@@ -1,7 +1,7 @@
 #ifndef PF_MATH_H
 #define PF_MATH_H
 
-#include <GL/glew.h> /* GLfloat definition */
+#include <GL/gl.h>   /* GLfloat definition */
 #include <stdio.h>   /* FILE definition    */
 #define __USE_MISC
 #include <math.h>    /* M_PI definition    */
@@ -28,6 +28,8 @@ typedef union vec4{
         GLfloat x, y, z, w; 
     };
 }vec4_t;
+
+typedef vec4_t quat_t;
 
 typedef union mat3x3{
     GLfloat raw[9];
