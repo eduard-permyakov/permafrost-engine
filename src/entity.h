@@ -1,8 +1,9 @@
 #ifndef ENTITY_H
 #define ENTITY_H
 
-#include <mesh.h>
-#include <anim_data.h>
+#include "pf_math.h"
+#include "render/mesh.h"
+#include "anim/anim_data.h"
 
 #define ENTITY_NAME_LEN 32
 
@@ -11,6 +12,7 @@ struct entity{
     char             name[ENTITY_NAME_LEN];
     struct mesh      mesh;    
     struct anim_data anim_data;
+    mat4x4_t         model_matrix;
     char             mem[];
 };
 

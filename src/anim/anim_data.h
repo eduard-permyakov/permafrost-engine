@@ -1,7 +1,7 @@
 #ifndef ANIM_MESH_H
 #define ANIM_MESH_H
 
-#include <pf_math.h>
+#include "../pf_math.h"
 #include <stddef.h>
 
 #define JOINT_NAME_LEN 32

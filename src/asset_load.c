@@ -1,6 +1,5 @@
-#include <asset_load.h>
-#include <entity.h>
-#include <vertex.h>
+#include "asset_load.h"
+#include "entity.h"
 
 #include <stdio.h>
 #define __USE_POSIX
@@ -82,6 +81,7 @@ fail:
  *  This allows us to do a single malloc/free per each model while
  *  also not wasting any memory.
  * */
+#if 0
 static size_t al_alloc_size_from_hdr(const struct pfobj_hdr *header)
 {
     size_t ret = 0;
@@ -106,6 +106,7 @@ static size_t al_alloc_size_from_hdr(const struct pfobj_hdr *header)
 
     return ret;
 }
+#endif
 
 struct entity *AL_EntityFromPFObj(const char *pfobj_path)
 {
@@ -132,8 +133,10 @@ struct entity *AL_EntityFromPFObj(const char *pfobj_path)
     }
     printf("\n");
 
+#if 0
     alloc_size = al_alloc_size_from_hdr(&header);
     printf("alloc sz: %zu bytes\n", alloc_size);
+#endif
 
 fail_alloc:
 fail_parse_hdr:

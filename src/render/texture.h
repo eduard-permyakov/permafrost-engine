@@ -5,7 +5,7 @@
 
 struct texture{
     GLint  id;
-    GLint  tunit
+    GLint  tunit;
     char  *tbuff;
 };
 

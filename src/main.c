@@ -2,7 +2,10 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 
-#include <stdbool.h>
+#include "asset_load.h"
+#include "entity.h"
+
+#include "stdbool.h"
 
 
 static SDL_Window    *s_window;
@@ -33,7 +36,6 @@ static void process_events(void)
 
             break;
         }
-
     }
 }
 
@@ -76,6 +78,10 @@ int main(int argc, char **argv)
 
     SDL_GL_SetSwapInterval(0); 
     glViewport(0, 0, 1024, 576);
+
+    /* Temp */
+    struct entity *entity = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mage/mage.pfobj");
+    /* End Temp */
 
     while(!s_quit) {
 
