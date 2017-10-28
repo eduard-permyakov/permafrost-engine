@@ -1,12 +1,15 @@
 #include "asset_load.h"
 #include "entity.h"
 
-#include <stdio.h>
+#include "render/public/render.h"
+
 #define __USE_POSIX
 #include <string.h>
+#include <stdio.h>
+#include <stdbool.h>
 
-#define MAX_ANIM_SETS 16
-#define MAX_LINE_LEN  128
+#include <stdlib.h> //temp
+
 
 #define READ_LINE(file, buff, fail_label)       \
     do{                                         \
@@ -14,14 +17,6 @@
             goto fail_label;                    \
         buff[MAX_LINE_LEN - 1] = '\0';          \
     }while(0)
-
-struct pfobj_hdr{
-    float    version; 
-    unsigned num_verts;
-    unsigned num_joints;
-    unsigned num_as;
-    unsigned frame_counts[MAX_ANIM_SETS];
-};
 
 static bool al_parse_header(FILE *stream, struct pfobj_hdr *out)
 {
@@ -37,6 +32,10 @@ static bool al_parse_header(FILE *stream, struct pfobj_hdr *out)
 
     READ_LINE(stream, line, fail);
     if(!sscanf(line, "num_joints %d", &out->num_joints))
+        goto fail;
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, "num_faces %d", &out->num_faces))
         goto fail;
 
     READ_LINE(stream, line, fail);
@@ -123,15 +122,21 @@ struct entity *AL_EntityFromPFObj(const char *pfobj_path)
     if(!al_parse_header(stream, &header))
         goto fail_parse_hdr;
 
-    printf("v: %f, nv: %d, nj: %d, ac: %d\n",
+    printf("v: %f, nv: %d, nj: %d, nf: %d, ac: %d\n",
         header.version,
         header.num_verts,
         header.num_joints,
+        header.num_faces,
         header.num_as);
     for(int i = 0; i < header.num_as; i++) {
         printf("%d ", header.frame_counts[i]); 
     }
     printf("\n");
+    
+    char *tmpbuff = malloc(1024*512);
+
+    R_AL_InitPrivFromStream((const struct pfobj_hdr*)&header, stream, tmpbuff);
+    R_DumpPrivate(stdout, tmpbuff);
 
 #if 0
     alloc_size = al_alloc_size_from_hdr(&header);

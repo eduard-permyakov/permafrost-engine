@@ -13,9 +13,9 @@ struct face{
 struct mesh{
     GLint           VBO;
     struct vertex  *vbuff;
-    struct texture  tex;
     GLint           EBO;
     struct face    *ebuff;
+    struct texture  tex;
 };
 
 #endif

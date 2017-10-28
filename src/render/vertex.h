@@ -4,7 +4,7 @@
 #include <GL/gl.h>
 
 struct joint_weight{
-    GLfloat joint_idx;
+    GLint   joint_idx;
     GLfloat weight;
 };
 

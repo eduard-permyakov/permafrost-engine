@@ -2,7 +2,8 @@ CC		= gcc
 AR		= ar
 BIN		= ./bin/pf
 
-PF_SRCS = $(wildcard ./src/*.c)
+PF_DIRS = ./src ./src/render ./src/anim
+PF_SRCS = $(foreach dir,$(PF_DIRS),$(wildcard $(dir)/*.c)) 
 PF_OBJS = $(PF_SRCS:./src/%.c=./obj/%.o)
 PF_DEPS = $(PF_OBJS:%.o=%.d)
 
