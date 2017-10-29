@@ -2,6 +2,7 @@
 #include "entity.h"
 
 #include "render/public/render.h"
+#include "anim/public/anim.h"
 
 #define __USE_POSIX
 #include <string.h>
@@ -134,15 +135,23 @@ struct entity *AL_EntityFromPFObj(const char *pfobj_path)
     printf("\n");
     
     char *tmpbuff = malloc(1024*512);
+    size_t render_buffsz = R_AL_PrivBuffSizeFromHeader((const struct pfobj_hdr*)&header);
+    size_t anim_buffsz = R_AL_PrivBuffSizeFromHeader((const struct pfobj_hdr*)&header);
 
-    R_AL_InitPrivFromStream((const struct pfobj_hdr*)&header, stream, tmpbuff);
+    if(!R_AL_InitPrivFromStream((const struct pfobj_hdr*)&header, stream, tmpbuff))
+        goto fail_parse_anim;
     R_DumpPrivate(stdout, tmpbuff);
+
+    if(!A_AL_InitPrivFromStream(&header, stream, tmpbuff + render_buffsz))
+        goto fail_parse_anim;
 
 #if 0
     alloc_size = al_alloc_size_from_hdr(&header);
     printf("alloc sz: %zu bytes\n", alloc_size);
 #endif
 
+fail_parse_anim:
+fail_parse_render:
 fail_alloc:
 fail_parse_hdr:
 fail_fopen:

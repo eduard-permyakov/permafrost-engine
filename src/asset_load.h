@@ -3,7 +3,7 @@
 
 
 #define MAX_ANIM_SETS 16
-#define MAX_LINE_LEN  128
+#define MAX_LINE_LEN  256
 
 struct entity;
 

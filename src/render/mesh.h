@@ -11,8 +11,10 @@ struct face{
 };
 
 struct mesh{
+    unsigned        num_verts;
     GLint           VBO;
     struct vertex  *vbuff;
+    unsigned        num_faces;
     GLint           EBO;
     struct face    *ebuff;
     struct texture  tex;

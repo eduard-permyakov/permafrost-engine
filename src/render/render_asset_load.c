@@ -62,6 +62,23 @@ fail:
     return false;
 }
 
+static bool al_read_face(FILE *stream, struct face *out)
+{
+    char line[MAX_LINE_LEN];
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, "f %d %d %d", &out->vertex_indeces[0],
+                                   &out->vertex_indeces[1], 
+                                   &out->vertex_indeces[2])) {
+        goto fail;
+    }
+
+    return true;
+
+fail:
+    return false;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -82,11 +99,19 @@ bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
     struct render_private *priv = priv_buff;
     size_t vbuff_sz = header->num_verts * sizeof(struct vertex);
 
+    priv->mesh.num_verts = header->num_verts;
     priv->mesh.vbuff = (void*)(priv + 1);
+    priv->mesh.num_faces = header->num_faces;
     priv->mesh.ebuff = (void*)((char*)priv->mesh.vbuff + vbuff_sz);
 
     for(int i = 0; i < header->num_verts; i++) {
-        al_read_vertex(stream, &priv->mesh.vbuff[i]);
+        if(!al_read_vertex(stream, &priv->mesh.vbuff[i]))
+            goto fail;
+    }
+
+    for(int i = 0; i < header->num_faces; i++) {
+        if(!al_read_face(stream, &priv->mesh.ebuff[i])) 
+            goto fail;
     }
 
     return true;
