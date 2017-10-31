@@ -33,7 +33,7 @@ struct anim_clip{
     struct skeleton    *skel;
     unsigned            num_frames;
     float               key_fps;
-    struct anim_sample  samples[];
+    struct anim_sample *samples;
 };
 
 struct anim_data{

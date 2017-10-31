@@ -65,6 +65,36 @@ static bool al_read_anim_clip(FILE *stream, struct anim_clip *out,
 {
     char line[MAX_LINE_LEN];
 
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, "as %s %u", out->name, &out->num_frames))
+        goto fail;
+
+    for(int f = 0; f < out->num_frames; f++) {
+        for(int j = 0; j < header->num_joints; j++) {
+
+            int joint_idx; /* unused */
+            struct SQT *curr_joint_trans = &out->samples[f].local_joint_poses[j];
+
+        
+            READ_LINE(stream, line, fail);
+            if(!sscanf(line, "%d %f/%f/%f %f/%f/%f/%f %f/%f/%f",
+                &joint_idx, 
+                &curr_joint_trans->scale.x,
+                &curr_joint_trans->scale.y,
+                &curr_joint_trans->scale.z,
+                &curr_joint_trans->quat_rotation.x,
+                &curr_joint_trans->quat_rotation.y,
+                &curr_joint_trans->quat_rotation.z,
+                &curr_joint_trans->quat_rotation.w,
+                &curr_joint_trans->trans.x,
+                &curr_joint_trans->trans.y,
+                &curr_joint_trans->trans.z)) {
+                goto fail;
+            }
+
+        }
+    }
+
     return true;
 
 fail:
@@ -90,7 +120,7 @@ size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
      *    2. num_joint number of 'struct SQT's (each joint's transform
      *       for the current frame)
      */
-    for(unsigned as_idx  = 0; as_idx  < header->num_as; as_idx++) {
+    for(unsigned as_idx  = 0; as_idx < header->num_as; as_idx++) {
 
         ret += header->frame_counts[as_idx] * 
                (sizeof(struct anim_sample) + header->num_joints * sizeof(struct SQT));
@@ -113,6 +143,9 @@ size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
  *  +---------------------------------+
  *  | struct anim_clip[num_as]        |
  *  +---------------------------------+
+ *  | struct anim_samples[num_as      |
+ *  |    * num_frames]                |
+ *  +---------------------------------+
  *  | struct SQT[num_as * num_joints] |
  *  |    (stored in clip-major order) |
  *  +---------------------------------+
@@ -124,7 +157,11 @@ bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
     void *unused_base = priv_buff;
     struct anim_private *priv;
 
-    /* First divide up the buffer betwen 'priv' members */
+    /*-----------------------------------------------------------
+     * First divide up the buffer betwen 'priv' members,
+     * set counts and pointers 
+     *-----------------------------------------------------------
+     */
     priv = unused_base;
     unused_base += sizeof(struct anim_private);
 
@@ -138,10 +175,21 @@ bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
     priv->data->skel.num_joints = header->num_joints;
     priv->data->skel.joints = unused_base;
     unused_base += sizeof(struct joint) * header->num_joints;
+
     priv->data->anims = unused_base;
     unused_base += sizeof(struct anim_clip) * header->num_as;
 
     for(int i = 0; i < header->num_as; i++) {
+
+        priv->data->anims[i].samples = unused_base;
+        unused_base += sizeof(struct anim_sample) * header->frame_counts[i];
+    }
+
+    for(int i = 0; i < header->num_as; i++) {
+
+        priv->data->anims[i].skel = &priv->data->skel;
+        priv->data->anims[i].num_frames = header->frame_counts[i];
+
         for(int f = 0; f < header->frame_counts[i]; f++) {
 
             priv->data->anims[i].samples[f].local_joint_poses = unused_base;
@@ -149,7 +197,10 @@ bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
         }
     }
 
-    /* Then we populate priv members with the file data */
+    /*---------------------------------------------------------------
+     * Then we populate priv members with the file data 
+     *---------------------------------------------------------------
+     */
     for(int i = 0; i < header->num_joints; i++) {
 
         if(!al_read_joint(stream, &priv->data->skel.joints[i])) 
@@ -167,5 +218,50 @@ bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
 
 fail:
     return false;
+}
+
+void A_AL_DumpPrivate(FILE *stream, void *priv_data)
+{
+    struct anim_private *priv = priv_data;
+
+    for(int i = 0; i < priv->data->skel.num_joints; i++) {
+
+        struct joint *j = &priv->data->skel.joints[i];
+        fprintf(stream, "j %d %s ", j->parent_idx + 1, j->name); 
+
+        for(int c = 0; c < 4; c++) {
+            fprintf(stream, "%f/%f/%f/%f ",
+                j->inv_bind_pose.cols[c][0],
+                j->inv_bind_pose.cols[c][1],
+                j->inv_bind_pose.cols[c][2],
+                j->inv_bind_pose.cols[c][3]);
+        }
+        fprintf(stream, "\n");
+    }
+
+    for(int i = 0; i < priv->data->num_anims; i++) {
+
+        struct anim_clip *ac = &priv->data->anims[i];
+        fprintf(stream, "as %s %d\n", ac->name, ac->num_frames); 
+
+        for(int f = 0; f < ac->num_frames; f++) {
+            for(int j = 0; j < ac->skel->num_joints; j++) {
+
+                struct SQT *sqt = &ac->samples[f].local_joint_poses[j]; 
+                fprintf(stream, "\t%d %f/%f/%f %f/%f/%f/%f %f/%f/%f\n",
+                    j + 1,
+                    sqt->scale.x,
+                    sqt->scale.y,
+                    sqt->scale.z,
+                    sqt->quat_rotation.x,
+                    sqt->quat_rotation.y,
+                    sqt->quat_rotation.z,
+                    sqt->quat_rotation.w,
+                    sqt->trans.x,
+                    sqt->trans.y,
+                    sqt->trans.z);
+            }
+        }
+    } 
 }
 

@@ -7,10 +7,10 @@
 
 struct pfobj_hdr;
 
-/* In PF Object format */
-void   A_DumpPrivate(FILE *stream, void *priv_data);
 
 size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header);
 bool   A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void *priv_buff);
+/* In PF Object format */
+void   A_AL_DumpPrivate(FILE *stream, void *priv_data);
 
 #endif

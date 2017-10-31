@@ -144,6 +144,7 @@ struct entity *AL_EntityFromPFObj(const char *pfobj_path)
 
     if(!A_AL_InitPrivFromStream(&header, stream, tmpbuff + render_buffsz))
         goto fail_parse_anim;
+    A_AL_DumpPrivate(stdout, tmpbuff + render_buffsz);
 
 #if 0
     alloc_size = al_alloc_size_from_hdr(&header);
