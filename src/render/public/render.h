@@ -7,9 +7,18 @@
 
 struct pfobj_hdr;
 
+/* Computes the size (in bytes) that is required to store all the rendering subsystem
+ * data from a PF Object file.
+ */
 size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header);
+
+/* Consumes lines of the stream and uses them to populate the private data stored 
+ * in priv_buff. 
+ */
 bool   R_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void *priv_buff);
-/* In PF Object format */
+
+/* Dumps private render data in PF Object format.
+ */
 void   R_AL_DumpPrivate(FILE *stream, void *priv_data);
 
 #endif
