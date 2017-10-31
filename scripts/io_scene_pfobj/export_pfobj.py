@@ -29,11 +29,13 @@ def save(operator, context, filepath, global_matrix):
 
         num_joints   = sum([len(arm.pose.bones) for arm in arms])
         num_as       = len(bpy.data.actions.items())
+        num_faces    = sum([len(mesh.polygons.items()) for mesh in meshes])
         frame_counts = [str(int(a.frame_range[1] - a.frame_range[0] + 1)) for a in bpy.data.actions]
 
         ofile.write("version        " + str(PFOBJ_VER) + "\n")
         ofile.write("num_verts      " + str(num_verts) + "\n")
         ofile.write("num_joints     " + str(num_joints) + "\n")
+        ofile.write("num_faces      " + str(num_faces) + "\n")
         ofile.write("num_as         " + str(num_as) + "\n")
         ofile.write("frame_counts   " + " ".join(frame_counts) + "\n")
 
@@ -42,7 +44,7 @@ def save(operator, context, filepath, global_matrix):
 
             mesh_triangulate(mesh)
 
-            ofile.write("# Vertices\n")
+            # write Vertices
             for face in mesh.polygons:
                 for loop_idx in face.loop_indices:
 
@@ -65,7 +67,7 @@ def save(operator, context, filepath, global_matrix):
                     line += "\n"
                     ofile.write(line)
 
-            ofile.write("# Faces\n")
+            # write Faces
             for face in mesh.polygons:
                 line = "f"
                 for loop_idx in face.loop_indices:
@@ -80,14 +82,24 @@ def save(operator, context, filepath, global_matrix):
         for obj in arms:
             arm = obj.data
 
-            ofile.write("# Joints\n")
+            # write Joints
             for bone in arm.bones:
-                line = "j {parent_idx} {name}\n"
+
+                line = "j {parent_idx} {name}" 
                 parent_idx = arm.bones.values().index(bone.parent) if bone.parent is not None else 0
                 line = line.format(parent_idx=parent_idx, name=bone.name)
+
+                for c in range(0,4):
+                    line += " {r1:.6f}/{r2:.6f}/{r3:.6f}/{r4:.6f}"
+                    line = line.format(r1=bone.matrix_local[c][0],
+                                       r2=bone.matrix_local[c][1],
+                                       r3=bone.matrix_local[c][2],
+                                       r4=bone.matrix_local[c][3])
+
+                line += "\n"
                 ofile.write(line)
 
-        ofile.write("# Animation sets\n")
+        # write Animation sets
         for action in bpy.data.actions:
 
             frame_cnt = action.frame_range[1] - action.frame_range[0] + 1;
