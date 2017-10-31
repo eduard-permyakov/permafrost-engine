@@ -1,7 +1,7 @@
 #ifndef PF_MATH_H
 #define PF_MATH_H
 
-#include <GL/gl.h>   /* GLfloat definition */
+#include <GL/glew.h>   /* GLfloat definition */
 #include <stdio.h>   /* FILE definition    */
 #define __USE_MISC
 #include <math.h>    /* M_PI definition    */

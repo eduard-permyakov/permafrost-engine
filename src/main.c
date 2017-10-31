@@ -4,6 +4,7 @@
 
 #include "asset_load.h"
 #include "entity.h"
+#include "render/public/render.h"
 
 #include "stdbool.h"
 
@@ -76,6 +77,9 @@ int main(int argc, char **argv)
         goto fail_glew;
     }
 
+    if(!R_Init())
+        goto fail_render;
+
     SDL_GL_SetSwapInterval(0); 
     glViewport(0, 0, 1024, 576);
 
@@ -96,6 +100,7 @@ int main(int argc, char **argv)
 
     exit(EXIT_SUCCESS);
 
+fail_render:
 fail_glew:
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window);

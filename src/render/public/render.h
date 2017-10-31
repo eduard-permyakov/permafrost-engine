@@ -7,6 +7,10 @@
 
 struct pfobj_hdr;
 
+/* Performs one-time initialization of the rendering subsystem.
+ */
+bool   R_Init(void);
+
 /* Computes the size (in bytes) that is required to store all the rendering subsystem
  * data from a PF Object file.
  */
