@@ -140,7 +140,7 @@ struct entity *AL_EntityFromPFObj(const char *pfobj_path)
 
     if(!R_AL_InitPrivFromStream((const struct pfobj_hdr*)&header, stream, tmpbuff))
         goto fail_parse_anim;
-    R_DumpPrivate(stdout, tmpbuff);
+    R_AL_DumpPrivate(stdout, tmpbuff);
 
     if(!A_AL_InitPrivFromStream(&header, stream, tmpbuff + render_buffsz))
         goto fail_parse_anim;
