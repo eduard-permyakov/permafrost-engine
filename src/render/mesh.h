@@ -12,7 +12,8 @@ struct face{
 
 struct mesh{
     unsigned        num_verts;
-    GLint           VBO;
+    GLuint          VBO;
+    GLuint          VAO;
     struct vertex  *vbuff;
     unsigned        num_faces;
     GLint           EBO;

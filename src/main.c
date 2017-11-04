@@ -5,6 +5,7 @@
 #include "asset_load.h"
 #include "entity.h"
 #include "render/public/render.h"
+#include "anim/public/anim.h"
 
 #include "stdbool.h"
 
@@ -13,6 +14,8 @@ static SDL_Window    *s_window;
 static SDL_GLContext  s_context;
 
 static bool           s_quit = false; 
+
+struct entity *s_temp;
 
 
 static void process_events(void)
@@ -47,6 +50,8 @@ static void render(void)
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT /* GL_DEPTH_BUFFER_BIT */);
 
+    R_GL_Draw(s_temp);
+
     SDL_GL_SwapWindow(s_window);
 }
 
@@ -77,14 +82,16 @@ int main(int argc, char **argv)
         goto fail_glew;
     }
 
-    if(!R_Init())
-        goto fail_render;
-
     SDL_GL_SetSwapInterval(0); 
     glViewport(0, 0, 1024, 576);
 
+    if(!R_Init())
+        goto fail_render;
+
     /* Temp */
-    struct entity *entity = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mage/mage.pfobj");
+    s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mage/mage.pfobj", "mage", 4);
+    R_AL_DumpPrivate(stdout, s_temp->render_private);
+    A_AL_DumpPrivate(stdout, s_temp->anim_private);
     /* End Temp */
 
     while(!s_quit) {
@@ -108,5 +115,4 @@ fail_glew:
 fail_sdl:
     exit(EXIT_FAILURE);
 }
-
 

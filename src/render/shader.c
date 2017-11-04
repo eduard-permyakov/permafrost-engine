@@ -19,6 +19,7 @@ struct shader_resource{
 /* Shader program ids will be initialized by Shader_InitAll */
 static struct shader_resource s_shaders[] = {
     { 
+        .prog_id     = (intptr_t)NULL,
         .name        = "generic",
         .vertex_path = "/home/eduard/engine/shaders/vertex.glsl",
         .frag_path   = "/home/eduard/engine/shaders/fragment.glsl"
@@ -109,7 +110,6 @@ static bool shader_make_prog(const GLuint vertex_shader, const GLuint frag_shade
     glAttachShader(*out, frag_shader);
     glLinkProgram(*out);
 
-    printf("%d\n", *out);
     glGetProgramiv(*out, GL_LINK_STATUS, &success);
     if(!success) {
 

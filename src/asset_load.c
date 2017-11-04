@@ -4,10 +4,11 @@
 #include "render/public/render.h"
 #include "anim/public/anim.h"
 
-#define __USE_POSIX
-#include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <assert.h>
+#define __USE_POSIX
+#include <string.h>
 
 #include <stdlib.h> //temp
 
@@ -74,41 +75,14 @@ fail:
 /*
  *  We compute the amount of memory needed for each entity ahead of 
  *  time. The we allocate a single buffer, which is appended to the 
- *  end of 'struct entity' and accessed by the flexible array member 
- *  'mem'. Resource fields of 'struct entity' such as the vertex 
- *  buffer pointer or the animation data pointer point into this buffer.
+ *  end of 'struct entity'. Resource fields of 'struct entity' such 
+ *  as the vertex buffer pointer or the animation data pointer point 
+ *  into this buffer.
  *
  *  This allows us to do a single malloc/free per each model while
  *  also not wasting any memory.
- * */
-#if 0
-static size_t al_alloc_size_from_hdr(const struct pfobj_hdr *header)
-{
-    size_t ret = 0;
-
-    ret += sizeof(struct entity);
-    ret += header->num_verts  * sizeof(struct vertex);
-    ret += header->num_as     * sizeof(struct anim_clip);
-    ret += header->num_joints * sizeof(struct joint);
-
-    /*
-     * For each frame of each animation clip, we also require:
-     *
-     *    1. a 'struct anim_sample' (for referencing this frame's SQT array)
-     *    2. num_joint number of 'struct SQT's (each joint's transform
-     *       for the current frame)
-     */
-    for(unsigned as_idx  = 0; as_idx  < header->num_as; as_idx++) {
-
-        ret += header->frame_counts[as_idx] * 
-               (sizeof(struct anim_sample) + header->num_joints * sizeof(struct SQT));
-    }
-
-    return ret;
-}
-#endif
-
-struct entity *AL_EntityFromPFObj(const char *pfobj_path)
+ */
+struct entity *AL_EntityFromPFObj(const char *pfobj_path, const char *name, size_t namelen)
 {
     struct entity *ret;
     FILE *stream;
@@ -117,11 +91,11 @@ struct entity *AL_EntityFromPFObj(const char *pfobj_path)
 
     stream = fopen(pfobj_path, "r");
     if(!stream){
-        goto fail_fopen; 
+        goto fail; 
     }
 
     if(!al_parse_header(stream, &header))
-        goto fail_parse_hdr;
+        goto fail;
 
     printf("v: %f, nv: %d, nj: %d, nf: %d, ac: %d\n",
         header.version,
@@ -139,23 +113,22 @@ struct entity *AL_EntityFromPFObj(const char *pfobj_path)
     size_t anim_buffsz = R_AL_PrivBuffSizeFromHeader((const struct pfobj_hdr*)&header);
 
     if(!R_AL_InitPrivFromStream((const struct pfobj_hdr*)&header, stream, tmpbuff))
-        goto fail_parse_anim;
-    R_AL_DumpPrivate(stdout, tmpbuff);
+        goto fail;
 
     if(!A_AL_InitPrivFromStream(&header, stream, tmpbuff + render_buffsz))
-        goto fail_parse_anim;
-    A_AL_DumpPrivate(stdout, tmpbuff + render_buffsz);
+        goto fail;
 
-#if 0
-    alloc_size = al_alloc_size_from_hdr(&header);
-    printf("alloc sz: %zu bytes\n", alloc_size);
-#endif
+    ret = malloc(sizeof(struct entity));
+    ret->render_private = tmpbuff;
+    ret->anim_private = tmpbuff + render_buffsz;
 
-fail_parse_anim:
-fail_parse_render:
-fail_alloc:
-fail_parse_hdr:
-fail_fopen:
+    assert(namelen < sizeof(ret->name));
+    strncpy(ret->name, name, namelen);
+    ret->name[sizeof(ret->name) - 1] = '\0';
+
+    return ret;
+
+fail:
     return NULL;
 }
 

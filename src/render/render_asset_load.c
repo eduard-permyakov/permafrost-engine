@@ -1,6 +1,7 @@
 #include "public/render.h"
 #include "render_private.h"
 #include "vertex.h"
+#include "render_gl.h"
 
 #include "../asset_load.h"
 
@@ -113,6 +114,8 @@ bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
         if(!al_read_face(stream, &priv->mesh.ebuff[i])) 
             goto fail;
     }
+
+    GL_Init(priv);
 
     return true;
 

@@ -1,6 +1,8 @@
 #ifndef ASSET_LOAD_H
 #define ASSET_LOAD_H
 
+#include <stddef.h>
+
 
 #define MAX_ANIM_SETS 16
 #define MAX_LINE_LEN  256
@@ -16,6 +18,6 @@ struct pfobj_hdr{
     unsigned frame_counts[MAX_ANIM_SETS];
 };
 
-struct entity *AL_EntityFromPFObj(const char *pfobj_path);
+struct entity *AL_EntityFromPFObj(const char *pfobj_path, const char *name, size_t namelen);
 
 #endif
