@@ -16,12 +16,15 @@ def save(operator, context, filepath, global_matrix):
     with open(filepath, "w", encoding="ascii") as ofile:
 
         # Transform all objects to OpenGL coordinate system
-        for obj in bpy.data.objects:
-            obj.matrix_world = global_matrix * obj.matrix_world
+        #for obj in bpy.data.objects:
+        #    obj.matrix_world = global_matrix * obj.matrix_world
 
         # Write the header
         meshes = [obj.data for obj in bpy.data.objects if obj.type == 'MESH']
         arms   = [obj for obj in bpy.data.objects if obj.type == 'ARMATURE']
+
+        for mesh in meshes:
+            mesh_triangulate(mesh)
 
         num_verts = 0
         for mesh in meshes:
@@ -42,7 +45,7 @@ def save(operator, context, filepath, global_matrix):
         # Iterate over meshes 
         for mesh in meshes:
 
-            mesh_triangulate(mesh)
+            mesh.transform(global_matrix)
 
             # write Vertices
             for face in mesh.polygons:
@@ -50,8 +53,7 @@ def save(operator, context, filepath, global_matrix):
 
                     line = "v {v.x:.6f} {v.y:.6f} {v.z:.6f}\n"
                     v = mesh.vertices[mesh.loops[loop_idx].vertex_index]
-                    v_co_world = obj.matrix_world * v.co
-                    line = line.format(v=v_co_world)
+                    line = line.format(v=v.co)
                     ofile.write(line)
 
                     uv_coords = mesh.uv_layers.active.data[loop_idx].uv
@@ -77,6 +79,8 @@ def save(operator, context, filepath, global_matrix):
                     line += next_elem
                 line += "\n"
                 ofile.write(line)
+
+            mesh.transform(global_matrix.inverted())
 
         # Iterate over armatures 
         for obj in arms:
@@ -116,17 +120,13 @@ def save(operator, context, filepath, global_matrix):
                 for pbone in obj.pose.bones:
                     line = "        {idx} {s.x:.6f}/{s.y:.6f}/{s.z:.6f} {q.x:.6f}/{q.y:.6f}/{q.z:.6f}/{q.w:.6f} {t.x:.6f}/{t.y:.6f}/{t.z:.6f}\n"
 
-                    world_scale         = obj.matrix_world * pbone.scale
-                    world_rot_quat      = pbone.rotation_quaternion
-                    world_rot_quat.axis = obj.matrix_world * pbone.rotation_quaternion.axis
-                    world_loc           = obj.matrix_world * pbone.location
                     idx = obj.pose.bones.values().index(pbone) + 1
 
-                    line = line.format(idx=idx, s=world_scale, q=world_rot_quat, t=world_loc)
+                    line = line.format(idx=idx, s=pbone.scale, q=pbone.rotation_quaternion, t=pbone.location)
                     ofile.write(line)
 
         # Now transfrom all objects back to Blender coordinate system
-        for obj in bpy.data.objects:
-            obj.matrix_world = global_matrix.inverted() * obj.matrix_world
+        #for obj in bpy.data.objects:
+        #    obj.matrix_world = global_matrix.inverted() * obj.matrix_world
 
     return {'FINISHED'}
