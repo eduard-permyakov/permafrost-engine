@@ -4,6 +4,7 @@
 #include "vertex.h"
 #include "shader.h"
 #include "../entity.h"
+#include "../gl_uniforms.h"
 
 #include <GL/glew.h>
 
@@ -41,6 +42,24 @@ void GL_Init(struct render_private *priv)
 void R_GL_Draw(struct entity *ent)
 {
     struct render_private *priv = ent->render_private;
+	GLuint loc;
+
+    /*tmp - TODO: set this from camera module */
+    GLint  viewport[4]; 
+    glGetIntegerv(GL_VIEWPORT, viewport);
+
+    mat4x4_t proj;
+    PFM_mat4x4_make_perspective(DEG_TO_RAD(45.0f), ((GLfloat)viewport[2])/viewport[3], 0.1f, 100.0f, &proj);
+    /*end temp*/
+
+    loc = glGetUniformLocation(priv->shader_prog, GL_U_MODEL);
+	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+
+    loc = glGetUniformLocation(priv->shader_prog, GL_U_VIEW);
+	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->view_matrix.raw);
+    
+    loc = glGetUniformLocation(priv->shader_prog, GL_U_PROJECTION);
+	glUniformMatrix4fv(loc, 1, GL_FALSE, proj.raw);
 
     glUseProgram(priv->shader_prog);
 

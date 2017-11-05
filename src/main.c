@@ -89,7 +89,12 @@ int main(int argc, char **argv)
         goto fail_render;
 
     /* Temp */
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
     s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mage/mage.pfobj", "mage", 4);
+    PFM_mat4x4_identity(&s_temp->model_matrix);
+    PFM_mat4x4_make_trans(0.0f, 0.0f, -50.0f, &s_temp->view_matrix);
+
     R_AL_DumpPrivate(stdout, s_temp->render_private);
     A_AL_DumpPrivate(stdout, s_temp->anim_private);
     /* End Temp */
