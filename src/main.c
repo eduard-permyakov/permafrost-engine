@@ -4,6 +4,7 @@
 
 #include "asset_load.h"
 #include "entity.h"
+#include "camera.h"
 #include "render/public/render.h"
 #include "anim/public/anim.h"
 
@@ -15,11 +16,18 @@ static SDL_GLContext  s_context;
 
 static bool           s_quit = false; 
 
-struct entity *s_temp;
+static struct camera *s_camera;
+
+struct entity         *s_temp;
 
 
 static void process_events(void)
 {
+    static bool s_w_down = false;
+    static bool s_a_down = false;
+    static bool s_s_down = false;
+    static bool s_d_down = false;
+
     SDL_Event event;    
    
     while(SDL_PollEvent(&event)) {
@@ -39,8 +47,33 @@ static void process_events(void)
             }
 
             break;
+
+        case SDL_KEYDOWN:
+            switch(event.key.keysym.scancode) {
+            case SDL_SCANCODE_W: s_w_down = true; break;
+            case SDL_SCANCODE_A: s_a_down = true; break;
+            case SDL_SCANCODE_S: s_s_down = true; break;
+            case SDL_SCANCODE_D: s_d_down = true; break;
+            }
+
+            break;
+
+        case SDL_KEYUP:
+            switch(event.key.keysym.scancode) {
+            case SDL_SCANCODE_W: s_w_down = false; break;
+            case SDL_SCANCODE_A: s_a_down = false; break;
+            case SDL_SCANCODE_S: s_s_down = false; break;
+            case SDL_SCANCODE_D: s_d_down = false; break;
+            }
+
+            break;
         }
     }
+
+    if(s_w_down) camera_move_front_tick(s_camera);
+    if(s_a_down) camera_move_left_tick (s_camera);
+    if(s_s_down) camera_move_back_tick (s_camera);
+    if(s_d_down) camera_move_right_tick(s_camera);
 }
 
 static void render(void)
@@ -88,12 +121,20 @@ int main(int argc, char **argv)
     if(!R_Init())
         goto fail_render;
 
+    s_camera = camera_new();
+    if(!s_camera)
+        goto fail_camera;
+
+    camera_set_pos  (s_camera, (vec3_t){ 0.0f,  0.0f,  0.0f});
+    camera_set_front(s_camera, (vec3_t){ 0.0f,  0.0f, -1.0f});
+    camera_set_up   (s_camera, (vec3_t){ 0.0f,  1.0f,  0.0f});
+    camera_set_speed(s_camera, 0.05f);
+
     /* Temp */
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
     s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mage/mage.pfobj", "mage", 4);
-    PFM_mat4x4_identity(&s_temp->model_matrix);
-    PFM_mat4x4_make_trans(0.0f, 0.0f, -50.0f, &s_temp->view_matrix);
+    PFM_mat4x4_make_trans(0.0f, 0.0f, -50.0f, &s_temp->model_matrix);
 
     R_AL_DumpPrivate(stdout, s_temp->render_private);
     A_AL_DumpPrivate(stdout, s_temp->anim_private);
@@ -102,16 +143,20 @@ int main(int argc, char **argv)
     while(!s_quit) {
 
         process_events();
+        camera_tick_finish(s_camera);
         render();        
 
     }
 
+    camera_free(s_camera);
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window);
     SDL_Quit();
 
     exit(EXIT_SUCCESS);
 
+fail_camera:
+    free(s_camera);
 fail_render:
 fail_glew:
     SDL_GL_DeleteContext(s_context);
