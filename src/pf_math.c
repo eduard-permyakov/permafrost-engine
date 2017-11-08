@@ -86,6 +86,11 @@ void PFM_vec3_normal(vec3_t *op1, vec3_t *out)
         out->raw[i] = op1->raw[i] / len;
 }
 
+void PFM_vec3_dump(vec3_t *vec, FILE *dumpfile)
+{
+    fprintf(dumpfile, "(%.4f, %.4f, %.4f)\n", vec->x, vec->y, vec->z);
+}
+
 GLfloat PFM_vec4_dot(vec4_t *op1,  vec4_t *op2, vec4_t *out)
 {
     return op1->x * op2->x +
@@ -291,11 +296,7 @@ void PFM_mat4x4_make_look_at(vec3_t *camera_pos, vec3_t *target_pos,
     axes.cols[1][2] = camera_dir.y;
     axes.cols[2][2] = camera_dir.z;
 
-    PFM_mat4x4_identity(&trans);
-    trans.cols[3][0] = -camera_pos->x;
-    trans.cols[3][1] = -camera_pos->y;
-    trans.cols[3][0] = -camera_pos->z;
-
+    PFM_mat4x4_make_trans(-camera_pos->x, -camera_pos->y, -camera_pos->z, &trans);
     PFM_mat4x4_mult4x4(&axes, &trans, out);
 }
 

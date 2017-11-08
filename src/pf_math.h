@@ -66,6 +66,7 @@ void    PFM_vec3_sub       (vec3_t *op1, vec3_t *op2, vec3_t *out);
 void    PFM_vec3_scale     (vec3_t *op1, GLfloat scale, vec3_t *out);
 GLfloat PFM_vec3_len       (vec3_t *op1);
 void    PFM_vec3_normal    (vec3_t *op1, vec3_t *out);
+void    PFM_vec3_dump      (vec3_t *vec, FILE *dumpfile);
 
 GLfloat PFM_vec4_dot       (vec4_t *op1, vec4_t *op2, vec4_t *out);
 void    PFM_vec4_add       (vec4_t *op1, vec4_t *op2, vec4_t *out);
