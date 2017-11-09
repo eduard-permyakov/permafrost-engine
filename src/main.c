@@ -1,14 +1,14 @@
-#include <GL/glew.h>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_opengl.h>
-
 #include "asset_load.h"
 #include "entity.h"
 #include "camera.h"
 #include "render/public/render.h"
 #include "anim/public/anim.h"
 
-#include "stdbool.h"
+#include <GL/glew.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_opengl.h>
+
+#include <stdbool.h>
 
 
 static SDL_Window    *s_window;
@@ -54,6 +54,8 @@ static void process_events(void)
             case SDL_SCANCODE_A: s_a_down = true; break;
             case SDL_SCANCODE_S: s_s_down = true; break;
             case SDL_SCANCODE_D: s_d_down = true; break;
+
+            case SDL_SCANCODE_ESCAPE: s_quit = true; break;
             }
 
             break;
@@ -67,6 +69,11 @@ static void process_events(void)
             }
 
             break;
+
+        case SDL_MOUSEMOTION: 
+            camera_change_direction(s_camera, event.motion.xrel, event.motion.yrel);
+            break;
+
         }
     }
 
@@ -116,6 +123,7 @@ int main(int argc, char **argv)
     }
 
     SDL_GL_SetSwapInterval(0); 
+    SDL_SetRelativeMouseMode(true);
     glViewport(0, 0, 1024, 576);
 
     if(!R_Init())
@@ -128,7 +136,8 @@ int main(int argc, char **argv)
     camera_set_pos  (s_camera, (vec3_t){ 0.0f,  0.0f,  0.0f});
     camera_set_front(s_camera, (vec3_t){ 0.0f,  0.0f, -1.0f});
     camera_set_up   (s_camera, (vec3_t){ 0.0f,  1.0f,  0.0f});
-    camera_set_speed(s_camera, 0.05f);
+    camera_set_speed(s_camera, 0.1f);
+    camera_set_sens (s_camera, 0.05f);
 
     /* Temp */
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);

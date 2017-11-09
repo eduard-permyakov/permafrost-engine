@@ -10,9 +10,14 @@
 
 struct camera {
     float    speed;
+    float    sensitivity;
+
     vec3_t   pos;
     vec3_t   front;
     vec3_t   up;
+
+    float    pitch;
+    float    yaw;
 
     uint32_t prev_frame_ts;
 };
@@ -22,7 +27,12 @@ const unsigned g_sizeof_camera = sizeof(struct camera);
 
 struct camera *camera_new(void)
 {
-    return calloc(1, sizeof(struct camera));
+    struct camera *ret = calloc(1, sizeof(struct camera));
+    if(!ret)
+        return NULL;
+
+    ret->yaw = 90.0f;
+    return ret;
 }
 
 void camera_free(struct camera *cam)
@@ -33,6 +43,7 @@ void camera_free(struct camera *cam)
 void camera_init_stack(struct camera *cam)
 {
     memset(cam, 0, sizeof(struct camera));
+    cam->yaw = 90.0f;
 }
 
 void camera_set_pos(struct camera *cam, vec3_t pos)
@@ -53,6 +64,11 @@ void camera_set_up(struct camera *cam, vec3_t up)
 void camera_set_speed(struct camera *cam, float speed)
 {
     cam->speed = speed;
+}
+
+void camera_set_sens(struct camera *cam, float sensitivity)
+{
+    cam->sensitivity = sensitivity;
 }
 
 void camera_move_left_tick(struct camera *cam)
@@ -119,6 +135,29 @@ void camera_move_back_tick(struct camera *cam)
 
     PFM_vec3_scale(&cam->front, tdelta * cam->speed, &vdelta);
     PFM_vec3_sub(&cam->pos, &vdelta, &cam->pos);
+}
+
+void camera_change_direction(struct camera *cam, int dx, int dy)
+{
+    float sdx = dx * cam->sensitivity; 
+    float sdy = dy * cam->sensitivity;
+
+    cam->yaw   += sdx;
+    cam->pitch -= sdy;
+
+    cam->pitch = cam->pitch <  89.0f ? cam->pitch :  89.0f;
+    cam->pitch = cam->pitch > -89.0f ? cam->pitch : -89.0f;
+
+    vec3_t front;         
+    front.x = cos(DEG_TO_RAD(cam->yaw)) * cos(DEG_TO_RAD(cam->pitch));
+    front.y = sin(DEG_TO_RAD(cam->pitch));
+    front.z = sin(DEG_TO_RAD(cam->yaw)) * cos(DEG_TO_RAD(cam->pitch)) * -1;
+    PFM_vec3_normal(&front, &cam->front);
+
+    /* Find a vector that is orthogonal to 'front' in the XZ plane */
+    vec3_t xz = (vec3_t){cam->front.z, 0.0f, -cam->front.x};
+    PFM_vec3_cross(&cam->front, &xz, &cam->up);
+    PFM_vec3_normal(&cam->up, &cam->up);
 }
 
 void camera_tick_finish(struct camera *cam)
