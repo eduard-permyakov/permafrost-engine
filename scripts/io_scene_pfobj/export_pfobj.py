@@ -94,11 +94,12 @@ def save(operator, context, filepath, global_matrix):
                 line = line.format(parent_idx=parent_idx, name=bone.name)
 
                 for c in range(0,4):
+                    gl_matrix = global_matrix * bone.matrix_local
                     line += " {r1:.6f}/{r2:.6f}/{r3:.6f}/{r4:.6f}"
-                    line = line.format(r1=bone.matrix_local[c][0],
-                                       r2=bone.matrix_local[c][1],
-                                       r3=bone.matrix_local[c][2],
-                                       r4=bone.matrix_local[c][3])
+                    line = line.format(r1=gl_matrix[0][c],
+                                       r2=gl_matrix[1][c],
+                                       r3=gl_matrix[2][c],
+                                       r4=gl_matrix[3][c])
 
                 line += "\n"
                 ofile.write(line)
