@@ -90,7 +90,7 @@ def save(operator, context, filepath, global_matrix):
             for bone in arm.bones:
 
                 line = "j {parent_idx} {name}" 
-                parent_idx = arm.bones.values().index(bone.parent) if bone.parent is not None else 0
+                parent_idx = arm.bones.values().index(bone.parent) + 1 if bone.parent is not None else 0
                 line = line.format(parent_idx=parent_idx, name=bone.name)
 
                 for c in range(0,4):
