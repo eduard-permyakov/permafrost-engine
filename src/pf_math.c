@@ -192,10 +192,10 @@ void PFM_mat4x4_mult4x4 (mat4x4_t *op1, mat4x4_t *op2, mat4x4_t *out)
 
 void PFM_mat4x4_mult4x1(mat4x4_t *op1, vec4_t *op2, vec4_t *out)
 {
-    for(int r = 0; r < 3; r++) {
+    for(int r = 0; r < 4; r++) {
         out->raw[r] = 0.0f;
         for(int c = 0; c < 4; c++)
-            out->raw[r] += op1->cols[c][r] * op2->raw[r];
+            out->raw[r] += op1->cols[c][r] * op2->raw[c];
     }
 }
 
