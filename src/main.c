@@ -144,6 +144,7 @@ int main(int argc, char **argv)
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
     s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mage/mage.pfobj", "mage", 4);
+    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/archer/archer_version_3.pfobj", "mage", 4);
     PFM_mat4x4_make_trans(0.0f, 0.0f, -50.0f, &s_temp->model_matrix);
 
     R_AL_DumpPrivate(stdout, s_temp->render_private);
