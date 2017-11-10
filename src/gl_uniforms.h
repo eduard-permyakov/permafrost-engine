@@ -5,5 +5,6 @@
 #define GL_U_PROJECTION "projection"
 #define GL_U_MODEL      "model"
 #define GL_U_VIEW       "view"
+#define GL_U_COLOR      "color"
 
 #endif

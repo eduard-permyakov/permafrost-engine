@@ -161,7 +161,7 @@ void PFM_mat3x3_mult3x1 (mat3x3_t *op1,  vec3_t *op2,  vec3_t *out)
     for(int r = 0; r < 3; r++) {
         out->raw[r] = 0.0f;
         for(int c = 0; c < 3; c++)
-            out->raw[r] += op1->cols[c][r] * op2->raw[r];
+            out->raw[r] += op1->cols[c][r] * op2->raw[c];
     }
 }
 

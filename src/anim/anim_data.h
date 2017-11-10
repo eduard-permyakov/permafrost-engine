@@ -1,27 +1,17 @@
 #ifndef ANIM_MESH_H
 #define ANIM_MESH_H
 
+#include "public/skeleton.h"
 #include "../pf_math.h"
+
 #include <stddef.h>
 
-#define JOINT_NAME_LEN 32
 #define ANIM_NAME_LEN  32
 
 struct SQT{
     vec3_t scale;
     quat_t quat_rotation;
     vec3_t trans;
-};
-
-struct joint{
-    char     name[JOINT_NAME_LEN];
-    int      parent_idx;
-    mat4x4_t inv_bind_pose;
-};
-
-struct skeleton{
-    size_t        num_joints;
-    struct joint *joints;
 };
 
 struct anim_sample{

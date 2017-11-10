@@ -6,6 +6,14 @@
 #include <stdbool.h>
 
 struct pfobj_hdr;
+struct entity;
+struct skeleton;
+
+
+/* Simple utility to get a reference to the skeleton structure. It shoould not be modified 
+ * or freed.
+ */
+const struct skeleton *A_GetSkeleton(struct entity *ent);
 
 /* Computes the size (in bytes) that is required to store all the animation subsystem
  * data from a PF Object file.

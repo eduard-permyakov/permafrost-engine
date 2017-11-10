@@ -9,6 +9,7 @@
 
 struct pfobj_hdr;
 struct entity;
+struct skeleton;
 
 /* Performs one-time initialization of the rendering subsystem.
  */
@@ -21,6 +22,13 @@ void   R_GL_Draw(struct entity *ent);
 
 void   R_GL_SetView(const mat4x4_t *view, const char *shader_name);
 void   R_GL_SetProj(const mat4x4_t *proj, const char *shader_name);
+
+/* Render an entitiy's skeleton which is used for animation. 
+ *
+ * NOTE: This is a low-performance routine that calls malloc/free at every call.
+ * It should be used for debugging only.
+ */
+void   R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel);
 
 /* Computes the size (in bytes) that is required to store all the rendering subsystem
  * data from a PF Object file.

@@ -91,6 +91,7 @@ static void render(void)
     glClear(GL_COLOR_BUFFER_BIT /* GL_DEPTH_BUFFER_BIT */);
 
     R_GL_Draw(s_temp);
+    R_GL_DrawSkeleton(s_temp, A_GetSkeleton(s_temp));
 
     SDL_GL_SwapWindow(s_window);
 }
