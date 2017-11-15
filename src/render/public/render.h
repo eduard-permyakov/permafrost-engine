@@ -30,6 +30,10 @@ void   R_GL_SetProj(const mat4x4_t *proj, const char *shader_name);
  */
 void   R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel);
 
+/* Debugging utility to draw X,Y,Z axes at the origin
+ */
+void   R_GL_DrawOrigin(const struct entity *ent);
+
 /* Computes the size (in bytes) that is required to store all the rendering subsystem
  * data from a PF Object file.
  */

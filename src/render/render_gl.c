@@ -149,3 +149,72 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
     free(vbuff);
 }
 
+void R_GL_DrawOrigin(const struct entity *ent)
+{
+    vec3_t vbuff[2];
+    GLint VAO, VBO;
+    GLint shader_prog;
+	GLuint loc;
+
+    vec3_t red   = (vec3_t){1.0f, 0.0f, 0.0f};
+    vec3_t green = (vec3_t){0.0f, 1.0f, 0.0f};
+    vec3_t blue  = (vec3_t){0.0f, 0.0f, 1.0f};
+
+    /* OpenGL setup */
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(0);  
+
+    shader_prog = Shader_GetProgForName("generic");
+
+    /* Set uniforms */
+    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
+	glUniform3fv(loc, 1, green.raw);
+
+    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
+	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+
+    /* Set line width */
+    GLfloat old_width;
+    glGetFloatv(GL_LINE_WIDTH, &old_width);
+    glLineWidth(3.0f);
+
+    /* Render the 3 axis lines at the origin */
+    vbuff[0] = (vec3_t){0.0f, 0.0f, 0.0f};
+    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
+
+    for(int i = 0; i < 3; i++) {
+
+        switch(i) {
+            case 0: { 
+                vbuff[1] = (vec3_t){1.0f, 0.0f, 0.0f}; 
+	            glUniform3fv(loc, 1, red.raw);
+                break;
+            }
+            case 1: {
+                vbuff[1] = (vec3_t){0.0f, 1.0f, 0.0f}; 
+	            glUniform3fv(loc, 1, green.raw);
+                break;
+            }
+            case 2: {
+                vbuff[1] = (vec3_t){0.0f, 0.0f, 1.0f}; 
+	            glUniform3fv(loc, 1, blue.raw);
+                break;
+            }
+        }
+    
+        glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+
+        glUseProgram(shader_prog);
+
+        glBindVertexArray(VAO);
+        glDrawArrays(GL_LINES, 0, 2);
+    }
+    glLineWidth(old_width);
+}
+
