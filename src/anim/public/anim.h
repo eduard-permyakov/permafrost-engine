@@ -9,23 +9,87 @@ struct pfobj_hdr;
 struct entity;
 struct skeleton;
 
+enum anim_mode{
+    ANIM_MODE_LOOP,
+    ANIM_MODE_ONCE
+};
 
-/* Simple utility to get a reference to the skeleton structure. It shoould not be modified 
- * or freed.
+
+
+/*###########################################################################*/
+/* ANIM GENERAL                                                              */
+/*###########################################################################*/
+
+/* ---------------------------------------------------------------------------
+ * Perform one-time context initialization and set the animation clip that will 
+ * play when no other animation clips are active.
+ *
+ * Note that 'key_fps' is the number of key frames to cycle through each
+ * second, not the frame rendering rate.
+ * ---------------------------------------------------------------------------
  */
-const struct skeleton *A_GetSkeleton(struct entity *ent);
+void                   A_InitCtx(const struct entity *ent, const char *idle_clip, 
+                                 unsigned key_fps);
 
-/* Computes the size (in bytes) that is required to store all the animation subsystem
+/* ---------------------------------------------------------------------------
+ * If anim_mode is 'ANIM_MODE_ONCE', the entity will go back to 
+ * playing the 'idle' animtion once the clip has played once. Otherwise, it will
+ * keep looping the clip.
+ * ---------------------------------------------------------------------------
+ */
+void                   A_SetActiveClip(const struct entity *ent, const char *name, 
+                                       enum anim_mode mode, unsigned key_fps);
+
+/* ---------------------------------------------------------------------------
+ * Should be called once per render loop, prior to rendering. Will update OpenGL
+ * state based on the current active clip and time.
+ * ---------------------------------------------------------------------------
+ */
+void                   A_Update(const struct entity *ent);
+
+/* ---------------------------------------------------------------------------
+ * Simple utility to get a reference to the skeleton structure in its' default
+ * bind pose. The skeleton structure shoould not be modified or freed.
+ * ---------------------------------------------------------------------------
+ */
+const struct skeleton *A_GetBindSkeleton(const struct entity *ent);
+
+/* ---------------------------------------------------------------------------
+ * Create a new skeleton for the current frame of the active clip.
+ *
+ * Note that this is a _debugging_ function, creating a skeleton to render based
+ * on context. It will allocate a new buffer for the skeleton, which should be 
+ * 'free'd by the caller. It should _not_ be called outside of debugging.
+ *
+ * It will only update at the granularity of clip poses per second. The interpolation 
+ * in-between clip poses is done by the vertex shader.
+ * ---------------------------------------------------------------------------
+ */
+const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent);
+
+
+
+/*###########################################################################*/
+/* ANIM ASSET LOADING                                                        */
+/*###########################################################################*/
+
+/* ---------------------------------------------------------------------------
+ * Computes the size (in bytes) that is required to store all the animation subsystem
  * data from a PF Object file.
+ * ---------------------------------------------------------------------------
  */
 size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header);
 
-/* Consumes lines of the stream and uses them to populate the private data stored 
+/* ---------------------------------------------------------------------------
+ * Consumes lines of the stream and uses them to populate the private data stored 
  * in priv_buff.
+ * ---------------------------------------------------------------------------
  */
 bool   A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void *priv_buff);
 
-/* Dumps private animation data in PF Object format.
+/* ---------------------------------------------------------------------------
+ * Dumps private animation data in PF Object format.
+ * ---------------------------------------------------------------------------
  */
 void   A_AL_DumpPrivate(FILE *stream, void *priv_data);
 

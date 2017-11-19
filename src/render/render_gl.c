@@ -13,6 +13,7 @@
 #include <stddef.h>
 #include <assert.h>
 
+
 void GL_Init(struct render_private *priv)
 {
     struct mesh *mesh = &priv->mesh;
@@ -101,21 +102,21 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
     for(int i = 0, vbuff_idx = 0; i < skel->num_joints; i++, vbuff_idx +=2) {
 
         struct joint *curr = &skel->joints[i];
+        struct SQT *sqt = &curr->bind_sqt;
+
         vec4_t homo = (vec4_t){0.0f, 0.0f, 0.0f, 1.0f}; 
         vec4_t result;
 
-        PFM_mat4x4_mult4x1(&curr->inv_bind_pose, &homo, &result);
+        mat4x4_t bind_pose;
+        PFM_mat4x4_inverse(&skel->inv_bind_poses[i], &bind_pose);
+
+        /* The root of the bone in object space */
+        PFM_mat4x4_mult4x1(&bind_pose, &homo, &result);
         vbuff[vbuff_idx] = (vec3_t){result.x, result.y ,result.z};
-
-        if(curr->parent_idx < 0){
-            vbuff[vbuff_idx + 1] = vbuff[vbuff_idx];
-            continue;
-        }
-
-        assert(curr->parent_idx >= 0 && curr->parent_idx < skel->num_joints);
-
-        struct joint *parent = &skel->joints[curr->parent_idx];
-        PFM_mat4x4_mult4x1(&parent->inv_bind_pose, &homo, &result);
+    
+        /* The tip of the bone in object space */
+        homo = (vec4_t){curr->tip.x, curr->tip.y, curr->tip.z, 1.0f}; 
+        PFM_mat4x4_mult4x1(&bind_pose, &homo, &result);
         vbuff[vbuff_idx + 1] = (vec3_t){result.x, result.y ,result.z};
     }
  

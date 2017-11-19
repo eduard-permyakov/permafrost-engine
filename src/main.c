@@ -91,7 +91,11 @@ static void render(void)
     glClear(GL_COLOR_BUFFER_BIT /* GL_DEPTH_BUFFER_BIT */);
 
     R_GL_Draw(s_temp);
-    R_GL_DrawSkeleton(s_temp, A_GetSkeleton(s_temp));
+
+    const struct skeleton *skel = A_GetCurrPoseSkeleton(s_temp);
+    R_GL_DrawSkeleton(s_temp, skel);
+    free((struct skelton*)skel);
+    R_GL_DrawOrigin(s_temp);
 
     SDL_GL_SwapWindow(s_window);
 }
@@ -143,8 +147,17 @@ int main(int argc, char **argv)
     /* Temp */
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-    s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mage/mage.pfobj", "mage", 4);
+    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mage/mage.pfobj", "mage", 4);
+    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/wyvern/Wyvern/Wyvern.pfobj", "mage", 4);
+    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/wizard/wizard.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/archer/archer_version_3.pfobj", "mage", 4);
+    s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/sinbad/Sinbad.pfobj", "mage", 4);
+    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mech/Mech4_final.pfobj", "mage", 4);
+    //s_temp = AL_EntityFromPFObj("/home/eduard/Desktop/hk.pfobj", "mage", 4);
+    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/chest/chest3-final.pfobj",s1 "mage", 4);
+    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/spider/Spider.pfobj", "mage", 4);
+    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/flag/flag.pfobj", "mage", 4);
+    A_InitCtx(s_temp, "Dance", 24);
     PFM_mat4x4_make_trans(0.0f, 0.0f, -50.0f, &s_temp->model_matrix);
 
     R_AL_DumpPrivate(stdout, s_temp->render_private);
@@ -155,6 +168,7 @@ int main(int argc, char **argv)
 
         process_events();
         camera_tick_finish(s_camera);
+        A_Update(s_temp);
         render();        
 
     }

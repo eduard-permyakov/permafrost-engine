@@ -52,12 +52,21 @@ typedef union mat4x4{
     };
 }mat4x4_t;
 
+
+/*****************************************************************************/
+/* vec2                                                                      */
+/*****************************************************************************/
+
 int     PFM_vec2_dot       (vec2_t *op1, vec2_t *op2);
 void    PFM_vec2_add       (vec2_t *op1, vec2_t *op2, vec2_t *out);
 void    PFM_vec2_sub       (vec2_t *op1, vec2_t *op2, vec2_t *out);
 void    PFM_vec2_scale     (vec2_t *op1, GLfloat scale, vec2_t *out);
 GLfloat PFM_vec2_len       (vec2_t *op1);
 void    PFM_vec2_normal    (vec2_t *op1,  vec2_t *out);
+
+/*****************************************************************************/
+/* vec3                                                                      */
+/*****************************************************************************/
 
 void    PFM_vec3_cross     (vec3_t *a,   vec3_t *b,   vec3_t *out);
 GLfloat PFM_vec3_dot       (vec3_t *op1, vec3_t *op2);
@@ -68,6 +77,10 @@ GLfloat PFM_vec3_len       (vec3_t *op1);
 void    PFM_vec3_normal    (vec3_t *op1, vec3_t *out);
 void    PFM_vec3_dump      (vec3_t *vec, FILE *dumpfile);
 
+/*****************************************************************************/
+/* vec4                                                                      */
+/*****************************************************************************/
+
 GLfloat PFM_vec4_dot       (vec4_t *op1, vec4_t *op2, vec4_t *out);
 void    PFM_vec4_add       (vec4_t *op1, vec4_t *op2, vec4_t *out);
 void    PFM_vec4_sub       (vec4_t *op1, vec4_t *op2, vec4_t *out);
@@ -76,10 +89,18 @@ GLfloat PFM_vec4_len       (vec4_t *op1);
 void    PFM_vec4_normal    (vec4_t *op1, vec4_t *out);
 void 	PFM_vec4_dump	   (vec4_t *vec, FILE *dumpfile);
 
+/*****************************************************************************/
+/* mat3x3                                                                    */
+/*****************************************************************************/
+
 void    PFM_mat3x3_scale   (mat3x3_t *op1,  GLfloat scale, mat3x3_t *out);
 void    PFM_mat3x3_mult3x3 (mat3x3_t *op1,  mat3x3_t *op2, mat3x3_t *out);
 void    PFM_mat3x3_mult3x1 (mat3x3_t *op1,  vec3_t *op2,   vec3_t *out);
 void    PFM_mat3x3_identity(mat3x3_t *out);
+
+/*****************************************************************************/
+/* mat4x4                                                                    */
+/*****************************************************************************/
 
 void    PFM_mat4x4_scale   (mat4x4_t *op1, GLfloat scale, mat4x4_t *out);
 void    PFM_mat4x4_mult4x4 (mat4x4_t *op1, mat4x4_t *op2, mat4x4_t *out);
@@ -92,10 +113,19 @@ void    PFM_mat4x4_make_rot_x (GLfloat radians, mat4x4_t *out);
 void    PFM_mat4x4_make_rot_y (GLfloat radians, mat4x4_t *out);
 void    PFM_mat4x4_make_rot_z (GLfloat radians, mat4x4_t *out);
 void    PFM_mat4x4_make_rot   (vec3_t *axis, GLfloat radians, mat4x4_t *out);
+void    PFM_mat4x4_rot_from_quat(const quat_t *quat, mat4x4_t *out);
+void    PFM_mat4x4_rot_from_euler(GLfloat deg_x, GLfloat deg_y, GLfloat deg_z, mat4x4_t *out);
+void    PFM_mat4x4_inverse    (mat4x4_t *in, mat4x4_t *out);
 
 void    PFM_mat4x4_make_perspective (GLfloat fov_radians, GLfloat aspect_ratio, 
                                      GLfloat z_near, GLfloat z_far, mat4x4_t *out);
 void    PFM_mat4x4_make_look_at     (vec3_t *camera_pos, vec3_t *target_pos, 
                                      vec3_t *up_dir, mat4x4_t *out);
+
+/*****************************************************************************/
+/* quat                                                                      */
+/*****************************************************************************/
+
+void    PFM_quat_from_rot_mat(mat4x4_t *mat, quat_t *out);
 
 #endif

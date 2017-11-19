@@ -108,7 +108,7 @@ struct entity *AL_EntityFromPFObj(const char *pfobj_path, const char *name, size
     }
     printf("\n");
     
-    char *tmpbuff = malloc(1024*512);
+    char *tmpbuff = malloc(32*1024*512);
     size_t render_buffsz = R_AL_PrivBuffSizeFromHeader((const struct pfobj_hdr*)&header);
     size_t anim_buffsz = R_AL_PrivBuffSizeFromHeader((const struct pfobj_hdr*)&header);
 

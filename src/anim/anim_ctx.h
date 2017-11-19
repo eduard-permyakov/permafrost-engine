@@ -3,16 +3,13 @@
 
 #include <stddef.h>
 
-enum anim_mode{
-    ANIM_TYPE_ONCE,
-    ANIM_TYPE_LOOP
-};
-
 struct anim_ctx{
-    struct anim_clip *active;
-    enum anim_mode    mode; 
-    int               curr_frame;
-    uint32_t          curr_frame_start_ticks;
+    const struct anim_clip *active;
+    const struct anim_clip *idle;
+    enum anim_mode          mode; 
+    unsigned                key_fps;
+    int                     curr_frame;
+    uint32_t                curr_frame_start_ticks;
 };
 
 #endif

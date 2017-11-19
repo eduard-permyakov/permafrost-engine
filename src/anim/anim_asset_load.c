@@ -19,6 +19,13 @@
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static void euler_to_quat(float euler[3], quat_t *out)
+{
+    mat4x4_t tmp;
+    PFM_mat4x4_rot_from_euler(euler[0], euler[1], euler[2], &tmp);
+    PFM_quat_from_rot_mat(&tmp, out);
+}
+
 static bool al_read_joint(FILE *stream, struct joint *out)
 {
     char line[MAX_LINE_LEN];
@@ -38,21 +45,25 @@ static bool al_read_joint(FILE *stream, struct joint *out)
     strtok_r(NULL, " \t", &saveptr);
     strtok_r(NULL, " \t", &saveptr);
 
-    for(int i = 0; i < 4; i++) {
+    string = strtok_r(NULL, " \t", &saveptr);  
+    if(!sscanf(string, "%f/%f/%f", 
+        &out->bind_sqt.scale.x, &out->bind_sqt.scale.y, &out->bind_sqt.scale.z))
+        goto fail;
 
-        mat4x4_t *ibp = &out->inv_bind_pose;
+    float euler[3]; /* XYZ order - in degrees */
+    string = strtok_r(NULL, " \t", &saveptr);  
+    if(!sscanf(string, "%f/%f/%f", &euler[0], &euler[1], &euler[2]))
+        goto fail;
+    euler_to_quat(euler, &out->bind_sqt.quat_rotation);
 
-        string = strtok_r(NULL, " \t", &saveptr);  
+    string = strtok_r(NULL, " \t", &saveptr);  
+    if(!sscanf(string, "%f/%f/%f", 
+        &out->bind_sqt.trans.x, &out->bind_sqt.trans.y, &out->bind_sqt.trans.z))
+        goto fail;
 
-        if(!string)
-            goto fail;
-
-        if(!sscanf(string, "%f/%f/%f/%f", 
-            &ibp->cols[i][0], &ibp->cols[i][1],
-            &ibp->cols[i][2], &ibp->cols[i][3])) {
-            goto fail;     
-        }
-    }
+    string = strtok_r(NULL, " \t", &saveptr);  
+    if(!sscanf(string, "%f/%f/%f", &out->tip.x, &out->tip.y, &out->tip.z))
+        goto fail;
 
     return true;
 
@@ -66,32 +77,33 @@ static bool al_read_anim_clip(FILE *stream, struct anim_clip *out,
     char line[MAX_LINE_LEN];
 
     READ_LINE(stream, line, fail);
+    printf("%s", line);
     if(!sscanf(line, "as %s %u", out->name, &out->num_frames))
         goto fail;
 
     for(int f = 0; f < out->num_frames; f++) {
         for(int j = 0; j < header->num_joints; j++) {
 
-            int joint_idx; /* unused */
+            int joint_idx;  /* unused */
             struct SQT *curr_joint_trans = &out->samples[f].local_joint_poses[j];
-
+            float euler[3]; /* XYZ order - in degrees */
         
             READ_LINE(stream, line, fail);
-            if(!sscanf(line, "%d %f/%f/%f %f/%f/%f/%f %f/%f/%f",
+            if(!sscanf(line, "%d %f/%f/%f %f/%f/%f %f/%f/%f",
                 &joint_idx, 
                 &curr_joint_trans->scale.x,
                 &curr_joint_trans->scale.y,
                 &curr_joint_trans->scale.z,
-                &curr_joint_trans->quat_rotation.x,
-                &curr_joint_trans->quat_rotation.y,
-                &curr_joint_trans->quat_rotation.z,
-                &curr_joint_trans->quat_rotation.w,
+                &euler[0],
+                &euler[1],
+                &euler[2],
                 &curr_joint_trans->trans.x,
                 &curr_joint_trans->trans.y,
                 &curr_joint_trans->trans.z)) {
                 goto fail;
             }
-
+        
+            euler_to_quat(euler, &curr_joint_trans->quat_rotation);
         }
     }
 
@@ -99,6 +111,11 @@ static bool al_read_anim_clip(FILE *stream, struct anim_clip *out,
 
 fail:
     return false;
+}
+
+static void a_prepare_bind_mats(struct skeleton *skel)
+{
+
 }
 
 /*****************************************************************************/
@@ -111,6 +128,7 @@ size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
 
     ret += sizeof(struct anim_private);
     ret += header->num_as     * sizeof(struct anim_clip);
+    ret += header->num_joints * sizeof(mat4x4_t);
     ret += header->num_joints * sizeof(struct joint);
 
     /*
@@ -138,6 +156,8 @@ size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
  *  | struct anim_data[1]             |
  *  +---------------------------------+
  *  | struct anim_ctx[1]              |
+ *  +---------------------------------+
+ *  | mat4x4_t[num_joints] (inv. bind)|
  *  +---------------------------------+
  *  | struct joint[num_joints]        |
  *  +---------------------------------+
@@ -173,6 +193,10 @@ bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
 
     priv->data->num_anims = header->num_as; 
     priv->data->skel.num_joints = header->num_joints;
+
+    priv->data->skel.inv_bind_poses = unused_base;
+    unused_base += sizeof(mat4x4_t) * header->num_joints;
+
     priv->data->skel.joints = unused_base;
     unused_base += sizeof(struct joint) * header->num_joints;
 
@@ -211,8 +235,9 @@ bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
         
         if(!al_read_anim_clip(stream, &priv->data->anims[i], header))
             goto fail;
-
     }
+
+    A_PrepareInvBindMatrices(&priv->data->skel);
 
     return true;
 
@@ -229,6 +254,8 @@ void A_AL_DumpPrivate(FILE *stream, void *priv_data)
         struct joint *j = &priv->data->skel.joints[i];
         fprintf(stream, "j %d %s ", j->parent_idx + 1, j->name); 
 
+    // TODO :  Proper dumping back to text file
+#if 0
         for(int c = 0; c < 4; c++) {
             fprintf(stream, "%f/%f/%f/%f ",
                 j->inv_bind_pose.cols[c][0],
@@ -237,6 +264,7 @@ void A_AL_DumpPrivate(FILE *stream, void *priv_data)
                 j->inv_bind_pose.cols[c][3]);
         }
         fprintf(stream, "\n");
+#endif
     }
 
     for(int i = 0; i < priv->data->num_anims; i++) {
