@@ -1,6 +1,9 @@
 import bpy
+import math
 from bpy import context
 from mathutils import Matrix
+from mathutils import Quaternion
+from mathutils import Euler
 
 PFOBJ_VER = 1.0
 
@@ -47,8 +50,9 @@ def save(operator, context, filepath, global_matrix):
             for face in mesh.polygons:
                 for loop_idx in face.loop_indices:
 
-                    trans = obj.matrix_local if obj.parent is None else obj.parent.matrix_local * obj.matrix_local 
-                    trans = global_matrix * trans
+                    #trans = obj.matrix_local if obj.parent is None else obj.parent.matrix_local * obj.matrix_local 
+                    #trans = global_matrix * trans
+                    trans = global_matrix * obj.matrix_world
 
                     v = mesh.vertices[mesh.loops[loop_idx].vertex_index]
                     v_co_world = trans * v.co
@@ -97,16 +101,29 @@ def save(operator, context, filepath, global_matrix):
                 parent_idx = arm.bones.values().index(bone.parent) + 1 if bone.parent is not None else 0
                 line = line.format(parent_idx=parent_idx, name=bone.name)
 
-                for c in range(0,4):
+                identity = Matrix.Identity(4)
+                mat_final = obj.matrix_world * global_matrix if bone.parent is None else identity
 
-                    trans = obj.matrix_local if obj.parent is None else obj.parent.matrix_local * obj.matrix_local 
-                    gl_matrix = global_matrix * trans * bone.matrix_local
+                euler = mat_final.to_euler('XYZ')
+                euler[0] = math.degrees(euler[0])
+                euler[1] = math.degrees(euler[1])
+                euler[2] = math.degrees(euler[2])
 
-                    line += " {r1:.6f}/{r2:.6f}/{r3:.6f}/{r4:.6f}"
-                    line = line.format(r1=gl_matrix[0][c],
-                                       r2=gl_matrix[1][c],
-                                       r3=gl_matrix[2][c],
-                                       r4=gl_matrix[3][c])
+                line += " {s.x:.6f}/{s.y:.6f}/{s.z:.6f}"
+                line = line.format(s=mat_final.to_scale())
+
+                line += " {e[0]:.6f}/{e[1]:.6f}/{e[2]:.6f}"
+                line = line.format(e=euler)
+
+                # Root bones are given in world coordinates - the rest of the bones'
+                # positions are given relative to the parent
+                loc = obj.matrix_world * bone.head_local if bone.parent is None else bone.head_local - bone.parent.head_local
+                line += " {t.x:.6f}/{t.y:.6f}/{t.z:.6f}"
+                line = line.format(t=loc)
+
+                tip = (bone.tail_local - bone.head_local)
+                line += " {v.x:.6f}/{v.y:.6f}/{v.z:.6f}"
+                line = line.format(v=tip)
 
                 line += "\n"
                 ofile.write(line)
@@ -122,16 +139,34 @@ def save(operator, context, filepath, global_matrix):
                 obj.animation_data.action = action
 
             for f in range(int(action.frame_range[0]), int(action.frame_range[1]+1)):
+
                 bpy.context.scene.frame_set(f)
 
-                obj = [obj for obj in bpy.data.objects if obj.pose is not None][0]
+                obj = arms[0]
                 for pbone in obj.pose.bones:
 
-                    line = "        {idx} {s.x:.6f}/{s.y:.6f}/{s.z:.6f} {q.x:.6f}/{q.y:.6f}/{q.z:.6f}/{q.w:.6f} {t.x:.6f}/{t.y:.6f}/{t.z:.6f}\n"
-
+                    line = "        {idx} {s.x:.6f}/{s.y:.6f}/{s.z:.6f} {e[0]:.6f}/{e[1]:.6f}/{e[2]:.6f} {t.x:.6f}/{t.y:.6f}/{t.z:.6f}\n"
                     idx = obj.pose.bones.values().index(pbone) + 1
 
-                    line = line.format(idx=idx, s=pbone.scale, q=pbone.rotation_quaternion, t=pbone.location)
+                    trans = Matrix.Translation(pbone.bone.head_local)
+                    itrans = Matrix.Translation(-pbone.bone.head_local)
+
+                    # The following code for builing the local transformation matrix for the current frame was derived from the 'BVH' exporter script
+                    if  pbone.parent:
+                        mat_final = pbone.parent.bone.matrix_local * pbone.parent.matrix.inverted() * pbone.matrix * pbone.bone.matrix_local.inverted()
+                        mat_final = itrans * mat_final * trans
+                    else:
+                        mat_final = pbone.matrix * pbone.bone.matrix_local.inverted()
+                        mat_final = itrans * mat_final * trans
+
+                    bone_matrix = mat_final
+                    euler = bone_matrix.to_euler('XYZ')
+                    euler[0] = math.degrees(euler[0])
+                    euler[1] = math.degrees(euler[1])
+                    euler[2] = math.degrees(euler[2])
+
+                    line = line.format(idx=idx, s=bone_matrix.to_scale(), e=euler, t=bone_matrix.to_translation())
                     ofile.write(line)
 
     return {'FINISHED'}
+
