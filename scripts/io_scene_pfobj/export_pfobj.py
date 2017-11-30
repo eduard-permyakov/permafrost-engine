@@ -68,9 +68,17 @@ def save(operator, context, filepath, global_matrix):
 
                     line = "vw ";
                     for vg in v.groups:
-                        next_elem = " {g}/{w}"
-                        next_elem = next_elem.format(g=vg.group, w=vg.weight)
+
+                        if vg.weight == 0:
+                            continue
+
+                        joint = arms[0].data.bones[obj.vertex_groups[vg.group].name]
+                        joint_idx = arms[0].data.bones.values().index(joint)
+
+                        next_elem = " {g}/{w:.6f}"
+                        next_elem = next_elem.format(g=joint_idx, w=vg.weight)
                         line += next_elem
+
                     line += "\n"
                     ofile.write(line)
 
