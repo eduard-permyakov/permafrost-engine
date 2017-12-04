@@ -6,6 +6,7 @@
 #include "../entity.h"
 #include "../gl_uniforms.h"
 #include "../anim/public/skeleton.h"
+#include "../anim/public/anim.h"
 
 #include <GL/glew.h>
 
@@ -27,20 +28,24 @@ void GL_Init(struct render_private *priv)
 
     /* Attribute 0 - position */
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (void*)0);
-    glEnableVertexAttribArray(0);  
+    glEnableVertexAttribArray(0);
 
     /* Attribute 1 - texture coordinates */
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
         (void*)offsetof(struct vertex, uv));
-    glEnableVertexAttribArray(1);  
+    glEnableVertexAttribArray(1);
 
-    //TODO: figure out attribute size constraints here
-    /* Attribute 2 - joint weights */
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
-        (void*)offsetof(struct vertex, weights));
+    /* Attribute 2 - joint indices */
+    glVertexAttribPointer(2, 4, GL_INT, GL_FALSE, sizeof(struct vertex),
+        (void*)offsetof(struct vertex, joint_indices));
     glEnableVertexAttribArray(2);  
 
-    priv->shader_prog = Shader_GetProgForName("generic");
+    /* Attribute 3 - joint weights */
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
+        (void*)offsetof(struct vertex, weights));
+    glEnableVertexAttribArray(3);  
+
+    priv->shader_prog = Shader_GetProgForName("entity_animated");
 }
 
 void R_GL_Draw(struct entity *ent)
@@ -49,13 +54,13 @@ void R_GL_Draw(struct entity *ent)
 	GLuint loc;
     vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
 
+    glUseProgram(priv->shader_prog);
+
     loc = glGetUniformLocation(priv->shader_prog, GL_U_COLOR);
 	glUniform3fv(loc, 1, red.raw);
 
     loc = glGetUniformLocation(priv->shader_prog, GL_U_MODEL);
 	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
-
-    glUseProgram(priv->shader_prog);
 
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
@@ -66,6 +71,7 @@ void R_GL_SetView(const mat4x4_t *view, const char *shader_name)
     GLuint loc, shader_prog;
 
     shader_prog = Shader_GetProgForName(shader_name);
+    glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, GL_U_VIEW);
 	glUniformMatrix4fv(loc, 1, GL_FALSE, view->raw);
@@ -76,9 +82,21 @@ void R_GL_SetProj(const mat4x4_t *proj, const char *shader_name)
     GLuint loc, shader_prog;
 
     shader_prog = Shader_GetProgForName(shader_name);
+    glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, GL_U_PROJECTION);
 	glUniformMatrix4fv(loc, 1, GL_FALSE, proj->raw);
+}
+
+void R_GL_SetUniformMat4x4Array(mat4x4_t *data, size_t count, const char *uname, const char *shader_name)
+{
+    GLuint loc, shader_prog;
+
+    shader_prog = Shader_GetProgForName(shader_name);
+    glUseProgram(shader_prog);
+
+    loc = glGetUniformLocation(shader_prog, uname);
+	glUniformMatrix4fv(loc, count, GL_FALSE, (void*)data);
 }
 
 void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
@@ -89,20 +107,17 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
 	GLuint loc;
     vec3_t green = (vec3_t){0.0f, 1.0f, 0.0f};
 
-    /* 2 vertices for each joint to draw a line between parent and child,
-     * in the case of root or an orphaned joint, the vertex will be duplicated 
-     *
-     * Our vbuff looks like this:
-     * +----------------+--------------------------+----------------
-     * | joint vertex 0 | parent joint vertex of 0 | joint vertex 1 ...
-     * +----------------+--------------------------+----------------
-     * */
+    /* Our vbuff looks like this:
+     * +----------------+-------------+--------------+-----
+     * | joint root 0   | joint tip 0 | joint root 1 | ...
+     * +----------------+-------------+--------------+-----
+     */
     vbuff = calloc(skel->num_joints * 2, sizeof(vec3_t));
 
     for(int i = 0, vbuff_idx = 0; i < skel->num_joints; i++, vbuff_idx +=2) {
 
         struct joint *curr = &skel->joints[i];
-        struct SQT *sqt = &curr->bind_sqt;
+        struct SQT *sqt = &skel->bind_sqts[i];
 
         vec4_t homo = (vec4_t){0.0f, 0.0f, 0.0f, 1.0f}; 
         vec4_t result;
@@ -130,7 +145,8 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = Shader_GetProgForName("generic");
+    shader_prog = Shader_GetProgForName("entity_static");
+    glUseProgram(shader_prog);
 
     /* Set uniforms */
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
@@ -140,8 +156,6 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
 	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
 
     glPointSize(5.0f);
-
-    glUseProgram(shader_prog);
 
     glBindVertexArray(VAO);
     glDrawArrays(GL_POINTS, 0, skel->num_joints * 2);
@@ -171,12 +185,10 @@ void R_GL_DrawOrigin(const struct entity *ent)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = Shader_GetProgForName("generic");
+    shader_prog = Shader_GetProgForName("entity_static");
+    glUseProgram(shader_prog);
 
     /* Set uniforms */
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-	glUniform3fv(loc, 1, green.raw);
-
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
 	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
 
@@ -210,8 +222,6 @@ void R_GL_DrawOrigin(const struct entity *ent)
         }
     
         glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
-
-        glUseProgram(shader_prog);
 
         glBindVertexArray(VAO);
         glDrawArrays(GL_LINES, 0, 2);

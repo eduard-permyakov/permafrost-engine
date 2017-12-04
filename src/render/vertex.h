@@ -3,15 +3,11 @@
 
 #include <GL/gl.h>
 
-struct joint_weight{
-    GLint   joint_idx;
-    GLfloat weight;
-};
-
 struct vertex{
-    vec3_t              pos;
-    vec2_t              uv;
-    struct joint_weight weights[4];
+    vec3_t  pos;
+    vec2_t  uv;
+    GLint   joint_indices[4];
+    GLfloat weights[4];
 };
 
 #endif

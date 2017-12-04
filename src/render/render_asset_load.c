@@ -41,6 +41,7 @@ static bool al_read_vertex(FILE *stream, struct vertex *out)
 
     /* Write 0.0 weights by default */
     memset(out->weights, 0, sizeof(out->weights));
+    memset(out->joint_indices, 0, sizeof(out->joint_indices));
 
     /* Consume the first token, the attribute name 'vw' */
     string = strtok_r(line, " \t", &saveptr);
@@ -50,7 +51,7 @@ static bool al_read_vertex(FILE *stream, struct vertex *out)
         if(!string)
             break;
 
-        if(!sscanf(string, "%d/%f", &out->weights[i].joint_idx, &out->weights[i].weight))
+        if(!sscanf(string, "%d/%f", &out->joint_indices[i], &out->weights[i]))
             goto fail;
     }
 
@@ -134,14 +135,11 @@ void R_AL_DumpPrivate(FILE *stream, void *priv_data)
         fprintf(stream, "v %.6f %.6f %.6f\n", v->pos.x, v->pos.y, v->pos.z); 
         fprintf(stream, "vt %.6f %.6f \n", v->uv.x, v->uv.y); 
 
-        struct joint_weight empty = {0}; 
-
         fprintf(stream, "vw");
         for(int j = 0; j < 4; j++) {
-            struct joint_weight *jw = &priv->mesh.vbuff[i].weights[j];
 
-            if(memcmp(jw, &empty, sizeof(struct joint_weight)) != 0) {
-                fprintf(stream, " %d/%.6f", jw->joint_idx, jw->weight); 
+            if(v->weights[j]) {
+                fprintf(stream, " %d/%.6f", v->joint_indices[j], v->weights[j]);
             }
         }
         fprintf(stream, "\n");

@@ -26,7 +26,7 @@ static void euler_to_quat(float euler[3], quat_t *out)
     PFM_quat_from_rot_mat(&tmp, out);
 }
 
-static bool al_read_joint(FILE *stream, struct joint *out)
+static bool al_read_joint(FILE *stream, struct joint *out, struct SQT *out_bind)
 {
     char line[MAX_LINE_LEN];
     int unfixed_idx;
@@ -47,18 +47,18 @@ static bool al_read_joint(FILE *stream, struct joint *out)
 
     string = strtok_r(NULL, " \t", &saveptr);  
     if(!sscanf(string, "%f/%f/%f", 
-        &out->bind_sqt.scale.x, &out->bind_sqt.scale.y, &out->bind_sqt.scale.z))
+        &out_bind->scale.x, &out_bind->scale.y, &out_bind->scale.z))
         goto fail;
 
     float euler[3]; /* XYZ order - in degrees */
     string = strtok_r(NULL, " \t", &saveptr);  
     if(!sscanf(string, "%f/%f/%f", &euler[0], &euler[1], &euler[2]))
         goto fail;
-    euler_to_quat(euler, &out->bind_sqt.quat_rotation);
+    euler_to_quat(euler, &out_bind->quat_rotation);
 
     string = strtok_r(NULL, " \t", &saveptr);  
     if(!sscanf(string, "%f/%f/%f", 
-        &out->bind_sqt.trans.x, &out->bind_sqt.trans.y, &out->bind_sqt.trans.z))
+        &out_bind->trans.x, &out_bind->trans.y, &out_bind->trans.z))
         goto fail;
 
     string = strtok_r(NULL, " \t", &saveptr);  
@@ -77,7 +77,6 @@ static bool al_read_anim_clip(FILE *stream, struct anim_clip *out,
     char line[MAX_LINE_LEN];
 
     READ_LINE(stream, line, fail);
-    printf("%s", line);
     if(!sscanf(line, "as %s %u", out->name, &out->num_frames))
         goto fail;
 
@@ -113,11 +112,6 @@ fail:
     return false;
 }
 
-static void a_prepare_bind_mats(struct skeleton *skel)
-{
-
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -128,6 +122,7 @@ size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
 
     ret += sizeof(struct anim_private);
     ret += header->num_as     * sizeof(struct anim_clip);
+    ret += header->num_joints * sizeof(struct SQT);
     ret += header->num_joints * sizeof(mat4x4_t);
     ret += header->num_joints * sizeof(struct joint);
 
@@ -156,6 +151,8 @@ size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
  *  | struct anim_data[1]             |
  *  +---------------------------------+
  *  | struct anim_ctx[1]              |
+ *  +---------------------------------+
+ *  | struct SQT[num_joints] (bind)   |
  *  +---------------------------------+
  *  | mat4x4_t[num_joints] (inv. bind)|
  *  +---------------------------------+
@@ -194,6 +191,9 @@ bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
     priv->data->num_anims = header->num_as; 
     priv->data->skel.num_joints = header->num_joints;
 
+    priv->data->skel.bind_sqts = unused_base;
+    unused_base += sizeof(struct SQT) * header->num_joints;
+
     priv->data->skel.inv_bind_poses = unused_base;
     unused_base += sizeof(mat4x4_t) * header->num_joints;
 
@@ -227,7 +227,7 @@ bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
      */
     for(int i = 0; i < header->num_joints; i++) {
 
-        if(!al_read_joint(stream, &priv->data->skel.joints[i])) 
+        if(!al_read_joint(stream, &priv->data->skel.joints[i], &priv->data->skel.bind_sqts[i]))
             goto fail;
     }
 

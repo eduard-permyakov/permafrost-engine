@@ -3,8 +3,6 @@
 
 #include "mesh.h"
 
-struct shader_prog;
-
 struct render_private{
     struct mesh mesh;
     GLint       shader_prog;

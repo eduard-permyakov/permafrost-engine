@@ -22,6 +22,7 @@ void   R_GL_Draw(struct entity *ent);
 
 void   R_GL_SetView(const mat4x4_t *view, const char *shader_name);
 void   R_GL_SetProj(const mat4x4_t *proj, const char *shader_name);
+void   R_GL_SetUniformMat4x4Array(mat4x4_t *data, size_t count, const char *uname, const char *shader_name);
 
 /* Render an entitiy's skeleton which is used for animation. 
  *

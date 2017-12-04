@@ -6,24 +6,30 @@
 #include <string.h>
 
 #define SHADER_PATH_LEN 128
-#define ARR_SIZE(a)     (sizeof(a[0])/sizeof(a))
+#define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 
 struct shader_resource{
-    GLint               prog_id;
-    const char         *name;
-    const char         *vertex_path;
-    const char         *frag_path;
+    GLint       prog_id;
+    const char *name;
+    const char *vertex_path;
+    const char *frag_path;
 };
 
 //TODO: non hard coded path
-/* Shader program ids will be initialized by Shader_InitAll */
+/* Shader 'prog_id' will be initialized by Shader_InitAll */
 static struct shader_resource s_shaders[] = {
-    { 
+    {
         .prog_id     = (intptr_t)NULL,
-        .name        = "generic",
-        .vertex_path = "/home/eduard/engine/shaders/vertex.glsl",
+        .name        = "entity_static",
+        .vertex_path = "/home/eduard/engine/shaders/vertex_static.glsl",
         .frag_path   = "/home/eduard/engine/shaders/fragment.glsl"
     },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "entity_animated",
+        .vertex_path = "/home/eduard/engine/shaders/vertex_skinned.glsl",
+        .frag_path   = "/home/eduard/engine/shaders/fragment.glsl"
+    }
 };
 
 /*****************************************************************************/

@@ -3,6 +3,8 @@
 #include "anim_data.h"
 #include "anim_ctx.h"
 #include "../entity.h"
+#include "../gl_uniforms.h"
+#include "../render/public/render.h"
 
 #include <SDL2/SDL.h>
 
@@ -42,7 +44,7 @@ static void a_mat_from_sqt(const struct SQT *sqt, mat4x4_t *out)
     PFM_mat4x4_mult4x4(&rot, &tmp, out);
 }
 
-void a_make_bind_mat(int joint_idx, const struct skeleton *skel, mat4x4_t *out)
+static void a_make_bind_mat(int joint_idx, const struct skeleton *skel, mat4x4_t *out)
 {
     mat4x4_t bind_trans;
     PFM_mat4x4_identity(&bind_trans);
@@ -54,7 +56,7 @@ void a_make_bind_mat(int joint_idx, const struct skeleton *skel, mat4x4_t *out)
     while(joint_idx >= 0) {
 
         struct joint *joint = &skel->joints[joint_idx];
-        struct SQT   *bind_sqt = &joint->bind_sqt;
+        struct SQT   *bind_sqt = &skel->bind_sqts[joint_idx];
         mat4x4_t to_parent, to_curr = bind_trans;
 
         a_mat_from_sqt(bind_sqt, &to_parent);
@@ -66,7 +68,7 @@ void a_make_bind_mat(int joint_idx, const struct skeleton *skel, mat4x4_t *out)
     *out = bind_trans;
 }
 
-void a_make_pose_mat(const struct entity *ent, int joint_idx, const struct skeleton *skel, mat4x4_t *out)
+static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struct skeleton *skel, mat4x4_t *out)
 {
     struct anim_private *priv = ent->anim_private;
     struct anim_sample *sample =  &priv->ctx->active->samples[priv->ctx->curr_frame];
@@ -81,7 +83,7 @@ void a_make_pose_mat(const struct entity *ent, int joint_idx, const struct skele
     while(joint_idx >= 0) {
 
         struct joint *joint = &skel->joints[joint_idx];
-        struct SQT   *bind_sqt = &joint->bind_sqt;
+        struct SQT   *bind_sqt = &skel->bind_sqts[joint_idx];
         struct SQT   *pose_sqt = &sample->local_joint_poses[joint_idx];
         mat4x4_t to_parent, to_curr = bind_trans;
         mat4x4_t local, tmp;
@@ -96,6 +98,25 @@ void a_make_pose_mat(const struct entity *ent, int joint_idx, const struct skele
     }
 
     *out = bind_trans;
+}
+
+void a_set_uniforms_curr_frame(const struct entity *ent)
+{
+    struct anim_private *priv = (struct anim_private*)ent->anim_private;
+
+    size_t float_per_mat = sizeof(mat4x4_t) / sizeof(float);
+    size_t num_joints = priv->data->skel.num_joints;
+
+    R_GL_SetUniformMat4x4Array(priv->data->skel.inv_bind_poses, num_joints, 
+        GL_U_INV_BIND_MATS, "entity_animated");
+
+    mat4x4_t curr_pose_mats[num_joints];
+    for(int j = 0; j < num_joints; j++) {
+        a_make_pose_mat(ent, j, &priv->data->skel, &curr_pose_mats[j]);
+    }
+
+    R_GL_SetUniformMat4x4Array(curr_pose_mats, num_joints, 
+        GL_U_CURR_POSE_MATS, "entity_animated");
 }
 
 
@@ -137,6 +158,8 @@ void A_Update(const struct entity *ent)
     struct anim_private *priv = ent->anim_private;
     struct anim_ctx *ctx = priv->ctx;
 
+    a_set_uniforms_curr_frame(ent);
+
     float frame_period_secs = 1.0f/ctx->key_fps;
     uint32_t curr_ticks = SDL_GetTicks();
     float elapsed_secs = (curr_ticks - ctx->curr_frame_start_ticks)/1000.0f;
@@ -145,8 +168,6 @@ void A_Update(const struct entity *ent)
 
         ctx->curr_frame = (ctx->curr_frame + 1) % ctx->active->num_frames;
         ctx->curr_frame_start_ticks = curr_ticks;
-
-        /* TODO: set uniform data */
     }
 }
 
@@ -168,10 +189,13 @@ const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent)
      *  +---------------------------------+
      *  | struct joint[num_joints]        |
      *  +---------------------------------+
+     *  | struct SQT[num_joints]          |
+     *  +---------------------------------+
      *  | mat4x4_t[num_joints]            |
      *  +---------------------------------+
      */
-    size_t alloc_sz = sizeof(struct skeleton) + num_joints * (sizeof(struct joint) + sizeof(mat4x4_t));
+    size_t alloc_sz = sizeof(struct skeleton) + 
+                      num_joints * (sizeof(struct joint) + sizeof(struct SQT) + sizeof(mat4x4_t));
 
     struct skeleton *ret = malloc(alloc_sz);
     if(!ret)
@@ -180,7 +204,11 @@ const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent)
     ret->num_joints = priv->data->skel.num_joints;
     ret->joints = (void*)(ret + 1);
     memcpy(ret->joints, priv->data->skel.joints, num_joints * sizeof(struct joint));
-    ret->inv_bind_poses = (void*)((char*)ret->joints + num_joints * sizeof(struct joint));
+
+    ret->bind_sqts = (void*)((char*)ret->joints + num_joints * sizeof(struct joint));
+    memcpy(ret->bind_sqts, priv->data->skel.bind_sqts, num_joints * sizeof(struct SQT));
+
+    ret->inv_bind_poses = (void*)((char*)ret->bind_sqts + num_joints * sizeof(struct SQT));
 
     struct anim_sample *sample =  &priv->ctx->active->samples[priv->ctx->curr_frame];
 

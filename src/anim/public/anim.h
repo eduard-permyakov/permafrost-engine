@@ -60,9 +60,6 @@ const struct skeleton *A_GetBindSkeleton(const struct entity *ent);
  * Note that this is a _debugging_ function, creating a skeleton to render based
  * on context. It will allocate a new buffer for the skeleton, which should be 
  * 'free'd by the caller. It should _not_ be called outside of debugging.
- *
- * It will only update at the granularity of clip poses per second. The interpolation 
- * in-between clip poses is done by the vertex shader.
  * ---------------------------------------------------------------------------
  */
 const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent);
