@@ -3,6 +3,7 @@
 #include "camera.h"
 #include "render/public/render.h"
 #include "anim/public/anim.h"
+#include "lib/public/stb_image.h"
 
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
@@ -131,6 +132,8 @@ int main(int argc, char **argv)
     SDL_SetRelativeMouseMode(true);
     glViewport(0, 0, 1024, 576);
 
+    stbi_set_flip_vertically_on_load(true);
+
     if(!R_Init())
         goto fail_render;
 
@@ -150,6 +153,7 @@ int main(int argc, char **argv)
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/wyvern/Wyvern/Wyvern.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/wizard/wizard.pfobj", "mage", 4);
     s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/sinbad/Sinbad.pfobj", "mage", 4);
+    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/turret/Base1.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mech/Mech4_final.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/Desktop/hk.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/chest/chest3-final.pfobj",s1 "mage", 4);
