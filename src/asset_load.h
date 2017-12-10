@@ -19,6 +19,6 @@ struct pfobj_hdr{
     unsigned frame_counts[MAX_ANIM_SETS];
 };
 
-struct entity *AL_EntityFromPFObj(const char *pfobj_path, const char *name, size_t namelen);
+struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name);
 
 #endif

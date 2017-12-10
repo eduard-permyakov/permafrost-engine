@@ -16,6 +16,9 @@
         buff[MAX_LINE_LEN - 1] = '\0';          \
     }while(0)
 
+#define STREVAL(a) STR(a)
+#define STR(a) #a
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -86,17 +89,35 @@ fail:
     return false;
 }
 
-static bool al_read_material(FILE *stream, struct material *out)
+static bool al_read_material(FILE *stream, const char *basedir, struct material *out)
 {
     char line[MAX_LINE_LEN];
 
-    //TODO: parse this properly 
+    /* Consume the first line with the name - we don't use it currently */
     READ_LINE(stream, line, fail);
-    printf("%s", line);
+
     READ_LINE(stream, line, fail);
+    if(!sscanf(line, " ambient %f", &out->ambient_intensity))
+        goto fail;
+
     READ_LINE(stream, line, fail);
+    if(!sscanf(line, " diffuse %f %f %f", &out->diffuse_clr.x, &out->diffuse_clr.y, &out->diffuse_clr.z))
+        goto fail;
+
     READ_LINE(stream, line, fail);
+    if(!sscanf(line, " specular %f %f %f", &out->specular_clr.x, &out->specular_clr.y, &out->specular_clr.z))
+        goto fail;
+
+    char texname[32];
     READ_LINE(stream, line, fail);
+    if(!sscanf(line, " texture %" STREVAL(sizeof(texname)) "s",  texname))
+        goto fail;
+    texname[sizeof(texname)-1] = '\0';
+
+    printf("Reading %s\n", texname);
+    if(!R_Texture_GetForName(texname, &out->texture.id) &&
+       !R_Texture_Load(basedir, texname, &out->texture.id))
+        goto fail;
 
     return true;
 
@@ -135,7 +156,7 @@ size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
  *
  */
 
-bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void *priv_buff)
+bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir, FILE *stream, void *priv_buff)
 {
     struct render_private *priv = priv_buff;
     void *unused_base = priv_buff + sizeof(struct render_private);
@@ -162,7 +183,9 @@ bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
     }
 
     for(int i = 0; i < header->num_materials; i++) {
-        if(!al_read_material(stream, &priv->materials[i])) 
+
+        priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
+        if(!al_read_material(stream, basedir, &priv->materials[i])) 
             goto fail;
     }
 

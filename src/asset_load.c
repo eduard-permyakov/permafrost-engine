@@ -85,17 +85,22 @@ fail:
  *  This allows us to do a single malloc/free per each model while
  *  also not wasting any memory.
  */
-struct entity *AL_EntityFromPFObj(const char *pfobj_path, const char *name, size_t namelen)
+struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name)
 {
     struct entity *ret;
     FILE *stream;
     struct pfobj_hdr header;
     size_t alloc_size;
 
+    char pfobj_path[BASEDIR_LEN * 2];
+    assert( strlen(base_path) + strlen(pfobj_name) + 1 < sizeof(pfobj_path) );
+    strcat(pfobj_path, base_path);
+    strcat(pfobj_path, "/");
+    strcat(pfobj_path, pfobj_name);
+
     stream = fopen(pfobj_path, "r");
-    if(!stream){
+    if(!stream)
         goto fail; 
-    }
 
     if(!al_parse_header(stream, &header))
         goto fail;
@@ -113,10 +118,10 @@ struct entity *AL_EntityFromPFObj(const char *pfobj_path, const char *name, size
     printf("\n");
     
     char *tmpbuff = malloc(32*1024*512);
-    size_t render_buffsz = R_AL_PrivBuffSizeFromHeader((const struct pfobj_hdr*)&header);
-    size_t anim_buffsz = R_AL_PrivBuffSizeFromHeader((const struct pfobj_hdr*)&header);
+    size_t render_buffsz = R_AL_PrivBuffSizeFromHeader(&header);
+    size_t anim_buffsz = R_AL_PrivBuffSizeFromHeader(&header);
 
-    if(!R_AL_InitPrivFromStream((const struct pfobj_hdr*)&header, stream, tmpbuff))
+    if(!R_AL_InitPrivFromStream(&header, base_path, stream, tmpbuff))
         goto fail;
 
     if(!A_AL_InitPrivFromStream(&header, stream, tmpbuff + render_buffsz))
@@ -126,9 +131,11 @@ struct entity *AL_EntityFromPFObj(const char *pfobj_path, const char *name, size
     ret->render_private = tmpbuff;
     ret->anim_private = tmpbuff + render_buffsz;
 
-    assert(namelen < sizeof(ret->name));
-    strncpy(ret->name, name, namelen);
-    ret->name[sizeof(ret->name) - 1] = '\0';
+    assert( strlen(name) < sizeof(ret->name) );
+    strcpy(ret->name, name);
+
+    assert( strlen(base_path) < sizeof(ret->basedir) );
+    strcpy(ret->basedir, base_path);
 
     return ret;
 

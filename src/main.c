@@ -152,7 +152,7 @@ int main(int argc, char **argv)
 
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/wyvern/Wyvern/Wyvern.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/wizard/wizard.pfobj", "mage", 4);
-    s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/sinbad/Sinbad.pfobj", "mage", 4);
+    s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/sinbad", "Sinbad.pfobj", "Sinbad");
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/turret/Base1.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mech/Mech4_final.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/Desktop/hk.pfobj", "mage", 4);

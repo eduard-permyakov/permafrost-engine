@@ -18,7 +18,6 @@ struct mesh{
     unsigned        num_faces;
     GLint           EBO;
     struct face    *ebuff;
-    struct texture  tex;
 };
 
 #endif

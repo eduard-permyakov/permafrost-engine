@@ -43,7 +43,8 @@ size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header);
 /* Consumes lines of the stream and uses them to populate the private data stored 
  * in priv_buff. 
  */
-bool   R_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void *priv_buff);
+bool   R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir, 
+                               FILE *stream, void *priv_buff);
 
 /* Dumps private render data in PF Object format.
  */
