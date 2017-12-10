@@ -30,15 +30,17 @@ def save(operator, context, filepath, global_matrix):
         for mesh in meshes: 
             num_verts += sum([face.loop_total for face in mesh.polygons])
 
-        num_joints   = sum([len(arm.pose.bones) for arm in arms])
-        num_as       = len(bpy.data.actions.items())
-        num_faces    = sum([len(mesh.polygons.items()) for mesh in meshes])
-        frame_counts = [str(int(a.frame_range[1] - a.frame_range[0] + 1)) for a in bpy.data.actions]
+        num_joints    = sum([len(arm.pose.bones) for arm in arms])
+        num_as        = len(bpy.data.actions.items())
+        num_faces     = sum([len(mesh.polygons.items()) for mesh in meshes])
+        num_materials = sum([len(mesh.materials) for mesh in meshes])
+        frame_counts  = [str(int(a.frame_range[1] - a.frame_range[0] + 1)) for a in bpy.data.actions]
 
         ofile.write("version        " + str(PFOBJ_VER) + "\n")
         ofile.write("num_verts      " + str(num_verts) + "\n")
         ofile.write("num_joints     " + str(num_joints) + "\n")
         ofile.write("num_faces      " + str(num_faces) + "\n")
+        ofile.write("num_materials  " + str(num_materials) + "\n")
         ofile.write("num_as         " + str(num_as) + "\n")
         ofile.write("frame_counts   " + " ".join(frame_counts) + "\n")
 
@@ -50,8 +52,6 @@ def save(operator, context, filepath, global_matrix):
             for face in mesh.polygons:
                 for loop_idx in face.loop_indices:
 
-                    #trans = obj.matrix_local if obj.parent is None else obj.parent.matrix_local * obj.matrix_local 
-                    #trans = global_matrix * trans
                     trans = global_matrix * obj.matrix_world
 
                     v = mesh.vertices[mesh.loops[loop_idx].vertex_index]
@@ -82,6 +82,10 @@ def save(operator, context, filepath, global_matrix):
                     line += "\n"
                     ofile.write(line)
 
+                    line = "vm {idx}\n"
+                    line = line.format(idx=face.material_index)
+                    ofile.write(line)
+
         #TODO: remove faces from export script and engine - they are not used
         for obj in mesh_objs:
             mesh = obj.data
@@ -97,6 +101,26 @@ def save(operator, context, filepath, global_matrix):
                 line += "\n"
                 ofile.write(line)
 
+        # Materials 
+        for obj in mesh_objs:
+            for material_idx, material in enumerate(obj.data.materials):
+
+                ofile.write("material " + material.name + "\n")
+
+                line = "    ambient {a:.6f}\n"
+                line = line.format(a=material.ambient)
+                ofile.write(line)
+
+                line = "    diffuse {c[0]:.6f} {c[1]:.6f} {c[2]:.6f}\n"
+                line = line.format(c=(material.diffuse_intensity * material.diffuse_color))
+                ofile.write(line)
+
+                line = "    specular {c[0]:.6f} {c[1]:.6f} {c[2]:.6f}\n"
+                line = line.format(c=(material.specular_intensity * material.specular_color))
+                ofile.write(line)
+
+                line = "    texture " + material.active_texture.image.name + "\n"
+                ofile.write(line)
 
         # Iterate over armatures 
         for obj in arms:
