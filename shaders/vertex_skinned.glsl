@@ -4,8 +4,9 @@
 
 layout (location = 0) in vec3  in_pos;
 layout (location = 1) in vec2  in_uv;
-layout (location = 2) in vec4  in_joint_indices;
-layout (location = 3) in vec4  in_joint_weights;
+layout (location = 2) in vec2  in_material_idx;
+layout (location = 3) in vec4  in_joint_indices;
+layout (location = 4) in vec4  in_joint_weights;
 
 uniform mat4 model;
 uniform mat4 view;

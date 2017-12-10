@@ -9,8 +9,7 @@
 #include <assert.h>
 #define __USE_POSIX
 #include <string.h>
-
-#include <stdlib.h> //temp
+#include <stdlib.h> 
 
 
 #define READ_LINE(file, buff, fail_label)       \
@@ -38,6 +37,10 @@ static bool al_parse_header(FILE *stream, struct pfobj_hdr *out)
 
     READ_LINE(stream, line, fail);
     if(!sscanf(line, "num_faces %d", &out->num_faces))
+        goto fail;
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, "num_materials %d", &out->num_materials))
         goto fail;
 
     READ_LINE(stream, line, fail);
@@ -97,11 +100,12 @@ struct entity *AL_EntityFromPFObj(const char *pfobj_path, const char *name, size
     if(!al_parse_header(stream, &header))
         goto fail;
 
-    printf("v: %f, nv: %d, nj: %d, nf: %d, ac: %d\n",
+    printf("v: %f, nv: %d, nj: %d, nf: %d, nm: %d, ac: %d\n",
         header.version,
         header.num_verts,
         header.num_joints,
         header.num_faces,
+        header.num_materials,
         header.num_as);
     for(int i = 0; i < header.num_as; i++) {
         printf("%d ", header.frame_counts[i]); 

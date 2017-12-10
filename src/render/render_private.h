@@ -4,8 +4,9 @@
 #include "mesh.h"
 
 struct render_private{
-    struct mesh mesh;
-    GLint       shader_prog;
+    struct mesh      mesh;
+    struct material *materials;
+    GLint            shader_prog;
 };
 
 #endif

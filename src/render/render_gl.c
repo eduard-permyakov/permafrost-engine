@@ -35,15 +35,20 @@ void GL_Init(struct render_private *priv)
         (void*)offsetof(struct vertex, uv));
     glEnableVertexAttribArray(1);
 
-    /* Attribute 2 - joint indices */
-    glVertexAttribPointer(2, 4, GL_INT, GL_FALSE, sizeof(struct vertex),
-        (void*)offsetof(struct vertex, joint_indices));
-    glEnableVertexAttribArray(2);  
+    /* Attribute 2 - material index */
+    glVertexAttribPointer(1, 2, GL_INT, GL_FALSE, sizeof(struct vertex), 
+        (void*)offsetof(struct vertex, material_idx));
+    glEnableVertexAttribArray(2);
 
-    /* Attribute 3 - joint weights */
-    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
-        (void*)offsetof(struct vertex, weights));
+    /* Attribute 3 - joint indices */
+    glVertexAttribPointer(3, 4, GL_INT, GL_FALSE, sizeof(struct vertex),
+        (void*)offsetof(struct vertex, joint_indices));
     glEnableVertexAttribArray(3);  
+
+    /* Attribute 4 - joint weights */
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
+        (void*)offsetof(struct vertex, weights));
+    glEnableVertexAttribArray(4);  
 
     priv->shader_prog = Shader_GetProgForName("entity_animated");
 }

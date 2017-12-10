@@ -1,6 +1,7 @@
 #include "public/render.h"
 #include "render_private.h"
 #include "vertex.h"
+#include "material.h"
 #include "render_gl.h"
 
 #include "../asset_load.h"
@@ -58,6 +59,10 @@ static bool al_read_vertex(FILE *stream, struct vertex *out)
     if(i == 0)
         goto fail;
 
+    READ_LINE(stream, line, fail); 
+    if(!sscanf(line, "vm %d", &out->material_idx))
+        goto fail;
+
     return true;
 
 fail:
@@ -81,6 +86,24 @@ fail:
     return false;
 }
 
+static bool al_read_material(FILE *stream, struct material *out)
+{
+    char line[MAX_LINE_LEN];
+
+    //TODO: parse this properly 
+    READ_LINE(stream, line, fail);
+    printf("%s", line);
+    READ_LINE(stream, line, fail);
+    READ_LINE(stream, line, fail);
+    READ_LINE(stream, line, fail);
+    READ_LINE(stream, line, fail);
+
+    return true;
+
+fail:
+    return false;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -92,19 +115,41 @@ size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
     ret += sizeof(struct render_private);
     ret += header->num_verts * sizeof(struct vertex);
     ret += header->num_faces * sizeof(struct face);
+    ret += header->num_materials * sizeof(struct material);
 
     return ret;
 }
 
+/*
+ * Render private buff layout:
+ *
+ *  +---------------------------------+ <-- base
+ *  | struct render_private[1]        |
+ *  +---------------------------------+
+ *  | struct vertex[num_verts]        |
+ *  +---------------------------------+
+ *  | struct face[num_faces]          |
+ *  +---------------------------------+
+ *  | struct material[num_materials]  |
+ *  +---------------------------------+
+ *
+ */
+
 bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void *priv_buff)
 {
     struct render_private *priv = priv_buff;
+    void *unused_base = priv_buff + sizeof(struct render_private);
     size_t vbuff_sz = header->num_verts * sizeof(struct vertex);
 
     priv->mesh.num_verts = header->num_verts;
-    priv->mesh.vbuff = (void*)(priv + 1);
+    priv->mesh.vbuff = unused_base;
+    unused_base += vbuff_sz;
+
     priv->mesh.num_faces = header->num_faces;
-    priv->mesh.ebuff = (void*)((char*)priv->mesh.vbuff + vbuff_sz);
+    priv->mesh.ebuff = unused_base;
+    unused_base += header->num_faces * sizeof(struct face);
+
+    priv->materials = unused_base;
 
     for(int i = 0; i < header->num_verts; i++) {
         if(!al_read_vertex(stream, &priv->mesh.vbuff[i]))
@@ -113,6 +158,11 @@ bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
 
     for(int i = 0; i < header->num_faces; i++) {
         if(!al_read_face(stream, &priv->mesh.ebuff[i])) 
+            goto fail;
+    }
+
+    for(int i = 0; i < header->num_materials; i++) {
+        if(!al_read_material(stream, &priv->materials[i])) 
             goto fail;
     }
 
