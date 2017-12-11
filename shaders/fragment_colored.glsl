@@ -1,4 +1,5 @@
 #version 330 core
+
 out vec4 o_frag_color;
 
 uniform vec3 color;

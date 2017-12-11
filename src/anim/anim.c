@@ -108,7 +108,7 @@ void a_set_uniforms_curr_frame(const struct entity *ent)
     size_t num_joints = priv->data->skel.num_joints;
 
     R_GL_SetUniformMat4x4Array(priv->data->skel.inv_bind_poses, num_joints, 
-        GL_U_INV_BIND_MATS, "entity_animated");
+        GL_U_INV_BIND_MATS, "mesh.animated.textured");
 
     mat4x4_t curr_pose_mats[num_joints];
     for(int j = 0; j < num_joints; j++) {
@@ -116,7 +116,7 @@ void a_set_uniforms_curr_frame(const struct entity *ent)
     }
 
     R_GL_SetUniformMat4x4Array(curr_pose_mats, num_joints, 
-        GL_U_CURR_POSE_MATS, "entity_animated");
+        GL_U_CURR_POSE_MATS, "mesh.animated.textured");
 }
 
 

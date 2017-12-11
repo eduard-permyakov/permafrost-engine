@@ -114,7 +114,7 @@ static bool al_read_material(FILE *stream, const char *basedir, struct material 
         goto fail;
     texname[sizeof(texname)-1] = '\0';
 
-    printf("Reading %s\n", texname);
+    //printf("Reading %s\n", texname);
     if(!R_Texture_GetForName(texname, &out->texture.id) &&
        !R_Texture_Load(basedir, texname, &out->texture.id))
         goto fail;
@@ -170,6 +170,7 @@ bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir
     priv->mesh.ebuff = unused_base;
     unused_base += header->num_faces * sizeof(struct face);
 
+    priv->num_materials = header->num_materials;
     priv->materials = unused_base;
 
     for(int i = 0; i < header->num_verts; i++) {
@@ -216,6 +217,8 @@ void R_AL_DumpPrivate(FILE *stream, void *priv_data)
             }
         }
         fprintf(stream, "\n");
+
+        fprintf(stream, "vm %d\n", v->material_idx); 
     }
 
     for(int i = 0; i < priv->mesh.num_faces; i++) {

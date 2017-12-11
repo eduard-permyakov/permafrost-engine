@@ -20,15 +20,15 @@ struct shader_resource{
 static struct shader_resource s_shaders[] = {
     {
         .prog_id     = (intptr_t)NULL,
-        .name        = "entity_static",
+        .name        = "mesh.static.colored",
         .vertex_path = "/home/eduard/engine/shaders/vertex_static.glsl",
-        .frag_path   = "/home/eduard/engine/shaders/fragment.glsl"
+        .frag_path   = "/home/eduard/engine/shaders/fragment_colored.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
-        .name        = "entity_animated",
+        .name        = "mesh.animated.textured",
         .vertex_path = "/home/eduard/engine/shaders/vertex_skinned.glsl",
-        .frag_path   = "/home/eduard/engine/shaders/fragment.glsl"
+        .frag_path   = "/home/eduard/engine/shaders/fragment_textured.glsl"
     }
 };
 

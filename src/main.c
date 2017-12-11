@@ -89,7 +89,7 @@ static void render(void)
     SDL_GL_MakeCurrent(s_window, s_context); 
 
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT /* GL_DEPTH_BUFFER_BIT */);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     R_GL_Draw(s_temp);
 
@@ -148,7 +148,7 @@ int main(int argc, char **argv)
     camera_set_sens (s_camera, 0.05f);
 
     /* Temp */
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/wyvern/Wyvern/Wyvern.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/wizard/wizard.pfobj", "mage", 4);
@@ -157,14 +157,16 @@ int main(int argc, char **argv)
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mech/Mech4_final.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/Desktop/hk.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/chest/chest3-final.pfobj",s1 "mage", 4);
-    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/spider/Spider.pfobj", "mage", 4);
-    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/flag/flag.pfobj", "mage", 4);
+    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/spider", "Spider.pfobj", "Spider");
+    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/flag", "flag.pfobj", "Flag");
     A_InitCtx(s_temp, "Dance", 24);
     PFM_mat4x4_make_trans(0.0f, 0.0f, -50.0f, &s_temp->model_matrix);
 
     //R_AL_DumpPrivate(stdout, s_temp->render_private);
     //A_AL_DumpPrivate(stdout, s_temp->anim_private);
     /* End Temp */
+
+    glEnable(GL_DEPTH_TEST);
 
     while(!s_quit) {
 

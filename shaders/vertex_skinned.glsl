@@ -2,11 +2,14 @@
 
 #define MAX_JOINTS 128
 
-layout (location = 0) in vec3  in_pos;
-layout (location = 1) in vec2  in_uv;
-layout (location = 2) in vec2  in_material_idx;
-layout (location = 3) in vec4  in_joint_indices;
-layout (location = 4) in vec4  in_joint_weights;
+layout (location = 0) in vec3 in_pos;
+layout (location = 1) in vec2 in_uv;
+layout (location = 2) in int  in_material_idx;
+layout (location = 3) in vec4 in_joint_indices;
+layout (location = 4) in vec4 in_joint_weights;
+
+     out vec2 uv;
+flat out int  uv_idx;
 
 uniform mat4 model;
 uniform mat4 view;
@@ -18,6 +21,10 @@ uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
 
 void main()
 {
+    /* Forward to fragment shader */
+    uv =     in_uv;
+    uv_idx = in_material_idx;
+
     float tot_weight = in_joint_weights[0] + in_joint_weights[1]
                      + in_joint_weights[2] + in_joint_weights[3];
 

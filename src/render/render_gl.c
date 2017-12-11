@@ -3,6 +3,7 @@
 #include "mesh.h"
 #include "vertex.h"
 #include "shader.h"
+#include "material.h"
 #include "../entity.h"
 #include "../gl_uniforms.h"
 #include "../anim/public/skeleton.h"
@@ -36,7 +37,7 @@ void GL_Init(struct render_private *priv)
     glEnableVertexAttribArray(1);
 
     /* Attribute 2 - material index */
-    glVertexAttribPointer(1, 2, GL_INT, GL_FALSE, sizeof(struct vertex), 
+    glVertexAttribIPointer(2, 1, GL_INT, sizeof(struct vertex), 
         (void*)offsetof(struct vertex, material_idx));
     glEnableVertexAttribArray(2);
 
@@ -50,7 +51,7 @@ void GL_Init(struct render_private *priv)
         (void*)offsetof(struct vertex, weights));
     glEnableVertexAttribArray(4);  
 
-    priv->shader_prog = Shader_GetProgForName("entity_animated");
+    priv->shader_prog = Shader_GetProgForName("mesh.animated.textured");
 }
 
 void R_GL_Draw(struct entity *ent)
@@ -66,6 +67,10 @@ void R_GL_Draw(struct entity *ent)
 
     loc = glGetUniformLocation(priv->shader_prog, GL_U_MODEL);
 	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+
+    for(int i = 0; i < priv->num_materials; i++) {
+        R_Texture_GL_Activate(&priv->materials[i].texture, priv->shader_prog);
+    }
 
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
@@ -150,7 +155,7 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = Shader_GetProgForName("entity_static");
+    shader_prog = Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */
@@ -190,7 +195,7 @@ void R_GL_DrawOrigin(const struct entity *ent)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = Shader_GetProgForName("entity_static");
+    shader_prog = Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */

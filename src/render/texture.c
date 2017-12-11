@@ -1,5 +1,6 @@
 #include "texture.h"
 #include "../lib/public/stb_image.h"
+#include "../gl_uniforms.h"
 
 #include <string.h>
 #include <assert.h>
@@ -20,8 +21,8 @@ struct texture_resource{
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static struct texture_resource s_tex_resources[MAX_NUM_TEXTURE];
-struct texture_resource       *s_free_head = &s_tex_resources[0];
+static struct texture_resource  s_tex_resources[MAX_NUM_TEXTURE];
+static struct texture_resource *s_free_head = &s_tex_resources[0];
 
 
 /*****************************************************************************/
@@ -38,20 +39,29 @@ static bool r_texture_gl_init(const char *path, GLuint *out)
     if(!data)
         goto fail_load;
 
+    glActiveTexture(GL_TEXTURE1);
     glGenTextures(1, &ret);
     glBindTexture(GL_TEXTURE_2D, ret);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);   
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+    if(nr_channels != 3 && nr_channels != 4)
+        goto fail_format;
+
+    GLint format = (nr_channels == 3) ? GL_RGB :
+                                        GL_RGBA;
+    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
 
     stbi_image_free(data);
+    *out = ret;
     return true;
 
+fail_format:
+    stbi_image_free(data);
 fail_load:
     return false;
 }
@@ -62,21 +72,26 @@ fail_load:
 
 void R_Texture_Init(void)
 {
-    for(int i = 0; i < MAX_NUM_TEXTURE - 1; i++) {
+    for(int i = 0; i < MAX_NUM_TEXTURE; i++) {
 
-        struct texture_resource *res  = &s_tex_resources[i];
-        struct texture_resource *next = &s_tex_resources[i+1];
-
-        res->next_free = next;
-        next->prev_free = res;
+        struct texture_resource *res = &s_tex_resources[i];
 
         res->free = true;
+        memset(res->name, 0, sizeof(res->name));
+
+        if(i + 1 < MAX_NUM_TEXTURE) {
+         
+            struct texture_resource *next = &s_tex_resources[i+1];
+
+            res->next_free = next;
+            next->prev_free = res;
+        }
     }
 }
 
 bool R_Texture_GetForName(const char *name, GLuint *out)
 {
-    for(int i = 0; i < MAX_NUM_TEXTURE - 1; i++) {
+    for(int i = 0; i < MAX_NUM_TEXTURE; i++) {
 
         struct texture_resource *curr = &s_tex_resources[i];
 
@@ -106,12 +121,16 @@ bool R_Texture_Load(const char *basedir, const char *name, GLuint *out)
 
     char texture_path[128];
     assert( strlen(basedir) + strlen(name) < sizeof(texture_path) );
-    strcat(texture_path, basedir);
+    strcpy(texture_path, basedir);
     strcat(texture_path, "/");
     strcat(texture_path, name);
 
-    if(!r_texture_gl_init(texture_path, out))
+    GLuint ret;
+    if(!r_texture_gl_init(texture_path, &ret))
         goto fail;
+
+    alloc->texture_id = ret;
+    *out = ret;
 
     return true;
 
@@ -140,8 +159,25 @@ void R_Texture_Free(const char *name)
     }
 }
 
-void R_Texture_GL_Activate(const struct texture *text)
+void R_Texture_GL_Activate(const struct texture *text, GLuint shader_prog)
 {
+    GLuint sampler_loc;
 
+    switch(text->tunit) {
+    case GL_TEXTURE0: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE0); break;
+    case GL_TEXTURE1: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE1); break;
+    case GL_TEXTURE2: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE2); break;
+    case GL_TEXTURE3: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE3); break;
+    case GL_TEXTURE4: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE4); break;
+    case GL_TEXTURE5: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE5); break;
+    case GL_TEXTURE6: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE6); break;
+    case GL_TEXTURE7: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE7); break;
+
+    default: assert(0);
+    }
+
+    glActiveTexture(text->tunit);
+    glBindTexture(GL_TEXTURE_2D, text->id);
+    glUniform1i(sampler_loc, text->tunit - GL_TEXTURE0);
 }
 

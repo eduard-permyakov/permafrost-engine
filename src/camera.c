@@ -169,16 +169,16 @@ void camera_tick_finish(struct camera *cam)
     PFM_vec3_add(&cam->pos, &cam->front, &target);
     PFM_mat4x4_make_look_at(&cam->pos, &target, &cam->up, &view);
 
-    R_GL_SetView(&view, "entity_static");
-    R_GL_SetView(&view, "entity_animated");
+    R_GL_SetView(&view, "mesh.static.colored");
+    R_GL_SetView(&view, "mesh.animated.textured");
     
     /* Set the projection matrix for the vertex shader */
     GLint viewport[4]; 
     glGetIntegerv(GL_VIEWPORT, viewport);
     PFM_mat4x4_make_perspective(DEG_TO_RAD(45.0f), ((GLfloat)viewport[2])/viewport[3], 0.1f, 250.0f, &proj);
 
-    R_GL_SetProj(&proj, "entity_static");
-    R_GL_SetProj(&proj, "entity_animated");
+    R_GL_SetProj(&proj, "mesh.static.colored");
+    R_GL_SetProj(&proj, "mesh.animated.textured");
 
     /* Update our last timestamp */
     cam->prev_frame_ts = SDL_GetTicks();
