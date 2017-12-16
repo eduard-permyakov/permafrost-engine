@@ -76,23 +76,6 @@ fail:
     return false;
 }
 
-static bool al_read_face(FILE *stream, struct face *out)
-{
-    char line[MAX_LINE_LEN];
-
-    READ_LINE(stream, line, fail);
-    if(!sscanf(line, "f %d %d %d", &out->vertex_indeces[0],
-                                   &out->vertex_indeces[1], 
-                                   &out->vertex_indeces[2])) {
-        goto fail;
-    }
-
-    return true;
-
-fail:
-    return false;
-}
-
 static bool al_read_material(FILE *stream, const char *basedir, struct material *out)
 {
     char line[MAX_LINE_LEN];
@@ -138,7 +121,6 @@ size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
 
     ret += sizeof(struct render_private);
     ret += header->num_verts * sizeof(struct vertex);
-    ret += header->num_faces * sizeof(struct face);
     ret += header->num_materials * sizeof(struct material);
 
     return ret;
@@ -151,8 +133,6 @@ size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
  *  | struct render_private[1]        |
  *  +---------------------------------+
  *  | struct vertex[num_verts]        |
- *  +---------------------------------+
- *  | struct face[num_faces]          |
  *  +---------------------------------+
  *  | struct material[num_materials]  |
  *  +---------------------------------+
@@ -169,20 +149,11 @@ bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir
     priv->mesh.vbuff = unused_base;
     unused_base += vbuff_sz;
 
-    priv->mesh.num_faces = header->num_faces;
-    priv->mesh.ebuff = unused_base;
-    unused_base += header->num_faces * sizeof(struct face);
-
     priv->num_materials = header->num_materials;
     priv->materials = unused_base;
 
     for(int i = 0; i < header->num_verts; i++) {
         if(!al_read_vertex(stream, &priv->mesh.vbuff[i]))
-            goto fail;
-    }
-
-    for(int i = 0; i < header->num_faces; i++) {
-        if(!al_read_face(stream, &priv->mesh.ebuff[i])) 
             goto fail;
     }
 
@@ -222,14 +193,6 @@ void R_AL_DumpPrivate(FILE *stream, void *priv_data)
         fprintf(stream, "\n");
 
         fprintf(stream, "vm %d\n", v->material_idx); 
-    }
-
-    for(int i = 0; i < priv->mesh.num_faces; i++) {
-
-        struct face *f = &priv->mesh.ebuff[i];
-
-        fprintf(stream, "f %d %d %d\n",
-            f->vertex_indeces[0], f->vertex_indeces[1], f->vertex_indeces[2]);
     }
 }
 

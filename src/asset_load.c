@@ -36,10 +36,6 @@ static bool al_parse_header(FILE *stream, struct pfobj_hdr *out)
         goto fail;
 
     READ_LINE(stream, line, fail);
-    if(!sscanf(line, "num_faces %d", &out->num_faces))
-        goto fail;
-
-    READ_LINE(stream, line, fail);
     if(!sscanf(line, "num_materials %d", &out->num_materials))
         goto fail;
 
@@ -105,11 +101,10 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     if(!al_parse_header(stream, &header))
         goto fail;
 
-    printf("v: %f, nv: %d, nj: %d, nf: %d, nm: %d, ac: %d\n",
+    printf("v: %f, nv: %d, nj: %d, nm: %d, ac: %d\n",
         header.version,
         header.num_verts,
         header.num_joints,
-        header.num_faces,
         header.num_materials,
         header.num_as);
     for(int i = 0; i < header.num_as; i++) {

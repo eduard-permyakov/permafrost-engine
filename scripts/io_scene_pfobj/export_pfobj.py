@@ -18,7 +18,6 @@ def mesh_triangulate(mesh):
 def save(operator, context, filepath, global_matrix):
     with open(filepath, "w", encoding="ascii") as ofile:
 
-        # Write the header
         mesh_objs = [obj for obj in bpy.context.selected_objects if obj.type == 'MESH']
         meshes = [obj.data for obj in mesh_objs]
         arms   = [obj for obj in bpy.context.selected_objects if obj.type == 'ARMATURE']
@@ -34,23 +33,27 @@ def save(operator, context, filepath, global_matrix):
 
         num_joints    = sum([len(arm.pose.bones) for arm in arms])
         num_as        = len(bpy.data.actions.items())
-        num_faces     = sum([len(mesh.polygons.items()) for mesh in meshes])
         num_materials = sum([len(mesh.materials) for mesh in meshes])
         frame_counts  = [str(int(a.frame_range[1] - a.frame_range[0] + 1)) for a in bpy.data.actions]
+
+        #####################################################################
+        # Write header
+        #####################################################################
 
         ofile.write("version        " + str(PFOBJ_VER) + "\n")
         ofile.write("num_verts      " + str(num_verts) + "\n")
         ofile.write("num_joints     " + str(num_joints) + "\n")
-        ofile.write("num_faces      " + str(num_faces) + "\n")
         ofile.write("num_materials  " + str(num_materials) + "\n")
         ofile.write("num_as         " + str(num_as) + "\n")
         ofile.write("frame_counts   " + " ".join(frame_counts) + "\n")
 
-        # Iterate over meshes 
+        #####################################################################
+        # Write vertices and their attributes 
+        #####################################################################
+
         for obj in mesh_objs:
             mesh = obj.data
 
-            # write Vertices
             for face in mesh.polygons:
                 for loop_idx in face.loop_indices:
 
@@ -93,22 +96,11 @@ def save(operator, context, filepath, global_matrix):
                     line = line.format(idx=mat_idx)
                     ofile.write(line)
 
-        #TODO: remove faces from export script and engine - they are not used
-        for obj in mesh_objs:
-            mesh = obj.data
 
-            # write Faces
-            for face in mesh.polygons:
-                line = "f"
-                for loop_idx in face.loop_indices:
-                    next_elem = " {idx}"
-                    # PFOBJ indices start at 1 like in the classic Waveform OBJ format
-                    next_elem = next_elem.format(idx=loop_idx+1)
-                    line += next_elem
-                line += "\n"
-                ofile.write(line)
+        #####################################################################
+        # Write materials 
+        #####################################################################
 
-        # Materials 
         for material in textured_mats:
 
             ofile.write("material " + material.name + "\n")
@@ -128,7 +120,11 @@ def save(operator, context, filepath, global_matrix):
             line = "    texture " + material.active_texture.image.name + "\n"
             ofile.write(line)
 
-        # Iterate over armatures 
+
+        #####################################################################
+        # Write joints
+        #####################################################################
+
         for obj in arms:
             arm = obj.data
 
@@ -166,7 +162,10 @@ def save(operator, context, filepath, global_matrix):
                 line += "\n"
                 ofile.write(line)
 
-        # write Animation sets
+        #####################################################################
+        # Write animation sets
+        #####################################################################
+
         for action in bpy.data.actions:
 
             frame_cnt = action.frame_range[1] - action.frame_range[0] + 1;

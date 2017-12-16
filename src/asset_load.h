@@ -13,7 +13,6 @@ struct pfobj_hdr{
     float    version; 
     unsigned num_verts;
     unsigned num_joints;
-    unsigned num_faces;
     unsigned num_materials;
     unsigned num_as;
     unsigned frame_counts[MAX_ANIM_SETS];
