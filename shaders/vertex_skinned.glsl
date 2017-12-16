@@ -4,12 +4,21 @@
 
 layout (location = 0) in vec3 in_pos;
 layout (location = 1) in vec2 in_uv;
-layout (location = 2) in int  in_material_idx;
-layout (location = 3) in vec4 in_joint_indices;
-layout (location = 4) in vec4 in_joint_weights;
+layout (location = 2) in vec3 in_normal;
+layout (location = 3) in int  in_material_idx;
+layout (location = 4) in vec4 in_joint_indices;
+layout (location = 5) in vec4 in_joint_weights;
+
+/*****************************************************************************/
+/* OUTPUTS                                                                   */
+/*****************************************************************************/
 
      out vec2 uv;
 flat out int  uv_idx;
+
+/*****************************************************************************/
+/* UNIFORMS                                                                  */
+/*****************************************************************************/
 
 uniform mat4 model;
 uniform mat4 view;
@@ -18,6 +27,9 @@ uniform mat4 projection;
 uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
 uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
 
+/*****************************************************************************/
+/* PROGRAM                                                                   */
+/*****************************************************************************/
 
 void main()
 {

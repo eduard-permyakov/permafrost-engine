@@ -6,6 +6,7 @@
 struct vertex{
     vec3_t  pos;
     vec2_t  uv;
+    vec3_t  normal;
     GLint   material_idx;
     GLint   joint_indices[4];
     GLfloat weights[4];

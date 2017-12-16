@@ -35,6 +35,10 @@ static bool al_read_vertex(FILE *stream, struct vertex *out)
     if(!sscanf(line, "vt %f %f", &out->uv.x, &out->uv.y))
         goto fail;
 
+    READ_LINE(stream, line, fail); 
+    if(!sscanf(line, "vn %f %f %f", &out->normal.x, &out->normal.y, &out->normal.z))
+        goto fail;
+
     READ_LINE(stream, line, fail);
     if(!strstr(line, "vw"))
         goto fail;

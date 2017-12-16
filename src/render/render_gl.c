@@ -80,20 +80,25 @@ void GL_Init(struct render_private *priv)
         (void*)offsetof(struct vertex, uv));
     glEnableVertexAttribArray(1);
 
-    /* Attribute 2 - material index */
-    glVertexAttribIPointer(2, 1, GL_INT, sizeof(struct vertex), 
-        (void*)offsetof(struct vertex, material_idx));
+    /* Attribute 2 - normal */
+    glVertexAttribIPointer(2, 3, GL_FLOAT, sizeof(struct vertex), 
+        (void*)offsetof(struct vertex, normal));
     glEnableVertexAttribArray(2);
 
-    /* Attribute 3 - joint indices */
-    glVertexAttribPointer(3, 4, GL_INT, GL_FALSE, sizeof(struct vertex),
-        (void*)offsetof(struct vertex, joint_indices));
-    glEnableVertexAttribArray(3);  
+    /* Attribute 3 - material index */
+    glVertexAttribIPointer(3, 1, GL_INT, sizeof(struct vertex), 
+        (void*)offsetof(struct vertex, material_idx));
+    glEnableVertexAttribArray(3);
 
-    /* Attribute 4 - joint weights */
-    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
-        (void*)offsetof(struct vertex, weights));
+    /* Attribute 4 - joint indices */
+    glVertexAttribPointer(4, 4, GL_INT, GL_FALSE, sizeof(struct vertex),
+        (void*)offsetof(struct vertex, joint_indices));
     glEnableVertexAttribArray(4);  
+
+    /* Attribute 5 - joint weights */
+    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
+        (void*)offsetof(struct vertex, weights));
+    glEnableVertexAttribArray(5);  
 
     priv->shader_prog = Shader_GetProgForName("mesh.animated.textured");
 }

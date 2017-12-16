@@ -23,6 +23,8 @@ def save(operator, context, filepath, global_matrix):
         meshes = [obj.data for obj in mesh_objs]
         arms   = [obj for obj in bpy.context.selected_objects if obj.type == 'ARMATURE']
 
+        textured_mats = [material for material in bpy.data.materials if material.active_texture]
+
         for mesh in meshes:
             mesh_triangulate(mesh)
 
@@ -66,6 +68,10 @@ def save(operator, context, filepath, global_matrix):
                     line = line.format(uv=uv_coords)
                     ofile.write(line)
 
+                    line = "vn {n[0]:.6f} {n[1]:.6f} {n[2]:.6f}\n"
+                    line = line.format(n=v.normal)
+                    ofile.write(line)
+
                     line = "vw ";
                     for vg in v.groups:
 
@@ -82,8 +88,9 @@ def save(operator, context, filepath, global_matrix):
                     line += "\n"
                     ofile.write(line)
 
+                    mat_idx = textured_mats.index( mesh.materials[face.material_index] )
                     line = "vm {idx}\n"
-                    line = line.format(idx=face.material_index)
+                    line = line.format(idx=mat_idx)
                     ofile.write(line)
 
         #TODO: remove faces from export script and engine - they are not used
@@ -102,25 +109,24 @@ def save(operator, context, filepath, global_matrix):
                 ofile.write(line)
 
         # Materials 
-        for obj in mesh_objs:
-            for material_idx, material in enumerate(obj.data.materials):
+        for material in textured_mats:
 
-                ofile.write("material " + material.name + "\n")
+            ofile.write("material " + material.name + "\n")
 
-                line = "    ambient {a:.6f}\n"
-                line = line.format(a=material.ambient)
-                ofile.write(line)
+            line = "    ambient {a:.6f}\n"
+            line = line.format(a=material.ambient)
+            ofile.write(line)
 
-                line = "    diffuse {c[0]:.6f} {c[1]:.6f} {c[2]:.6f}\n"
-                line = line.format(c=(material.diffuse_intensity * material.diffuse_color))
-                ofile.write(line)
+            line = "    diffuse {c[0]:.6f} {c[1]:.6f} {c[2]:.6f}\n"
+            line = line.format(c=(material.diffuse_intensity * material.diffuse_color))
+            ofile.write(line)
 
-                line = "    specular {c[0]:.6f} {c[1]:.6f} {c[2]:.6f}\n"
-                line = line.format(c=(material.specular_intensity * material.specular_color))
-                ofile.write(line)
+            line = "    specular {c[0]:.6f} {c[1]:.6f} {c[2]:.6f}\n"
+            line = line.format(c=(material.specular_intensity * material.specular_color))
+            ofile.write(line)
 
-                line = "    texture " + material.active_texture.image.name + "\n"
-                ofile.write(line)
+            line = "    texture " + material.active_texture.image.name + "\n"
+            ofile.write(line)
 
         # Iterate over armatures 
         for obj in arms:
