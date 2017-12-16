@@ -94,7 +94,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 
     char pfobj_path[BASEDIR_LEN * 2];
     assert( strlen(base_path) + strlen(pfobj_name) + 1 < sizeof(pfobj_path) );
-    strcat(pfobj_path, base_path);
+    strcpy(pfobj_path, base_path);
     strcat(pfobj_path, "/");
     strcat(pfobj_path, pfobj_name);
 
