@@ -24,4 +24,7 @@
 #define GL_U_TEXTURE6       "texture6"
 #define GL_U_TEXTURE7       "texture7"
 
+/* Global light color - affects all models */
+#define GL_U_AMBIENT_COLOR  "ambient_color"
+
 #endif

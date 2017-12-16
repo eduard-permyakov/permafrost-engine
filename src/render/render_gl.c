@@ -16,6 +16,50 @@
 #include <assert.h>
 
 
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static void gl_set_materials(GLuint shader_prog, size_t num_mats, const struct material *mats)
+{
+    for(size_t i = 0; i < num_mats; i++) {
+    
+        const struct material *mat = &mats[i];
+        const size_t nmembers = 3; 
+
+        const struct member_desc{
+            const GLchar *name; 
+            size_t        size;
+            ptrdiff_t     offset;
+        }descs[] = {
+            {"ambient_intensity", 1, offsetof(struct material, ambient_intensity) },
+            {"diffuse_clr",       3, offsetof(struct material, diffuse_clr)       },
+            {"specular_clr",      3, offsetof(struct material, specular_clr)      }
+        };
+
+        for(size_t j = 0; j < nmembers; j++) {
+        
+            char locbuff[64];
+            GLuint loc;
+
+            snprintf(locbuff, sizeof(locbuff), "%s[%zu].%s", GL_U_MATERIALS, i, descs[j].name);
+            locbuff[sizeof(locbuff)-1] = '\0';
+
+            loc = glGetUniformLocation(shader_prog, locbuff);
+            switch(descs[j].size) {
+            case 1: glUniform1fv(loc, 1, (void*) ((char*)mat + descs[j].offset) ); break;
+            case 3: glUniform3fv(loc, 1, (void*) ((char*)mat + descs[j].offset) ); break;
+            default: assert(0);
+            }
+
+        }
+    }
+}
+
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
 void GL_Init(struct render_private *priv)
 {
     struct mesh *mesh = &priv->mesh;
@@ -58,15 +102,13 @@ void R_GL_Draw(struct entity *ent)
 {
     struct render_private *priv = ent->render_private;
 	GLuint loc;
-    vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
 
     glUseProgram(priv->shader_prog);
 
-    loc = glGetUniformLocation(priv->shader_prog, GL_U_COLOR);
-	glUniform3fv(loc, 1, red.raw);
-
     loc = glGetUniformLocation(priv->shader_prog, GL_U_MODEL);
 	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+
+    gl_set_materials(priv->shader_prog, priv->num_materials, priv->materials);
 
     for(int i = 0; i < priv->num_materials; i++) {
         R_Texture_GL_Activate(&priv->materials[i].texture, priv->shader_prog);
@@ -107,6 +149,17 @@ void R_GL_SetUniformMat4x4Array(mat4x4_t *data, size_t count, const char *uname,
 
     loc = glGetUniformLocation(shader_prog, uname);
 	glUniformMatrix4fv(loc, count, GL_FALSE, (void*)data);
+}
+
+void R_GL_SetAmbientLightColor(vec3_t color, const char *shader_name)
+{
+    GLuint loc, shader_prog;
+
+    shader_prog = Shader_GetProgForName(shader_name);
+    glUseProgram(shader_prog);
+
+    loc = glGetUniformLocation(shader_prog, GL_U_AMBIENT_COLOR);
+	glUniform3fv(loc, 1, color.raw);
 }
 
 void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)

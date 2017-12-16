@@ -166,6 +166,7 @@ int main(int argc, char **argv)
     //A_AL_DumpPrivate(stdout, s_temp->anim_private);
     /* End Temp */
 
+    R_GL_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f}, "mesh.animated.textured");
     glEnable(GL_DEPTH_TEST);
 
     while(!s_quit) {

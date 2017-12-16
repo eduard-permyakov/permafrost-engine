@@ -114,7 +114,6 @@ static bool al_read_material(FILE *stream, const char *basedir, struct material 
         goto fail;
     texname[sizeof(texname)-1] = '\0';
 
-    //printf("Reading %s\n", texname);
     if(!R_Texture_GetForName(texname, &out->texture.id) &&
        !R_Texture_Load(basedir, texname, &out->texture.id))
         goto fail;
