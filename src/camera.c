@@ -171,6 +171,7 @@ void camera_tick_finish(struct camera *cam)
 
     R_GL_SetView(&view, "mesh.static.colored");
     R_GL_SetView(&view, "mesh.animated.textured");
+    R_GL_SetView(&view, "mesh.animated.normals.colored");
     
     /* Set the projection matrix for the vertex shader */
     GLint viewport[4]; 
@@ -179,6 +180,7 @@ void camera_tick_finish(struct camera *cam)
 
     R_GL_SetProj(&proj, "mesh.static.colored");
     R_GL_SetProj(&proj, "mesh.animated.textured");
+    R_GL_SetProj(&proj, "mesh.animated.normals.colored");
 
     /* Update our last timestamp */
     cam->prev_frame_ts = SDL_GetTicks();

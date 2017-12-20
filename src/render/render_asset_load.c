@@ -182,6 +182,7 @@ void R_AL_DumpPrivate(FILE *stream, void *priv_data)
 
         fprintf(stream, "v %.6f %.6f %.6f\n", v->pos.x, v->pos.y, v->pos.z); 
         fprintf(stream, "vt %.6f %.6f \n", v->uv.x, v->uv.y); 
+        fprintf(stream, "vn %.6f %.6f %.6f\n", v->normal.x, v->normal.y, v->normal.z);
 
         fprintf(stream, "vw");
         for(int j = 0; j < 4; j++) {

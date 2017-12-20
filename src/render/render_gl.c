@@ -81,7 +81,7 @@ void GL_Init(struct render_private *priv)
     glEnableVertexAttribArray(1);
 
     /* Attribute 2 - normal */
-    glVertexAttribIPointer(2, 3, GL_FLOAT, sizeof(struct vertex), 
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
         (void*)offsetof(struct vertex, normal));
     glEnableVertexAttribArray(2);
 
@@ -272,21 +272,18 @@ void R_GL_DrawOrigin(const struct entity *ent)
     for(int i = 0; i < 3; i++) {
 
         switch(i) {
-            case 0: { 
-                vbuff[1] = (vec3_t){1.0f, 0.0f, 0.0f}; 
-	            glUniform3fv(loc, 1, red.raw);
-                break;
-            }
-            case 1: {
-                vbuff[1] = (vec3_t){0.0f, 1.0f, 0.0f}; 
-	            glUniform3fv(loc, 1, green.raw);
-                break;
-            }
-            case 2: {
-                vbuff[1] = (vec3_t){0.0f, 0.0f, 1.0f}; 
-	            glUniform3fv(loc, 1, blue.raw);
-                break;
-            }
+        case 0:
+            vbuff[1] = (vec3_t){1.0f, 0.0f, 0.0f}; 
+	        glUniform3fv(loc, 1, red.raw);
+            break;
+        case 1:
+            vbuff[1] = (vec3_t){0.0f, 1.0f, 0.0f}; 
+	        glUniform3fv(loc, 1, green.raw);
+            break;
+        case 2:
+            vbuff[1] = (vec3_t){0.0f, 0.0f, 1.0f}; 
+	        glUniform3fv(loc, 1, blue.raw);
+            break;
         }
     
         glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
@@ -295,5 +292,26 @@ void R_GL_DrawOrigin(const struct entity *ent)
         glDrawArrays(GL_LINES, 0, 2);
     }
     glLineWidth(old_width);
+}
+
+void R_GL_DrawNormals(const struct entity *ent)
+{
+    struct render_private *priv = ent->render_private;
+
+    GLuint normals_shader = Shader_GetProgForName("mesh.animated.normals.colored");
+    assert(normals_shader);
+    glUseProgram(normals_shader);
+
+	GLuint loc;
+    vec3_t yellow = (vec3_t){1.0f, 1.0f, 0.0f};
+
+    loc = glGetUniformLocation(normals_shader, GL_U_COLOR);
+	glUniform3fv(loc, 1, yellow.raw);
+
+    loc = glGetUniformLocation(normals_shader, GL_U_MODEL);
+	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+
+    glBindVertexArray(priv->mesh.VAO);
+    glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 }
 

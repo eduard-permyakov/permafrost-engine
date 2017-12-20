@@ -10,6 +10,7 @@
 #include <SDL2/SDL_opengl.h>
 
 #include <stdbool.h>
+#include <assert.h>
 
 
 static SDL_Window    *s_window;
@@ -92,10 +93,11 @@ static void render(void)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     R_GL_Draw(s_temp);
+    R_GL_DrawNormals(s_temp);
 
-    const struct skeleton *skel = A_GetCurrPoseSkeleton(s_temp);
-    R_GL_DrawSkeleton(s_temp, skel);
-    free((struct skelton*)skel);
+    //const struct skeleton *skel = A_GetCurrPoseSkeleton(s_temp);
+    //R_GL_DrawSkeleton(s_temp, skel);
+    //free((struct skelton*)skel);
     R_GL_DrawOrigin(s_temp);
 
     SDL_GL_SwapWindow(s_window);
@@ -144,7 +146,7 @@ int main(int argc, char **argv)
     camera_set_pos  (s_camera, (vec3_t){ 0.0f,  0.0f,  0.0f});
     camera_set_front(s_camera, (vec3_t){ 0.0f,  0.0f, -1.0f});
     camera_set_up   (s_camera, (vec3_t){ 0.0f,  1.0f,  0.0f});
-    camera_set_speed(s_camera, 0.1f);
+    camera_set_speed(s_camera, 0.05f);
     camera_set_sens (s_camera, 0.05f);
 
     /* Temp */
@@ -159,6 +161,7 @@ int main(int argc, char **argv)
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/chest/chest3-final.pfobj",s1 "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/spider", "Spider.pfobj", "Spider");
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/flag", "flag.pfobj", "Flag");
+    assert(s_temp);
     A_InitCtx(s_temp, "Dance", 24);
     PFM_mat4x4_make_trans(0.0f, 0.0f, -50.0f, &s_temp->model_matrix);
 

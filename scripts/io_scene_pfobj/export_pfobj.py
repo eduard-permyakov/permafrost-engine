@@ -26,6 +26,7 @@ def save(operator, context, filepath, global_matrix):
 
         for mesh in meshes:
             mesh_triangulate(mesh)
+            mesh.calc_normals_split()
 
         num_verts = 0
         for mesh in meshes: 
@@ -71,8 +72,9 @@ def save(operator, context, filepath, global_matrix):
                     line = line.format(uv=uv_coords)
                     ofile.write(line)
 
+                    normal = global_matrix * mesh.loops[loop_idx].normal
                     line = "vn {n[0]:.6f} {n[1]:.6f} {n[2]:.6f}\n"
-                    line = line.format(n=v.normal)
+                    line = line.format(n=normal)
                     ofile.write(line)
 
                     line = "vw ";
@@ -96,7 +98,6 @@ def save(operator, context, filepath, global_matrix):
                     line = line.format(idx=mat_idx)
                     ofile.write(line)
 
-
         #####################################################################
         # Write materials 
         #####################################################################
@@ -119,7 +120,6 @@ def save(operator, context, filepath, global_matrix):
 
             line = "    texture " + material.active_texture.image.name + "\n"
             ofile.write(line)
-
 
         #####################################################################
         # Write joints

@@ -4,6 +4,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #define SHADER_PATH_LEN 128
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
@@ -12,6 +13,7 @@ struct shader_resource{
     GLint       prog_id;
     const char *name;
     const char *vertex_path;
+    const char *geo_path;
     const char *frag_path;
 };
 
@@ -22,13 +24,22 @@ static struct shader_resource s_shaders[] = {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.colored",
         .vertex_path = "/home/eduard/engine/shaders/vertex_static.glsl",
+        .geo_path    = NULL,
         .frag_path   = "/home/eduard/engine/shaders/fragment_colored.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.animated.textured",
         .vertex_path = "/home/eduard/engine/shaders/vertex_skinned.glsl",
+        .geo_path    = NULL,
         .frag_path   = "/home/eduard/engine/shaders/fragment_textured.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "mesh.animated.normals.colored",
+        .vertex_path = "/home/eduard/engine/shaders/vertex_skinned.glsl",
+        .geo_path    = "/home/eduard/engine/shaders/geometry_normals.glsl",
+        .frag_path   = "/home/eduard/engine/shaders/fragment_colored.glsl"
     }
 };
 
@@ -95,24 +106,31 @@ static bool shader_load_and_init(const char *path, GLint *out, GLint type)
 {
     const char *text = shader_text_load(path);
     if(!text)
-        return false;
+        goto fail;
     
-    if(!shader_init(text, out, type)) {
-        return false;
-    }
+    if(!shader_init(text, out, type))
+        goto fail;
 
     free((char*)text);
-
     return true;
+
+fail:
+    free((char*)text);
+    return false;
 }
 
-static bool shader_make_prog(const GLuint vertex_shader, const GLuint frag_shader, GLint *out)
+static bool shader_make_prog(const GLuint vertex_shader, const GLuint geo_shader, const GLuint frag_shader, GLint *out)
 {
     char info[512];
     GLint success;
 
     *out = glCreateProgram();
     glAttachShader(*out, vertex_shader);
+
+    if(geo_shader) {
+        glAttachShader(*out, geo_shader); 
+    }
+
     glAttachShader(*out, frag_shader);
     glLinkProgram(*out);
 
@@ -136,22 +154,30 @@ bool Shader_InitAll(void)
     for(int i = 0; i < ARR_SIZE(s_shaders); i++){
 
         struct shader_resource *res = &s_shaders[i];
-        GLuint vertex, fragment;
+        GLuint vertex, geometry = 0, fragment;
     
         if(!shader_load_and_init(res->vertex_path, &vertex, GL_VERTEX_SHADER))
             return false;
 
+        if(res->geo_path && !shader_load_and_init(res->geo_path, &geometry, GL_GEOMETRY_SHADER))
+            return false;
+        assert(!res->geo_path || geometry > 0);
+
         if(!shader_load_and_init(res->frag_path, &fragment, GL_FRAGMENT_SHADER))
             return false;
 
-        if(!shader_make_prog(vertex, fragment, &res->prog_id)) {
+        if(!shader_make_prog(vertex, geometry, fragment, &res->prog_id)) {
 
             glDeleteShader(vertex);
+            if(geometry)
+                glDeleteShader(geometry);
             glDeleteShader(fragment);
             return false;
         }
 
         glDeleteShader(vertex);
+        if(geometry)
+            glDeleteShader(geometry);
         glDeleteShader(fragment);
     }
 

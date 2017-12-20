@@ -13,8 +13,14 @@ layout (location = 5) in vec4 in_joint_weights;
 /* OUTPUTS                                                                   */
 /*****************************************************************************/
 
-     out vec2 uv;
-flat out int  uv_idx;
+out VertexToFrag {
+         vec2 uv;
+    flat int  mat_idx;
+}to_fragment;
+
+out VertexToGeo {
+    vec3 normal;
+}to_geometry;
 
 /*****************************************************************************/
 /* UNIFORMS                                                                  */
@@ -33,9 +39,13 @@ uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
 
 void main()
 {
-    /* Forward to fragment shader */
-    uv =     in_uv;
-    uv_idx = in_material_idx;
+    to_fragment.uv = in_uv;
+    to_fragment.mat_idx = in_material_idx;
+
+    /* TODO: compute normal matrix on CPU once per model each frame and pass as uniform 
+     */
+    mat3 normal_matrix = mat3(transpose(inverse(view * model)));
+    to_geometry.normal = normalize(vec3(projection * vec4(normal_matrix * in_normal, 1.0)));
 
     float tot_weight = in_joint_weights[0] + in_joint_weights[1]
                      + in_joint_weights[2] + in_joint_weights[3];
@@ -59,7 +69,7 @@ void main()
         float fraction = in_joint_weights[w_idx] / tot_weight;
         
         vec4 to_add_homo = fraction * pose_mat * inv_bind_mat * vec4(in_pos, 1.0f);
-        new_pos += vec3(to_add_homo.x, to_add_homo.y, to_add_homo.z);
+        new_pos += to_add_homo.xyz;
     }
 
     gl_Position = projection * view * model * vec4(new_pos, 1.0f);

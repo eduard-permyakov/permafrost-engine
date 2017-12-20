@@ -24,6 +24,7 @@ void   R_GL_SetView(const mat4x4_t *view, const char *shader_name);
 void   R_GL_SetProj(const mat4x4_t *proj, const char *shader_name);
 void   R_GL_SetUniformMat4x4Array(mat4x4_t *data, size_t count, const char *uname, const char *shader_name);
 
+/* Set the global ambient color that will impact all models based on their materials */
 void   R_GL_SetAmbientLightColor(vec3_t color, const char *shader_name);
 
 /* Render an entitiy's skeleton which is used for animation. 
@@ -40,6 +41,9 @@ void   R_GL_DrawOrigin(const struct entity *ent);
 /* Computes the size (in bytes) that is required to store all the rendering subsystem
  * data from a PF Object file.
  */
+
+void   R_GL_DrawNormals(const struct entity *ent);
+
 size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header);
 
 /* Consumes lines of the stream and uses them to populate the private data stored 

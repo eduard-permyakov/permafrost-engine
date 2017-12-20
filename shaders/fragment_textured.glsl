@@ -6,8 +6,10 @@
 /* INPUTS                                                                    */
 /*****************************************************************************/
 
-     in vec2 uv;
-flat in int  uv_idx;
+in VertexToFrag {
+         vec2 uv;
+    flat int  mat_idx;
+}from_vertex;
 
 /*****************************************************************************/
 /* OUTPUTS                                                                   */
@@ -46,18 +48,18 @@ void main()
 {
     vec4 tex_color;
 
-    switch(uv_idx) {
-    case 0: tex_color = texture(texture0, uv); break;
-    case 1: tex_color = texture(texture1, uv); break;
-    case 2: tex_color = texture(texture2, uv); break;
-    case 3: tex_color = texture(texture3, uv); break;
-    case 4: tex_color = texture(texture4, uv); break;
-    case 5: tex_color = texture(texture5, uv); break;
-    case 6: tex_color = texture(texture6, uv); break;
-    case 7: tex_color = texture(texture7, uv); break;
+    switch(from_vertex.mat_idx) {
+    case 0: tex_color = texture(texture0, from_vertex.uv); break;
+    case 1: tex_color = texture(texture1, from_vertex.uv); break;
+    case 2: tex_color = texture(texture2, from_vertex.uv); break;
+    case 3: tex_color = texture(texture3, from_vertex.uv); break;
+    case 4: tex_color = texture(texture4, from_vertex.uv); break;
+    case 5: tex_color = texture(texture5, from_vertex.uv); break;
+    case 6: tex_color = texture(texture6, from_vertex.uv); break;
+    case 7: tex_color = texture(texture7, from_vertex.uv); break;
     }
 
-    vec3 ambient = materials[uv_idx].ambient_intensity * ambient_color;
+    vec3 ambient = materials[from_vertex.mat_idx].ambient_intensity * ambient_color;
     o_frag_color = vec4(ambient * tex_color.xyz, 1.0);
 }
 
