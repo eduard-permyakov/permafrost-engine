@@ -16,11 +16,13 @@
 #include <assert.h>
 
 
+#define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void gl_set_materials(GLuint shader_prog, size_t num_mats, const struct material *mats)
+static void r_gl_set_materials(GLuint shader_prog, size_t num_mats, const struct material *mats)
 {
     for(size_t i = 0; i < num_mats; i++) {
     
@@ -54,6 +56,52 @@ static void gl_set_materials(GLuint shader_prog, size_t num_mats, const struct m
 
         }
     }
+}
+
+static void r_gl_set_uniform_mat4x4_array(mat4x4_t *data, size_t count, 
+                                          const char *uname, const char *shader_name)
+{
+    GLuint loc, shader_prog;
+
+    shader_prog = Shader_GetProgForName(shader_name);
+    glUseProgram(shader_prog);
+
+    loc = glGetUniformLocation(shader_prog, uname);
+	glUniformMatrix4fv(loc, count, GL_FALSE, (void*)data);
+}
+
+static void r_gl_set_uniform_vec4_array(vec4_t *data, size_t count, 
+                                        const char *uname, const char *shader_name)
+{
+    GLuint loc, shader_prog;
+
+    shader_prog = Shader_GetProgForName(shader_name);
+    glUseProgram(shader_prog);
+
+    loc = glGetUniformLocation(shader_prog, uname);
+	glUniform4fv(loc, count, (void*)data);
+}
+
+static void r_gl_set_view(const mat4x4_t *view, const char *shader_name)
+{
+    GLuint loc, shader_prog;
+
+    shader_prog = Shader_GetProgForName(shader_name);
+    glUseProgram(shader_prog);
+
+    loc = glGetUniformLocation(shader_prog, GL_U_VIEW);
+	glUniformMatrix4fv(loc, 1, GL_FALSE, view->raw);
+}
+
+static void r_gl_set_proj(const mat4x4_t *proj, const char *shader_name)
+{
+    GLuint loc, shader_prog;
+
+    shader_prog = Shader_GetProgForName(shader_name);
+    glUseProgram(shader_prog);
+
+    loc = glGetUniformLocation(shader_prog, GL_U_PROJECTION);
+	glUniformMatrix4fv(loc, 1, GL_FALSE, proj->raw);
 }
 
 /*****************************************************************************/
@@ -113,7 +161,7 @@ void R_GL_Draw(struct entity *ent)
     loc = glGetUniformLocation(priv->shader_prog, GL_U_MODEL);
 	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
 
-    gl_set_materials(priv->shader_prog, priv->num_materials, priv->materials);
+    r_gl_set_materials(priv->shader_prog, priv->num_materials, priv->materials);
 
     for(int i = 0; i < priv->num_materials; i++) {
         R_Texture_GL_Activate(&priv->materials[i].texture, priv->shader_prog);
@@ -123,48 +171,50 @@ void R_GL_Draw(struct entity *ent)
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 }
 
-void R_GL_SetView(const mat4x4_t *view, const char *shader_name)
+void R_GL_SetView(const mat4x4_t *view)
 {
-    GLuint loc, shader_prog;
+    const char *shaders[] = {
+        "mesh.static.colored",
+        "mesh.animated.textured",
+        "mesh.animated.normals.colored",
+    };
 
-    shader_prog = Shader_GetProgForName(shader_name);
-    glUseProgram(shader_prog);
-
-    loc = glGetUniformLocation(shader_prog, GL_U_VIEW);
-	glUniformMatrix4fv(loc, 1, GL_FALSE, view->raw);
+    for(int i = 0; i < ARR_SIZE(shaders); i++)
+        r_gl_set_view(view, shaders[i]);
 }
 
 void R_GL_SetProj(const mat4x4_t *proj, const char *shader_name)
 {
-    GLuint loc, shader_prog;
+    const char *shaders[] = {
+        "mesh.static.colored",
+        "mesh.animated.textured",
+        "mesh.animated.normals.colored",
+    };
 
-    shader_prog = Shader_GetProgForName(shader_name);
-    glUseProgram(shader_prog);
-
-    loc = glGetUniformLocation(shader_prog, GL_U_PROJECTION);
-	glUniformMatrix4fv(loc, 1, GL_FALSE, proj->raw);
+    for(int i = 0; i < ARR_SIZE(shaders); i++)
+        r_gl_set_proj(proj, shaders[i]);
 }
 
-void R_GL_SetUniformMat4x4Array(mat4x4_t *data, size_t count, const char *uname, const char *shader_name)
+void R_GL_SetAnimUniformMat4x4Array(mat4x4_t *data, size_t count, const char *uname)
 {
-    GLuint loc, shader_prog;
+    const char *shaders[] = {
+        "mesh.animated.textured",
+        "mesh.animated.normals.colored",
+    };
 
-    shader_prog = Shader_GetProgForName(shader_name);
-    glUseProgram(shader_prog);
-
-    loc = glGetUniformLocation(shader_prog, uname);
-	glUniformMatrix4fv(loc, count, GL_FALSE, (void*)data);
+    for(int i = 0; i < ARR_SIZE(shaders); i++)
+        r_gl_set_uniform_mat4x4_array(data, count, uname, shaders[i]);
 }
 
-void R_GL_SetUniformVec4Array(vec4_t *data, size_t count, const char *uname, const char *shader_name)
+void R_GL_SetAnimUniformVec4Array(vec4_t *data, size_t count, const char *uname)
 {
-    GLuint loc, shader_prog;
+    const char *shaders[] = {
+        "mesh.animated.textured",
+        "mesh.animated.normals.colored",
+    };
 
-    shader_prog = Shader_GetProgForName(shader_name);
-    glUseProgram(shader_prog);
-
-    loc = glGetUniformLocation(shader_prog, uname);
-	glUniform4fv(loc, count, (void*)data);
+    for(int i = 0; i < ARR_SIZE(shaders); i++)
+        r_gl_set_uniform_vec4_array(data, count, uname, shaders[i]);
 }
 
 void R_GL_SetAmbientLightColor(vec3_t color, const char *shader_name)
