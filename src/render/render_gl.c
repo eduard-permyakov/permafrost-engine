@@ -156,6 +156,17 @@ void R_GL_SetUniformMat4x4Array(mat4x4_t *data, size_t count, const char *uname,
 	glUniformMatrix4fv(loc, count, GL_FALSE, (void*)data);
 }
 
+void R_GL_SetUniformVec4Array(vec4_t *data, size_t count, const char *uname, const char *shader_name)
+{
+    GLuint loc, shader_prog;
+
+    shader_prog = Shader_GetProgForName(shader_name);
+    glUseProgram(shader_prog);
+
+    loc = glGetUniformLocation(shader_prog, uname);
+	glUniform4fv(loc, count, (void*)data);
+}
+
 void R_GL_SetAmbientLightColor(vec3_t color, const char *shader_name)
 {
     GLuint loc, shader_prog;

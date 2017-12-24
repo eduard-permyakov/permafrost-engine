@@ -13,6 +13,7 @@
 /* Written by anim subsystem for every entity */
 #define GL_U_INV_BIND_MATS  "anim_inv_bind_mats"
 #define GL_U_CURR_POSE_MATS "anim_curr_pose_mats"
+#define GL_U_CURR_POSE_ROTS "anim_curr_pose_rot_quats"
 
 /* 8 texture slots that get set for each entity */
 #define GL_U_TEXTURE0       "texture0"

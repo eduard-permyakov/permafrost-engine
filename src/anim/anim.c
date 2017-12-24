@@ -103,6 +103,7 @@ static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struc
 void a_set_uniforms_curr_frame(const struct entity *ent)
 {
     struct anim_private *priv = (struct anim_private*)ent->anim_private;
+    struct anim_sample *sample =  &priv->ctx->active->samples[priv->ctx->curr_frame];
 
     size_t float_per_mat = sizeof(mat4x4_t) / sizeof(float);
     size_t num_joints = priv->data->skel.num_joints;
@@ -113,14 +114,23 @@ void a_set_uniforms_curr_frame(const struct entity *ent)
         GL_U_INV_BIND_MATS, "mesh.animated.normals.colored");
 
     mat4x4_t curr_pose_mats[num_joints];
+    quat_t   rot_quats     [num_joints]; 
+
     for(int j = 0; j < num_joints; j++) {
+
         a_make_pose_mat(ent, j, &priv->data->skel, &curr_pose_mats[j]);
+        rot_quats[j] = sample->local_joint_poses[j].quat_rotation;
     }
 
     R_GL_SetUniformMat4x4Array(curr_pose_mats, num_joints, 
         GL_U_CURR_POSE_MATS, "mesh.animated.textured");
     R_GL_SetUniformMat4x4Array(curr_pose_mats, num_joints, 
         GL_U_CURR_POSE_MATS, "mesh.animated.normals.colored");
+
+    R_GL_SetUniformVec4Array(rot_quats, num_joints, 
+        GL_U_CURR_POSE_ROTS, "mesh.animated.textured");
+    R_GL_SetUniformVec4Array(rot_quats, num_joints, 
+        GL_U_CURR_POSE_ROTS, "mesh.animated.normals.colored");
 }
 
 

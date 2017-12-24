@@ -23,6 +23,7 @@ void   R_GL_Draw(struct entity *ent);
 void   R_GL_SetView(const mat4x4_t *view, const char *shader_name);
 void   R_GL_SetProj(const mat4x4_t *proj, const char *shader_name);
 void   R_GL_SetUniformMat4x4Array(mat4x4_t *data, size_t count, const char *uname, const char *shader_name);
+void   R_GL_SetUniformVec4Array(vec4_t *data, size_t count, const char *uname, const char *shader_name);
 
 /* Set the global ambient color that will impact all models based on their materials */
 void   R_GL_SetAmbientLightColor(vec3_t color, const char *shader_name);
