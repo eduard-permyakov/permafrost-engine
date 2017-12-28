@@ -9,6 +9,8 @@
 in VertexToFrag {
          vec2 uv;
     flat int  mat_idx;
+         vec3 world_pos;
+         vec3 normal;
 }from_vertex;
 
 /*****************************************************************************/
@@ -22,6 +24,7 @@ out vec4 o_frag_color;
 /*****************************************************************************/
 
 uniform vec3 ambient_color;
+uniform vec3 light_pos;
 
 uniform sampler2D texture0;
 uniform sampler2D texture1;
@@ -59,7 +62,14 @@ void main()
     case 7: tex_color = texture(texture7, from_vertex.uv); break;
     }
 
+    /* Ambient calculations */
     vec3 ambient = materials[from_vertex.mat_idx].ambient_intensity * ambient_color;
-    o_frag_color = vec4(ambient * tex_color.xyz, 1.0);
+
+    /* Diffuse calculations */
+    vec3 light_dir = normalize(light_pos - from_vertex.world_pos);  
+    float diff = max(dot(from_vertex.normal, light_dir), 0.0);
+    vec3 diffuse = diff * materials[from_vertex.mat_idx].diffuse_clr;
+
+    o_frag_color = vec4( (ambient + diffuse) * tex_color.xyz, 1.0);
 }
 

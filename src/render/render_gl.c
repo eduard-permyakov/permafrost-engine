@@ -217,15 +217,40 @@ void R_GL_SetAnimUniformVec4Array(vec4_t *data, size_t count, const char *uname)
         r_gl_set_uniform_vec4_array(data, count, uname, shaders[i]);
 }
 
-void R_GL_SetAmbientLightColor(vec3_t color, const char *shader_name)
+void R_GL_SetAmbientLightColor(vec3_t color)
 {
-    GLuint loc, shader_prog;
+    const char *shaders[] = {
+        "mesh.animated.textured",
+    };
 
-    shader_prog = Shader_GetProgForName(shader_name);
-    glUseProgram(shader_prog);
+    for(int i = 0; i < ARR_SIZE(shaders); i++) {
+    
+        GLuint loc, shader_prog;
 
-    loc = glGetUniformLocation(shader_prog, GL_U_AMBIENT_COLOR);
-	glUniform3fv(loc, 1, color.raw);
+        shader_prog = Shader_GetProgForName(shaders[i]);
+        glUseProgram(shader_prog);
+
+        loc = glGetUniformLocation(shader_prog, GL_U_AMBIENT_COLOR);
+	    glUniform3fv(loc, 1, color.raw);
+    }
+}
+
+void R_GL_SetLightPos(vec3_t pos)
+{
+    const char *shaders[] = {
+        "mesh.animated.textured",
+    };
+
+    for(int i = 0; i < ARR_SIZE(shaders); i++) {
+
+        GLuint loc, shader_prog;
+    
+        shader_prog = Shader_GetProgForName(shaders[i]);
+        glUseProgram(shader_prog);
+
+        loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_POS);
+	    glUniform3fv(loc, 1, pos.raw);
+    }
 }
 
 void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)

@@ -93,7 +93,7 @@ static void render(void)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     R_GL_Draw(s_temp);
-    R_GL_DrawNormals(s_temp);
+    //R_GL_DrawNormals(s_temp);
 
     //const struct skeleton *skel = A_GetCurrPoseSkeleton(s_temp);
     //R_GL_DrawSkeleton(s_temp, skel);
@@ -169,8 +169,10 @@ int main(int argc, char **argv)
     //A_AL_DumpPrivate(stdout, s_temp->anim_private);
     /* End Temp */
 
-    R_GL_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f}, "mesh.animated.textured");
     glEnable(GL_DEPTH_TEST);
+
+    R_GL_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f});
+    R_GL_SetLightPos((vec3_t){-25.0f, 25.0f, -25.0f});
 
     while(!s_quit) {
 

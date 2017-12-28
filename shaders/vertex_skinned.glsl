@@ -16,6 +16,8 @@ layout (location = 5) in vec4 in_joint_weights;
 out VertexToFrag {
          vec2 uv;
     flat int  mat_idx;
+         vec3 world_pos;
+         vec3 normal;
 }to_fragment;
 
 out VertexToGeo {
@@ -34,31 +36,6 @@ uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
 uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
 
 /*****************************************************************************/
-/* HELPER FUNCTIONS 
-/*****************************************************************************/
-
-vec4 quaternion_mult(vec4 a, vec4 b)
-{
-    /* Algorithm from: 
-     * http://www.euclideanspace.com/maths/algebra/realNormedAlgebra/quaternions/arithmetic/ 
-     */
-    float sa = a.w;
-    vec3  va = a.xyz;
-    
-    float sb = b.w;
-    vec3  vb = b.xyz;
-
-    vec3  rv = cross(va, vb) + (sa * vb) + (sb * va);
-    float rs = (sa * sb) - dot(va,vb);
-    return vec4( rv, rs );
-}
-
-vec4 quaternion_inverse(vec4 quat)
-{
-    return vec4(-quat.xyz, quat.w)/length(quat);
-}
-
-/*****************************************************************************/
 /* PROGRAM
 /*****************************************************************************/
 
@@ -66,10 +43,12 @@ void main()
 {
     to_fragment.uv = in_uv;
     to_fragment.mat_idx = in_material_idx;
+    to_fragment.world_pos = (model * vec4(in_pos, 1.0)).xyz;
 
     /* TODO: compute normal matrix on CPU once per model each frame and pass as uniform 
      */
-    mat3 normal_matrix = mat3(transpose(inverse(view * model)));
+    mat3 normal_matrix_geo = mat3(transpose(inverse(view * model)));
+    mat3 normal_matrix = mat3(transpose(inverse(model)));
 
     float tot_weight = in_joint_weights[0] + in_joint_weights[1]
                      + in_joint_weights[2] + in_joint_weights[3];
@@ -79,7 +58,8 @@ void main()
      */
     if(tot_weight == 0.0) {
 
-        to_geometry.normal = normalize(vec3(projection * vec4(normal_matrix * in_normal, 1.0)));
+        to_geometry.normal = normalize(vec3(projection * vec4(normal_matrix_geo * in_normal, 1.0)));
+        to_fragment.normal = normalize(normal_matrix * in_normal);
         gl_Position = projection * view * model * vec4(in_pos, 1.0);
 
     }else {
@@ -103,7 +83,8 @@ void main()
             new_normal += rot_mat * in_normal;
         }
 
-        to_geometry.normal = normalize(vec3(projection * vec4(normal_matrix * new_normal, 1.0)));
+        to_geometry.normal = normalize(normal_matrix_geo * new_normal);
+        to_fragment.normal = normalize(normal_matrix * new_normal);
         gl_Position = projection * view * model * vec4(new_pos, 1.0f);
 
     }
