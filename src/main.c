@@ -154,15 +154,15 @@ int main(int argc, char **argv)
 
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/wyvern/Wyvern/Wyvern.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/wizard/wizard.pfobj", "mage", 4);
-    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/sinbad", "Sinbad.pfobj", "Sinbad");
+    s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/sinbad", "Sinbad.pfobj", "Sinbad");
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/turret/Base1.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mech/Mech4_final.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/Desktop/hk.pfobj", "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/chest/chest3-final.pfobj",s1 "mage", 4);
     //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/spider", "Spider.pfobj", "Spider");
-    s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/flag", "flag.pfobj", "Flag");
+    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/flag", "flag.pfobj", "Flag");
     assert(s_temp);
-    A_InitCtx(s_temp, "Action", 24);
+    A_InitCtx(s_temp, "Dance", 24);
     PFM_mat4x4_make_trans(0.0f, 0.0f, -50.0f, &s_temp->model_matrix);
 
     //R_AL_DumpPrivate(stdout, s_temp->render_private);

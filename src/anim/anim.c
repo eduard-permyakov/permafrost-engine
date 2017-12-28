@@ -108,9 +108,6 @@ void a_set_uniforms_curr_frame(const struct entity *ent)
     size_t float_per_mat = sizeof(mat4x4_t) / sizeof(float);
     size_t num_joints = priv->data->skel.num_joints;
 
-    R_GL_SetAnimUniformMat4x4Array(priv->data->skel.inv_bind_poses, num_joints, GL_U_INV_BIND_MATS);
-    R_GL_SetAnimUniformMat4x4Array(priv->data->skel.inv_bind_poses, num_joints, GL_U_INV_BIND_MATS);
-
     mat4x4_t curr_pose_mats[num_joints];
     quat_t   rot_quats     [num_joints]; 
 
@@ -120,10 +117,8 @@ void a_set_uniforms_curr_frame(const struct entity *ent)
         rot_quats[j] = sample->local_joint_poses[j].quat_rotation;
     }
 
+    R_GL_SetAnimUniformMat4x4Array(priv->data->skel.inv_bind_poses, num_joints, GL_U_INV_BIND_MATS);
     R_GL_SetAnimUniformMat4x4Array(curr_pose_mats, num_joints, GL_U_CURR_POSE_MATS);
-    R_GL_SetAnimUniformMat4x4Array(curr_pose_mats, num_joints, GL_U_CURR_POSE_MATS);
-
-    R_GL_SetAnimUniformVec4Array(rot_quats, num_joints, GL_U_CURR_POSE_ROTS);
     R_GL_SetAnimUniformVec4Array(rot_quats, num_joints, GL_U_CURR_POSE_ROTS);
 }
 
