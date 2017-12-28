@@ -32,7 +32,6 @@ uniform mat4 projection;
 
 uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
 uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
-uniform vec4 anim_curr_pose_rot_quats[MAX_JOINTS];
 
 /*****************************************************************************/
 /* HELPER FUNCTIONS 

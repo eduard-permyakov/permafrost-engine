@@ -189,7 +189,7 @@ int main(int argc, char **argv)
     exit(EXIT_SUCCESS);
 
 fail_camera:
-    camera_free(s_camera);
+    free(s_camera);
 fail_render:
 fail_glew:
     SDL_GL_DeleteContext(s_context);
