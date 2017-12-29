@@ -2,97 +2,97 @@
 #include <string.h>
 #include <assert.h>
 
-int PFM_vec2_dot(vec2_t *op1, vec2_t *op2)
+int PFM_Vec2_Dot(vec2_t *op1, vec2_t *op2)
 {
     return op1->x * op2->x + 
            op1->y * op1->y;
 }
 
-void PFM_vec2_add(vec2_t *op1, vec2_t *op2, vec2_t *out)
+void PFM_Vec2_Add(vec2_t *op1, vec2_t *op2, vec2_t *out)
 {
     out->x = op1->x + op2->y; 
     out->y = op1->y + op1->y;
 }
 
-void PFM_vec2_sub(vec2_t *op1, vec2_t *op2, vec2_t *out)
+void PFM_Vec2_Sub(vec2_t *op1, vec2_t *op2, vec2_t *out)
 {
     out->x = op1->x - op2->x;
     out->y = op1->y - op2->y;
 }
 
-void PFM_vec2_scale(vec2_t *op1, GLfloat scale, vec2_t *out)
+void PFM_Vec2_Scale(vec2_t *op1, GLfloat scale, vec2_t *out)
 {
     out->x = op1->x * scale;
     out->y = op1->y * scale;
 }
 
-GLfloat PFM_vec2_len(vec2_t *op1)
+GLfloat PFM_Vec2_Len(vec2_t *op1)
 {
     return sqrt(op1->x * op1->x + 
                 op1->y * op1->y);
 }
 
-void PFM_vec2_normal(vec2_t *op1,  vec2_t *out)
+void PFM_Vec2_Normal(vec2_t *op1,  vec2_t *out)
 {
-    GLfloat len = PFM_vec2_len(op1); 
+    GLfloat len = PFM_Vec2_Len(op1); 
 
     out->x = op1->x / len;
     out->y = op1->y / len;
 }
 
-void PFM_vec3_cross(vec3_t *a, vec3_t *b, vec3_t *out)
+void PFM_Vec3_Cross(vec3_t *a, vec3_t *b, vec3_t *out)
 {
     out->x =   a->y * b->z - a->z * b->y;
     out->y = -(a->x * b->z - a->z * b->x);
     out->z =   a->x * b->y - a->y * b->x;
 }
 
-GLfloat PFM_vec3_dot(vec3_t *op1, vec3_t *op2)
+GLfloat PFM_Vec3_Dot(vec3_t *op1, vec3_t *op2)
 {
     return op1->x * op2->x +
            op1->y * op2->y +
            op1->z * op2->z;
 }
 
-void PFM_vec3_add(vec3_t *op1, vec3_t *op2, vec3_t *out)
+void PFM_Vec3_Add(vec3_t *op1, vec3_t *op2, vec3_t *out)
 {
     for(int i = 0; i < 3; i++)
         out->raw[i] = op1->raw[i] + op2->raw[i];
 }
 
-void PFM_vec3_sub(vec3_t *op1, vec3_t *op2, vec3_t *out)
+void PFM_Vec3_Sub(vec3_t *op1, vec3_t *op2, vec3_t *out)
 {
     for(int i = 0; i < 3; i++)
         out->raw[i] = op1->raw[i] - op2->raw[i];
 }
 
-void PFM_vec3_scale(vec3_t *op1, GLfloat scale, vec3_t *out)
+void PFM_Vec3_Scale(vec3_t *op1, GLfloat scale, vec3_t *out)
 {
     for(int i = 0; i < 3; i++)
         out->raw[i] = op1->raw[i] * scale;
 }
 
-GLfloat PFM_vec3_len (vec3_t *op1)
+GLfloat PFM_Vec3_Len(vec3_t *op1)
 {
     return sqrt(op1->x * op1->x + 
                 op1->y * op1->y +
                 op1->z * op1->z);
 }
 
-void PFM_vec3_normal(vec3_t *op1, vec3_t *out)
+void PFM_Vec3_Normal(vec3_t *op1, vec3_t *out)
 {
-    GLfloat len = PFM_vec3_len(op1); 
+    GLfloat len = PFM_Vec3_Len(op1); 
 
     for(int i = 0; i < 3; i++)
         out->raw[i] = op1->raw[i] / len;
 }
 
-void PFM_vec3_dump(vec3_t *vec, FILE *dumpfile)
+void PFM_Vec3_Dump(vec3_t *vec, FILE *dumpfile)
 {
     fprintf(dumpfile, "(%.4f, %.4f, %.4f)\n", vec->x, vec->y, vec->z);
 }
 
-GLfloat PFM_vec4_dot(vec4_t *op1,  vec4_t *op2, vec4_t *out)
+GLfloat PFM_Vec4_Dot(vec4_t *op1,  vec4_t *op2, vec4_t *out)
 {
     return op1->x * op2->x +
            op1->y * op2->y +
@@ -100,25 +100,25 @@ GLfloat PFM_vec4_dot(vec4_t *op1,  vec4_t *op2, vec4_t *out)
            op1->w * op2->w;
 }
 
-void PFM_vec4_add(vec4_t *op1, vec4_t *op2, vec4_t *out)
+void PFM_Vec4_Add(vec4_t *op1, vec4_t *op2, vec4_t *out)
 {
     for(int i = 0; i < 4; i++)
         out->raw[i] = op1->raw[i] + op2->raw[i];
 }
 
-void PFM_vec4_sub(vec4_t *op1, vec4_t *op2, vec4_t *out)
+void PFM_Vec4_Sub(vec4_t *op1, vec4_t *op2, vec4_t *out)
 {
     for(int i = 0; i < 4; i++)
         out->raw[i] = op1->raw[i] - op2->raw[i];
 }
 
-void PFM_vec4_scale(vec4_t *op1, GLfloat scale, vec4_t *out)
+void PFM_Vec4_Scale(vec4_t *op1, GLfloat scale, vec4_t *out)
 {
     for(int i = 0; i < 4; i++)
         out->raw[i] = op1->raw[i] * scale;
 }
 
-GLfloat PFM_vec4_len(vec4_t *op1)
+GLfloat PFM_Vec4_Len(vec4_t *op1)
 {
     return sqrt(op1->x * op1->x + 
                 op1->y * op1->y +
@@ -126,27 +126,27 @@ GLfloat PFM_vec4_len(vec4_t *op1)
                 op1->w * op1->w);
 }
 
-void PFM_vec4_normal(vec4_t *op1, vec4_t *out)
+void PFM_Vec4_Normal(vec4_t *op1, vec4_t *out)
 {
-    GLfloat len = PFM_vec4_len(op1); 
+    GLfloat len = PFM_Vec4_Len(op1); 
 
     for(int i = 0; i < 4; i++)
         out->raw[i] = op1->raw[i] / len;
 }
 
-void PFM_vec4_dump(vec4_t *vec,  FILE *dumpfile)
+void PFM_Vec4_Dump(vec4_t *vec,  FILE *dumpfile)
 {
     fprintf(dumpfile, "(%.4f, %.4f, %.4f, %.4f)\n", vec->x, vec->y, vec->z, vec->w);
 }
 
-void PFM_mat3x3_scale(mat3x3_t *op1, GLfloat scale, mat3x3_t *out)
+void PFM_Mat3x3_Scale(mat3x3_t *op1, GLfloat scale, mat3x3_t *out)
 {
     for(int i = 0; i < 9; i++) {
         out->raw[i] = op1->raw[i] * scale;
     }
 }
 
-void PFM_mat3x3_mult3x3 (mat3x3_t *op1, mat3x3_t *op2, mat3x3_t *out)
+void PFM_Mat3x3_Mult3x3 (mat3x3_t *op1, mat3x3_t *op2, mat3x3_t *out)
 {
     for(int r = 0; r < 3; r++) {
         for(int c = 0; c < 3; c++) {
@@ -157,7 +157,7 @@ void PFM_mat3x3_mult3x3 (mat3x3_t *op1, mat3x3_t *op2, mat3x3_t *out)
     }
 }
 
-void PFM_mat3x3_mult3x1 (mat3x3_t *op1,  vec3_t *op2,  vec3_t *out)
+void PFM_Mat3x3_Mult3x1 (mat3x3_t *op1,  vec3_t *op2,  vec3_t *out)
 {
     for(int r = 0; r < 3; r++) {
         out->raw[r] = 0.0f;
@@ -166,7 +166,7 @@ void PFM_mat3x3_mult3x1 (mat3x3_t *op1,  vec3_t *op2,  vec3_t *out)
     }
 }
 
-void PFM_mat3x3_identity(mat3x3_t *out)
+void PFM_Mat3x3_Identity(mat3x3_t *out)
 {
     memset(out, 0, sizeof(mat3x3_t));
 
@@ -174,14 +174,14 @@ void PFM_mat3x3_identity(mat3x3_t *out)
         out->cols[i][i] = 1;
 }
 
-void PFM_mat4x4_scale(mat4x4_t *op1, GLfloat scale, mat4x4_t *out)
+void PFM_Mat4x4_Scale(mat4x4_t *op1, GLfloat scale, mat4x4_t *out)
 {
     for(int i = 0; i < 16; i++) {
         out->raw[i] = op1->raw[i] * scale;
     }
 }
 
-void PFM_mat4x4_mult4x4 (mat4x4_t *op1, mat4x4_t *op2, mat4x4_t *out)
+void PFM_Mat4x4_Mult4x4 (mat4x4_t *op1, mat4x4_t *op2, mat4x4_t *out)
 {
     for(int r = 0; r < 4; r++) {
         for(int c = 0; c < 4; c++) {
@@ -192,7 +192,7 @@ void PFM_mat4x4_mult4x4 (mat4x4_t *op1, mat4x4_t *op2, mat4x4_t *out)
     }
 }
 
-void PFM_mat4x4_mult4x1(mat4x4_t *op1, vec4_t *op2, vec4_t *out)
+void PFM_Mat4x4_Mult4x1(mat4x4_t *op1, vec4_t *op2, vec4_t *out)
 {
     for(int r = 0; r < 4; r++) {
         out->raw[r] = 0.0f;
@@ -201,7 +201,7 @@ void PFM_mat4x4_mult4x1(mat4x4_t *op1, vec4_t *op2, vec4_t *out)
     }
 }
 
-void PFM_mat4x4_identity(mat4x4_t *out)
+void PFM_Mat4x4_Identity(mat4x4_t *out)
 {
     memset(out, 0, sizeof(mat4x4_t));
 
@@ -209,27 +209,27 @@ void PFM_mat4x4_identity(mat4x4_t *out)
         out->cols[i][i] = 1;
 }
 
-void PFM_mat4x4_make_scale(GLfloat s1, GLfloat s2, GLfloat s3, mat4x4_t *out)
+void PFM_Mat4x4_MakeScale(GLfloat s1, GLfloat s2, GLfloat s3, mat4x4_t *out)
 {
-    PFM_mat4x4_identity(out);
+    PFM_Mat4x4_Identity(out);
 
     out->cols[0][0] = s1;
     out->cols[1][1] = s2;
     out->cols[2][2] = s3;
 }
 
-void PFM_mat4x4_make_trans(GLfloat tx, GLfloat ty, GLfloat tz, mat4x4_t *out)
+void PFM_Mat4x4_MakeTrans(GLfloat tx, GLfloat ty, GLfloat tz, mat4x4_t *out)
 {
-    PFM_mat4x4_identity(out); 
+    PFM_Mat4x4_Identity(out); 
 
     out->cols[3][0] = tx;
     out->cols[3][1] = ty;
     out->cols[3][2] = tz;
 }
 
-void PFM_mat4x4_make_rot_x(GLfloat radians, mat4x4_t *out)
+void PFM_Mat4x4_MakeRotX(GLfloat radians, mat4x4_t *out)
 {
-    PFM_mat4x4_identity(out);
+    PFM_Mat4x4_Identity(out);
 
     out->cols[1][1] =  cos(radians);
     out->cols[1][2] =  sin(radians);
@@ -238,9 +238,9 @@ void PFM_mat4x4_make_rot_x(GLfloat radians, mat4x4_t *out)
     out->cols[2][2] =  cos(radians);
 }
 
-void PFM_mat4x4_make_rot_y(GLfloat radians, mat4x4_t *out)
+void PFM_Mat4x4_MakeRotY(GLfloat radians, mat4x4_t *out)
 {
-    PFM_mat4x4_identity(out);
+    PFM_Mat4x4_Identity(out);
 
     out->cols[0][0] =  cos(radians);
     out->cols[0][2] = -sin(radians);
@@ -249,9 +249,9 @@ void PFM_mat4x4_make_rot_y(GLfloat radians, mat4x4_t *out)
     out->cols[2][2] =  cos(radians);
 }
 
-void PFM_mat4x4_make_rot_z(GLfloat radians, mat4x4_t *out)
+void PFM_Mat4x4_MakeRotZ(GLfloat radians, mat4x4_t *out)
 {
-    PFM_mat4x4_identity(out);
+    PFM_Mat4x4_Identity(out);
 
     out->cols[0][0] =  cos(radians);
     out->cols[0][1] =  sin(radians);
@@ -260,7 +260,7 @@ void PFM_mat4x4_make_rot_z(GLfloat radians, mat4x4_t *out)
     out->cols[1][1] =  cos(radians);
 }
 
-void PFM_mat4x4_make_rot(vec3_t *axis, GLfloat radians, mat4x4_t *out)
+void PFM_Mat4x4_MakeRot(vec3_t *axis, GLfloat radians, mat4x4_t *out)
 {
     //TODO: http://paulbourke.net/geometry/rotate/
 }
@@ -268,9 +268,9 @@ void PFM_mat4x4_make_rot(vec3_t *axis, GLfloat radians, mat4x4_t *out)
 /* Algorithm taken from:
  * http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.184.3942&rep=rep1&type=pdf
  */
-void PFM_mat4x4_rot_from_quat(const quat_t *quat, mat4x4_t *out)
+void PFM_Mat4x4_RotFromQuat(const quat_t *quat, mat4x4_t *out)
 {
-    PFM_mat4x4_identity(out);
+    PFM_Mat4x4_Identity(out);
 
     out->cols[0][0]  = 1 - 2*pow(quat->y, 2) - 2*pow(quat->z, 2);
     out->cols[1][0] = 2*quat->x*quat->y + 2*quat->w*quat->z;
@@ -285,16 +285,16 @@ void PFM_mat4x4_rot_from_quat(const quat_t *quat, mat4x4_t *out)
     out->cols[2][2] = 1 - 2*pow(quat->x, 2) - 2*pow(quat->y, 2);
 }
 
-void PFM_mat4x4_rot_from_euler(GLfloat deg_x, GLfloat deg_y, GLfloat deg_z, mat4x4_t *out)
+void PFM_Mat4x4_RotFromEuler(GLfloat deg_x, GLfloat deg_y, GLfloat deg_z, mat4x4_t *out)
 {
     mat4x4_t x, y, z, tmp;
 
-    PFM_mat4x4_make_rot_x(DEG_TO_RAD(deg_x), &x);
-    PFM_mat4x4_make_rot_y(DEG_TO_RAD(deg_y), &y);
-    PFM_mat4x4_make_rot_z(DEG_TO_RAD(deg_z), &z);
+    PFM_Mat4x4_MakeRotX(DEG_TO_RAD(deg_x), &x);
+    PFM_Mat4x4_MakeRotY(DEG_TO_RAD(deg_y), &y);
+    PFM_Mat4x4_MakeRotZ(DEG_TO_RAD(deg_z), &z);
 
-    PFM_mat4x4_mult4x4(&y, &z, &tmp);
-    PFM_mat4x4_mult4x4(&x, &tmp, out);
+    PFM_Mat4x4_Mult4x4(&y, &z, &tmp);
+    PFM_Mat4x4_Mult4x4(&x, &tmp, out);
 }
 
 /* - fov_radians is the vertical FOV angle
@@ -303,7 +303,7 @@ void PFM_mat4x4_rot_from_euler(GLfloat deg_x, GLfloat deg_y, GLfloat deg_z, mat4
  * - Vectors multiplied by this matrix will already be in NDC
  * 
  */
-void PFM_mat4x4_make_perspective(GLfloat fov_radians, GLfloat aspect_ratio, 
+void PFM_Mat4x4_MakePerspective(GLfloat fov_radians, GLfloat aspect_ratio, 
                                  GLfloat z_near, GLfloat z_far, mat4x4_t *out)
 {
     /* This assumes symmetry (left = -right, top = -bottom) */ 
@@ -318,17 +318,17 @@ void PFM_mat4x4_make_perspective(GLfloat fov_radians, GLfloat aspect_ratio,
     out->cols[3][2] = -(2.0f * z_far * z_near) / (z_far - z_near);
 }
 
-void PFM_mat4x4_make_look_at(vec3_t *camera_pos, vec3_t *target_pos, 
+void PFM_Mat4x4_MakeLookAt(vec3_t *camera_pos, vec3_t *target_pos, 
                              vec3_t *up, mat4x4_t *out)
 {
     vec3_t camera_dir, right;
 
-    PFM_vec3_sub(camera_pos, target_pos, &camera_dir);
-    PFM_vec3_normal(&camera_dir, &camera_dir);
-    PFM_vec3_cross(&camera_dir, up, &right);
+    PFM_Vec3_Sub(camera_pos, target_pos, &camera_dir);
+    PFM_Vec3_Normal(&camera_dir, &camera_dir);
+    PFM_Vec3_Cross(&camera_dir, up, &right);
 
     mat4x4_t axes, trans;
-    PFM_mat4x4_identity(&axes);
+    PFM_Mat4x4_Identity(&axes);
     axes.cols[0][0] = right.x;
     axes.cols[1][0] = right.y;
     axes.cols[2][0] = right.z;
@@ -341,12 +341,12 @@ void PFM_mat4x4_make_look_at(vec3_t *camera_pos, vec3_t *target_pos,
     axes.cols[1][2] = camera_dir.y;
     axes.cols[2][2] = camera_dir.z;
 
-    PFM_mat4x4_make_trans(-camera_pos->x, -camera_pos->y, -camera_pos->z, &trans);
-    PFM_mat4x4_mult4x4(&axes, &trans, out);
+    PFM_Mat4x4_MakeTrans(-camera_pos->x, -camera_pos->y, -camera_pos->z, &trans);
+    PFM_Mat4x4_Mult4x4(&axes, &trans, out);
 }
 
 /* Implementation derived from Mesa 3D implementation */
-void PFM_mat4x4_inverse(mat4x4_t *in, mat4x4_t *out)
+void PFM_Mat4x4_Inverse(mat4x4_t *in, mat4x4_t *out)
 {
     double inv[16], det;
     int i;
@@ -476,7 +476,7 @@ void PFM_mat4x4_inverse(mat4x4_t *in, mat4x4_t *out)
 /* Algorithm from:  
  * http://www.euclideanspace.com/maths/geometry/rotations/conversions/quaternionToMatrix/ 
  */
-void PFM_quat_from_rot_mat(mat4x4_t *mat, quat_t *out)
+void PFM_Quat_FromRotMat(mat4x4_t *mat, quat_t *out)
 {
     GLfloat tr = mat->cols[0][0] + mat->cols[1][1] + mat->cols[2][2];
 

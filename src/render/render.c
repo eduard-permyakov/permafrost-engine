@@ -6,6 +6,6 @@ bool R_Init(const char *base_path)
 {
     R_Texture_Init();
 
-    return Shader_InitAll(base_path);    
+    return R_Shader_InitAll(base_path);    
 }
 

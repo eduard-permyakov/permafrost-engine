@@ -25,7 +25,7 @@ struct camera {
 const unsigned g_sizeof_camera = sizeof(struct camera);
 
 
-struct camera *camera_new(void)
+struct camera *Camera_New(void)
 {
     struct camera *ret = calloc(1, sizeof(struct camera));
     if(!ret)
@@ -35,43 +35,43 @@ struct camera *camera_new(void)
     return ret;
 }
 
-void camera_free(struct camera *cam)
+void Camera_Free(struct camera *cam)
 {
     free(cam);
 }
 
-void camera_init_stack(struct camera *cam)
+void Camera_InitStack(struct camera *cam)
 {
     memset(cam, 0, sizeof(struct camera));
     cam->yaw = 90.0f;
 }
 
-void camera_set_pos(struct camera *cam, vec3_t pos)
+void Camera_SetPos(struct camera *cam, vec3_t pos)
 {
     cam->pos = pos; 
 }
 
-void camera_set_front(struct camera *cam, vec3_t front)
+void Camera_SetFront(struct camera *cam, vec3_t front)
 {
     cam->front = front; 
 }
 
-void camera_set_up(struct camera *cam, vec3_t up)
+void Cameta_SetUp(struct camera *cam, vec3_t up)
 {
     cam->up = up; 
 }
 
-void camera_set_speed(struct camera *cam, float speed)
+void Camera_SetSpeed(struct camera *cam, float speed)
 {
     cam->speed = speed;
 }
 
-void camera_set_sens(struct camera *cam, float sensitivity)
+void Camera_SetSens(struct camera *cam, float sensitivity)
 {
     cam->sensitivity = sensitivity;
 }
 
-void camera_move_left_tick(struct camera *cam)
+void Camera_MoveLeftTick(struct camera *cam)
 {
     uint32_t tdelta;
     vec3_t   vdelta, right;
@@ -82,14 +82,14 @@ void camera_move_left_tick(struct camera *cam)
     uint32_t curr = SDL_GetTicks();
     tdelta = curr - cam->prev_frame_ts;
 
-    PFM_vec3_cross(&cam->front, &cam->up, &right);
-    PFM_vec3_normal(&right, &right);
+    PFM_Vec3_Cross(&cam->front, &cam->up, &right);
+    PFM_Vec3_Normal(&right, &right);
 
-    PFM_vec3_scale(&right, tdelta * cam->speed, &vdelta);
-    PFM_vec3_add(&cam->pos, &vdelta, &cam->pos);
+    PFM_Vec3_Scale(&right, tdelta * cam->speed, &vdelta);
+    PFM_Vec3_Add(&cam->pos, &vdelta, &cam->pos);
 }
 
-void camera_move_right_tick(struct camera *cam)
+void Camera_MoveRightTick(struct camera *cam)
 {
     uint32_t tdelta;
     vec3_t   vdelta, right;
@@ -100,14 +100,14 @@ void camera_move_right_tick(struct camera *cam)
     uint32_t curr = SDL_GetTicks();
     tdelta = curr - cam->prev_frame_ts;
 
-    PFM_vec3_cross(&cam->front, &cam->up, &right);
-    PFM_vec3_normal(&right, &right);
+    PFM_Vec3_Cross(&cam->front, &cam->up, &right);
+    PFM_Vec3_Normal(&right, &right);
 
-    PFM_vec3_scale(&right, tdelta * cam->speed, &vdelta);
-    PFM_vec3_sub(&cam->pos, &vdelta, &cam->pos);
+    PFM_Vec3_Scale(&right, tdelta * cam->speed, &vdelta);
+    PFM_Vec3_Sub(&cam->pos, &vdelta, &cam->pos);
 }
 
-void camera_move_front_tick(struct camera *cam)
+void Camera_MoveFrontTick(struct camera *cam)
 {
     uint32_t tdelta;
     vec3_t   vdelta;
@@ -118,11 +118,11 @@ void camera_move_front_tick(struct camera *cam)
     uint32_t curr = SDL_GetTicks();
     tdelta = curr - cam->prev_frame_ts;
 
-    PFM_vec3_scale(&cam->front, tdelta * cam->speed, &vdelta);
-    PFM_vec3_add(&cam->pos, &vdelta, &cam->pos);
+    PFM_Vec3_Scale(&cam->front, tdelta * cam->speed, &vdelta);
+    PFM_Vec3_Add(&cam->pos, &vdelta, &cam->pos);
 }
 
-void camera_move_back_tick(struct camera *cam)
+void Camera_MoveBackTick(struct camera *cam)
 {
     uint32_t tdelta;
     vec3_t   vdelta;
@@ -133,11 +133,11 @@ void camera_move_back_tick(struct camera *cam)
     uint32_t curr = SDL_GetTicks();
     tdelta = curr - cam->prev_frame_ts;
 
-    PFM_vec3_scale(&cam->front, tdelta * cam->speed, &vdelta);
-    PFM_vec3_sub(&cam->pos, &vdelta, &cam->pos);
+    PFM_Vec3_Scale(&cam->front, tdelta * cam->speed, &vdelta);
+    PFM_Vec3_Sub(&cam->pos, &vdelta, &cam->pos);
 }
 
-void camera_change_direction(struct camera *cam, int dx, int dy)
+void Camera_ChangeDirection(struct camera *cam, int dx, int dy)
 {
     float sdx = dx * cam->sensitivity; 
     float sdy = dy * cam->sensitivity;
@@ -152,29 +152,29 @@ void camera_change_direction(struct camera *cam, int dx, int dy)
     front.x = cos(DEG_TO_RAD(cam->yaw)) * cos(DEG_TO_RAD(cam->pitch));
     front.y = sin(DEG_TO_RAD(cam->pitch));
     front.z = sin(DEG_TO_RAD(cam->yaw)) * cos(DEG_TO_RAD(cam->pitch)) * -1;
-    PFM_vec3_normal(&front, &cam->front);
+    PFM_Vec3_Normal(&front, &cam->front);
 
     /* Find a vector that is orthogonal to 'front' in the XZ plane */
     vec3_t xz = (vec3_t){cam->front.z, 0.0f, -cam->front.x};
-    PFM_vec3_cross(&cam->front, &xz, &cam->up);
-    PFM_vec3_normal(&cam->up, &cam->up);
+    PFM_Vec3_Cross(&cam->front, &xz, &cam->up);
+    PFM_Vec3_Normal(&cam->up, &cam->up);
 }
 
-void camera_tick_finish(struct camera *cam)
+void Camera_TickFinish(struct camera *cam)
 {
     mat4x4_t view, proj;
 
     /* Set the view matrix for the vertex shader */
     vec3_t target;
-    PFM_vec3_add(&cam->pos, &cam->front, &target);
-    PFM_mat4x4_make_look_at(&cam->pos, &target, &cam->up, &view);
+    PFM_Vec3_Add(&cam->pos, &cam->front, &target);
+    PFM_Mat4x4_MakeLookAt(&cam->pos, &target, &cam->up, &view);
 
     R_GL_SetViewMatAndPos(&view, &cam->pos);
     
     /* Set the projection matrix for the vertex shader */
     GLint viewport[4]; 
     glGetIntegerv(GL_VIEWPORT, viewport);
-    PFM_mat4x4_make_perspective(DEG_TO_RAD(45.0f), ((GLfloat)viewport[2])/viewport[3], 0.1f, 250.0f, &proj);
+    PFM_Mat4x4_MakePerspective(DEG_TO_RAD(45.0f), ((GLfloat)viewport[2])/viewport[3], 0.1f, 250.0f, &proj);
 
     R_GL_SetProj(&proj);
 

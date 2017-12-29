@@ -3,6 +3,6 @@
 
 struct render_private;
 
-void GL_Init(struct render_private *priv);
+void R_GL_Init(struct render_private *priv);
 
 #endif

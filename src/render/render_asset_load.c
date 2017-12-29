@@ -164,7 +164,7 @@ bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir
             goto fail;
     }
 
-    GL_Init(priv);
+    R_GL_Init(priv);
 
     return true;
 

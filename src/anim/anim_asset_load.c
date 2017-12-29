@@ -22,8 +22,8 @@
 static void euler_to_quat(float euler[3], quat_t *out)
 {
     mat4x4_t tmp;
-    PFM_mat4x4_rot_from_euler(euler[0], euler[1], euler[2], &tmp);
-    PFM_quat_from_rot_mat(&tmp, out);
+    PFM_Mat4x4_RotFromEuler(euler[0], euler[1], euler[2], &tmp);
+    PFM_Quat_FromRotMat(&tmp, out);
 }
 
 static bool al_read_joint(FILE *stream, struct joint *out, struct SQT *out_bind)

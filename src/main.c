@@ -76,16 +76,16 @@ static void process_events(void)
             break;
 
         case SDL_MOUSEMOTION: 
-            camera_change_direction(s_camera, event.motion.xrel, event.motion.yrel);
+            Camera_ChangeDirection(s_camera, event.motion.xrel, event.motion.yrel);
             break;
 
         }
     }
 
-    if(s_w_down) camera_move_front_tick(s_camera);
-    if(s_a_down) camera_move_left_tick (s_camera);
-    if(s_s_down) camera_move_back_tick (s_camera);
-    if(s_d_down) camera_move_right_tick(s_camera);
+    if(s_w_down) Camera_MoveFrontTick(s_camera);
+    if(s_a_down) Camera_MoveLeftTick (s_camera);
+    if(s_s_down) Camera_MoveBackTick (s_camera);
+    if(s_d_down) Camera_MoveRightTick(s_camera);
 }
 
 static void render(void)
@@ -146,15 +146,15 @@ int main(int argc, char **argv)
     if(!R_Init(argv[1]))
         goto fail_render;
 
-    s_camera = camera_new();
+    s_camera = Camera_New();
     if(!s_camera)
         goto fail_camera;
 
-    camera_set_pos  (s_camera, (vec3_t){ 0.0f,  0.0f,  0.0f});
-    camera_set_front(s_camera, (vec3_t){ 0.0f,  0.0f, -1.0f});
-    camera_set_up   (s_camera, (vec3_t){ 0.0f,  1.0f,  0.0f});
-    camera_set_speed(s_camera, 0.05f);
-    camera_set_sens (s_camera, 0.05f);
+    Camera_SetPos  (s_camera, (vec3_t){ 0.0f,  0.0f,  0.0f});
+    Camera_SetFront(s_camera, (vec3_t){ 0.0f,  0.0f, -1.0f});
+    Cameta_SetUp   (s_camera, (vec3_t){ 0.0f,  1.0f,  0.0f});
+    Camera_SetSpeed(s_camera, 0.05f);
+    Camera_SetSens (s_camera, 0.05f);
 
     char entity_path[512];
     strcpy(entity_path, argv[1]);
@@ -166,9 +166,9 @@ int main(int argc, char **argv)
     A_InitCtx(s_demo_entity, "Dance", 24);
 
     mat4x4_t scale, trans;
-    PFM_mat4x4_make_trans(0.0f, 0.0f, -50.0f, &trans);
-    PFM_mat4x4_make_scale(1.0f, 1.0f, 1.0f, &scale);
-    PFM_mat4x4_mult4x4(&scale, &trans, &s_demo_entity->model_matrix);
+    PFM_Mat4x4_MakeTrans(0.0f, 0.0f, -50.0f, &trans);
+    PFM_Mat4x4_MakeScale(1.0f, 1.0f, 1.0f, &scale);
+    PFM_Mat4x4_Mult4x4(&scale, &trans, &s_demo_entity->model_matrix);
 
     //R_AL_DumpPrivate(stdout, s_demo_entity->render_private);
     //A_AL_DumpPrivate(stdout, s_demo_entity->anim_private);
@@ -180,13 +180,13 @@ int main(int argc, char **argv)
     while(!s_quit) {
 
         process_events();
-        camera_tick_finish(s_camera);
+        Camera_TickFinish(s_camera);
         A_Update(s_demo_entity);
         render();        
 
     }
 
-    camera_free(s_camera);
+    Camera_Free(s_camera);
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window);
     SDL_Quit();
@@ -194,7 +194,7 @@ int main(int argc, char **argv)
     exit(EXIT_SUCCESS);
 
 fail_camera:
-    camera_free(s_camera);
+    Camera_Free(s_camera);
 fail_render:
 fail_glew:
     SDL_GL_DeleteContext(s_context);

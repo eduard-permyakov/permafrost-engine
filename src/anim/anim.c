@@ -34,20 +34,20 @@ static void a_mat_from_sqt(const struct SQT *sqt, mat4x4_t *out)
     mat4x4_t rot, trans, scale;
     mat4x4_t tmp;
 
-    PFM_mat4x4_make_scale(sqt->scale.x, sqt->scale.y, sqt->scale.z, &scale);
-    PFM_mat4x4_make_trans(sqt->trans.x, sqt->trans.y, sqt->trans.z, &trans);
-    PFM_mat4x4_rot_from_quat(&sqt->quat_rotation, &rot);
+    PFM_Mat4x4_MakeScale(sqt->scale.x, sqt->scale.y, sqt->scale.z, &scale);
+    PFM_Mat4x4_MakeTrans(sqt->trans.x, sqt->trans.y, sqt->trans.z, &trans);
+    PFM_Mat4x4_RotFromQuat(&sqt->quat_rotation, &rot);
 
     /*  (R * T * S) 
      */
-    PFM_mat4x4_mult4x4(&trans, &scale, &tmp);
-    PFM_mat4x4_mult4x4(&rot, &tmp, out);
+    PFM_Mat4x4_Mult4x4(&trans, &scale, &tmp);
+    PFM_Mat4x4_Mult4x4(&rot, &tmp, out);
 }
 
 static void a_make_bind_mat(int joint_idx, const struct skeleton *skel, mat4x4_t *out)
 {
     mat4x4_t bind_trans;
-    PFM_mat4x4_identity(&bind_trans);
+    PFM_Mat4x4_Identity(&bind_trans);
 
     /* Walk up the bone heirarchy, multiplying our pose transform matrix by the parent-relative
      * transform of each bone we visit. In the end, this the pose matrix will hold a worldspace
@@ -60,7 +60,7 @@ static void a_make_bind_mat(int joint_idx, const struct skeleton *skel, mat4x4_t
         mat4x4_t to_parent, to_curr = bind_trans;
 
         a_mat_from_sqt(bind_sqt, &to_parent);
-        PFM_mat4x4_mult4x4(&to_parent, &to_curr, &bind_trans);
+        PFM_Mat4x4_Mult4x4(&to_parent, &to_curr, &bind_trans);
 
         joint_idx = joint->parent_idx;
     }
@@ -74,7 +74,7 @@ static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struc
     struct anim_sample *sample =  &priv->ctx->active->samples[priv->ctx->curr_frame];
 
     mat4x4_t bind_trans;
-    PFM_mat4x4_identity(&bind_trans);
+    PFM_Mat4x4_Identity(&bind_trans);
 
     /* Same as a_make_bind_mat, except we first apply a local transformation to each joint 
      * for the current frame before we transfrom it to its' parent joint's space 
@@ -91,8 +91,8 @@ static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struc
         a_mat_from_sqt(bind_sqt, &to_parent);
         a_mat_from_sqt(pose_sqt, &local);
 
-        PFM_mat4x4_mult4x4(&local, &to_curr, &tmp);
-        PFM_mat4x4_mult4x4(&to_parent, &tmp, &bind_trans);
+        PFM_Mat4x4_Mult4x4(&local, &to_curr, &tmp);
+        PFM_Mat4x4_Mult4x4(&to_parent, &tmp, &bind_trans);
 
         joint_idx = joint->parent_idx;
     }
@@ -214,7 +214,7 @@ const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent)
         /* Update the inverse bind matrices for the current frame */
         mat4x4_t pose_mat;
         a_make_pose_mat(ent, i, ret, &pose_mat);
-        PFM_mat4x4_inverse(&pose_mat, &ret->inv_bind_poses[i]);
+        PFM_Mat4x4_Inverse(&pose_mat, &ret->inv_bind_poses[i]);
     }
 
     return ret;
@@ -230,7 +230,7 @@ void A_PrepareInvBindMatrices(const struct skeleton *skel)
 
         mat4x4_t bind_mat;
         a_make_bind_mat(i, skel, &bind_mat);
-        PFM_mat4x4_inverse(&bind_mat, &skel->inv_bind_poses[i]);
+        PFM_Mat4x4_Inverse(&bind_mat, &skel->inv_bind_poses[i]);
     }
 }
 

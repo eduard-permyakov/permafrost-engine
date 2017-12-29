@@ -63,7 +63,7 @@ static void r_gl_set_uniform_mat4x4_array(mat4x4_t *data, size_t count,
 {
     GLuint loc, shader_prog;
 
-    shader_prog = Shader_GetProgForName(shader_name);
+    shader_prog = R_Shader_GetProgForName(shader_name);
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, uname);
@@ -75,7 +75,7 @@ static void r_gl_set_uniform_vec4_array(vec4_t *data, size_t count,
 {
     GLuint loc, shader_prog;
 
-    shader_prog = Shader_GetProgForName(shader_name);
+    shader_prog = R_Shader_GetProgForName(shader_name);
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, uname);
@@ -86,7 +86,7 @@ static void r_gl_set_view(const mat4x4_t *view, const char *shader_name)
 {
     GLuint loc, shader_prog;
 
-    shader_prog = Shader_GetProgForName(shader_name);
+    shader_prog = R_Shader_GetProgForName(shader_name);
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, GL_U_VIEW);
@@ -97,7 +97,7 @@ static void r_gl_set_proj(const mat4x4_t *proj, const char *shader_name)
 {
     GLuint loc, shader_prog;
 
-    shader_prog = Shader_GetProgForName(shader_name);
+    shader_prog = R_Shader_GetProgForName(shader_name);
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, GL_U_PROJECTION);
@@ -108,7 +108,7 @@ static void r_gl_set_view_pos(const vec3_t *pos, const char *shader_name)
 {
     GLuint loc, shader_prog;
 
-    shader_prog = Shader_GetProgForName(shader_name);
+    shader_prog = R_Shader_GetProgForName(shader_name);
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, GL_U_VIEW_POS);
@@ -120,7 +120,7 @@ static void r_gl_set_view_pos(const vec3_t *pos, const char *shader_name)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void GL_Init(struct render_private *priv)
+void R_GL_Init(struct render_private *priv)
 {
     struct mesh *mesh = &priv->mesh;
 
@@ -160,7 +160,7 @@ void GL_Init(struct render_private *priv)
         (void*)offsetof(struct vertex, weights));
     glEnableVertexAttribArray(5);  
 
-    priv->shader_prog = Shader_GetProgForName("mesh.animated.textured");
+    priv->shader_prog = R_Shader_GetProgForName("mesh.animated.textured");
 }
 
 void R_GL_Draw(struct entity *ent)
@@ -242,7 +242,7 @@ void R_GL_SetAmbientLightColor(vec3_t color)
     
         GLuint loc, shader_prog;
 
-        shader_prog = Shader_GetProgForName(shaders[i]);
+        shader_prog = R_Shader_GetProgForName(shaders[i]);
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_AMBIENT_COLOR);
@@ -260,7 +260,7 @@ void R_GL_SetLightEmitColor(vec3_t color)
     
         GLuint loc, shader_prog;
 
-        shader_prog = Shader_GetProgForName(shaders[i]);
+        shader_prog = R_Shader_GetProgForName(shaders[i]);
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_COLOR);
@@ -278,7 +278,7 @@ void R_GL_SetLightPos(vec3_t pos)
 
         GLuint loc, shader_prog;
     
-        shader_prog = Shader_GetProgForName(shaders[i]);
+        shader_prog = R_Shader_GetProgForName(shaders[i]);
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_POS);
@@ -310,15 +310,15 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
         vec4_t result;
 
         mat4x4_t bind_pose;
-        PFM_mat4x4_inverse(&skel->inv_bind_poses[i], &bind_pose);
+        PFM_Mat4x4_Inverse(&skel->inv_bind_poses[i], &bind_pose);
 
         /* The root of the bone in object space */
-        PFM_mat4x4_mult4x1(&bind_pose, &homo, &result);
+        PFM_Mat4x4_Mult4x1(&bind_pose, &homo, &result);
         vbuff[vbuff_idx] = (vec3_t){result.x, result.y ,result.z};
     
         /* The tip of the bone in object space */
         homo = (vec4_t){curr->tip.x, curr->tip.y, curr->tip.z, 1.0f}; 
-        PFM_mat4x4_mult4x1(&bind_pose, &homo, &result);
+        PFM_Mat4x4_Mult4x1(&bind_pose, &homo, &result);
         vbuff[vbuff_idx + 1] = (vec3_t){result.x, result.y ,result.z};
     }
  
@@ -332,7 +332,7 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = Shader_GetProgForName("mesh.static.colored");
+    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */
@@ -372,7 +372,7 @@ void R_GL_DrawOrigin(const struct entity *ent)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = Shader_GetProgForName("mesh.static.colored");
+    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */
@@ -417,7 +417,7 @@ void R_GL_DrawNormals(const struct entity *ent)
 {
     struct render_private *priv = ent->render_private;
 
-    GLuint normals_shader = Shader_GetProgForName("mesh.animated.normals.colored");
+    GLuint normals_shader = R_Shader_GetProgForName("mesh.animated.normals.colored");
     assert(normals_shader);
     glUseProgram(normals_shader);
 
