@@ -104,10 +104,10 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 
     stream = fopen(pfobj_path, "r");
     if(!stream)
-        goto fail; 
+        goto fail_parse; 
 
     if(!al_parse_header(stream, &header))
-        goto fail;
+        goto fail_parse;
 
     printf("v: %f, nv: %d, nj: %d, nm: %d, ac: %d\n",
         header.version,
@@ -120,19 +120,20 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     }
     printf("\n");
     
-    char *tmpbuff = malloc(32*1024*512);
     size_t render_buffsz = R_AL_PrivBuffSizeFromHeader(&header);
-    size_t anim_buffsz = R_AL_PrivBuffSizeFromHeader(&header);
+    size_t anim_buffsz = A_AL_PrivBuffSizeFromHeader(&header);
 
-    if(!R_AL_InitPrivFromStream(&header, base_path, stream, tmpbuff))
-        goto fail;
+    ret = malloc(sizeof(struct entity) + render_buffsz + anim_buffsz);
+    if(!ret)
+        goto fail_alloc;
+    ret->render_private = ret + 1;
+    ret->anim_private = ((char*)ret->render_private) + render_buffsz;
 
-    if(!A_AL_InitPrivFromStream(&header, stream, tmpbuff + render_buffsz))
-        goto fail;
+    if(!R_AL_InitPrivFromStream(&header, base_path, stream, ret->render_private))
+        goto fail_init;
 
-    ret = malloc(sizeof(struct entity));
-    ret->render_private = tmpbuff;
-    ret->anim_private = tmpbuff + render_buffsz;
+    if(!A_AL_InitPrivFromStream(&header, stream, ret->anim_private))
+        goto fail_init;
 
     assert( strlen(name) < sizeof(ret->name) );
     strcpy(ret->name, name);
@@ -142,12 +143,15 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 
     return ret;
 
-fail:
+fail_init:
+    free(ret);
+fail_alloc:
+fail_parse:
     return NULL;
 }
 
 void AL_EntityFree(struct entity *entity)
 {
-
+    free(entity);
 }
 

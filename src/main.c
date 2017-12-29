@@ -10,8 +10,10 @@
 #include <SDL2/SDL_opengl.h>
 
 #include <stdbool.h>
-#include <assert.h>
 
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
 
 static SDL_Window    *s_window;
 static SDL_GLContext  s_context;
@@ -106,13 +108,17 @@ static void render(void)
 
 int main(int argc, char **argv)
 {
+    int ret = EXIT_SUCCESS;
+
     if(argc != 2) {
         printf("Usage: %s [base directory path (which contains 'assets' and 'shaders' folders)]\n", argv[0]);
-        exit(EXIT_FAILURE); 
+        ret = EXIT_FAILURE;
+        goto fail_args;
     }
 
     if(SDL_Init(SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "Failed to initialize SDL: %s\n", SDL_GetError());
+        ret = EXIT_FAILURE;
         goto fail_sdl;
     }
 
@@ -133,6 +139,7 @@ int main(int argc, char **argv)
     glewExperimental = GL_TRUE;
     if(glewInit() != GLEW_OK) {
         fprintf(stderr, "Failed to initialize GLEW\n");
+        ret = EXIT_FAILURE;
         goto fail_glew;
     }
 
@@ -143,12 +150,16 @@ int main(int argc, char **argv)
 
     stbi_set_flip_vertically_on_load(true);
 
-    if(!R_Init(argv[1]))
+    if(!R_Init(argv[1])) {
+        ret = EXIT_FAILURE;
         goto fail_render;
+    }
 
     s_camera = Camera_New();
-    if(!s_camera)
+    if(!s_camera) {
+        ret = EXIT_FAILURE;
         goto fail_camera;
+    }
 
     Camera_SetPos  (s_camera, (vec3_t){ 0.0f,  0.0f,  0.0f});
     Camera_SetFront(s_camera, (vec3_t){ 0.0f,  0.0f, -1.0f});
@@ -161,7 +172,10 @@ int main(int argc, char **argv)
     strcat(entity_path, "/assets/models/sinbad");
 
     s_demo_entity = AL_EntityFromPFObj(entity_path, "Sinbad.pfobj", "Sinbad");
-    assert(s_demo_entity);
+    if(!s_demo_entity){
+        ret = EXIT_FAILURE; 
+        goto fail_entity;
+    }
 
     A_InitCtx(s_demo_entity, "Dance", 24);
 
@@ -186,21 +200,17 @@ int main(int argc, char **argv)
 
     }
 
+    AL_EntityFree(s_demo_entity);
+fail_entity:
     Camera_Free(s_camera);
-    SDL_GL_DeleteContext(s_context);
-    SDL_DestroyWindow(s_window);
-    SDL_Quit();
-
-    exit(EXIT_SUCCESS);
-
 fail_camera:
-    Camera_Free(s_camera);
 fail_render:
 fail_glew:
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window);
     SDL_Quit();
 fail_sdl:
-    exit(EXIT_FAILURE);
+fail_args:
+    exit(ret);
 }
 
