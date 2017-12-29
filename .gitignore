@@ -1,4 +1,8 @@
 /bin/
 /lib/
 /obj/
-/assets/
+
+/assets/*
+!/assets/models
+/assets/models/*
+!/assets/models/sinbad
