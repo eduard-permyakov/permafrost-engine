@@ -4,6 +4,7 @@
 /* Written by camera once per frame */
 #define GL_U_PROJECTION     "projection"
 #define GL_U_VIEW           "view"
+#define GL_U_VIEW_POS       "view_pos"
 
 /* Written to by render subsystem for every entity */
 #define GL_U_MODEL          "model"
@@ -27,5 +28,6 @@
 /* Global light parameters - affect all models */
 #define GL_U_AMBIENT_COLOR  "ambient_color"
 #define GL_U_LIGHT_POS      "light_pos"
+#define GL_U_LIGHT_COLOR    "light_color"
 
 #endif

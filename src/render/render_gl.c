@@ -104,6 +104,18 @@ static void r_gl_set_proj(const mat4x4_t *proj, const char *shader_name)
 	glUniformMatrix4fv(loc, 1, GL_FALSE, proj->raw);
 }
 
+static void r_gl_set_view_pos(const vec3_t *pos, const char *shader_name)
+{
+    GLuint loc, shader_prog;
+
+    shader_prog = Shader_GetProgForName(shader_name);
+    glUseProgram(shader_prog);
+
+    loc = glGetUniformLocation(shader_prog, GL_U_VIEW_POS);
+	glUniform3fv(loc, 1, pos->raw);
+}
+
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -171,7 +183,7 @@ void R_GL_Draw(struct entity *ent)
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 }
 
-void R_GL_SetView(const mat4x4_t *view)
+void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
 {
     const char *shaders[] = {
         "mesh.static.colored",
@@ -179,8 +191,11 @@ void R_GL_SetView(const mat4x4_t *view)
         "mesh.animated.normals.colored",
     };
 
-    for(int i = 0; i < ARR_SIZE(shaders); i++)
+    for(int i = 0; i < ARR_SIZE(shaders); i++) {
+
         r_gl_set_view(view, shaders[i]);
+        r_gl_set_view_pos(pos, shaders[i]);
+    }
 }
 
 void R_GL_SetProj(const mat4x4_t *proj, const char *shader_name)
@@ -231,6 +246,24 @@ void R_GL_SetAmbientLightColor(vec3_t color)
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_AMBIENT_COLOR);
+	    glUniform3fv(loc, 1, color.raw);
+    }
+}
+
+void R_GL_SetLightEmitColor(vec3_t color)
+{
+    const char *shaders[] = {
+        "mesh.animated.textured",
+    };
+
+    for(int i = 0; i < ARR_SIZE(shaders); i++) {
+    
+        GLuint loc, shader_prog;
+
+        shader_prog = Shader_GetProgForName(shaders[i]);
+        glUseProgram(shader_prog);
+
+        loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_COLOR);
 	    glUniform3fv(loc, 1, color.raw);
     }
 }

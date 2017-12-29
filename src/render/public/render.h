@@ -21,7 +21,7 @@ bool   R_Init(void);
 void   R_GL_Draw(struct entity *ent);
 
 /* Sets the view matrix for all relevant shader programs. */
-void   R_GL_SetView(const mat4x4_t *view);
+void   R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos);
 
 /* Sets the projection matrix for all relevant shader programs. */
 void   R_GL_SetProj(const mat4x4_t *proj);
@@ -31,6 +31,7 @@ void   R_GL_SetAnimUniformVec4Array(vec4_t *data, size_t count, const char *unam
 
 /* Set the global ambient color that will impact all models based on their materials */
 void   R_GL_SetAmbientLightColor(vec3_t color);
+void   R_GL_SetLightEmitColor(vec3_t color);
 
 /* Set the light position that will impact all models. 
  * Only one light source is supported for the time being. 

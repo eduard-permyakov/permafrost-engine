@@ -169,7 +169,7 @@ void camera_tick_finish(struct camera *cam)
     PFM_vec3_add(&cam->pos, &cam->front, &target);
     PFM_mat4x4_make_look_at(&cam->pos, &target, &cam->up, &view);
 
-    R_GL_SetView(&view);
+    R_GL_SetViewMatAndPos(&view, &cam->pos);
     
     /* Set the projection matrix for the vertex shader */
     GLint viewport[4]; 
