@@ -19,6 +19,10 @@
         buff[MAX_LINE_LEN - 1] = '\0';          \
     }while(0)
 
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
 static bool al_parse_header(FILE *stream, struct pfobj_hdr *out)
 {
     char line[MAX_LINE_LEN];
@@ -70,6 +74,10 @@ static bool al_parse_header(FILE *stream, struct pfobj_hdr *out)
 fail:
     return false;
 }
+
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
 
 /*
  *  We compute the amount of memory needed for each entity ahead of 
@@ -138,7 +146,7 @@ fail:
     return NULL;
 }
 
-void ALEntityFree(struct entity *entity)
+void AL_EntityFree(struct entity *entity)
 {
 
 }

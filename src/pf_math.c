@@ -260,11 +260,6 @@ void PFM_Mat4x4_MakeRotZ(GLfloat radians, mat4x4_t *out)
     out->cols[1][1] =  cos(radians);
 }
 
-void PFM_Mat4x4_MakeRot(vec3_t *axis, GLfloat radians, mat4x4_t *out)
-{
-    //TODO: http://paulbourke.net/geometry/rotate/
-}
-
 /* Algorithm taken from:
  * http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.184.3942&rep=rep1&type=pdf
  */

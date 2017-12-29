@@ -112,7 +112,6 @@ void    PFM_Mat4x4_MakeTrans   (GLfloat tx, GLfloat ty, GLfloat tz, mat4x4_t *ou
 void    PFM_Mat4x4_MakeRotX    (GLfloat radians, mat4x4_t *out);
 void    PFM_Mat4x4_MakeRotY    (GLfloat radians, mat4x4_t *out);
 void    PFM_Mat4x4_MakeRotZ    (GLfloat radians, mat4x4_t *out);
-void    PFM_Mat4x4_MakeRot     (vec3_t *axis, GLfloat radians, mat4x4_t *out);
 void    PFM_Mat4x4_RotFromQuat (const quat_t *quat, mat4x4_t *out);
 void    PFM_Mat4x4_RotFromEuler(GLfloat deg_x, GLfloat deg_y, GLfloat deg_z, mat4x4_t *out);
 void    PFM_Mat4x4_Inverse     (mat4x4_t *in, mat4x4_t *out);

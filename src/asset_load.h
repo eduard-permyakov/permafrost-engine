@@ -19,5 +19,6 @@ struct pfobj_hdr{
 };
 
 struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name);
+void           AL_EntityFree(struct entity *entity);
 
 #endif
