@@ -72,7 +72,10 @@ def save(operator, context, filepath, global_matrix):
                     line = line.format(uv=uv_coords)
                     ofile.write(line)
 
-                    normal = global_matrix * mesh.loops[loop_idx].normal
+                    # The following line will give per-face normals instead
+                    # Make it an option at some point ...
+                    #normal = global_matrix * mesh.loops[loop_idx].normal
+                    normal = global_matrix * v.normal
                     line = "vn {n[0]:.6f} {n[1]:.6f} {n[2]:.6f}\n"
                     line = line.format(n=normal)
                     ofile.write(line)
