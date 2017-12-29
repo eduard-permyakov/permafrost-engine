@@ -5,7 +5,7 @@
 
 #include <stdbool.h>
 
-bool  Shader_InitAll(void);
+bool  Shader_InitAll(const char *base_path);
 GLint Shader_GetProgForName(const char *name);
 
 #endif

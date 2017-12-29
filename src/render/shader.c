@@ -9,6 +9,13 @@
 #define SHADER_PATH_LEN 128
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 
+#define MAKE_PATH(buff, base, file)	\
+	do{								\
+		strcpy(buff, base);			\
+		strcat(buff, file);			\
+	}while(0)
+
+
 struct shader_resource{
     GLint       prog_id;
     const char *name;
@@ -17,29 +24,32 @@ struct shader_resource{
     const char *frag_path;
 };
 
-//TODO: non hard coded path
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
 /* Shader 'prog_id' will be initialized by Shader_InitAll */
 static struct shader_resource s_shaders[] = {
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.colored",
-        .vertex_path = "/home/eduard/engine/shaders/vertex_static.glsl",
+        .vertex_path = "shaders/vertex_static.glsl",
         .geo_path    = NULL,
-        .frag_path   = "/home/eduard/engine/shaders/fragment_colored.glsl"
+        .frag_path   = "shaders/fragment_colored.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.animated.textured",
-        .vertex_path = "/home/eduard/engine/shaders/vertex_skinned.glsl",
+        .vertex_path = "shaders/vertex_skinned.glsl",
         .geo_path    = NULL,
-        .frag_path   = "/home/eduard/engine/shaders/fragment_textured.glsl"
+        .frag_path   = "shaders/fragment_textured.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.animated.normals.colored",
-        .vertex_path = "/home/eduard/engine/shaders/vertex_skinned.glsl",
-        .geo_path    = "/home/eduard/engine/shaders/geometry_normals.glsl",
-        .frag_path   = "/home/eduard/engine/shaders/fragment_colored.glsl"
+        .vertex_path = "shaders/vertex_skinned.glsl",
+        .geo_path    = "shaders/geometry_normals.glsl",
+        .frag_path   = "shaders/fragment_colored.glsl"
     }
 };
 
@@ -149,21 +159,26 @@ static bool shader_make_prog(const GLuint vertex_shader, const GLuint geo_shader
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool Shader_InitAll(void)
+bool Shader_InitAll(const char *base_path)
 {
     for(int i = 0; i < ARR_SIZE(s_shaders); i++){
 
         struct shader_resource *res = &s_shaders[i];
         GLuint vertex, geometry = 0, fragment;
+		char path[512];
     
-        if(!shader_load_and_init(res->vertex_path, &vertex, GL_VERTEX_SHADER))
+		MAKE_PATH(path, base_path, res->vertex_path);
+        if(!shader_load_and_init(path, &vertex, GL_VERTEX_SHADER))
             return false;
 
-        if(res->geo_path && !shader_load_and_init(res->geo_path, &geometry, GL_GEOMETRY_SHADER))
+		if(res->geo_path)
+			MAKE_PATH(path, base_path, res->geo_path);
+        if(res->geo_path && !shader_load_and_init(path, &geometry, GL_GEOMETRY_SHADER))
             return false;
         assert(!res->geo_path || geometry > 0);
 
-        if(!shader_load_and_init(res->frag_path, &fragment, GL_FRAGMENT_SHADER))
+		MAKE_PATH(path, base_path, res->frag_path);
+        if(!shader_load_and_init(path, &fragment, GL_FRAGMENT_SHADER))
             return false;
 
         if(!shader_make_prog(vertex, geometry, fragment, &res->prog_id)) {

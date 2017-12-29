@@ -20,8 +20,11 @@ static bool           s_quit = false;
 
 static struct camera *s_camera;
 
-struct entity         *s_temp;
+struct entity         *s_demo_entity;
 
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
 
 static void process_events(void)
 {
@@ -92,19 +95,22 @@ static void render(void)
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    R_GL_Draw(s_temp);
-    //R_GL_DrawNormals(s_temp);
-
-    //const struct skeleton *skel = A_GetCurrPoseSkeleton(s_temp);
-    //R_GL_DrawSkeleton(s_temp, skel);
-    //free((struct skelton*)skel);
-    R_GL_DrawOrigin(s_temp);
+    R_GL_Draw(s_demo_entity);
 
     SDL_GL_SwapWindow(s_window);
 }
 
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
 int main(int argc, char **argv)
 {
+    if(argc != 2) {
+        printf("Usage: %s [base directory path (which contains 'assets' and 'shaders' folders)]\n", argv[0]);
+        exit(EXIT_FAILURE); 
+    }
+
     if(SDL_Init(SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "Failed to initialize SDL: %s\n", SDL_GetError());
         goto fail_sdl;
@@ -133,10 +139,11 @@ int main(int argc, char **argv)
     SDL_GL_SetSwapInterval(0); 
     SDL_SetRelativeMouseMode(true);
     glViewport(0, 0, 1024, 576);
+    glEnable(GL_DEPTH_TEST);
 
     stbi_set_flip_vertically_on_load(true);
 
-    if(!R_Init())
+    if(!R_Init(argv[1]))
         goto fail_render;
 
     s_camera = camera_new();
@@ -149,27 +156,22 @@ int main(int argc, char **argv)
     camera_set_speed(s_camera, 0.05f);
     camera_set_sens (s_camera, 0.05f);
 
-    /* Temp */
-    //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    char entity_path[512];
+    strcpy(entity_path, argv[1]);
+    strcat(entity_path, "/assets/models/sinbad");
 
-    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/wyvern/Wyvern/Wyvern.pfobj", "mage", 4);
-    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/wizard/wizard.pfobj", "mage", 4);
-    s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/sinbad", "Sinbad.pfobj", "Sinbad");
-    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/turret/Base1.pfobj", "mage", 4);
-    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/mech/Mech4_final.pfobj", "mage", 4);
-    //s_temp = AL_EntityFromPFObj("/home/eduard/Desktop/hk.pfobj", "mage", 4);
-    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/chest/chest3-final.pfobj",s1 "mage", 4);
-    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/spider", "Spider.pfobj", "Spider");
-    //s_temp = AL_EntityFromPFObj("/home/eduard/engine/assets/models/flag", "flag.pfobj", "Flag");
-    assert(s_temp);
-    A_InitCtx(s_temp, "Dance", 24);
-    PFM_mat4x4_make_trans(0.0f, 0.0f, -50.0f, &s_temp->model_matrix);
+    s_demo_entity = AL_EntityFromPFObj(entity_path, "Sinbad.pfobj", "Sinbad");
+    assert(s_demo_entity);
 
-    //R_AL_DumpPrivate(stdout, s_temp->render_private);
-    //A_AL_DumpPrivate(stdout, s_temp->anim_private);
-    /* End Temp */
+    A_InitCtx(s_demo_entity, "Dance", 24);
 
-    glEnable(GL_DEPTH_TEST);
+    mat4x4_t scale, trans;
+    PFM_mat4x4_make_trans(0.0f, 0.0f, -50.0f, &trans);
+    PFM_mat4x4_make_scale(1.0f, 1.0f, 1.0f, &scale);
+    PFM_mat4x4_mult4x4(&scale, &trans, &s_demo_entity->model_matrix);
+
+    //R_AL_DumpPrivate(stdout, s_demo_entity->render_private);
+    //A_AL_DumpPrivate(stdout, s_demo_entity->anim_private);
 
     R_GL_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f});
     R_GL_SetLightEmitColor((vec3_t){1.0f, 1.0f, 1.0f});
@@ -179,7 +181,7 @@ int main(int argc, char **argv)
 
         process_events();
         camera_tick_finish(s_camera);
-        A_Update(s_temp);
+        A_Update(s_demo_entity);
         render();        
 
     }

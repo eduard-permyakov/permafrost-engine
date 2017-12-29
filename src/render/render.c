@@ -2,10 +2,10 @@
 #include "shader.h"
 #include "texture.h"
 
-bool R_Init(void)
+bool R_Init(const char *base_path)
 {
     R_Texture_Init();
 
-    return Shader_InitAll();    
+    return Shader_InitAll(base_path);    
 }
 

@@ -13,7 +13,7 @@ struct skeleton;
 
 /* Performs one-time initialization of the rendering subsystem.
  */
-bool   R_Init(void);
+bool   R_Init(const char *base_path);
 
 /* Performs the OpenGL draw calls in order to render the entity based on the contents 
  * of its' private data.

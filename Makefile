@@ -21,8 +21,11 @@ pf: $(PF_OBJS)
 
 -include $(PF_DEPS)
 
-.PHONY: clean
+.PHONY: clean run
 
 clean:
 	@rm -rf $(PF_OBJS) $(PF_DEPS) $(BIN)
+
+run:
+	./bin/pf ./
 
