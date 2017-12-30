@@ -1,0 +1,14 @@
+********************************************************************************
+* CHANGELOG                                                                    *
+********************************************************************************
+
+================================================================================
+[Version 0.1.0] - 30.12.2017
+================================================================================
+	* Initial release of engine source code
+	* OpenGL 3.3 programmable pipeline
+	* Custom ASCII model format with Blender export script
+	* Skeletal animation with GPU skinning
+	* Phong reflection model with materials
+	* FPS camera
+

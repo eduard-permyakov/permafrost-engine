@@ -30,6 +30,11 @@
 
 #include <stdbool.h>
 
+
+#define PF_VER_MAJOR 0
+#define PF_VER_MINOR 1
+#define PF_VER_PATCH 0
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -188,7 +193,7 @@ int main(int argc, char **argv)
 
     char entity_path[512];
     strcpy(entity_path, argv[1]);
-    strcat(entity_path, "/assets/models/sinbad");
+    strcat(entity_path, "assets/models/sinbad");
 
     s_demo_entity = AL_EntityFromPFObj(entity_path, "Sinbad.pfobj", "Sinbad");
     if(!s_demo_entity){
