@@ -7,6 +7,7 @@
 #include <math.h>    /* M_PI definition    */
 
 #define DEG_TO_RAD(_deg) ((_deg)*(M_PI/180.0f))
+#define RAD_TO_DEG(_rad) ((_rad)*(180.0f/M_PI))
 
 typedef union vec2{
     GLfloat raw[2];
@@ -126,5 +127,6 @@ void    PFM_Mat4x4_MakeLookAt     (vec3_t *camera_pos, vec3_t *target_pos,
 /*****************************************************************************/
 
 void    PFM_Quat_FromRotMat(mat4x4_t *mat, quat_t *out);
+void    PFM_Quat_ToEuler   (quat_t *q, float *out_roll, float *out_pitch, float *out_yaw);
 
 #endif

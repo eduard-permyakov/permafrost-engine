@@ -184,9 +184,6 @@ int main(int argc, char **argv)
     PFM_Mat4x4_MakeScale(1.0f, 1.0f, 1.0f, &scale);
     PFM_Mat4x4_Mult4x4(&scale, &trans, &s_demo_entity->model_matrix);
 
-    //R_AL_DumpPrivate(stdout, s_demo_entity->render_private);
-    //A_AL_DumpPrivate(stdout, s_demo_entity->anim_private);
-
     R_GL_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f});
     R_GL_SetLightEmitColor((vec3_t){1.0f, 1.0f, 1.0f});
     R_GL_SetLightPos((vec3_t){-25.0f, 25.0f, -25.0f});

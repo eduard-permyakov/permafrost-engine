@@ -95,14 +95,13 @@ static bool al_read_material(FILE *stream, const char *basedir, struct material 
     if(!sscanf(line, " specular %f %f %f", &out->specular_clr.x, &out->specular_clr.y, &out->specular_clr.z))
         goto fail;
 
-    char texname[32];
     READ_LINE(stream, line, fail);
-    if(!sscanf(line, " texture %" STREVAL(sizeof(texname)) "s",  texname))
+    if(!sscanf(line, " texture %" STREVAL(sizeof(out->texname)) "s",  out->texname))
         goto fail;
-    texname[sizeof(texname)-1] = '\0';
+    out->texname[sizeof(out->texname)-1] = '\0';
 
-    if(!R_Texture_GetForName(texname, &out->texture.id) &&
-       !R_Texture_Load(basedir, texname, &out->texture.id))
+    if(!R_Texture_GetForName(out->texname, &out->texture.id) &&
+       !R_Texture_Load(basedir, out->texname, &out->texture.id))
         goto fail;
 
     return true;
@@ -176,6 +175,7 @@ void R_AL_DumpPrivate(FILE *stream, void *priv_data)
 {
     struct render_private *priv = priv_data;
 
+    /* Write verticies */
     for(int i = 0; i < priv->mesh.num_verts; i++) {
 
         struct vertex *v = &priv->mesh.vbuff[i];
@@ -184,16 +184,34 @@ void R_AL_DumpPrivate(FILE *stream, void *priv_data)
         fprintf(stream, "vt %.6f %.6f \n", v->uv.x, v->uv.y); 
         fprintf(stream, "vn %.6f %.6f %.6f\n", v->normal.x, v->normal.y, v->normal.z);
 
-        fprintf(stream, "vw");
+        fprintf(stream, "vw ");
         for(int j = 0; j < 4; j++) {
 
             if(v->weights[j]) {
-                fprintf(stream, " %d/%.6f", v->joint_indices[j], v->weights[j]);
+                fprintf(stream, "%d/%.6f ", v->joint_indices[j], v->weights[j]);
             }
         }
         fprintf(stream, "\n");
 
         fprintf(stream, "vm %d\n", v->material_idx); 
     }
-}
+
+    /* Write materials */
+    for(int i = 0; i < priv->num_materials; i++) {
+    
+        struct material *m = &priv->materials[i];
+
+        /* We don't keep track of the material names; this isn't strictly necessary */
+        char name[32];
+        snprintf(name, sizeof(name), "Material.%d", i + 1);
+
+        fprintf(stream, "material %s\n", name);
+        fprintf(stream, "\tambient %.6f\n", m->ambient_intensity);
+        fprintf(stream, "\tdiffuse %.6f %.6f %.6f\n", 
+            m->diffuse_clr.x, m->diffuse_clr.y, m->diffuse_clr.z);
+        fprintf(stream, "\tspecular %.6f %.6f %.6f\n", 
+            m->specular_clr.x, m->specular_clr.y, m->specular_clr.z);
+        fprintf(stream, "\ttexture %s\n", m->texname);
+    }
+} 
 

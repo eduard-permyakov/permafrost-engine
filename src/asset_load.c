@@ -109,17 +109,6 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     if(!al_parse_header(stream, &header))
         goto fail_parse;
 
-    printf("v: %f, nv: %d, nj: %d, nm: %d, ac: %d\n",
-        header.version,
-        header.num_verts,
-        header.num_joints,
-        header.num_materials,
-        header.num_as);
-    for(int i = 0; i < header.num_as; i++) {
-        printf("%d ", header.frame_counts[i]); 
-    }
-    printf("\n");
-    
     size_t render_buffsz = R_AL_PrivBuffSizeFromHeader(&header);
     size_t anim_buffsz = A_AL_PrivBuffSizeFromHeader(&header);
 

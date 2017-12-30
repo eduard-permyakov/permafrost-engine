@@ -249,24 +249,24 @@ void A_AL_DumpPrivate(FILE *stream, void *priv_data)
 {
     struct anim_private *priv = priv_data;
 
+    /* Write joints */
     for(int i = 0; i < priv->data->skel.num_joints; i++) {
 
         struct joint *j = &priv->data->skel.joints[i];
-        fprintf(stream, "j %d %s ", j->parent_idx + 1, j->name); 
+        struct SQT *bind = &priv->data->skel.bind_sqts[i];
 
-    // TODO :  Proper dumping back to text file
-#if 0
-        for(int c = 0; c < 4; c++) {
-            fprintf(stream, "%f/%f/%f/%f ",
-                j->inv_bind_pose.cols[c][0],
-                j->inv_bind_pose.cols[c][1],
-                j->inv_bind_pose.cols[c][2],
-                j->inv_bind_pose.cols[c][3]);
-        }
-        fprintf(stream, "\n");
-#endif
+        float roll, pitch, yaw;
+        PFM_Quat_ToEuler(&bind->quat_rotation, &roll, &pitch, &yaw);
+
+        fprintf(stream, "j %d %s ", j->parent_idx + 1, j->name); 
+        fprintf(stream, "%.6f/%.6f/%.6f %.6f/%.6f/%.6f %.6f/%.6f/%.6f %.6f/%.6f/%.6f\n",
+            bind->scale.x, bind->scale.y, bind->scale.z, 
+            roll,          pitch,         yaw,
+            bind->trans.x, bind->trans.y, bind->trans.z,
+            j->tip.x,      j->tip.y,      j->tip.z);
     }
 
+    /* Write animation sets */
     for(int i = 0; i < priv->data->num_anims; i++) {
 
         struct anim_clip *ac = &priv->data->anims[i];
@@ -276,18 +276,15 @@ void A_AL_DumpPrivate(FILE *stream, void *priv_data)
             for(int j = 0; j < ac->skel->num_joints; j++) {
 
                 struct SQT *sqt = &ac->samples[f].local_joint_poses[j]; 
-                fprintf(stream, "\t%d %f/%f/%f %f/%f/%f/%f %f/%f/%f\n",
+
+                float roll, pitch, yaw;
+                PFM_Quat_ToEuler(&sqt->quat_rotation, &roll, &pitch, &yaw);
+
+                fprintf(stream, "\t%d %f/%f/%f %f/%f/%f %f/%f/%f\n",
                     j + 1,
-                    sqt->scale.x,
-                    sqt->scale.y,
-                    sqt->scale.z,
-                    sqt->quat_rotation.x,
-                    sqt->quat_rotation.y,
-                    sqt->quat_rotation.z,
-                    sqt->quat_rotation.w,
-                    sqt->trans.x,
-                    sqt->trans.y,
-                    sqt->trans.z);
+                    sqt->scale.x, sqt->scale.y, sqt->scale.z,
+                    roll,         pitch,        yaw,
+                    sqt->trans.x, sqt->trans.y, sqt->trans.z);
             }
         }
     } 

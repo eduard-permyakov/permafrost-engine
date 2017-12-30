@@ -9,6 +9,7 @@ struct material{
     vec3_t         diffuse_clr;
     vec3_t         specular_clr;
     struct texture texture;
+    char           texname[32];
 };
 
 #endif
