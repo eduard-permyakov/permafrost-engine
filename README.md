@@ -33,6 +33,6 @@ the build will fail.
 
 Then, in the top-level directory:
 
-1. `make pf``
-2. `make run` (runs the binary in `./bin/` with default arguments)
+1. `make pf`
+2. `make run` (runs the binary in `./bin` with default arguments)
 
