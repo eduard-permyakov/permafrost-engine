@@ -88,7 +88,7 @@ void    PFM_Vec4_Sub       (vec4_t *op1, vec4_t *op2, vec4_t *out);
 void    PFM_Vec4_Scale     (vec4_t *op1, GLfloat scale, vec4_t *out);
 GLfloat PFM_Vec4_Len       (vec4_t *op1);
 void    PFM_Vec4_Normal    (vec4_t *op1, vec4_t *out);
-void 	PFM_Vec4_Dump	   (vec4_t *vec, FILE *dumpfile);
+void    PFM_Vec4_Dump      (vec4_t *vec, FILE *dumpfile);
 
 /*****************************************************************************/
 /* mat3x3                                                                    */

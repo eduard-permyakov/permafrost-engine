@@ -67,7 +67,7 @@ static void r_gl_set_uniform_mat4x4_array(mat4x4_t *data, size_t count,
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, uname);
-	glUniformMatrix4fv(loc, count, GL_FALSE, (void*)data);
+    glUniformMatrix4fv(loc, count, GL_FALSE, (void*)data);
 }
 
 static void r_gl_set_uniform_vec4_array(vec4_t *data, size_t count, 
@@ -79,7 +79,7 @@ static void r_gl_set_uniform_vec4_array(vec4_t *data, size_t count,
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, uname);
-	glUniform4fv(loc, count, (void*)data);
+    glUniform4fv(loc, count, (void*)data);
 }
 
 static void r_gl_set_view(const mat4x4_t *view, const char *shader_name)
@@ -90,7 +90,7 @@ static void r_gl_set_view(const mat4x4_t *view, const char *shader_name)
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, GL_U_VIEW);
-	glUniformMatrix4fv(loc, 1, GL_FALSE, view->raw);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, view->raw);
 }
 
 static void r_gl_set_proj(const mat4x4_t *proj, const char *shader_name)
@@ -101,7 +101,7 @@ static void r_gl_set_proj(const mat4x4_t *proj, const char *shader_name)
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, GL_U_PROJECTION);
-	glUniformMatrix4fv(loc, 1, GL_FALSE, proj->raw);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, proj->raw);
 }
 
 static void r_gl_set_view_pos(const vec3_t *pos, const char *shader_name)
@@ -112,7 +112,7 @@ static void r_gl_set_view_pos(const vec3_t *pos, const char *shader_name)
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, GL_U_VIEW_POS);
-	glUniform3fv(loc, 1, pos->raw);
+    glUniform3fv(loc, 1, pos->raw);
 }
 
 
@@ -166,12 +166,12 @@ void R_GL_Init(struct render_private *priv)
 void R_GL_Draw(struct entity *ent)
 {
     struct render_private *priv = ent->render_private;
-	GLuint loc;
+    GLuint loc;
 
     glUseProgram(priv->shader_prog);
 
     loc = glGetUniformLocation(priv->shader_prog, GL_U_MODEL);
-	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
 
     r_gl_set_materials(priv->shader_prog, priv->num_materials, priv->materials);
 
@@ -246,7 +246,7 @@ void R_GL_SetAmbientLightColor(vec3_t color)
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_AMBIENT_COLOR);
-	    glUniform3fv(loc, 1, color.raw);
+        glUniform3fv(loc, 1, color.raw);
     }
 }
 
@@ -264,7 +264,7 @@ void R_GL_SetLightEmitColor(vec3_t color)
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_COLOR);
-	    glUniform3fv(loc, 1, color.raw);
+        glUniform3fv(loc, 1, color.raw);
     }
 }
 
@@ -282,7 +282,7 @@ void R_GL_SetLightPos(vec3_t pos)
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_POS);
-	    glUniform3fv(loc, 1, pos.raw);
+        glUniform3fv(loc, 1, pos.raw);
     }
 }
 
@@ -291,7 +291,7 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
     vec3_t *vbuff;
     GLint VAO, VBO;
     GLint shader_prog;
-	GLuint loc;
+    GLuint loc;
     vec3_t green = (vec3_t){0.0f, 1.0f, 0.0f};
 
     /* Our vbuff looks like this:
@@ -337,10 +337,10 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
 
     /* Set uniforms */
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-	glUniform3fv(loc, 1, green.raw);
+    glUniform3fv(loc, 1, green.raw);
 
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
 
     glPointSize(5.0f);
 
@@ -356,7 +356,7 @@ void R_GL_DrawOrigin(const struct entity *ent)
     vec3_t vbuff[2];
     GLint VAO, VBO;
     GLint shader_prog;
-	GLuint loc;
+    GLuint loc;
 
     vec3_t red   = (vec3_t){1.0f, 0.0f, 0.0f};
     vec3_t green = (vec3_t){0.0f, 1.0f, 0.0f};
@@ -377,7 +377,7 @@ void R_GL_DrawOrigin(const struct entity *ent)
 
     /* Set uniforms */
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
 
     /* Set line width */
     GLfloat old_width;
@@ -393,15 +393,15 @@ void R_GL_DrawOrigin(const struct entity *ent)
         switch(i) {
         case 0:
             vbuff[1] = (vec3_t){1.0f, 0.0f, 0.0f}; 
-	        glUniform3fv(loc, 1, red.raw);
+            glUniform3fv(loc, 1, red.raw);
             break;
         case 1:
             vbuff[1] = (vec3_t){0.0f, 1.0f, 0.0f}; 
-	        glUniform3fv(loc, 1, green.raw);
+            glUniform3fv(loc, 1, green.raw);
             break;
         case 2:
             vbuff[1] = (vec3_t){0.0f, 0.0f, 1.0f}; 
-	        glUniform3fv(loc, 1, blue.raw);
+            glUniform3fv(loc, 1, blue.raw);
             break;
         }
     
@@ -421,14 +421,14 @@ void R_GL_DrawNormals(const struct entity *ent)
     assert(normals_shader);
     glUseProgram(normals_shader);
 
-	GLuint loc;
+    GLuint loc;
     vec3_t yellow = (vec3_t){1.0f, 1.0f, 0.0f};
 
     loc = glGetUniformLocation(normals_shader, GL_U_COLOR);
-	glUniform3fv(loc, 1, yellow.raw);
+    glUniform3fv(loc, 1, yellow.raw);
 
     loc = glGetUniformLocation(normals_shader, GL_U_MODEL);
-	glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
 
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);

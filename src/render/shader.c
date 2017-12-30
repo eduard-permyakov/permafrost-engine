@@ -9,11 +9,11 @@
 #define SHADER_PATH_LEN 128
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 
-#define MAKE_PATH(buff, base, file)	\
-	do{								\
-		strcpy(buff, base);			\
-		strcat(buff, file);			\
-	}while(0)
+#define MAKE_PATH(buff, base, file) \
+    do{                             \
+        strcpy(buff, base);         \
+        strcat(buff, file);         \
+    }while(0)
 
 
 struct shader_resource{
@@ -165,19 +165,19 @@ bool R_Shader_InitAll(const char *base_path)
 
         struct shader_resource *res = &s_shaders[i];
         GLuint vertex, geometry = 0, fragment;
-		char path[512];
+        char path[512];
     
-		MAKE_PATH(path, base_path, res->vertex_path);
+        MAKE_PATH(path, base_path, res->vertex_path);
         if(!shader_load_and_init(path, &vertex, GL_VERTEX_SHADER))
             return false;
 
-		if(res->geo_path)
-			MAKE_PATH(path, base_path, res->geo_path);
+        if(res->geo_path)
+            MAKE_PATH(path, base_path, res->geo_path);
         if(res->geo_path && !shader_load_and_init(path, &geometry, GL_GEOMETRY_SHADER))
             return false;
         assert(!res->geo_path || geometry > 0);
 
-		MAKE_PATH(path, base_path, res->frag_path);
+        MAKE_PATH(path, base_path, res->frag_path);
         if(!shader_load_and_init(path, &fragment, GL_FRAGMENT_SHADER))
             return false;
 
