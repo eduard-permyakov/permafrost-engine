@@ -1,0 +1,277 @@
+********************************************************************************
+* OUTLINE                                                                      *
+********************************************************************************
+
+    1. Version and Changelog
+    2. About
+    3. File structure
+        3.1 Header
+        3.2 Mesh Vertices
+        3.3 Materials
+        3.4 Joints (Optional)
+        3.5 Animation Sets (Optional)
+    4. Exporting from Blender
+
+********************************************************************************
+* 1. VERSION AND CHANGELOG                                                     *
+********************************************************************************
+
+    Current version: 1.0 
+
+********************************************************************************
+* 2. ABOUT                                                                     *
+********************************************************************************
+
+    PFOBJ is a custom ASCII file format for storing model data for the 
+    Permafrost Engine. It contains the mesh data including all the necessary
+    vertex attributes, the material/texture descriptors as well as,
+    optionally, the skeleton and animation set data.
+
+    The format aims to be human readable and easy to parse (mostly due to its'
+    very rigid format.)
+
+    PFOBJ has a header which states how many of each element are present in
+    the file (ex. how many vertices in the mesh, how many materials). This
+    makes it possible to make all memory allocations after reading just the
+    header.
+    
+    Related data is grouped together in the file similar to how it is groupd
+    in the engine, to make it easier to populate all the data structures
+    without having to backtrack in the file or re-visit the same structures
+    more than once.
+
+********************************************************************************
+* 3. FILE STRUCTURE                                                            *
+********************************************************************************
+
+    ----------
+    3.1 Header
+    ----------
+    
+    The header is exactly 6 lines, in the following order:
+
+    version         <version number (float)>
+    num_verts       <number of vertices in mesh>
+    num_joints      <number of joints in skeleton>
+    num_material    <number of materials>
+    num_as          <number of animation sets>
+    frame_counts    <space delimited integers of the number of keyframes in
+                     each animation set. These must be in the same order as
+                     the actual animation set data later>
+
+    -----------------
+    3.2 Mesh Vertices
+    -----------------
+
+    Next is a list of exactly <num_verts> number of vertices, each one being
+    exactly 5 lines. The vertex data is in a (X=left, Y=up, Z=forward) coordinate
+    system.
+
+    First is the vertex coordinate. The engine takes this value to be in local
+    object space, meaning this coordinate is relative to the local origin of
+    the object. The local origin of the object can then be moved around in
+    world space. It is a "v" followed by space-delimited XYZ coordinates:
+
+    v <x> <y> <z>
+
+    Next is the texture coordinate: 
+
+    vt <u> <v>
+
+    Next is the vertex normal:
+
+    vn <x> <y> <z>
+
+    Next are the vertex weights. The vertex weights describe which bones the
+    vertex is bound to and the relative weighting, used for vertex skinning.
+    There are a maximum of 4 bones that a vertex can be skinned to. The total
+    weights do not necessarily need to sum to 1. In the case of a static
+    vertex (not bound to any joints), this line will simply be:
+
+    vw 
+
+    In the case of a skinned vertex, this will be followed by up to 4 pairs
+    consisting of a joint index (starting at 0) and the weight:
+
+    vw <joint index>/<weight> <joint index>/<weight> ...
+    
+    Next is the material index (starting at 0). This will be used to index the
+    material list that comes later and has the following format:
+
+    vm <material index>
+
+    Here is an example of a complete vertex entry:
+
+    v  2.250000 6.000000 0.000000
+    vt 0.562499 1.000000
+    vn 0.000000 0.000000 1.000000
+    vw 3/0.150000 1/0.400000 2/0.400000
+    vm 0
+
+    -------------
+    3.3 Materials
+    -------------
+
+    Next is a list of exactly <num_materials> number of materials. Each
+    material is exactly 5 lines. Note that <num_materials> cannot be 0.
+
+    First is the material name:
+
+    material <material name>
+
+    Next is the ambient intensity, which will be used as a multiplier for the
+    ambient light the object receives.
+
+    ambient <ambient intensity>
+
+    Next are the diffuse and specular colors from the Phong reflection model.
+    These are specified as floating-point RGB multipliers.
+
+    diffuse  <r> <g> <b>
+    specular <r> <g> <b>
+
+    Lastly, there is a line specifying the texture image used for this
+    material. Currently, the engine expects this image file to be in the same
+    directory as the PFOBJ file. It has the following format:
+
+    texture <image file name>
+
+    Here is an example of a complete material entry:
+
+    material Wood
+        ambient  1.000000
+        diffuse  0.336000 0.200000 0.145600
+        specular 0.100000 0.100000 0.100000
+        texture  wood.png
+
+    ---------------------
+    3.4 Joints (Optional)
+    ---------------------
+
+    Next is a list of exactly <num_joints> number of joints. Each joint is
+    exactly 1 line.
+
+    The joints have the following format:
+
+    j <parent index> <bind scale: x/y/z> <bind rotation: roll/pitch/yaw> \
+    <bind translation: x/y/z> <relative bone tip: x/y/z>
+
+    The parent index is starting at 1 and is used to index this very joint
+    list. An index of 0 means that this is a root bone and does not have a
+    parent.
+
+    Next are the scale, rotation, and translation components of the
+    transformation that is used to transform a point from the local object
+    space to this bone's space. This means that if we apply these scale,
+    rotation, and translation components to a vector (0,0,0), the result will
+    be the (x,y,z) coordinate of this joint in the local object space, in its'
+    bind state.
+
+    The scale is specified as XYZ multipliers, delimited by slashes (/). The
+    rotation is specified as Euler angles in XYZ order and in degrees, also
+    delimited by slashes. The translation is specified as an XYZ vector,
+    delimited by slashes. All the different componets of a joint are delimited
+    by spaces.
+    
+    Lastly, a joint entry includes the bone tip as an XYZ vector delimited by
+    slashes. This is the offset of the "tail" end fo the bone, in the joint's
+    local space. This part is used strictly for rendering the bone for
+    debugging purposes. The length and orientation of the bone as it is in 
+    Blender is used for drawing the skeleton, even though this component is
+    not needed for skinning.
+
+    Here is an example of a joint entry (Note that it must be on a single line 
+    in the actual PFOBJ file and not include the stray "\"):
+
+    j 0 Flag0 1.000000/1.000000/1.000000 -90.000000/0.000000/0.000000 \
+    0.000000/0.000000/5.000000 1.000000/0.000000/0.000000
+
+    -----------------------------
+    3.5 Animation Sets (Optional)
+    -----------------------------
+
+    Next is a list of exaclty <num_as> number of animation sets. Every
+    animation set has a corresponding <frame_counts> number from the header.
+    The animation sets are in the same order as the <frame_counts> in the
+    header. Each animation set will have ( 1 + <num_joints> *
+    <frame_counts[i]> ) number of lines.
+
+    The first line is in the following format:
+
+    as <animation set name> <frame count>
+
+    Note that the frame count should exactly match the one specified in the
+    header.
+
+    Next, there is a list of <num_joints> * <frame_count> lines. Each line
+    will hold the transformation for a particular joint for a particular
+    keyframe. The transformation is specified in the joint's local space,
+    meaning that applying this transformation to the vector (0,0,0) will give
+    an offset for this joint's position in a coordinate space where the bind
+    position of the joint is the origin. Thus, to find the position of the
+    joint for the current keyframe in the object's local space, we must first
+    transform the vector (0,0,0) by the local transformation for this keyframe
+    and then transform the resulting vector by the bind transformation that is
+    specified in the joint entry.
+
+    Each transformation line has the following format:
+
+    <joint index> <scale: x/y/z> <rotation: roll/pitch/yaw> <translation: x/y/z>
+
+    The joint index is starting at 1, meaning that an index of "1" references
+    the first joint in the joint list. This index references the bone to which
+    this transformation applies.
+
+    The rotation is specified in degrees, in XYZ order.
+
+    The transformations are specified in "frame-major" order, meaning that all
+    the transformations for a particular frame are adjacent. The first
+    <num_joints> lines will hold the local joint transformations for the first
+    keyframe, the next <num_joints> lines will hold the local joint
+    transformations for the second keyframe, and so on.
+
+    The following is an example of an animation set with 3 frames, for a model 
+    with 4 joints:
+
+    as WaveAnimation 3
+    1 1.000000/1.000000/1.000000 0.000000/0.000001/19.588041 0.000000/0.000000/0.000000
+    2 1.000000/1.000000/1.000000 -0.000003/0.000009/-39.782310 0.000000/0.000000/0.000000
+    3 1.000000/1.000000/1.000000 0.000000/0.000000/-0.000001 0.000000/0.000000/0.000000
+    4 1.000000/1.000000/1.000000 0.000000/0.000000/40.000004 0.000000/0.000000/0.000000
+    1 1.000000/1.000000/1.000000 0.000000/0.000001/19.303738 0.000000/0.000000/0.000000
+    2 1.000000/1.000000/1.000000 -0.000003/0.000009/-39.089245 0.000000/0.000000/0.000000
+    3 1.000000/1.000000/1.000000 0.000000/0.000001/-2.389814 0.000000/0.000000/0.000000
+    4 1.000000/1.000000/1.000000 0.000000/0.000000/39.286037 0.000000/0.000000/0.000000
+    1 1.000000/1.000000/1.000000 0.000000/0.000001/18.624033 0.000000/0.000000/0.000000
+    2 1.000000/1.000000/1.000000 -0.000003/0.000009/-37.311275 0.000000/0.000000/0.000000
+    3 1.000000/1.000000/1.000000 0.000000/0.000003/-5.195786 0.000000/0.000000/0.000000
+    4 1.000000/1.000000/1.000000 0.000000/0.000000/37.074135 0.000000/0.000000/0.000000
+
+********************************************************************************
+* 4. EXPORTING FROM BLENDER                                                    *
+********************************************************************************
+
+    First, copy the folder "io_scene_pfobj" to the "addons" folder in Blender.
+    This may be a path like "/usr/share/blender/2.72/scripts/addons/" but
+    it will be different depending on your platform and version of Blender.
+
+    Next, launch Blender and navigate to: "File -> User Preferences".
+    Go to the "Addons -> Import-Export" tab and check the box beside
+    "Import-Export: Permafrost Engine Object (.pfobj)".
+
+    Now you should have an option to export to PFOBJ in "File -> Export ->
+    Permafrost Engine Object (.pfobj)"
+
+    To export a model, select the mesh(es) and optionally the armature by
+    Shift-Right-clicking them and use the export option in the "File" menu.
+    Note that only selected objects will be exported.
+
+    Also note that, in its' current state, the export script isn't very
+    robust and does not capture all subtleties of how Blender stores the model
+    data. For example, the script expects that every single exported object
+    has material(s) and each material has a texture associted with it, despite
+    it being possible to make a complete model in Bleder without this
+    condition being met. It may be necessary to either perform some surgery on
+    the model file or to hack the script a bit to get your model to export
+    correctly.
+
