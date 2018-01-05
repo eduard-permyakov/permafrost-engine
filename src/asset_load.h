@@ -21,12 +21,14 @@
 #define ASSET_LOAD_H
 
 #include <stddef.h>
+#include <stdbool.h>
 
 
 #define MAX_ANIM_SETS 16
 #define MAX_LINE_LEN  256
 
 struct entity;
+struct map;
 
 struct pfobj_hdr{
     float    version; 
@@ -39,5 +41,9 @@ struct pfobj_hdr{
 
 struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name);
 void           AL_EntityFree(struct entity *entity);
+
+/* TODO: eventually we will only need to pass the pfmap_path - it will hold everything */
+bool           AL_InitMapFromPFMap(const char *pfchunk_path, const char *pfmat_path, size_t num_mats,
+                                   struct map *out);
 
 #endif

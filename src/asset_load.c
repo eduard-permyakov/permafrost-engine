@@ -22,6 +22,7 @@
 
 #include "render/public/render.h"
 #include "anim/public/anim.h"
+#include "map/public/map.h"
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -161,5 +162,33 @@ fail_parse:
 void AL_EntityFree(struct entity *entity)
 {
     free(entity);
+}
+
+bool AL_InitMapFromPFMap(const char *pfchunk_path, const char *pfmat_path, size_t num_mats,
+                         struct map *out)
+{
+    FILE *pfchunk, *pfmat;
+
+    pfchunk = fopen(pfchunk_path, "r");
+    if(!pfchunk)
+        goto fail_pfchunk;
+
+    pfmat = fopen(pfmat_path, "r");
+    if(!pfmat)
+        goto fail_pfmat;
+
+    if(!M_AL_InitMapFromStreams(pfchunk, pfmat, out, num_mats))
+        goto fail_init;
+
+    fclose(pfchunk);
+    fclose(pfmat);
+    return true;
+
+fail_init:
+    fclose(pfmat);
+fail_pfmat:
+    fclose(pfchunk);
+fail_pfchunk:
+    return false;
 }
 

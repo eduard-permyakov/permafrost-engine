@@ -23,6 +23,7 @@
 #include "render/public/render.h"
 #include "anim/public/anim.h"
 #include "lib/public/stb_image.h"
+#include "map/public/map.h"
 
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
@@ -47,6 +48,7 @@ static bool           s_quit = false;
 static struct camera *s_camera;
 
 struct entity         *s_demo_entity;
+struct map             s_demo_map;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -212,6 +214,13 @@ int main(int argc, char **argv)
     R_GL_SetLightEmitColor((vec3_t){1.0f, 1.0f, 1.0f});
     R_GL_SetLightPos((vec3_t){-25.0f, 25.0f, -25.0f});
 
+    if(!AL_InitMapFromPFMap("/home/eduard/engine/assets/maps/grass-cliffs-1/0-0.pfchunk",
+                            "/home/eduard/engine/assets/maps/grass-cliffs-1/grassy-cliffs.pfmat",
+                            2, &s_demo_map)) {
+        goto fail_map;
+    }
+    M_AL_DumpMap(stdout, &s_demo_map);
+
     while(!s_quit) {
 
         process_events();
@@ -221,6 +230,7 @@ int main(int argc, char **argv)
 
     }
 
+fail_map:
     AL_EntityFree(s_demo_entity);
 fail_entity:
     Camera_Free(s_camera);

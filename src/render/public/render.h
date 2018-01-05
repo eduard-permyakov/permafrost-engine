@@ -29,6 +29,7 @@
 struct pfobj_hdr;
 struct entity;
 struct skeleton;
+struct tile;
 
 
 /*###########################################################################*/
@@ -140,5 +141,23 @@ bool   R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *based
  * ---------------------------------------------------------------------------
  */
 void   R_AL_DumpPrivate(FILE *stream, void *priv_data);
+
+/* ---------------------------------------------------------------------------
+ * Gives size (in bytes) of buffer size required for the render private 
+ * buffer for a renderable PFChunk.
+ * ---------------------------------------------------------------------------
+ */
+size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t num_mats);
+
+/* ---------------------------------------------------------------------------
+ * Initialize private render buff for a PFChunk. This will have the vertices
+ * of all the tiles (positions in local object space), as well as the vertex
+ * attributes required for rendering them. It will also hold the material 
+ * data.
+ * ---------------------------------------------------------------------------
+ */
+bool   R_AL_InitPrivFromTilesAndMats(FILE *mats_stream, size_t num_mats, 
+                                     const struct tile *tiles, size_t width, size_t height,
+                                     void *priv_buff);
 
 #endif

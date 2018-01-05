@@ -49,6 +49,27 @@ struct pfchunk{
      * ------------------------------------------------------------------------
      */
     struct tile     tiles[TILES_PER_CHUNK_HEIGHT * TILES_PER_CHUNK_WIDTH];
+    /* ------------------------------------------------------------------------
+     * Pointers for maintaining an embedded doubly-linked list structure.
+     * These are used for efficiently iterating over all pfchunks in a map.
+     * Can be NULL.
+     * ------------------------------------------------------------------------
+     */
+    struct pfchunk *next, *prev;
 };
+
+
+/* ------------------------------------------------------------------------
+ * Will return a heap-allocated pointer with the 'render_private' pointer
+ * already initialized to a buffer of the right size. This buffer cannot
+ * be initialized with the render data until the tiles of this chunk are filled
+ * out. All other pointers will be NULL and all other bools will be false,
+ * including for the tiles.
+ *
+ * 'M_PFChunk_Free' must be called on the pointer to free all resources. 
+ * ------------------------------------------------------------------------
+ */
+struct pfchunk *M_PFChunk_New(size_t num_mats);
+void            M_PFChunk_Free(struct pfchunk *chunk);
 
 #endif

@@ -25,6 +25,7 @@
 
 #include "../asset_load.h"
 
+#include <ctype.h>
 #define __USE_POSIX
 #include <string.h>
 
@@ -233,4 +234,26 @@ void R_AL_DumpPrivate(FILE *stream, void *priv_data)
         fprintf(stream, "\ttexture %s\n", m->texname);
     }
 } 
+
+size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t num_mats)
+{
+    size_t ret = 0;
+
+    ret += sizeof(struct render_private);
+    /* We are going to draw each tile as a 6-sided quad, each quad consisting 
+     * of 4 vertices  */
+    ret += (tiles_width * tiles_height) * sizeof(struct vertex) * 4 * 6;
+    ret += sizeof(struct material) * num_mats;
+
+    return ret;
+}
+
+bool R_AL_InitPrivFromTilesAndMats(FILE *mats_stream, size_t num_mats, 
+                                   const struct tile *tiles, size_t width, size_t height,
+                                   void *priv_buff)
+{
+    memset(priv_buff, 0, R_AL_PrivBuffSizeForChunk(width, height, num_mats));
+
+    return true;
+}
 
