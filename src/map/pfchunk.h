@@ -1,7 +1,7 @@
 #ifndef PFCHUNK_H
 #define PFCHUNK_H
 
-#include "tile.h"
+#include "public/tile.h"
 #include "../pf_math.h"
 
 #include <stdbool.h>

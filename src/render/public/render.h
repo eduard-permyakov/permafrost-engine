@@ -158,6 +158,6 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
  */
 bool   R_AL_InitPrivFromTilesAndMats(FILE *mats_stream, size_t num_mats, 
                                      const struct tile *tiles, size_t width, size_t height,
-                                     void *priv_buff);
+                                     void *priv_buff, const char *basedir);
 
 #endif

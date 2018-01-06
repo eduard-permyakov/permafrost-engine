@@ -22,6 +22,7 @@
 #include "vertex.h"
 #include "material.h"
 #include "render_gl.h"
+#include "../map/public/tile.h"
 
 #include "../asset_load.h"
 
@@ -38,6 +39,16 @@
 
 #define STREVAL(a) STR(a)
 #define STR(a) #a
+
+#define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+
+/* For rendering the map */
+#define VERTS_PER_FACE 4
+#define FACES_PER_TILE 6
+
+#define X_COORDS_PER_TILE 32
+#define Y_COORDS_PER_TILE 32
+#define Z_COORDS_PER_TILE 32
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -123,6 +134,252 @@ static bool al_read_material(FILE *stream, const char *basedir, struct material 
     if(!R_Texture_GetForName(out->texname, &out->texture.id) &&
        !R_Texture_Load(basedir, out->texname, &out->texture.id))
         goto fail;
+
+    return true;
+
+fail:
+    return false;
+}
+
+static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out, 
+                                  size_t r, size_t c)
+{
+    /* We take the directions to be relative to a normal vector facing outwards
+     * from the plane of the face. West is to the right, east is to the left,
+     * north is top, south is bottom. */
+    struct face{
+        struct vertex nw, ne, se, sw; 
+    };
+
+    struct face bot = {
+        .nw = (struct vertex) {
+            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (-1.0f * Y_COORDS_PER_TILE), 
+                                 0.0f + (r * Z_COORDS_PER_TILE) },
+            .uv     = (vec2_t) { 0.0f, 1.0f },
+            .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
+            .material_idx  = tile->top_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .ne = (struct vertex) {
+            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (-1.0f * Y_COORDS_PER_TILE), 
+                                 0.0f + (r * Z_COORDS_PER_TILE) }, 
+            .uv     = (vec2_t) { 1.0f, 1.0f },
+            .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
+            .material_idx  = tile->top_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .se = (struct vertex) {
+            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (-1.0f * Y_COORDS_PER_TILE), 
+                                 0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
+            .uv     = (vec2_t) { 1.0f, 0.0f },
+            .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
+            .material_idx  = tile->top_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .sw = (struct vertex) {
+            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), -1.0f, 0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
+            .uv     = (vec2_t) { 0.0f, 0.0f },
+            .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
+            .material_idx  = tile->top_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+    };
+
+    struct face top = {
+        .nw = (struct vertex) {
+            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (tile->base_height * Y_COORDS_PER_TILE), 
+                                 0.0f + (r * Z_COORDS_PER_TILE) },
+            .uv     = (vec2_t) { 0.0f, 1.0f },
+            .normal = (vec3_t) { 0.0f, 1.0f, 0.0f },
+            .material_idx  = tile->top_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .ne = (struct vertex) {
+            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (tile->base_height * Y_COORDS_PER_TILE), 
+                                 0.0f + (r * Z_COORDS_PER_TILE) }, 
+            .uv     = (vec2_t) { 1.0f, 1.0f },
+            .normal = (vec3_t) { 0.0f, 1.0f, 0.0f },
+            .material_idx  = tile->top_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .se = (struct vertex) {
+            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (tile->base_height * Y_COORDS_PER_TILE), 
+                                 0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
+            .uv     = (vec2_t) { 1.0f, 0.0f },
+            .normal = (vec3_t) { 0.0f, 1.0f, 0.0f },
+            .material_idx  = tile->top_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .sw = (struct vertex) {
+            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (tile->base_height * Y_COORDS_PER_TILE), 
+                                 0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
+            .uv     = (vec2_t) { 0.0f, 0.0f },
+            .normal = (vec3_t) { 0.0f, 1.0f, 0.0f },
+            .material_idx  = tile->top_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+    };
+
+    struct face back = {
+        .nw = (struct vertex) {
+            .pos    = top.nw.pos,
+            .uv     = (vec2_t) { 0.0f, 1.0f },
+            .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .ne = (struct vertex) {
+            .pos    = top.ne.pos,
+            .uv     = (vec2_t) { 1.0f, 1.0f },
+            .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .se = (struct vertex) {
+            .pos    = bot.nw.pos,
+            .uv     = (vec2_t) { 1.0f, 0.0f },
+            .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .sw = (struct vertex) {
+            .pos    = bot.ne.pos,
+            .uv     = (vec2_t) { 0.0f, 0.0f },
+            .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+    };
+
+    struct face front = {
+        .nw = (struct vertex) {
+            .pos    = top.sw.pos,
+            .uv     = (vec2_t) { 0.0f, 1.0f },
+            .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .ne = (struct vertex) {
+            .pos    = top.se.pos,
+            .uv     = (vec2_t) { 1.0f, 1.0f },
+            .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .se = (struct vertex) {
+            .pos    = bot.sw.pos,
+            .uv     = (vec2_t) { 1.0f, 0.0f },
+            .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .sw = (struct vertex) {
+            .pos    = bot.se.pos,
+            .uv     = (vec2_t) { 0.0f, 0.0f },
+            .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+    };
+
+    struct face left = {
+        .nw = (struct vertex) {
+            .pos    = top.sw.pos,
+            .uv     = (vec2_t) { 0.0f, 1.0f },
+            .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .ne = (struct vertex) {
+            .pos    = top.nw.pos,
+            .uv     = (vec2_t) { 1.0f, 1.0f },
+            .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .se = (struct vertex) {
+            .pos    = bot.ne.pos,
+            .uv     = (vec2_t) { 1.0f, 0.0f },
+            .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .sw = (struct vertex) {
+            .pos    = bot.se.pos,
+            .uv     = (vec2_t) { 0.0f, 0.0f },
+            .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+    };
+
+    struct face right = {
+        .nw = (struct vertex) {
+            .pos    = top.ne.pos,
+            .uv     = (vec2_t) { 0.0f, 1.0f },
+            .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .ne = (struct vertex) {
+            .pos    = top.se.pos,
+            .uv     = (vec2_t) { 1.0f, 1.0f },
+            .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .se = (struct vertex) {
+            .pos    = bot.sw.pos,
+            .uv     = (vec2_t) { 1.0f, 0.0f },
+            .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+        .sw = (struct vertex) {
+            .pos    = bot.nw.pos,
+            .uv     = (vec2_t) { 0.0f, 0.0f },
+            .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
+            .material_idx  = tile->sides_mat_idx,
+            .joint_indices = {0},
+            .weights       = {0}
+        },
+    };
+
+    struct face *faces[] = {
+        &top, &bot, &front, &back, &left, &right 
+    };
+
+    for(int i = 0; i < ARR_SIZE(faces); i++) {
+    
+        struct face *curr = faces[i];
+        memcpy(out + (i * VERTS_PER_FACE) + 0, &curr->nw, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_FACE) + 1, &curr->ne, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_FACE) + 2, &curr->se, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_FACE) + 3, &curr->sw, sizeof(struct vertex));
+    }
 
     return true;
 
@@ -242,18 +499,65 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
     ret += sizeof(struct render_private);
     /* We are going to draw each tile as a 6-sided quad, each quad consisting 
      * of 4 vertices  */
-    ret += (tiles_width * tiles_height) * sizeof(struct vertex) * 4 * 6;
+    ret += (tiles_width * tiles_height) * sizeof(struct vertex) * VERTS_PER_FACE * FACES_PER_TILE;
     ret += sizeof(struct material) * num_mats;
 
     return ret;
 }
 
+/*
+ * Render private buff layout:
+ *
+ *  +---------------------------------+ <-- base
+ *  | struct render_private[1]        |
+ *  +---------------------------------+
+ *  | struct vertex[num_verts]        |
+ *  +---------------------------------+
+ *  | struct material[num_materials]  |
+ *  +---------------------------------+
+ *
+ */
+
 bool R_AL_InitPrivFromTilesAndMats(FILE *mats_stream, size_t num_mats, 
                                    const struct tile *tiles, size_t width, size_t height,
-                                   void *priv_buff)
+                                   void *priv_buff, const char *basedir)
 {
-    memset(priv_buff, 0, R_AL_PrivBuffSizeForChunk(width, height, num_mats));
+    size_t num_verts = VERTS_PER_FACE * FACES_PER_TILE * (width * height);
+
+    struct render_private *priv = priv_buff;
+    void *unused_base = priv_buff + sizeof(struct render_private);
+    size_t vbuff_sz = num_verts * sizeof(struct vertex);
+
+    priv->mesh.num_verts = num_verts;
+    priv->mesh.vbuff = unused_base;
+    unused_base += vbuff_sz;
+
+    priv->num_materials = num_mats;
+    priv->materials = unused_base;
+
+    for(int r = 0; r < height; r++) {
+        for(int c = 0; c < width; c++) {
+
+            const struct tile *curr = &tiles[r * width + c];
+            struct vertex *vert_base = &priv->mesh.vbuff[ (r * width + c) * VERTS_PER_FACE * FACES_PER_TILE ];
+
+            if(!al_vertices_from_tile(curr, vert_base, r, c))
+                goto fail; 
+        }
+    }
+
+    for(int i = 0; i < num_mats; i++) {
+
+        priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
+        if(!al_read_material(mats_stream, basedir, &priv->materials[i])) 
+            goto fail;
+    }
+
+    R_GL_Init(priv);
 
     return true;
+
+fail:
+    return false;
 }
 

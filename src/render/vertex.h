@@ -20,7 +20,7 @@
 #ifndef VERTEX_H
 #define VERTEX_H
 
-#include <GL/gl.h>
+#include <GL/glew.h>
 
 struct vertex{
     vec3_t  pos;

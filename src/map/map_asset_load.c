@@ -95,9 +95,10 @@ bool M_AL_InitMapFromStreams(FILE *pfchunk_stream, FILE *pfmat_stream, struct ma
     if(!m_al_read_pfchunk(pfchunk_stream, chunk))
         goto fail_read;
 
+    const char *basedir = "/home/eduard/engine/assets/maps/grass-cliffs-1";
     if(!R_AL_InitPrivFromTilesAndMats(pfmat_stream, num_mats, 
                                       chunk->tiles, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
-                                      chunk->render_private)) {
+                                      chunk->render_private, basedir)) {
         goto fail_init_render;                                  
     }
 
