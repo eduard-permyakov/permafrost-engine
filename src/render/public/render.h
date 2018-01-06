@@ -48,11 +48,11 @@ bool   R_Init(const char *base_path);
 /*###########################################################################*/
 
 /* ---------------------------------------------------------------------------
- * Performs the OpenGL draw calls in order to render the entity based on the 
+ * Performs the OpenGL draw calls in order to render the object based on the 
  * contents of its' private data.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_Draw(struct entity *ent);
+void   R_GL_Draw(const void *render_private, mat4x4_t *model);
 
 /* ---------------------------------------------------------------------------
  * Sets the view matrix for all relevant shader programs. 
@@ -67,7 +67,7 @@ void   R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos);
 void   R_GL_SetProj(const mat4x4_t *proj);
 
 /* ---------------------------------------------------------------------------
- * Helpers to set OpenGL uniforms for particular shader programs.
+ * Helpers to set OpenGL uniforms for animation-related shader programs.
  * ---------------------------------------------------------------------------
  */
 void   R_GL_SetAnimUniformMat4x4Array(mat4x4_t *data, size_t count, const char *uname);
@@ -108,13 +108,13 @@ void   R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel);
  * Debugging utility to draw X(red), Y(green), Z(blue) axes at the origin
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawOrigin(const struct entity *ent);
+void   R_GL_DrawOrigin(const void *render_private, mat4x4_t *model);
 
 /* ---------------------------------------------------------------------------
  * Debugging utility to draw normals as yellow rays going out from the model.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawNormals(const struct entity *ent);
+void   R_GL_DrawNormals(const void *render_private, mat4x4_t *model);
 
 
 /*###########################################################################*/

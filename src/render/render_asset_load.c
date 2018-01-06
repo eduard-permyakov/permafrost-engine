@@ -43,12 +43,12 @@
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
 /* For rendering the map */
-#define VERTS_PER_FACE 4
+#define VERTS_PER_FACE 6
 #define FACES_PER_TILE 6
 
-#define X_COORDS_PER_TILE 32
-#define Y_COORDS_PER_TILE 32
-#define Z_COORDS_PER_TILE 32
+#define X_COORDS_PER_TILE 8 
+#define Y_COORDS_PER_TILE 8 
+#define Z_COORDS_PER_TILE 8 
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -302,7 +302,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         .nw = (struct vertex) {
             .pos    = top.sw.pos,
             .uv     = (vec2_t) { 0.0f, 1.0f },
-            .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
+            .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
             .weights       = {0}
@@ -310,7 +310,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         .ne = (struct vertex) {
             .pos    = top.nw.pos,
             .uv     = (vec2_t) { 1.0f, 1.0f },
-            .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
+            .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
             .weights       = {0}
@@ -318,7 +318,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         .se = (struct vertex) {
             .pos    = bot.ne.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
-            .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
+            .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
             .weights       = {0}
@@ -326,7 +326,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         .sw = (struct vertex) {
             .pos    = bot.se.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
-            .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
+            .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
             .weights       = {0}
@@ -337,7 +337,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         .nw = (struct vertex) {
             .pos    = top.ne.pos,
             .uv     = (vec2_t) { 0.0f, 1.0f },
-            .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
+            .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
             .weights       = {0}
@@ -345,7 +345,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         .ne = (struct vertex) {
             .pos    = top.se.pos,
             .uv     = (vec2_t) { 1.0f, 1.0f },
-            .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
+            .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
             .weights       = {0}
@@ -353,7 +353,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         .se = (struct vertex) {
             .pos    = bot.sw.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
-            .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
+            .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
             .weights       = {0}
@@ -361,7 +361,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         .sw = (struct vertex) {
             .pos    = bot.nw.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
-            .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
+            .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
             .weights       = {0}
@@ -375,10 +375,16 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
     for(int i = 0; i < ARR_SIZE(faces); i++) {
     
         struct face *curr = faces[i];
+
+        /* First triangle */
         memcpy(out + (i * VERTS_PER_FACE) + 0, &curr->nw, sizeof(struct vertex));
         memcpy(out + (i * VERTS_PER_FACE) + 1, &curr->ne, sizeof(struct vertex));
-        memcpy(out + (i * VERTS_PER_FACE) + 2, &curr->se, sizeof(struct vertex));
-        memcpy(out + (i * VERTS_PER_FACE) + 3, &curr->sw, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_FACE) + 2, &curr->sw, sizeof(struct vertex));
+
+        /* Second triangle */
+        memcpy(out + (i * VERTS_PER_FACE) + 3, &curr->se, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_FACE) + 4, &curr->sw, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_FACE) + 5, &curr->ne, sizeof(struct vertex));
     }
 
     return true;
@@ -401,19 +407,6 @@ size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
 
     return ret;
 }
-
-/*
- * Render private buff layout:
- *
- *  +---------------------------------+ <-- base
- *  | struct render_private[1]        |
- *  +---------------------------------+
- *  | struct vertex[num_verts]        |
- *  +---------------------------------+
- *  | struct material[num_materials]  |
- *  +---------------------------------+
- *
- */
 
 bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir, FILE *stream, void *priv_buff)
 {

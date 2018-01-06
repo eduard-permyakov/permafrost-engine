@@ -1,6 +1,8 @@
 #ifndef MAP_H
 #define MAP_H
 
+#include "../../pf_math.h"
+
 #include <stdio.h>
 #include <stdbool.h>
 
@@ -17,7 +19,23 @@ struct map{
      * ------------------------------------------------------------------------
      */
     size_t width, height;
+    /* ------------------------------------------------------------------------
+     * World-space location of the top left corner of the map.
+     * ------------------------------------------------------------------------
+     */
+    vec3_t pos;
 };
+
+struct pos{
+    int r, c;
+};
+
+/*###########################################################################*/
+/* MAP GENERAL                                                               */
+/*###########################################################################*/
+
+void M_ModelMatrixForChunk(const struct map *map, struct pos p, mat4x4_t *out);
+void M_RenderChunk(const struct map *map, struct pos p);
 
 
 /*###########################################################################*/

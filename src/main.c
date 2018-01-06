@@ -123,7 +123,9 @@ static void render(void)
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    R_GL_Draw(s_demo_entity);
+    R_GL_Draw(s_demo_entity->render_private, &s_demo_entity->model_matrix);
+
+    M_RenderChunk(&s_demo_map, (struct pos) {0, 0});
 
     SDL_GL_SwapWindow(s_window);
 }
@@ -220,6 +222,7 @@ int main(int argc, char **argv)
         goto fail_map;
     }
     M_AL_DumpMap(stdout, &s_demo_map);
+    s_demo_map.pos = (vec3_t) { 128.0f, 0.0f, -128.0f };
 
     while(!s_quit) {
 

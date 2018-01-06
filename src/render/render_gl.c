@@ -182,15 +182,15 @@ void R_GL_Init(struct render_private *priv)
     priv->shader_prog = R_Shader_GetProgForName("mesh.animated.textured");
 }
 
-void R_GL_Draw(struct entity *ent)
+void R_GL_Draw(const void *render_private, mat4x4_t *model)
 {
-    struct render_private *priv = ent->render_private;
+    const struct render_private *priv = render_private;
     GLuint loc;
 
     glUseProgram(priv->shader_prog);
 
     loc = glGetUniformLocation(priv->shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
 
     r_gl_set_materials(priv->shader_prog, priv->num_materials, priv->materials);
 
@@ -370,7 +370,7 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
     free(vbuff);
 }
 
-void R_GL_DrawOrigin(const struct entity *ent)
+void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
 {
     vec3_t vbuff[2];
     GLint VAO, VBO;
@@ -396,7 +396,7 @@ void R_GL_DrawOrigin(const struct entity *ent)
 
     /* Set uniforms */
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
 
     /* Set line width */
     GLfloat old_width;
@@ -432,9 +432,9 @@ void R_GL_DrawOrigin(const struct entity *ent)
     glLineWidth(old_width);
 }
 
-void R_GL_DrawNormals(const struct entity *ent)
+void R_GL_DrawNormals(const void *render_private, mat4x4_t *model)
 {
-    struct render_private *priv = ent->render_private;
+    const struct render_private *priv = render_private;
 
     GLuint normals_shader = R_Shader_GetProgForName("mesh.animated.normals.colored");
     assert(normals_shader);
@@ -447,7 +447,7 @@ void R_GL_DrawNormals(const struct entity *ent)
     glUniform3fv(loc, 1, yellow.raw);
 
     loc = glGetUniformLocation(normals_shader, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
 
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
