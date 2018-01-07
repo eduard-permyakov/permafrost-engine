@@ -214,7 +214,7 @@ int main(int argc, char **argv)
 
     R_GL_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f});
     R_GL_SetLightEmitColor((vec3_t){1.0f, 1.0f, 1.0f});
-    R_GL_SetLightPos((vec3_t){-25.0f, 25.0f, -25.0f});
+    R_GL_SetLightPos((vec3_t){0.0f, 100.0f, 0.0f});
 
     char map_path[512];
     strcpy(map_path, argv[1]);

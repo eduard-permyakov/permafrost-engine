@@ -20,6 +20,7 @@
 #include "camera.h"
 #include "gl_uniforms.h"
 #include "render/public/render.h"
+#include "config.h"
 
 #include <SDL2/SDL.h>
 
@@ -200,7 +201,7 @@ void Camera_TickFinish(struct camera *cam)
     /* Set the projection matrix for the vertex shader */
     GLint viewport[4]; 
     glGetIntegerv(GL_VIEWPORT, viewport);
-    PFM_Mat4x4_MakePerspective(DEG_TO_RAD(45.0f), ((GLfloat)viewport[2])/viewport[3], 0.1f, 250.0f, &proj);
+    PFM_Mat4x4_MakePerspective(DEG_TO_RAD(45.0f), ((GLfloat)viewport[2])/viewport[3], 0.1f, CONFIG_DRAWDIST, &proj);
 
     R_GL_SetProj(&proj);
 

@@ -147,6 +147,10 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         struct vertex nw, ne, se, sw; 
     };
 
+    /* Bottom face is always the same (just shifted over based on row and column), and the 
+     * front, back, left, right faces just connect the top and bottom faces. The only 
+     * variations are in the top face, which has some corners raised based on tile type. */
+
     struct face bot = {
         .nw = (struct vertex) {
             .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (-1.0f * Y_COORDS_PER_TILE), 
@@ -176,7 +180,8 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
             .weights       = {0}
         },
         .sw = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), -1.0f, 0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
+            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (-1.0f * Y_COORDS_PER_TILE), 
+                                 0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
@@ -185,9 +190,31 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         },
     };
 
+    bool top_nw_raised =  (tile->type == TILETYPE_RAMP_SN)
+                       || (tile->type == TILETYPE_RAMP_EW)
+                       || (tile->type == TILETYPE_CORNER_CONVEX_SW)
+                       || (tile->type == TILETYPE_CORNER_CONVEX_SE)
+                       || (tile->type == TILETYPE_CORNER_CONCAVE_SE);
+
+    bool top_ne_raised =  (tile->type == TILETYPE_RAMP_SN)
+                       || (tile->type == TILETYPE_RAMP_WE)
+                       || (tile->type == TILETYPE_CORNER_CONVEX_SW)
+                       || (tile->type == TILETYPE_CORNER_CONCAVE_SW)
+                       || (tile->type == TILETYPE_CORNER_CONVEX_SE);
+
+    bool top_sw_raised =  (tile->type == TILETYPE_RAMP_NS)
+                       || (tile->type == TILETYPE_RAMP_EW)
+                       || (tile->type == TILETYPE_CORNER_CONVEX_SE);
+
+    bool top_se_raised =  (tile->type == TILETYPE_RAMP_NS)
+                       || (tile->type == TILETYPE_RAMP_WE)
+                       || (tile->type == TILETYPE_CORNER_CONVEX_SW);
+
     struct face top = {
         .nw = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (tile->base_height * Y_COORDS_PER_TILE), 
+            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE),
+                                 (tile->base_height * Y_COORDS_PER_TILE)
+                                 + (Y_COORDS_PER_TILE * (top_nw_raised ? tile->ramp_height : 0)),
                                  0.0f + (r * Z_COORDS_PER_TILE) },
             .uv     = (vec2_t) { 0.0f, 1.0f },
             .normal = (vec3_t) { 0.0f, 1.0f, 0.0f },
@@ -196,7 +223,9 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
             .weights       = {0}
         },
         .ne = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (tile->base_height * Y_COORDS_PER_TILE), 
+            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), 
+                                 (tile->base_height * Y_COORDS_PER_TILE)
+                                 + (Y_COORDS_PER_TILE * (top_ne_raised ? tile->ramp_height : 0)), 
                                  0.0f + (r * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 1.0f },
             .normal = (vec3_t) { 0.0f, 1.0f, 0.0f },
@@ -205,7 +234,9 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
             .weights       = {0}
         },
         .se = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (tile->base_height * Y_COORDS_PER_TILE), 
+            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), 
+                                 (tile->base_height * Y_COORDS_PER_TILE)
+                                 + (Y_COORDS_PER_TILE * (top_se_raised ? tile->ramp_height : 0)), 
                                  0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, 1.0f, 0.0f },
@@ -214,7 +245,9 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
             .weights       = {0}
         },
         .sw = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (tile->base_height * Y_COORDS_PER_TILE), 
+            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), 
+                                 (tile->base_height * Y_COORDS_PER_TILE)
+                                 + (Y_COORDS_PER_TILE * (top_sw_raised ? tile->ramp_height : 0)), 
                                  0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, 1.0f, 0.0f },
@@ -224,10 +257,12 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         },
     };
 
+#define V_COORD(width, height) (((float)height)/width)
+
     struct face back = {
         .nw = (struct vertex) {
             .pos    = top.nw.pos,
-            .uv     = (vec2_t) { 0.0f, 1.0f },
+            .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, back.nw.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
@@ -235,7 +270,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         },
         .ne = (struct vertex) {
             .pos    = top.ne.pos,
-            .uv     = (vec2_t) { 1.0f, 1.0f },
+            .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, back.ne.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
@@ -262,7 +297,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
     struct face front = {
         .nw = (struct vertex) {
             .pos    = top.sw.pos,
-            .uv     = (vec2_t) { 0.0f, 1.0f },
+            .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, front.nw.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
@@ -270,7 +305,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         },
         .ne = (struct vertex) {
             .pos    = top.se.pos,
-            .uv     = (vec2_t) { 1.0f, 1.0f },
+            .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, front.ne.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
@@ -297,7 +332,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
     struct face left = {
         .nw = (struct vertex) {
             .pos    = top.sw.pos,
-            .uv     = (vec2_t) { 0.0f, 1.0f },
+            .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, left.nw.pos.y) },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
@@ -305,7 +340,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         },
         .ne = (struct vertex) {
             .pos    = top.nw.pos,
-            .uv     = (vec2_t) { 1.0f, 1.0f },
+            .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, left.ne.pos.y) },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
@@ -332,7 +367,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
     struct face right = {
         .nw = (struct vertex) {
             .pos    = top.ne.pos,
-            .uv     = (vec2_t) { 0.0f, 1.0f },
+            .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, right.nw.pos.y) },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
@@ -340,7 +375,7 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
         },
         .ne = (struct vertex) {
             .pos    = top.se.pos,
-            .uv     = (vec2_t) { 1.0f, 1.0f },
+            .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, right.ne.pos.y) },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
             .joint_indices = {0},
@@ -363,6 +398,8 @@ static bool al_vertices_from_tile(const struct tile *tile, struct vertex *out,
             .weights       = {0}
         },
     };
+
+#undef V_COORD
 
     struct face *faces[] = {
         &top, &bot, &front, &back, &left, &right 
