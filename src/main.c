@@ -48,7 +48,7 @@ static bool           s_quit = false;
 static struct camera *s_camera;
 
 struct entity         *s_demo_entity;
-struct map             s_demo_map;
+struct map            *s_demo_map;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -125,7 +125,7 @@ static void render(void)
 
     R_GL_Draw(s_demo_entity->render_private, &s_demo_entity->model_matrix);
 
-    M_RenderChunk(&s_demo_map, (struct pos) {0, 0});
+    M_RenderEntireMap(s_demo_map);
 
     SDL_GL_SwapWindow(s_window);
 }
@@ -216,13 +216,16 @@ int main(int argc, char **argv)
     R_GL_SetLightEmitColor((vec3_t){1.0f, 1.0f, 1.0f});
     R_GL_SetLightPos((vec3_t){-25.0f, 25.0f, -25.0f});
 
-    if(!AL_InitMapFromPFMap("/home/eduard/engine/assets/maps/grass-cliffs-1/0-0.pfchunk",
-                            "/home/eduard/engine/assets/maps/grass-cliffs-1/grassy-cliffs.pfmat",
-                            2, &s_demo_map)) {
+    char map_path[512];
+    strcpy(map_path, argv[1]);
+    strcat(map_path, "assets/maps/grass-cliffs-1");
+
+    s_demo_map = AL_MapFromPFMap(map_path, "grass-cliffs.pfmap", "grass-cliffs.pfmat");
+    if(!s_demo_map){
+        ret = EXIT_FAILURE; 
         goto fail_map;
     }
-    M_AL_DumpMap(stdout, &s_demo_map);
-    s_demo_map.pos = (vec3_t) { 128.0f, 0.0f, -128.0f };
+    M_CenterAtOrigin(s_demo_map);
 
     while(!s_quit) {
 
@@ -233,6 +236,7 @@ int main(int argc, char **argv)
 
     }
 
+    AL_MapFree(s_demo_map);
 fail_map:
     AL_EntityFree(s_demo_entity);
 fail_entity:

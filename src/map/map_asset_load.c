@@ -2,6 +2,7 @@
 #include "pfchunk.h"
 #include "../asset_load.h"
 #include "../render/public/render.h"
+#include "map_private.h"
 
 #define __USE_POSIX
 #include <string.h>
@@ -84,44 +85,71 @@ fail:
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
-
-bool M_AL_InitMapFromStreams(FILE *pfchunk_stream, FILE *pfmat_stream, struct map *out, 
-                             size_t num_mats)
+ 
+bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
+                            FILE *stream, const char *pfmat_name, void *outmap)
 {
-    struct pfchunk *chunk = M_PFChunk_New(num_mats);
-    if(!chunk)
-        goto fail_alloc;
+    struct map *map = outmap;
 
-    if(!m_al_read_pfchunk(pfchunk_stream, chunk))
-        goto fail_read;
+    map->width = header->num_cols;
+    map->height = header->num_rows;
+    map->pos = (vec3_t) {0.0f, 0.0f, 0.0f};
 
-    const char *basedir = "/home/eduard/engine/assets/maps/grass-cliffs-1";
-    if(!R_AL_InitPrivFromTilesAndMats(pfmat_stream, num_mats, 
-                                      chunk->tiles, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
-                                      chunk->render_private, basedir)) {
-        goto fail_init_render;                                  
+    size_t num_chunks = header->num_rows * header->num_cols;
+    size_t renderbuff_sz = R_AL_PrivBuffSizeForChunk(
+                           TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, header->num_materials);
+
+    void *unused_base = map + 1;
+    unused_base += num_chunks * sizeof(struct pfchunk);
+
+    for(int i = 0; i < num_chunks; i++) {
+
+        map->chunks[i].render_private = unused_base;
+        unused_base += renderbuff_sz;
+
+        if(!m_al_read_pfchunk(stream, map->chunks + i))
+            goto fail;
+
+        char pfmat_path[512];
+        strcpy(pfmat_path, basedir);
+        strcat(pfmat_path, "/");
+        strcat(pfmat_path, pfmat_name);
+
+        FILE *pfmat_stream;
+        pfmat_stream = fopen(pfmat_path, "r");
+        if(!pfmat_stream)
+            goto fail;
+
+        if(!R_AL_InitPrivFromTilesAndMats(pfmat_stream, header->num_materials, 
+                                          map->chunks[i].tiles, TILES_PER_CHUNK_HEIGHT, TILES_PER_CHUNK_WIDTH,
+                                          map->chunks[i].render_private, basedir)) {
+            fclose(pfmat_stream);
+            goto fail;
+        }
+        fclose(pfmat_stream);
     }
-
-    out->head = chunk;
-    out->tail = chunk;
-    out->width = 1;
-    out->height = 1;
 
     return true;
 
-fail_init_render:
-fail_read:
-    M_PFChunk_Free(chunk);
-fail_alloc:
+fail:
     return false;
+}
+
+size_t M_AL_BuffSizeFromHeader(const struct pfmap_hdr *header)
+{
+    size_t num_chunks = header->num_rows * header->num_cols;
+
+    return sizeof(struct map) + num_chunks * 
+           (sizeof(struct pfchunk) + R_AL_PrivBuffSizeForChunk(
+                                     TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, header->num_materials));
 }
 
 void M_AL_DumpMap(FILE *stream, const struct map *map)
 {
-    struct pfchunk *curr = map->head;
+    for(int i = 0; i < (map->width * map->height); i++) {
 
-    while(curr) {
-
+        const struct pfchunk *curr = &map->chunks[i];
+    
         for(int r = 0; r < TILES_PER_CHUNK_HEIGHT; r++) {
             for(int c = 0; c < TILES_PER_CHUNK_WIDTH; c++) {
 
@@ -138,8 +166,6 @@ void M_AL_DumpMap(FILE *stream, const struct map *map)
             }
             fprintf(stream, "\n");
         }
-     
-        curr = curr->next;
     }
 }
 

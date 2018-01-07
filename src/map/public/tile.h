@@ -3,6 +3,10 @@
 
 #include <stdbool.h>
 
+#define X_COORDS_PER_TILE 8 
+#define Y_COORDS_PER_TILE 8 
+#define Z_COORDS_PER_TILE 8 
+
 enum tiletype{
     /* TILETYPE_FLAT:
      *                     +----------+

@@ -46,10 +46,6 @@
 #define VERTS_PER_FACE 6
 #define FACES_PER_TILE 6
 
-#define X_COORDS_PER_TILE 8 
-#define Y_COORDS_PER_TILE 8 
-#define Z_COORDS_PER_TILE 8 
-
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -408,6 +404,19 @@ size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
     return ret;
 }
 
+/*
+ * Render private buff layout:
+ *
+ *  +---------------------------------+ <-- base
+ *  | struct render_private[1]        |
+ *  +---------------------------------+
+ *  | struct vertex[num_verts]        |
+ *  +---------------------------------+
+ *  | struct material[num_materials]  |
+ *  +---------------------------------+
+ *
+ */
+
 bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir, FILE *stream, void *priv_buff)
 {
     struct render_private *priv = priv_buff;
@@ -483,7 +492,7 @@ void R_AL_DumpPrivate(FILE *stream, void *priv_data)
             m->specular_clr.x, m->specular_clr.y, m->specular_clr.z);
         fprintf(stream, "\ttexture %s\n", m->texname);
     }
-} 
+}
 
 size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t num_mats)
 {
@@ -491,29 +500,16 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
 
     ret += sizeof(struct render_private);
     /* We are going to draw each tile as a 6-sided quad, each quad consisting 
-     * of 4 vertices  */
+     * of two triangles */
     ret += (tiles_width * tiles_height) * sizeof(struct vertex) * VERTS_PER_FACE * FACES_PER_TILE;
     ret += sizeof(struct material) * num_mats;
 
     return ret;
 }
 
-/*
- * Render private buff layout:
- *
- *  +---------------------------------+ <-- base
- *  | struct render_private[1]        |
- *  +---------------------------------+
- *  | struct vertex[num_verts]        |
- *  +---------------------------------+
- *  | struct material[num_materials]  |
- *  +---------------------------------+
- *
- */
-
 bool R_AL_InitPrivFromTilesAndMats(FILE *mats_stream, size_t num_mats, 
-                                   const struct tile *tiles, size_t width, size_t height,
-                                   void *priv_buff, const char *basedir)
+                                  const struct tile *tiles, size_t width, size_t height, 
+                                  void *priv_buff, const char *basedir)
 {
     size_t num_verts = VERTS_PER_FACE * FACES_PER_TILE * (width * height);
 

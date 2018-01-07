@@ -150,10 +150,12 @@ void   R_AL_DumpPrivate(FILE *stream, void *priv_data);
 size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t num_mats);
 
 /* ---------------------------------------------------------------------------
- * Initialize private render buff for a PFChunk. This will have the vertices
- * of all the tiles (positions in local object space), as well as the vertex
- * attributes required for rendering them. It will also hold the material 
- * data.
+ * Initialize private render buff for a PFChunk of the map. 
+ *
+ * This function will build the vertices and their vertices from the data
+ * already parsed into the 'tiles'.
+ * 
+ * Material data is read from a separate stream.
  * ---------------------------------------------------------------------------
  */
 bool   R_AL_InitPrivFromTilesAndMats(FILE *mats_stream, size_t num_mats, 

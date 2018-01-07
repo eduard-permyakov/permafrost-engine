@@ -39,11 +39,17 @@ struct pfobj_hdr{
     unsigned frame_counts[MAX_ANIM_SETS];
 };
 
+struct pfmap_hdr{
+    float    version;
+    unsigned num_rows;
+    unsigned num_cols;
+    unsigned num_materials;
+};
+
 struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name);
 void           AL_EntityFree(struct entity *entity);
 
-/* TODO: eventually we will only need to pass the pfmap_path - it will hold everything */
-bool           AL_InitMapFromPFMap(const char *pfchunk_path, const char *pfmat_path, size_t num_mats,
-                                   struct map *out);
+struct map    *AL_MapFromPFMap(const char *base_path, const char *pfmap_name, const char *pfmat_name);
+void           AL_MapFree(struct map *map);
 
 #endif

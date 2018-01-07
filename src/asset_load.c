@@ -43,7 +43,7 @@
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool al_parse_header(FILE *stream, struct pfobj_hdr *out)
+static bool al_parse_pfobj_header(FILE *stream, struct pfobj_hdr *out)
 {
     char line[MAX_LINE_LEN];
 
@@ -95,6 +95,32 @@ fail:
     return false;
 }
 
+static bool al_parse_pfmap_header(FILE *stream, struct pfmap_hdr *out)
+{
+    char line[MAX_LINE_LEN];
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, "version %f", &out->version))
+        goto fail;
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, "num_rows %d", &out->num_rows))
+        goto fail;
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, "num_cols %d", &out->num_cols))
+        goto fail;
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, "num_materials %d", &out->num_materials))
+        goto fail;
+
+    return true;
+
+fail:
+    return false;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -126,7 +152,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     if(!stream)
         goto fail_parse; 
 
-    if(!al_parse_header(stream, &header))
+    if(!al_parse_pfobj_header(stream, &header))
         goto fail_parse;
 
     size_t render_buffsz = R_AL_PrivBuffSizeFromHeader(&header);
@@ -150,45 +176,65 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     assert( strlen(base_path) < sizeof(ret->basedir) );
     strcpy(ret->basedir, base_path);
 
+    fclose(stream);
     return ret;
 
 fail_init:
     free(ret);
 fail_alloc:
 fail_parse:
+    fclose(stream);
+fail_open:
     return NULL;
 }
 
 void AL_EntityFree(struct entity *entity)
 {
+    //TODO: Clean up OpenGL buffers
     free(entity);
 }
 
-bool AL_InitMapFromPFMap(const char *pfchunk_path, const char *pfmat_path, size_t num_mats,
-                         struct map *out)
+struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name, const char *pfmat_name)
 {
-    FILE *pfchunk, *pfmat;
+    struct map *ret;
+    FILE       *stream;
 
-    pfchunk = fopen(pfchunk_path, "r");
-    if(!pfchunk)
-        goto fail_pfchunk;
+    char pfmap_path[BASEDIR_LEN * 2];
+    assert( strlen(base_path) + strlen(pfmap_name) + 1 < sizeof(pfmap_path) );
+    strcpy(pfmap_path, base_path);
+    strcat(pfmap_path, "/");
+    strcat(pfmap_path, pfmap_name);
 
-    pfmat = fopen(pfmat_path, "r");
-    if(!pfmat)
-        goto fail_pfmat;
+    stream = fopen(pfmap_path, "r");
+    if(!stream)
+        goto fail_open;
 
-    if(!M_AL_InitMapFromStreams(pfchunk, pfmat, out, num_mats))
+    struct pfmap_hdr header;
+    if(!al_parse_pfmap_header(stream, &header))
+        goto fail_parse;
+
+    ret = malloc(M_AL_BuffSizeFromHeader(&header));
+    if(!ret)
+        goto fail_alloc;
+
+    if(!M_AL_InitMapFromStream(&header, base_path, stream, pfmat_name, ret))
         goto fail_init;
 
-    fclose(pfchunk);
-    fclose(pfmat);
-    return true;
+    fclose(stream);
+    return ret;
 
 fail_init:
-    fclose(pfmat);
-fail_pfmat:
-    fclose(pfchunk);
-fail_pfchunk:
-    return false;
+    free(ret);
+fail_alloc:
+fail_parse:
+    fclose(stream);
+fail_open:
+    return NULL;
+}
+
+void AL_MapFree(struct map *map)
+{
+    //TODO: Clean up OpenGL buffers
+    free(map);
 }
 
