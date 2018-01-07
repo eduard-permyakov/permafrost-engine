@@ -189,7 +189,7 @@ int main(int argc, char **argv)
         goto fail_camera;
     }
 
-    Camera_SetPos  (s_camera, (vec3_t){ 0.0f,  0.0f,  0.0f});
+    Camera_SetPos  (s_camera, (vec3_t){ 0.0f,  15.0f,  0.0f});
     Camera_SetFront(s_camera, (vec3_t){ 0.0f,  0.0f, -1.0f});
     Cameta_SetUp   (s_camera, (vec3_t){ 0.0f,  1.0f,  0.0f});
     Camera_SetSpeed(s_camera, 0.05f);
@@ -208,7 +208,7 @@ int main(int argc, char **argv)
     A_InitCtx(s_demo_entity, "Dance", 24);
 
     mat4x4_t scale, trans;
-    PFM_Mat4x4_MakeTrans(0.0f, 0.0f, -50.0f, &trans);
+    PFM_Mat4x4_MakeTrans(0.0f, 5.0f, -50.0f, &trans);
     PFM_Mat4x4_MakeScale(1.0f, 1.0f, 1.0f, &scale);
     PFM_Mat4x4_Mult4x4(&scale, &trans, &s_demo_entity->model_matrix);
 
