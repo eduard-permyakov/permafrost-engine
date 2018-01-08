@@ -9,7 +9,7 @@ grow to be a fully-featured game engine.
 ![Hellknight](docs/images/hellknight.gif)
 ###### Sinbad by Zi Ye. ######
 ![Sinbad](docs/images/sinbad.gif)
-###### Example of Tile-based map ######
+###### Example of Tile-based map. ######
 ![Terrain](docs/images/terrain.png)
 
 ## Engine Summary ##
