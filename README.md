@@ -5,10 +5,10 @@ grow to be a fully-featured game engine.
 
 ## Engine Showcase ##
 
+###### Hellknight from DOOM 3 by id Sofware. ######
 ![Hellknight](docs/images/hellknight.gif)
-Hellknight from DOOM 3 by id Sofware.
+###### Sinbad by Zi Ye. ######
 ![Sinbad](docs/images/sinbad.gif)
-Sinbad by Zi Ye.
 
 ## Engine Summary ##
 
@@ -31,8 +31,8 @@ The engine can only be built on Linux for the time being.
 First, make sure you have `SDL2` and `GLEW` installed on your platform. Otherwise, 
 the build will fail.
 
-Then, in the top-level directory:
-
-1. `make pf``
-2. `make run` (runs the binary in `./bin/` with default arguments)
+1. `git clone https://github.com/eduard-permyakov/permafrost-engine.git`
+2. `cd permafrost-engine`
+3. `make pf`
+4. `make run` (runs the binary in `./bin` with default arguments)
 
