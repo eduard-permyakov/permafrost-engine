@@ -68,9 +68,11 @@ static void a_make_bind_mat(int joint_idx, const struct skeleton *skel, mat4x4_t
     mat4x4_t bind_trans;
     PFM_Mat4x4_Identity(&bind_trans);
 
-    /* Walk up the bone heirarchy, multiplying our pose transform matrix by the parent-relative
-     * transform of each bone we visit. In the end, this the pose matrix will hold a worldspace
-     * transfromation of a vertex from its' bind position to its' position in the current frame.
+    /* Walk up the bone heirarchy, multiplying our bind transform matrix by the parent-relative
+     * transform of each bone we visit. In the end, this the bind matrix will hold a transformation
+     * from the object's space to the current joint's space. Since each joint is positioned at the
+     * origin of its' local space, this gives us the object-space position of this joint in the bind
+     * pose.
      */
     while(joint_idx >= 0) {
 

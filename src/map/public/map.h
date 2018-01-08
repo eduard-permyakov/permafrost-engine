@@ -14,6 +14,12 @@ struct map;
 /* MAP GENERAL                                                               */
 /*###########################################################################*/
 
+/* ------------------------------------------------------------------------
+ * This renders all the chunks at once, which is wasteful when there are 
+ * many off-screen chunks.
+ * TODO: Rendering of visible chunks only
+ * ------------------------------------------------------------------------
+ */
 void   M_RenderEntireMap(const struct map *map);
 void   M_CenterAtOrigin(struct map *map);
 

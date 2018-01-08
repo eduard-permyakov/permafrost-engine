@@ -161,11 +161,17 @@
     parent.
 
     Next are the scale, rotation, and translation components of the
-    transformation that is used to transform a point from the local object
-    space to this bone's space. This means that if we apply these scale,
-    rotation, and translation components to a vector (0,0,0), the result will
-    be the (x,y,z) coordinate of this joint in the local object space, in its'
-    bind state.
+    transformation that is used to transform a point from the parent bone's 
+    space (or object space in the case of a root bone) to this bone's space. 
+    This means that, for the case of a root joint, if we apply these scale, 
+    rotation, and translation components to a vector (0,0,0), the result 
+    will be the (x,y,z) coordinate of this joint in the local object space, 
+    in its' bind state. If we apply the transformation of a non-root joint to
+    the vector (0,0,0), the result will be the location of the joint relative
+    to its' parent joint (in the parent joint's coordinate space). So, to get
+    the object space position of any joint, we must take a vector (0,0,0) and 
+    transform it, in order, by the transformation of all of its' ancestor 
+    bones all the way up to the root bone.
 
     The scale is specified as XYZ multipliers, delimited by slashes (/). The
     rotation is specified as Euler angles in XYZ order and in degrees, also
@@ -212,7 +218,9 @@
     joint for the current keyframe in the object's local space, we must first
     transform the vector (0,0,0) by the local transformation for this keyframe
     and then transform the resulting vector by the bind transformation that is
-    specified in the joint entry.
+    specified in the joint entry. This will give the position for the current
+    keyframe in the parent joint's space. Keep applying the transformations of 
+    all the ancestor joints to get the final object-space position.
 
     Each transformation line has the following format:
 
