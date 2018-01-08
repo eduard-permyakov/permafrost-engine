@@ -9,6 +9,8 @@ grow to be a fully-featured game engine.
 ![Hellknight](docs/images/hellknight.gif)
 ###### Sinbad by Zi Ye. ######
 ![Sinbad](docs/images/sinbad.gif)
+###### Example of Tile-based map ######
+![Terrain](docs/images/terrain.png)
 
 ## Engine Summary ##
 
@@ -17,6 +19,7 @@ grow to be a fully-featured game engine.
 * Skeletal animation with GPU skinning
 * Phong reflection model with materials
 * FPS camera
+* Rendering of tile-based world parsed from ASCII file
 
 ## Dependencies ##
 
