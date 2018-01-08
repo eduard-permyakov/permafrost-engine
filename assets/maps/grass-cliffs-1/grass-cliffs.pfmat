@@ -1,0 +1,10 @@
+material Grass
+    ambient 1.000000
+    diffuse 0.640000 0.640000 0.640000
+    specular 0.100000 0.100000 0.250000
+    texture grass.png
+material Cliffs
+    ambient 1.000000
+    diffuse 0.640000 0.640000 0.640000
+    specular 0.100000 0.100000 0.100000
+    texture cliffs.png

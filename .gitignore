@@ -3,6 +3,11 @@
 /obj/
 
 /assets/*
+
 !/assets/models
 /assets/models/*
 !/assets/models/sinbad
+
+!/assets/maps
+/assets/maps/*
+!/assets/maps/grass-cliffs-1
