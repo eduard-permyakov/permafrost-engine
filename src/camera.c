@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#include <assert.h>
 
 struct camera {
     float    speed;
@@ -58,7 +59,6 @@ struct camera *Camera_New(void)
     if(!ret)
         return NULL;
 
-    ret->yaw = 90.0f;
     return ret;
 }
 
@@ -67,25 +67,23 @@ void Camera_Free(struct camera *cam)
     free(cam);
 }
 
-void Camera_InitStack(struct camera *cam)
-{
-    memset(cam, 0, sizeof(struct camera));
-    cam->yaw = 90.0f;
-}
-
 void Camera_SetPos(struct camera *cam, vec3_t pos)
 {
     cam->pos = pos; 
 }
 
-void Camera_SetFront(struct camera *cam, vec3_t front)
+void Camera_SetFrontAndUp(struct camera *cam, vec3_t front, vec3_t up)
 {
-    cam->front = front; 
-}
+    float dot = PFM_Vec3_Dot(&front, &up);
+    assert(dot < 0.001);
 
-void Cameta_SetUp(struct camera *cam, vec3_t up)
-{
-    cam->up = up; 
+    cam->front = front; 
+    cam->up = up;
+
+    cam->yaw = RAD_TO_DEG(atan2( -front.z, -front.x ));
+    cam->pitch = RAD_TO_DEG(atan2( -up.z, up.y ));
+    printf("yaw: %f\n", cam->yaw);
+    printf("pitch: %f\n", cam->pitch);
 }
 
 void Camera_SetSpeed(struct camera *cam, float speed)

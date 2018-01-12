@@ -20,6 +20,7 @@
 #include "asset_load.h"
 #include "entity.h"
 #include "camera.h"
+#include "cam_control.h"
 #include "render/public/render.h"
 #include "anim/public/anim.h"
 #include "lib/public/stb_image.h"
@@ -40,15 +41,16 @@
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static SDL_Window    *s_window;
-static SDL_GLContext  s_context;
+static SDL_Window            *s_window;
+static SDL_GLContext          s_context;
 
-static bool           s_quit = false; 
+static bool                   s_quit = false; 
 
-static struct camera *s_camera;
+static struct camera         *s_camera;
+static struct camcontrol_ctx *s_cam_ctx;
 
-struct entity         *s_demo_entity;
-struct map            *s_demo_map;
+struct entity                *s_demo_entity;
+struct map                   *s_demo_map;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -56,14 +58,11 @@ struct map            *s_demo_map;
 
 static void process_events(void)
 {
-    static bool s_w_down = false;
-    static bool s_a_down = false;
-    static bool s_s_down = false;
-    static bool s_d_down = false;
-
     SDL_Event event;    
    
     while(SDL_PollEvent(&event)) {
+
+        CamControl_FPS_HandleEvent(s_cam_ctx, s_camera, event);
 
         switch(event.type) {
 
@@ -83,37 +82,13 @@ static void process_events(void)
 
         case SDL_KEYDOWN:
             switch(event.key.keysym.scancode) {
-            case SDL_SCANCODE_W: s_w_down = true; break;
-            case SDL_SCANCODE_A: s_a_down = true; break;
-            case SDL_SCANCODE_S: s_s_down = true; break;
-            case SDL_SCANCODE_D: s_d_down = true; break;
 
             case SDL_SCANCODE_ESCAPE: s_quit = true; break;
             }
 
             break;
-
-        case SDL_KEYUP:
-            switch(event.key.keysym.scancode) {
-            case SDL_SCANCODE_W: s_w_down = false; break;
-            case SDL_SCANCODE_A: s_a_down = false; break;
-            case SDL_SCANCODE_S: s_s_down = false; break;
-            case SDL_SCANCODE_D: s_d_down = false; break;
-            }
-
-            break;
-
-        case SDL_MOUSEMOTION: 
-            Camera_ChangeDirection(s_camera, event.motion.xrel, event.motion.yrel);
-            break;
-
         }
     }
-
-    if(s_w_down) Camera_MoveFrontTick(s_camera);
-    if(s_a_down) Camera_MoveLeftTick (s_camera);
-    if(s_s_down) Camera_MoveBackTick (s_camera);
-    if(s_d_down) Camera_MoveRightTick(s_camera);
 }
 
 static void render(void)
@@ -188,10 +163,14 @@ int main(int argc, char **argv)
         ret = EXIT_FAILURE;
         goto fail_camera;
     }
+    s_cam_ctx = CamControl_CtxNew();
+    if(!s_cam_ctx) {
+        ret = EXIT_FAILURE;
+        goto fail_camera_ctx;
+    }
 
     Camera_SetPos  (s_camera, (vec3_t){ 0.0f,  15.0f,  0.0f});
-    Camera_SetFront(s_camera, (vec3_t){ 0.0f,  0.0f, -1.0f});
-    Cameta_SetUp   (s_camera, (vec3_t){ 0.0f,  1.0f,  0.0f});
+    Camera_SetFrontAndUp(s_camera, (vec3_t){ 0.0f,  0.0f, -1.0f}, (vec3_t){ 0.0f, 1.0f, 0.0f});
     Camera_SetSpeed(s_camera, 0.05f);
     Camera_SetSens (s_camera, 0.05f);
 
@@ -230,7 +209,7 @@ int main(int argc, char **argv)
     while(!s_quit) {
 
         process_events();
-        Camera_TickFinish(s_camera);
+        CamControl_TickFinish(s_cam_ctx, s_camera);
         A_Update(s_demo_entity);
         render();        
 
@@ -240,6 +219,8 @@ int main(int argc, char **argv)
 fail_map:
     AL_EntityFree(s_demo_entity);
 fail_entity:
+    CamControl_CtxFree(s_cam_ctx);
+fail_camera_ctx:
     Camera_Free(s_camera);
 fail_camera:
 fail_render:
