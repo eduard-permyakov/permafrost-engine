@@ -19,4 +19,8 @@ bool Cursor_InitAll(const char *basedir);
 void Cursor_FreeAll(void);
 void Cursor_SetActive(enum cursortype type);
 
+/* Set the cursor icon based on which corner or edge of the screen the 
+ * cursor currently is */
+void Cursor_RTS_SetActive(int mouse_x, int mouse_y);
+
 #endif

@@ -80,7 +80,6 @@ static void process_events(void)
                 glViewport(0, 0, event.window.data1, event.window.data2);
                 break;
             }
-
             break;
 
         case SDL_KEYDOWN:
@@ -88,8 +87,16 @@ static void process_events(void)
 
             case SDL_SCANCODE_ESCAPE: s_quit = true; break;
             }
-
             break;
+
+        case SDL_MOUSEMOTION:  {
+
+            int mouse_x, mouse_y;
+            SDL_GetMouseState(&mouse_x, &mouse_y);
+
+            Cursor_RTS_SetActive(mouse_x, mouse_y); 
+            break;
+            }
         }
     }
 }
