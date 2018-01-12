@@ -37,6 +37,9 @@
 #define PF_VER_MINOR 2
 #define PF_VER_PATCH 0
 
+#define RES_X 1920
+#define RES_Y 1080
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -133,9 +136,9 @@ int main(int argc, char **argv)
         "Permafrost Engine",
         SDL_WINDOWPOS_UNDEFINED, 
         SDL_WINDOWPOS_UNDEFINED,
-        1024, 
-        576, 
-        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+        RES_X, 
+        RES_Y, 
+        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN);
 
     s_context = SDL_GL_CreateContext(s_window); 
 
@@ -148,7 +151,7 @@ int main(int argc, char **argv)
 
     SDL_GL_SetSwapInterval(0); 
     SDL_SetRelativeMouseMode(true);
-    glViewport(0, 0, 1024, 576);
+    glViewport(0, 0, RES_X, RES_Y);
     glEnable(GL_DEPTH_TEST);
 
     stbi_set_flip_vertically_on_load(true);
