@@ -32,19 +32,20 @@ struct camera *Camera_New (void);
 void           Camera_Free(struct camera *cam);
 
 void           Camera_SetPos       (struct camera *cam, vec3_t pos);
-/* Front and up _must_ be orthogonal to each other - there is an assert for this */
-void           Camera_SetFrontAndUp(struct camera *cam, vec3_t front, vec3_t up);
+void           Camera_SetPitchAndYaw(struct camera *cam, float pitch, float yaw);
 void           Camera_SetSpeed     (struct camera *cam, float speed);
 void           Camera_SetSens      (struct camera *cam, float sensitivity);
+float          Camera_GetYaw       (const struct camera *cam);
 
 /* These should be called once per tick, at most. The amount moved depends 
  * on the camera speed. 
  */
-void           Camera_MoveLeftTick   (struct camera *cam);
-void           Camera_MoveRightTick  (struct camera *cam);
-void           Camera_MoveFrontTick  (struct camera *cam);
-void           Camera_MoveBackTick   (struct camera *cam);
-void           Camera_ChangeDirection(struct camera *cam, int dx, int dy);
+void           Camera_MoveLeftTick     (struct camera *cam);
+void           Camera_MoveRightTick    (struct camera *cam);
+void           Camera_MoveFrontTick    (struct camera *cam);
+void           Camera_MoveBackTick     (struct camera *cam);
+void           Camera_MoveDirectionTick(struct camera *cam, vec3_t dir);
+void           Camera_ChangeDirection  (struct camera *cam, int dx, int dy);
 
 /* Should be called once per frame, after all movements have been set, but 
  * prior to rendering.

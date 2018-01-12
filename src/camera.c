@@ -72,18 +72,21 @@ void Camera_SetPos(struct camera *cam, vec3_t pos)
     cam->pos = pos; 
 }
 
-void Camera_SetFrontAndUp(struct camera *cam, vec3_t front, vec3_t up)
+void Camera_SetPitchAndYaw(struct camera *cam, float pitch, float yaw)
 {
-    float dot = PFM_Vec3_Dot(&front, &up);
-    assert(dot < 0.001);
+    cam->pitch = pitch;
+    cam->yaw = yaw;
 
-    cam->front = front; 
-    cam->up = up;
+    vec3_t front;
+    front.x = cos(DEG_TO_RAD(cam->yaw)) * cos(DEG_TO_RAD(cam->pitch));
+    front.y = sin(DEG_TO_RAD(cam->pitch));
+    front.z = sin(DEG_TO_RAD(cam->yaw)) * cos(DEG_TO_RAD(cam->pitch)) * -1;
+    PFM_Vec3_Normal(&front, &cam->front);
 
-    cam->yaw = RAD_TO_DEG(atan2( -front.z, -front.x ));
-    cam->pitch = RAD_TO_DEG(atan2( -up.z, up.y ));
-    printf("yaw: %f\n", cam->yaw);
-    printf("pitch: %f\n", cam->pitch);
+    /* Find a vector that is orthogonal to 'front' in the XZ plane */
+    vec3_t xz = (vec3_t){cam->front.z, 0.0f, -cam->front.x};
+    PFM_Vec3_Cross(&cam->front, &xz, &cam->up);
+    PFM_Vec3_Normal(&cam->up, &cam->up);
 }
 
 void Camera_SetSpeed(struct camera *cam, float speed)
@@ -94,6 +97,11 @@ void Camera_SetSpeed(struct camera *cam, float speed)
 void Camera_SetSens(struct camera *cam, float sensitivity)
 {
     cam->sensitivity = sensitivity;
+}
+
+float Camera_GetYaw(const struct camera *cam)
+{
+    return cam->yaw;
 }
 
 void Camera_MoveLeftTick(struct camera *cam)
@@ -160,6 +168,27 @@ void Camera_MoveBackTick(struct camera *cam)
 
     PFM_Vec3_Scale(&cam->front, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Sub(&cam->pos, &vdelta, &cam->pos);
+}
+
+void Camera_MoveDirectionTick(struct camera *cam, vec3_t dir)
+{
+    uint32_t tdelta;
+    vec3_t   vdelta;
+
+    if(!cam->prev_frame_ts)
+        cam->prev_frame_ts = SDL_GetTicks();
+
+    float mag = sqrt(pow(dir.x,2) + pow(dir.y,2) + pow(dir.z,2));
+    if(mag == 0.0f)
+        return;
+
+    PFM_Vec3_Normal(&dir, &dir);
+
+    uint32_t curr = SDL_GetTicks();
+    tdelta = curr - cam->prev_frame_ts;
+
+    PFM_Vec3_Scale(&dir, tdelta * cam->speed, &vdelta);
+    PFM_Vec3_Add(&cam->pos, &vdelta, &cam->pos);
 }
 
 void Camera_ChangeDirection(struct camera *cam, int dx, int dy)

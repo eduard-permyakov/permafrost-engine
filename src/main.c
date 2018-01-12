@@ -40,20 +40,23 @@
 #define PF_VER_MINOR 2
 #define PF_VER_PATCH 0
 
+#define CAM_HEIGHT          150.0f
+#define CAM_TILT_UP_DEGREES 15.0f
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static SDL_Window            *s_window;
-static SDL_GLContext          s_context;
+static SDL_Window         *s_window;
+static SDL_GLContext       s_context;
 
-static bool                   s_quit = false; 
+static bool                s_quit = false; 
 
-static struct camera         *s_camera;
-static struct camcontrol_ctx *s_cam_ctx;
+static struct camera      *s_camera;
+static struct cam_rts_ctx *s_cam_ctx;
 
-struct entity                *s_demo_entity;
-struct map                   *s_demo_map;
+struct entity             *s_demo_entity;
+struct map                *s_demo_map;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -65,7 +68,7 @@ static void process_events(void)
    
     while(SDL_PollEvent(&event)) {
 
-        CamControl_FPS_HandleEvent(s_cam_ctx, s_camera, event);
+        CamControl_RTS_HandleEvent(s_cam_ctx, s_camera, event);
 
         switch(event.type) {
 
@@ -157,7 +160,6 @@ int main(int argc, char **argv)
     }
 
     SDL_GL_SetSwapInterval(0); 
-    //SDL_SetRelativeMouseMode(true);
     glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
     glEnable(GL_DEPTH_TEST);
 
@@ -179,15 +181,16 @@ int main(int argc, char **argv)
         ret = EXIT_FAILURE;
         goto fail_camera;
     }
-    s_cam_ctx = CamControl_CtxNew();
+    s_cam_ctx = CamControl_RTS_CtxNew();
     if(!s_cam_ctx) {
         ret = EXIT_FAILURE;
         goto fail_camera_ctx;
     }
+    CamControl_RTS_SetMouseMode();
 
-    Camera_SetPos  (s_camera, (vec3_t){ 0.0f,  15.0f,  0.0f});
-    Camera_SetFrontAndUp(s_camera, (vec3_t){ 0.0f,  0.0f, -1.0f}, (vec3_t){ 0.0f, 1.0f, 0.0f});
-    Camera_SetSpeed(s_camera, 0.05f);
+    Camera_SetPos  (s_camera, (vec3_t){ 0.0f, CAM_HEIGHT,  0.0f});
+    Camera_SetPitchAndYaw(s_camera, -70.0f, 90.0f + 45.0f);
+    Camera_SetSpeed(s_camera, 0.10f);
     Camera_SetSens (s_camera, 0.05f);
 
     char entity_path[512];
@@ -209,7 +212,7 @@ int main(int argc, char **argv)
 
     R_GL_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f});
     R_GL_SetLightEmitColor((vec3_t){1.0f, 1.0f, 1.0f});
-    R_GL_SetLightPos((vec3_t){0.0f, 100.0f, 0.0f});
+    R_GL_SetLightPos((vec3_t){0.0f, 300.0f, 0.0f});
 
     char map_path[512];
     strcpy(map_path, argv[1]);
@@ -225,7 +228,7 @@ int main(int argc, char **argv)
     while(!s_quit) {
 
         process_events();
-        CamControl_TickFinish(s_cam_ctx, s_camera);
+        CamControl_RTS_TickFinish(s_cam_ctx, s_camera);
         A_Update(s_demo_entity);
         render();        
 
@@ -235,7 +238,7 @@ int main(int argc, char **argv)
 fail_map:
     AL_EntityFree(s_demo_entity);
 fail_entity:
-    CamControl_CtxFree(s_cam_ctx);
+    CamControl_RTS_CtxFree(s_cam_ctx);
 fail_camera_ctx:
     Camera_Free(s_camera);
 fail_camera:
