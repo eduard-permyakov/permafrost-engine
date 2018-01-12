@@ -21,6 +21,8 @@
 #include "entity.h"
 #include "camera.h"
 #include "cam_control.h"
+#include "config.h"
+#include "cursor.h"
 #include "render/public/render.h"
 #include "anim/public/anim.h"
 #include "lib/public/stb_image.h"
@@ -31,14 +33,12 @@
 #include <SDL2/SDL_opengl.h>
 
 #include <stdbool.h>
+#include <assert.h>
 
 
 #define PF_VER_MAJOR 0
 #define PF_VER_MINOR 2
 #define PF_VER_PATCH 0
-
-#define RES_X 1920
-#define RES_Y 1080
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -136,8 +136,8 @@ int main(int argc, char **argv)
         "Permafrost Engine",
         SDL_WINDOWPOS_UNDEFINED, 
         SDL_WINDOWPOS_UNDEFINED,
-        RES_X, 
-        RES_Y, 
+        CONFIG_RES_X, 
+        CONFIG_RES_Y, 
         SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN);
 
     s_context = SDL_GL_CreateContext(s_window); 
@@ -150,11 +150,17 @@ int main(int argc, char **argv)
     }
 
     SDL_GL_SetSwapInterval(0); 
-    SDL_SetRelativeMouseMode(true);
-    glViewport(0, 0, RES_X, RES_Y);
+    //SDL_SetRelativeMouseMode(true);
+    glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
     glEnable(GL_DEPTH_TEST);
 
     stbi_set_flip_vertically_on_load(true);
+
+    if(!Cursor_InitAll(argv[1])) {
+        ret = EXIT_FAILURE;
+        goto fail_cursor;
+    }
+    Cursor_SetActive(CURSOR_POINTER);
 
     if(!R_Init(argv[1])) {
         ret = EXIT_FAILURE;
@@ -227,6 +233,8 @@ fail_camera_ctx:
     Camera_Free(s_camera);
 fail_camera:
 fail_render:
+    Cursor_FreeAll();
+fail_cursor:
 fail_glew:
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window);
