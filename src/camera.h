@@ -21,9 +21,15 @@
 #define CAMERA_H
 
 #include "pf_math.h"
+#include <stdbool.h>
 
 struct camera;
 extern const unsigned g_sizeof_camera;
+
+struct bound_box{
+    GLfloat x, z;
+    GLfloat w, h;
+};
 
 #define DECL_CAMERA_STACK(_name)        \
     char _name[g_sizeof_camera]         \
@@ -36,6 +42,12 @@ void           Camera_SetPitchAndYaw(struct camera *cam, float pitch, float yaw)
 void           Camera_SetSpeed     (struct camera *cam, float speed);
 void           Camera_SetSens      (struct camera *cam, float sensitivity);
 float          Camera_GetYaw       (const struct camera *cam);
+float          Camera_GetPitch     (const struct camera *cam);
+float          Camera_GetHeight    (const struct camera *cam);
+
+void           Camera_RestrictPosWithBox(struct camera *cam, struct bound_box box);
+void           Camera_UnrestrictPos     (struct camera *cam);
+bool           Camera_PosIsRestricted   (const struct camera *cam);
 
 /* These should be called once per tick, at most. The amount moved depends 
  * on the camera speed. 

@@ -21,6 +21,7 @@
 #include "../render/public/render.h"
 #include "map_private.h"
 #include "pfchunk.h"
+#include "../camera.h"
 
 #include <unistd.h>
 
@@ -65,5 +66,31 @@ void M_CenterAtOrigin(struct map *map)
     size_t height = map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 
     map->pos = (vec3_t) {(width / 2.0f), 0.0f, -(height / 2.0f)};
+}
+
+void M_RestrictRTSCamToMap(const struct map *map, struct camera *cam)
+{
+    struct bound_box bounds;
+
+    /* 'Camera_RestrictPosWithBox' restricts the position of the camera to an XZ box.
+     * However, if we just let this box be the map position and dimensions, the corners will 
+     * not appear equal due to the camera tilt. For example, with yaw = 135 and pitch = -70, 
+     * less of the top center corner will be visible than the bottom center corner due to 
+     * the camera being tilted up. What we actually want is the camera ray position at ground 
+     * level to be bounded within the map box. To achieve this, we offset the camera 
+     * position bounding box by the XZ components of the difference between the camera position 
+     * and where the camera ray intersects the ground. 
+     *
+     * This assumes the camera pitch, yaw, and height will not change.
+     */
+    
+    float offset_mag = cos(DEG_TO_RAD(Camera_GetPitch(cam))) * Camera_GetHeight(cam);
+
+    bounds.x = map->pos.x - cos(DEG_TO_RAD(Camera_GetYaw(cam))) * offset_mag;
+    bounds.z = map->pos.z + sin(DEG_TO_RAD(Camera_GetYaw(cam))) * offset_mag;
+    bounds.w = map->width  * TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE;
+    bounds.h = map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    Camera_RestrictPosWithBox(cam, bounds);
 }
 

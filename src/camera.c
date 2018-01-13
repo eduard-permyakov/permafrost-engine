@@ -41,13 +41,42 @@ struct camera {
     float    yaw;
 
     uint32_t prev_frame_ts;
+
+    /* When 'bounded' is true, the camera position must 
+     * always be within the 'bounds' box */
+    bool            bounded;
+    struct bound_box bounds;
 };
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 /*****************************************************************************/
 /* GLOBAL VARIABLES                                                          */
 /*****************************************************************************/
 
 const unsigned g_sizeof_camera = sizeof(struct camera);
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static bool camera_pos_in_bounds(const struct camera *cam)
+{
+    /* X is increasing to the left in our coordinate system */
+    return (cam->pos.x <= cam->bounds.x && cam->pos.x >= cam->bounds.x - cam->bounds.w)
+        && (cam->pos.z >= cam->bounds.z && cam->pos.z <= cam->bounds.z + cam->bounds.h);
+}
+
+static void camera_move_within_bounds(struct camera *cam)
+{
+    /* X is increasing to the left in our coordinate system */
+    cam->pos.x = MIN(cam->pos.x, cam->bounds.x);
+    cam->pos.x = MAX(cam->pos.x, cam->bounds.x - cam->bounds.w);
+
+    cam->pos.z = MAX(cam->pos.z, cam->bounds.z);
+    cam->pos.z = MIN(cam->pos.z, cam->bounds.z + cam->bounds.h);
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -70,6 +99,8 @@ void Camera_Free(struct camera *cam)
 void Camera_SetPos(struct camera *cam, vec3_t pos)
 {
     cam->pos = pos; 
+
+    assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 
 void Camera_SetPitchAndYaw(struct camera *cam, float pitch, float yaw)
@@ -104,6 +135,16 @@ float Camera_GetYaw(const struct camera *cam)
     return cam->yaw;
 }
 
+float Camera_GetPitch(const struct camera *cam)
+{
+    return cam->pitch;
+}
+
+float Camera_GetHeight(const struct camera *cam)
+{
+    return cam->pos.y;
+}
+
 void Camera_MoveLeftTick(struct camera *cam)
 {
     uint32_t tdelta;
@@ -120,6 +161,9 @@ void Camera_MoveLeftTick(struct camera *cam)
 
     PFM_Vec3_Scale(&right, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Add(&cam->pos, &vdelta, &cam->pos);
+
+    if(cam->bounded) camera_move_within_bounds(cam);
+    assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 
 void Camera_MoveRightTick(struct camera *cam)
@@ -138,6 +182,9 @@ void Camera_MoveRightTick(struct camera *cam)
 
     PFM_Vec3_Scale(&right, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Sub(&cam->pos, &vdelta, &cam->pos);
+
+    if(cam->bounded) camera_move_within_bounds(cam);
+    assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 
 void Camera_MoveFrontTick(struct camera *cam)
@@ -153,6 +200,9 @@ void Camera_MoveFrontTick(struct camera *cam)
 
     PFM_Vec3_Scale(&cam->front, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Add(&cam->pos, &vdelta, &cam->pos);
+
+    if(cam->bounded) camera_move_within_bounds(cam);
+    assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 
 void Camera_MoveBackTick(struct camera *cam)
@@ -168,6 +218,9 @@ void Camera_MoveBackTick(struct camera *cam)
 
     PFM_Vec3_Scale(&cam->front, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Sub(&cam->pos, &vdelta, &cam->pos);
+
+    if(cam->bounded) camera_move_within_bounds(cam);
+    assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 
 void Camera_MoveDirectionTick(struct camera *cam, vec3_t dir)
@@ -189,6 +242,9 @@ void Camera_MoveDirectionTick(struct camera *cam, vec3_t dir)
 
     PFM_Vec3_Scale(&dir, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Add(&cam->pos, &vdelta, &cam->pos);
+
+    if(cam->bounded) camera_move_within_bounds(cam);
+    assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 
 void Camera_ChangeDirection(struct camera *cam, int dx, int dy)
@@ -234,5 +290,25 @@ void Camera_TickFinish(struct camera *cam)
 
     /* Update our last timestamp */
     cam->prev_frame_ts = SDL_GetTicks();
+}
+
+void Camera_RestrictPosWithBox(struct camera *cam, struct bound_box box)
+{
+    cam->bounded = true;
+    cam->bounds = box;
+
+    assert(!cam->bounded || camera_pos_in_bounds(cam));
+}
+
+void Camera_UnrestrictPos(struct camera *cam)
+{
+    cam->bounded = false;
+
+    assert(!cam->bounded || camera_pos_in_bounds(cam));
+}
+
+bool Camera_PosIsRestricted(const struct camera *cam)
+{
+    return cam->bounded;
 }
 

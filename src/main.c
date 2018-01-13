@@ -190,7 +190,7 @@ int main(int argc, char **argv)
 
     Camera_SetPos  (s_camera, (vec3_t){ 0.0f, CAM_HEIGHT,  0.0f});
     Camera_SetPitchAndYaw(s_camera, -70.0f, 90.0f + 45.0f);
-    Camera_SetSpeed(s_camera, 0.10f);
+    Camera_SetSpeed(s_camera, 0.15f);
     Camera_SetSens (s_camera, 0.05f);
 
     char entity_path[512];
@@ -224,6 +224,7 @@ int main(int argc, char **argv)
         goto fail_map;
     }
     M_CenterAtOrigin(s_demo_map);
+    M_RestrictRTSCamToMap(s_demo_map, s_camera);
 
     while(!s_quit) {
 
