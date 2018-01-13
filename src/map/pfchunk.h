@@ -46,7 +46,7 @@ struct pfchunk{
      */
     vec3_t          position;
     /* ------------------------------------------------------------------------
-     * The 'has_path' bools are precomuted when the pfchunk is initialized or 
+     * The 'has_path' bools are precomputed when the pfchunk is initialized or 
      * updated.
      *
      * They are used later to quickly query if we can reach onother chunk 
@@ -58,23 +58,12 @@ struct pfchunk{
      * ------------------------------------------------------------------------
      */
     bool            has_ns_path;
-    bool            has_sw_path;
-    bool            has_wn_path;
-    bool            has_ne_path;
-    bool            has_es_path;
-    bool            has_sn_path;
+    bool            has_ew_path;
     /* ------------------------------------------------------------------------
      * Each tiles' attributes, stored in row-major order.
      * ------------------------------------------------------------------------
      */
     struct tile     tiles[TILES_PER_CHUNK_HEIGHT * TILES_PER_CHUNK_WIDTH];
-    /* ------------------------------------------------------------------------
-     * Pointers for maintaining an embedded doubly-linked list structure.
-     * These are used for efficiently iterating over all pfchunks in a map.
-     * Can be NULL.
-     * ------------------------------------------------------------------------
-     */
-    struct pfchunk *next, *prev;
 };
 
 #endif

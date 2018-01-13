@@ -41,7 +41,19 @@ struct camera;
  * ------------------------------------------------------------------------
  */
 void   M_RenderEntireMap    (const struct map *map);
+
+/* ------------------------------------------------------------------------
+ * Centers the map at the worldspace origin.
+ * ------------------------------------------------------------------------
+ */
 void   M_CenterAtOrigin     (struct map *map);
+
+/* ------------------------------------------------------------------------
+ * Sets an XZ bounding box for the camera such that the XZ coordinate of 
+ * the intersection of the camera ray with the ground plane is always 
+ * within the map area.
+ * ------------------------------------------------------------------------
+ */
 void   M_RestrictRTSCamToMap(const struct map *map, struct camera *cam);
 
 /*###########################################################################*/

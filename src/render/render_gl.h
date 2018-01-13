@@ -20,8 +20,18 @@
 #ifndef RENDER_GL_H
 #define RENDER_GL_H
 
+#include <stddef.h>
+
+/* For rendering the map */
+#define VERTS_PER_FACE 6
+#define FACES_PER_TILE 6
+
+
 struct render_private;
+struct vertex;
+struct tile;
 
 void R_GL_Init(struct render_private *priv);
+void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r, size_t c);
 
 #endif
