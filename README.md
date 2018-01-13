@@ -18,7 +18,7 @@ grow to be a fully-featured game engine.
 * Custom ASCII model format with Blender export script
 * Skeletal animation with GPU skinning
 * Phong reflection model with materials
-* FPS camera
+* RTS camera, FPS camera
 * Rendering of tile-based world parsed from ASCII file
 
 ## Dependencies ##

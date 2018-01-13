@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017 Eduard Permyakov 
+ *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@
 
 
 #define PF_VER_MAJOR 0
-#define PF_VER_MINOR 2
+#define PF_VER_MINOR 3
 #define PF_VER_PATCH 0
 
 #define CAM_HEIGHT          150.0f
