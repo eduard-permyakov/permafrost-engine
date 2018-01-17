@@ -7,9 +7,9 @@ PF_SRCS = $(foreach dir,$(PF_DIRS),$(wildcard $(dir)/*.c))
 PF_OBJS = $(PF_SRCS:./src/%.c=./obj/%.o)
 PF_DEPS = $(PF_OBJS:%.o=%.d)
 
-CFLAGS  = -std=c99 -g
+CFLAGS  = -std=c99 -g $(shell python2.7-config --cflags)
 DEFS  	=
-LDFLAGS = -lGL -lGLEW -lSDL2 -lm
+LDFLAGS = -lGL -lGLEW -lSDL2 -lm $(shell python2.7-config --ldflags)
 
 ./obj/%.o: ./src/%.c
 	@mkdir -p $(dir $@)

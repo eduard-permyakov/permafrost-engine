@@ -140,10 +140,13 @@ size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
     size_t ret;
 
     ret += sizeof(struct anim_private);
-    ret += header->num_as     * sizeof(struct anim_clip);
+    ret += sizeof(struct anim_data);
+    ret += sizeof(struct anim_ctx);
+
     ret += header->num_joints * sizeof(struct SQT);
     ret += header->num_joints * sizeof(mat4x4_t);
     ret += header->num_joints * sizeof(struct joint);
+    ret += header->num_as     * sizeof(struct anim_clip);
 
     /*
      * For each frame of each animation clip, we also require:
@@ -190,7 +193,7 @@ size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
 
 bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void *priv_buff)
 {
-    void *unused_base = priv_buff;
+    char *unused_base = priv_buff;
     struct anim_private *priv;
 
     /*-----------------------------------------------------------
@@ -198,33 +201,33 @@ bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
      * set counts and pointers 
      *-----------------------------------------------------------
      */
-    priv = unused_base;
+    priv = (void*)unused_base;
     unused_base += sizeof(struct anim_private);
 
-    priv->data = unused_base;
+    priv->data = (void*)unused_base;
     unused_base += sizeof(struct anim_data);
 
-    priv->ctx = unused_base;
+    priv->ctx = (void*)unused_base;
     unused_base += sizeof(struct anim_ctx);
 
     priv->data->num_anims = header->num_as; 
     priv->data->skel.num_joints = header->num_joints;
 
-    priv->data->skel.bind_sqts = unused_base;
+    priv->data->skel.bind_sqts = (void*)unused_base;
     unused_base += sizeof(struct SQT) * header->num_joints;
 
-    priv->data->skel.inv_bind_poses = unused_base;
+    priv->data->skel.inv_bind_poses = (void*)unused_base;
     unused_base += sizeof(mat4x4_t) * header->num_joints;
 
-    priv->data->skel.joints = unused_base;
+    priv->data->skel.joints = (void*)unused_base;
     unused_base += sizeof(struct joint) * header->num_joints;
 
-    priv->data->anims = unused_base;
+    priv->data->anims = (void*)unused_base;
     unused_base += sizeof(struct anim_clip) * header->num_as;
 
     for(int i = 0; i < header->num_as; i++) {
 
-        priv->data->anims[i].samples = unused_base;
+        priv->data->anims[i].samples = (void*)unused_base;
         unused_base += sizeof(struct anim_sample) * header->frame_counts[i];
     }
 
@@ -235,7 +238,7 @@ bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void 
 
         for(int f = 0; f < header->frame_counts[i]; f++) {
 
-            priv->data->anims[i].samples[f].local_joint_poses = unused_base;
+            priv->data->anims[i].samples[f].local_joint_poses = (void*)unused_base;
             unused_base += sizeof(struct SQT) * header->num_joints;
         }
     }

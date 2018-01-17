@@ -73,7 +73,7 @@ static bool r_texture_gl_init(const char *path, GLuint *out)
     GLint format = (nr_channels == 3) ? GL_RGB :
                                         GL_RGBA;
     glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
+    //glGenerateMipmap(GL_TEXTURE_2D);
 
     stbi_image_free(data);
     *out = ret;
@@ -131,14 +131,14 @@ bool R_Texture_Load(const char *basedir, const char *name, GLuint *out)
     struct texture_resource *alloc = s_free_head;
     alloc->free = false;
 
-    s_free_head = s_free_head->next_free;
-    if(alloc->next_free)
-        alloc->next_free->prev_free = s_free_head;
+    s_free_head = alloc->next_free;
+    if(s_free_head)
+        s_free_head->prev_free = NULL;
 
     assert( strlen(name) < MAX_TEX_NAME_LEN );
     strcpy(alloc->name, name);
 
-    char texture_path[128];
+    char texture_path[512];
     assert( strlen(basedir) + strlen(name) < sizeof(texture_path) );
     strcpy(texture_path, basedir);
     strcat(texture_path, "/");

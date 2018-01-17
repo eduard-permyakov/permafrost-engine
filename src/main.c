@@ -27,6 +27,7 @@
 #include "anim/public/anim.h"
 #include "lib/public/stb_image.h"
 #include "map/public/map.h"
+#include "script/public/script.h"
 
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
@@ -41,7 +42,7 @@
 #define PF_VER_PATCH 0
 
 #define CAM_HEIGHT          150.0f
-#define CAM_TILT_UP_DEGREES 15.0f
+#define CAM_TILT_UP_DEGREES 20.0f
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -226,6 +227,11 @@ int main(int argc, char **argv)
     M_CenterAtOrigin(s_demo_map);
     M_RestrictRTSCamToMap(s_demo_map, s_camera);
 
+    if(!S_Init(argv[0], argv[1])){
+        ret = EXIT_FAILURE; 
+        goto fail_script;
+    }
+
     while(!s_quit) {
 
         process_events();
@@ -235,6 +241,8 @@ int main(int argc, char **argv)
 
     }
 
+    S_Shutdown();
+fail_script:
     AL_MapFree(s_demo_map);
 fail_map:
     AL_EntityFree(s_demo_entity);

@@ -118,12 +118,12 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     size_t renderbuff_sz = R_AL_PrivBuffSizeForChunk(
                            TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, header->num_materials);
 
-    void *unused_base = map + 1;
+    char *unused_base = (char*)(map + 1);
     unused_base += num_chunks * sizeof(struct pfchunk);
 
     for(int i = 0; i < num_chunks; i++) {
 
-        map->chunks[i].render_private = unused_base;
+        map->chunks[i].render_private = (void*)unused_base;
         unused_base += renderbuff_sz;
 
         if(!m_al_read_pfchunk(stream, map->chunks + i))
@@ -140,7 +140,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
             goto fail;
 
         if(!R_AL_InitPrivFromTilesAndMats(pfmat_stream, header->num_materials, 
-                                          map->chunks[i].tiles, TILES_PER_CHUNK_HEIGHT, TILES_PER_CHUNK_WIDTH,
+                                          map->chunks[i].tiles, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
                                           map->chunks[i].render_private, basedir)) {
             fclose(pfmat_stream);
             goto fail;

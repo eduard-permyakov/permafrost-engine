@@ -164,15 +164,15 @@ size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
 bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir, FILE *stream, void *priv_buff)
 {
     struct render_private *priv = priv_buff;
-    void *unused_base = priv_buff + sizeof(struct render_private);
+    char *unused_base = (char*)priv_buff + sizeof(struct render_private);
     size_t vbuff_sz = header->num_verts * sizeof(struct vertex);
 
     priv->mesh.num_verts = header->num_verts;
-    priv->mesh.vbuff = unused_base;
+    priv->mesh.vbuff = (void*)unused_base;
     unused_base += vbuff_sz;
 
     priv->num_materials = header->num_materials;
-    priv->materials = unused_base;
+    priv->materials = (void*)unused_base;
 
     for(int i = 0; i < header->num_verts; i++) {
         if(!al_read_vertex(stream, &priv->mesh.vbuff[i]))
@@ -258,15 +258,15 @@ bool R_AL_InitPrivFromTilesAndMats(FILE *mats_stream, size_t num_mats,
     size_t num_verts = VERTS_PER_FACE * FACES_PER_TILE * (width * height);
 
     struct render_private *priv = priv_buff;
-    void *unused_base = priv_buff + sizeof(struct render_private);
+    char *unused_base = (char*)priv_buff + sizeof(struct render_private);
     size_t vbuff_sz = num_verts * sizeof(struct vertex);
 
     priv->mesh.num_verts = num_verts;
-    priv->mesh.vbuff = unused_base;
+    priv->mesh.vbuff = (void*)unused_base;
     unused_base += vbuff_sz;
 
     priv->num_materials = num_mats;
-    priv->materials = unused_base;
+    priv->materials = (void*)unused_base;
 
     for(int r = 0; r < height; r++) {
         for(int c = 0; c < width; c++) {
@@ -283,7 +283,7 @@ bool R_AL_InitPrivFromTilesAndMats(FILE *mats_stream, size_t num_mats,
         priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
         if(!al_read_material(mats_stream, basedir, &priv->materials[i])) 
             goto fail;
-    }
+   }
 
     R_GL_Init(priv);
 
