@@ -1,6 +1,7 @@
-#include "public/script.h"
-
+/* Must be included first */
 #include <Python.h>
+
+#include "public/script.h"
 
 bool S_Init(char *progname, const char *base_path)
 {

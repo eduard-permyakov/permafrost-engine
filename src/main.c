@@ -28,6 +28,7 @@
 #include "lib/public/stb_image.h"
 #include "map/public/map.h"
 #include "script/public/script.h"
+#include "game/public/game.h"
 
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
@@ -112,30 +113,20 @@ static void render(void)
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    R_GL_Draw(s_demo_entity->render_private, &s_demo_entity->model_matrix);
-
-    M_RenderEntireMap(s_demo_map);
+    G_Render();
 
     SDL_GL_SwapWindow(s_window);
 }
 
-/*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
-/*****************************************************************************/
-
-int main(int argc, char **argv)
+static bool engine_init(char **argv)
 {
-    int ret = EXIT_SUCCESS;
+    bool result = true;
 
-    if(argc != 2) {
-        printf("Usage: %s [base directory path (which contains 'assets' and 'shaders' folders)]\n", argv[0]);
-        ret = EXIT_FAILURE;
-        goto fail_args;
-    }
-
+    /* ---------------------------------- */
+    /* SDL Initialization                 */
+    /* ---------------------------------- */
     if(SDL_Init(SDL_INIT_VIDEO) < 0) {
-        fprintf(stderr, "Failed to initialize SDL: %s\n", SDL_GetError());
-        ret = EXIT_FAILURE;
+        result = false;
         goto fail_sdl;
     }
 
@@ -153,38 +144,52 @@ int main(int argc, char **argv)
 
     s_context = SDL_GL_CreateContext(s_window); 
 
-    glewExperimental = GL_TRUE;
-    if(glewInit() != GLEW_OK) {
-        fprintf(stderr, "Failed to initialize GLEW\n");
-        ret = EXIT_FAILURE;
-        goto fail_glew;
-    }
-
     SDL_GL_SetSwapInterval(0); 
     glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
     glEnable(GL_DEPTH_TEST);
 
+    /* ---------------------------------- */
+    /* GLEW initialization                */
+    /* ---------------------------------- */
+    glewExperimental = GL_TRUE;
+    if(glewInit() != GLEW_OK) {
+        result = false;
+        goto fail_glew;
+    }
+
+    /* ---------------------------------- */
+    /* stb_image initialization           */
+    /* ---------------------------------- */
     stbi_set_flip_vertically_on_load(true);
 
+    /* ---------------------------------- */
+    /* Cursor initialization              */
+    /* ---------------------------------- */
     if(!Cursor_InitAll(argv[1])) {
-        ret = EXIT_FAILURE;
+        result = false;
         goto fail_cursor;
     }
     Cursor_SetActive(CURSOR_POINTER);
 
+    /* ---------------------------------- */
+    /* Rendering subsystem initialization */
+    /* ---------------------------------- */
     if(!R_Init(argv[1])) {
-        ret = EXIT_FAILURE;
+        result = false;
         goto fail_render;
     }
 
+    /* ---------------------------------- */
+    /* Camera initialization              */
+    /* ---------------------------------- */
     s_camera = Camera_New();
     if(!s_camera) {
-        ret = EXIT_FAILURE;
+        result = false;
         goto fail_camera;
     }
     s_cam_ctx = CamControl_RTS_CtxNew();
     if(!s_cam_ctx) {
-        ret = EXIT_FAILURE;
+        result = false;
         goto fail_camera_ctx;
     }
     CamControl_RTS_SetMouseMode();
@@ -194,59 +199,26 @@ int main(int argc, char **argv)
     Camera_SetSpeed(s_camera, 0.15f);
     Camera_SetSens (s_camera, 0.05f);
 
-    char entity_path[512];
-    strcpy(entity_path, argv[1]);
-    strcat(entity_path, "assets/models/sinbad");
-
-    s_demo_entity = AL_EntityFromPFObj(entity_path, "Sinbad.pfobj", "Sinbad");
-    if(!s_demo_entity){
-        ret = EXIT_FAILURE; 
-        goto fail_entity;
-    }
-
-    A_InitCtx(s_demo_entity, "Dance", 24);
-
-    mat4x4_t scale, trans;
-    PFM_Mat4x4_MakeTrans(0.0f, 5.0f, -50.0f, &trans);
-    PFM_Mat4x4_MakeScale(1.0f, 1.0f, 1.0f, &scale);
-    PFM_Mat4x4_Mult4x4(&scale, &trans, &s_demo_entity->model_matrix);
-
-    R_GL_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f});
-    R_GL_SetLightEmitColor((vec3_t){1.0f, 1.0f, 1.0f});
-    R_GL_SetLightPos((vec3_t){0.0f, 300.0f, 0.0f});
-
-    char map_path[512];
-    strcpy(map_path, argv[1]);
-    strcat(map_path, "assets/maps/grass-cliffs-1");
-
-    s_demo_map = AL_MapFromPFMap(map_path, "grass-cliffs.pfmap", "grass-cliffs.pfmat");
-    if(!s_demo_map){
-        ret = EXIT_FAILURE; 
-        goto fail_map;
-    }
-    M_CenterAtOrigin(s_demo_map);
-    M_RestrictRTSCamToMap(s_demo_map, s_camera);
-
+    /* ---------------------------------- */
+    /* Scripting subsystem initialization */
+    /* ---------------------------------- */
     if(!S_Init(argv[0], argv[1])){
-        ret = EXIT_FAILURE; 
+        result = false; 
         goto fail_script;
     }
 
-    while(!s_quit) {
-
-        process_events();
-        CamControl_RTS_TickFinish(s_cam_ctx, s_camera);
-        A_Update(s_demo_entity);
-        render();        
-
+    /* ---------------------------------- */
+    /* Game state initialization          */
+    /* ---------------------------------- */
+    if(!G_Init()) {
+        result = false; 
+        goto fail_game;
     }
 
-    S_Shutdown();
+    return result;
+
+fail_game:
 fail_script:
-    AL_MapFree(s_demo_map);
-fail_map:
-    AL_EntityFree(s_demo_entity);
-fail_entity:
     CamControl_RTS_CtxFree(s_cam_ctx);
 fail_camera_ctx:
     Camera_Free(s_camera);
@@ -259,6 +231,98 @@ fail_glew:
     SDL_DestroyWindow(s_window);
     SDL_Quit();
 fail_sdl:
+    return result; 
+}
+
+void engine_shutdown(void)
+{
+    S_Shutdown();
+
+    CamControl_RTS_CtxFree(s_cam_ctx);
+    Camera_Free(s_camera);
+
+    Cursor_FreeAll();
+
+    SDL_GL_DeleteContext(s_context);
+    SDL_DestroyWindow(s_window);
+
+    SDL_Quit();
+}
+
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
+int main(int argc, char **argv)
+{
+    int ret = EXIT_SUCCESS;
+
+    if(argc != 2) {
+        printf("Usage: %s [base directory path (which contains 'assets' and 'shaders' folders)]\n", argv[0]);
+        ret = EXIT_FAILURE;
+        goto fail_args;
+    }
+
+    if(!engine_init(argv)) {
+        ret = EXIT_FAILURE; 
+        goto fail_init;
+    }
+
+    /* -----> TODO: Loading map - move into scripting */
+    char map_path[512];
+    strcpy(map_path, argv[1]);
+    strcat(map_path, "assets/maps/grass-cliffs-1");
+
+    s_demo_map = AL_MapFromPFMap(map_path, "grass-cliffs.pfmap", "grass-cliffs.pfmat");
+    if(!s_demo_map){
+        ret = EXIT_FAILURE; 
+        goto fail_map;
+    }
+    M_CenterAtOrigin(s_demo_map);
+    M_RestrictRTSCamToMap(s_demo_map, s_camera);
+    G_SetMap(s_demo_map);
+    /* <-----                                         */
+
+    /* -----> TODO: Loading of the entity - move this into scripting */
+    char entity_path[512];
+    strcpy(entity_path, argv[1]);
+    strcat(entity_path, "assets/models/sinbad");
+
+    s_demo_entity = AL_EntityFromPFObj(entity_path, "Sinbad.pfobj", "Sinbad");
+    if(!s_demo_entity){
+        ret = EXIT_FAILURE; 
+        goto fail_entity;
+    }
+    G_AddEntity(s_demo_entity);
+
+    A_InitCtx(s_demo_entity, "Dance", 24);
+
+    mat4x4_t scale, trans;
+    PFM_Mat4x4_MakeTrans(0.0f, 5.0f, -50.0f, &trans);
+    PFM_Mat4x4_MakeScale(1.0f, 1.0f, 1.0f, &scale);
+    PFM_Mat4x4_Mult4x4(&scale, &trans, &s_demo_entity->model_matrix);
+    /* <-----                                                        */
+
+    /* -----> TODO: Setting one-time lighting configs - move into scripting */
+    R_GL_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f});
+    R_GL_SetLightEmitColor((vec3_t){1.0f, 1.0f, 1.0f});
+    R_GL_SetLightPos((vec3_t){0.0f, 300.0f, 0.0f});
+    /* <-----                                                               */
+
+    while(!s_quit) {
+
+        process_events();
+        CamControl_RTS_TickFinish(s_cam_ctx, s_camera);
+        render();        
+
+    }
+
+    AL_MapFree(s_demo_map);
+fail_map:
+    AL_EntityFree(s_demo_entity);
+fail_entity:
+    engine_shutdown();
+fail_init:
 fail_args:
     exit(ret);
 }
