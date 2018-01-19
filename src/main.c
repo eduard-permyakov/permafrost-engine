@@ -46,6 +46,13 @@
 #define CAM_TILT_UP_DEGREES 20.0f
 
 /*****************************************************************************/
+/* GLOBAL VARIABLES                                                          */
+/*****************************************************************************/
+
+/* Write-once global - path of the base directory */
+const char *g_basepath;
+
+/*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
@@ -263,10 +270,17 @@ int main(int argc, char **argv)
         goto fail_args;
     }
 
+    g_basepath = argv[1];
+
     if(!engine_init(argv)) {
         ret = EXIT_FAILURE; 
         goto fail_init;
     }
+
+    char script_path[512];
+    strcpy(script_path, argv[1]);
+    strcat(script_path, "scripts/demo.py");
+    S_RunFile(script_path);
 
     /* -----> TODO: Loading map - move into scripting */
     char map_path[512];

@@ -17,8 +17,6 @@
  *
  */
 
-#include <Python.h> /* must be first */
-
 #include "asset_load.h"
 #include "entity.h"
 

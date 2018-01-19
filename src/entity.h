@@ -20,6 +20,7 @@
 #ifndef ENTITY_H
 #define ENTITY_H
 
+#include <Python.h> /* Must be first */
 #include "pf_math.h"
 
 #define ENTITY_NAME_LEN 32
@@ -35,5 +36,6 @@ struct entity{
 };
 
 void Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
+void Entity_PyRegister(PyObject *module);
 
 #endif

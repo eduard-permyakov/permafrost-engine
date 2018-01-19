@@ -29,7 +29,7 @@
 
 bool   S_Init(char *progname, const char *base_path);
 void   S_Shutdown(void);
-bool   S_RunFile(FILE *stream);
+bool   S_RunFile(const char *path);
 
 #endif
 
