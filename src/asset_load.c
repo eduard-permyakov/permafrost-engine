@@ -17,6 +17,8 @@
  *
  */
 
+#include <Python.h> /* must be first */
+
 #include "asset_load.h"
 #include "entity.h"
 
@@ -27,7 +29,9 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <assert.h>
-#define __USE_POSIX
+#ifndef __USE_POSIX
+    #define __USE_POSIX
+#endif
 #include <string.h>
 #include <stdlib.h> 
 

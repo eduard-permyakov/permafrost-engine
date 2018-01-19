@@ -297,10 +297,8 @@ int main(int argc, char **argv)
 
     A_InitCtx(s_demo_entity, "Dance", 24);
 
-    mat4x4_t scale, trans;
-    PFM_Mat4x4_MakeTrans(0.0f, 5.0f, -50.0f, &trans);
-    PFM_Mat4x4_MakeScale(1.0f, 1.0f, 1.0f, &scale);
-    PFM_Mat4x4_Mult4x4(&scale, &trans, &s_demo_entity->model_matrix);
+    s_demo_entity->pos = (vec3_t){0.0f, 5.0f, -50.0f};
+    s_demo_entity->scale = (vec3_t){1.0f, 1.0f, 1.0f};
     /* <-----                                                        */
 
     /* -----> TODO: Setting one-time lighting configs - move into scripting */

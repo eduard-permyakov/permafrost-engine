@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017 Eduard Permyakov 
+ *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -17,23 +17,14 @@
  *
  */
 
-#ifndef ENTITY_H
-#define ENTITY_H
+#include "entity.h"
 
-#include "pf_math.h"
+void Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out)
+{
+    mat4x4_t trans, scale;
 
-#define ENTITY_NAME_LEN 32
-#define BASEDIR_LEN     64
+    PFM_Mat4x4_MakeTrans(ent->pos.x, ent->pos.y, ent->pos.z, &trans);
+    PFM_Mat4x4_MakeScale(ent->scale.x, ent->scale.y, ent->scale.z, &scale);
+    PFM_Mat4x4_Mult4x4(&trans, &scale, out);
+}
 
-struct entity{
-    char      name[ENTITY_NAME_LEN];
-    char      basedir[BASEDIR_LEN];
-    vec3_t    pos;
-    vec3_t    scale;
-    void     *render_private;
-    void     *anim_private;
-};
-
-void Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
-
-#endif

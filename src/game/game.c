@@ -51,7 +51,10 @@ void G_Render(void)
          * Also, add a proper distinction between static and animated entities - currently we 
          * assume all are animated.*/
         A_Update(curr);
-        R_GL_Draw(curr->render_private, &curr->model_matrix);
+
+        mat4x4_t model;
+        Entity_ModelMatrix(curr, &model);
+        R_GL_Draw(curr->render_private, &model);
     }
 }
 

@@ -22,7 +22,9 @@
 
 #include <GL/glew.h> /* GLfloat definition */
 #include <stdio.h>   /* FILE definition    */
-#define __USE_MISC
+#ifndef __USE_MISC
+    #define __USE_MISC
+#endif
 #include <math.h>    /* M_PI definition    */
 
 #define DEG_TO_RAD(_deg) ((_deg)*(M_PI/180.0f))

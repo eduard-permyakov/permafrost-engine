@@ -361,7 +361,10 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
     glUniform3fv(loc, 1, green.raw);
 
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, ent->model_matrix.raw);
+
+    mat4x4_t model;
+    Entity_ModelMatrix(ent, &model);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
 
     glPointSize(5.0f);
 
