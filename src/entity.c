@@ -21,6 +21,7 @@
 #include "entity.h" 
 #include "asset_load.h"
 #include "anim/public/anim.h"
+#include "game/public/game.h"
 
 typedef struct {
     PyObject_HEAD
@@ -39,6 +40,7 @@ static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure);
 static int       PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_scale(PyEntityObject *self, void *closure);
 static int       PyEntity_set_scale(PyEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyEntity_activate(PyEntityObject *self);
 
 static PyObject *PyAnimEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args);
@@ -46,6 +48,16 @@ static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
+
+static PyMethodDef PyEntity_methods[] = {
+    {"activate", 
+    (PyCFunction)PyEntity_activate, METH_NOARGS,
+    "Add the entity to the game world, making it visible and allowing other entities "
+    "to interact with it in the simulation. The activated entity will be removed from "
+    "the game world when no more references to it remain in scope. (Hint: Use 'del' "
+    "when you have a single reference)"},
+    {NULL}  /* Sentinel */
+};
 
 static PyGetSetDef PyEntity_getset[] = {
     {"name",
@@ -99,7 +111,7 @@ static PyTypeObject PyEntity_type = {
     0,                         /* tp_weaklistoffset */
     0,                         /* tp_iter */
     0,                         /* tp_iternext */
-    0,                         /* tp_methods */
+    PyEntity_methods,          /* tp_methods */
     0,                         /* tp_members */
     PyEntity_getset,           /* tp_getset */
     0,                         /* tp_base */
@@ -124,7 +136,7 @@ static PyTypeObject PyAnimEntity_type = {
 };
 
 /*****************************************************************************/
-/* PYTHON HOOKS                                                              */
+/* PYTHON API FUNCTIONS                                                      */
 /*****************************************************************************/
 
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
@@ -156,6 +168,8 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 static void PyEntity_dealloc(PyEntityObject *self)
 {
     assert(self->ent);
+
+    G_RemoveEntity(self->ent);
     AL_EntityFree(self->ent);
 
     Py_TYPE(self)->tp_free((PyObject*)self);
@@ -247,6 +261,13 @@ static int PyEntity_set_scale(PyEntityObject *self, PyObject *value, void *closu
     return 0;
 }
 
+static PyObject *PyEntity_activate(PyEntityObject *self)
+{
+    assert(self->ent);
+    G_AddEntity(self->ent);
+    Py_RETURN_NONE;
+}
+
 static PyObject *PyAnimEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     const char *dirpath, *filename, *name, *clipname;
@@ -295,13 +316,11 @@ void Entity_PyRegister(PyObject *module)
 {
     if(PyType_Ready(&PyEntity_type) < 0)
         return;
-
-    if(PyType_Ready(&PyAnimEntity_type) < 0)
-        return;
-
     Py_INCREF(&PyEntity_type);
     PyModule_AddObject(module, "Entity", (PyObject*)&PyEntity_type);
 
+    if(PyType_Ready(&PyAnimEntity_type) < 0)
+        return;
     Py_INCREF(&PyAnimEntity_type);
     PyModule_AddObject(module, "AnimEntity", (PyObject*)&PyAnimEntity_type);
 }

@@ -18,11 +18,9 @@
  */
 
 #include "asset_load.h"
-#include "entity.h"
 #include "config.h"
 #include "cursor.h"
 #include "render/public/render.h"
-#include "anim/public/anim.h"
 #include "lib/public/stb_image.h"
 #include "map/public/map.h"
 #include "script/public/script.h"
@@ -55,8 +53,6 @@ static SDL_Window         *s_window;
 static SDL_GLContext       s_context;
 
 static bool                s_quit = false; 
-
-struct entity             *s_demo_entity;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -210,9 +206,14 @@ fail_sdl:
 
 void engine_shutdown(void)
 {
-    G_Shutdown(); 
-
     S_Shutdown();
+
+    /* 'Game' must shut down after 'Scripting'. There are still 
+     * references to game entities in the Python interpreter that should get
+     * their destructors called during 'S_Shutdown(), which will invoke the 
+     * 'G_' API to remove them from the world.
+     */
+    G_Shutdown(); 
 
     Cursor_FreeAll();
 
@@ -242,38 +243,15 @@ int main(int argc, char **argv)
         goto fail_init;
     }
 
-    char map_path[512];
-    strcpy(map_path, argv[1]);
-    strcat(map_path, "assets/maps/grass-cliffs-1");
-    G_NewGameWithMap(map_path, "grass-cliffs.pfmap", "grass-cliffs.pfmat");
-
     char script_path[512];
     strcpy(script_path, argv[1]);
     strcat(script_path, "scripts/demo.py");
     S_RunFile(script_path);
 
-    /* -----> TODO: Loading of the entity - move this into scripting */
-    char entity_path[512];
-    strcpy(entity_path, argv[1]);
-    strcat(entity_path, "assets/models/sinbad");
-
-    s_demo_entity = AL_EntityFromPFObj(entity_path, "Sinbad.pfobj", "Sinbad");
-    if(!s_demo_entity){
-        ret = EXIT_FAILURE; 
-        goto fail_entity;
-    }
-    G_AddEntity(s_demo_entity);
-
-    A_InitCtx(s_demo_entity, "Dance", 24);
-
-    s_demo_entity->pos = (vec3_t){0.0f, 5.0f, -50.0f};
-    s_demo_entity->scale = (vec3_t){1.0f, 1.0f, 1.0f};
-    /* <-----                                                        */
-
     /* -----> TODO: Setting one-time lighting configs - move into scripting */
-    R_GL_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f});
-    R_GL_SetLightEmitColor((vec3_t){1.0f, 1.0f, 1.0f});
-    R_GL_SetLightPos((vec3_t){0.0f, 300.0f, 0.0f});
+    //R_GL_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f});
+    //R_GL_SetLightEmitColor((vec3_t){1.0f, 1.0f, 1.0f});
+    //R_GL_SetLightPos((vec3_t){0.0f, 300.0f, 0.0f});
     /* <-----                                                               */
 
     while(!s_quit) {

@@ -3,16 +3,133 @@
 
 #include "public/script.h"
 #include "../entity.h"
+#include "../game/public/game.h"
+#include "../render/public/render.h"
 
 #include <stdio.h>
+
+
+static PyObject *PyPf_new_game(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
 static PyMethodDef pf_module_methods[] = {
+
+    {"new_game", 
+    (PyCFunction)PyPf_new_game, METH_VARARGS,
+    "Loads the specified map and creates an empty scene. Note that all "
+    "references to existing _active_ entities _MUST_ be deleted before creating a "
+    "new game."},
+
+    {"set_ambient_light_color", 
+    (PyCFunction)PyPf_set_ambient_light_color, METH_VARARGS,
+    "Sets the global ambient light color (specified as an RGB multiplier) for the scene."},
+
+    {"set_emit_light_color", 
+    (PyCFunction)PyPf_set_emit_light_color, METH_VARARGS,
+    "Sets the color (specified as an RGB multiplier) for the global light source."},
+
+    {"set_emit_light_pos", 
+    (PyCFunction)PyPf_set_emit_light_pos, METH_VARARGS,
+    "Sets the position (in XYZ worldspace coordinates)"},
+
     {NULL}  /* Sentinel */
 };
+
+/*****************************************************************************/
+/* PYTHON API FUNCTIONS                                                      */
+/*****************************************************************************/
+
+static bool s_vec3_from_pylist_arg(PyObject *list, vec3_t *out)
+{
+    vec3_t ret;
+
+    if(!PyList_Check(list)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a list.");
+        return false;
+    }
+    
+    Py_ssize_t len = PyList_Size(list);
+    if(len != 3) {
+        PyErr_SetString(PyExc_TypeError, "Argument must have a size of 3."); 
+        return false;
+    }
+
+    for(int i = 0; i < len; i++) {
+
+        PyObject *item = PyList_GetItem(list, i);
+        if(!PyFloat_Check(item)) {
+            PyErr_SetString(PyExc_TypeError, "List items must be floats.");
+            return false;
+        }
+
+        out->raw[i] = PyFloat_AsDouble(item);
+    }
+
+    return true;
+}
+
+static PyObject *PyPf_new_game(PyObject *self, PyObject *args)
+{
+    const char *dir, *pfmap, *pfmat;
+    if(!PyArg_ParseTuple(args, "sss", &dir, &pfmap, &pfmat)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of three strings.");
+        return NULL;
+    }
+
+    G_NewGameWithMap(dir, pfmap, pfmat);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args)
+{
+    PyObject *list;
+    vec3_t color;
+
+    if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list))
+        return NULL;
+
+    if(!s_vec3_from_pylist_arg(list, &color))
+        return NULL;
+
+    R_GL_SetAmbientLightColor(color);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args)
+{
+    PyObject *list;
+    vec3_t color;
+
+    if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list))
+        return NULL;
+
+    if(!s_vec3_from_pylist_arg(list, &color))
+        return NULL;
+
+    R_GL_SetLightEmitColor(color);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)
+{
+    PyObject *list;
+    vec3_t pos;
+
+    if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list))
+        return NULL;
+
+    if(!s_vec3_from_pylist_arg(list, &pos))
+        return NULL;
+
+    R_GL_SetLightPos(pos);
+    Py_RETURN_NONE;
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
