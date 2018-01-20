@@ -248,12 +248,6 @@ int main(int argc, char **argv)
     strcat(script_path, "scripts/demo.py");
     S_RunFile(script_path);
 
-    /* -----> TODO: Setting one-time lighting configs - move into scripting */
-    //R_GL_SetAmbientLightColor((vec3_t){1.0f, 1.0f, 1.0f});
-    //R_GL_SetLightEmitColor((vec3_t){1.0f, 1.0f, 1.0f});
-    //R_GL_SetLightPos((vec3_t){0.0f, 300.0f, 0.0f});
-    /* <-----                                                               */
-
     while(!s_quit) {
 
         process_events();

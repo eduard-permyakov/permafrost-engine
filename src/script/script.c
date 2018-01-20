@@ -1,6 +1,25 @@
-/* Must be included first */
-#include <Python.h>
+/*
+ *  This file is part of Permafrost Engine. 
+ *  Copyright (C) 2017-2018 Eduard Permyakov 
+ *
+ *  Permafrost Engine is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  Permafrost Engine is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
 
+#include <Python.h> /* Must be included first */
+
+#include "entity_script.h"
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
@@ -42,7 +61,7 @@ static PyMethodDef pf_module_methods[] = {
 };
 
 /*****************************************************************************/
-/* PYTHON API FUNCTIONS                                                      */
+/* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
 static bool s_vec3_from_pylist_arg(PyObject *list, vec3_t *out)
@@ -142,7 +161,7 @@ PyMODINIT_FUNC initpf(void)
     if(!module)
         return;
 
-    Entity_PyRegister(module);
+    S_Entity_PyRegister(module);
 }
 
 bool S_Init(char *progname, const char *base_path)
