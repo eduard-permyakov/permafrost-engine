@@ -20,12 +20,16 @@
 #include <Python.h> /* must be first */
 #include "entity.h" 
 #include "asset_load.h"
-
+#include "anim/public/anim.h"
 
 typedef struct {
     PyObject_HEAD
     struct entity *ent;
 }PyEntityObject;
+
+typedef struct {
+    PyEntityObject super; 
+}PyAnimEntityObject;
 
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void      PyEntity_dealloc(PyEntityObject *self);
@@ -35,6 +39,9 @@ static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure);
 static int       PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_scale(PyEntityObject *self, void *closure);
 static int       PyEntity_set_scale(PyEntityObject *self, PyObject *value, void *closure);
+
+static PyObject *PyAnimEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -55,6 +62,14 @@ static PyGetSetDef PyEntity_getset[] = {
     NULL},
     {NULL}  /* Sentinel */
 };
+
+static PyMethodDef PyAnimEntity_methods[] = {
+    {"play_anim", 
+    (PyCFunction)PyAnimEntity_play_anim, METH_VARARGS,
+    "Play the animation clip with the specified name." },
+    {NULL}  /* Sentinel */
+};
+
 
 static PyTypeObject PyEntity_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -95,6 +110,17 @@ static PyTypeObject PyEntity_type = {
     0,                         /* tp_init */
     0,                         /* tp_alloc */
     PyEntity_new,              /* tp_new */
+};
+
+static PyTypeObject PyAnimEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.AnimEntity",
+    .tp_basicsize = sizeof(PyAnimEntityObject),
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine animated entity.",
+    .tp_methods   = PyAnimEntity_methods,
+    .tp_base      = &PyEntity_type,
+    .tp_new       = PyAnimEntity_new,
 };
 
 /*****************************************************************************/
@@ -221,6 +247,37 @@ static int PyEntity_set_scale(PyEntityObject *self, PyObject *value, void *closu
     return 0;
 }
 
+static PyObject *PyAnimEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    const char *dirpath, *filename, *name, *clipname;
+    if(!PyArg_ParseTuple(args, "ssss", &dirpath, &filename, &name, &clipname)) {
+        return NULL;
+    }
+
+    PyObject *super_args = Py_BuildValue("(s,s,s)", dirpath, filename, name);
+    PyAnimEntityObject *ret;
+
+    ret = (PyAnimEntityObject*)PyEntity_type.tp_new(&PyAnimEntity_type, super_args, NULL);
+    Py_DECREF(super_args);
+    if(!ret)
+        return NULL;
+
+    A_InitCtx(ret->super.ent, clipname, 24);
+    return (PyObject*)ret;
+}
+
+static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args)
+{
+    const char *clipname;
+    if(!PyArg_ParseTuple(args, "s", &clipname)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
+        return NULL;
+    }
+
+    A_SetActiveClip(self->super.ent, clipname, ANIM_MODE_LOOP, 24);
+    Py_RETURN_NONE;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -239,7 +296,13 @@ void Entity_PyRegister(PyObject *module)
     if(PyType_Ready(&PyEntity_type) < 0)
         return;
 
+    if(PyType_Ready(&PyAnimEntity_type) < 0)
+        return;
+
     Py_INCREF(&PyEntity_type);
     PyModule_AddObject(module, "Entity", (PyObject*)&PyEntity_type);
+
+    Py_INCREF(&PyAnimEntity_type);
+    PyModule_AddObject(module, "AnimEntity", (PyObject*)&PyAnimEntity_type);
 }
 

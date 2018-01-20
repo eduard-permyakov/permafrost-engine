@@ -19,8 +19,6 @@
 
 #include "asset_load.h"
 #include "entity.h"
-#include "camera.h"
-#include "cam_control.h"
 #include "config.h"
 #include "cursor.h"
 #include "render/public/render.h"
@@ -42,9 +40,6 @@
 #define PF_VER_MINOR 3
 #define PF_VER_PATCH 0
 
-#define CAM_HEIGHT          150.0f
-#define CAM_TILT_UP_DEGREES 20.0f
-
 /*****************************************************************************/
 /* GLOBAL VARIABLES                                                          */
 /*****************************************************************************/
@@ -61,11 +56,7 @@ static SDL_GLContext       s_context;
 
 static bool                s_quit = false; 
 
-static struct camera      *s_camera;
-static struct cam_rts_ctx *s_cam_ctx;
-
 struct entity             *s_demo_entity;
-struct map                *s_demo_map;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -77,7 +68,7 @@ static void process_events(void)
    
     while(SDL_PollEvent(&event)) {
 
-        CamControl_RTS_HandleEvent(s_cam_ctx, s_camera, event);
+        G_HandleEvent(&event);
 
         switch(event.type) {
 
@@ -187,26 +178,6 @@ static bool engine_init(char **argv)
     }
 
     /* ---------------------------------- */
-    /* Camera initialization              */
-    /* ---------------------------------- */
-    s_camera = Camera_New();
-    if(!s_camera) {
-        result = false;
-        goto fail_camera;
-    }
-    s_cam_ctx = CamControl_RTS_CtxNew();
-    if(!s_cam_ctx) {
-        result = false;
-        goto fail_camera_ctx;
-    }
-    CamControl_RTS_SetMouseMode();
-
-    Camera_SetPos  (s_camera, (vec3_t){ 0.0f, CAM_HEIGHT,  0.0f});
-    Camera_SetPitchAndYaw(s_camera, -70.0f, 90.0f + 45.0f);
-    Camera_SetSpeed(s_camera, 0.15f);
-    Camera_SetSens (s_camera, 0.05f);
-
-    /* ---------------------------------- */
     /* Scripting subsystem initialization */
     /* ---------------------------------- */
     if(!S_Init(argv[0], argv[1])){
@@ -226,10 +197,6 @@ static bool engine_init(char **argv)
 
 fail_game:
 fail_script:
-    CamControl_RTS_CtxFree(s_cam_ctx);
-fail_camera_ctx:
-    Camera_Free(s_camera);
-fail_camera:
 fail_render:
     Cursor_FreeAll();
 fail_cursor:
@@ -243,16 +210,14 @@ fail_sdl:
 
 void engine_shutdown(void)
 {
-    S_Shutdown();
+    G_Shutdown(); 
 
-    CamControl_RTS_CtxFree(s_cam_ctx);
-    Camera_Free(s_camera);
+    S_Shutdown();
 
     Cursor_FreeAll();
 
     SDL_GL_DeleteContext(s_context);
-    SDL_DestroyWindow(s_window);
-
+    SDL_DestroyWindow(s_window); 
     SDL_Quit();
 }
 
@@ -277,25 +242,15 @@ int main(int argc, char **argv)
         goto fail_init;
     }
 
+    char map_path[512];
+    strcpy(map_path, argv[1]);
+    strcat(map_path, "assets/maps/grass-cliffs-1");
+    G_NewGameWithMap(map_path, "grass-cliffs.pfmap", "grass-cliffs.pfmat");
+
     char script_path[512];
     strcpy(script_path, argv[1]);
     strcat(script_path, "scripts/demo.py");
     S_RunFile(script_path);
-
-    /* -----> TODO: Loading map - move into scripting */
-    char map_path[512];
-    strcpy(map_path, argv[1]);
-    strcat(map_path, "assets/maps/grass-cliffs-1");
-
-    s_demo_map = AL_MapFromPFMap(map_path, "grass-cliffs.pfmap", "grass-cliffs.pfmat");
-    if(!s_demo_map){
-        ret = EXIT_FAILURE; 
-        goto fail_map;
-    }
-    M_CenterAtOrigin(s_demo_map);
-    M_RestrictRTSCamToMap(s_demo_map, s_camera);
-    G_SetMap(s_demo_map);
-    /* <-----                                         */
 
     /* -----> TODO: Loading of the entity - move this into scripting */
     char entity_path[512];
@@ -324,14 +279,11 @@ int main(int argc, char **argv)
     while(!s_quit) {
 
         process_events();
-        CamControl_RTS_TickFinish(s_cam_ctx, s_camera);
+        G_Update();
         render();        
 
     }
 
-    AL_MapFree(s_demo_map);
-fail_map:
-    AL_EntityFree(s_demo_entity);
 fail_entity:
     engine_shutdown();
 fail_init:

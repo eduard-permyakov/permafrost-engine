@@ -21,21 +21,23 @@
 #define GAME_H
 
 #include <stdbool.h>
+#include <SDL2/SDL.h>
 
 struct entity;
 struct map;
 
-bool              G_Init(void);
-void              G_Shutdown(void);
+bool G_Init(void);
+bool G_NewGameWithMap(const char *dir, const char *pfmap, const char *pfmat);
+void G_Shutdown(void);
 
-void              G_Render(void);
+void G_Render(void);
+void G_Update(void);
+/* TODO: Eventually, have a centralized place of event handling and have different subsystems
+ * register handlers for particular events. */
+void G_HandleEvent(SDL_Event *e);
 
-bool              G_AddEntity(struct entity *ent);
-bool              G_RemoveEntity(struct entity *ent);
-
-bool              G_SetMap(struct map *map);
-const struct map *G_GetMap(void);
-
+bool G_AddEntity(struct entity *ent);
+bool G_RemoveEntity(struct entity *ent);
 
 #endif
 

@@ -26,8 +26,10 @@
 KLIST_INIT(entity, struct entity *, __ent_free)
 
 struct gamestate{
-    struct map      *map;
-    klist_t(entity) *active;
+    struct map         *map;
+    struct camera      *camera;
+    struct cam_rts_ctx *cam_ctx;
+    klist_t(entity)    *active;
 };
 
 #endif

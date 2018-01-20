@@ -56,12 +56,12 @@ void CamControl_FPS_CtxFree(struct cam_fps_ctx *ctx)
     free(ctx);
 }
 
-void CamControl_FPS_HandleEvent(struct cam_fps_ctx *ctx, struct camera *cam, SDL_Event e)
+void CamControl_FPS_HandleEvent(struct cam_fps_ctx *ctx, struct camera *cam, SDL_Event *e)
 {
-    switch(e.type) {
+    switch(e->type) {
 
     case SDL_KEYDOWN:
-        switch(e.key.keysym.scancode) {
+        switch(e->key.keysym.scancode) {
         case SDL_SCANCODE_W: ctx->move_front = true; break;
         case SDL_SCANCODE_A: ctx->move_left = true; break;
         case SDL_SCANCODE_S: ctx->move_back = true; break;
@@ -72,7 +72,7 @@ void CamControl_FPS_HandleEvent(struct cam_fps_ctx *ctx, struct camera *cam, SDL
         break;
     
     case SDL_KEYUP:
-        switch(e.key.keysym.scancode) {
+        switch(e->key.keysym.scancode) {
         case SDL_SCANCODE_W: ctx->move_front = false; break;
         case SDL_SCANCODE_A: ctx->move_left = false; break;
         case SDL_SCANCODE_S: ctx->move_back = false; break;
@@ -82,7 +82,7 @@ void CamControl_FPS_HandleEvent(struct cam_fps_ctx *ctx, struct camera *cam, SDL
         break;
 
     case SDL_MOUSEMOTION: 
-        Camera_ChangeDirection(cam, e.motion.xrel, e.motion.yrel);
+        Camera_ChangeDirection(cam, e->motion.xrel, e->motion.yrel);
         break;
     };
 }
@@ -117,9 +117,9 @@ void CamControl_RTS_CtxFree(struct cam_rts_ctx *ctx)
     free(ctx);
 }
 
-void CamControl_RTS_HandleEvent(struct cam_rts_ctx *ctx, struct camera *cam, SDL_Event e)
+void CamControl_RTS_HandleEvent(struct cam_rts_ctx *ctx, struct camera *cam, SDL_Event *e)
 {
-    switch(e.type) {
+    switch(e->type) {
 
         case SDL_MOUSEMOTION: {
         
