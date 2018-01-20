@@ -87,6 +87,10 @@ void main()
     case 7: tex_color = texture(texture7, from_vertex.uv); break;
     }
 
+    /* Simple alpha test to reject transparent pixels */
+    if(tex_color.a== 0.0)
+        discard;
+
     /* Ambient calculations */
     vec3 ambient = materials[from_vertex.mat_idx].ambient_intensity * ambient_color;
 

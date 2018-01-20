@@ -172,6 +172,12 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     if(!A_AL_InitPrivFromStream(&header, stream, ret->anim_private))
         goto fail_init;
 
+    /* Entities with no joints and no animation sets are considered static. 
+     * Otherwise, they must have both a nonzero number ofjoints and 
+     * animation sets to be considered valid considered valid. */
+    ret->animated = (header.num_joints > 0);
+    assert(!animated || header.num_as > 0);
+
     assert( strlen(name) < sizeof(ret->name) );
     strcpy(ret->name, name);
 

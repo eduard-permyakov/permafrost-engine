@@ -125,11 +125,8 @@ void G_Render(void)
 
         /* TODO: Currently, we perform animation right before rendering due to 'A_Update' setting
          * some uniforms for the shader. Investigate if it's better to perform the animation for all
-         * entities at once and just set the uniform right before rendering. 
-         *
-         * Also, add a proper distinction between static and animated entities - currently we 
-         * assume all are animated.*/
-        A_Update(curr);
+         * entities at once and just set the uniform right before rendering.  */
+        if(curr->animated) A_Update(curr);
 
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);

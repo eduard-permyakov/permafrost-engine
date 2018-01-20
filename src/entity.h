@@ -21,6 +21,7 @@
 #define ENTITY_H
 
 #include "pf_math.h"
+#include <stdbool.h>
 
 #define ENTITY_NAME_LEN 32
 #define BASEDIR_LEN     64
@@ -30,6 +31,7 @@ struct entity{
     char      basedir[BASEDIR_LEN];
     vec3_t    pos;
     vec3_t    scale;
+    bool      animated;
     void     *render_private;
     void     *anim_private;
 };
