@@ -22,7 +22,6 @@
 #include "cursor.h"
 #include "render/public/render.h"
 #include "lib/public/stb_image.h"
-#include "map/public/map.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
 
@@ -35,7 +34,7 @@
 
 
 #define PF_VER_MAJOR 0
-#define PF_VER_MINOR 3
+#define PF_VER_MINOR 4
 #define PF_VER_PATCH 0
 
 /*****************************************************************************/

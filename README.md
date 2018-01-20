@@ -20,19 +20,22 @@ grow to be a fully-featured game engine.
 * Phong reflection model with materials
 * RTS camera, FPS camera
 * Rendering of tile-based world parsed from ASCII file
+* Engine internals exposed to Python 2.7 for scripting
 
 ## Dependencies ##
 
 * SDL2
 * GLEW
+* python2.7
 * stb_image.h (part of source code)
+* khash.h, kvec.h, klist.h (part of source code)
 
 ## Building Permafrost Engine ##
 
 The engine can only be built on Linux for the time being.
 
-First, make sure you have `SDL2` and `GLEW` installed on your platform. Otherwise, 
-the build will fail.
+First, make sure you have `SDL2`, `GLEW` and `python2.7` installed on your platform. 
+Otherwise, the build will fail.
 
 1. `git clone https://github.com/eduard-permyakov/permafrost-engine.git`
 2. `cd permafrost-engine`
