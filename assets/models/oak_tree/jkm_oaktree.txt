@@ -1,0 +1,62 @@
+Date: 08/2001.
+Quake3Arena map object models
+
+====================================================
+Title:            Oaktree-mapmodels 
+File:             jkm_oaktree.pk3
+Author:           Julius Krischan Makowka 
+E-mail address:   jkmakowka@yahoo.de
+
+Description:      tree mapmodels
+
+		  
+====================================================
+Files included in the .pk3 :
+
+Oak.shader
+Oakstamm.jpg
+Oakstamm2.jpg
+Oakblaetter.tga
+Oakblaetter2.tga
+Oakblaetter3.tga
+Oak1.md3 (555 polys)
+Oak2.md3 (555 polys)
+Oak3.md3 (555 polys)
+Oak4.md3 (418 polys)
+Oak5.md3 (418 polys)
+
+====================================================
+Construction
+
+Base:           none
+Editor:         MilkShape 3d 
+Other progs:    PaintShopPro
+
+====================================================
+
+Distribution / Copyright / Permissions 
+
+Copyright (C) 2009  Julius Krischan Makowka
+
+This content is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or any later version.
+
+This content is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+Alternativly you can also use these under the terms of 
+the Creative Commons Share Alike 3.0 License, or maybe another 
+more liberal license if you contact me.
+
+____________________________________________________
+Quake III Arena is a registered trademark of
+id Software, Inc.
+All rights reserved.
