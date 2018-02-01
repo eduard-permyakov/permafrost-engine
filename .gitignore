@@ -2,6 +2,10 @@
 /lib/
 /obj/
 
+/deps/glew-2.1.0/lib
+/deps/glew-2.1.0/tmp
+/deps/glew-2.1.0/glew.pc
+
 /assets/*
 
 !/assets/models
