@@ -5,6 +5,7 @@
 /deps/glew-2.1.0/lib
 /deps/glew-2.1.0/tmp
 /deps/glew-2.1.0/glew.pc
+/deps/SDL2-2.0.7/build
 
 /assets/*
 
