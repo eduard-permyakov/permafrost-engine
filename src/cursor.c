@@ -20,8 +20,9 @@
 #include "cursor.h"
 #include "config.h"
 
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
+#include <string.h>
 #include <assert.h>
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
@@ -115,7 +116,6 @@ bool Cursor_InitAll(const char *basedir)
 
         char path[512];
         strcpy(path, basedir);
-        strcat(path, "/");
         strcat(path, curr->path);
 
         curr->surface = SDL_LoadBMP(path);

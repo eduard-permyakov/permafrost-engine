@@ -17,27 +17,19 @@
  *
  */
 
-#ifndef GAME_H
-#define GAME_H
+#ifndef GL_ASSERT_H
+#define GL_ASSERT_H
 
-#include <stdbool.h>
-#include <SDL.h>
+#include <assert.h>
+#include <stdio.h>
 
-struct entity;
-struct map;
-
-bool G_Init(void);
-bool G_NewGameWithMap(const char *dir, const char *pfmap, const char *pfmat);
-void G_Shutdown(void);
-
-void G_Render(void);
-void G_Update(void);
-/* TODO: Eventually, have a centralized place of event handling and have different subsystems
- * register handlers for particular events. */
-void G_HandleEvent(SDL_Event *e);
-
-bool G_AddEntity(struct entity *ent);
-bool G_RemoveEntity(struct entity *ent);
+#define GL_ASSERT_OK()										\
+	do {													\
+		GLenum error = glGetError();						\
+		if(error != GL_NO_ERROR)							\
+			fprintf(stderr, "%s:%d OpenGL error: %d\n", 	\
+				__FILE__, __LINE__, error);					\
+		assert(error == GL_NO_ERROR);						\
+	}while(0)												\
 
 #endif
-

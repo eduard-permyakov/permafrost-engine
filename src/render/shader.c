@@ -19,11 +19,12 @@
 
 #include "shader.h"
 
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdio.h>
 
 #define SHADER_PATH_LEN 128
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
@@ -134,11 +135,15 @@ static bool shader_init(const char *text, GLuint *out, GLint type)
 static bool shader_load_and_init(const char *path, GLint *out, GLint type)
 {
     const char *text = shader_text_load(path);
-    if(!text)
+    if(!text) {
+        fprintf(stderr, "Could not load shader at: %s\n", path);
         goto fail;
+    }
     
-    if(!shader_init(text, out, type))
+    if(!shader_init(text, out, type)){
+        fprintf(stderr, "Could not compile shader at: %s\n", path);
         goto fail;
+    }
 
     free((char*)text);
     return true;
@@ -187,8 +192,10 @@ bool R_Shader_InitAll(const char *base_path)
         char path[512];
     
         MAKE_PATH(path, base_path, res->vertex_path);
-        if(!shader_load_and_init(path, &vertex, GL_VERTEX_SHADER))
+        if(!shader_load_and_init(path, &vertex, GL_VERTEX_SHADER)) {
+            fprintf(stderr, "Failed to load and init vertex shader.\n");
             return false;
+        }
 
         if(res->geo_path)
             MAKE_PATH(path, base_path, res->geo_path);
@@ -197,8 +204,10 @@ bool R_Shader_InitAll(const char *base_path)
         assert(!res->geo_path || geometry > 0);
 
         MAKE_PATH(path, base_path, res->frag_path);
-        if(!shader_load_and_init(path, &fragment, GL_FRAGMENT_SHADER))
+        if(!shader_load_and_init(path, &fragment, GL_FRAGMENT_SHADER)) {
+            fprintf(stderr, "Failed to load and init fragment shader.\n");
             return false;
+        }
 
         if(!shader_make_prog(vertex, geometry, fragment, &res->prog_id)) {
 
@@ -206,6 +215,8 @@ bool R_Shader_InitAll(const char *base_path)
             if(geometry)
                 glDeleteShader(geometry);
             glDeleteShader(fragment);
+            fprintf(stderr, "Failed to make shader program %d of %d.\n",
+                i + 1, (int)ARR_SIZE(s_shaders));
             return false;
         }
 

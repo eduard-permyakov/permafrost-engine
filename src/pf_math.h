@@ -22,6 +22,9 @@
 
 #include <GL/glew.h> /* GLfloat definition */
 #include <stdio.h>   /* FILE definition    */
+#ifndef _USE_MATH_DEFINES
+    #define _USE_MATH_DEFINES
+#endif
 #ifndef __USE_MISC
     #define __USE_MISC
 #endif

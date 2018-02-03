@@ -22,7 +22,7 @@
 
 #include "camera.h"
 
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 struct cam_fps_ctx;
 struct cam_rts_ctx;

@@ -33,6 +33,10 @@
 #include <string.h>
 #include <stdlib.h> 
 
+#if defined(_WIN32)
+    #define strtok_r strtok_s
+#endif
+
 
 #define READ_LINE(file, buff, fail_label)       \
     do{                                         \

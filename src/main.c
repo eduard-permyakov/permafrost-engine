@@ -24,13 +24,19 @@
 #include "lib/public/stb_image.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
+#include "gl_assert.h"
 
 #include <GL/glew.h>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_opengl.h>
+#include <SDL.h>
+#include <SDL_opengl.h>
 
 #include <stdbool.h>
 #include <assert.h>
+#include <string.h>
+
+#if defined(_WIN32)
+    #include <windows.h>
+#endif
 
 
 #define PF_VER_MAJOR 0
@@ -123,9 +129,17 @@ static bool engine_init(char **argv)
         goto fail_sdl;
     }
 
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
+
+    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
     s_window = SDL_CreateWindow(
         "Permafrost Engine",
@@ -133,13 +147,10 @@ static bool engine_init(char **argv)
         SDL_WINDOWPOS_UNDEFINED,
         CONFIG_RES_X, 
         CONFIG_RES_Y, 
-        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN);
+        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN);
 
     s_context = SDL_GL_CreateContext(s_window); 
-
     SDL_GL_SetSwapInterval(0); 
-    glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
-    glEnable(GL_DEPTH_TEST);
 
     /* ---------------------------------- */
     /* GLEW initialization                */
@@ -149,6 +160,15 @@ static bool engine_init(char **argv)
         result = false;
         goto fail_glew;
     }
+
+    if(!GLEW_VERSION_3_3) {
+        result = false;
+        goto fail_glew;
+    }
+    GL_ASSERT_OK();
+
+    glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
+    glEnable(GL_DEPTH_TEST);
 
     /* ---------------------------------- */
     /* stb_image initialization           */
@@ -225,8 +245,29 @@ void engine_shutdown(void)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+#if defined(_WIN32)
+int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, 
+                     LPSTR lpCmdLine, int nCmdShow)
+#else
 int main(int argc, char **argv)
+#endif
 {
+#if defined(_WIN32)
+    LPWSTR *argv_wide;
+    char args[16][256];
+    char *argv[16];
+    int argc;
+    argv_wide = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if(!argv)
+        goto fail_args;
+
+    for(int i = 0; i < argc; i++) {
+        argv[i] = args[i];
+        snprintf(argv[i], sizeof(args[i]), "%S", argv_wide[i]);
+    }
+    LocalFree(argv_wide);
+#endif
+
     int ret = EXIT_SUCCESS;
 
     if(argc != 2) {
@@ -255,7 +296,6 @@ int main(int argc, char **argv)
 
     }
 
-fail_entity:
     engine_shutdown();
 fail_init:
 fail_args:

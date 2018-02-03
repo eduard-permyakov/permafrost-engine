@@ -185,7 +185,9 @@ bool S_RunFile(const char *path)
     if(!script)
         return false;
 
-    PyRun_SimpleFile(script, path); 
+    PyObject *PyFileObject = PyFile_FromString((char*)path, "r");
+    PyRun_SimpleFile(PyFile_AsFile(PyFileObject), path);
+
     fclose(script);
     return true;
 }

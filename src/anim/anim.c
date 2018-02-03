@@ -25,7 +25,7 @@
 #include "../gl_uniforms.h"
 #include "../render/public/render.h"
 
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 #include <string.h>
 #include <assert.h>
