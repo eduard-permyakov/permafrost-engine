@@ -41,7 +41,7 @@ along with the game binary if desired.
 1. `git clone https://github.com/eduard-permyakov/permafrost-engine.git`
 2. `cd permafrost-engine`
 3. Optionally `make deps` to build the shared library dependencies to `./lib`
-   If you skip this step, you linker must be able to satisfy `-lGLEW`, `lSDL2`, and 
+   If you skip this step, your linker must be able to satisfy `-lGLEW`, `lSDL2`, and 
    `-lpython2.7`.
 3. `make pf`
 4. `make run` (runs the binary in `./bin` with default arguments)
@@ -50,7 +50,7 @@ along with the game binary if desired.
 
 1. Python must be compiled using MSVC build tools and the solution file found in the
    the source's `PCbuild` directory. Afterwards, copy `python27.dll`(and extension shared
-   libraries if you with) and the `Lib` folder to `./lib`. Alternatively, you may try 
+   libraries if you wish) and the `Lib` folder to `./lib`. Alternatively, you may try 
    to link against an existing Python installation elsewhere on your system.
 2. The rest of the source code can be built with MinGW and MSYS using largely the same steps
    as on Linux.
