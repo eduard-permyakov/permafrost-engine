@@ -141,7 +141,7 @@ static void r_gl_set_view_pos(const vec3_t *pos, const char *shader_name)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_Init(struct render_private *priv)
+void R_GL_Init(struct render_private *priv, bool anim)
 {
     struct mesh *mesh = &priv->mesh;
 
@@ -171,17 +171,21 @@ void R_GL_Init(struct render_private *priv)
         (void*)offsetof(struct vertex, material_idx));
     glEnableVertexAttribArray(3);
 
-    /* Attribute 4 - joint indices */
-    glVertexAttribPointer(4, 4, GL_INT, GL_FALSE, sizeof(struct vertex),
-        (void*)offsetof(struct vertex, joint_indices));
-    glEnableVertexAttribArray(4);  
+    if(anim) {
+    
+        /* Attribute 4 - joint indices */
+        glVertexAttribPointer(4, 4, GL_INT, GL_FALSE, sizeof(struct vertex),
+            (void*)offsetof(struct vertex, joint_indices));
+        glEnableVertexAttribArray(4);  
 
-    /* Attribute 5 - joint weights */
-    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
-        (void*)offsetof(struct vertex, weights));
-    glEnableVertexAttribArray(5);  
+        /* Attribute 5 - joint weights */
+        glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
+            (void*)offsetof(struct vertex, weights));
+        glEnableVertexAttribArray(5);  
+    }
 
-    priv->shader_prog = R_Shader_GetProgForName("mesh.animated.textured");
+    priv->shader_prog = anim ? R_Shader_GetProgForName("mesh.animated.textured")
+                             : R_Shader_GetProgForName("mesh.static.textured");
 }
 
 void R_GL_Draw(const void *render_private, mat4x4_t *model)
@@ -208,6 +212,7 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
 {
     const char *shaders[] = {
         "mesh.static.colored",
+        "mesh.static.textured",
         "mesh.animated.textured",
         "mesh.animated.normals.colored",
     };
@@ -223,6 +228,7 @@ void R_GL_SetProj(const mat4x4_t *proj, const char *shader_name)
 {
     const char *shaders[] = {
         "mesh.static.colored",
+        "mesh.static.textured",
         "mesh.animated.textured",
         "mesh.animated.normals.colored",
     };
@@ -256,6 +262,7 @@ void R_GL_SetAnimUniformVec4Array(vec4_t *data, size_t count, const char *uname)
 void R_GL_SetAmbientLightColor(vec3_t color)
 {
     const char *shaders[] = {
+        "mesh.static.textured",
         "mesh.animated.textured",
     };
 
@@ -274,6 +281,7 @@ void R_GL_SetAmbientLightColor(vec3_t color)
 void R_GL_SetLightEmitColor(vec3_t color)
 {
     const char *shaders[] = {
+        "mesh.static.textured",
         "mesh.animated.textured",
     };
 
@@ -292,6 +300,7 @@ void R_GL_SetLightEmitColor(vec3_t color)
 void R_GL_SetLightPos(vec3_t pos)
 {
     const char *shaders[] = {
+        "mesh.static.textured",
         "mesh.animated.textured",
     };
 

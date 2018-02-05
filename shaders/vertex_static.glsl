@@ -20,6 +20,24 @@
 #version 330 core
 
 layout (location = 0) in vec3 in_pos;
+layout (location = 1) in vec2 in_uv;
+layout (location = 2) in vec3 in_normal;
+layout (location = 3) in int  in_material_idx;
+
+/*****************************************************************************/
+/* OUTPUTS                                                                   */
+/*****************************************************************************/
+
+out VertexToFrag {
+    layout (location = 0)      vec2 uv;
+    layout (location = 1) flat int  mat_idx;
+    layout (location = 2)      vec3 world_pos;
+    layout (location = 3)      vec3 normal;
+}to_fragment;
+
+/*****************************************************************************/
+/* UNIFORMS                                                                  */
+/*****************************************************************************/
 
 uniform mat4 model;
 uniform mat4 view;
@@ -27,6 +45,11 @@ uniform mat4 projection;
 
 void main()
 {
+    to_fragment.uv = in_uv;
+    to_fragment.mat_idx = in_material_idx;
+    to_fragment.world_pos = (model * vec4(in_pos, 1.0)).xyz;
+    to_fragment.normal = normalize(mat3(model) * in_normal);
+
     gl_Position = projection * view * model * vec4(in_pos, 1.0);
 }
 

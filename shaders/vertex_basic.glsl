@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017 Eduard Permyakov 
+ *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -17,22 +17,16 @@
  *
  */
 
-#ifndef RENDER_GL_H
-#define RENDER_GL_H
+#version 330 core
 
-#include <stddef.h>
-#include <stdbool.h>
+layout (location = 0) in vec3 in_pos;
 
-/* For rendering the map */
-#define VERTS_PER_FACE 6
-#define FACES_PER_TILE 6
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
 
+void main()
+{
+    gl_Position = projection * view * model * vec4(in_pos, 1.0);
+}
 
-struct render_private;
-struct vertex;
-struct tile;
-
-void R_GL_Init(struct render_private *priv, bool anim);
-void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r, size_t c);
-
-#endif

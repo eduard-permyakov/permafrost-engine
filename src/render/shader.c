@@ -53,9 +53,16 @@ static struct shader_resource s_shaders[] = {
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.colored",
-        .vertex_path = "shaders/vertex_static.glsl",
+        .vertex_path = "shaders/vertex_basic.glsl",
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment_colored.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "mesh.static.textured",
+        .vertex_path = "shaders/vertex_static.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment_textured.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
@@ -199,8 +206,10 @@ bool R_Shader_InitAll(const char *base_path)
 
         if(res->geo_path)
             MAKE_PATH(path, base_path, res->geo_path);
-        if(res->geo_path && !shader_load_and_init(path, &geometry, GL_GEOMETRY_SHADER))
+        if(res->geo_path && !shader_load_and_init(path, &geometry, GL_GEOMETRY_SHADER)) {
+            fprintf(stderr, "Failed to load and init geometry shader.\n");
             return false;
+        }
         assert(!res->geo_path || geometry > 0);
 
         MAKE_PATH(path, base_path, res->frag_path);

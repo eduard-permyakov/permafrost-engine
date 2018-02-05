@@ -191,7 +191,7 @@ bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir
             goto fail;
     }
 
-    R_GL_Init(priv);
+    R_GL_Init(priv, (header->num_as > 0));
 
     return true;
 
@@ -290,7 +290,7 @@ bool R_AL_InitPrivFromTilesAndMats(FILE *mats_stream, size_t num_mats,
             goto fail;
    }
 
-    R_GL_Init(priv);
+    R_GL_Init(priv, false);
 
     return true;
 
