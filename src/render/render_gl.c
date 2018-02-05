@@ -38,6 +38,14 @@
 
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+#define MAG(x, y)   sqrt(pow(x,2) + pow(y,2))
+
+/* We take the directions to be relative to a normal vector facing outwards
+ * from the plane of the face. West is to the right, east is to the left,
+ * north is top, south is bottom. */
+struct face{
+    struct vertex nw, ne, se, sw; 
+};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -136,6 +144,103 @@ static void r_gl_set_view_pos(const vec3_t *pos, const char *shader_name)
     glUniform3fv(loc, 1, pos->raw);
 }
 
+static void r_tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[2], bool *out_tri_left)
+{
+    switch(tile->type) {
+    case TILETYPE_FLAT: {
+        out_tri_normals[0]  = (vec3_t) {0.0f, 1.0f, 0.0f};
+        out_tri_normals[1]  = (vec3_t) {0.0f, 1.0f, 0.0f};
+
+        *out_tri_left = true;
+        break;
+    }
+    case TILETYPE_RAMP_SN: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, Z_COORDS_PER_TILE);
+
+        out_tri_normals[0] = (vec3_t) {0.0f, sin(normal_angle), cos(normal_angle)};
+        out_tri_normals[1] = (vec3_t) {0.0f, sin(normal_angle), cos(normal_angle)};
+
+        *out_tri_left = true;
+        break;
+    }
+    case TILETYPE_RAMP_NS: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, Z_COORDS_PER_TILE);
+    
+        out_tri_normals[0] = (vec3_t) {0.0f, sin(normal_angle), -cos(normal_angle)};
+        out_tri_normals[1] = (vec3_t) {0.0f, sin(normal_angle), -cos(normal_angle)};
+
+        *out_tri_left = true;
+        break;
+    }
+    case TILETYPE_RAMP_EW: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, X_COORDS_PER_TILE);
+    
+        out_tri_normals[0] = (vec3_t) {-cos(normal_angle), sin(normal_angle), 0.0f};
+        out_tri_normals[1] = (vec3_t) {-cos(normal_angle), sin(normal_angle), 0.0f};
+
+        *out_tri_left = true;
+        break;
+    }
+    case TILETYPE_RAMP_WE: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, X_COORDS_PER_TILE);
+    
+        out_tri_normals[0] = (vec3_t) {cos(normal_angle), sin(normal_angle), 0.0f};
+        out_tri_normals[1] = (vec3_t) {cos(normal_angle), sin(normal_angle), 0.0f};
+
+        *out_tri_left = true;
+        break;
+    }
+    case TILETYPE_CORNER_CONCAVE_SW: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, 
+            MAG(X_COORDS_PER_TILE, Z_COORDS_PER_TILE)/2.0f );
+
+        out_tri_normals[0] = (vec3_t) {0.0f, 1.0f, 0.0f};
+        out_tri_normals[1] = (vec3_t) {cos(normal_angle) * cos(M_PI/4.0f), sin(normal_angle), 
+                                       cos(normal_angle) * sin(M_PI/4.0f)};
+
+        *out_tri_left = false;
+        break; 
+    }
+    case TILETYPE_CORNER_CONVEX_SW: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, 
+            MAG(X_COORDS_PER_TILE, Z_COORDS_PER_TILE)/2.0f );
+
+        out_tri_normals[0] = (vec3_t) {cos(normal_angle) * cos(M_PI/4.0f), sin(normal_angle), 
+                                       cos(normal_angle) * sin(M_PI/4.0f)};
+        out_tri_normals[1] = (vec3_t) {0.0f, 1.0f, 0.0f};
+
+        *out_tri_left = false;
+        break; 
+    }
+    case TILETYPE_CORNER_CONCAVE_SE: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, 
+            MAG(X_COORDS_PER_TILE, Z_COORDS_PER_TILE)/2.0f );
+
+        out_tri_normals[0] = (vec3_t) {0.0f, 1.0f, 0.0f};
+        out_tri_normals[1] = (vec3_t) {-cos(normal_angle) * cos(M_PI/4.0f), sin(normal_angle), 
+                                        cos(normal_angle) * sin(M_PI/4.0f)};
+
+        *out_tri_left = true;
+        break; 
+    }
+    case TILETYPE_CORNER_CONVEX_SE: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, 
+            MAG(X_COORDS_PER_TILE, Z_COORDS_PER_TILE)/2.0f );
+
+        out_tri_normals[0] = (vec3_t) {-cos(normal_angle) * cos(M_PI/4.0f), sin(normal_angle), 
+                                        cos(normal_angle) * sin(M_PI/4.0f)};
+        out_tri_normals[1] = (vec3_t) {0.0f, 1.0f, 0.0f};
+
+        *out_tri_left = true;
+        break; 
+    }
+    default: assert(0);
+    }
+
+    PFM_Vec3_Normal(out_tri_normals, out_tri_normals);
+    PFM_Vec3_Normal(out_tri_normals + 1, out_tri_normals + 1);
+}
+
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -213,6 +318,7 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
     const char *shaders[] = {
         "mesh.static.colored",
         "mesh.static.textured",
+        "mesh.static.normals.colored",
         "mesh.animated.textured",
         "mesh.animated.normals.colored",
     };
@@ -229,6 +335,7 @@ void R_GL_SetProj(const mat4x4_t *proj, const char *shader_name)
     const char *shaders[] = {
         "mesh.static.colored",
         "mesh.static.textured",
+        "mesh.static.normals.colored",
         "mesh.animated.textured",
         "mesh.animated.normals.colored",
     };
@@ -446,11 +553,13 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
     glLineWidth(old_width);
 }
 
-void R_GL_DrawNormals(const void *render_private, mat4x4_t *model)
+void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim)
 {
     const struct render_private *priv = render_private;
 
-    GLuint normals_shader = R_Shader_GetProgForName("mesh.animated.normals.colored");
+
+    GLuint normals_shader = anim ? R_Shader_GetProgForName("mesh.animated.normals.colored")
+                                 : R_Shader_GetProgForName("mesh.static.normals.colored");
     assert(normals_shader);
     glUseProgram(normals_shader);
 
@@ -469,12 +578,6 @@ void R_GL_DrawNormals(const void *render_private, mat4x4_t *model)
 
 void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r, size_t c)
 {
-    /* We take the directions to be relative to a normal vector facing outwards
-     * from the plane of the face. West is to the right, east is to the left,
-     * north is top, south is bottom. */
-    struct face{
-        struct vertex nw, ne, se, sw; 
-    };
 
     /* Bottom face is always the same (just shifted over based on row and column), and the 
      * front, back, left, right faces just connect the top and bottom faces. The only 
@@ -539,6 +642,7 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
                        || (tile->type == TILETYPE_RAMP_WE)
                        || (tile->type == TILETYPE_CORNER_CONVEX_SW);
 
+    /* Normals for top face get set at the end */
     struct face top = {
         .nw = (struct vertex) {
             .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE),
@@ -546,7 +650,6 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
                                  + (Y_COORDS_PER_TILE * (top_nw_raised ? tile->ramp_height : 0)),
                                  0.0f + (r * Z_COORDS_PER_TILE) },
             .uv     = (vec2_t) { 0.0f, 1.0f },
-            .normal = (vec3_t) { 0.0f, 1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
             .joint_indices = {0},
             .weights       = {0}
@@ -557,7 +660,6 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
                                  + (Y_COORDS_PER_TILE * (top_ne_raised ? tile->ramp_height : 0)), 
                                  0.0f + (r * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 1.0f },
-            .normal = (vec3_t) { 0.0f, 1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
             .joint_indices = {0},
             .weights       = {0}
@@ -568,7 +670,6 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
                                  + (Y_COORDS_PER_TILE * (top_se_raised ? tile->ramp_height : 0)), 
                                  0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 0.0f },
-            .normal = (vec3_t) { 0.0f, 1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
             .joint_indices = {0},
             .weights       = {0}
@@ -579,7 +680,6 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
                                  + (Y_COORDS_PER_TILE * (top_sw_raised ? tile->ramp_height : 0)), 
                                  0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 0.0f, 0.0f },
-            .normal = (vec3_t) { 0.0f, 1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
             .joint_indices = {0},
             .weights       = {0}
@@ -731,7 +831,7 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
 #undef V_COORD
 
     struct face *faces[] = {
-        &top, &bot, &front, &back, &left, &right 
+        &bot, &front, &back, &left, &right 
     };
 
     for(int i = 0; i < ARR_SIZE(faces); i++) {
@@ -748,5 +848,62 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
         memcpy(out + (i * VERTS_PER_FACE) + 4, &curr->sw, sizeof(struct vertex));
         memcpy(out + (i * VERTS_PER_FACE) + 5, &curr->ne, sizeof(struct vertex));
     }
+
+    /* Lastly, the top face. Unlike the other five faces, it can have different 
+     * normals for its' two triangles, and the triangles can be arranged differently 
+     * at corner tiles. 
+     */
+
+    vec3_t top_tri_normals[2];
+    bool   top_tri_left_aligned;
+    r_tile_top_normals(tile, top_tri_normals, &top_tri_left_aligned);
+
+    /*
+     * CONFIG 1 (left-aligned)   CONFIG 2
+     * (nw)      (ne)            (nw)      (ne)
+     * +---------+               +---------+
+     * |       / |               | \       |
+     * |     /   |               |   \     |
+     * |   /     |               |     \   |
+     * | /       |               |       \ |
+     * +---------+               +---------+
+     * (sw)      (se)            (sw)      (se)
+     */
+
+    struct vertex *first_tri[3];
+    struct vertex *second_tri[3];
+
+    first_tri[0] = &top.sw;
+    first_tri[1] = &top.se;
+    second_tri[0] = &top.nw;
+    second_tri[1] = &top.ne;
+
+    if(top_tri_left_aligned) {
+
+        first_tri[2] = &top.ne;
+        second_tri[2] = &top.sw;
+    }else {
+
+        first_tri[2] = &top.nw; 
+        second_tri[2] = &top.se;
+    }
+
+    /* First triangle */
+    first_tri[0]->normal = top_tri_normals[0];
+    first_tri[1]->normal = top_tri_normals[0];
+    first_tri[2]->normal = top_tri_normals[0];
+
+    memcpy(out + (5 * VERTS_PER_FACE) + 0, first_tri[0], sizeof(struct vertex));
+    memcpy(out + (5 * VERTS_PER_FACE) + 1, first_tri[1], sizeof(struct vertex));
+    memcpy(out + (5 * VERTS_PER_FACE) + 2, first_tri[2], sizeof(struct vertex));
+
+    /* Second triangle */
+    second_tri[0]->normal = top_tri_normals[1];
+    second_tri[1]->normal = top_tri_normals[1];
+    second_tri[2]->normal = top_tri_normals[1];
+
+    memcpy(out + (5 * VERTS_PER_FACE) + 3, second_tri[0], sizeof(struct vertex));
+    memcpy(out + (5 * VERTS_PER_FACE) + 4, second_tri[1], sizeof(struct vertex));
+    memcpy(out + (5 * VERTS_PER_FACE) + 5, second_tri[2], sizeof(struct vertex));
 }
 

@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017 Eduard Permyakov 
+ *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -35,6 +35,10 @@ out VertexToFrag {
     layout (location = 3)      vec3 normal;
 }to_fragment;
 
+out VertexToGeo {
+    vec3 normal;
+}to_geometry;
+
 /*****************************************************************************/
 /* UNIFORMS                                                                  */
 /*****************************************************************************/
@@ -43,12 +47,18 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
+/*****************************************************************************/
+/* PROGRAM
+/*****************************************************************************/
+
 void main()
 {
     to_fragment.uv = in_uv;
     to_fragment.mat_idx = in_material_idx;
     to_fragment.world_pos = (model * vec4(in_pos, 1.0)).xyz;
     to_fragment.normal = normalize(mat3(model) * in_normal);
+
+    to_geometry.normal = normalize(mat3(projection * view * model) * in_normal);
 
     gl_Position = projection * view * model * vec4(in_pos, 1.0);
 }

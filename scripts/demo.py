@@ -2,7 +2,7 @@ import pf
 
 pf.set_ambient_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_color([1.0, 1.0, 1.0])
-pf.set_emit_light_pos([0.0, 300.0, 0.0])
+pf.set_emit_light_pos([1024.0, 512.0, 256.0])
 
 pf.new_game("assets/maps/grass-cliffs-1", "grass-cliffs.pfmap", "grass-cliffs.pfmat")
 

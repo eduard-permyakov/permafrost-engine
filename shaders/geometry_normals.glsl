@@ -19,7 +19,7 @@
 
 #version 330 core
 
-#define MAGNITUDE 0.4
+#define MAGNITUDE 2.0
 
 layout (triangles) in;
 layout (line_strip) out;

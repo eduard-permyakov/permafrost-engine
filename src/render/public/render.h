@@ -114,7 +114,7 @@ void   R_GL_DrawOrigin(const void *render_private, mat4x4_t *model);
  * Debugging utility to draw normals as yellow rays going out from the model.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawNormals(const void *render_private, mat4x4_t *model);
+void   R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim);
 
 
 /*###########################################################################*/

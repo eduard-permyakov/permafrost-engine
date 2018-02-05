@@ -73,6 +73,13 @@ static struct shader_resource s_shaders[] = {
     },
     {
         .prog_id     = (intptr_t)NULL,
+        .name        = "mesh.static.normals.colored",
+        .vertex_path = "shaders/vertex_static.glsl",
+        .geo_path    = "shaders/geometry_normals.glsl",
+        .frag_path   = "shaders/fragment_colored.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
         .name        = "mesh.animated.normals.colored",
         .vertex_path = "shaders/vertex_skinned.glsl",
         .geo_path    = "shaders/geometry_normals.glsl",

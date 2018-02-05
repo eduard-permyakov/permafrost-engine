@@ -11,7 +11,7 @@
 #include <assert.h> 
 
 
-#define CAM_HEIGHT          150.0f
+#define CAM_HEIGHT          175.0f
 #define CAM_TILT_UP_DEGREES 25.0f
 
 /*****************************************************************************/
