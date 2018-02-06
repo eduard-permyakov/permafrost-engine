@@ -23,6 +23,8 @@
 #include "../render/public/render.h"
 #include "map_private.h"
 
+#include <stdlib.h>
+#include <assert.h>
 #define __USE_POSIX
 #include <string.h>
 
@@ -47,7 +49,9 @@ bool m_al_parse_tile(const char *str, struct tile *out)
     if(strlen(str) != 6)
         goto fail;
 
-    out->type          = (enum tiletype) (str[0] - '0');
+    char type_hexstr[2] = {str[0], '\0'};
+
+    out->type          = (enum tiletype) strtol(type_hexstr, NULL, 16);
     out->pathable      = (bool)          (str[1] - '0');
     out->base_height   = (int)           (str[2] - '0');
     out->top_mat_idx   = (int)           (str[3] - '0');
@@ -177,12 +181,17 @@ void M_AL_DumpMap(FILE *stream, const struct map *map)
             for(int c = 0; c < TILES_PER_CHUNK_WIDTH; c++) {
 
                 const struct tile *tile = &curr->tiles[r * TILES_PER_CHUNK_WIDTH + c];
-                fprintf(stream, "%c%c%c%c%c", (char) (tile->type)          + '0',
-                                              (char) (tile->pathable)      + '0',
-                                              (char) (tile->base_height)   + '0',
-                                              (char) (tile->top_mat_idx)   + '0',
-                                              (char) (tile->sides_mat_idx) + '0',
-                                              (char) (tile->ramp_height)   + '0');
+
+                char type_hex[2];
+                assert(tile->type >= 0 && tile->type <= 16);
+                snprintf(type_hex, sizeof(type_hex), "%1x", tile->type);
+
+                fprintf(stream, "%c%c%c%c%c%c", (char) type_hex[0],
+                                                (char) (tile->pathable)      + '0',
+                                                (char) (tile->base_height)   + '0',
+                                                (char) (tile->top_mat_idx)   + '0',
+                                                (char) (tile->sides_mat_idx) + '0',
+                                                (char) (tile->ramp_height)   + '0');
 
                 if(c != (TILES_PER_CHUNK_WIDTH - 1))
                     fprintf(stream, " ");

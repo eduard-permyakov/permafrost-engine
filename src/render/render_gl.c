@@ -234,6 +234,50 @@ static void r_tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[2
         *out_tri_left = true;
         break; 
     }
+    case TILETYPE_CORNER_CONCAVE_NW: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, 
+            MAG(X_COORDS_PER_TILE, Z_COORDS_PER_TILE)/2.0f );
+
+        out_tri_normals[0] = (vec3_t) { cos(normal_angle) * cos(M_PI/4.0f), sin(normal_angle), 
+                                       -cos(normal_angle) * sin(M_PI/4.0f)};
+        out_tri_normals[1] = (vec3_t) {0.0f, 1.0f, 0.0f};
+
+        *out_tri_left = true;
+        break; 
+    }
+    case TILETYPE_CORNER_CONVEX_NW: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, 
+            MAG(X_COORDS_PER_TILE, Z_COORDS_PER_TILE)/2.0f );
+
+        out_tri_normals[0] = (vec3_t) {0.0f, 1.0f, 0.0f};
+        out_tri_normals[1] = (vec3_t) { cos(normal_angle) * cos(M_PI/4.0f), sin(normal_angle), 
+                                       -cos(normal_angle) * sin(M_PI/4.0f)};
+
+        *out_tri_left = true;
+        break; 
+    }
+    case TILETYPE_CORNER_CONCAVE_NE: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, 
+            MAG(X_COORDS_PER_TILE, Z_COORDS_PER_TILE)/2.0f );
+
+        out_tri_normals[0] = (vec3_t) {-cos(normal_angle) * cos(M_PI/4.0f), sin(normal_angle), 
+                                       -cos(normal_angle) * sin(M_PI/4.0f)};
+        out_tri_normals[1] = (vec3_t) {0.0f, 1.0f, 0.0f};
+
+        *out_tri_left = false;
+        break; 
+    }
+    case TILETYPE_CORNER_CONVEX_NE: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, 
+            MAG(X_COORDS_PER_TILE, Z_COORDS_PER_TILE)/2.0f );
+
+        out_tri_normals[0] = (vec3_t) {0.0f, 1.0f, 0.0f};
+        out_tri_normals[1] = (vec3_t) {-cos(normal_angle) * cos(M_PI/4.0f), sin(normal_angle), 
+                                       -cos(normal_angle) * sin(M_PI/4.0f)};
+
+        *out_tri_left = false;
+        break; 
+    }
     default: assert(0);
     }
 
@@ -626,21 +670,29 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
                        || (tile->type == TILETYPE_RAMP_EW)
                        || (tile->type == TILETYPE_CORNER_CONVEX_SW)
                        || (tile->type == TILETYPE_CORNER_CONVEX_SE)
-                       || (tile->type == TILETYPE_CORNER_CONCAVE_SE);
+                       || (tile->type == TILETYPE_CORNER_CONCAVE_SE)
+                       || (tile->type == TILETYPE_CORNER_CONVEX_NE);
 
     bool top_ne_raised =  (tile->type == TILETYPE_RAMP_SN)
                        || (tile->type == TILETYPE_RAMP_WE)
                        || (tile->type == TILETYPE_CORNER_CONVEX_SW)
                        || (tile->type == TILETYPE_CORNER_CONCAVE_SW)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_SE);
+                       || (tile->type == TILETYPE_CORNER_CONVEX_SE)
+                       || (tile->type == TILETYPE_CORNER_CONVEX_NW);
 
     bool top_sw_raised =  (tile->type == TILETYPE_RAMP_NS)
                        || (tile->type == TILETYPE_RAMP_EW)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_SE);
+                       || (tile->type == TILETYPE_CORNER_CONVEX_SE)
+                       || (tile->type == TILETYPE_CORNER_CONVEX_NW)
+                       || (tile->type == TILETYPE_CORNER_CONCAVE_NE)
+                       || (tile->type == TILETYPE_CORNER_CONVEX_NE);
 
     bool top_se_raised =  (tile->type == TILETYPE_RAMP_NS)
                        || (tile->type == TILETYPE_RAMP_WE)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_SW);
+                       || (tile->type == TILETYPE_CORNER_CONVEX_SW)
+                       || (tile->type == TILETYPE_CORNER_CONVEX_NE)
+                       || (tile->type == TILETYPE_CORNER_CONCAVE_NW)
+                       || (tile->type == TILETYPE_CORNER_CONVEX_NW);
 
     /* Normals for top face get set at the end */
     struct face top = {

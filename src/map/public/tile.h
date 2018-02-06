@@ -34,17 +34,21 @@ enum tiletype{
      * base_height -> |  |          |/
      *                -  +----------+
      */
-    TILETYPE_FLAT              = 0,
+    TILETYPE_FLAT              = 0x0,
     /* By convention, the second letter (ex. 'N' in 'SN') is the raised end */
-    TILETYPE_RAMP_SN           = 1,
-    TILETYPE_RAMP_NS           = 2,
-    TILETYPE_RAMP_EW           = 3,
-    TILETYPE_RAMP_WE           = 4,
+    TILETYPE_RAMP_SN           = 0x1,
+    TILETYPE_RAMP_NS           = 0x2,
+    TILETYPE_RAMP_EW           = 0x3,
+    TILETYPE_RAMP_WE           = 0x4,
     /* For corners, the direction in the name is that of the central lowered corner */
-    TILETYPE_CORNER_CONCAVE_SW = 5,
-    TILETYPE_CORNER_CONVEX_SW  = 6,
-    TILETYPE_CORNER_CONCAVE_SE = 7,
-    TILETYPE_CORNER_CONVEX_SE  = 8,
+    TILETYPE_CORNER_CONCAVE_SW = 0x5,
+    TILETYPE_CORNER_CONVEX_SW  = 0x6,
+    TILETYPE_CORNER_CONCAVE_SE = 0x7,
+    TILETYPE_CORNER_CONVEX_SE  = 0x8,
+    TILETYPE_CORNER_CONCAVE_NW = 0x9,
+    TILETYPE_CORNER_CONVEX_NW  = 0xa,
+    TILETYPE_CORNER_CONCAVE_NE = 0xb,
+    TILETYPE_CORNER_CONVEX_NE  = 0xc,
 };
 
 struct tile{
