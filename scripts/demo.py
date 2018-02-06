@@ -4,7 +4,7 @@ pf.set_ambient_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_pos([1024.0, 512.0, 256.0])
 
-pf.new_game("assets/maps/grass-cliffs-1", "grass-cliffs.pfmap", "grass-cliffs.pfmat")
+pf.new_game("assets/maps/grass-cliffs-1", "grass-cliffs.pfmap")
 
 sinbad = pf.AnimEntity("assets/models/sinbad", "Sinbad.pfobj", "Sinbad", "Dance")
 sinbad.pos = [0.0, 8.0, -50.0]

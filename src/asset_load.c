@@ -206,7 +206,7 @@ void AL_EntityFree(struct entity *entity)
     free(entity);
 }
 
-struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name, const char *pfmat_name)
+struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name)
 {
     struct map *ret;
     FILE       *stream;
@@ -229,7 +229,7 @@ struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name, const
     if(!ret)
         goto fail_alloc;
 
-    if(!M_AL_InitMapFromStream(&header, base_path, stream, pfmat_name, ret))
+    if(!M_AL_InitMapFromStream(&header, base_path, stream, ret))
         goto fail_init;
 
     fclose(stream);

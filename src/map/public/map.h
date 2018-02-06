@@ -61,7 +61,7 @@ void   M_RestrictRTSCamToMap(const struct map *map, struct camera *cam);
 /*###########################################################################*/
 
 bool   M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
-                              FILE *stream, const char *pfmat_name, void *outmap);
+                              FILE *stream, void *outmap);
 size_t M_AL_BuffSizeFromHeader(const struct pfmap_hdr *header);
 
 /* ------------------------------------------------------------------------

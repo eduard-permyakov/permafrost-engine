@@ -114,17 +114,16 @@ fail:
 /*****************************************************************************/
  
 bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
-                            FILE *stream, const char *pfmat_name, void *outmap)
+                            FILE *stream, void *outmap)
 {
     struct map *map = outmap;
+    char line[MAX_LINE_LEN];
 
     map->width = header->num_cols;
     map->height = header->num_rows;
     map->pos = (vec3_t) {0.0f, 0.0f, 0.0f};
 
     size_t num_chunks = header->num_rows * header->num_cols;
-    size_t renderbuff_sz = R_AL_PrivBuffSizeForChunk(
-                           TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, header->num_materials);
 
     char *unused_base = (char*)(map + 1);
     unused_base += num_chunks * sizeof(struct pfchunk);
@@ -132,28 +131,24 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     for(int i = 0; i < num_chunks; i++) {
 
         map->chunks[i].render_private = (void*)unused_base;
-        unused_base += renderbuff_sz;
 
         if(!m_al_read_pfchunk(stream, map->chunks + i))
             goto fail;
 
-        char pfmat_path[512];
-        strcpy(pfmat_path, basedir);
-        strcat(pfmat_path, "/");
-        strcat(pfmat_path, pfmat_name);
-
-        FILE *pfmat_stream;
-        pfmat_stream = fopen(pfmat_path, "r");
-        if(!pfmat_stream)
+        int num_mats;
+        READ_LINE(stream, line, fail); 
+        if(!sscanf(line, "chunk_materials %d", &num_mats))
             goto fail;
 
-        if(!R_AL_InitPrivFromTilesAndMats(pfmat_stream, header->num_materials, 
+        size_t renderbuff_sz = R_AL_PrivBuffSizeForChunk(
+                               TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, num_mats);
+        unused_base += renderbuff_sz;
+
+        if(!R_AL_InitPrivFromTilesAndMats(stream, num_mats, 
                                           map->chunks[i].tiles, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
                                           map->chunks[i].render_private, basedir)) {
-            fclose(pfmat_stream);
             goto fail;
         }
-        fclose(pfmat_stream);
     }
 
     return true;
@@ -165,10 +160,11 @@ fail:
 size_t M_AL_BuffSizeFromHeader(const struct pfmap_hdr *header)
 {
     size_t num_chunks = header->num_rows * header->num_cols;
+    size_t avg_num_mats = ceil(header->num_materials / (float)num_chunks);
 
     return sizeof(struct map) + num_chunks * 
            (sizeof(struct pfchunk) + R_AL_PrivBuffSizeForChunk(
-                                     TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, header->num_materials));
+                                     TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, avg_num_mats));
 }
 
 void M_AL_DumpMap(FILE *stream, const struct map *map)

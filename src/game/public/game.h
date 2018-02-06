@@ -27,7 +27,7 @@ struct entity;
 struct map;
 
 bool G_Init(void);
-bool G_NewGameWithMap(const char *dir, const char *pfmap, const char *pfmat);
+bool G_NewGameWithMap(const char *dir, const char *pfmap);
 void G_Shutdown(void);
 
 void G_Render(void);

@@ -95,13 +95,13 @@ static bool s_vec3_from_pylist_arg(PyObject *list, vec3_t *out)
 
 static PyObject *PyPf_new_game(PyObject *self, PyObject *args)
 {
-    const char *dir, *pfmap, *pfmat;
-    if(!PyArg_ParseTuple(args, "sss", &dir, &pfmap, &pfmat)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of three strings.");
+    const char *dir, *pfmap;
+    if(!PyArg_ParseTuple(args, "ss", &dir, &pfmap)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of two strings.");
         return NULL;
     }
 
-    G_NewGameWithMap(dir, pfmap, pfmat);
+    G_NewGameWithMap(dir, pfmap);
     Py_RETURN_NONE;
 }
 

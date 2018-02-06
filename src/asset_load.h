@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017 Eduard Permyakov 
+ *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -49,7 +49,7 @@ struct pfmap_hdr{
 struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name);
 void           AL_EntityFree(struct entity *entity);
 
-struct map    *AL_MapFromPFMap(const char *base_path, const char *pfmap_name, const char *pfmat_name);
+struct map    *AL_MapFromPFMap(const char *base_path, const char *pfmap_name);
 void           AL_MapFree(struct map *map);
 
 #endif
