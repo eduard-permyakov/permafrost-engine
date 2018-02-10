@@ -23,6 +23,10 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+/* Handle type to let the rest of the engine hold on to scripting objects 
+ * without needing to include Python.h */
+typedef void *script_opaque_t;
+
 /*###########################################################################*/
 /* SCRIPT GENERAL                                                            */
 /*###########################################################################*/

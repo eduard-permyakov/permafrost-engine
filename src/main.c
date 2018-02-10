@@ -24,6 +24,7 @@
 #include "lib/public/stb_image.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
+#include "event/public/event.h"
 #include "gl_assert.h"
 
 #include <GL/glew.h>
@@ -69,7 +70,7 @@ static void process_events(void)
    
     while(SDL_PollEvent(&event)) {
 
-        G_HandleEvent(&event);
+        E_Global_Broadcast(event.type, &event);
 
         switch(event.type) {
 
@@ -92,15 +93,6 @@ static void process_events(void)
             case SDL_SCANCODE_ESCAPE: s_quit = true; break;
             }
             break;
-
-        case SDL_MOUSEMOTION:  {
-
-            int mouse_x, mouse_y;
-            SDL_GetMouseState(&mouse_x, &mouse_y);
-
-            Cursor_RTS_SetActive(mouse_x, mouse_y); 
-            break;
-            }
         }
     }
 }
@@ -201,7 +193,17 @@ static bool engine_init(char **argv)
     }
 
     /* ---------------------------------- */
+    /* Event subsystem intialization      */
+    /* ---------------------------------- */
+    if(!E_Global_Init()) {
+        result = false; 
+        goto fail_game;
+    }
+    Cursor_SetRTSMode(true);
+
+    /* ---------------------------------- */
     /* Game state initialization          */
+    /*  * depends on Event subsystem      */
     /* ---------------------------------- */
     if(!G_Init()) {
         result = false; 
@@ -233,6 +235,7 @@ void engine_shutdown(void)
      * 'G_' API to remove them from the world.
      */
     G_Shutdown(); 
+    E_Global_Shutdown();
 
     Cursor_FreeAll();
 
@@ -291,8 +294,14 @@ int main(int argc, char **argv)
     while(!s_quit) {
 
         process_events();
+
+        E_Global_Broadcast(EVENT_UPDATE_START, NULL);
         G_Update();
+        E_Global_Broadcast(EVENT_UPDATE_END, NULL);
+
+        E_Global_Broadcast(EVENT_RENDER_START, NULL);
         render();        
+        E_Global_Broadcast(EVENT_RENDER_END, NULL);
 
     }
 

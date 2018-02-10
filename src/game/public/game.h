@@ -32,9 +32,6 @@ void G_Shutdown(void);
 
 void G_Render(void);
 void G_Update(void);
-/* TODO: Eventually, have a centralized place of event handling and have different subsystems
- * register handlers for particular events. */
-void G_HandleEvent(SDL_Event *e);
 
 bool G_AddEntity(struct entity *ent);
 bool G_RemoveEntity(struct entity *ent);

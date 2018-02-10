@@ -67,24 +67,18 @@ static void g_reset(void)
     g_center_camera();
 }
 
-static bool g_init_camera(void)
+static bool g_init_camera(void) 
 {
     s_gs.camera = Camera_New();
     if(!s_gs.camera) {
         return false;
     }
 
-    s_gs.cam_ctx = CamControl_RTS_CtxNew();
-    if(!s_gs.cam_ctx) {
-        Camera_Free(s_gs.camera); 
-        return false;
-    }
-
-    CamControl_RTS_SetMouseMode();
-
     Camera_SetPitchAndYaw(s_gs.camera, -(90.0f - CAM_TILT_UP_DEGREES), 90.0f + 45.0f);
     Camera_SetSpeed(s_gs.camera, 0.15f);
     Camera_SetSens (s_gs.camera, 0.05f);
+
+    CamControl_RTS_Install(s_gs.camera);
 }
 
 /*****************************************************************************/
@@ -124,8 +118,8 @@ void G_Shutdown(void)
 {
     g_reset();
 
+    CamControl_UninstallActive();
     Camera_Free(s_gs.camera);
-    CamControl_RTS_CtxFree(s_gs.cam_ctx);
 
     assert(s_gs.active);
     kl_destroy(entity, s_gs.active);
@@ -155,12 +149,7 @@ void G_Render(void)
 
 void G_Update(void)
 {
-    CamControl_RTS_TickFinish(s_gs.cam_ctx, s_gs.camera);
-}
 
-void G_HandleEvent(SDL_Event *e)
-{
-    CamControl_RTS_HandleEvent(s_gs.cam_ctx, s_gs.camera, e);
 }
 
 bool G_AddEntity(struct entity *ent)

@@ -24,26 +24,14 @@
 
 #include <SDL.h>
 
-struct cam_fps_ctx;
-struct cam_rts_ctx;
-
-
-struct cam_fps_ctx *CamControl_FPS_CtxNew     (void);
-void                CamControl_FPS_CtxFree    (struct cam_fps_ctx *ctx);
-void                CamControl_FPS_HandleEvent(struct cam_fps_ctx *ctx, struct camera *cam, SDL_Event *e);
-/* This will call Camera_TickFinish on the cam */
-void                CamControl_FPS_TickFinish (struct cam_fps_ctx *ctx, struct camera *cam);
-/* Locks mouse to the current window for use with FPS camera, removes cursor image */
-void                CamControl_FPS_SetMouseMode(void);
-
-
-struct cam_rts_ctx *CamControl_RTS_CtxNew     (void);
-void                CamControl_RTS_CtxFree    (struct cam_rts_ctx *ctx);
-void                CamControl_RTS_HandleEvent(struct cam_rts_ctx *ctx, struct camera *cam, SDL_Event *e);
-/* This will call Camera_TickFinish on the cam */
-void                CamControl_RTS_TickFinish (struct cam_rts_ctx *ctx, struct camera *cam);
-/* Allows free movement of cursor around the window */
-void                CamControl_RTS_SetMouseMode(void);
-
+/*
+ * Installation will set the specified camera as the currently active camera,
+ * from whose point of view the world will be rendered.
+ * The 'FPS' and 'RTS' modes control how mouse and keyboard events are used to 
+ * transform the active camera.
+ */
+void CamControl_FPS_Install(struct camera *cam);
+void CamControl_RTS_Install(struct camera *cam);
+void CamControl_UninstallActive(void);
 
 #endif

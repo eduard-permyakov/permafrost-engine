@@ -19,6 +19,7 @@
 
 #include "cursor.h"
 #include "config.h"
+#include "event/public/event.h"
 
 #include <SDL.h>
 
@@ -105,8 +106,58 @@ static struct cursor_resource s_cursors[] = {
 };
 
 /*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+void cursor_rts_set_active(int mouse_x, int mouse_y)
+{
+    bool top = (mouse_y == 0);
+    bool bot = (mouse_y == CONFIG_RES_Y - 1);
+    bool left  = (mouse_x == 0);
+    bool right = (mouse_x == CONFIG_RES_X - 1);
+
+    /* Check the corners first, then edges */
+    if(top && left) {
+        Cursor_SetActive(CURSOR_SCROLL_TOP_LEFT); 
+    }else if(top && right) {
+        Cursor_SetActive(CURSOR_SCROLL_TOP_RIGHT); 
+    }else if(bot && left) {
+        Cursor_SetActive(CURSOR_SCROLL_BOT_LEFT); 
+    }else if(bot && right) {
+        Cursor_SetActive(CURSOR_SCROLL_BOT_RIGHT); 
+    }else if(top) {
+        Cursor_SetActive(CURSOR_SCROLL_TOP); 
+    }else if(bot) {
+        Cursor_SetActive(CURSOR_SCROLL_BOT); 
+    }else if(left) {
+        Cursor_SetActive(CURSOR_SCROLL_LEFT); 
+    }else if(right) {
+        Cursor_SetActive(CURSOR_SCROLL_RIGHT); 
+    }else {
+        Cursor_SetActive(CURSOR_POINTER); 
+    }
+}
+
+static void cursor_on_mousemove(void *unused1, void *unused2)
+{
+    int mouse_x, mouse_y;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+    
+    cursor_rts_set_active(mouse_x, mouse_y); 
+}
+
+/*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
+
+void Cursor_SetRTSMode(bool on)
+{
+    if(on) {
+        E_Global_Register(SDL_MOUSEMOTION, cursor_on_mousemove, NULL);
+    }else {
+        E_Global_Unregister(SDL_MOUSEMOTION, cursor_on_mousemove);
+    }
+}
 
 bool Cursor_InitAll(const char *basedir)
 {
@@ -136,6 +187,8 @@ fail:
 
 void Cursor_FreeAll(void)
 {
+    E_Global_Unregister(SDL_MOUSEMOTION, cursor_on_mousemove);
+
     for(int i = 0; i < ARR_SIZE(s_cursors); i++) {
     
         struct cursor_resource *curr = &s_cursors[i];
@@ -149,34 +202,5 @@ void Cursor_SetActive(enum cursortype type)
 {
     assert(type >= 0 && type < ARR_SIZE(s_cursors));
     SDL_SetCursor(s_cursors[type].cursor);
-}
-
-void Cursor_RTS_SetActive(int mouse_x, int mouse_y)
-{
-    bool top = (mouse_y == 0);
-    bool bot = (mouse_y == CONFIG_RES_Y - 1);
-    bool left  = (mouse_x == 0);
-    bool right = (mouse_x == CONFIG_RES_X - 1);
-
-    /* Check the corners first, then edges */
-    if(top && left) {
-        Cursor_SetActive(CURSOR_SCROLL_TOP_LEFT); 
-    }else if(top && right) {
-        Cursor_SetActive(CURSOR_SCROLL_TOP_RIGHT); 
-    }else if(bot && left) {
-        Cursor_SetActive(CURSOR_SCROLL_BOT_LEFT); 
-    }else if(bot && right) {
-        Cursor_SetActive(CURSOR_SCROLL_BOT_RIGHT); 
-    }else if(top) {
-        Cursor_SetActive(CURSOR_SCROLL_TOP); 
-    }else if(bot) {
-        Cursor_SetActive(CURSOR_SCROLL_BOT); 
-    }else if(left) {
-        Cursor_SetActive(CURSOR_SCROLL_LEFT); 
-    }else if(right) {
-        Cursor_SetActive(CURSOR_SCROLL_RIGHT); 
-    }else {
-        Cursor_SetActive(CURSOR_POINTER); 
-    }
 }
 

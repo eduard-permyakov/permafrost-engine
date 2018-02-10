@@ -38,8 +38,9 @@ bool Cursor_InitAll(const char *basedir);
 void Cursor_FreeAll(void);
 void Cursor_SetActive(enum cursortype type);
 
-/* Set the cursor icon based on which corner or edge of the screen the 
- * cursor currently is */
-void Cursor_RTS_SetActive(int mouse_x, int mouse_y);
+/* When RTS mode is set, an event handler will continuosly update the cursor icon to be
+ * the correct scrolling icon for the cursor's current position on the screen 
+ * Must be called after Event subsystem is initialized. */
+void Cursor_SetRTSMode(bool on);
 
 #endif
