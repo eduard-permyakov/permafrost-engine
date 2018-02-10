@@ -23,7 +23,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-/* Handle type to let the rest of the engine hold on to scripting objects 
+/* 'Handle' type to let the rest of the engine hold on to scripting objects 
  * without needing to include Python.h */
 typedef void *script_opaque_t;
 
@@ -34,6 +34,9 @@ typedef void *script_opaque_t;
 bool   S_Init(char *progname, const char *base_path);
 void   S_Shutdown(void);
 bool   S_RunFile(const char *path);
+
+void   S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, 
+                         void *event_arg);
 
 #endif
 

@@ -21,3 +21,8 @@ oak_leafless.pos = [0.0, 8.0, -10.0]
 oak_leafless.scale = [1.5, 1.5, 1.5]
 oak_leafless.activate()
 
+def on_key_down(user, event):
+    print("key pressed!")
+
+pf.register_event_handler(0x300, on_key_down, None)
+

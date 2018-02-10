@@ -24,6 +24,7 @@
 #include "../entity.h"
 #include "../game/public/game.h"
 #include "../render/public/render.h"
+#include "../event/public/event.h"
 
 #include <stdio.h>
 
@@ -32,6 +33,9 @@ static PyObject *PyPf_new_game(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
+
+static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args);
+static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -57,12 +61,27 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_emit_light_pos, METH_VARARGS,
     "Sets the position (in XYZ worldspace coordinates)"},
 
+    {"register_event_handler", 
+    (PyCFunction)PyPf_register_event_handler, METH_VARARGS,
+    "Adds a script event handler to be called when the specified global event occurs."},
+
+    {"unregister_event_handler", 
+    (PyCFunction)PyPf_unregister_event_handler, METH_VARARGS,
+    "Removes a script event handler added by 'register_event_handler'."},
+
     {NULL}  /* Sentinel */
 };
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static void s_handler_freefunc(script_opaque_t callable, script_opaque_t user_arg)
+{
+    assert(callable && user_arg);
+    Py_DECREF(callable);
+    Py_DECREF(user_arg);
+}
 
 static bool s_vec3_from_pylist_arg(PyObject *list, vec3_t *out)
 {
@@ -150,6 +169,47 @@ static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args)
+{
+    enum eventtype event;
+    PyObject *callable, *user_arg;
+
+    if(!PyArg_ParseTuple(args, "iOO", &event, &callable, &user_arg)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of an integer and two objects.");
+        return NULL;
+    }
+
+    if(!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "Second argument must be callable.");
+        return NULL;
+    }
+
+    Py_INCREF(callable);
+    Py_INCREF(user_arg);
+    bool ret = E_Global_ScriptRegister(event, callable, user_arg, s_handler_freefunc);
+    assert(ret == true);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args)
+{
+    enum eventtype event;
+    PyObject *callable;
+
+    if(!PyArg_ParseTuple(args, "iO", &event, &callable)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of an integer and one object.");
+        return NULL;
+    }
+
+    if(!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "Second argument must be callable.");
+        return NULL;
+    }
+
+    bool ret = E_Global_ScriptUnregister(event, callable);
+    Py_RETURN_NONE;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -190,5 +250,22 @@ bool S_RunFile(const char *path)
 
     fclose(script);
     return true;
+}
+
+void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, void *event_arg)
+{
+    PyObject *args, *ret;
+    assert(PyCallable_Check(callable));
+
+    args = PyTuple_New(2);
+    PyTuple_SetItem(args, 0, user_arg);
+    PyObject *none = Py_None;
+    //TODO: expose SDL event arg to Python
+    Py_INCREF(none);
+    PyTuple_SetItem(args, 1, none);
+
+    ret = PyObject_CallObject(callable, args);
+    assert(ret);
+    Py_DECREF(args);
 }
 
