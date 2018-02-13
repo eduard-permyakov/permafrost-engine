@@ -235,9 +235,9 @@ void engine_shutdown(void)
      * 'G_' API to remove them from the world.
      */
     G_Shutdown(); 
-    E_Global_Shutdown();
-
     Cursor_FreeAll();
+
+    E_Global_Shutdown();
 
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window); 
