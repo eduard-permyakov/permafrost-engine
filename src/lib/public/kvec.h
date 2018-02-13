@@ -45,7 +45,7 @@ int main() {
   
   2018-02-13 (Eduard Permyakov):
 
-    * Add kv_del, kv_indexof, KV_DEFAULT_SIZE
+    * Add kv_del, kv_indexof, kv_reset, KV_DEFAULT_SIZE
     * Some reformatting for my own taste   
 
 */
@@ -67,6 +67,7 @@ int main() {
 #define kv_pop(v)       ((v).a[--(v).n])
 #define kv_size(v)      ((v).n)
 #define kv_max(v)       ((v).m)
+#define kv_reset(v)     do {(v).n = 0;}while(0)
 
 #define kv_resize(type, v, s)  ((v).m = (s), (v).a = (type*)realloc((v).a, sizeof(type) * (v).m))
 

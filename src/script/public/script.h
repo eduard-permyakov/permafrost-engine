@@ -27,20 +27,24 @@
  * without needing to include Python.h */
 typedef void *script_opaque_t;
 
+enum eventtype;
+
 /*###########################################################################*/
 /* SCRIPT GENERAL                                                            */
 /*###########################################################################*/
 
-bool   S_Init(char *progname, const char *base_path);
-void   S_Shutdown(void);
-bool   S_RunFile(const char *path);
+bool            S_Init(char *progname, const char *base_path);
+void            S_Shutdown(void);
+bool            S_RunFile(const char *path);
 
-void   S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, 
-                         void *event_arg);
+void            S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, 
+                                  void *event_arg);
 
 /* Decrement reference count for Python objects. 
  * No-op in the case of a NULL-pointer passed in */
-void   S_Release(script_opaque_t obj);
+void            S_Release(script_opaque_t obj);
+
+script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg);
 
 
 #endif

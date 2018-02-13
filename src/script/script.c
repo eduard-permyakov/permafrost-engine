@@ -36,6 +36,7 @@ static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args);
+static PyObject *PyPf_broadcast_event(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -68,6 +69,10 @@ static PyMethodDef pf_module_methods[] = {
     {"unregister_event_handler", 
     (PyCFunction)PyPf_unregister_event_handler, METH_VARARGS,
     "Removes a script event handler added by 'register_event_handler'."},
+
+    {"broadcast_event", 
+    (PyCFunction)PyPf_broadcast_event, METH_VARARGS,
+    "Broadcast a global event so all handlers can get invoked."},
 
     {NULL}  /* Sentinel */
 };
@@ -203,6 +208,22 @@ static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_broadcast_event(PyObject *self, PyObject *args)
+{
+    enum eventtype event;
+    PyObject *arg;
+
+    if(!PyArg_ParseTuple(args, "iO", &event, &arg)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of an integer and one object.");
+        return NULL;
+    }
+
+    Py_INCREF(arg);
+
+    E_Global_Broadcast(event, arg, ES_SCRIPT);
+    Py_RETURN_NONE;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -245,25 +266,43 @@ bool S_RunFile(const char *path)
     return true;
 }
 
-void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, void *event_arg)
+void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, script_opaque_t event_arg)
 {
     PyObject *args, *ret;
     assert(PyCallable_Check(callable));
 
     args = PyTuple_New(2);
     PyTuple_SetItem(args, 0, user_arg);
-    PyObject *none = Py_None;
-    //TODO: expose SDL event arg to Python
-    Py_INCREF(none);
-    PyTuple_SetItem(args, 1, none);
+    PyTuple_SetItem(args, 1, event_arg);
 
     ret = PyObject_CallObject(callable, args);
     assert(ret);
     Py_DECREF(args);
+    Py_DECREF(event_arg);
 }
 
 void S_Release(script_opaque_t obj)
 {
     Py_XDECREF(obj);
+}
+
+script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg)
+{
+    switch(e) {
+        case SDL_KEYDOWN:
+        case SDL_KEYUP:
+            return Py_BuildValue("(i)", 
+                ((SDL_Event*)arg)->key.keysym.scancode);
+            break;
+        case SDL_MOUSEMOTION:
+            return Py_BuildValue("( (i,i), (i,i) )",
+                ((SDL_Event*)arg)->motion.x,
+                ((SDL_Event*)arg)->motion.y,
+                ((SDL_Event*)arg)->motion.xrel,
+                ((SDL_Event*)arg)->motion.xrel);
+            break;
+        default:
+            Py_RETURN_NONE;
+    }
 }
 

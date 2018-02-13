@@ -47,10 +47,15 @@ enum eventtype{
     EVENT_ENGINE_LAST = 0x1ffff,
 };
 
+enum event_source{
+    ES_ENGINE,
+    ES_SCRIPT,
+};
+
 typedef void (*handler_t)(void*, void*);
 
 bool E_Global_Init(void);
-void E_Global_Broadcast(enum eventtype event, void *event_arg);
+void E_Global_Broadcast(enum eventtype event, void *event_arg, enum event_source);
 void E_Global_ServiceQueue(void);
 void E_Global_Shutdown(void);
 

@@ -22,6 +22,7 @@
 #include "cursor.h"
 #include "render/public/render.h"
 #include "lib/public/stb_image.h"
+#include "lib/public/kvec.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
 #include "event/public/event.h"
@@ -59,6 +60,7 @@ static SDL_Window         *s_window;
 static SDL_GLContext       s_context;
 
 static bool                s_quit = false; 
+static kvec_t(SDL_Event)   s_prev_tick_events;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -66,11 +68,14 @@ static bool                s_quit = false;
 
 static void process_sdl_events(void)
 {
+    kv_reset(s_prev_tick_events);
     SDL_Event event;    
    
     while(SDL_PollEvent(&event)) {
 
-        E_Global_Broadcast(event.type, &event);
+        kv_push(SDL_Event, s_prev_tick_events, event);
+        E_Global_Broadcast(event.type, &kv_A(s_prev_tick_events, kv_size(s_prev_tick_events)-1), 
+            ES_ENGINE);
 
         switch(event.type) {
 
@@ -112,6 +117,10 @@ static void render(void)
 static bool engine_init(char **argv)
 {
     bool result = true;
+
+    kv_init(s_prev_tick_events);
+    if(!kv_resize(SDL_Event, s_prev_tick_events, 256))
+        return false;
 
     /* ---------------------------------- */
     /* SDL Initialization                 */
@@ -238,6 +247,8 @@ void engine_shutdown(void)
     Cursor_FreeAll();
 
     E_Global_Shutdown();
+
+    kv_destroy(s_prev_tick_events);
 
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window); 

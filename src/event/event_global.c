@@ -41,15 +41,18 @@ struct handler_desc{
     void *user_arg;
 };
 
-#define HANDLERS_EQUAL(a, b)                                                                               \
-    ( (a).type == (b).type                                                                                 \
-   && (a).type == HANDLER_TYPE_SCRIPT ? (a).handler.as_script_callable == (b).handler.as_script_callable   \
-    : (a).type == HANDLER_TYPE_ENGINE ? (a).handler.as_function == (b).handler.as_function                 \
+#define HANDLERS_EQUAL(a, b)                                                \
+    ( (a).type == (b).type                                                  \
+   && (a).type == HANDLER_TYPE_SCRIPT                                       \
+        ? (a).handler.as_script_callable == (b).handler.as_script_callable  \
+    : (a).type == HANDLER_TYPE_ENGINE                                       \
+        ? (a).handler.as_function == (b).handler.as_function                \
     : 0 )
 
 struct event{
     enum eventtype type; 
     void *arg;
+    enum event_source source;
 };
 
 typedef kvec_t(struct handler_desc) kvec_handler_desc_t;
@@ -128,7 +131,10 @@ static void e_handle_event(struct event event)
         if(elem->type == HANDLER_TYPE_ENGINE) {
             elem->handler.as_function(elem->user_arg, event.arg);
         }else if(elem->type == HANDLER_TYPE_SCRIPT) {
-            S_RunEventHandler(elem->handler.as_script_callable, elem->user_arg, event.arg);
+
+            script_opaque_t script_arg = event.source == ES_SCRIPT ? event.arg 
+                : S_WrapEngineEventArg(event.type, event.arg);
+            S_RunEventHandler(elem->handler.as_script_callable, elem->user_arg, script_arg);
         }
     }
 }
@@ -179,9 +185,9 @@ void E_Global_Shutdown(void)
     queue_free(s_event_queue);
 }
 
-void E_Global_Broadcast(enum eventtype event, void *event_arg)
+void E_Global_Broadcast(enum eventtype event, void *event_arg, enum event_source source)
 {
-    struct event e = (struct event){event, event_arg};
+    struct event e = (struct event){event, event_arg, source};
     queue_push(s_event_queue, &e);
 }
 
@@ -190,9 +196,12 @@ void E_Global_ServiceQueue(void)
     e_handle_event( (struct event){EVENT_UPDATE_START, NULL} );
 
     struct event event;
-    while(0 == queue_pop(s_event_queue, &event))
+    while(0 == queue_pop(s_event_queue, &event)) {
+    
         e_handle_event(event);
-    //TODO: release the event arg if it originates from scripting 
+        if(event.source == ES_SCRIPT)
+            S_Release((script_opaque_t) event.arg);
+    }
 
     e_handle_event( (struct event){EVENT_UPDATE_END, NULL} );
 }
