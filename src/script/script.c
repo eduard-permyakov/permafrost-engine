@@ -76,13 +76,6 @@ static PyMethodDef pf_module_methods[] = {
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void s_handler_freefunc(script_opaque_t callable, script_opaque_t user_arg)
-{
-    assert(callable && user_arg);
-    Py_DECREF(callable);
-    Py_DECREF(user_arg);
-}
-
 static bool s_vec3_from_pylist_arg(PyObject *list, vec3_t *out)
 {
     vec3_t ret;
@@ -186,7 +179,7 @@ static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args)
 
     Py_INCREF(callable);
     Py_INCREF(user_arg);
-    bool ret = E_Global_ScriptRegister(event, callable, user_arg, s_handler_freefunc);
+    bool ret = E_Global_ScriptRegister(event, callable, user_arg);
     assert(ret == true);
     Py_RETURN_NONE;
 }
@@ -267,5 +260,10 @@ void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, void 
     ret = PyObject_CallObject(callable, args);
     assert(ret);
     Py_DECREF(args);
+}
+
+void S_Release(script_opaque_t obj)
+{
+    Py_XDECREF(obj);
 }
 

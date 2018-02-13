@@ -20,9 +20,12 @@
 #include "public/event.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/kvec.h"
+#include "../lib/public/queue.h"
 
 #include <assert.h>
 
+
+#define EVENT_QUEUE_SIZE_DEAULT 128
 
 enum handler_type{
     HANDLER_TYPE_ENGINE,
@@ -36,7 +39,11 @@ struct handler_desc{
         script_opaque_t as_script_callable;
     }handler;
     void *user_arg;
-    void (*freefunc)(script_opaque_t, script_opaque_t);
+};
+
+struct event{
+    enum eventtype type; 
+    void *arg;
 };
 
 typedef kvec_t(struct handler_desc) kvec_handler_desc_t;
@@ -47,6 +54,7 @@ KHASH_MAP_INIT_INT(handler_desc, kvec_handler_desc_t)
 /*****************************************************************************/
 
 static khash_t(handler_desc) *s_event_handler_table;
+static queue_t               *s_event_queue;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -92,12 +100,17 @@ static bool e_unregister_handler(enum eventtype event, struct handler_desc *desc
     while(kv_size(oldvec) > 0) {
         struct handler_desc elem = kv_pop(oldvec); 
 
-        if( ((elem.type == desc->type == HANDLER_TYPE_ENGINE) && elem.handler.as_function        == desc->handler.as_function) )
+        if( elem.type == HANDLER_TYPE_ENGINE 
+         && elem.type == desc->type
+         && elem.handler.as_function == desc->handler.as_function )
             continue;
-        if( ((elem.type == desc->type == HANDLER_TYPE_SCRIPT) && elem.handler.as_script_callable == desc->handler.as_script_callable) ) {
+
+        if( elem.type == HANDLER_TYPE_SCRIPT 
+         && elem.type == desc->type
+         && elem.handler.as_script_callable == desc->handler.as_script_callable ) {
         
-            if(elem.freefunc)
-                elem.freefunc(elem.handler.as_script_callable, elem.user_arg);
+            S_Release(elem.handler.as_script_callable);
+            S_Release(elem.user_arg);
             continue;
         }
 
@@ -110,6 +123,27 @@ static bool e_unregister_handler(enum eventtype event, struct handler_desc *desc
     return true;
 }
 
+static void e_handle_event(struct event event)
+{
+    khiter_t k;
+    k = kh_get(handler_desc, s_event_handler_table, event.type);
+    
+    if(k == kh_end(s_event_handler_table))
+        return; 
+    
+    kvec_handler_desc_t vec = kh_value(s_event_handler_table, k);
+    for(int i = 0; i < kv_size(vec); i++) {
+    
+        struct handler_desc *elem = &kv_A(vec, i);
+    
+        if(elem->type == HANDLER_TYPE_ENGINE) {
+            elem->handler.as_function(elem->user_arg, event.arg);
+        }else if(elem->type == HANDLER_TYPE_SCRIPT) {
+            S_RunEventHandler(elem->handler.as_script_callable, elem->user_arg, event.arg);
+        }
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -117,7 +151,19 @@ static bool e_unregister_handler(enum eventtype event, struct handler_desc *desc
 bool E_Global_Init(void)
 {
     s_event_handler_table = kh_init(handler_desc);
+    if(!s_event_handler_table)
+        goto fail_table;
+
+    s_event_queue = queue_init(sizeof(struct event), EVENT_QUEUE_SIZE_DEAULT);
+    if(!s_event_queue)
+        goto fail_queue; 
+
     return true;
+        
+fail_queue:
+    kh_destroy(handler_desc, s_event_handler_table);
+fail_table:
+    return false;
 }
 
 void E_Global_Shutdown(void)
@@ -129,10 +175,13 @@ void E_Global_Shutdown(void)
         
             kvec_handler_desc_t vec = kh_value(s_event_handler_table, k);
             for(int i = 0; i < kv_size(vec); i++) {
-               
+
                 struct handler_desc hd = kv_A(vec, i);
-                if(hd.freefunc)
-                    hd.freefunc(hd.handler.as_script_callable, hd.user_arg);
+            
+                if(hd.type == HANDLER_TYPE_SCRIPT) {
+                    S_Release(hd.handler.as_script_callable);
+                    S_Release(hd.user_arg);
+                }
             }
 
             kv_destroy(vec);
@@ -140,6 +189,25 @@ void E_Global_Shutdown(void)
     }
 
     kh_destroy(handler_desc, s_event_handler_table);
+    queue_free(s_event_queue);
+}
+
+void E_Global_Broadcast(enum eventtype event, void *event_arg)
+{
+    struct event e = (struct event){event, event_arg};
+    queue_push(s_event_queue, &e);
+}
+
+void E_Global_ServiceQueue(void)
+{
+    e_handle_event( (struct event){EVENT_UPDATE_START, NULL} );
+
+    struct event event;
+    while(0 == queue_pop(s_event_queue, &event))
+        e_handle_event(event);
+    //TODO: release the event arg if it originates from scripting 
+
+    e_handle_event( (struct event){EVENT_UPDATE_END, NULL} );
 }
 
 bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg)
@@ -148,7 +216,6 @@ bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg)
     hd.type = HANDLER_TYPE_ENGINE;
     hd.handler.as_function = handler;
     hd.user_arg = user_arg;
-    hd.freefunc = NULL;
 
     return e_register_handler(event, &hd);
 }
@@ -162,14 +229,12 @@ bool E_Global_Unregister(enum eventtype event, handler_t handler)
     return e_unregister_handler(event, &hd);
 }
 
-bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, script_opaque_t user_arg,
-                             void (*freefunc)(script_opaque_t, script_opaque_t))
+bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, script_opaque_t user_arg)
 {
     struct handler_desc hd;
     hd.type = HANDLER_TYPE_SCRIPT;
     hd.handler.as_script_callable = handler;
     hd.user_arg = user_arg;
-    hd.freefunc = freefunc;
 
     return e_register_handler(event, &hd);
 }
@@ -181,26 +246,5 @@ bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler)
     hd.handler.as_script_callable = handler;
 
     return e_unregister_handler(event, &hd);
-}
-
-void E_Global_Broadcast(enum eventtype event, void *event_arg)
-{
-	khiter_t k;
-	k = kh_get(handler_desc, s_event_handler_table, event);
-
-	if(k == kh_end(s_event_handler_table))
-        return;
-
-    kvec_handler_desc_t vec = kh_value(s_event_handler_table, k);
-    for(int i = 0; i < kv_size(vec); i++) {
-
-        struct handler_desc *elem = &kv_A(vec, i);
-    
-        if(elem->type == HANDLER_TYPE_ENGINE) {
-            elem->handler.as_function(elem->user_arg, event_arg);
-        }else if(elem->type == HANDLER_TYPE_SCRIPT) {
-            S_RunEventHandler(elem->handler.as_script_callable, elem->user_arg, event_arg);
-        }
-    }
 }
 

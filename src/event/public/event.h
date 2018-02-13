@@ -37,11 +37,12 @@ enum eventtype{
      * +-----------------+-----------------------------------------------+
      * | 0x20000-0x2ffff | Script-generated events                       |
      * +-----------------+-----------------------------------------------+
+     *
+     * The very first event serviced during a tick is a single EVENT_UPDATE_START one.
+     * The very last event serviced during a tick is a single EVENT_UPDATE_END one. 
      */
     EVENT_UPDATE_START = SDL_LASTEVENT + 1,
     EVENT_UPDATE_END,
-    EVENT_RENDER_START,
-    EVENT_RENDER_END,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };
@@ -50,14 +51,13 @@ typedef void (*handler_t)(void*, void*);
 
 bool E_Global_Init(void);
 void E_Global_Broadcast(enum eventtype event, void *event_arg);
+void E_Global_ServiceQueue(void);
 void E_Global_Shutdown(void);
 
 bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg);
 bool E_Global_Unregister(enum eventtype event, handler_t handler);
-/* If 'freefunc' is not NULL, it gets called with the 'handler' and 'user_arg' as arguments
- * at time of unregistering or shutdown. */
-bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, script_opaque_t user_arg,
-                             void (*freefunc)(script_opaque_t, script_opaque_t));
+
+bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, script_opaque_t user_arg);
 bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler);
 
 #endif

@@ -64,7 +64,7 @@ static bool                s_quit = false;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void process_events(void)
+static void process_sdl_events(void)
 {
     SDL_Event event;    
    
@@ -293,15 +293,10 @@ int main(int argc, char **argv)
 
     while(!s_quit) {
 
-        process_events();
-
-        E_Global_Broadcast(EVENT_UPDATE_START, NULL);
+        process_sdl_events();
+        E_Global_ServiceQueue();
         G_Update();
-        E_Global_Broadcast(EVENT_UPDATE_END, NULL);
-
-        E_Global_Broadcast(EVENT_RENDER_START, NULL);
         render();        
-        E_Global_Broadcast(EVENT_RENDER_END, NULL);
 
     }
 
