@@ -83,19 +83,19 @@ static uint64_t e_key(uint32_t ent_id, enum eventtype event)
 
 static bool e_register_handler(uint64_t key, struct handler_desc *desc)
 {
-	khiter_t k;
-	k = kh_get(handler_desc, s_event_handler_table, key);
+    khiter_t k;
+    k = kh_get(handler_desc, s_event_handler_table, key);
 
-	if(k == kh_end(s_event_handler_table)) {
+    if(k == kh_end(s_event_handler_table)) {
 
         kvec_handler_desc_t newv;
         kv_init(newv);
         kv_push(struct handler_desc, newv, *desc);
-    
+
         int ret;
-	    k = kh_put(handler_desc, s_event_handler_table, key, &ret);
+        k = kh_put(handler_desc, s_event_handler_table, key, &ret);
         assert(ret == 1);
-	    kh_value(s_event_handler_table, k) = newv;
+        kh_value(s_event_handler_table, k) = newv;
 
     }else{
     
@@ -109,10 +109,10 @@ static bool e_register_handler(uint64_t key, struct handler_desc *desc)
 
 static bool e_unregister_handler(uint64_t key, struct handler_desc *desc, bool release_script_objs)
 {
-	khiter_t k;
-	k = kh_get(handler_desc, s_event_handler_table, key);
+    khiter_t k;
+    k = kh_get(handler_desc, s_event_handler_table, key);
 
-	if(k == kh_end(s_event_handler_table))
+    if(k == kh_end(s_event_handler_table))
         return false;
 
     kvec_handler_desc_t vec = kh_value(s_event_handler_table, k);
@@ -187,12 +187,12 @@ fail_table:
 
 void E_Global_Shutdown(void)
 {
-	khiter_t k;
-	for (k = kh_begin(s_event_handler_table); k != kh_end(s_event_handler_table); ++k) {
+    khiter_t k;
+    for (k = kh_begin(s_event_handler_table); k != kh_end(s_event_handler_table); ++k) {
 
         uint64_t key = kh_key(s_event_handler_table, k);
     
-		if (kh_exist(s_event_handler_table, k)) {
+        if (kh_exist(s_event_handler_table, k)) {
         
             kvec_handler_desc_t vec = kh_value(s_event_handler_table, k);
             for(int i = 0; i < kv_size(vec); i++) {
