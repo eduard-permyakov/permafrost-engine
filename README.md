@@ -21,6 +21,7 @@ in the early phases of development.
 * RTS camera, FPS camera
 * Rendering of tile-based world parsed from ASCII file
 * Engine internals exposed to Python 2.7 for scripting
+* Event system
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
@@ -41,7 +42,7 @@ along with the game binary if desired.
 1. `git clone https://github.com/eduard-permyakov/permafrost-engine.git`
 2. `cd permafrost-engine`
 3. Optionally `make deps` to build the shared library dependencies to `./lib`
-   If you skip this step, your linker must be able to satisfy `-lGLEW`, `lSDL2`, and 
+   If you skip this step, your linker must be able to satisfy `-lGLEW`, `-lSDL2`, and 
    `-lpython2.7`.
 3. `make pf`
 4. `make run` (runs the binary in `./bin` with default arguments)
