@@ -27,6 +27,7 @@
 #define BASEDIR_LEN     64
 
 struct entity{
+    uint32_t  uid;
     char      name[ENTITY_NAME_LEN];
     char      basedir[BASEDIR_LEN];
     vec3_t    pos;
@@ -36,6 +37,7 @@ struct entity{
     void     *anim_private;
 };
 
-void Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
+void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
+uint32_t Entity_NewUID(void);
 
 #endif

@@ -187,8 +187,6 @@ fail:
 
 void Cursor_FreeAll(void)
 {
-    E_Global_Unregister(SDL_MOUSEMOTION, cursor_on_mousemove);
-
     for(int i = 0; i < ARR_SIZE(s_cursors); i++) {
     
         struct cursor_resource *curr = &s_cursors[i];

@@ -32,3 +32,9 @@ void Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out)
     PFM_Mat4x4_Mult4x4(&trans, &scale, out);
 }
 
+uint32_t Entity_NewUID(void)
+{
+    static uint32_t uid = 0;
+    return uid++;
+}
+

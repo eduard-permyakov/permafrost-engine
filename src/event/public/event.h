@@ -54,15 +54,31 @@ enum event_source{
 
 typedef void (*handler_t)(void*, void*);
 
+/*###########################################################################*/
+/* EVENT GLOBAL                                                              */
+/*###########################################################################*/
+
 bool E_Global_Init(void);
-void E_Global_Broadcast(enum eventtype event, void *event_arg, enum event_source);
+void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source);
 void E_Global_ServiceQueue(void);
 void E_Global_Shutdown(void);
 
 bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg);
 bool E_Global_Unregister(enum eventtype event, handler_t handler);
 
-bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, script_opaque_t user_arg);
+bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, 
+                             script_opaque_t user_arg);
 bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler);
+
+
+/*###########################################################################*/
+/* EVENT ENTITY                                                              */
+/*###########################################################################*/
+
+bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid, 
+                             script_opaque_t handler, script_opaque_t user_arg);
+bool E_Entity_ScriptUnregister(enum eventtype event, uint32_t ent_uid, 
+                               script_opaque_t handler);
+void E_Entity_Notify(enum eventtype, uint32_t ent_uid, void *event_arg, enum event_source);
 
 #endif

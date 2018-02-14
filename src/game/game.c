@@ -121,9 +121,6 @@ bool G_NewGameWithMap(const char *dir, const char *pfmap)
 
 void G_Shutdown(void)
 {
-    g_reset();
-
-    CamControl_UninstallActive();
     for(int i = 0; i < NUM_CAMERAS; i++)
         Camera_Free(s_gs.cameras[i]);
 

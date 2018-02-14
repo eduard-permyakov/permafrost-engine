@@ -25,7 +25,7 @@
 #include <assert.h>
 
 
-#define EVENT_QUEUE_SIZE_DEAULT 128
+#define EVENT_QUEUE_SIZE_DEAULT 2048
 
 enum handler_type{
     HANDLER_TYPE_ENGINE,
@@ -50,13 +50,20 @@ struct handler_desc{
     : 0 )
 
 struct event{
-    enum eventtype type; 
-    void *arg;
-    enum event_source source;
+    enum eventtype     type; 
+    void              *arg;
+    enum event_source  source;
+    uint32_t           receiver_id;
 };
 
+/* Used in the place of the entity ID for key generation for global events,
+ * which are not associated with any entity. This is the maximum 32-bit 
+ * entity ID, we will assume entity IDs will never reach this high.
+ */
+#define GLOBAL_ID (~((uint32_t)0))
+
 typedef kvec_t(struct handler_desc) kvec_handler_desc_t;
-KHASH_MAP_INIT_INT(handler_desc, kvec_handler_desc_t)
+KHASH_MAP_INIT_INT64(handler_desc, kvec_handler_desc_t)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -69,10 +76,15 @@ static queue_t               *s_event_queue;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool e_register_handler(enum eventtype event, struct handler_desc *desc)
+static uint64_t e_key(uint32_t ent_id, enum eventtype event)
+{
+    return (((uint64_t)ent_id) << 32) | (uint64_t)event;
+}
+
+static bool e_register_handler(uint64_t key, struct handler_desc *desc)
 {
 	khiter_t k;
-	k = kh_get(handler_desc, s_event_handler_table, event);
+	k = kh_get(handler_desc, s_event_handler_table, key);
 
 	if(k == kh_end(s_event_handler_table)) {
 
@@ -81,7 +93,7 @@ static bool e_register_handler(enum eventtype event, struct handler_desc *desc)
         kv_push(struct handler_desc, newv, *desc);
     
         int ret;
-	    k = kh_put(handler_desc, s_event_handler_table, event, &ret);
+	    k = kh_put(handler_desc, s_event_handler_table, key, &ret);
         assert(ret == 1);
 	    kh_value(s_event_handler_table, k) = newv;
 
@@ -95,10 +107,10 @@ static bool e_register_handler(enum eventtype event, struct handler_desc *desc)
     return true;
 }
 
-static bool e_unregister_handler(enum eventtype event, struct handler_desc *desc)
+static bool e_unregister_handler(uint64_t key, struct handler_desc *desc, bool release_script_objs)
 {
 	khiter_t k;
-	k = kh_get(handler_desc, s_event_handler_table, event);
+	k = kh_get(handler_desc, s_event_handler_table, key);
 
 	if(k == kh_end(s_event_handler_table))
         return false;
@@ -107,8 +119,15 @@ static bool e_unregister_handler(enum eventtype event, struct handler_desc *desc
 
     int idx;
     kv_indexof(struct handler_desc, vec, *desc, HANDLERS_EQUAL, idx);
-    if(idx != -1)
+    if(idx != -1) {
+    
+        if(release_script_objs && desc->type == HANDLER_TYPE_SCRIPT) {
+
+            S_Release(desc->handler.as_script_callable);
+            S_Release(desc->user_arg); 
+        }
         kv_del(struct handler_desc, vec, idx);
+    }
 
     kh_value(s_event_handler_table, k) = vec;
 
@@ -118,7 +137,8 @@ static bool e_unregister_handler(enum eventtype event, struct handler_desc *desc
 static void e_handle_event(struct event event)
 {
     khiter_t k;
-    k = kh_get(handler_desc, s_event_handler_table, event.type);
+    uint64_t key = e_key(event.receiver_id, event.type);
+    k = kh_get(handler_desc, s_event_handler_table, key);
     
     if(k == kh_end(s_event_handler_table))
         return; 
@@ -143,6 +163,10 @@ static void e_handle_event(struct event event)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+/*
+ * Global Events
+ */
+
 bool E_Global_Init(void)
 {
     s_event_handler_table = kh_init(handler_desc);
@@ -166,7 +190,7 @@ void E_Global_Shutdown(void)
 	khiter_t k;
 	for (k = kh_begin(s_event_handler_table); k != kh_end(s_event_handler_table); ++k) {
 
-        enum eventtype event = kh_key(s_event_handler_table, k);
+        uint64_t key = kh_key(s_event_handler_table, k);
     
 		if (kh_exist(s_event_handler_table, k)) {
         
@@ -174,7 +198,10 @@ void E_Global_Shutdown(void)
             for(int i = 0; i < kv_size(vec); i++) {
 
                 struct handler_desc hd = kv_A(vec, i);
-                e_unregister_handler(event, &hd);
+                /* The scripting subsystem is already shut down at the this time and 
+                 * the Python context is destroyed. Any existing handles are stale. As such, 
+                 * we use a flag not to touch them during shutdown. */
+                e_unregister_handler(key, &hd, false);
             }
 
             kv_destroy(vec);
@@ -185,25 +212,24 @@ void E_Global_Shutdown(void)
     queue_free(s_event_queue);
 }
 
-void E_Global_Broadcast(enum eventtype event, void *event_arg, enum event_source source)
+void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source source)
 {
-    struct event e = (struct event){event, event_arg, source};
+    struct event e = (struct event){event, event_arg, source, GLOBAL_ID};
     queue_push(s_event_queue, &e);
 }
 
 void E_Global_ServiceQueue(void)
 {
-    e_handle_event( (struct event){EVENT_UPDATE_START, NULL} );
+    e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID} );
 
     struct event event;
     while(0 == queue_pop(s_event_queue, &event)) {
     
         e_handle_event(event);
-        if(event.source == ES_SCRIPT)
-            S_Release((script_opaque_t) event.arg);
+        /* event arg already released */
     }
 
-    e_handle_event( (struct event){EVENT_UPDATE_END, NULL} );
+    e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID} );
 }
 
 bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg)
@@ -213,7 +239,7 @@ bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg)
     hd.handler.as_function = handler;
     hd.user_arg = user_arg;
 
-    return e_register_handler(event, &hd);
+    return e_register_handler(e_key(GLOBAL_ID, event), &hd);
 }
 
 bool E_Global_Unregister(enum eventtype event, handler_t handler)
@@ -222,7 +248,7 @@ bool E_Global_Unregister(enum eventtype event, handler_t handler)
     hd.type = HANDLER_TYPE_ENGINE;
     hd.handler.as_function = handler;
 
-    return e_unregister_handler(event, &hd);
+    return e_unregister_handler(e_key(GLOBAL_ID, event), &hd, true);
 }
 
 bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, script_opaque_t user_arg)
@@ -232,7 +258,7 @@ bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, scri
     hd.handler.as_script_callable = handler;
     hd.user_arg = user_arg;
 
-    return e_register_handler(event, &hd);
+    return e_register_handler(e_key(GLOBAL_ID, event), &hd);
 }
 
 bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler)
@@ -241,6 +267,38 @@ bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler)
     hd.type = HANDLER_TYPE_SCRIPT;
     hd.handler.as_script_callable = handler;
 
-    return e_unregister_handler(event, &hd);
+    return e_unregister_handler(e_key(GLOBAL_ID, event), &hd, true);
+}
+
+/*
+ * Entity Events
+ */
+
+bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid, 
+                             script_opaque_t handler, script_opaque_t user_arg)
+{
+    struct handler_desc hd;
+    hd.type = HANDLER_TYPE_SCRIPT;
+    hd.handler.as_script_callable = handler;
+    hd.user_arg = user_arg;
+
+    return e_register_handler(e_key(ent_uid, event), &hd);
+}
+
+bool E_Entity_ScriptUnregister(enum eventtype event, uint32_t ent_uid, 
+                               script_opaque_t handler)
+{
+    struct handler_desc hd;
+    hd.type = HANDLER_TYPE_SCRIPT;
+    hd.handler.as_script_callable = handler;
+
+    return e_unregister_handler(e_key(ent_uid, event), &hd, true);
+}
+
+void E_Entity_Notify(enum eventtype event, uint32_t ent_uid, void *event_arg, 
+                     enum event_source source)
+{
+    struct event e = (struct event){event, event_arg, source, ent_uid};
+    queue_push(s_event_queue, &e);
 }
 

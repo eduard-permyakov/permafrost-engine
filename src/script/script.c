@@ -36,7 +36,7 @@ static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args);
-static PyObject *PyPf_broadcast_event(PyObject *self, PyObject *args);
+static PyObject *PyPf_global_event(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args);
 
@@ -72,15 +72,17 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_unregister_event_handler, METH_VARARGS,
     "Removes a script event handler added by 'register_event_handler'."},
 
-    {"broadcast_event", 
-    (PyCFunction)PyPf_broadcast_event, METH_VARARGS,
+    {"global_event", 
+    (PyCFunction)PyPf_global_event, METH_VARARGS,
     "Broadcast a global event so all handlers can get invoked."},
 
     {"activate_camera", 
     (PyCFunction)PyPf_activate_camera, METH_VARARGS,
     "Set the camera specified by the index to be the active camera, meaning the scene is "
     "being rendered from the camera's point of view. The second argument is teh camera "
-    "control mode (0 = FPS, 1 = RTS)."},
+    "control mode (0 = FPS, 1 = RTS). Note that the position of camera 0 is restricted "
+    "to the map boundaries as it is expected to be the main RTS camera. The other cameras "
+    "are unrestricted."},
 
     {NULL}  /* Sentinel */
 };
@@ -192,6 +194,7 @@ static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args)
 
     Py_INCREF(callable);
     Py_INCREF(user_arg);
+
     bool ret = E_Global_ScriptRegister(event, callable, user_arg);
     assert(ret == true);
     Py_RETURN_NONE;
@@ -216,7 +219,7 @@ static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyPf_broadcast_event(PyObject *self, PyObject *args)
+static PyObject *PyPf_global_event(PyObject *self, PyObject *args)
 {
     enum eventtype event;
     PyObject *arg;
@@ -228,7 +231,7 @@ static PyObject *PyPf_broadcast_event(PyObject *self, PyObject *args)
 
     Py_INCREF(arg);
 
-    E_Global_Broadcast(event, arg, ES_SCRIPT);
+    E_Global_Notify(event, arg, ES_SCRIPT);
     Py_RETURN_NONE;
 }
 
@@ -294,13 +297,15 @@ void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, scrip
     assert(PyCallable_Check(callable));
 
     args = PyTuple_New(2);
+    /* PyTuple_SetItem steals references! However, we wish to hold on
+     * to the user_arg even when the tuple is destroyed. */
+    Py_INCREF(user_arg);
     PyTuple_SetItem(args, 0, user_arg);
     PyTuple_SetItem(args, 1, event_arg);
 
     ret = PyObject_CallObject(callable, args);
     assert(ret);
     Py_DECREF(args);
-    Py_DECREF(event_arg);
 }
 
 void S_Release(script_opaque_t obj)

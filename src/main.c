@@ -74,7 +74,7 @@ static void process_sdl_events(void)
     while(SDL_PollEvent(&event)) {
 
         kv_push(SDL_Event, s_prev_tick_events, event);
-        E_Global_Broadcast(event.type, &kv_A(s_prev_tick_events, kv_size(s_prev_tick_events)-1), 
+        E_Global_Notify(event.type, &kv_A(s_prev_tick_events, kv_size(s_prev_tick_events)-1), 
             ES_ENGINE);
 
         switch(event.type) {
@@ -245,7 +245,6 @@ void engine_shutdown(void)
      */
     G_Shutdown(); 
     Cursor_FreeAll();
-
     E_Global_Shutdown();
 
     kv_destroy(s_prev_tick_events);
@@ -307,7 +306,7 @@ int main(int argc, char **argv)
         process_sdl_events();
         E_Global_ServiceQueue();
         G_Update();
-        render();        
+        render();
 
     }
 

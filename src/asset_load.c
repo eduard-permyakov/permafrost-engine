@@ -179,6 +179,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     /* Entities with no joints and no animation sets are considered static. 
      * Otherwise, they must have both a nonzero number ofjoints and 
      * animation sets to be considered valid considered valid. */
+    //TODO: nicer way - we should still be able to render animated pfobj as static
     ret->animated = (header.num_joints > 0);
     assert(!animated || header.num_as > 0);
 
@@ -189,6 +190,8 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     strcpy(ret->basedir, base_path);
 
     fclose(stream);
+
+    ret->uid = Entity_NewUID();
     return ret;
 
 fail_init:

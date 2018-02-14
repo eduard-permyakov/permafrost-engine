@@ -23,6 +23,7 @@
 #include "../asset_load.h"
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
+#include "../event/public/event.h"
 
 typedef struct {
     PyObject_HEAD
@@ -42,8 +43,11 @@ static int       PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *c
 static PyObject *PyEntity_get_scale(PyEntityObject *self, void *closure);
 static int       PyEntity_set_scale(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_activate(PyEntityObject *self);
+static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args);
 
-static PyObject *PyAnimEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args);
 
 /*****************************************************************************/
@@ -57,6 +61,20 @@ static PyMethodDef PyEntity_methods[] = {
     "to interact with it in the simulation. The activated entity will be removed from "
     "the game world when no more references to it remain in scope. (ex: Using 'del' "
     "when you have a single reference)"},
+
+    {"register", 
+    (PyCFunction)PyEntity_register, METH_VARARGS,
+    "Registers the specified callable to be invoked when an event of the specified type "
+    "is sent to this entity." },
+
+    {"unregister", 
+    (PyCFunction)PyEntity_unregister, METH_VARARGS,
+    "Unregisters a callable previously registered to be invoked on the specified event."},
+
+    {"notify", 
+    (PyCFunction)PyEntity_notify, METH_VARARGS,
+    "Send a specific event to an entity in order to invoke the entity's event handlers."},
+
     {NULL}  /* Sentinel */
 };
 
@@ -128,12 +146,12 @@ static PyTypeObject PyEntity_type = {
 static PyTypeObject PyAnimEntity_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name      = "pf.AnimEntity",
-    .tp_basicsize = sizeof(PyAnimEntityObject),
+    .tp_basicsize = sizeof(PyAnimEntityObject), 
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc       = "Permafrost Engine animated entity.",
     .tp_methods   = PyAnimEntity_methods,
     .tp_base      = &PyEntity_type,
-    .tp_new       = PyAnimEntity_new,
+    .tp_init      = (initproc)PyAnimEntity_init,
 };
 
 /*****************************************************************************/
@@ -269,23 +287,73 @@ static PyObject *PyEntity_activate(PyEntityObject *self)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyAnimEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args)
 {
-    const char *dirpath, *filename, *name, *clipname;
-    if(!PyArg_ParseTuple(args, "ssss", &dirpath, &filename, &name, &clipname)) {
+    enum eventtype event;
+    PyObject *callable, *user_arg;
+
+    if(!PyArg_ParseTuple(args, "iOO", &event, &callable, &user_arg)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of an integer and two objects.");
         return NULL;
     }
 
-    PyObject *super_args = Py_BuildValue("(s,s,s)", dirpath, filename, name);
-    PyAnimEntityObject *ret;
-
-    ret = (PyAnimEntityObject*)PyEntity_type.tp_new(&PyAnimEntity_type, super_args, NULL);
-    Py_DECREF(super_args);
-    if(!ret)
+    if(!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "Second argument must be callable.");
         return NULL;
+    }
 
-    A_InitCtx(ret->super.ent, clipname, 24);
-    return (PyObject*)ret;
+    Py_INCREF(callable);
+    Py_INCREF(user_arg);
+
+    bool ret = E_Entity_ScriptRegister(event, self->ent->uid, callable, user_arg);
+    assert(ret == true);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args)
+{
+    enum eventtype event;
+    PyObject *callable;
+
+    if(!PyArg_ParseTuple(args, "iO", &event, &callable)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of an integer and one object.");
+        return NULL;
+    }
+
+    if(!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "Second argument must be callable.");
+        return NULL;
+    }
+
+    bool ret = E_Entity_ScriptUnregister(event, self->ent->uid, callable);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args)
+{
+    enum eventtype event;
+    PyObject *arg;
+
+    if(!PyArg_ParseTuple(args, "iO", &event, &arg)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of an integer and one object.");
+        return NULL;
+    }
+
+    Py_INCREF(arg);
+
+    E_Entity_Notify(event, self->ent->uid, arg, ES_SCRIPT);
+    Py_RETURN_NONE;
+}
+
+static int PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds)
+{
+    const char *dirpath, *filename, *name, *clipname;
+    if(!PyArg_ParseTuple(args, "ssss", &dirpath, &filename, &name, &clipname)) {
+        return -1;
+    }
+
+    A_InitCtx(self->super.ent, clipname, 24);
+    return 0;
 }
 
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args)
