@@ -38,6 +38,8 @@ static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_broadcast_event(PyObject *self, PyObject *args);
 
+static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -73,6 +75,12 @@ static PyMethodDef pf_module_methods[] = {
     {"broadcast_event", 
     (PyCFunction)PyPf_broadcast_event, METH_VARARGS,
     "Broadcast a global event so all handlers can get invoked."},
+
+    {"activate_camera", 
+    (PyCFunction)PyPf_activate_camera, METH_VARARGS,
+    "Set the camera specified by the index to be the active camera, meaning the scene is "
+    "being rendered from the camera's point of view. The second argument is teh camera "
+    "control mode (0 = FPS, 1 = RTS)."},
 
     {NULL}  /* Sentinel */
 };
@@ -221,6 +229,20 @@ static PyObject *PyPf_broadcast_event(PyObject *self, PyObject *args)
     Py_INCREF(arg);
 
     E_Global_Broadcast(event, arg, ES_SCRIPT);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args)
+{
+    int idx;
+    enum cam_mode mode;
+
+    if(!PyArg_ParseTuple(args, "ii", &idx, &mode)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of two integers.");
+        return NULL;
+    }
+
+    G_ActivateCamera(idx, mode);
     Py_RETURN_NONE;
 }
 

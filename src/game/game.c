@@ -33,6 +33,9 @@
 #define CAM_HEIGHT          175.0f
 #define CAM_TILT_UP_DEGREES 25.0f
 
+#define ACTIVE_CAM          (s_gs.cameras[s_gs.active_cam_idx])
+
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -43,16 +46,14 @@ static struct gamestate s_gs;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void g_center_camera(void)
+static void g_reset_camera(struct camera *cam)
 {
-    Camera_SetPos(s_gs.camera, (vec3_t){ 0.0f, CAM_HEIGHT, 0.0f }); 
+    Camera_SetPitchAndYaw(cam, -(90.0f - CAM_TILT_UP_DEGREES), 90.0f + 45.0f);
+    Camera_SetPos(cam, (vec3_t){ 0.0f, CAM_HEIGHT, 0.0f }); 
 }
 
 static void g_reset(void)
 {
-    assert(s_gs.camera);
-    assert(s_gs.cam_ctx);
-
     while(s_gs.active->size > 0) {
     
         struct entity *ent;
@@ -64,21 +65,25 @@ static void g_reset(void)
     if(s_gs.map) AL_MapFree(s_gs.map);
     s_gs.map = NULL;
 
-    g_center_camera();
+    for(int i = 0; i < NUM_CAMERAS; i++)
+        g_reset_camera(s_gs.cameras[i]);
+
+    G_ActivateCamera(0, CAM_MODE_RTS);
 }
 
-static bool g_init_camera(void) 
+static bool g_init_cameras(void) 
 {
-    s_gs.camera = Camera_New();
-    if(!s_gs.camera) {
-        return false;
+    for(int i = 0; i < NUM_CAMERAS; i++) {
+    
+        s_gs.cameras[i] = Camera_New();
+        if(!s_gs.cameras[i]) {
+            return false;
+        }
+
+        Camera_SetSpeed(s_gs.cameras[i], 0.15f);
+        Camera_SetSens (s_gs.cameras[i], 0.05f);
+        g_reset_camera(s_gs.cameras[i]);
     }
-
-    Camera_SetPitchAndYaw(s_gs.camera, -(90.0f - CAM_TILT_UP_DEGREES), 90.0f + 45.0f);
-    Camera_SetSpeed(s_gs.camera, 0.15f);
-    Camera_SetSens (s_gs.camera, 0.05f);
-
-    CamControl_RTS_Install(s_gs.camera);
 }
 
 /*****************************************************************************/
@@ -92,7 +97,7 @@ bool G_Init(void)
     if(!s_gs.active)
         return false;
 
-    if(g_init_camera())
+    if(g_init_cameras())
         return false; 
 
     g_reset();
@@ -109,7 +114,7 @@ bool G_NewGameWithMap(const char *dir, const char *pfmap)
         return false;
 
     M_CenterAtOrigin(s_gs.map);
-    M_RestrictRTSCamToMap(s_gs.map, s_gs.camera);
+    M_RestrictRTSCamToMap(s_gs.map, ACTIVE_CAM);
 
     return true;
 }
@@ -119,7 +124,8 @@ void G_Shutdown(void)
     g_reset();
 
     CamControl_UninstallActive();
-    Camera_Free(s_gs.camera);
+    for(int i = 0; i < NUM_CAMERAS; i++)
+        Camera_Free(s_gs.cameras[i]);
 
     assert(s_gs.active);
     kl_destroy(entity, s_gs.active);
@@ -149,7 +155,7 @@ void G_Render(void)
 
 void G_Update(void)
 {
-
+    //TODO
 }
 
 bool G_AddEntity(struct entity *ent)
@@ -160,5 +166,22 @@ bool G_AddEntity(struct entity *ent)
 bool G_RemoveEntity(struct entity *ent)
 {
     return (0 == kl_remove_first(entity, s_gs.active, &ent));
+}
+
+bool G_ActivateCamera(int idx, enum cam_mode mode)
+{
+    if( !(idx >= 0 && idx < NUM_CAMERAS) )
+        return false;
+
+    s_gs.active_cam_idx = idx;
+    CamControl_UninstallActive(); 
+
+    switch(mode) {
+    case CAM_MODE_RTS:  CamControl_RTS_Install(s_gs.cameras[idx]); break;
+    case CAM_MODE_FPS:  CamControl_FPS_Install(s_gs.cameras[idx]); break;
+    default: assert(0);
+    }
+
+    return true;
 }
 

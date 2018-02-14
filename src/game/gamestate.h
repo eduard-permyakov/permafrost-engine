@@ -25,9 +25,12 @@
 #define __ent_free(x) /* Freeing logic for entities is outside of list */
 KLIST_INIT(entity, struct entity *, __ent_free)
 
+#define NUM_CAMERAS 2
+
 struct gamestate{
     struct map         *map;
-    struct camera      *camera;
+    int                 active_cam_idx;
+    struct camera      *cameras[NUM_CAMERAS];
     klist_t(entity)    *active;
 };
 

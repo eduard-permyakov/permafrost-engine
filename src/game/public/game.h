@@ -26,6 +26,12 @@
 struct entity;
 struct map;
 
+enum cam_mode{
+    CAM_MODE_FPS,
+    CAM_MODE_RTS
+};
+
+
 bool G_Init(void);
 bool G_NewGameWithMap(const char *dir, const char *pfmap);
 void G_Shutdown(void);
@@ -35,6 +41,8 @@ void G_Update(void);
 
 bool G_AddEntity(struct entity *ent);
 bool G_RemoveEntity(struct entity *ent);
+
+bool G_ActivateCamera(int idx, enum cam_mode mode);
 
 #endif
 
