@@ -167,7 +167,7 @@ static void e_handle_event(struct event event)
  * Global Events
  */
 
-bool E_Global_Init(void)
+bool E_Init(void)
 {
     s_event_handler_table = kh_init(handler_desc);
     if(!s_event_handler_table)
@@ -185,7 +185,7 @@ fail_table:
     return false;
 }
 
-void E_Global_Shutdown(void)
+void E_Shutdown(void)
 {
     khiter_t k;
     for (k = kh_begin(s_event_handler_table); k != kh_end(s_event_handler_table); ++k) {
@@ -212,13 +212,7 @@ void E_Global_Shutdown(void)
     queue_free(s_event_queue);
 }
 
-void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source source)
-{
-    struct event e = (struct event){event, event_arg, source, GLOBAL_ID};
-    queue_push(s_event_queue, &e);
-}
-
-void E_Global_ServiceQueue(void)
+void E_ServiceQueue(void)
 {
     e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID} );
 
@@ -230,6 +224,12 @@ void E_Global_ServiceQueue(void)
     }
 
     e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID} );
+}
+
+void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source source)
+{
+    struct event e = (struct event){event, event_arg, source, GLOBAL_ID};
+    queue_push(s_event_queue, &e);
 }
 
 bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg)

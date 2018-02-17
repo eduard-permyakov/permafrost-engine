@@ -204,7 +204,7 @@ static bool engine_init(char **argv)
     /* ---------------------------------- */
     /* Event subsystem intialization      */
     /* ---------------------------------- */
-    if(!E_Global_Init()) {
+    if(!E_Init()) {
         result = false; 
         goto fail_game;
     }
@@ -245,7 +245,7 @@ void engine_shutdown(void)
      */
     G_Shutdown(); 
     Cursor_FreeAll();
-    E_Global_Shutdown();
+    E_Shutdown();
 
     kv_destroy(s_prev_tick_events);
 
@@ -304,7 +304,7 @@ int main(int argc, char **argv)
     while(!s_quit) {
 
         process_sdl_events();
-        E_Global_ServiceQueue();
+        E_ServiceQueue();
         G_Update();
         render();
 

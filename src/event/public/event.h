@@ -55,13 +55,18 @@ enum event_source{
 typedef void (*handler_t)(void*, void*);
 
 /*###########################################################################*/
+/* EVENT GENERAL                                                             */
+/*###########################################################################*/
+
+bool E_Init(void);
+void E_ServiceQueue(void);
+void E_Shutdown(void);
+
+/*###########################################################################*/
 /* EVENT GLOBAL                                                              */
 /*###########################################################################*/
 
-bool E_Global_Init(void);
 void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source);
-void E_Global_ServiceQueue(void);
-void E_Global_Shutdown(void);
 
 bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg);
 bool E_Global_Unregister(enum eventtype event, handler_t handler);
