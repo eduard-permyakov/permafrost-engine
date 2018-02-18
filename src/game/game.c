@@ -171,7 +171,6 @@ bool G_ActivateCamera(int idx, enum cam_mode mode)
         return false;
 
     s_gs.active_cam_idx = idx;
-    CamControl_UninstallActive(); 
 
     switch(mode) {
     case CAM_MODE_RTS:  CamControl_RTS_Install(s_gs.cameras[idx]); break;

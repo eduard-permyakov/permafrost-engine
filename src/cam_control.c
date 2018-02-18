@@ -190,7 +190,7 @@ void CamControl_FPS_Install(struct camera *cam)
     E_Global_Register(EVENT_UPDATE_END, fps_cam_on_update_end, NULL);
 
     s_cam_ctx.installed_on_keydown    = fps_cam_on_keydown;
-    s_cam_ctx.installed_on_keydown    = fps_cam_on_keyup;
+    s_cam_ctx.installed_on_keyup      = fps_cam_on_keyup;
     s_cam_ctx.installed_on_mousemove  = fps_cam_on_mousemove;
     s_cam_ctx.installed_on_update_end = fps_cam_on_update_end;
     s_cam_ctx.active = cam;
