@@ -27,6 +27,8 @@
 #include "game/public/game.h"
 #include "event/public/event.h"
 #include "gl_assert.h"
+#include "lib/public/nuklear.h"
+#include "lib/public/nuklear_sdl_gl3.h"
 
 #include <GL/glew.h>
 #include <SDL.h>
@@ -50,7 +52,7 @@
 /*****************************************************************************/
 
 /* Write-once global - path of the base directory */
-const char *g_basepath;
+const char                *g_basepath;
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -62,16 +64,22 @@ static SDL_GLContext       s_context;
 static bool                s_quit = false; 
 static kvec_t(SDL_Event)   s_prev_tick_events;
 
+static struct nk_context  *s_nk_ctx;
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
 static void process_sdl_events(void)
 {
+    nk_input_begin(s_nk_ctx);
+
     kv_reset(s_prev_tick_events);
     SDL_Event event;    
    
     while(SDL_PollEvent(&event)) {
+
+        nk_sdl_handle_event(&event);
 
         kv_push(SDL_Event, s_prev_tick_events, event);
         E_Global_Notify(event.type, &kv_A(s_prev_tick_events, kv_size(s_prev_tick_events)-1), 
@@ -100,6 +108,12 @@ static void process_sdl_events(void)
             break;
         }
     }
+    nk_input_end(s_nk_ctx);
+}
+
+static void gl_set_globals(void)
+{
+    glEnable(GL_DEPTH_TEST);
 }
 
 static void render(void)
@@ -110,6 +124,10 @@ static void render(void)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     G_Render();
+
+    nk_sdl_render(NK_ANTI_ALIASING_ON, 512 * 1024, 128 * 1024);
+    /* Restore OpenGL global state after it's been clobbered by nuklear */
+    gl_set_globals(); 
 
     SDL_GL_SwapWindow(s_window);
 }
@@ -169,7 +187,28 @@ static bool engine_init(char **argv)
     GL_ASSERT_OK();
 
     glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
-    glEnable(GL_DEPTH_TEST);
+
+    /* ---------------------------------- */
+    /* nuklear initialization             */
+    /* ---------------------------------- */
+    s_nk_ctx = nk_sdl_init(s_window);
+    if(!s_nk_ctx) {
+        result = false; 
+        goto fail_nuklear;
+    }
+
+    struct nk_font_atlas *atlas;
+
+    char font_path[256];
+
+    strcpy(font_path, argv[1]);
+    strcat(font_path, "assets/fonts/OptimusPrinceps.ttf");
+
+    nk_sdl_font_stash_begin(&atlas);
+    struct nk_font *optimus_princeps = nk_font_atlas_add_from_file(atlas, font_path, 14, 0);
+
+    atlas->default_font = optimus_princeps;
+    nk_sdl_font_stash_end();
 
     /* ---------------------------------- */
     /* stb_image initialization           */
@@ -226,6 +265,8 @@ fail_script:
 fail_render:
     Cursor_FreeAll();
 fail_cursor:
+    nk_sdl_shutdown();
+fail_nuklear:
 fail_glew:
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window);
@@ -234,7 +275,7 @@ fail_sdl:
     return result; 
 }
 
-void engine_shutdown(void)
+static void engine_shutdown(void)
 {
     S_Shutdown();
 
@@ -249,6 +290,7 @@ void engine_shutdown(void)
 
     kv_destroy(s_prev_tick_events);
 
+    nk_sdl_shutdown();
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window); 
     SDL_Quit();
@@ -302,6 +344,27 @@ int main(int argc, char **argv)
     S_RunFile(script_path);
 
     while(!s_quit) {
+
+        /* NK TEST BEGIN */
+        if (nk_begin(s_nk_ctx, "Permafrost Engine Demo", nk_rect(50, 50, 230, 250),
+            NK_WINDOW_BORDER|NK_WINDOW_MOVABLE|NK_WINDOW_SCALABLE|
+            NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE))
+        {
+            enum {EASY, HARD};
+            static int op = EASY;
+            static int property = 20;
+
+            nk_layout_row_static(s_nk_ctx, 30, 80, 1);
+            if (nk_button_label(s_nk_ctx, "button"))
+                printf("button pressed!\n");
+            nk_layout_row_dynamic(s_nk_ctx, 30, 2);
+            if (nk_option_label(s_nk_ctx, "easy", op == EASY)) op = EASY;
+            if (nk_option_label(s_nk_ctx, "hard", op == HARD)) op = HARD;
+            nk_layout_row_dynamic(s_nk_ctx, 22, 1);
+            nk_property_int(s_nk_ctx, "Compression:", 0, &property, 100, 10, 1);
+        }
+        nk_end(s_nk_ctx);
+        /* NK TEST END */
 
         process_sdl_events();
         E_ServiceQueue();
