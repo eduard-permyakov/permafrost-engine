@@ -41,14 +41,6 @@ struct handler_desc{
     void *user_arg;
 };
 
-#define HANDLERS_EQUAL(a, b)                                                \
-    ( (a).type == (b).type                                                  \
-   && (a).type == HANDLER_TYPE_SCRIPT                                       \
-        ? (a).handler.as_script_callable == (b).handler.as_script_callable  \
-    : (a).type == HANDLER_TYPE_ENGINE                                       \
-        ? (a).handler.as_function == (b).handler.as_function                \
-    : 0 )
-
 struct event{
     enum eventtype     type; 
     void              *arg;
@@ -75,6 +67,17 @@ static queue_t               *s_event_queue;
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static inline bool handlers_equal(const struct handler_desc *a, const struct handler_desc *b)
+{
+    if(a->type != b->type)
+        return false;
+
+    if(a->type == HANDLER_TYPE_SCRIPT)
+        return a->handler.as_script_callable == b->handler.as_script_callable;
+    else
+        return a->handler.as_function == b->handler.as_function;
+}
 
 static uint64_t e_key(uint32_t ent_id, enum eventtype event)
 {
@@ -118,7 +121,7 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc, bool r
     kvec_handler_desc_t vec = kh_value(s_event_handler_table, k);
 
     int idx;
-    kv_indexof(struct handler_desc, vec, *desc, HANDLERS_EQUAL, idx);
+    kv_indexof(struct handler_desc, vec, *desc, handlers_equal, idx);
     if(idx != -1) {
     
         if(release_script_objs && desc->type == HANDLER_TYPE_SCRIPT) {

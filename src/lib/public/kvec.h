@@ -115,7 +115,7 @@ int main() {
         int ret = -1;                                               \
         for(int i = 0; i < (v).n; i++) {                            \
             type t = (x);                                           \
-            if(comparator((v).a[i], (x)) != 0) {                    \
+            if(comparator(&(v).a[i], &(x)) != 0) {                  \
                 ret = i;                                            \
                 break;                                              \
             }                                                       \
