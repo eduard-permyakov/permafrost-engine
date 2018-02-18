@@ -1,6 +1,10 @@
 import pf
 
+############################################################
+# Constants                                                #
+############################################################
 
+EVENT_SDL_QUIT           = 0x100
 EVENT_SDL_KEYDOWN        = 0x300
 EVENT_CUSTOM             = 0x20000
 EVENT_SINBAD_TOGGLE_ANIM = 0x20001
@@ -8,12 +12,31 @@ EVENT_SINBAD_TOGGLE_ANIM = 0x20001
 SDL_SCANCODE_C  = 6
 SDL_SCANCODE_V  = 25
 
+NK_WINDOW_BORDER            = 1 << 0
+NK_WINDOW_MOVABLE           = 1 << 1
+NK_WINDOW_SCALABLE          = 1 << 2
+NK_WINDOW_CLOSABLE          = 1 << 3
+NK_WINDOW_MINIMIZABLE       = 1 << 4
+NK_WINDOW_NO_SCROLLBAR      = 1 << 5
+NK_WINDOW_TITLE             = 1 << 6
+NK_WINDOW_SCROLL_AUTO_HIDE  = 1 << 7
+NK_WINDOW_BACKGROUND        = 1 << 8
+NK_WINDOW_SCALE_LEFT        = 1 << 9
+NK_WINDOW_NO_INPUT          = 1 << 10
+
+############################################################
+# Global configs                                           #
+############################################################
+
 pf.set_ambient_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_pos([1024.0, 512.0, 256.0])
 
 pf.new_game("assets/maps/grass-cliffs-1", "grass-cliffs.pfmap")
 
+############################################################
+# Entities example                                         #
+############################################################
 
 class Sinbad(pf.AnimEntity):
 
@@ -46,6 +69,9 @@ oak_leafless.pos = [0.0, 0.0, -10.0]
 oak_leafless.scale = [1.5, 1.5, 1.5]
 oak_leafless.activate()
 
+############################################################
+# Events example                                           #
+############################################################
 
 active_cam_idx = 0
 def toggle_camera(user, event):
@@ -65,4 +91,25 @@ pf.register_event_handler(EVENT_SDL_KEYDOWN, toggle_camera, None)
 pf.register_event_handler(EVENT_CUSTOM, on_custom_event, "UserArg")
 
 pf.global_event(EVENT_CUSTOM, "EventArg")
+
+############################################################
+# UI example                                               #
+############################################################
+
+class DemoWindow(pf.Window):
+
+    def __init__(self):
+        super(DemoWindow, self).__init__("Permafrost Engine Demo", (50, 50, 230, 250), 
+            NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_MINIMIZABLE | NK_WINDOW_TITLE)
+
+    def update(self):
+
+        def on_button_click():
+            pf.global_event(EVENT_SDL_QUIT, None)
+
+        self.layout_row_dynamic(30, 1)
+        self.button_label("Exit Demo", on_button_click)
+
+demo_win = DemoWindow()
+demo_win.show()
 

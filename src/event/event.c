@@ -218,6 +218,7 @@ void E_Shutdown(void)
 void E_ServiceQueue(void)
 {
     e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID} );
+    e_handle_event( (struct event){EVENT_UPDATE_UI,    NULL, ES_ENGINE, GLOBAL_ID} );
 
     struct event event;
     while(0 == queue_pop(s_event_queue, &event)) {

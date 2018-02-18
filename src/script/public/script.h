@@ -28,12 +28,13 @@
 typedef void *script_opaque_t;
 
 enum eventtype;
+struct nk_context;
 
 /*###########################################################################*/
 /* SCRIPT GENERAL                                                            */
 /*###########################################################################*/
 
-bool            S_Init(char *progname, const char *base_path);
+bool            S_Init(char *progname, const char *base_path, struct nk_context *ctx);
 void            S_Shutdown(void);
 bool            S_RunFile(const char *path);
 
@@ -43,9 +44,7 @@ void            S_RunEventHandler(script_opaque_t callable, script_opaque_t user
 /* Decrement reference count for Python objects. 
  * No-op in the case of a NULL-pointer passed in */
 void            S_Release(script_opaque_t obj);
-
 script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg);
-
 
 #endif
 

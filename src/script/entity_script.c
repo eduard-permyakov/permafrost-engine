@@ -293,7 +293,7 @@ static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args)
     PyObject *callable, *user_arg;
 
     if(!PyArg_ParseTuple(args, "iOO", &event, &callable, &user_arg)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of an integer and two objects.");
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an integer and two objects.");
         return NULL;
     }
 
@@ -316,7 +316,7 @@ static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args)
     PyObject *callable;
 
     if(!PyArg_ParseTuple(args, "iO", &event, &callable)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of an integer and one object.");
+        PyErr_SetString(PyExc_TypeError, "Arguments must an integer and one object.");
         return NULL;
     }
 
@@ -335,7 +335,7 @@ static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args)
     PyObject *arg;
 
     if(!PyArg_ParseTuple(args, "iO", &event, &arg)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of an integer and one object.");
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an integer and one object.");
         return NULL;
     }
 

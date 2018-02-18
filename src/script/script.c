@@ -20,6 +20,7 @@
 #include <Python.h> /* Must be included first */
 
 #include "entity_script.h"
+#include "ui_script.h"
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
@@ -261,13 +262,15 @@ PyMODINIT_FUNC initpf(void)
         return;
 
     S_Entity_PyRegister(module);
+    S_UI_PyRegister(module);
 }
 
-bool S_Init(char *progname, const char *base_path)
+bool S_Init(char *progname, const char *base_path, struct nk_context *ctx)
 {
     Py_SetProgramName(progname);
     Py_Initialize();
 
+    S_UI_Init(ctx);
     initpf();
 
     return true;
@@ -275,6 +278,7 @@ bool S_Init(char *progname, const char *base_path)
 
 void S_Shutdown(void)
 {
+    S_UI_Shutdown();
     Py_Finalize();
 }
 

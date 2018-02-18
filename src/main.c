@@ -27,8 +27,7 @@
 #include "game/public/game.h"
 #include "event/public/event.h"
 #include "gl_assert.h"
-#include "lib/public/nuklear.h"
-#include "lib/public/nuklear_sdl_gl3.h"
+#include "ui.h"
 
 #include <GL/glew.h>
 #include <SDL.h>
@@ -72,7 +71,7 @@ static struct nk_context  *s_nk_ctx;
 
 static void process_sdl_events(void)
 {
-    nk_input_begin(s_nk_ctx);
+    UI_InputBegin(s_nk_ctx);
 
     kv_reset(s_prev_tick_events);
     SDL_Event event;    
@@ -86,10 +85,6 @@ static void process_sdl_events(void)
             ES_ENGINE);
 
         switch(event.type) {
-
-        case SDL_QUIT: 
-            s_quit = true;
-            break;
 
         case SDL_WINDOWEVENT:
 
@@ -108,7 +103,16 @@ static void process_sdl_events(void)
             break;
         }
     }
-    nk_input_end(s_nk_ctx);
+
+    UI_InputEnd(s_nk_ctx);
+}
+
+static void on_user_quit(void *user, void *event)
+{
+    (void)user;
+    (void)event;
+
+    s_quit = true;
 }
 
 static void gl_set_globals(void)
@@ -124,8 +128,8 @@ static void render(void)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     G_Render();
+    UI_Render();
 
-    nk_sdl_render(NK_ANTI_ALIASING_ON, 512 * 1024, 128 * 1024);
     /* Restore OpenGL global state after it's been clobbered by nuklear */
     gl_set_globals(); 
 
@@ -191,24 +195,10 @@ static bool engine_init(char **argv)
     /* ---------------------------------- */
     /* nuklear initialization             */
     /* ---------------------------------- */
-    s_nk_ctx = nk_sdl_init(s_window);
-    if(!s_nk_ctx) {
+    if( !(s_nk_ctx = UI_Init(argv[1], s_window)) ) {
         result = false; 
         goto fail_nuklear;
     }
-
-    struct nk_font_atlas *atlas;
-
-    char font_path[256];
-
-    strcpy(font_path, argv[1]);
-    strcat(font_path, "assets/fonts/OptimusPrinceps.ttf");
-
-    nk_sdl_font_stash_begin(&atlas);
-    struct nk_font *optimus_princeps = nk_font_atlas_add_from_file(atlas, font_path, 14, 0);
-
-    atlas->default_font = optimus_princeps;
-    nk_sdl_font_stash_end();
 
     /* ---------------------------------- */
     /* stb_image initialization           */
@@ -233,14 +223,6 @@ static bool engine_init(char **argv)
     }
 
     /* ---------------------------------- */
-    /* Scripting subsystem initialization */
-    /* ---------------------------------- */
-    if(!S_Init(argv[0], argv[1])){
-        result = false; 
-        goto fail_script;
-    }
-
-    /* ---------------------------------- */
     /* Event subsystem intialization      */
     /* ---------------------------------- */
     if(!E_Init()) {
@@ -248,6 +230,15 @@ static bool engine_init(char **argv)
         goto fail_game;
     }
     Cursor_SetRTSMode(true);
+    E_Global_Register(SDL_QUIT, on_user_quit, NULL);
+
+    /* ---------------------------------- */
+    /* Scripting subsystem initialization */
+    /* ---------------------------------- */
+    if(!S_Init(argv[0], argv[1], s_nk_ctx)){
+        result = false; 
+        goto fail_script;
+    }
 
     /* ---------------------------------- */
     /* Game state initialization          */
@@ -265,7 +256,7 @@ fail_script:
 fail_render:
     Cursor_FreeAll();
 fail_cursor:
-    nk_sdl_shutdown();
+    UI_Shutdown();
 fail_nuklear:
 fail_glew:
     SDL_GL_DeleteContext(s_context);
@@ -290,7 +281,7 @@ static void engine_shutdown(void)
 
     kv_destroy(s_prev_tick_events);
 
-    nk_sdl_shutdown();
+    UI_Shutdown();
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window); 
     SDL_Quit();
@@ -344,27 +335,6 @@ int main(int argc, char **argv)
     S_RunFile(script_path);
 
     while(!s_quit) {
-
-        /* NK TEST BEGIN */
-        if (nk_begin(s_nk_ctx, "Permafrost Engine Demo", nk_rect(50, 50, 230, 250),
-            NK_WINDOW_BORDER|NK_WINDOW_MOVABLE|NK_WINDOW_SCALABLE|
-            NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE))
-        {
-            enum {EASY, HARD};
-            static int op = EASY;
-            static int property = 20;
-
-            nk_layout_row_static(s_nk_ctx, 30, 80, 1);
-            if (nk_button_label(s_nk_ctx, "button"))
-                printf("button pressed!\n");
-            nk_layout_row_dynamic(s_nk_ctx, 30, 2);
-            if (nk_option_label(s_nk_ctx, "easy", op == EASY)) op = EASY;
-            if (nk_option_label(s_nk_ctx, "hard", op == HARD)) op = HARD;
-            nk_layout_row_dynamic(s_nk_ctx, 22, 1);
-            nk_property_int(s_nk_ctx, "Compression:", 0, &property, 100, 10, 1);
-        }
-        nk_end(s_nk_ctx);
-        /* NK TEST END */
 
         process_sdl_events();
         E_ServiceQueue();
