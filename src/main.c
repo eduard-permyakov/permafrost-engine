@@ -53,6 +53,8 @@
 /* Write-once global - path of the base directory */
 const char                *g_basepath;
 
+unsigned                   g_last_frame_ms = 0;
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -334,12 +336,17 @@ int main(int argc, char **argv)
     strcat(script_path, "scripts/demo.py");
     S_RunFile(script_path);
 
+    uint32_t last_ts = SDL_GetTicks();
     while(!s_quit) {
 
         process_sdl_events();
         E_ServiceQueue();
         G_Update();
         render();
+
+        uint32_t curr_time = SDL_GetTicks();
+        g_last_frame_ms = curr_time - last_ts;
+        last_ts = curr_time;
 
     }
 

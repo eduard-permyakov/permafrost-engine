@@ -40,6 +40,7 @@ static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_global_event(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args);
+static PyObject *PyPf_prev_frame_ms(PyObject *self);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -84,6 +85,10 @@ static PyMethodDef pf_module_methods[] = {
     "control mode (0 = FPS, 1 = RTS). Note that the position of camera 0 is restricted "
     "to the map boundaries as it is expected to be the main RTS camera. The other cameras "
     "are unrestricted."},
+
+    {"prev_frame_ms", 
+    (PyCFunction)PyPf_prev_frame_ms, METH_NOARGS,
+    "Get the duration of the previous game frame in milliseconds."},
 
     {NULL}  /* Sentinel */
 };
@@ -248,6 +253,12 @@ static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args)
 
     G_ActivateCamera(idx, mode);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_prev_frame_ms(PyObject *self)
+{
+    extern unsigned g_last_frame_ms;
+    return Py_BuildValue("i", g_last_frame_ms);
 }
 
 /*****************************************************************************/

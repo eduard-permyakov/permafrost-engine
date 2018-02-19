@@ -47,7 +47,7 @@ inline struct nk_context *UI_Init(const char *basedir, SDL_Window *win)
     strcat(font_path, "assets/fonts/OptimusPrinceps.ttf");
 
     nk_sdl_font_stash_begin(&atlas);
-    struct nk_font *optimus_princeps = nk_font_atlas_add_from_file(atlas, font_path, 14, 0);
+    struct nk_font *optimus_princeps = nk_font_atlas_add_from_file(atlas, font_path, 16, 0);
 
     atlas->default_font = optimus_princeps;
     nk_sdl_font_stash_end();

@@ -42,7 +42,10 @@ static int       PyWindow_init(PyWindowObject *self, PyObject *args);
 
 static PyObject *PyWindow_layout_row_static(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_layout_row_dynamic(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_label_colored(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_label_colored_wrap(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -65,9 +68,21 @@ static PyMethodDef PyWindow_methods[] = {
     (PyCFunction)PyWindow_layout_row_dynamic, METH_VARARGS,
     "Add a row with a dynamic layout."},
 
+    {"label_colored", 
+    (PyCFunction)PyWindow_label_colored, METH_VARARGS,
+    "Add a colored label layout with the specified alignment."},
+
+    {"label_colored_wrap", 
+    (PyCFunction)PyWindow_label_colored_wrap, METH_VARARGS,
+    "Add a colored label layout."},
+
     {"button_label", 
     (PyCFunction)PyWindow_button_label, METH_VARARGS,
     "Add a button with a label and action."},
+
+    {"simple_chart", 
+    (PyCFunction)PyWindow_simple_chart, METH_VARARGS,
+    "Add a chart with a single slot."},
 
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
@@ -172,6 +187,35 @@ static PyObject *PyWindow_layout_row_dynamic(PyWindowObject *self, PyObject *arg
     Py_RETURN_NONE;
 }
 
+static PyObject *PyWindow_label_colored(PyWindowObject *self, PyObject *args)
+{
+    const char *text;
+    int alignment;
+    int r, g, b;
+
+    if(!PyArg_ParseTuple(args, "si(iii)", &text, &alignment, &r, &g, &b)) {
+        PyErr_SetString(PyExc_TypeError, "3 arguments expected: a string, an integer and a tuple of 3 integers.");
+        return NULL;
+    }
+
+    nk_label_colored(s_nk_ctx, text, alignment, nk_rgb(r, g, b));
+    Py_RETURN_NONE;  
+}
+
+static PyObject *PyWindow_label_colored_wrap(PyWindowObject *self, PyObject *args)
+{
+    const char *text;
+    int r, g, b;
+
+    if(!PyArg_ParseTuple(args, "s(iii)", &text, &r, &g, &b)) {
+        PyErr_SetString(PyExc_TypeError, "2 arguments expected: a string and a tuple of 3 integers.");
+        return NULL;
+    }
+
+    nk_label_colored_wrap(s_nk_ctx, text, nk_rgb(r, g, b));
+    Py_RETURN_NONE;  
+}
+
 static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args)
 {
     const char *str;
@@ -188,7 +232,55 @@ static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args)
     }
 
     if(nk_button_label(s_nk_ctx, str)) {
-        PyObject_CallObject(callable, NULL);
+        PyObject *ret = PyObject_CallObject(callable, NULL);
+        Py_XDECREF(ret);
+    }
+
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args)
+{
+    int type;
+    int min, max;
+    PyObject *list;
+
+    int hovered_index = -1;
+    long hovered_val;
+
+    if(!PyArg_ParseTuple(args, "i(ii)O", &type, &min, &max, &list)) {
+        PyErr_SetString(PyExc_TypeError, "3 arguments expected: an integer, a tuple of two integers, and an object.");
+        return NULL;
+    }
+
+    if(!PyList_Check(list)) {
+        PyErr_SetString(PyExc_TypeError, "Last argument must be a list.");
+        return NULL;
+    }
+
+    unsigned num_datapoints = PyList_Size(list);
+    if(nk_chart_begin(s_nk_ctx, type, num_datapoints, min, max)) {
+    
+        for(int i = 0; i < num_datapoints; i++) {
+        
+            PyObject *elem = PyList_GetItem(list, i);
+            if(!PyInt_Check(elem)) {
+                PyErr_SetString(PyExc_TypeError, "List elements must be integers.");
+                return NULL;
+            }
+
+            long val = PyInt_AsLong(elem);
+            nk_flags res = nk_chart_push(s_nk_ctx, val);
+
+            if(res & NK_CHART_HOVERING) {
+                hovered_index = i;
+                hovered_val = val;
+            }
+        }
+        nk_chart_end(s_nk_ctx);
+
+        if(hovered_index != -1)
+            nk_tooltipf(s_nk_ctx, "Value: %lu", hovered_val);
     }
 
     Py_RETURN_NONE;
@@ -245,7 +337,7 @@ static void active_windows_update(void *user, void *event)
             nk_rect(win->rect.x, win->rect.y, win->rect.width, win->rect.height), win->flags)) {
 
             PyObject *ret = PyObject_CallMethod((PyObject*)win, "update", NULL); 
-            Py_DECREF(ret);
+            Py_XDECREF(ret);
 
         }
         nk_end(s_nk_ctx);

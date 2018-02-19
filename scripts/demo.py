@@ -24,6 +24,22 @@ NK_WINDOW_BACKGROUND        = 1 << 8
 NK_WINDOW_SCALE_LEFT        = 1 << 9
 NK_WINDOW_NO_INPUT          = 1 << 10
 
+NK_TEXT_ALIGN_LEFT          = 0x01
+NK_TEXT_ALIGN_CENTERED      = 0x02
+NK_TEXT_ALIGN_RIGHT         = 0x04
+NK_TEXT_ALIGN_TOP           = 0x08
+NK_TEXT_ALIGN_MIDDLE        = 0x10
+NK_TEXT_ALIGN_BOTTOM        = 0x20
+
+NK_TEXT_LEFT        = NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_LEFT
+NK_TEXT_CENTERED    = NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED
+NK_TEXT_RIGHT       = NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_RIGHT
+
+
+NK_CHART_LINES      = 0
+NK_CHART_COLUMN     = 1
+NK_CHART_MAX        = 2
+
 ############################################################
 # Global configs                                           #
 ############################################################
@@ -99,17 +115,64 @@ pf.global_event(EVENT_CUSTOM, "EventArg")
 class DemoWindow(pf.Window):
 
     def __init__(self):
-        super(DemoWindow, self).__init__("Permafrost Engine Demo", (50, 50, 230, 250), 
-            NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_MINIMIZABLE | NK_WINDOW_TITLE)
+        super(DemoWindow, self).__init__("Permafrost Engine Demo", (25, 25, 230, 200), 
+            NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_MINIMIZABLE | NK_WINDOW_TITLE)
 
     def update(self):
 
         def on_button_click():
             pf.global_event(EVENT_SDL_QUIT, None)
 
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Demo Hotkeys:", (255, 255, 255));
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("    C - Toggle Camera", (255, 255, 255));
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("    V - Toggle Animation", (255, 255, 255));
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("    ESC - Exit Demo", (255, 255, 255));
+
         self.layout_row_dynamic(30, 1)
         self.button_label("Exit Demo", on_button_click)
 
 demo_win = DemoWindow()
 demo_win.show()
+
+class PerfStatsWindow(pf.Window):
+
+    def __init__(self):
+        super(PerfStatsWindow, self).__init__("Performance", (280, 25, 600, 200), 
+            NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_MINIMIZABLE | NK_WINDOW_TITLE | NK_WINDOW_NO_SCROLLBAR)
+        self.tickindex = 0
+        self.ticksum_ms = 0
+        self.max_frame_latency = 0
+        self.frame_times_ms = [0]*100
+
+    def update(self):
+
+        newtick = pf.prev_frame_ms()
+        if newtick > self.max_frame_latency:
+            self.max_frame_latency = newtick
+
+        self.ticksum_ms -= self.frame_times_ms[self.tickindex]
+        self.ticksum_ms += newtick
+        self.frame_times_ms[self.tickindex] = newtick
+        self.tickindex = (self.tickindex + 1) % len(self.frame_times_ms)
+
+        self.layout_row_dynamic(100, 1)
+        self.simple_chart(NK_CHART_LINES, (0, 100), self.frame_times_ms)
+
+        self.layout_row_dynamic(20, 1)
+        avg_frame_latency_ms = float(self.ticksum_ms)/len(self.frame_times_ms)
+        fps = 1000/avg_frame_latency_ms
+        self.label_colored_wrap("FPS: {0}".format(int(fps)), (255, 255, 255));
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Max frame latency: {0} ms".format(self.max_frame_latency), (255, 255, 255))
+
+perf_win = PerfStatsWindow()
+perf_win.show()
 
