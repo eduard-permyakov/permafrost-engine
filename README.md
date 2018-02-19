@@ -22,6 +22,7 @@ in the early phases of development.
 * Rendering of tile-based world parsed from ASCII file
 * Engine internals exposed to Python 2.7 for scripting
 * Event system
+* UI framework (Nuklear)
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
@@ -31,6 +32,7 @@ in the early phases of development.
 * python 2.7.13
 * stb_image.h
 * khash.h, kvec.h, klist.h
+* nuklear.h
 
 All dependencies can be built from source and distributed
 along with the game binary if desired. 
