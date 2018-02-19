@@ -13,7 +13,6 @@
 /deps/Python-2.7.13/externals/
 /deps/Python-2.7.13/python.bat
 
-
 /assets/*
 
 !/assets/models
@@ -26,3 +25,4 @@
 !/assets/maps/grass-cliffs-1
 
 !/assets/cursors
+!/assets/fonts
