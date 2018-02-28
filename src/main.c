@@ -341,7 +341,6 @@ int main(int argc, char **argv)
 
         process_sdl_events();
         E_ServiceQueue();
-        G_Update();
         render();
 
         uint32_t curr_time = SDL_GetTicks();

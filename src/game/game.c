@@ -54,13 +54,13 @@ static void g_reset_camera(struct camera *cam)
 
 static void g_reset(void)
 {
-    while(s_gs.active->size > 0) {
-    
-        struct entity *ent;
+    khiter_t k;
+    for (k = kh_begin(s_gs.active); k != kh_end(s_gs.active); ++k) {
 
-        kl_shift(entity, s_gs.active, &ent);
+        struct entity *ent = kh_value(s_gs.active, k);
         AL_EntityFree(ent);
     }
+    kh_clear(entity, s_gs.active);
 
     if(s_gs.map) AL_MapFree(s_gs.map);
     s_gs.map = NULL;
@@ -92,7 +92,7 @@ static bool g_init_cameras(void)
 
 bool G_Init(void)
 {
-    s_gs.active = kl_init(entity);
+    s_gs.active = kh_init(entity);
 
     if(!s_gs.active)
         return false;
@@ -125,7 +125,7 @@ void G_Shutdown(void)
         Camera_Free(s_gs.cameras[i]);
 
     assert(s_gs.active);
-    kl_destroy(entity, s_gs.active);
+    kh_destroy(entity, s_gs.active);
 }
 
 void G_Render(void)
@@ -134,10 +134,12 @@ void G_Render(void)
 
     if(s_gs.map) M_RenderEntireMap(s_gs.map);
 
-    kliter_t(entity) *p;
-    for (p = kl_begin(s_gs.active); p != kl_end(s_gs.active); p = kl_next(p)) {
+    khiter_t k;
+	for(k = kh_begin(s_gs.active); k != kh_end(s_gs.active); ++k) {
     
-        struct entity *curr = kl_val(p);
+        if(!kh_exist(s_gs.active, k))
+            continue;
+        struct entity *curr = kh_value(s_gs.active, k);
 
         /* TODO: Currently, we perform animation right before rendering due to 'A_Update' setting
          * some uniforms for the shader. Investigate if it's better to perform the animation for all
@@ -150,19 +152,23 @@ void G_Render(void)
     }
 }
 
-void G_Update(void)
-{
-    //TODO
-}
-
 bool G_AddEntity(struct entity *ent)
 {
-    *kl_pushp(entity, s_gs.active) = ent;
+    int ret;
+    khiter_t k;
+
+    k = kh_put(entity, s_gs.active, ent->uid, &ret);
+    if(ret != 1)
+        return false;
+
+    kh_value(s_gs.active, k) = ent;
+    return true;
 }
 
 bool G_RemoveEntity(struct entity *ent)
 {
-    return (0 == kl_remove_first(entity, s_gs.active, &ent));
+    kh_del(entity, s_gs.active, ent->uid);
+    return true;
 }
 
 bool G_ActivateCamera(int idx, enum cam_mode mode)

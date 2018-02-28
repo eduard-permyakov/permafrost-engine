@@ -37,7 +37,6 @@ bool G_NewGameWithMap(const char *dir, const char *pfmap);
 void G_Shutdown(void);
 
 void G_Render(void);
-void G_Update(void);
 
 bool G_AddEntity(struct entity *ent);
 bool G_RemoveEntity(struct entity *ent);

@@ -20,10 +20,9 @@
 #ifndef GAMESTATE_H
 #define GAMESTATE_H
 
-#include "../lib/public/klist.h"
+#include "../lib/public/khash.h"
 
-#define __ent_free(x) /* Freeing logic for entities is outside of list */
-KLIST_INIT(entity, struct entity *, __ent_free)
+KHASH_MAP_INIT_INT(entity, struct entity *)
 
 #define NUM_CAMERAS 2
 
@@ -31,7 +30,7 @@ struct gamestate{
     struct map         *map;
     int                 active_cam_idx;
     struct camera      *cameras[NUM_CAMERAS];
-    klist_t(entity)    *active;
+    khash_t(entity)    *active;
 };
 
 #endif
