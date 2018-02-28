@@ -68,7 +68,8 @@ static PyMethodDef pf_module_methods[] = {
 
     {"register_event_handler", 
     (PyCFunction)PyPf_register_event_handler, METH_VARARGS,
-    "Adds a script event handler to be called when the specified global event occurs."},
+    "Adds a script event handler to be called when the specified global event occurs. "
+    "There is a limit of one global handler per event type."},
 
     {"unregister_event_handler", 
     (PyCFunction)PyPf_unregister_event_handler, METH_VARARGS,

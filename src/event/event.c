@@ -48,11 +48,13 @@ struct event{
     uint32_t           receiver_id;
 };
 
-/* Used in the place of the entity ID for key generation for global events,
- * which are not associated with any entity. This is the maximum 32-bit 
- * entity ID, we will assume entity IDs will never reach this high.
+/* Global events are those which are not associated with any entity. We
+ * give two slots for these, one for engine handlers and one for script
+ * handlers. Note that there is a limit of a single engine hanlder and a single
+ * script handler for an (id, event type) pair.
  */
-#define GLOBAL_ID (~((uint32_t)0))
+#define GLOBAL_ID_ENGINE (~((uint32_t)0))
+#define GLOBAL_ID_SCRIPT (GLOBAL_ID_ENGINE-1)
 
 typedef kvec_t(struct handler_desc) kvec_handler_desc_t;
 KHASH_MAP_INIT_INT64(handler_desc, kvec_handler_desc_t)
@@ -166,10 +168,6 @@ static void e_handle_event(struct event event)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-/*
- * Global Events
- */
-
 bool E_Init(void)
 {
     s_event_handler_table = kh_init(handler_desc);
@@ -217,8 +215,8 @@ void E_Shutdown(void)
 
 void E_ServiceQueue(void)
 {
-    e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID} );
-    e_handle_event( (struct event){EVENT_UPDATE_UI,    NULL, ES_ENGINE, GLOBAL_ID} );
+    e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID_ENGINE} );
+    e_handle_event( (struct event){EVENT_UPDATE_UI,    NULL, ES_ENGINE, GLOBAL_ID_ENGINE} );
 
     struct event event;
     while(0 == queue_pop(s_event_queue, &event)) {
@@ -227,12 +225,21 @@ void E_ServiceQueue(void)
         /* event arg already released */
     }
 
-    e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID} );
+    e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID_ENGINE} );
 }
+
+/*
+ * Global Events
+ */
 
 void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source source)
 {
-    struct event e = (struct event){event, event_arg, source, GLOBAL_ID};
+    /* Send global twice with different recepients. Once to trigger the engine handler and 
+     * once to trigger the scripting handler. */
+    struct event e = (struct event){event, event_arg, source, GLOBAL_ID_ENGINE};
+    queue_push(s_event_queue, &e);
+
+    e = (struct event){event, event_arg, source, GLOBAL_ID_SCRIPT};
     queue_push(s_event_queue, &e);
 }
 
@@ -243,7 +250,8 @@ bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg)
     hd.handler.as_function = handler;
     hd.user_arg = user_arg;
 
-    return e_register_handler(e_key(GLOBAL_ID, event), &hd);
+    uint32_t id = hd.type == HANDLER_TYPE_ENGINE ? GLOBAL_ID_ENGINE : GLOBAL_ID_SCRIPT;
+    return e_register_handler(e_key(id, event), &hd);
 }
 
 bool E_Global_Unregister(enum eventtype event, handler_t handler)
@@ -252,7 +260,8 @@ bool E_Global_Unregister(enum eventtype event, handler_t handler)
     hd.type = HANDLER_TYPE_ENGINE;
     hd.handler.as_function = handler;
 
-    return e_unregister_handler(e_key(GLOBAL_ID, event), &hd, true);
+    uint32_t id = hd.type == HANDLER_TYPE_ENGINE ? GLOBAL_ID_ENGINE : GLOBAL_ID_SCRIPT;
+    return e_unregister_handler(e_key(id, event), &hd, true);
 }
 
 bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, script_opaque_t user_arg)
@@ -262,7 +271,8 @@ bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, scri
     hd.handler.as_script_callable = handler;
     hd.user_arg = user_arg;
 
-    return e_register_handler(e_key(GLOBAL_ID, event), &hd);
+    uint32_t id = hd.type == HANDLER_TYPE_ENGINE ? GLOBAL_ID_ENGINE : GLOBAL_ID_SCRIPT;
+    return e_register_handler(e_key(id, event), &hd);
 }
 
 bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler)
@@ -271,7 +281,8 @@ bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler)
     hd.type = HANDLER_TYPE_SCRIPT;
     hd.handler.as_script_callable = handler;
 
-    return e_unregister_handler(e_key(GLOBAL_ID, event), &hd, true);
+    uint32_t id = hd.type == HANDLER_TYPE_ENGINE ? GLOBAL_ID_ENGINE : GLOBAL_ID_SCRIPT;
+    return e_unregister_handler(e_key(id, event), &hd, true);
 }
 
 /*
