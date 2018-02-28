@@ -135,7 +135,7 @@ void G_Render(void)
     if(s_gs.map) M_RenderEntireMap(s_gs.map);
 
     khiter_t k;
-	for(k = kh_begin(s_gs.active); k != kh_end(s_gs.active); ++k) {
+    for(k = kh_begin(s_gs.active); k != kh_end(s_gs.active); ++k) {
     
         if(!kh_exist(s_gs.active, k))
             continue;

@@ -33,10 +33,10 @@ layout (location = 5) in vec4 in_joint_weights;
 /*****************************************************************************/
 
 out VertexToFrag {
-    layout (location = 0)      vec2 uv;
-    layout (location = 1) flat int  mat_idx;
-    layout (location = 2)      vec3 world_pos;
-    layout (location = 3)      vec3 normal;
+         vec2 uv;
+    flat int  mat_idx;
+         vec3 world_pos;
+         vec3 normal;
 }to_fragment;
 
 out VertexToGeo {
