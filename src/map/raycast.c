@@ -40,9 +40,28 @@ struct rc_ctx{
     vec3_t         ray_dir;
 };
 
+struct box{
+    float x, z; 
+    float width, height;
+};
+
+struct ray{
+    vec3_t origin;
+    vec3_t dir;
+};
+
+struct line_seg_2d{
+    float ax, az; 
+    float bx, bz;
+};
+
+struct tile_desc{
+    int chunk_r, chunk_c;
+    int tile_r, tile_c;
+};
 
 #define _dummy_free(x) /* No need to free data on list removal - only store pointers */
-KLIST_INIT(tile, struct tile*, _dummy_free);
+KLIST_INIT(tile, const struct tile*, _dummy_free);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -54,25 +73,22 @@ static struct rc_ctx s_ctx;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-const struct tile *tile_for_point_2d(const struct map *map, float px, float pz)
+static bool tile_for_point_2d(const struct map *map, float px, float pz, struct tile_desc *out)
 {
     size_t width  = map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     size_t height = map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
-    struct box{
-        float x, z; 
-        float width, height;
-    }map_box = (struct box){map->pos.x, map->pos.z, width, height};
+    struct box map_box = (struct box){map->pos.x, map->pos.z, width, height};
 
     /* Recall X increases to the left in our engine */
     if(px > map_box.x || px < map_box.x - map_box.width)
-        return NULL;
+        return false;
 
     if(pz < map_box.z || px > map_box.z + map_box.height)
-        return NULL;
+        return false;
 
     int chunk_r, chunk_c;
-    chunk_r = (pz - map_box.z) / (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE);
-    chunk_c = (map_box.x - px) / (TILES_PER_CHUNK_HEIGHT * X_COORDS_PER_TILE);
+    chunk_r = fabs(map_box.z - pz) / (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE);
+    chunk_c = fabs(map_box.x - px) / (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE);
 
     assert(chunk_r >= 0 && chunk_r < map->height);
     assert(chunk_c >= 0 && chunk_r < map->width);
@@ -82,20 +98,166 @@ const struct tile *tile_for_point_2d(const struct map *map, float px, float pz)
     chunk_base_z = map_box.z + (chunk_r * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE);
 
     int tile_r, tile_c;
-    tile_r = (pz - chunk_base_z) / Z_COORDS_PER_TILE;
-    tile_c = (chunk_base_x - px) / X_COORDS_PER_TILE;
+    tile_r = fabs(chunk_base_z - pz) / Z_COORDS_PER_TILE;
+    tile_c = fabs(chunk_base_x - px) / X_COORDS_PER_TILE;
 
     assert(tile_c >= 0 && tile_c < TILES_PER_CHUNK_WIDTH);
     assert(tile_r >= 0 && tile_r < TILES_PER_CHUNK_HEIGHT);
 
-    printf("tile under cursor: (%d, %d) -> (%d, %d)\n", chunk_r, chunk_c, tile_r, tile_c);
-    return &map->chunks[(chunk_r * map->width) + chunk_c].tiles[(tile_r * TILES_PER_CHUNK_WIDTH) + tile_c];
+    out->chunk_r = chunk_r;
+    out->chunk_c = chunk_c;
+    out->tile_r = tile_r;
+    out->tile_c = tile_c;
+    return true;
 }
 
-/* Uses the algorithm outlined here:
+static int mod(int a, int b)
+{
+    int r = a % b;
+    return r < 0 ? r + b : r;
+}
+
+static bool box_point_inside(float px, float pz, struct box bounds)
+{
+    return (px <= bounds.x && px >= bounds.x - bounds.width)
+        && (pz >= bounds.z && pz <= bounds.z + bounds.height);
+}
+
+static bool line_line_intersection(struct line_seg_2d l1, 
+                                   struct line_seg_2d l2, 
+                                   float *out_x, float *out_z)
+{
+    float s1_x, s1_z, s2_x, s2_z;
+    s1_x = l1.bx - l1.ax;     s1_z = l1.bz - l1.az;
+    s2_x = l2.bx - l2.ax;     s2_z = l2.bz - l2.az;
+    
+    float s, t;
+    s = (-s1_z * (l1.ax - l2.ax) + s1_x * (l1.az - l2.az)) / (-s2_x * s1_z + s1_x * s2_z);
+    t = ( s2_x * (l1.az - l2.az) - s2_z * (l1.ax - l2.ax)) / (-s2_x * s1_z + s1_x * s2_z);
+    
+    if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+        /* Intersection detected */
+        if (out_x)
+            *out_x = l1.ax + (t * s1_x);
+        if (out_z)
+            *out_z = l1.az + (t * s1_z);
+        return true;
+    }
+    
+    return false; /* No intersection */
+}
+
+static float line_len(float ax, float az, float bx, float bz)
+{
+    return sqrt( pow(bx - ax, 2) + pow(bz - az, 2) );
+}
+
+static bool tiles_equal(const struct tile_desc *a, const struct tile_desc *b)
+{
+    return (a->chunk_r == b->chunk_r)
+        && (a->chunk_c == b->chunk_c)
+        && (a->tile_r  == b->tile_r)
+        && (a->tile_c  == b->tile_c);
+}
+
+static struct box bounds_for_tile(const struct map *map, struct tile_desc desc)
+{
+    size_t width  = map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    size_t height = map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+    struct box map_box = (struct box){map->pos.x, map->pos.z, width, height};
+
+    return (struct box){
+        map_box.x - desc.chunk_c * (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE)
+                  - desc.tile_c  * X_COORDS_PER_TILE,
+        map_box.z + desc.chunk_r * (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE)
+                  + desc.tile_r * Z_COORDS_PER_TILE,
+        X_COORDS_PER_TILE,
+        Z_COORDS_PER_TILE
+    };
+}
+
+static bool relative_tile_desc(const struct map *map, struct tile_desc *inout, int tile_dc, int tile_dr)
+{
+    assert(abs(tile_dc) <= TILES_PER_CHUNK_WIDTH);
+    assert(abs(tile_dr) <= TILES_PER_CHUNK_HEIGHT);
+
+    struct tile_desc ret = (struct tile_desc) {
+        inout->chunk_r + ((inout->tile_r + tile_dr < 0)                       ? -1 :
+                          (inout->tile_r + tile_dr >= TILES_PER_CHUNK_HEIGHT) ?  1 :
+                                                                                 0),
+
+        inout->chunk_c + ((inout->tile_c + tile_dc < 0)                       ? -1 :
+                          (inout->tile_c + tile_dc >= TILES_PER_CHUNK_WIDTH)  ?  1 :
+                                                                                 0),
+        mod(inout->tile_r + tile_dr, TILES_PER_CHUNK_HEIGHT),
+        mod(inout->tile_c + tile_dc, TILES_PER_CHUNK_WIDTH)
+    };
+
+    if( !(ret.chunk_r >= 0 && ret.chunk_r < map->height)
+     || !(ret.chunk_c >= 0 && ret.chunk_c < map->width)) {
+     
+        return false;
+    }
+
+    *inout = ret;
+    return true;
+}
+
+static int line_box_intersection(struct line_seg_2d line, 
+                                 struct box bounds, 
+                                 float out_x[2], float out_z[2])
+{
+    int ret = 0;
+
+    struct line_seg_2d top = (struct line_seg_2d){
+        bounds.x, 
+        bounds.z, 
+        bounds.x - bounds.width,
+        bounds.z
+    };
+
+    struct line_seg_2d bot = (struct line_seg_2d){
+        bounds.x, 
+        bounds.z + bounds.height, 
+        bounds.x - bounds.width,
+        bounds.z + bounds.height
+    };
+
+    struct line_seg_2d left = (struct line_seg_2d){
+        bounds.x, 
+        bounds.z, 
+        bounds.x,
+        bounds.z + bounds.height
+    };
+
+    struct line_seg_2d right = (struct line_seg_2d){
+        bounds.x - bounds.width, 
+        bounds.z, 
+        bounds.x - bounds.width,
+        bounds.z + bounds.height
+    };
+
+    if(line_line_intersection(line, top, out_x + ret, out_z + ret))
+        ret++;
+
+    if(line_line_intersection(line, bot, out_x + ret, out_z + ret))
+        ret++;
+
+    if(line_line_intersection(line, left, out_x + ret, out_z + ret))
+        ret++;
+
+    if(line_line_intersection(line, right, out_x + ret, out_z + ret))
+        ret++;
+
+    assert(ret >= 0 && ret <= 2);
+    return ret;
+}
+
+/* Uses a variant of the algorithm outlined here:
  * http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.42.3443&rep=rep1&type=pdf 
+ * ('A Fast Voxel Traversal Algorithm for Ray Tracing' by John Amanatides, Andrew Woo)
  */
-static klist_t(tile) *candindate_tiles_sorted(vec3_t ray_origin, vec3_t ray_dir)
+static klist_t(tile) *candidate_tiles_sorted(const struct map *map, vec3_t ray_origin, vec3_t ray_dir)
 {
     klist_t(tile) *ret = kl_init(tile);
     if(!ret)
@@ -103,16 +265,126 @@ static klist_t(tile) *candindate_tiles_sorted(vec3_t ray_origin, vec3_t ray_dir)
 
     /* Project the ray on the Y=0 plane between the camera position and where the 
      * ray intersects the Y=0 plane. */
-    float t = ray_origin.y / ray_dir.y;
-    struct line_seg_2d{
-        float ax, az; 
-        float bx, bz;
-    }y_eq_0_seg = {
-        ray_origin.x, ray_origin.z,
-        ray_origin.x - t * ray_dir.x, ray_origin.z - t * ray_dir.z,
+    float t = fabs(ray_origin.y / ray_dir.y);
+    struct line_seg_2d y_eq_0_seg = {
+        ray_origin.x, 
+        ray_origin.z,
+        ray_origin.x + t * ray_dir.x, 
+        ray_origin.z + t * ray_dir.z,
     };
+    
+    /* Initialization: find the coordinate of the ray origin within the map.
+     * In the case of the ray originating inside the map, this is simple - take the ray origin.
+     * In case the ray originates outside but intersects the map, we take the intersection 
+     * point as the start. Lastly, if ray doesn't even intersect the map, no work needs to be 
+     * done - return an empty list. 
+     */
+    size_t width  = map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    size_t height = map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+    struct box map_box = (struct box){map->pos.x, map->pos.z, width, height};
 
-    const struct tile *tile = tile_for_point_2d(s_ctx.map, y_eq_0_seg.bx, y_eq_0_seg.bz);
+    int num_intersect;
+    float intersect_x[2], intersect_z[2];
+    float start_x, start_z;
+    struct tile_desc curr_tile_desc;
+
+    if(box_point_inside(y_eq_0_seg.ax, y_eq_0_seg.az, map_box)) {
+
+        start_x = y_eq_0_seg.ax; 
+        start_z = y_eq_0_seg.az; 
+
+    }else if(num_intersect = line_box_intersection(y_eq_0_seg, map_box, intersect_x, intersect_z)) {
+
+        /* One intersection means that the end of the ray is inside the map */
+        if(num_intersect == 1) {
+
+            start_x = intersect_x[0];
+            start_z = intersect_z[0];
+        
+        }
+        /* If the first of the 2 intersection points is closer to the ray origin */
+        else if( line_len(intersect_x[0], intersect_z[0], y_eq_0_seg.ax, y_eq_0_seg.az)
+               < line_len(intersect_x[1], intersect_z[1], y_eq_0_seg.ax, y_eq_0_seg.az) ) {
+         
+            start_x = intersect_x[0];
+            start_z = intersect_z[0];
+
+         }else{
+         
+            start_x = intersect_x[1];
+            start_z = intersect_z[1];
+         }
+
+    }else {
+        return ret;
+    }
+
+    bool r = tile_for_point_2d(map, intersect_x[1], intersect_z[1], &curr_tile_desc);
+    assert(r);
+
+    assert(curr_tile_desc.r >= 0 && curr_tile_desc.r < map->height);
+    assert(curr_tile_desc.c >= 0 && curr_tile_desc.c < map->width);
+
+    struct tile_desc d;
+    tile_for_point_2d(map, y_eq_0_seg.bx, y_eq_0_seg.bz, &d);
+    printf("d: (%d, %d) -> (%d, %d)\n", d.chunk_r, d.chunk_c, d.tile_r, d.tile_c);
+    printf("\n");
+
+    bool done = false;
+    float t_max_x, t_max_z;
+
+    const int step_c = ray_dir.x <= 0.0f ? 1 : -1;
+    const int step_r = ray_dir.z >= 0.0f ? 1 : -1;
+
+    const float t_delta_x = fabs(X_COORDS_PER_TILE / ray_dir.x);
+    const float t_delta_z = fabs(Z_COORDS_PER_TILE / ray_dir.z);
+
+    struct box tile_bounds = bounds_for_tile(map, curr_tile_desc);
+
+    t_max_x = (step_c > 0) ? fabs(start_x - (tile_bounds.x - tile_bounds.width)) / fabs(ray_dir.x) 
+                           : fabs(start_x - tile_bounds.x) / fabs(ray_dir.x);
+
+    t_max_z = (step_r > 0) ? fabs(start_z - (tile_bounds.z + tile_bounds.height)) / fabs(ray_dir.z)
+                           : fabs(start_z - tile_bounds.z) / fabs(ray_dir.z);
+
+    assert(t_max_x > 0.0f && t_max_z > 0.0f);
+    printf("tmaxx: %f, tmaxz: %f\n", t_max_x, t_max_z);
+
+    bool ray_ends_inside = box_point_inside(y_eq_0_seg.bx, y_eq_0_seg.bz, map_box);
+    struct tile_desc final_tile_desc;
+
+    if(ray_ends_inside) {
+        int ret = tile_for_point_2d(map, y_eq_0_seg.bx, y_eq_0_seg.bz, &final_tile_desc);
+        assert(ret);
+    }
+
+    do{
+
+        printf("push tile: (%d, %d) ~> (%d, %d)\n", 
+            curr_tile_desc.chunk_r, curr_tile_desc.chunk_c,
+            curr_tile_desc.tile_r, curr_tile_desc.tile_c);
+
+        int dc = 0, dr = 0;
+        if(t_max_x < t_max_z) {
+            t_max_x = t_max_x + t_delta_x; 
+            dc = step_c;
+        }else{
+            t_max_z = t_max_z + t_delta_z; 
+            dr = step_r;
+        }
+
+        if(ray_ends_inside && tiles_equal(&curr_tile_desc, &final_tile_desc)){
+            printf("exit A\n");
+            done = true;
+        }
+
+        if(!relative_tile_desc(map, &curr_tile_desc, dc, dr)) {
+            printf("exit B [%d, %d]\n", dr, dc);
+            done = true;
+        }
+
+    }while(!done);
+    printf("Done!\n\n");
 
     return ret;
 }
@@ -146,8 +418,9 @@ static void on_mousemove(void *user, void *event)
 
     vec3_t cam_pos = Camera_GetPos(s_ctx.cam);
     PFM_Vec3_Sub(&s_ctx.ray_origin, &cam_pos, &s_ctx.ray_dir);
+    PFM_Vec3_Normal(&s_ctx.ray_dir, &s_ctx.ray_dir);
 
-    klist_t(tile) *cand_tiles = candindate_tiles_sorted(s_ctx.ray_origin, s_ctx.ray_dir);
+    klist_t(tile) *cand_tiles = candidate_tiles_sorted(s_ctx.map, s_ctx.ray_origin, s_ctx.ray_dir);
     kl_destroy(tile, cand_tiles);
 }
 
