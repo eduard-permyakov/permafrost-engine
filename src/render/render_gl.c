@@ -597,6 +597,46 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
     glLineWidth(old_width);
 }
 
+void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model)
+{
+    vec3_t vbuff[2];
+    GLint VAO, VBO;
+    GLint shader_prog;
+    GLuint loc;
+    vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
+
+    vbuff[0] = origin; 
+    PFM_Vec3_Normal(&dir, &dir);
+    PFM_Vec3_Scale(&dir, 1000.0f, &dir);
+    PFM_Vec3_Add(&origin, &dir, &vbuff[1]);
+
+    /* OpenGL setup */
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(0);  
+
+    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    glUseProgram(shader_prog);
+
+    /* Set uniforms */
+    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
+
+    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
+    glUniform3fv(loc, 1, red.raw);
+
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+
+    glBindVertexArray(VAO);
+    glDrawArrays(GL_LINES, 0, 2);
+}
+
 void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim)
 {
     const struct render_private *priv = render_private;

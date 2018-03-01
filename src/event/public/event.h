@@ -43,6 +43,7 @@ enum eventtype{
      */
     EVENT_UPDATE_START = SDL_LASTEVENT + 1,
     EVENT_UPDATE_UI,
+    EVENT_RENDER,
     EVENT_UPDATE_END,
 
     EVENT_ENGINE_LAST = 0x1ffff,
@@ -68,6 +69,7 @@ void E_Shutdown(void);
 /*###########################################################################*/
 
 void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source);
+void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_source);
 
 bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg);
 bool E_Global_Unregister(enum eventtype event, handler_t handler);

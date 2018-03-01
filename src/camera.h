@@ -34,6 +34,9 @@ struct bound_box{
 #define DECL_CAMERA_STACK(_name)        \
     char _name[g_sizeof_camera]         \
 
+
+#define CAM_Z_NEAR_DIST     (0.1f)
+
 struct camera *Camera_New (void);
 void           Camera_Free(struct camera *cam);
 
@@ -44,6 +47,10 @@ void           Camera_SetSens      (struct camera *cam, float sensitivity);
 float          Camera_GetYaw       (const struct camera *cam);
 float          Camera_GetPitch     (const struct camera *cam);
 float          Camera_GetHeight    (const struct camera *cam);
+vec3_t         Camera_GetPos       (const struct camera *cam);
+
+void           Camera_MakeViewMat  (const struct camera *cam, mat4x4_t *out);
+void           Camera_MakeProjMat  (const struct camera *cam, mat4x4_t *out);
 
 void           Camera_RestrictPosWithBox(struct camera *cam, struct bound_box box);
 void           Camera_UnrestrictPos     (struct camera *cam);

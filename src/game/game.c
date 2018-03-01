@@ -20,6 +20,7 @@
 #include "public/game.h"
 #include "gamestate.h"
 #include "../render/public/render.h"
+#include "../event/public/event.h"
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
 #include "../entity.h"
@@ -115,6 +116,7 @@ bool G_NewGameWithMap(const char *dir, const char *pfmap)
 
     M_CenterAtOrigin(s_gs.map);
     M_RestrictRTSCamToMap(s_gs.map, ACTIVE_CAM);
+    M_Raycast_Install(s_gs.map, ACTIVE_CAM);
 
     return true;
 }
@@ -150,6 +152,8 @@ void G_Render(void)
         Entity_ModelMatrix(curr, &model);
         R_GL_Draw(curr->render_private, &model);
     }
+
+    E_Global_NotifyImmediate(EVENT_RENDER, NULL, ES_ENGINE);
 }
 
 bool G_AddEntity(struct entity *ent)

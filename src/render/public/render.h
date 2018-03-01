@@ -116,6 +116,12 @@ void   R_GL_DrawOrigin(const void *render_private, mat4x4_t *model);
  */
 void   R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim);
 
+/* ---------------------------------------------------------------------------
+ * Debugging utility to draw an infinite ray defined by an origin and a direction.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model);
+
 
 /*###########################################################################*/
 /* RENDER ASSET LOADING                                                      */

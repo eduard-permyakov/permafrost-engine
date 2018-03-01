@@ -145,6 +145,11 @@ float Camera_GetHeight(const struct camera *cam)
     return cam->pos.y;
 }
 
+vec3_t Camera_GetPos(const struct camera *cam)
+{
+    return cam->pos;
+}
+
 void Camera_MoveLeftTick(struct camera *cam)
 {
     uint32_t tdelta;
@@ -284,7 +289,7 @@ void Camera_TickFinish(struct camera *cam)
     /* Set the projection matrix for the vertex shader */
     GLint viewport[4]; 
     glGetIntegerv(GL_VIEWPORT, viewport);
-    PFM_Mat4x4_MakePerspective(DEG_TO_RAD(45.0f), ((GLfloat)viewport[2])/viewport[3], 0.1f, CONFIG_DRAWDIST, &proj);
+    PFM_Mat4x4_MakePerspective(DEG_TO_RAD(45.0f), ((GLfloat)viewport[2])/viewport[3], CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, &proj);
 
     R_GL_SetProj(&proj);
 
@@ -310,5 +315,19 @@ void Camera_UnrestrictPos(struct camera *cam)
 bool Camera_PosIsRestricted(const struct camera *cam)
 {
     return cam->bounded;
+}
+
+void Camera_MakeViewMat(const struct camera *cam, mat4x4_t *out)
+{
+    vec3_t target;
+    PFM_Vec3_Add((vec3_t*)&cam->pos, (vec3_t*)&cam->front, &target);
+    PFM_Mat4x4_MakeLookAt((vec3_t*)&cam->pos, &target, (vec3_t*)&cam->up, out);
+}
+
+void Camera_MakeProjMat(const struct camera *cam, mat4x4_t *out)
+{
+    GLint viewport[4]; 
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    PFM_Mat4x4_MakePerspective(DEG_TO_RAD(45.0f), ((GLfloat)viewport[2])/viewport[3], 0.1f, CONFIG_DRAWDIST, out);
 }
 

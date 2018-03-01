@@ -56,6 +56,9 @@ void   M_CenterAtOrigin     (struct map *map);
  */
 void   M_RestrictRTSCamToMap(const struct map *map, struct camera *cam);
 
+
+int    M_Raycast_Install(struct map *map, struct camera *cam);
+
 /*###########################################################################*/
 /* MAP ASSET LOADING                                                         */
 /*###########################################################################*/

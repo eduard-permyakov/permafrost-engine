@@ -285,6 +285,17 @@ bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler)
     return e_unregister_handler(e_key(id, event), &hd, true);
 }
 
+void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_source source)
+{
+    /* Send global twice with different recepients. Once to trigger the engine handler and 
+     * once to trigger the scripting handler. */
+    struct event e = (struct event){event, event_arg, source, GLOBAL_ID_ENGINE};
+    e_handle_event(e);
+
+    e = (struct event){event, event_arg, source, GLOBAL_ID_SCRIPT};
+    e_handle_event(e);
+}
+
 /*
  * Entity Events
  */
