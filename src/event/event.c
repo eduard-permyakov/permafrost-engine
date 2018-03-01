@@ -166,10 +166,6 @@ static void e_handle_event(struct event event)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-/*
- * Global Events
- */
-
 bool E_Init(void)
 {
     s_event_handler_table = kh_init(handler_desc);
@@ -230,6 +226,10 @@ void E_ServiceQueue(void)
     e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID} );
 }
 
+/*
+ * Global Events
+ */
+
 void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source source)
 {
     struct event e = (struct event){event, event_arg, source, GLOBAL_ID};
@@ -278,10 +278,7 @@ void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_
 {
     /* Send global twice with different recepients. Once to trigger the engine handler and 
      * once to trigger the scripting handler. */
-    struct event e = (struct event){event, event_arg, source, GLOBAL_ID_ENGINE};
-    e_handle_event(e);
-
-    e = (struct event){event, event_arg, source, GLOBAL_ID_SCRIPT};
+    struct event e = (struct event){event, event_arg, source, GLOBAL_ID};
     e_handle_event(e);
 }
 

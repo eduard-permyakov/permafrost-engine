@@ -106,8 +106,8 @@ int main() {
 /* Will move the last element in the vector to take the place of the deleted one.
  */
 #define kv_del(type, v, i)                                          \
-    ( (v).n > 0 && (i) <= (v).n                                     \
-    ? ((v).a[(i)] = (v).a[(v).n--], 0)                              \
+    ( (i) >= 0 && (i) < (v).n                                       \
+    ? ((v).a[(i)] = (v).a[--(v).n], 0)                              \
     : (-1) )
 
 #define kv_indexof(type, v, x, comparator, out)                     \
