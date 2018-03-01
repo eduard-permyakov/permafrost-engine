@@ -65,7 +65,7 @@ static PyMethodDef PyEntity_methods[] = {
     {"register", 
     (PyCFunction)PyEntity_register, METH_VARARGS,
     "Registers the specified callable to be invoked when an event of the specified type "
-    "is sent to this entity. There is a limit of one handler per event type." },
+    "is sent to this entity." },
 
     {"unregister", 
     (PyCFunction)PyEntity_unregister, METH_VARARGS,
