@@ -535,6 +535,9 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
     glDrawArrays(GL_POINTS, 0, skel->num_joints * 2);
     glDrawArrays(GL_LINES, 0, skel->num_joints * 2);
 
+cleanup:
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
     free(vbuff);
 }
 
@@ -598,6 +601,10 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
         glDrawArrays(GL_LINES, 0, 2);
     }
     glLineWidth(old_width);
+
+cleanup:
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
 }
 
 void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model)
@@ -638,6 +645,10 @@ void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model)
 
     glBindVertexArray(VAO);
     glDrawArrays(GL_LINES, 0, 2);
+
+cleanup:
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
 }
 
 void R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivate, mat4x4_t *model, 
@@ -685,6 +696,10 @@ void R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivat
         glBindVertexArray(VAO);
         glDrawArrays(GL_TRIANGLES, 0, VERTS_PER_FACE * FACES_PER_TILE);
     }glEnable(GL_DEPTH_TEST);
+
+cleanup:
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
 }
 
 void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim)
