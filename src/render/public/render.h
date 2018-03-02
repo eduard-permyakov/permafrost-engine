@@ -30,6 +30,7 @@ struct pfobj_hdr;
 struct entity;
 struct skeleton;
 struct tile;
+struct tile_desc;
 
 
 /*###########################################################################*/
@@ -121,6 +122,13 @@ void   R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim);
  * ---------------------------------------------------------------------------
  */
 void   R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model);
+
+/* ---------------------------------------------------------------------------
+ * Draws a colored outline around the tile specified by the descriptor.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivate, 
+                             mat4x4_t *model, int tiles_per_chunk_x, int tiles_per_chunk_z);
 
 
 /*###########################################################################*/

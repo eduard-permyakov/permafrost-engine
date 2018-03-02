@@ -28,6 +28,7 @@
 #include "../anim/public/skeleton.h"
 #include "../anim/public/anim.h"
 #include "../map/public/tile.h"
+#include "../map/public/map.h"
 
 #include <GL/glew.h>
 
@@ -362,6 +363,7 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
     const char *shaders[] = {
         "mesh.static.colored",
         "mesh.static.textured",
+        "mesh.static.tile-outline",
         "mesh.static.normals.colored",
         "mesh.animated.textured",
         "mesh.animated.normals.colored",
@@ -379,6 +381,7 @@ void R_GL_SetProj(const mat4x4_t *proj, const char *shader_name)
     const char *shaders[] = {
         "mesh.static.colored",
         "mesh.static.textured",
+        "mesh.static.tile-outline",
         "mesh.static.normals.colored",
         "mesh.animated.textured",
         "mesh.animated.normals.colored",
@@ -635,6 +638,53 @@ void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model)
 
     glBindVertexArray(VAO);
     glDrawArrays(GL_LINES, 0, 2);
+}
+
+void R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivate, mat4x4_t *model, 
+                           int tiles_per_chunk_x, int tiles_per_chunk_z)
+{
+    struct vertex vbuff[VERTS_PER_FACE * FACES_PER_TILE];
+    vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
+    GLint VAO, VBO;
+    GLint shader_prog;
+    GLuint loc;
+
+    const struct render_private *priv = chunk_rprivate;
+
+    struct vertex *vert_base = &priv->mesh.vbuff[(in->tile_r * tiles_per_chunk_x + in->tile_c) 
+                                * VERTS_PER_FACE * FACES_PER_TILE ];
+    memcpy(vbuff, vert_base, sizeof(vbuff));
+
+    /* OpenGL setup */
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (void*)0);
+    glEnableVertexAttribArray(0);  
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
+        (void*)offsetof(struct vertex, uv));
+    glEnableVertexAttribArray(1);
+
+    shader_prog = R_Shader_GetProgForName("mesh.static.tile-outline");
+    glUseProgram(shader_prog);
+
+    /* Set uniforms */
+    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
+
+    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
+    glUniform3fv(loc, 1, red.raw);
+
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vbuff), vbuff, GL_STATIC_DRAW);
+
+    glDisable(GL_DEPTH_TEST); {
+        glBindVertexArray(VAO);
+        glDrawArrays(GL_TRIANGLES, 0, VERTS_PER_FACE * FACES_PER_TILE);
+    }glEnable(GL_DEPTH_TEST);
 }
 
 void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim)

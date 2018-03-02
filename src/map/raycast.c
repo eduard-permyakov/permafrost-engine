@@ -19,25 +19,23 @@
 
 #include "map_private.h"
 #include "public/tile.h"
+#include "public/map.h"
 #include "../event/public/event.h"
-#include "../lib/public/klist.h"
 #include "../pf_math.h"
 #include "../camera.h"
 #include "../config.h"
-
-//temp
 #include "../render/public/render.h"
 
 #include <SDL.h>
 #include <assert.h>
 
+
+#define MAX_CANDIDATE_TILES 256
+
 struct rc_ctx{
     struct map    *map;
     struct camera *cam;
     struct tile   *hovered;
-
-    vec3_t         ray_origin;
-    vec3_t         ray_dir;
 };
 
 struct box{
@@ -54,14 +52,6 @@ struct line_seg_2d{
     float ax, az; 
     float bx, bz;
 };
-
-struct tile_desc{
-    int chunk_r, chunk_c;
-    int tile_r, tile_c;
-};
-
-#define _dummy_free(x) /* No need to free data on list removal - only store pointers */
-KLIST_INIT(tile, const struct tile*, _dummy_free);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -257,11 +247,9 @@ static int line_box_intersection(struct line_seg_2d line,
  * http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.42.3443&rep=rep1&type=pdf 
  * ('A Fast Voxel Traversal Algorithm for Ray Tracing' by John Amanatides, Andrew Woo)
  */
-static klist_t(tile) *candidate_tiles_sorted(const struct map *map, vec3_t ray_origin, vec3_t ray_dir)
+int candidate_tiles_sorted(const struct map *map, vec3_t ray_origin, vec3_t ray_dir, struct tile_desc out[])
 {
-    klist_t(tile) *ret = kl_init(tile);
-    if(!ret)
-        return NULL;
+    int ret = 0;
 
     /* Project the ray on the Y=0 plane between the camera position and where the 
      * ray intersects the Y=0 plane. */
@@ -316,10 +304,10 @@ static klist_t(tile) *candidate_tiles_sorted(const struct map *map, vec3_t ray_o
          }
 
     }else {
-        return ret;
+        return 0;
     }
 
-    bool r = tile_for_point_2d(map, intersect_x[1], intersect_z[1], &curr_tile_desc);
+    bool r = tile_for_point_2d(map, start_x, start_z, &curr_tile_desc);
     assert(r);
 
     assert(curr_tile_desc.r >= 0 && curr_tile_desc.r < map->height);
@@ -327,10 +315,7 @@ static klist_t(tile) *candidate_tiles_sorted(const struct map *map, vec3_t ray_o
 
     struct tile_desc d;
     tile_for_point_2d(map, y_eq_0_seg.bx, y_eq_0_seg.bz, &d);
-    printf("d: (%d, %d) -> (%d, %d)\n", d.chunk_r, d.chunk_c, d.tile_r, d.tile_c);
-    printf("\n");
 
-    bool done = false;
     float t_max_x, t_max_z;
 
     const int step_c = ray_dir.x <= 0.0f ? 1 : -1;
@@ -348,21 +333,18 @@ static klist_t(tile) *candidate_tiles_sorted(const struct map *map, vec3_t ray_o
                            : fabs(start_z - tile_bounds.z) / fabs(ray_dir.z);
 
     assert(t_max_x > 0.0f && t_max_z > 0.0f);
-    printf("tmaxx: %f, tmaxz: %f\n", t_max_x, t_max_z);
 
     bool ray_ends_inside = box_point_inside(y_eq_0_seg.bx, y_eq_0_seg.bz, map_box);
     struct tile_desc final_tile_desc;
 
     if(ray_ends_inside) {
-        int ret = tile_for_point_2d(map, y_eq_0_seg.bx, y_eq_0_seg.bz, &final_tile_desc);
-        assert(ret);
+        int r = tile_for_point_2d(map, y_eq_0_seg.bx, y_eq_0_seg.bz, &final_tile_desc);
+        assert(r);
     }
 
     do{
 
-        printf("push tile: (%d, %d) ~> (%d, %d)\n", 
-            curr_tile_desc.chunk_r, curr_tile_desc.chunk_c,
-            curr_tile_desc.tile_r, curr_tile_desc.tile_c);
+        out[ret++] = curr_tile_desc;
 
         int dc = 0, dr = 0;
         if(t_max_x < t_max_z) {
@@ -374,17 +356,15 @@ static klist_t(tile) *candidate_tiles_sorted(const struct map *map, vec3_t ray_o
         }
 
         if(ray_ends_inside && tiles_equal(&curr_tile_desc, &final_tile_desc)){
-            printf("exit A\n");
-            done = true;
+            break;
         }
 
         if(!relative_tile_desc(map, &curr_tile_desc, dc, dr)) {
-            printf("exit B [%d, %d]\n", dr, dc);
-            done = true;
+            break;
         }
 
-    }while(!done);
-    printf("Done!\n\n");
+    }while(ret < 1024);
+    assert(ret < 1024);
 
     return ret;
 }
@@ -412,16 +392,20 @@ static vec3_t rc_unproject_mouse_coords(void)
     return (vec3_t){ret_homo.x/ret_homo.w, ret_homo.y/ret_homo.w, ret_homo.z/ret_homo.w};
 }
 
+//temp
+struct tile_desc cts[MAX_CANDIDATE_TILES];
+int len;
+
 static void on_mousemove(void *user, void *event)
 {
-    s_ctx.ray_origin = rc_unproject_mouse_coords();
+    vec3_t ray_origin = rc_unproject_mouse_coords();
+    vec3_t ray_dir;
 
     vec3_t cam_pos = Camera_GetPos(s_ctx.cam);
-    PFM_Vec3_Sub(&s_ctx.ray_origin, &cam_pos, &s_ctx.ray_dir);
-    PFM_Vec3_Normal(&s_ctx.ray_dir, &s_ctx.ray_dir);
+    PFM_Vec3_Sub(&ray_origin, &cam_pos, &ray_dir);
+    PFM_Vec3_Normal(&ray_dir, &ray_dir);
 
-    klist_t(tile) *cand_tiles = candidate_tiles_sorted(s_ctx.map, s_ctx.ray_origin, s_ctx.ray_dir);
-    kl_destroy(tile, cand_tiles);
+    len = candidate_tiles_sorted(s_ctx.map, ray_origin, ray_dir, cts);
 }
 
 static void on_render(void *user, void *event)
@@ -429,7 +413,13 @@ static void on_render(void *user, void *event)
     mat4x4_t model;
     PFM_Mat4x4_Identity(&model);
 
-    R_GL_DrawRay(Camera_GetPos(s_ctx.cam), s_ctx.ray_dir, &model);
+    for(int i = 0; i < len; i++) {
+        
+        const struct tile_desc *curr = &cts[i];
+        const struct pfchunk *chunk = &s_ctx.map->chunks[curr->chunk_r * s_ctx.map->width + curr->chunk_c];
+        M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){curr->chunk_r, curr->chunk_c}, &model);
+        R_GL_DrawTileSelected(&cts[i], chunk->render_private, &model, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT); 
+    }
 }
 
 /*****************************************************************************/

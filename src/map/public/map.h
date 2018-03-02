@@ -30,6 +30,11 @@ struct pfmap_hdr;
 struct map;
 struct camera;
 
+struct tile_desc{
+    int chunk_r, chunk_c;
+    int tile_r, tile_c;
+};
+
 /*###########################################################################*/
 /* MAP GENERAL                                                               */
 /*###########################################################################*/
