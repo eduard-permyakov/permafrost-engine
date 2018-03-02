@@ -75,5 +75,10 @@ inline void UI_Render(void)
     nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
 }
 
+inline void UI_HandleEvent(SDL_Event *event)
+{
+    nk_sdl_handle_event(event);
+}
+
 #endif
 

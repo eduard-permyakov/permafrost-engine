@@ -80,7 +80,7 @@ static void process_sdl_events(void)
    
     while(SDL_PollEvent(&event)) {
 
-        nk_sdl_handle_event(&event);
+        UI_HandleEvent(&event);
 
         kv_push(SDL_Event, s_prev_tick_events, event);
         E_Global_Notify(event.type, &kv_A(s_prev_tick_events, kv_size(s_prev_tick_events)-1), 
