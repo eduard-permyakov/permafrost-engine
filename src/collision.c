@@ -92,7 +92,7 @@ static bool ray_triangle_intersect(vec3_t ray_origin, vec3_t ray_dir, vec3_t tri
 
     PFM_Vec3_Sub(&tri_verts[0], &tri_verts[2], &edge2);
     PFM_Vec3_Sub(&P, &tri_verts[2], &vp2);
-    PFM_Vec3_Cross(&edge2, &vp1, &C);
+    PFM_Vec3_Cross(&edge2, &vp2, &C);
 
     if(PFM_Vec3_Dot(&n, &C) < 0.0f) {
         return false;
@@ -107,12 +107,12 @@ static bool ray_triangle_intersect(vec3_t ray_origin, vec3_t ray_dir, vec3_t tri
 
 bool C_RayIntersectsAABB(vec3_t ray_origin, vec3_t ray_dir, struct aabb aabb, float *out_t)
 {
-     float t1 = fabs( (aabb.x_min - ray_origin.x) / ray_dir.x );
-     float t2 = fabs( (aabb.x_max - ray_origin.x) / ray_dir.x );
-     float t3 = fabs( (aabb.y_min - ray_origin.y) / ray_dir.y );
-     float t4 = fabs( (aabb.y_max - ray_origin.y) / ray_dir.y );
-     float t5 = fabs( (aabb.z_min - ray_origin.z) / ray_dir.z );
-     float t6 = fabs( (aabb.z_max - ray_origin.z) / ray_dir.z );
+     float t1 = (aabb.x_min - ray_origin.x) / ray_dir.x;
+     float t2 = (aabb.x_max - ray_origin.x) / ray_dir.x;
+     float t3 = (aabb.y_min - ray_origin.y) / ray_dir.y;
+     float t4 = (aabb.y_max - ray_origin.y) / ray_dir.y;
+     float t5 = (aabb.z_min - ray_origin.z) / ray_dir.z;
+     float t6 = (aabb.z_max - ray_origin.z) / ray_dir.z;
     
      float tmin = MAX(MAX(MIN(t1, t2), MIN(t3, t4)), MIN(t5, t6));
      float tmax = MIN(MIN(MAX(t1, t2), MAX(t3, t4)), MAX(t5, t6));
