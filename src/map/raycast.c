@@ -24,6 +24,8 @@
 #include "../pf_math.h"
 #include "../camera.h"
 #include "../config.h"
+#include "../collision.h"
+
 #include "../render/public/render.h"
 
 #include <SDL.h>
@@ -31,12 +33,6 @@
 
 
 #define MAX_CANDIDATE_TILES 256
-
-struct rc_ctx{
-    struct map    *map;
-    struct camera *cam;
-    struct tile   *hovered;
-};
 
 struct box{
     float x, z; 
@@ -52,6 +48,14 @@ struct line_seg_2d{
     float ax, az; 
     float bx, bz;
 };
+
+struct rc_ctx{
+    struct map       *map;
+    struct camera    *cam;
+    bool              active_tile;
+    struct tile_desc  hovered;
+};
+
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -163,6 +167,23 @@ static struct box bounds_for_tile(const struct map *map, struct tile_desc desc)
                   + desc.tile_r * Z_COORDS_PER_TILE,
         X_COORDS_PER_TILE,
         Z_COORDS_PER_TILE
+    };
+}
+
+struct aabb aabb_for_tile(struct tile_desc desc, const struct map *map)
+{
+    const struct pfchunk *chunk = &map->chunks[desc.chunk_r * map->width + desc.chunk_c];
+    const struct tile *tile = &chunk->tiles[desc.tile_r * TILES_PER_CHUNK_WIDTH + desc.tile_c];
+
+    struct box tile_bounds = bounds_for_tile(map, desc);
+
+    return (struct aabb) {
+        .x_min = tile_bounds.x - tile_bounds.width,
+        .x_max = tile_bounds.x,
+        .y_min = 0.0f,
+        .y_max = (tile->base_height + (tile->type == TILETYPE_FLAT ? 0.0f : tile->ramp_height)) * Y_COORDS_PER_TILE,
+        .z_min = tile_bounds.z,
+        .z_max = tile_bounds.z + tile_bounds.height,
     };
 }
 
@@ -392,10 +413,6 @@ static vec3_t rc_unproject_mouse_coords(void)
     return (vec3_t){ret_homo.x/ret_homo.w, ret_homo.y/ret_homo.w, ret_homo.z/ret_homo.w};
 }
 
-//temp
-struct tile_desc cts[MAX_CANDIDATE_TILES];
-int len;
-
 static void on_mousemove(void *user, void *event)
 {
     vec3_t ray_origin = rc_unproject_mouse_coords();
@@ -405,21 +422,52 @@ static void on_mousemove(void *user, void *event)
     PFM_Vec3_Sub(&ray_origin, &cam_pos, &ray_dir);
     PFM_Vec3_Normal(&ray_dir, &ray_dir);
 
-    len = candidate_tiles_sorted(s_ctx.map, ray_origin, ray_dir, cts);
+    s_ctx.active_tile = false;
+
+    struct tile_desc cts[MAX_CANDIDATE_TILES];
+    int len = candidate_tiles_sorted(s_ctx.map, ray_origin, ray_dir, cts);
+
+    for(int i = 0; i < len; i++) {
+    
+        struct aabb tile_aabb = aabb_for_tile(cts[i], s_ctx.map);
+        float t;
+
+        /* The first level check is to see if the ray intersects the AABB */
+        if(C_RayIntersectsAABB(ray_origin, ray_dir, tile_aabb, &t)) {
+
+            /* If the ray hits the AABB, perform the second level check:
+             * Check if it intersects the exact triangle mesh of the tile. */
+            vec3_t tile_mesh[36];
+            mat4x4_t model;
+
+            const struct pfchunk *chunk = 
+                &s_ctx.map->chunks[cts[i].chunk_r * s_ctx.map->width + cts[i].chunk_c];
+            M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){cts[i].chunk_r, cts[i].chunk_c}, &model);
+
+            int num_verts = R_GL_TriMeshForTile(&cts[i], chunk->render_private, &model, 
+                TILES_PER_CHUNK_WIDTH, tile_mesh);
+
+            if(C_RayIntersectsTriMesh(ray_origin, ray_dir, tile_mesh, num_verts)) {
+            
+                s_ctx.hovered = cts[i]; 
+                s_ctx.active_tile = true;
+                break;
+            }
+        }
+    }
 }
 
 static void on_render(void *user, void *event)
 {
-    mat4x4_t model;
-    PFM_Mat4x4_Identity(&model);
+    if(!s_ctx.active_tile)
+        return;
 
-    for(int i = 0; i < len; i++) {
-        
-        const struct tile_desc *curr = &cts[i];
-        const struct pfchunk *chunk = &s_ctx.map->chunks[curr->chunk_r * s_ctx.map->width + curr->chunk_c];
-        M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){curr->chunk_r, curr->chunk_c}, &model);
-        R_GL_DrawTileSelected(&cts[i], chunk->render_private, &model, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT); 
-    }
+    const struct tile_desc *td = &s_ctx.hovered;
+    const struct pfchunk *chunk = &s_ctx.map->chunks[td->chunk_r * s_ctx.map->width + td->chunk_c];
+    mat4x4_t model;
+
+    M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){td->chunk_r, td->chunk_c}, &model);
+    R_GL_DrawTileSelected(&s_ctx.hovered, chunk->render_private, &model, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT); 
 }
 
 /*****************************************************************************/

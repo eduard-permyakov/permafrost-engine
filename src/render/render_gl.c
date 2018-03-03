@@ -1064,3 +1064,28 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
     memcpy(out + (5 * VERTS_PER_FACE) + 5, second_tri[2], sizeof(struct vertex));
 }
 
+int R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate, 
+                        mat4x4_t *model, int tiles_per_chunk_x, vec3_t out[])
+{
+    const struct render_private *priv = chunk_rprivate;
+    struct vertex *vert_base = &priv->mesh.vbuff[(in->tile_r * tiles_per_chunk_x + in->tile_c) 
+                                * VERTS_PER_FACE * FACES_PER_TILE ];
+
+    for(int i = 0; i < VERTS_PER_FACE * FACES_PER_TILE; i++) {
+    
+        vec4_t pos_homo = (vec4_t){vert_base[i].pos.x, vert_base[i].pos.y, vert_base[1].pos.z, 1.0f};
+        vec4_t ws_pos_homo;
+        PFM_Mat4x4_Mult4x1(model, &pos_homo, &ws_pos_homo);
+        
+        out[i] = (vec3_t){
+            ws_pos_homo.x / ws_pos_homo.w, 
+            ws_pos_homo.y / ws_pos_homo.w, 
+            ws_pos_homo.z / ws_pos_homo.w
+        };
+    }
+
+    int ret = VERTS_PER_FACE * FACES_PER_TILE;
+    assert(ret % 3 == 0);
+    return ret;
+}
+

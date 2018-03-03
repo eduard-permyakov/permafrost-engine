@@ -130,6 +130,15 @@ void   R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model);
 void   R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivate, 
                              mat4x4_t *model, int tiles_per_chunk_x, int tiles_per_chunk_z);
 
+/* ---------------------------------------------------------------------------
+ * Will output a trinagle mesh for a particular tile. The output will be an 
+ * array of vertices in worldspace coordinates, with 3 consecutive vertices
+ * defining a triangle. The return value is the number of vertices written,
+ * it will be a multiple of 3.
+ * ---------------------------------------------------------------------------
+ */
+int    R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate, 
+                           mat4x4_t *model, int tiles_per_chunk_x, vec3_t out[]);
 
 /*###########################################################################*/
 /* RENDER ASSET LOADING                                                      */
