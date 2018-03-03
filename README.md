@@ -23,6 +23,7 @@ in the early phases of development.
 * Engine internals exposed to Python 2.7 for scripting
 * Event system
 * UI framework (Nuklear)
+* Efficient raycasting algorithm
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
