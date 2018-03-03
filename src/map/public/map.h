@@ -61,7 +61,11 @@ void   M_CenterAtOrigin     (struct map *map);
  */
 void   M_RestrictRTSCamToMap(const struct map *map, struct camera *cam);
 
-
+/* ------------------------------------------------------------------------
+ * Install event handlers which will keep up-to-date state of the currently
+ * hovered over tile.
+ * ------------------------------------------------------------------------
+ */
 int    M_Raycast_Install(struct map *map, struct camera *cam);
 
 /*###########################################################################*/

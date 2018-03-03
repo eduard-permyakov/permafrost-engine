@@ -661,10 +661,28 @@ void R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivat
     GLuint loc;
 
     const struct render_private *priv = chunk_rprivate;
-
     struct vertex *vert_base = &priv->mesh.vbuff[(in->tile_r * tiles_per_chunk_x + in->tile_c) 
                                 * VERTS_PER_FACE * FACES_PER_TILE ];
     memcpy(vbuff, vert_base, sizeof(vbuff));
+
+    /* Additionally, scale the tile selection mesh slightly around its' center. This is so that 
+     * it is slightly larger than the actual tile underneath and can be rendered on top of it. */
+    const float SCALE_FACTOR = 1.025f;
+    mat4x4_t final_model;
+    mat4x4_t scale, trans, trans_inv, tmp1, tmp2;
+    PFM_Mat4x4_MakeScale(SCALE_FACTOR, SCALE_FACTOR, SCALE_FACTOR, &scale);
+
+    vec3_t center = (vec3_t){
+        ( 0.0f - (in->tile_c* X_COORDS_PER_TILE) - X_COORDS_PER_TILE/2.0f ), 
+        (-1.0f * Y_COORDS_PER_TILE + Y_COORDS_PER_TILE/2.0f), 
+        ( 0.0f + (in->tile_r* Z_COORDS_PER_TILE) + Z_COORDS_PER_TILE/2.0f),
+    };
+    PFM_Mat4x4_MakeTrans(-center.x, -center.y, -center.z, &trans);
+    PFM_Mat4x4_MakeTrans( center.x,  center.y,  center.z, &trans_inv);
+
+    PFM_Mat4x4_Mult4x4(&scale, &trans, &tmp1);
+    PFM_Mat4x4_Mult4x4(&trans_inv, &tmp1, &tmp2);
+    PFM_Mat4x4_Mult4x4(model, &tmp2, &final_model);
 
     /* OpenGL setup */
     glGenVertexArrays(1, &VAO);
@@ -673,18 +691,26 @@ void R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivat
     glGenBuffers(1, &VBO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
 
+    /* Attribute 0 - position */
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (void*)0);
-    glEnableVertexAttribArray(0);  
+    glEnableVertexAttribArray(0);
+
+    /* Attribute 1 - texture coordinates */
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
         (void*)offsetof(struct vertex, uv));
     glEnableVertexAttribArray(1);
+
+    /* Attribute 2 - normal */
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
+        (void*)offsetof(struct vertex, normal));
+    glEnableVertexAttribArray(2);
 
     shader_prog = R_Shader_GetProgForName("mesh.static.tile-outline");
     glUseProgram(shader_prog);
 
     /* Set uniforms */
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, final_model.raw);
 
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
     glUniform3fv(loc, 1, red.raw);
@@ -692,10 +718,8 @@ void R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivat
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, sizeof(vbuff), vbuff, GL_STATIC_DRAW);
 
-    glDisable(GL_DEPTH_TEST); {
-        glBindVertexArray(VAO);
-        glDrawArrays(GL_TRIANGLES, 0, VERTS_PER_FACE * FACES_PER_TILE);
-    }glEnable(GL_DEPTH_TEST);
+    glBindVertexArray(VAO);
+    glDrawArrays(GL_TRIANGLES, 0, VERTS_PER_FACE * FACES_PER_TILE);
 
 cleanup:
     glDeleteVertexArrays(1, &VAO);
