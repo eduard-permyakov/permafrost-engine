@@ -33,6 +33,7 @@
 
 
 #define MAX_CANDIDATE_TILES 256
+#define EPSILON             (1.0f / 1000.0)
 
 struct box{
     float x, z; 
@@ -304,24 +305,27 @@ int candidate_tiles_sorted(const struct map *map, vec3_t ray_origin, vec3_t ray_
 
     }else if(num_intersect = line_box_intersection(y_eq_0_seg, map_box, intersect_x, intersect_z)) {
 
+        /* Nudge the intersection point by EPSILON in the direction of the ray to make sure 
+         * the intersection point is within the map bounds. */
+
         /* One intersection means that the end of the ray is inside the map */
         if(num_intersect == 1) {
 
-            start_x = intersect_x[0];
-            start_z = intersect_z[0];
+            start_x = intersect_x[0] + EPSILON * ray_dir.x;
+            start_z = intersect_z[0] + EPSILON * ray_dir.z;
         
         }
         /* If the first of the 2 intersection points is closer to the ray origin */
         else if( line_len(intersect_x[0], intersect_z[0], y_eq_0_seg.ax, y_eq_0_seg.az)
                < line_len(intersect_x[1], intersect_z[1], y_eq_0_seg.ax, y_eq_0_seg.az) ) {
          
-            start_x = intersect_x[0];
-            start_z = intersect_z[0];
+            start_x = intersect_x[0] + EPSILON * ray_dir.x;
+            start_z = intersect_z[0] + EPSILON * ray_dir.z;
 
          }else{
          
-            start_x = intersect_x[1];
-            start_z = intersect_z[1];
+            start_x = intersect_x[1] + EPSILON * ray_dir.x;
+            start_z = intersect_z[1] + EPSILON * ray_dir.z;
          }
 
     }else {
@@ -331,11 +335,8 @@ int candidate_tiles_sorted(const struct map *map, vec3_t ray_origin, vec3_t ray_
     bool r = tile_for_point_2d(map, start_x, start_z, &curr_tile_desc);
     assert(r);
 
-    assert(curr_tile_desc.r >= 0 && curr_tile_desc.r < map->height);
-    assert(curr_tile_desc.c >= 0 && curr_tile_desc.c < map->width);
-
-    struct tile_desc d;
-    tile_for_point_2d(map, y_eq_0_seg.bx, y_eq_0_seg.bz, &d);
+    assert(curr_tile_desc.chunk_r >= 0 && curr_tile_desc.chunk_r < map->height);
+    assert(curr_tile_desc.chunk_c >= 0 && curr_tile_desc.chunk_c < map->width);
 
     float t_max_x, t_max_z;
 

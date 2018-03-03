@@ -36,7 +36,7 @@ endif
 PYTHON_VER_MAJOR = 2.7
 
 CFLAGS  = -std=c99 -I$(GLEW_SRC)/include -I$(SDL2_SRC)/include -I$(PYTHON_SRC)/Include -I$(PYTHON_SRC)/build \
-		   -fno-strict-aliasing -march=native -O2 -pipe -fwrapv -DNDEBUG -g
+		   -fno-strict-aliasing -march=native -O2 -pipe -fwrapv -g
 DEFS  	=
 LDFLAGS = -L./lib/ -lm -lpthread -lm -lSDL2 
 ifeq ($(OS),Windows_NT)
