@@ -52,7 +52,7 @@ static bool ray_triangle_intersect(vec3_t ray_origin, vec3_t ray_dir, vec3_t tri
     }
 
     float d = PFM_Vec3_Dot(&n, &tri_verts[0]);
-    float t = (PFM_Vec3_Dot(&n, &ray_origin) + d) / n_dot_ray_dir;
+    float t = (d - PFM_Vec3_Dot(&n, &ray_origin)) / n_dot_ray_dir;
 
     if(t < 0.0f) {
         /* Triangle is behind the ray */ 
@@ -134,9 +134,9 @@ bool C_RayIntersectsAABB(vec3_t ray_origin, vec3_t ray_dir, struct aabb aabb, fl
 bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, size_t n)
 {
     assert(n % 3 == 0);
-    for(int i = 0; i < n; n += 3) {
+    for(int i = 0; i < n; i += 3) {
         
-        if(ray_triangle_intersect(ray_origin, ray_dir, tribuff + n))
+        if(ray_triangle_intersect(ray_origin, ray_dir, tribuff + i))
             return true;
     }
 

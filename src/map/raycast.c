@@ -446,9 +446,10 @@ static void on_mousemove(void *user, void *event)
 
             int num_verts = R_GL_TriMeshForTile(&cts[i], chunk->render_private, &model, 
                 TILES_PER_CHUNK_WIDTH, tile_mesh);
+            assert(num_verts == sizeof(tile_mesh) / sizeof(vec3_t));
 
             if(C_RayIntersectsTriMesh(ray_origin, ray_dir, tile_mesh, num_verts)) {
-            
+
                 s_ctx.hovered = cts[i]; 
                 s_ctx.active_tile = true;
                 break;
@@ -467,7 +468,7 @@ static void on_render(void *user, void *event)
     mat4x4_t model;
 
     M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){td->chunk_r, td->chunk_c}, &model);
-    R_GL_DrawTileSelected(&s_ctx.hovered, chunk->render_private, &model, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT); 
+    R_GL_DrawTileSelected(td, chunk->render_private, &model, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT); 
 }
 
 /*****************************************************************************/

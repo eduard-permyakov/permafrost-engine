@@ -1094,10 +1094,11 @@ int R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate,
     const struct render_private *priv = chunk_rprivate;
     struct vertex *vert_base = &priv->mesh.vbuff[(in->tile_r * tiles_per_chunk_x + in->tile_c) 
                                 * VERTS_PER_FACE * FACES_PER_TILE ];
+    int i = 0;
 
-    for(int i = 0; i < VERTS_PER_FACE * FACES_PER_TILE; i++) {
+    for(; i < VERTS_PER_FACE * FACES_PER_TILE; i++) {
     
-        vec4_t pos_homo = (vec4_t){vert_base[i].pos.x, vert_base[i].pos.y, vert_base[1].pos.z, 1.0f};
+        vec4_t pos_homo = (vec4_t){vert_base[i].pos.x, vert_base[i].pos.y, vert_base[i].pos.z, 1.0f};
         vec4_t ws_pos_homo;
         PFM_Mat4x4_Mult4x1(model, &pos_homo, &ws_pos_homo);
         
@@ -1108,8 +1109,7 @@ int R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate,
         };
     }
 
-    int ret = VERTS_PER_FACE * FACES_PER_TILE;
-    assert(ret % 3 == 0);
-    return ret;
+    assert(i % 3 == 0);
+    return i;
 }
 
