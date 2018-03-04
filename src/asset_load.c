@@ -181,7 +181,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
      * animation sets to be considered valid considered valid. */
     //TODO: nicer way - we should still be able to render animated pfobj as static
     ret->animated = (header.num_joints > 0);
-    assert(!animated || header.num_as > 0);
+    assert(!ret->animated || header.num_as > 0);
 
     assert( strlen(name) < sizeof(ret->name) );
     strcpy(ret->name, name);
