@@ -26,3 +26,5 @@
 
 !/assets/cursors
 !/assets/fonts
+
+*.pyc

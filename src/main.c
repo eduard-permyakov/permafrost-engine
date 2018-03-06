@@ -333,7 +333,7 @@ int main(int argc, char **argv)
 
     char script_path[512];
     strcpy(script_path, argv[1]);
-    strcat(script_path, "scripts/demo.py");
+    strcat(script_path, "scripts/demo/main.py");
     S_RunFile(script_path);
 
     uint32_t last_ts = SDL_GetTicks();

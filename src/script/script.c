@@ -261,6 +261,31 @@ static PyObject *PyPf_prev_frame_ms(PyObject *self)
     return Py_BuildValue("i", g_last_frame_ms);
 }
 
+static bool s_sys_path_add_dir(const char *filename)
+{
+    if(strlen(filename) >= 512)
+        return false;
+
+    char copy[512];
+    strcpy(copy, filename);
+
+    char *end = copy + (strlen(copy) - 1);
+    while(end > copy && *end != '/')
+        end--;
+
+    if(end == copy)
+        return false;
+    *end = '\0';
+
+    PyObject *sys_path = PySys_GetObject("path");
+    assert(sys_path);
+
+    if(0 != PyList_Append(sys_path, Py_BuildValue("s", copy)) )
+        return false;
+
+    return true;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -297,6 +322,11 @@ bool S_RunFile(const char *path)
 {
     FILE *script = fopen(path, "r");
     if(!script)
+        return false;
+
+    /* The directory of the script file won't be automatically added by 'PyRun_SimpleFile'.
+     * We add it manually to sys.path ourselves. */
+    if(!s_sys_path_add_dir(path))
         return false;
 
     PyObject *PyFileObject = PyFile_FromString((char*)path, "r");
