@@ -42,6 +42,9 @@ static int       PyWindow_init(PyWindowObject *self, PyObject *args);
 
 static PyObject *PyWindow_layout_row_static(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_layout_row_dynamic(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_layout_row_begin(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_layout_row_end(PyWindowObject *self);
+static PyObject *PyWindow_layout_row_push(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_label_colored(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_label_colored_wrap(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args);
@@ -67,6 +70,19 @@ static PyMethodDef PyWindow_methods[] = {
     {"layout_row_dynamic", 
     (PyCFunction)PyWindow_layout_row_dynamic, METH_VARARGS,
     "Add a row with a dynamic layout."},
+
+    {"layout_row_begin", 
+    (PyCFunction)PyWindow_layout_row_begin, METH_VARARGS,
+    "Begin a new row to which widgets can be pushed."},
+
+    {"layout_row_end", 
+    (PyCFunction)PyWindow_layout_row_end, METH_NOARGS,
+    "End a row previously started with 'layout_row_begin'."},
+
+    {"layout_row_push", 
+    (PyCFunction)PyWindow_layout_row_push, METH_VARARGS,
+    "Add a widget to the currently active row. Note that this must be preceded by "
+    "a call to 'layout_row_begin'."},
 
     {"label_colored", 
     (PyCFunction)PyWindow_label_colored, METH_VARARGS,
@@ -185,6 +201,44 @@ static PyObject *PyWindow_layout_row_dynamic(PyWindowObject *self, PyObject *arg
     }
     nk_layout_row_dynamic(s_nk_ctx, height, cols);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_layout_row_begin(PyWindowObject *self, PyObject *args)
+{
+    int layout_fmt;
+    int height, cols;
+
+    if(!PyArg_ParseTuple(args, "iii", &layout_fmt, &height, &cols)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be three integers.");
+        return NULL;
+    }
+
+    if(layout_fmt != NK_STATIC && layout_fmt != NK_DYNAMIC) {
+        PyErr_SetString(PyExc_TypeError, "First argument must be 0 or 1.");
+        return NULL;
+    }
+
+    nk_layout_row_begin(s_nk_ctx, layout_fmt, height, cols);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_layout_row_end(PyWindowObject *self)
+{
+    nk_layout_row_end(s_nk_ctx);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_layout_row_push(PyWindowObject *self, PyObject *args)
+{
+    int width;
+
+    if(!PyArg_ParseTuple(args, "i", &width)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single integer.");
+        return NULL;
+    }
+
+    nk_layout_row_push(s_nk_ctx, width);
+    Py_RETURN_NONE; 
 }
 
 static PyObject *PyWindow_label_colored(PyWindowObject *self, PyObject *args)

@@ -26,6 +26,7 @@
 #include "../game/public/game.h"
 #include "../render/public/render.h"
 #include "../event/public/event.h"
+#include "../config.h"
 
 #include <stdio.h>
 
@@ -41,6 +42,7 @@ static PyObject *PyPf_global_event(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args);
 static PyObject *PyPf_prev_frame_ms(PyObject *self);
+static PyObject *PyPf_get_resolution(PyObject *self);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -89,6 +91,10 @@ static PyMethodDef pf_module_methods[] = {
     {"prev_frame_ms", 
     (PyCFunction)PyPf_prev_frame_ms, METH_NOARGS,
     "Get the duration of the previous game frame in milliseconds."},
+
+    {"get_resolution", 
+    (PyCFunction)PyPf_get_resolution, METH_NOARGS,
+    "Get the currently set resolution of the game window."},
 
     {NULL}  /* Sentinel */
 };
@@ -259,6 +265,11 @@ static PyObject *PyPf_prev_frame_ms(PyObject *self)
 {
     extern unsigned g_last_frame_ms;
     return Py_BuildValue("i", g_last_frame_ms);
+}
+
+static PyObject *PyPf_get_resolution(PyObject *self)
+{
+    return Py_BuildValue("(i, i)", CONFIG_RES_X, CONFIG_RES_Y);
 }
 
 static bool s_sys_path_add_dir(const char *filename)
