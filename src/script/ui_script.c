@@ -20,6 +20,7 @@
 #include <Python.h> /* Must be included first */
 
 #include "public/script.h"
+#include "ui_style_script.h"
 #include "../lib/public/nuklear.h"
 #include "../lib/public/kvec.h"
 #include "../event/public/event.h"
@@ -60,7 +61,6 @@ static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
 static struct nk_context       *s_nk_ctx;
 static kvec_t(PyWindowObject*)  s_active_windows;
-
 
 static PyMethodDef PyWindow_methods[] = {
     {"layout_row_static", 
@@ -423,5 +423,8 @@ void S_UI_PyRegister(PyObject *module)
         return;
     Py_INCREF(&PyWindow_type);
     PyModule_AddObject(module, "Window", (PyObject*)&PyWindow_type);
+
+    assert(s_nk_ctx);
+    S_UI_Style_PyRegister(module, s_nk_ctx);
 }
 
