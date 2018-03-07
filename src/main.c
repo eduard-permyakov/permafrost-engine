@@ -318,8 +318,8 @@ int main(int argc, char **argv)
 
     int ret = EXIT_SUCCESS;
 
-    if(argc != 2) {
-        printf("Usage: %s [base directory path (which contains 'assets' and 'shaders' folders)]\n", argv[0]);
+    if(argc != 3) {
+        printf("Usage: %s [base directory path (which contains 'assets' and 'shaders' folders)] [script path]\n", argv[0]);
         ret = EXIT_FAILURE;
         goto fail_args;
     }
@@ -331,10 +331,7 @@ int main(int argc, char **argv)
         goto fail_init;
     }
 
-    char script_path[512];
-    strcpy(script_path, argv[1]);
-    strcat(script_path, "scripts/editor/main.py");
-    S_RunFile(script_path);
+    S_RunFile(argv[2]);
 
     uint32_t last_ts = SDL_GetTicks();
     while(!s_quit) {

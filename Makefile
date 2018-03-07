@@ -108,6 +108,9 @@ clean_deps:
 clean:
 	rm -rf $(PF_OBJS) $(PF_DEPS) $(BIN) 
 
-run:
-	./bin/pf ./
+run_demo:
+	@./bin/pf ./ ./scripts/demo/main.py
+
+run_editor:
+	@./bin/pf ./ ./scripts/editor/main.py
 
