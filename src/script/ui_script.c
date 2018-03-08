@@ -347,6 +347,7 @@ static PyObject *PyWindow_show(PyWindowObject *self)
 
     kv_push(PyWindowObject*, s_active_windows, self);
     self->shown = true;
+    nk_window_show(s_nk_ctx, self->name, NK_SHOWN);
     Py_RETURN_NONE;
 }
 
@@ -364,6 +365,7 @@ static PyObject *PyWindow_hide(PyWindowObject *self)
     kv_indexof(PyWindowObject*, s_active_windows, self, equal, idx);
     kv_del(PyWindowObject*, s_active_windows, idx);
     self->shown = false;
+    nk_window_show(s_nk_ctx, self->name, NK_HIDDEN);
     Py_RETURN_NONE;
 }
 

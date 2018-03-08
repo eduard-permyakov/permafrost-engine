@@ -19,7 +19,7 @@
 import pf
 
 from constants import *
-import tabbar
+import ui
 
 ############################################################
 # Global configs                                           #
@@ -35,11 +35,11 @@ pf.new_game("assets/maps/grass-cliffs-1", "grass-cliffs.pfmap")
 # Setup UI                                                 #
 ############################################################
 
-one = tabbar.PerfStatsWindow()
-two = tabbar.DemoWindow();
-
-top_tb = tabbar.TabBar()
-top_tb.push_child("Demo", two)
-top_tb.push_child("Performance", one)
+top_tb = ui.TabBarWindow()
+top_tb.push_child("Terrain", ui.TerrainTabWindow())
+top_tb.push_child("Objects", ui.ObjectsTabWindow())
 top_tb.show()
+
+mb = ui.MenuButtonWindow(ui.Menu())
+mb.show()
 
