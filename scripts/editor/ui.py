@@ -19,21 +19,23 @@
 import pf
 from constants import *
 
+#Note: button highlighting is off if there is any overlap between windows
+
 TAB_BAR_HEIGHT = 40
-TAB_BAR_NUM_COLS = 3
+TAB_BAR_NUM_COLS = 5
 TAB_BAR_COL_WIDTH = 120
-TAB_SELECTED_COLOR = (90, 90, 90, 255)
-TAB_SELECTED_HOVER_COLOR = (75, 75, 75, 255)
 
 LEFT_PANE_WIDTH = 250
 
 class TabBarWindow(pf.Window):
+    SELECTED_COLOR = (90, 90, 90, 255)
+    SELECTED_HOVER_COLOR = (75, 75, 75, 255)
 
     def __init__(self):
         resx, _ = pf.get_resolution()
 
         dims = (0, 0, resx - TAB_BAR_COL_WIDTH, TAB_BAR_HEIGHT)
-        super(TabBarWindow, self).__init__("TabBar", dims, NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)
+        super(TabBarWindow, self).__init__("TabBar", dims, NK_WINDOW_NO_SCROLLBAR)
         self.active_idx = 0
         self.labels = []
         self.child_windows = []
@@ -60,8 +62,8 @@ class TabBarWindow(pf.Window):
             if idx == self.active_idx:
                 normal_style = pf.button_style.normal
                 hover_style = pf.button_style.hover
-                pf.button_style.normal = TAB_SELECTED_COLOR
-                pf.button_style.hover = TAB_SELECTED_HOVER_COLOR
+                pf.button_style.normal = TabBarWindow.SELECTED_COLOR
+                pf.button_style.hover = TabBarWindow.SELECTED_HOVER_COLOR
                 self.button_label(self.labels[idx], on_tab_click)
                 pf.button_style.normal = normal_style
                 pf.button_style.hover = hover_style
@@ -85,14 +87,42 @@ class TabBarWindow(pf.Window):
 
 class TerrainTabWindow(pf.Window):
 
+    # these can be passed to constructor later from the controller
+    textures = [
+        {"name" : "Grass",          "path" : "asssets/textures/grass.png"},
+        {"name" : "Cliffs",         "path" : "assets/textures/cliffs.png"},
+        {"name" : "Cobblestone",    "path" : "assets/textures/cobblestone.png"}
+    ]
+
     def __init__(self):
         _, resy = pf.get_resolution()
         super(TerrainTabWindow, self).__init__("TerrainTab", 
             (0, TAB_BAR_HEIGHT + 1, LEFT_PANE_WIDTH, resy - TAB_BAR_HEIGHT - 1), NK_WINDOW_BORDER)
+        assert len(TerrainTabWindow.textures) > 0
+        self.selected_tex_idx = 0
+        self.brush_size_idx = 0
 
     def update(self):
         self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Terrain", (255, 255, 255));
+        self.label_colored_wrap("Texture:", (255, 255, 255))
+
+        def textures_group():
+            self.layout_row_static(25, LEFT_PANE_WIDTH-60, 1)
+            for i in range(0, len(TerrainTabWindow.textures)):
+                on = self.selectable_label(TerrainTabWindow.textures[i]["name"], 
+                    NK_TEXT_ALIGN_LEFT, i == self.selected_tex_idx)
+                if on: 
+                    self.selected_tex_idx = i
+
+        self.layout_row_static(200, LEFT_PANE_WIDTH-30, 1)
+        self.group("Texture:", NK_WINDOW_BORDER, textures_group)
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Brush Size:", (255, 255, 255))
+        if self.option_label("Small", self.brush_size_idx == 0):
+            self.brush_size_idx = 0
+        if self.option_label("Large", self.brush_size_idx == 1):
+            self.brush_size_idx = 1
 
 
 class ObjectsTabWindow(pf.Window):
@@ -104,7 +134,7 @@ class ObjectsTabWindow(pf.Window):
 
     def update(self):
         self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Objects", (255, 255, 255));
+        self.label_colored_wrap("Objects", (255, 255, 255))
 
 
 class MenuButtonWindow(pf.Window):
@@ -112,8 +142,8 @@ class MenuButtonWindow(pf.Window):
     def __init__(self, menu_window):
         resx, _ = pf.get_resolution()
         super(MenuButtonWindow, self).__init__("MenuButton", 
-            (resx - TAB_BAR_COL_WIDTH + 1, 0, TAB_BAR_COL_WIDTH - 1, TAB_BAR_HEIGHT), 
-            NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)
+            (resx - TAB_BAR_COL_WIDTH, 0, TAB_BAR_COL_WIDTH, TAB_BAR_HEIGHT),
+            NK_WINDOW_NO_SCROLLBAR)
         self.menu = menu_window
 
     def update(self):
@@ -125,30 +155,29 @@ class MenuButtonWindow(pf.Window):
         self.button_label("Menu", on_menu_click)
 
 
-MENU_WINDOW_WIDTH = 300
-MENU_WINDOW_HEIGHT = 400
-
 class Menu(pf.Window):
+    WINDOW_WIDTH = 300
+    WINDOW_HEIGHT = 400
 
     def __init__(self):
         resx, resy = pf.get_resolution()
         super(Menu, self).__init__("Menu", 
-            (resx / 2 - MENU_WINDOW_WIDTH / 2, resy / 2 - MENU_WINDOW_HEIGHT / 2, MENU_WINDOW_WIDTH, MENU_WINDOW_HEIGHT), 
+            (resx / 2 - Menu.WINDOW_WIDTH/ 2, resy / 2 - Menu.WINDOW_HEIGHT / 2, Menu.WINDOW_WIDTH, Menu.WINDOW_HEIGHT), 
             NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)
 
     def update(self):
 
-        def on_exit():
-            pf.global_event(EVENT_SDL_QUIT, None)
-
         def on_cancel():
             self.hide()
 
-        self.layout_row_static(10, MENU_WINDOW_WIDTH, 1)
-        self.layout_row_dynamic(TAB_BAR_HEIGHT-10, 1)
-        self.button_label("Exit", on_exit)
+        def on_exit():
+            pf.global_event(EVENT_SDL_QUIT, None)
 
-        self.layout_row_static(10, MENU_WINDOW_WIDTH, 1)
+        self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
         self.layout_row_dynamic(TAB_BAR_HEIGHT-10, 1)
         self.button_label("Cancel", on_cancel)
+
+        self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
+        self.layout_row_dynamic(TAB_BAR_HEIGHT-10, 1)
+        self.button_label("Exit", on_exit)
 

@@ -50,6 +50,9 @@ static PyObject *PyWindow_label_colored(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_label_colored_wrap(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_selectable_label(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_option_label(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -99,6 +102,19 @@ static PyMethodDef PyWindow_methods[] = {
     {"simple_chart", 
     (PyCFunction)PyWindow_simple_chart, METH_VARARGS,
     "Add a chart with a single slot."},
+
+    {"selectable_label", 
+    (PyCFunction)PyWindow_selectable_label, METH_VARARGS,
+    "Adds a label that can be toggled to be selected with a mouse click. "
+    "Returns the new state of the selectable label."},
+
+    {"option_label", 
+    (PyCFunction)PyWindow_option_label, METH_VARARGS,
+    "Combo box with the specified text. Returns if the combo box is selected."},
+
+    {"group", 
+    (PyCFunction)PyWindow_group, METH_VARARGS,
+    "The window UI statements within the argument callable will be put in a group."},
 
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
@@ -337,6 +353,65 @@ static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args)
             nk_tooltipf(s_nk_ctx, "Value: %lu", hovered_val);
     }
 
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_selectable_label(PyWindowObject *self, PyObject *args)
+{
+    const char *text; 
+    int align_flags;
+    int on;
+
+    if(!PyArg_ParseTuple(args, "sii", &text, &align_flags, &on)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string and two integers.");
+        return NULL;
+    }
+
+    nk_selectable_label(s_nk_ctx, text, align_flags, &on);
+    if(0 == on)
+        Py_RETURN_FALSE;
+    else
+        Py_RETURN_TRUE;
+}
+
+static PyObject *PyWindow_option_label(PyWindowObject *self, PyObject *args)
+{
+    const char *text; 
+    int set;
+
+    if(!PyArg_ParseTuple(args, "si", &text, &set)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string and an integer.");
+        return NULL;
+    }
+
+    set = nk_option_label(s_nk_ctx, text, set);
+    if(0 == set)
+        Py_RETURN_FALSE;
+    else
+        Py_RETURN_TRUE;
+}
+
+static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args)
+{
+    const char *name;
+    int group_flags;
+    PyObject *callable;
+
+    if(!PyArg_ParseTuple(args, "siO", &name, &group_flags, &callable)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string, an integer and an object object.");
+        return NULL;
+    }
+
+    if(!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "Second argument must be callable.");
+        return NULL;
+    }
+
+    if(nk_group_begin(s_nk_ctx, name, group_flags)) {
+        PyObject *ret = PyObject_CallObject(callable, NULL);
+        Py_XDECREF(ret);
+    }
+    nk_group_end(s_nk_ctx);
     Py_RETURN_NONE;
 }
 
