@@ -27,17 +27,6 @@
 #define __USE_POSIX
 #include <string.h>
 
-#if defined(_WIN32)
-    #define strtok_r strtok_s
-#endif
-
-#define READ_LINE(file, buff, fail_label)       \
-    do{                                         \
-        if(!fgets(buff, MAX_LINE_LEN, file))    \
-            goto fail_label;                    \
-        buff[MAX_LINE_LEN - 1] = '\0';          \
-    }while(0)
-
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -49,7 +38,7 @@ static void euler_to_quat(float euler[3], quat_t *out)
     PFM_Quat_FromRotMat(&tmp, out);
 }
 
-static bool al_read_joint(FILE *stream, struct joint *out, struct SQT *out_bind)
+static bool al_read_joint(SDL_RWops *stream, struct joint *out, struct SQT *out_bind)
 {
     char line[MAX_LINE_LEN];
     int unfixed_idx;
@@ -94,7 +83,7 @@ fail:
     return false;
 }
 
-static bool al_read_anim_clip(FILE *stream, struct anim_clip *out, 
+static bool al_read_anim_clip(SDL_RWops *stream, struct anim_clip *out, 
                               const struct pfobj_hdr *header)
 {
     char line[MAX_LINE_LEN];
@@ -195,7 +184,7 @@ size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
  *
  */
 
-bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void *priv_buff)
+bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, SDL_RWops *stream, void *priv_buff)
 {
     char *unused_base = priv_buff;
     struct anim_private *priv;

@@ -24,6 +24,8 @@
 #include "anim/public/anim.h"
 #include "map/public/map.h"
 
+#include <SDL.h>
+
 #include <stdio.h>
 #include <stdbool.h>
 #include <assert.h>
@@ -33,23 +35,11 @@
 #include <string.h>
 #include <stdlib.h> 
 
-#if defined(_WIN32)
-    #define strtok_r strtok_s
-#endif
-
-
-#define READ_LINE(file, buff, fail_label)       \
-    do{                                         \
-        if(!fgets(buff, MAX_LINE_LEN, file))    \
-            goto fail_label;                    \
-        buff[MAX_LINE_LEN - 1] = '\0';          \
-    }while(0)
-
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool al_parse_pfobj_header(FILE *stream, struct pfobj_hdr *out)
+static bool al_parse_pfobj_header(SDL_RWops *stream, struct pfobj_hdr *out)
 {
     char line[MAX_LINE_LEN];
 
@@ -101,7 +91,7 @@ fail:
     return false;
 }
 
-static bool al_parse_pfmap_header(FILE *stream, struct pfmap_hdr *out)
+static bool al_parse_pfmap_header(SDL_RWops *stream, struct pfmap_hdr *out)
 {
     char line[MAX_LINE_LEN];
 
@@ -144,7 +134,7 @@ fail:
 struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name)
 {
     struct entity *ret;
-    FILE *stream;
+    SDL_RWops *stream;
     struct pfobj_hdr header;
     size_t alloc_size;
 
@@ -154,7 +144,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     strcat(pfobj_path, "/");
     strcat(pfobj_path, pfobj_name);
 
-    stream = fopen(pfobj_path, "r");
+    stream = SDL_RWFromFile(pfobj_path, "r");
     if(!stream)
         goto fail_parse; 
 
@@ -189,7 +179,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     assert( strlen(base_path) < sizeof(ret->basedir) );
     strcpy(ret->basedir, base_path);
 
-    fclose(stream);
+    SDL_RWclose(stream);
 
     ret->uid = Entity_NewUID();
     return ret;
@@ -198,7 +188,7 @@ fail_init:
     free(ret);
 fail_alloc:
 fail_parse:
-    fclose(stream);
+    SDL_RWclose(stream);
 fail_open:
     return NULL;
 }
@@ -212,7 +202,7 @@ void AL_EntityFree(struct entity *entity)
 struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name)
 {
     struct map *ret;
-    FILE       *stream;
+    SDL_RWops *stream;
 
     char pfmap_path[BASEDIR_LEN * 2];
     assert( strlen(base_path) + strlen(pfmap_name) + 1 < sizeof(pfmap_path) );
@@ -220,7 +210,7 @@ struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name)
     strcat(pfmap_path, "/");
     strcat(pfmap_path, pfmap_name);
 
-    stream = fopen(pfmap_path, "r");
+    stream = SDL_RWFromFile(pfmap_path, "r");
     if(!stream)
         goto fail_open;
 
@@ -235,21 +225,46 @@ struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name)
     if(!M_AL_InitMapFromStream(&header, base_path, stream, ret))
         goto fail_init;
 
-    fclose(stream);
+    SDL_RWclose(stream);
     return ret;
 
 fail_init:
     free(ret);
 fail_alloc:
 fail_parse:
-    fclose(stream);
+    SDL_RWclose(stream);
 fail_open:
     return NULL;
+}
+
+struct map *AL_MapFromPFMapString(const char *str)
+{
+
 }
 
 void AL_MapFree(struct map *map)
 {
     //TODO: Clean up OpenGL buffers
     free(map);
+}
+
+bool AL_ReadLine(SDL_RWops *stream, char *outbuff)
+{
+    bool done = false;
+    int idx = 0;
+    do {
+         
+        if(!SDL_RWread(stream, outbuff + idx, 1, 1))
+            return false; 
+
+        if(outbuff[idx] == '\n') {
+            outbuff[++idx] = '\0';
+            return true;
+        }
+        
+        idx++; 
+    }while(idx < MAX_LINE_LEN);
+
+    return false;
 }
 

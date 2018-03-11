@@ -23,9 +23,23 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include <SDL.h> /* for SDL_RWops */
+
 
 #define MAX_ANIM_SETS 16
 #define MAX_LINE_LEN  256
+
+#if defined(_WIN32)
+    #define strtok_r strtok_s
+#endif
+
+#define READ_LINE(rwops, buff, fail_label)              \
+    do{                                                 \
+        if(!AL_ReadLine(rwops, buff))                   \
+            goto fail_label;                            \
+        buff[MAX_LINE_LEN - 1] = '\0';                  \
+    }while(0)
+
 
 struct entity;
 struct map;
@@ -50,6 +64,9 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 void           AL_EntityFree(struct entity *entity);
 
 struct map    *AL_MapFromPFMap(const char *base_path, const char *pfmap_name);
+struct map    *AL_MapFromPFMapString(const char *str);
 void           AL_MapFree(struct map *map);
+
+bool           AL_ReadLine(SDL_RWops *stream, char *outbuff);
 
 #endif

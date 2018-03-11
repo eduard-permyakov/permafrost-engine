@@ -25,6 +25,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include <SDL.h> /* for SDL_RWops */
+
 struct pfchunk;
 struct pfmap_hdr;
 struct map;
@@ -73,7 +75,7 @@ int    M_Raycast_Install(struct map *map, struct camera *cam);
 /*###########################################################################*/
 
 bool   M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
-                              FILE *stream, void *outmap);
+                              SDL_RWops *stream, void *outmap);
 size_t M_AL_BuffSizeFromHeader(const struct pfmap_hdr *header);
 
 /* ------------------------------------------------------------------------

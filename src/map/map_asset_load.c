@@ -28,18 +28,6 @@
 #define __USE_POSIX
 #include <string.h>
 
-#if defined(_WIN32)
-    #define strtok_r strtok_s
-#endif
-
-
-#define READ_LINE(file, buff, fail_label)       \
-    do{                                         \
-        if(!fgets(buff, MAX_LINE_LEN, file))    \
-            goto fail_label;                    \
-        buff[MAX_LINE_LEN - 1] = '\0';          \
-    }while(0)
-
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -64,7 +52,7 @@ fail:
     return false;
 }
 
-bool m_al_read_row(FILE *stream, struct tile *out)
+bool m_al_read_row(SDL_RWops *stream, struct tile *out)
 {
     char line[MAX_LINE_LEN];
 
@@ -95,7 +83,7 @@ fail:
     return false;
 }
 
-bool m_al_read_pfchunk(FILE *stream, struct pfchunk *out)
+bool m_al_read_pfchunk(SDL_RWops *stream, struct pfchunk *out)
 {
     for(int i = 0; i < TILES_PER_CHUNK_HEIGHT; i++) {
         
@@ -114,7 +102,7 @@ fail:
 /*****************************************************************************/
  
 bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
-                            FILE *stream, void *outmap)
+                            SDL_RWops *stream, void *outmap)
 {
     struct map *map = outmap;
     char line[MAX_LINE_LEN];

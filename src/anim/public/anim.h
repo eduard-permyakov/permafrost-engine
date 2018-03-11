@@ -24,6 +24,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include <SDL.h> /* for SDL_RWops */
+
 struct pfobj_hdr;
 struct entity;
 struct skeleton;
@@ -99,7 +101,7 @@ size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header);
  * in priv_buff.
  * ---------------------------------------------------------------------------
  */
-bool   A_AL_InitPrivFromStream(const struct pfobj_hdr *header, FILE *stream, void *priv_buff);
+bool   A_AL_InitPrivFromStream(const struct pfobj_hdr *header, SDL_RWops *stream, void *priv_buff);
 
 /* ---------------------------------------------------------------------------
  * Dumps private animation data in PF Object format.

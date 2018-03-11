@@ -26,6 +26,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include <SDL.h> /* for SDL_RWops */
+
 struct pfobj_hdr;
 struct entity;
 struct skeleton;
@@ -157,7 +159,7 @@ size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header);
  * ---------------------------------------------------------------------------
  */
 bool   R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir, 
-                               FILE *stream, void *priv_buff);
+                               SDL_RWops *stream, void *priv_buff);
 
 /* ---------------------------------------------------------------------------
  * Dumps private render data in PF Object format.
@@ -181,7 +183,7 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
  * Material data is read from a separate stream.
  * ---------------------------------------------------------------------------
  */
-bool   R_AL_InitPrivFromTilesAndMats(FILE *mats_stream, size_t num_mats, 
+bool   R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats, 
                                      const struct tile *tiles, size_t width, size_t height,
                                      void *priv_buff, const char *basedir);
 

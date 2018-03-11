@@ -106,6 +106,11 @@ bool G_Init(void)
     return true;
 }
 
+bool G_NewGammeWithMapString(const char *mapstr)
+{
+    g_reset();
+}
+
 bool G_NewGameWithMap(const char *dir, const char *pfmap)
 {
     g_reset();

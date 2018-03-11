@@ -30,18 +30,6 @@
 #define __USE_POSIX
 #include <string.h>
 
-#if defined(_WIN32)
-    #define strtok_r strtok_s
-#endif
-
-
-#define READ_LINE(file, buff, fail_label)       \
-    do{                                         \
-        if(!fgets(buff, MAX_LINE_LEN, file))    \
-            goto fail_label;                    \
-        buff[MAX_LINE_LEN - 1] = '\0';          \
-    }while(0)
-
 #define STREVAL(a) STR(a)
 #define STR(a) #a
 
@@ -51,7 +39,7 @@
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool al_read_vertex(FILE *stream, struct vertex *out)
+static bool al_read_vertex(SDL_RWops *stream, struct vertex *out)
 {
     char line[MAX_LINE_LEN];
 
@@ -104,7 +92,7 @@ fail:
     return false;
 }
 
-static bool al_read_material(FILE *stream, const char *basedir, struct material *out)
+static bool al_read_material(SDL_RWops *stream, const char *basedir, struct material *out)
 {
     char line[MAX_LINE_LEN];
 
@@ -166,7 +154,7 @@ size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
  *
  */
 
-bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir, FILE *stream, void *priv_buff)
+bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir, SDL_RWops *stream, void *priv_buff)
 {
     struct render_private *priv = priv_buff;
     char *unused_base = (char*)priv_buff + sizeof(struct render_private);
@@ -256,7 +244,7 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
     return ret;
 }
 
-bool R_AL_InitPrivFromTilesAndMats(FILE *mats_stream, size_t num_mats, 
+bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats, 
                                   const struct tile *tiles, size_t width, size_t height, 
                                   void *priv_buff, const char *basedir)
 {
