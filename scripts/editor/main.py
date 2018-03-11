@@ -29,7 +29,9 @@ pf.set_ambient_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_pos([1024.0, 512.0, 256.0])
 
-pf.new_game("assets/maps", "grass-cliffs.pfmap")
+with open(pf.get_basedir() + "assets/maps/grass-cliffs.pfmap", "r") as mapfile:
+    mapdata = mapfile.read()
+pf.new_game_string(mapdata)
 
 ############################################################
 # Setup UI                                                 #

@@ -87,6 +87,13 @@ static bool g_init_cameras(void)
     }
 }
 
+static void g_init_map(void)
+{
+    M_CenterAtOrigin(s_gs.map);
+    M_RestrictRTSCamToMap(s_gs.map, ACTIVE_CAM);
+    M_Raycast_Install(s_gs.map, ACTIVE_CAM);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -106,9 +113,16 @@ bool G_Init(void)
     return true;
 }
 
-bool G_NewGammeWithMapString(const char *mapstr)
+bool G_NewGameWithMapString(const char *mapstr)
 {
     g_reset();
+
+    s_gs.map = AL_MapFromPFMapString(mapstr);
+    if(!s_gs.map)
+        return false;
+    g_init_map();
+
+    return true;
 }
 
 bool G_NewGameWithMap(const char *dir, const char *pfmap)
@@ -118,10 +132,7 @@ bool G_NewGameWithMap(const char *dir, const char *pfmap)
     s_gs.map = AL_MapFromPFMap(dir, pfmap);
     if(!s_gs.map)
         return false;
-
-    M_CenterAtOrigin(s_gs.map);
-    M_RestrictRTSCamToMap(s_gs.map, ACTIVE_CAM);
-    M_Raycast_Install(s_gs.map, ACTIVE_CAM);
+    g_init_map();
 
     return true;
 }

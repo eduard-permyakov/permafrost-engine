@@ -117,6 +117,30 @@ fail:
     return false;
 }
 
+static struct map *al_map_from_stream(const char *base_path, SDL_RWops *stream)
+{
+    struct map *ret;
+    struct pfmap_hdr header;
+
+    if(!al_parse_pfmap_header(stream, &header))
+        goto fail_parse;
+
+    ret = malloc(M_AL_BuffSizeFromHeader(&header));
+    if(!ret)
+        goto fail_alloc;
+
+    if(!M_AL_InitMapFromStream(&header, base_path, stream, ret))
+        goto fail_init;
+
+    return ret;
+
+fail_init:
+    free(ret);
+fail_alloc:
+fail_parse:
+    return NULL;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -211,26 +235,13 @@ struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name)
     strcat(pfmap_path, pfmap_name);
 
     stream = SDL_RWFromFile(pfmap_path, "r");
-    if(!stream)
-        goto fail_open;
-
-    struct pfmap_hdr header;
-    if(!al_parse_pfmap_header(stream, &header))
-        goto fail_parse;
-
-    ret = malloc(M_AL_BuffSizeFromHeader(&header));
+    ret = al_map_from_stream(base_path, stream);
     if(!ret)
-        goto fail_alloc;
-
-    if(!M_AL_InitMapFromStream(&header, base_path, stream, ret))
-        goto fail_init;
+        goto fail_parse;
 
     SDL_RWclose(stream);
     return ret;
 
-fail_init:
-    free(ret);
-fail_alloc:
 fail_parse:
     SDL_RWclose(stream);
 fail_open:
@@ -239,7 +250,21 @@ fail_open:
 
 struct map *AL_MapFromPFMapString(const char *str)
 {
+    struct map *ret;
+    SDL_RWops *stream;
 
+    stream = SDL_RWFromConstMem(str, strlen(str));
+    ret = al_map_from_stream(NULL, stream);
+    if(!ret)
+        goto fail_parse;
+
+    SDL_RWclose(stream);
+    return ret;
+
+fail_parse:
+    SDL_RWclose(stream);
+fail_open:
+    return NULL;
 }
 
 void AL_MapFree(struct map *map)

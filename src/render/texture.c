@@ -139,11 +139,17 @@ bool R_Texture_Load(const char *basedir, const char *name, GLuint *out)
     strcpy(alloc->name, name);
 
     char texture_path[512], texture_path_maps[512];
-    assert( strlen(basedir) + strlen(name) < sizeof(texture_path) );
 
-    strcpy(texture_path, basedir);
-    strcat(texture_path, "/");
-    strcat(texture_path, name);
+    if(basedir) {
+    
+        assert( strlen(basedir) + strlen(name) < sizeof(texture_path) );
+
+        strcpy(texture_path, basedir);
+        strcat(texture_path, "/");
+        strcat(texture_path, name);
+    }else{
+        texture_path[0] = '\0';
+    }
 
     extern const char *g_basepath;
     strcpy(texture_path_maps, g_basepath);

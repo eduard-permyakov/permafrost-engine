@@ -34,6 +34,7 @@ enum cam_mode{
 
 bool G_Init(void);
 bool G_NewGameWithMap(const char *dir, const char *pfmap);
+bool G_NewGameWithMapString(const char *mapstr);
 void G_Shutdown(void);
 
 void G_Render(void);

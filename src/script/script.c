@@ -32,6 +32,7 @@
 
 
 static PyObject *PyPf_new_game(PyObject *self, PyObject *args);
+static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
@@ -43,6 +44,7 @@ static PyObject *PyPf_global_event(PyObject *self, PyObject *args);
 static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args);
 static PyObject *PyPf_prev_frame_ms(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
+static PyObject *PyPf_get_basedir(PyObject *self);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -55,6 +57,11 @@ static PyMethodDef pf_module_methods[] = {
     "Loads the specified map and creates an empty scene. Note that all "
     "references to existing _active_ entities _MUST_ be deleted before creating a "
     "new game."},
+
+    {"new_game_string", 
+    (PyCFunction)PyPf_new_game_string, METH_VARARGS,
+    "The same as 'new_game' but takes the map contents string as an argument instead of "
+    "a path and filename."},
 
     {"set_ambient_light_color", 
     (PyCFunction)PyPf_set_ambient_light_color, METH_VARARGS,
@@ -96,6 +103,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_get_resolution, METH_NOARGS,
     "Get the currently set resolution of the game window."},
 
+    {"get_basedir", 
+    (PyCFunction)PyPf_get_basedir, METH_NOARGS,
+    "Get the path to the top-level game resource folder (parent of 'assets')."},
+
     {NULL}  /* Sentinel */
 };
 
@@ -136,11 +147,23 @@ static PyObject *PyPf_new_game(PyObject *self, PyObject *args)
 {
     const char *dir, *pfmap;
     if(!PyArg_ParseTuple(args, "ss", &dir, &pfmap)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of two strings.");
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two strings.");
         return NULL;
     }
 
     G_NewGameWithMap(dir, pfmap);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args)
+{
+    const char *mapstr;
+    if(!PyArg_ParseTuple(args, "s", &mapstr)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a string.");
+        return NULL;
+    }
+
+    G_NewGameWithMapString(mapstr);
     Py_RETURN_NONE;
 }
 
@@ -270,6 +293,12 @@ static PyObject *PyPf_prev_frame_ms(PyObject *self)
 static PyObject *PyPf_get_resolution(PyObject *self)
 {
     return Py_BuildValue("(i, i)", CONFIG_RES_X, CONFIG_RES_Y);
+}
+
+static PyObject *PyPf_get_basedir(PyObject *self)
+{
+    extern const char *g_basepath;
+    return Py_BuildValue("s", g_basepath);
 }
 
 static bool s_sys_path_add_dir(const char *filename)
