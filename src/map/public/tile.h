@@ -26,6 +26,9 @@
 #define Y_COORDS_PER_TILE 4 
 #define Z_COORDS_PER_TILE 8 
 
+#define TILES_PER_CHUNK_HEIGHT 32
+#define TILES_PER_CHUNK_WIDTH  32
+
 enum tiletype{
     /* TILETYPE_FLAT:
      *                     +----------+

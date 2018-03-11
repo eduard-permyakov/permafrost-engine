@@ -27,6 +27,9 @@
 
 #include <SDL.h> /* for SDL_RWops */
 
+
+#define MATERIALS_PER_CHUNK 8
+
 struct pfchunk;
 struct pfmap_hdr;
 struct map;

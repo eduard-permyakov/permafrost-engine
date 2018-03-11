@@ -25,9 +25,6 @@
 
 #include <stdbool.h>
 
-#define TILES_PER_CHUNK_HEIGHT 32
-#define TILES_PER_CHUNK_WIDTH  32
-
 struct pfchunk{
     /* ------------------------------------------------------------------------
      * Initialized and used by the rendering subsystem. Holds the mesh data 

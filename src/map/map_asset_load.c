@@ -148,11 +148,10 @@ fail:
 size_t M_AL_BuffSizeFromHeader(const struct pfmap_hdr *header)
 {
     size_t num_chunks = header->num_rows * header->num_cols;
-    size_t avg_num_mats = ceil(header->num_materials / (float)num_chunks);
 
     return sizeof(struct map) + num_chunks * 
            (sizeof(struct pfchunk) + R_AL_PrivBuffSizeForChunk(
-                                     TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, avg_num_mats));
+                                     TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, MATERIALS_PER_CHUNK));
 }
 
 void M_AL_DumpMap(FILE *stream, const struct map *map)

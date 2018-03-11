@@ -20,6 +20,7 @@ import pf
 
 from constants import *
 import ui
+import map
 
 ############################################################
 # Global configs                                           #
@@ -29,9 +30,11 @@ pf.set_ambient_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_pos([1024.0, 512.0, 256.0])
 
+default_map = map.Map(4, 4)
+
 with open(pf.get_basedir() + "assets/maps/grass-cliffs.pfmap", "r") as mapfile:
     mapdata = mapfile.read()
-pf.new_game_string(mapdata)
+pf.new_game_string(default_map.pfmap_str())
 
 ############################################################
 # Setup UI                                                 #
