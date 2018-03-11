@@ -128,8 +128,8 @@ static bool al_read_material(FILE *stream, const char *basedir, struct material 
         goto fail;
     out->texname[sizeof(out->texname)-1] = '\0';
 
-    if(!R_Texture_GetForName(out->texname, &out->texture.id) &&
-       !R_Texture_Load(basedir, out->texname, &out->texture.id))
+    if(!R_Texture_GetForName(out->texname, &out->texture.id)
+    && !R_Texture_Load(basedir, out->texname, &out->texture.id))
         goto fail;
 
     return true;

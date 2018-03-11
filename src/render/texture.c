@@ -138,14 +138,21 @@ bool R_Texture_Load(const char *basedir, const char *name, GLuint *out)
     assert( strlen(name) < MAX_TEX_NAME_LEN );
     strcpy(alloc->name, name);
 
-    char texture_path[512];
+    char texture_path[512], texture_path_maps[512];
     assert( strlen(basedir) + strlen(name) < sizeof(texture_path) );
+
     strcpy(texture_path, basedir);
     strcat(texture_path, "/");
     strcat(texture_path, name);
 
+    extern const char *g_basepath;
+    strcpy(texture_path_maps, g_basepath);
+    strcat(texture_path_maps, "assets/map_textures/");
+    strcat(texture_path_maps, name);
+
     GLuint ret;
-    if(!r_texture_gl_init(texture_path, &ret))
+    if(!r_texture_gl_init(texture_path, &ret)
+    && !r_texture_gl_init(texture_path_maps, &ret))
         goto fail;
 
     alloc->texture_id = ret;
