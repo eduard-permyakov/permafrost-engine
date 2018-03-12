@@ -34,7 +34,7 @@
 
 
 #define MAX_CANDIDATE_TILES 256
-#define EPSILON             (1.0f / 1000.0)
+#define EPSILON             (1.0f / 64.0)
 
 struct box{
     float x, z; 
