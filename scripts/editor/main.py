@@ -21,6 +21,9 @@ import pf
 from constants import *
 import ui
 import map
+import view_controller as vc
+import terrain_tab_controller as ter
+import top_tab_controller as top
 
 ############################################################
 # Global configs                                           #
@@ -40,10 +43,14 @@ pf.new_game_string(default_map.pfmap_str())
 # Setup UI                                                 #
 ############################################################
 
-top_tb = ui.TabBarWindow()
-top_tb.push_child("Terrain", ui.TerrainTabWindow())
-top_tb.push_child("Objects", ui.ObjectsTabWindow())
-top_tb.show()
+terrain_tab_ctrl = ter.TerrainViewController(ui.TerrainTabWindow())
+objects_tab_ctrl = vc.ObjectsViewController(ui.ObjectsTabWindow())
+
+top_tab_ctrl = top.TabController(ui.TabBarWindow())
+top_tab_ctrl.push_child("Terrain", terrain_tab_ctrl)
+top_tab_ctrl.push_child("Objects", objects_tab_ctrl)
+
+top_tab_ctrl.activate()
 
 mb = ui.MenuButtonWindow(ui.Menu())
 mb.show()

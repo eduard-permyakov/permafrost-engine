@@ -20,7 +20,7 @@ import pf
 
 EDITOR_PFMAP_VERSION = 1.0
 
-class Material():
+class Material(object):
 
     def __init__(self, name, texname):
         self.refcount = 0
@@ -40,7 +40,7 @@ class Material():
         return ret
 
 
-class Chunk():
+class Chunk(object):
     DEFAULT_TOP_MATERIAL = Material("Grass", "grass.png")
     DEFAULT_SIDE_MATERIAL = Material("Cliffs", "cliffs.png")
 
@@ -93,7 +93,7 @@ class Chunk():
         return ret
 
 
-class Map():
+class Map(object):
 
     def __init__(self, chunk_rows, chunk_cols):
         self.filename = None

@@ -18,6 +18,7 @@
 
 import pf
 from constants import *
+from map import Material
 
 #Note: button highlighting is off if there is any overlap between windows
 
@@ -56,6 +57,7 @@ class TabBarWindow(pf.Window):
             def on_tab_click():
                 self.active_idx = idx;
                 self.__show_active()
+                pf.global_event(EVENT_TOP_TAB_SELECTION_CHANGED, self.active_idx)
 
             self.layout_row_push(TAB_BAR_COL_WIDTH)
 
@@ -87,33 +89,22 @@ class TabBarWindow(pf.Window):
 
 class TerrainTabWindow(pf.Window):
 
-    # these can be passed to constructor later from the controller
-    textures = [
-        {"name" : "Grass",          "path" : "asssets/textures/grass.png"},
-        {"name" : "Cliffs",         "path" : "assets/textures/cliffs.png"},
-        {"name" : "Cobblestone",    "path" : "assets/textures/cobblestone.png"}
-    ]
-
     def __init__(self):
         _, resy = pf.get_resolution()
         super(TerrainTabWindow, self).__init__("TerrainTab", 
             (0, TAB_BAR_HEIGHT + 1, LEFT_PANE_WIDTH, resy - TAB_BAR_HEIGHT - 1), NK_WINDOW_BORDER)
-        assert len(TerrainTabWindow.textures) > 0
-        self.selected_tex_idx = 0
+        self.selected_mat_idx = 0
         self.brush_size_idx = 0
-
         self.selected_tile = None
-        def on_selected_tile_changed(user, event):
-            self.selected_tile = event
-        pf.register_event_handler(EVENT_SELECTED_TILE_CHANGED, on_selected_tile_changed, None)
+        self.materials_list = []
 
     def update(self):
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Selected Tile:", (255, 255, 255))
 
-        self.layout_row_dynamic(20, 1)
+        self.layout_row_dynamic(30, 1)
         label = str(self.selected_tile) if self.selected_tile is None \
-            else "{0} {1}".format(self.selected_tile[0], self.selected_tile[1])
+            else "Chunk: {0} Tile: {1}".format(self.selected_tile[0], self.selected_tile[1])
         self.label_colored_wrap(label, (200, 200, 0))
 
         self.layout_row_dynamic(20, 1)
@@ -121,11 +112,14 @@ class TerrainTabWindow(pf.Window):
 
         def textures_group():
             self.layout_row_static(25, LEFT_PANE_WIDTH-60, 1)
-            for i in range(0, len(TerrainTabWindow.textures)):
-                on = self.selectable_label(TerrainTabWindow.textures[i]["name"], 
-                    NK_TEXT_ALIGN_LEFT, i == self.selected_tex_idx)
+            for i in range(0, len(self.materials_list)):
+                old = self.selected_mat_idx
+                on = self.selectable_label(self.materials_list[i].name, 
+                    NK_TEXT_ALIGN_LEFT, i == self.selected_mat_idx)
                 if on: 
-                    self.selected_tex_idx = i
+                    self.selected_mat_idx = i
+                if self.selected_mat_idx != old:
+                    pf.global_event(EVENT_TEXTURE_SELECTION_CHANGED, i)
 
         self.layout_row_static(200, LEFT_PANE_WIDTH-30, 1)
         self.group("Texture:", NK_WINDOW_BORDER, textures_group)

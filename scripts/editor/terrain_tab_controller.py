@@ -17,5 +17,38 @@
 #
 
 import pf
+import view_controller as vc
+from constants import *
+from map import Material
 
+class TerrainViewController(vc.ViewController):
+
+    MATERIALS_LIST = [
+        Material("Grass",       "grass.png"), 
+        Material("Cliffs",      "cliffs.png"),
+        Material("Cobblestone", "cobblestone.png"),
+    ]
+
+    def __init__(self, view):
+        self.view = view
+        self.selected_mat_idx = 0
+        self.selected_tile = None
+
+        self.view.materials_list = TerrainViewController.MATERIALS_LIST
+        self.view.selected_mat_idx = self.selected_mat_idx
+
+    def __on_selected_tile_changed(self, event):
+        self.selected_tile = event
+        self.view.selected_tile = event
+
+    def __on_mat_selection_changed(self, event):
+        self.view.selected_mat_idx = event
+
+    def activate(self):
+        pf.register_event_handler(EVENT_SELECTED_TILE_CHANGED, TerrainViewController.__on_selected_tile_changed, self)
+        pf.register_event_handler(EVENT_TEXTURE_SELECTION_CHANGED, TerrainViewController.__on_mat_selection_changed, self)
+
+    def deactivate(self):
+        pf.register_event_handler(EVENT_SELECTED_TILE_CHANGED, TerrainViewController.__on_selected_tile_changed, self)
+        pf.register_event_handler(EVENT_TEXTURE_SELECTION_CHANGED, TerrainViewController.__on_mat_selection_changed, self)
 

@@ -395,7 +395,6 @@ void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, scrip
     PyTuple_SetItem(args, 1, event_arg);
 
     ret = PyObject_CallObject(callable, args);
-    assert(ret);
     Py_DECREF(args);
 }
 

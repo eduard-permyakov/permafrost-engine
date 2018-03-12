@@ -20,6 +20,9 @@
 # Editor-specific events                                   #
 ############################################################
 
+EVENT_TEXTURE_SELECTION_CHANGED = 0x20000
+EVENT_TOP_TAB_SELECTION_CHANGED = 0x20001
+
 ############################################################
 # SDL Events used (from SDL_event.h)                       #
 ############################################################
