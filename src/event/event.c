@@ -157,6 +157,7 @@ static void e_handle_event(struct event event)
 
             script_opaque_t script_arg = event.source == ES_SCRIPT ? event.arg 
                 : S_WrapEngineEventArg(event.type, event.arg);
+            assert(script_arg);
             S_RunEventHandler(elem->handler.as_script_callable, elem->user_arg, script_arg);
         }
     }

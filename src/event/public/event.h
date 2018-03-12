@@ -45,6 +45,7 @@ enum eventtype{
     EVENT_UPDATE_UI,
     EVENT_RENDER,
     EVENT_UPDATE_END,
+    EVENT_SELECTED_TILE_CHANGED,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };

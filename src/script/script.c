@@ -27,6 +27,7 @@
 #include "../game/public/game.h"
 #include "../render/public/render.h"
 #include "../event/public/event.h"
+#include "../map/public/map.h"
 #include "../config.h"
 
 #include <stdio.h>
@@ -381,7 +382,10 @@ bool S_RunFile(const char *path)
 void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, script_opaque_t event_arg)
 {
     PyObject *args, *ret;
+
     assert(PyCallable_Check(callable));
+    assert(user_arg);
+    assert(event_arg);
 
     args = PyTuple_New(2);
     /* PyTuple_SetItem steals references! However, we wish to hold on
@@ -407,14 +411,23 @@ script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg)
         case SDL_KEYUP:
             return Py_BuildValue("(i)", 
                 ((SDL_Event*)arg)->key.keysym.scancode);
-            break;
+
         case SDL_MOUSEMOTION:
-            return Py_BuildValue("( (i,i), (i,i) )",
+            return Py_BuildValue("(i,i), (i,i)",
                 ((SDL_Event*)arg)->motion.x,
                 ((SDL_Event*)arg)->motion.y,
                 ((SDL_Event*)arg)->motion.xrel,
                 ((SDL_Event*)arg)->motion.xrel);
-            break;
+
+        case EVENT_SELECTED_TILE_CHANGED:
+            if(!arg)
+                Py_RETURN_NONE;
+            return Py_BuildValue("(i,i), (i,i)", 
+                ((struct tile_desc*)arg)->chunk_r,
+                ((struct tile_desc*)arg)->chunk_c,
+                ((struct tile_desc*)arg)->tile_r,
+                ((struct tile_desc*)arg)->tile_c);
+
         default:
             Py_RETURN_NONE;
     }

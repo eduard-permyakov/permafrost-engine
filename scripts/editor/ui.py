@@ -102,7 +102,20 @@ class TerrainTabWindow(pf.Window):
         self.selected_tex_idx = 0
         self.brush_size_idx = 0
 
+        self.selected_tile = None
+        def on_selected_tile_changed(user, event):
+            self.selected_tile = event
+        pf.register_event_handler(EVENT_SELECTED_TILE_CHANGED, on_selected_tile_changed, None)
+
     def update(self):
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Selected Tile:", (255, 255, 255))
+
+        self.layout_row_dynamic(20, 1)
+        label = str(self.selected_tile) if self.selected_tile is None \
+            else "{0} {1}".format(self.selected_tile[0], self.selected_tile[1])
+        self.label_colored_wrap(label, (200, 200, 0))
+
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Texture:", (255, 255, 255))
 

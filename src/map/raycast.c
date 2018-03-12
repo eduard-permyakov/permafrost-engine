@@ -30,6 +30,7 @@
 
 #include <SDL.h>
 #include <assert.h>
+#include <string.h>
 
 
 #define MAX_CANDIDATE_TILES 256
@@ -423,6 +424,9 @@ static void on_mousemove(void *user, void *event)
     PFM_Vec3_Sub(&ray_origin, &cam_pos, &ray_dir);
     PFM_Vec3_Normal(&ray_dir, &ray_dir);
 
+    const struct tile_desc initial_hovered = s_ctx.hovered;
+    const bool initial_active = s_ctx.active_tile;
+
     s_ctx.active_tile = false;
 
     struct tile_desc cts[MAX_CANDIDATE_TILES];
@@ -456,6 +460,14 @@ static void on_mousemove(void *user, void *event)
                 break;
             }
         }
+    }
+
+    if(s_ctx.active_tile != initial_active || memcmp(&s_ctx.hovered, &initial_hovered, sizeof(struct tile_desc)) ) {
+
+        if(s_ctx.active_tile)
+            E_Global_Notify(EVENT_SELECTED_TILE_CHANGED, &s_ctx.hovered, ES_ENGINE);
+        else
+            E_Global_Notify(EVENT_SELECTED_TILE_CHANGED, NULL, ES_ENGINE);
     }
 }
 
