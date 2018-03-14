@@ -21,9 +21,8 @@ import pf
 from constants import *
 import ui
 import map
-import view_controller as vc
-import terrain_tab_controller as ter
-import top_tab_controller as top
+import terrain_tab_vc as tt
+import tab_bar_vc as tb
 
 ############################################################
 # Global configs                                           #
@@ -37,20 +36,22 @@ default_map = map.Map(4, 4)
 
 with open(pf.get_basedir() + "assets/maps/grass-cliffs.pfmap", "r") as mapfile:
     mapdata = mapfile.read()
+    default_map = map.Map.from_string(mapdata)
 pf.new_game_string(default_map.pfmap_str())
 
 ############################################################
 # Setup UI                                                 #
 ############################################################
 
-terrain_tab_ctrl = ter.TerrainViewController(ui.TerrainTabWindow())
-objects_tab_ctrl = vc.ObjectsViewController(ui.ObjectsTabWindow())
+terrain_tab_ctrl = tt.TerrainTabViewController(ui.TerrainTabWindow())
+objects_tab_ctrl = ui.ObjectsViewController(ui.ObjectsTabWindow())
 
-top_tab_ctrl = top.TabController(ui.TabBarWindow())
-top_tab_ctrl.push_child("Terrain", terrain_tab_ctrl)
-top_tab_ctrl.push_child("Objects", objects_tab_ctrl)
+tab_bar_ctrl = tb.TabBarViewController(ui.TabBarWindow())
+tab_bar_ctrl.push_child("Terrain", terrain_tab_ctrl)
+tab_bar_ctrl.push_child("Objects", objects_tab_ctrl)
 
-top_tab_ctrl.activate()
+tab_bar_ctrl.activate()
+tab_bar_ctrl.view.show()
 
 mb = ui.MenuButtonWindow(ui.Menu())
 mb.show()

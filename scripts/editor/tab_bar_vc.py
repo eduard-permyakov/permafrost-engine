@@ -17,10 +17,10 @@
 #
 
 import pf
-import view_controller as vc
 from constants import *
+from ui import ViewController
 
-class TabController(vc.ViewController):
+class TabBarViewController(ViewController):
 
     def __init__(self, view):
         self.view = view
@@ -35,20 +35,18 @@ class TabController(vc.ViewController):
         self.active_idx = event
         self.children[self.active_idx].activate()
 
-    def push_child(self, label, v):
-        assert isinstance(v, vc.ViewController)
+    def push_child(self, label, vc):
+        assert isinstance(vc, ViewController)
         assert isinstance(label, basestring)
-        self.children.append(v)
+        self.children.append(vc)
         self.view.labels.append(label)
-        self.view.child_windows.append(v.view)
+        self.view.child_windows.append(vc.view)
 
     def activate(self):
-        self.view.show()
-        pf.register_event_handler(EVENT_TOP_TAB_SELECTION_CHANGED, TabController.__on_tab_changed, self)
+        pf.register_event_handler(EVENT_TOP_TAB_SELECTION_CHANGED, TabBarViewController.__on_tab_changed, self)
         self.children[self.active_idx].activate()
 
     def deactivate(self):
         self.children[self.active_idx].deactivate()
-        pf.unregister_event_handler(EVENT_TOP_TAB_SELECTION_CHANGED, TabController.__on_tab_changed)
-        self.view.hide()
+        pf.unregister_event_handler(EVENT_TOP_TAB_SELECTION_CHANGED, TabBarViewController.__on_tab_changed)
 

@@ -188,3 +188,14 @@ class Menu(pf.Window):
         self.layout_row_dynamic(TAB_BAR_HEIGHT-10, 1)
         self.button_label("Exit", on_exit)
 
+
+class ViewController(object):
+
+    def activate(self): pass 
+    def deactivate(self): pass 
+
+class ObjectsViewController(ViewController):
+
+    def __init__(self, view):
+        self.view = view
+
