@@ -20,7 +20,7 @@ import pf
 from constants import *
 from ui import ViewController
 
-class TabBarViewController(ViewController):
+class TabBarVC(ViewController):
 
     def __init__(self, view):
         self.view = view
@@ -43,10 +43,10 @@ class TabBarViewController(ViewController):
         self.view.child_windows.append(vc.view)
 
     def activate(self):
-        pf.register_event_handler(EVENT_TOP_TAB_SELECTION_CHANGED, TabBarViewController.__on_tab_changed, self)
+        pf.register_event_handler(EVENT_TOP_TAB_SELECTION_CHANGED, TabBarVC.__on_tab_changed, self)
         self.children[self.active_idx].activate()
 
     def deactivate(self):
         self.children[self.active_idx].deactivate()
-        pf.unregister_event_handler(EVENT_TOP_TAB_SELECTION_CHANGED, TabBarViewController.__on_tab_changed)
+        pf.unregister_event_handler(EVENT_TOP_TAB_SELECTION_CHANGED, TabBarVC.__on_tab_changed)
 

@@ -23,36 +23,38 @@ import ui
 import map
 import terrain_tab_vc as tt
 import tab_bar_vc as tb
+import menu_vc
+import globals
 
 ############################################################
-# Global configs                                           #
+# Global globalss                                           #
 ############################################################
 
 pf.set_ambient_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_pos([1024.0, 512.0, 256.0])
 
-default_map = map.Map(4, 4)
-
-with open(pf.get_basedir() + "assets/maps/grass-cliffs.pfmap", "r") as mapfile:
-    mapdata = mapfile.read()
-    default_map = map.Map.from_string(mapdata)
-pf.new_game_string(default_map.pfmap_str())
+globals.active_map = map.Map.from_filepath(pf.get_basedir() + "assets/maps/grass-cliffs.pfmap")
+pf.new_game_string(globals.active_map.pfmap_str())
 
 ############################################################
 # Setup UI                                                 #
 ############################################################
 
-terrain_tab_ctrl = tt.TerrainTabViewController(ui.TerrainTabWindow())
-objects_tab_ctrl = ui.ObjectsViewController(ui.ObjectsTabWindow())
+terrain_tab_vc = tt.TerrainTabVC(ui.TerrainTabWindow())
+objects_tab_vc = ui.ObjectsVC(ui.ObjectsTabWindow())
 
-tab_bar_ctrl = tb.TabBarViewController(ui.TabBarWindow())
-tab_bar_ctrl.push_child("Terrain", terrain_tab_ctrl)
-tab_bar_ctrl.push_child("Objects", objects_tab_ctrl)
+tab_bar_vc = tb.TabBarVC(ui.TabBarWindow())
+tab_bar_vc.push_child("Terrain", terrain_tab_vc)
+tab_bar_vc.push_child("Objects", objects_tab_vc)
+tab_bar_vc.activate()
+tab_bar_vc.view.show()
 
-tab_bar_ctrl.activate()
-tab_bar_ctrl.view.show()
+menu = ui.Menu()
+menuvc = menu_vc.MenuVC(menu)
+menuvc.activate()
 
-mb = ui.MenuButtonWindow(ui.Menu())
+mb = ui.MenuButtonWindow(menu)
 mb.show()
+
 

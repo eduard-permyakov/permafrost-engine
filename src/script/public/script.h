@@ -45,6 +45,7 @@ void            S_RunEventHandler(script_opaque_t callable, script_opaque_t user
  * No-op in the case of a NULL-pointer passed in */
 void            S_Release(script_opaque_t obj);
 script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg);
+bool            S_ObjectsEqual(script_opaque_t a, script_opaque_t b);
 
 #endif
 

@@ -432,3 +432,8 @@ script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg)
     }
 }
 
+bool S_ObjectsEqual(script_opaque_t a, script_opaque_t b)
+{
+    return (1 == PyObject_RichCompareBool(a, b, Py_EQ));
+}
+

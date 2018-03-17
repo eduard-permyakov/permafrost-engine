@@ -499,3 +499,11 @@ int M_Raycast_Install(struct map *map, struct camera *cam)
     return 0;
 }
 
+void M_Raycast_Uninstall(void)
+{
+    E_Global_Unregister(SDL_MOUSEMOTION, on_mousemove);
+    E_Global_Unregister(EVENT_RENDER, on_render);
+
+    memset(&s_ctx, 0, sizeof(s_ctx));
+}
+

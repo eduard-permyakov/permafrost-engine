@@ -23,18 +23,28 @@
 EVENT_TEXTURE_SELECTION_CHANGED = 0x20000
 EVENT_TOP_TAB_SELECTION_CHANGED = 0x20001
 
+EVENT_FILE_CHOOSER_OKAY         = 0x20008
+EVENT_FILE_CHOOSER_CANCEL       = 0x20009
+
+EVENT_MENU_LOAD                 = 0x20010
+EVENT_MENU_SAVE                 = 0x20011
+EVENT_MENU_SAVE_AS              = 0x20012
+EVENT_MENU_NEW                  = 0x20013
+EVENT_MENU_EXIT                 = 0x20014
+EVENT_MENU_CANCEL               = 0x20015
+
 ############################################################
 # SDL Events used (from SDL_event.h)                       #
 ############################################################
 
-EVENT_SDL_QUIT           = 0x100
-EVENT_SDL_KEYDOWN        = 0x300
+EVENT_SDL_QUIT                  = 0x100
+EVENT_SDL_KEYDOWN               = 0x300
 
 ############################################################
 # Engine events (from event.h)                             #
 ############################################################
 
-EVENT_SELECTED_TILE_CHANGED = 0x10004
+EVENT_SELECTED_TILE_CHANGED     = 0x10004
 
 ############################################################
 # SDL Scancodes (from SDL_event.h)                         #
@@ -312,4 +322,27 @@ NK_CHART_MAX                = 2
 """ nk_layout_format """
 NK_DYNAMIC                  = 0
 NK_STATIC                   = 1
+
+
+""" nk_edit_flags """
+NK_EDIT_DEFAULT                 = 0,
+NK_EDIT_READ_ONLY               = 1 << 0
+NK_EDIT_AUTO_SELECT             = 1 << 1
+NK_EDIT_SIG_ENTER               = 1 << 2
+NK_EDIT_ALLOW_TAB               = 1 << 3
+NK_EDIT_NO_CURSOR               = 1 << 4
+NK_EDIT_SELECTABLE              = 1 << 5
+NK_EDIT_CLIPBOARD               = 1 << 6
+NK_EDIT_CTRL_ENTER_NEWLINE      = 1 << 7
+NK_EDIT_NO_HORIZONTAL_SCROLL    = 1 << 8
+NK_EDIT_ALWAYS_INSERT_MODE      = 1 << 9
+NK_EDIT_MULTILINE               = 1 << 10
+NK_EDIT_GOTO_END_ON_ACTIVATE    = 1 << 11
+
+""" nk_edit_types """
+NK_EDIT_SIMPLE  = NK_EDIT_ALWAYS_INSERT_MODE
+NK_EDIT_FIELD   = NK_EDIT_SIMPLE|NK_EDIT_SELECTABLE|NK_EDIT_CLIPBOARD
+NK_EDIT_BOX     = NK_EDIT_ALWAYS_INSERT_MODE| NK_EDIT_SELECTABLE| NK_EDIT_MULTILINE|NK_EDIT_ALLOW_TAB|NK_EDIT_CLIPBOARD
+NK_EDIT_EDITOR  = NK_EDIT_SELECTABLE|NK_EDIT_MULTILINE|NK_EDIT_ALLOW_TAB| NK_EDIT_CLIPBOARD
+
 

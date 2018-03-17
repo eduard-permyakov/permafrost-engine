@@ -16,6 +16,7 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
+#include <Python.h> //temp
 
 #include "public/event.h"
 #include "../lib/public/khash.h"
@@ -74,7 +75,7 @@ static inline bool handlers_equal(const struct handler_desc *a, const struct han
         return false;
 
     if(a->type == HANDLER_TYPE_SCRIPT)
-        return a->handler.as_script_callable == b->handler.as_script_callable;
+        return S_ObjectsEqual(a->handler.as_script_callable, b->handler.as_script_callable);
     else
         return a->handler.as_function == b->handler.as_function;
 }
@@ -147,6 +148,7 @@ static void e_handle_event(struct event event)
         return; 
     
     kvec_handler_desc_t vec = kh_value(s_event_handler_table, k);
+
     for(int i = 0; i < kv_size(vec); i++) {
     
         struct handler_desc *elem = &kv_A(vec, i);
@@ -277,8 +279,6 @@ bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler)
 
 void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_source source)
 {
-    /* Send global twice with different recepients. Once to trigger the engine handler and 
-     * once to trigger the scripting handler. */
     struct event e = (struct event){event, event_arg, source, GLOBAL_ID};
     e_handle_event(e);
 }

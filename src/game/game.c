@@ -63,6 +63,7 @@ static void g_reset(void)
     }
     kh_clear(entity, s_gs.active);
 
+    M_Raycast_Uninstall();
     if(s_gs.map) AL_MapFree(s_gs.map);
     s_gs.map = NULL;
 

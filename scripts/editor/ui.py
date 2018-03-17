@@ -175,10 +175,22 @@ class Menu(pf.Window):
     def update(self):
 
         def on_cancel():
-            self.hide()
+            pf.global_event(EVENT_MENU_CANCEL, None)
+
+        def on_new():
+            pf.global_event(EVENT_MENU_NEW, None)
+
+        def on_load():
+            pf.global_event(EVENT_MENU_LOAD, None) 
+
+        def on_save():
+            pf.global_event(EVENT_MENU_SAVE, None) 
+
+        def on_save_as():
+            pf.global_event(EVENT_MENU_SAVE_AS, None) 
 
         def on_exit():
-            pf.global_event(EVENT_SDL_QUIT, None)
+            pf.global_event(EVENT_MENU_EXIT, None)
 
         self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
         self.layout_row_dynamic(TAB_BAR_HEIGHT-10, 1)
@@ -186,7 +198,53 @@ class Menu(pf.Window):
 
         self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
         self.layout_row_dynamic(TAB_BAR_HEIGHT-10, 1)
+        self.button_label("New", on_new)
+
+        self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
+        self.layout_row_dynamic(TAB_BAR_HEIGHT-10, 1)
+        self.button_label("Load", on_load)
+
+        self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
+        self.layout_row_dynamic(TAB_BAR_HEIGHT-10, 1)
+        self.button_label("Save", on_save)
+
+        self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
+        self.layout_row_dynamic(TAB_BAR_HEIGHT-10, 1)
+        self.button_label("Save As", on_save_as)
+
+        self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
+        self.layout_row_dynamic(TAB_BAR_HEIGHT-10, 1)
         self.button_label("Exit", on_exit)
+
+
+class FileChooser(pf.Window):
+    WINDOW_WIDTH = 400 
+    WINDOW_HEIGHT = 150
+
+    def __init__(self):
+        resx, resy = pf.get_resolution()
+        super(FileChooser, self).__init__("FileChooser", 
+            (resx / 2 - FileChooser.WINDOW_WIDTH/ 2, resy / 2 - FileChooser.WINDOW_HEIGHT / 2, 
+            FileChooser.WINDOW_WIDTH, FileChooser.WINDOW_HEIGHT), NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)
+        import os 
+        self.filestring = os.path.realpath(pf.get_basedir()) + "/assets/maps/"
+
+    def update(self):
+
+        self.layout_row_static(15, FileChooser.WINDOW_WIDTH, 1)
+        self.layout_row_dynamic(30, 1)
+        self.filestring = self.edit_string(NK_EDIT_SIMPLE, self.filestring)
+        self.layout_row_static(15, FileChooser.WINDOW_WIDTH, 1)
+
+        def on_okay():
+            pf.global_event(EVENT_FILE_CHOOSER_OKAY, self.filestring)
+
+        def on_cancel():
+            pf.global_event(EVENT_FILE_CHOOSER_CANCEL, None)
+
+        self.layout_row_dynamic(30, 2)
+        self.button_label("Okay", on_okay)
+        self.button_label("Cancel", on_cancel)
 
 
 class ViewController(object):
@@ -194,7 +252,7 @@ class ViewController(object):
     def activate(self): pass 
     def deactivate(self): pass 
 
-class ObjectsViewController(ViewController):
+class ObjectsVC(ViewController):
 
     def __init__(self, view):
         self.view = view

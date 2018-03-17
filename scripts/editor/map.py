@@ -159,13 +159,26 @@ class Map(object):
         ret = ""
         ret += "version " + str(EDITOR_PFMAP_VERSION) + "\n"
         ret += "num_rows " + str(self.chunk_rows) + "\n"
-        ret += "num_cols" + str(self.chunk_cols) + "\n"
+        ret += "num_cols " + str(self.chunk_cols) + "\n"
         ret += "num_materials " + str(self.chunk_cols * self.chunk_rows * pf.MATERIALS_PER_CHUNK) + "\n"
 
         for chunk_r in range(0, self.chunk_rows):
             for chunk_c in range(0, self.chunk_cols):
                 ret += self.chunks[chunk_r][chunk_c].pfmap_str()
         return ret
+
+    def write_to_file(self):
+        if self.filename is not None:
+            with open(self.filename, "w") as mapfile:
+                mapfile.write(self.pfmap_str())
+
+    @classmethod
+    def from_filepath(cls, filepath):
+        with open(filepath, "r") as mapfile:
+            mapdata = mapfile.read()
+            ret = Map.from_string(mapdata)
+            ret.filename = filepath
+            return ret
 
     @classmethod
     def from_string(cls, string):

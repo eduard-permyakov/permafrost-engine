@@ -52,6 +52,7 @@ static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_selectable_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_option_label(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_edit_string(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
@@ -111,6 +112,10 @@ static PyMethodDef PyWindow_methods[] = {
     {"option_label", 
     (PyCFunction)PyWindow_option_label, METH_VARARGS,
     "Combo box with the specified text. Returns if the combo box is selected."},
+
+    {"edit_string", 
+    (PyCFunction)PyWindow_edit_string, METH_VARARGS,
+    "Text field for getting string input from the user. Returns the current text."},
 
     {"group", 
     (PyCFunction)PyWindow_group, METH_VARARGS,
@@ -391,6 +396,27 @@ static PyObject *PyWindow_option_label(PyWindowObject *self, PyObject *args)
         Py_RETURN_TRUE;
 }
 
+static PyObject *PyWindow_edit_string(PyWindowObject *self, PyObject *args)
+{
+    int flags;
+    const char *str;
+
+    if(!PyArg_ParseTuple(args, "is", &flags, &str)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an integer and a string.");
+        return NULL;
+    }
+
+    char textbuff[128];
+    int len = strlen(str);
+
+    assert(len < sizeof(textbuff));
+    strcpy(textbuff, str);
+
+    nk_edit_string(s_nk_ctx, flags, textbuff, &len, sizeof(textbuff), nk_filter_default);
+    textbuff[len] = '\0';
+    return Py_BuildValue("s", textbuff);
+}
+
 static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args)
 {
     const char *name;
@@ -469,7 +495,10 @@ static void active_windows_update(void *user, void *event)
 
             PyObject *ret = PyObject_CallMethod((PyObject*)win, "update", NULL); 
             Py_XDECREF(ret);
-
+            if(!ret) {
+                PyErr_Print();
+                exit(EXIT_FAILURE);
+            }
         }
         nk_end(s_nk_ctx);
     }

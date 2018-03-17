@@ -73,6 +73,12 @@ void   M_RestrictRTSCamToMap(const struct map *map, struct camera *cam);
  */
 int    M_Raycast_Install(struct map *map, struct camera *cam);
 
+/* ------------------------------------------------------------------------
+ * Uninstall handlers installed by 'M_Raycast_Install'
+ * ------------------------------------------------------------------------
+ */
+void   M_Raycast_Uninstall(void);
+
 /*###########################################################################*/
 /* MAP ASSET LOADING                                                         */
 /*###########################################################################*/
