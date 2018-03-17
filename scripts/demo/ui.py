@@ -72,6 +72,9 @@ class PerfStatsWindow(pf.Window):
 
         self.layout_row_dynamic(20, 1)
         avg_frame_latency_ms = float(self.ticksum_ms)/len(self.frame_times_ms)
+        if avg_frame_latency_ms == 0.0:
+            return
+        
         fps = 1000/avg_frame_latency_ms
         self.label_colored_wrap("FPS: {0}".format(int(fps)), (255, 255, 255));
 
