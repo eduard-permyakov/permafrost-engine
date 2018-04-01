@@ -208,3 +208,8 @@ bool G_ActivateCamera(int idx, enum cam_mode mode)
     return true;
 }
 
+bool G_UpdateChunkMats(int chunk_c, int chunk_r, const char *mats_string)
+{
+    return M_AL_UpdateChunkMats(s_gs.map, chunk_c, chunk_r, mats_string);
+}
+

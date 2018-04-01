@@ -123,16 +123,11 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
         if(!m_al_read_pfchunk(stream, map->chunks + i))
             goto fail;
 
-        int num_mats;
-        READ_LINE(stream, line, fail); 
-        if(!sscanf(line, "chunk_materials %d", &num_mats))
-            goto fail;
-
         size_t renderbuff_sz = R_AL_PrivBuffSizeForChunk(
-                               TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, num_mats);
+                               TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, MATERIALS_PER_CHUNK);
         unused_base += renderbuff_sz;
 
-        if(!R_AL_InitPrivFromTilesAndMats(stream, num_mats, 
+        if(!R_AL_InitPrivFromTilesAndMats(stream, MATERIALS_PER_CHUNK, 
                                           map->chunks[i].tiles, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
                                           map->chunks[i].render_private, basedir)) {
             goto fail;
@@ -152,6 +147,17 @@ size_t M_AL_BuffSizeFromHeader(const struct pfmap_hdr *header)
     return sizeof(struct map) + num_chunks * 
            (sizeof(struct pfchunk) + R_AL_PrivBuffSizeForChunk(
                                      TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, MATERIALS_PER_CHUNK));
+}
+
+bool M_AL_UpdateChunkMats(const struct map *map, int chunk_r, int chunk_c, const char *mats_string)
+{
+    SDL_RWops *stream;
+    const struct pfchunk *chunk = &map->chunks[chunk_r * map->width + chunk_c];
+
+    stream = SDL_RWFromConstMem(mats_string, strlen(mats_string));
+    bool result = R_AL_UpdateMats(stream, MATERIALS_PER_CHUNK, chunk->render_private);
+    SDL_RWclose(stream);
+    return result;
 }
 
 void M_AL_DumpMap(FILE *stream, const struct map *map)

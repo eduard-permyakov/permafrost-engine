@@ -99,6 +99,12 @@ static bool al_read_material(SDL_RWops *stream, const char *basedir, struct mate
     /* Consume the first line with the name - we don't use it currently */
     READ_LINE(stream, line, fail);
 
+    char *saveptr;
+    char *mat_name = strtok_r(line, " \t\n", &saveptr);
+    mat_name = strtok_r(NULL, " \t\n", &saveptr);
+    if(0 == strcmp(mat_name, "__none__"))
+        return true;
+
     READ_LINE(stream, line, fail);
     if(!sscanf(line, " ambient %f", &out->ambient_intensity))
         goto fail;
@@ -276,7 +282,7 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
         priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
         if(!al_read_material(mats_stream, basedir, &priv->materials[i])) 
             goto fail;
-   }
+    }
 
     R_GL_Init(priv, false);
 
@@ -284,5 +290,19 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
 
 fail:
     return false;
+}
+
+bool R_AL_UpdateMats(SDL_RWops *mats_stream, size_t num_mats, void *priv_buff)
+{
+    struct render_private *priv = priv_buff;
+    extern const char *g_basepath;
+
+    for(int i = 0; i < num_mats; i++) {
+
+        priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
+        if(!al_read_material(mats_stream, g_basepath, &priv->materials[i])) 
+            return false;
+    }
+    return true;
 }
 

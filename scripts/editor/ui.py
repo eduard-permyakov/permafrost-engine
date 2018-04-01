@@ -243,7 +243,7 @@ class FileChooser(pf.Window):
             pf.global_event(EVENT_FILE_CHOOSER_CANCEL, None)
 
         self.layout_row_dynamic(30, 2)
-        self.button_label("Okay", on_okay)
+        self.button_label("OK", on_okay)
         self.button_label("Cancel", on_cancel)
 
 

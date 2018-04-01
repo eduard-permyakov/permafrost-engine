@@ -47,6 +47,7 @@ static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args);
 static PyObject *PyPf_prev_frame_ms(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
 static PyObject *PyPf_get_basedir(PyObject *self);
+static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -108,6 +109,11 @@ static PyMethodDef pf_module_methods[] = {
     {"get_basedir", 
     (PyCFunction)PyPf_get_basedir, METH_NOARGS,
     "Get the path to the top-level game resource folder (parent of 'assets')."},
+
+    {"update_chunk_materials", 
+    (PyCFunction)PyPf_update_chunk_materials, METH_VARARGS,
+    "Update the material list for a particular chunk. Expects a tuple of chunk coordinates "
+    "and a PFMAP material section string as arguments."},
 
     {NULL}  /* Sentinel */
 };
@@ -301,6 +307,23 @@ static PyObject *PyPf_get_basedir(PyObject *self)
 {
     extern const char *g_basepath;
     return Py_BuildValue("s", g_basepath);
+}
+
+static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args)
+{
+    int chunk_r, chunk_c;
+    const char *mats_str;
+
+    if(!PyArg_ParseTuple(args, "(ii)s", &chunk_r, &chunk_c, &mats_str)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two integers and a string.");
+        return NULL;
+    }
+
+    bool result = G_UpdateChunkMats(chunk_r, chunk_c, mats_str);
+    if(!result)
+        return NULL;
+    else
+        Py_RETURN_NONE;
 }
 
 static bool s_sys_path_add_dir(const char *filename)

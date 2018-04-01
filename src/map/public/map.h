@@ -93,4 +93,12 @@ size_t M_AL_BuffSizeFromHeader(const struct pfmap_hdr *header);
  */
 void   M_AL_DumpMap(FILE *stream, const struct map *map);
 
+/* ------------------------------------------------------------------------
+ * Updates the material list for the map, parsed from a PFMAP materials 
+ * section string.
+ * ------------------------------------------------------------------------
+ */
+bool   M_AL_UpdateChunkMats(const struct map *map, int chunk_r, int chunk_c, 
+                            const char *mats_string);
+
 #endif

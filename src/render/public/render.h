@@ -187,4 +187,11 @@ bool   R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
                                      const struct tile *tiles, size_t width, size_t height,
                                      void *priv_buff, const char *basedir);
 
+/* ---------------------------------------------------------------------------
+ * Update material data for a particular renderable object, parsed from a 
+ * PFMAP material section stream.
+ * ---------------------------------------------------------------------------
+ */
+bool   R_AL_UpdateMats(SDL_RWops *mats_stream, size_t num_mats, void *priv_buff);
+
 #endif

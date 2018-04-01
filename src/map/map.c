@@ -24,6 +24,9 @@
 #include "../camera.h"
 
 #include <unistd.h>
+#include <string.h>
+
+#include <SDL.h>
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */

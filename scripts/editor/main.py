@@ -21,13 +21,13 @@ import pf
 from constants import *
 import ui
 import map
-import terrain_tab_vc as tt
-import tab_bar_vc as tb
+import terrain_tab_vc as ttvc
+import tab_bar_vc as tbvc
 import menu_vc
 import globals
 
 ############################################################
-# Global globalss                                           #
+# Global settings                                           #
 ############################################################
 
 pf.set_ambient_light_color([1.0, 1.0, 1.0])
@@ -41,10 +41,10 @@ pf.new_game_string(globals.active_map.pfmap_str())
 # Setup UI                                                 #
 ############################################################
 
-terrain_tab_vc = tt.TerrainTabVC(ui.TerrainTabWindow())
+terrain_tab_vc = ttvc.TerrainTabVC(ui.TerrainTabWindow())
 objects_tab_vc = ui.ObjectsVC(ui.ObjectsTabWindow())
 
-tab_bar_vc = tb.TabBarVC(ui.TabBarWindow())
+tab_bar_vc = tbvc.TabBarVC(ui.TabBarWindow())
 tab_bar_vc.push_child("Terrain", terrain_tab_vc)
 tab_bar_vc.push_child("Objects", objects_tab_vc)
 tab_bar_vc.activate()

@@ -43,6 +43,7 @@ bool G_AddEntity(struct entity *ent);
 bool G_RemoveEntity(struct entity *ent);
 
 bool G_ActivateCamera(int idx, enum cam_mode mode);
+bool G_UpdateChunkMats(int chunk_c, int chunk_r, const char *mats_string);
 
 #endif
 

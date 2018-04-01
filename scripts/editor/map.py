@@ -109,10 +109,16 @@ class Chunk(object):
             for c in range(0, self.cols):
                 ret += tile_to_string(self.tiles[r][c]) + " "
             ret += "\n"
-        used_mats = [m for m in self.materials if m is not None and m.refcount > 0]
-        ret += "chunk_materials {0}\n".format(len(used_mats))
-        for m in used_mats:
-            ret += m.pfmap_str()
+        ret += self.materials_str()
+        return ret
+
+    def materials_str(self):
+        ret = ""
+        for m in self.materials:
+            if m is not None:
+                ret += m.pfmap_str()
+            else:
+                ret += "material __none__\n"
         return ret
 
     @classmethod
@@ -131,11 +137,12 @@ class Chunk(object):
             ret.tiles.append(tiles_row)
             line_idx += 1
 
-        num_mats = int(lines[line_idx].split()[1])
-        line_idx += 1
-        for i in range(0, num_mats):
-            ret.materials[i] = Material.from_lines(lines[line_idx:line_idx+5])
-            line_idx += 5
+        for i in range(0, pf.MATERIALS_PER_CHUNK):
+            if lines[line_idx].split()[1] == "__none__":
+                line_idx += 1
+            else:
+                ret.materials[i] = Material.from_lines(lines[line_idx:line_idx+5])
+                line_idx += 5
 
         for r in range(0, pf.TILES_PER_CHUNK_HEIGHT):
             for c in range(0, pf.TILES_PER_CHUNK_WIDTH):
@@ -160,7 +167,6 @@ class Map(object):
         ret += "version " + str(EDITOR_PFMAP_VERSION) + "\n"
         ret += "num_rows " + str(self.chunk_rows) + "\n"
         ret += "num_cols " + str(self.chunk_cols) + "\n"
-        ret += "num_materials " + str(self.chunk_cols * self.chunk_rows * pf.MATERIALS_PER_CHUNK) + "\n"
 
         for chunk_r in range(0, self.chunk_rows):
             for chunk_c in range(0, self.chunk_cols):
@@ -190,15 +196,15 @@ class Map(object):
             assert lines[0].split()[1] == str(EDITOR_PFMAP_VERSION)
             ret.chunk_rows = int(lines[1].split()[1])
             ret.chunk_cols = int(lines[2].split()[1])
-            line_idx += 4 #skip past header
+            line_idx += 3 #skip past header
 
             for r in range(0, ret.chunk_rows):
                 row = []
                 for c in range(0, ret.chunk_cols):
-                    num_chunk_mats = int(lines[line_idx + pf.TILES_PER_CHUNK_HEIGHT].split()[1])
-                    num_lines_for_chunk = pf.TILES_PER_CHUNK_HEIGHT + 1 + (num_chunk_mats * 5)
-                    row.append( Chunk.from_lines(lines[line_idx:line_idx+num_lines_for_chunk]) )
-                    line_idx += num_lines_for_chunk
+                    new_chunk =  Chunk.from_lines(lines[line_idx:])
+                    row.append(new_chunk)
+                    num_mats = len([m for m in new_chunk.materials if m is not None])
+                    line_idx += pf.TILES_PER_CHUNK_HEIGHT + (num_mats * 5) + (pf.MATERIALS_PER_CHUNK - num_mats)
                 ret.chunks.append(row)
         except:
             traceback.print_exc()

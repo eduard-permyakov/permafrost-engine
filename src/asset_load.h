@@ -57,7 +57,6 @@ struct pfmap_hdr{
     float    version;
     unsigned num_rows;
     unsigned num_cols;
-    unsigned num_materials;
 };
 
 struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name);
