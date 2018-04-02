@@ -11,6 +11,8 @@ in the early phases of development.
 ![Sinbad](docs/images/sinbad.gif)
 ###### Example of Tile-based map. ######
 ![Terrain](docs/images/terrain.png)
+###### Map Editor Example. ######
+![Map Editor](docs/images/editor.png)
 
 ## Engine Summary ##
 
@@ -24,6 +26,7 @@ in the early phases of development.
 * Event system
 * UI framework (Nuklear)
 * Efficient raycasting algorithm
+* Map editor
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
@@ -44,11 +47,9 @@ along with the game binary if desired.
 
 1. `git clone https://github.com/eduard-permyakov/permafrost-engine.git`
 2. `cd permafrost-engine`
-3. Optionally `make deps` to build the shared library dependencies to `./lib`
-   If you skip this step, your linker must be able to satisfy `-lGLEW`, `-lSDL2`, and 
-   `-lpython2.7`.
+3. `make deps` to build the shared library dependencies to `./lib`
 3. `make pf`
-4. `make run` (runs the binary in `./bin` with default arguments)
+4. `make run` to run the demo or `make run_editor` to run the map editor
 
 #### On Windows ####
 
@@ -58,5 +59,5 @@ along with the game binary if desired.
    to link against an existing Python installation elsewhere on your system.
 2. The rest of the source code can be built with MinGW and MSYS using largely the same steps
    as on Linux.
-3. `run.bat` will launch the binary with default arguments.
+3. `run.bat` or `run_editor.bat` will launch the binary with appropriate arguments.
 
