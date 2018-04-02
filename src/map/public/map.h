@@ -34,6 +34,7 @@ struct pfchunk;
 struct pfmap_hdr;
 struct map;
 struct camera;
+struct tile;
 
 struct tile_desc{
     int chunk_r, chunk_c;
@@ -79,6 +80,7 @@ int    M_Raycast_Install(struct map *map, struct camera *cam);
  */
 void   M_Raycast_Uninstall(void);
 
+
 /*###########################################################################*/
 /* MAP ASSET LOADING                                                         */
 /*###########################################################################*/
@@ -100,5 +102,9 @@ void   M_AL_DumpMap(FILE *stream, const struct map *map);
  */
 bool   M_AL_UpdateChunkMats(const struct map *map, int chunk_r, int chunk_c, 
                             const char *mats_string);
+
+bool   M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, 
+                       const struct tile *tile);
+
 
 #endif

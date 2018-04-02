@@ -160,6 +160,18 @@ bool M_AL_UpdateChunkMats(const struct map *map, int chunk_r, int chunk_c, const
     return result;
 }
 
+bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct tile *tile)
+{
+    if(desc->chunk_r >= map->height || desc->chunk_c >= map->width)
+        return false;
+
+    struct pfchunk *chunk = &map->chunks[desc->chunk_r * map->width + desc->chunk_c];
+    chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c] = *tile;
+    R_AL_UpdateTile(chunk->render_private, desc->tile_r, desc->tile_c, TILES_PER_CHUNK_WIDTH, tile);
+
+    return true;
+}
+
 void M_AL_DumpMap(FILE *stream, const struct map *map)
 {
     for(int i = 0; i < (map->width * map->height); i++) {

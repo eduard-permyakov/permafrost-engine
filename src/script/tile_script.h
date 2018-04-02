@@ -22,6 +22,9 @@
 
 #include <Python.h> /* must be first */
 
-void S_Tile_PyRegister(PyObject *module);
+struct tile;
+
+void               S_Tile_PyRegister(PyObject *module);
+const struct tile *S_Tile_GetTile(PyObject *tile_obj);
 
 #endif

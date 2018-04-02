@@ -25,6 +25,8 @@
 
 struct entity;
 struct map;
+struct tile_desc;
+struct tile;
 
 enum cam_mode{
     CAM_MODE_FPS,
@@ -43,7 +45,9 @@ bool G_AddEntity(struct entity *ent);
 bool G_RemoveEntity(struct entity *ent);
 
 bool G_ActivateCamera(int idx, enum cam_mode mode);
+
 bool G_UpdateChunkMats(int chunk_c, int chunk_r, const char *mats_string);
+bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
 
 #endif
 

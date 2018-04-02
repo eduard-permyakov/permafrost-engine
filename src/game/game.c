@@ -213,3 +213,8 @@ bool G_UpdateChunkMats(int chunk_c, int chunk_r, const char *mats_string)
     return M_AL_UpdateChunkMats(s_gs.map, chunk_c, chunk_r, mats_string);
 }
 
+bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
+{
+    return M_AL_UpdateTile(s_gs.map, desc, tile);
+}
+

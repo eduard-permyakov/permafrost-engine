@@ -306,3 +306,13 @@ bool R_AL_UpdateMats(SDL_RWops *mats_stream, size_t num_mats, void *priv_buff)
     return true;
 }
 
+void R_AL_UpdateTile(void *chunk_rprivate, int r, int c, int tiles_width, const struct tile *tile)
+{
+    struct render_private *priv = chunk_rprivate;
+    struct vertex *vert_base = &priv->mesh.vbuff[ (r * tiles_width + c) * VERTS_PER_FACE * FACES_PER_TILE ];
+    
+    R_GL_VerticesFromTile(tile, vert_base, r, c);
+    ptrdiff_t offset = ((unsigned char*)vert_base) - ((unsigned char*)priv->mesh.vbuff);
+    R_GL_BufferSubData(chunk_rprivate, offset, sizeof(struct vertex) * VERTS_PER_FACE * FACES_PER_TILE);
+}
+

@@ -194,4 +194,7 @@ bool   R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
  */
 bool   R_AL_UpdateMats(SDL_RWops *mats_stream, size_t num_mats, void *priv_buff);
 
+void   R_AL_UpdateTile(void *chunk_rprivate, int r, int c, int tiles_width, 
+                       const struct tile *tile);
+
 #endif

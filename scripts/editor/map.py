@@ -52,13 +52,27 @@ def tile_from_string(string):
 
 class Material(object):
 
-    def __init__(self, name, texname):
+    def __init__(self, name, texname, ambient, diffuse, specular):
         self.refcount = 0
         self.name = name
         self.texname = texname
-        self.ambient = 1.0
-        self.diffuse = (0.5, 0.5, 0.5)
-        self.specular = (0.2, 0.2, 0.2)
+        self.ambient = ambient
+        self.diffuse = diffuse
+        self.specular = specular
+
+    def __eq__(self, other): 
+        if isinstance(other, Material):
+            # Ignore 'refcount' attribute when comparing equality
+            return  self.name == other.name \
+                and self.texname == other.texname \
+                and self.ambient == other.ambient \
+                and self.diffuse == other.diffuse \
+                and self.specular == other.specular
+        else:
+            return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def pfmap_str(self):
         ret = ""
@@ -73,16 +87,15 @@ class Material(object):
     def from_lines(cls, lines):
         name = lines[0].split()[1]
         texname = lines[4].split()[1]
-        ret = Material(name, texname)
-        ret.ambient = float(lines[1].split()[1])
-        ret.diffuse = tuple([float(s) for s in lines[2].split()[1:]])
-        ret.specular = tuple([float(s) for s in lines[3].split()[1:]])
-        return ret
+        ambient = float(lines[1].split()[1])
+        diffuse = tuple([float(s) for s in lines[2].split()[1:]])
+        specular = tuple([float(s) for s in lines[3].split()[1:]])
+        return Material(name, texname, ambient, diffuse, specular)
 
 
 class Chunk(object):
-    DEFAULT_TOP_MATERIAL = Material("Grass", "grass.png")
-    DEFAULT_SIDE_MATERIAL = Material("Cliffs", "cliffs.png")
+    DEFAULT_TOP_MATERIAL  = Material("Grass",  "grass.png",  1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1))
+    DEFAULT_SIDE_MATERIAL = Material("Cliffs", "cliffs.png", 1.0, (0.8, 0.8, 0.8), (0.3, 0.3, 0.3))
 
     def __init__(self):
         """
@@ -120,6 +133,18 @@ class Chunk(object):
             else:
                 ret += "material __none__\n"
         return ret
+
+    def index_for_mat(self, material):
+        try:
+            return self.materials.index(material)
+        except: 
+            return None
+
+    def free_material_slots(self):
+        return len([m for m in self.materials if m is not None])
+
+    def free_material_slot_idx(self):
+        return self.materials.index(None)
 
     @classmethod
     def from_lines(cls, lines):
@@ -177,6 +202,35 @@ class Map(object):
         if self.filename is not None:
             with open(self.filename, "w") as mapfile:
                 mapfile.write(self.pfmap_str())
+
+    def update_tile(self, tile_coords, top_material):
+        chunk = self.chunks[tile_coords[0][0]][tile_coords[0][1]]
+        tile = chunk.tiles[tile_coords[1][0]][tile_coords[1][1]]
+
+        if chunk.materials[tile.top_mat_idx] != top_material:
+            chunk.materials[tile.top_mat_idx].refcount -= 1
+            mat_deleted = chunk.materials[tile.top_mat_idx].refcount == 0
+
+            if mat_deleted:
+                chunk.materials[tile.top_mat_idx] = None
+            mat_idx = chunk.index_for_mat(top_material)
+            mat_added = chunk.free_material_slots() > 0 and mat_idx is None
+
+            assert mat_added if mat_deleted else True
+            if mat_added:
+                mat_idx = chunk.free_material_slot_idx() 
+                chunk.materials[mat_idx] = top_material
+
+            if mat_idx is None: 
+                print("Only {0} materials allowed per chunk!".format(pf.MATERIALS_PER_CHUNK))
+                return
+
+            chunk.materials[mat_idx].refcount += 1
+            tile.top_mat_idx = mat_idx
+            pf.update_tile(tile_coords[0], tile_coords[1], tile)
+
+            if mat_deleted or mat_added:
+                pf.update_chunk_materials(tile_coords[0], chunk.materials_str())
 
     @classmethod
     def from_filepath(cls, filepath):

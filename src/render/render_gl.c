@@ -1113,3 +1113,11 @@ int R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate,
     return i;
 }
 
+void R_GL_BufferSubData(const void *chunk_rprivate, size_t offset, size_t size)
+{
+    const struct render_private *priv = chunk_rprivate;
+
+    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
+    glBufferSubData(GL_ARRAY_BUFFER, offset, size, ((unsigned char*)priv->mesh.vbuff) + offset);
+}
+

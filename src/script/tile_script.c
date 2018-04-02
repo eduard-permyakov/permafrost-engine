@@ -111,3 +111,12 @@ void S_Tile_PyRegister(PyObject *module)
     assert(0 == ret);
 }
 
+
+const struct tile *S_Tile_GetTile(PyObject *tile_obj)
+{
+    if(!PyObject_IsInstance(tile_obj, (PyObject*)&PyTile_type))
+        return NULL;
+
+    return &((PyTileObject*)tile_obj)->tile;
+}
+

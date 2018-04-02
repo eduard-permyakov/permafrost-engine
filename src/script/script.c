@@ -47,7 +47,9 @@ static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args);
 static PyObject *PyPf_prev_frame_ms(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
 static PyObject *PyPf_get_basedir(PyObject *self);
+
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
+static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -114,6 +116,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_update_chunk_materials, METH_VARARGS,
     "Update the material list for a particular chunk. Expects a tuple of chunk coordinates "
     "and a PFMAP material section string as arguments."},
+
+    {"update_tile", 
+    (PyCFunction)PyPf_update_tile, METH_VARARGS,
+    "Update the map tile at the specified coordinates to the new value."},
 
     {NULL}  /* Sentinel */
 };
@@ -326,6 +332,29 @@ static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args)
         Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_update_tile(PyObject *self, PyObject *args)
+{
+    struct tile_desc desc;
+    PyObject *tile_obj;
+    const struct tile *tile;
+
+    if(!PyArg_ParseTuple(args, "(ii)(ii)O", &desc.chunk_r, &desc.chunk_c, &desc.tile_r, &desc.tile_c, &tile_obj)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two tuples of two integers and a pf.Tile object.");
+        return NULL;
+    }
+
+    if(NULL == (tile = S_Tile_GetTile(tile_obj))) {
+        PyErr_SetString(PyExc_TypeError, "Last argument must be of type pf.Tile.");
+        return NULL;
+    }
+
+    bool result = G_UpdateTile(&desc, tile); 
+    if(!result)
+        return NULL;
+    else
+        Py_RETURN_NONE;
+}
+
 static bool s_sys_path_add_dir(const char *filename)
 {
     if(strlen(filename) >= 512)
@@ -440,6 +469,16 @@ script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg)
                 ((SDL_Event*)arg)->motion.y,
                 ((SDL_Event*)arg)->motion.xrel,
                 ((SDL_Event*)arg)->motion.xrel);
+
+        case SDL_MOUSEBUTTONDOWN:
+            return Py_BuildValue("(i, i)",
+                ((SDL_Event*)arg)->button.button,
+                ((SDL_Event*)arg)->button.state);
+
+        case SDL_MOUSEBUTTONUP:
+            return Py_BuildValue("(i, i)",
+                ((SDL_Event*)arg)->button.button,
+                ((SDL_Event*)arg)->button.state);
 
         case EVENT_SELECTED_TILE_CHANGED:
             if(!arg)

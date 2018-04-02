@@ -39,6 +39,8 @@ EVENT_MENU_CANCEL               = 0x20015
 
 EVENT_SDL_QUIT                  = 0x100
 EVENT_SDL_KEYDOWN               = 0x300
+EVENT_SDL_MOUSEBUTTONDOWN       = 0x401
+EVENT_SDL_MOUSEBUTTONUP         = 0x402
 
 ############################################################
 # Engine events (from event.h)                             #
@@ -287,6 +289,17 @@ SDL_SCANCODE_EJECT = 281
 SDL_SCANCODE_SLEEP = 282
 SDL_SCANCODE_APP1 = 283
 SDL_SCANCODE_APP2 = 284
+
+""" SDL button indices """
+SDL_BUTTON_LEFT     = 1
+SDL_BUTTON_MIDDLE   = 2
+SDL_BUTTON_RIGHT    = 3
+SDL_BUTTON_X1       = 4
+SDL_BUTTON_X2       = 5
+
+""" SDL button state """
+SDL_RELEASED        = 0
+SDL_PRESSED         = 1
 
 ############################################################
 # Nuklear constants (from nuklear.h)                       #
