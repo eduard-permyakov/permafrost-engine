@@ -20,7 +20,7 @@
 #ifndef EVENT_H
 #define EVENT_H
 
-#include "../../script/public/script.h"
+#include "script/public/script.h"
 
 #include <SDL_events.h>
 #include <stdbool.h>

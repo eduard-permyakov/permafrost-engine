@@ -20,10 +20,10 @@
 #include <Python.h> /* must be first */
 #include "entity_script.h" 
 #include "../entity.h"
+#include "../event.h"
 #include "../asset_load.h"
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
-#include "../event/public/event.h"
 
 typedef struct {
     PyObject_HEAD

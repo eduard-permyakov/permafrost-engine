@@ -23,7 +23,7 @@
 #include "ui_style_script.h"
 #include "../lib/public/nuklear.h"
 #include "../lib/public/kvec.h"
-#include "../event/public/event.h"
+#include "../event.h"
 
 #include <assert.h>
 

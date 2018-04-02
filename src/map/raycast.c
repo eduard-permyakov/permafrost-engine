@@ -20,7 +20,7 @@
 #include "map_private.h"
 #include "public/tile.h"
 #include "public/map.h"
-#include "../event/public/event.h"
+#include "../event.h"
 #include "../pf_math.h"
 #include "../camera.h"
 #include "../config.h"

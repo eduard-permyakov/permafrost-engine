@@ -25,8 +25,7 @@
 #include "lib/public/kvec.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
-#include "event/public/event.h"
-#include "gl_assert.h"
+#include "event.h"
 #include "ui.h"
 
 #include <GL/glew.h>
@@ -190,7 +189,6 @@ static bool engine_init(char **argv)
         result = false;
         goto fail_glew;
     }
-    GL_ASSERT_OK();
 
     glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
 

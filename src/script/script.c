@@ -26,8 +26,8 @@
 #include "../entity.h"
 #include "../game/public/game.h"
 #include "../render/public/render.h"
-#include "../event/public/event.h"
 #include "../map/public/map.h"
+#include "../event.h"
 #include "../config.h"
 
 #include <stdio.h>

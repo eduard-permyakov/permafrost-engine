@@ -18,10 +18,10 @@
  */
 #include <Python.h> //temp
 
-#include "public/event.h"
-#include "../lib/public/khash.h"
-#include "../lib/public/kvec.h"
-#include "../lib/public/queue.h"
+#include "event.h"
+#include "lib/public/khash.h"
+#include "lib/public/kvec.h"
+#include "lib/public/queue.h"
 
 #include <assert.h>
 

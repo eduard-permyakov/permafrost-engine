@@ -19,7 +19,7 @@
 
 #include "cursor.h"
 #include "config.h"
-#include "event/public/event.h"
+#include "event.h"
 
 #include <SDL.h>
 

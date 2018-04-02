@@ -19,7 +19,7 @@
 
 #include "cam_control.h"
 #include "config.h"
-#include "event/public/event.h"
+#include "event.h"
 
 #include <stdbool.h>
 #include <assert.h>

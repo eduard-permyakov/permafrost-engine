@@ -20,13 +20,13 @@
 #include "public/game.h"
 #include "gamestate.h"
 #include "../render/public/render.h"
-#include "../event/public/event.h"
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
 #include "../entity.h"
 #include "../camera.h"
 #include "../cam_control.h"
 #include "../asset_load.h"
+#include "../event.h"
 
 #include <assert.h> 
 
