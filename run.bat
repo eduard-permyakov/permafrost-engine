@@ -1,1 +1,1 @@
-start ./lib/pf.exe ./
+start ./lib/pf.exe ./ ./scripts/demo/main.py
