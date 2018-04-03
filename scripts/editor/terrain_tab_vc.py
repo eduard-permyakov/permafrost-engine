@@ -25,10 +25,14 @@ import globals
 class TerrainTabVC(ViewController):
 
     MATERIALS_LIST = [
-        Material("Grass",       "grass.png",        1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)), 
-        Material("Cliffs",      "cliffs.png",       1.0, (0.8, 0.8, 0.8), (0.3, 0.3, 0.3)),
-        Material("Cobblestone", "cobblestone.jpg",  1.0, (0.5, 0.5, 0.5), (0.2, 0.2, 0.2)),
-        Material("Dirty Grass", "dirty_grass.jpg",  1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1))
+        Material("Grass",           "grass.png",            1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)), 
+        Material("Cliffs",          "cliffs.png",           1.0, (0.8, 0.8, 0.8), (0.3, 0.3, 0.3)),
+        Material("Cobblestone",     "cobblestone.jpg",      1.0, (0.5, 0.5, 0.5), (0.2, 0.2, 0.2)),
+        Material("Dirty-Grass",     "dirty_grass.jpg",      1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)),
+        Material("Metal-Platform",  "metal_platform.jpg",   1.0, (0.8, 0.8, 0.8), (0.5, 0.5, 0.5)),
+        Material("Snowy-Grass",     "snowy_grass.jpg",      1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)),
+        Material("Lava-Ground",     "lava_ground.jpg",      1.0, (0.7, 0.7, 0.7), (0.4, 0.4, 0.4)),
+        Material("Sand",            "sand.jpg",             1.0, (0.2, 0.2, 0.2), (0.1, 0.1, 0.1)),
     ]
 
     def __init__(self, view):
