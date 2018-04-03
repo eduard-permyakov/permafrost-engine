@@ -232,6 +232,21 @@ class Map(object):
             if mat_deleted or mat_added:
                 pf.update_chunk_materials(tile_coords[0], chunk.materials_str())
 
+    def relative_tile_coords(self, global_r, global_c, dr, dc):
+
+        if global_r + dr < 0 or global_r + dr >= self.chunk_rows * pf.TILES_PER_CHUNK_HEIGHT:
+            return None
+
+        if global_c + dc < 0 or global_c + dc >= self.chunk_cols * pf.TILES_PER_CHUNK_WIDTH:
+            return None
+
+        chunk_r = (global_r + dr) // pf.TILES_PER_CHUNK_HEIGHT
+        chunk_c = (global_c + dc) // pf.TILES_PER_CHUNK_WIDTH
+        tile_r  = (global_r + dr) %  pf.TILES_PER_CHUNK_HEIGHT
+        tile_c  = (global_c + dc) %  pf.TILES_PER_CHUNK_WIDTH
+
+        return (chunk_r, chunk_c), (tile_r, tile_c)
+
     @classmethod
     def from_filepath(cls, filepath):
         with open(filepath, "r") as mapfile:

@@ -36,16 +36,27 @@ class TerrainTabVC(ViewController):
         self.selected_mat_idx = 0
         self.selected_tile = None
         self.painting = False
+        self.brush_size = 0
 
         self.view.materials_list = TerrainTabVC.MATERIALS_LIST
         self.view.selected_mat_idx = self.selected_mat_idx
+        self.view.brush_size_idx = self.brush_size
+
+    def __paint_selection(self):
+        for r in range(-((self.brush_size + 1) // 2), ((self.brush_size + 1) // 2) + 1):
+            for c in range(-((self.brush_size + 1) // 2), ((self.brush_size + 1) // 2) + 1):
+                global_r = self.selected_tile[0][0] * pf.TILES_PER_CHUNK_HEIGHT + self.selected_tile[1][0]
+                global_c = self.selected_tile[0][1] * pf.TILES_PER_CHUNK_WIDTH  + self.selected_tile[1][1]
+                tile_coords = globals.active_map.relative_tile_coords(global_r, global_c, r, c)
+                if tile_coords is not None:
+                    globals.active_map.update_tile(tile_coords, TerrainTabVC.MATERIALS_LIST[self.selected_mat_idx])
 
     def __on_selected_tile_changed(self, event):
         self.selected_tile = event
         self.view.selected_tile = event
 
         if self.painting == True and self.selected_tile is not None:
-            globals.active_map.update_tile(self.selected_tile, TerrainTabVC.MATERIALS_LIST[self.selected_mat_idx])
+            self.__paint_selection() 
 
     def __on_mat_selection_changed(self, event):
         self.selected_mat_idx = event
@@ -54,21 +65,27 @@ class TerrainTabVC(ViewController):
         if event[0] == SDL_BUTTON_LEFT:
             self.painting = True
         if self.selected_tile is not None:
-            globals.active_map.update_tile(self.selected_tile, TerrainTabVC.MATERIALS_LIST[self.selected_mat_idx])
+            self.__paint_selection() 
 
     def __on_mouse_released(self, event):
         if event[0] == SDL_BUTTON_LEFT:
             self.painting = False
+
+    def __on_brush_size_changed(self, event):
+        self.brush_size = event
+        pf.set_map_highlight_size(self.brush_size + 1)
 
     def activate(self):
         pf.register_event_handler(EVENT_SELECTED_TILE_CHANGED, TerrainTabVC.__on_selected_tile_changed, self)
         pf.register_event_handler(EVENT_TEXTURE_SELECTION_CHANGED, TerrainTabVC.__on_mat_selection_changed, self)
         pf.register_event_handler(EVENT_SDL_MOUSEBUTTONDOWN, TerrainTabVC.__on_mouse_pressed, self)
         pf.register_event_handler(EVENT_SDL_MOUSEBUTTONUP, TerrainTabVC.__on_mouse_released, self)
+        pf.register_event_handler(EVENT_TERRAIN_BRUSH_SIZE_CHANGED, TerrainTabVC.__on_brush_size_changed, self)
 
     def deactivate(self):
         pf.unregister_event_handler(EVENT_SELECTED_TILE_CHANGED, TerrainTabVC.__on_selected_tile_changed)
         pf.unregister_event_handler(EVENT_TEXTURE_SELECTION_CHANGED, TerrainTabVC.__on_mat_selection_changed)
         pf.unregister_event_handler(EVENT_SDL_MOUSEBUTTONDOWN, TerrainTabVC.__on_mouse_pressed)
         pf.unregister_event_handler(EVENT_SDL_MOUSEBUTTONUP, TerrainTabVC.__on_mouse_released)
+        pf.unregister_event_handler(EVENT_TERRAIN_BRUSH_SIZE_CHANGED, TerrainTabVC.__on_brush_size_changed)
 

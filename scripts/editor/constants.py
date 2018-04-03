@@ -20,33 +20,34 @@
 # Editor-specific events                                   #
 ############################################################
 
-EVENT_TEXTURE_SELECTION_CHANGED = 0x20000
-EVENT_TOP_TAB_SELECTION_CHANGED = 0x20001
+EVENT_TEXTURE_SELECTION_CHANGED  = 0x20000
+EVENT_TOP_TAB_SELECTION_CHANGED  = 0x20001
+EVENT_TERRAIN_BRUSH_SIZE_CHANGED = 0x20002
 
-EVENT_FILE_CHOOSER_OKAY         = 0x20008
-EVENT_FILE_CHOOSER_CANCEL       = 0x20009
+EVENT_FILE_CHOOSER_OKAY          = 0x20008
+EVENT_FILE_CHOOSER_CANCEL        = 0x20009
 
-EVENT_MENU_LOAD                 = 0x20010
-EVENT_MENU_SAVE                 = 0x20011
-EVENT_MENU_SAVE_AS              = 0x20012
-EVENT_MENU_NEW                  = 0x20013
-EVENT_MENU_EXIT                 = 0x20014
-EVENT_MENU_CANCEL               = 0x20015
+EVENT_MENU_LOAD                  = 0x20010
+EVENT_MENU_SAVE                  = 0x20011
+EVENT_MENU_SAVE_AS               = 0x20012
+EVENT_MENU_NEW                   = 0x20013
+EVENT_MENU_EXIT                  = 0x20014
+EVENT_MENU_CANCEL                = 0x20015
 
 ############################################################
 # SDL Events used (from SDL_event.h)                       #
 ############################################################
 
-EVENT_SDL_QUIT                  = 0x100
-EVENT_SDL_KEYDOWN               = 0x300
-EVENT_SDL_MOUSEBUTTONDOWN       = 0x401
-EVENT_SDL_MOUSEBUTTONUP         = 0x402
+EVENT_SDL_QUIT                   = 0x100
+EVENT_SDL_KEYDOWN                = 0x300
+EVENT_SDL_MOUSEBUTTONDOWN        = 0x401
+EVENT_SDL_MOUSEBUTTONUP          = 0x402
 
 ############################################################
 # Engine events (from event.h)                             #
 ############################################################
 
-EVENT_SELECTED_TILE_CHANGED     = 0x10004
+EVENT_SELECTED_TILE_CHANGED      = 0x10004
 
 ############################################################
 # SDL Scancodes (from SDL_event.h)                         #

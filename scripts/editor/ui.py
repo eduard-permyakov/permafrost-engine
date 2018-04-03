@@ -124,12 +124,16 @@ class TerrainTabWindow(pf.Window):
         self.layout_row_static(200, LEFT_PANE_WIDTH-30, 1)
         self.group("Texture:", NK_WINDOW_BORDER, textures_group)
 
+        old_brush_size_idx = self.brush_size_idx
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Brush Size:", (255, 255, 255))
         if self.option_label("Small", self.brush_size_idx == 0):
             self.brush_size_idx = 0
         if self.option_label("Large", self.brush_size_idx == 1):
             self.brush_size_idx = 1
+
+        if self.brush_size_idx != old_brush_size_idx:
+            pf.global_event(EVENT_TERRAIN_BRUSH_SIZE_CHANGED, self.brush_size_idx)
 
 
 class ObjectsTabWindow(pf.Window):
