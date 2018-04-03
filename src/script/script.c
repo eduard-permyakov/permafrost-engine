@@ -50,6 +50,7 @@ static PyObject *PyPf_get_basedir(PyObject *self);
 
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -120,6 +121,11 @@ static PyMethodDef pf_module_methods[] = {
     {"update_tile", 
     (PyCFunction)PyPf_update_tile, METH_VARARGS,
     "Update the map tile at the specified coordinates to the new value."},
+
+    {"set_map_highlight_size", 
+    (PyCFunction)PyPf_set_map_highlight_size, METH_VARARGS,
+    "Determines how many tiles around the currently hovered tile are highlighted. (0 = none, "
+    "1 = single tile highlighted, 2 = 3x3 grid highlighted, etc.)"},
 
     {NULL}  /* Sentinel */
 };
@@ -353,6 +359,19 @@ static PyObject *PyPf_update_tile(PyObject *self, PyObject *args)
         return NULL;
     else
         Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args)
+{
+    int size;
+
+    if(!PyArg_ParseTuple(args, "i", &size)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an integer.");
+        return NULL;
+    }
+
+    M_Raycast_SetHighlightSize(size);
+    Py_RETURN_NONE;
 }
 
 static bool s_sys_path_add_dir(const char *filename)

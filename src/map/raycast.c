@@ -55,6 +55,7 @@ struct rc_ctx{
     struct map       *map;
     struct camera    *cam;
     bool              active_tile;
+    size_t            highlight_size;
     struct tile_desc  hovered;
 };
 
@@ -476,12 +477,25 @@ static void on_render(void *user, void *event)
     if(!s_ctx.active_tile)
         return;
 
-    const struct tile_desc *td = &s_ctx.hovered;
-    const struct pfchunk *chunk = &s_ctx.map->chunks[td->chunk_r * s_ctx.map->width + td->chunk_c];
-    mat4x4_t model;
+    if(s_ctx.highlight_size == 0)
+        return;
 
-    M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){td->chunk_r, td->chunk_c}, &model);
-    R_GL_DrawTileSelected(td, chunk->render_private, &model, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT); 
+    int num_tiles = s_ctx.highlight_size * 2 - 1;
+
+    for(int r = -(num_tiles / 2); r < (num_tiles / 2) + 1; r++) {
+        for(int c = -(num_tiles / 2); c < (num_tiles / 2) + 1; c++) {
+
+            struct tile_desc curr = s_ctx.hovered;
+            if(relative_tile_desc(s_ctx.map, &curr, r, c)) {
+            
+                const struct pfchunk *chunk = &s_ctx.map->chunks[curr.chunk_r * s_ctx.map->width + curr.chunk_c];
+                mat4x4_t model;
+
+                M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){curr.chunk_r, curr.chunk_c}, &model);
+                R_GL_DrawTileSelected(&curr, chunk->render_private, &model, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT); 
+            }
+        }
+    }
 }
 
 /*****************************************************************************/
@@ -505,5 +519,10 @@ void M_Raycast_Uninstall(void)
     E_Global_Unregister(EVENT_RENDER, on_render);
 
     memset(&s_ctx, 0, sizeof(s_ctx));
+}
+
+void M_Raycast_SetHighlightSize(size_t size)
+{
+    s_ctx.highlight_size = size;
 }
 

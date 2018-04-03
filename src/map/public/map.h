@@ -80,6 +80,14 @@ int    M_Raycast_Install(struct map *map, struct camera *cam);
  */
 void   M_Raycast_Uninstall(void);
 
+/* ------------------------------------------------------------------------
+ * Determines how many tiles around the selected tile are highlighted during
+ * rendering. 0 (default) means no tile is highlighted; 1 = single tile is 
+ * highlighted; 3 = 3x3 grid is highlighted; etc.
+ * ------------------------------------------------------------------------
+ */
+void   M_Raycast_SetHighlightSize(size_t size);
+
 
 /*###########################################################################*/
 /* MAP ASSET LOADING                                                         */
