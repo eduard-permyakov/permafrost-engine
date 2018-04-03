@@ -44,7 +44,7 @@ class TerrainTabVC(ViewController):
         self.selected_tile = event
         self.view.selected_tile = event
 
-        if self.painting == True:
+        if self.painting == True and self.selected_tile is not None:
             globals.active_map.update_tile(self.selected_tile, TerrainTabVC.MATERIALS_LIST[self.selected_mat_idx])
 
     def __on_mat_selection_changed(self, event):
@@ -53,7 +53,8 @@ class TerrainTabVC(ViewController):
     def __on_mouse_pressed(self, event):
         if event[0] == SDL_BUTTON_LEFT:
             self.painting = True
-        globals.active_map.update_tile(self.selected_tile, TerrainTabVC.MATERIALS_LIST[self.selected_mat_idx])
+        if self.selected_tile is not None:
+            globals.active_map.update_tile(self.selected_tile, TerrainTabVC.MATERIALS_LIST[self.selected_mat_idx])
 
     def __on_mouse_released(self, event):
         if event[0] == SDL_BUTTON_LEFT:
