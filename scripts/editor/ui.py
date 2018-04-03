@@ -93,10 +93,15 @@ class TerrainTabWindow(pf.Window):
         _, resy = pf.get_resolution()
         super(TerrainTabWindow, self).__init__("TerrainTab", 
             (0, TAB_BAR_HEIGHT + 1, LEFT_PANE_WIDTH, resy - TAB_BAR_HEIGHT - 1), NK_WINDOW_BORDER)
+
         self.selected_mat_idx = 0
         self.brush_size_idx = 0
+        self.brush_type_idx = 0
+        self.edges_type_idx = 0
         self.selected_tile = None
         self.materials_list = []
+        self.heights = [h for h in range(0, 10)]
+        self.selected_height_idx = 0
 
     def update(self):
         self.layout_row_dynamic(20, 1)
@@ -107,33 +112,78 @@ class TerrainTabWindow(pf.Window):
             else "Chunk: {0} Tile: {1}".format(self.selected_tile[0], self.selected_tile[1])
         self.label_colored_wrap(label, (200, 200, 0))
 
+        # Brush type
         self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Texture:", (255, 255, 255))
+        self.label_colored_wrap("Brush Type:", (255, 255, 255))
 
-        def textures_group():
-            self.layout_row_static(25, LEFT_PANE_WIDTH-60, 1)
-            for i in range(0, len(self.materials_list)):
-                old = self.selected_mat_idx
-                on = self.selectable_label(self.materials_list[i].name, 
-                    NK_TEXT_ALIGN_LEFT, i == self.selected_mat_idx)
-                if on: 
-                    self.selected_mat_idx = i
-                if self.selected_mat_idx != old:
-                    pf.global_event(EVENT_TEXTURE_SELECTION_CHANGED, i)
+        old_brush_type_idx = self.brush_type_idx
+        self.layout_row_dynamic(20, 2)
+        if self.option_label("Texture", self.brush_type_idx == 0):
+            self.brush_type_idx = 0
+        if self.option_label("Elevation", self.brush_type_idx == 1):
+            self.brush_type_idx = 1
+        self.layout_row_dynamic(10, 1)
 
-        self.layout_row_static(200, LEFT_PANE_WIDTH-30, 1)
-        self.group("Texture:", NK_WINDOW_BORDER, textures_group)
+        if self.brush_type_idx != old_brush_type_idx:
+            pf.global_event(EVENT_TERRAIN_BRUSH_TYPE_CHANGED, self.brush_type_idx)
 
-        old_brush_size_idx = self.brush_size_idx
+        # Brush size
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Brush Size:", (255, 255, 255))
+
+        old_brush_size_idx = self.brush_size_idx
+        self.layout_row_dynamic(20, 2)
         if self.option_label("Small", self.brush_size_idx == 0):
             self.brush_size_idx = 0
         if self.option_label("Large", self.brush_size_idx == 1):
             self.brush_size_idx = 1
+        self.layout_row_dynamic(10, 1)
 
         if self.brush_size_idx != old_brush_size_idx:
             pf.global_event(EVENT_TERRAIN_BRUSH_SIZE_CHANGED, self.brush_size_idx)
+
+        if self.brush_type_idx == 0:
+            # Texture
+            self.layout_row_dynamic(20, 1)
+            self.label_colored_wrap("Texture:", (255, 255, 255))
+
+            def textures_group():
+                self.layout_row_static(25, LEFT_PANE_WIDTH-60, 1)
+                for i in range(0, len(self.materials_list)):
+                    old = self.selected_mat_idx
+                    on = self.selectable_label(self.materials_list[i].name, 
+                        NK_TEXT_ALIGN_LEFT, i == self.selected_mat_idx)
+                    if on: 
+                        self.selected_mat_idx = i
+                    if self.selected_mat_idx != old:
+                        pf.global_event(EVENT_TEXTURE_SELECTION_CHANGED, i)
+
+            self.layout_row_static(400, LEFT_PANE_WIDTH-30, 1)
+            self.group("Texture:", NK_WINDOW_BORDER, textures_group)
+        else:
+            # Elevation
+            self.layout_row_dynamic(20, 1)
+            self.label_colored_wrap("Edges:", (255, 255, 255))
+
+            old_edges_type_idx = self.edges_type_idx
+            self.layout_row_dynamic(20, 2)
+            if self.option_label("Hard", self.edges_type_idx == 0):
+                self.edges_type_idx = 0
+            if self.option_label("Smooth", self.edges_type_idx == 1):
+                self.edges_type_idx = 1
+            self.layout_row_dynamic(10, 1)
+
+            if old_edges_type_idx != self.edges_type_idx:
+                pf.global_event(EVENT_TERRAIN_EDGE_TYPE_CHANGED, self.edges_type_idx)
+
+            self.layout_row_dynamic(20, 1)
+            self.label_colored_wrap("Height:", (255, 255, 255))
+
+            self.layout_row_static(25, LEFT_PANE_WIDTH - 30, 1)
+            old_height_idx = self.selected_height_idx
+            self.selected_height_idx = self.combo_box([str(h) for h in self.heights], self.selected_height_idx, 25, (LEFT_PANE_WIDTH - 30, 200))
+            if old_height_idx != self.selected_height_idx:
+                pf.global_event(EVENT_HEIGHT_SELECTION_CHANGED, self.heights[self.selected_height_idx])
 
 
 class ObjectsTabWindow(pf.Window):

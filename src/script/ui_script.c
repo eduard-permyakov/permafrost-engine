@@ -54,6 +54,7 @@ static PyObject *PyWindow_selectable_label(PyWindowObject *self, PyObject *args)
 static PyObject *PyWindow_option_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_edit_string(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -111,7 +112,7 @@ static PyMethodDef PyWindow_methods[] = {
 
     {"option_label", 
     (PyCFunction)PyWindow_option_label, METH_VARARGS,
-    "Combo box with the specified text. Returns if the combo box is selected."},
+    "Radio button with the specified text. Returns if the radio button is selected."},
 
     {"edit_string", 
     (PyCFunction)PyWindow_edit_string, METH_VARARGS,
@@ -120,6 +121,10 @@ static PyMethodDef PyWindow_methods[] = {
     {"group", 
     (PyCFunction)PyWindow_group, METH_VARARGS,
     "The window UI statements within the argument callable will be put in a group."},
+
+    {"combo_box", 
+    (PyCFunction)PyWindow_combo_box, METH_VARARGS,
+    "Present a combo box with a list of selectable options."},
 
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
@@ -439,6 +444,40 @@ static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args)
     }
     nk_group_end(s_nk_ctx);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args)
+{
+    PyObject *items_list;
+    int selected_idx;
+    int item_height;
+    struct nk_vec2 size;
+
+    if(!PyArg_ParseTuple(args, "Oii(ff)", &items_list, &selected_idx, &item_height, &size.x, &size.y)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an object, two integers, and a tuple of two floats.");
+        return NULL;
+    }
+
+    if(!PyList_Check(items_list)) {
+        PyErr_SetString(PyExc_TypeError, "First argument must be a list.");
+        return NULL;
+    }
+
+    size_t num_items = PyList_Size(items_list);
+    const char *labels[num_items];
+
+    for(int i = 0; i < num_items; i++) {
+
+        PyObject *str = PyList_GetItem(items_list, i);
+        if(!PyString_Check(str)) {
+            PyErr_SetString(PyExc_TypeError, "First argument list must only contain strings.");
+            return NULL;
+        }
+        labels[i] = PyString_AsString(str);
+    }
+
+    int ret = nk_combo(s_nk_ctx, labels, num_items, selected_idx, item_height, size);
+    return Py_BuildValue("i", ret);
 }
 
 static PyObject *PyWindow_show(PyWindowObject *self)
