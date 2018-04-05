@@ -230,7 +230,6 @@ class Map(object):
             mat_idx = chunk.index_for_mat(top_material)
             mat_added = chunk.free_material_slots() > 0 and mat_idx is None
 
-            assert mat_added if mat_deleted else True
             if mat_added:
                 mat_idx = chunk.free_material_slot_idx() 
                 chunk.materials[mat_idx] = top_material
