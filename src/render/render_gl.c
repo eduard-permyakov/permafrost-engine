@@ -1074,11 +1074,23 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
     first_tri[1]->normal = top_tri_normals[0];
     first_tri[2]->normal = top_tri_normals[0];
 
+    vec2_t xz = (vec2_t){top_tri_normals[0].x, top_tri_normals[0].z};
+    bool use_side_mat = fabs(top_tri_normals[0].y) < 1.0 && (tile->ramp_height > 1);
+    first_tri[0]->material_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+    first_tri[1]->material_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+    first_tri[2]->material_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+
     memcpy(out + (5 * VERTS_PER_FACE) + 0, first_tri[0], sizeof(struct vertex));
     memcpy(out + (5 * VERTS_PER_FACE) + 1, first_tri[1], sizeof(struct vertex));
     memcpy(out + (5 * VERTS_PER_FACE) + 2, first_tri[2], sizeof(struct vertex));
 
     /* Second triangle */
+    xz = (vec2_t){top_tri_normals[1].x, top_tri_normals[1].z};
+    use_side_mat = fabs(top_tri_normals[1].y) < 1.0 && (tile->ramp_height > 1);
+    second_tri[0]->material_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+    second_tri[1]->material_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+    second_tri[2]->material_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+
     second_tri[0]->normal = top_tri_normals[1];
     second_tri[1]->normal = top_tri_normals[1];
     second_tri[2]->normal = top_tri_normals[1];
