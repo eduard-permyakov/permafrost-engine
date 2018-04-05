@@ -21,6 +21,20 @@ import traceback
 
 EDITOR_PFMAP_VERSION = 1.0
 
+TILETYPE_FLAT              = 0x0
+TILETYPE_RAMP_SN           = 0x1
+TILETYPE_RAMP_NS           = 0x2
+TILETYPE_RAMP_EW           = 0x3
+TILETYPE_RAMP_WE           = 0x4
+TILETYPE_CORNER_CONCAVE_SW = 0x5
+TILETYPE_CORNER_CONVEX_SW  = 0x6
+TILETYPE_CORNER_CONCAVE_SE = 0x7
+TILETYPE_CORNER_CONVEX_SE  = 0x8
+TILETYPE_CORNER_CONCAVE_NW = 0x9
+TILETYPE_CORNER_CONVEX_NW  = 0xa
+TILETYPE_CORNER_CONCAVE_NE = 0xb
+TILETYPE_CORNER_CONVEX_NE  = 0xc
+
 
 def tile_to_string(tile):
     ret = ""
@@ -203,7 +217,7 @@ class Map(object):
             with open(self.filename, "w") as mapfile:
                 mapfile.write(self.pfmap_str())
 
-    def update_tile(self, tile_coords, top_material):
+    def update_tile_mat(self, tile_coords, top_material):
         chunk = self.chunks[tile_coords[0][0]][tile_coords[0][1]]
         tile = chunk.tiles[tile_coords[1][0]][tile_coords[1][1]]
 
@@ -232,6 +246,17 @@ class Map(object):
             if mat_deleted or mat_added:
                 pf.update_chunk_materials(tile_coords[0], chunk.materials_str())
 
+    def update_tile(self, tile_coords, newheight=None, newtype=None, new_ramp_height=None):
+        chunk = self.chunks[tile_coords[0][0]][tile_coords[0][1]]
+        tile = chunk.tiles[tile_coords[1][0]][tile_coords[1][1]]
+        if newheight is not None:
+            tile.base_height = newheight
+        if newtype is not None:
+            tile.type = newtype
+        if new_ramp_height is not None:
+            tile.ramp_height = new_ramp_height
+        pf.update_tile(tile_coords[0], tile_coords[1], tile)
+
     def relative_tile_coords(self, global_r, global_c, dr, dc):
 
         if global_r + dr < 0 or global_r + dr >= self.chunk_rows * pf.TILES_PER_CHUNK_HEIGHT:
@@ -246,6 +271,17 @@ class Map(object):
         tile_c  = (global_c + dc) %  pf.TILES_PER_CHUNK_WIDTH
 
         return (chunk_r, chunk_c), (tile_r, tile_c)
+
+    def tile_at_coords(self, chunk_coords, tile_coords):
+        chunk_r, chunk_c = chunk_coords
+        tile_r, tile_c = tile_coords
+        return self.chunks[chunk_r][chunk_c].tiles[tile_r][tile_c]
+
+    def relative_tile(self, global_r, global_c, dr, dc):
+        tc = self.relative_tile_coords(global_r, global_c, dr, dc)
+        if tc is None:
+            return None
+        return self.tile_at_coords(*tc)
 
     @classmethod
     def from_filepath(cls, filepath):
