@@ -518,7 +518,9 @@ void M_Raycast_Uninstall(void)
     E_Global_Unregister(SDL_MOUSEMOTION, on_mousemove);
     E_Global_Unregister(EVENT_RENDER, on_render);
 
-    memset(&s_ctx, 0, sizeof(s_ctx));
+    s_ctx.map = NULL;
+    s_ctx.cam = NULL;
+    s_ctx.active_tile = false;
 }
 
 void M_Raycast_SetHighlightSize(size_t size)
