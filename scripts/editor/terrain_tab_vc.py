@@ -19,7 +19,7 @@
 import pf
 from constants import *
 import map
-from ui import ViewController
+import ui
 import globals
 
 
@@ -88,7 +88,7 @@ def tile_bot_left_height(tile):
         return max(tile_bot_height(tile), tile_left_height(tile))
 
 
-class TerrainTabVC(ViewController):
+class TerrainTabVC(ui.ViewController):
 
     MATERIALS_LIST = [
         map.Material("Grass",           "grass.png",            1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)), 
@@ -109,6 +109,11 @@ class TerrainTabVC(ViewController):
         self.view.materials_list = TerrainTabVC.MATERIALS_LIST
 
     def __paint_selection(self):
+
+        mouse_pos = pf.get_mouse_pos()
+        if ui.mouse_over_ui(*mouse_pos):
+            return
+
         for r in range(-((self.view.brush_size_idx + 1) // 2), ((self.view.brush_size_idx + 1) // 2) + 1):
             for c in range(-((self.view.brush_size_idx + 1) // 2), ((self.view.brush_size_idx + 1) // 2) + 1):
 
@@ -132,14 +137,14 @@ class TerrainTabVC(ViewController):
         First, we pick a height for each of the 4 corners. The height is taken
         to be the the height of that corner in the 3 adjacent tiles.
         (Ex. when 'X' is the current corner of the '?' tile, pick the maximum height of 
-        that corner in the surrounding tiles 1, 2, 3, 4)
+        that corner in the surrounding tiles 1, 2, 3)
 
             +------+------+------+
             |      |      |      |
             |   2 /-\ 1   |      |
             +-----|X|-----+------+
-            |   3 \-/ 4 ??|      |
-            |      |?   ??|      |
+            |   3 \-/?????|      |
+            |      |??????|      |
             +------+------+------+
             |      |      |      |
             |      |      |      |
@@ -248,8 +253,8 @@ class TerrainTabVC(ViewController):
             globals.active_map.relative_tile_coords(global_r, global_c,  radius, -radius)
         ]
         for coords in [c for c in corner_tiles_coords if c is not None]:
-            r = coords + self.__tile_make_smooth(coords)
-            globals.active_map.update_tile( (r[0], r[1]), *r[2:] )
+            r = self.__tile_make_smooth(coords)
+            globals.active_map.update_tile(coords, *r)
 
     def __on_selected_tile_changed(self, event):
         self.selected_tile = event

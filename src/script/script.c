@@ -30,6 +30,8 @@
 #include "../event.h"
 #include "../config.h"
 
+#include <SDL.h>
+
 #include <stdio.h>
 
 
@@ -47,6 +49,7 @@ static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args);
 static PyObject *PyPf_prev_frame_ms(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
 static PyObject *PyPf_get_basedir(PyObject *self);
+static PyObject *PyPf_get_mouse_pos(PyObject *self);
 
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
@@ -112,6 +115,10 @@ static PyMethodDef pf_module_methods[] = {
     {"get_basedir", 
     (PyCFunction)PyPf_get_basedir, METH_NOARGS,
     "Get the path to the top-level game resource folder (parent of 'assets')."},
+
+    {"get_mouse_pos", 
+    (PyCFunction)PyPf_get_mouse_pos, METH_NOARGS,
+    "Get the (x, y) cursor position on the screen."},
 
     {"update_chunk_materials", 
     (PyCFunction)PyPf_update_chunk_materials, METH_VARARGS,
@@ -319,6 +326,13 @@ static PyObject *PyPf_get_basedir(PyObject *self)
 {
     extern const char *g_basepath;
     return Py_BuildValue("s", g_basepath);
+}
+
+static PyObject *PyPf_get_mouse_pos(PyObject *self)
+{
+    int mouse_x, mouse_y;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+    return Py_BuildValue("(i, i)", mouse_x, mouse_y);
 }
 
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args)
