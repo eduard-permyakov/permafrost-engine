@@ -114,11 +114,12 @@ class TerrainTabVC(ui.ViewController):
         if ui.mouse_over_ui(*mouse_pos):
             return
 
+        global_r = self.selected_tile[0][0] * pf.TILES_PER_CHUNK_HEIGHT + self.selected_tile[1][0]
+        global_c = self.selected_tile[0][1] * pf.TILES_PER_CHUNK_WIDTH  + self.selected_tile[1][1]
+
+        dir = 'up'
         for r in range(-((self.view.brush_size_idx + 1) // 2), ((self.view.brush_size_idx + 1) // 2) + 1):
             for c in range(-((self.view.brush_size_idx + 1) // 2), ((self.view.brush_size_idx + 1) // 2) + 1):
-
-                global_r = self.selected_tile[0][0] * pf.TILES_PER_CHUNK_HEIGHT + self.selected_tile[1][0]
-                global_c = self.selected_tile[0][1] * pf.TILES_PER_CHUNK_WIDTH  + self.selected_tile[1][1]
 
                 tile_coords = globals.active_map.relative_tile_coords(global_r, global_c, r, c)
                 if tile_coords is not None:
@@ -126,18 +127,23 @@ class TerrainTabVC(ui.ViewController):
                     if self.view.brush_type_idx == 0:
                         globals.active_map.update_tile_mat(tile_coords, TerrainTabVC.MATERIALS_LIST[self.view.selected_mat_idx])
                     elif self.view.brush_type_idx == 1:
+                        old_height = globals.active_map.tile_at_coords(*self.selected_tile).base_height
                         center_height = self.view.heights[self.view.selected_height_idx]
                         globals.active_map.update_tile(tile_coords, center_height, newtype=map.TILETYPE_FLAT)
 
-        if self.view.edges_type_idx == 1:
-            self.__paint_smooth_border(self.view.brush_size_idx + 1)
+                        if old_height > center_height:
+                            dir = 'down'
 
-    def __tile_make_smooth(self, tile_coords):
+        if self.view.edges_type_idx == 1:
+            self.__paint_smooth_border(self.view.brush_size_idx + 1, dir)
+
+    def __tile_make_smooth(self, tile_coords, dir):
         """
         First, we pick a height for each of the 4 corners. The height is taken
         to be the the height of that corner in the 3 adjacent tiles.
-        (Ex. when 'X' is the current corner of the '?' tile, pick the maximum height of 
-        that corner in the surrounding tiles 1, 2, 3)
+        (Ex. when 'X' is the current corner of the '?' tile, pick the maximum/minimum height of 
+        that corner in the surrounding tiles 1, 2, 3) Whether we use the max or min depends on if
+        we have just lowered or raised the center tile.
 
             +------+------+------+
             |      |      |      |
@@ -150,13 +156,13 @@ class TerrainTabVC(ui.ViewController):
             |      |      |      |
             +------+------+------+
 
-            Then we set the height to be one of 2 values: the max of the corner heights
-            if it is that already, otherwise the min of the corner heights. This way, the
-            corners will be at one of 2 heights.
+        Then we set the height to be one of 2 values: the max of the corner heights
+        if it is that already, otherwise the min of the corner heights. This way, the
+        corners will be at one of 2 heights.
 
-            Lastly, we use the 'marching squares' algorithm to pick out the right tile. The
-            corners that are 'high' are taken to be inside the contour and the corners that are
-            'low' are taken to be outside the contour.
+        Lastly, we use the 'marching squares' algorithm to pick out the right tile. The
+        corners that are 'high' are taken to be inside the contour and the corners that are
+        'low' are taken to be outside the contour.
         """
 
         global_r = tile_coords[0][0] * pf.TILES_PER_CHUNK_HEIGHT + tile_coords[1][0]
@@ -181,29 +187,32 @@ class TerrainTabVC(ui.ViewController):
             map.TILETYPE_FLAT
         ]
 
-        nw_height = max([h for h in [
+        func = max if dir == 'up' else min
+        default = 0 if dir == 'up' else 9
+
+        nw_height = func([h for h in [
             tile_top_right_height(globals.active_map.relative_tile(global_r, global_c,  0, -1)),
             tile_bot_right_height(globals.active_map.relative_tile(global_r, global_c, -1, -1)),
             tile_bot_left_height (globals.active_map.relative_tile(global_r, global_c, -1,  0)),
-        ] if h is not None] + [0])
+        ] if h is not None] + [default])
 
-        ne_height = max([h for h in [
+        ne_height = func([h for h in [
             tile_bot_right_height(globals.active_map.relative_tile(global_r, global_c, -1,  0)),
             tile_bot_left_height (globals.active_map.relative_tile(global_r, global_c, -1,  1)),
             tile_top_left_height (globals.active_map.relative_tile(global_r, global_c,  0,  1)),
-        ] if h is not None] + [0])
+        ] if h is not None] + [default])
 
-        se_height = max([h for h in [
+        se_height = func([h for h in [
             tile_bot_left_height (globals.active_map.relative_tile(global_r, global_c,  0,  1)),
             tile_top_left_height (globals.active_map.relative_tile(global_r, global_c,  1,  1)),
             tile_top_right_height(globals.active_map.relative_tile(global_r, global_c,  1,  0)),
-        ] if h is not None] + [0])
+        ] if h is not None] + [default])
 
-        sw_height = max([h for h in [
+        sw_height = func([h for h in [
             tile_top_left_height (globals.active_map.relative_tile(global_r, global_c,  1,  0)),
             tile_top_right_height(globals.active_map.relative_tile(global_r, global_c,  1, -1)),
             tile_bot_right_height(globals.active_map.relative_tile(global_r, global_c,  0, -1)),
-        ] if h is not None] + [0]) 
+        ] if h is not None] + [default]) 
 
         og_heights = [nw_height, ne_height, se_height, sw_height]
         heights = [h if h == max(og_heights) else min(og_heights) for h in og_heights]
@@ -219,7 +228,7 @@ class TerrainTabVC(ui.ViewController):
 
         return base_height, new_type, ramp_height
 
-    def __paint_smooth_border(self, radius):
+    def __paint_smooth_border(self, radius, dir='up'):
         assert self.selected_tile is not None
         global_r = self.selected_tile[0][0] * pf.TILES_PER_CHUNK_HEIGHT + self.selected_tile[1][0]
         global_c = self.selected_tile[0][1] * pf.TILES_PER_CHUNK_WIDTH  + self.selected_tile[1][1]
@@ -241,7 +250,7 @@ class TerrainTabVC(ui.ViewController):
                 or right_edge and not (top_edge or bot_edge) \
                 or top_edge and not (left_edge or right_edge) \
                 or bot_edge and not (left_edge or right_edge):
-                    results.append((tile_coords) + self.__tile_make_smooth(tile_coords))
+                    results.append((tile_coords) + self.__tile_make_smooth(tile_coords, dir))
 
         for r in results:
             globals.active_map.update_tile( (r[0], r[1]), *r[2:] )
@@ -253,7 +262,7 @@ class TerrainTabVC(ui.ViewController):
             globals.active_map.relative_tile_coords(global_r, global_c,  radius, -radius)
         ]
         for coords in [c for c in corner_tiles_coords if c is not None]:
-            r = self.__tile_make_smooth(coords)
+            r = self.__tile_make_smooth(coords, dir)
             globals.active_map.update_tile(coords, *r)
 
     def __on_selected_tile_changed(self, event):

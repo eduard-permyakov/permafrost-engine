@@ -19,6 +19,7 @@
 import pf
 import traceback
 
+
 EDITOR_PFMAP_VERSION = 1.0
 
 TILETYPE_FLAT              = 0x0
