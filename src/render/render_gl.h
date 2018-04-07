@@ -32,7 +32,7 @@ struct render_private;
 struct vertex;
 struct tile;
 
-void R_GL_Init(struct render_private *priv, bool anim);
+void R_GL_Init(struct render_private *priv, const char *shader);
 void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r, size_t c);
 void R_GL_BufferSubData(const void *chunk_rprivate, size_t offset, size_t size);
 

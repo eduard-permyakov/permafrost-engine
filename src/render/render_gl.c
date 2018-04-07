@@ -291,7 +291,7 @@ static void r_tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[2
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_Init(struct render_private *priv, bool anim)
+void R_GL_Init(struct render_private *priv, const char *shader)
 {
     struct mesh *mesh = &priv->mesh;
 
@@ -321,7 +321,7 @@ void R_GL_Init(struct render_private *priv, bool anim)
         (void*)offsetof(struct vertex, material_idx));
     glEnableVertexAttribArray(3);
 
-    if(anim) {
+    if(0 == strcmp("mesh.animated.textured", shader)) {
     
         /* Attribute 4 - joint indices */
         glVertexAttribPointer(4, 4, GL_INT, GL_FALSE, sizeof(struct vertex),
@@ -334,8 +334,7 @@ void R_GL_Init(struct render_private *priv, bool anim)
         glEnableVertexAttribArray(5);  
     }
 
-    priv->shader_prog = anim ? R_Shader_GetProgForName("mesh.animated.textured")
-                             : R_Shader_GetProgForName("mesh.static.textured");
+    priv->shader_prog = R_Shader_GetProgForName(shader);
 }
 
 void R_GL_Draw(const void *render_private, mat4x4_t *model)
@@ -367,6 +366,7 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
         "mesh.static.normals.colored",
         "mesh.animated.textured",
         "mesh.animated.normals.colored",
+        "terrain.static.textured"
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -385,6 +385,7 @@ void R_GL_SetProj(const mat4x4_t *proj, const char *shader_name)
         "mesh.static.normals.colored",
         "mesh.animated.textured",
         "mesh.animated.normals.colored",
+        "terrain.static.textured"
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++)
@@ -418,6 +419,7 @@ void R_GL_SetAmbientLightColor(vec3_t color)
     const char *shaders[] = {
         "mesh.static.textured",
         "mesh.animated.textured",
+        "terrain.static.textured"
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -437,6 +439,7 @@ void R_GL_SetLightEmitColor(vec3_t color)
     const char *shaders[] = {
         "mesh.static.textured",
         "mesh.animated.textured",
+        "terrain.static.textured"
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -456,6 +459,7 @@ void R_GL_SetLightPos(vec3_t pos)
     const char *shaders[] = {
         "mesh.static.textured",
         "mesh.animated.textured",
+        "terrain.static.textured"
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {

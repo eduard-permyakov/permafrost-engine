@@ -91,6 +91,13 @@ static struct shader_resource s_shaders[] = {
         .vertex_path = "shaders/vertex_skinned.glsl",
         .geo_path    = "shaders/geometry_normals.glsl",
         .frag_path   = "shaders/fragment_colored.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "terrain.static.textured",
+        .vertex_path = "shaders/vertex_static.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment_terrain.glsl"
     }
 };
 
