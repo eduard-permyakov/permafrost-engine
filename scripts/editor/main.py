@@ -34,9 +34,7 @@ pf.set_ambient_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_pos([1024.0, 512.0, 256.0])
 
-globals.active_map = map.Map.from_filepath(pf.get_basedir() + "assets/maps/grass-cliffs.pfmap")
 pf.new_game_string(globals.active_map.pfmap_str())
-
 pf.set_map_highlight_size(1)
 
 ############################################################
