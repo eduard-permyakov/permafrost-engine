@@ -23,6 +23,7 @@
 #include "vertex.h"
 #include "shader.h"
 #include "material.h"
+#include "public/render.h"
 #include "../entity.h"
 #include "../gl_uniforms.h"
 #include "../anim/public/skeleton.h"
@@ -418,7 +419,7 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
     }
 }
 
-void R_GL_SetProj(const mat4x4_t *proj, const char *shader_name)
+void R_GL_SetProj(const mat4x4_t *proj)
 {
     const char *shaders[] = {
         "mesh.static.colored",

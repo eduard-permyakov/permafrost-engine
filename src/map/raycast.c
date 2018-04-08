@@ -175,6 +175,12 @@ static struct box bounds_for_tile(const struct map *map, struct tile_desc desc)
 
 struct aabb aabb_for_tile(struct tile_desc desc, const struct map *map)
 {
+    assert(map);
+    assert(desc.chunk_r >= 0 && desc.chunk_r < map->height);
+    assert(desc.chunk_c >= 0 && desc.chunk_c < map->width);
+    assert(desc.tile_r >= 0  && desc.tile_r < TILES_PER_CHUNK_HEIGHT);
+    assert(desc.tile_c >= 0  && desc.tile_c < TILES_PER_CHUNK_HEIGHT);
+
     const struct pfchunk *chunk = &map->chunks[desc.chunk_r * map->width + desc.chunk_c];
     const struct tile *tile = &chunk->tiles[desc.tile_r * TILES_PER_CHUNK_WIDTH + desc.tile_c];
 
@@ -432,6 +438,7 @@ static void on_mousemove(void *user, void *event)
 
     struct tile_desc cts[MAX_CANDIDATE_TILES];
     int len = candidate_tiles_sorted(s_ctx.map, ray_origin, ray_dir, cts);
+    assert(len <= MAX_CANDIDATE_TILES);
 
     for(int i = 0; i < len; i++) {
     
@@ -443,7 +450,7 @@ static void on_mousemove(void *user, void *event)
 
             /* If the ray hits the AABB, perform the second level check:
              * Check if it intersects the exact triangle mesh of the tile. */
-            vec3_t tile_mesh[36];
+            vec3_t tile_mesh[VERTS_PER_TILE];
             mat4x4_t model;
 
             const struct pfchunk *chunk = 
