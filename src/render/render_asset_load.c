@@ -244,7 +244,7 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
     ret += sizeof(struct render_private);
     /* We are going to draw each tile as a 6-sided quad, each quad consisting 
      * of two triangles */
-    ret += (tiles_width * tiles_height) * sizeof(struct vertex) * VERTS_PER_FACE * FACES_PER_TILE;
+    ret += (tiles_width * tiles_height) * sizeof(struct vertex) * VERTS_PER_TILE;
     ret += sizeof(struct material) * num_mats;
 
     return ret;
@@ -254,7 +254,7 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
                                   const struct tile *tiles, size_t width, size_t height, 
                                   void *priv_buff, const char *basedir)
 {
-    size_t num_verts = VERTS_PER_FACE * FACES_PER_TILE * (width * height);
+    size_t num_verts = VERTS_PER_TILE * (width * height);
 
     struct render_private *priv = priv_buff;
     char *unused_base = (char*)priv_buff + sizeof(struct render_private);
@@ -271,7 +271,7 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
         for(int c = 0; c < width; c++) {
 
             const struct tile *curr = &tiles[r * width + c];
-            struct vertex *vert_base = &priv->mesh.vbuff[ (r * width + c) * VERTS_PER_FACE * FACES_PER_TILE ];
+            struct vertex *vert_base = &priv->mesh.vbuff[ (r * width + c) * VERTS_PER_TILE ];
 
             R_GL_VerticesFromTile(curr, vert_base, r, c);
         }
@@ -309,10 +309,10 @@ bool R_AL_UpdateMats(SDL_RWops *mats_stream, size_t num_mats, void *priv_buff)
 void R_AL_UpdateTile(void *chunk_rprivate, int r, int c, int tiles_width, const struct tile *tile)
 {
     struct render_private *priv = chunk_rprivate;
-    struct vertex *vert_base = &priv->mesh.vbuff[ (r * tiles_width + c) * VERTS_PER_FACE * FACES_PER_TILE ];
+    struct vertex *vert_base = &priv->mesh.vbuff[ (r * tiles_width + c) * VERTS_PER_TILE ];
     
     R_GL_VerticesFromTile(tile, vert_base, r, c);
     ptrdiff_t offset = ((unsigned char*)vert_base) - ((unsigned char*)priv->mesh.vbuff);
-    R_GL_BufferSubData(chunk_rprivate, offset, sizeof(struct vertex) * VERTS_PER_FACE * FACES_PER_TILE);
+    R_GL_BufferSubData(chunk_rprivate, offset, sizeof(struct vertex) * VERTS_PER_TILE);
 }
 

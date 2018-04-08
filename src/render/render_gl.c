@@ -145,7 +145,7 @@ static void r_gl_set_view_pos(const vec3_t *pos, const char *shader_name)
     glUniform3fv(loc, 1, pos->raw);
 }
 
-static void r_tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[2], bool *out_tri_left)
+static void r_gl_tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[2], bool *out_tri_left)
 {
     switch(tile->type) {
     case TILETYPE_FLAT: {
@@ -286,6 +286,48 @@ static void r_tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[2
     PFM_Vec3_Normal(out_tri_normals + 1, out_tri_normals + 1);
 }
 
+static vec3_t r_gl_tile_middle_normal(const struct tile *tile)
+{
+    vec3_t ret;
+    switch(tile->type) {
+    case TILETYPE_FLAT: {
+    case TILETYPE_CORNER_CONCAVE_SW:
+    case TILETYPE_CORNER_CONVEX_SW:
+    case TILETYPE_CORNER_CONCAVE_SE:
+    case TILETYPE_CORNER_CONVEX_SE:
+    case TILETYPE_CORNER_CONCAVE_NW:
+    case TILETYPE_CORNER_CONVEX_NW:
+    case TILETYPE_CORNER_CONCAVE_NE:
+    case TILETYPE_CORNER_CONVEX_NE:
+        ret = (vec3_t) {0.0f, 1.0f, 0.0f}; 
+        break;
+    }
+    case TILETYPE_RAMP_SN: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, Z_COORDS_PER_TILE);
+        ret = (vec3_t) {0.0f, sin(normal_angle), cos(normal_angle)};
+        break;
+    }
+    case TILETYPE_RAMP_NS: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, Z_COORDS_PER_TILE);
+        ret = (vec3_t) {0.0f, sin(normal_angle), -cos(normal_angle)};
+        break;
+    }
+    case TILETYPE_RAMP_EW: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, X_COORDS_PER_TILE);
+        ret = (vec3_t) {-cos(normal_angle), sin(normal_angle), 0.0f};
+        break;
+    }
+    case TILETYPE_RAMP_WE: {
+        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, X_COORDS_PER_TILE);
+        ret = (vec3_t) {cos(normal_angle), sin(normal_angle), 0.0f};
+        break;
+    }
+    default: assert(0); 
+    }
+
+    PFM_Vec3_Normal(&ret, &ret);
+    return ret;
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -658,7 +700,7 @@ cleanup:
 void R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivate, mat4x4_t *model, 
                            int tiles_per_chunk_x, int tiles_per_chunk_z)
 {
-    struct vertex vbuff[VERTS_PER_FACE * FACES_PER_TILE];
+    struct vertex vbuff[VERTS_PER_TILE];
     vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
     GLint VAO, VBO;
     GLint shader_prog;
@@ -666,7 +708,7 @@ void R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivat
 
     const struct render_private *priv = chunk_rprivate;
     struct vertex *vert_base = &priv->mesh.vbuff[(in->tile_r * tiles_per_chunk_x + in->tile_c) 
-                                * VERTS_PER_FACE * FACES_PER_TILE ];
+                                * VERTS_PER_TILE];
     memcpy(vbuff, vert_base, sizeof(vbuff));
 
     /* Additionally, scale the tile selection mesh slightly around its' center. This is so that 
@@ -723,7 +765,7 @@ void R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivat
     glBufferData(GL_ARRAY_BUFFER, sizeof(vbuff), vbuff, GL_STATIC_DRAW);
 
     glBindVertexArray(VAO);
-    glDrawArrays(GL_TRIANGLES, 0, VERTS_PER_FACE * FACES_PER_TILE);
+    glDrawArrays(GL_TRIANGLES, 0, VERTS_PER_TILE);
 
 cleanup:
     glDeleteVertexArrays(1, &VAO);
@@ -1020,7 +1062,7 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
     };
 
     for(int i = 0; i < ARR_SIZE(faces); i++) {
-    
+
         struct face *curr = faces[i];
 
         /* First triangle */
@@ -1041,7 +1083,7 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
 
     vec3_t top_tri_normals[2];
     bool   top_tri_left_aligned;
-    r_tile_top_normals(tile, top_tri_normals, &top_tri_left_aligned);
+    r_gl_tile_top_normals(tile, top_tri_normals, &top_tri_left_aligned);
 
     /*
      * CONFIG 1 (left-aligned)   CONFIG 2
@@ -1073,35 +1115,58 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
         second_tri[2] = &top.se;
     }
 
-    /* First triangle */
-    first_tri[0]->normal = top_tri_normals[0];
-    first_tri[1]->normal = top_tri_normals[0];
-    first_tri[2]->normal = top_tri_normals[0];
+    float center_height = 
+          TILETYPE_IS_RAMP(tile->type)          ? (tile->base_height + tile->ramp_height / 2.0f) 
+        : TILETYPE_IS_CORNER_CONVEX(tile->type) ? (tile->base_height + tile->ramp_height) 
+        : (tile->base_height);
 
-    vec2_t xz = (vec2_t){top_tri_normals[0].x, top_tri_normals[0].z};
+    struct vertex center_vert = (struct vertex) {
+        .pos    = (vec3_t) {top.nw.pos.x - X_COORDS_PER_TILE / 2.0f, 
+                            center_height * Y_COORDS_PER_TILE, 
+                            top.nw.pos.z + Z_COORDS_PER_TILE / 2.0f},
+        .uv     = (vec2_t) {0.5f, 0.5f},
+        .normal = r_gl_tile_middle_normal(tile),
+        .joint_indices = {0},
+        .weights       = {0}
+    };
+
+    /* First triangle */
     bool use_side_mat = fabs(top_tri_normals[0].y) < 1.0 && (tile->ramp_height > 1);
-    first_tri[0]->material_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
-    first_tri[1]->material_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
-    first_tri[2]->material_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+    int mat_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+
+    for(int i = 0; i < 3; i++) {
+        first_tri[i]->normal = top_tri_normals[0];
+        first_tri[i]->material_idx = mat_idx;
+    }
+    center_vert.material_idx = mat_idx;
 
     memcpy(out + (5 * VERTS_PER_FACE) + 0, first_tri[0], sizeof(struct vertex));
     memcpy(out + (5 * VERTS_PER_FACE) + 1, first_tri[1], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 2, first_tri[2], sizeof(struct vertex));
+    memcpy(out + (5 * VERTS_PER_FACE) + 2, &center_vert, sizeof(struct vertex));
+
+    memcpy(out + (5 * VERTS_PER_FACE) + 3, &center_vert, sizeof(struct vertex));
+    memcpy(out + (5 * VERTS_PER_FACE) + 4, first_tri[2], sizeof(struct vertex));
+    memcpy(out + (5 * VERTS_PER_FACE) + 5, top_tri_left_aligned ? first_tri[1] : first_tri[0], 
+                                                         sizeof(struct vertex));
 
     /* Second triangle */
-    xz = (vec2_t){top_tri_normals[1].x, top_tri_normals[1].z};
     use_side_mat = fabs(top_tri_normals[1].y) < 1.0 && (tile->ramp_height > 1);
-    second_tri[0]->material_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
-    second_tri[1]->material_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
-    second_tri[2]->material_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+    mat_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
 
-    second_tri[0]->normal = top_tri_normals[1];
-    second_tri[1]->normal = top_tri_normals[1];
-    second_tri[2]->normal = top_tri_normals[1];
+    for(int i = 0; i < 3; i++) {
+        second_tri[i]->normal = top_tri_normals[1];
+        second_tri[i]->material_idx = mat_idx;
+    }
+    center_vert.material_idx = mat_idx;
 
-    memcpy(out + (5 * VERTS_PER_FACE) + 3, second_tri[0], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 4, second_tri[1], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 5, second_tri[2], sizeof(struct vertex));
+    memcpy(out + (5 * VERTS_PER_FACE) + 6,  second_tri[0], sizeof(struct vertex));
+    memcpy(out + (5 * VERTS_PER_FACE) + 7,  second_tri[1], sizeof(struct vertex));
+    memcpy(out + (5 * VERTS_PER_FACE) + 8,  &center_vert,  sizeof(struct vertex));
+
+    memcpy(out + (5 * VERTS_PER_FACE) + 9,  &center_vert,  sizeof(struct vertex));
+    memcpy(out + (5 * VERTS_PER_FACE) + 10, second_tri[2], sizeof(struct vertex));
+    memcpy(out + (5 * VERTS_PER_FACE) + 11, top_tri_left_aligned ? second_tri[0] : second_tri[1],
+                                                           sizeof(struct vertex));
 }
 
 int R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate, 
@@ -1109,10 +1174,10 @@ int R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate,
 {
     const struct render_private *priv = chunk_rprivate;
     struct vertex *vert_base = &priv->mesh.vbuff[(in->tile_r * tiles_per_chunk_x + in->tile_c) 
-                                * VERTS_PER_FACE * FACES_PER_TILE ];
+                                * VERTS_PER_TILE ];
     int i = 0;
 
-    for(; i < VERTS_PER_FACE * FACES_PER_TILE; i++) {
+    for(; i < VERTS_PER_TILE; i++) {
     
         vec4_t pos_homo = (vec4_t){vert_base[i].pos.x, vert_base[i].pos.y, vert_base[i].pos.z, 1.0f};
         vec4_t ws_pos_homo;

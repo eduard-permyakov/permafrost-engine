@@ -54,6 +54,25 @@ enum tiletype{
     TILETYPE_CORNER_CONVEX_NE  = 0xc,
 };
 
+#define TILETYPE_IS_RAMP(t) \
+    (  ((t) == TILETYPE_RAMP_SN ) \
+    || ((t) == TILETYPE_RAMP_NS ) \
+    || ((t) == TILETYPE_RAMP_EW ) \
+    || ((t) == TILETYPE_RAMP_WE))
+
+
+#define TILETYPE_IS_CORNER_CONCAVE(t) \
+    (  ((t) == TILETYPE_CORNER_CONCAVE_SW ) \
+    || ((t) == TILETYPE_CORNER_CONCAVE_SE ) \
+    || ((t) == TILETYPE_CORNER_CONCAVE_NW ) \
+    || ((t) == TILETYPE_CORNER_CONCAVE_NE))
+
+#define TILETYPE_IS_CORNER_CONVEX(t) \
+    (  ((t) == TILETYPE_CORNER_CONVEX_SW ) \
+    || ((t) == TILETYPE_CORNER_CONVEX_SE ) \
+    || ((t) == TILETYPE_CORNER_CONVEX_NW ) \
+    || ((t) == TILETYPE_CORNER_CONVEX_NE))
+
 struct tile{
     bool          pathable;    
     enum tiletype type;

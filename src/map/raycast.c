@@ -452,7 +452,6 @@ static void on_mousemove(void *user, void *event)
 
             int num_verts = R_GL_TriMeshForTile(&cts[i], chunk->render_private, &model, 
                 TILES_PER_CHUNK_WIDTH, tile_mesh);
-            assert(num_verts == sizeof(tile_mesh) / sizeof(vec3_t));
 
             if(C_RayIntersectsTriMesh(ray_origin, ray_dir, tile_mesh, num_verts)) {
 
