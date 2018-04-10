@@ -39,8 +39,11 @@
 #include <string.h>
 
 
-#define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
-#define MAG(x, y)   sqrt(pow(x,2) + pow(y,2))
+#define ARR_SIZE(a)                 (sizeof(a)/sizeof(a[0]))
+#define MAG(x, y)                   sqrt(pow(x,2) + pow(y,2))
+#define VEC3_EQUAL(a, b)            (0 == memcmp((a).raw, (b).raw, sizeof((a).raw)))
+#define INDICES_MASK_8(a, b)        (uint8_t)( (((a) & 0xf) << 4) | ((b) & 0xf) )
+#define INDICES_MASK_32(a, b, c, d) (uint32_t)( (((a) & 0xff) << 24) | (((b) & 0xff) << 16) | (((c) & 0xff) << 8) | (((d) & 0xff) << 0) )
 
 /* We take the directions to be relative to a normal vector facing outwards
  * from the plane of the face. West is to the right, east is to the left,
@@ -359,10 +362,19 @@ void R_GL_Init(struct render_private *priv, const char *shader)
         (void*)offsetof(struct vertex, normal));
     glEnableVertexAttribArray(2);
 
-    /* Attribute 3 - material index */
-    glVertexAttribIPointer(3, 1, GL_INT, sizeof(struct vertex), 
-        (void*)offsetof(struct vertex, material_idx));
-    glEnableVertexAttribArray(3);
+    if(0 == strcmp("terrain", shader)) {
+    
+        /* Attribute 3 - adjacent material indices */
+        glVertexAttribIPointer(3, 1, GL_INT, sizeof(struct vertex), 
+            (void*)offsetof(struct vertex, adjacent_mat_indices));
+        glEnableVertexAttribArray(3);
+    }else {
+    
+        /* Attribute 3 - material index */
+        glVertexAttribIPointer(3, 1, GL_INT, sizeof(struct vertex), 
+            (void*)offsetof(struct vertex, material_idx));
+        glEnableVertexAttribArray(3);
+    }
 
     if(0 == strcmp("mesh.animated.textured", shader)) {
     
@@ -409,7 +421,7 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
         "mesh.static.normals.colored",
         "mesh.animated.textured",
         "mesh.animated.normals.colored",
-        "terrain.static.textured"
+        "terrain"
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -428,7 +440,7 @@ void R_GL_SetProj(const mat4x4_t *proj)
         "mesh.static.normals.colored",
         "mesh.animated.textured",
         "mesh.animated.normals.colored",
-        "terrain.static.textured"
+        "terrain"
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++)
@@ -462,7 +474,7 @@ void R_GL_SetAmbientLightColor(vec3_t color)
     const char *shaders[] = {
         "mesh.static.textured",
         "mesh.animated.textured",
-        "terrain.static.textured"
+        "terrain"
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -482,7 +494,7 @@ void R_GL_SetLightEmitColor(vec3_t color)
     const char *shaders[] = {
         "mesh.static.textured",
         "mesh.animated.textured",
-        "terrain.static.textured"
+        "terrain"
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -502,7 +514,7 @@ void R_GL_SetLightPos(vec3_t pos)
     const char *shaders[] = {
         "mesh.static.textured",
         "mesh.animated.textured",
-        "terrain.static.textured"
+        "terrain"
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -796,12 +808,148 @@ void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim)
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 }
 
-void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r, size_t c)
+static void r_gl_tile_mat_indices(const struct tile *tile, uint8_t out[5], bool *out_top_tri_left_aligned)
+{
+    /* Output is in the following order:
+     *      0. middle
+     *      1. top right
+     *      2. top left
+     *      3. bottom right
+     *      4. bottom left
+     */
+    assert(tile);
+
+    vec3_t top_tri_normals[2];
+    bool   top_tri_left_aligned;
+    r_gl_tile_top_normals(tile, top_tri_normals, out_top_tri_left_aligned);
+
+    GLint tri_mats[2] = {
+        fabs(top_tri_normals[0].y) < 1.0 && (tile->ramp_height > 1) ? tile->sides_mat_idx : tile->top_mat_idx,
+        fabs(top_tri_normals[1].y) < 1.0 && (tile->ramp_height > 1) ? tile->sides_mat_idx : tile->top_mat_idx,
+    };
+    int mid_mixed = (tri_mats[0] != tri_mats[1]);
+
+    /*
+     * CONFIG 1 (left-aligned)   CONFIG 2
+     * (nw)      (ne)            (nw)      (ne)
+     * +---------+               +---------+
+     * |       / |               | \       |
+     * |     /   |               |   \     |
+     * |   /     |               |     \   |
+     * | /       |               |       \ |
+     * +---------+               +---------+
+     * (sw)      (se)            (sw)      (se)
+     */
+    out[0] = mid_mixed ? INDICES_MASK_8(tile->sides_mat_idx, tile->top_mat_idx) 
+                         : INDICES_MASK_8(tile->top_mat_idx, tile->top_mat_idx);
+    if(*out_top_tri_left_aligned) {
+        out[1] = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
+        out[2] = INDICES_MASK_8(tri_mats[0], tri_mats[0]);
+        out[3] = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
+        out[4] = INDICES_MASK_8(tri_mats[1], tri_mats[1]);
+    }else {
+        out[1] = INDICES_MASK_8(tri_mats[1], tri_mats[1]);
+        out[2] = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
+        out[3] = INDICES_MASK_8(tri_mats[0], tri_mats[0]);
+        out[4] = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
+    }
+}
+
+void R_GL_PatchVbuffAdjacencyInfo(struct vertex *vbuff, const struct tile *tiles, size_t width, size_t height)
 {
 
+    for(int r = 0; r < height; r++) {
+        for(int c = 0; c < width; c++) {
+        
+            const struct tile *curr_tile  = &tiles[r * width + c];
+            const struct tile *top_tile   = (r > 0)          ? &tiles[(r - 1) * width + c] : NULL;
+            const struct tile *bot_tile   = (r < height - 1) ? &tiles[(r + 1) * width + c] : NULL;
+            const struct tile *left_tile  = (c > 0)          ? &tiles[r * width + (c - 1)] : NULL;
+            const struct tile *right_tile = (c < width - 1)  ? &tiles[r * width + (c + 1)] : NULL;
+
+            const struct tile *top_right_tile = (top_tile && right_tile) ? &tiles[(r - 1) * width + (c + 1)] : NULL;
+            const struct tile *bot_right_tile = (bot_tile && right_tile) ? &tiles[(r + 1) * width + (c + 1)] : NULL;
+            const struct tile *top_left_tile = (top_tile && left_tile)   ? &tiles[(r - 1) * width + (c - 1)] : NULL;
+            const struct tile *bot_left_tile = (bot_tile && left_tile)   ? &tiles[(r + 1) * width + (c - 1)] : NULL;
+
+            uint32_t mid, tr, tl, br, bl;
+            bool top_tri_left_aligned;
+            uint8_t curr[5], top[5], bot[5], left[5], right[5];
+            uint8_t top_right[4], bot_right[5], top_left[5], bot_left[5];
+            r_gl_tile_mat_indices(curr_tile, curr, &top_tri_left_aligned);
+
+            struct{
+                const struct tile *tile;
+                uint8_t           *outptr;
+            }map[] = {
+                {top_tile,          top},
+                {bot_tile,          bot},
+                {left_tile,         left},
+                {right_tile,        right},
+                {top_right_tile,    top_right},
+                {bot_right_tile,    bot_right},
+                {top_left_tile,     top_left},
+                {bot_left_tile,     bot_left},
+            };
+
+            for(int i = 0; i < ARR_SIZE(map); i++) {
+                bool tmp;
+                if(map[i].tile) 
+                    r_gl_tile_mat_indices(map[i].tile, map[i].outptr, &tmp);
+                else
+                    memset(map[i].outptr, curr[0], sizeof(curr));
+            }
+                
+            /* Now, update all 4 triangles of the top face */
+            struct vertex *tile_verts_base = &vbuff[VERTS_PER_TILE * (r * width + c)];
+            struct vertex *tr_verts[2], *tl_verts[2], *bl_verts[2], *br_verts[2];
+            struct vertex *mid_verts[4] = {&tile_verts_base[32], &tile_verts_base[33],
+                                            &tile_verts_base[38], &tile_verts_base[39]};
+
+            bl_verts[0] = &tile_verts_base[30];
+            br_verts[0] = &tile_verts_base[31];
+            tl_verts[0] = &tile_verts_base[36];
+            tr_verts[0] = &tile_verts_base[37];
+
+            if(top_tri_left_aligned) {
+                bl_verts[1] = &tile_verts_base[40];
+                br_verts[1] = &tile_verts_base[35];
+                tl_verts[1] = &tile_verts_base[41];
+                tr_verts[1] = &tile_verts_base[34];
+            }else {
+                bl_verts[1] = &tile_verts_base[35];
+                br_verts[1] = &tile_verts_base[40];
+                tl_verts[1] = &tile_verts_base[34];
+                tr_verts[1] = &tile_verts_base[41];
+            }
+
+            for(int i = 0; i < 4; i++)
+                mid_verts[i]->adjacent_mat_indices = INDICES_MASK_32(curr[0], curr[0], curr[0], curr[0]);
+
+            for(int i = 0; i < 2; i++)
+                tl_verts[i]->adjacent_mat_indices = INDICES_MASK_32(curr[2], left[1], top_left[3], top[4]);
+
+            for(int i = 0; i < 2; i++)
+                tr_verts[i]->adjacent_mat_indices = INDICES_MASK_32(right[2], curr[1], top[3], top_right[4]);
+
+            for(int i = 0; i < 2; i++)
+                bl_verts[i]->adjacent_mat_indices = INDICES_MASK_32(bot[2], bot_left[1], left[3], curr[4]);
+
+            for(int i = 0; i < 2; i++)
+                br_verts[i]->adjacent_mat_indices = INDICES_MASK_32(bot_right[2], bot[1], curr[3], right[1]);
+        }
+    }
+}
+
+void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r, size_t c)
+{
     /* Bottom face is always the same (just shifted over based on row and column), and the 
      * front, back, left, right faces just connect the top and bottom faces. The only 
-     * variations are in the top face, which has some corners raised based on tile type. */
+     * variations are in the top face, which has some corners raised based on tile type. 
+     *
+     * The 'adjacent_mat_indices' are ordered such that the 'bottom right' corner is the least
+     * significant and the other indices are in clockwise order after that. This is important
+     * information for selecting the texture coordinate for each of the indices. */
 
     struct face bot = {
         .nw = (struct vertex) {
@@ -810,8 +958,10 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
             .uv     = (vec2_t) { 0.0f, 1.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = ((tile->adj_mat_E   & 0xf) << 0)
+            //                      | ((tile->top_mat_idx & 0xf) << 4)
+            //                      | ((tile->adj_mat_N   & 0xf) << 8)
+            //                      | ((tile->adj_mat_NE  & 0xf) << 12),
         },
         .ne = (struct vertex) {
             .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (-1.0f * Y_COORDS_PER_TILE), 
@@ -819,8 +969,10 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
             .uv     = (vec2_t) { 1.0f, 1.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = ((tile->top_mat_idx & 0xf) << 0)
+            //                      | ((tile->adj_mat_W   & 0xf) << 4)
+            //                      | ((tile->adj_mat_NW  & 0xf) << 8)
+            //                      | ((tile->adj_mat_N   & 0xf) << 12),
         },
         .se = (struct vertex) {
             .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (-1.0f * Y_COORDS_PER_TILE), 
@@ -828,8 +980,10 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = ((tile->adj_mat_S   & 0xf) << 0)
+            //                      | ((tile->adj_mat_SW  & 0xf) << 4)
+            //                      | ((tile->adj_mat_W   & 0xf) << 8)
+            //                      | ((tile->top_mat_idx & 0xf) << 12),
         },
         .sw = (struct vertex) {
             .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (-1.0f * Y_COORDS_PER_TILE), 
@@ -837,8 +991,10 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = ((tile->adj_mat_SE  & 0xf) << 0)
+            //                      | ((tile->adj_mat_S   & 0xf) << 4)
+            //                      | ((tile->top_mat_idx & 0xf) << 8)
+            //                      | ((tile->adj_mat_E   & 0xf) << 12),
         },
     };
 
@@ -879,8 +1035,10 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
                                  0.0f + (r * Z_COORDS_PER_TILE) },
             .uv     = (vec2_t) { 0.0f, 1.0f },
             .material_idx  = tile->top_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = ((tile->adj_mat_W   & 0xf) << 0)
+            //                      | ((tile->top_mat_idx & 0xf) << 4)
+            //                      | ((tile->adj_mat_N   & 0xf) << 8)
+            //                      | ((tile->adj_mat_NW  & 0xf) << 12),
         },
         .ne = (struct vertex) {
             .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), 
@@ -889,8 +1047,10 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
                                  0.0f + (r * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 1.0f },
             .material_idx  = tile->top_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = ((tile->top_mat_idx & 0xf) << 0)
+            //                      | ((tile->adj_mat_E   & 0xf) << 4)
+            //                      | ((tile->adj_mat_NE  & 0xf) << 8)
+            //                      | ((tile->adj_mat_N   & 0xf) << 12),
         },
         .se = (struct vertex) {
             .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), 
@@ -899,8 +1059,10 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
                                  0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = ((tile->adj_mat_S   & 0xf) << 0)
+            //                      | ((tile->adj_mat_SE  & 0xf) << 4)
+            //                      | ((tile->adj_mat_E   & 0xf) << 8)
+            //                      | ((tile->top_mat_idx & 0xf) << 12),
         },
         .sw = (struct vertex) {
             .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), 
@@ -909,45 +1071,45 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
                                  0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = ((tile->adj_mat_SW  & 0xf) << 0)
+            //                      | ((tile->adj_mat_S   & 0xf) << 4)
+            //                      | ((tile->top_mat_idx & 0xf) << 8)
+            //                      | ((tile->adj_mat_W   & 0xf) << 12),
         },
     };
 
 #define V_COORD(width, height) (((float)height)/width)
 
+    GLint side_adjacent_indices = ((tile->sides_mat_idx & 0xf) << 0) | ((tile->sides_mat_idx & 0xf) << 4)
+                                | ((tile->sides_mat_idx & 0xf) << 8) | ((tile->sides_mat_idx & 0xf) << 12);
     struct face back = {
         .nw = (struct vertex) {
             .pos    = top.nw.pos,
             .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, back.nw.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
         .ne = (struct vertex) {
             .pos    = top.ne.pos,
             .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, back.ne.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
         .se = (struct vertex) {
             .pos    = bot.nw.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
         .sw = (struct vertex) {
             .pos    = bot.ne.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
     };
 
@@ -957,32 +1119,28 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
             .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, front.nw.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
         .ne = (struct vertex) {
             .pos    = top.se.pos,
             .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, front.ne.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
         .se = (struct vertex) {
             .pos    = bot.sw.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
         .sw = (struct vertex) {
             .pos    = bot.se.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
     };
 
@@ -992,32 +1150,28 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
             .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, left.nw.pos.y) },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
         .ne = (struct vertex) {
             .pos    = top.nw.pos,
             .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, left.ne.pos.y) },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
         .se = (struct vertex) {
             .pos    = bot.ne.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
         .sw = (struct vertex) {
             .pos    = bot.se.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
     };
 
@@ -1027,32 +1181,28 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
             .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, right.nw.pos.y) },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
         .ne = (struct vertex) {
             .pos    = top.se.pos,
             .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, right.ne.pos.y) },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
         .se = (struct vertex) {
             .pos    = bot.sw.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
         .sw = (struct vertex) {
             .pos    = bot.nw.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
-            .joint_indices = {0},
-            .weights       = {0}
+            //.adjacent_mat_indices = side_adjacent_indices,
         },
     };
 
@@ -1127,47 +1277,33 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
                             top.nw.pos.z + Z_COORDS_PER_TILE / 2.0f},
         .uv     = (vec2_t) {0.5f, 0.5f},
         .normal = r_gl_tile_middle_normal(tile),
-        .joint_indices = {0},
-        .weights       = {0}
     };
 
-    /* First triangle */
-    bool use_side_mat = fabs(top_tri_normals[0].y) < 1.0 && (tile->ramp_height > 1);
-    int mat_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+    /* Draw each of the two triangles for the top face, each one being made of 2 triangles,
+     * resulting in 4 tringles total for the top face. */
+    for(int t = 0; t < 2; t++) {
+        struct vertex **tri = (t == 0) ? first_tri : second_tri;
+    
+        bool use_side_mat = fabs(top_tri_normals[t].y) < 1.0 && (tile->ramp_height > 1);
+        int mat_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
 
-    for(int i = 0; i < 3; i++) {
-        first_tri[i]->normal = top_tri_normals[0];
-        first_tri[i]->material_idx = mat_idx;
+        for(int i = 0; i < 3; i++) {
+            tri[i]->normal = top_tri_normals[t];
+            tri[i]->material_idx = mat_idx;
+        }
+        center_vert.material_idx = mat_idx;
+
+        memcpy(out + (5 * VERTS_PER_FACE) + 0 + (t * 6), tri[0], sizeof(struct vertex));
+        memcpy(out + (5 * VERTS_PER_FACE) + 1 + (t * 6), tri[1], sizeof(struct vertex));
+        memcpy(out + (5 * VERTS_PER_FACE) + 2 + (t * 6), &center_vert, sizeof(struct vertex));
+
+        memcpy(out + (5 * VERTS_PER_FACE) + 3 + (t * 6), &center_vert, sizeof(struct vertex));
+        memcpy(out + (5 * VERTS_PER_FACE) + 4 + (t * 6), tri[2], sizeof(struct vertex));
+
+        struct vertex *last = (t == 0) ? (top_tri_left_aligned ? tri[1] : tri[0])
+                                       : (top_tri_left_aligned ? tri[0] : tri[1]);
+        memcpy(out + (5 * VERTS_PER_FACE) + 5 + (t * 6), last, sizeof(struct vertex));
     }
-    center_vert.material_idx = mat_idx;
-
-    memcpy(out + (5 * VERTS_PER_FACE) + 0, first_tri[0], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 1, first_tri[1], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 2, &center_vert, sizeof(struct vertex));
-
-    memcpy(out + (5 * VERTS_PER_FACE) + 3, &center_vert, sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 4, first_tri[2], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 5, top_tri_left_aligned ? first_tri[1] : first_tri[0], 
-                                                         sizeof(struct vertex));
-
-    /* Second triangle */
-    use_side_mat = fabs(top_tri_normals[1].y) < 1.0 && (tile->ramp_height > 1);
-    mat_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
-
-    for(int i = 0; i < 3; i++) {
-        second_tri[i]->normal = top_tri_normals[1];
-        second_tri[i]->material_idx = mat_idx;
-    }
-    center_vert.material_idx = mat_idx;
-
-    memcpy(out + (5 * VERTS_PER_FACE) + 6,  second_tri[0], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 7,  second_tri[1], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 8,  &center_vert,  sizeof(struct vertex));
-
-    memcpy(out + (5 * VERTS_PER_FACE) + 9,  &center_vert,  sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 10, second_tri[2], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 11, top_tri_left_aligned ? second_tri[0] : second_tri[1],
-                                                           sizeof(struct vertex));
 }
 
 int R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate, 

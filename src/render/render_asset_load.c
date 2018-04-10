@@ -284,7 +284,8 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
             goto fail;
     }
 
-    R_GL_Init(priv, "terrain.static.textured");
+    R_GL_PatchVbuffAdjacencyInfo(priv->mesh.vbuff, tiles, width, height);
+    R_GL_Init(priv, "terrain");
 
     return true;
 

@@ -39,6 +39,7 @@ bool m_al_parse_tile(const char *str, struct tile *out)
 
     char type_hexstr[2] = {str[0], '\0'};
 
+    memset(out, 0, sizeof(struct tile));
     out->type          = (enum tiletype) strtol(type_hexstr, NULL, 16);
     out->pathable      = (bool)          (str[1] - '0');
     out->base_height   = (int)           (str[2] - '0');
