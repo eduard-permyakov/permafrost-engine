@@ -23,7 +23,7 @@
 
 /* TODO: Make these as material parameters */
 #define SPECULAR_STRENGTH  2
-#define SPECULAR_SHININESS 8
+#define SPECULAR_SHININESS 4
 
 #define Y_COORDS_PER_TILE  4 
 #define EXTRA_AMBIENT_PER_LEVEL 0.03
@@ -33,10 +33,12 @@
 /*****************************************************************************/
 
 in VertexToFrag {
-         vec2 uv;
-    flat int  mat_idx;
-         vec3 world_pos;
-         vec3 normal;
+         vec2  uv;
+    flat int   mat_idx;
+         vec3  world_pos;
+         vec3  normal;
+    flat int   blend_mode;
+    flat ivec2 adjacent_mat_indices;
 }from_vertex;
 
 /*****************************************************************************/
@@ -75,23 +77,33 @@ uniform material materials[MAX_MATERIALS];
 /* PROGRAM                                                                   */
 /*****************************************************************************/
 
+vec4 texture_val(int mat_idx, vec2 uv)
+{
+    switch(mat_idx) {
+    case 0: return vec4(1.0, 0.0, 0.0, 1.0); break;
+    case 1: return vec4(0.0, 1.0, 0.0, 1.0); break;
+    case 2: return vec4(0.0, 0.0, 1.0, 1.0); break;
+    case 3: return vec4(0.0, 1.0, 1.0, 1.0); break;
+    case 4: return texture2D(texture4, uv); break;
+    case 5: return texture2D(texture5, uv); break;
+    case 6: return texture2D(texture6, uv); break;
+    case 7: return texture2D(texture7, uv); break;
+    default: return vec4(0.0);
+    }
+}
+
 void main()
 {
     vec4 tex_color;
 
-    switch(from_vertex.mat_idx) {
-    case 0: tex_color = texture(texture0, from_vertex.uv); break;
-    case 1: tex_color = texture(texture1, from_vertex.uv); break;
-    case 2: tex_color = texture(texture2, from_vertex.uv); break;
-    case 3: tex_color = texture(texture3, from_vertex.uv); break;
-    case 4: tex_color = texture(texture4, from_vertex.uv); break;
-    case 5: tex_color = texture(texture5, from_vertex.uv); break;
-    case 6: tex_color = texture(texture6, from_vertex.uv); break;
-    case 7: tex_color = texture(texture7, from_vertex.uv); break;
+    if(0 == from_vertex.blend_mode) {
+        tex_color = texture_val(from_vertex.mat_idx, from_vertex.uv);     
+    }else {
+        tex_color = texture_val(from_vertex.adjacent_mat_indices[0], from_vertex.uv);
     }
 
     /* Simple alpha test to reject transparent pixels */
-    if(tex_color.a== 0.0)
+    if(tex_color.a == 0.0)
         discard;
 
     /* We increase the amount of ambient light that taller tiles get, in order to make
@@ -110,7 +122,7 @@ void main()
     vec3 view_dir = normalize(view_pos - from_vertex.world_pos);
     vec3 reflect_dir = reflect(-light_dir, from_vertex.normal);  
     float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
-    vec3 specular = SPECULAR_STRENGTH * light_color * (spec * materials[from_vertex.mat_idx].specular_clr);  
+    vec3 specular = SPECULAR_STRENGTH * light_color * (spec * materials[from_vertex.mat_idx].specular_clr);
 
     o_frag_color = vec4( (ambient + diffuse + specular) * tex_color.xyz, 1.0);
 }

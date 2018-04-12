@@ -128,11 +128,11 @@ static void render(void)
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    G_Render();
-    UI_Render();
-
     /* Restore OpenGL global state after it's been clobbered by nuklear */
     gl_set_globals(); 
+
+    G_Render();
+    UI_Render();
 
     SDL_GL_SwapWindow(s_window);
 }
@@ -191,6 +191,7 @@ static bool engine_init(char **argv)
     }
 
     glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
+    glProvokingVertex(GL_FIRST_VERTEX_CONVENTION); 
 
     /* ---------------------------------- */
     /* nuklear initialization             */

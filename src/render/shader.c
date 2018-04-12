@@ -95,7 +95,7 @@ static struct shader_resource s_shaders[] = {
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "terrain",
-        .vertex_path = "shaders/vertex_static.glsl",
+        .vertex_path = "shaders/vertex_terrain.glsl",
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment_terrain.glsl"
     }

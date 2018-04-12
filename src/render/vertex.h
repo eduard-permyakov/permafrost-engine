@@ -29,10 +29,9 @@ struct vertex{
     GLint   material_idx;
     GLint   joint_indices[4];
     GLfloat weights[4];
-    /* The lowest (4*4=16) bits are used as the 4-bit indices of 
-     * the 4 different materials to be blended at this vertex. 
-     * Used for blending adjacent tile textures. */
-    GLint   adjacent_mat_indices;
+    /* The following attributes are used for terrain vertices. */
+    GLint   blend_mode;
+    GLint   adjacent_mat_indices[2];
 };
 
 #endif
