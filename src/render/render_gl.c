@@ -40,10 +40,18 @@
 
 
 #define ARR_SIZE(a)                 (sizeof(a)/sizeof(a[0]))
+
 #define MAG(x, y)                   sqrt(pow(x,2) + pow(y,2))
+
 #define VEC3_EQUAL(a, b)            (0 == memcmp((a).raw, (b).raw, sizeof((a).raw)))
+
 #define INDICES_MASK_8(a, b)        (uint8_t)( (((a) & 0xf) << 4) | ((b) & 0xf) )
+
 #define INDICES_MASK_32(a, b, c, d) (uint32_t)( (((a) & 0xff) << 24) | (((b) & 0xff) << 16) | (((c) & 0xff) << 8) | (((d) & 0xff) << 0) )
+
+#define SAME_INDICES_32(i)          (  (( (i) >> 0) & 0xffff) == (( (i) >> 16) & 0xfffff) \
+                                    && (( (i) >> 0) & 0xff  ) == (( (i) >> 8 ) & 0xff   ) \
+                                    && (( (i) >> 0) & 0xf   ) == (( (i) >> 4 ) & 0xf    ) )
 
 /* We take the directions to be relative to a normal vector facing outwards
  * from the plane of the face. West is to the right, east is to the left,
@@ -843,7 +851,7 @@ static void r_gl_tile_mat_indices(const struct tile *tile, uint8_t out[5], bool 
      * (sw)      (se)            (sw)      (se)
      */
     out[0] = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
-    if(*out_top_tri_left_aligned) {
+    if(!(*out_top_tri_left_aligned)) {
         out[1] = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
         out[2] = INDICES_MASK_8(tri_mats[0], tri_mats[0]);
         out[3] = INDICES_MASK_8(tri_mats[1], tri_mats[1]);
@@ -853,6 +861,19 @@ static void r_gl_tile_mat_indices(const struct tile *tile, uint8_t out[5], bool 
         out[2] = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
         out[3] = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
         out[4] = INDICES_MASK_8(tri_mats[0], tri_mats[0]);
+    }
+}
+
+enum blend_mode r_gl_blendmode_for_provoking_vert(const struct vertex *vert)
+{
+    if(SAME_INDICES_32(vert->adjacent_mat_indices[0])
+    && SAME_INDICES_32(vert->adjacent_mat_indices[1])
+    && vert->adjacent_mat_indices[0] == vert->adjacent_mat_indices[1]
+    && (vert->adjacent_mat_indices[0] & 0xf) == vert->material_idx) {
+    
+        return BLEND_MODE_NOBLEND;
+    }else{
+        return BLEND_MODE_BLUR; 
     }
 }
 
@@ -873,9 +894,8 @@ void R_GL_PatchVbuffAdjacencyInfo(struct vertex *vbuff, const struct tile *tiles
             const struct tile *top_left_tile = (top_tile && left_tile)   ? &tiles[(r - 1) * width + (c - 1)] : NULL;
             const struct tile *bot_left_tile = (bot_tile && left_tile)   ? &tiles[(r + 1) * width + (c - 1)] : NULL;
 
-            uint32_t mid, tr, tl, br, bl;
             uint8_t top[5],       bot[5],       left[5],     right[5];
-            uint8_t top_right[4], bot_right[5], top_left[5], bot_left[5];
+            uint8_t top_right[5], bot_right[5], top_left[5], bot_left[5];
 
             uint8_t curr[5];
             bool top_tri_left_aligned;
@@ -914,15 +934,33 @@ void R_GL_PatchVbuffAdjacencyInfo(struct vertex *vbuff, const struct tile *tiles
             struct vertex *west_provoking = tile_verts_base + (top_tri_left_aligned ? 39 : 33);
             struct vertex *east_provoking = tile_verts_base + (top_tri_left_aligned ? 33 : 39);
 
-            south_provoking->adjacent_mat_indices[0] = 0;
-            north_provoking->adjacent_mat_indices[0] = 1; 
-            west_provoking->adjacent_mat_indices[0]  = 2; 
-            east_provoking->adjacent_mat_indices[0]  = 3; 
+#define MID(buf)       ((buf)[0])
+#define TOP_RIGHT(buf) ((buf)[1])
+#define TOP_LEFT(buf)  ((buf)[2])
+#define BOT_RIGHT(buf) ((buf)[3])
+#define BOT_LEFT(buf)  ((buf)[4])
 
-            south_provoking->blend_mode = 1;
-            north_provoking->blend_mode = 1; 
-            west_provoking->blend_mode = 1; 
-            east_provoking->blend_mode = 1; 
+            south_provoking->adjacent_mat_indices[0] = INDICES_MASK_32(TOP_LEFT(bot),       TOP_RIGHT(bot_left), BOT_RIGHT(left),     BOT_LEFT(curr));
+            south_provoking->adjacent_mat_indices[1] = INDICES_MASK_32(TOP_LEFT(bot_right), TOP_RIGHT(bot),      BOT_RIGHT(curr),     BOT_LEFT(right));
+            south_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(south_provoking);
+
+            north_provoking->adjacent_mat_indices[0] = INDICES_MASK_32(TOP_LEFT(curr),      TOP_RIGHT(left),     BOT_RIGHT(top_left), BOT_LEFT(top));
+            north_provoking->adjacent_mat_indices[1] = INDICES_MASK_32(TOP_LEFT(right),     TOP_RIGHT(curr),     BOT_RIGHT(top),      BOT_LEFT(top_right));
+            north_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(north_provoking);
+
+            west_provoking->adjacent_mat_indices[0] = south_provoking->adjacent_mat_indices[0];
+            west_provoking->adjacent_mat_indices[1] = north_provoking->adjacent_mat_indices[0];
+            west_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(west_provoking);
+
+            east_provoking->adjacent_mat_indices[0] = south_provoking->adjacent_mat_indices[1];
+            east_provoking->adjacent_mat_indices[1] = north_provoking->adjacent_mat_indices[1];
+            east_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(east_provoking);
+
+#undef MID
+#undef TOP_RIGHT
+#undef TOP_LEFT
+#undef BOT_RIGHT
+#undef BOT_LEFT
         }
     }
 }
@@ -1233,7 +1271,7 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
     memcpy(out + (5 * VERTS_PER_FACE) + 5, (top_tri_left_aligned ? first_tri[1] : first_tri[0]), sizeof(struct vertex));
 
     /* Second 'major' triangle */
-    use_side_mat = fabs(top_tri_normals[0].y) < 1.0 && (tile->ramp_height > 1);
+    use_side_mat = fabs(top_tri_normals[1].y) < 1.0 && (tile->ramp_height > 1);
     mat_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
 
     for(int i = 0; i < 3; i++) {

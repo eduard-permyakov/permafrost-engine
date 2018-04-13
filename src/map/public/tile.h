@@ -73,6 +73,11 @@ enum tiletype{
     || ((t) == TILETYPE_CORNER_CONVEX_NW ) \
     || ((t) == TILETYPE_CORNER_CONVEX_NE))
 
+enum blend_mode{
+    BLEND_MODE_NOBLEND = 0,
+    BLEND_MODE_BLUR,
+};
+
 struct tile{
     bool          pathable;    
     enum tiletype type;

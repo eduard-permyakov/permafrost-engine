@@ -80,10 +80,10 @@ uniform material materials[MAX_MATERIALS];
 vec4 texture_val(int mat_idx, vec2 uv)
 {
     switch(mat_idx) {
-    case 0: return vec4(1.0, 0.0, 0.0, 1.0); break;
-    case 1: return vec4(0.0, 1.0, 0.0, 1.0); break;
-    case 2: return vec4(0.0, 0.0, 1.0, 1.0); break;
-    case 3: return vec4(0.0, 1.0, 1.0, 1.0); break;
+    case 0: return texture2D(texture0, uv); break;
+    case 1: return texture2D(texture1, uv); break;
+    case 2: return texture2D(texture2, uv); break;
+    case 3: return texture2D(texture3, uv); break;
     case 4: return texture2D(texture4, uv); break;
     case 5: return texture2D(texture5, uv); break;
     case 6: return texture2D(texture6, uv); break;
@@ -92,14 +92,89 @@ vec4 texture_val(int mat_idx, vec2 uv)
     }
 }
 
+vec4 mixed_texture_val(int adjacency_mats, vec2 uv)
+{
+    vec4 ret = vec4(0.0f);
+    for(int i = 0; i < 8; i++) {
+        int idx = (adjacency_mats >> (i * 4)) & 0xf;
+        ret += texture_val(idx, uv) * (1.0/8.0);
+    }
+    return ret;
+}
+
+material mixed_material_from_adj(int adjacency_mats)
+{
+    material ret = material(0.0, vec3(0.0), vec3(0.0));
+    for(int i = 0; i < 8; i++) {
+        int idx = (adjacency_mats >> (i * 4)) & 0xf;
+        ret.ambient_intensity += materials[idx].ambient_intensity * (1.0f/8.0f);
+        ret.diffuse_clr += materials[idx].diffuse_clr * (1.0f/8.0f);
+        ret.specular_clr += materials[idx].specular_clr * (1.0f/8.0f);
+    }
+    return ret;
+}
+
+material mix_materials(material x, material y, float a)
+{
+    return material(
+        x.ambient_intensity * (1.0 - a) + y.ambient_intensity * a, 
+        x.diffuse_clr       * (1.0 - a) + y.diffuse_clr       * a, 
+        x.specular_clr      * (1.0 - a) + y.specular_clr      * a
+    );
+}
+
 void main()
 {
     vec4 tex_color;
+    material frag_material;
 
     if(0 == from_vertex.blend_mode) {
         tex_color = texture_val(from_vertex.mat_idx, from_vertex.uv);     
+        //tex_color = vec4(1.0, 0.0, 0.0, 1.0);     
+        frag_material = materials[from_vertex.mat_idx];
     }else {
-        tex_color = texture_val(from_vertex.adjacent_mat_indices[0], from_vertex.uv);
+
+        bool bot   = (from_vertex.uv.x > from_vertex.uv.y) && (1.0 - from_vertex.uv.x > from_vertex.uv.y);
+        bool top   = (from_vertex.uv.x < from_vertex.uv.y) && (1.0 - from_vertex.uv.x < from_vertex.uv.y);
+        bool left  = (from_vertex.uv.x < from_vertex.uv.y) && (1.0 - from_vertex.uv.x > from_vertex.uv.y);
+        bool right = (from_vertex.uv.x > from_vertex.uv.y) && (1.0 - from_vertex.uv.x < from_vertex.uv.y);
+
+        vec4 color1 = mixed_texture_val(from_vertex.adjacent_mat_indices[0], from_vertex.uv);
+        vec4 color2 = mixed_texture_val(from_vertex.adjacent_mat_indices[1], from_vertex.uv);
+        vec4 tile_color = texture_val(from_vertex.mat_idx, from_vertex.uv);
+
+        material m1 = mixed_material_from_adj(from_vertex.adjacent_mat_indices[0]);
+        material m2 = mixed_material_from_adj(from_vertex.adjacent_mat_indices[1]);
+
+        if(bot) {
+            float alpha_u = (0.5f - from_vertex.uv.y)/0.5f;
+            vec4 u_component = mix(color1, color2, from_vertex.uv.x);
+            tex_color = mix(tile_color, u_component, alpha_u);
+
+            material u_mat = mix_materials(m1, m2, from_vertex.uv.x);
+            frag_material = mix_materials(materials[from_vertex.mat_idx], u_mat, alpha_u);
+        }else if(top){
+            float alpha_u = 1.0f - (1.0 - from_vertex.uv.y)/0.5f;
+            vec4 u_component = mix(color1, color2, from_vertex.uv.x);
+            tex_color = mix(tile_color, u_component, alpha_u);
+
+            material u_mat = mix_materials(m1, m2, from_vertex.uv.x);
+            frag_material = mix_materials(materials[from_vertex.mat_idx], u_mat, alpha_u);
+        }else if(left){
+            float alpha_v = (0.5f - from_vertex.uv.x)/0.5f;
+            vec4 v_component = mix(color1, color2, from_vertex.uv.y);
+            tex_color = mix(tile_color, v_component, alpha_v);
+
+            material v_mat = mix_materials(m1, m2, from_vertex.uv.y);
+            frag_material = mix_materials(materials[from_vertex.mat_idx], v_mat, alpha_v);
+        }else /*right*/{
+            float alpha_v = 1.0f - (1.0 - from_vertex.uv.x)/0.5f;
+            vec4 v_component = mix(color1, color2, from_vertex.uv.y);
+            tex_color = mix(tile_color, v_component, alpha_v);
+
+            material v_mat = mix_materials(m1, m2, from_vertex.uv.y);
+            frag_material = mix_materials(materials[from_vertex.mat_idx], v_mat, alpha_v);
+        }
     }
 
     /* Simple alpha test to reject transparent pixels */
@@ -111,18 +186,18 @@ void main()
     float height = from_vertex.world_pos.y / Y_COORDS_PER_TILE;
 
     /* Ambient calculations */
-    vec3 ambient = (materials[from_vertex.mat_idx].ambient_intensity + height * EXTRA_AMBIENT_PER_LEVEL) * ambient_color;
+    vec3 ambient = (frag_material.ambient_intensity + height * EXTRA_AMBIENT_PER_LEVEL) * ambient_color;
 
     /* Diffuse calculations */
     vec3 light_dir = normalize(light_pos - from_vertex.world_pos);  
     float diff = max(dot(from_vertex.normal, light_dir), 0.0);
-    vec3 diffuse = light_color * (diff * materials[from_vertex.mat_idx].diffuse_clr);
+    vec3 diffuse = light_color * (diff * frag_material.diffuse_clr);
 
     /* Specular calculations */
     vec3 view_dir = normalize(view_pos - from_vertex.world_pos);
     vec3 reflect_dir = reflect(-light_dir, from_vertex.normal);  
     float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
-    vec3 specular = SPECULAR_STRENGTH * light_color * (spec * materials[from_vertex.mat_idx].specular_clr);
+    vec3 specular = SPECULAR_STRENGTH * light_color * (spec * frag_material.specular_clr);
 
     o_frag_color = vec4( (ambient + diffuse + specular) * tex_color.xyz, 1.0);
 }
