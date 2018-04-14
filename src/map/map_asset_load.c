@@ -168,7 +168,8 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
 
     struct pfchunk *chunk = &map->chunks[desc->chunk_r * map->width + desc->chunk_c];
     chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c] = *tile;
-    R_AL_UpdateTile(chunk->render_private, desc->tile_r, desc->tile_c, TILES_PER_CHUNK_WIDTH, tile);
+    R_AL_UpdateTile(chunk->render_private, desc->tile_r, desc->tile_c, 
+        TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, chunk->tiles);
 
     return true;
 }

@@ -132,6 +132,15 @@ fail:
     return false;
 }
 
+void al_patch_vbuff_adjacency_info(struct vertex *vbuff, const struct tile *tiles, size_t width, size_t height)
+{
+    for(int r = 0; r < height; r++) {
+        for(int c = 0; c < width; c++) {
+            R_GL_PatchTileVertsBlend(vbuff, tiles, width, height, r, c); 
+        }
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -284,7 +293,7 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
             goto fail;
     }
 
-    R_GL_PatchVbuffAdjacencyInfo(priv->mesh.vbuff, tiles, width, height);
+    al_patch_vbuff_adjacency_info(priv->mesh.vbuff, tiles, width, height);
     R_GL_Init(priv, "terrain");
 
     return true;
@@ -307,13 +316,29 @@ bool R_AL_UpdateMats(SDL_RWops *mats_stream, size_t num_mats, void *priv_buff)
     return true;
 }
 
-void R_AL_UpdateTile(void *chunk_rprivate, int r, int c, int tiles_width, const struct tile *tile)
+void R_AL_UpdateTile(void *chunk_rprivate, int r, int c, int tiles_width, int tiles_height, 
+                     const struct tile *tiles)
 {
     struct render_private *priv = chunk_rprivate;
+    const struct tile *tile = &tiles[r * tiles_width + c];
     struct vertex *vert_base = &priv->mesh.vbuff[ (r * tiles_width + c) * VERTS_PER_TILE ];
     
     R_GL_VerticesFromTile(tile, vert_base, r, c);
-    ptrdiff_t offset = ((unsigned char*)vert_base) - ((unsigned char*)priv->mesh.vbuff);
-    R_GL_BufferSubData(chunk_rprivate, offset, sizeof(struct vertex) * VERTS_PER_TILE);
+
+    for(int r_curr = r - 1; r_curr < r + 2; r_curr++){
+        for(int c_curr = c - 1; c_curr < c + 2; c_curr++) {
+        
+            if(r_curr < 0 || r_curr >= tiles_height)
+                continue;
+            if(c_curr < 0 || c_curr >= tiles_width)
+                continue;
+
+            struct vertex *vert_base = &priv->mesh.vbuff[ (r_curr * tiles_width + c_curr) * VERTS_PER_TILE ];
+            ptrdiff_t offset = ((unsigned char*)vert_base) - ((unsigned char*)priv->mesh.vbuff);
+
+            R_GL_PatchTileVertsBlend(priv->mesh.vbuff, tiles, tiles_width, tiles_height, r_curr, c_curr);
+            R_GL_BufferSubData(chunk_rprivate, offset, sizeof(struct vertex) * VERTS_PER_TILE);
+        }
+    }
 }
 

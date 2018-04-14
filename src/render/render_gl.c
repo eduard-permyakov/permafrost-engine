@@ -876,88 +876,82 @@ void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim)
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 }
 
-void R_GL_PatchVbuffAdjacencyInfo(struct vertex *vbuff, const struct tile *tiles, size_t width, size_t height)
+void R_GL_PatchTileVertsBlend(struct vertex *vbuff, const struct tile *tiles, int width, int height, int r, int c)
 {
-    for(int r = 0; r < height; r++) {
-        for(int c = 0; c < width; c++) {
-        
-            const struct tile *curr_tile  = &tiles[r * width + c];
-            const struct tile *top_tile   = (r > 0)          ? &tiles[(r - 1) * width + c] : NULL;
-            const struct tile *bot_tile   = (r < height - 1) ? &tiles[(r + 1) * width + c] : NULL;
-            const struct tile *left_tile  = (c > 0)          ? &tiles[r * width + (c - 1)] : NULL;
-            const struct tile *right_tile = (c < width - 1)  ? &tiles[r * width + (c + 1)] : NULL;
+    const struct tile *curr_tile  = &tiles[r * width + c];
+    const struct tile *top_tile   = (r > 0)          ? &tiles[(r - 1) * width + c] : NULL;
+    const struct tile *bot_tile   = (r < height - 1) ? &tiles[(r + 1) * width + c] : NULL;
+    const struct tile *left_tile  = (c > 0)          ? &tiles[r * width + (c - 1)] : NULL;
+    const struct tile *right_tile = (c < width - 1)  ? &tiles[r * width + (c + 1)] : NULL;
 
-            const struct tile *top_right_tile = (top_tile && right_tile) ? &tiles[(r - 1) * width + (c + 1)] : NULL;
-            const struct tile *bot_right_tile = (bot_tile && right_tile) ? &tiles[(r + 1) * width + (c + 1)] : NULL;
-            const struct tile *top_left_tile = (top_tile && left_tile)   ? &tiles[(r - 1) * width + (c - 1)] : NULL;
-            const struct tile *bot_left_tile = (bot_tile && left_tile)   ? &tiles[(r + 1) * width + (c - 1)] : NULL;
+    const struct tile *top_right_tile = (top_tile && right_tile) ? &tiles[(r - 1) * width + (c + 1)] : NULL;
+    const struct tile *bot_right_tile = (bot_tile && right_tile) ? &tiles[(r + 1) * width + (c + 1)] : NULL;
+    const struct tile *top_left_tile = (top_tile && left_tile)   ? &tiles[(r - 1) * width + (c - 1)] : NULL;
+    const struct tile *bot_left_tile = (bot_tile && left_tile)   ? &tiles[(r + 1) * width + (c - 1)] : NULL;
 
-            struct tile_adj_info top        = {.tile = top_tile}
-                               , bot        = {.tile = bot_tile}
-                               , left       = {.tile = left_tile}
-                               , right      = {.tile = right_tile}
-                               , top_right  = {.tile = top_right_tile}
-                               , bot_right  = {.tile = bot_right_tile}
-                               , top_left   = {.tile = top_left_tile}
-                               , bot_left   = {.tile = bot_left_tile};
-            struct tile_adj_info *adjacent[] = {&top, &bot, &left, &right, &top_right, &bot_right, &top_left, &bot_left};
+    struct tile_adj_info top        = {.tile = top_tile}
+                       , bot        = {.tile = bot_tile}
+                       , left       = {.tile = left_tile}
+                       , right      = {.tile = right_tile}
+                       , top_right  = {.tile = top_right_tile}
+                       , bot_right  = {.tile = bot_right_tile}
+                       , top_left   = {.tile = top_left_tile}
+                       , bot_left   = {.tile = bot_left_tile};
+    struct tile_adj_info *adjacent[] = {&top, &bot, &left, &right, &top_right, &bot_right, &top_left, &bot_left};
 
-            struct tile_adj_info curr = {.tile = curr_tile};
-            bool top_tri_left_aligned;
-            r_gl_tile_mat_indices(&curr, &top_tri_left_aligned);
+    struct tile_adj_info curr = {.tile = curr_tile};
+    bool top_tri_left_aligned;
+    r_gl_tile_mat_indices(&curr, &top_tri_left_aligned);
 
-            for(int i = 0; i < ARR_SIZE(adjacent); i++) {
-                bool tmp;
-                if(adjacent[i]->tile) {
-                    r_gl_tile_mat_indices(adjacent[i], &tmp);
-                }else {
-                    adjacent[i]->middle = adjacent[i]->top_right = adjacent[i]->top_left 
-                                        = adjacent[i]->bot_right = adjacent[i]->bot_left = curr.middle;
-                }
-            }
-                
-            /* Now, update all 4 triangles of the top face 
-             *
-             * Since 'adjacent_mat_indices' is a flat attribute, we only need to set 
-             * it for the provoking vertex of each triangle.
-             */
-            struct vertex *tile_verts_base = &vbuff[VERTS_PER_TILE * (r * width + c)];
-            struct vertex *south_provoking = tile_verts_base + (5 * VERTS_PER_FACE);
-            struct vertex *north_provoking = tile_verts_base + (5 * VERTS_PER_FACE) + 2*3;
-            struct vertex *west_provoking  = tile_verts_base + (5 * VERTS_PER_FACE) + (top_tri_left_aligned ?  3*3 : 3*1);
-            struct vertex *east_provoking  = tile_verts_base + (5 * VERTS_PER_FACE) + (top_tri_left_aligned ?  3*1 : 3*3);
-
-            south_provoking->adjacent_mat_indices[0] = 
-                INDICES_MASK_32(bot.top_left, bot_left.top_right, left.bot_right, curr.bot_left);
-            south_provoking->adjacent_mat_indices[1] = 
-                INDICES_MASK_32(bot_right.top_left, bot.top_right, curr.bot_right, right.bot_left);
-            south_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(south_provoking);
-
-            north_provoking->adjacent_mat_indices[0] = 
-                INDICES_MASK_32(curr.top_left, left.top_right, top_left.bot_right, top.bot_left);
-            north_provoking->adjacent_mat_indices[1] = 
-                INDICES_MASK_32(right.top_left, curr.top_right, top.bot_right, top_right.bot_left);
-            north_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(north_provoking);
-
-            west_provoking->adjacent_mat_indices[0] = south_provoking->adjacent_mat_indices[0];
-            west_provoking->adjacent_mat_indices[1] = north_provoking->adjacent_mat_indices[0];
-            west_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(west_provoking);
-
-            east_provoking->adjacent_mat_indices[0] = south_provoking->adjacent_mat_indices[1];
-            east_provoking->adjacent_mat_indices[1] = north_provoking->adjacent_mat_indices[1];
-            east_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(east_provoking);
-
-            /* For 'blended' tiles, we also pack the material indices for the two major tiles into
-             * the lowest 8 bits of 'material_idx'. This handles the case when the two major tiles
-             * have different materials so we need the midpoint of the tile to be 50% of each material
-             * in order to have a smooth gradient. */
-            struct vertex *provoking[] = {south_provoking, north_provoking, west_provoking, east_provoking};
-            for(int i = 0; i < ARR_SIZE(provoking); i++) {
-                if(provoking[i]->blend_mode == BLEND_MODE_BLUR)
-                    provoking[i]->material_idx = curr.middle;
-            }
-
+    for(int i = 0; i < ARR_SIZE(adjacent); i++) {
+        bool tmp;
+        if(adjacent[i]->tile) {
+            r_gl_tile_mat_indices(adjacent[i], &tmp);
+        }else {
+            adjacent[i]->middle = adjacent[i]->top_right = adjacent[i]->top_left 
+                                = adjacent[i]->bot_right = adjacent[i]->bot_left = curr.middle;
         }
+    }
+        
+    /* Now, update all 4 triangles of the top face 
+     *
+     * Since 'adjacent_mat_indices' is a flat attribute, we only need to set 
+     * it for the provoking vertex of each triangle.
+     */
+    struct vertex *tile_verts_base = &vbuff[VERTS_PER_TILE * (r * width + c)];
+    struct vertex *south_provoking = tile_verts_base + (5 * VERTS_PER_FACE);
+    struct vertex *north_provoking = tile_verts_base + (5 * VERTS_PER_FACE) + 2*3;
+    struct vertex *west_provoking  = tile_verts_base + (5 * VERTS_PER_FACE) + (top_tri_left_aligned ?  3*3 : 3*1);
+    struct vertex *east_provoking  = tile_verts_base + (5 * VERTS_PER_FACE) + (top_tri_left_aligned ?  3*1 : 3*3);
+
+    south_provoking->adjacent_mat_indices[0] = 
+        INDICES_MASK_32(bot.top_left, bot_left.top_right, left.bot_right, curr.bot_left);
+    south_provoking->adjacent_mat_indices[1] = 
+        INDICES_MASK_32(bot_right.top_left, bot.top_right, curr.bot_right, right.bot_left);
+    south_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(south_provoking);
+
+    north_provoking->adjacent_mat_indices[0] = 
+        INDICES_MASK_32(curr.top_left, left.top_right, top_left.bot_right, top.bot_left);
+    north_provoking->adjacent_mat_indices[1] = 
+        INDICES_MASK_32(right.top_left, curr.top_right, top.bot_right, top_right.bot_left);
+    north_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(north_provoking);
+
+    west_provoking->adjacent_mat_indices[0] = south_provoking->adjacent_mat_indices[0];
+    west_provoking->adjacent_mat_indices[1] = north_provoking->adjacent_mat_indices[0];
+    west_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(west_provoking);
+
+    east_provoking->adjacent_mat_indices[0] = south_provoking->adjacent_mat_indices[1];
+    east_provoking->adjacent_mat_indices[1] = north_provoking->adjacent_mat_indices[1];
+    east_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(east_provoking);
+
+    /* For 'blended' tiles, we also pack the material indices for the two major tiles into
+     * the lowest 8 bits of 'material_idx'. This handles the case when the two major tiles
+     * have different materials so we need the midpoint of the tile to be 50% of each material
+     * in order to have a smooth gradient. */
+    struct vertex *provoking[] = {south_provoking, north_provoking, west_provoking, east_provoking};
+    for(int i = 0; i < ARR_SIZE(provoking); i++) {
+        if(provoking[i]->blend_mode == BLEND_MODE_BLUR)
+            provoking[i]->material_idx = curr.middle;
     }
 }
 

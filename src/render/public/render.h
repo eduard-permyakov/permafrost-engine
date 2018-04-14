@@ -34,7 +34,6 @@ struct skeleton;
 struct tile;
 struct tile_desc;
 
-
 /* Each face is made of 2 independent triangles. The top face is an exception, and is made up of 4 
  * triangles. This is to give each triangle a vertex which lies at the center of the tile in the XZ
  * dimensions.
@@ -152,6 +151,7 @@ void   R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rpriv
 int    R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate, 
                            mat4x4_t *model, int tiles_per_chunk_x, vec3_t out[]);
 
+
 /*###########################################################################*/
 /* RENDER ASSET LOADING                                                      */
 /*###########################################################################*/
@@ -204,7 +204,12 @@ bool   R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
  */
 bool   R_AL_UpdateMats(SDL_RWops *mats_stream, size_t num_mats, void *priv_buff);
 
-void   R_AL_UpdateTile(void *chunk_rprivate, int r, int c, int tiles_width, 
-                       const struct tile *tile);
+/* ---------------------------------------------------------------------------
+ * Update a specific tile with new attributes and buffer the new vertex data.
+ * Will also update surrounding tiles with new adjacency data.
+ * ---------------------------------------------------------------------------
+ */
+void   R_AL_UpdateTile(void *chunk_rprivate, int r, int c, int tiles_width, int tiles_height, 
+                       const struct tile *tiles);
 
 #endif

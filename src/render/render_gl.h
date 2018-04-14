@@ -31,4 +31,14 @@ void R_GL_Init(struct render_private *priv, const char *shader);
 void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r, size_t c);
 void R_GL_BufferSubData(const void *chunk_rprivate, size_t offset, size_t size);
 
+/* ---------------------------------------------------------------------------
+ * Patch the vertices for a particular tile to have adjacency information
+ * about the neighboring tiles, to be used for smooth blending.
+ * Tiles which border tiles with different materials will get blending
+ * 'turned on' by setting a vertex attribute.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_PatchTileVertsBlend(struct vertex *vbuff, const struct tile *tiles, 
+                              int width, int height, int r, int c);
+
 #endif
