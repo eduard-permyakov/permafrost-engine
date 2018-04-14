@@ -142,11 +142,11 @@ void main()
          * Our top tile faces are made up of 4 triangles in the following configuration:
          *
          *  +----+----+
-         *  | \     / |
+         *  | \ top / |
          *  |  \   /  |
-         *  +   -+-   +
+         *  + l -+- r +
          *  |  /   \  |
-         *  | /     \ |
+         *  | / bot \ |
          *  +----+----+
          *
          * Each of the 4 triangles has a vertex at the center of the tile. The 'adjacent_mat_indices'
@@ -169,6 +169,10 @@ void main()
          * the position of this fragment in the tile, which is encoded in the UV coordinates.
          * 
          * Here, the 'major' gradient is the one between the two non-center vertices.
+         *
+         * Also, note that, in this blend mode, the 'material index' is interpreted as having 2 4-bit
+         * indices packed into the lowest 8 bits. The final material is the equal blend of the two
+         * materials.
          */
 
         bool bot   = (from_vertex.uv.x > from_vertex.uv.y) && (1.0 - from_vertex.uv.x > from_vertex.uv.y);
@@ -178,44 +182,47 @@ void main()
 
         vec4 color1 = mixed_texture_val(from_vertex.adjacent_mat_indices[0], from_vertex.uv);
         vec4 color2 = mixed_texture_val(from_vertex.adjacent_mat_indices[1], from_vertex.uv);
-        vec4 tile_color = texture_val(from_vertex.mat_idx, from_vertex.uv);
+        vec4 tile_color = mix(texture_val(from_vertex.mat_idx & 0xf, from_vertex.uv), 
+            texture_val(from_vertex.mat_idx >> 4, from_vertex.uv), 0.5f);
 
         material m1 = mixed_material_from_adj(from_vertex.adjacent_mat_indices[0]);
         material m2 = mixed_material_from_adj(from_vertex.adjacent_mat_indices[1]);
 
-        float alpha_major = (bot)   ? (0.5f - from_vertex.uv.y)/0.5f
-                          : (top)   ? 1.0f - (1.0 - from_vertex.uv.y)/0.5f
-                          : (left)  ? (0.5f - from_vertex.uv.x)/0.5f
-                          : /*right*/ 1.0f - (1.0 - from_vertex.uv.x)/0.5f;
-        vec4 major_component;
-        material major_mat;
+        float alpha_edge = (bot)   ? (0.5f - from_vertex.uv.y)/0.5f
+                         : (top)   ? 1.0f - (1.0 - from_vertex.uv.y)/0.5f
+                         : (left)  ? (0.5f - from_vertex.uv.x)/0.5f
+                         : /*right*/ 1.0f - (1.0 - from_vertex.uv.x)/0.5f;
+        vec4 edge_component;
+        material edge_mat;
 
         if(bot || top) {
 
-            vec4 bot_center_color = mixed_texture_val(
+            vec4 major_center_color = mixed_texture_val(
                 from_vertex.adjacent_mat_indices[0] & 0xff0000ff | from_vertex.adjacent_mat_indices[1] & 0x00ffff00,
                 from_vertex.uv
             );
-            major_component = from_vertex.uv.x < 0.5f ? mix(color1, bot_center_color, from_vertex.uv.x/0.5f)
-                                                       : mix(bot_center_color, color2, (from_vertex.uv.x - 0.5f)/0.5f);
-            major_mat = mix_materials(m1, m2, from_vertex.uv.x);
+            edge_component = from_vertex.uv.x < 0.5f ? mix(color1, major_center_color, from_vertex.uv.x/0.5f)
+                                                      : mix(major_center_color, color2, (from_vertex.uv.x - 0.5f)/0.5f);
+            edge_mat = mix_materials(m1, m2, from_vertex.uv.x);
 
         }else if(left || right){
 
-            vec4 left_center_color = mixed_texture_val(
+            vec4 major_center_color = mixed_texture_val(
                 from_vertex.adjacent_mat_indices[0] & 0x0000ffff | from_vertex.adjacent_mat_indices[1] & 0xffff0000,
                 from_vertex.uv
             );
-            major_component = from_vertex.uv.y < 0.5f ? mix(color1, left_center_color, from_vertex.uv.y/0.5f)
-                                                       : mix(left_center_color, color2, (from_vertex.uv.y - 0.5f)/0.5f);
-            major_mat = mix_materials(m1, m2, from_vertex.uv.y);
+            edge_component = from_vertex.uv.y < 0.5f ? mix(color1, major_center_color, from_vertex.uv.y/0.5f)
+                                                      : mix(major_center_color, color2, (from_vertex.uv.y - 0.5f)/0.5f);
+            edge_mat = mix_materials(m1, m2, from_vertex.uv.y);
         }
 
-        tex_color = mix(tile_color, major_component, alpha_major);
-        frag_material = mix_materials(materials[from_vertex.mat_idx], major_mat, alpha_major);
+        tex_color = mix(tile_color, edge_component, alpha_edge);
+        material tile_mat = mix_materials(materials[from_vertex.mat_idx & 0xf], materials[from_vertex.mat_idx >> 4], 0.5f);
+        frag_material = mix_materials(tile_mat, edge_mat, alpha_edge);
         break;
     default:
         tex_color = vec4(1.0, 0.0, 1.0, 1.0);
+        return;
     }
 
     /* Simple alpha test to reject transparent pixels */

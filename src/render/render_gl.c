@@ -371,7 +371,7 @@ static void r_gl_tile_mat_indices(struct tile_adj_info *inout, bool *out_top_tri
      * (sw)      (se)            (sw)      (se)
      */
     inout->middle = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
-    if(*out_top_tri_left_aligned) {
+    if(!(*out_top_tri_left_aligned)) {
         inout->top_left  = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
         inout->top_right = INDICES_MASK_8(tri_mats[0], tri_mats[0]);
         inout->bot_left  = INDICES_MASK_8(tri_mats[1], tri_mats[1]);
@@ -946,6 +946,17 @@ void R_GL_PatchVbuffAdjacencyInfo(struct vertex *vbuff, const struct tile *tiles
             east_provoking->adjacent_mat_indices[0] = south_provoking->adjacent_mat_indices[1];
             east_provoking->adjacent_mat_indices[1] = north_provoking->adjacent_mat_indices[1];
             east_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(east_provoking);
+
+            /* For 'blended' tiles, we also pack the material indices for the two major tiles into
+             * the lowest 8 bits of 'material_idx'. This handles the case when the two major tiles
+             * have different materials so we need the midpoint of the tile to be 50% of each material
+             * in order to have a smooth gradient. */
+            struct vertex *provoking[] = {south_provoking, north_provoking, west_provoking, east_provoking};
+            for(int i = 0; i < ARR_SIZE(provoking); i++) {
+                if(provoking[i]->blend_mode == BLEND_MODE_BLUR)
+                    provoking[i]->material_idx = curr.middle;
+            }
+
         }
     }
 }
