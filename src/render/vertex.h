@@ -31,7 +31,7 @@ struct vertex{
     GLfloat weights[4];
     /* The following attributes are used for terrain vertices. */
     GLint   blend_mode;
-    GLint   adjacent_mat_indices[3];
+    GLint   adjacent_mat_indices[4];
 };
 
 #endif

@@ -24,7 +24,7 @@ layout (location = 1) in vec2  in_uv;
 layout (location = 2) in vec3  in_normal;
 layout (location = 3) in int   in_material_idx;
 layout (location = 4) in int   in_blend_mode;
-layout (location = 5) in ivec3 in_adjacent_mat_indices;
+layout (location = 5) in ivec4 in_adjacent_mat_indices;
 
 /*****************************************************************************/
 /* OUTPUTS                                                                   */
@@ -36,7 +36,7 @@ out VertexToFrag {
          vec3  world_pos;
          vec3  normal;
     flat int   blend_mode;
-    flat ivec3 adjacent_mat_indices;
+    flat ivec4 adjacent_mat_indices;
 }to_fragment;
 
 out VertexToGeo {

@@ -903,39 +903,47 @@ void R_GL_PatchTileVertsBlend(struct vertex *vbuff, const struct tile *tiles, in
     bool top_tri_left_aligned;
     r_gl_tile_mat_indices(&curr, &top_tri_left_aligned);
 
-    /* It may be possible that some of the adjacent tiles are NULL, such as when the current
-     * tile as at a chunk edge. In that case, we have no neighbor tile to blend with. In 
-     * that case, we make the tile's material go up to the very edge. */
-
     struct tile_adj_info 
         top = {
            .tile = top_tile,
            .bot_center_idx = curr.top_center_idx,
-           .bot_left_mask = curr.top_left_mask,
-           .bot_right_mask = curr.top_right_mask,
+           //.bot_left_mask = curr.top_left_mask,
+           //.bot_right_mask = curr.top_right_mask,
         },
         bot = {
            .tile = bot_tile,
            .top_center_idx = curr.bot_center_idx,
-           .top_left_mask = curr.bot_left_mask,
-           .top_right_mask = curr.bot_right_mask,
+           //.top_left_mask = curr.bot_left_mask,
+           //.top_right_mask = curr.bot_right_mask,
         },
         left = {
            .tile = left_tile,
            .right_center_idx = curr.left_center_idx,
-           .top_right_mask = curr.top_left_mask,
-           .bot_right_mask = curr.bot_left_mask,
+           //.top_right_mask = curr.top_left_mask,
+           //.bot_right_mask = curr.bot_left_mask,
         },
         right = {
            .tile = right_tile,
            .left_center_idx = curr.right_center_idx, 
-           .bot_left_mask = curr.bot_right_mask,
-           .top_left_mask = curr.top_right_mask,
+           //.bot_left_mask = curr.bot_right_mask,
+           //.top_left_mask = curr.top_right_mask,
         },
-        top_right = { .tile = top_right_tile, },
-        bot_right = { .tile = bot_right_tile, },
-        top_left  = { .tile = top_left_tile, },
-        bot_left  = { .tile = bot_left_tile, };
+        top_right = {
+           .tile = top_right_tile,
+           //.bot_left_mask = curr.top_right_mask,
+        },
+        bot_right = {
+           .tile = bot_right_tile,
+           //.top_left_mask = curr.bot_right_mask, 
+        },
+        top_left = {
+           .tile = top_left_tile,
+           //.bot_right_mask = curr.top_left_mask,
+        },
+        bot_left = {
+           .tile = bot_left_tile,
+           //.top_right_mask = curr.bot_left_mask,
+        };
 
     struct tile_adj_info *adjacent[] = {&top, &bot, &left, &right, &top_right, &bot_right, &top_left, &bot_left};
 
@@ -946,26 +954,8 @@ void R_GL_PatchTileVertsBlend(struct vertex *vbuff, const struct tile *tiles, in
         }
     }
     
-    if(!top_right.tile) {
-        top_right.bot_left_mask = top_tile ? INDICES_MASK_8(curr.top_center_idx, top.bot_center_idx)
-                                           : INDICES_MASK_8(curr.right_center_idx, right.left_center_idx); 
-    }
-
-    if(!top_left.tile) {
-        top_left.bot_right_mask = top_tile ? INDICES_MASK_8(curr.top_center_idx, top.bot_center_idx)
-                                           : INDICES_MASK_8(curr.left_center_idx, left.right_center_idx);
-    }
-
-    if(!bot_right.tile) {
-        bot_right.top_left_mask = bot_tile ? INDICES_MASK_8(curr.bot_center_idx, bot.top_center_idx)
-                                           : INDICES_MASK_8(curr.right_center_idx, right.left_center_idx);
-    }
-
-    if(!bot_left.tile) {
-        bot_left.top_right_mask = bot_tile ? INDICES_MASK_8(curr.bot_center_idx, bot.top_center_idx)
-                                           : INDICES_MASK_8(curr.left_center_idx, left.right_center_idx);
-    }
-
+    if(!)
+        
     /* Now, update all 4 triangles of the top face 
      *
      * Since 'adjacent_mat_indices' is a flat attribute, we only need to set 
