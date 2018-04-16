@@ -42,7 +42,7 @@
 
 
 #define PF_VER_MAJOR 0
-#define PF_VER_MINOR 11
+#define PF_VER_MINOR 12
 #define PF_VER_PATCH 0
 
 /*****************************************************************************/
