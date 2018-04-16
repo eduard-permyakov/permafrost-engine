@@ -92,9 +92,12 @@ class TerrainTabVC(ui.ViewController):
 
     MATERIALS_LIST = [
         map.Material("Grass",           "grass.png",            1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)), 
-        map.Material("Cliffs",          "cliffs.png",           1.0, (0.8, 0.8, 0.8), (0.3, 0.3, 0.3)),
+        map.Material("Grass2",          "grass2.jpg",           1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)), 
+        map.Material("Cliffs",          "cliffs.png",           1.0, (0.4, 0.4, 0.4), (0.2, 0.2, 0.2)),
         map.Material("Cobblestone",     "cobblestone.jpg",      1.0, (0.5, 0.5, 0.5), (0.2, 0.2, 0.2)),
         map.Material("Dirty-Grass",     "dirty_grass.jpg",      1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)),
+        map.Material("Dirt-Road",       "dirt_road.jpg",        1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)),
+        map.Material("Cracked-Dirt",    "cracked_dirt.jpg",     1.0, (0.2, 0.2, 0.2), (0.1, 0.1, 0.1)),
         map.Material("Metal-Platform",  "metal_platform.jpg",   1.0, (0.8, 0.8, 0.8), (0.5, 0.5, 0.5)),
         map.Material("Snowy-Grass",     "snowy_grass.jpg",      1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)),
         map.Material("Lava-Ground",     "lava_ground.jpg",      1.0, (0.7, 0.7, 0.7), (0.4, 0.4, 0.4)),

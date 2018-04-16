@@ -110,7 +110,7 @@ class Material(object):
 
 class Chunk(object):
     DEFAULT_TOP_MATERIAL  = Material("Grass",  "grass.png",  1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1))
-    DEFAULT_SIDE_MATERIAL = Material("Cliffs", "cliffs.png", 1.0, (0.8, 0.8, 0.8), (0.3, 0.3, 0.3))
+    DEFAULT_SIDE_MATERIAL = Material("Cliffs", "cliffs.png", 1.0, (0.4, 0.4, 0.4), (0.2, 0.2, 0.2))
 
     def __init__(self):
         """
