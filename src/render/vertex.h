@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017 Eduard Permyakov 
+ *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@ struct vertex{
     GLfloat weights[4];
     /* The following attributes are used for terrain vertices. */
     GLint   blend_mode;
-    GLint   adjacent_mat_indices[2];
+    GLint   adjacent_mat_indices[3];
 };
 
 #endif

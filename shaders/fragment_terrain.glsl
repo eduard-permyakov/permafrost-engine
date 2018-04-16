@@ -22,7 +22,7 @@
 #define MAX_MATERIALS 16
 
 /* TODO: Make these as material parameters */
-#define SPECULAR_STRENGTH  1
+#define SPECULAR_STRENGTH  0.5
 #define SPECULAR_SHININESS 2
 
 #define Y_COORDS_PER_TILE  4 
@@ -41,7 +41,7 @@ in VertexToFrag {
          vec3  world_pos;
          vec3  normal;
     flat int   blend_mode;
-    flat ivec2 adjacent_mat_indices;
+    flat ivec3 adjacent_mat_indices;
 }from_vertex;
 
 /*****************************************************************************/
@@ -126,6 +126,40 @@ material mix_materials(material x, material y, float a)
     );
 }
 
+vec4 mixed_texture_val_4(int idxa, int idxb, int idxc, int idxd, vec2 uv)
+{
+    return mix(
+        mix(texture_val(idxa, uv), texture_val(idxb, uv), 0.5f),
+        mix(texture_val(idxc, uv), texture_val(idxd, uv), 0.5f),
+        0.5f
+    );
+}
+
+vec4 bilinear_interp_vec4
+(
+    vec4 q11, vec4 q12, vec4 q21, vec4 q22, 
+    float x1, float x2, 
+    float y1, float y2, 
+    float x, float y
+)
+{
+    float x2x1, y2y1, x2x, y2y, yy1, xx1;
+
+    x2x1 = x2 - x1;
+    y2y1 = y2 - y1;
+    x2x = x2 - x;
+    y2y = y2 - y;
+    yy1 = y - y1;
+    xx1 = x - x1;
+
+    return 1.0 / (x2x1 * y2y1) * (
+        q11 * x2x * y2y +
+        q21 * xx1 * y2y +
+        q12 * x2x * yy1 +
+        q22 * xx1 * yy1
+    );
+}
+
 void main()
 {
     vec4 tex_color;
@@ -180,6 +214,9 @@ void main()
         bool left  = (from_vertex.uv.x < from_vertex.uv.y) && (1.0 - from_vertex.uv.x > from_vertex.uv.y);
         bool right = (from_vertex.uv.x > from_vertex.uv.y) && (1.0 - from_vertex.uv.x < from_vertex.uv.y);
 
+        bool left_half = from_vertex.uv.x < 0.5f;
+        bool bot_half = from_vertex.uv.y < 0.5f;
+
         vec4 color1 = mixed_texture_val(from_vertex.adjacent_mat_indices[0], from_vertex.uv);
         vec4 color2 = mixed_texture_val(from_vertex.adjacent_mat_indices[1], from_vertex.uv);
         vec4 tile_color = mix(texture_val(from_vertex.mat_idx & 0xf, from_vertex.uv), 
@@ -195,28 +232,68 @@ void main()
         vec4 edge_component;
         material edge_mat;
 
+        vec4 left_center_color =  mix(texture_val((from_vertex.adjacent_mat_indices[2] >> 0) & 0xf, from_vertex.uv), 
+                                      texture_val((from_vertex.adjacent_mat_indices[2] >> 4) & 0xf, from_vertex.uv), 
+                                      0.5f);
+        vec4 bot_center_color = mix(texture_val((from_vertex.adjacent_mat_indices[2] >> 8) & 0xf, from_vertex.uv),
+                                    texture_val((from_vertex.adjacent_mat_indices[2] >> 12) & 0xf, from_vertex.uv),
+                                    0.5f);
+        vec4 right_center_color =  mix(texture_val((from_vertex.adjacent_mat_indices[2] >> 16) & 0xf, from_vertex.uv), 
+                                       texture_val((from_vertex.adjacent_mat_indices[2] >> 20) & 0xf, from_vertex.uv), 
+                                       0.5f);
+        vec4 top_center_color =  mix(texture_val((from_vertex.adjacent_mat_indices[2] >> 24) & 0xf, from_vertex.uv), 
+                                     texture_val((from_vertex.adjacent_mat_indices[2] >> 28) & 0xf, from_vertex.uv), 
+                                     0.5f);
+        vec4 edge_center_color = (bot)     ? bot_center_color
+                               : (top)     ? top_center_color
+                               : (left)    ? left_center_color
+                               : /*right*/   right_center_color;
+
         if(bot || top) {
 
-            vec4 major_center_color = mixed_texture_val(
-                from_vertex.adjacent_mat_indices[0] & 0xff0000ff | from_vertex.adjacent_mat_indices[1] & 0x00ffff00,
-                from_vertex.uv
-            );
-            edge_component = from_vertex.uv.x < 0.5f ? mix(color1, major_center_color, from_vertex.uv.x/0.5f)
-                                                      : mix(major_center_color, color2, (from_vertex.uv.x - 0.5f)/0.5f);
+            edge_component = from_vertex.uv.x < 0.5f ? mix(color1, edge_center_color, from_vertex.uv.x/0.5f)
+                                                     : mix(edge_center_color, color2, (from_vertex.uv.x - 0.5f)/0.5f);
             edge_mat = mix_materials(m1, m2, from_vertex.uv.x);
 
-        }else if(left || right){
+        }else if(left || right) {
 
-            vec4 major_center_color = mixed_texture_val(
-                from_vertex.adjacent_mat_indices[0] & 0x0000ffff | from_vertex.adjacent_mat_indices[1] & 0xffff0000,
-                from_vertex.uv
-            );
-            edge_component = from_vertex.uv.y < 0.5f ? mix(color1, major_center_color, from_vertex.uv.y/0.5f)
-                                                      : mix(major_center_color, color2, (from_vertex.uv.y - 0.5f)/0.5f);
+            edge_component = from_vertex.uv.y < 0.5f ? mix(color1, edge_center_color, from_vertex.uv.y/0.5f)
+                                                     : mix(edge_center_color, color2, (from_vertex.uv.y - 0.5f)/0.5f);
             edge_mat = mix_materials(m1, m2, from_vertex.uv.y);
         }
 
-        tex_color = mix(tile_color, edge_component, alpha_edge);
+        //tex_color = mix(tile_color, edge_component, alpha_edge);
+
+        if(top){
+            if(left_half)
+                tex_color = bilinear_interp_vec4(left_center_color, color1, tile_color, top_center_color,
+                    0.0f, 0.5f, 0.5f, 1.0f, from_vertex.uv.x, from_vertex.uv.y);        
+            else
+                tex_color = bilinear_interp_vec4(tile_color, top_center_color, right_center_color, color2,
+                    0.5f, 1.0f, 0.5f, 1.0f, from_vertex.uv.x, from_vertex.uv.y);
+        }else if(bot){
+            if(left_half)
+                tex_color = bilinear_interp_vec4(color1, left_center_color, bot_center_color, tile_color,
+                    0.0f, 0.5f, 0.0f, 0.5f, from_vertex.uv.x, from_vertex.uv.y);        
+            else
+                tex_color = bilinear_interp_vec4(bot_center_color, tile_color, color2, right_center_color,
+                    0.5f, 1.0f, 0.0f, 0.5f, from_vertex.uv.x, from_vertex.uv.y);
+        }else if(left){
+            if(bot_half)
+                tex_color = bilinear_interp_vec4(color1, left_center_color, bot_center_color, tile_color,
+                    0.0f, 0.5f, 0.0f, 0.5f, from_vertex.uv.x, from_vertex.uv.y);        
+            else
+                tex_color = bilinear_interp_vec4(left_center_color, color2, tile_color, top_center_color,
+                    0.0f, 0.5f, 0.5f, 1.0f, from_vertex.uv.x, from_vertex.uv.y);
+        }else if(right){
+            if(bot_half)
+                tex_color = bilinear_interp_vec4(bot_center_color, tile_color, color1, right_center_color,
+                    0.5f, 1.0f, 0.0f, 0.5f, from_vertex.uv.x, from_vertex.uv.y);        
+            else
+                tex_color = bilinear_interp_vec4(tile_color, top_center_color, right_center_color, color2,
+                    0.5f, 1.0f, 0.5f, 1.0f, from_vertex.uv.x, from_vertex.uv.y);
+        }
+
         material tile_mat = mix_materials(materials[from_vertex.mat_idx & 0xf], materials[from_vertex.mat_idx >> 4], 0.5f);
         frag_material = mix_materials(tile_mat, edge_mat, alpha_edge);
         break;

@@ -63,6 +63,7 @@ struct face{
 struct tile_adj_info{
     const struct tile *tile;
     uint8_t middle, top_left, top_right, bot_left, bot_right;
+    int top_center_idx, bot_center_idx, left_center_idx, right_center_idx;
 };
 
 /*****************************************************************************/
@@ -371,16 +372,25 @@ static void r_gl_tile_mat_indices(struct tile_adj_info *inout, bool *out_top_tri
      * (sw)      (se)            (sw)      (se)
      */
     inout->middle = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
+    inout->bot_center_idx = tri_mats[0];
+    inout->top_center_idx = tri_mats[1];
+
     if(!(*out_top_tri_left_aligned)) {
-        inout->top_left  = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
-        inout->top_right = INDICES_MASK_8(tri_mats[0], tri_mats[0]);
-        inout->bot_left  = INDICES_MASK_8(tri_mats[1], tri_mats[1]);
-        inout->bot_right = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
+        inout->top_left     = INDICES_MASK_8(tri_mats[1], tri_mats[0]);
+        inout->top_right    = INDICES_MASK_8(tri_mats[1], tri_mats[1]);
+        inout->bot_left     = INDICES_MASK_8(tri_mats[0], tri_mats[0]);
+        inout->bot_right    = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
+
+        inout->left_center_idx  = tri_mats[0];
+        inout->right_center_idx = tri_mats[1];
     }else {
-        inout->top_left  = INDICES_MASK_8(tri_mats[1], tri_mats[1]);
-        inout->top_right = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
-        inout->bot_left  = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
-        inout->bot_right = INDICES_MASK_8(tri_mats[0], tri_mats[0]);
+        inout->top_left     = INDICES_MASK_8(tri_mats[1], tri_mats[1]);
+        inout->top_right    = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
+        inout->bot_left     = INDICES_MASK_8(tri_mats[1], tri_mats[0]);
+        inout->bot_right    = INDICES_MASK_8(tri_mats[0], tri_mats[0]);
+
+        inout->left_center_idx  = tri_mats[1];
+        inout->right_center_idx = tri_mats[0];
     }
 }
 
@@ -452,7 +462,7 @@ void R_GL_Init(struct render_private *priv, const char *shader)
         glEnableVertexAttribArray(4);
          
         /* Attribute 5 - adjacent material indices */
-        glVertexAttribIPointer(5, 2, GL_INT, sizeof(struct vertex), 
+        glVertexAttribIPointer(5, 3, GL_INT, sizeof(struct vertex), 
             (void*)offsetof(struct vertex, adjacent_mat_indices));
         glEnableVertexAttribArray(5);
     }
@@ -943,6 +953,18 @@ void R_GL_PatchTileVertsBlend(struct vertex *vbuff, const struct tile *tiles, in
     east_provoking->adjacent_mat_indices[0] = south_provoking->adjacent_mat_indices[1];
     east_provoking->adjacent_mat_indices[1] = north_provoking->adjacent_mat_indices[1];
     east_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(east_provoking);
+
+    GLint adj_center_mask = INDICES_MASK_32(
+        INDICES_MASK_8(curr.top_center_idx,     top.bot_center_idx),
+        INDICES_MASK_8(curr.right_center_idx,   right.left_center_idx),
+        INDICES_MASK_8(curr.bot_center_idx,     bot.top_center_idx),
+        INDICES_MASK_8(curr.left_center_idx,    left.right_center_idx)
+    );
+    north_provoking->adjacent_mat_indices[2] = adj_center_mask;
+    south_provoking->adjacent_mat_indices[2] = adj_center_mask;
+    west_provoking->adjacent_mat_indices[2] = adj_center_mask;
+    east_provoking->adjacent_mat_indices[2] = adj_center_mask;
+
 
     /* For 'blended' tiles, we also pack the material indices for the two major tiles into
      * the lowest 8 bits of 'material_idx'. This handles the case when the two major tiles
