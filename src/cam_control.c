@@ -104,7 +104,7 @@ static void fps_cam_on_update_end(void *unused1, void *unused2)
     if(ctx->move_back)  Camera_MoveBackTick (cam);
     if(ctx->move_right) Camera_MoveRightTick(cam);
 
-    Camera_TickFinish(cam);
+    Camera_TickFinishPerspective(cam);
 }
 
 static void rts_cam_on_mousemove(void *unused, void *event_arg)
@@ -173,7 +173,7 @@ static void rts_cam_on_update_end(void *unused1, void *unused2)
     if(ctx->move_down)  PFM_Vec3_Add(&dir, &down, &dir);
 
     Camera_MoveDirectionTick(cam, dir);
-    Camera_TickFinish(cam);
+    Camera_TickFinishPerspective(cam);
 }
 
 /*****************************************************************************/

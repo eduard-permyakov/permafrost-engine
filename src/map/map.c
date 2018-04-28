@@ -25,6 +25,7 @@
 
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 
 #include <SDL.h>
 
@@ -47,9 +48,13 @@ void M_RenderEntireMap(const struct map *map)
         for(int c = 0; c < map->width; c++) {
         
             mat4x4_t chunk_model;
+            const struct pfchunk *chunk = &map->chunks[r * map->width + c];
+            void *render_private = 
+                (chunk->mode == CHUNK_RENDER_MODE_REALTIME_BLEND) ? chunk->render_private_tiles
+                                                                  : chunk->render_private_prebaked;
 
             M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-            R_GL_Draw(map->chunks[r * map->width + c].render_private, &chunk_model);
+            R_GL_Draw(render_private, &chunk_model);
         }
     }
 }
@@ -86,5 +91,33 @@ void M_RestrictRTSCamToMap(const struct map *map, struct camera *cam)
     bounds.h = map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 
     Camera_RestrictPosWithBox(cam, bounds);
+}
+
+void M_SetChunkRenderMode(struct map *map, int chunk_r, int chunk_c, enum chunk_render_mode mode)
+{
+    assert(chunk_r >= 0 && chunk_r < map->height);
+    assert(chunk_c >= 0 && chunk_r < map->width);
+
+    struct pfchunk *chunk = &map->chunks[chunk_r * map->width + chunk_c];
+    chunk->mode = mode;
+
+    if(mode == CHUNK_RENDER_MODE_PREBAKED) {
+        
+        ssize_t x_offset = -(chunk_c * TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE);
+        ssize_t z_offset =  (chunk_r * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE);
+        vec3_t chunk_pos = (vec3_t) {map->pos.x + x_offset, map->pos.y, map->pos.z + z_offset};
+
+        mat4x4_t chunk_model;
+        PFM_Mat4x4_MakeTrans(chunk_pos.x, chunk_pos.y, chunk_pos.z, &chunk_model);
+
+        vec3_t chunk_center = (vec3_t) {
+            chunk_pos.x - (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE)/2.0f,
+            chunk_pos.y,
+            chunk_pos.z + (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE)/2.0f
+        };
+
+        chunk->render_private_prebaked = R_GL_BakeChunk(chunk->render_private_tiles, chunk_center, &chunk_model,
+            TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT);
+    }
 }
 

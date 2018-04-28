@@ -41,6 +41,20 @@ struct tile_desc{
     int tile_r, tile_c;
 };
 
+enum chunk_render_mode{
+
+    /* The first option for rendering a terrain chunk is using a shader-based 
+     * approach to draw individual tiles. Each tile gets a texture and the 
+     * texture is blended with adjacent tiles' textures. */
+    CHUNK_RENDER_MODE_REALTIME_BLEND,
+
+    /* The second option is to initially render the entire top face of the 
+     * chunk to a single texture and use that. As well, during the 'baking'
+     * process we also strip away any non-visible tile faces. This makes rendering
+     * much faster but it is not suitable for real-time terrain updates.*/
+    CHUNK_RENDER_MODE_PREBAKED,
+};
+
 /*###########################################################################*/
 /* MAP GENERAL                                                               */
 /*###########################################################################*/
@@ -48,7 +62,6 @@ struct tile_desc{
 /* ------------------------------------------------------------------------
  * This renders all the chunks at once, which is wasteful when there are 
  * many off-screen chunks.
- * TODO: Rendering of visible chunks only
  * ------------------------------------------------------------------------
  */
 void   M_RenderEntireMap    (const struct map *map);
@@ -87,6 +100,15 @@ void   M_Raycast_Uninstall(void);
  * ------------------------------------------------------------------------
  */
 void   M_Raycast_SetHighlightSize(size_t size);
+
+/* ------------------------------------------------------------------------
+ * Sets the rendering mode for a particular chunk. In the case that the 
+ * mode is 'CHUNK_RENDER_MODE_PREBAKED', the baking will be performed in
+ * this call.
+ * ------------------------------------------------------------------------
+ */
+void   M_SetChunkRenderMode(struct map *map, int chunk_r, int chunk_c, 
+                            enum chunk_render_mode mode);
 
 
 /*###########################################################################*/

@@ -59,6 +59,11 @@ void PFM_Vec2_Normal(vec2_t *op1,  vec2_t *out)
     out->y = op1->y / len;
 }
 
+void PFM_Vec2_Dump(vec2_t *vec, FILE *dumpfile)
+{
+    fprintf(dumpfile, "(%.4f, %.4f)\n", vec->x, vec->y);
+}
+
 void PFM_Vec3_Cross(vec3_t *a, vec3_t *b, vec3_t *out)
 {
     out->x =   a->y * b->z - a->z * b->y;
@@ -318,7 +323,7 @@ void PFM_Mat4x4_RotFromEuler(GLfloat deg_x, GLfloat deg_y, GLfloat deg_z, mat4x4
  * 
  */
 void PFM_Mat4x4_MakePerspective(GLfloat fov_radians, GLfloat aspect_ratio, 
-                                 GLfloat z_near, GLfloat z_far, mat4x4_t *out)
+                                GLfloat z_near, GLfloat z_far, mat4x4_t *out)
 {
     /* This assumes symmetry (left = -right, top = -bottom) */ 
     GLfloat t = z_near * tan(fov_radians / 2);
@@ -332,8 +337,21 @@ void PFM_Mat4x4_MakePerspective(GLfloat fov_radians, GLfloat aspect_ratio,
     out->cols[3][2] = -(2.0f * z_far * z_near) / (z_far - z_near);
 }
 
+void PFM_Mat4x4_MakeOrthographic(GLfloat left, GLfloat right,
+                                 GLfloat bot,  GLfloat top,
+                                 GLfloat near, GLfloat far, mat4x4_t *out)
+{
+    PFM_Mat4x4_Identity(out);
+    out->cols[0][0] = 2.0f/(right - left);
+    out->cols[1][1] = 2.0f/(top - bot);
+    out->cols[2][2] = -2.0f/(far - near);
+    out->cols[3][0] = -(right + left)/(right - left);
+    out->cols[3][1] = -(top + bot)/(top - bot);
+    out->cols[3][2] = -(far + near)/(far - near);
+}
+
 void PFM_Mat4x4_MakeLookAt(vec3_t *camera_pos, vec3_t *target_pos, 
-                             vec3_t *up, mat4x4_t *out)
+                           vec3_t *up, mat4x4_t *out)
 {
     vec3_t camera_dir, right;
 

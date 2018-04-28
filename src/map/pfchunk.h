@@ -21,41 +21,29 @@
 #define PFCHUNK_H
 
 #include "public/tile.h"
+#include "public/map.h"
 #include "../pf_math.h"
 
 #include <stdbool.h>
 
 struct pfchunk{
+
+    enum chunk_render_mode mode;
     /* ------------------------------------------------------------------------
      * Initialized and used by the rendering subsystem. Holds the mesh data 
      * and everything the rendering subsystem needs to render this PFChunk.
+     * 
+     * There are two rendering contexts. The one that is used to render the 
+     * chunk depends on the 'mode' attribute.
      * ------------------------------------------------------------------------
      */
-    void           *render_private;
-    /* ------------------------------------------------------------------------
-     * Pointers to adjacent chunks. NULL if there are none.
-     * ------------------------------------------------------------------------
-     */
-    struct pfchunk *north, *south, *east, *west;
+    void           *render_private_tiles;
+    void           *render_private_prebaked;
     /* ------------------------------------------------------------------------
      * Worldspace position of the top left corner. 
      * ------------------------------------------------------------------------
      */
     vec3_t          position;
-    /* ------------------------------------------------------------------------
-     * The 'has_path' bools are precomputed when the pfchunk is initialized or 
-     * updated.
-     *
-     * They are used later to quickly query if we can reach onother chunk 
-     * adjacent to this one. If not, there is no point looking at the tile or 
-     * subtile resolution.
-     *
-     * Note that having a North->South path implies that there is also a 
-     * South->North path and so on.
-     * ------------------------------------------------------------------------
-     */
-    bool            has_ns_path;
-    bool            has_ew_path;
     /* ------------------------------------------------------------------------
      * Each tiles' attributes, stored in row-major order.
      * ------------------------------------------------------------------------

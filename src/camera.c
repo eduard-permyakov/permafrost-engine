@@ -275,7 +275,7 @@ void Camera_ChangeDirection(struct camera *cam, int dx, int dy)
     PFM_Vec3_Normal(&cam->up, &cam->up);
 }
 
-void Camera_TickFinish(struct camera *cam)
+void Camera_TickFinishPerspective(struct camera *cam)
 {
     mat4x4_t view, proj;
 
@@ -291,6 +291,25 @@ void Camera_TickFinish(struct camera *cam)
     glGetIntegerv(GL_VIEWPORT, viewport);
     PFM_Mat4x4_MakePerspective(DEG_TO_RAD(45.0f), ((GLfloat)viewport[2])/viewport[3], CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, &proj);
 
+    R_GL_SetProj(&proj);
+
+    /* Update our last timestamp */
+    cam->prev_frame_ts = SDL_GetTicks();
+}
+
+void Camera_TickFinishOrthographic(struct camera *cam, vec2_t bot_left, vec2_t top_right)
+{
+    mat4x4_t view, proj;
+
+    /* Set the view matrix for the vertex shader */
+    vec3_t target;
+    PFM_Vec3_Add(&cam->pos, &cam->front, &target);
+    PFM_Mat4x4_MakeLookAt(&cam->pos, &target, &cam->up, &view);
+
+    R_GL_SetViewMatAndPos(&view, &cam->pos);
+    
+    /* Set the projection matrix for the vertex shader */
+    PFM_Mat4x4_MakeOrthographic(bot_left.raw[0], top_right.raw[0], bot_left.raw[1], top_right.raw[1], CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, &proj);
     R_GL_SetProj(&proj);
 
     /* Update our last timestamp */

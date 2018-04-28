@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017 Eduard Permyakov 
+ *  Copyright (C) 2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@
 #include "public/render.h"
 #include "../entity.h"
 #include "../gl_uniforms.h"
+#include "../camera.h"
 #include "../anim/public/skeleton.h"
 #include "../anim/public/anim.h"
 #include "../map/public/tile.h"
@@ -1378,5 +1379,86 @@ void R_GL_BufferSubData(const void *chunk_rprivate, size_t offset, size_t size)
 
     glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
     glBufferSubData(GL_ARRAY_BUFFER, offset, size, ((unsigned char*)priv->mesh.vbuff) + offset);
+}
+
+void R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height)
+{
+    long img_size = width * height * 3;
+    unsigned char *data = malloc(img_size);
+    if(!data) {
+        return;
+    }
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, data);
+
+    FILE *file = fopen(filename, "wb");
+    if(!file) {
+        free(data); 
+        return;
+    }
+
+    fprintf(file, "P6\n%d %d\n%d\n", width, height, 255);
+    for(int i = 0; i < height; i++) {
+        for(int j = 0; j < width; j++) {
+
+            static unsigned char color[3];
+            color[0] = data[3*i*width + 3*j    ];
+            color[1] = data[3*i*width + 3*j + 1];
+            color[2] = data[3*i*width + 3*j + 2];
+            fwrite(color, 1, 3, file);
+        }
+    }
+
+    fclose(file);
+    free(data);
+}
+
+void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4x4_t *model,
+                     int tiles_per_chunk_x, int tiles_per_chunk_z)
+{
+    /* Create a new camera, with orthographic projection, centered 
+     * over the chunk and facing straight down. */
+    DECL_CAMERA_STACK(chunk_cam);
+    memset(&chunk_cam, 0, g_sizeof_camera);
+
+    vec3_t offset = (vec3_t){0.0f, 200.0f, 0.0f};
+    PFM_Vec3_Add(&chunk_center, &offset, &chunk_center);
+
+    Camera_SetPos((struct camera*)chunk_cam, chunk_center);
+    Camera_SetPitchAndYaw((struct camera*)chunk_cam, -90.0f, 90.0f);
+
+    vec2_t bot_left = (vec2_t){-(X_COORDS_PER_TILE * tiles_per_chunk_x/2), (Z_COORDS_PER_TILE * tiles_per_chunk_z/2)};
+    vec2_t top_right = (vec2_t){(X_COORDS_PER_TILE * tiles_per_chunk_x/2), -(Z_COORDS_PER_TILE * tiles_per_chunk_z/2)};
+    Camera_TickFinishOrthographic((struct camera*)chunk_cam, bot_left, top_right);
+
+    /* Next, create a new framebuffer and texture that we will render our chunk 
+     * top view to. */
+    GLuint fb;
+    glGenFramebuffers(1, &fb);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+
+    GLuint rendered_tex;
+    glGenTextures(1, &rendered_tex);
+
+    glBindTexture(GL_TEXTURE_2D, rendered_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, TILE_TEX_RES * tiles_per_chunk_x, TILE_TEX_RES * tiles_per_chunk_z, 
+        0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, rendered_tex, 0);
+
+    GLenum draw_buffers[1] = {GL_COLOR_ATTACHMENT0};
+    glDrawBuffers(1, draw_buffers);
+    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+    glViewport(0,0, TILE_TEX_RES * tiles_per_chunk_x, TILE_TEX_RES * tiles_per_chunk_x);
+
+    /* Render the chunk top-view to the texture. */
+    R_GL_Draw(chunk_rprivate_tiles, model);
+    R_GL_DumpFramebuffer_PPM("test.ppm", TILE_TEX_RES * tiles_per_chunk_x, TILE_TEX_RES * tiles_per_chunk_z);
 }
 

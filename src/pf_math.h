@@ -88,6 +88,7 @@ void    PFM_Vec2_Sub       (vec2_t *op1, vec2_t *op2, vec2_t *out);
 void    PFM_Vec2_Scale     (vec2_t *op1, GLfloat scale, vec2_t *out);
 GLfloat PFM_Vec2_Len       (vec2_t *op1);
 void    PFM_Vec2_Normal    (vec2_t *op1,  vec2_t *out);
+void    PFM_Vec2_Dump(vec2_t *vec, FILE *dumpfile);
 
 /*****************************************************************************/
 /* vec3                                                                      */
@@ -143,6 +144,9 @@ void    PFM_Mat4x4_Inverse     (mat4x4_t *in, mat4x4_t *out);
 
 void    PFM_Mat4x4_MakePerspective(GLfloat fov_radians, GLfloat aspect_ratio, 
                                    GLfloat z_near, GLfloat z_far, mat4x4_t *out);
+void    PFM_Mat4x4_MakeOrthographic(GLfloat left, GLfloat right,
+                                    GLfloat top,  GLfloat bot,
+                                    GLfloat near, GLfloat far, mat4x4_t *out);
 void    PFM_Mat4x4_MakeLookAt     (vec3_t *camera_pos, vec3_t *target_pos, 
                                    vec3_t *up_dir, mat4x4_t *out);
 

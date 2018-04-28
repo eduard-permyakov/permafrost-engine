@@ -151,6 +151,21 @@ void   R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rpriv
 int    R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate, 
                            mat4x4_t *model, int tiles_per_chunk_x, vec3_t out[]);
 
+/* ---------------------------------------------------------------------------
+ * Returns a new render context with a mesh that can be rendered much faster
+ * than the original chunk mesh. It will use a single large texture for the 
+ * top surface and have all non-visible tile faces removed.
+ * ---------------------------------------------------------------------------
+ */
+void  *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4x4_t *model,
+                      int tiles_per_chunk_x, int tiles_per_chunk_z);
+
+/* ---------------------------------------------------------------------------
+ * Writes the framebuffer region (0, 0, width, height) to a PPM file.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height);
+
 
 /*###########################################################################*/
 /* RENDER ASSET LOADING                                                      */

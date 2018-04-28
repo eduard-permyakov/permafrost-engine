@@ -69,6 +69,7 @@ void           Camera_ChangeDirection  (struct camera *cam, int dx, int dy);
 /* Should be called once per frame, after all movements have been set, but 
  * prior to rendering.
  */
-void           Camera_TickFinish(struct camera *cam);
+void           Camera_TickFinishPerspective(struct camera *cam);
+void           Camera_TickFinishOrthographic(struct camera *cam, vec2_t bot_left, vec2_t top_right);
 
 #endif

@@ -119,7 +119,8 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
 
     for(int i = 0; i < num_chunks; i++) {
 
-        map->chunks[i].render_private = (void*)unused_base;
+        map->chunks[i].render_private_tiles = (void*)unused_base;
+        map->chunks[i].mode = CHUNK_RENDER_MODE_REALTIME_BLEND;
 
         if(!m_al_read_pfchunk(stream, map->chunks + i))
             goto fail;
@@ -130,7 +131,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
 
         if(!R_AL_InitPrivFromTilesAndMats(stream, MATERIALS_PER_CHUNK, 
                                           map->chunks[i].tiles, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
-                                          map->chunks[i].render_private, basedir)) {
+                                          map->chunks[i].render_private_tiles, basedir)) {
             goto fail;
         }
     }
@@ -156,7 +157,7 @@ bool M_AL_UpdateChunkMats(const struct map *map, int chunk_r, int chunk_c, const
     const struct pfchunk *chunk = &map->chunks[chunk_r * map->width + chunk_c];
 
     stream = SDL_RWFromConstMem(mats_string, strlen(mats_string));
-    bool result = R_AL_UpdateMats(stream, MATERIALS_PER_CHUNK, chunk->render_private);
+    bool result = R_AL_UpdateMats(stream, MATERIALS_PER_CHUNK, chunk->render_private_tiles);
     SDL_RWclose(stream);
     return result;
 }
@@ -168,7 +169,7 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
 
     struct pfchunk *chunk = &map->chunks[desc->chunk_r * map->width + desc->chunk_c];
     chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c] = *tile;
-    R_AL_UpdateTile(chunk->render_private, desc->tile_r, desc->tile_c, 
+    R_AL_UpdateTile(chunk->render_private_tiles, desc->tile_r, desc->tile_c, 
         TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, chunk->tiles);
 
     return true;
