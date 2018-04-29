@@ -75,6 +75,7 @@ struct material{
 };
 
 uniform material materials[MAX_MATERIALS];
+uniform bool skip_lighting = false;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
@@ -314,6 +315,11 @@ void main()
     /* Simple alpha test to reject transparent pixels */
     if(tex_color.a == 0.0)
         discard;
+
+    if(skip_lighting) {
+        o_frag_color = vec4(tex_color.xyz, 1.0);
+        return;
+    }
 
     /* We increase the amount of ambient light that taller tiles get, in order to make
      * them not blend with lower terrain. */

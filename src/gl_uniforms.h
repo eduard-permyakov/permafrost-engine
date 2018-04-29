@@ -49,4 +49,7 @@
 #define GL_U_LIGHT_POS      "light_pos"
 #define GL_U_LIGHT_COLOR    "light_color"
 
+/* Used to toggle lighting in terrain shader */
+#define GL_U_SKIP_LIGHTING  "skip_lighting"
+
 #endif

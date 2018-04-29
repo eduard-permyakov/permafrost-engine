@@ -1417,6 +1417,10 @@ void R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height)
 void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4x4_t *model,
                      int tiles_per_chunk_x, int tiles_per_chunk_z)
 {
+    const struct render_private *priv = chunk_rprivate_tiles;
+    GLuint skip_loc = glGetUniformLocation(priv->shader_prog, GL_U_SKIP_LIGHTING);
+    glUseProgram(priv->shader_prog);
+
     /* Create a new camera, with orthographic projection, centered 
      * over the chunk and facing straight down. */
     DECL_CAMERA_STACK(chunk_cam);
@@ -1458,7 +1462,13 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
     glViewport(0,0, TILE_TEX_RES * tiles_per_chunk_x, TILE_TEX_RES * tiles_per_chunk_x);
 
     /* Render the chunk top-view to the texture. */
+    glUniform1i(skip_loc, true);
     R_GL_Draw(chunk_rprivate_tiles, model);
+    glUniform1i(skip_loc, false);
+
     R_GL_DumpFramebuffer_PPM("test.ppm", TILE_TEX_RES * tiles_per_chunk_x, TILE_TEX_RES * tiles_per_chunk_z);
+
+    /* Bind the default framebuffer when we're done */
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
