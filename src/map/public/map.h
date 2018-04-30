@@ -110,6 +110,11 @@ void   M_Raycast_SetHighlightSize(size_t size);
 void   M_SetChunkRenderMode(struct map *map, int chunk_r, int chunk_c, 
                             enum chunk_render_mode mode);
 
+/* ------------------------------------------------------------------------
+ * Sets the render mode for every chunk in the map.
+ * ------------------------------------------------------------------------
+ */
+void   M_SetMapRenderMode(struct map *map, enum chunk_render_mode mode);
 
 /*###########################################################################*/
 /* MAP ASSET LOADING                                                         */

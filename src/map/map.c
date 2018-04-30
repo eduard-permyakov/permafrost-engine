@@ -121,3 +121,14 @@ void M_SetChunkRenderMode(struct map *map, int chunk_r, int chunk_c, enum chunk_
     }
 }
 
+void M_SetMapRenderMode(struct map *map, enum chunk_render_mode mode)
+{
+    assert(map);
+
+    for(int r = 0; r < map->height; r++) {
+        for(int c = 0; c < map->width; c++) {
+           M_SetChunkRenderMode(map, r, c, mode); 
+        }
+    }
+}
+

@@ -20,6 +20,8 @@
 #ifndef GAME_H
 #define GAME_H
 
+#include "../../map/public/map.h"
+
 #include <stdbool.h>
 #include <SDL.h>
 
@@ -40,6 +42,7 @@ bool G_NewGameWithMapString(const char *mapstr);
 void G_Shutdown(void);
 
 void G_Render(void);
+void G_SetMapRenderMode(enum chunk_render_mode mode);
 
 bool G_AddEntity(struct entity *ent);
 bool G_RemoveEntity(struct entity *ent);

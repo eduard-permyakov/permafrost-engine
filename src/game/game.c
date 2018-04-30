@@ -138,6 +138,14 @@ bool G_NewGameWithMap(const char *dir, const char *pfmap)
     return true;
 }
 
+void G_SetMapRenderMode(enum chunk_render_mode mode)
+{
+    if(!s_gs.map)
+        return;
+
+    M_SetMapRenderMode(s_gs.map, mode);
+}
+
 void G_Shutdown(void)
 {
     for(int i = 0; i < NUM_CAMERAS; i++)

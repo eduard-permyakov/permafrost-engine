@@ -1456,8 +1456,6 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
     R_GL_Draw(chunk_rprivate_tiles, model);
     glUniform1i(skip_loc, false);
 
-    //R_GL_DumpFramebuffer_PPM("test.ppm", CONFIG_BAKED_TILE_TEX_RES * tiles_per_chunk_x, CONFIG_BAKED_TILE_TEX_RES * tiles_per_chunk_z);
-
     /* Re-bind the default framebuffer when we're done rendering */
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

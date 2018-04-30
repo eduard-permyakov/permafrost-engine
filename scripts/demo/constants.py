@@ -303,3 +303,10 @@ NK_CHART_LINES              = 0
 NK_CHART_COLUMN             = 1
 NK_CHART_MAX                = 2
 
+############################################################
+# Chunk rendering modes (from map.h)                       #
+############################################################
+
+CHUNK_RENDER_MODE_REALTIME_BLEND    = 0
+CHUNK_RENDER_MODE_PREBAKED          = 1
+
