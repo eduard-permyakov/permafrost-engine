@@ -23,8 +23,6 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#define TILE_TEX_RES 256
-
 struct render_private;
 struct vertex;
 struct tile;

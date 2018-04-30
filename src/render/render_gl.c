@@ -27,6 +27,7 @@
 #include "../entity.h"
 #include "../gl_uniforms.h"
 #include "../camera.h"
+#include "../config.h"
 #include "../anim/public/skeleton.h"
 #include "../anim/public/anim.h"
 #include "../map/public/tile.h"
@@ -408,6 +409,23 @@ enum blend_mode r_gl_blendmode_for_provoking_vert(const struct vertex *vert)
     }
 }
 
+static bool arr_contains(int *array, size_t size, int elem)
+{
+    for(int i = 0; i < size; i++) {
+        if(array[i] == elem) 
+            return true;
+    }
+    return false;
+}
+
+static int arr_indexof(int *array, size_t size, int elem)
+{
+    for(int i = 0; i < size; i++) {
+        if(array[i] == elem) 
+            return i;
+    }
+    return -1;
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -1061,64 +1079,32 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
         },
     };
 
-    bool top_nw_raised =  (tile->type == TILETYPE_RAMP_SN)
-                       || (tile->type == TILETYPE_RAMP_EW)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_SW)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_SE)
-                       || (tile->type == TILETYPE_CORNER_CONCAVE_SE)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_NE);
-
-    bool top_ne_raised =  (tile->type == TILETYPE_RAMP_SN)
-                       || (tile->type == TILETYPE_RAMP_WE)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_SW)
-                       || (tile->type == TILETYPE_CORNER_CONCAVE_SW)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_SE)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_NW);
-
-    bool top_sw_raised =  (tile->type == TILETYPE_RAMP_NS)
-                       || (tile->type == TILETYPE_RAMP_EW)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_SE)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_NW)
-                       || (tile->type == TILETYPE_CORNER_CONCAVE_NE)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_NE);
-
-    bool top_se_raised =  (tile->type == TILETYPE_RAMP_NS)
-                       || (tile->type == TILETYPE_RAMP_WE)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_SW)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_NE)
-                       || (tile->type == TILETYPE_CORNER_CONCAVE_NW)
-                       || (tile->type == TILETYPE_CORNER_CONVEX_NW);
-
     /* Normals for top face get set at the end */
     struct face top = {
         .nw = (struct vertex) {
             .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE),
-                                 (tile->base_height * Y_COORDS_PER_TILE)
-                                 + (Y_COORDS_PER_TILE * (top_nw_raised ? tile->ramp_height : 0)),
+                                 M_Tile_NWHeight(tile) * Y_COORDS_PER_TILE,
                                  0.0f + (r * Z_COORDS_PER_TILE) },
             .uv     = (vec2_t) { 0.0f, 1.0f },
             .material_idx  = tile->top_mat_idx,
         },
         .ne = (struct vertex) {
             .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), 
-                                 (tile->base_height * Y_COORDS_PER_TILE)
-                                 + (Y_COORDS_PER_TILE * (top_ne_raised ? tile->ramp_height : 0)), 
+                                 M_Tile_NEHeight(tile) * Y_COORDS_PER_TILE,
                                  0.0f + (r * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 1.0f },
             .material_idx  = tile->top_mat_idx,
         },
         .se = (struct vertex) {
             .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), 
-                                 (tile->base_height * Y_COORDS_PER_TILE)
-                                 + (Y_COORDS_PER_TILE * (top_se_raised ? tile->ramp_height : 0)), 
+                                 M_Tile_SEHeight(tile) * Y_COORDS_PER_TILE,
                                  0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
         .sw = (struct vertex) {
             .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), 
-                                 (tile->base_height * Y_COORDS_PER_TILE)
-                                 + (Y_COORDS_PER_TILE * (top_sw_raised ? tile->ramp_height : 0)), 
+                                 M_Tile_SWHeight(tile) * Y_COORDS_PER_TILE,
                                  0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
@@ -1319,6 +1305,7 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
         first_tri[i]->material_idx = mat_idx;
     }
     center_vert.material_idx = mat_idx;
+    center_vert.normal = top_tri_normals[0];
 
     memcpy(out + (5 * VERTS_PER_FACE) + 0, first_tri[0], sizeof(struct vertex));
     memcpy(out + (5 * VERTS_PER_FACE) + 1, first_tri[1], sizeof(struct vertex));
@@ -1337,6 +1324,7 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
         second_tri[i]->material_idx = mat_idx;
     }
     center_vert.material_idx = mat_idx;
+    center_vert.normal = top_tri_normals[1];
 
     memcpy(out + (5 * VERTS_PER_FACE) + 6, second_tri[0], sizeof(struct vertex));
     memcpy(out + (5 * VERTS_PER_FACE) + 7, second_tri[1], sizeof(struct vertex));
@@ -1415,11 +1403,12 @@ void R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height)
 }
 
 void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4x4_t *model,
-                     int tiles_per_chunk_x, int tiles_per_chunk_z)
+                     int tiles_per_chunk_x, int tiles_per_chunk_z, const struct tile *tiles,
+                     int chunk_r, int chunk_c)
 {
-    const struct render_private *priv = chunk_rprivate_tiles;
-    GLuint skip_loc = glGetUniformLocation(priv->shader_prog, GL_U_SKIP_LIGHTING);
-    glUseProgram(priv->shader_prog);
+    const struct render_private *og_priv = chunk_rprivate_tiles;
+    GLuint skip_loc = glGetUniformLocation(og_priv->shader_prog, GL_U_SKIP_LIGHTING);
+    glUseProgram(og_priv->shader_prog);
 
     /* Create a new camera, with orthographic projection, centered 
      * over the chunk and facing straight down. */
@@ -1432,12 +1421,12 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
     Camera_SetPos((struct camera*)chunk_cam, chunk_center);
     Camera_SetPitchAndYaw((struct camera*)chunk_cam, -90.0f, 90.0f);
 
-    vec2_t bot_left = (vec2_t){-(X_COORDS_PER_TILE * tiles_per_chunk_x/2), (Z_COORDS_PER_TILE * tiles_per_chunk_z/2)};
-    vec2_t top_right = (vec2_t){(X_COORDS_PER_TILE * tiles_per_chunk_x/2), -(Z_COORDS_PER_TILE * tiles_per_chunk_z/2)};
+    vec2_t bot_left  = (vec2_t){-(X_COORDS_PER_TILE * tiles_per_chunk_x/2),  (Z_COORDS_PER_TILE * tiles_per_chunk_z/2)};
+    vec2_t top_right = (vec2_t){ (X_COORDS_PER_TILE * tiles_per_chunk_x/2), -(Z_COORDS_PER_TILE * tiles_per_chunk_z/2)};
     Camera_TickFinishOrthographic((struct camera*)chunk_cam, bot_left, top_right);
 
     /* Next, create a new framebuffer and texture that we will render our chunk 
-     * top view to. */
+     * top-down view to. */
     GLuint fb;
     glGenFramebuffers(1, &fb);
     glBindFramebuffer(GL_FRAMEBUFFER, fb);
@@ -1446,7 +1435,7 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
     glGenTextures(1, &rendered_tex);
 
     glBindTexture(GL_TEXTURE_2D, rendered_tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, TILE_TEX_RES * tiles_per_chunk_x, TILE_TEX_RES * tiles_per_chunk_z, 
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, CONFIG_BAKED_TILE_TEX_RES * tiles_per_chunk_x, CONFIG_BAKED_TILE_TEX_RES * tiles_per_chunk_z, 
         0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -1456,19 +1445,212 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
 
     GLenum draw_buffers[1] = {GL_COLOR_ATTACHMENT0};
     glDrawBuffers(1, draw_buffers);
-    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        goto fail_fb;
 
     glBindFramebuffer(GL_FRAMEBUFFER, fb);
-    glViewport(0,0, TILE_TEX_RES * tiles_per_chunk_x, TILE_TEX_RES * tiles_per_chunk_x);
+    glViewport(0,0, CONFIG_BAKED_TILE_TEX_RES * tiles_per_chunk_x, CONFIG_BAKED_TILE_TEX_RES * tiles_per_chunk_x);
 
-    /* Render the chunk top-view to the texture. */
+    /* Render the chunk top-down view to the texture. */
     glUniform1i(skip_loc, true);
     R_GL_Draw(chunk_rprivate_tiles, model);
     glUniform1i(skip_loc, false);
 
-    R_GL_DumpFramebuffer_PPM("test.ppm", TILE_TEX_RES * tiles_per_chunk_x, TILE_TEX_RES * tiles_per_chunk_z);
+    //R_GL_DumpFramebuffer_PPM("test.ppm", CONFIG_BAKED_TILE_TEX_RES * tiles_per_chunk_x, CONFIG_BAKED_TILE_TEX_RES * tiles_per_chunk_z);
 
-    /* Bind the default framebuffer when we're done */
+    /* Re-bind the default framebuffer when we're done rendering */
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    /* Now construct our new 'fast' render context. We have some unused memory at the 
+     * end of the buffer but this is not a concern. */
+    size_t max_buff_sz = sizeof(struct render_private)
+                       + og_priv->mesh.num_verts * sizeof(struct vertex) 
+                       + MATERIALS_PER_CHUNK * sizeof(struct material);
+    struct render_private *ret = malloc(max_buff_sz);
+    if(!ret)
+        goto fail_alloc;
+
+    /*
+     * Recall: render private buff layout:
+     *
+     *  +---------------------------------+ <-- base
+     *  | struct render_private[1]        |
+     *  +---------------------------------+
+     *  | struct vertex[num_verts]        |
+     *  +---------------------------------+
+     *  | struct material[num_materials]  |
+     *  +---------------------------------+
+     */
+
+    ret->mesh.vbuff = (void*)(ret + 1);
+    struct vertex *vbuff = ret->mesh.vbuff;
+
+    /* First pass over the tiles - figure out which materials we need to keep */
+    int side_mats_set[MATERIALS_PER_CHUNK];
+    int num_side_mats = 0;
+
+    for(int r = 0; r < tiles_per_chunk_z; r++) {
+        for(int c = 0; c < tiles_per_chunk_x; c++) {
+
+            const struct tile *curr_tile = &tiles[r * tiles_per_chunk_x + c];    
+
+            if(!arr_contains(side_mats_set, num_side_mats, curr_tile->sides_mat_idx)) {
+                side_mats_set[num_side_mats++] = curr_tile->sides_mat_idx;
+
+                /* We need at least one free material slot for the baked top face texture. */
+                if(num_side_mats > (MATERIALS_PER_CHUNK-1))
+                    goto fail_side_mats_count;
+            }
+        }
+    }
+
+    int top_mat_idx = num_side_mats;
+    assert(top_mat_idx >= 0 && top_mat_idx < MATERIALS_PER_CHUNK);
+
+    /* Second pass over the tiles - fill the vbuff and patch UV coordinates */
+    int num_verts = 0;
+
+    for(int r = 0; r < tiles_per_chunk_z; r++) {
+        for(int c = 0; c < tiles_per_chunk_x; c++) {
+            
+            const struct tile *curr_tile = &tiles[r * tiles_per_chunk_x + c];
+            const struct vertex *curr_tile_vbuff_base = &og_priv->mesh.vbuff[(r * tiles_per_chunk_x + c) * VERTS_PER_TILE];
+
+            /* Order of faces for each tile in the vbuff: bot, front, back, left, right, top.
+             * Recall that the top face has double the number of triangles and vertices. */
+
+            if(M_Tile_FrontFaceVisible(tiles, r, c)) {
+                memcpy(vbuff, curr_tile_vbuff_base + (VERTS_PER_FACE * 1), sizeof(struct vertex) * VERTS_PER_FACE); 
+                for(int i = 0; i < VERTS_PER_FACE; i++) {
+                    vbuff[i].material_idx = arr_indexof(side_mats_set, num_side_mats, vbuff[i].material_idx);
+                    assert(vbuff[i].material_idx >= 0);
+                }
+                num_verts += VERTS_PER_FACE; 
+                vbuff += VERTS_PER_FACE;
+            }
+
+            if(M_Tile_BackFaceVisible(tiles, r, c)) {
+                memcpy(vbuff, curr_tile_vbuff_base + (VERTS_PER_FACE * 2), sizeof(struct vertex) * VERTS_PER_FACE); 
+                for(int i = 0; i < VERTS_PER_FACE; i++) {
+                    vbuff[i].material_idx = arr_indexof(side_mats_set, num_side_mats, vbuff[i].material_idx);
+                    assert(vbuff[i].material_idx >= 0);
+                }
+                num_verts += VERTS_PER_FACE; 
+                vbuff += VERTS_PER_FACE;
+            }
+
+            if(M_Tile_LeftFaceVisible(tiles, r, c)) {
+                memcpy(vbuff, curr_tile_vbuff_base + (VERTS_PER_FACE * 3), sizeof(struct vertex) * VERTS_PER_FACE); 
+                for(int i = 0; i < VERTS_PER_FACE; i++) {
+                    vbuff[i].material_idx = arr_indexof(side_mats_set, num_side_mats, vbuff[i].material_idx);
+                    assert(vbuff[i].material_idx >= 0);
+                }
+                num_verts += VERTS_PER_FACE; 
+                vbuff += VERTS_PER_FACE;
+            }
+
+            if(M_Tile_RightFaceVisible(tiles, r, c)) {
+                memcpy(vbuff, curr_tile_vbuff_base + (VERTS_PER_FACE * 4), sizeof(struct vertex) * VERTS_PER_FACE); 
+                for(int i = 0; i < VERTS_PER_FACE; i++) {
+                    vbuff[i].material_idx = arr_indexof(side_mats_set, num_side_mats, vbuff[i].material_idx);
+                    assert(vbuff[i].material_idx >= 0);
+                }
+                num_verts += VERTS_PER_FACE; 
+                vbuff += VERTS_PER_FACE;
+            }
+
+            struct vertex sw = curr_tile_vbuff_base[(VERTS_PER_FACE * 5) + 0];
+            struct vertex se = curr_tile_vbuff_base[(VERTS_PER_FACE * 5) + 1];
+            struct vertex nw = curr_tile_vbuff_base[(VERTS_PER_FACE * 5) + 6];
+            struct vertex ne = curr_tile_vbuff_base[(VERTS_PER_FACE * 5) + 7];
+
+            /* Patch the UV coordinates of the top face */
+            float u_frac = (1.0f / tiles_per_chunk_x);
+            float v_frac = (1.0f / tiles_per_chunk_z);
+
+            sw.material_idx = top_mat_idx;
+            se.material_idx = top_mat_idx;
+            nw.material_idx = top_mat_idx;
+            ne.material_idx = top_mat_idx;
+
+            sw.uv = (vec2_t){ c    * u_frac, (r+1) * v_frac};
+            se.uv = (vec2_t){(c+1) * u_frac, (r+1) * v_frac};
+            nw.uv = (vec2_t){ c    * u_frac, r     * v_frac};
+            ne.uv = (vec2_t){(c+1) * u_frac, r     * v_frac};
+
+            vec3_t top_tri_normals[2];
+            bool   top_tri_left_aligned;
+            r_gl_tile_top_normals(curr_tile, top_tri_normals, &top_tri_left_aligned);
+
+            /*
+             * CONFIG 1 (left-aligned)   CONFIG 2
+             * (nw)      (ne)            (nw)      (ne)
+             * +---------+               +---------+
+             * |       / |               | \       |
+             * |     /   |               |   \     |
+             * |   /     |               |     \   |
+             * | /       |               |       \ |
+             * +---------+               +---------+
+             * (sw)      (se)            (sw)      (se)
+             */
+
+            vbuff[0] = sw;
+            vbuff[1] = se;
+            vbuff[3] = nw;
+            vbuff[4] = ne;
+
+            if(top_tri_left_aligned) {
+                vbuff[2] = ne;
+                vbuff[5] = sw;
+            }else {
+                vbuff[2] = nw; 
+                vbuff[5] = se;
+            }
+
+            for(int i = 0; i < 3; i++)
+                vbuff[i].normal = top_tri_normals[0];
+
+            for(int i = 3; i < 6; i++)
+                vbuff[i].normal = top_tri_normals[1];
+
+            num_verts += 6;
+            vbuff += 6;
+        }
+    }
+
+    ret->mesh.num_verts = num_verts;
+    ret->materials = (void*)(ret->mesh.vbuff + ret->mesh.num_verts);
+    ret->num_materials = num_side_mats + 1;
+
+    for(int i = 0; i < num_side_mats; i++) {
+        ret->materials[i] = og_priv->materials[side_mats_set[i]];
+        ret->materials[i].texture.tunit = GL_TEXTURE0 + i;
+    }
+
+    char texname[32];
+    snprintf(texname, sizeof(texname), "__baked_chunk__.%d.%d", chunk_r, chunk_c);
+    texname[sizeof(texname)-1] = '\0';
+    R_Texture_AddExisting(texname, rendered_tex);
+
+    /* TODO: Since we're only using a single 'material' for the entire top surface, the
+     * entire top surface must use the same ambient/diffuse/specular constants for
+     * lighting effects. This can be fixed but for this we need to de-couple textures
+     * from materials. */
+    ret->materials[top_mat_idx].ambient_intensity = 1.0f;
+    ret->materials[top_mat_idx].diffuse_clr  = (vec3_t){0.2f, 0.2f, 0.2f};
+    ret->materials[top_mat_idx].specular_clr = (vec3_t){0.05f, 0.05f, 0.05f};
+    ret->materials[top_mat_idx].texture.id = rendered_tex;
+    ret->materials[top_mat_idx].texture.tunit = GL_TEXTURE0 + top_mat_idx;
+
+    R_GL_Init(ret, "mesh.static.textured");
+    return ret;
+
+fail_side_mats_count:
+    free(ret);
+fail_alloc:
+    glDeleteTextures(1, &rendered_tex); 
+    glDeleteFramebuffers(1, &fb);
+fail_fb:
+    return NULL;
 }
 

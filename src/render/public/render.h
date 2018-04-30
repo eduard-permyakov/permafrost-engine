@@ -158,7 +158,8 @@ int    R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivat
  * ---------------------------------------------------------------------------
  */
 void  *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4x4_t *model,
-                      int tiles_per_chunk_x, int tiles_per_chunk_z);
+                      int tiles_per_chunk_x, int tiles_per_chunk_z, const struct tile *tiles,
+                      int chunk_r, int chunk_c);
 
 /* ---------------------------------------------------------------------------
  * Writes the framebuffer region (0, 0, width, height) to a PPM file.

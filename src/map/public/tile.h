@@ -54,25 +54,6 @@ enum tiletype{
     TILETYPE_CORNER_CONVEX_NE  = 0xc,
 };
 
-#define TILETYPE_IS_RAMP(t) \
-    (  ((t) == TILETYPE_RAMP_SN ) \
-    || ((t) == TILETYPE_RAMP_NS ) \
-    || ((t) == TILETYPE_RAMP_EW ) \
-    || ((t) == TILETYPE_RAMP_WE))
-
-
-#define TILETYPE_IS_CORNER_CONCAVE(t) \
-    (  ((t) == TILETYPE_CORNER_CONCAVE_SW ) \
-    || ((t) == TILETYPE_CORNER_CONCAVE_SE ) \
-    || ((t) == TILETYPE_CORNER_CONCAVE_NW ) \
-    || ((t) == TILETYPE_CORNER_CONCAVE_NE))
-
-#define TILETYPE_IS_CORNER_CONVEX(t) \
-    (  ((t) == TILETYPE_CORNER_CONVEX_SW ) \
-    || ((t) == TILETYPE_CORNER_CONVEX_SE ) \
-    || ((t) == TILETYPE_CORNER_CONVEX_NW ) \
-    || ((t) == TILETYPE_CORNER_CONVEX_NE))
-
 enum blend_mode{
     BLEND_MODE_NOBLEND = 0,
     BLEND_MODE_BLUR,
@@ -95,5 +76,36 @@ struct tile{
     int           top_mat_idx;
     int           sides_mat_idx;
 };
+
+
+#define TILETYPE_IS_RAMP(t) \
+    (  ((t) == TILETYPE_RAMP_SN ) \
+    || ((t) == TILETYPE_RAMP_NS ) \
+    || ((t) == TILETYPE_RAMP_EW ) \
+    || ((t) == TILETYPE_RAMP_WE))
+
+
+#define TILETYPE_IS_CORNER_CONCAVE(t) \
+    (  ((t) == TILETYPE_CORNER_CONCAVE_SW ) \
+    || ((t) == TILETYPE_CORNER_CONCAVE_SE ) \
+    || ((t) == TILETYPE_CORNER_CONCAVE_NW ) \
+    || ((t) == TILETYPE_CORNER_CONCAVE_NE))
+
+#define TILETYPE_IS_CORNER_CONVEX(t) \
+    (  ((t) == TILETYPE_CORNER_CONVEX_SW ) \
+    || ((t) == TILETYPE_CORNER_CONVEX_SE ) \
+    || ((t) == TILETYPE_CORNER_CONVEX_NW ) \
+    || ((t) == TILETYPE_CORNER_CONVEX_NE))
+
+
+int  M_Tile_NWHeight(const struct tile *tile);
+int  M_Tile_NEHeight(const struct tile *tile);
+int  M_Tile_SWHeight(const struct tile *tile);
+int  M_Tile_SEHeight(const struct tile *tile);
+
+bool M_Tile_FrontFaceVisible(const struct tile *tiles, int r, int c);
+bool M_Tile_BackFaceVisible (const struct tile *tiles, int r, int c);
+bool M_Tile_LeftFaceVisible (const struct tile *tiles, int r, int c);
+bool M_Tile_RightFaceVisible(const struct tile *tiles, int r, int c);
 
 #endif

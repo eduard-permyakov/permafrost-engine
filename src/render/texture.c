@@ -62,7 +62,7 @@ static bool r_texture_gl_init(const char *path, GLuint *out)
     glGenTextures(1, &ret);
     glBindTexture(GL_TEXTURE_2D, ret);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);   
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -168,6 +168,25 @@ bool R_Texture_Load(const char *basedir, const char *name, GLuint *out)
 
 fail:
     return false;
+}
+
+bool R_Texture_AddExisting(const char *name, GLuint id)
+{
+    if(!s_free_head)
+        return false;
+
+    struct texture_resource *alloc = s_free_head;
+    alloc->free = false;
+
+    s_free_head = alloc->next_free;
+    if(s_free_head)
+        s_free_head->prev_free = NULL;
+
+    assert( strlen(name) < MAX_TEX_NAME_LEN );
+    strcpy(alloc->name, name);
+
+    alloc->texture_id = id;
+    return true;
 }
 
 void R_Texture_Free(const char *name)

@@ -120,6 +120,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     for(int i = 0; i < num_chunks; i++) {
 
         map->chunks[i].render_private_tiles = (void*)unused_base;
+        map->chunks[i].render_private_prebaked = NULL;
         map->chunks[i].mode = CHUNK_RENDER_MODE_REALTIME_BLEND;
 
         if(!m_al_read_pfchunk(stream, map->chunks + i))
