@@ -66,6 +66,13 @@ static struct shader_resource s_shaders[] = {
     },
     {
         .prog_id     = (intptr_t)NULL,
+        .name        = "mesh.static.textured-phong",
+        .vertex_path = "shaders/vertex_static.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment_textured-phong.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.tile-outline",
         .vertex_path = "shaders/vertex_static.glsl",
         .geo_path    = NULL,
@@ -73,10 +80,10 @@ static struct shader_resource s_shaders[] = {
     },
     {
         .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.animated.textured",
+        .name        = "mesh.animated.textured-phong",
         .vertex_path = "shaders/vertex_skinned.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_textured.glsl"
+        .frag_path   = "shaders/fragment_textured-phong.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,

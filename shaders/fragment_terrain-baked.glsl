@@ -22,18 +22,20 @@
 #define MAX_MATERIALS 8
 
 /* TODO: Make these as material parameters */
-#define SPECULAR_STRENGTH  2
-#define SPECULAR_SHININESS 8
+#define SPECULAR_STRENGTH  0.5
+#define SPECULAR_SHININESS 2
 
 /*****************************************************************************/
 /* INPUTS                                                                    */
 /*****************************************************************************/
 
 in VertexToFrag {
-         vec2 uv;
-    flat int  mat_idx;
-         vec3 world_pos;
-         vec3 normal;
+         vec2  uv;
+    flat int   mat_idx;
+    flat int   tex_idx;
+         vec3  world_pos;
+         vec3  normal;
+    flat ivec4 adjacent_mat_indices;
 }from_vertex;
 
 /*****************************************************************************/
@@ -59,6 +61,7 @@ uniform sampler2D texture4;
 uniform sampler2D texture5;
 uniform sampler2D texture6;
 uniform sampler2D texture7;
+uniform sampler2D texture8;
 
 struct material{
     float ambient_intensity;
@@ -76,7 +79,7 @@ void main()
 {
     vec4 tex_color;
 
-    switch(from_vertex.mat_idx) {
+    switch(from_vertex.tex_idx) {
     case 0: tex_color = texture(texture0, from_vertex.uv); break;
     case 1: tex_color = texture(texture1, from_vertex.uv); break;
     case 2: tex_color = texture(texture2, from_vertex.uv); break;
@@ -85,6 +88,7 @@ void main()
     case 5: tex_color = texture(texture5, from_vertex.uv); break;
     case 6: tex_color = texture(texture6, from_vertex.uv); break;
     case 7: tex_color = texture(texture7, from_vertex.uv); break;
+    case 8: tex_color = texture(texture8, from_vertex.uv); break;
     }
 
     /* Simple alpha test to reject transparent pixels */
@@ -92,5 +96,21 @@ void main()
         discard;
 
     o_frag_color = vec4(tex_color.xyz, 1.0);
+
+    ///* Ambient calculations */
+    //vec3 ambient = materials[from_vertex.mat_idx].ambient_intensity * ambient_color;
+
+    ///* Diffuse calculations */
+    //vec3 light_dir = normalize(light_pos - from_vertex.world_pos);  
+    //float diff = max(dot(from_vertex.normal, light_dir), 0.0);
+    //vec3 diffuse = light_color * (diff * materials[from_vertex.mat_idx].diffuse_clr);
+
+    ///* Specular calculations */
+    //vec3 view_dir = normalize(view_pos - from_vertex.world_pos);
+    //vec3 reflect_dir = reflect(-light_dir, from_vertex.normal);  
+    //float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
+    //vec3 specular = SPECULAR_STRENGTH * light_color * (spec * materials[from_vertex.mat_idx].specular_clr);  
+
+    //o_frag_color = vec4( (ambient + diffuse + specular) * tex_color.xyz, 1.0);
 }
 

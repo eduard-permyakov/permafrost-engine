@@ -194,7 +194,7 @@ bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir
             goto fail;
     }
 
-    R_GL_Init(priv, (header->num_as > 0) ? "mesh.animated.textured" : "mesh.static.textured");
+    R_GL_Init(priv, (header->num_as > 0) ? "mesh.animated.textured-phong" : "mesh.static.textured-phong");
 
     return true;
 

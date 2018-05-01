@@ -461,7 +461,7 @@ void R_GL_Init(struct render_private *priv, const char *shader)
         (void*)offsetof(struct vertex, material_idx));
     glEnableVertexAttribArray(3);
 
-    if(0 == strcmp("mesh.animated.textured", shader)) {
+    if(0 == strcmp("mesh.animated.textured-phong", shader)) {
     
         /* Attribute 4 - joint indices */
         glVertexAttribPointer(4, 4, GL_INT, GL_FALSE, sizeof(struct vertex),
@@ -514,9 +514,10 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
     const char *shaders[] = {
         "mesh.static.colored",
         "mesh.static.textured",
+        "mesh.static.textured-phong",
         "mesh.static.tile-outline",
         "mesh.static.normals.colored",
-        "mesh.animated.textured",
+        "mesh.animated.textured-phong",
         "mesh.animated.normals.colored",
         "terrain"
     };
@@ -533,9 +534,10 @@ void R_GL_SetProj(const mat4x4_t *proj)
     const char *shaders[] = {
         "mesh.static.colored",
         "mesh.static.textured",
+        "mesh.static.textured-phong",
         "mesh.static.tile-outline",
         "mesh.static.normals.colored",
-        "mesh.animated.textured",
+        "mesh.animated.textured-phong",
         "mesh.animated.normals.colored",
         "terrain"
     };
@@ -547,7 +549,7 @@ void R_GL_SetProj(const mat4x4_t *proj)
 void R_GL_SetAnimUniformMat4x4Array(mat4x4_t *data, size_t count, const char *uname)
 {
     const char *shaders[] = {
-        "mesh.animated.textured",
+        "mesh.animated.textured-phong",
         "mesh.animated.normals.colored",
     };
 
@@ -558,7 +560,7 @@ void R_GL_SetAnimUniformMat4x4Array(mat4x4_t *data, size_t count, const char *un
 void R_GL_SetAnimUniformVec4Array(vec4_t *data, size_t count, const char *uname)
 {
     const char *shaders[] = {
-        "mesh.animated.textured",
+        "mesh.animated.textured-phong",
         "mesh.animated.normals.colored",
     };
 
@@ -569,8 +571,8 @@ void R_GL_SetAnimUniformVec4Array(vec4_t *data, size_t count, const char *uname)
 void R_GL_SetAmbientLightColor(vec3_t color)
 {
     const char *shaders[] = {
-        "mesh.static.textured",
-        "mesh.animated.textured",
+        "mesh.static.textured-phong",
+        "mesh.animated.textured-phong",
         "terrain"
     };
 
@@ -589,8 +591,8 @@ void R_GL_SetAmbientLightColor(vec3_t color)
 void R_GL_SetLightEmitColor(vec3_t color)
 {
     const char *shaders[] = {
-        "mesh.static.textured",
-        "mesh.animated.textured",
+        "mesh.static.textured-phong",
+        "mesh.animated.textured-phong",
         "terrain"
     };
 
@@ -609,8 +611,8 @@ void R_GL_SetLightEmitColor(vec3_t color)
 void R_GL_SetLightPos(vec3_t pos)
 {
     const char *shaders[] = {
-        "mesh.static.textured",
-        "mesh.animated.textured",
+        "mesh.static.textured-phong",
+        "mesh.animated.textured-phong",
         "terrain"
     };
 
@@ -1406,8 +1408,14 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
                      int tiles_per_chunk_x, int tiles_per_chunk_z, const struct tile *tiles,
                      int chunk_r, int chunk_c)
 {
+    /* Note that we already include the phong lighting information in the pre-baked chunk. This
+     * means that the pre-baked terrain cannot change lighting in real-time. It is possible 
+     * to render the top surface texture with lighting disabled and then light in in real-time
+     * but this makes dealing with all the different tile materials a headache. We would either
+     * need to blend them so there are no sharp edges (slow) or use a single material for the 
+     * entire top surface.*/
+
     const struct render_private *og_priv = chunk_rprivate_tiles;
-    GLuint skip_loc = glGetUniformLocation(og_priv->shader_prog, GL_U_SKIP_LIGHTING);
     glUseProgram(og_priv->shader_prog);
 
     /* Create a new camera, with orthographic projection, centered 
@@ -1452,9 +1460,7 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
     glViewport(0,0, CONFIG_BAKED_TILE_TEX_RES * tiles_per_chunk_x, CONFIG_BAKED_TILE_TEX_RES * tiles_per_chunk_x);
 
     /* Render the chunk top-down view to the texture. */
-    glUniform1i(skip_loc, true);
     R_GL_Draw(chunk_rprivate_tiles, model);
-    glUniform1i(skip_loc, false);
 
     /* Re-bind the default framebuffer when we're done rendering */
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1630,13 +1636,6 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
     texname[sizeof(texname)-1] = '\0';
     R_Texture_AddExisting(texname, rendered_tex);
 
-    /* TODO: Since we're only using a single 'material' for the entire top surface, the
-     * entire top surface must use the same ambient/diffuse/specular constants for
-     * lighting effects. This can be fixed but for this we need to de-couple textures
-     * from materials. */
-    ret->materials[top_mat_idx].ambient_intensity = 1.0f;
-    ret->materials[top_mat_idx].diffuse_clr  = (vec3_t){0.2f, 0.2f, 0.2f};
-    ret->materials[top_mat_idx].specular_clr = (vec3_t){0.05f, 0.05f, 0.05f};
     ret->materials[top_mat_idx].texture.id = rendered_tex;
     ret->materials[top_mat_idx].texture.tunit = GL_TEXTURE0 + top_mat_idx;
 

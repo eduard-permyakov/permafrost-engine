@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018 Eduard Permyakov 
+ *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -91,6 +91,20 @@ void main()
     if(tex_color.a== 0.0)
         discard;
 
-    o_frag_color = vec4(tex_color.xyz, 1.0);
+    /* Ambient calculations */
+    vec3 ambient = materials[from_vertex.mat_idx].ambient_intensity * ambient_color;
+
+    /* Diffuse calculations */
+    vec3 light_dir = normalize(light_pos - from_vertex.world_pos);  
+    float diff = max(dot(from_vertex.normal, light_dir), 0.0);
+    vec3 diffuse = light_color * (diff * materials[from_vertex.mat_idx].diffuse_clr);
+
+    /* Specular calculations */
+    vec3 view_dir = normalize(view_pos - from_vertex.world_pos);
+    vec3 reflect_dir = reflect(-light_dir, from_vertex.normal);  
+    float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
+    vec3 specular = SPECULAR_STRENGTH * light_color * (spec * materials[from_vertex.mat_idx].specular_clr);  
+
+    o_frag_color = vec4( (ambient + diffuse + specular) * tex_color.xyz, 1.0);
 }
 
