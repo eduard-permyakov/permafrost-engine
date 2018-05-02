@@ -22,12 +22,43 @@
 #include "map_private.h"
 #include "pfchunk.h"
 #include "../camera.h"
+#include "../collision.h"
 
 #include <unistd.h>
 #include <string.h>
 #include <assert.h>
 
 #include <SDL.h>
+
+#define MAX_HEIGHT_LEVEL 9
+
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static void m_aabb_for_chunk(const struct map *map, struct chunkpos p, struct aabb *out)
+{
+    size_t chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    size_t chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+    size_t chunk_max_height = MAX_HEIGHT_LEVEL * Y_COORDS_PER_TILE;
+
+    ssize_t x_offset = -(p.c * chunk_x_dim);
+    ssize_t z_offset =  (p.r * chunk_z_dim);
+
+    out->x_max = map->pos.x + x_offset;
+    out->x_min = out->x_max - chunk_x_dim;
+
+    out->z_min = map->pos.z + z_offset;
+    out->z_max = out->z_min + chunk_z_dim;
+
+    out->y_min = 0.0f;
+    out->y_max = chunk_max_height;
+
+    assert(out->x_max >= out->x_min);
+    assert(out->y_max >= out->y_min);
+    assert(out->z_max >= out->z_min);
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -47,6 +78,37 @@ void M_RenderEntireMap(const struct map *map)
     for(int r = 0; r < map->height; r++) {
         for(int c = 0; c < map->width; c++) {
         
+            mat4x4_t chunk_model;
+            const struct pfchunk *chunk = &map->chunks[r * map->width + c];
+            void *render_private = 
+                (chunk->mode == CHUNK_RENDER_MODE_REALTIME_BLEND) ? chunk->render_private_tiles
+                                                                  : chunk->render_private_prebaked;
+
+            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+            R_GL_Draw(render_private, &chunk_model);
+        }
+    }
+}
+
+void M_RenderVisibleMap(const struct map *map, const struct camera *cam)
+{
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+        for(int c = 0; c < map->width; c++) {
+
+            struct aabb chunk_aabb;
+            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+            /* Due to the nature of the the map (perfect grid), the fast and greedy frustrum 
+             * intersection test will yield too many false positives. As each chunk mesh has 
+             * a high vertex count, this is undesirable. It is absolutely worth it to do the 
+             * precise frustrum intersection test. With it, the map rendering performance
+             * scales great for large maps. */
+            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+                continue;
+
             mat4x4_t chunk_model;
             const struct pfchunk *chunk = &map->chunks[r * map->width + c];
             void *render_private = 

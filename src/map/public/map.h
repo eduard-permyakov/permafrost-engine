@@ -67,6 +67,13 @@ enum chunk_render_mode{
 void   M_RenderEntireMap    (const struct map *map);
 
 /* ------------------------------------------------------------------------
+ * Renders the chunks of the map that are currently visible by the specified
+ * camera using a frustrum-chunk intersection test.
+ * ------------------------------------------------------------------------
+ */
+void   M_RenderVisibleMap   (const struct map *map, const struct camera *cam);
+
+/* ------------------------------------------------------------------------
  * Centers the map at the worldspace origin.
  * ------------------------------------------------------------------------
  */

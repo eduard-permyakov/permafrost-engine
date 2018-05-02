@@ -24,6 +24,7 @@
 #include <stdbool.h>
 
 struct camera;
+struct frustum;
 extern const unsigned g_sizeof_camera;
 
 struct bound_box{
@@ -36,6 +37,7 @@ struct bound_box{
 
 
 #define CAM_Z_NEAR_DIST     (0.1f)
+#define CAM_FOV_RAD         (M_PI/4.0f)
 
 struct camera *Camera_New (void);
 void           Camera_Free(struct camera *cam);
@@ -71,5 +73,7 @@ void           Camera_ChangeDirection  (struct camera *cam, int dx, int dy);
  */
 void           Camera_TickFinishPerspective(struct camera *cam);
 void           Camera_TickFinishOrthographic(struct camera *cam, vec2_t bot_left, vec2_t top_right);
+
+void           Camera_MakeFrustum(const struct camera *cam, struct frustum *out);
 
 #endif

@@ -29,7 +29,36 @@ struct aabb{
     float z_min, z_max;
 };
 
+struct plane{
+    vec3_t point;
+    vec3_t normal;
+};
+
+struct frustum{
+    struct plane near, far;
+    struct plane top, bot;
+    struct plane left, right;
+    /* The 8 corners of the frustum are used for precise collision 
+     * detection using Separating Axis Theorem. */
+    vec3_t ntl, ntr, nbl, nbr;
+    vec3_t ftl, ftr, fbl, fbr;
+};
+
+enum volume_intersec_type{
+    VOLUME_INTERSEC_INSIDE,
+    VOLUME_INTERSEC_OUTSIDE,
+    VOLUME_INTERSEC_INTERSECTION,
+};
+
 bool C_RayIntersectsAABB(vec3_t ray_origin, vec3_t ray_dir, struct aabb aabb, float *out_t);
 bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, size_t n);
+
+/* Note that the following 2 routines do not give precise results. They are fast checks but 
+ * sometimes give false positives. Howvever, this is still suitable for view frustum culling 
+ * in some cases. */
+enum volume_intersec_type C_FrustumPointIntersection(const struct frustum *frustum, vec3_t point);
+enum volume_intersec_type C_FrustumAABBIntersection (const struct frustum *frustum, const struct aabb *aabb);
+
+bool C_FrustumAABBIntersectionExact(const struct frustum *frustum, const struct aabb *aabb);
 
 #endif

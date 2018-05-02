@@ -159,7 +159,7 @@ void G_Render(void)
 {
     assert(s_gs.active);
 
-    if(s_gs.map) M_RenderEntireMap(s_gs.map);
+    if(s_gs.map) M_RenderVisibleMap(s_gs.map, ACTIVE_CAM);
 
     khiter_t k;
     for(k = kh_begin(s_gs.active); k != kh_end(s_gs.active); ++k) {

@@ -20,10 +20,16 @@
 #include "collision.h"
 #include <assert.h>
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b)   ((a) < (b) ? (a) : (b))
+#define MAX(a, b)   ((a) > (b) ? (a) : (b))
+#define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
 #define EPSILON (1.0f / 1000000.0f)
+
+
+struct range{
+    float begin, end;
+};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -101,6 +107,85 @@ static bool ray_triangle_intersect(vec3_t ray_origin, vec3_t ray_dir, vec3_t tri
     return true;
 }
 
+static float plane_point_signed_distance(const struct plane *plane, vec3_t point)
+{
+    vec3_t diff;
+    PFM_Vec3_Sub(&point, (vec3_t*)&plane->point, &diff);
+    return PFM_Vec3_Dot(&diff, (vec3_t*)&plane->normal);
+}
+
+static float arr_min(float *array, size_t size)
+{
+    assert(size > 0);
+
+    float min = array[0];
+    for(int i = 1; i < size; i++) {
+            
+        if(array[i] < min)
+           min = array[i]; 
+    }
+
+    return min;
+}
+
+static float arr_max(float *array, size_t size)
+{
+    assert(size > 0);
+
+    float max = array[0];
+    for(int i = 1; i < size; i++) {
+            
+        if(array[i] > max)
+           max = array[i]; 
+    }
+
+    return max;
+}
+
+static bool ranges_overlap(struct range *a, struct range *b)
+{
+    if(b->begin >= a->begin && b->begin <= a->end)
+        return true;
+
+    if(b->end >= a->begin && b->end <= a->end)
+        return true;
+
+    return false;
+}
+
+static bool separating_axis_exists(vec3_t axis, const struct frustum *frustum, const struct aabb *aabb)
+{
+    struct range frust_range, aabb_range;
+
+    float frust_axis_dots[8];
+    float aabb_axis_dots[8];
+
+    const vec3_t *frust_points[8] = {&frustum->ntl, &frustum->ntr, &frustum->nbl, &frustum->nbr,
+                                     &frustum->ftl, &frustum->ftr, &frustum->fbl, &frustum->fbr};
+
+    vec3_t aabb_points[8] = {
+        (vec3_t){aabb->x_min, aabb->y_min, aabb->z_min},
+        (vec3_t){aabb->x_min, aabb->y_min, aabb->z_max},
+        (vec3_t){aabb->x_min, aabb->y_max, aabb->z_min},
+        (vec3_t){aabb->x_min, aabb->y_max, aabb->z_max},
+        (vec3_t){aabb->x_max, aabb->y_min, aabb->z_min},
+        (vec3_t){aabb->x_max, aabb->y_min, aabb->z_max},
+        (vec3_t){aabb->x_max, aabb->y_max, aabb->z_min},
+        (vec3_t){aabb->x_max, aabb->y_max, aabb->z_max},
+    };
+
+    for(int i = 0; i < 8; i++)
+        frust_axis_dots[i] = PFM_Vec3_Dot((vec3_t*)frust_points[i], &axis);
+
+    for(int i = 0; i < 8; i++)
+        aabb_axis_dots[i] = PFM_Vec3_Dot(&aabb_points[i], &axis);
+
+    frust_range = (struct range){arr_min(frust_axis_dots, 8), arr_max(frust_axis_dots, 8)}; 
+    aabb_range  = (struct range){arr_min(aabb_axis_dots, 8),  arr_max(aabb_axis_dots, 8)};
+
+    return !ranges_overlap(&frust_range, &aabb_range);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -141,5 +226,106 @@ bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, 
     }
 
     return false;
+}
+
+enum volume_intersec_type C_FrustrumPointIntersection(const struct frustum *frustum, vec3_t point)
+{
+    const struct plane *planes[] = {&frustum->top, &frustum->bot, &frustum->left, 
+                                    &frustum->right, &frustum->near, &frustum->far};
+
+    for(int i = 0; i < ARR_SIZE(planes); i++) {
+   
+        if(plane_point_signed_distance(planes[i], point) < 0.0f)
+            return VOLUME_INTERSEC_OUTSIDE;
+    }
+
+    return VOLUME_INTERSEC_INSIDE;
+}
+
+/* Based on the algorithm outlined here:
+ * http://cgvr.informatik.uni-bremen.de/teaching/cg_literatur/lighthouse3d_view_frustum_culling/index.html
+ */
+enum volume_intersec_type C_FrustumAABBIntersection(const struct frustum *frustum, const struct aabb *aabb)
+{
+    const struct plane *planes[] = {&frustum->top, &frustum->bot, &frustum->left, 
+                                    &frustum->right, &frustum->near, &frustum->far};
+
+    for(int i = 0; i < ARR_SIZE(planes); i++) {
+
+        int corners_in = 0, corners_out = 0;
+
+        const vec3_t corners[8] = {
+            (vec3_t){aabb->x_min, aabb->y_min, aabb->z_min},
+            (vec3_t){aabb->x_min, aabb->y_min, aabb->z_max},
+            (vec3_t){aabb->x_min, aabb->y_max, aabb->z_min},
+            (vec3_t){aabb->x_min, aabb->y_max, aabb->z_max},
+            (vec3_t){aabb->x_max, aabb->y_min, aabb->z_min},
+            (vec3_t){aabb->x_max, aabb->y_min, aabb->z_max},
+            (vec3_t){aabb->x_max, aabb->y_max, aabb->z_min},
+            (vec3_t){aabb->x_max, aabb->y_max, aabb->z_max},
+        };
+
+        /* Break as soon as we know the box has corners both inside and outside 
+         * the frustum */
+        for(int k = 0; k < 8 && (corners_in == 0 || corners_out == 0); k++) {
+        
+            if(plane_point_signed_distance(planes[i], corners[k]) < 0.0f)
+                corners_out++;
+            else
+                corners_in++;
+        }
+
+        /* All corners are outside */
+        if(corners_in == 0)
+            return VOLUME_INTERSEC_OUTSIDE;
+        else if(corners_out > 0)
+            return VOLUME_INTERSEC_INTERSECTION;
+    }
+
+    return VOLUME_INTERSEC_INSIDE;
+}
+
+bool C_FrustumAABBIntersectionExact(const struct frustum *frustum, const struct aabb *aabb)
+{
+    vec3_t aabb_axes[3] = {
+        (vec3_t){1.0f, 0.0f, 0.0f}, 
+        (vec3_t){0.0f, 1.0f, 0.0f}, 
+        (vec3_t){0.0f, 0.0f, 1.0f}
+    };
+    
+    for(int i = 0; i < ARR_SIZE(aabb_axes); i++) {
+    
+        if(separating_axis_exists(aabb_axes[i], frustum, aabb))
+            return false;
+    }
+
+    vec3_t frust_axes[6] = {
+        frustum->near.normal,
+        frustum->far.normal,
+        frustum->top.normal,
+        frustum->bot.normal,
+        frustum->left.normal,
+        frustum->right.normal
+    };
+
+    for(int i = 0; i < ARR_SIZE(frust_axes); i++) {
+    
+        if(separating_axis_exists(frust_axes[i], frustum, aabb)) 
+            return false;
+    }
+
+    vec3_t axes_cross_products[ARR_SIZE(aabb_axes) * ARR_SIZE(frust_axes)];
+    for(int i = 0; i < ARR_SIZE(aabb_axes); i++) {
+        for(int j = 0; j < ARR_SIZE(frust_axes); j++)
+            PFM_Vec3_Cross(&aabb_axes[i], &frust_axes[j], &axes_cross_products[i * ARR_SIZE(aabb_axes) + j]);
+    }
+
+    for(int i = 0; i < ARR_SIZE(axes_cross_products); i++) {
+    
+        if(separating_axis_exists(axes_cross_products[i], frustum, aabb)) 
+            return false;
+    }
+
+    return true;
 }
 
