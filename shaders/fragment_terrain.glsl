@@ -333,12 +333,18 @@ void main()
     float diff = max(dot(from_vertex.normal, light_dir), 0.0);
     vec3 diffuse = light_color * (diff * frag_material.diffuse_clr);
 
+    /* Since, for optimization reasons, we currently render the terrain top surface to a texture 
+     * with the lighting calculations already included, we skip the specular lighting, as it is 
+     * dependent on the camera position. */
+
     /* Specular calculations */
+    #if 0
     vec3 view_dir = normalize(view_pos - from_vertex.world_pos);
     vec3 reflect_dir = reflect(-light_dir, from_vertex.normal);  
     float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
     vec3 specular = SPECULAR_STRENGTH * light_color * (spec * frag_material.specular_clr);
+    #endif
 
-    o_frag_color = vec4( (ambient + diffuse + specular) * tex_color.xyz, 1.0);
+    o_frag_color = vec4( (ambient + diffuse) * tex_color.xyz, 1.0);
 }
 
