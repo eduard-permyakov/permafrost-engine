@@ -163,10 +163,7 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     PyEntityObject *self;
     const char *dirpath, *filename, *name;
 
-    self = (PyEntityObject*)type->tp_alloc(type, 0);
-
     if(!PyArg_ParseTuple(args, "sss", &dirpath, &filename, &name)) {
-        Py_DECREF(self); 
         return NULL;
     }
 
@@ -175,10 +172,17 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     strcpy(entity_path, g_basepath);
     strcat(entity_path, dirpath);
 
-    self->ent = AL_EntityFromPFObj(entity_path, filename, name);
-    if(!self->ent) {
-        Py_DECREF(self); 
+    struct entity *ent = AL_EntityFromPFObj(entity_path, filename, name);
+    if(!ent) {
         return NULL;
+    }
+
+    self = (PyEntityObject*)type->tp_alloc(type, 0);
+    if(!self) {
+        AL_EntityFree(ent); 
+        return NULL;
+    }else{
+        self->ent = ent; 
     }
 
     return (PyObject*)self;

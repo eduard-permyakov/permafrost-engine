@@ -257,9 +257,6 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
     size_t ret = 0;
 
     ret += sizeof(struct render_private);
-    /* We are going to draw each tile as a 6-sided quad, each quad consisting 
-     * of two triangles */
-    ret += (tiles_width * tiles_height) * sizeof(struct vertex) * VERTS_PER_TILE;
     ret += sizeof(struct material) * num_mats;
 
     return ret;

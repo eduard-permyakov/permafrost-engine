@@ -31,7 +31,7 @@ pf.set_emit_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_pos([1024.0, 768.0, 768.0])
 
 pf.new_game("assets/maps", "demo-arena.pfmap")
-pf.set_map_render_mode(CHUNK_RENDER_MODE_PREBAKED);
+pf.set_map_render_mode(CHUNK_RENDER_MODE_PREBAKED)
 
 ############################################################
 # Setup entities                                           #

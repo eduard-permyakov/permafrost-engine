@@ -24,7 +24,7 @@
 #include <string.h>
 #include <assert.h>
 
-#define MAX_NUM_TEXTURE  128
+#define MAX_NUM_TEXTURE  2048
 #define MAX_TEX_NAME_LEN 32
 
 
