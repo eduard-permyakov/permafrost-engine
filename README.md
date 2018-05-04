@@ -27,6 +27,7 @@ in the early phases of development.
 * UI framework (Nuklear)
 * Efficient raycasting algorithm
 * Map editor
+* Fast rendering of huge maps (map size only limited by memory)
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
