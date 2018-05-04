@@ -18,6 +18,7 @@
 
 import pf
 import traceback
+import copy
 
 
 EDITOR_PFMAP_VERSION = 1.0
@@ -126,9 +127,9 @@ class Chunk(object):
             self.tiles.append(row)
 
         self.materials = [None]*pf.MATERIALS_PER_CHUNK
-        self.materials[0] = Chunk.DEFAULT_TOP_MATERIAL
+        self.materials[0] = copy.deepcopy(Chunk.DEFAULT_TOP_MATERIAL)
         self.materials[0].refcount = self.rows * self.cols
-        self.materials[1] = Chunk.DEFAULT_SIDE_MATERIAL
+        self.materials[1] = copy.deepcopy(Chunk.DEFAULT_SIDE_MATERIAL)
         self.materials[1].refcount = self.rows * self.cols
 
     def pfmap_str(self):
@@ -156,7 +157,7 @@ class Chunk(object):
             return None
 
     def free_material_slots(self):
-        return len([m for m in self.materials if m is not None])
+        return len([m for m in self.materials if m is None])
 
     def free_material_slot_idx(self):
         return self.materials.index(None)
@@ -219,26 +220,29 @@ class Map(object):
                 mapfile.write(self.pfmap_str())
 
     def update_tile_mat(self, tile_coords, top_material):
+
         chunk = self.chunks[tile_coords[0][0]][tile_coords[0][1]]
         tile = chunk.tiles[tile_coords[1][0]][tile_coords[1][1]]
 
         if chunk.materials[tile.top_mat_idx] != top_material:
+
             chunk.materials[tile.top_mat_idx].refcount -= 1
             mat_deleted = chunk.materials[tile.top_mat_idx].refcount == 0
-
             if mat_deleted:
                 chunk.materials[tile.top_mat_idx] = None
+
             mat_idx = chunk.index_for_mat(top_material)
-            mat_added = chunk.free_material_slots() > 0 and mat_idx is None
-
-            if mat_added:
-                mat_idx = chunk.free_material_slot_idx() 
-                chunk.materials[mat_idx] = top_material
-
-            if mat_idx is None: 
+            if mat_idx is None and chunk.free_material_slots() == 0: 
                 print("Only {0} materials allowed per chunk!".format(pf.MATERIALS_PER_CHUNK))
                 return
 
+            mat_added = chunk.free_material_slots() > 0 and mat_idx is None
+            if mat_added:
+                mat_idx = chunk.free_material_slot_idx() 
+                chunk.materials[mat_idx] = copy.deepcopy(top_material)
+
+            assert mat_idx is not None
+            assert mat_idx >= 0 and mat_idx < pf.MATERIALS_PER_CHUNK
             chunk.materials[mat_idx].refcount += 1
             tile.top_mat_idx = mat_idx
             pf.update_tile(tile_coords[0], tile_coords[1], tile)
