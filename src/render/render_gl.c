@@ -1303,10 +1303,12 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
         : TILETYPE_IS_CORNER_CONVEX(tile->type) ? (tile->base_height + tile->ramp_height) 
         : (tile->base_height);
 
+    vec3_t center_vert_pos = (vec3_t) {
+        top.nw.pos.x - X_COORDS_PER_TILE / 2.0f, 
+        center_height * Y_COORDS_PER_TILE, 
+        top.nw.pos.z + Z_COORDS_PER_TILE / 2.0f
+    };
     struct vertex center_vert = (struct vertex) {
-        .pos    = (vec3_t) {top.nw.pos.x - X_COORDS_PER_TILE / 2.0f, 
-                            center_height * Y_COORDS_PER_TILE, 
-                            top.nw.pos.z + Z_COORDS_PER_TILE / 2.0f},
         .uv     = (vec2_t) {0.5f, 0.5f},
         .normal = r_gl_tile_middle_normal(tile),
     };
@@ -1321,6 +1323,12 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
     }
     center_vert.material_idx = mat_idx;
     center_vert.normal = top_tri_normals[0];
+    /* When all 4 of the top face triangles share the exact same center vertex, there is potential for 
+     * there to be a single texel-wide line in between the different triangles due to imprecision in
+     * interpolation. To fix this, we make the triangles have a very slight overlap by moving the 
+     * center vertex very slightly for the different triangles. The top face will look the same but 
+     * this will guarantee that there are no artifacts. */
+    center_vert.pos = (vec3_t){center_vert_pos.x, center_vert_pos.y, center_vert_pos.z - 0.001};
 
     memcpy(out + (5 * VERTS_PER_FACE) + 0, first_tri[0], sizeof(struct vertex));
     memcpy(out + (5 * VERTS_PER_FACE) + 1, first_tri[1], sizeof(struct vertex));
@@ -1340,6 +1348,7 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
     }
     center_vert.material_idx = mat_idx;
     center_vert.normal = top_tri_normals[1];
+    center_vert.pos = (vec3_t){center_vert_pos.x, center_vert_pos.y, center_vert_pos.z + 0.001};
 
     memcpy(out + (5 * VERTS_PER_FACE) + 6, second_tri[0], sizeof(struct vertex));
     memcpy(out + (5 * VERTS_PER_FACE) + 7, second_tri[1], sizeof(struct vertex));
