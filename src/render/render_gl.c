@@ -23,6 +23,7 @@
 #include "vertex.h"
 #include "shader.h"
 #include "material.h"
+#include "gl_assert.h"
 #include "public/render.h"
 #include "../entity.h"
 #include "../gl_uniforms.h"
@@ -431,7 +432,7 @@ static int arr_indexof(int *array, size_t size, int elem)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_Init(struct render_private *priv, const char *shader)
+void R_GL_Init(struct render_private *priv, const char *shader, const struct vertex *vbuff)
 {
     struct mesh *mesh = &priv->mesh;
 
@@ -440,7 +441,7 @@ void R_GL_Init(struct render_private *priv, const char *shader)
 
     glGenBuffers(1, &mesh->VBO);
     glBindBuffer(GL_ARRAY_BUFFER, mesh->VBO);
-    glBufferData(GL_ARRAY_BUFFER, mesh->num_verts * sizeof(struct vertex), mesh->vbuff, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, mesh->num_verts * sizeof(struct vertex), vbuff, GL_STATIC_DRAW);
 
     /* Attribute 0 - position */
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (void*)0);
@@ -819,9 +820,13 @@ void R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivat
     GLuint loc;
 
     const struct render_private *priv = chunk_rprivate;
-    struct vertex *vert_base = &priv->mesh.vbuff[(in->tile_r * tiles_per_chunk_x + in->tile_c) 
-                                * VERTS_PER_TILE];
+    size_t offset = (in->tile_r * tiles_per_chunk_x + in->tile_c) * VERTS_PER_TILE * sizeof(struct vertex);
+    size_t length = VERTS_PER_TILE * sizeof(struct vertex);
+
+    const struct vertex *vert_base = glMapNamedBufferRange(priv->mesh.VBO, offset, length, GL_MAP_READ_BIT);
+    assert(vert_base);
     memcpy(vbuff, vert_base, sizeof(vbuff));
+    glUnmapNamedBuffer(priv->mesh.VBO);
 
     /* Additionally, scale the tile selection mesh slightly around its' center. This is so that 
      * it is slightly larger than the actual tile underneath and can be rendered on top of it. */
@@ -907,7 +912,7 @@ void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim)
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 }
 
-void R_GL_PatchTileVertsBlend(struct vertex *vbuff, const struct tile *tiles, int width, int height, int r, int c)
+void R_GL_PatchTileVertsBlend(GLuint VBO, const struct tile *tiles, int width, int height, int r, int c)
 {
     const struct tile *curr_tile  = &tiles[r * width + c];
     const struct tile *top_tile   = (r > 0)          ? &tiles[(r - 1) * width + c] : NULL;
@@ -1002,7 +1007,12 @@ void R_GL_PatchTileVertsBlend(struct vertex *vbuff, const struct tile *tiles, in
      * The next element holds the materials at the midpoints of the edges of this tile and 
      * the last one holds the materials for the middle_mask of the tile.
      */
-    struct vertex *tile_verts_base = &vbuff[VERTS_PER_TILE * (r * width + c)];
+    size_t offset = VERTS_PER_TILE * (r * width + c) * sizeof(struct vertex);
+    size_t length = VERTS_PER_TILE * sizeof(struct vertex);
+
+    struct vertex *tile_verts_base = glMapNamedBufferRange(VBO, offset, length, GL_MAP_WRITE_BIT);
+    assert(tile_verts_base);
+    //&vbuff[VERTS_PER_TILE * (r * width + c)];
     struct vertex *south_provoking = tile_verts_base + (5 * VERTS_PER_FACE);
     struct vertex *north_provoking = tile_verts_base + (5 * VERTS_PER_FACE) + 2*3;
     struct vertex *west_provoking  = tile_verts_base + (5 * VERTS_PER_FACE) + (top_tri_left_aligned ?  3*3 : 3*1);
@@ -1041,6 +1051,9 @@ void R_GL_PatchTileVertsBlend(struct vertex *vbuff, const struct tile *tiles, in
         provoking[i]->adjacent_mat_indices[2] = adj_center_mask;
         provoking[i]->adjacent_mat_indices[3] = curr.middle_mask;
     }
+
+    glFlushMappedNamedBufferRange(VBO, offset, length);
+    glUnmapNamedBuffer(VBO);
 }
 
 void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r, size_t c)
@@ -1342,8 +1355,11 @@ int R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate,
                         mat4x4_t *model, int tiles_per_chunk_x, vec3_t out[])
 {
     const struct render_private *priv = chunk_rprivate;
-    struct vertex *vert_base = &priv->mesh.vbuff[(in->tile_r * tiles_per_chunk_x + in->tile_c) 
-                                * VERTS_PER_TILE ];
+
+    size_t offset = (in->tile_r * tiles_per_chunk_x + in->tile_c) * VERTS_PER_TILE * sizeof(struct vertex);
+    size_t length = VERTS_PER_TILE * sizeof(struct vertex);
+    const struct vertex *vert_base = glMapNamedBufferRange(priv->mesh.VBO, offset, length, GL_MAP_READ_BIT);
+    assert(vert_base);
     int i = 0;
 
     for(; i < VERTS_PER_TILE; i++) {
@@ -1359,16 +1375,9 @@ int R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate,
         };
     }
 
+    glUnmapNamedBuffer(priv->mesh.VBO);
     assert(i % 3 == 0);
     return i;
-}
-
-void R_GL_BufferSubData(const void *chunk_rprivate, size_t offset, size_t size)
-{
-    const struct render_private *priv = chunk_rprivate;
-
-    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
-    glBufferSubData(GL_ARRAY_BUFFER, offset, size, ((unsigned char*)priv->mesh.vbuff) + offset);
 }
 
 void R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height)
@@ -1402,6 +1411,35 @@ void R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height)
 
     fclose(file);
     free(data);
+}
+
+void R_GL_UpdateTile(void *chunk_rprivate, int r, int c, int tiles_width, int tiles_height, 
+                     const struct tile *tiles)
+{
+    struct render_private *priv = chunk_rprivate;
+    const struct tile *tile = &tiles[r * tiles_width + c];
+
+    size_t offset = (r * tiles_width + c) * VERTS_PER_TILE * sizeof(struct vertex);
+    size_t length = VERTS_PER_TILE * sizeof(struct vertex);
+    struct vertex *vert_base = glMapNamedBufferRange(priv->mesh.VBO, offset, length, GL_MAP_WRITE_BIT);
+    assert(vert_base);
+    
+    R_GL_VerticesFromTile(tile, vert_base, r, c);
+
+    glFlushMappedNamedBufferRange(priv->mesh.VBO, offset, length);
+    glUnmapNamedBuffer(priv->mesh.VBO);
+
+    for(int r_curr = r - 1; r_curr < r + 2; r_curr++){
+        for(int c_curr = c - 1; c_curr < c + 2; c_curr++) {
+        
+            if(r_curr < 0 || r_curr >= tiles_height)
+                continue;
+            if(c_curr < 0 || c_curr >= tiles_width)
+                continue;
+
+            R_GL_PatchTileVertsBlend(priv->mesh.VBO, tiles, tiles_width, tiles_height, r_curr, c_curr);
+        }
+    }
 }
 
 void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4x4_t *model,
@@ -1468,11 +1506,10 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
     /* Now construct our new 'fast' render context. We have some unused memory at the 
      * end of the buffer but this is not a concern. */
     size_t max_buff_sz = sizeof(struct render_private)
-                       + og_priv->mesh.num_verts * sizeof(struct vertex) 
                        + MATERIALS_PER_CHUNK * sizeof(struct material);
     struct render_private *ret = malloc(max_buff_sz);
     if(!ret)
-        goto fail_alloc;
+        goto fail_alloc_ret;
 
     /*
      * Recall: render private buff layout:
@@ -1480,14 +1517,14 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
      *  +---------------------------------+ <-- base
      *  | struct render_private[1]        |
      *  +---------------------------------+
-     *  | struct vertex[num_verts]        |
-     *  +---------------------------------+
      *  | struct material[num_materials]  |
      *  +---------------------------------+
      */
 
-    ret->mesh.vbuff = (void*)(ret + 1);
-    struct vertex *vbuff = ret->mesh.vbuff;
+    struct vertex *vbuff = malloc(og_priv->mesh.num_verts * sizeof(struct vertex));
+    if(!vbuff)
+        goto fail_alloc_vbuff;
+    struct vertex *vbuff_curr = vbuff;
 
     /* First pass over the tiles - figure out which materials we need to keep */
     int side_mats_set[MATERIALS_PER_CHUNK];
@@ -1511,62 +1548,64 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
     int top_mat_idx = num_side_mats;
     assert(top_mat_idx >= 0 && top_mat_idx < MATERIALS_PER_CHUNK);
 
-    /* Second pass over the tiles - fill the vbuff and patch UV coordinates */
+    /* Second pass over the tiles - fill the vbuff_curr and patch UV coordinates */
     int num_verts = 0;
 
     for(int r = 0; r < tiles_per_chunk_z; r++) {
         for(int c = 0; c < tiles_per_chunk_x; c++) {
             
             const struct tile *curr_tile = &tiles[r * tiles_per_chunk_x + c];
-            const struct vertex *curr_tile_vbuff_base = &og_priv->mesh.vbuff[(r * tiles_per_chunk_x + c) * VERTS_PER_TILE];
 
-            /* Order of faces for each tile in the vbuff: bot, front, back, left, right, top.
+            struct vertex curr_tile_vbuff[VERTS_PER_TILE];
+            R_GL_VerticesFromTile(curr_tile, curr_tile_vbuff, r, c);
+
+            /* Order of faces for each tile in the vbuff_curr: bot, front, back, left, right, top.
              * Recall that the top face has double the number of triangles and vertices. */
 
             if(M_Tile_FrontFaceVisible(tiles, r, c)) {
-                memcpy(vbuff, curr_tile_vbuff_base + (VERTS_PER_FACE * 1), sizeof(struct vertex) * VERTS_PER_FACE); 
+                memcpy(vbuff_curr, curr_tile_vbuff + (VERTS_PER_FACE * 1), sizeof(struct vertex) * VERTS_PER_FACE); 
                 for(int i = 0; i < VERTS_PER_FACE; i++) {
-                    vbuff[i].material_idx = arr_indexof(side_mats_set, num_side_mats, vbuff[i].material_idx);
-                    assert(vbuff[i].material_idx >= 0);
+                    vbuff_curr[i].material_idx = arr_indexof(side_mats_set, num_side_mats, vbuff_curr[i].material_idx);
+                    assert(vbuff_curr[i].material_idx >= 0);
                 }
                 num_verts += VERTS_PER_FACE; 
-                vbuff += VERTS_PER_FACE;
+                vbuff_curr += VERTS_PER_FACE;
             }
 
             if(M_Tile_BackFaceVisible(tiles, r, c)) {
-                memcpy(vbuff, curr_tile_vbuff_base + (VERTS_PER_FACE * 2), sizeof(struct vertex) * VERTS_PER_FACE); 
+                memcpy(vbuff_curr, curr_tile_vbuff + (VERTS_PER_FACE * 2), sizeof(struct vertex) * VERTS_PER_FACE); 
                 for(int i = 0; i < VERTS_PER_FACE; i++) {
-                    vbuff[i].material_idx = arr_indexof(side_mats_set, num_side_mats, vbuff[i].material_idx);
-                    assert(vbuff[i].material_idx >= 0);
+                    vbuff_curr[i].material_idx = arr_indexof(side_mats_set, num_side_mats, vbuff_curr[i].material_idx);
+                    assert(vbuff_curr[i].material_idx >= 0);
                 }
                 num_verts += VERTS_PER_FACE; 
-                vbuff += VERTS_PER_FACE;
+                vbuff_curr += VERTS_PER_FACE;
             }
 
             if(M_Tile_LeftFaceVisible(tiles, r, c)) {
-                memcpy(vbuff, curr_tile_vbuff_base + (VERTS_PER_FACE * 3), sizeof(struct vertex) * VERTS_PER_FACE); 
+                memcpy(vbuff_curr, curr_tile_vbuff + (VERTS_PER_FACE * 3), sizeof(struct vertex) * VERTS_PER_FACE); 
                 for(int i = 0; i < VERTS_PER_FACE; i++) {
-                    vbuff[i].material_idx = arr_indexof(side_mats_set, num_side_mats, vbuff[i].material_idx);
-                    assert(vbuff[i].material_idx >= 0);
+                    vbuff_curr[i].material_idx = arr_indexof(side_mats_set, num_side_mats, vbuff_curr[i].material_idx);
+                    assert(vbuff_curr[i].material_idx >= 0);
                 }
                 num_verts += VERTS_PER_FACE; 
-                vbuff += VERTS_PER_FACE;
+                vbuff_curr += VERTS_PER_FACE;
             }
 
             if(M_Tile_RightFaceVisible(tiles, r, c)) {
-                memcpy(vbuff, curr_tile_vbuff_base + (VERTS_PER_FACE * 4), sizeof(struct vertex) * VERTS_PER_FACE); 
+                memcpy(vbuff_curr, curr_tile_vbuff + (VERTS_PER_FACE * 4), sizeof(struct vertex) * VERTS_PER_FACE); 
                 for(int i = 0; i < VERTS_PER_FACE; i++) {
-                    vbuff[i].material_idx = arr_indexof(side_mats_set, num_side_mats, vbuff[i].material_idx);
-                    assert(vbuff[i].material_idx >= 0);
+                    vbuff_curr[i].material_idx = arr_indexof(side_mats_set, num_side_mats, vbuff_curr[i].material_idx);
+                    assert(vbuff_curr[i].material_idx >= 0);
                 }
                 num_verts += VERTS_PER_FACE; 
-                vbuff += VERTS_PER_FACE;
+                vbuff_curr += VERTS_PER_FACE;
             }
 
-            struct vertex sw = curr_tile_vbuff_base[(VERTS_PER_FACE * 5) + 0];
-            struct vertex se = curr_tile_vbuff_base[(VERTS_PER_FACE * 5) + 1];
-            struct vertex nw = curr_tile_vbuff_base[(VERTS_PER_FACE * 5) + 6];
-            struct vertex ne = curr_tile_vbuff_base[(VERTS_PER_FACE * 5) + 7];
+            struct vertex sw = curr_tile_vbuff[(VERTS_PER_FACE * 5) + 0];
+            struct vertex se = curr_tile_vbuff[(VERTS_PER_FACE * 5) + 1];
+            struct vertex nw = curr_tile_vbuff[(VERTS_PER_FACE * 5) + 6];
+            struct vertex ne = curr_tile_vbuff[(VERTS_PER_FACE * 5) + 7];
 
             /* Patch the UV coordinates of the top face */
             float u_frac = (1.0f / tiles_per_chunk_x);
@@ -1598,32 +1637,32 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
              * (sw)      (se)            (sw)      (se)
              */
 
-            vbuff[0] = sw;
-            vbuff[1] = se;
-            vbuff[3] = nw;
-            vbuff[4] = ne;
+            vbuff_curr[0] = sw;
+            vbuff_curr[1] = se;
+            vbuff_curr[3] = nw;
+            vbuff_curr[4] = ne;
 
             if(top_tri_left_aligned) {
-                vbuff[2] = ne;
-                vbuff[5] = sw;
+                vbuff_curr[2] = ne;
+                vbuff_curr[5] = sw;
             }else {
-                vbuff[2] = nw; 
-                vbuff[5] = se;
+                vbuff_curr[2] = nw; 
+                vbuff_curr[5] = se;
             }
 
             for(int i = 0; i < 3; i++)
-                vbuff[i].normal = top_tri_normals[0];
+                vbuff_curr[i].normal = top_tri_normals[0];
 
             for(int i = 3; i < 6; i++)
-                vbuff[i].normal = top_tri_normals[1];
+                vbuff_curr[i].normal = top_tri_normals[1];
 
             num_verts += 6;
-            vbuff += 6;
+            vbuff_curr += 6;
         }
     }
 
     ret->mesh.num_verts = num_verts;
-    ret->materials = (void*)(ret->mesh.vbuff + ret->mesh.num_verts);
+    ret->materials = (void*)(ret + 1);
     ret->num_materials = num_side_mats + 1;
 
     for(int i = 0; i < num_side_mats; i++) {
@@ -1639,12 +1678,15 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
     ret->materials[top_mat_idx].texture.id = rendered_tex;
     ret->materials[top_mat_idx].texture.tunit = GL_TEXTURE0 + top_mat_idx;
 
-    R_GL_Init(ret, "mesh.static.textured");
+    R_GL_Init(ret, "mesh.static.textured", vbuff);
+    free(vbuff);
     return ret;
 
 fail_side_mats_count:
+    free(vbuff);
+fail_alloc_vbuff:
     free(ret);
-fail_alloc:
+fail_alloc_ret:
     glDeleteTextures(1, &rendered_tex); 
     glDeleteFramebuffers(1, &fb);
 fail_fb:

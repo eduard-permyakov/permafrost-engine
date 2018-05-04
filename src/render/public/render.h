@@ -167,6 +167,14 @@ void  *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat
  */
 void   R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height);
 
+/* ---------------------------------------------------------------------------
+ * Update a specific tile with new attributes and buffer the new vertex data.
+ * Will also update surrounding tiles with new adjacency data.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_UpdateTile(void *chunk_rprivate, int r, int c, int tiles_width, int tiles_height, 
+                       const struct tile *tiles);
+
 
 /*###########################################################################*/
 /* RENDER ASSET LOADING                                                      */
@@ -219,13 +227,5 @@ bool   R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
  * ---------------------------------------------------------------------------
  */
 bool   R_AL_UpdateMats(SDL_RWops *mats_stream, size_t num_mats, void *priv_buff);
-
-/* ---------------------------------------------------------------------------
- * Update a specific tile with new attributes and buffer the new vertex data.
- * Will also update surrounding tiles with new adjacency data.
- * ---------------------------------------------------------------------------
- */
-void   R_AL_UpdateTile(void *chunk_rprivate, int r, int c, int tiles_width, int tiles_height, 
-                       const struct tile *tiles);
 
 #endif

@@ -20,16 +20,18 @@
 #ifndef RENDER_GL_H
 #define RENDER_GL_H
 
+#include <GL/glew.h>
+
 #include <stddef.h>
 #include <stdbool.h>
+
 
 struct render_private;
 struct vertex;
 struct tile;
 
-void R_GL_Init(struct render_private *priv, const char *shader);
+void R_GL_Init(struct render_private *priv, const char *shader, const struct vertex *vbuff);
 void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r, size_t c);
-void R_GL_BufferSubData(const void *chunk_rprivate, size_t offset, size_t size);
 
 /* ---------------------------------------------------------------------------
  * Patch the vertices for a particular tile to have adjacency information
@@ -38,7 +40,7 @@ void R_GL_BufferSubData(const void *chunk_rprivate, size_t offset, size_t size);
  * 'turned on' by setting a vertex attribute.
  * ---------------------------------------------------------------------------
  */
-void R_GL_PatchTileVertsBlend(struct vertex *vbuff, const struct tile *tiles, 
+void R_GL_PatchTileVertsBlend(GLuint VBO, const struct tile *tiles, 
                               int width, int height, int r, int c);
 
 #endif

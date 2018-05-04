@@ -23,13 +23,13 @@
 #include <assert.h>
 #include <stdio.h>
 
-#define GL_ASSERT_OK()										\
-	do {													\
-		GLenum error = glGetError();						\
-		if(error != GL_NO_ERROR)							\
-			fprintf(stderr, "%s:%d OpenGL error: %d\n", 	\
-				__FILE__, __LINE__, error);					\
-		assert(error == GL_NO_ERROR);						\
-	}while(0)												\
+#define GL_ASSERT_OK()                                  \
+    do {                                                \
+        GLenum error = glGetError();                    \
+        if(error != GL_NO_ERROR)                        \
+            fprintf(stderr, "%s:%d OpenGL error: %x\n", \
+            __FILE__, __LINE__, error);                 \
+        assert(error == GL_NO_ERROR);                   \
+    }while(0)
 
 #endif

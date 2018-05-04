@@ -28,7 +28,6 @@ struct mesh{
     unsigned       num_verts;
     GLuint         VBO;
     GLuint         VAO;
-    struct vertex *vbuff;
 };
 
 #endif
