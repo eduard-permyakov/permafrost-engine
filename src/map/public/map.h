@@ -123,6 +123,12 @@ void   M_SetChunkRenderMode(struct map *map, int chunk_r, int chunk_c,
  */
 void   M_SetMapRenderMode(struct map *map, enum chunk_render_mode mode);
 
+/* ------------------------------------------------------------------------
+ * Creates a minimap texture from the map to be rendered later.
+ * ------------------------------------------------------------------------
+ */
+bool   M_PrepareMinimap(const struct map *map);
+
 /*###########################################################################*/
 /* MAP ASSET LOADING                                                         */
 /*###########################################################################*/

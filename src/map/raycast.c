@@ -362,8 +362,6 @@ int candidate_tiles_sorted(const struct map *map, vec3_t ray_origin, vec3_t ray_
     t_max_z = (step_r > 0) ? fabs(start_z - (tile_bounds.z + tile_bounds.height)) / fabs(ray_dir.z)
                            : fabs(start_z - tile_bounds.z) / fabs(ray_dir.z);
 
-    assert(t_max_x > 0.0f && t_max_z > 0.0f);
-
     bool ray_ends_inside = box_point_inside(y_eq_0_seg.bx, y_eq_0_seg.bz, map_box);
     struct tile_desc final_tile_desc;
 

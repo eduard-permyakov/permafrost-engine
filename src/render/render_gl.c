@@ -1012,7 +1012,6 @@ void R_GL_PatchTileVertsBlend(GLuint VBO, const struct tile *tiles, int width, i
 
     struct vertex *tile_verts_base = glMapNamedBufferRange(VBO, offset, length, GL_MAP_WRITE_BIT);
     assert(tile_verts_base);
-    //&vbuff[VERTS_PER_TILE * (r * width + c)];
     struct vertex *south_provoking = tile_verts_base + (5 * VERTS_PER_FACE);
     struct vertex *north_provoking = tile_verts_base + (5 * VERTS_PER_FACE) + 2*3;
     struct vertex *west_provoking  = tile_verts_base + (5 * VERTS_PER_FACE) + (top_tri_left_aligned ?  3*3 : 3*1);
@@ -1328,7 +1327,7 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
      * interpolation. To fix this, we make the triangles have a very slight overlap by moving the 
      * center vertex very slightly for the different triangles. The top face will look the same but 
      * this will guarantee that there are no artifacts. */
-    center_vert.pos = (vec3_t){center_vert_pos.x, center_vert_pos.y, center_vert_pos.z - 0.001};
+    center_vert.pos = (vec3_t){center_vert_pos.x, center_vert_pos.y, center_vert_pos.z - 0.005};
 
     memcpy(out + (5 * VERTS_PER_FACE) + 0, first_tri[0], sizeof(struct vertex));
     memcpy(out + (5 * VERTS_PER_FACE) + 1, first_tri[1], sizeof(struct vertex));
@@ -1348,7 +1347,7 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
     }
     center_vert.material_idx = mat_idx;
     center_vert.normal = top_tri_normals[1];
-    center_vert.pos = (vec3_t){center_vert_pos.x, center_vert_pos.y, center_vert_pos.z + 0.001};
+    center_vert.pos = (vec3_t){center_vert_pos.x, center_vert_pos.y, center_vert_pos.z + 0.005};
 
     memcpy(out + (5 * VERTS_PER_FACE) + 6, second_tri[0], sizeof(struct vertex));
     memcpy(out + (5 * VERTS_PER_FACE) + 7, second_tri[1], sizeof(struct vertex));
@@ -1511,6 +1510,7 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
 
     /* Re-bind the default framebuffer when we're done rendering */
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &fb);
 
     /* Now construct our new 'fast' render context. We have some unused memory at the 
      * end of the buffer but this is not a concern. */
@@ -1687,6 +1687,7 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
     ret->materials[top_mat_idx].texture.id = rendered_tex;
     ret->materials[top_mat_idx].texture.tunit = GL_TEXTURE0 + top_mat_idx;
 
+    glDeleteFramebuffers(1, &fb);
     R_GL_Init(ret, "mesh.static.textured", vbuff);
     free(vbuff);
     return ret;
@@ -1697,7 +1698,6 @@ fail_alloc_vbuff:
     free(ret);
 fail_alloc_ret:
     glDeleteTextures(1, &rendered_tex); 
-    glDeleteFramebuffers(1, &fb);
 fail_fb:
     return NULL;
 }

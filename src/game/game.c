@@ -93,6 +93,7 @@ static void g_init_map(void)
     M_CenterAtOrigin(s_gs.map);
     M_RestrictRTSCamToMap(s_gs.map, ACTIVE_CAM);
     M_Raycast_Install(s_gs.map, ACTIVE_CAM);
+    M_PrepareMinimap(s_gs.map);
 }
 
 /*****************************************************************************/
@@ -179,6 +180,9 @@ void G_Render(void)
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER, NULL, ES_ENGINE);
+
+    /* Render the minimap/HUD last. Minimap rendering clobbers the shader unifroms. */
+    R_GL_MinimapRender((vec2_t){368/2.0f + 10, 1080 - 368/2.0f - 10});
 }
 
 bool G_AddEntity(struct entity *ent)

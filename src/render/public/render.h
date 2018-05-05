@@ -177,6 +177,25 @@ void   R_GL_UpdateTile(void *chunk_rprivate, int r, int c, int tiles_width, int 
 
 
 /*###########################################################################*/
+/* MINIMAP                                                                   */
+/*###########################################################################*/
+
+/* ---------------------------------------------------------------------------
+ * Will create a texture and mesh for the map and store them in a local context
+ * for rendering later.
+ * ---------------------------------------------------------------------------
+ */
+bool  R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats, 
+                       size_t chunk_x, size_t chunk_z,
+                       vec3_t map_center, vec2_t map_size);
+
+
+void  R_GL_MinimapRender(vec2_t center_pos);
+
+void  R_GL_MinimapFree(void);
+
+
+/*###########################################################################*/
 /* RENDER ASSET LOADING                                                      */
 /*###########################################################################*/
 
