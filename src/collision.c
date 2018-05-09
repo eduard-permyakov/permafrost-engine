@@ -329,3 +329,17 @@ bool C_FrustumAABBIntersectionExact(const struct frustum *frustum, const struct 
     return true;
 }
 
+bool C_PointInsideScreenRect(vec2_t point, vec2_t a, vec2_t b, vec2_t c, vec2_t d)
+{
+    vec2_t ap, ab, ad;
+    PFM_Vec2_Sub(&point, &a, &ap);
+    PFM_Vec2_Sub(&b, &a, &ab);
+    PFM_Vec2_Sub(&d, &a, &ad);
+
+    float ap_dot_ab = PFM_Vec2_Dot(&ap, &ab); 
+    float ap_dot_ad = PFM_Vec2_Dot(&ap, &ad);
+
+    return (ap_dot_ab >= 0.0f && ap_dot_ab <= PFM_Vec2_Dot(&ab, &ab))
+        && (ap_dot_ad >= 0.0f && ap_dot_ad <= PFM_Vec2_Dot(&ad, &ad));
+}
+

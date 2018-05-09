@@ -27,6 +27,7 @@
 #include "../cam_control.h"
 #include "../asset_load.h"
 #include "../event.h"
+#include "../config.h"
 
 #include <assert.h> 
 
@@ -35,6 +36,13 @@
 #define CAM_TILT_UP_DEGREES 25.0f
 
 #define ACTIVE_CAM          (s_gs.cameras[s_gs.active_cam_idx])
+
+/* By default, the minimap is in the bottom left corner with 10 px padding. */
+#define DEFAULT_MINIMAP_POS                                                 \
+        ((vec2_t){                                                          \
+            (MINIMAP_SIZE + 6)/cos(M_PI/4.0f)/2.0f + 10.0f,                 \
+            CONFIG_RES_Y - (MINIMAP_SIZE + 6)/cos(M_PI/4.0f)/2.0f - 10.0f   \
+        })
 
 
 /*****************************************************************************/
@@ -93,7 +101,7 @@ static void g_init_map(void)
     M_CenterAtOrigin(s_gs.map);
     M_RestrictRTSCamToMap(s_gs.map, ACTIVE_CAM);
     M_Raycast_Install(s_gs.map, ACTIVE_CAM);
-    M_PrepareMinimap(s_gs.map);
+    M_InitMinimap(s_gs.map, DEFAULT_MINIMAP_POS);
 }
 
 /*****************************************************************************/
@@ -147,6 +155,16 @@ void G_SetMapRenderMode(enum chunk_render_mode mode)
     M_SetMapRenderMode(s_gs.map, mode);
 }
 
+void G_SetMinimapPos(float x, float y)
+{
+    M_SetMinimapPos(s_gs.map, (vec2_t){x, y});
+}
+
+bool G_MouseOverMinimap(void)
+{
+    return M_MouseOverMinimap(s_gs.map);
+}
+
 void G_Shutdown(void)
 {
     for(int i = 0; i < NUM_CAMERAS; i++)
@@ -182,7 +200,7 @@ void G_Render(void)
     E_Global_NotifyImmediate(EVENT_RENDER, NULL, ES_ENGINE);
 
     /* Render the minimap/HUD last. Minimap rendering clobbers the shader unifroms. */
-    R_GL_MinimapRender((vec2_t){368/2.0f + 10, 1080 - 368/2.0f - 10});
+    M_RenderMinimap(s_gs.map);
 }
 
 bool G_AddEntity(struct entity *ent)

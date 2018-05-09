@@ -35,6 +35,11 @@ struct map{
      */
     vec3_t pos;
     /* ------------------------------------------------------------------------
+     * Minimap center location, in screen coordinates.
+     * ------------------------------------------------------------------------
+     */
+    vec2_t minimap_center_pos;
+    /* ------------------------------------------------------------------------
      * The map chunks stored in row-major order. In total, there must be 
      * (width * height) number of chunks.
      * ------------------------------------------------------------------------

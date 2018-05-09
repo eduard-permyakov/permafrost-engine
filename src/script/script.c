@@ -55,6 +55,8 @@ static PyObject *PyPf_get_mouse_pos(PyObject *self);
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args);
+static PyObject *PyPf_mouse_over_minimap(PyObject *self);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -138,6 +140,14 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_map_highlight_size, METH_VARARGS,
     "Determines how many tiles around the currently hovered tile are highlighted. (0 = none, "
     "1 = single tile highlighted, 2 = 3x3 grid highlighted, etc.)"},
+
+    {"set_minimap_position", 
+    (PyCFunction)PyPf_set_minimap_position, METH_VARARGS,
+    "Set the center position of the minimap in screen coordinates."},
+
+    {"mouse_over_minimap",
+    (PyCFunction)PyPf_mouse_over_minimap, METH_NOARGS,
+    "Returns true if the mouse cursor is over the minimap, false otherwise."},
 
     {NULL}  /* Sentinel */
 };
@@ -403,6 +413,28 @@ static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args)
 
     M_Raycast_SetHighlightSize(size);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args)
+{
+    float x, y;
+
+    if(!PyArg_ParseTuple(args, "ff", &x, &y)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two floats.");
+        return NULL;
+    }
+
+    G_SetMinimapPos(x, y);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_mouse_over_minimap(PyObject *self)
+{
+    bool result = G_MouseOverMinimap();
+    if(result) 
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
 }
 
 static bool s_sys_path_add_dir(const char *filename)

@@ -21,16 +21,16 @@
 #include <string.h>
 #include <assert.h>
 
-int PFM_Vec2_Dot(vec2_t *op1, vec2_t *op2)
+GLfloat PFM_Vec2_Dot(vec2_t *op1, vec2_t *op2)
 {
     return op1->x * op2->x + 
-           op1->y * op1->y;
+           op1->y * op2->y;
 }
 
 void PFM_Vec2_Add(vec2_t *op1, vec2_t *op2, vec2_t *out)
 {
-    out->x = op1->x + op2->y; 
-    out->y = op1->y + op1->y;
+    out->x = op1->x + op2->x; 
+    out->y = op1->y + op2->y;
 }
 
 void PFM_Vec2_Sub(vec2_t *op1, vec2_t *op2, vec2_t *out)

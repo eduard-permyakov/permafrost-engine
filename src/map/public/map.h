@@ -28,7 +28,8 @@
 #include <SDL.h> /* for SDL_RWops */
 
 
-#define MATERIALS_PER_CHUNK 8
+#define MATERIALS_PER_CHUNK  (8)
+#define MINIMAP_SIZE         (256)
 
 struct pfchunk;
 struct pfmap_hdr;
@@ -123,11 +124,34 @@ void   M_SetChunkRenderMode(struct map *map, int chunk_r, int chunk_c,
  */
 void   M_SetMapRenderMode(struct map *map, enum chunk_render_mode mode);
 
+
+/*###########################################################################*/
+/* MINIMAP                                                                   */
+/*###########################################################################*/
+
 /* ------------------------------------------------------------------------
  * Creates a minimap texture from the map to be rendered later.
  * ------------------------------------------------------------------------
  */
-bool   M_PrepareMinimap(const struct map *map);
+bool   M_InitMinimap     (struct map *map, vec2_t center_pos);
+
+/* ------------------------------------------------------------------------
+ * Sets the position of the minimap center, in screen coordinates.
+ * ------------------------------------------------------------------------
+ */
+void   M_SetMinimapPos   (struct map *map, vec2_t center_pos);
+
+/* ------------------------------------------------------------------------
+ * Render the minimap at the location specified by 'M_SetMinimapPos'.
+ * ------------------------------------------------------------------------
+ */
+void   M_RenderMinimap   (const struct map *map);
+
+/* ------------------------------------------------------------------------
+ * Render the minimap at the location specified by 'M_SetMinimapPos'.
+ * ------------------------------------------------------------------------
+ */
+bool   M_MouseOverMinimap(const struct map *map);
 
 /*###########################################################################*/
 /* MAP ASSET LOADING                                                         */

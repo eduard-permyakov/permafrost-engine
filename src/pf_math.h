@@ -82,7 +82,7 @@ typedef union mat4x4{
 /* vec2                                                                      */
 /*****************************************************************************/
 
-int     PFM_Vec2_Dot       (vec2_t *op1, vec2_t *op2);
+GLfloat PFM_Vec2_Dot       (vec2_t *op1, vec2_t *op2);
 void    PFM_Vec2_Add       (vec2_t *op1, vec2_t *op2, vec2_t *out);
 void    PFM_Vec2_Sub       (vec2_t *op1, vec2_t *op2, vec2_t *out);
 void    PFM_Vec2_Scale     (vec2_t *op1, GLfloat scale, vec2_t *out);

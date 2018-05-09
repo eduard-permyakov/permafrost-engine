@@ -117,6 +117,9 @@ class TerrainTabVC(ui.ViewController):
         if ui.mouse_over_ui(*mouse_pos):
             return
 
+        if pf.mouse_over_minimap():
+            return
+
         global_r = self.selected_tile[0][0] * pf.TILES_PER_CHUNK_HEIGHT + self.selected_tile[1][0]
         global_c = self.selected_tile[0][1] * pf.TILES_PER_CHUNK_WIDTH  + self.selected_tile[1][1]
 

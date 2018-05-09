@@ -61,4 +61,8 @@ enum volume_intersec_type C_FrustumAABBIntersection (const struct frustum *frust
 
 bool C_FrustumAABBIntersectionExact(const struct frustum *frustum, const struct aabb *aabb);
 
+/* Note that the following assumes that AB is parallel to CD and BC is parallel to AD
+ */
+bool C_PointInsideScreenRect(vec2_t point, vec2_t a, vec2_t b, vec2_t c, vec2_t d);
+
 #endif

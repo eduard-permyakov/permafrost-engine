@@ -27,6 +27,7 @@
 #include "../camera.h"
 #include "../pf_math.h"
 #include "../config.h"
+#include "../map/public/map.h"
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -37,7 +38,6 @@
 #define MAX(a, b)            ((a) > (b) ? (a) : (b))
 #define ARR_SIZE(a)          (sizeof(a)/sizeof(a[0])) 
 #define MINIMAP_RES          (1024)
-#define MINIMAP_SIZE         (256)
 #define MINIMAP_BORDER_CLR   ((vec3_t){65.0f/256.0f, 65.0f/256.0f, 65.0f/256.0f})
 #define MINIMAP_BORDER_WIDTH (3.0f)
 
@@ -107,6 +107,7 @@ bool R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats,
 
     s_ctx.minimap_texture.tunit = GL_TEXTURE0;
     R_Texture_AddExisting("__minimap__", s_ctx.minimap_texture.id);
+
     /* Re-bind the default framebuffer when we're done rendering */
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDeleteFramebuffers(1, &fb);
