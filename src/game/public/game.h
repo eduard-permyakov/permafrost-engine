@@ -45,6 +45,7 @@ void G_Render(void);
 void G_SetMapRenderMode(enum chunk_render_mode mode);
 void G_SetMinimapPos(float x, float y);
 bool G_MouseOverMinimap(void);
+void G_MoveActiveCamera(vec2_t xz_ground_pos);
 
 bool G_AddEntity(struct entity *ent);
 bool G_RemoveEntity(struct entity *ent);

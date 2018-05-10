@@ -71,9 +71,12 @@ static void g_reset(void)
     }
     kh_clear(entity, s_gs.active);
 
-    M_Raycast_Uninstall();
-    if(s_gs.map) AL_MapFree(s_gs.map);
-    s_gs.map = NULL;
+    if(s_gs.map) {
+        M_Raycast_Uninstall();
+        M_FreeMinimap(s_gs.map);
+        AL_MapFree(s_gs.map);
+        s_gs.map = NULL;
+    }
 
     for(int i = 0; i < NUM_CAMERAS; i++)
         g_reset_camera(s_gs.cameras[i]);
@@ -149,20 +152,36 @@ bool G_NewGameWithMap(const char *dir, const char *pfmap)
 
 void G_SetMapRenderMode(enum chunk_render_mode mode)
 {
-    if(!s_gs.map)
-        return;
-
+    assert(s_gs.map);
     M_SetMapRenderMode(s_gs.map, mode);
 }
 
 void G_SetMinimapPos(float x, float y)
 {
+    assert(s_gs.map);
     M_SetMinimapPos(s_gs.map, (vec2_t){x, y});
 }
 
 bool G_MouseOverMinimap(void)
 {
+    assert(s_gs.map);
     return M_MouseOverMinimap(s_gs.map);
+}
+
+void G_MoveActiveCamera(vec2_t xz_ground_pos)
+{
+    vec3_t old_pos = Camera_GetPos(ACTIVE_CAM);
+    float offset_mag = cos(DEG_TO_RAD(Camera_GetPitch(ACTIVE_CAM))) * Camera_GetHeight(ACTIVE_CAM);
+
+    /* We position the camera such that the camera ray intersects the ground plane (Y=0)
+     * at the specified xz position. */
+    vec3_t new_pos = (vec3_t) {
+        xz_ground_pos.raw[0] - cos(DEG_TO_RAD(Camera_GetYaw(ACTIVE_CAM))) * offset_mag,
+        old_pos.y,
+        xz_ground_pos.raw[1] + sin(DEG_TO_RAD(Camera_GetYaw(ACTIVE_CAM))) * offset_mag 
+    };
+
+    Camera_SetPos(ACTIVE_CAM, new_pos);
 }
 
 void G_Shutdown(void)

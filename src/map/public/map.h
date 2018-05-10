@@ -148,6 +148,12 @@ vec2_t M_WorldCoordsToNormMapCoords(const struct map *map, vec2_t xz);
 bool   M_InitMinimap     (struct map *map, vec2_t center_pos);
 
 /* ------------------------------------------------------------------------
+ * Frees the resources allocated by 'M_InitMinimap'.
+ * ------------------------------------------------------------------------
+ */
+void   M_FreeMinimap     (struct map *map);
+
+/* ------------------------------------------------------------------------
  * Sets the position of the minimap center, in screen coordinates.
  * ------------------------------------------------------------------------
  */

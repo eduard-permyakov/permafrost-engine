@@ -21,6 +21,7 @@ from constants import *
 import map
 import ui
 import globals
+from math import cos, pi
 
 class MenuVC(ui.ViewController):
 
@@ -33,6 +34,8 @@ class MenuVC(ui.ViewController):
     def on_new(self, event):
         globals.active_map = map.Map(4, 4)
         pf.new_game_string(globals.active_map.pfmap_str())
+        pf.set_minimap_position(ui.LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10, 
+            pf.get_resolution()[1] - MINIMAP_PX_WIDTH/cos(pi/4)/2 - 10)
         self.view.hide()
 
     ### LOAD ###
@@ -61,6 +64,8 @@ class MenuVC(ui.ViewController):
             if new_map is not None:
                 globals.active_map = new_map
                 pf.new_game_string(globals.active_map.pfmap_str())
+                pf.set_minimap_position(ui.LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10, 
+                    pf.get_resolution()[1] - MINIMAP_PX_WIDTH/cos(pi/4)/2 - 10)
                 self.view.hide()
 
     def on_load_cancel(self, event):
