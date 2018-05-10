@@ -61,10 +61,10 @@ void M_SetMinimapPos(struct map *map, vec2_t center_pos)
     map->minimap_center_pos = center_pos;
 }
 
-void M_RenderMinimap(const struct map *map)
+void M_RenderMinimap(const struct map *map, const struct camera *cam)
 {
     assert(map);
-    R_GL_MinimapRender(map->minimap_center_pos);
+    R_GL_MinimapRender(map, cam, map->minimap_center_pos);
 }
 
 bool M_MouseOverMinimap(const struct map *map)

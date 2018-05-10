@@ -33,6 +33,8 @@ struct entity;
 struct skeleton;
 struct tile;
 struct tile_desc;
+struct map;
+struct camera;
 
 /* Each face is made of 2 independent triangles. The top face is an exception, and is made up of 4 
  * triangles. This is to give each triangle a vertex which lies at the center of the tile in the XZ
@@ -189,9 +191,19 @@ bool  R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats,
                        size_t chunk_x, size_t chunk_z,
                        vec3_t map_center, vec2_t map_size);
 
+/* ---------------------------------------------------------------------------
+ * Render the minimap centered at the specified screenscape coordinate.
+ * This function will also render a box over the minimap that indicates the
+ * region currently visible by the specified camera. If camera is NULL, no
+ * box is drawn.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t center_pos);
 
-void  R_GL_MinimapRender(vec2_t center_pos);
-
+/* ---------------------------------------------------------------------------
+ * Free the memory allocated by 'R_GL_MinimapBake'.
+ * ---------------------------------------------------------------------------
+ */
 void  R_GL_MinimapFree(void);
 
 

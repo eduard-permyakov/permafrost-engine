@@ -228,6 +228,20 @@ bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, 
     return false;
 }
 
+bool C_RayIntersectsPlane(vec3_t ray_origin, vec3_t ray_dir, struct plane plane, float *out_t)
+{
+    float denom = PFM_Vec3_Dot(&ray_dir, &plane.normal);
+    if(denom > 0.0f) {
+
+        vec3_t rp; 
+        PFM_Vec3_Sub(&plane.point, &ray_origin, &rp);
+        *out_t = PFM_Vec3_Dot(&rp, &plane.normal) / denom;
+        return true;
+    }
+
+    return false;
+}
+
 enum volume_intersec_type C_FrustrumPointIntersection(const struct frustum *frustum, vec3_t point)
 {
     const struct plane *planes[] = {&frustum->top, &frustum->bot, &frustum->left, 

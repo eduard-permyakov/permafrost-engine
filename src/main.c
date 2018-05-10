@@ -126,7 +126,7 @@ static void render(void)
     SDL_GL_MakeCurrent(s_window, s_context); 
 
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
     /* Restore OpenGL global state after it's been clobbered by nuklear */
     gl_set_globals(); 

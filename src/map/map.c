@@ -30,7 +30,8 @@
 
 #include <SDL.h>
 
-#define MAX_HEIGHT_LEVEL 9
+#define MAX(a, b)           ((a) > (b) ? (a) : (b))
+#define MAX_HEIGHT_LEVEL    9
 
 
 /*****************************************************************************/
@@ -192,5 +193,17 @@ void M_SetMapRenderMode(struct map *map, enum chunk_render_mode mode)
            M_SetChunkRenderMode(map, r, c, mode); 
         }
     }
+}
+
+vec2_t M_WorldCoordsToNormMapCoords(const struct map *map, vec2_t xz)
+{
+    float width  = map->width  * TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE;
+    float height = map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+    float dim = MAX(width, height);
+
+    return (vec2_t) {
+        -xz.raw[0] / (dim / 2.0f),
+         xz.raw[1] / (dim / 2.0f)
+    };
 }
 

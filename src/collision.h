@@ -52,6 +52,7 @@ enum volume_intersec_type{
 
 bool C_RayIntersectsAABB(vec3_t ray_origin, vec3_t ray_dir, struct aabb aabb, float *out_t);
 bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, size_t n);
+bool C_RayIntersectsPlane(vec3_t ray_origin, vec3_t ray_dir, struct plane plane, float *out_t);
 
 /* Note that the following 2 routines do not give precise results. They are fast checks but 
  * sometimes give false positives. Howvever, this is still suitable for view frustum culling 

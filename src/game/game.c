@@ -200,7 +200,7 @@ void G_Render(void)
     E_Global_NotifyImmediate(EVENT_RENDER, NULL, ES_ENGINE);
 
     /* Render the minimap/HUD last. Minimap rendering clobbers the shader unifroms. */
-    M_RenderMinimap(s_gs.map);
+    M_RenderMinimap(s_gs.map, ACTIVE_CAM);
 }
 
 bool G_AddEntity(struct entity *ent)

@@ -124,6 +124,18 @@ void   M_SetChunkRenderMode(struct map *map, int chunk_r, int chunk_c,
  */
 void   M_SetMapRenderMode(struct map *map, enum chunk_render_mode mode);
 
+/* ------------------------------------------------------------------------
+ * Utility function to convert an XZ worldspace coordinate to one in the 
+ * range (-1, -1) in the 'top left' corner to (1, 1) in the 'bottom right' 
+ * corner for square maps, with (0, 0) being in the exact center of the map. 
+ * Coordinates outside the map bounds will be ouside this range. Note that 
+ * for non-square maps, the proportion of the width to the height is kept 
+ * the same, meaning that the shorter dimension will not span the entire 
+ * range of [-1, 1]
+ * ------------------------------------------------------------------------
+ */
+vec2_t M_WorldCoordsToNormMapCoords(const struct map *map, vec2_t xz);
+
 
 /*###########################################################################*/
 /* MINIMAP                                                                   */
@@ -142,10 +154,11 @@ bool   M_InitMinimap     (struct map *map, vec2_t center_pos);
 void   M_SetMinimapPos   (struct map *map, vec2_t center_pos);
 
 /* ------------------------------------------------------------------------
- * Render the minimap at the location specified by 'M_SetMinimapPos'.
+ * Render the minimap at the location specified by 'M_SetMinimapPos' and 
+ * draw a box around the area visible by the specified camera.
  * ------------------------------------------------------------------------
  */
-void   M_RenderMinimap   (const struct map *map);
+void   M_RenderMinimap   (const struct map *map, const struct camera *cam);
 
 /* ------------------------------------------------------------------------
  * Render the minimap at the location specified by 'M_SetMinimapPos'.
