@@ -142,9 +142,9 @@ bool M_InitMinimap(struct map *map, vec2_t center_pos)
     for(int r = 0; r < map->height; r++) {
         for(int c = 0; c < map->width; c++) {
             
-            const struct pfchunk *curr = &map->chunks[r * map->height + c];
-            chunk_rprivates[r * map->height + c] = curr->render_private_tiles;
-            M_ModelMatrixForChunk(map, (struct chunkpos){r, c}, chunk_model_mats + (r * map->height + c));
+            const struct pfchunk *curr = &map->chunks[r * map->width + c];
+            chunk_rprivates[r * map->width + c] = curr->render_private_tiles;
+            M_ModelMatrixForChunk(map, (struct chunkpos){r, c}, chunk_model_mats + (r * map->width + c));
         }
     }
     
@@ -162,6 +162,20 @@ bool M_InitMinimap(struct map *map, vec2_t center_pos)
         E_Global_Register(SDL_MOUSEMOTION,     on_mousemove,  map);
     }
     return ret;
+}
+
+bool M_UpdateMinimapChunk(const struct map *map, int chunk_r, int chunk_c)
+{
+    vec2_t map_size = (vec2_t) {
+        map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE, 
+        map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE
+    };
+    vec3_t map_center = (vec3_t){ map->pos.x - map_size.raw[0]/2.0f, map->pos.y, map->pos.z + map_size.raw[1]/2.0f };
+    mat4x4_t model;
+    M_ModelMatrixForChunk(map, (struct chunkpos){chunk_r, chunk_c}, &model);
+
+    return R_GL_MinimapUpdateChunk(map, map->chunks[chunk_r * map->width + chunk_c].render_private_tiles, &model,
+        map_center, map_size);
 }
 
 void M_FreeMinimap(struct map *map)

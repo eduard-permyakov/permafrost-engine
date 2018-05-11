@@ -192,7 +192,7 @@ bool R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats,
     vec2_t top_right = (vec2_t){  (map_dim/2), -(map_dim/2) };
     Camera_TickFinishOrthographic((struct camera*)map_cam, bot_left, top_right);
 
-    /* Next, create a new framebuffer and texture that we will render our chunk 
+    /* Next, create a new framebuffer and texture that we will render our map
      * top-down view to. */
     GLuint fb;
     glGenFramebuffers(1, &fb);
@@ -206,22 +206,20 @@ bool R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, s_ctx.minimap_texture.id, 0);
-
-    GLenum draw_buffers[1] = {GL_COLOR_ATTACHMENT0};
-    glDrawBuffers(1, draw_buffers);
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         goto fail_fb;
 
     glBindFramebuffer(GL_FRAMEBUFFER, fb);
-    glViewport(0,0, MINIMAP_RES, MINIMAP_RES);
 
     /* Render the map top-down view to the texture. */
+    glViewport(0,0, MINIMAP_RES, MINIMAP_RES);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     for(int r = 0; r < chunk_z; r++) {
         for(int c = 0; c < chunk_x; c++) {
             R_GL_Draw(chunk_rprivates[r * chunk_x + c], chunk_model_mats + (r * chunk_x + c)); 
         }
     }
+    glViewport(0,0, CONFIG_RES_X, CONFIG_RES_Y);
 
     s_ctx.minimap_texture.tunit = GL_TEXTURE0;
     R_Texture_AddExisting("__minimap__", s_ctx.minimap_texture.id);
@@ -264,6 +262,50 @@ bool R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats,
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
         (void*)offsetof(struct vertex, uv));
     glEnableVertexAttribArray(1);
+
+    return true;
+
+fail_fb:
+    return false;
+}
+
+bool R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, mat4x4_t *chunk_model, 
+                             vec3_t map_center, vec2_t map_size)
+{
+    /* Create a new camera, with orthographic projection, centered 
+     * over the map and facing straight down. */
+    DECL_CAMERA_STACK(map_cam);
+    memset(&map_cam, 0, g_sizeof_camera);
+
+    vec3_t offset = (vec3_t){0.0f, 200.0f, 0.0f};
+    PFM_Vec3_Add(&map_center, &offset, &map_center);
+
+    Camera_SetPos((struct camera*)map_cam, map_center);
+    Camera_SetPitchAndYaw((struct camera*)map_cam, -90.0f, 90.0f);
+
+    float map_dim = MAX(map_size.raw[0], map_size.raw[1]);
+    vec2_t bot_left  = (vec2_t){ -(map_dim/2),  (map_dim/2) };
+    vec2_t top_right = (vec2_t){  (map_dim/2), -(map_dim/2) };
+    Camera_TickFinishOrthographic((struct camera*)map_cam, bot_left, top_right);
+
+    /* Next, create a new framebuffer and texture that we will render our chunk 
+     * top-down view to. Bind the existing minimap texture to it.*/
+    GLuint fb;
+    glGenFramebuffers(1, &fb);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+
+    assert(s_ctx.minimap_texture.id > 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, s_ctx.minimap_texture.id, 0);
+    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        goto fail_fb;
+
+    glViewport(0,0, MINIMAP_RES, MINIMAP_RES);
+    R_GL_Draw(chunk_rprivate, chunk_model);
+    glViewport(0,0, CONFIG_RES_X, CONFIG_RES_Y);
+
+    /* Re-bind the default framebuffer when we're done rendering */
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &fb);
 
     return true;
 

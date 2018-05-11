@@ -148,6 +148,13 @@ vec2_t M_WorldCoordsToNormMapCoords(const struct map *map, vec2_t xz);
 bool   M_InitMinimap     (struct map *map, vec2_t center_pos);
 
 /* ------------------------------------------------------------------------
+ * Update a chunk-sized region of the minimap texture with the most 
+ * up-to-date vertex data.
+ * ------------------------------------------------------------------------
+ */
+bool   M_UpdateMinimapChunk(const struct map *map, int chunk_r, int chunk_c);
+
+/* ------------------------------------------------------------------------
  * Frees the resources allocated by 'M_InitMinimap'.
  * ------------------------------------------------------------------------
  */

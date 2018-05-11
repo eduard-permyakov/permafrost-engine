@@ -168,6 +168,12 @@ bool G_MouseOverMinimap(void)
     return M_MouseOverMinimap(s_gs.map);
 }
 
+bool G_UpdateMinimapChunk(int chunk_r, int chunk_c)
+{
+    assert(s_gs.map);
+    return M_UpdateMinimapChunk(s_gs.map, chunk_r, chunk_c);
+}
+
 void G_MoveActiveCamera(vec2_t xz_ground_pos)
 {
     vec3_t old_pos = Camera_GetPos(ACTIVE_CAM);

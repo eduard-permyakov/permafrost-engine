@@ -32,7 +32,7 @@
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool m_al_parse_tile(const char *str, struct tile *out)
+static bool m_al_parse_tile(const char *str, struct tile *out)
 {
     if(strlen(str) != 6)
         goto fail;
@@ -53,7 +53,7 @@ fail:
     return false;
 }
 
-bool m_al_read_row(SDL_RWops *stream, struct tile *out)
+static bool m_al_read_row(SDL_RWops *stream, struct tile *out)
 {
     char line[MAX_LINE_LEN];
 
@@ -84,7 +84,7 @@ fail:
     return false;
 }
 
-bool m_al_read_pfchunk(SDL_RWops *stream, struct pfchunk *out)
+static bool m_al_read_pfchunk(SDL_RWops *stream, struct pfchunk *out)
 {
     for(int i = 0; i < TILES_PER_CHUNK_HEIGHT; i++) {
         

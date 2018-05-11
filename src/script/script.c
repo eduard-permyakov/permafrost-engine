@@ -395,11 +395,13 @@ static PyObject *PyPf_update_tile(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    bool result = G_UpdateTile(&desc, tile); 
-    if(!result)
+    if(!G_UpdateTile(&desc, tile))
         return NULL;
-    else
-        Py_RETURN_NONE;
+
+    if(!G_UpdateMinimapChunk(desc.chunk_r, desc.chunk_c))
+        return NULL;
+
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args)

@@ -192,6 +192,14 @@ bool  R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats,
                        vec3_t map_center, vec2_t map_size);
 
 /* ---------------------------------------------------------------------------
+ * Update a chunk-sized region of the minimap texture with up-to-date mesh 
+ * data.
+ * ---------------------------------------------------------------------------
+ */
+bool  R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, mat4x4_t *chunk_model, 
+                              vec3_t map_center, vec2_t map_size);
+
+/* ---------------------------------------------------------------------------
  * Render the minimap centered at the specified screenscape coordinate.
  * This function will also render a box over the minimap that indicates the
  * region currently visible by the specified camera. If camera is NULL, no
