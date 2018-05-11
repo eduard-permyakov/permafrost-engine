@@ -28,6 +28,7 @@ in the early phases of development.
 * Efficient raycasting algorithm
 * Map editor
 * Fast rendering of huge maps (map size only limited by memory)
+* RTS minimap
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
