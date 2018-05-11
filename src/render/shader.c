@@ -105,6 +105,13 @@ static struct shader_resource s_shaders[] = {
         .vertex_path = "shaders/vertex_terrain.glsl",
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment_terrain.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "terrain-baked",
+        .vertex_path = "shaders/vertex_static.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment_terrain-baked.glsl"
     }
 };
 

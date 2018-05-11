@@ -19,6 +19,12 @@
 
 #version 330 core
 
+#define MAX_MATERIALS 8
+
+/* TODO: Make these as material parameters */
+#define SPECULAR_STRENGTH  0.5
+#define SPECULAR_SHININESS 2
+
 /*****************************************************************************/
 /* INPUTS                                                                    */
 /*****************************************************************************/
@@ -54,6 +60,14 @@ uniform sampler2D texture5;
 uniform sampler2D texture6;
 uniform sampler2D texture7;
 
+struct material{
+    float ambient_intensity;
+    vec3  diffuse_clr;
+    vec3  specular_clr;
+};
+
+uniform material materials[MAX_MATERIALS];
+
 /*****************************************************************************/
 /* PROGRAM                                                                   */
 /*****************************************************************************/
@@ -77,6 +91,22 @@ void main()
     if(tex_color.a== 0.0)
         discard;
 
-    o_frag_color = vec4(tex_color.xyz, 1.0);
+    /* Add ambient diffuse shading to the 'side-facing' faces */
+    if(abs(from_vertex.normal.y) < 0.05) {
+
+        /* Ambient calculations */
+        vec3 ambient = (materials[from_vertex.mat_idx].ambient_intensity) * ambient_color;
+
+        /* Diffuse calculations */
+        vec3 light_dir = normalize(light_pos - from_vertex.world_pos);  
+        float diff = max(dot(from_vertex.normal, light_dir), 0.0);
+        vec3 diffuse = light_color * (diff * materials[from_vertex.mat_idx].diffuse_clr);
+
+        o_frag_color = vec4( (ambient + diffuse) * tex_color.xyz, 1.0);
+    
+    }else{
+
+        o_frag_color = vec4(tex_color.xyz, 1.0);
+    }
 }
 

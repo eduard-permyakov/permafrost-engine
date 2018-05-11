@@ -520,7 +520,8 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
         "mesh.static.normals.colored",
         "mesh.animated.textured-phong",
         "mesh.animated.normals.colored",
-        "terrain"
+        "terrain",
+        "terrain-baked",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -540,7 +541,8 @@ void R_GL_SetProj(const mat4x4_t *proj)
         "mesh.static.normals.colored",
         "mesh.animated.textured-phong",
         "mesh.animated.normals.colored",
-        "terrain"
+        "terrain",
+        "terrain-baked",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++)
@@ -574,7 +576,8 @@ void R_GL_SetAmbientLightColor(vec3_t color)
     const char *shaders[] = {
         "mesh.static.textured-phong",
         "mesh.animated.textured-phong",
-        "terrain"
+        "terrain",
+        "terrain-baked",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -594,7 +597,8 @@ void R_GL_SetLightEmitColor(vec3_t color)
     const char *shaders[] = {
         "mesh.static.textured-phong",
         "mesh.animated.textured-phong",
-        "terrain"
+        "terrain",
+        "terrain-baked",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -614,7 +618,8 @@ void R_GL_SetLightPos(vec3_t pos)
     const char *shaders[] = {
         "mesh.static.textured-phong",
         "mesh.animated.textured-phong",
-        "terrain"
+        "terrain",
+        "terrain-baked",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -1688,7 +1693,7 @@ void *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4
     ret->materials[top_mat_idx].texture.tunit = GL_TEXTURE0 + top_mat_idx;
 
     glDeleteFramebuffers(1, &fb);
-    R_GL_Init(ret, "mesh.static.textured", vbuff);
+    R_GL_Init(ret, "terrain-baked", vbuff);
     free(vbuff);
     return ret;
 
