@@ -31,9 +31,9 @@
 #define MAX_ELEMENT_MEMORY (128 * 1024)
 
 struct text_desc{
-    const char    *text;
-    struct rect    rect;
-    struct rgba    rgba;
+    char        text[256];
+    struct rect rect;
+    struct rgba rgba;
 };
 
 /*****************************************************************************/
@@ -135,7 +135,9 @@ void UI_ProcessText(void)
 
 void UI_DrawText(const char *text, struct rect rect, struct rgba rgba)
 {
-    struct text_desc d = (struct text_desc){text, rect, rgba};
+    struct text_desc d = (struct text_desc){.rect = rect, .rgba = rgba};
+    strncpy(d.text, text, sizeof(d.text));
+    d.text[sizeof(d.text)-1] = '\0';
     kv_push(struct text_desc, s_curr_frame_labels, d);
 }
 

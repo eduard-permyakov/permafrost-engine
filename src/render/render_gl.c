@@ -33,6 +33,7 @@
 #include "../anim/public/anim.h"
 #include "../map/public/tile.h"
 #include "../map/public/map.h"
+#include "../ui.h"
 
 #include <GL/glew.h>
 
@@ -643,13 +644,16 @@ void R_GL_SetLightPos(vec3_t pos)
     }
 }
 
-void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
+void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, const struct camera *cam)
 {
     vec3_t *vbuff;
     GLint VAO, VBO;
     GLint shader_prog;
     GLuint loc;
     vec3_t green = (vec3_t){0.0f, 1.0f, 0.0f};
+
+    mat4x4_t model;
+    Entity_ModelMatrix(ent, &model);
 
     /* Our vbuff looks like this:
      * +----------------+-------------+--------------+-----
@@ -677,6 +681,25 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
         homo = (vec4_t){curr->tip.x, curr->tip.y, curr->tip.z, 1.0f}; 
         PFM_Mat4x4_Mult4x1(&bind_pose, &homo, &result);
         vbuff[vbuff_idx + 1] = (vec3_t){result.x, result.y ,result.z};
+
+        /* Lastly, render a label with the joint's name at the root position */
+        if(!cam)
+            continue;
+
+        mat4x4_t view, proj;
+        Camera_MakeViewMat(cam, &view); 
+        Camera_MakeProjMat(cam, &proj);
+
+        vec4_t root_homo = {vbuff[vbuff_idx].x, vbuff[vbuff_idx].y, vbuff[vbuff_idx].z, 1.0f};
+        vec4_t clip, tmpa, tmpb;
+        PFM_Mat4x4_Mult4x1(&model, &root_homo, &tmpa);
+        PFM_Mat4x4_Mult4x1(&view, &tmpa, &tmpb);
+        PFM_Mat4x4_Mult4x1(&proj, &tmpb, &clip);
+        vec3_t ndc = (vec3_t){ clip.x / clip.w, clip.y / clip.w, clip.z / clip.w };
+
+        float screen_x = (ndc.x + 1.0f) * CONFIG_RES_X/2.0f;
+        float screen_y = CONFIG_RES_Y - ((ndc.y + 1.0f) * CONFIG_RES_Y/2.0f);
+        UI_DrawText(curr->name, (struct rect){screen_x, screen_y, 100, 25}, (struct rgba){0, 255, 0, 255});
     }
  
     glGenVertexArrays(1, &VAO);
@@ -697,9 +720,6 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel)
     glUniform3fv(loc, 1, green.raw);
 
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-
-    mat4x4_t model;
-    Entity_ModelMatrix(ent, &model);
     glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
 
     glPointSize(5.0f);
