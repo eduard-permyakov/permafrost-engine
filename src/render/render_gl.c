@@ -463,16 +463,25 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
     glEnableVertexAttribArray(3);
 
     if(0 == strcmp("mesh.animated.textured-phong", shader)) {
-    
-        /* Attribute 4 - joint indices */
-        glVertexAttribPointer(4, 4, GL_INT, GL_FALSE, sizeof(struct vertex),
+
+        /* Here, we use 2 attributes to pass in an array of size 6 since we are 
+         * limited to a maximum of 4 components per attribute. */
+
+        /* Attribute 4/5 - joint indices */
+        glVertexAttribPointer(4, 3, GL_INT, GL_FALSE, sizeof(struct vertex),
             (void*)offsetof(struct vertex, joint_indices));
         glEnableVertexAttribArray(4);  
+        glVertexAttribPointer(5, 3, GL_INT, GL_FALSE, sizeof(struct vertex),
+            (void*)offsetof(struct vertex, joint_indices) + 3*sizeof(GLint));
+        glEnableVertexAttribArray(6);  
 
-        /* Attribute 5 - joint weights */
-        glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
+        /* Attribute 6/7 - joint weights */
+        glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
             (void*)offsetof(struct vertex, weights));
-        glEnableVertexAttribArray(5);  
+        glEnableVertexAttribArray(6);  
+        glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
+            (void*)offsetof(struct vertex, weights) + 3*sizeof(GLfloat));
+        glEnableVertexAttribArray(7);  
 
     }else if(0 == strcmp("terrain", shader)) {
 

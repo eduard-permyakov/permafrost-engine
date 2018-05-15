@@ -27,8 +27,8 @@ struct vertex{
     vec2_t  uv;
     vec3_t  normal;
     GLint   material_idx;
-    GLint   joint_indices[4];
-    GLfloat weights[4];
+    GLint   joint_indices[6];
+    GLfloat weights[6];
     /* The following attributes are used for terrain vertices. */
     GLint   blend_mode;
     GLint   adjacent_mat_indices[4];

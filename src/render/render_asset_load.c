@@ -70,7 +70,7 @@ static bool al_read_vertex(SDL_RWops *stream, struct vertex *out)
 
     /* Consume the first token, the attribute name 'vw' */
     string = strtok_r(line, " \t", &saveptr);
-    for(i = 0; i < 4; i++) {
+    for(i = 0; i < 6; i++) {
 
         string = strtok_r(NULL, " \t", &saveptr);
         if(!string)
