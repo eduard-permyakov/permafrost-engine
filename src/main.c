@@ -337,6 +337,7 @@ int main(int argc, char **argv)
 
         process_sdl_events();
         E_ServiceQueue();
+        UI_ProcessText();
         render();
 
         uint32_t curr_time = SDL_GetTicks();

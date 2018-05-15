@@ -20,65 +20,26 @@
 #ifndef UI_H
 #define UI_H
 
+#include <SDL.h>
 
-#include "lib/public/nuklear.h"
-#include "lib/public/nuklear_sdl_gl3.h"
+struct nk_context;
 
-#include <stdbool.h>
-#include <string.h>
+struct rect{
+    float x, y, w, h;
+};
 
-#define MAX_VERTEX_MEMORY  (512 * 1024)
-#define MAX_ELEMENT_MEMORY (128 * 1024)
+struct rgba{
+    unsigned char r, g, b, a;
+};
 
-/*****************************************************************************/
-/* INLINE FUNCTIONS                                                          */
-/*****************************************************************************/
-
-inline struct nk_context *UI_Init(const char *basedir, SDL_Window *win)
-{
-    struct nk_context *ctx = nk_sdl_init(win);
-    if(!ctx)
-        return NULL;
-
-    struct nk_font_atlas *atlas;
-    char font_path[256];
-
-    strcpy(font_path, basedir);
-    strcat(font_path, "assets/fonts/OptimusPrinceps.ttf");
-
-    nk_sdl_font_stash_begin(&atlas);
-    struct nk_font *optimus_princeps = nk_font_atlas_add_from_file(atlas, font_path, 16, 0);
-
-    atlas->default_font = optimus_princeps;
-    nk_sdl_font_stash_end();
-
-    return ctx;
-}
-
-inline void UI_Shutdown(void)
-{
-    nk_sdl_shutdown();
-}
-
-inline void UI_InputBegin(struct nk_context *ctx)
-{
-    nk_input_begin(ctx);
-}
-
-inline void UI_InputEnd(struct nk_context *ctx)
-{
-    nk_input_end(ctx);
-}
-
-inline void UI_Render(void)
-{
-    nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
-}
-
-inline void UI_HandleEvent(SDL_Event *event)
-{
-    nk_sdl_handle_event(event);
-}
+struct nk_context *UI_Init(const char *basedir, SDL_Window *win);
+void               UI_Shutdown(void);
+void               UI_InputBegin(struct nk_context *ctx);
+void               UI_InputEnd(struct nk_context *ctx);
+void               UI_Render(void);
+void               UI_HandleEvent(SDL_Event *event);
+void               UI_DrawText(const char *text, struct rect rect, struct rgba rgba);
+void               UI_ProcessText(void);
 
 #endif
 
