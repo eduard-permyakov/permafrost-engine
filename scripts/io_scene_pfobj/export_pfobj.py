@@ -16,7 +16,7 @@ def mesh_triangulate(mesh):
     bm.to_mesh(mesh)
     bm.free()
 
-def save(operator, context, filepath, global_matrix):
+def save(operator, context, filepath, global_matrix, export_bbox):
     with open(filepath, "w", encoding="ascii") as ofile:
 
         mesh_objs = [obj for obj in bpy.context.selected_objects if obj.type == 'MESH']
@@ -48,6 +48,7 @@ def save(operator, context, filepath, global_matrix):
         ofile.write("num_materials  " + str(num_materials) + "\n")
         ofile.write("num_as         " + str(num_as) + "\n")
         ofile.write("frame_counts   " + " ".join(frame_counts) + "\n")
+        ofile.write("has_collision  " + str(1 if export_bbox is True else 0) + "\n")
 
         #####################################################################
         # Write vertices and their attributes 
@@ -203,6 +204,35 @@ def save(operator, context, filepath, global_matrix):
                     line = line.format(idx=idx, s=mat_final.to_scale(), q=mat_final.to_quaternion().inverted(), t=mat_final.to_translation())
 
                     ofile.write(line)
+
+        #####################################################################
+        # Write bounding box data
+        #####################################################################
+
+        bpy.ops.object.mode_set(mode='EDIT')
+
+        # We build a single bounding box encapsulating all objects - this only works
+        # if a single entity is composed of multiple objects - otherwise they must be 
+        # exported one at a time
+        bbox_verts = []
+        for obj in mesh_objs:
+            bbox_verts += [global_matrix * obj.matrix_world * Vector(b) for b in obj.bound_box]
+
+        min_x = min(p.x for p in bbox_verts)
+        max_x = max(p.x for p in bbox_verts)
+        min_y = min(p.y for p in bbox_verts)
+        max_y = max(p.y for p in bbox_verts)
+        min_z = min(p.z for p in bbox_verts)
+        max_z = max(p.z for p in bbox_verts)
+
+        line = "{a:.6f} {b:.6f}\n".format(a=min_x, b=max_x)
+        ofile.write(line)
+        line = "{a:.6f} {b:.6f}\n".format(a=min_y, b=max_y)
+        ofile.write(line)
+        line = "{a:.6f} {b:.6f}\n".format(a=min_z, b=max_z)
+        ofile.write(line)
+
+        bpy.ops.object.mode_set(mode='OBJECT')
 
         return {'FINISHED'}
 

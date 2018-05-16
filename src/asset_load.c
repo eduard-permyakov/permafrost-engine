@@ -85,6 +85,12 @@ static bool al_parse_pfobj_header(SDL_RWops *stream, struct pfobj_hdr *out)
             goto fail;
     }
 
+    int tmp;
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, "has_collision %d", &tmp))
+        goto fail;
+    out->has_collision = tmp;
+
     return true;
 
 fail:
@@ -137,6 +143,28 @@ fail_parse:
     return NULL;
 }
 
+static bool al_parse_aabb(SDL_RWops *stream, struct aabb *out)
+{
+    char line[MAX_LINE_LEN];
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, "%f %f", &out->x_min, &out->x_max))
+        goto fail;
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, "%f %f", &out->y_min, &out->y_max))
+        goto fail;
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, "%f %f", &out->z_min, &out->z_max))
+        goto fail;
+
+    return true;
+
+fail:
+    return false;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -179,6 +207,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
         goto fail_alloc;
     ret->render_private = ret + 1;
     ret->anim_private = ((char*)ret->render_private) + render_buffsz;
+    ret->flags = 0;
 
     if(!R_AL_InitPrivFromStream(&header, base_path, stream, ret->render_private))
         goto fail_init;
@@ -186,12 +215,16 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     if(!A_AL_InitPrivFromStream(&header, stream, ret->anim_private))
         goto fail_init;
 
-    /* Entities with no joints and no animation sets are considered static. 
-     * Otherwise, they must have both a nonzero number ofjoints and 
-     * animation sets to be considered valid considered valid. */
-    //TODO: nicer way - we should still be able to render animated pfobj as static
-    ret->animated = (header.num_joints > 0);
-    assert(!ret->animated || header.num_as > 0);
+    /* Entities with no animation sets are considered static. */
+    if(header.num_as > 0)
+        ret->flags |= ENTITY_FLAG_ANIMATED;
+
+    if(header.has_collision) {
+
+        ret->flags |= ENTITY_FLAG_COLLISION;
+        if(!al_parse_aabb(stream, &ret->identity_aabb))
+            goto fail_init;
+    }
 
     assert( strlen(name) < sizeof(ret->name) );
     strcpy(ret->name, name);

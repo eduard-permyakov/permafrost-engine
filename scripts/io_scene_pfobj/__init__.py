@@ -1,21 +1,3 @@
-#
-#  This file is part of Permafrost Engine. 
-#  Copyright (C) 2017 Eduard Permyakov 
-#
-#  Permafrost Engine is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation, either version 3 of the License, or
-#  (at your option) any later version.
-#
-#  Permafrost Engine is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-#
 
 bl_info = {
     "name": "Permafrost Engine Object (.pfobj)",
@@ -34,7 +16,8 @@ from bpy_extras.io_utils import(
     axis_conversion
 )
 from bpy.props import(
-    StringProperty
+    StringProperty,
+    BoolProperty
 )
 
 
@@ -65,6 +48,13 @@ class ExportPFOBJ(bpy.types.Operator, ExportHelper):
     )
     check_extension = True
     filename_ext    = ".pfobj"
+
+    export_bbox = BoolProperty(
+        name="Export Object Bounding Box",
+        description="Export Bounding Box (used for entities which have collision). For animated " \
+            "entities, this is the bind pose bounding box.",
+        default=True
+    )
 
     def execute(self, context):
         from . import export_pfobj

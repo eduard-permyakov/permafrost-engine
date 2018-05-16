@@ -51,6 +51,7 @@ struct pfobj_hdr{
     unsigned num_materials;
     unsigned num_as;
     unsigned frame_counts[MAX_ANIM_SETS];
+    bool     has_collision;
 };
 
 struct pfmap_hdr{

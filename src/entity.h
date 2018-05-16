@@ -21,20 +21,26 @@
 #define ENTITY_H
 
 #include "pf_math.h"
+#include "collision.h"
+
 #include <stdbool.h>
 
 #define ENTITY_NAME_LEN 32
 #define BASEDIR_LEN     64
 
+#define ENTITY_FLAG_ANIMATED    (1 << 0)
+#define ENTITY_FLAG_COLLISION   (1 << 1)
+
 struct entity{
-    uint32_t  uid;
-    char      name[ENTITY_NAME_LEN];
-    char      basedir[BASEDIR_LEN];
-    vec3_t    pos;
-    vec3_t    scale;
-    bool      animated;
-    void     *render_private;
-    void     *anim_private;
+    uint32_t     uid;
+    char         name[ENTITY_NAME_LEN];
+    char         basedir[BASEDIR_LEN];
+    vec3_t       pos;
+    vec3_t       scale;
+    uint32_t     flags;
+    void        *render_private;
+    void        *anim_private;
+    struct aabb  identity_aabb;
 };
 
 void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);

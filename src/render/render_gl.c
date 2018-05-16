@@ -34,6 +34,7 @@
 #include "../map/public/tile.h"
 #include "../map/public/map.h"
 #include "../ui.h"
+#include "../collision.h"
 
 #include <GL/glew.h>
 
@@ -838,6 +839,78 @@ void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model)
 
     glBindVertexArray(VAO);
     glDrawArrays(GL_LINES, 0, 2);
+
+cleanup:
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
+}
+
+void R_GL_DrawOBB(const struct entity *ent)
+{
+    if(!(ent->flags & ENTITY_FLAG_COLLISION))
+        return;
+
+    GLint VAO, VBO;
+    GLint shader_prog;
+    GLuint loc;
+    vec3_t blue = (vec3_t){0.0f, 0.0f, 1.0f};
+
+    const struct aabb *aabb = &ent->identity_aabb;
+    mat4x4_t model;
+    Entity_ModelMatrix(ent, &model);
+
+    vec3_t vbuff[24] = {
+        [0] = {aabb->x_min, aabb->y_min, aabb->z_min},
+        [1] = {aabb->x_min, aabb->y_min, aabb->z_max},
+        [2] = {aabb->x_min, aabb->y_max, aabb->z_min},
+        [3] = {aabb->x_min, aabb->y_max, aabb->z_max},
+        [4] = {aabb->x_max, aabb->y_min, aabb->z_min},
+        [5] = {aabb->x_max, aabb->y_min, aabb->z_max},
+        [6] = {aabb->x_max, aabb->y_max, aabb->z_min},
+        [7] = {aabb->x_max, aabb->y_max, aabb->z_max},
+    };
+    vbuff[8 ] = vbuff[0];
+    vbuff[9 ] = vbuff[2];
+    vbuff[10] = vbuff[1];
+    vbuff[11] = vbuff[3];
+    vbuff[12] = vbuff[4];
+    vbuff[13] = vbuff[6];
+    vbuff[14] = vbuff[5];
+    vbuff[15] = vbuff[7];
+    vbuff[16] = vbuff[0];
+    vbuff[17] = vbuff[4];
+    vbuff[18] = vbuff[1];
+    vbuff[19] = vbuff[5];
+    vbuff[20] = vbuff[2];
+    vbuff[21] = vbuff[6];
+    vbuff[22] = vbuff[3];
+    vbuff[23] = vbuff[7];
+
+    /* OpenGL setup */
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(0);  
+
+    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    glUseProgram(shader_prog);
+
+    /* Set uniforms */
+    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
+
+    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
+    glUniform3fv(loc, 1, blue.raw);
+
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+
+    glBindVertexArray(VAO);
+    glDrawArrays(GL_LINES, 0, ARR_SIZE(vbuff));
 
 cleanup:
     glDeleteVertexArrays(1, &VAO);

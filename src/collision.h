@@ -44,6 +44,12 @@ struct frustum{
     vec3_t ftl, ftr, fbl, fbr;
 };
 
+struct obb{
+    vec3_t center;
+    vec3_t axes[3];
+    float  half_lengths[3];
+};
+
 enum volume_intersec_type{
     VOLUME_INTERSEC_INSIDE,
     VOLUME_INTERSEC_OUTSIDE,

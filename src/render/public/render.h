@@ -140,6 +140,12 @@ void   R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim);
 void   R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model);
 
 /* ---------------------------------------------------------------------------
+ * Render the oriented bounding box for collidable entities.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawOBB(const struct entity *ent);
+
+/* ---------------------------------------------------------------------------
  * Draws a colored outline around the tile specified by the descriptor.
  * ---------------------------------------------------------------------------
  */

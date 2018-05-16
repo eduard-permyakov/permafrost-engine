@@ -215,11 +215,13 @@ void G_Render(void)
         /* TODO: Currently, we perform animation right before rendering due to 'A_Update' setting
          * some uniforms for the shader. Investigate if it's better to perform the animation for all
          * entities at once and just set the uniform right before rendering.  */
-        if(curr->animated) A_Update(curr);
+        if(curr->flags & ENTITY_FLAG_ANIMATED) A_Update(curr);
 
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
         R_GL_Draw(curr->render_private, &model);
+
+        R_GL_DrawOBB(curr);
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER, NULL, ES_ENGINE);
