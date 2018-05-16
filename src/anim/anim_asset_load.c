@@ -31,13 +31,6 @@
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void euler_to_quat(float euler[3], quat_t *out)
-{
-    mat4x4_t tmp;
-    PFM_Mat4x4_RotFromEuler(euler[0], euler[1], euler[2], &tmp);
-    PFM_Quat_FromRotMat(&tmp, out);
-}
-
 static bool al_read_joint(SDL_RWops *stream, struct joint *out, struct SQT *out_bind)
 {
     char line[MAX_LINE_LEN];
@@ -62,11 +55,10 @@ static bool al_read_joint(SDL_RWops *stream, struct joint *out, struct SQT *out_
         &out_bind->scale.x, &out_bind->scale.y, &out_bind->scale.z))
         goto fail;
 
-    float euler[3]; /* XYZ order - in degrees */
     string = strtok_r(NULL, " \t", &saveptr);  
-    if(!sscanf(string, "%f/%f/%f", &euler[0], &euler[1], &euler[2]))
+    if(!sscanf(string, "%f/%f/%f/%f", &out_bind->quat_rotation.x, &out_bind->quat_rotation.y, 
+        &out_bind->quat_rotation.z, &out_bind->quat_rotation.w))
         goto fail;
-    euler_to_quat(euler, &out_bind->quat_rotation);
 
     string = strtok_r(NULL, " \t", &saveptr);  
     if(!sscanf(string, "%f/%f/%f", 
@@ -97,24 +89,23 @@ static bool al_read_anim_clip(SDL_RWops *stream, struct anim_clip *out,
 
             int joint_idx;  /* unused */
             struct SQT *curr_joint_trans = &out->samples[f].local_joint_poses[j];
-            float euler[3]; /* XYZ order - in degrees */
         
             READ_LINE(stream, line, fail);
-            if(!sscanf(line, "%d %f/%f/%f %f/%f/%f %f/%f/%f",
+            if(!sscanf(line, "%d %f/%f/%f %f/%f/%f/%f %f/%f/%f",
                 &joint_idx, 
                 &curr_joint_trans->scale.x,
                 &curr_joint_trans->scale.y,
                 &curr_joint_trans->scale.z,
-                &euler[0],
-                &euler[1],
-                &euler[2],
+                &curr_joint_trans->quat_rotation.x,
+                &curr_joint_trans->quat_rotation.y,
+                &curr_joint_trans->quat_rotation.z,
+                &curr_joint_trans->quat_rotation.w,
                 &curr_joint_trans->trans.x,
                 &curr_joint_trans->trans.y,
                 &curr_joint_trans->trans.z)) {
                 goto fail;
             }
         
-            euler_to_quat(euler, &curr_joint_trans->quat_rotation);
         }
     }
 
@@ -254,6 +245,7 @@ bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, SDL_RWops *stream, 
 
     A_PrepareInvBindMatrices(&priv->data->skel);
 
+    //exit(EXIT_SUCCESS);
     return true;
 
 fail:

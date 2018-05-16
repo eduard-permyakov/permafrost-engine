@@ -57,10 +57,10 @@ static void a_mat_from_sqt(const struct SQT *sqt, mat4x4_t *out)
     PFM_Mat4x4_MakeTrans(sqt->trans.x, sqt->trans.y, sqt->trans.z, &trans);
     PFM_Mat4x4_RotFromQuat(&sqt->quat_rotation, &rot);
 
-    /*  (R * T * S) 
+    /*  (T * R * S) 
      */
-    PFM_Mat4x4_Mult4x4(&trans, &scale, &tmp);
-    PFM_Mat4x4_Mult4x4(&rot, &tmp, out);
+    PFM_Mat4x4_Mult4x4(&rot, &scale, &tmp);
+    PFM_Mat4x4_Mult4x4(&trans, &tmp, out);
 }
 
 static void a_make_bind_mat(int joint_idx, const struct skeleton *skel, mat4x4_t *out)
@@ -94,31 +94,23 @@ static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struc
     struct anim_private *priv = ent->anim_private;
     struct anim_sample *sample =  &priv->ctx->active->samples[priv->ctx->curr_frame];
 
-    mat4x4_t bind_trans;
-    PFM_Mat4x4_Identity(&bind_trans);
+    mat4x4_t pose_trans;
+    PFM_Mat4x4_Identity(&pose_trans);
 
-    /* Same as a_make_bind_mat, except we first apply a local transformation to each joint 
-     * for the current frame before we transfrom it to its' parent joint's space 
-     */
-
+    /* Same as a_make_bind_mat, except for the current pose. */
     while(joint_idx >= 0) {
 
         struct joint *joint = &skel->joints[joint_idx];
-        struct SQT   *bind_sqt = &skel->bind_sqts[joint_idx];
         struct SQT   *pose_sqt = &sample->local_joint_poses[joint_idx];
-        mat4x4_t to_parent, to_curr = bind_trans;
-        mat4x4_t local, tmp;
-        
-        a_mat_from_sqt(bind_sqt, &to_parent);
-        a_mat_from_sqt(pose_sqt, &local);
+        mat4x4_t to_parent, to_curr = pose_trans;
 
-        PFM_Mat4x4_Mult4x4(&local, &to_curr, &tmp);
-        PFM_Mat4x4_Mult4x4(&to_parent, &tmp, &bind_trans);
+        a_mat_from_sqt(pose_sqt, &to_parent);
+        PFM_Mat4x4_Mult4x4(&to_parent, &to_curr, &pose_trans);
 
         joint_idx = joint->parent_idx;
     }
 
-    *out = bind_trans;
+    *out = pose_trans;
 }
 
 void a_set_uniforms_curr_frame(const struct entity *ent)

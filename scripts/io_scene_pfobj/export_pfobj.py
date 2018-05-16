@@ -1,28 +1,10 @@
-#
-#  This file is part of Permafrost Engine. 
-#  Copyright (C) 2017 Eduard Permyakov 
-#
-#  Permafrost Engine is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation, either version 3 of the License, or
-#  (at your option) any later version.
-#
-#  Permafrost Engine is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-#
-
 import bpy
 import math
 from bpy import context
 from mathutils import Matrix
 from mathutils import Quaternion
 from mathutils import Euler
+from mathutils import Vector
 
 PFOBJ_VER = 1.0
 
@@ -105,7 +87,11 @@ def save(operator, context, filepath, global_matrix):
                         if vg.weight == 0:
                             continue
 
-                        joint = arms[0].data.bones[obj.vertex_groups[vg.group].name]
+                        bone_name = obj.vertex_groups[vg.group].name
+                        if bone_name not in arms[0].data.bones.keys():
+                            continue
+
+                        joint = arms[0].data.bones[bone_name]
                         joint_idx = arms[0].data.bones.values().index(joint)
 
                         next_elem = " {g}/{w:.6f}"
@@ -157,27 +143,26 @@ def save(operator, context, filepath, global_matrix):
                 parent_idx = arm.bones.values().index(bone.parent) + 1 if bone.parent is not None else 0
                 line = line.format(parent_idx=parent_idx, name=bone.name)
 
-                identity = Matrix.Identity(4)
-                mat_final = obj.matrix_world * global_matrix if bone.parent is None else identity
-
-                euler = mat_final.to_euler('XYZ')
-                euler[0] = math.degrees(euler[0])
-                euler[1] = math.degrees(euler[1])
-                euler[2] = math.degrees(euler[2])
+                # Root bones are given in world coordinates - the rest of the bones'
+                # positions are given relative to the parent
+                if bone.parent is not None:
+                    mat_final = bone.parent.matrix_local.inverted() * bone.matrix_local
+                else:
+                    mat_final = global_matrix * obj.matrix_world * bone.matrix_local
 
                 line += " {s.x:.6f}/{s.y:.6f}/{s.z:.6f}"
                 line = line.format(s=mat_final.to_scale())
 
-                line += " {e[0]:.6f}/{e[1]:.6f}/{e[2]:.6f}"
-                line = line.format(e=euler)
+                # Unsure why we have to invert the quaternion here...
+                # If we convert the quaternion to a matrix using standard algorithms in the engine
+                # we get the transpose of the matrix we were supposed to get 
+                line += " {q.x:.6f}/{q.y:.6f}/{q.z:.6f}/{q.w:.6f}"
+                line = line.format(q=mat_final.to_quaternion().inverted())
 
-                # Root bones are given in world coordinates - the rest of the bones'
-                # positions are given relative to the parent
-                loc = obj.matrix_world * bone.head_local if bone.parent is None else bone.head_local - bone.parent.head_local
                 line += " {t.x:.6f}/{t.y:.6f}/{t.z:.6f}"
-                line = line.format(t=loc)
+                line = line.format(t=mat_final.to_translation())
 
-                tip = (bone.tail_local - bone.head_local)
+                tip = bone.matrix_local.inverted() * bone.tail_local
                 line += " {v.x:.6f}/{v.y:.6f}/{v.z:.6f}"
                 line = line.format(v=tip)
 
@@ -202,30 +187,22 @@ def save(operator, context, filepath, global_matrix):
                 bpy.context.scene.frame_set(f)
 
                 obj = arms[0]
-                for pbone in obj.pose.bones:
+                for bone in obj.data.bones:
+                    pbone = obj.pose.bones[bone.name]
 
-                    line = "        {idx} {s.x:.6f}/{s.y:.6f}/{s.z:.6f} {e[0]:.6f}/{e[1]:.6f}/{e[2]:.6f} {t.x:.6f}/{t.y:.6f}/{t.z:.6f}\n"
-                    idx = obj.pose.bones.values().index(pbone) + 1
+                    line = "        {idx} {s.x:.6f}/{s.y:.6f}/{s.z:.6f} {q.x:.6f}/{q.y:.6f}/{q.z:.6f}/{q.w:.6f} {t.x:.6f}/{t.y:.6f}/{t.z:.6f}\n"
+                    idx = obj.data.bones.values().index(bone) + 1
 
-                    trans = Matrix.Translation(pbone.bone.head_local)
-                    itrans = Matrix.Translation(-pbone.bone.head_local)
-
-                    # The following code for builing the local transformation matrix for the current frame was derived from the 'BVH' exporter script
-                    if  pbone.parent:
-                        mat_final = pbone.parent.bone.matrix_local * pbone.parent.matrix.inverted() * pbone.matrix * pbone.bone.matrix_local.inverted()
-                        mat_final = itrans * mat_final * trans
+                    # Root bones are given in world coordinates - the rest of the bones'
+                    # positions are given relative to the parent
+                    if bone.parent is not None:
+                        mat_final = pbone.parent.matrix.inverted() * pbone.matrix
                     else:
-                        mat_final = pbone.matrix * pbone.bone.matrix_local.inverted()
-                        mat_final = itrans * mat_final * trans
+                        mat_final = global_matrix * obj.matrix_world * pbone.matrix
 
-                    bone_matrix = mat_final
-                    euler = bone_matrix.to_euler('XYZ')
-                    euler[0] = math.degrees(euler[0])
-                    euler[1] = math.degrees(euler[1])
-                    euler[2] = math.degrees(euler[2])
+                    line = line.format(idx=idx, s=mat_final.to_scale(), q=mat_final.to_quaternion().inverted(), t=mat_final.to_translation())
 
-                    line = line.format(idx=idx, s=bone_matrix.to_scale(), e=euler, t=bone_matrix.to_translation())
                     ofile.write(line)
 
-    return {'FINISHED'}
+        return {'FINISHED'}
 

@@ -548,26 +548,24 @@ void PFM_Quat_FromRotMat(mat4x4_t *mat, quat_t *out)
 
 /* Algorithm from:
  * https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
- * We also negate the values to get them to match the originals before they 
- * were converted to quaternions in our engine.
  */
 void PFM_Quat_ToEuler(quat_t *q, float *out_roll, float *out_pitch, float *out_yaw)
 {
     /* roll (x-axis rotation) */
     float sinr = 2.0f * (q->w * q->x + q->y * q->z);
     float cosr = 1.0f - 2.0f * (q->x * q->x + q->y * q->y);
-    *out_roll = -RAD_TO_DEG(atan2(sinr, cosr));
+    *out_roll = RAD_TO_DEG(atan2(sinr, cosr));
 
     /* pitch (y-axis rotation) */
     float sinp = 2.0f * (q->w * q->y - q->z * q->x);
     if (fabs(sinp) >= 1)
-        *out_pitch = -RAD_TO_DEG((sinp >= 0.0f) ? (M_PI / 2) : -(M_PI / 2)); // use 90 degrees if out of range
+        *out_pitch = RAD_TO_DEG((sinp >= 0.0f) ? (M_PI / 2) : -(M_PI / 2)); // use 90 degrees if out of range
     else
-        *out_pitch = -RAD_TO_DEG(asin(sinp));
+        *out_pitch = RAD_TO_DEG(asin(sinp));
 
     /* yaw (z-axis rotation) */
     double siny = 2.0f * (q->w * q->z + q->x * q->y);
     double cosy = 1.0f - 2.0f * (q->y * q->y + q->z * q->z);
-    *out_yaw = -RAD_TO_DEG(atan2(siny, cosy));
+    *out_yaw = RAD_TO_DEG(atan2(siny, cosy));
 }
 
