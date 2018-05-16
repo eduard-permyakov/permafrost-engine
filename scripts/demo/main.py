@@ -38,7 +38,7 @@ pf.set_map_render_mode(CHUNK_RENDER_MODE_PREBAKED)
 ############################################################
 
 sinbad = sb.Sinbad("assets/models/sinbad", "Sinbad.pfobj", "Sinbad")
-sinbad.pos = [-90.0, 24.0, -125.0]
+sinbad.pos = [-90.0, 16.0, -125.0]
 sinbad.scale = [1.2, 1.2, 1.2]
 sinbad.activate()
 
@@ -46,18 +46,18 @@ knights = []
 for i in range(0, 4):
     for j in range(0, 2):
         knight = pf.AnimEntity("assets/models/knight", "knight.pfobj", "Knight", "Idle")
-        knight.pos = [-40.0 - (10 * i), 24.0, -75.0 - (10 * j)]
+        knight.pos = [-40.0 - (10 * i), 12.0, -75.0 - (10 * j)]
         knight.scale = [0.7, 0.7, 0.7]
         knight.activate()
         knights.append(knight)
 
 oak_tree = pf.Entity("assets/models/oak_tree", "oak_tree.pfobj", "OakTree")
-oak_tree.pos = [-40.0, 14.0, -115.0]
+oak_tree.pos = [-40.0, 12.0, -115.0]
 oak_tree.scale = [2.0, 2.0, 2.0]
 oak_tree.activate()
 
 oak_leafless = pf.Entity("assets/models/oak_tree", "oak_leafless.pfobj", "OakLeafless")
-oak_leafless.pos = [-95.0, 18.0, -35.0]
+oak_leafless.pos = [-95.0, 16.0, -35.0]
 oak_leafless.scale = [1.5, 1.5, 1.5]
 oak_leafless.activate()
 

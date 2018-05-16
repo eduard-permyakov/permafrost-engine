@@ -4,6 +4,7 @@ num_joints     0
 num_materials  1
 num_as         0
 frame_counts   
+has_collision  1
 v 2.168797 0.703349 0.893997
 vt 0.068297 0.732666
 vn 0.025056 0.571520 -0.820185
@@ -6279,3 +6280,6 @@ material oakstamm2
     diffuse 0.640000 0.640000 0.640000
     specular 0.500000 0.500000 0.500000
     texture oakbark.jpg
+x_bounds -4.071438 5.069188
+y_bounds -0.067745 11.435381
+z_bounds -7.344285 6.008060
