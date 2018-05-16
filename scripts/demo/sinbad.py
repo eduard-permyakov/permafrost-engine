@@ -23,7 +23,7 @@ class Sinbad(pf.AnimEntity):
 
     def __init__(self, path, pfobj, name):
         self.anim_idx = 0
-        self.anim_map = ["Dance", "RunBase"]
+        self.anim_map = ["Dance", "JumpLoop"]
         super(Sinbad, self).__init__(path, pfobj, name, self.anim_map[self.anim_idx])
         self.register(EVENT_SINBAD_TOGGLE_ANIM, Sinbad.on_anim_toggle, self)
     

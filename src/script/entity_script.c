@@ -163,9 +163,16 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     PyEntityObject *self;
     const char *dirpath, *filename, *name;
 
-    if(!PyArg_ParseTuple(args, "sss", &dirpath, &filename, &name)) {
+    /* First, extract the first 3 args to handle the cases where subclasses get 
+     * intialized with more arguments */
+    PyObject *first_args = PyTuple_GetSlice(args, 0, 3);
+    if(!first_args)
+        return NULL;
+
+    if(!PyArg_ParseTuple(first_args, "sss", &dirpath, &filename, &name)) {
         return NULL;
     }
+    Py_DECREF(first_args);
 
     extern const char *g_basepath;
     char entity_path[512];
@@ -352,9 +359,14 @@ static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args)
 static int PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds)
 {
     const char *dirpath, *filename, *name, *clipname;
-    if(!PyArg_ParseTuple(args, "ssss", &dirpath, &filename, &name, &clipname)) {
+    PyObject *first_args = PyTuple_GetSlice(args, 0, 4);
+    if(!first_args)
+        return -1;
+
+    if(!PyArg_ParseTuple(first_args, "ssss", &dirpath, &filename, &name, &clipname)) {
         return -1;
     }
+    Py_DECREF(first_args);
 
     A_InitCtx(self->super.ent, clipname, 24);
     return 0;
