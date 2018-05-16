@@ -22,13 +22,15 @@
 
 #include "public/skeleton.h"
 #include "../pf_math.h"
+#include "../collision.h"
 
 #include <stddef.h>
 
 #define ANIM_NAME_LEN  32
 
 struct anim_sample{
-    struct SQT *local_joint_poses;
+    struct SQT  *local_joint_poses;
+    struct aabb  sample_aabb;
 };
 
 struct anim_clip{

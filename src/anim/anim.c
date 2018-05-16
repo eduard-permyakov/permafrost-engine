@@ -247,3 +247,12 @@ void A_PrepareInvBindMatrices(const struct skeleton *skel)
     }
 }
 
+const struct aabb *A_GetCurrPoseAABB(const struct entity *ent)
+{
+    assert(ent->flags & ENTITY_FLAG_COLLISION);
+    struct anim_private *priv = ent->anim_private;
+    struct anim_ctx *ctx = priv->ctx;
+
+    return &ctx->active->samples[ctx->curr_frame].sample_aabb;
+}
+

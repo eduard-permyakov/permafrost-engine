@@ -84,6 +84,14 @@ const struct skeleton *A_GetBindSkeleton(const struct entity *ent);
  */
 const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent);
 
+/* ---------------------------------------------------------------------------
+ * Returns a pointer to the AABB for the current sample. The pointer should 
+ * not be freed. This should only be called for entities with the COLLISION
+ * flag set.
+ * ---------------------------------------------------------------------------
+ */
+const struct aabb     *A_GetCurrPoseAABB(const struct entity *ent);
+
 
 /*###########################################################################*/
 /* ANIM ASSET LOADING                                                        */

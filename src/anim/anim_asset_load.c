@@ -107,6 +107,12 @@ static bool al_read_anim_clip(SDL_RWops *stream, struct anim_clip *out,
             }
         
         }
+
+        if(!header->has_collision)
+            continue;
+
+        if(!AL_ParseAABB(stream, &out->samples[f].sample_aabb))
+            goto fail;
     }
 
     return true;

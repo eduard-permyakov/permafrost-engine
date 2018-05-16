@@ -43,6 +43,7 @@
 
 struct entity;
 struct map;
+struct aabb;
 
 struct pfobj_hdr{
     float    version; 
@@ -68,5 +69,6 @@ struct map    *AL_MapFromPFMapString(const char *str);
 void           AL_MapFree(struct map *map);
 
 bool           AL_ReadLine(SDL_RWops *stream, char *outbuff);
+bool           AL_ParseAABB(SDL_RWops *stream, struct aabb *out);
 
 #endif

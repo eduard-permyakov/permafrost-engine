@@ -220,8 +220,6 @@ void G_Render(void)
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
         R_GL_Draw(curr->render_private, &model);
-
-        R_GL_DrawOBB(curr);
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER, NULL, ES_ENGINE);

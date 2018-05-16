@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017 Eduard Permyakov 
+ *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -143,28 +143,6 @@ fail_parse:
     return NULL;
 }
 
-static bool al_parse_aabb(SDL_RWops *stream, struct aabb *out)
-{
-    char line[MAX_LINE_LEN];
-
-    READ_LINE(stream, line, fail);
-    if(!sscanf(line, "%f %f", &out->x_min, &out->x_max))
-        goto fail;
-
-    READ_LINE(stream, line, fail);
-    if(!sscanf(line, "%f %f", &out->y_min, &out->y_max))
-        goto fail;
-
-    READ_LINE(stream, line, fail);
-    if(!sscanf(line, "%f %f", &out->z_min, &out->z_max))
-        goto fail;
-
-    return true;
-
-fail:
-    return false;
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -222,7 +200,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     if(header.has_collision) {
 
         ret->flags |= ENTITY_FLAG_COLLISION;
-        if(!al_parse_aabb(stream, &ret->identity_aabb))
+        if(!AL_ParseAABB(stream, &ret->identity_aabb))
             goto fail_init;
     }
 
@@ -320,6 +298,28 @@ bool AL_ReadLine(SDL_RWops *stream, char *outbuff)
         idx++; 
     }while(idx < MAX_LINE_LEN);
 
+    return false;
+}
+
+bool AL_ParseAABB(SDL_RWops *stream, struct aabb *out)
+{
+    char line[MAX_LINE_LEN];
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, " x_bounds %f %f", &out->x_min, &out->x_max))
+        goto fail;
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, " y_bounds %f %f", &out->y_min, &out->y_max))
+        goto fail;
+
+    READ_LINE(stream, line, fail);
+    if(!sscanf(line, " z_bounds %f %f", &out->z_min, &out->z_max))
+        goto fail;
+
+    return true;
+
+fail:
     return false;
 }
 

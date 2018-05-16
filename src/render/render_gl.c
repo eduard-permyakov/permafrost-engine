@@ -855,7 +855,12 @@ void R_GL_DrawOBB(const struct entity *ent)
     GLuint loc;
     vec3_t blue = (vec3_t){0.0f, 0.0f, 1.0f};
 
-    const struct aabb *aabb = &ent->identity_aabb;
+    const struct aabb *aabb;
+    if(ent->flags & ENTITY_FLAG_ANIMATED)
+        aabb = A_GetCurrPoseAABB(ent);
+    else
+        aabb = &ent->identity_aabb;
+
     mat4x4_t model;
     Entity_ModelMatrix(ent, &model);
 
