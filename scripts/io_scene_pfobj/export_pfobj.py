@@ -16,6 +16,23 @@ def mesh_triangulate(mesh):
     bm.to_mesh(mesh)
     bm.free()
 
+def current_pose_bbox(global_matrix, mesh_objs):
+    # We build a single bounding box encapsulating all selected objects - this only works
+    # if a single entity is composed of multiple objects - otherwise they must be 
+    # exported one at a time
+    bbox_verts = []
+    for obj in mesh_objs:
+        bbox_verts += [global_matrix * obj.matrix_world * Vector(b) for b in obj.bound_box]
+
+    min_x = min(p.x for p in bbox_verts)
+    max_x = max(p.x for p in bbox_verts)
+    min_y = min(p.y for p in bbox_verts)
+    max_y = max(p.y for p in bbox_verts)
+    min_z = min(p.z for p in bbox_verts)
+    max_z = max(p.z for p in bbox_verts)
+
+    return min_x, max_x, min_y, max_y, min_z, max_z
+
 def save(operator, context, filepath, global_matrix, export_bbox):
     with open(filepath, "w", encoding="ascii") as ofile:
 
@@ -205,34 +222,32 @@ def save(operator, context, filepath, global_matrix, export_bbox):
 
                     ofile.write(line)
 
+                if not export_bbox:
+                    continue
+
+                # Write bbox for current animation frame
+                min_x, max_x, min_y, max_y, min_z, max_z = current_pose_bbox(global_matrix, mesh_objs)
+                line = "\tx_bounds {a:.6f} {b:.6f}\n".format(a=min_x, b=max_x)
+                ofile.write(line)
+                line = "\ty_bounds {a:.6f} {b:.6f}\n".format(a=min_y, b=max_y)
+                ofile.write(line)
+                line = "\tz_bounds {a:.6f} {b:.6f}\n".format(a=min_z, b=max_z)
+                ofile.write(line)
+
         #####################################################################
         # Write bounding box data
         #####################################################################
 
         bpy.ops.object.mode_set(mode='EDIT')
-
-        # We build a single bounding box encapsulating all objects - this only works
-        # if a single entity is composed of multiple objects - otherwise they must be 
-        # exported one at a time
-        bbox_verts = []
-        for obj in mesh_objs:
-            bbox_verts += [global_matrix * obj.matrix_world * Vector(b) for b in obj.bound_box]
-
-        min_x = min(p.x for p in bbox_verts)
-        max_x = max(p.x for p in bbox_verts)
-        min_y = min(p.y for p in bbox_verts)
-        max_y = max(p.y for p in bbox_verts)
-        min_z = min(p.z for p in bbox_verts)
-        max_z = max(p.z for p in bbox_verts)
-
-        line = "{a:.6f} {b:.6f}\n".format(a=min_x, b=max_x)
-        ofile.write(line)
-        line = "{a:.6f} {b:.6f}\n".format(a=min_y, b=max_y)
-        ofile.write(line)
-        line = "{a:.6f} {b:.6f}\n".format(a=min_z, b=max_z)
-        ofile.write(line)
-
+        min_x, max_x, min_y, max_y, min_z, max_z = current_pose_bbox(global_matrix, mesh_objs)
         bpy.ops.object.mode_set(mode='OBJECT')
+
+        line = "x_bounds {a:.6f} {b:.6f}\n".format(a=min_x, b=max_x)
+        ofile.write(line)
+        line = "y_bounds {a:.6f} {b:.6f}\n".format(a=min_y, b=max_y)
+        ofile.write(line)
+        line = "z_bounds {a:.6f} {b:.6f}\n".format(a=min_z, b=max_z)
+        ofile.write(line)
 
         return {'FINISHED'}
 
