@@ -19,6 +19,8 @@
 /assets/models/*
 !/assets/models/sinbad
 !/assets/models/oak_tree
+!/assets/models/knight
+!/assets/models/mage
 
 !/assets/maps
 
