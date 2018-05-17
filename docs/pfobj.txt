@@ -10,6 +10,7 @@
         3.3 Materials
         3.4 Joints (Optional)
         3.5 Animation Sets (Optional)
+        3.6 Bounding Box (Optional)
     4. Exporting from Blender
 
 ********************************************************************************
@@ -17,6 +18,9 @@
 ********************************************************************************
 
     Current version: 1.0 
+
+    May 2018:
+        * Add optional support for bounding boxes
 
 ********************************************************************************
 * 2. ABOUT                                                                     *
@@ -58,6 +62,8 @@
     frame_counts    <space delimited integers of the number of keyframes in
                      each animation set. These must be in the same order as
                      the actual animation set data later>
+    has_collision   <0 or 1 depending on if bounding box data is present>
+
 
     -----------------
     3.2 Mesh Vertices
@@ -200,7 +206,8 @@
     animation set has a corresponding <frame_counts> number from the header.
     The animation sets are in the same order as the <frame_counts> in the
     header. Each animation set will have ( 1 + <num_joints> *
-    <frame_counts[i]> ) number of lines.
+    <frame_counts[i]> ) number of lines. In case 'has_collision' is true, 
+    each animation set will have an additional (3 * <frame_counts[i]>) lines.
 
     The first line is in the following format:
 
@@ -211,16 +218,12 @@
 
     Next, there is a list of <num_joints> * <frame_count> lines. Each line
     will hold the transformation for a particular joint for a particular
-    keyframe. The transformation is specified in the joint's local space,
-    meaning that applying this transformation to the vector (0,0,0) will give
-    an offset for this joint's position in a coordinate space where the bind
-    position of the joint is the origin. Thus, to find the position of the
-    joint for the current keyframe in the object's local space, we must first
-    transform the vector (0,0,0) by the local transformation for this keyframe
-    and then transform the resulting vector by the bind transformation that is
-    specified in the joint entry. This will give the position for the current
-    keyframe in the parent joint's space. Keep applying the transformations of 
-    all the ancestor joints to get the final object-space position.
+    keyframe. The transformation is specified in the parent bone's space, or
+    the object space in the case of a root bone. For example, transforming 
+    the vector (0,0,0) by a joint's pose transform will give this joint's offset
+    relative to its' parent. To get the object space position of a vertex in a
+    non-root bone's space, keep applying the parent's transformation to the 
+    result of the previous transformation.
 
     Each transformation line has the following format:
 
@@ -255,6 +258,43 @@
     3 1.000000/1.000000/1.000000 0.000000/0.000003/-5.195786 0.000000/0.000000/0.000000
     4 1.000000/1.000000/1.000000 0.000000/0.000000/37.074135 0.000000/0.000000/0.000000
 
+    Lastly, there are optinally 3 lines per frame if 'has_collision' is true.
+    These lines come after the the joint transforms for the current frame and
+    describe an axis-aligned bounding box for the mesh in its' current pose.
+    They have the following format:
+
+    x_bounds <x_min> <x_max>
+    y_bounds <y_min> <y_max>
+    z_bounds <z_min> <z_max>
+
+    The following is an example of an animation set with 2 frames, for a model 
+    with 2 joints and with collision:
+
+    as WaveAnimation 2
+    1 1.000000/1.000000/1.000000 0.000000/0.000001/19.588041 0.000000/0.000000/0.000000
+    2 1.000000/1.000000/1.000000 -0.000003/0.000009/-39.782310 0.000000/0.000000/0.000000
+    x_bounds -0.523 0.523
+    y_bounds 0.01 10.23
+    z_bounds -1.05 2.05
+    1 1.000000/1.000000/1.000000 0.000000/0.000001/19.303738 0.000000/0.000000/0.000000
+    2 1.000000/1.000000/1.000000 -0.000003/0.000009/-39.089245 0.000000/0.000000/0.000000
+    x_bounds -0.523 0.523
+    y_bounds 0.01 8.23
+    z_bounds -1.55 2.55
+
+    ---------------------------
+    3.6 Bounding Box (Optional)
+    ---------------------------
+
+    Next is an additional 3 lines for the axis-aligned bounding box for the
+    mesh. In the case of animated entities, this is the bounding box for the
+    bind pose. These lines are only present if 'has_collision' is true. They
+    have the following format:
+
+    x_bounds <x_min> <x_max>
+    y_bounds <y_min> <y_max>
+    z_bounds <z_min> <z_max>
+
 ********************************************************************************
 * 4. EXPORTING FROM BLENDER                                                    *
 ********************************************************************************
@@ -279,7 +319,7 @@
     data. For example, the script expects that every single exported object
     has material(s) and each material has a texture associted with it, despite
     it being possible to make a complete model in Bleder without this
-    condition being met. It may be necessary to either perform some surgery on
-    the model file or to hack the script a bit to get your model to export
+    condition being met. It may be necessary to either perform some light surgery 
+    on the model file or to hack the script a bit to get your model to export
     correctly.
 
