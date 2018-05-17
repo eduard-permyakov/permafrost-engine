@@ -40,6 +40,7 @@ pf.set_map_render_mode(CHUNK_RENDER_MODE_PREBAKED)
 sinbad = sb.Sinbad("assets/models/sinbad", "Sinbad.pfobj", "Sinbad")
 sinbad.pos = [-90.0, 16.0, -125.0]
 sinbad.scale = [1.2, 1.2, 1.2]
+sinbad.rotation = [0.0, -0.3826834, 0.0, 0.9238795]
 sinbad.activate()
 
 knights = []

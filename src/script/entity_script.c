@@ -42,6 +42,8 @@ static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure);
 static int       PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_scale(PyEntityObject *self, void *closure);
 static int       PyEntity_set_scale(PyEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyEntity_get_rotation(PyEntityObject *self, void *closure);
+static int       PyEntity_set_rotation(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_activate(PyEntityObject *self);
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args);
@@ -90,6 +92,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"scale",
     (getter)PyEntity_get_scale, (setter)PyEntity_set_scale,
     "The XYZ scaling factors.",
+    NULL},
+    {"rotation",
+    (getter)PyEntity_get_rotation, (setter)PyEntity_set_rotation,
+    "XYZW quaternion for rotaion about local origin.",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -286,6 +292,39 @@ static int PyEntity_set_scale(PyEntityObject *self, PyObject *value, void *closu
         }
 
         self->ent->scale.raw[i] = PyFloat_AsDouble(item);
+    }
+
+    return 0;
+}
+
+static PyObject *PyEntity_get_rotation(PyEntityObject *self, void *closure)
+{
+    return Py_BuildValue("[f,f,f,f]", self->ent->rotation.x, self->ent->rotation.y, 
+        self->ent->rotation.z, self->ent->rotation.w);
+}
+
+static int PyEntity_set_rotation(PyEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyList_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a list.");
+        return -1;
+    }
+    
+    Py_ssize_t len = PyList_Size(value);
+    if(len != 4) {
+        PyErr_SetString(PyExc_TypeError, "Argument must have a size of 4."); 
+        return -1;
+    }
+
+    for(int i = 0; i < len; i++) {
+
+        PyObject *item = PyList_GetItem(value, i);
+        if(!PyFloat_Check(item)) {
+            PyErr_SetString(PyExc_TypeError, "List items must be floats.");
+            return -1;
+        }
+
+        self->ent->rotation.raw[i] = PyFloat_AsDouble(item);
     }
 
     return 0;

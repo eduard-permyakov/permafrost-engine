@@ -25,11 +25,14 @@
 
 void Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out)
 {
-    mat4x4_t trans, scale;
+    mat4x4_t trans, scale, rot, tmp;
 
     PFM_Mat4x4_MakeTrans(ent->pos.x, ent->pos.y, ent->pos.z, &trans);
     PFM_Mat4x4_MakeScale(ent->scale.x, ent->scale.y, ent->scale.z, &scale);
-    PFM_Mat4x4_Mult4x4(&trans, &scale, out);
+    PFM_Mat4x4_RotFromQuat(&ent->rotation, &rot);
+
+    PFM_Mat4x4_Mult4x4(&scale, &rot, &tmp);
+    PFM_Mat4x4_Mult4x4(&trans, &tmp, out);
 }
 
 uint32_t Entity_NewUID(void)

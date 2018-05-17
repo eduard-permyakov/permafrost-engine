@@ -37,6 +37,7 @@ struct entity{
     char         basedir[BASEDIR_LEN];
     vec3_t       pos;
     vec3_t       scale;
+    quat_t       rotation;
     uint32_t     flags;
     void        *render_private;
     void        *anim_private;
