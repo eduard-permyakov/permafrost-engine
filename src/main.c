@@ -171,10 +171,10 @@ static bool engine_init(char **argv)
         SDL_WINDOWPOS_UNDEFINED,
         CONFIG_RES_X, 
         CONFIG_RES_Y, 
-        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN);
+        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | CONFIG_WINDOWFLAGS);
 
     s_context = SDL_GL_CreateContext(s_window); 
-    SDL_GL_SetSwapInterval(0); 
+    SDL_GL_SetSwapInterval(CONFIG_VSYNC ? 1 : 0); 
 
     /* ---------------------------------- */
     /* GLEW initialization                */

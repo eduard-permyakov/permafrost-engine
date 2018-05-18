@@ -20,10 +20,20 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include <SDL.h>
+#include <stdbool.h>
+
+enum pf_window_flags{
+    PF_WINDOWFLAGS_FULLSCREEN          = SDL_WINDOW_FULLSCREEN | SDL_WINDOW_INPUT_GRABBED,
+    PF_WINDOWFLAGS_BORDERLESS_WINDOWED = SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_INPUT_GRABBED
+};
+
 /* The far end of the camera's clipping frustrum, in OpenGL coordinates */
 #define CONFIG_DRAWDIST             1000.0f
 #define CONFIG_RES_X                1920
 #define CONFIG_RES_Y                1080
 #define CONFIG_BAKED_TILE_TEX_RES   128
+#define CONFIG_WINDOWFLAGS          PF_WINDOWFLAGS_BORDERLESS_WINDOWED
+#define CONFIG_VSYNC                false
 
 #endif
