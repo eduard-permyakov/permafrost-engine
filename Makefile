@@ -38,11 +38,11 @@ PYTHON_VER_MAJOR = 2.7
 CFLAGS  = -std=c99 -I$(GLEW_SRC)/include -I$(SDL2_SRC)/include -I$(PYTHON_SRC)/Include -I$(PYTHON_SRC)/build \
 		   -fno-strict-aliasing -march=native -O2 -pipe -fwrapv -g
 DEFS  	=
-LDFLAGS = -L./lib/ -lm -lpthread -lm -lSDL2 
+LDFLAGS = -L./lib/ -lm -lpthread -lm
 ifeq ($(OS),Windows_NT)
-LDFLAGS += -lmingw32 -lglew32 -lpython27 -lopengl32
+LDFLAGS += -lmingw32 -lSDL2 -lglew32 -lpython27 -lopengl32
 else
-LDFLAGS += -l:$(GLEW_LIB) -lpython2.7 -lGL -ldl -lutil -Xlinker -export-dynamic -Xlinker -rpath='$$ORIGIN/../lib'
+LDFLAGS += -l:$(SDL2_LIB) -l:$(GLEW_LIB) -l:$(PYTHON_LIB) -lGL -ldl -lutil -Xlinker -export-dynamic -Xlinker -rpath='$$ORIGIN/../lib'
 endif
 DEPS = ./lib/$(GLEW_LIB) ./lib/$(SDL2_LIB) ./lib/$(PYTHON_LIB)
 
