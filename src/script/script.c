@@ -57,6 +57,7 @@ static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args);
 static PyObject *PyPf_mouse_over_minimap(PyObject *self);
+static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -148,6 +149,11 @@ static PyMethodDef pf_module_methods[] = {
     {"mouse_over_minimap",
     (PyCFunction)PyPf_mouse_over_minimap, METH_NOARGS,
     "Returns true if the mouse cursor is over the minimap, false otherwise."},
+
+    {"map_height_at_point",
+    (PyCFunction)PyPf_map_height_at_point, METH_VARARGS,
+    "Returns the Y-dimension map height at the specified XZ coordinate. Returns None if the "
+    "specified coordinate is outside the map bounds."},
 
     {NULL}  /* Sentinel */
 };
@@ -437,6 +443,23 @@ static PyObject *PyPf_mouse_over_minimap(PyObject *self)
         Py_RETURN_TRUE;
     else
         Py_RETURN_FALSE;
+}
+
+static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args)
+{
+    float x, z;
+
+    if(!PyArg_ParseTuple(args, "ff", &x, &z)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two floats.");
+        return NULL;
+    }
+
+    float height;
+    bool result = G_MapHeightAtPoint((vec2_t){x, z}, &height);
+    if(!result)
+        Py_RETURN_NONE;
+    else
+        return Py_BuildValue("f", height);
 }
 
 static bool s_sys_path_add_dir(const char *filename)

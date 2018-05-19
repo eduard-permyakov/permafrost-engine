@@ -157,4 +157,12 @@ void    PFM_Mat4x4_MakeLookAt     (vec3_t *camera_pos, vec3_t *target_pos,
 void    PFM_Quat_FromRotMat(mat4x4_t *mat, quat_t *out);
 void    PFM_Quat_ToEuler   (quat_t *q, float *out_roll, float *out_pitch, float *out_yaw);
 
+/*****************************************************************************/
+/* Other                                                                     */
+/*****************************************************************************/
+
+GLfloat PFM_BilinearInterp(GLfloat q11, GLfloat q12, GLfloat q21, GLfloat q22,
+                           GLfloat x1,  GLfloat x2,  GLfloat y1,  GLfloat y2,
+                           GLfloat x,   GLfloat y);
+
 #endif

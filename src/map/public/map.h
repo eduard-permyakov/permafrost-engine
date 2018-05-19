@@ -30,6 +30,7 @@
 
 #define MATERIALS_PER_CHUNK  (8)
 #define MINIMAP_SIZE         (256)
+#define MAX_HEIGHT_LEVEL     (9)
 
 struct pfchunk;
 struct pfmap_hdr;
@@ -136,6 +137,17 @@ void   M_SetMapRenderMode(struct map *map, enum chunk_render_mode mode);
  */
 vec2_t M_WorldCoordsToNormMapCoords(const struct map *map, vec2_t xz);
 
+/* ------------------------------------------------------------------------
+ * Returns true if the XZ coordinate is within the map bounds.
+ * ------------------------------------------------------------------------
+ */
+bool   M_PointInsideMap(const struct map *map, vec2_t xz);
+
+/* ------------------------------------------------------------------------
+ * Returns the Y coordinate for an XZ point on the map's surface.
+ * ------------------------------------------------------------------------
+ */
+float  M_HeightAtPoint(const struct map *map, vec2_t xz);
 
 /*###########################################################################*/
 /* MINIMAP                                                                   */

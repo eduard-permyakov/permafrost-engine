@@ -45,14 +45,15 @@ void G_Render(void);
 void G_SetMapRenderMode(enum chunk_render_mode mode);
 void G_SetMinimapPos(float x, float y);
 bool G_MouseOverMinimap(void);
-bool G_UpdateMinimapChunk(int chunk_r, int chunk_c);
-void G_MoveActiveCamera(vec2_t xz_ground_pos);
+bool G_MapHeightAtPoint(vec2_t xz, float *out_height);
 
 bool G_AddEntity(struct entity *ent);
 bool G_RemoveEntity(struct entity *ent);
 
 bool G_ActivateCamera(int idx, enum cam_mode mode);
+void G_MoveActiveCamera(vec2_t xz_ground_pos);
 
+bool G_UpdateMinimapChunk(int chunk_r, int chunk_c);
 bool G_UpdateChunkMats(int chunk_c, int chunk_r, const char *mats_string);
 bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
 

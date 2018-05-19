@@ -98,14 +98,18 @@ struct tile{
     || ((t) == TILETYPE_CORNER_CONVEX_NE))
 
 
-int  M_Tile_NWHeight(const struct tile *tile);
-int  M_Tile_NEHeight(const struct tile *tile);
-int  M_Tile_SWHeight(const struct tile *tile);
-int  M_Tile_SEHeight(const struct tile *tile);
+int   M_Tile_NWHeight(const struct tile *tile);
+int   M_Tile_NEHeight(const struct tile *tile);
+int   M_Tile_SWHeight(const struct tile *tile);
+int   M_Tile_SEHeight(const struct tile *tile);
 
-bool M_Tile_FrontFaceVisible(const struct tile *tiles, int r, int c);
-bool M_Tile_BackFaceVisible (const struct tile *tiles, int r, int c);
-bool M_Tile_LeftFaceVisible (const struct tile *tiles, int r, int c);
-bool M_Tile_RightFaceVisible(const struct tile *tiles, int r, int c);
+bool  M_Tile_FrontFaceVisible(const struct tile *tiles, int r, int c);
+bool  M_Tile_BackFaceVisible (const struct tile *tiles, int r, int c);
+bool  M_Tile_LeftFaceVisible (const struct tile *tiles, int r, int c);
+bool  M_Tile_RightFaceVisible(const struct tile *tiles, int r, int c);
+
+/* 'frac_with' and 'frac_height' are given in screen cooridnates (width increases to the
+ * right and height increases downwards. */
+float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_height);
 
 #endif

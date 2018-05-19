@@ -569,3 +569,22 @@ void PFM_Quat_ToEuler(quat_t *q, float *out_roll, float *out_pitch, float *out_y
     *out_yaw = RAD_TO_DEG(atan2(siny, cosy));
 }
 
+GLfloat PFM_BilinearInterp(GLfloat q11, GLfloat q12, GLfloat q21, GLfloat q22,
+                           GLfloat x1,  GLfloat x2,  GLfloat y1,  GLfloat y2,
+                           GLfloat x,   GLfloat y)
+{
+    float x2x1, y2y1, x2x, y2y, yy1, xx1;
+    x2x1 = x2 - x1;
+    y2y1 = y2 - y1;
+    x2x = x2 - x;
+    y2y = y2 - y;
+    yy1 = y - y1;
+    xx1 = x - x1;
+    return 1.0 / (x2x1 * y2y1) * (
+        q11 * x2x * y2y +
+        q21 * xx1 * y2y +
+        q12 * x2x * yy1 +
+        q22 * xx1 * yy1
+    );
+}
+

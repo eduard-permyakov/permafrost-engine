@@ -357,3 +357,24 @@ bool C_PointInsideScreenRect(vec2_t point, vec2_t a, vec2_t b, vec2_t c, vec2_t 
         && (ap_dot_ad >= 0.0f && ap_dot_ad <= PFM_Vec2_Dot(&ad, &ad));
 }
 
+bool C_PointInsideTriangle2D(vec2_t point, vec2_t a, vec2_t b, vec2_t c)
+{
+    vec2_t v0, v1, v2;
+    PFM_Vec2_Sub(&c, &a, &v0);
+    PFM_Vec2_Sub(&b, &a, &v1);
+    PFM_Vec2_Sub(&point, &a, &v2);
+    
+    GLfloat dot00 = PFM_Vec2_Dot(&v0, &v0);
+    GLfloat dot01 = PFM_Vec2_Dot(&v0, &v1);
+    GLfloat dot02 = PFM_Vec2_Dot(&v0, &v2);
+    GLfloat dot11 = PFM_Vec2_Dot(&v1, &v1);
+    GLfloat dot12 = PFM_Vec2_Dot(&v1, &v2);
+    
+    /* Compute barycentric coordinates */
+    GLfloat invDenom = 1.0f / (dot00 * dot11 - dot01 * dot01);
+    GLfloat u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+    GLfloat v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+    
+    return (u >= 0.0f) && (v >= 0.0f) && (u + v < 1.0f);
+}
+

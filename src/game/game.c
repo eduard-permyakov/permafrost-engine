@@ -1,4 +1,5 @@
 /*
+void G_MoveActiveCamera(vec2_t xz_ground_pos);
  *  This file is part of Permafrost Engine. 
  *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
@@ -166,6 +167,17 @@ bool G_MouseOverMinimap(void)
 {
     assert(s_gs.map);
     return M_MouseOverMinimap(s_gs.map);
+}
+
+bool G_MapHeightAtPoint(vec2_t xz, float *out_height)
+{
+    assert(s_gs.map);
+
+    if(!M_PointInsideMap(s_gs.map, xz))
+        return false;
+
+    *out_height = M_HeightAtPoint(s_gs.map, xz);
+    return true;
 }
 
 bool G_UpdateMinimapChunk(int chunk_r, int chunk_c)

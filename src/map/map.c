@@ -31,7 +31,6 @@
 #include <SDL.h>
 
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
-#define MAX_HEIGHT_LEVEL    9
 
 
 /*****************************************************************************/
@@ -205,5 +204,47 @@ vec2_t M_WorldCoordsToNormMapCoords(const struct map *map, vec2_t xz)
         -xz.raw[0] / (dim / 2.0f),
          xz.raw[1] / (dim / 2.0f)
     };
+}
+
+bool M_PointInsideMap(const struct map *map, vec2_t xz)
+{
+    float width  = map->width  * TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE;
+    float height = map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    return (xz.raw[0] <= map->pos.x && xz.raw[0] >= map->pos.x - width)
+        && (xz.raw[1] >= map->pos.z && xz.raw[1] <= map->pos.z + height);
+}
+
+float M_HeightAtPoint(const struct map *map, vec2_t xz)
+{
+    assert(M_PointInsideMap(map, xz));
+
+    float x = xz.raw[0];
+    float z = xz.raw[1];
+
+    int chunk_r, chunk_c;
+    chunk_r =  (z - map->pos.z) / (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE);
+    chunk_c = -(x - map->pos.x) / (TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE);
+    assert(chunk_r >= 0 && chunk_r < map->height);
+    assert(chunk_c >= 0 && chunk_c < map->width);
+
+    float chunk_off_r = fmod(z - map->pos.z, TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE);
+    float chunk_off_c = fmod(-(x - map->pos.x), TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE);
+    assert(chunk_off_r >= 0 && chunk_off_c >= 0);
+
+    int tile_r, tile_c;    
+    tile_r = chunk_off_r / Z_COORDS_PER_TILE;
+    tile_c = chunk_off_c / X_COORDS_PER_TILE;
+    assert(tile_r >= 0 && tile_r < TILES_PER_CHUNK_HEIGHT);
+    assert(tile_c >= 0 && tile_c < TILES_PER_CHUNK_WIDTH);
+    
+    float tile_frac_width, tile_frac_height;
+    tile_frac_width =  fmod(chunk_off_c, X_COORDS_PER_TILE) / X_COORDS_PER_TILE;
+    tile_frac_height = fmod(chunk_off_r, Z_COORDS_PER_TILE) / Z_COORDS_PER_TILE;
+    assert(tile_frac_width >= 0.0f && tile_frac_width <= 1.0f);
+    assert(tile_frac_height >= 0.0f && tile_frac_height <= 1.0f);
+
+    const struct tile *tile = &map->chunks[chunk_r * map->width + chunk_c].tiles[tile_r * TILES_PER_CHUNK_WIDTH + tile_c];
+    return M_Tile_HeightAtPos(tile, tile_frac_width, tile_frac_height);
 }
 

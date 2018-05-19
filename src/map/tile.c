@@ -18,6 +18,9 @@
  */
 
 #include "public/tile.h"
+#include "public/map.h"
+#include "../pf_math.h"
+#include "../collision.h"
 
 #include <assert.h>
 
@@ -143,5 +146,102 @@ bool M_Tile_RightFaceVisible(const struct tile *tiles, int r, int c)
 
     return (M_Tile_NEHeight(curr) > M_Tile_NWHeight(right))
         || (M_Tile_SEHeight(curr) > M_Tile_SWHeight(right));
+}
+
+float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_height)
+{
+    if(tile->type == TILETYPE_FLAT) {
+        return tile->base_height * Y_COORDS_PER_TILE;
+
+    }else if(TILETYPE_IS_RAMP(tile->type)) {
+        return PFM_BilinearInterp(
+            M_Tile_NWHeight(tile) * Y_COORDS_PER_TILE, M_Tile_SWHeight(tile) * Y_COORDS_PER_TILE,
+            M_Tile_NEHeight(tile) * Y_COORDS_PER_TILE, M_Tile_SEHeight(tile) * Y_COORDS_PER_TILE,
+            0.0f, 1.0f, 0.0f, 1.0f,
+            frac_width, frac_height);
+
+    }else /*corner tiles */ {
+
+        /* For corner tiles, we break up the top face into two triangles, 
+         * figure out which triangle the point is in, and determine the map 
+         * height by finding the intersection point of a downward facing ray
+         * and the plane of the triangle. */
+
+        vec3_t corners[] = {
+            (vec3_t){0.0f, M_Tile_NWHeight(tile) * Y_COORDS_PER_TILE, 0.0f},
+            (vec3_t){0.0f, M_Tile_NEHeight(tile) * Y_COORDS_PER_TILE, 1.0f},
+            (vec3_t){1.0f, M_Tile_SWHeight(tile) * Y_COORDS_PER_TILE, 0.0f},
+            (vec3_t){1.0f, M_Tile_SEHeight(tile) * Y_COORDS_PER_TILE, 1.0f}
+        };
+
+        /* Triangles are defined in screen coordinates */
+        vec3_t *first_tri, *second_tri;
+
+        switch(tile->type){
+        case TILETYPE_CORNER_CONVEX_NE:
+        case TILETYPE_CORNER_CONCAVE_NE:
+        case TILETYPE_CORNER_CONVEX_SW:
+        case TILETYPE_CORNER_CONCAVE_SW: 
+            {
+                /* Clockwise order */
+                first_tri  = (vec3_t[3]){corners[0], corners[2], corners[3]};
+                second_tri = (vec3_t[3]){corners[0], corners[3], corners[1]};
+                break;
+            }
+        case TILETYPE_CORNER_CONVEX_NW:
+        case TILETYPE_CORNER_CONCAVE_NW:
+        case TILETYPE_CORNER_CONVEX_SE:
+        case TILETYPE_CORNER_CONCAVE_SE:
+            {
+                /* Clockwise order */
+                first_tri  = (vec3_t[3]){corners[0], corners[2], corners[1]};
+                second_tri = (vec3_t[3]){corners[2], corners[3], corners[1]};
+                break;
+            }
+        default: assert(0);
+        }
+
+        vec3_t tri_neg_normal;
+        vec3_t tri_point;
+        vec3_t edge1, edge2;
+
+        if(C_PointInsideTriangle2D(
+            (vec2_t){frac_width, frac_height}, 
+            (vec2_t){first_tri[0].x, first_tri[0].z}, 
+            (vec2_t){first_tri[1].x, first_tri[1].z}, 
+            (vec2_t){first_tri[2].x, first_tri[2].z})) {
+
+            PFM_Vec3_Sub(&first_tri[1], &first_tri[0], &edge1);
+            PFM_Vec3_Sub(&first_tri[2], &first_tri[0], &edge2);
+            tri_point = first_tri[0];
+
+        }else{
+
+            PFM_Vec3_Sub(&second_tri[1], &second_tri[0], &edge1);
+            PFM_Vec3_Sub(&second_tri[2], &second_tri[0], &edge2);
+            tri_point = second_tri[0];
+        }
+
+        PFM_Vec3_Cross(&edge1, &edge2, &tri_neg_normal);
+        PFM_Vec3_Normal(&tri_neg_normal, &tri_neg_normal);
+
+        struct plane tri_plane = (struct plane){
+            .point = tri_point,
+            .normal = tri_neg_normal
+        };
+
+        vec3_t ray_origin = (vec3_t){frac_width, (MAX_HEIGHT_LEVEL * Y_COORDS_PER_TILE) + 10, frac_height};
+        vec3_t ray_dir = (vec3_t){0.0f, -1.0f, 0.0f};
+
+        float t;
+        bool result = C_RayIntersectsPlane(ray_origin, ray_dir, tri_plane, &t);
+        assert(result);
+
+        vec3_t intersec_point;
+        PFM_Vec3_Scale(&ray_dir, t, &ray_dir);
+        PFM_Vec3_Add(&ray_origin, &ray_dir, &intersec_point);
+
+        return intersec_point.y;
+    }
 }
 

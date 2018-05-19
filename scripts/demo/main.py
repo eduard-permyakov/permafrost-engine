@@ -37,8 +37,10 @@ pf.set_map_render_mode(CHUNK_RENDER_MODE_PREBAKED)
 # Setup entities                                           #
 ############################################################
 
+coord = lambda x, z : [x, pf.map_height_at_point(x, z), z]
+
 sinbad = sb.Sinbad("assets/models/sinbad", "Sinbad.pfobj", "Sinbad")
-sinbad.pos = [-90.0, 16.0, -125.0]
+sinbad.pos = coord(-90.0, -125.0)
 sinbad.scale = [1.2, 1.2, 1.2]
 sinbad.rotation = [0.0, -0.3826834, 0.0, 0.9238795]
 sinbad.activate()
@@ -47,7 +49,7 @@ knights = []
 for i in range(0, 4):
     for j in range(0, 2):
         knight = pf.AnimEntity("assets/models/knight", "knight.pfobj", "Knight", "Idle")
-        knight.pos = [-40.0 - (10 * i), 12.0, -75.0 - (10 * j)]
+        knight.pos = coord(-40.0 - (10 * i), -75.0 - (10 * j))
         knight.scale = [0.7, 0.7, 0.7]
         knight.activate()
         knights.append(knight)
