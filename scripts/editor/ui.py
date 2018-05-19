@@ -26,23 +26,6 @@ TAB_BAR_COL_WIDTH = 120
 LEFT_PANE_WIDTH = 250
 
 
-def mouse_over_ui(x, y):
-
-    def in_bounds(x, y, w, h, test_x, test_y):
-        return (test_x >= x and test_x < x + w) \
-           and (test_y >= y and test_y < y + h)
-
-    resx, resy = pf.get_resolution()
-    menu_dims = [
-        resx / 2 - Menu.WINDOW_WIDTH / 2,
-        resy / 2 - Menu.WINDOW_HEIGHT / 2,
-        Menu.WINDOW_WIDTH,
-        Menu.WINDOW_HEIGHT
-    ]
-    return (in_bounds(*[0, TAB_BAR_HEIGHT, LEFT_PANE_WIDTH, resy - TAB_BAR_HEIGHT], test_x=x, test_y=y)) \
-        or (in_bounds(*[0, 0, resx, TAB_BAR_HEIGHT], test_x=x, test_y=y)) \
-        or (in_bounds(*menu_dims, test_x=x, test_y=y) if Menu.menu_shown else False)
-
 class TabBarWindow(pf.Window):
     SELECTED_COLOR = (90, 90, 90, 255)
     SELECTED_HOVER_COLOR = (75, 75, 75, 255)

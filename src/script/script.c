@@ -51,6 +51,7 @@ static PyObject *PyPf_prev_frame_ms(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
 static PyObject *PyPf_get_basedir(PyObject *self);
 static PyObject *PyPf_get_mouse_pos(PyObject *self);
+static PyObject *PyPf_mouse_over_ui(PyObject *self);
 
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
@@ -127,6 +128,10 @@ static PyMethodDef pf_module_methods[] = {
     {"get_mouse_pos", 
     (PyCFunction)PyPf_get_mouse_pos, METH_NOARGS,
     "Get the (x, y) cursor position on the screen."},
+
+    {"mouse_over_ui", 
+    (PyCFunction)PyPf_mouse_over_ui, METH_NOARGS,
+    "Returns True if the mouse cursor is within the bounds of any UI windows."},
 
     {"update_chunk_materials", 
     (PyCFunction)PyPf_update_chunk_materials, METH_VARARGS,
@@ -366,6 +371,17 @@ static PyObject *PyPf_get_mouse_pos(PyObject *self)
     int mouse_x, mouse_y;
     SDL_GetMouseState(&mouse_x, &mouse_y);
     return Py_BuildValue("(i, i)", mouse_x, mouse_y);
+}
+
+static PyObject *PyPf_mouse_over_ui(PyObject *self)
+{
+    int mouse_x, mouse_y;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+
+    if(S_UI_MouseOverWindow(mouse_x, mouse_y))
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args)

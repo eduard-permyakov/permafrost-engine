@@ -24,6 +24,8 @@
 #include "../lib/public/nuklear.h"
 #include "../lib/public/kvec.h"
 #include "../event.h"
+#include "../collision.h"
+#include "../config.h"
 
 #include <assert.h>
 
@@ -538,6 +540,10 @@ static void active_windows_update(void *user, void *event)
                 PyErr_Print();
                 exit(EXIT_FAILURE);
             }
+
+            struct nk_vec2 pos = nk_window_get_position(s_nk_ctx);
+            struct nk_vec2 size = nk_window_get_size(s_nk_ctx);
+            win->rect = (struct rect){pos.x, pos.y, size.x, size.y};
         }
         nk_end(s_nk_ctx);
     }
@@ -571,5 +577,22 @@ void S_UI_PyRegister(PyObject *module)
 
     assert(s_nk_ctx);
     S_UI_Style_PyRegister(module, s_nk_ctx);
+}
+
+bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
+{
+    for(int i = 0; i < kv_size(s_active_windows); i++) {
+
+        PyWindowObject *win = kv_A(s_active_windows, i);
+        if(C_PointInsideScreenRect(
+            (vec2_t){mouse_x,                       mouse_y                       },
+            (vec2_t){win->rect.x,                   win->rect.y                   },
+            (vec2_t){win->rect.x + win->rect.width, win->rect.y                   },
+            (vec2_t){win->rect.x + win->rect.width, win->rect.y + win->rect.height},
+            (vec2_t){win->rect.x,                   win->rect.y + win->rect.height}))
+            return true;
+    }
+
+    return false;
 }
 

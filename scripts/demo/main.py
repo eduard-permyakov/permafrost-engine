@@ -55,12 +55,12 @@ for i in range(0, 4):
         knights.append(knight)
 
 oak_tree = pf.Entity("assets/models/oak_tree", "oak_tree.pfobj", "OakTree")
-oak_tree.pos = [-40.0, 12.0, -115.0]
+oak_tree.pos = coord(-40.0, -115.0)
 oak_tree.scale = [2.0, 2.0, 2.0]
 oak_tree.activate()
 
 oak_leafless = pf.Entity("assets/models/oak_tree", "oak_leafless.pfobj", "OakLeafless")
-oak_leafless.pos = [-95.0, 16.0, -35.0]
+oak_leafless.pos = coord(-95.0, -35.0)
 oak_leafless.scale = [1.5, 1.5, 1.5]
 oak_leafless.activate()
 

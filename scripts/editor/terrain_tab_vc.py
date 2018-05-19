@@ -113,8 +113,7 @@ class TerrainTabVC(ui.ViewController):
 
     def __paint_selection(self):
 
-        mouse_pos = pf.get_mouse_pos()
-        if ui.mouse_over_ui(*mouse_pos):
+        if pf.mouse_over_ui():
             return
 
         if pf.mouse_over_minimap():
