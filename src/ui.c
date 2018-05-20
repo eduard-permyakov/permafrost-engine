@@ -19,7 +19,7 @@
 #include "ui.h"
 #include "config.h"
 
-#include "lib/public/nuklear.h"
+#include "lib/public/pf_nuklear.h"
 #include "lib/public/nuklear_sdl_gl3.h"
 #include "lib/public/kvec.h"
 

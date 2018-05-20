@@ -21,7 +21,7 @@
 
 #include "public/script.h"
 #include "ui_style_script.h"
-#include "../lib/public/nuklear.h"
+#include "../lib/public/pf_nuklear.h"
 #include "../lib/public/kvec.h"
 #include "../event.h"
 #include "../collision.h"
