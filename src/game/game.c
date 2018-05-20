@@ -1,5 +1,4 @@
 /*
-void G_MoveActiveCamera(vec2_t xz_ground_pos);
  *  This file is part of Permafrost Engine. 
  *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
@@ -20,6 +19,7 @@ void G_MoveActiveCamera(vec2_t xz_ground_pos);
 
 #include "public/game.h"
 #include "gamestate.h"
+#include "selection.h"
 #include "../render/public/render.h"
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
@@ -64,6 +64,8 @@ static void g_reset_camera(struct camera *cam)
 
 static void g_reset(void)
 {
+    G_Sel_Clear();
+
     khiter_t k;
     for (k = kh_begin(s_gs.active); k != kh_end(s_gs.active); ++k) {
 
@@ -123,6 +125,7 @@ bool G_Init(void)
         return false; 
 
     g_reset();
+    G_Sel_Install();
 
     return true;
 }
@@ -204,6 +207,8 @@ void G_MoveActiveCamera(vec2_t xz_ground_pos)
 
 void G_Shutdown(void)
 {
+    G_Sel_Uninstall();
+
     for(int i = 0; i < NUM_CAMERAS; i++)
         Camera_Free(s_gs.cameras[i]);
 
@@ -234,10 +239,11 @@ void G_Render(void)
         R_GL_Draw(curr->render_private, &model);
     }
 
-    E_Global_NotifyImmediate(EVENT_RENDER, NULL, ES_ENGINE);
+    E_Global_NotifyImmediate(EVENT_RENDER_3D, NULL, ES_ENGINE);
 
-    /* Render the minimap/HUD last. Minimap rendering clobbers the shader unifroms. */
+    /* Render the minimap/HUD last. Screenspace rendering clobbers the view/projection uniforms. */
     M_RenderMinimap(s_gs.map, ACTIVE_CAM);
+    E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
 }
 
 bool G_AddEntity(struct entity *ent)
@@ -283,5 +289,15 @@ bool G_UpdateChunkMats(int chunk_c, int chunk_r, const char *mats_string)
 bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
 {
     return M_AL_UpdateTile(s_gs.map, desc, tile);
+}
+
+void G_EnableUnitSelection(void)
+{
+    G_Sel_Install();
+}
+
+void G_DisableUnitSelection(void)
+{
+    G_Sel_Uninstall();
 }
 

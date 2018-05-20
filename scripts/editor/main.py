@@ -39,6 +39,7 @@ pf.new_game_string(globals.active_map.pfmap_str())
 pf.set_map_highlight_size(1)
 pf.set_minimap_position(ui.LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10, 
     pf.get_resolution()[1] - MINIMAP_PX_WIDTH/cos(pi/4)/2 - 10)
+pf.disable_unit_selection()
 
 ############################################################
 # Setup UI                                                 #

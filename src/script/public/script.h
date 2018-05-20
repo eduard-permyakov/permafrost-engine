@@ -47,5 +47,11 @@ void            S_Release(script_opaque_t obj);
 script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg);
 bool            S_ObjectsEqual(script_opaque_t a, script_opaque_t b);
 
+/*###########################################################################*/
+/* SCRIPT UI                                                                 */
+/*###########################################################################*/
+
+bool S_UI_MouseOverWindow(int mouse_x, int mouse_y);
+
 #endif
 

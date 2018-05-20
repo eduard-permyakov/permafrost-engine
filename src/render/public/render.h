@@ -146,6 +146,13 @@ void   R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model);
 void   R_GL_DrawOBB(const struct entity *ent);
 
 /* ---------------------------------------------------------------------------
+ * Render a 2D box on the screen. 'screen_pos' + 'signed_size' is the 'opposite'
+ * corner of the box. Both are given in screen coordinates.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color);
+
+/* ---------------------------------------------------------------------------
  * Draws a colored outline around the tile specified by the descriptor.
  * ---------------------------------------------------------------------------
  */

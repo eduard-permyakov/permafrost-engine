@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2018 Eduard Permyakov 
+ *  Copyright (C) 2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -17,18 +17,11 @@
  *
  */
 
-#ifndef UI_SCRIPT_H
-#define UI_SCRIPT_H
+#ifndef SELECTION_H
+#define SELECTION_H
 
-#include <Python.h> /* must be first */
-#include <stdbool.h>
-
-struct nk_context;
-
-bool S_UI_Init(struct nk_context *ctx);
-void S_UI_Shutdown(void);
-void S_UI_Update(void);
-void S_UI_PyRegister(PyObject *module);
+void G_Sel_Install(void);
+void G_Sel_Uninstall(void);
+void G_Sel_Clear(void);
 
 #endif
-

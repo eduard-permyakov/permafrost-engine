@@ -47,6 +47,9 @@ void G_SetMinimapPos(float x, float y);
 bool G_MouseOverMinimap(void);
 bool G_MapHeightAtPoint(vec2_t xz, float *out_height);
 
+void G_EnableUnitSelection(void);
+void G_DisableUnitSelection(void);
+
 bool G_AddEntity(struct entity *ent);
 bool G_RemoveEntity(struct entity *ent);
 

@@ -50,7 +50,7 @@ EVENT_SDL_MOUSEBUTTONUP          = 0x402
 # Engine events (from event.h)                             #
 ############################################################
 
-EVENT_SELECTED_TILE_CHANGED      = 0x10004
+EVENT_SELECTED_TILE_CHANGED      = 0x10005
 
 ############################################################
 # Engine constants                                         #

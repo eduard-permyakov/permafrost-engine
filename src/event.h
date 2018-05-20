@@ -42,9 +42,10 @@ enum eventtype{
      * The very last event serviced during a tick is a single EVENT_UPDATE_END one. 
      */
     EVENT_UPDATE_START = SDL_LASTEVENT + 1,
-    EVENT_UPDATE_UI,
-    EVENT_RENDER,
     EVENT_UPDATE_END,
+    EVENT_UPDATE_UI,
+    EVENT_RENDER_3D,
+    EVENT_RENDER_UI,
     EVENT_SELECTED_TILE_CHANGED,
 
     EVENT_ENGINE_LAST = 0x1ffff,

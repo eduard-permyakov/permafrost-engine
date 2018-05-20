@@ -53,6 +53,9 @@ static PyObject *PyPf_get_basedir(PyObject *self);
 static PyObject *PyPf_get_mouse_pos(PyObject *self);
 static PyObject *PyPf_mouse_over_ui(PyObject *self);
 
+static PyObject *PyPf_enable_unit_selection(PyObject *self);
+static PyObject *PyPf_disable_unit_selection(PyObject *self);
+
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args);
@@ -132,6 +135,14 @@ static PyMethodDef pf_module_methods[] = {
     {"mouse_over_ui", 
     (PyCFunction)PyPf_mouse_over_ui, METH_NOARGS,
     "Returns True if the mouse cursor is within the bounds of any UI windows."},
+
+    {"enable_unit_selection", 
+    (PyCFunction)PyPf_enable_unit_selection, METH_NOARGS,
+    "Make it possible to select units with the mouse. Enable drawing of a selection box when dragging the mouse."},
+
+    {"disable_unit_selection", 
+    (PyCFunction)PyPf_disable_unit_selection, METH_NOARGS,
+    "Make it impossible to select units with the mouse. Disable drawing of a selection box when dragging the mouse."},
 
     {"update_chunk_materials", 
     (PyCFunction)PyPf_update_chunk_materials, METH_VARARGS,
@@ -382,6 +393,18 @@ static PyObject *PyPf_mouse_over_ui(PyObject *self)
         Py_RETURN_TRUE;
     else
         Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_enable_unit_selection(PyObject *self)
+{
+    G_EnableUnitSelection();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_disable_unit_selection(PyObject *self)
+{
+    G_DisableUnitSelection();
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args)

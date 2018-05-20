@@ -922,6 +922,60 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
+void R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color)
+{
+    GLint VAO, VBO;
+    GLint shader_prog;
+    GLuint loc;
+
+    vec3_t vbuff[4] = {
+        (vec3_t){screen_pos.x,                 screen_pos.y,                 0.0f},
+        (vec3_t){screen_pos.x + signed_size.x, screen_pos.y,                 0.0f},
+        (vec3_t){screen_pos.x + signed_size.x, screen_pos.y + signed_size.y, 0.0f},
+        (vec3_t){screen_pos.x,                 screen_pos.y + signed_size.y, 0.0f},
+    };
+
+    /* Set view and projection matrices for rendering in screen coordinates */
+    mat4x4_t ortho;
+    PFM_Mat4x4_MakeOrthographic(0.0f, CONFIG_RES_X, CONFIG_RES_Y, 0.0f, -1.0f, 1.0f, &ortho);
+    R_GL_SetProj(&ortho);
+
+    mat4x4_t identity;
+    PFM_Mat4x4_Identity(&identity);
+    vec3_t dummy_pos = (vec3_t){0.0f};
+    R_GL_SetViewMatAndPos(&identity, &dummy_pos);
+
+    /* OpenGL setup */
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(0);  
+
+    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    glUseProgram(shader_prog);
+
+    /* Set uniforms */
+    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, identity.raw);
+
+    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
+    glUniform3fv(loc, 1, color.raw);
+
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+
+    glBindVertexArray(VAO);
+    glDrawArrays(GL_LINE_LOOP, 0, ARR_SIZE(vbuff));
+
+cleanup:
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
+}
+
 void R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivate, mat4x4_t *model, 
                            int tiles_per_chunk_x, int tiles_per_chunk_z)
 {
