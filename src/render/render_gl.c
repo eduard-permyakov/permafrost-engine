@@ -922,7 +922,7 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-void R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color)
+void R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color, float width)
 {
     GLint VAO, VBO;
     GLint shader_prog;
@@ -968,8 +968,14 @@ void R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color)
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
 
+    float old_width;
+    glGetFloatv(GL_LINE_WIDTH, &old_width);
+    glLineWidth(width);
+
     glBindVertexArray(VAO);
     glDrawArrays(GL_LINE_LOOP, 0, ARR_SIZE(vbuff));
+
+    glLineWidth(old_width);
 
 cleanup:
     glDeleteVertexArrays(1, &VAO);

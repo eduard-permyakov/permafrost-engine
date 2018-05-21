@@ -38,6 +38,7 @@ struct cam_rts_ctx{
     bool move_down;
     bool move_left;
     bool move_right;
+    bool pan_disabled;
 };
 
 /*****************************************************************************/
@@ -53,6 +54,8 @@ struct{
     handler_t installed_on_keydown;
     handler_t installed_on_keyup;
     handler_t installed_on_mousemove;
+    handler_t installed_on_mousedown;
+    handler_t installed_on_mouseup;
     handler_t installed_on_update_end;
 }s_cam_ctx;
 
@@ -121,6 +124,27 @@ static void rts_cam_on_mousemove(void *unused, void *event_arg)
     ctx->move_right = (mouse_x == CONFIG_RES_X - 1);
 }
 
+static void rts_cam_on_mousedown(void *unused, void *event_arg)
+{
+    struct cam_rts_ctx *ctx = &s_cam_ctx.active_ctx.rts;
+    SDL_Event *e = (SDL_Event*)event_arg;
+
+    if(ctx->move_up || ctx->move_down || ctx->move_left || ctx->move_right)
+        return;
+
+    if(e->button.button == SDL_BUTTON_LEFT)
+        ctx->pan_disabled = true;
+}
+
+static void rts_cam_on_mouseup(void *unused, void *event_arg)
+{
+    struct cam_rts_ctx *ctx = &s_cam_ctx.active_ctx.rts;
+    SDL_Event *e = (SDL_Event*)event_arg;
+
+    if(e->button.button == SDL_BUTTON_LEFT)
+        ctx->pan_disabled = false;
+}
+
 static void rts_cam_on_update_end(void *unused1, void *unused2)
 {
     struct cam_rts_ctx *ctx = &s_cam_ctx.active_ctx.rts;
@@ -167,10 +191,13 @@ static void rts_cam_on_update_end(void *unused1, void *unused2)
 
     vec3_t dir = (vec3_t){0.0f, 0.0f, 0.0f};
 
-    if(ctx->move_left)  PFM_Vec3_Add(&dir, &left, &dir);
-    if(ctx->move_right) PFM_Vec3_Add(&dir, &right, &dir);
-    if(ctx->move_up)    PFM_Vec3_Add(&dir, &up, &dir);
-    if(ctx->move_down)  PFM_Vec3_Add(&dir, &down, &dir);
+    if(!ctx->pan_disabled) {
+
+        if(ctx->move_left)  PFM_Vec3_Add(&dir, &left, &dir);
+        if(ctx->move_right) PFM_Vec3_Add(&dir, &right, &dir);
+        if(ctx->move_up)    PFM_Vec3_Add(&dir, &up, &dir);
+        if(ctx->move_down)  PFM_Vec3_Add(&dir, &down, &dir);
+    }
 
     Camera_MoveDirectionTick(cam, dir);
     Camera_TickFinishPerspective(cam);
@@ -202,10 +229,14 @@ void CamControl_RTS_Install(struct camera *cam)
 {
     CamControl_UninstallActive();
 
-    E_Global_Register(SDL_MOUSEMOTION,  rts_cam_on_mousemove,  NULL);
-    E_Global_Register(EVENT_UPDATE_END, rts_cam_on_update_end, NULL);
+    E_Global_Register(SDL_MOUSEMOTION,     rts_cam_on_mousemove,  NULL);
+    E_Global_Register(SDL_MOUSEBUTTONDOWN, rts_cam_on_mousedown,  NULL);
+    E_Global_Register(SDL_MOUSEBUTTONUP,   rts_cam_on_mouseup,    NULL);
+    E_Global_Register(EVENT_UPDATE_END,    rts_cam_on_update_end, NULL);
 
     s_cam_ctx.installed_on_mousemove  = rts_cam_on_mousemove;
+    s_cam_ctx.installed_on_mousedown  = rts_cam_on_mousedown;
+    s_cam_ctx.installed_on_mouseup    = rts_cam_on_mouseup;
     s_cam_ctx.installed_on_update_end = rts_cam_on_update_end;
     s_cam_ctx.active = cam;
 
@@ -214,10 +245,12 @@ void CamControl_RTS_Install(struct camera *cam)
 
 void CamControl_UninstallActive(void)
 {
-    if(s_cam_ctx.installed_on_keydown)    E_Global_Unregister(SDL_KEYDOWN,      s_cam_ctx.installed_on_keydown);
-    if(s_cam_ctx.installed_on_keyup)      E_Global_Unregister(SDL_KEYUP,        s_cam_ctx.installed_on_keyup);
-    if(s_cam_ctx.installed_on_mousemove)  E_Global_Unregister(SDL_MOUSEMOTION,  s_cam_ctx.installed_on_mousemove);
-    if(s_cam_ctx.installed_on_update_end) E_Global_Unregister(EVENT_UPDATE_END, s_cam_ctx.installed_on_update_end);
+    if(s_cam_ctx.installed_on_keydown)    E_Global_Unregister(SDL_KEYDOWN,         s_cam_ctx.installed_on_keydown);
+    if(s_cam_ctx.installed_on_keyup)      E_Global_Unregister(SDL_KEYUP,           s_cam_ctx.installed_on_keyup);
+    if(s_cam_ctx.installed_on_mousemove)  E_Global_Unregister(SDL_MOUSEMOTION,     s_cam_ctx.installed_on_mousemove);
+    if(s_cam_ctx.installed_on_mousedown)  E_Global_Unregister(SDL_MOUSEBUTTONDOWN, s_cam_ctx.installed_on_mousedown);
+    if(s_cam_ctx.installed_on_mouseup)    E_Global_Unregister(SDL_MOUSEBUTTONUP,   s_cam_ctx.installed_on_mouseup);
+    if(s_cam_ctx.installed_on_update_end) E_Global_Unregister(EVENT_UPDATE_END,    s_cam_ctx.installed_on_update_end);
 
     memset(&s_cam_ctx, 0, sizeof(s_cam_ctx));
 

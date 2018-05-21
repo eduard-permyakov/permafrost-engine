@@ -150,7 +150,7 @@ void   R_GL_DrawOBB(const struct entity *ent);
  * corner of the box. Both are given in screen coordinates.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color);
+void   R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color, float width);
 
 /* ---------------------------------------------------------------------------
  * Draws a colored outline around the tile specified by the descriptor.

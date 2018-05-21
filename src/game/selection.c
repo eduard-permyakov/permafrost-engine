@@ -22,6 +22,7 @@
 #include "../pf_math.h"
 #include "../event.h"
 #include "../render/public/render.h"
+#include "../config.h"
 
 #include <string.h>
 #include <stdbool.h>
@@ -65,6 +66,14 @@ static void on_mousedown(void *user, void *event)
         return;
     }
 
+    /* Don't allow dragging a selection box when the mouse is at the edges of 
+     * the screen (camera pan action) which is mutually exclusive to unit selection. */
+    if(mouse_event->x == 0 || mouse_event->x == CONFIG_RES_X-1
+    || mouse_event->y == 0 || mouse_event->y == CONFIG_RES_Y-1) {
+        s_ctx.mouse_down_in_map = false;
+        return;
+    }
+
     s_ctx.mouse_down_in_map = true;
     s_ctx.mouse_down_coord = (vec2_t){mouse_event->x, mouse_event->y};
 }
@@ -85,7 +94,7 @@ static void on_render(void *user, void *event)
     SDL_GetMouseState(&mouse_x, &mouse_y);
 
     vec2_t signed_size = (vec2_t){mouse_x - s_ctx.mouse_down_coord.x, mouse_y - s_ctx.mouse_down_coord.y};
-    R_GL_DrawBox2D(s_ctx.mouse_down_coord, signed_size, (vec3_t){0.0f, 1.0f, 0.0f});
+    R_GL_DrawBox2D(s_ctx.mouse_down_coord, signed_size, (vec3_t){0.0f, 1.0f, 0.0f}, 2.0f);
 }
 
 /*****************************************************************************/

@@ -35,16 +35,15 @@
 
 #define CAM_HEIGHT          175.0f
 #define CAM_TILT_UP_DEGREES 25.0f
+#define CAM_SPEED           0.20f
 
 #define ACTIVE_CAM          (s_gs.cameras[s_gs.active_cam_idx])
 
 /* By default, the minimap is in the bottom left corner with 10 px padding. */
-#define DEFAULT_MINIMAP_POS                                                 \
-        ((vec2_t){                                                          \
-            (MINIMAP_SIZE + 6)/cos(M_PI/4.0f)/2.0f + 10.0f,                 \
-            CONFIG_RES_Y - (MINIMAP_SIZE + 6)/cos(M_PI/4.0f)/2.0f - 10.0f   \
-        })
-
+const static vec2_t DEFAULT_MINIMAP_POS = {
+    (MINIMAP_SIZE + 6)/cos(M_PI/4.0f)/2.0f + 10.0f,
+    CONFIG_RES_Y - (MINIMAP_SIZE + 6)/cos(M_PI/4.0f)/2.0f - 10.0f
+};
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -96,7 +95,7 @@ static bool g_init_cameras(void)
             return false;
         }
 
-        Camera_SetSpeed(s_gs.cameras[i], 0.15f);
+        Camera_SetSpeed(s_gs.cameras[i], CAM_SPEED);
         Camera_SetSens (s_gs.cameras[i], 0.05f);
         g_reset_camera(s_gs.cameras[i]);
     }
