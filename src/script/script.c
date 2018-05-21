@@ -594,6 +594,12 @@ void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, scrip
 
     ret = PyObject_CallObject(callable, args);
     Py_DECREF(args);
+
+    Py_XDECREF(ret);
+    if(!ret) {
+        PyErr_Print();
+        exit(EXIT_FAILURE);
+    }
 }
 
 void S_Release(script_opaque_t obj)

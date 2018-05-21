@@ -16,7 +16,6 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
-#include <Python.h> //temp
 
 #include "event.h"
 #include "lib/public/khash.h"
@@ -123,16 +122,17 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc, bool r
 
     int idx;
     kv_indexof(struct handler_desc, vec, *desc, handlers_equal, idx);
-    if(idx != -1) {
-    
-        if(release_script_objs && desc->type == HANDLER_TYPE_SCRIPT) {
+    if(idx == -1)
+        return false;
+    struct handler_desc to_del = kv_A(vec, idx);
 
-            S_Release(desc->handler.as_script_callable);
-            S_Release(desc->user_arg); 
-        }
-        kv_del(struct handler_desc, vec, idx);
+    if(release_script_objs && to_del.type == HANDLER_TYPE_SCRIPT) {
+
+        S_Release(to_del.handler.as_script_callable);
+        S_Release(to_del.user_arg); 
     }
 
+    kv_del(struct handler_desc, vec, idx);
     kh_value(s_event_handler_table, k) = vec;
 
     return true;
