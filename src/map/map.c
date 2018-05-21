@@ -178,7 +178,7 @@ void M_SetChunkRenderMode(struct map *map, int chunk_r, int chunk_c, enum chunk_
             chunk_pos.z + (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE)/2.0f
         };
 
-        chunk->render_private_prebaked = R_GL_BakeChunk(chunk->render_private_tiles, chunk_center, &chunk_model,
+        chunk->render_private_prebaked = R_GL_TileBakeChunk(chunk->render_private_tiles, chunk_center, &chunk_model,
             TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, chunk->tiles, chunk_r, chunk_c);
     }
 }

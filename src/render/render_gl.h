@@ -31,7 +31,7 @@ struct vertex;
 struct tile;
 
 void R_GL_Init(struct render_private *priv, const char *shader, const struct vertex *vbuff);
-void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r, size_t c);
+void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r, size_t c);
 
 /* ---------------------------------------------------------------------------
  * Patch the vertices for a particular tile to have adjacency information
@@ -40,7 +40,7 @@ void R_GL_VerticesFromTile(const struct tile *tile, struct vertex *out, size_t r
  * 'turned on' by setting a vertex attribute.
  * ---------------------------------------------------------------------------
  */
-void R_GL_PatchTileVertsBlend(GLuint VBO, const struct tile *tiles, 
+void R_GL_TilePatchVertsBlend(GLuint VBO, const struct tile *tiles, 
                               int width, int height, int r, int c);
 
 #endif

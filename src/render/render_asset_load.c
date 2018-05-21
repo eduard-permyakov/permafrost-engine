@@ -137,7 +137,7 @@ void al_patch_vbuff_adjacency_info(GLuint VBO, const struct tile *tiles, size_t 
 {
     for(int r = 0; r < height; r++) {
         for(int c = 0; c < width; c++) {
-            R_GL_PatchTileVertsBlend(VBO, tiles, width, height, r, c);
+            R_GL_TilePatchVertsBlend(VBO, tiles, width, height, r, c);
         }
     }
 }
@@ -286,7 +286,7 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
             const struct tile *curr = &tiles[r * width + c];
             struct vertex *vert_base = &vbuff[ (r * width + c) * VERTS_PER_TILE ];
 
-            R_GL_VerticesFromTile(curr, vert_base, r, c);
+            R_GL_TileGetVertices(curr, vert_base, r, c);
         }
     }
 

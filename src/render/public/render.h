@@ -153,11 +153,22 @@ void   R_GL_DrawOBB(const struct entity *ent);
 void   R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color, float width);
 
 /* ---------------------------------------------------------------------------
+ * Writes the framebuffer region (0, 0, width, height) to a PPM file.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height);
+
+
+/*###########################################################################*/
+/* RENDER TILES                                                              */
+/*###########################################################################*/
+
+/* ---------------------------------------------------------------------------
  * Draws a colored outline around the tile specified by the descriptor.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rprivate, 
-                             mat4x4_t *model, int tiles_per_chunk_x, int tiles_per_chunk_z);
+void   R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivate, mat4x4_t *model, 
+                             int tiles_per_chunk_x, int tiles_per_chunk_z);
 
 /* ---------------------------------------------------------------------------
  * Will output a trinagle mesh for a particular tile. The output will be an 
@@ -166,8 +177,16 @@ void   R_GL_DrawTileSelected(const struct tile_desc *in, const void *chunk_rpriv
  * it will be a multiple of 3.
  * ---------------------------------------------------------------------------
  */
-int    R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivate, 
+int    R_GL_TileGetTriMesh(const struct tile_desc *in, const void *chunk_rprivate, 
                            mat4x4_t *model, int tiles_per_chunk_x, vec3_t out[]);
+
+/* ---------------------------------------------------------------------------
+ * Update a specific tile with new attributes and buffer the new vertex data.
+ * Will also update surrounding tiles with new adjacency data.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_TileUpdate(void *chunk_rprivate, int r, int c, int tiles_width, int tiles_height, 
+                       const struct tile *tiles);
 
 /* ---------------------------------------------------------------------------
  * Returns a new render context with a mesh that can be rendered much faster
@@ -175,27 +194,13 @@ int    R_GL_TriMeshForTile(const struct tile_desc *in, const void *chunk_rprivat
  * top surface and have all non-visible tile faces removed.
  * ---------------------------------------------------------------------------
  */
-void  *R_GL_BakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4x4_t *model,
-                      int tiles_per_chunk_x, int tiles_per_chunk_z, const struct tile *tiles,
-                      int chunk_r, int chunk_c);
-
-/* ---------------------------------------------------------------------------
- * Writes the framebuffer region (0, 0, width, height) to a PPM file.
- * ---------------------------------------------------------------------------
- */
-void   R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height);
-
-/* ---------------------------------------------------------------------------
- * Update a specific tile with new attributes and buffer the new vertex data.
- * Will also update surrounding tiles with new adjacency data.
- * ---------------------------------------------------------------------------
- */
-void   R_GL_UpdateTile(void *chunk_rprivate, int r, int c, int tiles_width, int tiles_height, 
-                       const struct tile *tiles);
+void  *R_GL_TileBakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4x4_t *model,
+                          int tiles_per_chunk_x, int tiles_per_chunk_z, const struct tile *tiles,
+                          int chunk_r, int chunk_c);
 
 
 /*###########################################################################*/
-/* MINIMAP                                                                   */
+/* RENDER MINIMAP                                                            */
 /*###########################################################################*/
 
 /* ---------------------------------------------------------------------------
