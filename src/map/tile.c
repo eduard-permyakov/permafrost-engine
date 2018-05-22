@@ -199,7 +199,7 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
         default: assert(0);
         }
 
-        vec3_t tri_neg_normal;
+        vec3_t tri_normal;
         vec3_t tri_point;
         vec3_t edge1, edge2;
 
@@ -220,13 +220,13 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
             tri_point = second_tri[0];
         }
 
-        PFM_Vec3_Cross(&edge1, &edge2, &tri_neg_normal);
-        PFM_Vec3_Normal(&tri_neg_normal, &tri_neg_normal);
-        assert(tri_neg_normal.y < 0.0f);
+        PFM_Vec3_Cross(&edge1, &edge2, &tri_normal);
+        PFM_Vec3_Normal(&tri_normal, &tri_normal);
+        assert(tri_normal.y < 0.0f);
 
         struct plane tri_plane = (struct plane){
             .point = tri_point,
-            .normal = tri_neg_normal
+            .normal = tri_normal
         };
 
         vec3_t ray_origin = (vec3_t){frac_width, (MAX_HEIGHT_LEVEL * Y_COORDS_PER_TILE) + 10, frac_height};

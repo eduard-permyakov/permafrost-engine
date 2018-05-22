@@ -72,10 +72,10 @@ void r_gl_draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, co
 
     vec3_t tr_dir, tl_dir, br_dir, bl_dir; 
 
-    PFM_Vec3_Sub(&cam_frust.ntr, &cam_frust.ftr, &tr_dir);
-    PFM_Vec3_Sub(&cam_frust.ntl, &cam_frust.ftl, &tl_dir);
-    PFM_Vec3_Sub(&cam_frust.nbr, &cam_frust.fbr, &br_dir);
-    PFM_Vec3_Sub(&cam_frust.nbl, &cam_frust.fbl, &bl_dir);
+    PFM_Vec3_Sub(&cam_frust.ftr, &cam_frust.ntr, &tr_dir);
+    PFM_Vec3_Sub(&cam_frust.ftl, &cam_frust.ntl, &tl_dir);
+    PFM_Vec3_Sub(&cam_frust.fbr, &cam_frust.nbr, &br_dir);
+    PFM_Vec3_Sub(&cam_frust.fbl, &cam_frust.nbl, &bl_dir);
 
     PFM_Vec3_Normal(&tr_dir, &tr_dir);
     PFM_Vec3_Normal(&tl_dir, &tl_dir);
@@ -88,13 +88,13 @@ void r_gl_draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, co
      * so that we can still draw a partial visible box. */
     float t;
     if(!C_RayIntersectsPlane(cam_pos, tr_dir, ground_plane, &t))
-        t = -(1e10);
+        t = (1e10);
     PFM_Vec3_Scale(&tr_dir, t, &tr_dir);
     PFM_Vec3_Add(&cam_pos, &tr_dir, &tr);
 
     bool result;
     if(!C_RayIntersectsPlane(cam_pos, tl_dir, ground_plane, &t))
-        t = -(1e10);
+        t = (1e10);
     PFM_Vec3_Scale(&tl_dir, t, &tl_dir);
     PFM_Vec3_Add(&cam_pos, &tl_dir, &tl);
 

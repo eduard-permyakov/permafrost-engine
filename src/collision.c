@@ -231,7 +231,7 @@ bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, 
 bool C_RayIntersectsPlane(vec3_t ray_origin, vec3_t ray_dir, struct plane plane, float *out_t)
 {
     float denom = PFM_Vec3_Dot(&ray_dir, &plane.normal);
-    if(denom > 0.0f) {
+    if(denom < 0.0f) {
 
         vec3_t rp; 
         PFM_Vec3_Sub(&plane.point, &ray_origin, &rp);
