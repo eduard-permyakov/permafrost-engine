@@ -158,6 +158,13 @@ void   R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color, float
  */
 void   R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height);
 
+/* ---------------------------------------------------------------------------
+ * Render a selection circle over the map surface.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawSelectionCirle(vec2_t xz, float radius, float width, vec3_t color, 
+                               const struct map *map);
+
 
 /*###########################################################################*/
 /* RENDER TILES                                                              */

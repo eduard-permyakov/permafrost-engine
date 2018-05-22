@@ -371,9 +371,9 @@ bool C_PointInsideTriangle2D(vec2_t point, vec2_t a, vec2_t b, vec2_t c)
     GLfloat dot12 = PFM_Vec2_Dot(&v1, &v2);
     
     /* Compute barycentric coordinates */
-    GLfloat invDenom = 1.0f / (dot00 * dot11 - dot01 * dot01);
-    GLfloat u = (dot11 * dot02 - dot01 * dot12) * invDenom;
-    GLfloat v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+    GLfloat inv_denom = 1.0f / (dot00 * dot11 - dot01 * dot01);
+    GLfloat u = (dot11 * dot02 - dot01 * dot12) * inv_denom;
+    GLfloat v = (dot00 * dot12 - dot01 * dot02) * inv_denom;
     
     return (u >= 0.0f) && (v >= 0.0f) && (u + v < 1.0f);
 }

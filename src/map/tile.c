@@ -169,8 +169,8 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
 
         vec3_t corners[] = {
             (vec3_t){0.0f, M_Tile_NWHeight(tile) * Y_COORDS_PER_TILE, 0.0f},
-            (vec3_t){0.0f, M_Tile_NEHeight(tile) * Y_COORDS_PER_TILE, 1.0f},
-            (vec3_t){1.0f, M_Tile_SWHeight(tile) * Y_COORDS_PER_TILE, 0.0f},
+            (vec3_t){1.0f, M_Tile_NEHeight(tile) * Y_COORDS_PER_TILE, 0.0f},
+            (vec3_t){0.0f, M_Tile_SWHeight(tile) * Y_COORDS_PER_TILE, 1.0f},
             (vec3_t){1.0f, M_Tile_SEHeight(tile) * Y_COORDS_PER_TILE, 1.0f}
         };
 
@@ -183,9 +183,8 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
         case TILETYPE_CORNER_CONVEX_SW:
         case TILETYPE_CORNER_CONCAVE_SW: 
             {
-                /* Clockwise order */
-                first_tri  = (vec3_t[3]){corners[0], corners[2], corners[3]};
-                second_tri = (vec3_t[3]){corners[0], corners[3], corners[1]};
+                first_tri  = (vec3_t[3]){corners[1], corners[3], corners[0]};
+                second_tri = (vec3_t[3]){corners[2], corners[0], corners[3]};
                 break;
             }
         case TILETYPE_CORNER_CONVEX_NW:
@@ -193,9 +192,8 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
         case TILETYPE_CORNER_CONVEX_SE:
         case TILETYPE_CORNER_CONCAVE_SE:
             {
-                /* Clockwise order */
-                first_tri  = (vec3_t[3]){corners[0], corners[2], corners[1]};
-                second_tri = (vec3_t[3]){corners[2], corners[3], corners[1]};
+                first_tri  = (vec3_t[3]){corners[0], corners[1], corners[2]};
+                second_tri = (vec3_t[3]){corners[3], corners[2], corners[1]};
                 break;
             }
         default: assert(0);
@@ -224,6 +222,7 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
 
         PFM_Vec3_Cross(&edge1, &edge2, &tri_neg_normal);
         PFM_Vec3_Normal(&tri_neg_normal, &tri_neg_normal);
+        assert(tri_neg_normal.y < 0.0f);
 
         struct plane tri_plane = (struct plane){
             .point = tri_point,

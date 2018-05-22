@@ -32,6 +32,7 @@
 #include "../anim/public/skeleton.h"
 #include "../anim/public/anim.h"
 #include "../ui.h"
+#include "../map/public/map.h"
 
 #include <GL/glew.h>
 
@@ -746,5 +747,64 @@ void R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height)
 
     fclose(file);
     free(data);
+}
+
+void R_GL_DrawSelectionCirle(vec2_t xz, float radius, float width, vec3_t color, 
+                             const struct map *map)
+{
+    GLint VAO, VBO;
+    GLint shader_prog;
+    GLuint loc;
+
+    const int NUM_VERTS = 32;
+    vec3_t vbuff[NUM_VERTS];
+
+    for(int i = 0; i < NUM_VERTS; i++) {
+
+        float theta = (2.0f * M_PI) * ((float)i/NUM_VERTS);
+        float x = xz.raw[0] +  radius * cos(theta);
+        float z = xz.raw[1] - (radius * sin(theta));
+
+        vbuff[i] = (vec3_t){x, M_HeightAtPoint(map, (vec2_t){x, z}) + 0.3, z};
+    }
+
+    mat4x4_t identity;
+    PFM_Mat4x4_Identity(&identity);
+
+    /* OpenGL setup */
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(0);  
+
+    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    glUseProgram(shader_prog);
+
+    /* Set uniforms */
+    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, identity.raw);
+
+    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
+    glUniform3fv(loc, 1, color.raw);
+
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+
+    float old_width;
+    glGetFloatv(GL_LINE_WIDTH, &old_width);
+    glLineWidth(width);
+
+    glBindVertexArray(VAO);
+    glDrawArrays(GL_LINE_LOOP, 0, ARR_SIZE(vbuff));
+
+    glLineWidth(old_width);
+
+cleanup:
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
 }
 
