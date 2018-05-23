@@ -42,11 +42,12 @@ struct entity{
     void        *render_private;
     void        *anim_private;
     /* For animated entities, this is the bind pose AABB. Each
-     * animation sample has its' own AABB. */
+     * animation sample also has its' own AABB. */
     struct aabb  identity_aabb;
 };
 
 void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
 uint32_t Entity_NewUID(void);
+void     Entity_CurrentOBB(const struct entity *ent, struct obb *out);
 
 #endif

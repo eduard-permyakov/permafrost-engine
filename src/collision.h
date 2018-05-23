@@ -44,10 +44,12 @@ struct frustum{
     vec3_t ftl, ftr, fbl, fbr;
 };
 
+/* Use 3 axes and 8 corners representation for OBBs. Our use case is primarily 
+ * OBB-frustum intersections and OBB-ray intersecions. The center + axes + half lengths 
+ * representation mainly benefits OBB-OBB tests. */
 struct obb{
-    vec3_t center;
     vec3_t axes[3];
-    float  half_lengths[3];
+    vec3_t corners[8];
 };
 
 enum volume_intersec_type{
@@ -63,10 +65,12 @@ bool C_RayIntersectsPlane(vec3_t ray_origin, vec3_t ray_dir, struct plane plane,
 /* Note that the following 2 routines do not give precise results. They are fast checks but 
  * sometimes give false positives. Howvever, this is still suitable for view frustum culling 
  * in some cases. */
-enum volume_intersec_type C_FrustumPointIntersection(const struct frustum *frustum, vec3_t point);
-enum volume_intersec_type C_FrustumAABBIntersection (const struct frustum *frustum, const struct aabb *aabb);
+enum volume_intersec_type C_FrustumPointIntersectionFast(const struct frustum *frustum, vec3_t point);
+enum volume_intersec_type C_FrustumAABBIntersectionFast (const struct frustum *frustum, const struct aabb *aabb);
+enum volume_intersec_type C_FrustumOBBIntersectionFast  (const struct frustum *frustum, const struct obb *obb);
 
 bool C_FrustumAABBIntersectionExact(const struct frustum *frustum, const struct aabb *aabb);
+bool C_FrustumOBBIntersectionExact(const struct frustum *frustum, const struct obb *obb);
 
 /* Note that the following assumes that AB is parallel to CD and BC is parallel to AD
  */

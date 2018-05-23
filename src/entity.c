@@ -18,6 +18,9 @@
  */
 
 #include "entity.h" 
+#include "anim/public/anim.h"
+
+#include <assert.h>
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -39,5 +42,49 @@ uint32_t Entity_NewUID(void)
 {
     static uint32_t uid = 0;
     return uid++;
+}
+
+void Entity_CurrentOBB(const struct entity *ent, struct obb *out)
+{
+    assert(ent->flags & ENTITY_FLAG_COLLISION);
+
+    const struct aabb *aabb;
+    if(ent->flags & ENTITY_FLAG_ANIMATED)
+        aabb = A_GetCurrPoseAABB(ent);
+    else
+        aabb = &ent->identity_aabb;
+
+    vec4_t identity_verts_homo[8] = {
+        {aabb->x_min, aabb->y_min, aabb->z_min, 1.0f},
+        {aabb->x_min, aabb->y_min, aabb->z_max, 1.0f},
+        {aabb->x_min, aabb->y_max, aabb->z_min, 1.0f},
+        {aabb->x_min, aabb->y_max, aabb->z_max, 1.0f},
+        {aabb->x_max, aabb->y_min, aabb->z_min, 1.0f},
+        {aabb->x_max, aabb->y_min, aabb->z_max, 1.0f},
+        {aabb->x_max, aabb->y_max, aabb->z_min, 1.0f},
+        {aabb->x_max, aabb->y_max, aabb->z_max, 1.0f},
+    };
+
+    mat4x4_t model;
+    Entity_ModelMatrix(ent, &model);
+
+    vec4_t obb_verts_homo[8];
+    for(int i = 0; i < 8; i++) {
+        PFM_Mat4x4_Mult4x1(&model, identity_verts_homo + i, obb_verts_homo + i);
+        out->corners[i] = (vec3_t){
+            obb_verts_homo[i].x / obb_verts_homo[i].w,
+            obb_verts_homo[i].y / obb_verts_homo[i].w,
+            obb_verts_homo[i].z / obb_verts_homo[i].w,
+        };
+    }
+
+    vec3_t axis0, axis1, axis2;   
+    PFM_Vec3_Sub(&out->corners[4], &out->corners[0], &axis0);
+    PFM_Vec3_Sub(&out->corners[2], &out->corners[0], &axis1);
+    PFM_Vec3_Sub(&out->corners[1], &out->corners[0], &axis2);
+
+    PFM_Vec3_Normal(&axis0, &out->axes[0]);
+    PFM_Vec3_Normal(&axis1, &out->axes[1]);
+    PFM_Vec3_Normal(&axis2, &out->axes[2]);
 }
 

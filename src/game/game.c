@@ -29,6 +29,7 @@
 #include "../asset_load.h"
 #include "../event.h"
 #include "../config.h"
+#include "../collision.h"
 
 #include <assert.h> 
 
@@ -71,7 +72,10 @@ static void g_reset(void)
         struct entity *ent = kh_value(s_gs.active, k);
         AL_EntityFree(ent);
     }
+
     kh_clear(entity, s_gs.active);
+    kv_reset(s_gs.visible);
+    kv_reset(s_gs.selected);
 
     if(s_gs.map) {
         M_Raycast_Uninstall();
@@ -116,6 +120,8 @@ static void g_init_map(void)
 bool G_Init(void)
 {
     s_gs.active = kh_init(entity);
+    kv_init(s_gs.visible);
+    kv_init(s_gs.selected);
 
     if(!s_gs.active)
         return false;
@@ -213,29 +219,52 @@ void G_Shutdown(void)
 
     assert(s_gs.active);
     kh_destroy(entity, s_gs.active);
+    kv_destroy(s_gs.visible);
+    kv_destroy(s_gs.selected);
+}
+
+void G_Update(void)
+{
+    /* Build the set of currently visible entities. Note that there may be some false positives due to 
+       using the fast frustum cull. */
+    kv_reset(s_gs.visible);
+
+    struct frustum frust;
+    Camera_MakeFrustum(ACTIVE_CAM, &frust);
+
+    for(khiter_t k = kh_begin(s_gs.active); k != kh_end(s_gs.active); ++k) {
+
+        if(!kh_exist(s_gs.active, k))
+            continue;
+
+        struct entity *curr = kh_value(s_gs.active, k);
+
+        /* We can get away with using un-rotated aabb for frustum culling */
+        struct obb obb;
+        Entity_CurrentOBB(curr, &obb);
+
+        if(C_FrustumOBBIntersectionFast(&frust, &obb) != VOLUME_INTERSEC_OUTSIDE)
+            kv_push(struct entity *, s_gs.visible, curr);
+    }
 }
 
 void G_Render(void)
 {
-    assert(s_gs.active);
+    if(s_gs.map)
+        M_RenderVisibleMap(s_gs.map, ACTIVE_CAM);
 
-    if(s_gs.map) M_RenderVisibleMap(s_gs.map, ACTIVE_CAM);
-
-    khiter_t k;
-    for(k = kh_begin(s_gs.active); k != kh_end(s_gs.active); ++k) {
+    for(int i = 0; i < kv_size(s_gs.visible); i++) {
     
-        if(!kh_exist(s_gs.active, k))
-            continue;
-        struct entity *curr = kh_value(s_gs.active, k);
+        struct entity *curr = kv_A(s_gs.visible, i);
 
-        /* TODO: Currently, we perform animation right before rendering due to 'A_Update' setting
-         * some uniforms for the shader. Investigate if it's better to perform the animation for all
-         * entities at once and just set the uniform right before rendering.  */
-        if(curr->flags & ENTITY_FLAG_ANIMATED) A_Update(curr);
+        if(curr->flags & ENTITY_FLAG_ANIMATED)
+            A_Update(curr);
 
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
         R_GL_Draw(curr->render_private, &model);
+
+        R_GL_DrawOBB(curr);
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_3D, NULL, ES_ENGINE);

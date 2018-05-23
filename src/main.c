@@ -337,6 +337,7 @@ int main(int argc, char **argv)
 
         process_sdl_events();
         E_ServiceQueue();
+        G_Update();
         UI_ProcessText();
         render();
 

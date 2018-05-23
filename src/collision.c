@@ -153,37 +153,26 @@ static bool ranges_overlap(struct range *a, struct range *b)
     return false;
 }
 
-static bool separating_axis_exists(vec3_t axis, const struct frustum *frustum, const struct aabb *aabb)
+static bool separating_axis_exists(vec3_t axis, const struct frustum *frustum, const vec3_t cuboid_corners[8])
 {
-    struct range frust_range, aabb_range;
+    struct range frust_range, cuboid_range;
 
     float frust_axis_dots[8];
-    float aabb_axis_dots[8];
+    float cuboid_axis_dots[8];
 
     const vec3_t *frust_points[8] = {&frustum->ntl, &frustum->ntr, &frustum->nbl, &frustum->nbr,
                                      &frustum->ftl, &frustum->ftr, &frustum->fbl, &frustum->fbr};
-
-    vec3_t aabb_points[8] = {
-        (vec3_t){aabb->x_min, aabb->y_min, aabb->z_min},
-        (vec3_t){aabb->x_min, aabb->y_min, aabb->z_max},
-        (vec3_t){aabb->x_min, aabb->y_max, aabb->z_min},
-        (vec3_t){aabb->x_min, aabb->y_max, aabb->z_max},
-        (vec3_t){aabb->x_max, aabb->y_min, aabb->z_min},
-        (vec3_t){aabb->x_max, aabb->y_min, aabb->z_max},
-        (vec3_t){aabb->x_max, aabb->y_max, aabb->z_min},
-        (vec3_t){aabb->x_max, aabb->y_max, aabb->z_max},
-    };
 
     for(int i = 0; i < 8; i++)
         frust_axis_dots[i] = PFM_Vec3_Dot((vec3_t*)frust_points[i], &axis);
 
     for(int i = 0; i < 8; i++)
-        aabb_axis_dots[i] = PFM_Vec3_Dot(&aabb_points[i], &axis);
+        cuboid_axis_dots[i] = PFM_Vec3_Dot((vec3_t*)&cuboid_corners[i], &axis);
 
     frust_range = (struct range){arr_min(frust_axis_dots, 8), arr_max(frust_axis_dots, 8)}; 
-    aabb_range  = (struct range){arr_min(aabb_axis_dots, 8),  arr_max(aabb_axis_dots, 8)};
+    cuboid_range  = (struct range){arr_min(cuboid_axis_dots, 8),  arr_max(cuboid_axis_dots, 8)};
 
-    return !ranges_overlap(&frust_range, &aabb_range);
+    return !ranges_overlap(&frust_range, &cuboid_range);
 }
 
 /*****************************************************************************/
@@ -242,7 +231,7 @@ bool C_RayIntersectsPlane(vec3_t ray_origin, vec3_t ray_dir, struct plane plane,
     return false;
 }
 
-enum volume_intersec_type C_FrustrumPointIntersection(const struct frustum *frustum, vec3_t point)
+enum volume_intersec_type C_FrustrumPointIntersectionFast(const struct frustum *frustum, vec3_t point)
 {
     const struct plane *planes[] = {&frustum->top, &frustum->bot, &frustum->left, 
                                     &frustum->right, &frustum->near, &frustum->far};
@@ -259,7 +248,47 @@ enum volume_intersec_type C_FrustrumPointIntersection(const struct frustum *frus
 /* Based on the algorithm outlined here:
  * http://cgvr.informatik.uni-bremen.de/teaching/cg_literatur/lighthouse3d_view_frustum_culling/index.html
  */
-enum volume_intersec_type C_FrustumAABBIntersection(const struct frustum *frustum, const struct aabb *aabb)
+enum volume_intersec_type C_FrustumAABBIntersectionFast(const struct frustum *frustum, const struct aabb *aabb)
+{
+    const struct plane *planes[] = {&frustum->top, &frustum->bot, &frustum->left, 
+                                    &frustum->right, &frustum->near, &frustum->far};
+
+    const vec3_t corners[8] = {
+        (vec3_t){aabb->x_min, aabb->y_min, aabb->z_min},
+        (vec3_t){aabb->x_min, aabb->y_min, aabb->z_max},
+        (vec3_t){aabb->x_min, aabb->y_max, aabb->z_min},
+        (vec3_t){aabb->x_min, aabb->y_max, aabb->z_max},
+        (vec3_t){aabb->x_max, aabb->y_min, aabb->z_min},
+        (vec3_t){aabb->x_max, aabb->y_min, aabb->z_max},
+        (vec3_t){aabb->x_max, aabb->y_max, aabb->z_min},
+        (vec3_t){aabb->x_max, aabb->y_max, aabb->z_max},
+    };
+
+    for(int i = 0; i < ARR_SIZE(planes); i++) {
+
+        int corners_in = 0, corners_out = 0;
+
+        /* Break as soon as we know the box has corners both inside and outside 
+         * the frustum */
+        for(int k = 0; k < 8 && (corners_in == 0 || corners_out == 0); k++) {
+        
+            if(plane_point_signed_distance(planes[i], corners[k]) < 0.0f)
+                corners_out++;
+            else
+                corners_in++;
+        }
+
+        /* All corners are outside */
+        if(corners_in == 0)
+            return VOLUME_INTERSEC_OUTSIDE;
+        else if(corners_out > 0)
+            return VOLUME_INTERSEC_INTERSECTION;
+    }
+
+    return VOLUME_INTERSEC_INSIDE;
+}
+
+enum volume_intersec_type C_FrustumOBBIntersectionFast(const struct frustum *frustum, const struct obb *obb)
 {
     const struct plane *planes[] = {&frustum->top, &frustum->bot, &frustum->left, 
                                     &frustum->right, &frustum->near, &frustum->far};
@@ -268,22 +297,11 @@ enum volume_intersec_type C_FrustumAABBIntersection(const struct frustum *frustu
 
         int corners_in = 0, corners_out = 0;
 
-        const vec3_t corners[8] = {
-            (vec3_t){aabb->x_min, aabb->y_min, aabb->z_min},
-            (vec3_t){aabb->x_min, aabb->y_min, aabb->z_max},
-            (vec3_t){aabb->x_min, aabb->y_max, aabb->z_min},
-            (vec3_t){aabb->x_min, aabb->y_max, aabb->z_max},
-            (vec3_t){aabb->x_max, aabb->y_min, aabb->z_min},
-            (vec3_t){aabb->x_max, aabb->y_min, aabb->z_max},
-            (vec3_t){aabb->x_max, aabb->y_max, aabb->z_min},
-            (vec3_t){aabb->x_max, aabb->y_max, aabb->z_max},
-        };
-
         /* Break as soon as we know the box has corners both inside and outside 
          * the frustum */
         for(int k = 0; k < 8 && (corners_in == 0 || corners_out == 0); k++) {
         
-            if(plane_point_signed_distance(planes[i], corners[k]) < 0.0f)
+            if(plane_point_signed_distance(planes[i], obb->corners[k]) < 0.0f)
                 corners_out++;
             else
                 corners_in++;
@@ -306,10 +324,21 @@ bool C_FrustumAABBIntersectionExact(const struct frustum *frustum, const struct 
         (vec3_t){0.0f, 1.0f, 0.0f}, 
         (vec3_t){0.0f, 0.0f, 1.0f}
     };
-    
+
+    vec3_t aabb_corners[8] = {
+        (vec3_t){aabb->x_min, aabb->y_min, aabb->z_min},
+        (vec3_t){aabb->x_min, aabb->y_min, aabb->z_max},
+        (vec3_t){aabb->x_min, aabb->y_max, aabb->z_min},
+        (vec3_t){aabb->x_min, aabb->y_max, aabb->z_max},
+        (vec3_t){aabb->x_max, aabb->y_min, aabb->z_min},
+        (vec3_t){aabb->x_max, aabb->y_min, aabb->z_max},
+        (vec3_t){aabb->x_max, aabb->y_max, aabb->z_min},
+        (vec3_t){aabb->x_max, aabb->y_max, aabb->z_max},
+    };
+
     for(int i = 0; i < ARR_SIZE(aabb_axes); i++) {
     
-        if(separating_axis_exists(aabb_axes[i], frustum, aabb))
+        if(separating_axis_exists(aabb_axes[i], frustum, aabb_corners))
             return false;
     }
 
@@ -324,7 +353,7 @@ bool C_FrustumAABBIntersectionExact(const struct frustum *frustum, const struct 
 
     for(int i = 0; i < ARR_SIZE(frust_axes); i++) {
     
-        if(separating_axis_exists(frust_axes[i], frustum, aabb)) 
+        if(separating_axis_exists(frust_axes[i], frustum, aabb_corners)) 
             return false;
     }
 
@@ -336,7 +365,45 @@ bool C_FrustumAABBIntersectionExact(const struct frustum *frustum, const struct 
 
     for(int i = 0; i < ARR_SIZE(axes_cross_products); i++) {
     
-        if(separating_axis_exists(axes_cross_products[i], frustum, aabb)) 
+        if(separating_axis_exists(axes_cross_products[i], frustum, aabb_corners)) 
+            return false;
+    }
+
+    return true;
+}
+
+bool C_FrustumOBBIntersectionExact(const struct frustum *frustum, const struct obb *obb)
+{
+    for(int i = 0; i < ARR_SIZE(obb->axes); i++) {
+    
+        if(separating_axis_exists(obb->axes[i], frustum, obb->corners))
+            return false;
+    }
+
+    vec3_t frust_axes[6] = {
+        frustum->near.normal,
+        frustum->far.normal,
+        frustum->top.normal,
+        frustum->bot.normal,
+        frustum->left.normal,
+        frustum->right.normal
+    };
+
+    for(int i = 0; i < ARR_SIZE(frust_axes); i++) {
+    
+        if(separating_axis_exists(frust_axes[i], frustum, obb->corners)) 
+            return false;
+    }
+
+    vec3_t axes_cross_products[ARR_SIZE(obb->axes) * ARR_SIZE(frust_axes)];
+    for(int i = 0; i < ARR_SIZE(obb->axes); i++) {
+        for(int j = 0; j < ARR_SIZE(frust_axes); j++)
+            PFM_Vec3_Cross((vec3_t*)&obb->axes[i], &frust_axes[j], &axes_cross_products[i * ARR_SIZE(obb->axes) + j]);
+    }
+
+    for(int i = 0; i < ARR_SIZE(axes_cross_products); i++) {
+    
+        if(separating_axis_exists(axes_cross_products[i], frustum, obb->corners)) 
             return false;
     }
 

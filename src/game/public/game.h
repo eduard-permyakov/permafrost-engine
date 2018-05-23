@@ -41,7 +41,9 @@ bool G_NewGameWithMap(const char *dir, const char *pfmap);
 bool G_NewGameWithMapString(const char *mapstr);
 void G_Shutdown(void);
 
+void G_Update(void);
 void G_Render(void);
+
 void G_SetMapRenderMode(enum chunk_render_mode mode);
 void G_SetMinimapPos(float x, float y);
 bool G_MouseOverMinimap(void);

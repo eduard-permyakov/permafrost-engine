@@ -21,16 +21,31 @@
 #define GAMESTATE_H
 
 #include "../lib/public/khash.h"
+#include "../lib/public/kvec.h"
 
 KHASH_MAP_INIT_INT(entity, struct entity *)
 
 #define NUM_CAMERAS 2
 
 struct gamestate{
-    struct map         *map;
-    int                 active_cam_idx;
-    struct camera      *cameras[NUM_CAMERAS];
-    khash_t(entity)    *active;
+    struct map             *map;
+    int                     active_cam_idx;
+    struct camera          *cameras[NUM_CAMERAS];
+    /*-------------------------------------------------------------------------
+     * The set of all game entities currently taking part in the game simulation.
+     *-------------------------------------------------------------------------
+     */
+    khash_t(entity)        *active;
+    /*-------------------------------------------------------------------------
+     * The set of entities potentially visible by the active camera.
+     *-------------------------------------------------------------------------
+     */
+    kvec_t(struct entity*)  visible;
+    /*-------------------------------------------------------------------------
+     * The player's current unit selection.
+     *-------------------------------------------------------------------------
+     */
+    kvec_t(struct entity*)  selected;
 };
 
 #endif
