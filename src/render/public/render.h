@@ -162,8 +162,8 @@ void   R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height);
  * Render a selection circle over the map surface.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawSelectionCirle(vec2_t xz, float radius, float width, vec3_t color, 
-                               const struct map *map);
+void   R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t color, 
+                                const struct map *map);
 
 
 /*###########################################################################*/

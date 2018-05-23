@@ -51,6 +51,8 @@ for i in range(0, 4):
         knight = pf.AnimEntity("assets/models/knight", "knight.pfobj", "Knight", "Idle")
         knight.pos = coord(-40.0 - (10 * i), -75.0 - (10 * j))
         knight.scale = [0.7, 0.7, 0.7]
+        knight.selectable = True
+        knight.selection_radius = 3.25
         knight.activate()
         knights.append(knight)
 

@@ -190,6 +190,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     ret->scale =    (vec3_t){1.0f, 1.0f, 1.0f};
     ret->pos =      (vec3_t){1.0f, 1.0f, 1.0f};
     ret->rotation = (quat_t){0.0f, 0.0f, 0.0f, 1.0f};
+    ret->selection_radius = 0.0f;
 
     if(!R_AL_InitPrivFromStream(&header, base_path, stream, ret->render_private))
         goto fail_init;

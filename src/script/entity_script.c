@@ -44,6 +44,10 @@ static PyObject *PyEntity_get_scale(PyEntityObject *self, void *closure);
 static int       PyEntity_set_scale(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_rotation(PyEntityObject *self, void *closure);
 static int       PyEntity_set_rotation(PyEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyEntity_get_selectable(PyEntityObject *self, void *closure);
+static int       PyEntity_set_selectable(PyEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyEntity_get_selection_radius(PyEntityObject *self, void *closure);
+static int       PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_activate(PyEntityObject *self);
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args);
@@ -96,6 +100,14 @@ static PyGetSetDef PyEntity_getset[] = {
     {"rotation",
     (getter)PyEntity_get_rotation, (setter)PyEntity_set_rotation,
     "XYZW quaternion for rotaion about local origin.",
+    NULL},
+    {"selectable",
+    (getter)PyEntity_get_selectable, (setter)PyEntity_set_selectable,
+    "Flag indicating whether this entity can be selected with the mouse.",
+    NULL},
+    {"selection_radius",
+    (getter)PyEntity_get_selection_radius, (setter)PyEntity_set_selection_radius,
+    "Radius (in OpenGL coordinates) of the unit selection circle for this entity.",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -327,6 +339,46 @@ static int PyEntity_set_rotation(PyEntityObject *self, PyObject *value, void *cl
         self->ent->rotation.raw[i] = PyFloat_AsDouble(item);
     }
 
+    return 0;
+}
+
+static PyObject *PyEntity_get_selectable(PyEntityObject *self, void *closure)
+{
+    if(self->ent->flags & ENTITY_FLAG_SELECTABLE)
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
+}
+
+static int PyEntity_set_selectable(PyEntityObject *self, PyObject *value, void *closure)
+{
+    int result = PyObject_IsTrue(value);
+
+    if(-1 == result) {
+        PyErr_SetString(PyExc_TypeError, "Argument must evaluate to True or False.");
+        return -1;
+    }else if(1 == result) {
+        self->ent->flags |= ENTITY_FLAG_SELECTABLE;
+    }else {
+        self->ent->flags &= ~ENTITY_FLAG_SELECTABLE;
+    }
+
+    return 0;
+}
+
+static PyObject *PyEntity_get_selection_radius(PyEntityObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->ent->selection_radius);
+}
+
+static int PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
+        return -1;
+    }
+
+    self->ent->selection_radius = PyFloat_AsDouble(value);
     return 0;
 }
 

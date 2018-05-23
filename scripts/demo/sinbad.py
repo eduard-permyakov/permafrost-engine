@@ -26,6 +26,8 @@ class Sinbad(pf.AnimEntity):
         self.anim_map = ["Dance", "JumpLoop"]
         super(Sinbad, self).__init__(path, pfobj, name, self.anim_map[self.anim_idx])
         self.register(EVENT_SINBAD_TOGGLE_ANIM, Sinbad.on_anim_toggle, self)
+        self.selectable = True
+        self.selection_radius = 3.25
     
     def __del__(self):
         self.unregister(EVENT_SINBAD_TOGGLE_ANIM, Sinbad.on_anim_toggle)

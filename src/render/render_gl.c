@@ -749,24 +749,31 @@ void R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height)
     free(data);
 }
 
-void R_GL_DrawSelectionCirle(vec2_t xz, float radius, float width, vec3_t color, 
-                             const struct map *map)
+void R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t color, 
+                              const struct map *map)
 {
     GLint VAO, VBO;
     GLint shader_prog;
     GLuint loc;
 
-    const int NUM_VERTS = 32;
-    vec3_t vbuff[NUM_VERTS];
+    const int NUM_SAMPLES = 48;
+    vec3_t vbuff[NUM_SAMPLES * 2 + 2];
 
-    for(int i = 0; i < NUM_VERTS; i++) {
+    for(int i = 0; i < NUM_SAMPLES * 2; i += 2) {
 
-        float theta = (2.0f * M_PI) * ((float)i/NUM_VERTS);
-        float x = xz.raw[0] +  radius * cos(theta);
-        float z = xz.raw[1] - (radius * sin(theta));
+        float theta = (2.0f * M_PI) * ((float)i/NUM_SAMPLES);
 
-        vbuff[i] = (vec3_t){x, M_HeightAtPoint(map, (vec2_t){x, z}) + 0.3, z};
+        float x_near = xz.raw[0] + radius * cos(theta);
+        float z_near = xz.raw[1] - radius * sin(theta);
+
+        float x_far = xz.raw[0] + (radius + width) * cos(theta);
+        float z_far = xz.raw[1] - (radius + width) * sin(theta);
+
+        vbuff[i]     = (vec3_t){x_near, M_HeightAtPoint(map, (vec2_t){x_near, z_near}) + 0.1, z_near};
+        vbuff[i + 1] = (vec3_t){x_far,  M_HeightAtPoint(map, (vec2_t){x_far,  z_far }) + 0.1, z_far };
     }
+    vbuff[NUM_SAMPLES * 2]     = vbuff[0];
+    vbuff[NUM_SAMPLES * 2 + 1] = vbuff[1];
 
     mat4x4_t identity;
     PFM_Mat4x4_Identity(&identity);
@@ -799,7 +806,7 @@ void R_GL_DrawSelectionCirle(vec2_t xz, float radius, float width, vec3_t color,
     glLineWidth(width);
 
     glBindVertexArray(VAO);
-    glDrawArrays(GL_LINE_LOOP, 0, ARR_SIZE(vbuff));
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, ARR_SIZE(vbuff));
 
     glLineWidth(old_width);
 

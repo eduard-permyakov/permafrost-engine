@@ -220,9 +220,9 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
             tri_point = second_tri[0];
         }
 
-        PFM_Vec3_Cross(&edge1, &edge2, &tri_normal);
+        PFM_Vec3_Cross(&edge2, &edge1, &tri_normal);
         PFM_Vec3_Normal(&tri_normal, &tri_normal);
-        assert(tri_normal.y < 0.0f);
+        assert(tri_normal.y > 0.0f);
 
         struct plane tri_plane = (struct plane){
             .point = tri_point,

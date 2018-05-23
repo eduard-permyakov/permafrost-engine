@@ -39,6 +39,7 @@
 #define CAM_SPEED           0.20f
 
 #define ACTIVE_CAM          (s_gs.cameras[s_gs.active_cam_idx])
+#define DEFAULT_SEL_COLOR   (vec3_t){0.95f, 0.95f, 0.95f}
 
 /* By default, the minimap is in the bottom left corner with 10 px padding. */
 const static vec2_t DEFAULT_MINIMAP_POS = {
@@ -265,6 +266,10 @@ void G_Render(void)
         R_GL_Draw(curr->render_private, &model);
 
         R_GL_DrawOBB(curr);
+
+        if(curr->flags & ENTITY_FLAG_SELECTABLE) {
+            R_GL_DrawSelectionCircle((vec2_t){curr->pos.x, curr->pos.z}, curr->selection_radius, 0.4f, DEFAULT_SEL_COLOR, s_gs.map);
+        }
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_3D, NULL, ES_ENGINE);

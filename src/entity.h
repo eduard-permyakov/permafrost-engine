@@ -30,6 +30,7 @@
 
 #define ENTITY_FLAG_ANIMATED    (1 << 0)
 #define ENTITY_FLAG_COLLISION   (1 << 1)
+#define ENTITY_FLAG_SELECTABLE  (1 << 2)
 
 struct entity{
     uint32_t     uid;
@@ -44,6 +45,7 @@ struct entity{
     /* For animated entities, this is the bind pose AABB. Each
      * animation sample also has its' own AABB. */
     struct aabb  identity_aabb;
+    float        selection_radius;
 };
 
 void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
