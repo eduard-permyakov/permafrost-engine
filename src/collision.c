@@ -19,10 +19,19 @@
 
 #include "collision.h"
 #include <assert.h>
+#include <float.h>
 
-#define MIN(a, b)   ((a) < (b) ? (a) : (b))
-#define MAX(a, b)   ((a) > (b) ? (a) : (b))
-#define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+#define MIN(a, b)     ((a) < (b) ? (a) : (b))
+#define MAX(a, b)     ((a) > (b) ? (a) : (b))
+#define MAX3(a, b, c) (MAX(MAX(a, b), c))
+#define ARR_SIZE(a)   (sizeof(a)/sizeof(a[0]))
+
+#define SWAP(type, a, b) \
+    do{ \
+        type tmp = a; \
+        a = b; \
+        b = tmp; \
+    }while(0)
 
 #define EPSILON (1.0f / 1000000.0f)
 
@@ -150,7 +159,18 @@ static bool ranges_overlap(struct range *a, struct range *b)
     if(b->end >= a->begin && b->end <= a->end)
         return true;
 
+    if(a->begin >= b->begin && a->begin <= b->end)
+        return true;
+
+    if(a->end >= b->begin && a->end <= b->end)
+        return true;
+
     return false;
+}
+
+static bool point_in_range(float point, struct range *r)
+{
+    return (point >= r->begin && point <= r->end);
 }
 
 static bool separating_axis_exists(vec3_t axis, const struct frustum *frustum, const vec3_t cuboid_corners[8])
@@ -205,6 +225,44 @@ bool C_RayIntersectsAABB(vec3_t ray_origin, vec3_t ray_dir, struct aabb aabb, fl
      return true;
 }
 
+bool C_RayIntersectsOBB(vec3_t ray_origin, vec3_t ray_dir, struct obb obb, float *out_t)
+{
+    float tmin = 0;
+    float tmax = FLT_MAX;
+
+    vec3_t d;
+    PFM_Vec3_Sub(&obb.center, &ray_origin, &d);
+
+    for (int i = 0; i < 3; ++i) {
+
+        GLfloat DA = PFM_Vec3_Dot(&ray_dir, &obb.axes[i]); 
+        GLfloat dA = PFM_Vec3_Dot(&d, &obb.axes[i]);
+
+        if(fabs(DA) < EPSILON) {
+
+            /* Ray is parallel to the slabs - check that the ray origin is inside the slab. */
+            if(fabs(dA - tmin * DA) > obb.half_lengths[i] || fabs(dA - tmax * DA) > obb.half_lengths[i])
+                return false;
+        }else {
+            /* Otherwise find the entry and exit points into the slab. For there to be intersection, the 
+             * time range between entry and exit must overlap with the previously found time range. */
+
+            GLfloat es = (DA > 0.0) ? obb.half_lengths[i] : -obb.half_lengths[i];
+            GLfloat invDA = 1.0 / DA;
+
+            GLfloat t1 = (dA - es) * invDA;
+            GLfloat t2 = (dA + es) * invDA;
+
+            if(t1 > tmin) tmin = t1;
+            if(t2 < tmax) tmax = t2;
+            if(tmin > tmax) return false;
+        }
+    }
+    
+    *out_t = tmin;
+    return true;
+}
+
 bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, size_t n)
 {
     assert(n % 3 == 0);
@@ -220,12 +278,15 @@ bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, 
 bool C_RayIntersectsPlane(vec3_t ray_origin, vec3_t ray_dir, struct plane plane, float *out_t)
 {
     float denom = PFM_Vec3_Dot(&ray_dir, &plane.normal);
-    if(denom < 0.0f) {
+    if(fabs(denom) > EPSILON) {
 
         vec3_t rp; 
         PFM_Vec3_Sub(&plane.point, &ray_origin, &rp);
-        *out_t = PFM_Vec3_Dot(&rp, &plane.normal) / denom;
-        return true;
+        float t = PFM_Vec3_Dot(&rp, &plane.normal) / denom;
+        if(t >= 0.0f) {
+            *out_t = t;
+            return true;
+        }
     }
 
     return false;
@@ -357,15 +418,28 @@ bool C_FrustumAABBIntersectionExact(const struct frustum *frustum, const struct 
             return false;
     }
 
-    vec3_t axes_cross_products[ARR_SIZE(aabb_axes) * ARR_SIZE(frust_axes)];
+    vec3_t frust_edges[6];
+    PFM_Vec3_Sub((vec3_t*)&frustum->ntr, (vec3_t*)&frustum->ntl, &frust_edges[0]);
+    PFM_Vec3_Sub((vec3_t*)&frustum->ntl, (vec3_t*)&frustum->nbl, &frust_edges[1]);
+    PFM_Vec3_Sub((vec3_t*)&frustum->ftl, (vec3_t*)&frustum->ntl, &frust_edges[2]);
+    PFM_Vec3_Sub((vec3_t*)&frustum->ftr, (vec3_t*)&frustum->ntr, &frust_edges[3]);
+    PFM_Vec3_Sub((vec3_t*)&frustum->fbr, (vec3_t*)&frustum->nbr, &frust_edges[4]);
+    PFM_Vec3_Sub((vec3_t*)&frustum->fbl, (vec3_t*)&frustum->nbl, &frust_edges[5]);
+
+    /* For AABBs, edge axes and normals are the same */
+    vec3_t edge_cross_products[ARR_SIZE(aabb_axes) * ARR_SIZE(frust_edges)];
+
     for(int i = 0; i < ARR_SIZE(aabb_axes); i++) {
-        for(int j = 0; j < ARR_SIZE(frust_axes); j++)
-            PFM_Vec3_Cross(&aabb_axes[i], &frust_axes[j], &axes_cross_products[i * ARR_SIZE(aabb_axes) + j]);
+        for(int j = 0; j < ARR_SIZE(frust_edges); j++) {
+
+            PFM_Vec3_Cross(&aabb_axes[i], &frust_edges[j], &edge_cross_products[i * ARR_SIZE(frust_edges) + j]);
+            PFM_Vec3_Normal(&edge_cross_products[i * ARR_SIZE(frust_edges) + j], &edge_cross_products[i * ARR_SIZE(frust_edges) + j]);
+        }
     }
 
-    for(int i = 0; i < ARR_SIZE(axes_cross_products); i++) {
+    for(int i = 0; i < ARR_SIZE(edge_cross_products); i++) {
     
-        if(separating_axis_exists(axes_cross_products[i], frustum, aabb_corners)) 
+        if(separating_axis_exists(edge_cross_products[i], frustum, aabb_corners)) 
             return false;
     }
 
@@ -380,8 +454,8 @@ bool C_FrustumOBBIntersectionExact(const struct frustum *frustum, const struct o
             return false;
     }
 
-    vec3_t frust_axes[6] = {
-        frustum->near.normal,
+    /* Near and far planes assumed to be parallel */
+    vec3_t frust_normals[5] = {
         frustum->far.normal,
         frustum->top.normal,
         frustum->bot.normal,
@@ -389,21 +463,34 @@ bool C_FrustumOBBIntersectionExact(const struct frustum *frustum, const struct o
         frustum->right.normal
     };
 
-    for(int i = 0; i < ARR_SIZE(frust_axes); i++) {
+    for(int i = 0; i < ARR_SIZE(frust_normals); i++) {
     
-        if(separating_axis_exists(frust_axes[i], frustum, obb->corners)) 
+        if(separating_axis_exists(frust_normals[i], frustum, obb->corners))
             return false;
     }
 
-    vec3_t axes_cross_products[ARR_SIZE(obb->axes) * ARR_SIZE(frust_axes)];
+    vec3_t frust_edges[6];
+    PFM_Vec3_Sub((vec3_t*)&frustum->ntr, (vec3_t*)&frustum->ntl, &frust_edges[0]);
+    PFM_Vec3_Sub((vec3_t*)&frustum->ntl, (vec3_t*)&frustum->nbl, &frust_edges[1]);
+    PFM_Vec3_Sub((vec3_t*)&frustum->ftl, (vec3_t*)&frustum->ntl, &frust_edges[2]);
+    PFM_Vec3_Sub((vec3_t*)&frustum->ftr, (vec3_t*)&frustum->ntr, &frust_edges[3]);
+    PFM_Vec3_Sub((vec3_t*)&frustum->fbr, (vec3_t*)&frustum->nbr, &frust_edges[4]);
+    PFM_Vec3_Sub((vec3_t*)&frustum->fbl, (vec3_t*)&frustum->nbl, &frust_edges[5]);
+
+    /* For OBBs, edge axes and normals are the same */
+    vec3_t edge_cross_products[ARR_SIZE(obb->axes) * ARR_SIZE(frust_edges)];
+
     for(int i = 0; i < ARR_SIZE(obb->axes); i++) {
-        for(int j = 0; j < ARR_SIZE(frust_axes); j++)
-            PFM_Vec3_Cross((vec3_t*)&obb->axes[i], &frust_axes[j], &axes_cross_products[i * ARR_SIZE(obb->axes) + j]);
+        for(int j = 0; j < ARR_SIZE(frust_edges); j++) {
+
+            PFM_Vec3_Cross((vec3_t*)&obb->axes[i], &frust_edges[j], &edge_cross_products[i * ARR_SIZE(frust_edges) + j]);
+            PFM_Vec3_Normal(&edge_cross_products[i * ARR_SIZE(frust_edges) + j], &edge_cross_products[i * ARR_SIZE(frust_edges) + j]);
+        }
     }
 
-    for(int i = 0; i < ARR_SIZE(axes_cross_products); i++) {
+    for(int i = 0; i < ARR_SIZE(edge_cross_products); i++) {
     
-        if(separating_axis_exists(axes_cross_products[i], frustum, obb->corners)) 
+        if(separating_axis_exists(edge_cross_products[i], frustum, obb->corners))
             return false;
     }
 

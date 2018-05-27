@@ -44,11 +44,10 @@ struct frustum{
     vec3_t ftl, ftr, fbl, fbr;
 };
 
-/* Use 3 axes and 8 corners representation for OBBs. Our use case is primarily 
- * OBB-frustum intersections and OBB-ray intersecions. The center + axes + half lengths 
- * representation mainly benefits OBB-OBB tests. */
 struct obb{
+    vec3_t center;
     vec3_t axes[3];
+    float  half_lengths[3];
     vec3_t corners[8];
 };
 
@@ -59,6 +58,7 @@ enum volume_intersec_type{
 };
 
 bool C_RayIntersectsAABB(vec3_t ray_origin, vec3_t ray_dir, struct aabb aabb, float *out_t);
+bool C_RayIntersectsOBB (vec3_t ray_origin, vec3_t ray_dir, struct obb obb,   float *out_t);
 bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, size_t n);
 bool C_RayIntersectsPlane(vec3_t ray_origin, vec3_t ray_dir, struct plane plane, float *out_t);
 

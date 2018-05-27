@@ -65,6 +65,13 @@ void Entity_CurrentOBB(const struct entity *ent, struct obb *out)
         {aabb->x_max, aabb->y_max, aabb->z_max, 1.0f},
     };
 
+    vec4_t identity_center_homo = (vec4_t){
+        (aabb->x_min + aabb->x_max) / 2.0f,
+        (aabb->y_min + aabb->y_max) / 2.0f,
+        (aabb->z_min + aabb->z_max) / 2.0f,
+        1.0f
+    };
+
     mat4x4_t model;
     Entity_ModelMatrix(ent, &model);
 
@@ -77,6 +84,17 @@ void Entity_CurrentOBB(const struct entity *ent, struct obb *out)
             obb_verts_homo[i].z / obb_verts_homo[i].w,
         };
     }
+
+    vec4_t obb_center_homo;
+    PFM_Mat4x4_Mult4x1(&model, &identity_center_homo, &obb_center_homo);
+    out->center = (vec3_t){
+        obb_center_homo.x / obb_center_homo.w,
+        obb_center_homo.y / obb_center_homo.w,
+        obb_center_homo.z / obb_center_homo.w,
+    };
+    out->half_lengths[0] = (aabb->x_max - aabb->x_min) / 2.0f;
+    out->half_lengths[1] = (aabb->y_max - aabb->y_min) / 2.0f;
+    out->half_lengths[2] = (aabb->z_max - aabb->z_min) / 2.0f;
 
     vec3_t axis0, axis1, axis2;   
     PFM_Vec3_Sub(&out->corners[4], &out->corners[0], &axis0);

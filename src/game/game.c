@@ -76,6 +76,7 @@ static void g_reset(void)
 
     kh_clear(entity, s_gs.active);
     kv_reset(s_gs.visible);
+    kv_reset(s_gs.visible_obbs);
     kv_reset(s_gs.selected);
 
     if(s_gs.map) {
@@ -122,6 +123,7 @@ bool G_Init(void)
 {
     s_gs.active = kh_init(entity);
     kv_init(s_gs.visible);
+    kv_init(s_gs.visible_obbs);
     kv_init(s_gs.selected);
 
     if(!s_gs.active)
@@ -221,6 +223,7 @@ void G_Shutdown(void)
     assert(s_gs.active);
     kh_destroy(entity, s_gs.active);
     kv_destroy(s_gs.visible);
+    kv_destroy(s_gs.visible_obbs);
     kv_destroy(s_gs.selected);
 }
 
@@ -229,6 +232,7 @@ void G_Update(void)
     /* Build the set of currently visible entities. Note that there may be some false positives due to 
        using the fast frustum cull. */
     kv_reset(s_gs.visible);
+    kv_reset(s_gs.visible_obbs);
 
     struct frustum frust;
     Camera_MakeFrustum(ACTIVE_CAM, &frust);
@@ -240,13 +244,18 @@ void G_Update(void)
 
         struct entity *curr = kh_value(s_gs.active, k);
 
-        /* We can get away with using un-rotated aabb for frustum culling */
         struct obb obb;
         Entity_CurrentOBB(curr, &obb);
 
-        if(C_FrustumOBBIntersectionFast(&frust, &obb) != VOLUME_INTERSEC_OUTSIDE)
+        if(C_FrustumOBBIntersectionFast(&frust, &obb) != VOLUME_INTERSEC_OUTSIDE) {
             kv_push(struct entity *, s_gs.visible, curr);
+            kv_push(struct obb, s_gs.visible_obbs, obb);
+        }
     }
+
+    /* Next, update the set of currently selected entities. */
+    G_Sel_GetSelection(ACTIVE_CAM, (const pentity_kvec_t*)&s_gs.visible, 
+        (obb_kvec_t*)&s_gs.visible_obbs, (pentity_kvec_t*)&s_gs.selected);
 }
 
 void G_Render(void)
@@ -264,12 +273,12 @@ void G_Render(void)
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
         R_GL_Draw(curr->render_private, &model);
+    }
 
-        R_GL_DrawOBB(curr);
+    for(int i = 0; i < kv_size(s_gs.selected); i++) {
 
-        if(curr->flags & ENTITY_FLAG_SELECTABLE) {
-            R_GL_DrawSelectionCircle((vec2_t){curr->pos.x, curr->pos.z}, curr->selection_radius, 0.4f, DEFAULT_SEL_COLOR, s_gs.map);
-        }
+        struct entity *curr = kv_A(s_gs.selected, i);
+        R_GL_DrawSelectionCircle((vec2_t){curr->pos.x, curr->pos.z}, curr->selection_radius, 0.4f, DEFAULT_SEL_COLOR, s_gs.map);
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_3D, NULL, ES_ENGINE);

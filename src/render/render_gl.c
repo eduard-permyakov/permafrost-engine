@@ -512,13 +512,12 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model)
+void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model, vec3_t color)
 {
     vec3_t vbuff[2];
     GLint VAO, VBO;
     GLint shader_prog;
     GLuint loc;
-    vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
 
     vbuff[0] = origin; 
     PFM_Vec3_Normal(&dir, &dir);
@@ -543,15 +542,20 @@ void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model)
     glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
 
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform3fv(loc, 1, red.raw);
+    glUniform3fv(loc, 1, color.raw);
 
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+
+    GLfloat old_width;
+    glGetFloatv(GL_LINE_WIDTH, &old_width);
+    glLineWidth(5.0f);
 
     glBindVertexArray(VAO);
     glDrawArrays(GL_LINES, 0, 2);
 
 cleanup:
+    glLineWidth(old_width);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 }
