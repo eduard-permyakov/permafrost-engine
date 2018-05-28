@@ -29,6 +29,7 @@ in the early phases of development.
 * Map editor
 * Fast rendering of huge maps (map size only limited by memory)
 * RTS minimap
+* RTS-style unit selection
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
