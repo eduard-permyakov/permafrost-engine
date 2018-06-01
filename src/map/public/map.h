@@ -111,6 +111,13 @@ void   M_Raycast_Uninstall(void);
 void   M_Raycast_SetHighlightSize(size_t size);
 
 /* ------------------------------------------------------------------------
+ * If returning true, the height of the map under the mouse cursor will be
+ * written to 'out'. Otherwise, the mouse cursor is not over the map surface.
+ * ------------------------------------------------------------------------
+ */
+bool   M_Raycast_IntersecCoordinate(vec3_t *out);
+
+/* ------------------------------------------------------------------------
  * Sets the rendering mode for a particular chunk. In the case that the 
  * mode is 'CHUNK_RENDER_MODE_PREBAKED', the baking will be performed in
  * this call.

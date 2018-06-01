@@ -49,6 +49,7 @@ static int       PyEntity_set_selectable(PyEntityObject *self, PyObject *value, 
 static PyObject *PyEntity_get_selection_radius(PyEntityObject *self, void *closure);
 static int       PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_activate(PyEntityObject *self);
+static PyObject *PyEntity_deactivate(PyEntityObject *self);
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args);
@@ -67,6 +68,11 @@ static PyMethodDef PyEntity_methods[] = {
     "to interact with it in the simulation. The activated entity will be removed from "
     "the game world when no more references to it remain in scope. (ex: Using 'del' "
     "when you have a single reference)"},
+
+    {"deactivate", 
+    (PyCFunction)PyEntity_deactivate, METH_NOARGS,
+    "Remove the entity from the game simulation and hiding it. The entity's state is "
+    "preserved until it is activated again."},
 
     {"register", 
     (PyCFunction)PyEntity_register, METH_VARARGS,
@@ -386,6 +392,13 @@ static PyObject *PyEntity_activate(PyEntityObject *self)
 {
     assert(self->ent);
     G_AddEntity(self->ent);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_deactivate(PyEntityObject *self)
+{
+    assert(self->ent);
+    G_RemoveEntity(self->ent);
     Py_RETURN_NONE;
 }
 

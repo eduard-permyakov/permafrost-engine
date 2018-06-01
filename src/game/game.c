@@ -303,7 +303,11 @@ bool G_AddEntity(struct entity *ent)
 
 bool G_RemoveEntity(struct entity *ent)
 {
-    kh_del(entity, s_gs.active, ent->uid);
+    khiter_t k = kh_get(entity, s_gs.active, ent->uid);
+    if(k == kh_end(s_gs.active))
+        return false;
+
+    kh_del(entity, s_gs.active, k);
     return true;
 }
 

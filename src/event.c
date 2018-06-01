@@ -110,7 +110,7 @@ static bool e_register_handler(uint64_t key, struct handler_desc *desc)
     return true;
 }
 
-static bool e_unregister_handler(uint64_t key, struct handler_desc *desc, bool release_script_objs)
+static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
 {
     khiter_t k;
     k = kh_get(handler_desc, s_event_handler_table, key);
@@ -126,7 +126,7 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc, bool r
         return false;
     struct handler_desc to_del = kv_A(vec, idx);
 
-    if(release_script_objs && to_del.type == HANDLER_TYPE_SCRIPT) {
+    if(to_del.type == HANDLER_TYPE_SCRIPT) {
 
         S_Release(to_del.handler.as_script_callable);
         S_Release(to_del.user_arg); 
@@ -197,15 +197,6 @@ void E_Shutdown(void)
         if (kh_exist(s_event_handler_table, k)) {
         
             kvec_handler_desc_t vec = kh_value(s_event_handler_table, k);
-            for(int i = 0; i < kv_size(vec); i++) {
-
-                struct handler_desc hd = kv_A(vec, i);
-                /* The scripting subsystem is already shut down at the this time and 
-                 * the Python context is destroyed. Any existing handles are stale. As such, 
-                 * we use a flag not to touch them during shutdown. */
-                e_unregister_handler(key, &hd, false);
-            }
-
             kv_destroy(vec);
         }
     }
@@ -255,7 +246,7 @@ bool E_Global_Unregister(enum eventtype event, handler_t handler)
     hd.type = HANDLER_TYPE_ENGINE;
     hd.handler.as_function = handler;
 
-    return e_unregister_handler(e_key(GLOBAL_ID, event), &hd, true);
+    return e_unregister_handler(e_key(GLOBAL_ID, event), &hd);
 }
 
 bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, script_opaque_t user_arg)
@@ -274,7 +265,7 @@ bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler)
     hd.type = HANDLER_TYPE_SCRIPT;
     hd.handler.as_script_callable = handler;
 
-    return e_unregister_handler(e_key(GLOBAL_ID, event), &hd, true);
+    return e_unregister_handler(e_key(GLOBAL_ID, event), &hd);
 }
 
 void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_source source)
@@ -305,7 +296,7 @@ bool E_Entity_ScriptUnregister(enum eventtype event, uint32_t ent_uid,
     hd.type = HANDLER_TYPE_SCRIPT;
     hd.handler.as_script_callable = handler;
 
-    return e_unregister_handler(e_key(ent_uid, event), &hd, true);
+    return e_unregister_handler(e_key(ent_uid, event), &hd);
 }
 
 void E_Entity_Notify(enum eventtype event, uint32_t ent_uid, void *event_arg, 

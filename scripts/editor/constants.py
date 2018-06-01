@@ -37,12 +37,19 @@ EVENT_MENU_NEW                   = 0x20013
 EVENT_MENU_EXIT                  = 0x20014
 EVENT_MENU_CANCEL                = 0x20015
 
+EVENT_MOUSE_ENTERED_MAP          = 0x20016
+EVENT_MOUSE_EXITED_MAP           = 0x20017
+
+EVENT_OBJECTS_TAB_MODE_CHANGED   = 0x20020
+EVENT_OBJECT_SELECTION_CHANGED   = 0x20021
+
 ############################################################
 # SDL Events used (from SDL_event.h)                       #
 ############################################################
 
 EVENT_SDL_QUIT                   = 0x100
 EVENT_SDL_KEYDOWN                = 0x300
+EVENT_SDL_MOUSEMOTION            = 0x400
 EVENT_SDL_MOUSEBUTTONDOWN        = 0x401
 EVENT_SDL_MOUSEBUTTONUP          = 0x402
 

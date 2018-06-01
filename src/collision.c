@@ -48,7 +48,7 @@ struct range{
  * Based on the algorithm outlined here:
  * https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/ray-triangle-intersection-geometric-solution
  */
-static bool ray_triangle_intersect(vec3_t ray_origin, vec3_t ray_dir, vec3_t tri_verts[3])
+static bool ray_triangle_intersect(vec3_t ray_origin, vec3_t ray_dir, vec3_t tri_verts[3], float *out_t)
 {
     /* Compute plane's normal */
     vec3_t v0v1;
@@ -113,6 +113,7 @@ static bool ray_triangle_intersect(vec3_t ray_origin, vec3_t ray_dir, vec3_t tri
         return false;
     }
 
+    *out_t = t;
     return true;
 }
 
@@ -263,16 +264,23 @@ bool C_RayIntersectsOBB(vec3_t ray_origin, vec3_t ray_dir, struct obb obb, float
     return true;
 }
 
-bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, size_t n)
+bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, size_t n, float *out_t)
 {
+    float tmin = FLT_MAX;
+    bool intersec = false;
+
     assert(n % 3 == 0);
     for(int i = 0; i < n; i += 3) {
         
-        if(ray_triangle_intersect(ray_origin, ray_dir, tribuff + i))
-            return true;
+        float t;
+        if(ray_triangle_intersect(ray_origin, ray_dir, tribuff + i, &t)) {
+            intersec = true;
+            tmin = MIN(tmin, t);
+        }
     }
 
-    return false;
+    *out_t = tmin;
+    return intersec;
 }
 
 bool C_RayIntersectsPlane(vec3_t ray_origin, vec3_t ray_dir, struct plane plane, float *out_t)

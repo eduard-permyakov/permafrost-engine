@@ -186,14 +186,51 @@ class TerrainTabWindow(pf.Window):
 
 class ObjectsTabWindow(pf.Window):
 
+    OBJECTS_MODE_PLACE  = 0
+    OBJECTS_MODE_SELECT = 1
+
     def __init__(self):
         _, resy = pf.get_resolution()
         super(ObjectsTabWindow, self).__init__("ObjectsTab", 
             (0, TAB_BAR_HEIGHT + 1, LEFT_PANE_WIDTH, resy - TAB_BAR_HEIGHT - 1), NK_WINDOW_BORDER)
+        self.mode = self.OBJECTS_MODE_PLACE
+        self.objects_list = []
+        self.selected_object_idx = 0
 
     def update(self):
+
+        # Mode
         self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Objects", (255, 255, 255))
+        self.label_colored_wrap("Mode:", (255, 255, 255))
+
+        old_mode = self.mode
+        self.layout_row_dynamic(20, 2)
+        if self.option_label("Place", self.mode == self.OBJECTS_MODE_PLACE):
+            self.mode = self.OBJECTS_MODE_PLACE
+        if self.option_label("Select", self.mode == self.OBJECTS_MODE_SELECT):
+            self.mode = self.OBJECTS_MODE_SELECT
+        self.layout_row_dynamic(10, 1)
+
+        if self.mode != old_mode:
+            pf.global_event(EVENT_OBJECTS_TAB_MODE_CHANGED, self.mode)
+
+        # Objects
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Objects:", (255, 255, 255))
+
+        def objects_group():
+            self.layout_row_static(25, LEFT_PANE_WIDTH-60, 1)
+            for i in range(0, len(self.objects_list)):
+                old = self.selected_object_idx
+                on = self.selectable_label(self.objects_list[i], 
+                    NK_TEXT_ALIGN_LEFT, i == self.selected_object_idx)
+                if on: 
+                    self.selected_object_idx = i
+                if self.selected_object_idx != old:
+                    pf.global_event(EVENT_OBJECT_SELECTION_CHANGED, i)
+
+        self.layout_row_static(400, LEFT_PANE_WIDTH-30, 1)
+        self.group("Objects:", NK_WINDOW_BORDER, objects_group)
 
 
 class MenuButtonWindow(pf.Window):
@@ -312,9 +349,4 @@ class ViewController(object):
 
     def activate(self): pass 
     def deactivate(self): pass 
-
-class ObjectsVC(ViewController):
-
-    def __init__(self, view):
-        self.view = view
 

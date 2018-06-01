@@ -54,9 +54,13 @@ struct line_seg_2d{
 struct rc_ctx{
     struct map       *map;
     struct camera    *cam;
-    bool              active_tile;
+    bool              tile_active;
     size_t            highlight_size;
-    struct tile_desc  hovered;
+    /* Valid bit gets cleared at the start of each frame and set when the intersection point 
+     * is computed. This way the computation only needs to be done once per frame. */
+    bool              valid;
+    struct tile_desc  intersec_tile;
+    vec3_t            intersec_pos;
 };
 
 
@@ -420,7 +424,7 @@ static vec3_t rc_unproject_mouse_coords(void)
     return (vec3_t){ret_homo.x/ret_homo.w, ret_homo.y/ret_homo.w, ret_homo.z/ret_homo.w};
 }
 
-static void on_mousemove(void *user, void *event)
+static void rc_find_intersection(void)
 {
     vec3_t ray_origin = rc_unproject_mouse_coords();
     vec3_t ray_dir;
@@ -429,10 +433,7 @@ static void on_mousemove(void *user, void *event)
     PFM_Vec3_Sub(&ray_origin, &cam_pos, &ray_dir);
     PFM_Vec3_Normal(&ray_dir, &ray_dir);
 
-    const struct tile_desc initial_hovered = s_ctx.hovered;
-    const bool initial_active = s_ctx.active_tile;
-
-    s_ctx.active_tile = false;
+    s_ctx.tile_active = false;
 
     struct tile_desc cts[MAX_CANDIDATE_TILES];
     int len = candidate_tiles_sorted(s_ctx.map, ray_origin, ray_dir, cts);
@@ -458,27 +459,44 @@ static void on_mousemove(void *user, void *event)
             int num_verts = R_GL_TileGetTriMesh(&cts[i], chunk->render_private_tiles, &model, 
                 TILES_PER_CHUNK_WIDTH, tile_mesh);
 
-            if(C_RayIntersectsTriMesh(ray_origin, ray_dir, tile_mesh, num_verts)) {
+            if(C_RayIntersectsTriMesh(ray_origin, ray_dir, tile_mesh, num_verts, &t)) {
 
-                s_ctx.hovered = cts[i]; 
-                s_ctx.active_tile = true;
+                PFM_Vec3_Scale(&ray_dir, t, &ray_dir);
+                PFM_Vec3_Add(&ray_origin, &ray_dir, &s_ctx.intersec_pos);
+
+                s_ctx.intersec_tile = cts[i]; 
+                s_ctx.tile_active = true;
                 break;
             }
         }
     }
+}
 
-    if(s_ctx.active_tile != initial_active || memcmp(&s_ctx.hovered, &initial_hovered, sizeof(struct tile_desc)) ) {
+static void on_mousemove(void *user, void *event)
+{
+    static struct tile_desc s_initial_intersec_tile;
+    static bool s_initial_active;
 
-        if(s_ctx.active_tile)
-            E_Global_Notify(EVENT_SELECTED_TILE_CHANGED, &s_ctx.hovered, ES_ENGINE);
+    if(!s_ctx.valid) {
+        rc_find_intersection();
+        s_ctx.valid = true;
+    }
+
+    if(s_ctx.tile_active != s_initial_active || memcmp(&s_ctx.intersec_tile, &s_initial_intersec_tile, sizeof(struct tile_desc)) ) {
+
+        if(s_ctx.tile_active)
+            E_Global_Notify(EVENT_SELECTED_TILE_CHANGED, &s_ctx.intersec_tile, ES_ENGINE);
         else
             E_Global_Notify(EVENT_SELECTED_TILE_CHANGED, NULL, ES_ENGINE);
     }
+
+    s_initial_intersec_tile = s_ctx.intersec_tile;
+    s_initial_active = s_ctx.tile_active;
 }
 
 static void on_render(void *user, void *event)
 {
-    if(!s_ctx.active_tile)
+    if(!s_ctx.tile_active)
         return;
 
     if(s_ctx.highlight_size == 0)
@@ -489,7 +507,7 @@ static void on_render(void *user, void *event)
     for(int r = -(num_tiles / 2); r < (num_tiles / 2) + 1; r++) {
         for(int c = -(num_tiles / 2); c < (num_tiles / 2) + 1; c++) {
 
-            struct tile_desc curr = s_ctx.hovered;
+            struct tile_desc curr = s_ctx.intersec_tile;
             if(relative_tile_desc(s_ctx.map, &curr, r, c)) {
             
                 const struct pfchunk *chunk = &s_ctx.map->chunks[curr.chunk_r * s_ctx.map->width + curr.chunk_c];
@@ -500,6 +518,11 @@ static void on_render(void *user, void *event)
             }
         }
     }
+}
+
+static void on_update_start(void *user, void *event)
+{
+    s_ctx.valid = false;
 }
 
 /*****************************************************************************/
@@ -513,6 +536,7 @@ int M_Raycast_Install(struct map *map, struct camera *cam)
 
     E_Global_Register(SDL_MOUSEMOTION, on_mousemove, NULL);
     E_Global_Register(EVENT_RENDER_3D, on_render, NULL);
+    E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL);
 
     return 0;
 }
@@ -521,14 +545,30 @@ void M_Raycast_Uninstall(void)
 {
     E_Global_Unregister(SDL_MOUSEMOTION, on_mousemove);
     E_Global_Unregister(EVENT_RENDER_3D, on_render);
+    E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
 
     s_ctx.map = NULL;
     s_ctx.cam = NULL;
-    s_ctx.active_tile = false;
+    s_ctx.tile_active = false;
+    s_ctx.valid = false;
 }
 
 void M_Raycast_SetHighlightSize(size_t size)
 {
     s_ctx.highlight_size = size;
+}
+
+bool M_Raycast_IntersecCoordinate(vec3_t *out)
+{
+    if(!s_ctx.valid) {
+        rc_find_intersection();
+        s_ctx.valid = true;
+    }
+
+    if(!s_ctx.tile_active) 
+        return false;
+
+    *out = s_ctx.intersec_pos;
+    return true;
 }
 

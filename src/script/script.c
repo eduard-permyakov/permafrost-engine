@@ -62,6 +62,7 @@ static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args);
 static PyObject *PyPf_mouse_over_minimap(PyObject *self);
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
+static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -170,6 +171,11 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_map_height_at_point, METH_VARARGS,
     "Returns the Y-dimension map height at the specified XZ coordinate. Returns None if the "
     "specified coordinate is outside the map bounds."},
+
+    {"map_pos_under_cursor",
+    (PyCFunction)PyPf_map_pos_under_cursor, METH_NOARGS,
+    "Returns the XYZ coordinate of the point of the map underneath the cursor. Returns 'None' if "
+    "the cursor is not over the map."},
 
     {NULL}  /* Sentinel */
 };
@@ -499,6 +505,15 @@ static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args)
         Py_RETURN_NONE;
     else
         return Py_BuildValue("f", height);
+}
+
+static PyObject *PyPf_map_pos_under_cursor(PyObject *self)
+{
+    vec3_t pos;
+    if(M_Raycast_IntersecCoordinate(&pos))
+        return Py_BuildValue("[fff]", pos.x, pos.y, pos.z);
+    else
+        Py_RETURN_NONE;
 }
 
 static bool s_sys_path_add_dir(const char *filename)
