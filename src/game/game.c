@@ -335,13 +335,3 @@ bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
     return M_AL_UpdateTile(s_gs.map, desc, tile);
 }
 
-void G_EnableUnitSelection(void)
-{
-    G_Sel_Install();
-}
-
-void G_DisableUnitSelection(void)
-{
-    G_Sel_Uninstall();
-}
-

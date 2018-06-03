@@ -403,13 +403,13 @@ static PyObject *PyPf_mouse_over_ui(PyObject *self)
 
 static PyObject *PyPf_enable_unit_selection(PyObject *self)
 {
-    G_EnableUnitSelection();
+    G_Sel_Install();
     Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_disable_unit_selection(PyObject *self)
 {
-    G_DisableUnitSelection();
+    G_Sel_Uninstall();
     Py_RETURN_NONE;
 }
 

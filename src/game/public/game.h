@@ -35,6 +35,9 @@ enum cam_mode{
     CAM_MODE_RTS
 };
 
+/*###########################################################################*/
+/* GAME GENERAL                                                              */
+/*###########################################################################*/
 
 bool G_Init(void);
 bool G_NewGameWithMap(const char *dir, const char *pfmap);
@@ -61,6 +64,13 @@ void G_MoveActiveCamera(vec2_t xz_ground_pos);
 bool G_UpdateMinimapChunk(int chunk_r, int chunk_c);
 bool G_UpdateChunkMats(int chunk_c, int chunk_r, const char *mats_string);
 bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
+
+/*###########################################################################*/
+/* GAME SELECTION                                                            */
+/*###########################################################################*/
+
+void G_Sel_Install(void);
+void G_Sel_Uninstall(void);
 
 #endif
 
