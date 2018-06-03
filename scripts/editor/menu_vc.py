@@ -31,7 +31,8 @@ class MenuVC(ui.ViewController):
 
     ### NEW ###
 
-    def on_new(self, event):
+    def __on_new(self, event):
+        del globals.active_objects_list[:]
         globals.active_map = map.Map(4, 4)
         pf.new_game_string(globals.active_map.pfmap_str())
         pf.set_minimap_position(ui.LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10, 
@@ -40,18 +41,18 @@ class MenuVC(ui.ViewController):
 
     ### LOAD ###
 
-    def on_load(self, event):
+    def __on_load(self, event):
         assert self.fc is None
         self.fc = ui.FileChooser()
         self.fc.show()
         self.deactivate()
 
-        pf.register_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.on_load_confirm, self)
-        pf.register_event_handler(EVENT_FILE_CHOOSER_CANCEL, MenuVC.on_load_cancel, self)
+        pf.register_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.__on_load_confirm, self)
+        pf.register_event_handler(EVENT_FILE_CHOOSER_CANCEL, MenuVC.__on_load_cancel, self)
 
-    def on_load_confirm(self, event):
-        pf.unregister_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.on_load_confirm)
-        pf.unregister_event_handler(EVENT_FILE_CHOOSER_CANCEL, MenuVC.on_load_cancel)
+    def __on_load_confirm(self, event):
+        pf.unregister_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.__on_load_confirm)
+        pf.unregister_event_handler(EVENT_FILE_CHOOSER_CANCEL, MenuVC.__on_load_cancel)
 
         assert self.fc is not None
         self.fc.hide()
@@ -62,15 +63,16 @@ class MenuVC(ui.ViewController):
         if os.path.isfile(event):
             new_map = map.Map.from_filepath(event)
             if new_map is not None:
+                del globals.active_objects_list[:]
                 globals.active_map = new_map
                 pf.new_game_string(globals.active_map.pfmap_str())
                 pf.set_minimap_position(ui.LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10, 
                     pf.get_resolution()[1] - MINIMAP_PX_WIDTH/cos(pi/4)/2 - 10)
                 self.view.hide()
 
-    def on_load_cancel(self, event):
-        pf.unregister_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.on_load_confirm)
-        pf.unregister_event_handler(EVENT_FILE_CHOOSER_CANCEL, MenuVC.on_load_cancel)
+    def __on_load_cancel(self, event):
+        pf.unregister_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.__on_load_confirm)
+        pf.unregister_event_handler(EVENT_FILE_CHOOSER_CANCEL, MenuVC.__on_load_cancel)
 
         assert self.fc is not None
         self.fc.hide()
@@ -79,18 +81,18 @@ class MenuVC(ui.ViewController):
 
     ### SAVE AS ###
 
-    def on_save_as(self, event):
+    def __on_save_as(self, event):
         assert self.fc is None
         self.fc = ui.FileChooser()
         self.fc.show()
         self.deactivate()
 
-        pf.register_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.on_save_as_confirm, self)
-        pf.register_event_handler(EVENT_FILE_CHOOSER_CANCEL, MenuVC.on_save_as_cancel, self)
+        pf.register_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.__on_save_as_confirm, self)
+        pf.register_event_handler(EVENT_FILE_CHOOSER_CANCEL, MenuVC.__on_save_as_cancel, self)
 
-    def on_save_as_confirm(self, event):
-        pf.unregister_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.on_save_as_confirm)
-        pf.unregister_event_handler(EVENT_FILE_CHOOSER_CANCEL, MenuVC.on_save_as_cancel)
+    def __on_save_as_confirm(self, event):
+        pf.unregister_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.__on_save_as_confirm)
+        pf.unregister_event_handler(EVENT_FILE_CHOOSER_CANCEL, MenuVC.__on_save_as_cancel)
 
         assert self.fc is not None
         self.fc.hide()
@@ -102,9 +104,9 @@ class MenuVC(ui.ViewController):
         except: pass
         else: self.view.hide()
 
-    def on_save_as_cancel(self, event):
-        pf.unregister_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.on_save_as_confirm)
-        pf.unregister_event_handler(EVENT_FILE_CHOOSER_CANCEL, MenuVC.on_save_as_cancel)
+    def __on_save_as_cancel(self, event):
+        pf.unregister_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.__on_save_as_confirm)
+        pf.unregister_event_handler(EVENT_FILE_CHOOSER_CANCEL, MenuVC.__on_save_as_cancel)
 
         assert self.fc is not None
         self.fc.hide()
@@ -113,35 +115,35 @@ class MenuVC(ui.ViewController):
         
     ### SAVE ###
 
-    def on_save(self, event):
+    def __on_save(self, event):
         if globals.active_map.filename is not None:
             try: globals.active_map.write_to_file()
             except: pass
             else: self.view.hide()
         else:
-            self.on_save_as(None)
+            self.__on_save_as(None)
 
     ### OTHER ###
 
-    def on_exit(self, event):
+    def __on_exit(self, event):
         pf.global_event(EVENT_SDL_QUIT, None)
 
-    def on_cancel(self, event):
+    def __on_cancel(self, event):
         self.view.hide() 
 
     def activate(self):
-        pf.register_event_handler(EVENT_MENU_NEW, MenuVC.on_new, self)
-        pf.register_event_handler(EVENT_MENU_LOAD, MenuVC.on_load, self)
-        pf.register_event_handler(EVENT_MENU_SAVE, MenuVC.on_save, self)
-        pf.register_event_handler(EVENT_MENU_SAVE_AS, MenuVC.on_save_as, self)
-        pf.register_event_handler(EVENT_MENU_EXIT, MenuVC.on_exit, self)
-        pf.register_event_handler(EVENT_MENU_CANCEL, MenuVC.on_cancel, self)
+        pf.register_event_handler(EVENT_MENU_NEW, MenuVC.__on_new, self)
+        pf.register_event_handler(EVENT_MENU_LOAD, MenuVC.__on_load, self)
+        pf.register_event_handler(EVENT_MENU_SAVE, MenuVC.__on_save, self)
+        pf.register_event_handler(EVENT_MENU_SAVE_AS, MenuVC.__on_save_as, self)
+        pf.register_event_handler(EVENT_MENU_EXIT, MenuVC.__on_exit, self)
+        pf.register_event_handler(EVENT_MENU_CANCEL, MenuVC.__on_cancel, self)
 
     def deactivate(self):
-        pf.unregister_event_handler(EVENT_MENU_NEW, MenuVC.on_new)
-        pf.unregister_event_handler(EVENT_MENU_LOAD, MenuVC.on_load)
-        pf.unregister_event_handler(EVENT_MENU_SAVE, MenuVC.on_save)
-        pf.unregister_event_handler(EVENT_MENU_SAVE_AS, MenuVC.on_save_as)
-        pf.unregister_event_handler(EVENT_MENU_EXIT, MenuVC.on_exit)
-        pf.unregister_event_handler(EVENT_MENU_CANCEL, MenuVC.on_cancel)
+        pf.unregister_event_handler(EVENT_MENU_NEW, MenuVC.__on_new)
+        pf.unregister_event_handler(EVENT_MENU_LOAD, MenuVC.__on_load)
+        pf.unregister_event_handler(EVENT_MENU_SAVE, MenuVC.__on_save)
+        pf.unregister_event_handler(EVENT_MENU_SAVE_AS, MenuVC.__on_save_as)
+        pf.unregister_event_handler(EVENT_MENU_EXIT, MenuVC.__on_exit)
+        pf.unregister_event_handler(EVENT_MENU_CANCEL, MenuVC.__on_cancel)
 

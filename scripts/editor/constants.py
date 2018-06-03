@@ -58,6 +58,7 @@ EVENT_SDL_MOUSEBUTTONUP          = 0x402
 ############################################################
 
 EVENT_SELECTED_TILE_CHANGED      = 0x10005
+EVENT_NEW_GAME                   = 0x10006
 
 ############################################################
 # Engine constants                                         #

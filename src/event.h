@@ -47,6 +47,7 @@ enum eventtype{
     EVENT_RENDER_3D,
     EVENT_RENDER_UI,
     EVENT_SELECTED_TILE_CHANGED,
+    EVENT_NEW_GAME,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };

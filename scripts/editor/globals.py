@@ -19,4 +19,5 @@
 import map
 
 active_map = map.Map(4, 4)
+active_objects_list = []
 

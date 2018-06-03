@@ -42,10 +42,10 @@
 #define DEFAULT_SEL_COLOR   (vec3_t){0.95f, 0.95f, 0.95f}
 
 /* By default, the minimap is in the bottom left corner with 10 px padding. */
-const static vec2_t DEFAULT_MINIMAP_POS = {
-    (MINIMAP_SIZE + 6)/cos(M_PI/4.0f)/2.0f + 10.0f,
-    CONFIG_RES_Y - (MINIMAP_SIZE + 6)/cos(M_PI/4.0f)/2.0f - 10.0f
-};
+#define DEFAULT_MINIMAP_POS (vec2_t) { \
+    (MINIMAP_SIZE + 6)/cos(M_PI/4.0f)/2.0f + 10.0f, \
+    CONFIG_RES_Y - (MINIMAP_SIZE + 6)/cos(M_PI/4.0f)/2.0f - 10.0f \
+}
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -67,12 +67,11 @@ static void g_reset(void)
 {
     G_Sel_Clear();
 
-    khiter_t k;
-    for (k = kh_begin(s_gs.active); k != kh_end(s_gs.active); ++k) {
-
-        struct entity *ent = kh_value(s_gs.active, k);
-        AL_EntityFree(ent);
-    }
+    uint32_t key;
+    struct entity *curr;
+    kh_foreach(s_gs.active, key, curr, {
+        AL_EntityFree(curr);
+    });
 
     kh_clear(entity, s_gs.active);
     kv_reset(s_gs.visible);
@@ -146,6 +145,7 @@ bool G_NewGameWithMapString(const char *mapstr)
     if(!s_gs.map)
         return false;
     g_init_map();
+    E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
 
     return true;
 }
@@ -158,6 +158,7 @@ bool G_NewGameWithMap(const char *dir, const char *pfmap)
     if(!s_gs.map)
         return false;
     g_init_map();
+    E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
 
     return true;
 }
@@ -237,12 +238,9 @@ void G_Update(void)
     struct frustum frust;
     Camera_MakeFrustum(ACTIVE_CAM, &frust);
 
-    for(khiter_t k = kh_begin(s_gs.active); k != kh_end(s_gs.active); ++k) {
-
-        if(!kh_exist(s_gs.active, k))
-            continue;
-
-        struct entity *curr = kh_value(s_gs.active, k);
+    uint32_t key;
+    struct entity *curr;
+    kh_foreach(s_gs.active, key, curr, {
 
         struct obb obb;
         Entity_CurrentOBB(curr, &obb);
@@ -251,7 +249,7 @@ void G_Update(void)
             kv_push(struct entity *, s_gs.visible, curr);
             kv_push(struct obb, s_gs.visible_obbs, obb);
         }
-    }
+    });
 
     /* Next, update the set of currently selected entities. */
     G_Sel_GetSelection(ACTIVE_CAM, (const pentity_kvec_t*)&s_gs.visible, 
@@ -294,7 +292,7 @@ bool G_AddEntity(struct entity *ent)
     khiter_t k;
 
     k = kh_put(entity, s_gs.active, ent->uid, &ret);
-    if(ret != 1)
+    if(ret == -1 || ret == 0)
         return false;
 
     kh_value(s_gs.active, k) = ent;

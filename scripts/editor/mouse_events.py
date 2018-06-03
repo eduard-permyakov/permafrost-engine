@@ -19,7 +19,7 @@
 import pf
 from constants import *
 
-mouse_over_map =  None
+mouse_over_map = None
 
 def __on_mousemove(user, event):
     new_mouse_over_map = not pf.mouse_over_ui() and not pf.mouse_over_minimap()

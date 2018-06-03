@@ -291,7 +291,7 @@ class TerrainTabVC(ui.ViewController):
         pf.set_map_highlight_size(self.view.brush_size_idx + 1)
 
     def activate(self):
-        pf.set_map_highlight_size(1)
+        pf.set_map_highlight_size(self.view.brush_size_idx + 1)
         pf.register_event_handler(EVENT_SELECTED_TILE_CHANGED, TerrainTabVC.__on_selected_tile_changed, self)
         pf.register_event_handler(EVENT_SDL_MOUSEBUTTONDOWN, TerrainTabVC.__on_mouse_pressed, self)
         pf.register_event_handler(EVENT_SDL_MOUSEBUTTONUP, TerrainTabVC.__on_mouse_released, self)
