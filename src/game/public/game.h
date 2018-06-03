@@ -65,6 +65,8 @@ bool G_UpdateMinimapChunk(int chunk_r, int chunk_c);
 bool G_UpdateChunkMats(int chunk_c, int chunk_r, const char *mats_string);
 bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
 
+void G_ClearSelection(void);
+
 /*###########################################################################*/
 /* GAME SELECTION                                                            */
 /*###########################################################################*/

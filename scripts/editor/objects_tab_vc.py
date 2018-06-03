@@ -98,6 +98,7 @@ class ObjectsVC(ui.ViewController):
         self.mode = event 
         self.__set_selection_for_mode()
         if self.mode == self.view.OBJECTS_MODE_PLACE:
+            pf.clear_unit_selection()
             self.current_object = self.__object_at_index(self.object_index)
             if mouse_events.mouse_over_map:
                 self.current_object.pos = pf.map_pos_under_cursor()

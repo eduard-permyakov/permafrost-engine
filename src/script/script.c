@@ -55,6 +55,7 @@ static PyObject *PyPf_mouse_over_ui(PyObject *self);
 
 static PyObject *PyPf_enable_unit_selection(PyObject *self);
 static PyObject *PyPf_disable_unit_selection(PyObject *self);
+static PyObject *PyPf_clear_unit_selection(PyObject *self);
 
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
@@ -144,6 +145,10 @@ static PyMethodDef pf_module_methods[] = {
     {"disable_unit_selection", 
     (PyCFunction)PyPf_disable_unit_selection, METH_NOARGS,
     "Make it impossible to select units with the mouse. Disable drawing of a selection box when dragging the mouse."},
+
+    {"clear_unit_selection", 
+    (PyCFunction)PyPf_clear_unit_selection, METH_NOARGS,
+    "Clear the current unit seleciton."},
 
     {"update_chunk_materials", 
     (PyCFunction)PyPf_update_chunk_materials, METH_VARARGS,
@@ -410,6 +415,12 @@ static PyObject *PyPf_enable_unit_selection(PyObject *self)
 static PyObject *PyPf_disable_unit_selection(PyObject *self)
 {
     G_Sel_Uninstall();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_clear_unit_selection(PyObject *self)
+{
+    G_ClearSelection();
     Py_RETURN_NONE;
 }
 
