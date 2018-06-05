@@ -56,6 +56,7 @@ static PyObject *PyPf_mouse_over_ui(PyObject *self);
 static PyObject *PyPf_enable_unit_selection(PyObject *self);
 static PyObject *PyPf_disable_unit_selection(PyObject *self);
 static PyObject *PyPf_clear_unit_selection(PyObject *self);
+static PyObject *PyPf_get_unit_selection(PyObject *self);
 
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
@@ -149,6 +150,10 @@ static PyMethodDef pf_module_methods[] = {
     {"clear_unit_selection", 
     (PyCFunction)PyPf_clear_unit_selection, METH_NOARGS,
     "Clear the current unit seleciton."},
+
+    {"get_unit_selection", 
+    (PyCFunction)PyPf_get_unit_selection, METH_NOARGS,
+    "Returns a list of objects currently selected by the player."},
 
     {"update_chunk_materials", 
     (PyCFunction)PyPf_update_chunk_materials, METH_VARARGS,
@@ -424,6 +429,24 @@ static PyObject *PyPf_clear_unit_selection(PyObject *self)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_get_unit_selection(PyObject *self)
+{
+    const pentity_kvec_t *sel = G_GetSelection();
+
+    PyObject *ret = PyList_New(0);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < kv_size(*sel); i++) {
+        PyObject *ent =  S_Entity_ObjForUID(kv_A(*sel, i)->uid);
+        if(ent) {
+            PyList_Append(ret, ent);
+        }
+    }
+
+    return ret;
+}
+
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args)
 {
     int chunk_r, chunk_c;
@@ -573,16 +596,20 @@ bool S_Init(char *progname, const char *base_path, struct nk_context *ctx)
     Py_SetProgramName(progname);
     Py_Initialize();
 
-    S_UI_Init(ctx);
-    initpf();
+    if(!S_UI_Init(ctx))
+        return false;
+    if(!S_Entity_Init())
+        return false;
 
+    initpf();
     return true;
 }
 
 void S_Shutdown(void)
 {
-    S_UI_Shutdown();
     Py_Finalize();
+    S_UI_Shutdown();
+    S_Entity_Shutdown();
 }
 
 bool S_RunFile(const char *path)

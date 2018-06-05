@@ -21,8 +21,12 @@
 #define ENTITY_SCRIPT_H
 
 #include <Python.h> /* Must be first */
+#include <stdbool.h>
 
+bool S_Entity_Init(void);
+void S_Entity_Shutdown(void);
 void S_Entity_PyRegister(PyObject *module);
+PyObject *S_Entity_ObjForUID(uint32_t uid);
 
 #endif
 

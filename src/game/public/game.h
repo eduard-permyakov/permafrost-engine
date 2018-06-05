@@ -21,6 +21,7 @@
 #define GAME_H
 
 #include "../../map/public/map.h"
+#include "../../lib/public/kvec.h"
 
 #include <stdbool.h>
 #include <SDL.h>
@@ -34,6 +35,8 @@ enum cam_mode{
     CAM_MODE_FPS,
     CAM_MODE_RTS
 };
+
+typedef kvec_t(struct entity*) pentity_kvec_t;
 
 /*###########################################################################*/
 /* GAME GENERAL                                                              */
@@ -62,10 +65,13 @@ bool G_ActivateCamera(int idx, enum cam_mode mode);
 void G_MoveActiveCamera(vec2_t xz_ground_pos);
 
 bool G_UpdateMinimapChunk(int chunk_r, int chunk_c);
-bool G_UpdateChunkMats(int chunk_c, int chunk_r, const char *mats_string);
+bool G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string);
 bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
 
 void G_ClearSelection(void);
+void G_AddToSelection(struct entity *ent);
+void G_RemoveFromSelection(struct entity *ent);
+const pentity_kvec_t *G_GetSelection(void);
 
 /*###########################################################################*/
 /* GAME SELECTION                                                            */

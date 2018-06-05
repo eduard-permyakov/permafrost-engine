@@ -24,6 +24,9 @@
 #include "../asset_load.h"
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
+#include "../lib/public/khash.h"
+
+#include <assert.h>
 
 typedef struct {
     PyObject_HEAD
@@ -53,6 +56,8 @@ static PyObject *PyEntity_deactivate(PyEntityObject *self);
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_select(PyEntityObject *self);
+static PyObject *PyEntity_deselect(PyEntityObject *self);
 
 static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args);
@@ -86,6 +91,14 @@ static PyMethodDef PyEntity_methods[] = {
     {"notify", 
     (PyCFunction)PyEntity_notify, METH_VARARGS,
     "Send a specific event to an entity in order to invoke the entity's event handlers."},
+
+    {"select", 
+    (PyCFunction)PyEntity_select, METH_NOARGS,
+    "Adds the entity to the current unit selection, if it is not present there already."},
+
+    {"deselect", 
+    (PyCFunction)PyEntity_deselect, METH_NOARGS,
+    "Removes the entity from the current unit selection, if it is selected."},
 
     {NULL}  /* Sentinel */
 };
@@ -178,6 +191,9 @@ static PyTypeObject PyAnimEntity_type = {
     .tp_init      = (initproc)PyAnimEntity_init,
 };
 
+KHASH_MAP_INIT_INT(PyObject, PyObject*)
+static khash_t(PyObject) *s_uid_pyobj_table;
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -216,12 +232,21 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         self->ent = ent; 
     }
 
+    int ret;
+    khiter_t k = kh_put(PyObject, s_uid_pyobj_table, ent->uid, &ret);
+    assert(ret != -1 && ret != 0);
+    kh_value(s_uid_pyobj_table, k) = (PyObject*)self;
+
     return (PyObject*)self;
 }
 
 static void PyEntity_dealloc(PyEntityObject *self)
 {
     assert(self->ent);
+
+    khiter_t k = kh_get(PyObject, s_uid_pyobj_table, self->ent->uid);
+    assert(k != kh_end(s_uid_pyobj_table));
+    kh_del(PyObject, s_uid_pyobj_table, k);
 
     G_RemoveEntity(self->ent);
     AL_EntityFree(self->ent);
@@ -460,6 +485,20 @@ static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyEntity_select(PyEntityObject *self)
+{
+    assert(self->ent);
+    G_AddToSelection(self->ent);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_deselect(PyEntityObject *self)
+{
+    assert(self->ent);
+    G_RemoveFromSelection(self->ent);
+    Py_RETURN_NONE;
+}
+
 static int PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds)
 {
     const char *dirpath, *filename, *name, *clipname;
@@ -503,5 +542,25 @@ void S_Entity_PyRegister(PyObject *module)
         return;
     Py_INCREF(&PyAnimEntity_type);
     PyModule_AddObject(module, "AnimEntity", (PyObject*)&PyAnimEntity_type);
+}
+
+bool S_Entity_Init(void)
+{
+    s_uid_pyobj_table = kh_init(PyObject);
+    return (s_uid_pyobj_table != NULL);
+}
+
+void S_Entity_Shutdown(void)
+{
+    kh_destroy(PyObject, s_uid_pyobj_table);
+}
+
+PyObject *S_Entity_ObjForUID(uint32_t uid)
+{
+    khiter_t k = kh_get(PyObject, s_uid_pyobj_table, uid);
+    if(k == kh_end(s_uid_pyobj_table))
+        return NULL;
+
+    return kh_value(s_uid_pyobj_table, k);
 }
 

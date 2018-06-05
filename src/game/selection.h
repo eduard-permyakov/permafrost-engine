@@ -20,6 +20,7 @@
 #ifndef SELECTION_H
 #define SELECTION_H
 
+#include "public/game.h"
 #include "../lib/public/kvec.h"
 #include "../entity.h"
 
@@ -28,7 +29,6 @@
 struct obb;
 struct camera;
 
-typedef kvec_t(struct entity*) pentity_kvec_t;
 typedef kvec_t(struct obb) obb_kvec_t;
 
 

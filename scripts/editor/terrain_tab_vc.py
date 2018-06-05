@@ -111,6 +111,10 @@ class TerrainTabVC(ui.ViewController):
 
         self.view.materials_list = TerrainTabVC.MATERIALS_LIST
 
+    def __update_objects_for_height_change(self):
+        for obj in globals.active_objects_list:
+            obj.pos = [obj.pos[0], pf.map_height_at_point(obj.pos[0], obj.pos[2]), obj.pos[2]]
+
     def __paint_selection(self):
 
         if pf.mouse_over_ui():
@@ -141,6 +145,7 @@ class TerrainTabVC(ui.ViewController):
 
         if self.view.edges_type_idx == 1:
             self.__paint_smooth_border(self.view.brush_size_idx + 1, dir)
+            self.__update_objects_for_height_change()
 
     def __tile_make_smooth(self, tile_coords, dir):
         """

@@ -30,7 +30,7 @@ import mouse_events
 from math import cos, pi
 
 ############################################################
-# Global settings                                           #
+# Global settings                                          #
 ############################################################
 
 pf.set_ambient_light_color([1.0, 1.0, 1.0])

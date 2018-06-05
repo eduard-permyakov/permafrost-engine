@@ -250,8 +250,11 @@ bool G_Sel_GetSelection(struct camera *cam, const pentity_kvec_t *visible, const
         
             float t;
             if(C_RayIntersectsOBB(ray_origin, ray_dir, kv_A(*visible_obbs, i), &t)) {
+
                 kv_reset(*inout);                
                 kv_push(struct entity*, *inout, kv_A(*visible, i));
+
+                E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
                 return true;
             }
         }
@@ -281,7 +284,12 @@ bool G_Sel_GetSelection(struct camera *cam, const pentity_kvec_t *visible, const
             }
         }
         
-        return (!sel_empty);
+        if(!sel_empty) {
+            E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
+            return true;
+        }else{
+            return false;
+        }
     }
 }
 

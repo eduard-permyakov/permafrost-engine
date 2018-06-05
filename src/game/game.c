@@ -114,6 +114,11 @@ static void g_init_map(void)
     M_InitMinimap(s_gs.map, DEFAULT_MINIMAP_POS);
 }
 
+static bool pentities_equal(struct entity *const *a, struct entity *const *b)
+{
+    return ((*a) == (*b));
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -221,7 +226,11 @@ void G_Shutdown(void)
     for(int i = 0; i < NUM_CAMERAS; i++)
         Camera_Free(s_gs.cameras[i]);
 
-    assert(s_gs.active);
+    uint32_t key;
+    struct entity *curr;
+    kh_foreach(s_gs.active, key, curr, {
+        AL_EntityFree(curr);
+    });
     kh_destroy(entity, s_gs.active);
     kv_destroy(s_gs.visible);
     kv_destroy(s_gs.visible_obbs);
@@ -305,6 +314,9 @@ bool G_RemoveEntity(struct entity *ent)
     if(k == kh_end(s_gs.active))
         return false;
 
+    if(ent->flags & ENTITY_FLAG_SELECTABLE)
+        G_RemoveFromSelection(ent);
+
     kh_del(entity, s_gs.active, k);
     return true;
 }
@@ -325,9 +337,9 @@ bool G_ActivateCamera(int idx, enum cam_mode mode)
     return true;
 }
 
-bool G_UpdateChunkMats(int chunk_c, int chunk_r, const char *mats_string)
+bool G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string)
 {
-    return M_AL_UpdateChunkMats(s_gs.map, chunk_c, chunk_r, mats_string);
+    return M_AL_UpdateChunkMats(s_gs.map, chunk_r, chunk_c, mats_string);
 }
 
 bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
@@ -338,5 +350,32 @@ bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
 void G_ClearSelection(void)
 {
     kv_reset(s_gs.selected);
+}
+
+void G_AddToSelection(struct entity *ent)
+{
+    assert(ent->flags & ENTITY_FLAG_SELECTABLE);
+
+    int idx;
+    kv_indexof(struct entity*, s_gs.selected, ent, pentities_equal, idx);
+    if(idx == -1) {
+        kv_push(struct entity*, s_gs.selected, ent);
+    }
+}
+
+void G_RemoveFromSelection(struct entity *ent)
+{
+    assert(ent->flags & ENTITY_FLAG_SELECTABLE);
+
+    int idx;
+    kv_indexof(struct entity*, s_gs.selected, ent, pentities_equal, idx);
+    if(idx != -1) {
+        kv_del(struct entity*, s_gs.selected, idx);
+    }
+}
+
+const pentity_kvec_t *G_GetSelection(void)
+{
+    return (const pentity_kvec_t*)&s_gs.selected;
 }
 

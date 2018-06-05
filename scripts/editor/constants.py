@@ -20,51 +20,54 @@
 # Editor-specific events                                   #
 ############################################################
 
-EVENT_TEXTURE_SELECTION_CHANGED  = 0x20000
-EVENT_TOP_TAB_SELECTION_CHANGED  = 0x20001
-EVENT_TERRAIN_BRUSH_SIZE_CHANGED = 0x20002
-EVENT_TERRAIN_BRUSH_TYPE_CHANGED = 0x20003
-EVENT_TERRAIN_EDGE_TYPE_CHANGED  = 0x20004
-EVENT_HEIGHT_SELECTION_CHANGED   = 0x20005
+EVENT_TEXTURE_SELECTION_CHANGED    = 0x20000
+EVENT_TOP_TAB_SELECTION_CHANGED    = 0x20001
+EVENT_TERRAIN_BRUSH_SIZE_CHANGED   = 0x20002
+EVENT_TERRAIN_BRUSH_TYPE_CHANGED   = 0x20003
+EVENT_TERRAIN_EDGE_TYPE_CHANGED    = 0x20004
+EVENT_HEIGHT_SELECTION_CHANGED     = 0x20005
 
-EVENT_FILE_CHOOSER_OKAY          = 0x20008
-EVENT_FILE_CHOOSER_CANCEL        = 0x20009
+EVENT_FILE_CHOOSER_OKAY            = 0x20008
+EVENT_FILE_CHOOSER_CANCEL          = 0x20009
 
-EVENT_MENU_LOAD                  = 0x20010
-EVENT_MENU_SAVE                  = 0x20011
-EVENT_MENU_SAVE_AS               = 0x20012
-EVENT_MENU_NEW                   = 0x20013
-EVENT_MENU_EXIT                  = 0x20014
-EVENT_MENU_CANCEL                = 0x20015
+EVENT_MENU_LOAD                    = 0x20010
+EVENT_MENU_SAVE                    = 0x20011
+EVENT_MENU_SAVE_AS                 = 0x20012
+EVENT_MENU_NEW                     = 0x20013
+EVENT_MENU_EXIT                    = 0x20014
+EVENT_MENU_CANCEL                  = 0x20015
 
-EVENT_MOUSE_ENTERED_MAP          = 0x20016
-EVENT_MOUSE_EXITED_MAP           = 0x20017
+EVENT_OBJECTS_TAB_MODE_CHANGED     = 0x20020
+EVENT_OBJECT_SELECTION_CHANGED     = 0x20021
+EVENT_OBJECT_SELECTED_UNIT_PICKED  = 0x20022
+EVENT_OBJECT_DELETE_SELECTION      = 0x20023
 
-EVENT_OBJECTS_TAB_MODE_CHANGED   = 0x20020
-EVENT_OBJECT_SELECTION_CHANGED   = 0x20021
+EVENT_MOUSE_ENTERED_MAP            = 0x20030
+EVENT_MOUSE_EXITED_MAP             = 0x20031
 
 ############################################################
 # SDL Events used (from SDL_event.h)                       #
 ############################################################
 
-EVENT_SDL_QUIT                   = 0x100
-EVENT_SDL_KEYDOWN                = 0x300
-EVENT_SDL_MOUSEMOTION            = 0x400
-EVENT_SDL_MOUSEBUTTONDOWN        = 0x401
-EVENT_SDL_MOUSEBUTTONUP          = 0x402
+EVENT_SDL_QUIT                     = 0x100
+EVENT_SDL_KEYDOWN                  = 0x300
+EVENT_SDL_MOUSEMOTION              = 0x400
+EVENT_SDL_MOUSEBUTTONDOWN          = 0x401
+EVENT_SDL_MOUSEBUTTONUP            = 0x402
 
 ############################################################
 # Engine events (from event.h)                             #
 ############################################################
 
-EVENT_SELECTED_TILE_CHANGED      = 0x10005
-EVENT_NEW_GAME                   = 0x10006
+EVENT_SELECTED_TILE_CHANGED        = 0x10005
+EVENT_NEW_GAME                     = 0x10006
+EVENT_UNIT_SELECTION_CHANGED       = 0x10007
 
 ############################################################
 # Engine constants                                         #
 ############################################################
 
-MINIMAP_PX_WIDTH                 = (256 + 6)
+MINIMAP_PX_WIDTH                   = (256 + 6)
 
 ############################################################
 # SDL Scancodes (from SDL_event.h)                         #
