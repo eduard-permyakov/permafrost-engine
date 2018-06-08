@@ -512,7 +512,7 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model, vec3_t color)
+void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model, vec3_t color, float t)
 {
     vec3_t vbuff[2];
     GLint VAO, VBO;
@@ -521,7 +521,7 @@ void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model, vec3_t color)
 
     vbuff[0] = origin; 
     PFM_Vec3_Normal(&dir, &dir);
-    PFM_Vec3_Scale(&dir, 1000.0f, &dir);
+    PFM_Vec3_Scale(&dir, t, &dir);
     PFM_Vec3_Add(&origin, &dir, &vbuff[1]);
 
     /* OpenGL setup */

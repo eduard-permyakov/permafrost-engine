@@ -413,25 +413,25 @@ static PyObject *PyPf_mouse_over_ui(PyObject *self)
 
 static PyObject *PyPf_enable_unit_selection(PyObject *self)
 {
-    G_Sel_Install();
+    G_Sel_Enable();
     Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_disable_unit_selection(PyObject *self)
 {
-    G_Sel_Uninstall();
+    G_Sel_Disable();
     Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_clear_unit_selection(PyObject *self)
 {
-    G_ClearSelection();
+    G_Sel_Clear();
     Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_get_unit_selection(PyObject *self)
 {
-    const pentity_kvec_t *sel = G_GetSelection();
+    const pentity_kvec_t *sel = G_Sel_Get();
 
     PyObject *ret = PyList_New(0);
     if(!ret)

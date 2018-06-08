@@ -76,7 +76,6 @@ static void g_reset(void)
     kh_clear(entity, s_gs.active);
     kv_reset(s_gs.visible);
     kv_reset(s_gs.visible_obbs);
-    kv_reset(s_gs.selected);
 
     if(s_gs.map) {
         M_Raycast_Uninstall();
@@ -114,11 +113,6 @@ static void g_init_map(void)
     M_InitMinimap(s_gs.map, DEFAULT_MINIMAP_POS);
 }
 
-static bool pentities_equal(struct entity *const *a, struct entity *const *b)
-{
-    return ((*a) == (*b));
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -128,7 +122,6 @@ bool G_Init(void)
     s_gs.active = kh_init(entity);
     kv_init(s_gs.visible);
     kv_init(s_gs.visible_obbs);
-    kv_init(s_gs.selected);
 
     if(!s_gs.active)
         return false;
@@ -137,7 +130,8 @@ bool G_Init(void)
         return false; 
 
     g_reset();
-    G_Sel_Install();
+    G_Sel_Init();
+    G_Sel_Enable();
 
     return true;
 }
@@ -221,7 +215,7 @@ void G_MoveActiveCamera(vec2_t xz_ground_pos)
 
 void G_Shutdown(void)
 {
-    G_Sel_Uninstall();
+    G_Sel_Shutdown();
 
     for(int i = 0; i < NUM_CAMERAS; i++)
         Camera_Free(s_gs.cameras[i]);
@@ -234,7 +228,6 @@ void G_Shutdown(void)
     kh_destroy(entity, s_gs.active);
     kv_destroy(s_gs.visible);
     kv_destroy(s_gs.visible_obbs);
-    kv_destroy(s_gs.selected);
 }
 
 void G_Update(void)
@@ -261,8 +254,7 @@ void G_Update(void)
     });
 
     /* Next, update the set of currently selected entities. */
-    G_Sel_GetSelection(ACTIVE_CAM, (const pentity_kvec_t*)&s_gs.visible, 
-        (obb_kvec_t*)&s_gs.visible_obbs, (pentity_kvec_t*)&s_gs.selected);
+    G_Sel_Update(ACTIVE_CAM, (const pentity_kvec_t*)&s_gs.visible, (obb_kvec_t*)&s_gs.visible_obbs);
 }
 
 void G_Render(void)
@@ -282,9 +274,10 @@ void G_Render(void)
         R_GL_Draw(curr->render_private, &model);
     }
 
-    for(int i = 0; i < kv_size(s_gs.selected); i++) {
+    const pentity_kvec_t *selected = G_Sel_Get();
+    for(int i = 0; i < kv_size(*selected); i++) {
 
-        struct entity *curr = kv_A(s_gs.selected, i);
+        struct entity *curr = kv_A(*selected, i);
         R_GL_DrawSelectionCircle((vec2_t){curr->pos.x, curr->pos.z}, curr->selection_radius, 0.4f, DEFAULT_SEL_COLOR, s_gs.map);
     }
 
@@ -315,7 +308,7 @@ bool G_RemoveEntity(struct entity *ent)
         return false;
 
     if(ent->flags & ENTITY_FLAG_SELECTABLE)
-        G_RemoveFromSelection(ent);
+        G_Sel_Remove(ent);
 
     kh_del(entity, s_gs.active, k);
     return true;
@@ -345,37 +338,5 @@ bool G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string)
 bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
 {
     return M_AL_UpdateTile(s_gs.map, desc, tile);
-}
-
-void G_ClearSelection(void)
-{
-    kv_reset(s_gs.selected);
-}
-
-void G_AddToSelection(struct entity *ent)
-{
-    assert(ent->flags & ENTITY_FLAG_SELECTABLE);
-
-    int idx;
-    kv_indexof(struct entity*, s_gs.selected, ent, pentities_equal, idx);
-    if(idx == -1) {
-        kv_push(struct entity*, s_gs.selected, ent);
-    }
-}
-
-void G_RemoveFromSelection(struct entity *ent)
-{
-    assert(ent->flags & ENTITY_FLAG_SELECTABLE);
-
-    int idx;
-    kv_indexof(struct entity*, s_gs.selected, ent, pentities_equal, idx);
-    if(idx != -1) {
-        kv_del(struct entity*, s_gs.selected, idx);
-    }
-}
-
-const pentity_kvec_t *G_GetSelection(void)
-{
-    return (const pentity_kvec_t*)&s_gs.selected;
 }
 

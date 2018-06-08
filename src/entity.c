@@ -92,9 +92,9 @@ void Entity_CurrentOBB(const struct entity *ent, struct obb *out)
         obb_center_homo.y / obb_center_homo.w,
         obb_center_homo.z / obb_center_homo.w,
     };
-    out->half_lengths[0] = (aabb->x_max - aabb->x_min) / 2.0f;
-    out->half_lengths[1] = (aabb->y_max - aabb->y_min) / 2.0f;
-    out->half_lengths[2] = (aabb->z_max - aabb->z_min) / 2.0f;
+    out->half_lengths[0] = (aabb->x_max - aabb->x_min) / 2.0f * ent->scale.x;
+    out->half_lengths[1] = (aabb->y_max - aabb->y_min) / 2.0f * ent->scale.y;
+    out->half_lengths[2] = (aabb->z_max - aabb->z_min) / 2.0f * ent->scale.z;
 
     vec3_t axis0, axis1, axis2;   
     PFM_Vec3_Sub(&out->corners[4], &out->corners[0], &axis0);

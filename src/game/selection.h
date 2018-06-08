@@ -31,11 +31,8 @@ struct camera;
 
 typedef kvec_t(struct obb) obb_kvec_t;
 
-
-void G_Sel_Clear(void);
-/* Returns true if the current selection has changed. If returning false, 'out_selection'
- * parameter is unmodified. */
-bool G_Sel_GetSelection(struct camera *cam, const pentity_kvec_t *visible, 
-                        const obb_kvec_t *visible_obbs, pentity_kvec_t *inout);
+bool G_Sel_Init(void);
+void G_Sel_Shutdown(void);
+bool G_Sel_Update(struct camera *cam, const pentity_kvec_t *visible, const obb_kvec_t *visible_obbs);
 
 #endif

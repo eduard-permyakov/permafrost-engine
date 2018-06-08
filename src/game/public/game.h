@@ -68,17 +68,17 @@ bool G_UpdateMinimapChunk(int chunk_r, int chunk_c);
 bool G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string);
 bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
 
-void G_ClearSelection(void);
-void G_AddToSelection(struct entity *ent);
-void G_RemoveFromSelection(struct entity *ent);
-const pentity_kvec_t *G_GetSelection(void);
-
 /*###########################################################################*/
 /* GAME SELECTION                                                            */
 /*###########################################################################*/
 
-void G_Sel_Install(void);
-void G_Sel_Uninstall(void);
+void                  G_Sel_Enable(void);
+void                  G_Sel_Disable(void);
+
+void                  G_Sel_Clear(void);
+void                  G_Sel_Add(struct entity *ent);
+void                  G_Sel_Remove(struct entity *ent);
+const pentity_kvec_t *G_Sel_Get(void);
 
 #endif
 

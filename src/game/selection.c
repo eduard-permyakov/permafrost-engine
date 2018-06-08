@@ -28,6 +28,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <float.h>
 
 #include <SDL.h>
 
@@ -59,6 +60,8 @@ static struct selection_ctx{
  * The 'MOUSE_SEL_RELEASED' state lasts one tick. This is the point where we 
  * re-calculate the current selection.
  */
+
+pentity_kvec_t s_selected;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -188,11 +191,27 @@ static void sel_make_frustum(struct camera *cam, vec2_t mouse_down, vec2_t mouse
     PFM_Vec3_Normal(&out->left.normal, &out->left.normal);
 }
 
+static bool pentities_equal(struct entity *const *a, struct entity *const *b)
+{
+    return ((*a) == (*b));
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void G_Sel_Install(void)
+bool G_Sel_Init(void)
+{
+    kv_init(s_selected);
+}
+
+void G_Sel_Shutdown(void)
+{
+    G_Sel_Disable();
+    kv_destroy(s_selected);
+}
+
+void G_Sel_Enable(void)
 {
     if(s_ctx.installed)
         return;
@@ -203,7 +222,7 @@ void G_Sel_Install(void)
     E_Global_Register(EVENT_RENDER_UI,     on_render, NULL);
 }
 
-void G_Sel_Uninstall(void)
+void G_Sel_Disable(void)
 {
     if(!s_ctx.installed)
         return;
@@ -216,26 +235,23 @@ void G_Sel_Uninstall(void)
     G_Sel_Clear();
 }
 
-void G_Sel_Clear(void)
-{
-    bool installed = s_ctx.installed;
-    memset(&s_ctx, 0, sizeof(s_ctx));
-    s_ctx.installed = installed;
-}
-
 /* Note that the selection is only changed if there is at least one entity in the new selection. Otherwise
  * (ex. if the player is left-clicking on an empty part of the map), the previous selection is kept. */
-bool G_Sel_GetSelection(struct camera *cam, const pentity_kvec_t *visible, const obb_kvec_t *visible_obbs, 
-                        pentity_kvec_t *inout)
+bool G_Sel_Update(struct camera *cam, const pentity_kvec_t *visible, const obb_kvec_t *visible_obbs)
 {
     if(s_ctx.state != STATE_MOUSE_SEL_RELEASED)
         return false;
     s_ctx.state = STATE_MOUSE_SEL_UP;
 
+    bool sel_empty = true;
     if(s_ctx.mouse_down_coord.x == s_ctx.mouse_up_coord.x && s_ctx.mouse_down_coord.y && s_ctx.mouse_up_coord.y) {
 
         /* Case 1: The mouse is pressed and released in the same spot, meaning we can use a single ray
-         * to test against the OBBs */
+         * to test against the OBBs 
+         *
+         * The behaviour is that only a single entity can be selected with a 'click' action, even if multiple
+         * OBBs intersect with the mouse ray. We pick the one with the closest intersection point.
+         */
         vec3_t ray_origin = sel_unproject_mouse_coords(cam, s_ctx.mouse_up_coord, -1.0f);
         vec3_t ray_dir;
 
@@ -243,6 +259,7 @@ bool G_Sel_GetSelection(struct camera *cam, const pentity_kvec_t *visible, const
         PFM_Vec3_Sub(&ray_origin, &cam_pos, &ray_dir);
         PFM_Vec3_Normal(&ray_dir, &ray_dir);
 
+        float t_min = FLT_MAX;
         for(int i = 0; i < kv_size(*visible_obbs); i++) {
 
             if(!(kv_A(*visible, i)->flags & ENTITY_FLAG_SELECTABLE))
@@ -251,11 +268,12 @@ bool G_Sel_GetSelection(struct camera *cam, const pentity_kvec_t *visible, const
             float t;
             if(C_RayIntersectsOBB(ray_origin, ray_dir, kv_A(*visible_obbs, i), &t)) {
 
-                kv_reset(*inout);                
-                kv_push(struct entity*, *inout, kv_A(*visible, i));
-
-                E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
-                return true;
+                sel_empty = false;
+                if(t < t_min) {
+                    t_min = t;
+                    kv_reset(s_selected);                
+                    kv_push(struct entity*, s_selected, kv_A(*visible, i));
+                }
             }
         }
 
@@ -268,7 +286,6 @@ bool G_Sel_GetSelection(struct camera *cam, const pentity_kvec_t *visible, const
         struct frustum frust;
         sel_make_frustum(cam, s_ctx.mouse_down_coord, s_ctx.mouse_up_coord, &frust);
 
-        bool sel_empty = true;
         for(int i = 0; i < kv_size(*visible_obbs); i++) {
 
             if(!(kv_A(*visible, i)->flags & ENTITY_FLAG_SELECTABLE))
@@ -277,19 +294,56 @@ bool G_Sel_GetSelection(struct camera *cam, const pentity_kvec_t *visible, const
             if(C_FrustumOBBIntersectionExact(&frust, &kv_A(*visible_obbs, i))) {
 
                 if(sel_empty) {
-                    kv_reset(*inout);
+                    kv_reset(s_selected);
                     sel_empty = false;
                 }
-                kv_push(struct entity*, *inout, kv_A(*visible, i));
+                kv_push(struct entity*, s_selected, kv_A(*visible, i));
             }
         }
         
-        if(!sel_empty) {
-            E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
-            return true;
-        }else{
-            return false;
-        }
     }
+
+    if(!sel_empty) {
+        E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
+        return true;
+    }else{
+        return false;
+    }
+}
+
+void G_Sel_Clear(void)
+{
+    bool installed = s_ctx.installed;
+    memset(&s_ctx, 0, sizeof(s_ctx));
+    s_ctx.installed = installed;
+
+    kv_reset(s_selected);
+}
+
+void G_Sel_Add(struct entity *ent)
+{
+    assert(ent->flags & ENTITY_FLAG_SELECTABLE);
+
+    int idx;
+    kv_indexof(struct entity*, s_selected, ent, pentities_equal, idx);
+    if(idx == -1) {
+        kv_push(struct entity*, s_selected, ent);
+    }
+}
+
+void G_Sel_Remove(struct entity *ent)
+{
+    assert(ent->flags & ENTITY_FLAG_SELECTABLE);
+
+    int idx;
+    kv_indexof(struct entity*, s_selected, ent, pentities_equal, idx);
+    if(idx != -1) {
+        kv_del(struct entity*, s_selected, idx);
+    }
+}
+
+const pentity_kvec_t *G_Sel_Get(void)
+{
+    return &s_selected;
 }
 

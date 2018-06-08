@@ -488,14 +488,14 @@ static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args)
 static PyObject *PyEntity_select(PyEntityObject *self)
 {
     assert(self->ent);
-    G_AddToSelection(self->ent);
+    G_Sel_Add(self->ent);
     Py_RETURN_NONE;
 }
 
 static PyObject *PyEntity_deselect(PyEntityObject *self)
 {
     assert(self->ent);
-    G_RemoveFromSelection(self->ent);
+    G_Sel_Remove(self->ent);
     Py_RETURN_NONE;
 }
 
