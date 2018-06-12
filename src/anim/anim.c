@@ -37,10 +37,10 @@
 
 static const struct anim_clip *a_clip_for_name(const struct entity *ent, const char *name)
 {
-    struct anim_private *priv = ent->anim_private;
-    for(int i = 0; i < priv->data->num_anims; i++) {
+    struct anim_data *priv = ent->anim_private;
+    for(int i = 0; i < priv->num_anims; i++) {
 
-        const struct anim_clip *curr = &priv->data->anims[i];
+        const struct anim_clip *curr = &priv->anims[i];
         if(!strcmp(curr->name, name)) 
             return curr;
     }
@@ -91,8 +91,9 @@ static void a_make_bind_mat(int joint_idx, const struct skeleton *skel, mat4x4_t
 
 static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struct skeleton *skel, mat4x4_t *out)
 {
-    struct anim_private *priv = ent->anim_private;
-    struct anim_sample *sample =  &priv->ctx->active->samples[priv->ctx->curr_frame];
+    struct anim_data *priv = ent->anim_private;
+    struct anim_ctx *ctx = ent->anim_ctx;
+    struct anim_sample *sample = &ctx->active->samples[ctx->curr_frame];
 
     mat4x4_t pose_trans;
     PFM_Mat4x4_Identity(&pose_trans);
@@ -115,17 +116,17 @@ static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struc
 
 void a_set_uniforms_curr_frame(const struct entity *ent)
 {
-    struct anim_private *priv = (struct anim_private*)ent->anim_private;
+    struct anim_data *priv = (struct anim_data*)ent->anim_private;
 
     size_t float_per_mat = sizeof(mat4x4_t) / sizeof(float);
-    size_t num_joints = priv->data->skel.num_joints;
+    size_t num_joints = priv->skel.num_joints;
 
     mat4x4_t curr_pose_mats[num_joints];
     for(int j = 0; j < num_joints; j++) {
-        a_make_pose_mat(ent, j, &priv->data->skel, &curr_pose_mats[j]);
+        a_make_pose_mat(ent, j, &priv->skel, &curr_pose_mats[j]);
     }
 
-    R_GL_SetAnimUniformMat4x4Array(priv->data->skel.inv_bind_poses, num_joints, GL_U_INV_BIND_MATS);
+    R_GL_SetAnimUniformMat4x4Array(priv->skel.inv_bind_poses, num_joints, GL_U_INV_BIND_MATS);
     R_GL_SetAnimUniformMat4x4Array(curr_pose_mats, num_joints, GL_U_CURR_POSE_MATS);
 }
 
@@ -136,22 +137,21 @@ void a_set_uniforms_curr_frame(const struct entity *ent)
 
 void A_InitCtx(const struct entity *ent, const char *idle_clip, unsigned key_fps)
 {
-    struct anim_private *priv = ent->anim_private;
-    struct anim_ctx *ctx = priv->ctx;
+    struct anim_data *priv = ent->anim_private;
+    struct anim_ctx *ctx = ent->anim_ctx;
 
     const struct anim_clip *idle = a_clip_for_name(ent, idle_clip);
     assert(idle);
 
     ctx->idle = idle;
-
     A_SetActiveClip(ent, idle_clip, ANIM_MODE_LOOP, key_fps);
 }
 
 void A_SetActiveClip(const struct entity *ent, const char *name, 
                      enum anim_mode mode, unsigned key_fps)
 {
-    struct anim_private *priv = ent->anim_private;
-    struct anim_ctx *ctx = priv->ctx;
+    struct anim_data *priv = ent->anim_private;
+    struct anim_ctx *ctx = ent->anim_ctx;
 
     const struct anim_clip *clip = a_clip_for_name(ent, name);
     assert(clip);
@@ -165,8 +165,8 @@ void A_SetActiveClip(const struct entity *ent, const char *name,
 
 void A_Update(const struct entity *ent)
 {
-    struct anim_private *priv = ent->anim_private;
-    struct anim_ctx *ctx = priv->ctx;
+    struct anim_data *priv = ent->anim_private;
+    struct anim_ctx *ctx = ent->anim_ctx;
 
     a_set_uniforms_curr_frame(ent);
 
@@ -183,14 +183,14 @@ void A_Update(const struct entity *ent)
 
 const struct skeleton *A_GetBindSkeleton(const struct entity *ent)
 {
-    struct anim_private *priv = ent->anim_private;
-    return &priv->data->skel;
+    struct anim_data *priv = ent->anim_private;
+    return &priv->skel;
 }
 
 const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent)
 {
-    struct anim_private *priv = ent->anim_private;
-    size_t num_joints = priv->data->skel.num_joints;
+    struct anim_data *priv = ent->anim_private;
+    size_t num_joints = priv->skel.num_joints;
 
     /* We make a copy of the skeleton structure, the joints, and the inverse bind poses.
      * Returned buffer layout:
@@ -211,16 +211,17 @@ const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent)
     if(!ret)
         return NULL;
 
-    ret->num_joints = priv->data->skel.num_joints;
+    ret->num_joints = priv->skel.num_joints;
     ret->joints = (void*)(ret + 1);
-    memcpy(ret->joints, priv->data->skel.joints, num_joints * sizeof(struct joint));
+    memcpy(ret->joints, priv->skel.joints, num_joints * sizeof(struct joint));
 
     ret->bind_sqts = (void*)((char*)ret->joints + num_joints * sizeof(struct joint));
-    memcpy(ret->bind_sqts, priv->data->skel.bind_sqts, num_joints * sizeof(struct SQT));
+    memcpy(ret->bind_sqts, priv->skel.bind_sqts, num_joints * sizeof(struct SQT));
 
     ret->inv_bind_poses = (void*)((char*)ret->bind_sqts + num_joints * sizeof(struct SQT));
 
-    struct anim_sample *sample =  &priv->ctx->active->samples[priv->ctx->curr_frame];
+    struct anim_ctx *ctx = ent->anim_ctx;
+    struct anim_sample *sample =  &ctx->active->samples[ctx->curr_frame];
 
     for(int i = 0; i < ret->num_joints; i++) {
     
@@ -250,8 +251,8 @@ void A_PrepareInvBindMatrices(const struct skeleton *skel)
 const struct aabb *A_GetCurrPoseAABB(const struct entity *ent)
 {
     assert(ent->flags & ENTITY_FLAG_COLLISION);
-    struct anim_private *priv = ent->anim_private;
-    struct anim_ctx *ctx = priv->ctx;
+    struct anim_data *priv = ent->anim_private;
+    struct anim_ctx *ctx = ent->anim_ctx;
 
     return &ctx->active->samples[ctx->curr_frame].sample_aabb;
 }

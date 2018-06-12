@@ -17,6 +17,7 @@
  *
  */
 
+
 #include "public/render.h"
 #include "render_private.h"
 #include "vertex.h"
@@ -35,6 +36,7 @@
 #define STR(a) #a
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -142,11 +144,7 @@ void al_patch_vbuff_adjacency_info(GLuint VBO, const struct tile *tiles, size_t 
     }
 }
 
-/*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
-/*****************************************************************************/
-
-size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
+size_t al_priv_buffsize_from_header(const struct pfobj_hdr *header)
 {
     size_t ret = 0;
 
@@ -155,6 +153,11 @@ size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
 
     return ret;
 }
+
+
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
 
 /*
  * Render private buff layout:
@@ -167,19 +170,20 @@ size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
  *
  */
 
-bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir, SDL_RWops *stream, void *priv_buff)
+void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header, SDL_RWops *stream)
 {
-    struct render_private *priv = priv_buff;
-    char *unused_base = (char*)priv_buff + sizeof(struct render_private);
-    size_t vbuff_sz = header->num_verts * sizeof(struct vertex);
+    struct render_private *priv = malloc(al_priv_buffsize_from_header(header));
+    if(!priv)
+        goto fail_alloc_priv;
 
+    size_t vbuff_sz = header->num_verts * sizeof(struct vertex);
     struct vertex *vbuff = malloc(vbuff_sz);
     if(!vbuff)
-        goto fail_alloc;
+        goto fail_alloc_vbuff;
 
     priv->mesh.num_verts = header->num_verts;
     priv->num_materials = header->num_materials;
-    priv->materials = (void*)unused_base;
+    priv->materials = (void*)(priv + 1);
 
     for(int i = 0; i < header->num_verts; i++) {
         if(!al_read_vertex(stream, &vbuff[i]))
@@ -189,19 +193,20 @@ bool R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir
     for(int i = 0; i < header->num_materials; i++) {
 
         priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
-        if(!al_read_material(stream, basedir, &priv->materials[i])) 
+        if(!al_read_material(stream, base_path, &priv->materials[i])) 
             goto fail_parse;
     }
 
     R_GL_Init(priv, (header->num_as > 0) ? "mesh.animated.textured-phong" : "mesh.static.textured-phong", vbuff);
-
     free(vbuff);
-    return true;
+    return priv;
 
 fail_parse:
     free(vbuff);
-fail_alloc:
-    return false;
+fail_alloc_vbuff:
+    free(priv);
+fail_alloc_priv:
+    return NULL;
 }
 
 void R_AL_DumpPrivate(FILE *stream, void *priv_data)

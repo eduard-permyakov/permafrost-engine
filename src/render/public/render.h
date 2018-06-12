@@ -248,19 +248,11 @@ void  R_GL_MinimapFree(void);
 /*###########################################################################*/
 
 /* ---------------------------------------------------------------------------
- * Computes the size (in bytes) that is required to store all the rendering 
- * subsystem data from a PF Object file.
+ * Consumes lines of the stream and uses them to populate a new private context
+ * for the model. The context is returned in a malloc'd buffer.
  * ---------------------------------------------------------------------------
  */
-size_t R_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header);
-
-/* ---------------------------------------------------------------------------
- * Consumes lines of the stream and uses them to populate the private data 
- * stored in priv_buff. 
- * ---------------------------------------------------------------------------
- */
-bool   R_AL_InitPrivFromStream(const struct pfobj_hdr *header, const char *basedir, 
-                               SDL_RWops *stream, void *priv_buff);
+void  *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header, SDL_RWops *stream);
 
 /* ---------------------------------------------------------------------------
  * Dumps private render data in PF Object format.

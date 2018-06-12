@@ -23,17 +23,32 @@
 #include "render/public/render.h"
 #include "anim/public/anim.h"
 #include "map/public/map.h"
+#define __USE_POSIX
+#include "lib/public/khash.h"
 
 #include <SDL.h>
 
 #include <stdio.h>
 #include <stdbool.h>
 #include <assert.h>
-#ifndef __USE_POSIX
-    #define __USE_POSIX
-#endif
 #include <string.h>
 #include <stdlib.h> 
+
+
+struct shared_resource{
+    char         key[64];
+    uint32_t     ent_flags;
+    void        *render_private;
+    void        *anim_private;
+    struct aabb  aabb;
+};
+
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+KHASH_MAP_INIT_STR(entity_res, struct shared_resource)
+khash_t(entity_res) *s_name_resource_table;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -147,91 +162,98 @@ fail_parse:
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-/*
- *  We compute the amount of memory needed for each entity ahead of 
- *  time. The we allocate a single buffer, which is appended to the 
- *  end of 'struct entity'. Resource fields of 'struct entity' such 
- *  as the vertex buffer pointer or the animation data pointer point 
- *  into this buffer.
- *
- *  This allows us to do a single malloc/free per each model while
- *  also not wasting any memory.
- */
 struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name)
 {
-    struct entity *ret;
+    struct shared_resource res;
     SDL_RWops *stream;
-    struct pfobj_hdr header;
-    size_t alloc_size;
 
-    char pfobj_path[BASEDIR_LEN * 2];
-    assert( strlen(base_path) + strlen(pfobj_name) + 1 < sizeof(pfobj_path) );
-    strcpy(pfobj_path, base_path);
-    strcat(pfobj_path, "/");
-    strcat(pfobj_path, pfobj_name);
-
-    stream = SDL_RWFromFile(pfobj_path, "r");
-    if(!stream)
-        goto fail_parse; 
-
-    if(!al_parse_pfobj_header(stream, &header))
-        goto fail_parse;
-
-    size_t render_buffsz = R_AL_PrivBuffSizeFromHeader(&header);
-    size_t anim_buffsz = A_AL_PrivBuffSizeFromHeader(&header);
-
-    ret = malloc(sizeof(struct entity) + render_buffsz + anim_buffsz);
+    size_t alloc_size = sizeof(struct entity) + A_AL_CtxBuffSize();
+    struct entity *ret = malloc(alloc_size);
     if(!ret)
         goto fail_alloc;
-    ret->render_private = ret + 1;
-    ret->anim_private = ((char*)ret->render_private) + render_buffsz;
 
     ret->flags = 0;
     ret->scale =    (vec3_t){1.0f, 1.0f, 1.0f};
     ret->pos =      (vec3_t){1.0f, 1.0f, 1.0f};
     ret->rotation = (quat_t){0.0f, 0.0f, 0.0f, 1.0f};
     ret->selection_radius = 0.0f;
+    ret->anim_ctx = (void*)(ret + 1);
 
-    if(!R_AL_InitPrivFromStream(&header, base_path, stream, ret->render_private))
-        goto fail_init;
-
-    if(!A_AL_InitPrivFromStream(&header, stream, ret->anim_private))
-        goto fail_init;
-
-    /* Entities with no animation sets are considered static. */
-    if(header.num_as > 0)
-        ret->flags |= ENTITY_FLAG_ANIMATED;
-
-    if(header.has_collision) {
-
-        ret->flags |= ENTITY_FLAG_COLLISION;
-        if(!AL_ParseAABB(stream, &ret->identity_aabb))
-            goto fail_init;
-    }
-
-    assert( strlen(name) < sizeof(ret->name) );
+    assert(strlen(name) < sizeof(ret->name));
     strcpy(ret->name, name);
 
-    assert( strlen(base_path) < sizeof(ret->basedir) );
+    assert(strlen(base_path) < sizeof(ret->basedir));
     strcpy(ret->basedir, base_path);
+    strcpy(res.key, pfobj_name);
 
-    SDL_RWclose(stream);
+    khiter_t k = kh_get(entity_res, s_name_resource_table, pfobj_name);
+    if(k != kh_end(s_name_resource_table)) {
 
+        res = kh_value(s_name_resource_table, k);
+    }else{
+
+        struct pfobj_hdr header;
+
+        char pfobj_path[BASEDIR_LEN * 2];
+        assert( strlen(base_path) + strlen(pfobj_name) + 1 < sizeof(pfobj_path) );
+        strcpy(pfobj_path, base_path);
+        strcat(pfobj_path, "/");
+        strcat(pfobj_path, pfobj_name);
+
+        stream = SDL_RWFromFile(pfobj_path, "r");
+        if(!stream)
+            goto fail_stream; 
+
+        if(!al_parse_pfobj_header(stream, &header))
+            goto fail_parse;
+
+        res.ent_flags = 0;
+        res.render_private = R_AL_PrivFromStream(base_path, &header, stream);
+        if(!res.render_private)
+            goto fail_parse;
+
+        res.anim_private = A_AL_PrivFromStream(&header, stream);
+        if(!res.anim_private)
+            goto fail_parse;
+
+        /* Entities with no animation sets are considered static. */
+        if(header.num_as > 0) {
+            res.ent_flags |= ENTITY_FLAG_ANIMATED;
+        }
+
+        if(header.has_collision) {
+            res.ent_flags |= ENTITY_FLAG_COLLISION;
+            if(!AL_ParseAABB(stream, &res.aabb))
+                goto fail_parse;
+        }
+        SDL_RWclose(stream);
+
+        int put_ret;
+        k = kh_put(entity_res, s_name_resource_table, pfobj_name, &put_ret);
+        assert(put_ret != -1 && put_ret != 0);
+        kh_value(s_name_resource_table, k) = res;
+        /* A copy of the key string is stored in the 'struct resource' itself. Make the key (string pointer)
+         * be a pointer to that buffer in order to avoid allocating/storing the key strings separately. */
+        kh_key(s_name_resource_table, k) = kh_value(s_name_resource_table, k).key;
+    }
+
+    ret->flags |= res.ent_flags;
+    ret->render_private = res.render_private;
+    ret->anim_private = res.anim_private;
+    ret->identity_aabb = res.aabb;
     ret->uid = Entity_NewUID();
     return ret;
 
-fail_init:
-    free(ret);
-fail_alloc:
 fail_parse:
     SDL_RWclose(stream);
-fail_open:
+fail_stream:
+    free(ret);
+fail_alloc:
     return NULL;
 }
 
 void AL_EntityFree(struct entity *entity)
 {
-    //TODO: Clean up OpenGL buffers
     free(entity);
 }
 
@@ -326,5 +348,16 @@ bool AL_ParseAABB(SDL_RWops *stream, struct aabb *out)
 
 fail:
     return false;
+}
+
+bool AL_Init(void)
+{
+    s_name_resource_table = kh_init(entity_res);
+    return (s_name_resource_table != NULL);
+}
+
+void AL_Shutdown(void)
+{
+    kh_destroy(entity_res, s_name_resource_table);
 }
 

@@ -22,11 +22,6 @@
 
 struct skeleton;
 
-struct anim_private{
-    struct anim_data *data;
-    struct anim_ctx  *ctx;
-};
-
 /* Computes the inverse bind matrix for each joint based on the 
  * joint's bind SQT. The inverse bind matrix will be used by the vertex
  * shader to transform a vertex to the coordinate space of a joint

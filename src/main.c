@@ -180,15 +180,11 @@ static bool engine_init(char **argv)
     /* GLEW initialization                */
     /* ---------------------------------- */
     glewExperimental = GL_TRUE;
-    if(glewInit() != GLEW_OK) {
-        result = false;
+    if(glewInit() != GLEW_OK)
         goto fail_glew;
-    }
 
-    if(!GLEW_VERSION_3_3) {
-        result = false;
+    if(!GLEW_VERSION_3_3)
         goto fail_glew;
-    }
 
     glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
     glProvokingVertex(GL_FIRST_VERTEX_CONVENTION); 
@@ -196,10 +192,8 @@ static bool engine_init(char **argv)
     /* ---------------------------------- */
     /* nuklear initialization             */
     /* ---------------------------------- */
-    if( !(s_nk_ctx = UI_Init(argv[1], s_window)) ) {
-        result = false; 
+    if( !(s_nk_ctx = UI_Init(argv[1], s_window)) ) 
         goto fail_nuklear;
-    }
 
     /* ---------------------------------- */
     /* stb_image initialization           */
@@ -207,50 +201,46 @@ static bool engine_init(char **argv)
     stbi_set_flip_vertically_on_load(true);
 
     /* ---------------------------------- */
+    /* Asset Loading initialization       */
+    /* ---------------------------------- */
+    if(!AL_Init())
+        goto fail_al;
+
+    /* ---------------------------------- */
     /* Cursor initialization              */
     /* ---------------------------------- */
-    if(!Cursor_InitAll(argv[1])) {
-        result = false;
+    if(!Cursor_InitAll(argv[1]))
         goto fail_cursor;
-    }
     Cursor_SetActive(CURSOR_POINTER);
 
     /* ---------------------------------- */
     /* Rendering subsystem initialization */
     /* ---------------------------------- */
-    if(!R_Init(argv[1])) {
-        result = false;
+    if(!R_Init(argv[1]))
         goto fail_render;
-    }
 
     /* ---------------------------------- */
     /* Event subsystem intialization      */
     /* ---------------------------------- */
-    if(!E_Init()) {
-        result = false; 
+    if(!E_Init())
         goto fail_game;
-    }
     Cursor_SetRTSMode(true);
     E_Global_Register(SDL_QUIT, on_user_quit, NULL);
 
     /* ---------------------------------- */
     /* Scripting subsystem initialization */
     /* ---------------------------------- */
-    if(!S_Init(argv[0], argv[1], s_nk_ctx)){
-        result = false; 
+    if(!S_Init(argv[0], argv[1], s_nk_ctx))
         goto fail_script;
-    }
 
     /* ---------------------------------- */
     /* Game state initialization          */
     /*  * depends on Event subsystem      */
     /* ---------------------------------- */
-    if(!G_Init()) {
-        result = false; 
+    if(!G_Init())
         goto fail_game;
-    }
 
-    return result;
+    return true;
 
 fail_game:
 fail_script:
@@ -258,13 +248,14 @@ fail_render:
     Cursor_FreeAll();
 fail_cursor:
     UI_Shutdown();
+fail_al:
 fail_nuklear:
 fail_glew:
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window);
     SDL_Quit();
 fail_sdl:
-    return result; 
+    return false; 
 }
 
 static void engine_shutdown(void)
@@ -278,6 +269,7 @@ static void engine_shutdown(void)
      */
     G_Shutdown(); 
     Cursor_FreeAll();
+    AL_Shutdown();
     E_Shutdown();
 
     kv_destroy(s_prev_tick_events);

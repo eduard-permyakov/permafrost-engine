@@ -27,6 +27,7 @@
 #define __USE_POSIX
 #include <string.h>
 
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -121,17 +122,11 @@ fail:
     return false;
 }
 
-/*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
-/*****************************************************************************/
-
-size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
+size_t al_data_buffsize_from_header(const struct pfobj_hdr *header)
 {
-    size_t ret;
+    size_t ret = 0;
 
-    ret += sizeof(struct anim_private);
     ret += sizeof(struct anim_data);
-    ret += sizeof(struct anim_ctx);
 
     ret += header->num_joints * sizeof(struct SQT);
     ret += header->num_joints * sizeof(mat4x4_t);
@@ -154,15 +149,20 @@ size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
     return ret;
 }
 
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
+size_t A_AL_CtxBuffSize(void)
+{
+    return sizeof(struct anim_ctx);
+}
+
 /*
- * Animation private buff layout:
+ * Animation data buff layout:
  *
  *  +---------------------------------+ <-- base
- *  | struct anim_private[1]          |
- *  +---------------------------------+
  *  | struct anim_data[1]             |
- *  +---------------------------------+
- *  | struct anim_ctx[1]              |
  *  +---------------------------------+
  *  | struct SQT[num_joints] (bind)   |
  *  +---------------------------------+
@@ -181,54 +181,49 @@ size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header)
  *
  */
 
-bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, SDL_RWops *stream, void *priv_buff)
+void *A_AL_PrivFromStream(const struct pfobj_hdr *header, SDL_RWops *stream)
 {
-    char *unused_base = priv_buff;
-    struct anim_private *priv;
+    struct anim_data *ret = malloc(al_data_buffsize_from_header(header));
+    if(!ret)
+        goto fail_alloc;
 
     /*-----------------------------------------------------------
-     * First divide up the buffer betwen 'priv' members,
+     * First divide up the buffer betwen data members,
      * set counts and pointers 
      *-----------------------------------------------------------
      */
-    priv = (void*)unused_base;
-    unused_base += sizeof(struct anim_private);
 
-    priv->data = (void*)unused_base;
-    unused_base += sizeof(struct anim_data);
+    char *unused_base = (char*)(ret + 1);
 
-    priv->ctx = (void*)unused_base;
-    unused_base += sizeof(struct anim_ctx);
+    ret->num_anims = header->num_as; 
+    ret->skel.num_joints = header->num_joints;
 
-    priv->data->num_anims = header->num_as; 
-    priv->data->skel.num_joints = header->num_joints;
-
-    priv->data->skel.bind_sqts = (void*)unused_base;
+    ret->skel.bind_sqts = (void*)unused_base;
     unused_base += sizeof(struct SQT) * header->num_joints;
 
-    priv->data->skel.inv_bind_poses = (void*)unused_base;
+    ret->skel.inv_bind_poses = (void*)unused_base;
     unused_base += sizeof(mat4x4_t) * header->num_joints;
 
-    priv->data->skel.joints = (void*)unused_base;
+    ret->skel.joints = (void*)unused_base;
     unused_base += sizeof(struct joint) * header->num_joints;
 
-    priv->data->anims = (void*)unused_base;
+    ret->anims = (void*)unused_base;
     unused_base += sizeof(struct anim_clip) * header->num_as;
 
     for(int i = 0; i < header->num_as; i++) {
 
-        priv->data->anims[i].samples = (void*)unused_base;
+        ret->anims[i].samples = (void*)unused_base;
         unused_base += sizeof(struct anim_sample) * header->frame_counts[i];
     }
 
     for(int i = 0; i < header->num_as; i++) {
 
-        priv->data->anims[i].skel = &priv->data->skel;
-        priv->data->anims[i].num_frames = header->frame_counts[i];
+        ret->anims[i].skel = &ret->skel;
+        ret->anims[i].num_frames = header->frame_counts[i];
 
         for(int f = 0; f < header->frame_counts[i]; f++) {
 
-            priv->data->anims[i].samples[f].local_joint_poses = (void*)unused_base;
+            ret->anims[i].samples[f].local_joint_poses = (void*)unused_base;
             unused_base += sizeof(struct SQT) * header->num_joints;
         }
     }
@@ -239,34 +234,34 @@ bool A_AL_InitPrivFromStream(const struct pfobj_hdr *header, SDL_RWops *stream, 
      */
     for(int i = 0; i < header->num_joints; i++) {
 
-        if(!al_read_joint(stream, &priv->data->skel.joints[i], &priv->data->skel.bind_sqts[i]))
-            goto fail;
+        if(!al_read_joint(stream, &ret->skel.joints[i], &ret->skel.bind_sqts[i]))
+            goto fail_parse;
     }
 
     for(int i = 0; i < header->num_as; i++) {
         
-        if(!al_read_anim_clip(stream, &priv->data->anims[i], header))
-            goto fail;
+        if(!al_read_anim_clip(stream, &ret->anims[i], header))
+            goto fail_parse;
     }
 
-    A_PrepareInvBindMatrices(&priv->data->skel);
+    A_PrepareInvBindMatrices(&ret->skel);
+    return ret;
 
-    //exit(EXIT_SUCCESS);
-    return true;
-
-fail:
-    return false;
+fail_parse:
+    free(ret);
+fail_alloc:
+    return NULL;
 }
 
 void A_AL_DumpPrivate(FILE *stream, void *priv_data)
 {
-    struct anim_private *priv = priv_data;
+    struct anim_data *priv = priv_data;
 
     /* Write joints */
-    for(int i = 0; i < priv->data->skel.num_joints; i++) {
+    for(int i = 0; i < priv->skel.num_joints; i++) {
 
-        struct joint *j = &priv->data->skel.joints[i];
-        struct SQT *bind = &priv->data->skel.bind_sqts[i];
+        struct joint *j = &priv->skel.joints[i];
+        struct SQT *bind = &priv->skel.bind_sqts[i];
 
         float roll, pitch, yaw;
         PFM_Quat_ToEuler(&bind->quat_rotation, &roll, &pitch, &yaw);
@@ -280,9 +275,9 @@ void A_AL_DumpPrivate(FILE *stream, void *priv_data)
     }
 
     /* Write animation sets */
-    for(int i = 0; i < priv->data->num_anims; i++) {
+    for(int i = 0; i < priv->num_anims; i++) {
 
-        struct anim_clip *ac = &priv->data->anims[i];
+        struct anim_clip *ac = &priv->anims[i];
         fprintf(stream, "as %s %d\n", ac->name, ac->num_frames); 
 
         for(int f = 0; f < ac->num_frames; f++) {

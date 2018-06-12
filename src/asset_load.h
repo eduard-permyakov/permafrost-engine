@@ -61,6 +61,10 @@ struct pfmap_hdr{
     unsigned num_cols;
 };
 
+
+bool           AL_Init(void);
+void           AL_Shutdown(void);
+
 struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name);
 void           AL_EntityFree(struct entity *entity);
 

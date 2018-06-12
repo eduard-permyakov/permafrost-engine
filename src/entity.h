@@ -42,6 +42,7 @@ struct entity{
     uint32_t     flags;
     void        *render_private;
     void        *anim_private;
+    void        *anim_ctx;
     /* For animated entities, this is the bind pose AABB. Each
      * animation sample also has its' own AABB. */
     struct aabb  identity_aabb;

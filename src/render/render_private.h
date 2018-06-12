@@ -27,7 +27,6 @@ struct render_private{
     size_t           num_materials;
     struct material *materials;
     GLuint           shader_prog;
-    GLuint           primitive;
 };
 
 #endif

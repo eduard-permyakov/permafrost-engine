@@ -98,18 +98,18 @@ const struct aabb     *A_GetCurrPoseAABB(const struct entity *ent);
 /*###########################################################################*/
 
 /* ---------------------------------------------------------------------------
- * Computes the size (in bytes) that is required to store all the animation subsystem
- * data from a PF Object file.
+ * Returns the size (in bytes) that is required to store private animation 
+ * context for a single entity.
  * ---------------------------------------------------------------------------
  */
-size_t A_AL_PrivBuffSizeFromHeader(const struct pfobj_hdr *header);
+size_t A_AL_CtxBuffSize(void);
 
 /* ---------------------------------------------------------------------------
- * Consumes lines of the stream and uses them to populate the private data stored 
- * in priv_buff.
+ * Consumes lines of the stream and uses them to populate the private data, 
+ * which is then returned in a malloc'd buffer.
  * ---------------------------------------------------------------------------
  */
-bool   A_AL_InitPrivFromStream(const struct pfobj_hdr *header, SDL_RWops *stream, void *priv_buff);
+void  *A_AL_PrivFromStream(const struct pfobj_hdr *header, SDL_RWops *stream);
 
 /* ---------------------------------------------------------------------------
  * Dumps private animation data in PF Object format.
