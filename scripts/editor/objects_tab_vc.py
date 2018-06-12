@@ -121,9 +121,10 @@ class ObjectsVC(ui.ViewController):
             self.current_object = None
 
     def __on_new_game(self, event):
-        self.current_object = self.__object_at_index(self.view.selected_object_idx)
-        self.current_object.pos = pf.map_pos_under_cursor()
-        self.current_object.activate()
+        if self.view.mode == self.view.OBJECTS_MODE_PLACE:
+            self.current_object = self.__object_at_index(self.view.selected_object_idx)
+            self.current_object.pos = pf.map_pos_under_cursor()
+            self.current_object.activate()
 
     def __on_selected_unit_picked(self, event):
         assert isinstance(event, pf.Entity)
