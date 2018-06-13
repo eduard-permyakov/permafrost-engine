@@ -156,6 +156,8 @@ void    PFM_Mat4x4_MakeLookAt     (vec3_t *camera_pos, vec3_t *target_pos,
 
 void    PFM_Quat_FromRotMat(mat4x4_t *mat, quat_t *out);
 void    PFM_Quat_ToEuler   (quat_t *q, float *out_roll, float *out_pitch, float *out_yaw);
+void    PFM_Quat_MultQuat  (quat_t *op1, quat_t *op2, quat_t *out);
+void    PFM_Quat_Normal    (quat_t *op1, quat_t *out);
 
 /*****************************************************************************/
 /* Other                                                                     */

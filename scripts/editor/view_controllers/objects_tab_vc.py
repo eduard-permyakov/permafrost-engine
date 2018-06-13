@@ -137,6 +137,21 @@ class ObjectsVC(vc.ViewController):
             globals.active_objects_list.remove(obj)
         del sel_obj_list[:]
 
+    def __on_mousewheel(self, event):
+        CCW_ROT_5DEG = [0.0,  0.0436194, 0.0, 0.9990482]
+        CW_ROT_5DEG  = [0.0, -0.0436194, 0.0, 0.9990482]
+        if self.view.mode == self.view.OBJECTS_MODE_SELECT:
+            sel_obj_list = pf.get_unit_selection()
+            if len(sel_obj_list) != 1:
+                return
+            obj = sel_obj_list[0]
+        else:
+            obj = self.current_object
+        if event[1] > 0:
+            obj.rotation = pf.multiply_quaternions(obj.rotation, CCW_ROT_5DEG)
+        else:
+            obj.rotation = pf.multiply_quaternions(obj.rotation, CW_ROT_5DEG)
+
     def activate(self):
         pf.register_event_handler(EVENT_OBJECT_SELECTION_CHANGED, ObjectsVC.__on_selected_object_changed, self)
         pf.register_event_handler(EVENT_MOUSE_ENTERED_MAP, ObjectsVC.__on_mouse_enter_map, self)
@@ -148,6 +163,7 @@ class ObjectsVC(vc.ViewController):
         pf.register_event_handler(EVENT_NEW_GAME, ObjectsVC.__on_new_game, self)
         pf.register_event_handler(EVENT_OBJECT_SELECTED_UNIT_PICKED, ObjectsVC.__on_selected_unit_picked, self)
         pf.register_event_handler(EVENT_OBJECT_DELETE_SELECTION, ObjectsVC.__on_delete_selection, self)
+        pf.register_event_handler(EVENT_SDL_MOUSEWHEEL, ObjectsVC.__on_mousewheel, self)
         self.__set_selection_for_mode()
 
     def deactivate(self):
@@ -161,6 +177,7 @@ class ObjectsVC(vc.ViewController):
         pf.unregister_event_handler(EVENT_NEW_GAME, ObjectsVC.__on_new_game)
         pf.unregister_event_handler(EVENT_OBJECT_SELECTED_UNIT_PICKED, ObjectsVC.__on_selected_unit_picked)
         pf.unregister_event_handler(EVENT_OBJECT_DELETE_SELECTION, ObjectsVC.__on_delete_selection)
+        pf.unregister_event_handler(EVENT_SDL_MOUSEWHEEL, ObjectsVC.__on_mousewheel)
         pf.clear_unit_selection()
         pf.disable_unit_selection()
 

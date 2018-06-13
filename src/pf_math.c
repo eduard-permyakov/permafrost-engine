@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017 Eduard Permyakov 
+ *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -567,6 +567,28 @@ void PFM_Quat_ToEuler(quat_t *q, float *out_roll, float *out_pitch, float *out_y
     double siny = 2.0f * (q->w * q->z + q->x * q->y);
     double cosy = 1.0f - 2.0f * (q->y * q->y + q->z * q->z);
     *out_yaw = RAD_TO_DEG(atan2(siny, cosy));
+}
+
+void PFM_Quat_MultQuat(quat_t *op1, quat_t *op2, quat_t *out)
+{
+    out->x = ( op1->x * op2->w) + (op1->y * op2->z) - (op1->z * op2->y) + (op1->w * op2->x);
+    out->y = (-op1->x * op2->z) + (op1->y * op2->w) + (op1->z * op2->x) + (op1->w * op2->y);
+    out->z = ( op1->x * op2->y) - (op1->y * op2->x) + (op1->z * op2->w) + (op1->w * op2->z);
+    out->w = (-op1->x * op2->x) - (op1->y * op2->y) - (op1->z * op2->z) + (op1->w * op2->w);
+}
+
+void PFM_Quat_Normal(quat_t *op1, quat_t *out)
+{
+    GLfloat len = sqrt(
+         op1->x * op1->x 
+       + op1->y * op1->y
+       + op1->z * op1->z 
+       + op1->w * op1->w
+    ); 
+    out->x = op1->x / len;
+    out->y = op1->y / len;
+    out->z = op1->z / len;
+    out->w = op1->w / len;
 }
 
 GLfloat PFM_BilinearInterp(GLfloat q11, GLfloat q12, GLfloat q21, GLfloat q22,

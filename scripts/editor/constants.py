@@ -63,6 +63,7 @@ EVENT_SDL_KEYDOWN                  = 0x300
 EVENT_SDL_MOUSEMOTION              = 0x400
 EVENT_SDL_MOUSEBUTTONDOWN          = 0x401
 EVENT_SDL_MOUSEBUTTONUP            = 0x402
+EVENT_SDL_MOUSEWHEEL               = 0x403
 
 ############################################################
 # Engine events (from event.h)                             #

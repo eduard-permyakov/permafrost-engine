@@ -66,6 +66,8 @@ static PyObject *PyPf_mouse_over_minimap(PyObject *self);
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 
+static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -187,6 +189,10 @@ static PyMethodDef pf_module_methods[] = {
     "Returns the XYZ coordinate of the point of the map underneath the cursor. Returns 'None' if "
     "the cursor is not over the map."},
 
+    {"multiply_quaternions",
+    (PyCFunction)PyPf_multiply_quaternions, METH_VARARGS,
+    "Returns the normalized result of multiplying 2 quaternions (specified as a list of 4 floats - XYZW order)."},
+
     {NULL}  /* Sentinel */
 };
 
@@ -196,8 +202,6 @@ static PyMethodDef pf_module_methods[] = {
 
 static bool s_vec3_from_pylist_arg(PyObject *list, vec3_t *out)
 {
-    vec3_t ret;
-
     if(!PyList_Check(list)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a list.");
         return false;
@@ -206,6 +210,33 @@ static bool s_vec3_from_pylist_arg(PyObject *list, vec3_t *out)
     Py_ssize_t len = PyList_Size(list);
     if(len != 3) {
         PyErr_SetString(PyExc_TypeError, "Argument must have a size of 3."); 
+        return false;
+    }
+
+    for(int i = 0; i < len; i++) {
+
+        PyObject *item = PyList_GetItem(list, i);
+        if(!PyFloat_Check(item)) {
+            PyErr_SetString(PyExc_TypeError, "List items must be floats.");
+            return false;
+        }
+
+        out->raw[i] = PyFloat_AsDouble(item);
+    }
+
+    return true;
+}
+
+static bool s_quat_from_pylist_arg(PyObject *list, quat_t *out)
+{
+    if(!PyList_Check(list)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a list.");
+        return false;
+    }
+    
+    Py_ssize_t len = PyList_Size(list);
+    if(len != 4) {
+        PyErr_SetString(PyExc_TypeError, "Argument must have a size of 4."); 
         return false;
     }
 
@@ -550,6 +581,27 @@ static PyObject *PyPf_map_pos_under_cursor(PyObject *self)
         Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args)
+{
+    PyObject *q1_list, *q2_list;
+    quat_t q1, q2, ret;
+
+    if(!PyArg_ParseTuple(args, "OO", &q1_list, &q2_list)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two objects.");
+        return NULL;
+    }
+
+    if(!s_quat_from_pylist_arg(q1_list, &q1))
+        return NULL;
+    if(!s_quat_from_pylist_arg(q2_list, &q2))
+        return NULL;
+
+    PFM_Quat_MultQuat(&q1, &q2, &ret);
+    PFM_Quat_Normal(&ret, &ret);
+
+    return Py_BuildValue("[ffff]", ret.x, ret.y, ret.z, ret.w);
+}
+
 static bool s_sys_path_add_dir(const char *filename)
 {
     if(strlen(filename) >= 512)
@@ -685,6 +737,13 @@ script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg)
                 ((SDL_Event*)arg)->button.button,
                 ((SDL_Event*)arg)->button.state);
 
+        case SDL_MOUSEWHEEL:
+        {
+            uint32_t dir = ((SDL_Event*)arg)->wheel.direction;
+            return Py_BuildValue("(i, i)",
+                ((SDL_Event*)arg)->wheel.x * (dir == SDL_MOUSEWHEEL_NORMAL ? 1 : -1),
+                ((SDL_Event*)arg)->wheel.y * (dir == SDL_MOUSEWHEEL_NORMAL ? 1 : -1));
+        }
         case EVENT_SELECTED_TILE_CHANGED:
             if(!arg)
                 Py_RETURN_NONE;
