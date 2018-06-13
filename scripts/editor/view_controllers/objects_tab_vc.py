@@ -17,17 +17,17 @@
 #
 
 import pf
-import ui
 from constants import *
 import os
 import mouse_events
 import globals
+import view_controller as vc
 
 
 def listdir_fullpath(dir):
     return [os.path.join(dir, f) for f in os.listdir(dir)]
 
-class ObjectsVC(ui.ViewController):
+class ObjectsVC(vc.ViewController):
 
     OBJECTS_LIST = [
         { "path" : "sinbad/Sinbad.pfobj",            "anim" : True,      "idle" : "IdleBase",    "scale" : [1.2,  1.2,  1.2], "sel_radius" : 3.25 },

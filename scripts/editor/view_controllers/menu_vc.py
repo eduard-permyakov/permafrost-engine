@@ -19,11 +19,13 @@
 import pf
 from constants import *
 import map
-import ui
 import globals
+import view_controller as vc
 from math import cos, pi
 
-class MenuVC(ui.ViewController):
+import views.file_chooser_window as fc
+
+class MenuVC(vc.ViewController):
 
     def __init__(self, view):
         self.view = view
@@ -35,7 +37,7 @@ class MenuVC(ui.ViewController):
         del globals.active_objects_list[:]
         globals.active_map = map.Map(4, 4)
         pf.new_game_string(globals.active_map.pfmap_str())
-        pf.set_minimap_position(ui.LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10, 
+        pf.set_minimap_position(UI_LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10, 
             pf.get_resolution()[1] - MINIMAP_PX_WIDTH/cos(pi/4)/2 - 10)
         self.view.hide()
 
@@ -43,7 +45,7 @@ class MenuVC(ui.ViewController):
 
     def __on_load(self, event):
         assert self.fc is None
-        self.fc = ui.FileChooser()
+        self.fc = fc.FileChooser()
         self.fc.show()
         self.deactivate()
 
@@ -66,7 +68,7 @@ class MenuVC(ui.ViewController):
                 del globals.active_objects_list[:]
                 globals.active_map = new_map
                 pf.new_game_string(globals.active_map.pfmap_str())
-                pf.set_minimap_position(ui.LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10, 
+                pf.set_minimap_position(UI_LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10, 
                     pf.get_resolution()[1] - MINIMAP_PX_WIDTH/cos(pi/4)/2 - 10)
                 self.view.hide()
 
@@ -83,7 +85,7 @@ class MenuVC(ui.ViewController):
 
     def __on_save_as(self, event):
         assert self.fc is None
-        self.fc = ui.FileChooser()
+        self.fc = fc.FileChooser()
         self.fc.show()
         self.deactivate()
 

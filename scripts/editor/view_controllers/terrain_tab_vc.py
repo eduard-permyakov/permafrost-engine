@@ -19,8 +19,8 @@
 import pf
 from constants import *
 import map
-import ui
 import globals
+import view_controller as vc
 
 
 def tile_left_height(tile):
@@ -88,7 +88,7 @@ def tile_bot_left_height(tile):
         return max(tile_bot_height(tile), tile_left_height(tile))
 
 
-class TerrainTabVC(ui.ViewController):
+class TerrainTabVC(vc.ViewController):
 
     MATERIALS_LIST = [
         map.Material("Grass",           "grass.png",            1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)), 

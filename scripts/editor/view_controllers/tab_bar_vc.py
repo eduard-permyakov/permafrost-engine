@@ -18,9 +18,9 @@
 
 import pf
 from constants import *
-from ui import ViewController
+import view_controller
 
-class TabBarVC(ViewController):
+class TabBarVC(view_controller.ViewController):
 
     def __init__(self, view):
         self.view = view
@@ -36,7 +36,7 @@ class TabBarVC(ViewController):
         self.children[self.active_idx].activate()
 
     def push_child(self, label, vc):
-        assert isinstance(vc, ViewController)
+        assert isinstance(vc, view_controller.ViewController)
         assert isinstance(label, basestring)
         self.children.append(vc)
         self.view.labels.append(label)

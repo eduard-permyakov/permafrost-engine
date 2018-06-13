@@ -16,15 +16,8 @@
 #  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import pf
-from constants import *
-from map import Material
+class ViewController(object):
 
-
-
-
-
-
-
-
+    def activate(self): pass 
+    def deactivate(self): pass 
 
