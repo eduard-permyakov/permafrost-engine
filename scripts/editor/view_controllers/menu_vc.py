@@ -20,8 +20,10 @@ import pf
 from constants import *
 import map
 import globals
+import scene
 import view_controller as vc
 from math import cos, pi
+import traceback
 
 import views.file_chooser_window as fc
 
@@ -45,7 +47,7 @@ class MenuVC(vc.ViewController):
 
     def __on_load(self, event):
         assert self.fc is None
-        self.fc = fc.FileChooser()
+        self.fc = fc.FileChooser("Load")
         self.fc.show()
         self.deactivate()
 
@@ -62,8 +64,8 @@ class MenuVC(vc.ViewController):
         self.activate()
 
         import os.path 
-        if os.path.isfile(event):
-            new_map = map.Map.from_filepath(event)
+        if os.path.isfile(event[0]):
+            new_map = map.Map.from_filepath(event[0])
             if new_map is not None:
                 del globals.active_objects_list[:]
                 globals.active_map = new_map
@@ -85,7 +87,7 @@ class MenuVC(vc.ViewController):
 
     def __on_save_as(self, event):
         assert self.fc is None
-        self.fc = fc.FileChooser()
+        self.fc = fc.FileChooser("Save")
         self.fc.show()
         self.deactivate()
 
@@ -101,10 +103,16 @@ class MenuVC(vc.ViewController):
         self.fc = None
         self.activate()
 
-        globals.active_map.filename = event
-        try: globals.active_map.write_to_file()
-        except: pass
-        else: self.view.hide()
+        globals.active_map.filename = event[0]
+        try: 
+            globals.active_map.write_to_file()
+            if event[1] is not None:
+                scene.save_scene(event[1])
+        except:
+            print("Failed to save map/scene!")
+            traceback.print_exc() 
+        else: 
+            self.view.hide()
 
     def __on_save_as_cancel(self, event):
         pf.unregister_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.__on_save_as_confirm)

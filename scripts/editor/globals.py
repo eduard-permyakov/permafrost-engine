@@ -17,6 +17,11 @@
 #
 
 import map
+import pf
+
+# Wrappers around C-created types which can have additional attributes
+class EditorEntity(pf.Entity): pass
+class EditorAnimEntity(pf.AnimEntity): pass
 
 active_map = map.Map(4, 4)
 active_objects_list = []

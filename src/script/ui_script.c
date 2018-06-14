@@ -57,6 +57,7 @@ static PyObject *PyWindow_option_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_edit_string(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_checkbox(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -127,6 +128,10 @@ static PyMethodDef PyWindow_methods[] = {
     {"combo_box", 
     (PyCFunction)PyWindow_combo_box, METH_VARARGS,
     "Present a combo box with a list of selectable options."},
+
+    {"checkbox", 
+    (PyCFunction)PyWindow_checkbox, METH_VARARGS,
+    "Checkbox which can be toggled. Returns True if checked."},
 
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
@@ -480,6 +485,20 @@ static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args)
 
     int ret = nk_combo(s_nk_ctx, labels, num_items, selected_idx, item_height, size);
     return Py_BuildValue("i", ret);
+}
+
+static PyObject *PyWindow_checkbox(PyWindowObject *self, PyObject *args)
+{
+    const char *label;
+    int selected;
+
+    if(!PyArg_ParseTuple(args, "si", &label, &selected)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string and an integer.");
+        return NULL;
+    }
+
+    nk_checkbox_label(s_nk_ctx, label, &selected);
+    return Py_BuildValue("i", selected);
 }
 
 static PyObject *PyWindow_show(PyWindowObject *self)

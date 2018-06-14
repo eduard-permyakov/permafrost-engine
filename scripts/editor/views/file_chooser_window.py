@@ -20,29 +20,41 @@ import pf
 from constants import *
 
 class FileChooser(pf.Window):
-    WINDOW_WIDTH = 400 
-    WINDOW_HEIGHT = 150
+    WINDOW_WIDTH = 500 
+    WINDOW_HEIGHT = 260
 
-    def __init__(self):
+    def __init__(self, title):
         resx, resy = pf.get_resolution()
-        super(FileChooser, self).__init__("FileChooser", 
+        super(FileChooser, self).__init__(title, 
             (resx / 2 - FileChooser.WINDOW_WIDTH/ 2, resy / 2 - FileChooser.WINDOW_HEIGHT / 2, 
-            FileChooser.WINDOW_WIDTH, FileChooser.WINDOW_HEIGHT), NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)
+            FileChooser.WINDOW_WIDTH, FileChooser.WINDOW_HEIGHT), NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_TITLE)
         import os 
-        self.filestring = os.path.realpath(pf.get_basedir()) + "/assets/maps/"
+        self.mapstring = os.path.realpath(pf.get_basedir()) + "/assets/maps/"
+        self.scenestring = os.path.realpath(pf.get_basedir()) + "/assets/maps/"
+        self.scene_flag = False
+        self.title = title
 
     def update(self):
 
         self.layout_row_static(15, FileChooser.WINDOW_WIDTH, 1)
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap(self.title + " Map:", (175, 175, 175))
         self.layout_row_dynamic(30, 1)
-        self.filestring = self.edit_string(NK_EDIT_SIMPLE, self.filestring)
-        self.layout_row_static(15, FileChooser.WINDOW_WIDTH, 1)
+        self.mapstring = self.edit_string(NK_EDIT_SIMPLE, self.mapstring)
 
         def on_okay():
-            pf.global_event(EVENT_FILE_CHOOSER_OKAY, self.filestring)
+            scenepath = self.scenestring if self.scene_flag is not None else None
+            pf.global_event(EVENT_FILE_CHOOSER_OKAY, (self.mapstring, scenepath))
 
         def on_cancel():
             pf.global_event(EVENT_FILE_CHOOSER_CANCEL, None)
+
+        self.layout_row_dynamic(30, 1)
+        self.scene_flag = self.checkbox(self.title + " Scene:", self.scene_flag)
+        self.layout_row_dynamic(30, 1)
+        if self.scene_flag:
+            self.scenestring = self.edit_string(NK_EDIT_SIMPLE, self.scenestring)
+        self.layout_row_static(15, FileChooser.WINDOW_WIDTH, 1)
 
         self.layout_row_dynamic(30, 2)
         self.button_label("OK", on_okay)

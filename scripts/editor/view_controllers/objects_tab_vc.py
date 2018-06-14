@@ -30,11 +30,41 @@ def listdir_fullpath(dir):
 class ObjectsVC(vc.ViewController):
 
     OBJECTS_LIST = [
-        { "path" : "sinbad/Sinbad.pfobj",            "anim" : True,      "idle" : "IdleBase",    "scale" : [1.2,  1.2,  1.2], "sel_radius" : 3.25 },
-        { "path" : "knight/knight.pfobj",            "anim" : True,      "idle" : "Idle",        "scale" : [0.8,  0.8,  0.8], "sel_radius" : 3.25 },
-        { "path" : "mage/mage.pfobj",                "anim" : True,      "idle" : "Idle",        "scale" : [0.7,  0.7,  0.7], "sel_radius" : 4.25 },
-        { "path" : "oak_tree/oak_tree.pfobj",        "anim" : False,                             "scale" : [1.6,  1.6,  1.6], "sel_radius" : 5.25 },
-        { "path" : "oak_tree/oak_leafless.pfobj",    "anim" : False,                             "scale" : [1.6,  1.6,  1.6], "sel_radius" : 5.25 },
+        { 
+            "path"           : "sinbad/Sinbad.pfobj",
+            "anim"           : True,
+            "idle"           : "IdleBase",
+            "scale"          : [1.2,  1.2,  1.2], 
+            "sel_radius"     : 3.25,
+            "class"          : "Sinbad",
+            "construct_args" : ["Sinbad", 10]
+        },
+        { 
+            "path"           : "knight/knight.pfobj",
+            "anim"           : True,
+            "idle"           : "Idle",
+            "scale"          : [0.8,  0.8,  0.8], 
+            "sel_radius"     : 3.25 
+        },
+        { 
+            "path"           : "mage/mage.pfobj",
+            "anim"           : True,
+            "idle"           : "Idle",
+            "scale"          : [0.7,  0.7,  0.7], 
+            "sel_radius"     : 4.25
+        },
+        { 
+            "path"           : "oak_tree/oak_tree.pfobj",
+            "anim"           : False,
+            "scale"          : [1.6,  1.6,  1.6],
+            "sel_radius"     : 5.25 
+        },
+        { 
+            "path"           : "oak_tree/oak_leafless.pfobj",
+            "anim"           : False,
+            "scale"          : [1.6,  1.6,  1.6],
+            "sel_radius"     : 5.25 
+        },
     ]
 
     def __init__(self, view):
@@ -49,12 +79,13 @@ class ObjectsVC(vc.ViewController):
     def __object_at_index(self, index):
         split_path = os.path.split("assets/models/" + self.OBJECTS_LIST[index]["path"])
         if self.OBJECTS_LIST[index]["anim"]:
-            ret = pf.AnimEntity(os.path.join(split_path[:-1])[0], split_path[-1], split_path[-1].split(".")[0], self.OBJECTS_LIST[index]["idle"])
+            ret = globals.EditorAnimEntity(os.path.join(split_path[:-1])[0], split_path[-1], split_path[-1].split(".")[0], self.OBJECTS_LIST[index]["idle"])
         else:
-            ret = pf.Entity(os.path.join(split_path[:-1])[0], split_path[-1], split_path[-1].split(".")[0])
+            ret = globals.EditorEntity(os.path.join(split_path[:-1])[0], split_path[-1], split_path[-1].split(".")[0])
         ret.scale = self.OBJECTS_LIST[index]["scale"]
         ret.selection_radius = self.OBJECTS_LIST[index]["sel_radius"]
         ret.selectable = True
+        ret.meta_dict = self.OBJECTS_LIST[index]
         return ret
 
     def __set_selection_for_mode(self):
