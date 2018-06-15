@@ -16,13 +16,14 @@ def mesh_triangulate(mesh):
     bm.to_mesh(mesh)
     bm.free()
 
-def current_pose_bbox(global_matrix, mesh_objs):
+def current_pose_bbox(global_matrix, mesh_objs, local_origin):
     # We build a single bounding box encapsulating all selected objects - this only works
     # if a single entity is composed of multiple objects - otherwise they must be 
     # exported one at a time
     bbox_verts = []
     for obj in mesh_objs:
-        bbox_verts += [global_matrix * obj.matrix_world * Vector(b) for b in obj.bound_box]
+        ws_mat = Matrix.Identity(4) if local_origin else obj.matrix_world
+        bbox_verts += [global_matrix * ws_mat * Vector(b) for b in obj.bound_box]
 
     min_x = min(p.x for p in bbox_verts)
     max_x = max(p.x for p in bbox_verts)
@@ -33,14 +34,18 @@ def current_pose_bbox(global_matrix, mesh_objs):
 
     return min_x, max_x, min_y, max_y, min_z, max_z
 
-def save(operator, context, filepath, global_matrix, export_bbox):
+def save(operator, context, filepath, global_matrix, export_bbox, local_origin):
     with open(filepath, "w", encoding="ascii") as ofile:
 
         mesh_objs = [obj for obj in bpy.context.selected_objects if obj.type == 'MESH']
         meshes = [obj.data for obj in mesh_objs]
         arms   = [obj for obj in bpy.context.selected_objects if obj.type == 'ARMATURE']
 
-        textured_mats = [material for material in bpy.data.materials if material.active_texture]
+        textured_mats = []
+        for mesh in meshes:
+            for mat in mesh.materials:
+                if mat.active_texture:
+                    textured_mats.append(mat)
 
         for mesh in meshes:
             mesh_triangulate(mesh)
@@ -52,7 +57,7 @@ def save(operator, context, filepath, global_matrix, export_bbox):
 
         num_joints    = sum([len(arm.pose.bones) for arm in arms])
         num_as        = len(bpy.data.actions.items())
-        num_materials = sum([len(mesh.materials) for mesh in meshes])
+        num_materials = len(textured_mats)
         frame_counts  = [str(int(a.frame_range[1] - a.frame_range[0] + 1)) for a in bpy.data.actions]
 
         #####################################################################
@@ -77,7 +82,8 @@ def save(operator, context, filepath, global_matrix, export_bbox):
             for face in mesh.polygons:
                 for loop_idx in face.loop_indices:
 
-                    trans = global_matrix * obj.matrix_world
+                    ws_mat = Matrix.Identity(4) if local_origin else obj.matrix_world
+                    trans = global_matrix * ws_mat
 
                     v = mesh.vertices[mesh.loops[loop_idx].vertex_index]
                     v_co_world = trans * v.co
@@ -100,6 +106,7 @@ def save(operator, context, filepath, global_matrix, export_bbox):
                     ofile.write(line)
 
                     line = "vw ";
+                    joint_idx_weight_map = {}
                     for vg in v.groups:
 
                         if vg.weight == 0:
@@ -112,8 +119,14 @@ def save(operator, context, filepath, global_matrix, export_bbox):
                         joint = arms[0].data.bones[bone_name]
                         joint_idx = arms[0].data.bones.values().index(joint)
 
+                        joint_idx_weight_map[joint_idx] = vg.weight
+
+                    # Write the joints ordered by weight - we only use the top 6 highest weights
+                    # in the engine
+                    from operator import itemgetter
+                    for tuple in sorted(joint_idx_weight_map.items(), key=itemgetter(1), reverse=True):
                         next_elem = " {g}/{w:.6f}"
-                        next_elem = next_elem.format(g=joint_idx, w=vg.weight)
+                        next_elem = next_elem.format(g=tuple[0], w=tuple[1])
                         line += next_elem
 
                     line += "\n"
@@ -153,6 +166,7 @@ def save(operator, context, filepath, global_matrix, export_bbox):
 
         for obj in arms:
             arm = obj.data
+            ws_mat = Matrix.Identity(4) if local_origin else obj.matrix_world
 
             # write Joints
             for bone in arm.bones:
@@ -166,7 +180,7 @@ def save(operator, context, filepath, global_matrix, export_bbox):
                 if bone.parent is not None:
                     mat_final = bone.parent.matrix_local.inverted() * bone.matrix_local
                 else:
-                    mat_final = global_matrix * obj.matrix_world * bone.matrix_local
+                    mat_final = global_matrix * ws_mat * bone.matrix_local
 
                 line += " {s.x:.6f}/{s.y:.6f}/{s.z:.6f}"
                 line = line.format(s=mat_final.to_scale())
@@ -193,6 +207,9 @@ def save(operator, context, filepath, global_matrix, export_bbox):
 
         for action in bpy.data.actions:
 
+            if len(arms) == 0:
+                break
+
             frame_cnt = action.frame_range[1] - action.frame_range[0] + 1;
             ofile.write("as " + action.name + " " + str(int(frame_cnt)) + "\n")
 
@@ -205,6 +222,8 @@ def save(operator, context, filepath, global_matrix, export_bbox):
                 bpy.context.scene.frame_set(f)
 
                 obj = arms[0]
+                ws_mat = Matrix.Identity(4) if local_origin else obj.matrix_world
+
                 for bone in obj.data.bones:
                     pbone = obj.pose.bones[bone.name]
 
@@ -216,7 +235,7 @@ def save(operator, context, filepath, global_matrix, export_bbox):
                     if bone.parent is not None:
                         mat_final = pbone.parent.matrix.inverted() * pbone.matrix
                     else:
-                        mat_final = global_matrix * obj.matrix_world * pbone.matrix
+                        mat_final = global_matrix * ws_mat * pbone.matrix
 
                     line = line.format(idx=idx, s=mat_final.to_scale(), q=mat_final.to_quaternion().inverted(), t=mat_final.to_translation())
 
@@ -226,7 +245,7 @@ def save(operator, context, filepath, global_matrix, export_bbox):
                     continue
 
                 # Write bbox for current animation frame
-                min_x, max_x, min_y, max_y, min_z, max_z = current_pose_bbox(global_matrix, mesh_objs)
+                min_x, max_x, min_y, max_y, min_z, max_z = current_pose_bbox(global_matrix, mesh_objs, local_origin)
                 line = "\tx_bounds {a:.6f} {b:.6f}\n".format(a=min_x, b=max_x)
                 ofile.write(line)
                 line = "\ty_bounds {a:.6f} {b:.6f}\n".format(a=min_y, b=max_y)
@@ -239,7 +258,7 @@ def save(operator, context, filepath, global_matrix, export_bbox):
         #####################################################################
 
         bpy.ops.object.mode_set(mode='EDIT')
-        min_x, max_x, min_y, max_y, min_z, max_z = current_pose_bbox(global_matrix, mesh_objs)
+        min_x, max_x, min_y, max_y, min_z, max_z = current_pose_bbox(global_matrix, mesh_objs, local_origin)
         bpy.ops.object.mode_set(mode='OBJECT')
 
         line = "x_bounds {a:.6f} {b:.6f}\n".format(a=min_x, b=max_x)

@@ -56,6 +56,12 @@ class ExportPFOBJ(bpy.types.Operator, ExportHelper):
         default=True
     )
 
+    local_origin = BoolProperty(
+        name="Use Local Object Origin",
+        description="Worldspace transform is not applied to vertices, they are exported in object space instead.",
+        default=False
+    )
+
     def execute(self, context):
         from . import export_pfobj
         from mathutils import Matrix
