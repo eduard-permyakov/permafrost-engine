@@ -30,6 +30,11 @@ def listdir_fullpath(dir):
 class ObjectsVC(vc.ViewController):
 
     OBJECTS_LIST = [
+
+        ########################################################################
+        # UNITS                                                                #
+        ########################################################################
+
         { 
             "path"           : "sinbad/Sinbad.pfobj",
             "anim"           : True,
@@ -50,9 +55,49 @@ class ObjectsVC(vc.ViewController):
             "path"           : "mage/mage.pfobj",
             "anim"           : True,
             "idle"           : "Idle",
-            "scale"          : [0.7,  0.7,  0.7], 
+            "scale"          : [0.6,  0.6,  0.6], 
             "sel_radius"     : 4.25
         },
+        { 
+            "path"           : "berzerker/berzerker.pfobj",
+            "anim"           : True,
+            "idle"           : "Idle",
+            "scale"          : [0.7,  0.7,  0.7], 
+            "sel_radius"     : 3.00 
+        },
+        {
+            "path"           : "goblin/goblin.pfobj",
+            "anim"           : True,
+            "idle"           : "Idle",
+            "scale"          : [0.9,  0.9,  0.9],
+            "sel_radius"     : 3.00
+        },
+        {
+            "path"           : "deer/doe.pfobj",
+            "anim"           : True,
+            "idle"           : "Idle",
+            "scale"          : [2.0,  2.0,  2.0],
+            "sel_radius"     : 3.25
+        },
+        {
+            "path"           : "deer/deer.pfobj",
+            "anim"           : True,
+            "idle"           : "Idle",
+            "scale"          : [2.0,  2.0,  2.0],
+            "sel_radius"     : 3.25
+        },
+        {
+            "path"           : "chicken/chicken.pfobj",
+            "anim"           : True,
+            "idle"           : "Idle",
+            "scale"          : [0.4,  0.4,  0.4],
+            "sel_radius"     : 1.50
+        },
+
+        ########################################################################
+        # TREES                                                                #
+        ########################################################################
+
         { 
             "path"           : "oak_tree/oak_tree.pfobj",
             "anim"           : False,
@@ -64,6 +109,299 @@ class ObjectsVC(vc.ViewController):
             "anim"           : False,
             "scale"          : [1.6,  1.6,  1.6],
             "sel_radius"     : 5.25 
+        },
+        {
+            "path"           : "tree_basic/tree_basic.pfobj",
+            "anim"           : False,
+            "scale"          : [10.0,  10.0,  10.0],
+            "sel_radius"     : 3.00 
+        },
+        {
+            "path"           : "pine_tree/pine_tree.pfobj",
+            "anim"           : False,
+            "scale"          : [15.0,  15.0,  15.0],
+            "sel_radius"     : 2.50 
+        },
+        {
+            "path"           : "tree_leafy/tree_leafy.pfobj",
+            "anim"           : False,
+            "scale"          : [10.0,  10.0,  10.0],
+            "sel_radius"     : 3.00 
+        },
+        {
+            "path"           : "tree_dry/tree_dry.pfobj",
+            "anim"           : False,
+            "scale"          : [10.0,  10.0,  10.0],
+            "sel_radius"     : 2.50 
+        },
+        {
+            "path"           : "large_pine_tree/large_pine_tree.pfobj",
+            "anim"           : False,
+            "scale"          : [22.0,  22.0,  22.0],
+            "sel_radius"     : 6.50 
+        },
+        {
+            "path"           : "large_tree/large_tree.pfobj",
+            "anim"           : False,
+            "scale"          : [15.0,  15.0,  15.0],
+            "sel_radius"     : 5.25
+        },
+        {
+            "path"           : "palm_tree/palm.pfobj",
+            "anim"           : False,
+            "scale"          : [5.5,  5.5,  5.5],
+            "sel_radius"     : 3.25
+        },
+
+        ########################################################################
+        # DOODADS                                                              #
+        ########################################################################
+
+        {
+            "path"           : "ceramic_jar/ceramic_jar.pfobj",
+            "anim"           : False,
+            "scale"          : [35.0,  35.0,  35.0],
+            "sel_radius"     : 2.50 
+        },
+        {
+            "path"           : "rock/rock.pfobj",
+            "anim"           : False,
+            "scale"          : [2.0,  2.0,  2.0],
+            "sel_radius"     : 3.25 
+        },
+        {
+            "path"           : "varied_rocks/rock_1.pfobj",
+            "anim"           : False,
+            "scale"          : [4.0,  4.0,  4.0],
+            "sel_radius"     : 3.25
+        },
+        {
+            "path"           : "varied_rocks/rock_2.pfobj",
+            "anim"           : False,
+            "scale"          : [4.0,  4.0,  4.0],
+            "sel_radius"     : 3.00
+        },
+        {
+            "path"           : "varied_rocks/rock_3.pfobj",
+            "anim"           : False,
+            "scale"          : [4.0,  4.0,  4.0],
+            "sel_radius"     : 3.25
+        },
+        {
+            "path"           : "varied_rocks/rock_4.pfobj",
+            "anim"           : False,
+            "scale"          : [4.0,  4.0,  4.0],
+            "sel_radius"     : 3.75
+        },
+        {
+            "path"           : "varied_rocks/rock_5.pfobj",
+            "anim"           : False,
+            "scale"          : [4.0,  4.0,  4.0],
+            "sel_radius"     : 3.25
+        },
+        {
+            "path"           : "shrub/shrub.pfobj",
+            "anim"           : False,
+            "scale"          : [6.5,  6.5,  6.5],
+            "sel_radius"     : 3.50 
+        },
+        {
+            "path"           : "well/well.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 3.25
+        },
+        {
+            "path"           : "props/wood_fence_1.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 3.00
+        },
+        {
+            "path"           : "props/wood_fence_2.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 3.00
+        },
+        {
+            "path"           : "props/wood_trough.pfobj",
+            "anim"           : False,
+            "scale"          : [1.5,  1.5,  1.5],
+            "sel_radius"     : 3.00
+        },
+        {
+            "path"           : "props/wood_road_sign.pfobj",
+            "anim"           : False,
+            "scale"          : [0.7,  0.7,  0.7],
+            "sel_radius"     : 1.50
+        },
+        {
+            "path"           : "props/wood_lamp_post.pfobj",
+            "anim"           : False,
+            "scale"          : [0.7,  0.7,  0.7],
+            "sel_radius"     : 1.50
+        },
+        {
+            "path"           : "props/tombstone_1.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 2.50
+        },
+        {
+            "path"           : "props/tombstone_2.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 2.50
+        },
+        {
+            "path"           : "props/tombstone_3.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 2.50
+        },
+        {
+            "path"           : "props/cross_1.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 2.00
+        },
+        {
+            "path"           : "props/cross_2.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 2.25
+        },
+        {
+            "path"           : "props/cross_3.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 3.50
+        },
+        {
+            "path"           : "props/cross_4.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 3.50
+        },
+        {
+            "path"           : "props/obelisk_1.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 2.00
+        },
+        {
+            "path"           : "props/obelisk_2.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 3.50
+        },
+        {
+            "path"           : "props/obelisk_3.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 4.00
+        },
+        {
+            "path"           : "props/broken_pillar_1.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 4.50
+        },
+        {
+            "path"           : "props/broken_pillar_2.pfobj",
+            "anim"           : False,
+            "scale"          : [3.0,  3.0,  3.0],
+            "sel_radius"     : 4.50
+        },
+        {
+            "path"           : "barrel/barrel.pfobj",
+            "anim"           : False,
+            "scale"          : [8.0,  8.0,  8.0],
+            "sel_radius"     : 3.25
+        },
+        {
+            "path"           : "hay/hay.pfobj",
+            "anim"           : False,
+            "scale"          : [6.0,  6.0,  6.0],
+            "sel_radius"     : 4.00
+        },
+        {
+            "path"           : "hay/hay_2.pfobj",
+            "anim"           : False,
+            "scale"          : [4.0,  4.0,  4.0],
+            "sel_radius"     : 4.00
+        },
+        {
+            "path"           : "hay/haystack.pfobj",
+            "anim"           : False,
+            "scale"          : [4.0,  4.0,  4.0],
+            "sel_radius"     : 6.75
+        },
+        {
+            "path"           : "crate/crate_1.pfobj",
+            "anim"           : False,
+            "scale"          : [4.0,  4.0,  4.0],
+            "sel_radius"     : 3.25
+        },
+        {
+            "path"           : "crate/crate_2.pfobj",
+            "anim"           : False,
+            "scale"          : [4.0,  4.0,  4.0],
+            "sel_radius"     : 3.25
+        },
+        {
+            "path"           : "war_banner/war_banner.pfobj",
+            "anim"           : True,
+            "idle"           : "ArmatureAction",
+            "scale"          : [2.5,  2.5,  2.5],
+            "sel_radius"     : 1.75
+        },
+        {
+            "path"           : "cart/cart.pfobj",
+            "anim"           : False,
+            "scale"          : [2.5,  2.5,  2.5],
+            "sel_radius"     : 3.75
+        },
+        {
+            "path"           : "grass/grass_1.pfobj",
+            "anim"           : False,
+            "scale"          : [1.5,  1.5,  1.5],
+            "sel_radius"     : 2.00
+        },
+        {
+            "path"           : "grass/grass_2.pfobj",
+            "anim"           : False,
+            "scale"          : [1.5,  1.5,  1.5],
+            "sel_radius"     : 2.00
+        },
+        {
+            "path"           : "grass/grass_3.pfobj",
+            "anim"           : False,
+            "scale"          : [1.5,  1.5,  1.5],
+            "sel_radius"     : 2.00
+        },
+        {
+            "path"           : "fern/fern.pfobj",
+            "anim"           : False,
+            "scale"          : [1.5,  1.5,  1.5],
+            "sel_radius"     : 2.50
+        },
+
+        ########################################################################
+        # BUILDINGS                                                            #
+        ########################################################################
+
+        {
+            "path"           : "mage_tower/mage_tower.pfobj",
+            "anim"           : False,
+            "scale"          : [6.0,  6.0,  6.0],
+            "sel_radius"     : 7.00
+        },
+        {
+            "path"           : "tower/tower.pfobj",
+            "anim"           : False,
+            "scale"          : [5.0,  5.0,  5.0],
+            "sel_radius"     : 8.00
         },
     ]
 

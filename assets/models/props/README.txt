@@ -1,0 +1,1 @@
+Miscellaneous props models by Clint Bellanger from OpenGameArt.org are licensed under CC BY 3.0

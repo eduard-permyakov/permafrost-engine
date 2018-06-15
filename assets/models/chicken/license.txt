@@ -1,0 +1,4 @@
+License: CC0
+Author: Čestmír Dammer
+
+Note: Model was created for Kelgar project (http://www.kelgar.org/). UV-Texture was derived from photos by Rick Hoppmann.

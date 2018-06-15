@@ -1,0 +1,1 @@
+Berzerker model by Clement Wu, Nikolaus & Botanic from OpenGameArt.org is licensed under CC BY 3.0
