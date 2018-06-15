@@ -22,8 +22,8 @@
 #define MAX_MATERIALS 8
 
 /* TODO: Make these as material parameters */
-#define SPECULAR_STRENGTH  2
-#define SPECULAR_SHININESS 8
+#define SPECULAR_STRENGTH  0.5
+#define SPECULAR_SHININESS 2
 
 /*****************************************************************************/
 /* INPUTS                                                                    */
