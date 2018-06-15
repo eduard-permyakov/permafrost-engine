@@ -67,6 +67,14 @@ uniform sampler2D texture4;
 uniform sampler2D texture5;
 uniform sampler2D texture6;
 uniform sampler2D texture7;
+uniform sampler2D texture8;
+uniform sampler2D texture9;
+uniform sampler2D texture10;
+uniform sampler2D texture11;
+uniform sampler2D texture12;
+uniform sampler2D texture13;
+uniform sampler2D texture14;
+uniform sampler2D texture15;
 
 struct material{
     float ambient_intensity;
@@ -84,14 +92,22 @@ uniform bool skip_lighting = false;
 vec4 texture_val(int mat_idx, vec2 uv)
 {
     switch(mat_idx) {
-    case 0: return texture2D(texture0, uv); break;
-    case 1: return texture2D(texture1, uv); break;
-    case 2: return texture2D(texture2, uv); break;
-    case 3: return texture2D(texture3, uv); break;
-    case 4: return texture2D(texture4, uv); break;
-    case 5: return texture2D(texture5, uv); break;
-    case 6: return texture2D(texture6, uv); break;
-    case 7: return texture2D(texture7, uv); break;
+    case 0:  return texture2D(texture0,  uv);
+    case 1:  return texture2D(texture1,  uv);
+    case 2:  return texture2D(texture2,  uv);
+    case 3:  return texture2D(texture3,  uv);
+    case 4:  return texture2D(texture4,  uv);
+    case 5:  return texture2D(texture5,  uv);
+    case 6:  return texture2D(texture6,  uv);
+    case 7:  return texture2D(texture7,  uv);
+    case 8:  return texture2D(texture8,  uv);
+    case 9:  return texture2D(texture9,  uv);
+    case 10: return texture2D(texture10, uv);
+    case 11: return texture2D(texture11, uv);
+    case 12: return texture2D(texture12, uv);
+    case 13: return texture2D(texture13, uv);
+    case 14: return texture2D(texture14, uv);
+    case 15: return texture2D(texture15, uv);
     default: return vec4(0.0);
     }
 }

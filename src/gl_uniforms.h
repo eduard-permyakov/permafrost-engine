@@ -43,6 +43,14 @@
 #define GL_U_TEXTURE5       "texture5"
 #define GL_U_TEXTURE6       "texture6"
 #define GL_U_TEXTURE7       "texture7"
+#define GL_U_TEXTURE8       "texture8"
+#define GL_U_TEXTURE9       "texture9"
+#define GL_U_TEXTURE10      "texture10"
+#define GL_U_TEXTURE11      "texture11"
+#define GL_U_TEXTURE12      "texture12"
+#define GL_U_TEXTURE13      "texture13"
+#define GL_U_TEXTURE14      "texture14"
+#define GL_U_TEXTURE15      "texture15"
 
 /* Global light parameters - affect all models */
 #define GL_U_AMBIENT_COLOR  "ambient_color"
