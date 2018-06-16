@@ -42,7 +42,7 @@ class ObjectsVC(vc.ViewController):
             "scale"          : [1.2,  1.2,  1.2], 
             "sel_radius"     : 3.25,
             "class"          : "Sinbad",
-            "construct_args" : ["Sinbad", 10]
+            "construct_args" : ["assets/models/sinbad", "Sinbad.pfobj", "Sinbad"]
         },
         { 
             "path"           : "knight/knight.pfobj",
@@ -206,6 +206,42 @@ class ObjectsVC(vc.ViewController):
             "sel_radius"     : 3.50 
         },
         {
+            "path"           : "bushes/bush_1.pfobj",
+            "anim"           : False,
+            "scale"          : [9.5,  9.5,  9.5],
+            "sel_radius"     : 3.50 
+        },
+        {
+            "path"           : "bushes/bush_2.pfobj",
+            "anim"           : False,
+            "scale"          : [2.5,  2.5,  2.5],
+            "sel_radius"     : 3.75 
+        },
+        {
+            "path"           : "grass/grass_1.pfobj",
+            "anim"           : False,
+            "scale"          : [1.5,  1.5,  1.5],
+            "sel_radius"     : 2.00
+        },
+        {
+            "path"           : "grass/grass_2.pfobj",
+            "anim"           : False,
+            "scale"          : [1.5,  1.5,  1.5],
+            "sel_radius"     : 2.00
+        },
+        {
+            "path"           : "grass/grass_3.pfobj",
+            "anim"           : False,
+            "scale"          : [1.5,  1.5,  1.5],
+            "sel_radius"     : 2.00
+        },
+        {
+            "path"           : "fern/fern.pfobj",
+            "anim"           : False,
+            "scale"          : [1.5,  1.5,  1.5],
+            "sel_radius"     : 2.50
+        },
+        {
             "path"           : "well/well.pfobj",
             "anim"           : False,
             "scale"          : [3.0,  3.0,  3.0],
@@ -362,30 +398,6 @@ class ObjectsVC(vc.ViewController):
             "scale"          : [2.5,  2.5,  2.5],
             "sel_radius"     : 3.75
         },
-        {
-            "path"           : "grass/grass_1.pfobj",
-            "anim"           : False,
-            "scale"          : [1.5,  1.5,  1.5],
-            "sel_radius"     : 2.00
-        },
-        {
-            "path"           : "grass/grass_2.pfobj",
-            "anim"           : False,
-            "scale"          : [1.5,  1.5,  1.5],
-            "sel_radius"     : 2.00
-        },
-        {
-            "path"           : "grass/grass_3.pfobj",
-            "anim"           : False,
-            "scale"          : [1.5,  1.5,  1.5],
-            "sel_radius"     : 2.00
-        },
-        {
-            "path"           : "fern/fern.pfobj",
-            "anim"           : False,
-            "scale"          : [1.5,  1.5,  1.5],
-            "sel_radius"     : 2.50
-        },
 
         ########################################################################
         # BUILDINGS                                                            #
@@ -415,7 +427,7 @@ class ObjectsVC(vc.ViewController):
         self.right_mousebutton_state = SDL_RELEASED
 
     def __object_at_index(self, index):
-        split_path = os.path.split("assets/models/" + self.OBJECTS_LIST[index]["path"])
+        split_path = os.path.split(MODELS_PREFIX_DIR + self.OBJECTS_LIST[index]["path"])
         if self.OBJECTS_LIST[index]["anim"]:
             ret = globals.EditorAnimEntity(os.path.join(split_path[:-1])[0], split_path[-1], split_path[-1].split(".")[0], self.OBJECTS_LIST[index]["idle"])
         else:

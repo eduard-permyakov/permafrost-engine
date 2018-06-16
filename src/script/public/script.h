@@ -20,6 +20,8 @@
 #ifndef SCRIPT_H
 #define SCRIPT_H
 
+#include "../../scene.h"
+
 #include <stdio.h>
 #include <stdbool.h>
 
@@ -52,6 +54,14 @@ bool            S_ObjectsEqual(script_opaque_t a, script_opaque_t b);
 /*###########################################################################*/
 
 bool S_UI_MouseOverWindow(int mouse_x, int mouse_y);
+
+/*###########################################################################*/
+/* SCRIPT ENTITY                                                             */
+/*###########################################################################*/
+
+script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
+                                     const khash_t(attr) *attr_table, 
+                                     const kvec_attr_t *construct_args);
 
 #endif
 

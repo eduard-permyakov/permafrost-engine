@@ -25,7 +25,6 @@
 
 #include <SDL.h> /* for SDL_RWops */
 
-
 #define MAX_ANIM_SETS 16
 #define MAX_LINE_LEN  256
 

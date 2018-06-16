@@ -17,10 +17,11 @@
 #
 
 import globals
+from constants import *
 
 def save_scene(filename):
     with open(filename, "w") as scenefile:
-        scenefile.write("num_objects {0}\n".format(len(globals.active_objects_list)))
+        scenefile.write("num_entities {0}\n".format(len(globals.active_objects_list)))
         for obj in globals.active_objects_list:
             num_atts = 5
             if "idle" in obj.meta_dict:
@@ -30,21 +31,21 @@ def save_scene(filename):
             if "class" in obj.meta_dict:
                 num_atts += 1
             if "construct_args" in obj.meta_dict:
-                num_atts += (1 + len(obj.meta_dict["construct_args"]))
-            scenefile.write("entity {0} {1} {2}\n".format(obj.name, obj.meta_dict["path"], num_atts))
-            scenefile.write("   position {0:.6f} {1:.6f} {2:.6f}\n".format(obj.pos[0], obj.pos[1], obj.pos[2]))
-            scenefile.write("   scale {0:.6f} {1:.6f} {2:.6f}\n".format(obj.scale[0], obj.scale[1], obj.scale[2]))
-            scenefile.write("   rotation {0:.6f} {1:.6f} {2:.6f} {3:.6f}\n".format(obj.rotation[0], obj.rotation[1], obj.rotation[2], obj.rotation[3]))
-            scenefile.write("   animated {0}\n".format(int(obj.meta_dict["anim"])))
-            scenefile.write("   selectable {0}\n".format(int(obj.selectable)))
+                num_atts += 1
+            scenefile.write("entity {0} {1} {2}\n".format(obj.name, MODELS_PREFIX_DIR + obj.meta_dict["path"], num_atts))
+            scenefile.write("   position vec3 {0:.6f} {1:.6f} {2:.6f}\n".format(obj.pos[0], obj.pos[1], obj.pos[2]))
+            scenefile.write("   scale vec3 {0:.6f} {1:.6f} {2:.6f}\n".format(obj.scale[0], obj.scale[1], obj.scale[2]))
+            scenefile.write("   rotation quat {0:.6f} {1:.6f} {2:.6f} {3:.6f}\n".format(obj.rotation[0], obj.rotation[1], obj.rotation[2], obj.rotation[3]))
+            scenefile.write("   animated bool {0}\n".format(int(obj.meta_dict["anim"])))
+            scenefile.write("   selectable bool {0}\n".format(int(obj.selectable)))
             if "idle" in obj.meta_dict:
-                scenefile.write("   idle_clip {0}\n".format(obj.meta_dict["idle"]))
+                scenefile.write("   idle_clip string {0}\n".format(obj.meta_dict["idle"]))
             if "sel_radius" in obj.meta_dict:
-                scenefile.write("   selection_radius {0}\n".format(obj.selection_radius))
+                scenefile.write("   selection_radius float {0}\n".format(obj.selection_radius))
             if "class" in obj.meta_dict:
-                scenefile.write("   class {0}\n".format(obj.meta_dict["class"]))
+                scenefile.write("   class string {0}\n".format(obj.meta_dict["class"]))
             if "construct_args" in obj.meta_dict:
-                scenefile.write("   constructor_arguments {0}\n".format(len(obj.meta_dict["construct_args"])))
+                scenefile.write("   constructor_arguments int {0}\n".format(len(obj.meta_dict["construct_args"])))
                 for arg in obj.meta_dict["construct_args"]:
                     if isinstance(arg, int):
                         type = "int" 

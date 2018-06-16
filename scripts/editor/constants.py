@@ -20,6 +20,8 @@
 # Editor shared constants                                  #
 ############################################################
 
+MODELS_PREFIX_DIR = "assets/models/"
+
 UI_TAB_BAR_HEIGHT = 40
 UI_LEFT_PANE_WIDTH = 250
 UI_TAB_BAR_NUM_COLS = 5

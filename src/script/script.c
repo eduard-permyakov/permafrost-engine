@@ -29,6 +29,7 @@
 #include "../map/public/map.h"
 #include "../event.h"
 #include "../config.h"
+#include "../scene.h"
 
 #include <SDL.h>
 
@@ -41,6 +42,7 @@ static PyObject *PyPf_set_map_render_mode(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
+static PyObject *PyPf_load_scene(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args);
@@ -100,6 +102,10 @@ static PyMethodDef pf_module_methods[] = {
     {"set_emit_light_pos", 
     (PyCFunction)PyPf_set_emit_light_pos, METH_VARARGS,
     "Sets the position (in XYZ worldspace coordinates)"},
+
+    {"load_scene", 
+    (PyCFunction)PyPf_load_scene, METH_VARARGS,
+    "Import list of entities from a PFSCENE file (specified as a path string)."},
 
     {"register_event_handler", 
     (PyCFunction)PyPf_register_event_handler, METH_VARARGS,
@@ -317,6 +323,21 @@ static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args)
         return NULL;
 
     R_GL_SetLightEmitColor(color);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_load_scene(PyObject *self, PyObject *args)
+{
+    const char *path; 
+
+    if(!PyArg_ParseTuple(args, "s", &path)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
+        return NULL;
+    }
+
+    if(!Scene_Load(path))
+        return NULL;
+
     Py_RETURN_NONE;
 }
 

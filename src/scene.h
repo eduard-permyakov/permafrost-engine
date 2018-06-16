@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2018 Eduard Permyakov 
+ *  Copyright (C) 2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -17,16 +17,42 @@
  *
  */
 
-#ifndef ENTITY_SCRIPT_H
-#define ENTITY_SCRIPT_H
+#ifndef SCENE_H
+#define SCENE_H
 
-#include <Python.h> /* Must be first */
+#include "pf_math.h"
+#include "lib/public/kvec.h"
+#ifndef __USE_POSIX
+    #define __USE_POSIX /* strtok_r */
+#endif
+#include "lib/public/khash.h"
+
 #include <stdbool.h>
 
-bool      S_Entity_Init(void);
-void      S_Entity_Shutdown(void);
-void      S_Entity_PyRegister(PyObject *module);
-PyObject *S_Entity_ObjForUID(uint32_t uid);
+struct attr{
+    char key[64];
+    enum{
+        TYPE_STRING,
+        TYPE_FLOAT,
+        TYPE_INT,
+        TYPE_VEC3,
+        TYPE_QUAT,
+        TYPE_BOOL,
+    }type;
+    union{
+        char   as_string[64];
+        float  as_float;
+        int    as_int;
+        vec3_t as_vec3;
+        quat_t as_quat;
+        bool   as_bool;
+    }val;
+};
+
+KHASH_DECLARE(attr, kh_cstr_t, struct attr)
+typedef kvec_t(struct attr) kvec_attr_t;
+
+bool Scene_Load(const char *path);
 
 #endif
 

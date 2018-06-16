@@ -69,4 +69,3 @@ menuvc.activate()
 mb = mw.MenuButtonWindow(menu)
 mb.show()
 
-

@@ -23,7 +23,9 @@
 #include "render/public/render.h"
 #include "anim/public/anim.h"
 #include "map/public/map.h"
-#define __USE_POSIX
+#ifndef __USE_POSIX
+    #define __USE_POSIX /* strtok_r */
+#endif
 #include "lib/public/khash.h"
 
 #include <SDL.h>

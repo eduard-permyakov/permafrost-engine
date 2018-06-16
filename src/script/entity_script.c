@@ -527,6 +527,104 @@ static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args
     Py_RETURN_NONE;
 }
 
+static PyObject *s_obj_from_attr(const struct attr *attr)
+{
+    switch(attr->type){
+    case TYPE_STRING:   return Py_BuildValue("s", attr->val.as_string);
+    case TYPE_FLOAT:    return Py_BuildValue("f", attr->val.as_float);
+    case TYPE_INT:      return Py_BuildValue("i", attr->val.as_int);
+    case TYPE_VEC3:     return Py_BuildValue("[f,f,f]", attr->val.as_vec3.x, attr->val.as_vec3.y, attr->val.as_vec3.z);
+    case TYPE_QUAT:     return Py_BuildValue("[f,f,f,f]", 
+                               attr->val.as_quat.x, attr->val.as_quat.y, attr->val.as_quat.z, attr->val.as_quat.w);
+    case TYPE_BOOL:     return Py_BuildValue("i", attr->val.as_bool);
+    default: assert(0);
+    }
+}
+
+static PyObject *s_tuple_from_attr_vec(const kvec_attr_t *attr_vec)
+{
+    PyObject *ret = PyTuple_New(kv_size(*attr_vec));
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < kv_size(*attr_vec); i++) {
+        PyTuple_SetItem(ret, i, s_obj_from_attr(&kv_A(*attr_vec, i)));
+    }
+
+    return ret;
+}
+
+static PyObject *s_entity_from_atts(const char *path, const char *name, const khash_t(attr) *attr_table)
+{
+    PyObject *ret;
+
+    char copy[256];
+    if(strlen(path) >= sizeof(copy)) 
+        return NULL;
+    strcpy(copy, path);
+    char *end = copy + strlen(path);
+    assert(*end == '\0');
+    while(end > copy && *end != '/')
+        end--;
+    if(end == copy)
+        return NULL;
+    *end = '\0';
+    const char *filename = end + 1;
+
+    khiter_t k = kh_get(attr, attr_table, "animated");
+    if(k == kh_end(attr_table))
+        return NULL;
+    bool anim = kh_value(attr_table, k).val.as_bool;
+
+    PyObject *args = PyTuple_New(anim ? 4 : 3);
+    if(!args)
+        return NULL;
+
+    PyTuple_SetItem(args, 0, PyString_FromString(copy));
+    PyTuple_SetItem(args, 1, PyString_FromString(filename));
+    PyTuple_SetItem(args, 2, PyString_FromString(name));
+
+    if(anim) {
+        k = kh_get(attr, attr_table, "idle_clip");
+        if(k == kh_end(attr_table)) {
+            Py_DECREF(args);
+            return NULL;
+        }
+        PyTuple_SetItem(args, 3, s_obj_from_attr(&kh_value(attr_table, k)));
+        ret = PyObject_CallObject((PyObject*)&PyAnimEntity_type, args);
+    }else{
+        ret = PyObject_CallObject((PyObject*)&PyEntity_type, args);
+    }
+
+    Py_DECREF(args);
+    return ret;
+}
+
+static PyObject *s_new_custom_class(const char *name, const kvec_attr_t *construct_args)
+{
+    PyObject *sys_mod_dict = PyImport_GetModuleDict();
+    PyObject *main_mod = PyMapping_GetItemString(sys_mod_dict, "__main__");
+    if(!PyObject_HasAttrString(main_mod, name)) {
+        Py_DECREF(main_mod);
+        return NULL;
+    }
+    PyObject *class = PyObject_GetAttrString(main_mod, name);
+    assert(class);
+    PyObject *args = s_tuple_from_attr_vec(construct_args);
+    if(!args){
+        Py_DECREF(main_mod);
+        Py_DECREF(class);
+        return NULL;
+    }
+    PyObject *ret = PyObject_CallObject(class, args);
+
+    Py_DECREF(main_mod);
+    Py_DECREF(class);
+    Py_DECREF(args);
+
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -562,5 +660,59 @@ PyObject *S_Entity_ObjForUID(uint32_t uid)
         return NULL;
 
     return kh_value(s_uid_pyobj_table, k);
+}
+
+script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
+                                     const khash_t(attr) *attr_table, 
+                                     const kvec_attr_t *construct_args)
+{
+    khiter_t k;
+    PyObject *ret = NULL;
+
+    /* First, attempt to make an instance of the custom class specified in the 
+     * attributes dictionary, if the key is present. */
+    if((k = kh_get(attr, attr_table, "class")) != kh_end(attr_table)) {
+        ret = s_new_custom_class(kh_value(attr_table, k).val.as_string, construct_args);
+    }
+
+    /* If we could not make a custom class, fall back to instantiating a basic entity */
+    if(!ret){
+        ret = s_entity_from_atts(path, name, attr_table); 
+    }
+
+    if(!ret){
+        return NULL;
+    }
+
+    if(PyObject_HasAttrString(ret, "pos") 
+    && (k = kh_get(attr, attr_table, "position")) != kh_end(attr_table))
+        PyObject_SetAttrString(ret, "pos", s_obj_from_attr(&kh_value(attr_table, k)));
+
+    if(PyObject_HasAttrString(ret, "scale") 
+    && (k = kh_get(attr, attr_table, "scale")) != kh_end(attr_table))
+        PyObject_SetAttrString(ret, "scale", s_obj_from_attr(&kh_value(attr_table, k)));
+
+    if(PyObject_HasAttrString(ret, "rotation") 
+    && (k = kh_get(attr, attr_table, "rotation")) != kh_end(attr_table))
+        PyObject_SetAttrString(ret, "rotation", s_obj_from_attr(&kh_value(attr_table, k)));
+
+    if(PyObject_HasAttrString(ret, "selectable") 
+    && (k = kh_get(attr, attr_table, "selectable")) != kh_end(attr_table))
+        PyObject_SetAttrString(ret, "selectable", s_obj_from_attr(&kh_value(attr_table, k)));
+
+    if(PyObject_HasAttrString(ret, "selection_radius") 
+    && (k = kh_get(attr, attr_table, "selection_radius")) != kh_end(attr_table))
+        PyObject_SetAttrString(ret, "selection_radius", s_obj_from_attr(&kh_value(attr_table, k)));
+
+    if(PyObject_HasAttrString(ret, "activate")) {
+        PyObject *result = PyObject_CallMethod(ret, "activate", "");
+        Py_XDECREF(result);
+        if(!result) {
+            PyErr_Print();
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    return ret;
 }
 
