@@ -181,8 +181,17 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     ret->selection_radius = 0.0f;
     ret->anim_ctx = (void*)(ret + 1);
 
-    assert(strlen(name) < sizeof(ret->name));
+    if(strlen(name) >= sizeof(ret->name))
+        return NULL;
     strcpy(ret->name, name);
+
+    if(strlen(name) >= sizeof(ret->name))
+        return NULL;
+    strcpy(ret->name, name);
+
+    if(strlen(pfobj_name) >= sizeof(ret->filename))
+        return NULL;
+    strcpy(ret->filename, pfobj_name);
 
     assert(strlen(base_path) < sizeof(ret->basedir));
     strcpy(ret->basedir, base_path);
@@ -196,7 +205,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 
         struct pfobj_hdr header;
 
-        char pfobj_path[BASEDIR_LEN * 2];
+        char pfobj_path[128];
         assert( strlen(base_path) + strlen(pfobj_name) + 1 < sizeof(pfobj_path) );
         strcpy(pfobj_path, base_path);
         strcat(pfobj_path, "/");
@@ -264,7 +273,7 @@ struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name)
     struct map *ret;
     SDL_RWops *stream;
 
-    char pfmap_path[BASEDIR_LEN * 2];
+    char pfmap_path[128];
     assert( strlen(base_path) + strlen(pfmap_name) + 1 < sizeof(pfmap_path) );
     strcpy(pfmap_path, base_path);
     strcat(pfmap_path, "/");

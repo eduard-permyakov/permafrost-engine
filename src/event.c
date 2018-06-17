@@ -163,6 +163,9 @@ static void e_handle_event(struct event event)
             S_RunEventHandler(elem->handler.as_script_callable, elem->user_arg, script_arg);
         }
     }
+
+    if(event.source == ES_SCRIPT)
+        S_Release(event.arg);
 }
 
 /*****************************************************************************/

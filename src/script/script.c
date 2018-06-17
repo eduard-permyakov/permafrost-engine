@@ -338,7 +338,7 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args)
     if(!Scene_Load(path))
         return NULL;
 
-    Py_RETURN_NONE;
+    return S_Entity_GetAllList();
 }
 
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)
@@ -712,9 +712,10 @@ void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, scrip
     assert(event_arg);
 
     args = PyTuple_New(2);
-    /* PyTuple_SetItem steals references! However, we wish to hold on
-     * to the user_arg even when the tuple is destroyed. */
+    /* PyTuple_SetItem steals references! However, we wish to hold on to the user_arg. The event_arg
+     * is DECREF'd once after all the handlers for the event have been executed. */
     Py_INCREF(user_arg);
+    Py_INCREF(event_arg);
     PyTuple_SetItem(args, 0, user_arg);
     PyTuple_SetItem(args, 1, event_arg);
 

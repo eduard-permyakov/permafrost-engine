@@ -56,6 +56,9 @@ EVENT_OBJECT_DELETE_SELECTION      = 0x20023
 EVENT_MOUSE_ENTERED_MAP            = 0x20030
 EVENT_MOUSE_EXITED_MAP             = 0x20031
 
+EVENT_OLD_GAME_TEARDOWN_BEGIN      = 0x20040
+EVENT_OLD_GAME_TEARDOWN_END        = 0x20041
+
 ############################################################
 # SDL Events used (from SDL_event.h)                       #
 ############################################################

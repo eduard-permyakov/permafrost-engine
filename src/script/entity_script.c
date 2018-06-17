@@ -51,6 +51,7 @@ static PyObject *PyEntity_get_selectable(PyEntityObject *self, void *closure);
 static int       PyEntity_set_selectable(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_selection_radius(PyEntityObject *self, void *closure);
 static int       PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_activate(PyEntityObject *self);
 static PyObject *PyEntity_deactivate(PyEntityObject *self);
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args);
@@ -106,7 +107,7 @@ static PyMethodDef PyEntity_methods[] = {
 static PyGetSetDef PyEntity_getset[] = {
     {"name",
     (getter)PyEntity_get_name, (setter)PyEntity_set_name,
-    "Custom name given to this enitty.",
+    "Custom name given to this enity.",
     NULL},
     {"pos",
     (getter)PyEntity_get_pos, (setter)PyEntity_set_pos,
@@ -127,6 +128,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"selection_radius",
     (getter)PyEntity_get_selection_radius, (setter)PyEntity_set_selection_radius,
     "Radius (in OpenGL coordinates) of the unit selection circle for this entity.",
+    NULL},
+    {"pfobj_path",
+    (getter)PyEntity_get_pfobj_path, NULL,
+    "The relative path of the PFOBJ file used to instantiate the entity. Readonly.",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -267,7 +272,7 @@ static int PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closur
     }
 
     const char *s = PyString_AsString(value);
-    if(strlen(s) >= ENTITY_NAME_LEN){
+    if(strlen(s) >= sizeof(self->ent->name)){
         PyErr_SetString(PyExc_TypeError, "Name string is too long.");
         return -1;
     }
@@ -400,6 +405,15 @@ static int PyEntity_set_selectable(PyEntityObject *self, PyObject *value, void *
 static PyObject *PyEntity_get_selection_radius(PyEntityObject *self, void *closure)
 {
     return Py_BuildValue("f", self->ent->selection_radius);
+}
+
+static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure)
+{
+    char buff[sizeof(self->ent->basedir) + sizeof(self->ent->filename) + 2];
+    strcpy(buff, self->ent->basedir);
+    strcat(buff, "/");
+    strcat(buff, self->ent->filename);
+    return PyString_FromString(buff); 
 }
 
 static int PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure)
@@ -713,6 +727,22 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
         }
     }
 
+    return ret;
+}
+
+PyObject *S_Entity_GetAllList(void)
+{
+    PyObject *ret = PyList_New(kh_size(s_uid_pyobj_table));
+    if(!ret)
+        return NULL;
+
+    uint32_t key;
+    PyObject *curr;
+    int i = 0;
+    kh_foreach(s_uid_pyobj_table, key, curr, {
+        PyList_SetItem(ret, i++, curr); /* steals reference */
+    });
+    
     return ret;
 }
 
