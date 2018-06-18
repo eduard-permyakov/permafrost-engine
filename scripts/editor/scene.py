@@ -31,6 +31,7 @@ OBJECTS_LIST = [
         "anim"           : True,
         "idle"           : "IdleBase",
         "scale"          : [1.2,  1.2,  1.2], 
+        "selectable"     : True,
         "sel_radius"     : 3.25,
         "class"          : "Sinbad",
         "construct_args" : ["assets/models/sinbad", "Sinbad.pfobj", "Sinbad"]
@@ -40,6 +41,7 @@ OBJECTS_LIST = [
         "anim"           : True,
         "idle"           : "Idle",
         "scale"          : [0.8,  0.8,  0.8], 
+        "selectable"     : True,
         "sel_radius"     : 3.25 
     },
     { 
@@ -47,6 +49,7 @@ OBJECTS_LIST = [
         "anim"           : True,
         "idle"           : "Idle",
         "scale"          : [0.6,  0.6,  0.6], 
+        "selectable"     : True,
         "sel_radius"     : 4.25
     },
     { 
@@ -54,6 +57,7 @@ OBJECTS_LIST = [
         "anim"           : True,
         "idle"           : "Idle",
         "scale"          : [0.7,  0.7,  0.7], 
+        "selectable"     : True,
         "sel_radius"     : 3.00 
     },
     {
@@ -61,6 +65,7 @@ OBJECTS_LIST = [
         "anim"           : True,
         "idle"           : "Idle",
         "scale"          : [0.9,  0.9,  0.9],
+        "selectable"     : True,
         "sel_radius"     : 3.00
     },
     {
@@ -68,6 +73,7 @@ OBJECTS_LIST = [
         "anim"           : True,
         "idle"           : "Idle",
         "scale"          : [2.0,  2.0,  2.0],
+        "selectable"     : True,
         "sel_radius"     : 3.25
     },
     {
@@ -75,6 +81,7 @@ OBJECTS_LIST = [
         "anim"           : True,
         "idle"           : "Idle",
         "scale"          : [2.0,  2.0,  2.0],
+        "selectable"     : True,
         "sel_radius"     : 3.25
     },
     {
@@ -82,6 +89,7 @@ OBJECTS_LIST = [
         "anim"           : True,
         "idle"           : "Idle",
         "scale"          : [0.4,  0.4,  0.4],
+        "selectable"     : True,
         "sel_radius"     : 1.50
     },
 
@@ -93,54 +101,63 @@ OBJECTS_LIST = [
         "path"           : "oak_tree/oak_tree.pfobj",
         "anim"           : False,
         "scale"          : [1.6,  1.6,  1.6],
+        "selectable"     : False,
         "sel_radius"     : 5.25 
     },
     { 
         "path"           : "oak_tree/oak_leafless.pfobj",
         "anim"           : False,
         "scale"          : [1.6,  1.6,  1.6],
+        "selectable"     : False,
         "sel_radius"     : 5.25 
     },
     {
         "path"           : "tree_basic/tree_basic.pfobj",
         "anim"           : False,
         "scale"          : [10.0,  10.0,  10.0],
+        "selectable"     : False,
         "sel_radius"     : 3.00 
     },
     {
         "path"           : "pine_tree/pine_tree.pfobj",
         "anim"           : False,
         "scale"          : [15.0,  15.0,  15.0],
+        "selectable"     : False,
         "sel_radius"     : 2.50 
     },
     {
         "path"           : "tree_leafy/tree_leafy.pfobj",
         "anim"           : False,
         "scale"          : [10.0,  10.0,  10.0],
+        "selectable"     : False,
         "sel_radius"     : 3.00 
     },
     {
         "path"           : "tree_dry/tree_dry.pfobj",
         "anim"           : False,
         "scale"          : [10.0,  10.0,  10.0],
+        "selectable"     : False,
         "sel_radius"     : 2.50 
     },
     {
         "path"           : "large_pine_tree/large_pine_tree.pfobj",
         "anim"           : False,
         "scale"          : [22.0,  22.0,  22.0],
+        "selectable"     : False,
         "sel_radius"     : 6.50 
     },
     {
         "path"           : "large_tree/large_tree.pfobj",
         "anim"           : False,
         "scale"          : [15.0,  15.0,  15.0],
+        "selectable"     : False,
         "sel_radius"     : 5.25
     },
     {
         "path"           : "palm_tree/palm.pfobj",
         "anim"           : False,
         "scale"          : [5.5,  5.5,  5.5],
+        "selectable"     : False,
         "sel_radius"     : 3.25
     },
 
@@ -152,228 +169,266 @@ OBJECTS_LIST = [
         "path"           : "ceramic_jar/ceramic_jar.pfobj",
         "anim"           : False,
         "scale"          : [35.0,  35.0,  35.0],
+        "selectable"     : False,
         "sel_radius"     : 2.50 
     },
     {
         "path"           : "rock/rock.pfobj",
         "anim"           : False,
         "scale"          : [2.0,  2.0,  2.0],
+        "selectable"     : False,
         "sel_radius"     : 3.25 
     },
     {
         "path"           : "varied_rocks/rock_1.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
+        "selectable"     : False,
         "sel_radius"     : 3.25
     },
     {
         "path"           : "varied_rocks/rock_2.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
+        "selectable"     : False,
         "sel_radius"     : 3.00
     },
     {
         "path"           : "varied_rocks/rock_3.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
+        "selectable"     : False,
         "sel_radius"     : 3.25
     },
     {
         "path"           : "varied_rocks/rock_4.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
+        "selectable"     : False,
         "sel_radius"     : 3.75
     },
     {
         "path"           : "varied_rocks/rock_5.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
+        "selectable"     : False,
         "sel_radius"     : 3.25
     },
     {
         "path"           : "shrub/shrub.pfobj",
         "anim"           : False,
         "scale"          : [6.5,  6.5,  6.5],
+        "selectable"     : False,
         "sel_radius"     : 3.50 
     },
     {
         "path"           : "bushes/bush_1.pfobj",
         "anim"           : False,
         "scale"          : [9.5,  9.5,  9.5],
+        "selectable"     : False,
         "sel_radius"     : 3.50 
     },
     {
         "path"           : "bushes/bush_2.pfobj",
         "anim"           : False,
         "scale"          : [2.5,  2.5,  2.5],
+        "selectable"     : False,
         "sel_radius"     : 3.75 
     },
     {
         "path"           : "grass/grass_1.pfobj",
         "anim"           : False,
         "scale"          : [1.5,  1.5,  1.5],
+        "selectable"     : False,
         "sel_radius"     : 2.00
     },
     {
         "path"           : "grass/grass_2.pfobj",
         "anim"           : False,
         "scale"          : [1.5,  1.5,  1.5],
+        "selectable"     : False,
         "sel_radius"     : 2.00
     },
     {
         "path"           : "grass/grass_3.pfobj",
         "anim"           : False,
         "scale"          : [1.5,  1.5,  1.5],
+        "selectable"     : False,
         "sel_radius"     : 2.00
     },
     {
         "path"           : "fern/fern.pfobj",
         "anim"           : False,
         "scale"          : [1.5,  1.5,  1.5],
+        "selectable"     : False,
         "sel_radius"     : 2.50
     },
     {
         "path"           : "well/well.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 3.25
     },
     {
         "path"           : "props/wood_fence_1.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 3.00
     },
     {
         "path"           : "props/wood_fence_2.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 3.00
     },
     {
         "path"           : "props/wood_trough.pfobj",
         "anim"           : False,
         "scale"          : [1.5,  1.5,  1.5],
+        "selectable"     : False,
         "sel_radius"     : 3.00
     },
     {
         "path"           : "props/wood_road_sign.pfobj",
         "anim"           : False,
         "scale"          : [0.7,  0.7,  0.7],
+        "selectable"     : False,
         "sel_radius"     : 1.50
     },
     {
         "path"           : "props/wood_lamp_post.pfobj",
         "anim"           : False,
         "scale"          : [0.7,  0.7,  0.7],
+        "selectable"     : False,
         "sel_radius"     : 1.50
     },
     {
         "path"           : "props/tombstone_1.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 2.50
     },
     {
         "path"           : "props/tombstone_2.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 2.50
     },
     {
         "path"           : "props/tombstone_3.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 2.50
     },
     {
         "path"           : "props/cross_1.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 2.00
     },
     {
         "path"           : "props/cross_2.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 2.25
     },
     {
         "path"           : "props/cross_3.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 3.50
     },
     {
         "path"           : "props/cross_4.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 3.50
     },
     {
         "path"           : "props/obelisk_1.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 2.00
     },
     {
         "path"           : "props/obelisk_2.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 3.50
     },
     {
         "path"           : "props/obelisk_3.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 4.00
     },
     {
         "path"           : "props/broken_pillar_1.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 4.50
     },
     {
         "path"           : "props/broken_pillar_2.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
+        "selectable"     : False,
         "sel_radius"     : 4.50
     },
     {
         "path"           : "barrel/barrel.pfobj",
         "anim"           : False,
         "scale"          : [8.0,  8.0,  8.0],
+        "selectable"     : False,
         "sel_radius"     : 3.25
     },
     {
         "path"           : "hay/hay.pfobj",
         "anim"           : False,
         "scale"          : [6.0,  6.0,  6.0],
+        "selectable"     : False,
         "sel_radius"     : 4.00
     },
     {
         "path"           : "hay/hay_2.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
+        "selectable"     : False,
         "sel_radius"     : 4.00
     },
     {
         "path"           : "hay/haystack.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
+        "selectable"     : False,
         "sel_radius"     : 6.75
     },
     {
         "path"           : "crate/crate_1.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
+        "selectable"     : False,
         "sel_radius"     : 3.25
     },
     {
         "path"           : "crate/crate_2.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
+        "selectable"     : False,
         "sel_radius"     : 3.25
     },
     {
@@ -381,12 +436,14 @@ OBJECTS_LIST = [
         "anim"           : True,
         "idle"           : "ArmatureAction",
         "scale"          : [2.5,  2.5,  2.5],
+        "selectable"     : False,
         "sel_radius"     : 1.75
     },
     {
         "path"           : "cart/cart.pfobj",
         "anim"           : False,
         "scale"          : [2.5,  2.5,  2.5],
+        "selectable"     : False,
         "sel_radius"     : 3.75
     },
 
@@ -398,12 +455,14 @@ OBJECTS_LIST = [
         "path"           : "mage_tower/mage_tower.pfobj",
         "anim"           : False,
         "scale"          : [6.0,  6.0,  6.0],
+        "selectable"     : False,
         "sel_radius"     : 7.00
     },
     {
         "path"           : "tower/tower.pfobj",
         "anim"           : False,
         "scale"          : [5.0,  5.0,  5.0],
+        "selectable"     : False,
         "sel_radius"     : 8.00
     },
 ]
@@ -436,7 +495,7 @@ def save_scene(filename):
             scenefile.write("   scale vec3 {0:.6f} {1:.6f} {2:.6f}\n".format(obj.scale[0], obj.scale[1], obj.scale[2]))
             scenefile.write("   rotation quat {0:.6f} {1:.6f} {2:.6f} {3:.6f}\n".format(obj.rotation[0], obj.rotation[1], obj.rotation[2], obj.rotation[3]))
             scenefile.write("   animated bool {0}\n".format(int(meta_dict["anim"])))
-            scenefile.write("   selectable bool {0}\n".format(int(obj.selectable)))
+            scenefile.write("   selectable bool {0}\n".format(int(meta_dict["selectable"])))
             if "idle" in meta_dict:
                 scenefile.write("   idle_clip string {0}\n".format(meta_dict["idle"]))
             if "sel_radius" in meta_dict:

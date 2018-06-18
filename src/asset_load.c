@@ -56,6 +56,17 @@ khash_t(entity_res) *s_name_resource_table;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+/* A copy of the key string is stored in the 'struct shared_resource' itself. Make the key 
+ * (string pointer) be a pointer to that buffer in order to avoid allocating/storing the key 
+ * strings separately. All keys must be patched in case rehashing took place. */
+static void kh_update_str_keys(khash_t(entity_res) *table)
+{
+    for(khiter_t k = kh_begin(table); k != kh_end(table); k++) {
+        if(!kh_exist(table, k)) continue;
+        kh_key(table, k) = kh_value(table, k).key;
+    }
+}
+
 static bool al_parse_pfobj_header(SDL_RWops *stream, struct pfobj_hdr *out)
 {
     char line[MAX_LINE_LEN];
@@ -243,9 +254,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
         k = kh_put(entity_res, s_name_resource_table, pfobj_name, &put_ret);
         assert(put_ret != -1 && put_ret != 0);
         kh_value(s_name_resource_table, k) = res;
-        /* A copy of the key string is stored in the 'struct resource' itself. Make the key (string pointer)
-         * be a pointer to that buffer in order to avoid allocating/storing the key strings separately. */
-        kh_key(s_name_resource_table, k) = kh_value(s_name_resource_table, k).key;
+        kh_update_str_keys(s_name_resource_table);
     }
 
     ret->flags |= res.ent_flags;

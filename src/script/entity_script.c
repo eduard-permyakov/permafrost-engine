@@ -617,22 +617,25 @@ static PyObject *s_entity_from_atts(const char *path, const char *name, const kh
 static PyObject *s_new_custom_class(const char *name, const kvec_attr_t *construct_args)
 {
     PyObject *sys_mod_dict = PyImport_GetModuleDict();
-    PyObject *main_mod = PyMapping_GetItemString(sys_mod_dict, "__main__");
-    if(!PyObject_HasAttrString(main_mod, name)) {
-        Py_DECREF(main_mod);
-        return NULL;
+    PyObject *modules = PyMapping_Values(sys_mod_dict);
+    PyObject *class = NULL;
+    for(int i = 0; i < PyList_Size(modules); i++) {
+        if(PyObject_HasAttrString(PyList_GetItem(modules, i), name)) {
+            class = PyObject_GetAttrString(PyList_GetItem(modules, i), name);
+            break;
+        }
     }
-    PyObject *class = PyObject_GetAttrString(main_mod, name);
-    assert(class);
+    Py_DECREF(modules);
+    if(!class)
+        return NULL;
+
     PyObject *args = s_tuple_from_attr_vec(construct_args);
     if(!args){
-        Py_DECREF(main_mod);
         Py_DECREF(class);
         return NULL;
     }
     PyObject *ret = PyObject_CallObject(class, args);
 
-    Py_DECREF(main_mod);
     Py_DECREF(class);
     Py_DECREF(args);
 

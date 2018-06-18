@@ -18,7 +18,7 @@
 
 import pf
 import ui
-import sinbad as sb
+import sinbad
 
 from constants import *
 
@@ -30,41 +30,13 @@ pf.set_ambient_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_pos([1024.0, 768.0, 768.0])
 
-pf.new_game("assets/maps", "demo-arena.pfmap")
+############################################################
+# Setup map/scene                                          #
+############################################################
+
+pf.new_game("assets/maps", "demo.pfmap")
 pf.set_map_render_mode(CHUNK_RENDER_MODE_PREBAKED)
-
-############################################################
-# Setup entities                                           #
-############################################################
-
-coord = lambda x, z : [x, pf.map_height_at_point(x, z), z]
-
-sinbad = sb.Sinbad("assets/models/sinbad", "Sinbad.pfobj", "Sinbad")
-sinbad.pos = coord(-90.0, -125.0)
-sinbad.scale = [1.2, 1.2, 1.2]
-sinbad.rotation = [0.0, -0.3826834, 0.0, 0.9238795]
-sinbad.activate()
-
-knights = []
-for i in range(0, 4):
-    for j in range(0, 2):
-        knight = pf.AnimEntity("assets/models/knight", "knight.pfobj", "Knight", "Idle")
-        knight.pos = coord(-40.0 - (10 * i), -75.0 - (10 * j))
-        knight.scale = [0.7, 0.7, 0.7]
-        knight.selectable = True
-        knight.selection_radius = 3.25
-        knight.activate()
-        knights.append(knight)
-
-oak_tree = pf.Entity("assets/models/oak_tree", "oak_tree.pfobj", "OakTree")
-oak_tree.pos = coord(-40.0, -115.0)
-oak_tree.scale = [2.0, 2.0, 2.0]
-oak_tree.activate()
-
-oak_leafless = pf.Entity("assets/models/oak_tree", "oak_leafless.pfobj", "OakLeafless")
-oak_leafless.pos = coord(-95.0, -35.0)
-oak_leafless.scale = [1.5, 1.5, 1.5]
-oak_leafless.activate()
+scene_objs = pf.load_scene("assets/maps/demo.pfscene")
 
 ############################################################
 # Setup global events                                      #
@@ -80,8 +52,10 @@ def toggle_camera(user, event):
         pf.activate_camera(active_cam_idx, mode_for_idx[active_cam_idx])
 
 def toggle_sinbad(user, event):
+    global scene_objs
     if event[0] == SDL_SCANCODE_V:
-        sinbad.notify(EVENT_SINBAD_TOGGLE_ANIM, None)
+        for ent in [obj for obj in scene_objs if isinstance(obj, sinbad.Sinbad)]:
+            ent.notify(EVENT_SINBAD_TOGGLE_ANIM, None)
 
 
 pf.register_event_handler(EVENT_SDL_KEYDOWN, toggle_camera, None)
