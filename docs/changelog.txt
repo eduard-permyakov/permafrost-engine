@@ -3,111 +3,117 @@
 ********************************************************************************
 
 ================================================================================
+[Version 0.18.0] - 19.06.2018
+================================================================================
+    * Implement export of entities in editor (PFSCENE files)
+    * Implement de-serialization of game entities from PFSCENE files
+
+================================================================================
 [Version 0.17.0] - 13.06.2018
 ================================================================================
-	* Allow placing/moving/deleting of objects in editor
-	* Allow sharing of rendering/animation data between different entities
+    * Allow placing/moving/deleting of objects in editor
+    * Allow sharing of rendering/animation data between different entities
 
 ================================================================================
 [Version 0.16.0] - 28.05.2018
 ================================================================================
-	* Implement RTS-style unit selection
+    * Implement RTS-style unit selection
 
 ================================================================================
 [Version 0.15.0] - 16.05.2018
 ================================================================================
-	* Add collision boxes to game entities
-	* Add rotation to game entities
-	* Fixes to skeletal animation
+    * Add collision boxes to game entities
+    * Add rotation to game entities
+    * Fixes to skeletal animation
 
 ================================================================================
 [Version 0.14.0] - 10.05.2018
 ================================================================================
-	* Implement minimap
+    * Implement minimap
 
 ================================================================================
 [Version 0.13.0] - 04.05.2018
 ================================================================================
-	* Greatly improve performance of map rendering
-		--> Render chunk top surface to a texture to avoid repetitive blending
-		--> Frustum cull chunks that aren't visible, allowing huge maps
+    * Greatly improve performance of map rendering
+        --> Render chunk top surface to a texture to avoid repetitive blending
+        --> Frustum cull chunks that aren't visible, allowing huge maps
 
 ================================================================================
 [Version 0.12.0] - 16.04.2018
 ================================================================================
-	* Add smooth transition between adjacent tiles with different textures
+    * Add smooth transition between adjacent tiles with different textures
 
 ================================================================================
 [Version 0.11.0] - 05.04.2018
 ================================================================================
-	* Add brush size option to editor
-	* Add elevation option to editor
-		--> Can place elevation with 'smooth' edges using marching squares
-			algorithm
+    * Add brush size option to editor
+    * Add elevation option to editor
+        --> Can place elevation with 'smooth' edges using marching squares
+            algorithm 
 
 ================================================================================
 [Version 0.10.0] - 01.04.2018
 ================================================================================
-	* Add initial implementation of the map editor
-		--> Able to save and load maps to and from PFMAP files
-		--> Able to edit the terrain texture per tile
+    * Add initial implementation of the map editor
+        --> Able to save and load maps to and from PFMAP files
+        --> Able to edit the terrain texture per tile
 
 ================================================================================
 [Version 0.9.0] - 02.03.2018
 ================================================================================
-	* Add raycasting and collision logic
-	* Highlighting of tile under cursor
+    * Add raycasting and collision logic
+    * Highlighting of tile under cursor
 
 ================================================================================
 [Version 0.8.0] - 18.02.2018
 ================================================================================
-	* Integrate with nuklear UI
-	* Add some performance metrics
+    * Integrate with nuklear UI
+    * Add some performance metrics
 
 ================================================================================
 [Version 0.7.0] - 14.02.2018
 ================================================================================
-	* Add event system
+    * Add event system
 
 ================================================================================
-[Version 0.6.0] - 5.02.2018
+[Version 0.6.0] - 05.02.2018
 ================================================================================
-	* Fix terrain normals  
-	* Use correct shader for static meshes
-	* Implement all remaining corner tiles
-	* Update pfmap format
+     * Fix terrain normals  
+     * Use correct shader for static meshes
+     * Implement all remaining corner tiles
+     * Update pfmap format
 
 ================================================================================
-[Version 0.5.0] - 3.02.2018
+[Version 0.5.0] - 03.02.2018
 ================================================================================
-	* Add dependencies to repository and add option to build them from source
-	* Port to Windows
+    * Add dependencies to repository and add option to build them from source
+    * Port to Windows
 
 ================================================================================
 [Version 0.4.0] - 20.01.2018
 ================================================================================
-	* Integrate with Python 2.7 scripting
+    * Integrate with Python 2.7 scripting
 
 ================================================================================
 [Version 0.3.0] - 13.01.2018
 ================================================================================
-	* Add RTS camera mode
-	* Add support for custom cursor images
+    * Add RTS camera mode
+    * Add support for custom cursor images
 
 ================================================================================
 [Version 0.2.0] - 07.01.2018
 ================================================================================
-	* Add rendering of tile-based maps parsed from ASCII file
-		--> different-height flat tiles, ramps, and corner tiles available
-		--> custom textures specified per tile
+    * Add rendering of tile-based maps parsed from ASCII file
+    --> different-height flat tiles, ramps, and corner tiles available
+    --> custom textures specified per tile
 
 ================================================================================
 [Version 0.1.0] - 30.12.2017
 ================================================================================
-	* Initial release of engine source code
-	* OpenGL 3.3 programmable pipeline
-	* Custom ASCII model format with Blender export script
-	* Skeletal animation with GPU skinning
-	* Phong reflection model with materials
-	* FPS camera
+    * Initial release of engine source code
+    * OpenGL 3.3 programmable pipeline
+    * Custom ASCII model format with Blender export script
+    * Skeletal animation with GPU skinning
+    * Phong reflection model with materials
+    * FPS camera
 

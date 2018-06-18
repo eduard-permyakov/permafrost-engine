@@ -22,11 +22,12 @@ in the early phases of development.
 * Phong reflection model with materials
 * RTS camera, FPS camera
 * Rendering of tile-based world parsed from ASCII file
+* Export/Import of game entites to/from ASCII files
 * Engine internals exposed to Python 2.7 for scripting
 * Event system
 * UI framework (Nuklear)
 * Efficient raycasting algorithm
-* Map editor
+* Map/Scene editor
 * Fast rendering of huge maps (map size only limited by memory)
 * RTS minimap
 * RTS-style unit selection
@@ -38,7 +39,7 @@ in the early phases of development.
 * GLEW 2.1.0
 * python 2.7.13
 * stb_image.h
-* khash.h, kvec.h, klist.h
+* khash.h, kvec.h
 * nuklear.h
 
 All dependencies can be built from source and distributed
