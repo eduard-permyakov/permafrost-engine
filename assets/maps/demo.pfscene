@@ -1,0 +1,2255 @@
+num_entities 312
+entity rock_1 assets/models/varied_rocks/rock_1.pfobj 6
+   position vec3 52.475933 28.000000 -8.552010
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 6
+   position vec3 45.532726 28.000000 -6.425491
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 6
+   position vec3 58.882858 28.000000 -24.056622
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity rock assets/models/rock/rock.pfobj 6
+   position vec3 72.547966 20.000000 -27.399410
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 -0.906308 0.000000 0.422618
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock assets/models/rock/rock.pfobj 6
+   position vec3 69.411263 12.912933 -14.324184
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.642788 0.000000 0.766044
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock assets/models/rock/rock.pfobj 6
+   position vec3 86.423683 12.000000 -19.635651
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.675590 0.000000 0.737277
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock assets/models/rock/rock.pfobj 6
+   position vec3 75.470497 12.000000 -12.842205
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 -0.608762 0.000000 0.793353
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock assets/models/rock/rock.pfobj 6
+   position vec3 43.823463 36.000000 -20.091396
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 -0.382684 0.000000 0.923880
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_4 assets/models/varied_rocks/rock_4.pfobj 6
+   position vec3 36.573044 28.000000 -6.886894
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.887011 0.000000 0.461748
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.75
+entity rock_4 assets/models/varied_rocks/rock_4.pfobj 6
+   position vec3 31.176331 12.000000 7.201925
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.991445 0.000000 0.130526
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.75
+entity rock_5 assets/models/varied_rocks/rock_5.pfobj 6
+   position vec3 38.825165 12.000000 8.924053
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.422618 0.000000 0.906308
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_5 assets/models/varied_rocks/rock_5.pfobj 6
+   position vec3 69.437866 12.000000 -8.005550
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.608762 0.000000 0.793353
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_5 assets/models/varied_rocks/rock_5.pfobj 6
+   position vec3 105.816170 12.000000 -129.564423
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 6
+   position vec3 111.426636 12.000000 -129.449844
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 6
+   position vec3 120.596146 12.000000 -121.372147
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 6
+   position vec3 70.958664 12.354797 -135.645203
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tower assets/models/tower/tower.pfobj 6
+   position vec3 7.019781 12.000000 -290.042664
+   scale vec3 5.000000 5.000000 5.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 8.0
+entity tower assets/models/tower/tower.pfobj 6
+   position vec3 -65.694481 12.000000 -312.932495
+   scale vec3 5.000000 5.000000 5.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 8.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 2.824116 12.000000 -302.930847
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.996195 0.000000 0.087155
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 -63.595734 10.116455 -323.767090
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.996195 0.000000 0.087155
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 -53.049644 12.000000 -313.943359
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.642788 0.000000 0.766044
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_2 assets/models/props/wood_fence_2.pfobj 6
+   position vec3 -9.919254 12.000000 -296.237946
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.500000 0.000000 0.866025
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity rock_1 assets/models/varied_rocks/rock_1.pfobj 6
+   position vec3 -59.853867 12.000000 -304.132416
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.382684 0.000000 0.923880
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 6
+   position vec3 -58.674057 12.000000 -309.929718
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.573577 0.000000 0.819152
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity war_banner assets/models/war_banner/war_banner.pfobj 7
+   position vec3 -14.934669 12.000000 -295.933533
+   scale vec3 2.500000 2.500000 2.500000
+   rotation quat 0.000000 0.216440 0.000000 0.976296
+   animated bool 1
+   selectable bool 0
+   idle_clip string ArmatureAction
+   selection_radius float 1.75
+entity war_banner assets/models/war_banner/war_banner.pfobj 7
+   position vec3 -46.764194 12.000000 -306.977386
+   scale vec3 2.500000 2.500000 2.500000
+   rotation quat 0.000000 0.216440 0.000000 0.976296
+   animated bool 1
+   selectable bool 0
+   idle_clip string ArmatureAction
+   selection_radius float 1.75
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -140.569077 12.000000 -294.077484
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.866026 0.000000 0.500000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -142.376083 0.000000 -325.373810
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.984808 0.000000 0.173648
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -124.472504 0.000000 -327.477142
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.382684 0.000000 0.923880
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -122.917816 12.000000 -302.125824
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.258819 0.000000 0.965926
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -104.386185 0.000000 -325.569122
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.258819 0.000000 0.965926
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -163.509949 12.000000 -313.511047
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.422618 0.000000 0.906308
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -140.254166 0.000000 -343.396118
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 37.021053 0.000000 -281.178192
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 35.432774 12.000000 -256.370972
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.422618 0.000000 0.906308
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 52.857590 0.000000 -269.871582
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 53.830757 12.000000 -244.394623
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 37.664768 12.000000 -239.930603
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.382684 0.000000 0.923880
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 45.982155 12.000000 -218.124756
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.461749 0.000000 0.887011
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 60.418438 12.000000 -207.226151
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.043619 0.000000 0.999048
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 45.679253 12.000000 -199.530090
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 32.679565 12.000000 -210.280487
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 67.334534 12.000000 -225.526749
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 84.489532 0.000000 -251.266113
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 101.270569 0.000000 -252.446548
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 112.031715 0.000000 -234.654465
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 94.034019 0.000000 -231.632706
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 79.939926 12.000000 -202.867706
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 100.698181 0.000000 -217.933578
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 97.642807 12.000000 -174.665375
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 120.768654 0.000000 -176.453964
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 119.290733 0.000000 -193.374207
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 139.512131 0.000000 -174.281784
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 115.514824 12.000000 -153.622162
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.461749 0.000000 0.887011
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity shrub assets/models/shrub/shrub.pfobj 6
+   position vec3 -97.400650 0.000000 -327.022858
+   scale vec3 6.500000 6.500000 6.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity shrub assets/models/shrub/shrub.pfobj 6
+   position vec3 -138.370239 12.000000 -288.498383
+   scale vec3 6.500000 6.500000 6.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity shrub assets/models/shrub/shrub.pfobj 6
+   position vec3 -142.350266 12.000000 -280.530212
+   scale vec3 6.500000 6.500000 6.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity shrub assets/models/shrub/shrub.pfobj 6
+   position vec3 -176.341766 12.000000 -314.896118
+   scale vec3 6.500000 6.500000 6.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity shrub assets/models/shrub/shrub.pfobj 6
+   position vec3 60.039753 0.000000 -265.381287
+   scale vec3 6.500000 6.500000 6.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity shrub assets/models/shrub/shrub.pfobj 6
+   position vec3 28.165970 0.000000 -298.461517
+   scale vec3 6.500000 6.500000 6.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity shrub assets/models/shrub/shrub.pfobj 6
+   position vec3 105.092178 0.000000 -194.750000
+   scale vec3 6.500000 6.500000 6.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity shrub assets/models/shrub/shrub.pfobj 6
+   position vec3 135.291382 0.000000 -165.266083
+   scale vec3 6.500000 6.500000 6.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity shrub assets/models/shrub/shrub.pfobj 6
+   position vec3 131.215302 0.000000 -158.211243
+   scale vec3 6.500000 6.500000 6.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity shrub assets/models/shrub/shrub.pfobj 6
+   position vec3 91.284164 12.000000 -170.365555
+   scale vec3 6.500000 6.500000 6.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 69.867210 0.000000 -251.961746
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 66.299171 0.000000 -258.919922
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 57.181534 0.000000 -271.453552
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 35.355217 12.000000 -235.339630
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 31.511284 12.000000 -227.225861
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 70.503204 12.000000 -234.803284
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 97.254440 0.000000 -212.242065
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 119.135361 12.000000 -164.008240
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 119.053391 12.000000 -157.172409
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 137.812210 12.000000 -138.498703
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 140.350815 12.000000 -134.052383
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -92.966072 12.000000 -314.232788
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -121.833710 12.000000 -298.094666
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -137.420486 12.000000 -297.107422
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -161.155380 12.000000 -317.802368
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -171.408966 12.000000 -317.905792
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -168.657776 12.000000 -312.717346
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -135.786362 0.000000 -344.295135
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -141.805145 0.000000 -345.906128
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -120.415802 12.000000 -304.186462
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -108.862709 0.000000 -326.953491
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -120.434128 0.000000 -324.336639
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -123.971840 0.000000 -331.392059
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity rock_5 assets/models/varied_rocks/rock_5.pfobj 6
+   position vec3 -157.529678 12.000000 -260.139221
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.707107 0.000000 0.707107
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_4 assets/models/varied_rocks/rock_4.pfobj 6
+   position vec3 -164.457489 12.000000 -224.482285
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.75
+entity rock_4 assets/models/varied_rocks/rock_4.pfobj 6
+   position vec3 -155.005157 28.000000 -149.101089
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.75
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 6
+   position vec3 -168.193268 12.193237 -231.617065
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.461749 0.000000 0.887011
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 6
+   position vec3 -148.811859 20.307556 -139.495667
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 6
+   position vec3 -144.856430 20.000000 -142.904968
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.461749 0.000000 0.887011
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity rock_1 assets/models/varied_rocks/rock_1.pfobj 6
+   position vec3 -166.518402 20.000000 -172.160751
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_1 assets/models/varied_rocks/rock_1.pfobj 6
+   position vec3 -173.694565 20.000000 -177.308533
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -180.905945 20.000000 -231.869522
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -185.406708 20.000000 -229.904724
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -151.131470 20.000000 -159.444626
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -145.277771 20.000000 -156.866547
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -149.324890 20.000000 -162.854584
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 41.857193 12.000000 -192.561996
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.996195 0.000000 -0.087156
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 58.887527 12.000000 -193.860931
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -1.000000 0.000000 -0.000001
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 76.212753 12.000000 -192.302994
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.996195 0.000000 0.087155
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 84.172882 12.000000 -179.228485
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.707107 0.000000 0.707107
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_2 assets/models/props/wood_fence_2.pfobj 6
+   position vec3 82.693047 12.000000 -163.053833
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.675589 0.000000 -0.737278
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_2 assets/models/props/wood_fence_2.pfobj 6
+   position vec3 73.898514 12.000000 -153.933212
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.087156 0.000000 0.996195
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 58.944851 12.000000 -152.280884
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 34.125328 12.000000 -180.469330
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.737278 0.000000 0.675590
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 32.604660 12.000000 -162.962997
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.707107 0.000000 0.707107
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity chicken assets/models/chicken/chicken.pfobj 7
+   position vec3 74.991371 12.000000 -183.204361
+   scale vec3 0.400000 0.400000 0.400000
+   rotation quat 0.000000 0.461749 0.000000 0.887011
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 1.5
+entity chicken assets/models/chicken/chicken.pfobj 7
+   position vec3 44.740574 12.000000 -183.708618
+   scale vec3 0.400000 0.400000 0.400000
+   rotation quat 0.000000 -0.537300 0.000000 0.843391
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 1.5
+entity chicken assets/models/chicken/chicken.pfobj 7
+   position vec3 50.394928 12.000000 -184.892029
+   scale vec3 0.400000 0.400000 0.400000
+   rotation quat 0.000000 0.422618 0.000000 0.906308
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 1.5
+entity hay_2 assets/models/hay/hay_2.pfobj 6
+   position vec3 75.796143 12.000000 -162.301590
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.043619 0.000000 0.999048
+   animated bool 0
+   selectable bool 0
+   selection_radius float 4.0
+entity chicken assets/models/chicken/chicken.pfobj 7
+   position vec3 64.537849 12.000000 -161.369080
+   scale vec3 0.400000 0.400000 0.400000
+   rotation quat 0.000000 0.887011 0.000000 0.461748
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 1.5
+entity chicken assets/models/chicken/chicken.pfobj 7
+   position vec3 60.865231 12.000000 -158.994385
+   scale vec3 0.400000 0.400000 0.400000
+   rotation quat 0.000000 0.965926 0.000000 -0.258820
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 1.5
+entity chicken assets/models/chicken/chicken.pfobj 7
+   position vec3 40.127365 12.000000 -171.669800
+   scale vec3 0.400000 0.400000 0.400000
+   rotation quat 0.000000 -0.300706 0.000000 0.953717
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 1.5
+entity chicken assets/models/chicken/chicken.pfobj 7
+   position vec3 39.067101 12.000000 -164.091675
+   scale vec3 0.400000 0.400000 0.400000
+   rotation quat 0.000000 -0.887011 0.000000 0.461748
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 1.5
+entity chicken assets/models/chicken/chicken.pfobj 7
+   position vec3 63.488377 12.000000 -178.838547
+   scale vec3 0.400000 0.400000 0.400000
+   rotation quat 0.000000 0.043619 0.000000 0.999048
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 1.5
+entity tree_leafy assets/models/tree_leafy/tree_leafy.pfobj 6
+   position vec3 -120.588875 12.000000 -109.034225
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.707107 0.000000 0.707107
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_leafy assets/models/tree_leafy/tree_leafy.pfobj 6
+   position vec3 -124.994484 12.000000 -90.986282
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_leafy assets/models/tree_leafy/tree_leafy.pfobj 6
+   position vec3 -120.385696 12.000000 -71.743202
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.422618 0.000000 0.906308
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_leafy assets/models/tree_leafy/tree_leafy.pfobj 6
+   position vec3 -105.599960 12.000000 -85.181557
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.300706 0.000000 0.953717
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_leafy assets/models/tree_leafy/tree_leafy.pfobj 6
+   position vec3 -44.016720 12.000000 -34.938442
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_leafy assets/models/tree_leafy/tree_leafy.pfobj 6
+   position vec3 -88.155273 0.000000 -40.726799
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.342020 0.000000 0.939693
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -101.900642 12.000000 -67.705139
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.258819 0.000000 0.965926
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -140.545914 12.000000 -103.203453
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.300706 0.000000 0.953717
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -28.633858 12.000000 -27.422182
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -67.318405 12.000000 -45.332314
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.866026 0.000000 0.500000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -70.662949 0.000000 -23.465410
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -91.581184 0.000000 -20.697428
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -108.630661 0.000000 -32.853436
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -118.865601 0.000000 -19.893526
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -109.713448 0.000000 -45.187363
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -58.891750 0.000000 -9.995631
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.608762 0.000000 0.793353
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 -81.317429 0.000000 -5.260455
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -115.800285 12.000000 -109.802910
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -117.798630 12.000000 -105.180817
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -121.134087 12.000000 -122.429764
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -99.525833 12.000000 -69.795837
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -98.798920 12.000000 -66.023361
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -34.615280 12.000000 -29.946941
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -39.238468 12.000000 -37.726654
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -27.215067 12.000000 -30.545841
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -24.537155 12.000000 -26.430960
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -68.299156 12.000000 -51.586552
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -62.103195 12.000000 -48.444183
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -55.975624 0.000000 -3.854097
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -113.791718 0.000000 -42.351593
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity oak_tree assets/models/oak_tree/oak_tree.pfobj 6
+   position vec3 110.664085 20.000000 -88.128532
+   scale vec3 1.600000 1.600000 1.600000
+   rotation quat 0.000000 -0.422618 0.000000 0.906308
+   animated bool 0
+   selectable bool 0
+   selection_radius float 5.25
+entity rock_1 assets/models/varied_rocks/rock_1.pfobj 6
+   position vec3 141.479828 12.000000 -65.775032
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 6
+   position vec3 136.083740 12.000000 -63.342072
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.300706 0.000000 0.953717
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity rock_4 assets/models/varied_rocks/rock_4.pfobj 6
+   position vec3 18.309494 20.000000 -39.612961
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.043619 0.000000 0.999048
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.75
+entity rock_5 assets/models/varied_rocks/rock_5.pfobj 6
+   position vec3 14.676765 20.000000 -35.801575
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_5 assets/models/varied_rocks/rock_5.pfobj 6
+   position vec3 77.678223 20.000000 -41.419262
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_1 assets/models/varied_rocks/rock_1.pfobj 6
+   position vec3 72.903496 20.000000 -35.747673
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.258819 0.000000 0.965926
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_3 assets/models/varied_rocks/rock_3.pfobj 6
+   position vec3 35.562775 20.000000 -39.265072
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock assets/models/rock/rock.pfobj 6
+   position vec3 142.276978 12.000000 -107.921646
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.087156 0.000000 0.996195
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock assets/models/rock/rock.pfobj 6
+   position vec3 147.747879 12.000000 -109.081055
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock assets/models/rock/rock.pfobj 6
+   position vec3 170.210098 0.000000 -109.118134
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.500000 0.000000 0.866025
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity Sinbad assets/models/sinbad/Sinbad.pfobj 9
+   position vec3 69.727661 20.000000 -72.038765
+   scale vec3 1.200000 1.200000 1.200000
+   rotation quat 0.000000 -0.923879 0.000000 -0.382684
+   animated bool 1
+   selectable bool 1
+   idle_clip string IdleBase
+   selection_radius float 3.25
+   class string Sinbad
+   constructor_arguments int 3
+       string assets/models/sinbad
+       string Sinbad.pfobj
+       string Sinbad
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 70.701439 20.000000 -111.893204
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.887011 0.000000 0.461748
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 66.472794 20.000000 -104.795502
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.866026 0.000000 0.500000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 62.139919 20.000000 -97.142845
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.887011 0.000000 0.461748
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 80.126991 20.000000 -108.021248
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.866026 0.000000 0.500000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 75.053375 20.000000 -100.527527
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.887011 0.000000 0.461748
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 70.039215 20.000000 -92.729568
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.906308 0.000000 0.422618
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 42.974602 20.000000 -77.989342
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.984808 0.000000 0.173648
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 33.946815 20.000000 -73.405273
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.976296 0.000000 0.216439
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 26.242332 20.000000 -68.941566
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.976296 0.000000 0.216439
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 48.372528 20.000000 -69.932045
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.984808 0.000000 0.173648
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 39.569252 20.000000 -65.399139
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.984808 0.000000 0.173648
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 30.989548 20.000000 -60.347763
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.991445 0.000000 0.130526
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity mage assets/models/mage/mage.pfobj 7
+   position vec3 77.982689 20.000000 -84.175186
+   scale vec3 0.600000 0.600000 0.600000
+   rotation quat 0.000000 0.906308 0.000000 0.422618
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 4.25
+entity mage assets/models/mage/mage.pfobj 7
+   position vec3 56.737705 20.000000 -62.936424
+   scale vec3 0.600000 0.600000 0.600000
+   rotation quat 0.000000 0.991445 0.000000 0.130526
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 4.25
+entity war_banner assets/models/war_banner/war_banner.pfobj 7
+   position vec3 61.912025 20.000000 -125.741165
+   scale vec3 2.500000 2.500000 2.500000
+   rotation quat 0.000000 -0.342020 0.000000 0.939693
+   animated bool 1
+   selectable bool 0
+   idle_clip string ArmatureAction
+   selection_radius float 1.75
+entity war_banner assets/models/war_banner/war_banner.pfobj 7
+   position vec3 5.263046 20.000000 -64.115761
+   scale vec3 2.500000 2.500000 2.500000
+   rotation quat 0.000000 -0.422618 0.000000 0.906308
+   animated bool 1
+   selectable bool 0
+   idle_clip string ArmatureAction
+   selection_radius float 1.75
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 -149.482437 12.000000 -220.736206
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.976296 0.000000 -0.216440
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 -131.351379 12.000000 -224.181061
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -1.000000 0.000000 -0.000001
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 -117.882179 12.000000 -214.533997
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.500000 0.000000 0.866025
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_2 assets/models/props/wood_fence_2.pfobj 6
+   position vec3 -99.123764 12.000000 -188.041183
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.906308 0.000000 0.422618
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_2 assets/models/props/wood_fence_2.pfobj 6
+   position vec3 -93.886200 12.000000 -174.354919
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.675590 0.000000 0.737277
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 -96.650444 12.000000 -160.721100
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.382684 0.000000 0.923880
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 6
+   position vec3 -109.980705 12.000000 -150.315582
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tombstone_1 assets/models/props/tombstone_1.pfobj 6
+   position vec3 -146.012543 12.000000 -208.708649
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.608762 0.000000 0.793353
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.5
+entity tombstone_1 assets/models/props/tombstone_1.pfobj 6
+   position vec3 -110.174934 12.000000 -161.960464
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.887011 0.000000 0.461748
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.5
+entity tombstone_1 assets/models/props/tombstone_1.pfobj 6
+   position vec3 -117.538254 12.000000 -168.781570
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.382684 0.000000 0.923880
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.5
+entity tombstone_3 assets/models/props/tombstone_3.pfobj 6
+   position vec3 -135.676727 12.000000 -210.455185
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.537300 0.000000 0.843391
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.5
+entity cross_2 assets/models/props/cross_2.pfobj 6
+   position vec3 -139.165054 12.000000 -195.841766
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.573577 0.000000 0.819152
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.25
+entity cross_2 assets/models/props/cross_2.pfobj 6
+   position vec3 -124.138313 12.000000 -175.104752
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.422618 0.000000 0.906308
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.25
+entity cross_4 assets/models/props/cross_4.pfobj 6
+   position vec3 -104.644325 12.000000 -170.755066
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.422618 0.000000 0.906308
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity obelisk_3 assets/models/props/obelisk_3.pfobj 6
+   position vec3 -110.376465 12.000000 -210.829193
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   selection_radius float 4.0
+entity obelisk_3 assets/models/props/obelisk_3.pfobj 6
+   position vec3 -97.153625 12.000000 -191.751602
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.461749 0.000000 0.887011
+   animated bool 0
+   selectable bool 0
+   selection_radius float 4.0
+entity obelisk_1 assets/models/props/obelisk_1.pfobj 6
+   position vec3 -131.433136 12.000000 -200.413116
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity obelisk_1 assets/models/props/obelisk_1.pfobj 6
+   position vec3 -115.677498 12.000000 -178.354843
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity tombstone_2 assets/models/props/tombstone_2.pfobj 6
+   position vec3 -130.086578 12.000000 -184.059601
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.461749 0.000000 0.887011
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.5
+entity tombstone_2 assets/models/props/tombstone_2.pfobj 6
+   position vec3 -126.890533 12.000000 -191.696091
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.461749 0.000000 0.887011
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.5
+entity tombstone_2 assets/models/props/tombstone_2.pfobj 6
+   position vec3 -128.237930 12.000000 -214.295105
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.537300 0.000000 0.843391
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.5
+entity cross_2 assets/models/props/cross_2.pfobj 6
+   position vec3 -118.685600 12.000000 -199.223450
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.737278 0.000000 0.675590
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.25
+entity obelisk_1 assets/models/props/obelisk_1.pfobj 6
+   position vec3 -116.055794 12.000000 -187.499237
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -15.575935 12.000000 -218.568420
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -25.844265 12.000000 -218.703644
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -35.325256 12.000000 -217.424133
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.087156 0.000000 0.996195
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -17.532936 12.000000 -227.286041
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.087156 0.000000 0.996195
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -27.285145 12.000000 -226.754150
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -37.369610 12.000000 -225.382095
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -19.560635 12.000000 -236.531204
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -29.614925 12.000000 -234.200653
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.043619 0.000000 0.999048
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -39.382778 12.000000 -232.596558
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.087156 0.000000 0.996195
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -52.908325 12.000000 -197.349136
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.500000 0.000000 0.866025
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -57.303528 12.000000 -189.960754
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.500000 0.000000 0.866025
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -61.482868 12.000000 -182.092529
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.537300 0.000000 0.843391
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -64.838211 12.000000 -174.584137
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.537300 0.000000 0.843391
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -7.262569 12.368713 -220.670227
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.043619 0.000000 0.999048
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -7.568398 14.147827 -227.864075
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -8.920696 15.539642 -234.837708
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -61.554180 12.000000 -201.744537
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.537300 0.000000 0.843391
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -65.953766 12.000000 -194.741272
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.537300 0.000000 0.843391
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -70.049416 12.000000 -186.771667
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.573577 0.000000 0.819152
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -73.392967 12.000000 -178.914474
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.500000 0.000000 0.866025
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -69.129425 12.000000 -206.071594
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.500000 0.000000 0.866025
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -74.195206 12.000000 -198.863068
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.573577 0.000000 0.819152
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -77.821594 12.000000 -191.502045
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.500000 0.000000 0.866025
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -81.862503 12.000000 -183.248581
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 -0.537300 0.000000 0.843391
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity grass_2 assets/models/grass/grass_2.pfobj 6
+   position vec3 -92.821747 12.000000 -289.205963
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_2 assets/models/grass/grass_2.pfobj 6
+   position vec3 -96.105095 12.000000 -287.362305
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_2 assets/models/grass/grass_2.pfobj 6
+   position vec3 -94.332802 12.000000 -221.214493
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_2 assets/models/grass/grass_2.pfobj 6
+   position vec3 -107.480354 12.000000 -216.348618
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.342020 0.000000 0.939693
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -93.064301 12.000000 -220.784103
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.461749 0.000000 0.887011
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -104.330170 12.000000 -215.953522
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.342020 0.000000 0.939693
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -94.509293 12.000000 -186.061142
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -95.159264 12.000000 -184.579407
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -153.166473 12.000000 -263.182129
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -134.621185 12.000000 -291.951538
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -104.809944 12.000000 -308.730621
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -113.055786 12.000000 -105.301071
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -111.152939 12.000000 -100.317444
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -110.896423 12.000000 -102.907898
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -125.463966 14.265747 -155.198257
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -127.307640 12.000000 -159.469986
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -150.549118 14.526430 -188.022705
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -161.425827 12.000000 -218.505386
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity mage assets/models/mage/mage.pfobj 7
+   position vec3 -78.756081 16.000000 -117.482681
+   scale vec3 0.600000 0.600000 0.600000
+   rotation quat 0.000000 -0.953717 0.000000 0.300705
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 4.25
+entity mage assets/models/mage/mage.pfobj 7
+   position vec3 -70.708649 16.000000 -110.598022
+   scale vec3 0.600000 0.600000 0.600000
+   rotation quat 0.000000 -0.976296 0.000000 0.216439
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 4.25
+entity mage assets/models/mage/mage.pfobj 7
+   position vec3 -63.881527 16.000000 -104.296028
+   scale vec3 0.600000 0.600000 0.600000
+   rotation quat 0.000000 -0.965926 0.000000 0.258819
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 4.25
+entity mage assets/models/mage/mage.pfobj 7
+   position vec3 -56.768406 16.000000 -98.008415
+   scale vec3 0.600000 0.600000 0.600000
+   rotation quat 0.000000 -0.976296 0.000000 0.216439
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 4.25
+entity mage assets/models/mage/mage.pfobj 7
+   position vec3 -72.733482 16.000000 -123.733673
+   scale vec3 0.600000 0.600000 0.600000
+   rotation quat 0.000000 -0.953717 0.000000 0.300705
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 4.25
+entity mage assets/models/mage/mage.pfobj 7
+   position vec3 -65.088707 16.000000 -117.410179
+   scale vec3 0.600000 0.600000 0.600000
+   rotation quat 0.000000 -0.976296 0.000000 0.216439
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 4.25
+entity mage assets/models/mage/mage.pfobj 7
+   position vec3 -58.176941 16.000000 -111.340355
+   scale vec3 0.600000 0.600000 0.600000
+   rotation quat 0.000000 -0.976296 0.000000 0.216439
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 4.25
+entity mage assets/models/mage/mage.pfobj 7
+   position vec3 -51.126335 16.000000 -105.341660
+   scale vec3 0.600000 0.600000 0.600000
+   rotation quat 0.000000 -0.984808 0.000000 0.173648
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 4.25
+entity cart assets/models/cart/cart.pfobj 6
+   position vec3 27.409922 12.000000 -198.049561
+   scale vec3 2.500000 2.500000 2.500000
+   rotation quat 0.000000 -0.461749 0.000000 0.887011
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.75
+entity cart assets/models/cart/cart.pfobj 6
+   position vec3 26.867842 12.000000 -178.534012
+   scale vec3 2.500000 2.500000 2.500000
+   rotation quat 0.000000 0.737278 0.000000 0.675590
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.75
+entity crate_2 assets/models/crate/crate_2.pfobj 6
+   position vec3 13.254417 16.000000 -218.100952
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.382684 0.000000 0.923880
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity crate_2 assets/models/crate/crate_2.pfobj 6
+   position vec3 11.981892 16.000000 -212.924652
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity crate_2 assets/models/crate/crate_2.pfobj 6
+   position vec3 16.108547 16.000000 -226.319061
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity crate_1 assets/models/crate/crate_1.pfobj 6
+   position vec3 11.200104 16.000000 -223.994263
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity crate_1 assets/models/crate/crate_1.pfobj 6
+   position vec3 6.891167 16.000000 -224.194397
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity crate_1 assets/models/crate/crate_1.pfobj 6
+   position vec3 6.961712 16.000000 -219.734573
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity barrel assets/models/barrel/barrel.pfobj 6
+   position vec3 10.733128 16.000000 -231.460907
+   scale vec3 8.000000 8.000000 8.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity barrel assets/models/barrel/barrel.pfobj 6
+   position vec3 15.229000 16.000000 -232.327393
+   scale vec3 8.000000 8.000000 8.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity barrel assets/models/barrel/barrel.pfobj 6
+   position vec3 12.069221 16.000000 -235.925568
+   scale vec3 8.000000 8.000000 8.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity barrel assets/models/barrel/barrel.pfobj 6
+   position vec3 -29.370544 12.000000 -145.362228
+   scale vec3 8.000000 8.000000 8.000000
+   rotation quat 0.000000 -0.953717 0.000000 0.300705
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity barrel assets/models/barrel/barrel.pfobj 6
+   position vec3 -32.503418 12.000000 -149.356750
+   scale vec3 8.000000 8.000000 8.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity barrel assets/models/barrel/barrel.pfobj 6
+   position vec3 -27.146770 12.000000 -150.645386
+   scale vec3 8.000000 8.000000 8.000000
+   rotation quat 0.000000 -0.608762 0.000000 0.793353
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity fern assets/models/fern/fern.pfobj 6
+   position vec3 -88.629356 12.000000 -164.973389
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.5
+entity fern assets/models/fern/fern.pfobj 6
+   position vec3 -90.602600 12.000000 -161.739059
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.5
+entity crate_1 assets/models/crate/crate_1.pfobj 6
+   position vec3 -40.539284 12.000000 -152.421753
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity crate_1 assets/models/crate/crate_1.pfobj 6
+   position vec3 -40.452301 12.000000 -147.908752
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity crate_2 assets/models/crate/crate_2.pfobj 6
+   position vec3 -43.424095 12.000000 -143.329300
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.300706 0.000000 0.953717
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity crate_2 assets/models/crate/crate_2.pfobj 6
+   position vec3 -48.197975 12.000000 -145.423691
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity crate_2 assets/models/crate/crate_2.pfobj 6
+   position vec3 -48.088448 12.000000 -149.949036
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 1.550625 12.000000 -188.318085
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -7.550812 12.000000 -187.245209
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 2.601559 12.000000 -181.784653
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 -5.691193 12.000000 -180.177460
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 10.313187 12.000000 -189.262802
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity knight assets/models/knight/knight.pfobj 7
+   position vec3 11.039165 12.000000 -182.607269
+   scale vec3 0.800000 0.800000 0.800000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   idle_clip string Idle
+   selection_radius float 3.25
+entity rock_1 assets/models/varied_rocks/rock_1.pfobj 6
+   position vec3 -111.184105 12.000000 -273.967438
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.25
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 6
+   position vec3 -116.790436 12.000000 -272.843750
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_leafy assets/models/tree_leafy/tree_leafy.pfobj 6
+   position vec3 108.751053 0.000000 1.379530
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_leafy assets/models/tree_leafy/tree_leafy.pfobj 6
+   position vec3 91.476761 0.000000 13.942374
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.500000 0.000000 0.866025
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 133.292526 0.000000 -8.861206
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 73.416252 0.000000 22.568619
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 86.275421 0.000000 29.505451
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 112.603241 0.000000 20.956255
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.537300 0.000000 0.843391
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 124.678024 0.000000 5.673355
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.300706 0.000000 0.953717
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 56.972603 0.000000 46.391281
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 38.320885 0.000000 32.690407
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 20.587082 0.000000 28.603321
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.537300 0.000000 0.843391
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity tree_basic assets/models/tree_basic/tree_basic.pfobj 6
+   position vec3 28.023499 0.000000 46.433121
+   scale vec3 10.000000 10.000000 10.000000
+   rotation quat 0.000000 -0.819152 0.000000 0.573576
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.0
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -7.342148 12.000000 -10.035088
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -10.629814 12.000000 -14.807156
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -114.859924 12.000000 -268.473999
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 6
+   position vec3 -120.419098 12.000000 -268.492554
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 3.5
+entity grass_1 assets/models/grass/grass_1.pfobj 6
+   position vec3 -36.352856 12.000000 -141.016708
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_1 assets/models/grass/grass_1.pfobj 6
+   position vec3 -37.803616 12.000000 -139.579514
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.382684 0.000000 0.923880
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_1 assets/models/grass/grass_1.pfobj 6
+   position vec3 28.823809 12.000000 -173.616180
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_1 assets/models/grass/grass_1.pfobj 6
+   position vec3 27.986874 12.000000 -165.004730
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.422618 0.000000 0.906308
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_1 assets/models/grass/grass_1.pfobj 6
+   position vec3 28.657551 12.000000 -164.627853
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.043619 0.000000 0.999048
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 30.101673 12.000000 -173.172089
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -15.027420 12.486298 -88.340134
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.382684 0.000000 0.923880
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 -15.443714 13.121048 -86.314178
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 6.824532 20.000000 -62.430962
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 61.336971 20.000000 -124.490921
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 102.382446 12.000000 -35.908592
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 100.417419 12.000000 -34.991650
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 58.128807 12.000000 0.288390
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.258819 0.000000 0.965926
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 56.825630 12.000000 1.747206
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 45.458099 12.066650 7.966692
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 146.465881 12.000000 -98.278778
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 145.217270 12.000000 -95.107864
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 97.733292 12.000000 -136.663086
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 6
+   position vec3 95.717995 12.000000 -137.743835
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   selection_radius float 2.0
