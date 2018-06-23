@@ -323,8 +323,7 @@ fail_open:
 
 void AL_MapFree(struct map *map)
 {
-    //TODO: Clean up OpenGL buffers
-    //TODO: Clean up extra allocations by map
+    M_AL_FreePrivate(map);
     free(map);
 }
 

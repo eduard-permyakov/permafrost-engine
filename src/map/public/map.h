@@ -213,6 +213,12 @@ size_t M_AL_BuffSizeFromHeader(const struct pfmap_hdr *header);
 void   M_AL_DumpMap(FILE *stream, const struct map *map);
 
 /* ------------------------------------------------------------------------
+ * Cleans up resource allocations done during map initialization.
+ * ------------------------------------------------------------------------
+ */
+void   M_AL_FreePrivate(struct map *map);
+
+/* ------------------------------------------------------------------------
  * Updates the material list for the map, parsed from a PFMAP materials 
  * section string.
  * ------------------------------------------------------------------------

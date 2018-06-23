@@ -40,6 +40,11 @@ struct map{
      */
     vec2_t minimap_center_pos;
     /* ------------------------------------------------------------------------
+     * Navigation private data for the map.
+     * ------------------------------------------------------------------------
+     */
+    void *nav_private;
+    /* ------------------------------------------------------------------------
      * The map chunks stored in row-major order. In total, there must be 
      * (width * height) number of chunks.
      * ------------------------------------------------------------------------

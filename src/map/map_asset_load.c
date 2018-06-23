@@ -21,11 +21,14 @@
 #include "pfchunk.h"
 #include "../asset_load.h"
 #include "../render/public/render.h"
+#include "../navigation/public/nav.h"
 #include "map_private.h"
 
 #include <stdlib.h>
 #include <assert.h>
-#define __USE_POSIX
+#ifndef __USE_POSIX
+    #define __USE_POSIX /* strtok_r */
+#endif
 #include <string.h>
 
 /*****************************************************************************/
@@ -124,7 +127,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
         map->chunks[i].mode = CHUNK_RENDER_MODE_REALTIME_BLEND;
 
         if(!m_al_read_pfchunk(stream, map->chunks + i))
-            goto fail;
+            return false;
 
         size_t renderbuff_sz = R_AL_PrivBuffSizeForChunk(
                                TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, MATERIALS_PER_CHUNK);
@@ -133,14 +136,22 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
         if(!R_AL_InitPrivFromTilesAndMats(stream, MATERIALS_PER_CHUNK, 
                                           map->chunks[i].tiles, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
                                           map->chunks[i].render_private_tiles, basedir)) {
-            goto fail;
+            return false;
         }
     }
 
-    return true;
+    struct tile *chunk_tiles[map->width * map->height];
+    for(int r = 0; r < map->height; r++) {
+        for(int c = 0; c < map->width; c++) {
+            chunk_tiles[r * map->width + c] = map->chunks[r * map->width + c].tiles;
+        }
+    }
+    map->nav_private = N_BuildForMapData(map->width, map->height, 
+        TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, chunk_tiles);
+    if(!map->nav_private)
+        return false;
 
-fail:
-    return false;
+    return true;
 }
 
 size_t M_AL_BuffSizeFromHeader(const struct pfmap_hdr *header)
@@ -188,7 +199,7 @@ void M_AL_DumpMap(FILE *stream, const struct map *map)
                 const struct tile *tile = &curr->tiles[r * TILES_PER_CHUNK_WIDTH + c];
 
                 char type_hex[2];
-                assert(tile->type >= 0 && tile->type <= 16);
+                assert(tile->type >= 0 && tile->type < 16);
                 snprintf(type_hex, sizeof(type_hex), "%1x", tile->type);
 
                 fprintf(stream, "%c%c%c%c%c%c", (char) type_hex[0],
@@ -204,5 +215,13 @@ void M_AL_DumpMap(FILE *stream, const struct map *map)
             fprintf(stream, "\n");
         }
     }
+}
+
+void M_AL_FreePrivate(struct map *map)
+{
+    //TODO: Clean up OpenGL buffers
+    //TODO: Clean up extra allocations by map
+    assert(map->nav_private);
+    N_FreePrivate(map->nav_private);
 }
 
