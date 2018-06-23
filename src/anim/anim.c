@@ -22,7 +22,6 @@
 #include "anim_data.h"
 #include "anim_ctx.h"
 #include "../entity.h"
-#include "../gl_uniforms.h"
 #include "../render/public/render.h"
 
 #include <SDL.h>
@@ -126,8 +125,7 @@ void a_set_uniforms_curr_frame(const struct entity *ent)
         a_make_pose_mat(ent, j, &priv->skel, &curr_pose_mats[j]);
     }
 
-    R_GL_SetAnimUniformMat4x4Array(priv->skel.inv_bind_poses, num_joints, GL_U_INV_BIND_MATS);
-    R_GL_SetAnimUniformMat4x4Array(curr_pose_mats, num_joints, GL_U_CURR_POSE_MATS);
+    R_GL_SetAnimUniforms(priv->skel.inv_bind_poses, curr_pose_mats, num_joints);
 }
 
 

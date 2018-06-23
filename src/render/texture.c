@@ -18,8 +18,8 @@
  */
 
 #include "texture.h"
+#include "gl_uniforms.h"
 #include "../lib/public/stb_image.h"
-#include "../gl_uniforms.h"
 
 #include <string.h>
 #include <assert.h>

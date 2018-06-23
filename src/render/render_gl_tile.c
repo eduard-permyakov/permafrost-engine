@@ -24,11 +24,11 @@
 #include "shader.h"
 #include "material.h"
 #include "gl_assert.h"
+#include "gl_uniforms.h"
 #include "public/render.h"
 #include "../map/public/tile.h"
 #include "../map/public/map.h"
 #include "../collision.h"
-#include "../gl_uniforms.h"
 #include "../camera.h"
 #include "../config.h"
 

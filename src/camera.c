@@ -18,7 +18,6 @@
  */
 
 #include "camera.h"
-#include "gl_uniforms.h"
 #include "render/public/render.h"
 #include "config.h"
 #include "collision.h"
