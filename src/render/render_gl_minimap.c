@@ -39,7 +39,7 @@
 #define MAX(a, b)            ((a) > (b) ? (a) : (b))
 #define ARR_SIZE(a)          (sizeof(a)/sizeof(a[0])) 
 #define MINIMAP_RES          (1024)
-#define MINIMAP_BORDER_CLR   ((vec3_t){65.0f/256.0f, 65.0f/256.0f, 65.0f/256.0f})
+#define MINIMAP_BORDER_CLR   ((vec4_t){65.0f/255.0f, 65.0f/255.0f, 65.0f/255.0f, 1.0f})
 #define MINIMAP_BORDER_WIDTH (3.0f)
 
 /*****************************************************************************/
@@ -145,11 +145,11 @@ void r_gl_draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, co
     GLuint loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, minimap_model->raw);
 
-    vec3_t black = (vec3_t){0.0f, 0.0f, 0.0f};
-    vec3_t white = (vec3_t){1.0f, 1.0f, 1.0f};
+    vec4_t black = (vec4_t){0.0f, 0.0f, 0.0f, 1.0f};
+    vec4_t white = (vec4_t){1.0f, 1.0f, 1.0f, 1.0f};
 
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform3fv(loc, 1, black.raw);
+    glUniform4fv(loc, 1, black.raw);
 
     glDrawArrays(GL_LINE_LOOP, 0, 4);
 
@@ -160,7 +160,7 @@ void r_gl_draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, co
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, new_model.raw);
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform3fv(loc, 1, white.raw);
+    glUniform4fv(loc, 1, white.raw);
 
     glDrawArrays(GL_LINE_LOOP, 0, 4);
 
@@ -355,7 +355,7 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t 
     glUniformMatrix4fv(loc, 1, GL_FALSE, border_model.raw);
 
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform3fv(loc, 1, MINIMAP_BORDER_CLR.raw);
+    glUniform4fv(loc, 1, MINIMAP_BORDER_CLR.raw);
 
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 

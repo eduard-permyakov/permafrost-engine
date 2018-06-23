@@ -21,10 +21,10 @@
 
 out vec4 o_frag_color;
 
-uniform vec3 color;
+uniform vec4 color;
 
 void main()
 {
-    o_frag_color = vec4(color, 1.0);
+    o_frag_color = color;
 }
 

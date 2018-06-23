@@ -165,6 +165,23 @@ void   R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height);
 void   R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t color, 
                                 const struct map *map);
 
+/* ---------------------------------------------------------------------------
+ * Enable/disable alpha blending.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_EnableBlend(void);
+void   R_GL_DisableBlend(void);
+
+/* ---------------------------------------------------------------------------
+ * Render a translucent quad over the map surface. The quad corners are 
+ * specified in chunk coordinates. The quad geometry will have 4 vertices only,
+ * so clipping is possible if the map pertrudes through the center of a 
+ * large quad.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawMapOverlayQuad(vec2_t xz_corners[4], mat4x4_t *model, vec3_t color, 
+                               const struct map *map);
+
 
 /*###########################################################################*/
 /* RENDER TILES                                                              */

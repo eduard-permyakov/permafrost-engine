@@ -354,7 +354,7 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
     GLint VAO, VBO;
     GLint shader_prog;
     GLuint loc;
-    vec3_t green = (vec3_t){0.0f, 1.0f, 0.0f};
+    vec4_t green = (vec4_t){0.0f, 1.0f, 0.0f, 1.0f};
 
     mat4x4_t model;
     Entity_ModelMatrix(ent, &model);
@@ -421,14 +421,13 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
 
     /* Set uniforms */
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform3fv(loc, 1, green.raw);
+    glUniform4fv(loc, 1, green.raw);
 
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
 
     glPointSize(5.0f);
 
-    glBindVertexArray(VAO);
     glDrawArrays(GL_POINTS, 0, skel->num_joints * 2);
     glDrawArrays(GL_LINES, 0, skel->num_joints * 2);
 
@@ -445,9 +444,9 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
     GLint shader_prog;
     GLuint loc;
 
-    vec3_t red   = (vec3_t){1.0f, 0.0f, 0.0f};
-    vec3_t green = (vec3_t){0.0f, 1.0f, 0.0f};
-    vec3_t blue  = (vec3_t){0.0f, 0.0f, 1.0f};
+    vec4_t red   = (vec4_t){1.0f, 0.0f, 0.0f, 1.0f};
+    vec4_t green = (vec4_t){0.0f, 1.0f, 0.0f, 1.0f};
+    vec4_t blue  = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
 
     /* OpenGL setup */
     glGenVertexArrays(1, &VAO);
@@ -480,21 +479,19 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
         switch(i) {
         case 0:
             vbuff[1] = (vec3_t){1.0f, 0.0f, 0.0f}; 
-            glUniform3fv(loc, 1, red.raw);
+            glUniform4fv(loc, 1, red.raw);
             break;
         case 1:
             vbuff[1] = (vec3_t){0.0f, 1.0f, 0.0f}; 
-            glUniform3fv(loc, 1, green.raw);
+            glUniform4fv(loc, 1, green.raw);
             break;
         case 2:
             vbuff[1] = (vec3_t){0.0f, 0.0f, 1.0f}; 
-            glUniform3fv(loc, 1, blue.raw);
+            glUniform4fv(loc, 1, blue.raw);
             break;
         }
     
         glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
-
-        glBindVertexArray(VAO);
         glDrawArrays(GL_LINES, 0, 2);
     }
     glLineWidth(old_width);
@@ -533,17 +530,16 @@ void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model, vec3_t color, floa
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
 
+    vec4_t color4 = (vec4_t){color.x, color.y, color.z, 1.0f};
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform3fv(loc, 1, color.raw);
-
-    /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+    glUniform4fv(loc, 1, color4.raw);
 
     GLfloat old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
     glLineWidth(5.0f);
 
-    glBindVertexArray(VAO);
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
     glDrawArrays(GL_LINES, 0, 2);
 
 cleanup:
@@ -560,7 +556,7 @@ void R_GL_DrawOBB(const struct entity *ent)
     GLint VAO, VBO;
     GLint shader_prog;
     GLuint loc;
-    vec3_t blue = (vec3_t){0.0f, 0.0f, 1.0f};
+    vec4_t blue = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
 
     const struct aabb *aabb;
     if(ent->flags & ENTITY_FLAG_ANIMATED)
@@ -616,12 +612,10 @@ void R_GL_DrawOBB(const struct entity *ent)
     glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
 
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform3fv(loc, 1, blue.raw);
+    glUniform4fv(loc, 1, blue.raw);
 
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
-
-    glBindVertexArray(VAO);
     glDrawArrays(GL_LINES, 0, ARR_SIZE(vbuff));
 
 cleanup:
@@ -669,17 +663,16 @@ void R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color, float w
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, identity.raw);
 
+    vec4_t color4 = (vec4_t){color.x, color.y, color.z, 1.0f};
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform3fv(loc, 1, color.raw);
-
-    /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+    glUniform4fv(loc, 1, color4.raw);
 
     float old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
     glLineWidth(width);
 
-    glBindVertexArray(VAO);
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
     glDrawArrays(GL_LINE_LOOP, 0, ARR_SIZE(vbuff));
 
     glLineWidth(old_width);
@@ -700,10 +693,10 @@ void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim)
     glUseProgram(normals_shader);
 
     GLuint loc;
-    vec3_t yellow = (vec3_t){1.0f, 1.0f, 0.0f};
+    vec4_t yellow = (vec4_t){1.0f, 1.0f, 0.0f, 1.0f};
 
     loc = glGetUniformLocation(normals_shader, GL_U_COLOR);
-    glUniform3fv(loc, 1, yellow.raw);
+    glUniform4fv(loc, 1, yellow.raw);
 
     loc = glGetUniformLocation(normals_shader, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
@@ -791,19 +784,92 @@ void R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t color
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, identity.raw);
 
+    vec4_t color4 = (vec4_t){color.x, color.y, color.z, 1.0f};
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform3fv(loc, 1, color.raw);
-
-    /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+    glUniform4fv(loc, 1, color4.raw);
 
     float old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
     glLineWidth(width);
 
-    glBindVertexArray(VAO);
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, ARR_SIZE(vbuff));
 
+    glLineWidth(old_width);
+
+cleanup:
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
+}
+
+void R_GL_EnableBlend(void)
+{
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+}
+
+void R_GL_DisableBlend(void)
+{
+    glDisable(GL_BLEND);
+}
+
+void R_GL_DrawMapOverlayQuad(vec2_t xz_corners[4], mat4x4_t *model, vec3_t color, const struct map *map)
+{
+    vec3_t vbuff[4];
+    GLint VAO, VBO;
+    GLint shader_prog;
+    GLuint loc;
+
+    for(int i = 0; i < 4; i++) {
+        vec4_t xz_homo = (vec4_t){xz_corners[i].raw[0], 0.0f, xz_corners[i].raw[1], 1.0f};
+        vec4_t ws_xz_homo;
+        PFM_Mat4x4_Mult4x1(model, &xz_homo, &ws_xz_homo);
+        ws_xz_homo.x /= ws_xz_homo.w;
+        ws_xz_homo.z /= ws_xz_homo.w;
+        vbuff[i] = (vec3_t){
+            xz_corners[i].raw[0], 
+            M_HeightAtPoint(map, (vec2_t){ws_xz_homo.x, ws_xz_homo.z}) + 0.1, 
+            xz_corners[i].raw[1]
+        };
+    }
+
+    /* OpenGL setup */
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(0);  
+
+    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    glUseProgram(shader_prog);
+
+    /* Set uniforms */
+    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
+
+    vec4_t color4 = (vec4_t){color.x, color.y, color.z, 0.25f};
+    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
+    glUniform4fv(loc, 1, color4.raw);
+
+    /* Set line width */
+    GLfloat old_width;
+    glGetFloatv(GL_LINE_WIDTH, &old_width);
+    glLineWidth(3.0f);
+
+    /* Render surface */
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+    glDrawArrays(GL_TRIANGLE_FAN, 0, ARR_SIZE(vbuff));
+
+    /* Set new color and render outline */
+    color4 = (vec4_t){color.x, color.y, color.z, 0.5f};
+    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
+    glUniform4fv(loc, 1, color4.raw);
+
+    glDrawArrays(GL_LINE_LOOP, 0, ARR_SIZE(vbuff));
     glLineWidth(old_width);
 
 cleanup:
