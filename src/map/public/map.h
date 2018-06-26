@@ -76,6 +76,13 @@ void   M_RenderEntireMap    (const struct map *map);
 void   M_RenderVisibleMap   (const struct map *map, const struct camera *cam);
 
 /* ------------------------------------------------------------------------
+ * Render a layer over the visible map surface showing which regions are 
+ * pathable and which are not.
+ * ------------------------------------------------------------------------
+ */
+void   M_RenderVisiblePathableLayer(const struct map *map, const struct camera *cam);
+
+/* ------------------------------------------------------------------------
  * Centers the map at the worldspace origin.
  * ------------------------------------------------------------------------
  */

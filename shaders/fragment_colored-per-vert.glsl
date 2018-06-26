@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2018 Eduard Permyakov 
+ *  Copyright (C) 2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -17,26 +17,16 @@
  *
  */
 
-#ifndef VERTEX_H
-#define VERTEX_H
+#version 330 core
 
-#include <GL/glew.h>
+out vec4 o_frag_color;
 
-struct vertex{
-    vec3_t  pos;
-    vec2_t  uv;
-    vec3_t  normal;
-    GLint   material_idx;
-    GLint   joint_indices[6];
-    GLfloat weights[6];
-    /* The following attributes are used for terrain vertices. */
-    GLint   blend_mode;
-    GLint   adjacent_mat_indices[4];
-};
+in VertexToFrag {
+         vec4 color;
+}from_vertex;
 
-struct colored_vert{
-    vec3_t pos;
-    vec4_t color;
-};
+void main()
+{
+    o_frag_color = from_vertex.color;
+}
 
-#endif

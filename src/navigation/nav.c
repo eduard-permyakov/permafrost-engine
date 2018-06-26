@@ -20,6 +20,7 @@
 #include "public/nav.h"
 #include "nav_private.h"
 #include "../map/public/tile.h"
+#include "../render/public/render.h"
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -28,6 +29,8 @@
 
 #define CHUNK_IDX(r, width, c)   ((r) * (width) + (c))
 #define CURSOR_OFF(cursor, base) ((ptrdiff_t)((cursor) - (base)))
+#define EPSILON                  (1.0f/10000.0f)
+#define ARR_SIZE(a)              (sizeof(a)/sizeof(a[0]))
 
 enum edge_type{
     EDGE_BOT   = (1 << 0),
@@ -56,8 +59,8 @@ static void n_set_cost_for_tile(struct nav_chunk *chunk,
                                 size_t tile_r,  size_t tile_c,
                                 const struct tile *tile)
 {
-    size_t field_per_map_r = chunk_h / FIELD_RES_R;
-    size_t field_per_map_c = chunk_w / FIELD_RES_C;
+    size_t field_per_map_r = FIELD_RES_R / chunk_h;
+    size_t field_per_map_c = FIELD_RES_C / chunk_w;
 
     size_t r_base = tile_r * field_per_map_r;
     size_t c_base = tile_c * field_per_map_c;
@@ -189,11 +192,11 @@ void *N_BuildForMapData(size_t w, size_t h,
     assert(FIELD_RES_C >= chunk_w && FIELD_RES_C % chunk_w == 0);
 
     /* First build the base cost field based on terrain, reset portals */
-    for(int chunk_r = 0; chunk_r < h; chunk_r++){
-        for(int chunk_c = 0; chunk_c < w; chunk_c++){
+    for(int chunk_r = 0; chunk_r < ret->height; chunk_r++){
+        for(int chunk_c = 0; chunk_c < ret->width; chunk_c++){
 
-            struct nav_chunk *curr_chunk = &ret->chunks[CHUNK_IDX(chunk_r, w, chunk_c)];
-            struct tile *curr_tiles = chunk_tiles[CHUNK_IDX(chunk_r, w, chunk_c)];
+            struct nav_chunk *curr_chunk = &ret->chunks[CHUNK_IDX(chunk_r, ret->width, chunk_c)];
+            struct tile *curr_tiles = chunk_tiles[CHUNK_IDX(chunk_r, ret->width, chunk_c)];
             curr_chunk->num_portals = 0;
 
             for(int tile_r = 0; tile_r < chunk_h; tile_r++) {
@@ -218,5 +221,45 @@ void N_FreePrivate(void *nav_private)
 {
     assert(nav_private);
     free(nav_private);
+}
+
+void N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
+                           const struct map *map,
+                           int chunk_r, int chunk_c, 
+                           int chunk_x_dim, int chunk_z_dim)
+{
+    const struct nav_private *priv = nav_private;
+    assert(chunk_r < priv->height);
+    assert(chunk_c < priv->width);
+
+    vec2_t corners_buff[4 * FIELD_RES_R * FIELD_RES_C];
+    vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
+
+    const struct nav_chunk *chunk = &priv->chunks[CHUNK_IDX(chunk_r, priv->width, chunk_c)];
+    vec2_t *corners_base = corners_buff;
+    vec3_t *colors_base = colors_buff; 
+
+    for(int r = 0; r < FIELD_RES_R; r++) {
+        for(int c = 0; c < FIELD_RES_C; c++) {
+
+            /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
+            float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
+            float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
+            float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
+            float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+
+            *corners_base++ = (vec2_t){square_x, square_z};
+            *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
+            *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
+            *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
+
+            *colors_base++ = chunk->cost_base[r][c] == COST_IMPASSABLE ? (vec3_t){1.0f, 0.0f, 0.0f}
+                                                                       : (vec3_t){0.0f, 1.0f, 0.0f};
+        }
+    }
+    
+    assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
+    assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
+    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
 }
 

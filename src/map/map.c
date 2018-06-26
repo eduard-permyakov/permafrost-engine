@@ -19,6 +19,7 @@
 
 #include "public/map.h"
 #include "../render/public/render.h"
+#include "../navigation/public/nav.h"
 #include "map_private.h"
 #include "pfchunk.h"
 #include "../camera.h"
@@ -117,6 +118,28 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam)
 
             M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
             R_GL_Draw(render_private, &chunk_model);
+        }
+    }
+}
+
+void M_RenderVisiblePathableLayer(const struct map *map, const struct camera *cam)
+{
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+        for(int c = 0; c < map->width; c++) {
+
+            struct aabb chunk_aabb;
+            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+                continue;
+
+            mat4x4_t chunk_model;
+            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+            N_RenderPathableChunk(map->nav_private, &chunk_model, map, r, c,
+                TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE, TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE); 
         }
     }
 }

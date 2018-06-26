@@ -166,21 +166,13 @@ void   R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t col
                                 const struct map *map);
 
 /* ---------------------------------------------------------------------------
- * Enable/disable alpha blending.
+ * Render an array of translucent quads over the map surface. The quad corners are 
+ * specified in chunk coordinates, with 4 corners per quad in the 'xz_corners'
+ * buffer. 
  * ---------------------------------------------------------------------------
  */
-void   R_GL_EnableBlend(void);
-void   R_GL_DisableBlend(void);
-
-/* ---------------------------------------------------------------------------
- * Render a translucent quad over the map surface. The quad corners are 
- * specified in chunk coordinates. The quad geometry will have 4 vertices only,
- * so clipping is possible if the map pertrudes through the center of a 
- * large quad.
- * ---------------------------------------------------------------------------
- */
-void   R_GL_DrawMapOverlayQuad(vec2_t xz_corners[4], mat4x4_t *model, vec3_t color, 
-                               const struct map *map);
+void   R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, size_t count, mat4x4_t *model, 
+                                const struct map *map);
 
 
 /*###########################################################################*/

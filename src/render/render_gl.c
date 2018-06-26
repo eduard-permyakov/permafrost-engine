@@ -236,6 +236,7 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
 {
     const char *shaders[] = {
         "mesh.static.colored",
+        "mesh.static.colored-per-vert",
         "mesh.static.textured",
         "mesh.static.textured-phong",
         "mesh.static.tile-outline",
@@ -257,6 +258,7 @@ void R_GL_SetProj(const mat4x4_t *proj)
 {
     const char *shaders[] = {
         "mesh.static.colored",
+        "mesh.static.colored-per-vert",
         "mesh.static.textured",
         "mesh.static.textured-phong",
         "mesh.static.tile-outline",
@@ -803,36 +805,83 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-void R_GL_EnableBlend(void)
+void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, size_t count, mat4x4_t *model, const struct map *map)
 {
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-}
-
-void R_GL_DisableBlend(void)
-{
-    glDisable(GL_BLEND);
-}
-
-void R_GL_DrawMapOverlayQuad(vec2_t xz_corners[4], mat4x4_t *model, vec3_t color, const struct map *map)
-{
-    vec3_t vbuff[4];
+    struct colored_vert surf_vbuff[count * 4 * 3];
+    struct colored_vert line_vbuff[count * 4 * 2];
     GLint VAO, VBO;
     GLint shader_prog;
     GLuint loc;
 
-    for(int i = 0; i < 4; i++) {
-        vec4_t xz_homo = (vec4_t){xz_corners[i].raw[0], 0.0f, xz_corners[i].raw[1], 1.0f};
-        vec4_t ws_xz_homo;
-        PFM_Mat4x4_Mult4x1(model, &xz_homo, &ws_xz_homo);
-        ws_xz_homo.x /= ws_xz_homo.w;
-        ws_xz_homo.z /= ws_xz_homo.w;
-        vbuff[i] = (vec3_t){
-            xz_corners[i].raw[0], 
-            M_HeightAtPoint(map, (vec2_t){ws_xz_homo.x, ws_xz_homo.z}) + 0.1, 
-            xz_corners[i].raw[1]
+    vec2_t *corners_base = xz_corners;
+    struct colored_vert *surf_vbuff_base = surf_vbuff;
+    struct colored_vert *line_vbuff_base = line_vbuff;
+
+    for(int i = 0; i < count; i++, xz_corners += 4, colors++) {
+
+        vec2_t center = (vec2_t){
+            (xz_corners[0].raw[0] + xz_corners[1].raw[0] + xz_corners[2].raw[0] + xz_corners[3].raw[0]) / 4.0f,
+            (xz_corners[0].raw[1] + xz_corners[1].raw[1] + xz_corners[2].raw[1] + xz_corners[3].raw[1]) / 4.0f,
         };
+        
+        vec2_t verts[5] = {
+            center,
+            xz_corners[0], xz_corners[1],
+            xz_corners[2], xz_corners[3], 
+        };
+
+        vec3_t verts_3d[5];
+
+        for(int i = 0; i < ARR_SIZE(verts); i++) {
+            vec4_t xz_homo = (vec4_t){verts[i].raw[0], 0.0f, verts[i].raw[1], 1.0f};
+            vec4_t ws_xz_homo;
+            PFM_Mat4x4_Mult4x1(model, &xz_homo, &ws_xz_homo);
+            ws_xz_homo.x /= ws_xz_homo.w;
+            ws_xz_homo.z /= ws_xz_homo.w;
+            verts_3d[i] = (vec3_t){
+                verts[i].raw[0], 
+                M_HeightAtPoint(map, (vec2_t){ws_xz_homo.x, ws_xz_homo.z}) + 0.1, 
+                verts[i].raw[1]
+            };
+        }
+        verts_3d[5] = verts_3d[1];
+
+        vec4_t surf_color = (vec4_t){colors->x, colors->y, colors->z, 0.25};
+        vec4_t line_color = (vec4_t){colors->x, colors->y, colors->z, 0.75};
+
+        /* 4 triangles per tile */
+        *surf_vbuff_base++ = (struct colored_vert){verts_3d[0], surf_color};
+        *surf_vbuff_base++ = (struct colored_vert){verts_3d[1], surf_color};
+        *surf_vbuff_base++ = (struct colored_vert){verts_3d[2], surf_color};
+
+        *surf_vbuff_base++ = (struct colored_vert){verts_3d[0], surf_color};
+        *surf_vbuff_base++ = (struct colored_vert){verts_3d[2], surf_color};
+        *surf_vbuff_base++ = (struct colored_vert){verts_3d[3], surf_color};
+
+        *surf_vbuff_base++ = (struct colored_vert){verts_3d[0], surf_color};
+        *surf_vbuff_base++ = (struct colored_vert){verts_3d[3], surf_color};
+        *surf_vbuff_base++ = (struct colored_vert){verts_3d[4], surf_color};
+
+        *surf_vbuff_base++ = (struct colored_vert){verts_3d[0], surf_color};
+        *surf_vbuff_base++ = (struct colored_vert){verts_3d[4], surf_color};
+        *surf_vbuff_base++ = (struct colored_vert){verts_3d[1], surf_color};
+
+        /* 4 lines per tile */
+        *line_vbuff_base++ = (struct colored_vert){verts_3d[1], line_color};
+        *line_vbuff_base++ = (struct colored_vert){verts_3d[2], line_color};
+
+        *line_vbuff_base++ = (struct colored_vert){verts_3d[2], line_color};
+        *line_vbuff_base++ = (struct colored_vert){verts_3d[3], line_color};
+
+        *line_vbuff_base++ = (struct colored_vert){verts_3d[3], line_color};
+        *line_vbuff_base++ = (struct colored_vert){verts_3d[4], line_color};
+
+        *line_vbuff_base++ = (struct colored_vert){verts_3d[4], line_color};
+        *line_vbuff_base++ = (struct colored_vert){verts_3d[1], line_color};
     }
+    
+    assert(surf_vbuff_base == surf_vbuff + ARR_SIZE(surf_vbuff));
+    assert(line_vbuff_base == line_vbuff + ARR_SIZE(line_vbuff));
 
     /* OpenGL setup */
     glGenVertexArrays(1, &VAO);
@@ -841,38 +890,43 @@ void R_GL_DrawMapOverlayQuad(vec2_t xz_corners[4], mat4x4_t *model, vec3_t color
     glGenBuffers(1, &VBO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct colored_vert), 
+        (void*)offsetof(struct colored_vert, pos));
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(struct colored_vert), 
+        (void*)offsetof(struct colored_vert, color));
+    glEnableVertexAttribArray(1);  
+
+    shader_prog = R_Shader_GetProgForName("mesh.static.colored-per-vert");
     glUseProgram(shader_prog);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     /* Set uniforms */
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
 
-    vec4_t color4 = (vec4_t){color.x, color.y, color.z, 0.25f};
+    vec4_t color4 = (vec4_t){colors[0].x, colors[0].y, colors[0].z, 0.25f};
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
     glUniform4fv(loc, 1, color4.raw);
 
-    /* Set line width */
+    /* Render surface */
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(surf_vbuff) * sizeof(struct colored_vert), surf_vbuff, GL_STATIC_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, ARR_SIZE(surf_vbuff));
+
+    /* Render outline */
     GLfloat old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
     glLineWidth(3.0f);
 
-    /* Render surface */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
-    glDrawArrays(GL_TRIANGLE_FAN, 0, ARR_SIZE(vbuff));
-
-    /* Set new color and render outline */
-    color4 = (vec4_t){color.x, color.y, color.z, 0.5f};
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, color4.raw);
-
-    glDrawArrays(GL_LINE_LOOP, 0, ARR_SIZE(vbuff));
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(line_vbuff) * sizeof(struct colored_vert), line_vbuff, GL_STATIC_DRAW);
+    glDrawArrays(GL_LINES, 0, ARR_SIZE(line_vbuff));
     glLineWidth(old_width);
 
 cleanup:
+    glDisable(GL_BLEND);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 }

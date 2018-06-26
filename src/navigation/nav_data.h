@@ -26,10 +26,10 @@
 #define MAX_PORTALS_PER_CHUNK 64
 #define FIELD_RES_R           64
 #define FIELD_RES_C           64
-#define COST_IMPASSABLE       0x255
+#define COST_IMPASSABLE       0xff
 
 struct coord{
-    int x, y;
+    int r, c;
 };
 
 struct edge{
