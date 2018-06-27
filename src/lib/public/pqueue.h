@@ -1,0 +1,137 @@
+/*
+ *  This file is part of Permafrost Engine. 
+ *  Copyright (C) 2018 Eduard Permyakov 
+ *
+ *  Permafrost Engine is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  Permafrost Engine is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
+
+#ifndef PQUEUE_H
+#define PQUEUE_H
+
+#include <stddef.h>
+#include <stdbool.h>
+#include <stdio.h>
+
+
+/***********************************************************************************************/
+
+#define PQUEUE_TYPE(name, type)                                                                 \
+                                                                                                \
+    typedef struct pq_##name##_node_s {                                                         \
+        int  priority;                                                                          \
+        type data;                                                                              \
+    } pq_##name##_node_t;                                                                       \
+                                                                                                \
+    typedef struct pq_##name##_s {                                                              \
+        pq_##name##_node_t *nodes;                                                              \
+        size_t capacity;                                                                        \
+        size_t size;                                                                            \
+    } pq_##name##_t;                                                                            \
+
+/***********************************************************************************************/
+
+#define pq(name)                                                                                \
+    pq_##name##_t
+
+/***********************************************************************************************/
+
+#define pq_size(pqueue)                                                                         \
+    ((pqueue)->size)
+
+/***********************************************************************************************/
+
+#define PQUEUE_PROTOTYPES(scope, name, type)                                                    \
+                                                                                                \
+    scope void pq_##name##_init   (pq(name) *pqueue);                                           \
+    scope void pq_##name##_destroy(pq(name) *pqueue);                                           \
+    scope bool pq_##name##_push   (pq(name) *pqueue, int in_prio, type in);                     \
+    scope bool pq_##name##_pop    (pq(name) *pqueue, type *out);
+
+/***********************************************************************************************/
+
+#define PQUEUE_IMPL(scope, name, type)                                                          \
+                                                                                                \
+    scope void pq_##name##_init(pq(name) *pqueue)                                               \
+    {                                                                                           \
+        pqueue->nodes = NULL;                                                                   \
+        pqueue->capacity = 0;                                                                   \
+        pqueue->size = 0;                                                                       \
+    }                                                                                           \
+                                                                                                \
+    scope void pq_##name##_destroy(pq(name) *pqueue)                                            \
+    {                                                                                           \
+        if(pqueue->nodes)                                                                       \
+            free(pqueue->nodes);                                                                \
+    }                                                                                           \
+                                                                                                \
+    scope bool pq_##name##_push(pq(name) *pqueue, int in_prio, type in)                         \
+    {                                                                                           \
+        if(pqueue->size + 1 >= pqueue->capacity) {                                              \
+                                                                                                \
+            pqueue->capacity = pqueue->capacity ? pqueue->capacity * 2 : 4;                     \
+            pqueue->nodes = realloc(pqueue->nodes,                                              \
+                pqueue->capacity * sizeof(pq_##name##_node_t));                                 \
+            if(!pqueue->nodes)                                                                  \
+                return false;                                                                   \
+        }                                                                                       \
+                                                                                                \
+        int curr_idx = pqueue->size + 1;                                                        \
+        int parent_idx = curr_idx / 2;                                                          \
+                                                                                                \
+        while(curr_idx > 1 && pqueue->nodes[parent_idx].priority > in_prio) {                   \
+            pqueue->nodes[curr_idx] = pqueue->nodes[parent_idx];                                \
+            curr_idx = parent_idx;                                                              \
+            parent_idx = parent_idx / 2;                                                        \
+        }                                                                                       \
+                                                                                                \
+        pqueue->nodes[curr_idx].priority = in_prio;                                             \
+        pqueue->nodes[curr_idx].data = in;                                                      \
+        pqueue->size++;                                                                         \
+        return true;                                                                            \
+    }                                                                                           \
+                                                                                                \
+    scope bool pq_##name##_pop(pq(name) *pqueue, type *out)                                     \
+    {                                                                                           \
+        if(pqueue->size == 0)                                                                   \
+            return false;                                                                       \
+                                                                                                \
+        *out = pqueue->nodes[1].data;                                                           \
+        pqueue->nodes[1] = pqueue->nodes[pqueue->size--];                                       \
+                                                                                                \
+        int curr_idx = 1;                                                                       \
+        while(curr_idx != pqueue->size + 1) {                                                   \
+                                                                                                \
+            int target_idx = pqueue->size + 1;                                                  \
+            int left_child_idx = curr_idx * 2;                                                  \
+            int right_child_idx = left_child_idx + 1;                                           \
+                                                                                                \
+            if(left_child_idx <= pqueue->size                                                   \
+            && pqueue->nodes[left_child_idx].priority < pqueue->nodes[target_idx].priority) {   \
+                target_idx = left_child_idx;                                                    \
+            }                                                                                   \
+                                                                                                \
+            if(right_child_idx <= pqueue->size                                                  \
+            && pqueue->nodes[right_child_idx].priority < pqueue->nodes[target_idx].priority) {  \
+                target_idx = right_child_idx;                                                   \
+            }                                                                                   \
+                                                                                                \
+            pqueue->nodes[curr_idx] = pqueue->nodes[target_idx];                                \
+            curr_idx = target_idx;                                                              \
+        }                                                                                       \
+        return true;                                                                            \
+    }
+
+#endif
+
