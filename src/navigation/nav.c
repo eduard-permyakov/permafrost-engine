@@ -19,6 +19,7 @@
 
 #include "public/nav.h"
 #include "nav_private.h"
+#include "a_star.h"
 #include "../map/public/tile.h"
 #include "../render/public/render.h"
 
@@ -170,6 +171,45 @@ static void n_create_portals(struct nav_private *priv)
     assert(n_links == (priv->width)*(priv->width-1) + (priv->height)*(priv->height-1));
 }
 
+void n_render_grid_path(void *nav_private, mat4x4_t *chunk_model,
+                        const struct map *map, coord_vec_t *path,
+                        int chunk_r, int chunk_c, 
+                        int chunk_x_dim, int chunk_z_dim)
+{
+    const struct nav_private *priv = nav_private;
+    assert(chunk_r < priv->height);
+    assert(chunk_c < priv->width);
+
+    vec2_t corners_buff[4 * kv_size(*path)];
+    vec3_t colors_buff[kv_size(*path)];
+
+    const struct nav_chunk *chunk = &priv->chunks[CHUNK_IDX(chunk_r, priv->width, chunk_c)];
+    vec2_t *corners_base = corners_buff;
+    vec3_t *colors_base = colors_buff; 
+
+    for(int i = 0, r = kv_A(*path, i).r, c = kv_A(*path, i).c; 
+        i < kv_size(*path); 
+        i++, r = kv_A(*path, i).r, c = kv_A(*path, i).c) {
+
+        /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
+        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
+        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
+        float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
+        float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+
+        *corners_base++ = (vec2_t){square_x, square_z};
+        *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
+        *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
+        *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
+
+        *colors_base++ = (vec3_t){0.0f, 0.0f, 1.0f};
+    }
+
+    assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
+    assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
+    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, kv_size(*path), chunk_model, map);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -257,7 +297,7 @@ void N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
                                                                        : (vec3_t){0.0f, 1.0f, 0.0f};
         }
     }
-    
+
     assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
     R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);

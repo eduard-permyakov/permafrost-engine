@@ -17,38 +17,20 @@
  *
  */
 
-#ifndef NAV_DAT_H
-#define NAV_DAT_H
+#ifndef A_STAR_H
+#define A_STAR_H
 
-#include <stddef.h>
-#include <stdint.h>
+#include "../lib/public/kvec.h"
+#include "nav_data.h"
 
-#define MAX_PORTALS_PER_CHUNK 64
-#define FIELD_RES_R           64
-#define FIELD_RES_C           64
-#define COST_IMPASSABLE       0xff
+#include <stdbool.h>
 
-struct coord{
-    int r, c;
-};
 
-struct edge{
-    struct portal *neighbour;
-    float          distance;
-};
+typedef kvec_t(struct coord) coord_vec_t;
 
-struct portal{
-    struct coord   chunk;
-    struct coord   endpoints[2]; 
-    size_t         num_neighbours;
-    struct edge    edges[MAX_PORTALS_PER_CHUNK-1];
-    struct portal *connected;
-};
-
-struct nav_chunk{
-    size_t        num_portals; 
-    struct portal portals[MAX_PORTALS_PER_CHUNK];
-    uint8_t       cost_base[FIELD_RES_R][FIELD_RES_C]; 
-};
+bool AStar_GridPath(struct coord start, struct coord finish, 
+                    const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
+                    coord_vec_t *out_path);
 
 #endif
+
