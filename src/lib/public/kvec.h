@@ -28,20 +28,20 @@
 
 #include "kvec.h"
 int main() {
-	kvec_t(int) array;
-	kv_init(array);
-	kv_push(int, array, 10); // append
-	kv_a(int, array, 20) = 5; // dynamic
-	kv_A(array, 20) = 4; // static
-	kv_destroy(array);
-	return 0;
+    kvec_t(int) array;
+    kv_init(array);
+    kv_push(int, array, 10); // append
+    kv_a(int, array, 20) = 5; // dynamic
+    kv_A(array, 20) = 4; // static
+    kv_destroy(array);
+    return 0;
 }
 */
 
 /*
   2008-09-22 (0.1.0):
 
-	* The initial version.
+    * The initial version.
   
   2018-02-13 (Eduard Permyakov):
 
@@ -72,35 +72,35 @@ int main() {
 #define kv_resize(type, v, s)  ((v).m = (s), (v).a = (type*)realloc((v).a, sizeof(type) * (v).m))
 
 #define kv_copy(type, v1, v0)                                       \
-    do {							                                \
-		if ((v1).m < (v0).n)                                        \
-            kv_resize(type, v1, (v0).n);	                        \
-		(v1).n = (v0).n;									        \
-		memcpy((v1).a, (v0).a, sizeof(type) * (v0).n);		        \
-	}while(0)												        \
+    do {                                                            \
+        if ((v1).m < (v0).n)                                        \
+            kv_resize(type, v1, (v0).n);                            \
+        (v1).n = (v0).n;                                            \
+        memcpy((v1).a, (v0).a, sizeof(type) * (v0).n);              \
+    }while(0)                                                       \
 
 #define kv_push(type, v, x)                                         \
-    do {									                        \
-		if ((v).n == (v).m) {										\
-			(v).m = (v).m ? (v).m << 1 : KV_DEFAULT_SIZE;           \
-			(v).a = (type*)realloc((v).a, sizeof(type) * (v).m);	\
-		}															\
-		(v).a[(v).n++] = (x);										\
-	}while(0)
+    do {                                                            \
+        if ((v).n == (v).m) {                                       \
+            (v).m = (v).m ? (v).m << 1 : KV_DEFAULT_SIZE;           \
+            (v).a = (type*)realloc((v).a, sizeof(type) * (v).m);    \
+        }                                                           \
+        (v).a[(v).n++] = (x);                                       \
+    }while(0)
 
 #define kv_pushp(type, v)                                           \
     ( ((v).n == (v).m)                                              \
-    ? ((v).m = ((v).m ? (v).m << 1 : KV_DEFAULT_SIZE) 				\
+    ? ((v).m = ((v).m ? (v).m << 1 : KV_DEFAULT_SIZE)               \
       ,(v).a = (type*)realloc((v).a, sizeof(type) * (v).m)          \
-      , 0)	                                                        \
+      , 0)                                                          \
     : 0                                                             \
     , ((v).a + ((v).n++)) )
 
 #define kv_a(type, v, i)                                            \
     ( ((v).m <= (size_t)(i)                                         \
     ? ((v).m = (v).n = (i) + 1, kv_roundup32((v).m),                \
-	   (v).a = (type*)realloc((v).a, sizeof(type) * (v).m), 0)      \
-	:  (v).n <= (size_t)(i) ? (v).n = (i) + 1 : 0)                  \
+       (v).a = (type*)realloc((v).a, sizeof(type) * (v).m), 0)      \
+    :  (v).n <= (size_t)(i) ? (v).n = (i) + 1 : 0)                  \
     , (v).a[(i)])
 
 /* Will move the last element in the vector to take the place of the deleted one.
@@ -114,7 +114,6 @@ int main() {
     do {                                                            \
         int ret = -1;                                               \
         for(int i = 0; i < (v).n; i++) {                            \
-            type t = (x);                                           \
             if(comparator(&(v).a[i], &(x)) != 0) {                  \
                 ret = i;                                            \
                 break;                                              \
