@@ -31,6 +31,7 @@ in the early phases of development.
 * Fast rendering of huge maps (map size only limited by memory)
 * RTS minimap
 * RTS-style unit selection
+* Map navigation graph/grid generation
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
