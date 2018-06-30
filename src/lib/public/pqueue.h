@@ -30,7 +30,7 @@
 #define PQUEUE_TYPE(name, type)                                                                 \
                                                                                                 \
     typedef struct pq_##name##_node_s {                                                         \
-        int  priority;                                                                          \
+        float priority;                                                                         \
         type data;                                                                              \
     } pq_##name##_node_t;                                                                       \
                                                                                                 \
@@ -56,7 +56,7 @@
                                                                                                 \
     scope void pq_##name##_init   (pq(name) *pqueue);                                           \
     scope void pq_##name##_destroy(pq(name) *pqueue);                                           \
-    scope bool pq_##name##_push   (pq(name) *pqueue, int in_prio, type in);                     \
+    scope bool pq_##name##_push   (pq(name) *pqueue, float in_prio, type in);                   \
     scope bool pq_##name##_pop    (pq(name) *pqueue, type *out);
 
 /***********************************************************************************************/
@@ -76,7 +76,7 @@
             free(pqueue->nodes);                                                                \
     }                                                                                           \
                                                                                                 \
-    scope bool pq_##name##_push(pq(name) *pqueue, int in_prio, type in)                         \
+    scope bool pq_##name##_push(pq(name) *pqueue, float in_prio, type in)                       \
     {                                                                                           \
         if(pqueue->size + 1 >= pqueue->capacity) {                                              \
                                                                                                 \
