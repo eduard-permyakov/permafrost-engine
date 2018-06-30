@@ -55,8 +55,7 @@ void  N_FreePrivate(void *nav_private);
  */
 void  N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
                             const struct map *map,
-                            int chunk_r, int chunk_c, 
-                            int chunk_x_dim, int chunk_z_dim);
+                            int chunk_r, int chunk_c);
 
 #endif
 

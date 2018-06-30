@@ -24,12 +24,13 @@
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 PQUEUE_TYPE(coord, struct coord)
 PQUEUE_IMPL(static, coord, struct coord)
 
 KHASH_MAP_INIT_INT64(coord_coord, struct coord)
-KHASH_MAP_INIT_INT64(coord_uint, float)
+KHASH_MAP_INIT_INT64(coord_float, float)
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define kh_put_val(name, table, key, val)               \
@@ -44,38 +45,57 @@ KHASH_MAP_INIT_INT64(coord_uint, float)
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-uint64_t coord_to_key(struct coord c)
+static uint64_t coord_to_key(struct coord c)
 {
     return (((uint64_t)c.r) << 32 | ((uint64_t)c.c) & ~((uint32_t)0));
 }
 
-int coord_get_neighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C],
-                         struct coord coord, struct coord *out_neighbours)
+static int coord_get_neighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
+                                struct coord *out_neighbours, float *out_costs)
 {
     int ret = 0;
-    for(int r = coord.r - 1; r <= coord.r + 1; r++) {
-        for(int c = coord.c - 1; c <= coord.c + 1; c++) {
 
-            if(r < 0 || r >= FIELD_RES_R)
+    for(int r = -1; r <= 1; r++) {
+        for(int c = -1; c <= 1; c++) {
+
+            int abs_r = coord.r + r;
+            int abs_c = coord.c + c;
+
+            if(abs_r < 0 || abs_r >= FIELD_RES_R)
                 continue;
-            if(c < 0 || c >= FIELD_RES_C)
+            if(abs_c < 0 || abs_c >= FIELD_RES_C)
                 continue;
-            if(cost_field[r][c] == COST_IMPASSABLE)
+            if(r == 0 && c == 0)
                 continue;
-            out_neighbours[ret++] = (struct coord){r, c};
+            if(cost_field[abs_r][abs_c] == COST_IMPASSABLE)
+                continue;
+
+            bool diag = (r == c) || (r == -c);
+            if(diag && cost_field[abs_r][coord.c] == COST_IMPASSABLE 
+                    && cost_field[coord.r][abs_c] == COST_IMPASSABLE)
+                continue;
+            float cost_mult = diag ? sqrt(2) : 1.0f;
+
+            out_neighbours[ret] = (struct coord){abs_r, abs_c};
+            out_costs[ret] = cost_field[abs_r][abs_c] * cost_mult;
+            ret++;
         }
     }
+    assert(ret < 9);
     return ret;
 }
 
-float heuristic(struct coord a, struct coord b)
+static float heuristic(struct coord a, struct coord b)
 {
-    /* diagonal distance */
-    const int D = 1;
-    const int D2 = 1;
+    /* Octile Distance:
+     * Compute the number of steps you can take if you can't take
+     * a diagonal, then subtract the steps you save by using the 
+     * diagonal. Uses cost 'D' for orthogonal traversal of one tile.*/
+    const float D = 1.0f;
+    const float D2 = sqrt(2) * D;
 
-    float dx = abs(a.r - b.r);
-    float dy = abs(a.c - b.c);
+    int dx = abs(a.r - b.r);
+    int dy = abs(a.c - b.c);
 
     return D * (dx + dy) + (D2 - 2 * D) * MIN(dx, dy);
 }
@@ -86,20 +106,20 @@ float heuristic(struct coord a, struct coord b)
 
 bool AStar_GridPath(struct coord start, struct coord finish, 
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
-                    coord_vec_t *out_path)
+                    coord_vec_t *out_path, float *out_cost)
 {
     pq_coord_t            frontier;
     khash_t(coord_coord) *came_from;
-    khash_t(coord_uint)  *running_cost;
+    khash_t(coord_float) *running_cost;
     
     pq_coord_init(&frontier);
     if(NULL == (came_from = kh_init(coord_coord)))
         goto fail_came_from;
-    if(NULL == (running_cost = kh_init(coord_uint)))
+    if(NULL == (running_cost = kh_init(coord_float)))
         goto fail_running_cost;
 
-    kh_put_val(coord_uint, running_cost, coord_to_key(start), 0);
-    pq_coord_push(&frontier, 0, start);
+    kh_put_val(coord_float, running_cost, coord_to_key(start), 0.0f);
+    pq_coord_push(&frontier, 0.0f, start);
 
     while(pq_size(&frontier) > 0) {
 
@@ -110,17 +130,21 @@ bool AStar_GridPath(struct coord start, struct coord finish,
             break;
 
         struct coord neighbours[8];
-        int num_neighbours = coord_get_neighbours(cost_field, curr, neighbours);
-        for(struct coord *next = neighbours; next < neighbours + num_neighbours; next++) {
-            
-            khiter_t k = kh_get(coord_uint, running_cost, coord_to_key(curr));
-            float new_cost = kh_value(running_cost, k) + cost_field[next->r][next->c];
+        float neighbour_costs[8];
+        int num_neighbours = coord_get_neighbours(cost_field, curr, neighbours, neighbour_costs);
 
-            if((k = kh_get(coord_uint, running_cost, coord_to_key(*next))) == kh_end(running_cost)
+        for(int i = 0; i < num_neighbours; i++) {
+
+            struct coord *next = &neighbours[i];
+            khiter_t k = kh_get(coord_float, running_cost, coord_to_key(curr));
+            assert(k != kh_end(running_cost));
+            float new_cost = kh_value(running_cost, k) + neighbour_costs[i];
+
+            if((k = kh_get(coord_float, running_cost, coord_to_key(*next))) == kh_end(running_cost)
             || new_cost < kh_value(running_cost, k)) {
 
-                kh_put_val(coord_uint, running_cost, coord_to_key(*next), new_cost);
-                int priority = new_cost + heuristic(finish, *next);
+                kh_put_val(coord_float, running_cost, coord_to_key(*next), new_cost);
+                float priority = new_cost + heuristic(finish, *next);
                 pq_coord_push(&frontier, priority, *next);
                 kh_put_val(coord_coord, came_from, coord_to_key(*next), curr);
             }
@@ -151,14 +175,18 @@ bool AStar_GridPath(struct coord start, struct coord finish,
         kv_A(*out_path, j) = tmp;
     }
 
+    khiter_t k = kh_get(coord_float, running_cost, coord_to_key(finish));
+    assert(k != kh_end(running_cost));
+    *out_cost = kh_value(running_cost, k);
+
     pq_coord_destroy(&frontier);
-    kh_destroy(coord_uint, running_cost);
+    kh_destroy(coord_float, running_cost);
     kh_destroy(coord_coord, came_from);
     return true;
 
 fail_find_path:
     pq_coord_destroy(&frontier);
-    kh_destroy(coord_uint, running_cost);
+    kh_destroy(coord_float, running_cost);
 fail_running_cost:
     kh_destroy(coord_coord, came_from);
 fail_came_from:

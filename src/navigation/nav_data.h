@@ -34,7 +34,9 @@ struct coord{
 
 struct edge{
     struct portal *neighbour;
-    float          distance;
+    /* Cost of moving from the center of one portal to the center
+     * of the next. */
+    float          cost;
 };
 
 struct portal{

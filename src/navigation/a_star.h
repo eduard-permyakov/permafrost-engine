@@ -30,7 +30,7 @@ typedef kvec_t(struct coord) coord_vec_t;
 
 bool AStar_GridPath(struct coord start, struct coord finish, 
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
-                    coord_vec_t *out_path);
+                    coord_vec_t *out_path, float *out_cost);
 
 #endif
 

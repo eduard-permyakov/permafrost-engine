@@ -138,8 +138,7 @@ void M_RenderVisiblePathableLayer(const struct map *map, const struct camera *ca
 
             mat4x4_t chunk_model;
             M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-            N_RenderPathableChunk(map->nav_private, &chunk_model, map, r, c,
-                TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE, TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE); 
+            N_RenderPathableChunk(map->nav_private, &chunk_model, map, r, c); 
         }
     }
 }
