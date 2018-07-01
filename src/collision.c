@@ -540,3 +540,81 @@ bool C_PointInsideTriangle2D(vec2_t point, vec2_t a, vec2_t b, vec2_t c)
     return (u >= 0.0f) && (v >= 0.0f) && (u + v < 1.0f);
 }
 
+bool C_LineLineIntersection(struct line_seg_2d l1, struct line_seg_2d l2, 
+                            float *out_x, float *out_z)
+{
+    float s1_x, s1_z, s2_x, s2_z;
+    s1_x = l1.bx - l1.ax;     s1_z = l1.bz - l1.az;
+    s2_x = l2.bx - l2.ax;     s2_z = l2.bz - l2.az;
+    
+    float s, t;
+    s = (-s1_z * (l1.ax - l2.ax) + s1_x * (l1.az - l2.az)) / (-s2_x * s1_z + s1_x * s2_z);
+    t = ( s2_x * (l1.az - l2.az) - s2_z * (l1.ax - l2.ax)) / (-s2_x * s1_z + s1_x * s2_z);
+    
+    if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+        /* Intersection detected */
+        if (out_x)
+            *out_x = l1.ax + (t * s1_x);
+        if (out_z)
+            *out_z = l1.az + (t * s1_z);
+        return true;
+    }
+    
+    return false; /* No intersection */
+}
+
+int C_LineBoxIntersection(struct line_seg_2d line, struct box bounds, 
+                          float out_x[2], float out_z[2])
+{
+    int ret = 0;
+
+    struct line_seg_2d top = (struct line_seg_2d){
+        bounds.x, 
+        bounds.z, 
+        bounds.x - bounds.width,
+        bounds.z
+    };
+
+    struct line_seg_2d bot = (struct line_seg_2d){
+        bounds.x, 
+        bounds.z + bounds.height, 
+        bounds.x - bounds.width,
+        bounds.z + bounds.height
+    };
+
+    struct line_seg_2d left = (struct line_seg_2d){
+        bounds.x, 
+        bounds.z, 
+        bounds.x,
+        bounds.z + bounds.height
+    };
+
+    struct line_seg_2d right = (struct line_seg_2d){
+        bounds.x - bounds.width, 
+        bounds.z, 
+        bounds.x - bounds.width,
+        bounds.z + bounds.height
+    };
+
+    if(C_LineLineIntersection(line, top, out_x + ret, out_z + ret))
+        ret++;
+
+    if(C_LineLineIntersection(line, bot, out_x + ret, out_z + ret))
+        ret++;
+
+    if(C_LineLineIntersection(line, left, out_x + ret, out_z + ret))
+        ret++;
+
+    if(C_LineLineIntersection(line, right, out_x + ret, out_z + ret))
+        ret++;
+
+    assert(ret >= 0 && ret <= 2);
+    return ret;
+}
+
+bool C_BoxPointIntersection(float px, float pz, struct box bounds)
+{
+    return (px <= bounds.x && px >= bounds.x - bounds.width)
+        && (pz >= bounds.z && pz <= bounds.z + bounds.height);
+}
+

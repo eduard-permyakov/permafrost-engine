@@ -57,6 +57,7 @@ enum volume_intersec_type{
     VOLUME_INTERSEC_INTERSECTION,
 };
 
+
 bool C_RayIntersectsAABB(vec3_t ray_origin, vec3_t ray_dir, struct aabb aabb, float *out_t);
 bool C_RayIntersectsOBB (vec3_t ray_origin, vec3_t ray_dir, struct obb obb,   float *out_t);
 bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, size_t n, float *out_t);
@@ -77,4 +78,22 @@ bool C_FrustumOBBIntersectionExact(const struct frustum *frustum, const struct o
 bool C_PointInsideScreenRect(vec2_t point, vec2_t a, vec2_t b, vec2_t c, vec2_t d);
 bool C_PointInsideTriangle2D(vec2_t point, vec2_t a, vec2_t b, vec2_t c);
 
+
+struct box{
+    float x, z; 
+    float width, height;
+};
+
+struct line_seg_2d{
+    float ax, az; 
+    float bx, bz;
+};
+
+bool C_LineLineIntersection(struct line_seg_2d l1, struct line_seg_2d l2, 
+                            float *out_x, float *out_z);
+int  C_LineBoxIntersection (struct line_seg_2d line, struct box bounds, 
+                            float out_x[2], float out_z[2]);
+bool C_BoxPointIntersection(float px, float pz, struct box bounds);
+
 #endif
+

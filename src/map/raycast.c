@@ -36,19 +36,9 @@
 #define MAX_CANDIDATE_TILES 256
 #define EPSILON             (1.0f / 64.0)
 
-struct box{
-    float x, z; 
-    float width, height;
-};
-
 struct ray{
     vec3_t origin;
     vec3_t dir;
-};
-
-struct line_seg_2d{
-    float ax, az; 
-    float bx, bz;
 };
 
 struct rc_ctx{
@@ -62,7 +52,6 @@ struct rc_ctx{
     struct tile_desc  intersec_tile;
     vec3_t            intersec_pos;
 };
-
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -116,36 +105,6 @@ static int mod(int a, int b)
 {
     int r = a % b;
     return r < 0 ? r + b : r;
-}
-
-static bool box_point_inside(float px, float pz, struct box bounds)
-{
-    return (px <= bounds.x && px >= bounds.x - bounds.width)
-        && (pz >= bounds.z && pz <= bounds.z + bounds.height);
-}
-
-static bool line_line_intersection(struct line_seg_2d l1, 
-                                   struct line_seg_2d l2, 
-                                   float *out_x, float *out_z)
-{
-    float s1_x, s1_z, s2_x, s2_z;
-    s1_x = l1.bx - l1.ax;     s1_z = l1.bz - l1.az;
-    s2_x = l2.bx - l2.ax;     s2_z = l2.bz - l2.az;
-    
-    float s, t;
-    s = (-s1_z * (l1.ax - l2.ax) + s1_x * (l1.az - l2.az)) / (-s2_x * s1_z + s1_x * s2_z);
-    t = ( s2_x * (l1.az - l2.az) - s2_z * (l1.ax - l2.ax)) / (-s2_x * s1_z + s1_x * s2_z);
-    
-    if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
-        /* Intersection detected */
-        if (out_x)
-            *out_x = l1.ax + (t * s1_x);
-        if (out_z)
-            *out_z = l1.az + (t * s1_z);
-        return true;
-    }
-    
-    return false; /* No intersection */
 }
 
 static float line_len(float ax, float az, float bx, float bz)
@@ -227,61 +186,11 @@ static bool relative_tile_desc(const struct map *map, struct tile_desc *inout, i
     return true;
 }
 
-static int line_box_intersection(struct line_seg_2d line, 
-                                 struct box bounds, 
-                                 float out_x[2], float out_z[2])
-{
-    int ret = 0;
-
-    struct line_seg_2d top = (struct line_seg_2d){
-        bounds.x, 
-        bounds.z, 
-        bounds.x - bounds.width,
-        bounds.z
-    };
-
-    struct line_seg_2d bot = (struct line_seg_2d){
-        bounds.x, 
-        bounds.z + bounds.height, 
-        bounds.x - bounds.width,
-        bounds.z + bounds.height
-    };
-
-    struct line_seg_2d left = (struct line_seg_2d){
-        bounds.x, 
-        bounds.z, 
-        bounds.x,
-        bounds.z + bounds.height
-    };
-
-    struct line_seg_2d right = (struct line_seg_2d){
-        bounds.x - bounds.width, 
-        bounds.z, 
-        bounds.x - bounds.width,
-        bounds.z + bounds.height
-    };
-
-    if(line_line_intersection(line, top, out_x + ret, out_z + ret))
-        ret++;
-
-    if(line_line_intersection(line, bot, out_x + ret, out_z + ret))
-        ret++;
-
-    if(line_line_intersection(line, left, out_x + ret, out_z + ret))
-        ret++;
-
-    if(line_line_intersection(line, right, out_x + ret, out_z + ret))
-        ret++;
-
-    assert(ret >= 0 && ret <= 2);
-    return ret;
-}
-
 /* Uses a variant of the algorithm outlined here:
  * http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.42.3443&rep=rep1&type=pdf 
  * ('A Fast Voxel Traversal Algorithm for Ray Tracing' by John Amanatides, Andrew Woo)
  */
-int candidate_tiles_sorted(const struct map *map, vec3_t ray_origin, vec3_t ray_dir, struct tile_desc out[])
+static int candidate_tiles_sorted(const struct map *map, vec3_t ray_origin, vec3_t ray_dir, struct tile_desc out[])
 {
     int ret = 0;
 
@@ -310,12 +219,12 @@ int candidate_tiles_sorted(const struct map *map, vec3_t ray_origin, vec3_t ray_
     float start_x, start_z;
     struct tile_desc curr_tile_desc;
 
-    if(box_point_inside(y_eq_0_seg.ax, y_eq_0_seg.az, map_box)) {
+    if(C_BoxPointIntersection(y_eq_0_seg.ax, y_eq_0_seg.az, map_box)) {
 
         start_x = y_eq_0_seg.ax; 
         start_z = y_eq_0_seg.az; 
 
-    }else if(num_intersect = line_box_intersection(y_eq_0_seg, map_box, intersect_x, intersect_z)) {
+    }else if(num_intersect = C_LineBoxIntersection(y_eq_0_seg, map_box, intersect_x, intersect_z)) {
 
         /* Nudge the intersection point by EPSILON in the direction of the ray to make sure 
          * the intersection point is within the map bounds. */
@@ -344,8 +253,8 @@ int candidate_tiles_sorted(const struct map *map, vec3_t ray_origin, vec3_t ray_
         return 0;
     }
 
-    bool r = tile_for_point_2d(map, start_x, start_z, &curr_tile_desc);
-    assert(r);
+    bool result = tile_for_point_2d(map, start_x, start_z, &curr_tile_desc);
+    assert(result);
 
     assert(curr_tile_desc.chunk_r >= 0 && curr_tile_desc.chunk_r < map->height);
     assert(curr_tile_desc.chunk_c >= 0 && curr_tile_desc.chunk_c < map->width);
@@ -366,16 +275,15 @@ int candidate_tiles_sorted(const struct map *map, vec3_t ray_origin, vec3_t ray_
     t_max_z = (step_r > 0) ? fabs(start_z - (tile_bounds.z + tile_bounds.height)) / fabs(ray_dir.z)
                            : fabs(start_z - tile_bounds.z) / fabs(ray_dir.z);
 
-    bool ray_ends_inside = box_point_inside(y_eq_0_seg.bx, y_eq_0_seg.bz, map_box);
+    bool ray_ends_inside = C_BoxPointIntersection(y_eq_0_seg.bx, y_eq_0_seg.bz, map_box);
     struct tile_desc final_tile_desc;
 
     if(ray_ends_inside) {
-        int r = tile_for_point_2d(map, y_eq_0_seg.bx, y_eq_0_seg.bz, &final_tile_desc);
-        assert(r);
+        int result = tile_for_point_2d(map, y_eq_0_seg.bx, y_eq_0_seg.bz, &final_tile_desc);
+        assert(result);
     }
 
     do{
-
         out[ret++] = curr_tile_desc;
 
         int dc = 0, dr = 0;
