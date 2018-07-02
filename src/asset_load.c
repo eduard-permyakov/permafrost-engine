@@ -243,11 +243,15 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
             res.ent_flags |= ENTITY_FLAG_ANIMATED;
         }
 
-        if(header.has_collision) {
-            res.ent_flags |= ENTITY_FLAG_COLLISION;
-            if(!AL_ParseAABB(stream, &res.aabb))
-                goto fail_parse;
+        if(!header.has_collision) {
+            fprintf(stderr, "Imported entities required to have bounding boxes.\n");
+            goto fail_parse;
         }
+
+        res.ent_flags |= ENTITY_FLAG_COLLISION;
+        if(!AL_ParseAABB(stream, &res.aabb))
+            goto fail_parse;
+
         SDL_RWclose(stream);
 
         int put_ret;

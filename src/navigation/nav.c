@@ -356,7 +356,7 @@ void *N_BuildForMapData(size_t w, size_t h,
     assert(FIELD_RES_R >= chunk_h && FIELD_RES_R % chunk_h == 0);
     assert(FIELD_RES_C >= chunk_w && FIELD_RES_C % chunk_w == 0);
 
-    /* First build the base cost field based on terrain, reset portals */
+    /* First build the base cost field based on terrain */
     for(int chunk_r = 0; chunk_r < ret->height; chunk_r++){
         for(int chunk_c = 0; chunk_c < ret->width; chunk_c++){
 
@@ -374,18 +374,7 @@ void *N_BuildForMapData(size_t w, size_t h,
         }
     }
 
-    /* Next define the portals between chunks */
-    n_create_portals(ret);
-
-    /* Then create links between portals of the same chunk */
-    for(int chunk_r = 0; chunk_r < ret->height; chunk_r++){
-        for(int chunk_c = 0; chunk_c < ret->width; chunk_c++){
-
-            struct nav_chunk *curr_chunk = &ret->chunks[CHUNK_IDX(chunk_r, ret->width, chunk_c)];
-            n_link_chunk_portals(curr_chunk);
-        }
-    }
-
+    N_UpdatePortals(ret);
     return ret;
 
 fail_alloc:
@@ -532,6 +521,29 @@ void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *o
                 priv->chunks[CHUNK_IDX(desc.chunk_r, priv->width, desc.chunk_c)]
                     .cost_base[desc.tile_r][desc.tile_c] = COST_IMPASSABLE;
             }
+        }
+    }
+}
+
+void N_UpdatePortals(void *nav_private)
+{
+    struct nav_private *priv = nav_private;
+
+    for(int chunk_r = 0; chunk_r < priv->height; chunk_r++){
+        for(int chunk_c = 0; chunk_c < priv->width; chunk_c++){
+            
+            struct nav_chunk *curr_chunk = &priv->chunks[CHUNK_IDX(chunk_r, priv->width, chunk_c)];
+            curr_chunk->num_portals = 0;
+        }
+    }
+    
+    n_create_portals(priv);
+
+    for(int chunk_r = 0; chunk_r < priv->height; chunk_r++){
+        for(int chunk_c = 0; chunk_c < priv->width; chunk_c++){
+            
+            struct nav_chunk *curr_chunk = &priv->chunks[CHUNK_IDX(chunk_r, priv->width, chunk_c)];
+            n_link_chunk_portals(curr_chunk);
         }
     }
 }

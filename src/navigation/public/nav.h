@@ -65,5 +65,13 @@ void  N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
  */
 void  N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *obb);
 
+/* ------------------------------------------------------------------------
+ * Update portals and the links between them after there have been 
+ * changes to the cost field, as new obstructions could have closed off 
+ * paths or removed obstructions could have opened up new ones.
+ * ------------------------------------------------------------------------
+ */
+void  N_UpdatePortals(void *nav_private);
+
 #endif
 

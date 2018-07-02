@@ -55,6 +55,8 @@ void G_SetMinimapPos(float x, float y);
 bool G_MouseOverMinimap(void);
 bool G_MapHeightAtPoint(vec2_t xz, float *out_height);
 
+void G_MakeStaticObjsImpassable(void);
+
 void G_EnableUnitSelection(void);
 void G_DisableUnitSelection(void);
 

@@ -207,7 +207,14 @@ bool   M_MouseOverMinimap(const struct map *map);
  * for pathable units to pass through the region underneath the OBB.
  * ------------------------------------------------------------------------
  */
-void   M_CutoutStaticObject(const struct map *map, const struct obb *obb);
+void   M_NavCutoutStaticObject(const struct map *map, const struct obb *obb);
+
+/* ------------------------------------------------------------------------
+ * Update navigation private data after calls to 'M_NavCutoutStaticObject'.
+ * (ex. to remove a path in case it was blocked off by a placed object)
+ * ------------------------------------------------------------------------
+ */
+void   M_NavUpdatePortals(const struct map *map);
 
 /*###########################################################################*/
 /* MAP ASSET LOADING                                                         */

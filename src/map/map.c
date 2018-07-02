@@ -270,8 +270,13 @@ float M_HeightAtPoint(const struct map *map, vec2_t xz)
     return M_Tile_HeightAtPos(tile, tile_frac_width, tile_frac_height);
 }
 
-void M_CutoutStaticObject(const struct map *map, const struct obb *obb)
+void M_NavCutoutStaticObject(const struct map *map, const struct obb *obb)
 {
     N_CutoutStaticObject(map->nav_private, map->pos, obb);
+}
+
+void M_NavUpdatePortals(const struct map *map)
+{
+    N_UpdatePortals(map->nav_private);
 }
 

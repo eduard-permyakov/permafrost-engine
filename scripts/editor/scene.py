@@ -34,7 +34,9 @@ OBJECTS_LIST = [
         "selectable"     : True,
         "sel_radius"     : 3.25,
         "class"          : "Sinbad",
-        "construct_args" : ["assets/models/sinbad", "Sinbad.pfobj", "Sinbad"]
+        "construct_args" : ["assets/models/sinbad", "Sinbad.pfobj", "Sinbad"],
+        "static"         : False,
+        "collision"      : True
     },
     { 
         "path"           : "knight/knight.pfobj",
@@ -42,7 +44,9 @@ OBJECTS_LIST = [
         "idle"           : "Idle",
         "scale"          : [0.8,  0.8,  0.8], 
         "selectable"     : True,
-        "sel_radius"     : 3.25 
+        "sel_radius"     : 3.25,
+        "static"         : False,
+        "collision"      : True
     },
     { 
         "path"           : "mage/mage.pfobj",
@@ -50,7 +54,9 @@ OBJECTS_LIST = [
         "idle"           : "Idle",
         "scale"          : [0.6,  0.6,  0.6], 
         "selectable"     : True,
-        "sel_radius"     : 4.25
+        "sel_radius"     : 4.25,
+        "static"         : False,
+        "collision"      : True
     },
     { 
         "path"           : "berzerker/berzerker.pfobj",
@@ -58,7 +64,9 @@ OBJECTS_LIST = [
         "idle"           : "Idle",
         "scale"          : [0.7,  0.7,  0.7], 
         "selectable"     : True,
-        "sel_radius"     : 3.00 
+        "sel_radius"     : 3.00,
+        "static"         : False,
+        "collision"      : True
     },
     {
         "path"           : "goblin/goblin.pfobj",
@@ -66,7 +74,9 @@ OBJECTS_LIST = [
         "idle"           : "Idle",
         "scale"          : [0.9,  0.9,  0.9],
         "selectable"     : True,
-        "sel_radius"     : 3.00
+        "sel_radius"     : 3.00,
+        "static"         : False,
+        "collision"      : True
     },
     {
         "path"           : "deer/doe.pfobj",
@@ -74,7 +84,9 @@ OBJECTS_LIST = [
         "idle"           : "Idle",
         "scale"          : [2.0,  2.0,  2.0],
         "selectable"     : True,
-        "sel_radius"     : 3.25
+        "sel_radius"     : 3.25,
+        "static"         : False,
+        "collision"      : True
     },
     {
         "path"           : "deer/deer.pfobj",
@@ -82,7 +94,9 @@ OBJECTS_LIST = [
         "idle"           : "Idle",
         "scale"          : [2.0,  2.0,  2.0],
         "selectable"     : True,
-        "sel_radius"     : 3.25
+        "sel_radius"     : 3.25,
+        "static"         : False,
+        "collision"      : True
     },
     {
         "path"           : "chicken/chicken.pfobj",
@@ -90,7 +104,9 @@ OBJECTS_LIST = [
         "idle"           : "Idle",
         "scale"          : [0.4,  0.4,  0.4],
         "selectable"     : True,
-        "sel_radius"     : 1.50
+        "sel_radius"     : 1.50,
+        "static"         : False,
+        "collision"      : True
     },
 
     ########################################################################
@@ -102,63 +118,81 @@ OBJECTS_LIST = [
         "anim"           : False,
         "scale"          : [1.6,  1.6,  1.6],
         "selectable"     : False,
-        "sel_radius"     : 5.25 
+        "sel_radius"     : 5.25,
+        "static"         : True,
+        "collision"      : True
     },
     { 
         "path"           : "oak_tree/oak_leafless.pfobj",
         "anim"           : False,
         "scale"          : [1.6,  1.6,  1.6],
         "selectable"     : False,
-        "sel_radius"     : 5.25 
+        "sel_radius"     : 5.25,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "tree_basic/tree_basic.pfobj",
         "anim"           : False,
         "scale"          : [10.0,  10.0,  10.0],
         "selectable"     : False,
-        "sel_radius"     : 3.00 
+        "sel_radius"     : 3.00,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "pine_tree/pine_tree.pfobj",
         "anim"           : False,
         "scale"          : [15.0,  15.0,  15.0],
         "selectable"     : False,
-        "sel_radius"     : 2.50 
+        "sel_radius"     : 2.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "tree_leafy/tree_leafy.pfobj",
         "anim"           : False,
         "scale"          : [10.0,  10.0,  10.0],
         "selectable"     : False,
-        "sel_radius"     : 3.00 
+        "sel_radius"     : 3.00,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "tree_dry/tree_dry.pfobj",
         "anim"           : False,
         "scale"          : [10.0,  10.0,  10.0],
         "selectable"     : False,
-        "sel_radius"     : 2.50 
+        "sel_radius"     : 2.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "large_pine_tree/large_pine_tree.pfobj",
         "anim"           : False,
         "scale"          : [22.0,  22.0,  22.0],
         "selectable"     : False,
-        "sel_radius"     : 6.50 
+        "sel_radius"     : 6.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "large_tree/large_tree.pfobj",
         "anim"           : False,
         "scale"          : [15.0,  15.0,  15.0],
         "selectable"     : False,
-        "sel_radius"     : 5.25
+        "sel_radius"     : 5.25,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "palm_tree/palm.pfobj",
         "anim"           : False,
         "scale"          : [5.5,  5.5,  5.5],
         "selectable"     : False,
-        "sel_radius"     : 3.25
+        "sel_radius"     : 3.25,
+        "static"         : True,
+        "collision"      : True
     },
 
     ########################################################################
@@ -170,266 +204,342 @@ OBJECTS_LIST = [
         "anim"           : False,
         "scale"          : [35.0,  35.0,  35.0],
         "selectable"     : False,
-        "sel_radius"     : 2.50 
+        "sel_radius"     : 2.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "rock/rock.pfobj",
         "anim"           : False,
         "scale"          : [2.0,  2.0,  2.0],
         "selectable"     : False,
-        "sel_radius"     : 3.25 
+        "sel_radius"     : 3.25,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "varied_rocks/rock_1.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
         "selectable"     : False,
-        "sel_radius"     : 3.25
+        "sel_radius"     : 3.25,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "varied_rocks/rock_2.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
         "selectable"     : False,
-        "sel_radius"     : 3.00
+        "sel_radius"     : 3.00,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "varied_rocks/rock_3.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
         "selectable"     : False,
-        "sel_radius"     : 3.25
+        "sel_radius"     : 3.25,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "varied_rocks/rock_4.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
         "selectable"     : False,
-        "sel_radius"     : 3.75
+        "sel_radius"     : 3.75,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "varied_rocks/rock_5.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
         "selectable"     : False,
-        "sel_radius"     : 3.25
+        "sel_radius"     : 3.25,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "shrub/shrub.pfobj",
         "anim"           : False,
         "scale"          : [6.5,  6.5,  6.5],
         "selectable"     : False,
-        "sel_radius"     : 3.50 
+        "sel_radius"     : 3.50,
+        "static"         : True,
+        "collision"      : False 
     },
     {
         "path"           : "bushes/bush_1.pfobj",
         "anim"           : False,
         "scale"          : [9.5,  9.5,  9.5],
         "selectable"     : False,
-        "sel_radius"     : 3.50 
+        "sel_radius"     : 3.50,
+        "static"         : True,
+        "collision"      : False
     },
     {
         "path"           : "bushes/bush_2.pfobj",
         "anim"           : False,
         "scale"          : [2.5,  2.5,  2.5],
         "selectable"     : False,
-        "sel_radius"     : 3.75 
+        "sel_radius"     : 3.75,
+        "static"         : True,
+        "collision"      : False
     },
     {
         "path"           : "grass/grass_1.pfobj",
         "anim"           : False,
         "scale"          : [1.5,  1.5,  1.5],
         "selectable"     : False,
-        "sel_radius"     : 2.00
+        "sel_radius"     : 2.00,
+        "static"         : True,
+        "collision"      : False
     },
     {
         "path"           : "grass/grass_2.pfobj",
         "anim"           : False,
         "scale"          : [1.5,  1.5,  1.5],
         "selectable"     : False,
-        "sel_radius"     : 2.00
+        "sel_radius"     : 2.00,
+        "static"         : True,
+        "collision"      : False
     },
     {
         "path"           : "grass/grass_3.pfobj",
         "anim"           : False,
         "scale"          : [1.5,  1.5,  1.5],
         "selectable"     : False,
-        "sel_radius"     : 2.00
+        "sel_radius"     : 2.00,
+        "static"         : True,
+        "collision"      : False
     },
     {
         "path"           : "fern/fern.pfobj",
         "anim"           : False,
         "scale"          : [1.5,  1.5,  1.5],
         "selectable"     : False,
-        "sel_radius"     : 2.50
+        "sel_radius"     : 2.50,
+        "static"         : True,
+        "collision"      : False
     },
     {
         "path"           : "well/well.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 3.25
+        "sel_radius"     : 3.25,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/wood_fence_1.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 3.00
+        "sel_radius"     : 3.00,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/wood_fence_2.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 3.00
+        "sel_radius"     : 3.00,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/wood_trough.pfobj",
         "anim"           : False,
         "scale"          : [1.5,  1.5,  1.5],
         "selectable"     : False,
-        "sel_radius"     : 3.00
+        "sel_radius"     : 3.00,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/wood_road_sign.pfobj",
         "anim"           : False,
         "scale"          : [0.7,  0.7,  0.7],
         "selectable"     : False,
-        "sel_radius"     : 1.50
+        "sel_radius"     : 1.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/wood_lamp_post.pfobj",
         "anim"           : False,
         "scale"          : [0.7,  0.7,  0.7],
         "selectable"     : False,
-        "sel_radius"     : 1.50
+        "sel_radius"     : 1.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/tombstone_1.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 2.50
+        "sel_radius"     : 2.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/tombstone_2.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 2.50
+        "sel_radius"     : 2.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/tombstone_3.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 2.50
+        "sel_radius"     : 2.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/cross_1.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 2.00
+        "sel_radius"     : 2.00,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/cross_2.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 2.25
+        "sel_radius"     : 2.25,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/cross_3.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 3.50
+        "sel_radius"     : 3.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/cross_4.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 3.50
+        "sel_radius"     : 3.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/obelisk_1.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 2.00
+        "sel_radius"     : 2.00,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/obelisk_2.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 3.50
+        "sel_radius"     : 3.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/obelisk_3.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 4.00
+        "sel_radius"     : 4.00,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/broken_pillar_1.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 4.50
+        "sel_radius"     : 4.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "props/broken_pillar_2.pfobj",
         "anim"           : False,
         "scale"          : [3.0,  3.0,  3.0],
         "selectable"     : False,
-        "sel_radius"     : 4.50
+        "sel_radius"     : 4.50,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "barrel/barrel.pfobj",
         "anim"           : False,
         "scale"          : [8.0,  8.0,  8.0],
         "selectable"     : False,
-        "sel_radius"     : 3.25
+        "sel_radius"     : 3.25,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "hay/hay.pfobj",
         "anim"           : False,
         "scale"          : [6.0,  6.0,  6.0],
         "selectable"     : False,
-        "sel_radius"     : 4.00
+        "sel_radius"     : 4.00,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "hay/hay_2.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
         "selectable"     : False,
-        "sel_radius"     : 4.00
+        "sel_radius"     : 4.00,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "hay/haystack.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
         "selectable"     : False,
-        "sel_radius"     : 6.75
+        "sel_radius"     : 6.75,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "crate/crate_1.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
         "selectable"     : False,
-        "sel_radius"     : 3.25
+        "sel_radius"     : 3.25,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "crate/crate_2.pfobj",
         "anim"           : False,
         "scale"          : [4.0,  4.0,  4.0],
         "selectable"     : False,
-        "sel_radius"     : 3.25
+        "sel_radius"     : 3.25,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "war_banner/war_banner.pfobj",
@@ -437,14 +547,18 @@ OBJECTS_LIST = [
         "idle"           : "ArmatureAction",
         "scale"          : [2.5,  2.5,  2.5],
         "selectable"     : False,
-        "sel_radius"     : 1.75
+        "sel_radius"     : 1.75,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "cart/cart.pfobj",
         "anim"           : False,
         "scale"          : [2.5,  2.5,  2.5],
         "selectable"     : False,
-        "sel_radius"     : 3.75
+        "sel_radius"     : 3.75,
+        "static"         : True,
+        "collision"      : True
     },
 
     ########################################################################
@@ -456,14 +570,18 @@ OBJECTS_LIST = [
         "anim"           : False,
         "scale"          : [6.0,  6.0,  6.0],
         "selectable"     : False,
-        "sel_radius"     : 7.00
+        "sel_radius"     : 7.00,
+        "static"         : True,
+        "collision"      : True
     },
     {
         "path"           : "tower/tower.pfobj",
         "anim"           : False,
         "scale"          : [5.0,  5.0,  5.0],
         "selectable"     : False,
-        "sel_radius"     : 8.00
+        "sel_radius"     : 8.00,
+        "static"         : True,
+        "collision"      : True
     },
 ]
 
@@ -479,7 +597,7 @@ def save_scene(filename):
     with open(filename, "w") as scenefile:
         scenefile.write("num_entities {0}\n".format(len(globals.active_objects_list)))
         for obj in globals.active_objects_list:
-            num_atts = 5
+            num_atts = 7
             meta_dict = __meta_dict_for_path(obj.pfobj_path[len(MODELS_PREFIX_DIR) + 2:])
             assert(meta_dict is not None)
             if "idle" in meta_dict:
@@ -496,6 +614,8 @@ def save_scene(filename):
             scenefile.write("   rotation quat {0:.6f} {1:.6f} {2:.6f} {3:.6f}\n".format(obj.rotation[0], obj.rotation[1], obj.rotation[2], obj.rotation[3]))
             scenefile.write("   animated bool {0}\n".format(int(meta_dict["anim"])))
             scenefile.write("   selectable bool {0}\n".format(int(meta_dict["selectable"])))
+            scenefile.write("   static bool {0}\n".format(int(meta_dict["static"])))
+            scenefile.write("   collision bool {0}\n".format(int(meta_dict["collision"])))
             if "idle" in meta_dict:
                 scenefile.write("   idle_clip string {0}\n".format(meta_dict["idle"]))
             if "sel_radius" in meta_dict:

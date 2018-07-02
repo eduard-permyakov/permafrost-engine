@@ -701,6 +701,20 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
         return NULL;
     }
 
+    if((k = kh_get(attr, attr_table, "static")) != kh_end(attr_table)) {
+        if(kh_value(attr_table, k).val.as_bool)
+            ((PyEntityObject*)ret)->ent->flags |= ENTITY_FLAG_STATIC;
+        else
+            ((PyEntityObject*)ret)->ent->flags &= ~ENTITY_FLAG_STATIC;
+    }
+
+    if((k = kh_get(attr, attr_table, "collision")) != kh_end(attr_table)) {
+        if(kh_value(attr_table, k).val.as_bool)
+            ((PyEntityObject*)ret)->ent->flags |= ENTITY_FLAG_COLLISION;
+        else
+            ((PyEntityObject*)ret)->ent->flags &= ~ENTITY_FLAG_COLLISION;
+    }
+
     if(PyObject_HasAttrString(ret, "pos") 
     && (k = kh_get(attr, attr_table, "position")) != kh_end(attr_table))
         PyObject_SetAttrString(ret, "pos", s_obj_from_attr(&kh_value(attr_table, k)));

@@ -46,8 +46,6 @@ uint32_t Entity_NewUID(void)
 
 void Entity_CurrentOBB(const struct entity *ent, struct obb *out)
 {
-    assert(ent->flags & ENTITY_FLAG_COLLISION);
-
     const struct aabb *aabb;
     if(ent->flags & ENTITY_FLAG_ANIMATED)
         aabb = A_GetCurrPoseAABB(ent);

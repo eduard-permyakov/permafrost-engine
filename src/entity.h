@@ -28,6 +28,7 @@
 #define ENTITY_FLAG_ANIMATED    (1 << 0)
 #define ENTITY_FLAG_COLLISION   (1 << 1)
 #define ENTITY_FLAG_SELECTABLE  (1 << 2)
+#define ENTITY_FLAG_STATIC      (1 << 3)
 
 struct entity{
     uint32_t     uid;

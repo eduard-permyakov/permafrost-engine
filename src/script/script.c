@@ -339,6 +339,7 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args)
     if(!Scene_Load(path))
         return NULL;
 
+    G_MakeStaticObjsImpassable();
     return S_Entity_GetAllList();
 }
 

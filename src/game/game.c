@@ -191,6 +191,23 @@ bool G_MapHeightAtPoint(vec2_t xz, float *out_height)
     return true;
 }
 
+void G_MakeStaticObjsImpassable(void)
+{
+    uint32_t key;
+    struct entity *curr;
+    kh_foreach(s_gs.active, key, curr, {
+
+        if(((ENTITY_FLAG_COLLISION | ENTITY_FLAG_STATIC) & curr->flags) 
+         != (ENTITY_FLAG_COLLISION | ENTITY_FLAG_STATIC))
+            continue;
+
+        struct obb obb;
+        Entity_CurrentOBB(curr, &obb);
+        M_NavCutoutStaticObject(s_gs.map, &obb);
+    });
+    M_NavUpdatePortals(s_gs.map);
+}
+
 bool G_UpdateMinimapChunk(int chunk_r, int chunk_c)
 {
     assert(s_gs.map);
@@ -259,8 +276,9 @@ void G_Update(void)
 
 void G_Render(void)
 {
-    if(s_gs.map)
+    if(s_gs.map){
         M_RenderVisibleMap(s_gs.map, ACTIVE_CAM);
+    }
 
     for(int i = 0; i < kv_size(s_gs.visible); i++) {
     
