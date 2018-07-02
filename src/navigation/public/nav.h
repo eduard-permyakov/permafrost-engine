@@ -25,6 +25,7 @@
 
 struct tile;
 struct map;
+struct obb;
 
 /*###########################################################################*/
 /* NAV GENERAL                                                               */
@@ -56,6 +57,13 @@ void  N_FreePrivate(void *nav_private);
 void  N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
                             const struct map *map,
                             int chunk_r, int chunk_c);
+
+/* ------------------------------------------------------------------------
+ * Make an impassable region in the cost field, completely covering the 
+ * specified OBB.
+ * ------------------------------------------------------------------------
+ */
+void  N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *obb);
 
 #endif
 

@@ -38,6 +38,7 @@ struct map;
 struct camera;
 struct tile;
 struct tile_desc;
+struct obb;
 
 enum chunk_render_mode{
 
@@ -201,12 +202,30 @@ void   M_RenderMinimap   (const struct map *map, const struct camera *cam);
  */
 bool   M_MouseOverMinimap(const struct map *map);
 
+/* ------------------------------------------------------------------------
+ * Make an impassable region in the navigation data, making it not possible 
+ * for pathable units to pass through the region underneath the OBB.
+ * ------------------------------------------------------------------------
+ */
+void   M_CutoutStaticObject(const struct map *map, const struct obb *obb);
+
 /*###########################################################################*/
 /* MAP ASSET LOADING                                                         */
 /*###########################################################################*/
 
+/* ------------------------------------------------------------------------
+ * Initialize private map data ('outmap', which is allocated by the calleer) 
+ * from PFMAP stream.
+ * ------------------------------------------------------------------------
+ */
 bool   M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
                               SDL_RWops *stream, void *outmap);
+
+/* ------------------------------------------------------------------------
+ * Returns the size, in bytes, needed to store the private map data
+ * based on the header contents.
+ * ------------------------------------------------------------------------
+ */
 size_t M_AL_BuffSizeFromHeader(const struct pfmap_hdr *header);
 
 /* ------------------------------------------------------------------------
