@@ -381,7 +381,7 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
     PFM_Vec2_Normal(&line_dir, &line_dir);
 
     int num_intersect;
-    float intersect_x[2], intersect_z[2];
+    vec2_t intersect_xz[2];
     float start_x, start_z;
     struct tile_desc curr_tile_desc;
 
@@ -390,7 +390,7 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
         start_x = line.ax; 
         start_z = line.az; 
 
-    }else if(num_intersect = C_LineBoxIntersection(line, map_box, intersect_x, intersect_z)) {
+    }else if(num_intersect = C_LineBoxIntersection(line, map_box, intersect_xz)) {
 
         /* Nudge the intersection point by EPSILON in the direction of the ray to make sure 
          * the intersection point is within the map bounds. */
@@ -398,21 +398,21 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
         /* One intersection means that the end of the ray is inside the map */
         if(num_intersect == 1) {
 
-            start_x = intersect_x[0] + EPSILON * line_dir.raw[0];
-            start_z = intersect_z[0] + EPSILON * line_dir.raw[1];
+            start_x = intersect_xz[0].raw[0] + EPSILON * line_dir.raw[0];
+            start_z = intersect_xz[0].raw[1] + EPSILON * line_dir.raw[1];
         
         }
         /* If the first of the 2 intersection points is closer to the ray origin */
-        else if( line_len(intersect_x[0], intersect_z[0], line.ax, line.az)
-               < line_len(intersect_x[1], intersect_z[1], line.ax, line.az) ) {
+        else if( line_len(intersect_xz[0].raw[0], intersect_xz[0].raw[1], line.ax, line.az)
+               < line_len(intersect_xz[1].raw[0], intersect_xz[1].raw[1], line.ax, line.az) ) {
          
-            start_x = intersect_x[0] + EPSILON * line_dir.raw[0];
-            start_z = intersect_z[0] + EPSILON * line_dir.raw[1];
+            start_x = intersect_xz[0].raw[0] + EPSILON * line_dir.raw[0];
+            start_z = intersect_xz[0].raw[0] + EPSILON * line_dir.raw[1];
 
          }else{
          
-            start_x = intersect_x[1] + EPSILON * line_dir.raw[0];
-            start_z = intersect_z[1] + EPSILON * line_dir.raw[1];
+            start_x = intersect_xz[1].raw[1] + EPSILON * line_dir.raw[0];
+            start_z = intersect_xz[1].raw[1] + EPSILON * line_dir.raw[1];
          }
 
     }else {

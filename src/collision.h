@@ -63,7 +63,7 @@ bool C_RayIntersectsOBB (vec3_t ray_origin, vec3_t ray_dir, struct obb obb,   fl
 bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, size_t n, float *out_t);
 bool C_RayIntersectsPlane(vec3_t ray_origin, vec3_t ray_dir, struct plane plane, float *out_t);
 
-/* Note that the following 2 routines do not give precise results. They are fast checks but 
+/* Note that the following routines do not give precise results. They are fast checks but 
  * sometimes give false positives. Howvever, this is still suitable for view frustum culling 
  * in some cases. */
 enum volume_intersec_type C_FrustumPointIntersectionFast(const struct frustum *frustum, vec3_t point);
@@ -89,10 +89,8 @@ struct line_seg_2d{
     float bx, bz;
 };
 
-bool C_LineLineIntersection(struct line_seg_2d l1, struct line_seg_2d l2, 
-                            float *out_x, float *out_z);
-int  C_LineBoxIntersection (struct line_seg_2d line, struct box bounds, 
-                            float out_x[2], float out_z[2]);
+bool C_LineLineIntersection(struct line_seg_2d l1, struct line_seg_2d l2, vec2_t *out_xz);
+int  C_LineBoxIntersection (struct line_seg_2d line, struct box bounds, vec2_t out_xz[2]);
 bool C_BoxPointIntersection(float px, float pz, struct box bounds);
 
 #endif
