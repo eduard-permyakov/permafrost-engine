@@ -22,10 +22,13 @@
 #include "a_star.h"
 #include "../map/public/tile.h"
 #include "../render/public/render.h"
+#include "../pf_math.h"
+#include "../collision.h"
 
 #include <stdlib.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <string.h>
 
 
 #define CHUNK_IDX(r, width, c)   ((r) * (width) + (c))
@@ -36,6 +39,10 @@
 #define MIN(a, b)                ((a) < (b) ? (a) : (b))
 #define MAX(a, b)                ((a) > (b) ? (a) : (b))
 
+#define MAX_TILES_PER_LINE       (128)
+#define CHUNK_WIDTH              (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE)
+#define CHUNK_HEIGHT             (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE)
+
 enum edge_type{
     EDGE_BOT   = (1 << 0),
     EDGE_LEFT  = (1 << 1),
@@ -43,9 +50,25 @@ enum edge_type{
     EDGE_TOP   = (1 << 3),
 };
 
+struct tile_desc{
+    int chunk_r, chunk_c;
+    int tile_r, tile_c;
+};
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static int mod(int a, int b)
+{
+    int r = a % b;
+    return r < 0 ? r + b : r;
+}
+
+static float line_len(float ax, float az, float bx, float bz)
+{
+    return sqrt( pow(bx - ax, 2) + pow(bz - az, 2) );
+}
 
 static bool n_tile_pathable(const struct tile *tile)
 {
@@ -177,6 +200,41 @@ static void n_create_portals(struct nav_private *priv)
     assert(n_links == (priv->width)*(priv->width-1) + (priv->height)*(priv->height-1));
 }
 
+static void n_link_chunk_portals(struct nav_chunk *chunk)
+{
+    coord_vec_t path;
+    kv_init(path);
+
+    for(int i = 0; i < chunk->num_portals; i++) {
+
+        struct portal *port = &chunk->portals[i];
+        for(int j = 0; j < chunk->num_portals; j++) {
+
+            if(i == j)
+                continue;
+
+            struct portal *link_candidate = &chunk->portals[j];
+            struct coord a = (struct coord){
+                (port->endpoints[0].r + port->endpoints[1].r) / 2,
+                (port->endpoints[0].c + port->endpoints[1].c) / 2,
+            };
+            struct coord b = (struct coord){
+                (link_candidate->endpoints[0].r + link_candidate->endpoints[1].r) / 2,
+                (link_candidate->endpoints[0].c + link_candidate->endpoints[1].c) / 2,
+            };
+
+            float cost;
+            bool has_path = AStar_GridPath(a, b, chunk->cost_base, &path, &cost);
+            if(has_path) {
+                port->edges[port->num_neighbours] = (struct edge){link_candidate, cost};
+                port->num_neighbours++;    
+            }
+        }
+    }
+
+    kv_destroy(path);
+}
+
 static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
                                const struct map *map, coord_vec_t *path)
 {
@@ -257,39 +315,212 @@ static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_mode
     R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, num_tiles, chunk_model, map);
 }
 
-static void n_link_chunk_portals(struct nav_chunk *chunk)
+static bool tile_for_point_2d(const struct nav_private *priv, vec3_t map_pos, 
+                              float px, float pz, struct tile_desc *out)
 {
-    coord_vec_t path;
-    kv_init(path);
+    const int NAV_TILE_X_DIM = CHUNK_WIDTH / FIELD_RES_C;
+    const int NAV_TILE_Z_DIM = CHUNK_HEIGHT / FIELD_RES_R;
 
-    for(int i = 0; i < chunk->num_portals; i++) {
+    size_t width  = priv->width * CHUNK_WIDTH;
+    size_t height = priv->height * CHUNK_HEIGHT;
+    struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
 
-        struct portal *port = &chunk->portals[i];
-        for(int j = 0; j < chunk->num_portals; j++) {
+    /* Recall X increases to the left in our engine */
+    if(px > map_box.x || px < map_box.x - map_box.width)
+        return false;
 
-            if(i == j)
-                continue;
+    if(pz < map_box.z || px > map_box.z + map_box.height)
+        return false;
 
-            struct portal *link_candidate = &chunk->portals[j];
-            struct coord a = (struct coord){
-                (port->endpoints[0].r + port->endpoints[1].r) / 2,
-                (port->endpoints[0].c + port->endpoints[1].c) / 2,
-            };
-            struct coord b = (struct coord){
-                (link_candidate->endpoints[0].r + link_candidate->endpoints[1].r) / 2,
-                (link_candidate->endpoints[0].c + link_candidate->endpoints[1].c) / 2,
-            };
+    int chunk_r, chunk_c;
+    chunk_r = fabs(map_box.z - pz) / CHUNK_WIDTH;
+    chunk_c = fabs(map_box.x - px) / CHUNK_HEIGHT;
 
-            float cost;
-            bool has_path = AStar_GridPath(a, b, chunk->cost_base, &path, &cost);
-            if(has_path) {
-                port->edges[port->num_neighbours] = (struct edge){link_candidate, cost};
-                port->num_neighbours++;    
-            }
-        }
+    assert(chunk_r >= 0 && chunk_r < priv->height);
+    assert(chunk_c >= 0 && chunk_r < priv->width);
+
+    float chunk_base_x, chunk_base_z;
+    chunk_base_x = map_box.x - (chunk_c * CHUNK_WIDTH);
+    chunk_base_z = map_box.z + (chunk_r * CHUNK_HEIGHT);
+
+    int tile_r, tile_c;
+    tile_r = fabs(chunk_base_z - pz) / NAV_TILE_X_DIM;
+    tile_c = fabs(chunk_base_x - px) / NAV_TILE_Z_DIM;
+
+    assert(tile_c >= 0 && tile_c < FIELD_RES_C);
+    assert(tile_r >= 0 && tile_r < FIELD_RES_R);
+
+    out->chunk_r = chunk_r;
+    out->chunk_c = chunk_c;
+    out->tile_r = tile_r;
+    out->tile_c = tile_c;
+    return true;
+}
+
+static struct box bounds_for_tile(const struct nav_private *priv, vec3_t map_pos, struct tile_desc desc)
+{
+    const int NAV_TILE_X_DIM = CHUNK_WIDTH / FIELD_RES_C;
+    const int NAV_TILE_Z_DIM = CHUNK_HEIGHT / FIELD_RES_R;
+
+    size_t width  = priv->width * CHUNK_WIDTH;
+    size_t height = priv->height * CHUNK_HEIGHT;
+    struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
+
+    return (struct box){
+        map_box.x - desc.chunk_c * (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE)
+                  - desc.tile_c  * NAV_TILE_X_DIM,
+        map_box.z + desc.chunk_r * (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE)
+                  + desc.tile_r * NAV_TILE_Z_DIM,
+        NAV_TILE_X_DIM,
+        NAV_TILE_Z_DIM 
+    };
+}
+
+static bool relative_tile_desc(const struct nav_private *priv, struct tile_desc *inout, int tile_dc, int tile_dr)
+{
+    assert(abs(tile_dc) <= FIELD_RES_C);
+    assert(abs(tile_dr) <= FIELD_RES_R);
+
+    struct tile_desc ret = (struct tile_desc) {
+        inout->chunk_r + ((inout->tile_r + tile_dr < 0)            ? -1 :
+                          (inout->tile_r + tile_dr >= FIELD_RES_R) ?  1 :
+                                                                      0),
+
+        inout->chunk_c + ((inout->tile_c + tile_dc < 0)             ? -1 :
+                          (inout->tile_c + tile_dc >= FIELD_RES_C)  ?  1 :
+                                                                       0),
+        mod(inout->tile_r + tile_dr, FIELD_RES_R),
+        mod(inout->tile_c + tile_dc, FIELD_RES_C)
+    };
+
+    if( !(ret.chunk_r >= 0 && ret.chunk_r < priv->height)
+     || !(ret.chunk_c >= 0 && ret.chunk_c < priv->width)) {
+     
+        return false;
     }
 
-    kv_destroy(path);
+    *inout = ret;
+    return true;
+}
+
+/* Uses a variant of the algorithm outlined here:
+ * http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.42.3443&rep=rep1&type=pdf 
+ * ('A Fast Voxel Traversal Algorithm for Ray Tracing' by John Amanatides, Andrew Woo)
+ */
+static int n_line_supercover(struct nav_private *priv, vec3_t map_pos, 
+                             struct line_seg_2d line, struct tile_desc out[MAX_TILES_PER_LINE])
+{
+    int ret = 0;
+
+    const int NAV_TILE_X_DIM = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / FIELD_RES_C;
+    const int NAV_TILE_Z_DIM = (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE) / FIELD_RES_R;
+
+    /* Initialization: find the coordinate of the line segment origin within the map.
+     * In the case of the line segmennt originating inside the map, this is simple - take the 
+     * first point. In case the ray originates outside but intersects the map, we take the 
+     * intersection point as the start. Lastly, if ray doesn't even intersect the map, no work 
+     * needs to be done - return an empty list. 
+     */
+    size_t width  = priv->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    size_t height = priv->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+    struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
+
+    vec2_t line_dir = (vec2_t){line.bx - line.ax, line.bz - line.az};
+    PFM_Vec2_Normal(&line_dir, &line_dir);
+
+    int num_intersect;
+    float intersect_x[2], intersect_z[2];
+    float start_x, start_z;
+    struct tile_desc curr_tile_desc;
+
+    if(C_BoxPointIntersection(line.ax, line.az, map_box)) {
+
+        start_x = line.ax; 
+        start_z = line.az; 
+
+    }else if(num_intersect = C_LineBoxIntersection(line, map_box, intersect_x, intersect_z)) {
+
+        /* Nudge the intersection point by EPSILON in the direction of the ray to make sure 
+         * the intersection point is within the map bounds. */
+
+        /* One intersection means that the end of the ray is inside the map */
+        if(num_intersect == 1) {
+
+            start_x = intersect_x[0] + EPSILON * line_dir.raw[0];
+            start_z = intersect_z[0] + EPSILON * line_dir.raw[1];
+        
+        }
+        /* If the first of the 2 intersection points is closer to the ray origin */
+        else if( line_len(intersect_x[0], intersect_z[0], line.ax, line.az)
+               < line_len(intersect_x[1], intersect_z[1], line.ax, line.az) ) {
+         
+            start_x = intersect_x[0] + EPSILON * line_dir.raw[0];
+            start_z = intersect_z[0] + EPSILON * line_dir.raw[1];
+
+         }else{
+         
+            start_x = intersect_x[1] + EPSILON * line_dir.raw[0];
+            start_z = intersect_z[1] + EPSILON * line_dir.raw[1];
+         }
+
+    }else {
+        return 0;
+    }
+
+    bool result = tile_for_point_2d(priv, map_pos, start_x, start_z, &curr_tile_desc);
+    assert(result);
+
+    assert(curr_tile_desc.chunk_r >= 0 && curr_tile_desc.chunk_r < priv->height);
+    assert(curr_tile_desc.chunk_c >= 0 && curr_tile_desc.chunk_c < priv->width);
+
+    float t_max_x, t_max_z;
+
+    const int step_c = line_dir.raw[0] <= 0.0f ? 1 : -1;
+    const int step_r = line_dir.raw[1] >= 0.0f ? 1 : -1;
+
+    const float t_delta_x = fabs(NAV_TILE_X_DIM / line_dir.raw[0]);
+    const float t_delta_z = fabs(NAV_TILE_Z_DIM / line_dir.raw[1]);
+
+    struct box tile_bounds = bounds_for_tile(priv, map_pos, curr_tile_desc);
+
+    t_max_x = (step_c > 0) ? fabs(start_x - (tile_bounds.x - tile_bounds.width)) / fabs(line_dir.raw[0]) 
+                           : fabs(start_x - tile_bounds.x) / fabs(line_dir.raw[0]);
+
+    t_max_z = (step_r > 0) ? fabs(start_z - (tile_bounds.z + tile_bounds.height)) / fabs(line_dir.raw[1])
+                           : fabs(start_z - tile_bounds.z) / fabs(line_dir.raw[1]);
+
+    bool line_ends_inside = C_BoxPointIntersection(line.bx, line.bz, map_box);
+    struct tile_desc final_tile_desc;
+
+    if(line_ends_inside) {
+        int result = tile_for_point_2d(priv, map_pos, line.bx, line.bz, &final_tile_desc);
+        assert(result);
+    }
+
+    do{
+        out[ret++] = curr_tile_desc;
+
+        int dc = 0, dr = 0;
+        if(t_max_x < t_max_z) {
+            t_max_x = t_max_x + t_delta_x; 
+            dc = step_c;
+        }else{
+            t_max_z = t_max_z + t_delta_z; 
+            dr = step_r;
+        }
+
+        if(line_ends_inside && 0 == memcmp(&curr_tile_desc, &final_tile_desc, sizeof(struct tile_desc))){
+            break;
+        }
+
+        if(!relative_tile_desc(priv, &curr_tile_desc, dc, dr)) {
+            break;
+        }
+
+    }while(ret < 1024);
+    assert(ret < 1024);
+
+    return ret;
 }
 
 /*****************************************************************************/
@@ -397,5 +628,30 @@ void N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
     assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
     R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
+}
+
+void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *obb)
+{
+    struct nav_private *priv = nav_private;
+
+    /* Corners ordered to make a loop */
+    vec3_t bot_corners[4] = {obb->corners[0], obb->corners[1], obb->corners[5], obb->corners[4]};
+    struct line_seg_2d xz_line_segs[4] = {
+        (struct line_seg_2d){bot_corners[0].x, bot_corners[0].z, bot_corners[1].x, bot_corners[1].z},
+        (struct line_seg_2d){bot_corners[1].x, bot_corners[1].z, bot_corners[2].x, bot_corners[2].z},
+        (struct line_seg_2d){bot_corners[2].x, bot_corners[2].z, bot_corners[3].x, bot_corners[3].z},
+        (struct line_seg_2d){bot_corners[3].x, bot_corners[3].z, bot_corners[0].x, bot_corners[0].z},
+    };
+
+    struct tile_desc descs[MAX_TILES_PER_LINE];
+    for(int i = 0; i < ARR_SIZE(xz_line_segs); i++) {
+
+        size_t num_tiles = n_line_supercover(priv, map_pos, xz_line_segs[i], descs);
+        for(int j = 0; j < num_tiles; j++) {
+
+            priv->chunks[CHUNK_IDX(descs[j].chunk_r, priv->width, descs[j].chunk_c)]
+                .cost_base[descs[j].tile_r][descs[j].tile_c] = COST_IMPASSABLE;
+        }
+    }
 }
 
