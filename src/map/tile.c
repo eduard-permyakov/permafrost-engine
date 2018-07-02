@@ -23,6 +23,69 @@
 #include "../collision.h"
 
 #include <assert.h>
+#include <string.h>
+
+
+#define CHUNK_WIDTH  (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE)
+#define CHUNK_HEIGHT (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE)
+#define EPSILON      (1.0f / 1024.0)
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static int mod(int a, int b)
+{
+    int r = a % b;
+    return r < 0 ? r + b : r;
+}
+
+static float line_len(float ax, float az, float bx, float bz)
+{
+    return sqrt( pow(bx - ax, 2) + pow(bz - az, 2) );
+}
+
+static bool tile_for_point_2d(struct map_resolution res, vec3_t map_pos, 
+                              float px, float pz, struct tile_desc *out)
+{
+    const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
+    const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
+
+    size_t width  = res.chunk_w * CHUNK_WIDTH;
+    size_t height = res.chunk_h * CHUNK_HEIGHT;
+    struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
+
+    /* Recall X increases to the left in our engine */
+    if(px > map_box.x || px < map_box.x - map_box.width)
+        return false;
+
+    if(pz < map_box.z || px > map_box.z + map_box.height)
+        return false;
+
+    int chunk_r, chunk_c;
+    chunk_r = fabs(map_box.z - pz) / CHUNK_WIDTH;
+    chunk_c = fabs(map_box.x - px) / CHUNK_HEIGHT;
+
+    assert(chunk_r >= 0 && chunk_r < res.chunk_h);
+    assert(chunk_c >= 0 && chunk_r < res.chunk_w);
+
+    float chunk_base_x, chunk_base_z;
+    chunk_base_x = map_box.x - (chunk_c * CHUNK_WIDTH);
+    chunk_base_z = map_box.z + (chunk_r * CHUNK_HEIGHT);
+
+    int tile_r, tile_c;
+    tile_r = fabs(chunk_base_z - pz) / TILE_X_DIM;
+    tile_c = fabs(chunk_base_x - px) / TILE_Z_DIM;
+
+    assert(tile_c >= 0 && tile_c < res.tile_w);
+    assert(tile_r >= 0 && tile_r < res.tile_h);
+
+    out->chunk_r = chunk_r;
+    out->chunk_c = chunk_c;
+    out->tile_r = tile_r;
+    out->tile_c = tile_c;
+    return true;
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -242,5 +305,173 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
 
         return intersec_point.y;
     }
+}
+
+struct box M_Tile_Bounds(struct map_resolution res, vec3_t map_pos, struct tile_desc desc)
+{
+    const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
+    const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
+
+    size_t width  = res.chunk_w * CHUNK_WIDTH;
+    size_t height = res.chunk_h * CHUNK_HEIGHT;
+
+    struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
+
+    return (struct box){
+        map_box.x - desc.chunk_c * (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE)
+                  - desc.tile_c  * TILE_X_DIM,
+        map_box.z + desc.chunk_r * (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE)
+                  + desc.tile_r * TILE_Z_DIM,
+        TILE_X_DIM,
+        TILE_Z_DIM 
+    };
+}
+
+bool M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inout, 
+                         int tile_dc, int tile_dr)
+{
+    assert(abs(tile_dc) <= res.tile_w);
+    assert(abs(tile_dr) <= res.tile_h);
+
+    struct tile_desc ret = (struct tile_desc) {
+        inout->chunk_r + ((inout->tile_r + tile_dr < 0)           ? -1 :
+                          (inout->tile_r + tile_dr >= res.tile_h) ?  1 :
+                                                                     0),
+
+        inout->chunk_c + ((inout->tile_c + tile_dc < 0)            ? -1 :
+                          (inout->tile_c + tile_dc >= res.tile_w)  ?  1 :
+                                                                      0),
+        mod(inout->tile_r + tile_dr, res.tile_h),
+        mod(inout->tile_c + tile_dc, res.tile_w)
+    };
+
+    if( !(ret.chunk_r >= 0 && ret.chunk_r < res.chunk_h)
+     || !(ret.chunk_c >= 0 && ret.chunk_c < res.chunk_w)) {
+     
+        return false;
+    }
+
+    *inout = ret;
+    return true;
+}
+
+/* Uses a variant of the algorithm outlined here:
+ * http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.42.3443&rep=rep1&type=pdf 
+ * ('A Fast Voxel Traversal Algorithm for Ray Tracing' by John Amanatides, Andrew Woo)
+ */
+int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos, 
+                                     struct line_seg_2d line, struct tile_desc out[])
+{
+    int ret = 0;
+
+    const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
+    const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
+
+    /* Initialization: find the coordinate of the line segment origin within the map.
+     * In the case of the line segmennt originating inside the map, this is simple - take the 
+     * first point. In case the ray originates outside but intersects the map, we take the 
+     * intersection point as the start. Lastly, if ray doesn't even intersect the map, no work 
+     * needs to be done - return an empty list. 
+     */
+    size_t width  = res.chunk_w * CHUNK_WIDTH;
+    size_t height = res.chunk_h * CHUNK_HEIGHT;
+    struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
+
+    vec2_t line_dir = (vec2_t){line.bx - line.ax, line.bz - line.az};
+    PFM_Vec2_Normal(&line_dir, &line_dir);
+
+    int num_intersect;
+    float intersect_x[2], intersect_z[2];
+    float start_x, start_z;
+    struct tile_desc curr_tile_desc;
+
+    if(C_BoxPointIntersection(line.ax, line.az, map_box)) {
+
+        start_x = line.ax; 
+        start_z = line.az; 
+
+    }else if(num_intersect = C_LineBoxIntersection(line, map_box, intersect_x, intersect_z)) {
+
+        /* Nudge the intersection point by EPSILON in the direction of the ray to make sure 
+         * the intersection point is within the map bounds. */
+
+        /* One intersection means that the end of the ray is inside the map */
+        if(num_intersect == 1) {
+
+            start_x = intersect_x[0] + EPSILON * line_dir.raw[0];
+            start_z = intersect_z[0] + EPSILON * line_dir.raw[1];
+        
+        }
+        /* If the first of the 2 intersection points is closer to the ray origin */
+        else if( line_len(intersect_x[0], intersect_z[0], line.ax, line.az)
+               < line_len(intersect_x[1], intersect_z[1], line.ax, line.az) ) {
+         
+            start_x = intersect_x[0] + EPSILON * line_dir.raw[0];
+            start_z = intersect_z[0] + EPSILON * line_dir.raw[1];
+
+         }else{
+         
+            start_x = intersect_x[1] + EPSILON * line_dir.raw[0];
+            start_z = intersect_z[1] + EPSILON * line_dir.raw[1];
+         }
+
+    }else {
+        return 0;
+    }
+
+    bool result = tile_for_point_2d(res, map_pos, start_x, start_z, &curr_tile_desc);
+    assert(result);
+
+    assert(curr_tile_desc.chunk_r >= 0 && curr_tile_desc.chunk_r < res.chunk_h);
+    assert(curr_tile_desc.chunk_c >= 0 && curr_tile_desc.chunk_c < res.chunk_w);
+
+    float t_max_x, t_max_z;
+
+    const int step_c = line_dir.raw[0] <= 0.0f ? 1 : -1;
+    const int step_r = line_dir.raw[1] >= 0.0f ? 1 : -1;
+
+    const float t_delta_x = fabs(TILE_X_DIM / line_dir.raw[0]);
+    const float t_delta_z = fabs(TILE_Z_DIM / line_dir.raw[1]);
+
+    struct box bounds = M_Tile_Bounds(res, map_pos, curr_tile_desc);
+
+    t_max_x = (step_c > 0) ? fabs(start_x - (bounds.x - bounds.width)) / fabs(line_dir.raw[0]) 
+                           : fabs(start_x - bounds.x) / fabs(line_dir.raw[0]);
+
+    t_max_z = (step_r > 0) ? fabs(start_z - (bounds.z + bounds.height)) / fabs(line_dir.raw[1])
+                           : fabs(start_z - bounds.z) / fabs(line_dir.raw[1]);
+
+    bool line_ends_inside = C_BoxPointIntersection(line.bx, line.bz, map_box);
+    struct tile_desc final_tile_desc;
+
+    if(line_ends_inside) {
+        int result = tile_for_point_2d(res, map_pos, line.bx, line.bz, &final_tile_desc);
+        assert(result);
+    }
+
+    do{
+        out[ret++] = curr_tile_desc;
+
+        int dc = 0, dr = 0;
+        if(t_max_x < t_max_z) {
+            t_max_x = t_max_x + t_delta_x; 
+            dc = step_c;
+        }else{
+            t_max_z = t_max_z + t_delta_z; 
+            dr = step_r;
+        }
+
+        if(line_ends_inside && 0 == memcmp(&curr_tile_desc, &final_tile_desc, sizeof(struct tile_desc))){
+            break;
+        }
+
+        if(!M_Tile_RelativeDesc(res, &curr_tile_desc, dc, dr)) {
+            break;
+        }
+
+    }while(ret < 1024);
+    assert(ret < 1024);
+
+    return ret;
 }
 

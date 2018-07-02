@@ -27,6 +27,7 @@
 #include "../game/public/game.h"
 #include "../render/public/render.h"
 #include "../map/public/map.h"
+#include "../map/public/tile.h"
 #include "../event.h"
 #include "../config.h"
 #include "../scene.h"

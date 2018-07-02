@@ -20,6 +20,7 @@
 #ifndef TILE_H
 #define TILE_H
 
+#include "../../collision.h"
 #include <stdbool.h>
 
 #define X_COORDS_PER_TILE 8 
@@ -77,6 +78,15 @@ struct tile{
     int           sides_mat_idx;
 };
 
+struct tile_desc{
+    int chunk_r, chunk_c;
+    int tile_r, tile_c;
+};
+
+struct map_resolution{
+    int chunk_w, chunk_h;
+    int tile_w, tile_h;
+};
 
 #define TILETYPE_IS_RAMP(t) \
     (  ((t) == TILETYPE_RAMP_SN ) \
@@ -109,7 +119,20 @@ bool  M_Tile_LeftFaceVisible (const struct tile *tiles, int r, int c);
 bool  M_Tile_RightFaceVisible(const struct tile *tiles, int r, int c);
 
 /* 'frac_with' and 'frac_height' are given in screen cooridnates (width increases to the
- * right and height increases downwards. */
-float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_height);
+ * right and height increases downwards. 
+ */
+float      M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_height);
+
+struct box M_Tile_Bounds(struct map_resolution res, vec3_t map_pos, struct tile_desc desc);
+bool       M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inout, 
+                               int tile_dc, int tile_dr);
+
+/* Fills 'out' with a list of tile descriptors which are intersected by the 2D line 
+ * segment. The descriptors will be in the order they are intersected by the line
+ * segment, starting at the first point and ending at the second. 'res' specifies 
+ * the map resolution in the number of chunks per map and the number of tiles per chunk. 
+ */
+int        M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos, 
+                                            struct line_seg_2d line, struct tile_desc out[]);
 
 #endif

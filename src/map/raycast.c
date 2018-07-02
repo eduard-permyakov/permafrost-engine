@@ -34,7 +34,6 @@
 
 
 #define MAX_CANDIDATE_TILES 256
-#define EPSILON             (1.0f / 64.0)
 
 struct ray{
     vec3_t origin;
@@ -63,79 +62,6 @@ static struct rc_ctx s_ctx;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool tile_for_point_2d(const struct map *map, float px, float pz, struct tile_desc *out)
-{
-    size_t width  = map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
-    size_t height = map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
-    struct box map_box = (struct box){map->pos.x, map->pos.z, width, height};
-
-    /* Recall X increases to the left in our engine */
-    if(px > map_box.x || px < map_box.x - map_box.width)
-        return false;
-
-    if(pz < map_box.z || px > map_box.z + map_box.height)
-        return false;
-
-    int chunk_r, chunk_c;
-    chunk_r = fabs(map_box.z - pz) / (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE);
-    chunk_c = fabs(map_box.x - px) / (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE);
-
-    assert(chunk_r >= 0 && chunk_r < map->height);
-    assert(chunk_c >= 0 && chunk_r < map->width);
-
-    float chunk_base_x, chunk_base_z;
-    chunk_base_x = map_box.x - (chunk_c * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE);
-    chunk_base_z = map_box.z + (chunk_r * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE);
-
-    int tile_r, tile_c;
-    tile_r = fabs(chunk_base_z - pz) / Z_COORDS_PER_TILE;
-    tile_c = fabs(chunk_base_x - px) / X_COORDS_PER_TILE;
-
-    assert(tile_c >= 0 && tile_c < TILES_PER_CHUNK_WIDTH);
-    assert(tile_r >= 0 && tile_r < TILES_PER_CHUNK_HEIGHT);
-
-    out->chunk_r = chunk_r;
-    out->chunk_c = chunk_c;
-    out->tile_r = tile_r;
-    out->tile_c = tile_c;
-    return true;
-}
-
-static int mod(int a, int b)
-{
-    int r = a % b;
-    return r < 0 ? r + b : r;
-}
-
-static float line_len(float ax, float az, float bx, float bz)
-{
-    return sqrt( pow(bx - ax, 2) + pow(bz - az, 2) );
-}
-
-static bool tiles_equal(const struct tile_desc *a, const struct tile_desc *b)
-{
-    return (a->chunk_r == b->chunk_r)
-        && (a->chunk_c == b->chunk_c)
-        && (a->tile_r  == b->tile_r)
-        && (a->tile_c  == b->tile_c);
-}
-
-static struct box bounds_for_tile(const struct map *map, struct tile_desc desc)
-{
-    size_t width  = map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
-    size_t height = map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
-    struct box map_box = (struct box){map->pos.x, map->pos.z, width, height};
-
-    return (struct box){
-        map_box.x - desc.chunk_c * (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE)
-                  - desc.tile_c  * X_COORDS_PER_TILE,
-        map_box.z + desc.chunk_r * (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE)
-                  + desc.tile_r * Z_COORDS_PER_TILE,
-        X_COORDS_PER_TILE,
-        Z_COORDS_PER_TILE
-    };
-}
-
 struct aabb aabb_for_tile(struct tile_desc desc, const struct map *map)
 {
     assert(map);
@@ -147,7 +73,11 @@ struct aabb aabb_for_tile(struct tile_desc desc, const struct map *map)
     const struct pfchunk *chunk = &map->chunks[desc.chunk_r * map->width + desc.chunk_c];
     const struct tile *tile = &chunk->tiles[desc.tile_r * TILES_PER_CHUNK_WIDTH + desc.tile_c];
 
-    struct box tile_bounds = bounds_for_tile(map, desc);
+    struct map_resolution res = {
+        map->width, map->height,
+        TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT
+    };
+    struct box tile_bounds = M_Tile_Bounds(res, map->pos, desc);
 
     return (struct aabb) {
         .x_min = tile_bounds.x - tile_bounds.width,
@@ -157,156 +87,6 @@ struct aabb aabb_for_tile(struct tile_desc desc, const struct map *map)
         .z_min = tile_bounds.z,
         .z_max = tile_bounds.z + tile_bounds.height,
     };
-}
-
-static bool relative_tile_desc(const struct map *map, struct tile_desc *inout, int tile_dc, int tile_dr)
-{
-    assert(abs(tile_dc) <= TILES_PER_CHUNK_WIDTH);
-    assert(abs(tile_dr) <= TILES_PER_CHUNK_HEIGHT);
-
-    struct tile_desc ret = (struct tile_desc) {
-        inout->chunk_r + ((inout->tile_r + tile_dr < 0)                       ? -1 :
-                          (inout->tile_r + tile_dr >= TILES_PER_CHUNK_HEIGHT) ?  1 :
-                                                                                 0),
-
-        inout->chunk_c + ((inout->tile_c + tile_dc < 0)                       ? -1 :
-                          (inout->tile_c + tile_dc >= TILES_PER_CHUNK_WIDTH)  ?  1 :
-                                                                                 0),
-        mod(inout->tile_r + tile_dr, TILES_PER_CHUNK_HEIGHT),
-        mod(inout->tile_c + tile_dc, TILES_PER_CHUNK_WIDTH)
-    };
-
-    if( !(ret.chunk_r >= 0 && ret.chunk_r < map->height)
-     || !(ret.chunk_c >= 0 && ret.chunk_c < map->width)) {
-     
-        return false;
-    }
-
-    *inout = ret;
-    return true;
-}
-
-/* Uses a variant of the algorithm outlined here:
- * http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.42.3443&rep=rep1&type=pdf 
- * ('A Fast Voxel Traversal Algorithm for Ray Tracing' by John Amanatides, Andrew Woo)
- */
-static int candidate_tiles_sorted(const struct map *map, vec3_t ray_origin, vec3_t ray_dir, struct tile_desc out[])
-{
-    int ret = 0;
-
-    /* Project the ray on the Y=0 plane between the camera position and where the 
-     * ray intersects the Y=0 plane. */
-    float t = fabs(ray_origin.y / ray_dir.y);
-    struct line_seg_2d y_eq_0_seg = {
-        ray_origin.x, 
-        ray_origin.z,
-        ray_origin.x + t * ray_dir.x, 
-        ray_origin.z + t * ray_dir.z,
-    };
-    
-    /* Initialization: find the coordinate of the ray origin within the map.
-     * In the case of the ray originating inside the map, this is simple - take the ray origin.
-     * In case the ray originates outside but intersects the map, we take the intersection 
-     * point as the start. Lastly, if ray doesn't even intersect the map, no work needs to be 
-     * done - return an empty list. 
-     */
-    size_t width  = map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
-    size_t height = map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
-    struct box map_box = (struct box){map->pos.x, map->pos.z, width, height};
-
-    int num_intersect;
-    float intersect_x[2], intersect_z[2];
-    float start_x, start_z;
-    struct tile_desc curr_tile_desc;
-
-    if(C_BoxPointIntersection(y_eq_0_seg.ax, y_eq_0_seg.az, map_box)) {
-
-        start_x = y_eq_0_seg.ax; 
-        start_z = y_eq_0_seg.az; 
-
-    }else if(num_intersect = C_LineBoxIntersection(y_eq_0_seg, map_box, intersect_x, intersect_z)) {
-
-        /* Nudge the intersection point by EPSILON in the direction of the ray to make sure 
-         * the intersection point is within the map bounds. */
-
-        /* One intersection means that the end of the ray is inside the map */
-        if(num_intersect == 1) {
-
-            start_x = intersect_x[0] + EPSILON * ray_dir.x;
-            start_z = intersect_z[0] + EPSILON * ray_dir.z;
-        
-        }
-        /* If the first of the 2 intersection points is closer to the ray origin */
-        else if( line_len(intersect_x[0], intersect_z[0], y_eq_0_seg.ax, y_eq_0_seg.az)
-               < line_len(intersect_x[1], intersect_z[1], y_eq_0_seg.ax, y_eq_0_seg.az) ) {
-         
-            start_x = intersect_x[0] + EPSILON * ray_dir.x;
-            start_z = intersect_z[0] + EPSILON * ray_dir.z;
-
-         }else{
-         
-            start_x = intersect_x[1] + EPSILON * ray_dir.x;
-            start_z = intersect_z[1] + EPSILON * ray_dir.z;
-         }
-
-    }else {
-        return 0;
-    }
-
-    bool result = tile_for_point_2d(map, start_x, start_z, &curr_tile_desc);
-    assert(result);
-
-    assert(curr_tile_desc.chunk_r >= 0 && curr_tile_desc.chunk_r < map->height);
-    assert(curr_tile_desc.chunk_c >= 0 && curr_tile_desc.chunk_c < map->width);
-
-    float t_max_x, t_max_z;
-
-    const int step_c = ray_dir.x <= 0.0f ? 1 : -1;
-    const int step_r = ray_dir.z >= 0.0f ? 1 : -1;
-
-    const float t_delta_x = fabs(X_COORDS_PER_TILE / ray_dir.x);
-    const float t_delta_z = fabs(Z_COORDS_PER_TILE / ray_dir.z);
-
-    struct box tile_bounds = bounds_for_tile(map, curr_tile_desc);
-
-    t_max_x = (step_c > 0) ? fabs(start_x - (tile_bounds.x - tile_bounds.width)) / fabs(ray_dir.x) 
-                           : fabs(start_x - tile_bounds.x) / fabs(ray_dir.x);
-
-    t_max_z = (step_r > 0) ? fabs(start_z - (tile_bounds.z + tile_bounds.height)) / fabs(ray_dir.z)
-                           : fabs(start_z - tile_bounds.z) / fabs(ray_dir.z);
-
-    bool ray_ends_inside = C_BoxPointIntersection(y_eq_0_seg.bx, y_eq_0_seg.bz, map_box);
-    struct tile_desc final_tile_desc;
-
-    if(ray_ends_inside) {
-        int result = tile_for_point_2d(map, y_eq_0_seg.bx, y_eq_0_seg.bz, &final_tile_desc);
-        assert(result);
-    }
-
-    do{
-        out[ret++] = curr_tile_desc;
-
-        int dc = 0, dr = 0;
-        if(t_max_x < t_max_z) {
-            t_max_x = t_max_x + t_delta_x; 
-            dc = step_c;
-        }else{
-            t_max_z = t_max_z + t_delta_z; 
-            dr = step_r;
-        }
-
-        if(ray_ends_inside && tiles_equal(&curr_tile_desc, &final_tile_desc)){
-            break;
-        }
-
-        if(!relative_tile_desc(map, &curr_tile_desc, dc, dr)) {
-            break;
-        }
-
-    }while(ret < 1024);
-    assert(ret < 1024);
-
-    return ret;
 }
 
 static vec3_t rc_unproject_mouse_coords(void)
@@ -343,8 +123,23 @@ static void rc_find_intersection(void)
 
     s_ctx.tile_active = false;
 
+    struct map_resolution res = {
+        s_ctx.map->width, s_ctx.map->height,
+        TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT
+    };
+
+    /* Project the ray on the Y=0 plane between the camera position and where the 
+     * ray intersects the Y=0 plane. */
+    float t = fabs(ray_origin.y / ray_dir.y);
+    struct line_seg_2d y_eq_0_seg = {
+        ray_origin.x, 
+        ray_origin.z,
+        ray_origin.x + t * ray_dir.x, 
+        ray_origin.z + t * ray_dir.z,
+    };
+
     struct tile_desc cts[MAX_CANDIDATE_TILES];
-    int len = candidate_tiles_sorted(s_ctx.map, ray_origin, ray_dir, cts);
+    int len = M_Tile_LineSupercoverTilesSorted(res, s_ctx.map->pos, y_eq_0_seg, cts);
     assert(len <= MAX_CANDIDATE_TILES);
 
     for(int i = 0; i < len; i++) {
@@ -415,8 +210,13 @@ static void on_render(void *user, void *event)
     for(int r = -(num_tiles / 2); r < (num_tiles / 2) + 1; r++) {
         for(int c = -(num_tiles / 2); c < (num_tiles / 2) + 1; c++) {
 
+            struct map_resolution res = {
+                s_ctx.map->width, s_ctx.map->height,
+                TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT
+            };
+
             struct tile_desc curr = s_ctx.intersec_tile;
-            if(relative_tile_desc(s_ctx.map, &curr, r, c)) {
+            if(M_Tile_RelativeDesc(res, &curr, r, c)) {
             
                 const struct pfchunk *chunk = &s_ctx.map->chunks[curr.chunk_r * s_ctx.map->width + curr.chunk_c];
                 mat4x4_t model;

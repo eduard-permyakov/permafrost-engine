@@ -37,11 +37,7 @@ struct pfmap_hdr;
 struct map;
 struct camera;
 struct tile;
-
-struct tile_desc{
-    int chunk_r, chunk_c;
-    int tile_r, tile_c;
-};
+struct tile_desc;
 
 enum chunk_render_mode{
 
