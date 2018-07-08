@@ -106,18 +106,59 @@ static void n_set_cost_for_tile(struct nav_chunk *chunk,
                                 size_t tile_r,  size_t tile_c,
                                 const struct tile *tile)
 {
-    size_t field_per_map_r = FIELD_RES_R / chunk_h;
-    size_t field_per_map_c = FIELD_RES_C / chunk_w;
+    assert(FIELD_RES_R / chunk_h == 2);
+    assert(FIELD_RES_C / chunk_w == 2);
 
-    size_t r_base = tile_r * field_per_map_r;
-    size_t c_base = tile_c * field_per_map_c;
+    const int (*tile_path_map)[2];
+
+    switch(tile->type) {
+    case TILETYPE_FLAT:
+    case TILETYPE_RAMP_SN:
+    case TILETYPE_RAMP_NS:
+    case TILETYPE_RAMP_EW:
+    case TILETYPE_RAMP_WE:
+        tile_path_map = (int[2][2]){
+            {0,0}, 
+            {0,0}
+        };  break;
+    case TILETYPE_CORNER_CONCAVE_SW:
+    case TILETYPE_CORNER_CONVEX_NE:
+        tile_path_map = (int[2][2]){
+            {0,0}, 
+            {1,0}
+        };  break;
+    case TILETYPE_CORNER_CONCAVE_SE:
+    case TILETYPE_CORNER_CONVEX_NW:
+        tile_path_map = (int[2][2]){
+            {0,0}, 
+            {0,1}
+        };  break;
+    case TILETYPE_CORNER_CONCAVE_NW:
+    case TILETYPE_CORNER_CONVEX_SE:
+        tile_path_map = (int[2][2]){
+            {1,0}, 
+            {0,0}
+        };  break;
+    case TILETYPE_CORNER_CONCAVE_NE:
+    case TILETYPE_CORNER_CONVEX_SW:
+        tile_path_map = (int[2][2]){
+            {0,1}, 
+            {0,0}
+        };  break;
+    default: assert(0);
+    }
+
+    size_t r_base = tile_r * 2;
+    size_t c_base = tile_c * 2;
 
     uint8_t cost = n_tile_pathable(tile) ? 1 : COST_IMPASSABLE;
 
-    for(int r = 0; r < field_per_map_r; r++) {
-        for(int c = 0; c < field_per_map_c; c++) {
+    for(int r = 0; r < 2; r++) {
+        for(int c = 0; c < 2; c++) {
 
-            chunk->cost_base[r_base + r][c_base + c] = cost;
+            chunk->cost_base[r_base + r][c_base + c] = n_tile_pathable(tile) ? 1 
+                                                     : tile_path_map[r][c]   ? 1
+                                                     : COST_IMPASSABLE;
         }
     }
 }
