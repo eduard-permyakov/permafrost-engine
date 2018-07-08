@@ -5,14 +5,16 @@ in the early phases of development.
 
 ## Engine Showcase ##
 
-###### Hellknight from DOOM 3 by id Sofware. ######
+###### Hellknight from DOOM 3 by id Sofware ######
 ![Hellknight](docs/images/hellknight.gif)
-###### Sinbad by Zi Ye. ######
+###### Sinbad by Zi Ye ######
 ![Sinbad](docs/images/sinbad.gif)
-###### Example of Tile-based map. ######
+###### Tile-Based Map ######
 ![Terrain](docs/images/terrain.png)
-###### Map Editor Example. ######
+###### Map Editor ######
 ![Map Editor](docs/images/editor.png)
+###### Baked Navigation Grid ######
+![Navigation Grid](docs/images/navigation.png)
 
 ## Engine Summary ##
 
