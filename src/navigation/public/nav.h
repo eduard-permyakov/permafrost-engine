@@ -40,7 +40,7 @@ struct obb;
  */
 void *N_BuildForMapData(size_t w, size_t h, 
                         size_t chunk_w, size_t chunk_h,
-                        struct tile **chunk_tiles);
+                        const struct tile **chunk_tiles);
 
 /* ------------------------------------------------------------------------
  * Clean up resources allocated by 'N_BuildForMapData'.

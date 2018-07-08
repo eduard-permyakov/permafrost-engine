@@ -140,7 +140,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
         }
     }
 
-    struct tile *chunk_tiles[map->width * map->height];
+    const struct tile *chunk_tiles[map->width * map->height];
     for(int r = 0; r < map->height; r++) {
         for(int c = 0; c < map->width; c++) {
             chunk_tiles[r * map->width + c] = map->chunks[r * map->width + c].tiles;

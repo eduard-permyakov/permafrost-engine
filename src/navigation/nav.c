@@ -31,7 +31,7 @@
 #include <string.h>
 
 
-#define CHUNK_IDX(r, width, c)   ((r) * (width) + (c))
+#define IDX(r, width, c)   ((r) * (width) + (c))
 #define CURSOR_OFF(cursor, base) ((ptrdiff_t)((cursor) - (base)))
 #define ARR_SIZE(a)              (sizeof(a)/sizeof(a[0]))
 
@@ -151,14 +151,116 @@ static void n_set_cost_for_tile(struct nav_chunk *chunk,
     size_t r_base = tile_r * 2;
     size_t c_base = tile_c * 2;
 
-    uint8_t cost = n_tile_pathable(tile) ? 1 : COST_IMPASSABLE;
-
     for(int r = 0; r < 2; r++) {
         for(int c = 0; c < 2; c++) {
 
             chunk->cost_base[r_base + r][c_base + c] = n_tile_pathable(tile) ? 1 
                                                      : tile_path_map[r][c]   ? 1
                                                      : COST_IMPASSABLE;
+        }
+    }
+}
+
+static void n_set_cost_edge(struct nav_chunk *chunk,
+                            size_t chunk_w, size_t chunk_h,
+                            size_t tile_r,  size_t tile_c,
+                            enum edge_type edge)
+{
+    assert(FIELD_RES_R / chunk_h == 2);
+    assert(FIELD_RES_C / chunk_w == 2);
+
+    const int (*tile_path_map)[2];
+
+    switch(edge){
+    case EDGE_BOT:
+        tile_path_map = (int[2][2]){
+            {1,1}, 
+            {0,0}
+        };  break;
+    case EDGE_TOP:
+        tile_path_map = (int[2][2]){
+            {0,0}, 
+            {1,1}
+        };  break;
+    case EDGE_LEFT:
+        tile_path_map = (int[2][2]){
+            {0,1}, 
+            {0,1}
+        };  break;
+    case EDGE_RIGHT:
+        tile_path_map = (int[2][2]){
+            {1,0}, 
+            {1,0}
+        };  break;
+    }
+
+    size_t r_base = tile_r * 2;
+    size_t c_base = tile_c * 2;
+
+    for(int r = 0; r < 2; r++) {
+        for(int c = 0; c < 2; c++) {
+
+            if(!tile_path_map[r][c])
+                chunk->cost_base[r_base + r][c_base + c] = COST_IMPASSABLE;
+        }
+    }
+}
+
+static bool n_cliff_edge(const struct tile *a, const struct tile *b)
+{
+    if(!a || !b)
+        return false;
+
+    if(a->type != TILETYPE_FLAT || b->type != TILETYPE_FLAT)
+        return false;
+
+    return (a->base_height != b->base_height);
+}
+
+static void n_make_cliff_edges(struct nav_private *priv, const struct tile **tiles,
+                               size_t chunk_w, size_t chunk_h)
+{
+    for(int r = 0; r < priv->height; r++) {
+        for(int c = 0; c < priv->width; c++) {
+            
+            struct nav_chunk *curr_chunk = &priv->chunks[IDX(r, priv->width, c)];
+
+            const struct tile *bot_tiles = (r < priv->height-1)  ? tiles[IDX(r+1, priv->width, c)] : NULL;
+            const struct tile *top_tiles = (r > 0)               ? tiles[IDX(r-1, priv->width, c)] : NULL;
+            const struct tile *right_tiles = (c < priv->width-1) ? tiles[IDX(r, priv->width, c+1)] : NULL;
+            const struct tile *left_tiles = (c > 0)              ? tiles[IDX(r, priv->width, c-1)] : NULL;
+
+            for(int chr = 0; chr < chunk_h; chr++) {
+                for(int chc = 0; chc < chunk_w; chc++) {
+
+                    const struct tile *curr_tile = &tiles[IDX(r, priv->width, c)][IDX(chr, chunk_w, chc)];
+                    const struct tile *bot_tile   = (chr < chunk_h-1) ? curr_tile + chunk_w 
+                                                  : bot_tiles         ? &bot_tiles[IDX(0, chunk_w, chc)]
+                                                  : NULL;
+                    const struct tile *top_tile   = (chr > 0)         ? curr_tile - chunk_w
+                                                  : top_tiles         ? &top_tiles[IDX(chunk_h-1, chunk_w, chc)]
+                                                  : NULL;
+                    const struct tile *left_tile  = (chc > 0)         ? curr_tile - 1 
+                                                  : left_tiles        ? &left_tiles[IDX(chr, chunk_w, chunk_w-1)]
+                                                  : NULL;
+                    const struct tile *right_tile = (chc < chunk_w-1) ? curr_tile + 1 
+                                                  : right_tiles       ? &right_tiles[IDX(chr, chunk_w, 0)]
+                                                  : NULL;
+
+                    if(n_cliff_edge(curr_tile, bot_tile))
+                        n_set_cost_edge(curr_chunk, chunk_w, chunk_h, chr, chc, EDGE_BOT);
+
+                    if(n_cliff_edge(curr_tile, top_tile))
+                        n_set_cost_edge(curr_chunk, chunk_w, chunk_h, chr, chc, EDGE_TOP);
+
+                    if(n_cliff_edge(curr_tile, left_tile))
+                        n_set_cost_edge(curr_chunk, chunk_w, chunk_h, chr, chc, EDGE_LEFT);
+
+                    if(n_cliff_edge(curr_tile, right_tile))
+                        n_set_cost_edge(curr_chunk, chunk_w, chunk_h, chr, chc, EDGE_RIGHT);
+                }
+            }
+
         }
     }
 }
@@ -170,8 +272,10 @@ static void n_link_chunks(struct nav_chunk *a, enum edge_type a_type, struct coo
     size_t stride = (a_type & (EDGE_BOT | EDGE_TOP)) ? 1 : FIELD_RES_C;
     size_t line_len = (a_type & (EDGE_BOT | EDGE_TOP)) ? FIELD_RES_C : FIELD_RES_R;
 
-    uint8_t *a_cursor = &a->cost_base[a_type == EDGE_BOT ? FIELD_RES_R-1 : 0][a_type == EDGE_RIGHT ? FIELD_RES_C-1 : 0];
-    uint8_t *b_cursor = &b->cost_base[b_type == EDGE_BOT ? FIELD_RES_R-1 : 0][b_type == EDGE_RIGHT ? FIELD_RES_C-1 : 0];
+    uint8_t *a_cursor = &a->cost_base[a_type == EDGE_BOT   ? FIELD_RES_R-1 : 0]
+                                     [a_type == EDGE_RIGHT ? FIELD_RES_C-1 : 0];
+    uint8_t *b_cursor = &b->cost_base[b_type == EDGE_BOT   ? FIELD_RES_R-1 : 0]
+                                     [b_type == EDGE_RIGHT ? FIELD_RES_C-1 : 0];
 
     int a_fixed_idx = a_type == EDGE_TOP   ? 0
                     : a_type == EDGE_BOT   ? FIELD_RES_R-1
@@ -247,9 +351,9 @@ static void n_create_portals(struct nav_private *priv)
     for(int r = 0; r < priv->height; r++) {
         for(int c = 0; c < priv->width; c++) {
             
-            struct nav_chunk *curr = &priv->chunks[CHUNK_IDX(r, priv->width, c)];
-            struct nav_chunk *bot = (r < priv->height-1) ? &priv->chunks[CHUNK_IDX(r+1, priv->width, c)] : NULL;
-            struct nav_chunk *right = (c < priv->width-1) ? &priv->chunks[CHUNK_IDX(r, priv->width, c+1)] : NULL;
+            struct nav_chunk *curr = &priv->chunks[IDX(r, priv->width, c)];
+            struct nav_chunk *bot = (r < priv->height-1) ? &priv->chunks[IDX(r+1, priv->width, c)] : NULL;
+            struct nav_chunk *right = (c < priv->width-1) ? &priv->chunks[IDX(r, priv->width, c+1)] : NULL;
 
             if(bot)   n_link_chunks(curr, EDGE_BOT, (struct coord){r, c}, bot, EDGE_TOP, (struct coord){r+1, c});
             if(right) n_link_chunks(curr, EDGE_RIGHT, (struct coord){r, c}, right, EDGE_LEFT, (struct coord){r, c+1});
@@ -382,7 +486,7 @@ static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_mode
 
 void *N_BuildForMapData(size_t w, size_t h, 
                         size_t chunk_w, size_t chunk_h,
-                        struct tile **chunk_tiles)
+                        const struct tile **chunk_tiles)
 {
     struct nav_private *ret;
     size_t alloc_size = sizeof(struct nav_private) + (w * h * sizeof(struct nav_chunk));
@@ -401,8 +505,8 @@ void *N_BuildForMapData(size_t w, size_t h,
     for(int chunk_r = 0; chunk_r < ret->height; chunk_r++){
         for(int chunk_c = 0; chunk_c < ret->width; chunk_c++){
 
-            struct nav_chunk *curr_chunk = &ret->chunks[CHUNK_IDX(chunk_r, ret->width, chunk_c)];
-            struct tile *curr_tiles = chunk_tiles[CHUNK_IDX(chunk_r, ret->width, chunk_c)];
+            struct nav_chunk *curr_chunk = &ret->chunks[IDX(chunk_r, ret->width, chunk_c)];
+            const struct tile *curr_tiles = chunk_tiles[IDX(chunk_r, ret->width, chunk_c)];
             curr_chunk->num_portals = 0;
 
             for(int tile_r = 0; tile_r < chunk_h; tile_r++) {
@@ -415,6 +519,7 @@ void *N_BuildForMapData(size_t w, size_t h,
         }
     }
 
+    n_make_cliff_edges(ret, chunk_tiles, chunk_w, chunk_h);
     N_UpdatePortals(ret);
     return ret;
 
@@ -442,7 +547,7 @@ void N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
     vec2_t corners_buff[4 * FIELD_RES_R * FIELD_RES_C];
     vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
 
-    const struct nav_chunk *chunk = &priv->chunks[CHUNK_IDX(chunk_r, priv->width, chunk_c)];
+    const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
     n_render_portals(chunk, chunk_model, map);
 
     vec2_t *corners_base = corners_buff;
@@ -513,7 +618,7 @@ void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *o
         size_t num_tiles = M_Tile_LineSupercoverTilesSorted(res, map_pos, xz_line_segs[i], descs);
         for(int j = 0; j < num_tiles; j++) {
 
-            priv->chunks[CHUNK_IDX(descs[j].chunk_r, priv->width, descs[j].chunk_c)]
+            priv->chunks[IDX(descs[j].chunk_r, priv->width, descs[j].chunk_c)]
                 .cost_base[descs[j].tile_r][descs[j].tile_c] = COST_IMPASSABLE;
 
             if(HIGHER(descs[j], min_rows[i]))
@@ -559,7 +664,7 @@ void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *o
 
             if(C_PointInsideScreenRect(center, bot_corners_2d[0], bot_corners_2d[1], 
                                                bot_corners_2d[2], bot_corners_2d[3])) {
-                priv->chunks[CHUNK_IDX(desc.chunk_r, priv->width, desc.chunk_c)]
+                priv->chunks[IDX(desc.chunk_r, priv->width, desc.chunk_c)]
                     .cost_base[desc.tile_r][desc.tile_c] = COST_IMPASSABLE;
             }
         }
@@ -573,7 +678,7 @@ void N_UpdatePortals(void *nav_private)
     for(int chunk_r = 0; chunk_r < priv->height; chunk_r++){
         for(int chunk_c = 0; chunk_c < priv->width; chunk_c++){
             
-            struct nav_chunk *curr_chunk = &priv->chunks[CHUNK_IDX(chunk_r, priv->width, chunk_c)];
+            struct nav_chunk *curr_chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
             curr_chunk->num_portals = 0;
         }
     }
@@ -583,7 +688,7 @@ void N_UpdatePortals(void *nav_private)
     for(int chunk_r = 0; chunk_r < priv->height; chunk_r++){
         for(int chunk_c = 0; chunk_c < priv->width; chunk_c++){
             
-            struct nav_chunk *curr_chunk = &priv->chunks[CHUNK_IDX(chunk_r, priv->width, chunk_c)];
+            struct nav_chunk *curr_chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
             n_link_chunk_portals(curr_chunk);
         }
     }
