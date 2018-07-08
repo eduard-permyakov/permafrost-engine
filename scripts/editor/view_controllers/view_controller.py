@@ -16,8 +16,14 @@
 #  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-class ViewController(object):
+from abc import ABCMeta, abstractmethod
 
+class ViewController:
+    __metaclass__ = ABCMeta 
+
+    @abstractmethod
     def activate(self): pass 
+
+    @abstractmethod
     def deactivate(self): pass 
 

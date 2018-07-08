@@ -43,7 +43,7 @@ class FileChooser(pf.Window):
         self.mapstring = self.edit_string(NK_EDIT_SIMPLE, self.mapstring)
 
         def on_okay():
-            scenepath = self.scenestring if self.scene_flag is not None else None
+            scenepath = self.scenestring if self.scene_flag else None
             pf.global_event(EVENT_FILE_CHOOSER_OKAY, (self.mapstring, scenepath))
 
         def on_cancel():

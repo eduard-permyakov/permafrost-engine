@@ -31,17 +31,18 @@ class ObjectsVC(vc.ViewController):
         self.view = view
         self.view.objects_list = [os.path.split(o["path"])[-1] for o in scene.OBJECTS_LIST]
         assert(len(scene.OBJECTS_LIST) > 0)
-        self.view.selected_height_idx = 0
-        self.current_object = self.__object_at_index(self.view.selected_height_idx)
+        self.current_object = None
         self.view.mode = self.view.OBJECTS_MODE_PLACE
         self.right_mousebutton_state = SDL_RELEASED
 
     def __object_at_index(self, index):
         split_path = os.path.split(MODELS_PREFIX_DIR + scene.OBJECTS_LIST[index]["path"])
+        pfobj_dir = os.path.join(split_path[:-1])[0]
+        pfobj_filename = split_path[-1]
         if scene.OBJECTS_LIST[index]["anim"]:
-            ret = pf.AnimEntity(os.path.join(split_path[:-1])[0], split_path[-1], split_path[-1].split(".")[0], scene.OBJECTS_LIST[index]["idle"])
+            ret = pf.AnimEntity(pfobj_dir, pfobj_filename, pfobj_filename.split(".")[0], scene.OBJECTS_LIST[index]["idle"])
         else:
-            ret = pf.Entity(os.path.join(split_path[:-1])[0], split_path[-1], split_path[-1].split(".")[0])
+            ret = pf.Entity(pfobj_dir, pfobj_filename, pfobj_filename.split(".")[0])
         ret.scale = scene.OBJECTS_LIST[index]["scale"]
         ret.selection_radius = scene.OBJECTS_LIST[index]["sel_radius"]
         ret.selectable = True
@@ -56,8 +57,6 @@ class ObjectsVC(vc.ViewController):
     def __on_selected_object_changed(self, event):
         self.object_index = event
         if self.view.mode == self.view.OBJECTS_MODE_PLACE:
-            if self.current_object is not None:
-                del self.current_object
             self.current_object = self.__object_at_index(event)
             if mouse_events.mouse_over_map:
                 self.current_object.activate()
@@ -109,7 +108,6 @@ class ObjectsVC(vc.ViewController):
                 self.current_object.pos = pf.map_pos_under_cursor()
                 self.current_object.activate()
         elif self.view.mode == self.view.OBJECTS_MODE_SELECT:
-            del self.current_object
             self.current_object = None
 
     def __on_new_game(self, event):
@@ -127,7 +125,6 @@ class ObjectsVC(vc.ViewController):
         sel_obj_list = pf.get_unit_selection()
         for obj in sel_obj_list:
             globals.active_objects_list.remove(obj)
-        del sel_obj_list[:]
 
     def __on_mousewheel(self, event):
         CCW_ROT_5DEG = [0.0,  0.0436194, 0.0, 0.9990482]
@@ -145,8 +142,7 @@ class ObjectsVC(vc.ViewController):
             obj.rotation = pf.multiply_quaternions(obj.rotation, CW_ROT_5DEG)
 
     def __on_old_game_teardown_begin(self, event):
-        if self.current_object: 
-            del self.current_object
+        self.current_object = None
 
     def activate(self):
         pf.register_event_handler(EVENT_OBJECT_SELECTION_CHANGED, ObjectsVC.__on_selected_object_changed, self)
@@ -162,6 +158,7 @@ class ObjectsVC(vc.ViewController):
         pf.register_event_handler(EVENT_SDL_MOUSEWHEEL, ObjectsVC.__on_mousewheel, self)
         pf.register_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, ObjectsVC.__on_old_game_teardown_begin, self)
         self.__set_selection_for_mode()
+        self.current_object = self.__object_at_index(self.view.selected_object_idx)
 
     def deactivate(self):
         pf.unregister_event_handler(EVENT_OBJECT_SELECTION_CHANGED, ObjectsVC.__on_selected_object_changed)
@@ -178,4 +175,5 @@ class ObjectsVC(vc.ViewController):
         pf.unregister_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, ObjectsVC.__on_old_game_teardown_begin)
         pf.clear_unit_selection()
         pf.disable_unit_selection()
+        self.current_object = None
 

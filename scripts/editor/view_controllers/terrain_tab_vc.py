@@ -126,7 +126,9 @@ class TerrainTabVC(vc.ViewController):
         global_r = self.selected_tile[0][0] * pf.TILES_PER_CHUNK_HEIGHT + self.selected_tile[1][0]
         global_c = self.selected_tile[0][1] * pf.TILES_PER_CHUNK_WIDTH  + self.selected_tile[1][1]
 
-        dir = 'up'
+        old_tot_height = 0
+        new_tot_height = 0
+
         for r in range(-((self.view.brush_size_idx + 1) // 2), ((self.view.brush_size_idx + 1) // 2) + 1):
             for c in range(-((self.view.brush_size_idx + 1) // 2), ((self.view.brush_size_idx + 1) // 2) + 1):
 
@@ -136,12 +138,14 @@ class TerrainTabVC(vc.ViewController):
                     if self.view.brush_type_idx == 0:
                         globals.active_map.update_tile_mat(tile_coords, TerrainTabVC.MATERIALS_LIST[self.view.selected_mat_idx])
                     elif self.view.brush_type_idx == 1:
-                        old_height = globals.active_map.tile_at_coords(*self.selected_tile).base_height
+                        tile = globals.active_map.tile_at_coords(*tile_coords)
                         center_height = self.view.heights[self.view.selected_height_idx]
+                        old_tot_height += (tile_top_right_height(tile) + tile_top_left_height(tile) + \
+                                           tile_bot_right_height(tile) + tile_bot_left_height(tile))
+                        new_tot_height += (center_height * 4)
                         globals.active_map.update_tile(tile_coords, center_height, newtype=map.TILETYPE_FLAT)
 
-                        if old_height > center_height:
-                            dir = 'down'
+        dir = 'up' if old_tot_height <= new_tot_height else 'down'
 
         if self.view.edges_type_idx == 1:
             self.__paint_smooth_border(self.view.brush_size_idx + 1, dir)
@@ -197,32 +201,36 @@ class TerrainTabVC(vc.ViewController):
             map.TILETYPE_FLAT
         ]
 
+        tile = globals.active_map.tile_at_coords(*tile_coords)
         func = max if dir == 'up' else min
-        default = 0 if dir == 'up' else 9
 
         nw_height = func([h for h in [
             tile_top_right_height(globals.active_map.relative_tile(global_r, global_c,  0, -1)),
             tile_bot_right_height(globals.active_map.relative_tile(global_r, global_c, -1, -1)),
             tile_bot_left_height (globals.active_map.relative_tile(global_r, global_c, -1,  0)),
-        ] if h is not None] + [default])
+            tile_top_left_height(tile)
+        ] if h is not None])
 
         ne_height = func([h for h in [
             tile_bot_right_height(globals.active_map.relative_tile(global_r, global_c, -1,  0)),
             tile_bot_left_height (globals.active_map.relative_tile(global_r, global_c, -1,  1)),
             tile_top_left_height (globals.active_map.relative_tile(global_r, global_c,  0,  1)),
-        ] if h is not None] + [default])
+            tile_top_right_height(tile)
+        ] if h is not None])
 
         se_height = func([h for h in [
             tile_bot_left_height (globals.active_map.relative_tile(global_r, global_c,  0,  1)),
             tile_top_left_height (globals.active_map.relative_tile(global_r, global_c,  1,  1)),
             tile_top_right_height(globals.active_map.relative_tile(global_r, global_c,  1,  0)),
-        ] if h is not None] + [default])
+            tile_bot_right_height(tile)
+        ] if h is not None])
 
         sw_height = func([h for h in [
             tile_top_left_height (globals.active_map.relative_tile(global_r, global_c,  1,  0)),
             tile_top_right_height(globals.active_map.relative_tile(global_r, global_c,  1, -1)),
             tile_bot_right_height(globals.active_map.relative_tile(global_r, global_c,  0, -1)),
-        ] if h is not None] + [default]) 
+            tile_bot_left_height(tile)
+        ] if h is not None]) 
 
         og_heights = [nw_height, ne_height, se_height, sw_height]
         heights = [h if h == max(og_heights) else min(og_heights) for h in og_heights]
