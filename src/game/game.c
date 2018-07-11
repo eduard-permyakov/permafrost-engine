@@ -20,6 +20,7 @@
 #include "public/game.h"
 #include "gamestate.h"
 #include "selection.h"
+#include "timer_events.h"
 #include "../render/public/render.h"
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
@@ -132,6 +133,7 @@ bool G_Init(void)
     g_reset();
     G_Sel_Init();
     G_Sel_Enable();
+    G_Timer_Init();
 
     return true;
 }
@@ -232,6 +234,7 @@ void G_MoveActiveCamera(vec2_t xz_ground_pos)
 
 void G_Shutdown(void)
 {
+    G_Timer_Shutdown();
     G_Sel_Shutdown();
 
     for(int i = 0; i < NUM_CAMERAS; i++)

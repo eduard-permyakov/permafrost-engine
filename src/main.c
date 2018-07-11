@@ -102,6 +102,12 @@ static void process_sdl_events(void)
             case SDL_SCANCODE_ESCAPE: s_quit = true; break;
             }
             break;
+
+        case SDL_USEREVENT:
+            switch(event.user.code) {
+            case 0: E_Global_Notify(EVENT_60HZ_TICK, NULL, ES_ENGINE); break;
+            }
+            break;
         }
     }
 
@@ -148,7 +154,7 @@ static bool engine_init(char **argv)
     /* ---------------------------------- */
     /* SDL Initialization                 */
     /* ---------------------------------- */
-    if(SDL_Init(SDL_INIT_VIDEO) < 0) {
+    if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
         result = false;
         goto fail_sdl;
     }
