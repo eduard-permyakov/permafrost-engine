@@ -281,6 +281,25 @@ void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_
  * Entity Events
  */
 
+bool E_Entity_Register(enum eventtype event, uint32_t ent_uid, handler_t handler, void *user_arg)
+{
+    struct handler_desc hd;
+    hd.type = HANDLER_TYPE_ENGINE;
+    hd.handler.as_function = handler;
+    hd.user_arg = user_arg;
+
+    return e_register_handler(e_key(ent_uid, event), &hd);
+}
+
+bool E_Entity_Unregister(enum eventtype event, uint32_t ent_uid, handler_t handler)
+{
+    struct handler_desc hd;
+    hd.type = HANDLER_TYPE_ENGINE;
+    hd.handler.as_function = handler;
+
+    return e_unregister_handler(e_key(ent_uid, event), &hd);
+}
+
 bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid, 
                              script_opaque_t handler, script_opaque_t user_arg)
 {

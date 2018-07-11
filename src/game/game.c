@@ -21,6 +21,7 @@
 #include "gamestate.h"
 #include "selection.h"
 #include "timer_events.h"
+#include "movement.h"
 #include "../render/public/render.h"
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
@@ -82,6 +83,7 @@ static void g_reset(void)
         M_Raycast_Uninstall();
         M_FreeMinimap(s_gs.map);
         AL_MapFree(s_gs.map);
+        G_Move_Shutdown();
         s_gs.map = NULL;
     }
 
@@ -112,6 +114,7 @@ static void g_init_map(void)
     M_RestrictRTSCamToMap(s_gs.map, ACTIVE_CAM);
     M_Raycast_Install(s_gs.map, ACTIVE_CAM);
     M_InitMinimap(s_gs.map, DEFAULT_MINIMAP_POS);
+    G_Move_Init();
 }
 
 /*****************************************************************************/
@@ -234,17 +237,14 @@ void G_MoveActiveCamera(vec2_t xz_ground_pos)
 
 void G_Shutdown(void)
 {
+    g_reset();
+
     G_Timer_Shutdown();
     G_Sel_Shutdown();
 
     for(int i = 0; i < NUM_CAMERAS; i++)
         Camera_Free(s_gs.cameras[i]);
 
-    uint32_t key;
-    struct entity *curr;
-    kh_foreach(s_gs.active, key, curr, {
-        AL_EntityFree(curr);
-    });
     kh_destroy(entity, s_gs.active);
     kv_destroy(s_gs.visible);
     kv_destroy(s_gs.visible_obbs);

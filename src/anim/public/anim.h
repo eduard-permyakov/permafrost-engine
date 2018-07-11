@@ -52,9 +52,9 @@ void                   A_InitCtx(const struct entity *ent, const char *idle_clip
                                  unsigned key_fps);
 
 /* ---------------------------------------------------------------------------
- * If anim_mode is 'ANIM_MODE_ONCE', the entity will go back to 
- * playing the 'idle' animtion once the clip has played once. Otherwise, it will
- * keep looping the clip.
+ * If anim_mode is 'ANIM_MODE_ONCE', the entity will fire an 'EVENT_ANIM_FINISHED'
+ * event and go back to playing the 'idle' animtion once the clip has played once. 
+ * Otherwise, it will keep looping the clip.
  * ---------------------------------------------------------------------------
  */
 void                   A_SetActiveClip(const struct entity *ent, const char *name, 

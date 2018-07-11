@@ -53,6 +53,7 @@ enum eventtype{
     EVENT_30HZ_TICK,
     EVENT_10HZ_TICK,
     EVENT_1HZ_TICK,
+    EVENT_ANIM_FINISHED,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };
@@ -90,6 +91,10 @@ bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler);
 /*###########################################################################*/
 /* EVENT ENTITY                                                              */
 /*###########################################################################*/
+
+bool E_Entity_Register(enum eventtype event, uint32_t ent_uid, handler_t handler, 
+                       void *user_arg);
+bool E_Entity_Unregister(enum eventtype event, uint32_t ent_uid, handler_t handler);
 
 bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid, 
                              script_opaque_t handler, script_opaque_t user_arg);

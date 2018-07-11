@@ -22,6 +22,7 @@
 #include "anim_data.h"
 #include "anim_ctx.h"
 #include "../entity.h"
+#include "../event.h"
 #include "../render/public/render.h"
 
 #include <SDL.h>
@@ -176,6 +177,12 @@ void A_Update(const struct entity *ent)
 
         ctx->curr_frame = (ctx->curr_frame + 1) % ctx->active->num_frames;
         ctx->curr_frame_start_ticks = curr_ticks;
+
+        if(ctx->curr_frame == 0 && ctx->mode == ANIM_MODE_ONCE) {
+
+            E_Entity_Notify(EVENT_ANIM_FINISHED, ent->uid, NULL, ES_ENGINE);
+            A_SetActiveClip(ent, ctx->idle->name, ANIM_MODE_LOOP, ctx->key_fps);
+        }
     }
 }
 
