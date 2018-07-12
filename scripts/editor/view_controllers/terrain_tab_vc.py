@@ -126,9 +126,6 @@ class TerrainTabVC(vc.ViewController):
         global_r = self.selected_tile[0][0] * pf.TILES_PER_CHUNK_HEIGHT + self.selected_tile[1][0]
         global_c = self.selected_tile[0][1] * pf.TILES_PER_CHUNK_WIDTH  + self.selected_tile[1][1]
 
-        old_tot_height = 0
-        new_tot_height = 0
-
         for r in range(-((self.view.brush_size_idx + 1) // 2), ((self.view.brush_size_idx + 1) // 2) + 1):
             for c in range(-((self.view.brush_size_idx + 1) // 2), ((self.view.brush_size_idx + 1) // 2) + 1):
 
@@ -138,17 +135,12 @@ class TerrainTabVC(vc.ViewController):
                     if self.view.brush_type_idx == 0:
                         globals.active_map.update_tile_mat(tile_coords, TerrainTabVC.MATERIALS_LIST[self.view.selected_mat_idx])
                     elif self.view.brush_type_idx == 1:
-                        tile = globals.active_map.tile_at_coords(*tile_coords)
                         center_height = self.view.heights[self.view.selected_height_idx]
-                        old_tot_height += (tile_top_right_height(tile) + tile_top_left_height(tile) + \
-                                           tile_bot_right_height(tile) + tile_bot_left_height(tile))
-                        new_tot_height += (center_height * 4)
                         globals.active_map.update_tile(tile_coords, center_height, newtype=map.TILETYPE_FLAT)
 
-        dir = 'up' if old_tot_height <= new_tot_height else 'down'
-
         if self.view.edges_type_idx == 1:
-            self.__paint_smooth_border(self.view.brush_size_idx + 1, dir)
+            self.__paint_smooth_border(self.view.brush_size_idx + 1, 'down')
+            self.__paint_smooth_border(self.view.brush_size_idx + 1, 'up')
             self.__update_objects_for_height_change()
 
     def __tile_make_smooth(self, tile_coords, dir):
