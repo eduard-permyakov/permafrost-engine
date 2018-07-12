@@ -759,9 +759,12 @@ void R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t color
 
         float x_far = xz.raw[0] + (radius + width) * cos(theta);
         float z_far = xz.raw[1] - (radius + width) * sin(theta);
+    
+        float height_near = M_HeightAtPoint(map, M_ClampedMapCoordinate(map, (vec2_t){x_near, z_near}));
+        float height_far  = M_HeightAtPoint(map, M_ClampedMapCoordinate(map, (vec2_t){x_far,  z_far }));
 
-        vbuff[i]     = (vec3_t){x_near, M_HeightAtPoint(map, (vec2_t){x_near, z_near}) + 0.1, z_near};
-        vbuff[i + 1] = (vec3_t){x_far,  M_HeightAtPoint(map, (vec2_t){x_far,  z_far }) + 0.1, z_far };
+        vbuff[i]     = (vec3_t){x_near, height_near + 0.0f, z_near};
+        vbuff[i + 1] = (vec3_t){x_far,  height_far + 0.1,   z_far };
     }
     vbuff[NUM_SAMPLES * 2]     = vbuff[0];
     vbuff[NUM_SAMPLES * 2 + 1] = vbuff[1];

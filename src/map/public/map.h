@@ -155,6 +155,13 @@ vec2_t M_WorldCoordsToNormMapCoords(const struct map *map, vec2_t xz);
 bool   M_PointInsideMap(const struct map *map, vec2_t xz);
 
 /* ------------------------------------------------------------------------
+ * Returns an XZ coordinate that is contained within the map bounds. The 
+ * 'xz' arg is truncated if it's outside the map range, or unchanged otherwise.
+ * ------------------------------------------------------------------------
+ */
+vec2_t M_ClampedMapCoordinate(const struct map *map, vec2_t xz);
+
+/* ------------------------------------------------------------------------
  * Returns the Y coordinate for an XZ point on the map's surface.
  * ------------------------------------------------------------------------
  */

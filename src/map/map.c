@@ -31,6 +31,7 @@
 
 #include <SDL.h>
 
+#define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
 
 
@@ -235,6 +236,20 @@ bool M_PointInsideMap(const struct map *map, vec2_t xz)
 
     return (xz.raw[0] <= map->pos.x && xz.raw[0] >= map->pos.x - width)
         && (xz.raw[1] >= map->pos.z && xz.raw[1] <= map->pos.z + height);
+}
+
+vec2_t M_ClampedMapCoordinate(const struct map *map, vec2_t xz)
+{
+    const float EPSILON = (1.0f/1024);
+    float x, z;
+
+    x = MIN(map->pos.x - EPSILON, xz.raw[0]);
+    x = MAX(map->pos.x - map->width * (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) + EPSILON, x);
+
+    z = MAX(map->pos.z + EPSILON, xz.raw[1]);
+    z = MIN(map->pos.z + (map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE) - EPSILON, z);
+
+    return (vec2_t){x, z};
 }
 
 float M_HeightAtPoint(const struct map *map, vec2_t xz)

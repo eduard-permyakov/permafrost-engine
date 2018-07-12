@@ -46,6 +46,8 @@ struct flock{
 /* For the purpose of movement simulation, all entities have the same mass,
  * meaning they are accelerate the same amount when applied equal forces. */
 #define ENTITY_MASS (1.0f)
+#define EPSILON     (1.0f/1024)
+#define MAX_ACCEL   (1.0f)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -194,6 +196,19 @@ static void on_render_3d(void *user, void *event)
     }
 }
 
+static quat_t dir_quat_from_velocity(vec2_t velocity)
+{
+    assert(PFM_Vec2_Len(&velocity) > EPSILON);
+
+    float angle_rad = atan2(velocity.raw[1], velocity.raw[0]) - M_PI/2.0f;
+    return (quat_t) {
+        0.0f, 
+        1.0f * sin(angle_rad / 2.0f),
+        0.0f,
+        cos(angle_rad / 2.0f)
+    };
+}
+
 static vec2_t seek_force(const struct entity *ent, const struct flock *flock, int tick_res)
 {
     vec2_t ret, desired_velocity;
@@ -202,6 +217,31 @@ static vec2_t seek_force(const struct entity *ent, const struct flock *flock, in
     PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &pos_xz, &desired_velocity);
     PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
     PFM_Vec2_Scale(&desired_velocity, ent->max_speed / tick_res, &desired_velocity);
+
+    khiter_t k = kh_get(velocity, s_entity_velocity_table, ent->uid);
+    assert(k != kh_end(s_entity_velocity_table));
+    PFM_Vec2_Sub(&desired_velocity, &kh_value(s_entity_velocity_table, k), &ret);
+
+    return ret;
+}
+
+static vec2_t arrive_force(const struct entity *ent, const struct flock *flock, int tick_res)
+{
+    const float SLOWING_RADIUS = 10.0f;
+
+    vec2_t ret, desired_velocity;
+    vec2_t pos_xz = (vec2_t){ent->pos.x, ent->pos.z};
+    float distance;
+
+    PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &pos_xz, &desired_velocity);
+    distance = PFM_Vec2_Len(&desired_velocity);
+
+    PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
+    PFM_Vec2_Scale(&desired_velocity, ent->max_speed / tick_res, &desired_velocity);
+
+    if(distance < SLOWING_RADIUS) {
+        PFM_Vec2_Scale(&desired_velocity, distance / SLOWING_RADIUS, &desired_velocity);
+    }
 
     khiter_t k = kh_get(velocity, s_entity_velocity_table, ent->uid);
     assert(k != kh_end(s_entity_velocity_table));
@@ -219,14 +259,21 @@ static void on_30hz_tick(void *user, void *event)
         uint32_t key;
         struct entity *curr;
         kh_foreach(kv_A(s_flocks, i).ents, key, curr, {
+            curr->max_speed = 20.0f; //TODO temp
         
             vec2_t steer_accel, new_velocity; 
-            vec2_t steer_force = seek_force(curr, &kv_A(s_flocks, i), TICK_RES);
+            vec2_t steer_force = arrive_force(curr, &kv_A(s_flocks, i), TICK_RES);
 
             khiter_t k = kh_get(velocity, s_entity_velocity_table, curr->uid);
             assert(k != kh_end(s_entity_velocity_table));
 
             PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &steer_accel);
+            if(PFM_Vec2_Len(&steer_accel) > MAX_ACCEL) {
+
+                PFM_Vec2_Normal(&steer_accel, &steer_accel);
+                PFM_Vec2_Scale(&steer_accel, MAX_ACCEL, &steer_accel);
+            }
+
             PFM_Vec2_Add(&kh_value(s_entity_velocity_table, k), &steer_accel, &new_velocity);
 
             if(PFM_Vec2_Len(&new_velocity) > curr->max_speed / TICK_RES) {
@@ -240,7 +287,12 @@ static void on_30hz_tick(void *user, void *event)
             vec2_t xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
             vec2_t new_xz_pos;
             PFM_Vec2_Add(&xz_pos, &new_velocity, &new_xz_pos);
+            new_xz_pos = M_ClampedMapCoordinate(s_map, new_xz_pos);
             curr->pos = (vec3_t){new_xz_pos.raw[0], M_HeightAtPoint(s_map, new_xz_pos), new_xz_pos.raw[1]};
+
+            if(PFM_Vec2_Len(&new_velocity) > EPSILON) {
+                curr->rotation = dir_quat_from_velocity(new_velocity);
+            }
         });
     }
 }
