@@ -46,6 +46,7 @@ struct entity{
      * animation sample also has its' own AABB. */
     struct aabb  identity_aabb;
     float        selection_radius;
+    float        max_speed; /* units: OpenGL coordinates / second */
 };
 
 void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);

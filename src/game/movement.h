@@ -22,7 +22,9 @@
 
 #include <stdbool.h>
 
-bool G_Move_Init(void);
+struct map;
+
+bool G_Move_Init(const struct map *map);
 void G_Move_Shutdown(void);
 
 #endif

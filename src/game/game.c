@@ -114,7 +114,7 @@ static void g_init_map(void)
     M_RestrictRTSCamToMap(s_gs.map, ACTIVE_CAM);
     M_Raycast_Install(s_gs.map, ACTIVE_CAM);
     M_InitMinimap(s_gs.map, DEFAULT_MINIMAP_POS);
-    G_Move_Init();
+    G_Move_Init(s_gs.map);
 }
 
 /*****************************************************************************/
