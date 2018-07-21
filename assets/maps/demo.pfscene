@@ -982,7 +982,7 @@ entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 8
    static bool 1
    collision bool 1
    selection_radius float 3.0
-entity chicken assets/models/chicken/chicken.pfobj 9
+entity chicken assets/models/chicken/chicken.pfobj 11
    position vec3 74.991371 12.000000 -183.204361
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 0.461749 0.000000 0.887011
@@ -992,7 +992,12 @@ entity chicken assets/models/chicken/chicken.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 1.5
-entity chicken assets/models/chicken/chicken.pfobj 9
+   class string Chicken
+   constructor_arguments int 3
+       string assets/models/chicken
+       string chicken.pfobj
+       string Chicken
+entity chicken assets/models/chicken/chicken.pfobj 11
    position vec3 44.740574 12.000000 -183.708618
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 -0.537300 0.000000 0.843391
@@ -1002,7 +1007,12 @@ entity chicken assets/models/chicken/chicken.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 1.5
-entity chicken assets/models/chicken/chicken.pfobj 9
+   class string Chicken
+   constructor_arguments int 3
+       string assets/models/chicken
+       string chicken.pfobj
+       string Chicken
+entity chicken assets/models/chicken/chicken.pfobj 11
    position vec3 50.394928 12.000000 -184.892029
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 0.422618 0.000000 0.906308
@@ -1012,6 +1022,11 @@ entity chicken assets/models/chicken/chicken.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 1.5
+   class string Chicken
+   constructor_arguments int 3
+       string assets/models/chicken
+       string chicken.pfobj
+       string Chicken
 entity hay_2 assets/models/hay/hay_2.pfobj 8
    position vec3 75.796143 12.000000 -162.301590
    scale vec3 4.000000 4.000000 4.000000
@@ -1021,7 +1036,7 @@ entity hay_2 assets/models/hay/hay_2.pfobj 8
    static bool 1
    collision bool 1
    selection_radius float 4.0
-entity chicken assets/models/chicken/chicken.pfobj 9
+entity chicken assets/models/chicken/chicken.pfobj 11
    position vec3 64.537849 12.000000 -161.369080
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 0.887011 0.000000 0.461748
@@ -1031,7 +1046,12 @@ entity chicken assets/models/chicken/chicken.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 1.5
-entity chicken assets/models/chicken/chicken.pfobj 9
+   class string Chicken
+   constructor_arguments int 3
+       string assets/models/chicken
+       string chicken.pfobj
+       string Chicken
+entity chicken assets/models/chicken/chicken.pfobj 11
    position vec3 60.865231 12.000000 -158.994385
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 0.965926 0.000000 -0.258820
@@ -1041,7 +1061,12 @@ entity chicken assets/models/chicken/chicken.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 1.5
-entity chicken assets/models/chicken/chicken.pfobj 9
+   class string Chicken
+   constructor_arguments int 3
+       string assets/models/chicken
+       string chicken.pfobj
+       string Chicken
+entity chicken assets/models/chicken/chicken.pfobj 11
    position vec3 40.127365 12.000000 -171.669800
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 -0.300706 0.000000 0.953717
@@ -1051,7 +1076,12 @@ entity chicken assets/models/chicken/chicken.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 1.5
-entity chicken assets/models/chicken/chicken.pfobj 9
+   class string Chicken
+   constructor_arguments int 3
+       string assets/models/chicken
+       string chicken.pfobj
+       string Chicken
+entity chicken assets/models/chicken/chicken.pfobj 11
    position vec3 39.067101 12.000000 -164.091675
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 -0.887011 0.000000 0.461748
@@ -1061,7 +1091,12 @@ entity chicken assets/models/chicken/chicken.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 1.5
-entity chicken assets/models/chicken/chicken.pfobj 9
+   class string Chicken
+   constructor_arguments int 3
+       string assets/models/chicken
+       string chicken.pfobj
+       string Chicken
+entity chicken assets/models/chicken/chicken.pfobj 11
    position vec3 63.488377 12.000000 -178.838547
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 0.043619 0.000000 0.999048
@@ -1071,6 +1106,11 @@ entity chicken assets/models/chicken/chicken.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 1.5
+   class string Chicken
+   constructor_arguments int 3
+       string assets/models/chicken
+       string chicken.pfobj
+       string Chicken
 entity tree_leafy assets/models/tree_leafy/tree_leafy.pfobj 8
    position vec3 -120.588875 12.000000 -109.034225
    scale vec3 10.000000 10.000000 10.000000
@@ -1455,7 +1495,7 @@ entity Sinbad assets/models/sinbad/Sinbad.pfobj 11
        string assets/models/sinbad
        string Sinbad.pfobj
        string Sinbad
-entity knight assets/models/knight/knight.pfobj 9
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 70.701439 20.000000 -111.893204
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.887011 0.000000 0.461748
@@ -1465,7 +1505,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 66.472794 20.000000 -104.795502
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.866026 0.000000 0.500000
@@ -1475,7 +1520,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 62.139919 20.000000 -97.142845
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.887011 0.000000 0.461748
@@ -1485,7 +1535,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 80.126991 20.000000 -108.021248
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.866026 0.000000 0.500000
@@ -1495,7 +1550,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 75.053375 20.000000 -100.527527
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.887011 0.000000 0.461748
@@ -1505,7 +1565,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 70.039215 20.000000 -92.729568
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.906308 0.000000 0.422618
@@ -1515,7 +1580,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 42.974602 20.000000 -77.989342
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.984808 0.000000 0.173648
@@ -1525,7 +1595,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 33.946815 20.000000 -73.405273
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.976296 0.000000 0.216439
@@ -1535,7 +1610,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 26.242332 20.000000 -68.941566
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.976296 0.000000 0.216439
@@ -1545,7 +1625,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 48.372528 20.000000 -69.932045
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.984808 0.000000 0.173648
@@ -1555,7 +1640,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 39.569252 20.000000 -65.399139
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.984808 0.000000 0.173648
@@ -1565,7 +1655,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 30.989548 20.000000 -60.347763
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.991445 0.000000 0.130526
@@ -1575,7 +1670,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity mage assets/models/mage/mage.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity mage assets/models/mage/mage.pfobj 11
    position vec3 77.982689 20.000000 -84.175186
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 0.906308 0.000000 0.422618
@@ -1585,7 +1685,12 @@ entity mage assets/models/mage/mage.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 4.25
-entity mage assets/models/mage/mage.pfobj 9
+   class string Mage
+   constructor_arguments int 3
+       string assets/models/mage
+       string mage.pfobj
+       string Mage
+entity mage assets/models/mage/mage.pfobj 11
    position vec3 56.737705 20.000000 -62.936424
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 0.991445 0.000000 0.130526
@@ -1595,6 +1700,11 @@ entity mage assets/models/mage/mage.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 4.25
+   class string Mage
+   constructor_arguments int 3
+       string assets/models/mage
+       string mage.pfobj
+       string Mage
 entity war_banner assets/models/war_banner/war_banner.pfobj 9
    position vec3 61.912025 20.000000 -125.741165
    scale vec3 2.500000 2.500000 2.500000
@@ -1822,7 +1932,7 @@ entity obelisk_1 assets/models/props/obelisk_1.pfobj 8
    static bool 1
    collision bool 1
    selection_radius float 2.0
-entity knight assets/models/knight/knight.pfobj 9
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -15.575935 12.000000 -218.568420
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -1832,7 +1942,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -25.844265 12.000000 -218.703644
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -1842,7 +1957,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -35.325256 12.000000 -217.424133
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.087156 0.000000 0.996195
@@ -1852,7 +1972,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -17.532936 12.000000 -227.286041
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.087156 0.000000 0.996195
@@ -1862,7 +1987,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -27.285145 12.000000 -226.754150
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -1872,7 +2002,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -37.369610 12.000000 -225.382095
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -1882,7 +2017,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -19.560635 12.000000 -236.531204
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -1892,7 +2032,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -29.614925 12.000000 -234.200653
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.043619 0.000000 0.999048
@@ -1902,7 +2047,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -39.382778 12.000000 -232.596558
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.087156 0.000000 0.996195
@@ -1912,7 +2062,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -52.908325 12.000000 -197.349136
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.500000 0.000000 0.866025
@@ -1922,7 +2077,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -57.303528 12.000000 -189.960754
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.500000 0.000000 0.866025
@@ -1932,7 +2092,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -61.482868 12.000000 -182.092529
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.537300 0.000000 0.843391
@@ -1942,7 +2107,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -64.838211 12.000000 -174.584137
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.537300 0.000000 0.843391
@@ -1952,7 +2122,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -7.262569 12.368713 -220.670227
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.043619 0.000000 0.999048
@@ -1962,7 +2137,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -7.568398 14.147827 -227.864075
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -1972,7 +2152,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -8.920696 15.539642 -234.837708
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -1982,7 +2167,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -61.554180 12.000000 -201.744537
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.537300 0.000000 0.843391
@@ -1992,7 +2182,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -65.953766 12.000000 -194.741272
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.537300 0.000000 0.843391
@@ -2002,7 +2197,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -70.049416 12.000000 -186.771667
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.573577 0.000000 0.819152
@@ -2012,7 +2212,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -73.392967 12.000000 -178.914474
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.500000 0.000000 0.866025
@@ -2022,7 +2227,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -69.129425 12.000000 -206.071594
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.500000 0.000000 0.866025
@@ -2032,7 +2242,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -74.195206 12.000000 -198.863068
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.573577 0.000000 0.819152
@@ -2042,7 +2257,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -77.821594 12.000000 -191.502045
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.500000 0.000000 0.866025
@@ -2052,7 +2272,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -81.862503 12.000000 -183.248581
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 -0.537300 0.000000 0.843391
@@ -2062,6 +2287,11 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
 entity grass_2 assets/models/grass/grass_2.pfobj 8
    position vec3 -92.821747 12.000000 -289.205963
    scale vec3 1.500000 1.500000 1.500000
@@ -2224,7 +2454,7 @@ entity grass_3 assets/models/grass/grass_3.pfobj 8
    static bool 1
    collision bool 0
    selection_radius float 2.0
-entity mage assets/models/mage/mage.pfobj 9
+entity mage assets/models/mage/mage.pfobj 11
    position vec3 -78.756081 16.000000 -117.482681
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.953717 0.000000 0.300705
@@ -2234,7 +2464,12 @@ entity mage assets/models/mage/mage.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 4.25
-entity mage assets/models/mage/mage.pfobj 9
+   class string Mage
+   constructor_arguments int 3
+       string assets/models/mage
+       string mage.pfobj
+       string Mage
+entity mage assets/models/mage/mage.pfobj 11
    position vec3 -70.708649 16.000000 -110.598022
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.976296 0.000000 0.216439
@@ -2244,7 +2479,12 @@ entity mage assets/models/mage/mage.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 4.25
-entity mage assets/models/mage/mage.pfobj 9
+   class string Mage
+   constructor_arguments int 3
+       string assets/models/mage
+       string mage.pfobj
+       string Mage
+entity mage assets/models/mage/mage.pfobj 11
    position vec3 -63.881527 16.000000 -104.296028
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.965926 0.000000 0.258819
@@ -2254,7 +2494,12 @@ entity mage assets/models/mage/mage.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 4.25
-entity mage assets/models/mage/mage.pfobj 9
+   class string Mage
+   constructor_arguments int 3
+       string assets/models/mage
+       string mage.pfobj
+       string Mage
+entity mage assets/models/mage/mage.pfobj 11
    position vec3 -56.768406 16.000000 -98.008415
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.976296 0.000000 0.216439
@@ -2264,7 +2509,12 @@ entity mage assets/models/mage/mage.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 4.25
-entity mage assets/models/mage/mage.pfobj 9
+   class string Mage
+   constructor_arguments int 3
+       string assets/models/mage
+       string mage.pfobj
+       string Mage
+entity mage assets/models/mage/mage.pfobj 11
    position vec3 -72.733482 16.000000 -123.733673
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.953717 0.000000 0.300705
@@ -2274,7 +2524,12 @@ entity mage assets/models/mage/mage.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 4.25
-entity mage assets/models/mage/mage.pfobj 9
+   class string Mage
+   constructor_arguments int 3
+       string assets/models/mage
+       string mage.pfobj
+       string Mage
+entity mage assets/models/mage/mage.pfobj 11
    position vec3 -65.088707 16.000000 -117.410179
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.976296 0.000000 0.216439
@@ -2284,7 +2539,12 @@ entity mage assets/models/mage/mage.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 4.25
-entity mage assets/models/mage/mage.pfobj 9
+   class string Mage
+   constructor_arguments int 3
+       string assets/models/mage
+       string mage.pfobj
+       string Mage
+entity mage assets/models/mage/mage.pfobj 11
    position vec3 -58.176941 16.000000 -111.340355
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.976296 0.000000 0.216439
@@ -2294,7 +2554,12 @@ entity mage assets/models/mage/mage.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 4.25
-entity mage assets/models/mage/mage.pfobj 9
+   class string Mage
+   constructor_arguments int 3
+       string assets/models/mage
+       string mage.pfobj
+       string Mage
+entity mage assets/models/mage/mage.pfobj 11
    position vec3 -51.126335 16.000000 -105.341660
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.984808 0.000000 0.173648
@@ -2304,6 +2569,11 @@ entity mage assets/models/mage/mage.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 4.25
+   class string Mage
+   constructor_arguments int 3
+       string assets/models/mage
+       string mage.pfobj
+       string Mage
 entity cart assets/models/cart/cart.pfobj 8
    position vec3 27.409922 12.000000 -198.049561
    scale vec3 2.500000 2.500000 2.500000
@@ -2493,7 +2763,7 @@ entity crate_2 assets/models/crate/crate_2.pfobj 8
    static bool 1
    collision bool 1
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 1.550625 12.000000 -188.318085
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -2503,7 +2773,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -7.550812 12.000000 -187.245209
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -2513,7 +2788,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 2.601559 12.000000 -181.784653
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -2523,7 +2803,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 -5.691193 12.000000 -180.177460
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -2533,7 +2818,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 10.313187 12.000000 -189.262802
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -2543,7 +2833,12 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 9
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
+entity knight assets/models/knight/knight.pfobj 11
    position vec3 11.039165 12.000000 -182.607269
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -2553,6 +2848,11 @@ entity knight assets/models/knight/knight.pfobj 9
    collision bool 1
    idle_clip string Idle
    selection_radius float 3.25
+   class string Knight
+   constructor_arguments int 3
+       string assets/models/knight
+       string knight.pfobj
+       string Knight
 entity rock_1 assets/models/varied_rocks/rock_1.pfobj 8
    position vec3 -111.184105 12.000000 -273.967438
    scale vec3 4.000000 4.000000 4.000000
