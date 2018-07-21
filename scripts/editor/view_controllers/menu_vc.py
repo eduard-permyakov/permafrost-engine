@@ -171,7 +171,7 @@ class MenuVC(vc.ViewController):
     ### OTHER ###
 
     def __on_exit(self, event):
-        pf.global_event(EVENT_SDL_QUIT, None)
+        pf.global_event(pf.SDL_QUIT, None)
 
     def __on_cancel(self, event):
         self.view.hide() 

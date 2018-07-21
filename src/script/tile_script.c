@@ -97,20 +97,7 @@ void S_Tile_PyRegister(PyObject *module)
         return;
     Py_INCREF(&PyTile_type);
     PyModule_AddObject(module, "Tile", (PyObject*)&PyTile_type);
-
-    int ret = PyObject_SetAttrString(module, "TILES_PER_CHUNK_WIDTH", 
-        Py_BuildValue("i", TILES_PER_CHUNK_WIDTH));
-    assert(0 == ret);
-
-    ret = PyObject_SetAttrString(module, "TILES_PER_CHUNK_HEIGHT", 
-        Py_BuildValue("i", TILES_PER_CHUNK_HEIGHT));
-    assert(0 == ret);
-
-    ret = PyObject_SetAttrString(module, "MATERIALS_PER_CHUNK", 
-        Py_BuildValue("i", MATERIALS_PER_CHUNK));
-    assert(0 == ret);
 }
-
 
 const struct tile *S_Tile_GetTile(PyObject *tile_obj)
 {

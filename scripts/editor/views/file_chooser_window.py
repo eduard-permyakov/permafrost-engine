@@ -27,7 +27,7 @@ class FileChooser(pf.Window):
         resx, resy = pf.get_resolution()
         super(FileChooser, self).__init__(title, 
             (resx / 2 - FileChooser.WINDOW_WIDTH/ 2, resy / 2 - FileChooser.WINDOW_HEIGHT / 2, 
-            FileChooser.WINDOW_WIDTH, FileChooser.WINDOW_HEIGHT), NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_TITLE)
+            FileChooser.WINDOW_WIDTH, FileChooser.WINDOW_HEIGHT), pf.NK_WINDOW_BORDER | pf.NK_WINDOW_NO_SCROLLBAR | pf.NK_WINDOW_TITLE)
         import os 
         self.mapstring = os.path.realpath(pf.get_basedir()) + "/assets/maps/"
         self.scenestring = os.path.realpath(pf.get_basedir()) + "/assets/maps/"
@@ -40,7 +40,7 @@ class FileChooser(pf.Window):
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap(self.title + " Map:", (175, 175, 175))
         self.layout_row_dynamic(30, 1)
-        self.mapstring = self.edit_string(NK_EDIT_SIMPLE, self.mapstring)
+        self.mapstring = self.edit_string(pf.NK_EDIT_SIMPLE, self.mapstring)
 
         def on_okay():
             scenepath = self.scenestring if self.scene_flag else None
@@ -53,7 +53,7 @@ class FileChooser(pf.Window):
         self.scene_flag = self.checkbox(self.title + " Scene:", self.scene_flag)
         self.layout_row_dynamic(30, 1)
         if self.scene_flag:
-            self.scenestring = self.edit_string(NK_EDIT_SIMPLE, self.scenestring)
+            self.scenestring = self.edit_string(pf.NK_EDIT_SIMPLE, self.scenestring)
         self.layout_row_static(15, FileChooser.WINDOW_WIDTH, 1)
 
         self.layout_row_dynamic(30, 2)

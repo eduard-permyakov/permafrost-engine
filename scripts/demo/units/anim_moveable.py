@@ -26,12 +26,12 @@ class AnimMoveable(pf.AnimEntity):
     def __init__(self, path, pfobj, name, idle_anim):
         super(AnimMoveable, self).__init__(path, pfobj, name, idle_anim)
         self.moving = False
-        self.register(EVENT_MOTION_START, AnimMoveable.__on_motion_begin, self)
-        self.register(EVENT_MOTION_END, AnimMoveable.__on_motion_end, self)
+        self.register(pf.EVENT_MOTION_START, AnimMoveable.__on_motion_begin, self)
+        self.register(pf.EVENT_MOTION_END, AnimMoveable.__on_motion_end, self)
 
     def __del__(self):
-        self.unregister(EVENT_MOTION_START, AnimMoveable.__on_motion_begin)
-        self.unregister(EVENT_MOTION_END, AnimMoveable.__on_motion_end)
+        self.unregister(pf.EVENT_MOTION_START, AnimMoveable.__on_motion_begin)
+        self.unregister(pf.EVENT_MOTION_END, AnimMoveable.__on_motion_end)
         super(AnimMoveable, self).__del__()
     
     @abstractproperty

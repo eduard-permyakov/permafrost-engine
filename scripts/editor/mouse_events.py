@@ -35,5 +35,5 @@ def __on_mousemove(user, event):
 def install():
     global mouse_over_map
     mouse_over_map = not pf.mouse_over_ui() and not pf.mouse_over_minimap()
-    pf.register_event_handler(EVENT_SDL_MOUSEMOTION, __on_mousemove, None)
+    pf.register_event_handler(pf.SDL_MOUSEMOTION, __on_mousemove, None)
 

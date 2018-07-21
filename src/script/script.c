@@ -22,6 +22,7 @@
 #include "entity_script.h"
 #include "ui_script.h"
 #include "tile_script.h"
+#include "script_constants.h"
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
@@ -664,6 +665,7 @@ PyMODINIT_FUNC initpf(void)
     S_Entity_PyRegister(module);
     S_UI_PyRegister(module);
     S_Tile_PyRegister(module);
+    S_Constants_Expose(module); 
 }
 
 bool S_Init(char *progname, const char *base_path, struct nk_context *ctx)

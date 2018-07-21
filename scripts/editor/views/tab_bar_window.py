@@ -27,7 +27,7 @@ class TabBarWindow(pf.Window):
         resx, _ = pf.get_resolution()
 
         dims = (0, 0, resx - UI_TAB_BAR_COL_WIDTH, UI_TAB_BAR_HEIGHT)
-        super(TabBarWindow, self).__init__("TabBar", dims, NK_WINDOW_NO_SCROLLBAR)
+        super(TabBarWindow, self).__init__("TabBar", dims, pf.NK_WINDOW_NO_SCROLLBAR)
         self.active_idx = 0
         self.labels = []
         self.child_windows = []
@@ -42,7 +42,7 @@ class TabBarWindow(pf.Window):
     def update(self):
         orig_rounding = pf.button_style.rounding
         pf.button_style.rounding = 0.0
-        self.layout_row_begin(NK_STATIC, UI_TAB_BAR_HEIGHT-10, UI_TAB_BAR_NUM_COLS)
+        self.layout_row_begin(pf.NK_STATIC, UI_TAB_BAR_HEIGHT-10, UI_TAB_BAR_NUM_COLS)
         for idx in range(0, len(self.child_windows)):
 
             def on_tab_click():

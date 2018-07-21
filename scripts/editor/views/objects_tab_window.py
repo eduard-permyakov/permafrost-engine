@@ -36,7 +36,7 @@ class ObjectsTabWindow(pf.Window):
     def __init__(self):
         _, resy = pf.get_resolution()
         super(ObjectsTabWindow, self).__init__("ObjectsTab", 
-            (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, resy - UI_TAB_BAR_HEIGHT - 1), NK_WINDOW_BORDER)
+            (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, resy - UI_TAB_BAR_HEIGHT - 1), pf.NK_WINDOW_BORDER)
         self.mode = self.OBJECTS_MODE_PLACE
         self.objects_list = []
         self.selected_object_idx = 0
@@ -68,14 +68,14 @@ class ObjectsTabWindow(pf.Window):
                 for i in range(0, len(self.objects_list)):
                     old = self.selected_object_idx
                     on = self.selectable_label(self.objects_list[i], 
-                        NK_TEXT_ALIGN_LEFT, i == self.selected_object_idx)
+                        pf.NK_TEXT_ALIGN_LEFT, i == self.selected_object_idx)
                     if on: 
                         self.selected_object_idx = i
                     if self.selected_object_idx != old:
                         pf.global_event(EVENT_OBJECT_SELECTION_CHANGED, i)
 
             self.layout_row_static(400, UI_LEFT_PANE_WIDTH-30, 1)
-            self.group("Objects", NK_WINDOW_BORDER, objects_group)
+            self.group("Objects", pf.NK_WINDOW_BORDER, objects_group)
         elif self.mode == self.OBJECTS_MODE_SELECT:
             # Selection
             sel_obj_list = pf.get_unit_selection()
@@ -91,11 +91,11 @@ class ObjectsTabWindow(pf.Window):
                     self.layout_row_static(25, UI_LEFT_PANE_WIDTH-60, 1)
                     for i in range(0, len(sel_obj_list)):
                         name = "{0} {1}".format(sel_obj_list[i].name, format_str_for_numlist(sel_obj_list[i].pos))
-                        on = self.selectable_label(name, NK_TEXT_ALIGN_LEFT, False)
+                        on = self.selectable_label(name, pf.NK_TEXT_ALIGN_LEFT, False)
                         if on:
                             pf.global_event(EVENT_OBJECT_SELECTED_UNIT_PICKED, sel_obj_list[i])
                 self.layout_row_static(400, UI_LEFT_PANE_WIDTH-30, 1)
-                self.group("Selection", NK_WINDOW_BORDER, selection_group)
+                self.group("Selection", pf.NK_WINDOW_BORDER, selection_group)
             else:
                 assert(len(sel_obj_list) == 1)
                 self.layout_row_dynamic(10, 1)

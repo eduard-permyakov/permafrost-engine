@@ -283,13 +283,13 @@ class TerrainTabVC(vc.ViewController):
             self.__paint_selection() 
 
     def __on_mouse_pressed(self, event):
-        if event[0] == SDL_BUTTON_LEFT:
+        if event[0] == pf.SDL_BUTTON_LEFT:
             self.painting = True
         if self.selected_tile is not None:
             self.__paint_selection() 
 
     def __on_mouse_released(self, event):
-        if event[0] == SDL_BUTTON_LEFT:
+        if event[0] == pf.SDL_BUTTON_LEFT:
             self.painting = False
 
     def __on_brush_size_changed(self, event):
@@ -297,15 +297,15 @@ class TerrainTabVC(vc.ViewController):
 
     def activate(self):
         pf.set_map_highlight_size(self.view.brush_size_idx + 1)
-        pf.register_event_handler(EVENT_SELECTED_TILE_CHANGED, TerrainTabVC.__on_selected_tile_changed, self)
-        pf.register_event_handler(EVENT_SDL_MOUSEBUTTONDOWN, TerrainTabVC.__on_mouse_pressed, self)
-        pf.register_event_handler(EVENT_SDL_MOUSEBUTTONUP, TerrainTabVC.__on_mouse_released, self)
+        pf.register_event_handler(pf.SDL_MOUSEBUTTONDOWN, TerrainTabVC.__on_mouse_pressed, self)
+        pf.register_event_handler(pf.SDL_MOUSEBUTTONUP, TerrainTabVC.__on_mouse_released, self)
+        pf.register_event_handler(pf.EVENT_SELECTED_TILE_CHANGED, TerrainTabVC.__on_selected_tile_changed, self)
         pf.register_event_handler(EVENT_TERRAIN_BRUSH_SIZE_CHANGED, TerrainTabVC.__on_brush_size_changed, self)
 
     def deactivate(self):
         pf.set_map_highlight_size(0)
-        pf.unregister_event_handler(EVENT_SELECTED_TILE_CHANGED, TerrainTabVC.__on_selected_tile_changed)
-        pf.unregister_event_handler(EVENT_SDL_MOUSEBUTTONDOWN, TerrainTabVC.__on_mouse_pressed)
-        pf.unregister_event_handler(EVENT_SDL_MOUSEBUTTONUP, TerrainTabVC.__on_mouse_released)
+        pf.unregister_event_handler(pf.SDL_MOUSEBUTTONDOWN, TerrainTabVC.__on_mouse_pressed)
+        pf.unregister_event_handler(pf.SDL_MOUSEBUTTONUP, TerrainTabVC.__on_mouse_released)
+        pf.unregister_event_handler(pf.EVENT_SELECTED_TILE_CHANGED, TerrainTabVC.__on_selected_tile_changed)
         pf.unregister_event_handler(EVENT_TERRAIN_BRUSH_SIZE_CHANGED, TerrainTabVC.__on_brush_size_changed)
 

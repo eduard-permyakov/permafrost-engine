@@ -24,7 +24,7 @@ class TerrainTabWindow(pf.Window):
     def __init__(self):
         _, resy = pf.get_resolution()
         super(TerrainTabWindow, self).__init__("TerrainTab", 
-            (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, resy - UI_TAB_BAR_HEIGHT - 1), NK_WINDOW_BORDER)
+            (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, resy - UI_TAB_BAR_HEIGHT - 1), pf.NK_WINDOW_BORDER)
 
         self.selected_mat_idx = 0
         self.brush_size_idx = 0
@@ -84,14 +84,14 @@ class TerrainTabWindow(pf.Window):
                 for i in range(0, len(self.materials_list)):
                     old = self.selected_mat_idx
                     on = self.selectable_label(self.materials_list[i].name, 
-                        NK_TEXT_ALIGN_LEFT, i == self.selected_mat_idx)
+                        pf.NK_TEXT_ALIGN_LEFT, i == self.selected_mat_idx)
                     if on: 
                         self.selected_mat_idx = i
                     if self.selected_mat_idx != old:
                         pf.global_event(EVENT_TEXTURE_SELECTION_CHANGED, i)
 
             self.layout_row_static(400, UI_LEFT_PANE_WIDTH-30, 1)
-            self.group("Texture:", NK_WINDOW_BORDER, textures_group)
+            self.group("Texture:", pf.NK_WINDOW_BORDER, textures_group)
         else:
             # Elevation
             self.layout_row_dynamic(20, 1)

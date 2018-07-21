@@ -25,7 +25,7 @@ class MenuButtonWindow(pf.Window):
         resx, _ = pf.get_resolution()
         super(MenuButtonWindow, self).__init__("MenuButton", 
             (resx - UI_TAB_BAR_COL_WIDTH, 0, UI_TAB_BAR_COL_WIDTH, UI_TAB_BAR_HEIGHT),
-            NK_WINDOW_NO_SCROLLBAR)
+            pf.NK_WINDOW_NO_SCROLLBAR)
         self.menu = menu_window
 
     def update(self):
@@ -46,7 +46,7 @@ class Menu(pf.Window):
         resx, resy = pf.get_resolution()
         super(Menu, self).__init__("Menu", 
             (resx / 2 - Menu.WINDOW_WIDTH/ 2, resy / 2 - Menu.WINDOW_HEIGHT / 2, Menu.WINDOW_WIDTH, Menu.WINDOW_HEIGHT), 
-            NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)
+            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_NO_SCROLLBAR)
 
     def show(self):
         super(Menu, self).show()
