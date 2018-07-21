@@ -160,6 +160,9 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
         int ret;
         const struct entity *curr_ent = kv_A(*sel, i);
 
+        if(curr_ent->flags & ENTITY_FLAG_STATIC || curr_ent->max_speed == 0.0f)
+            continue;
+
         khiter_t k = kh_put(entity, new_flock.ents, curr_ent->uid, &ret);
         assert(ret != -1 && ret != 0);
         kh_value(new_flock.ents, k) = (struct entity*)curr_ent;
