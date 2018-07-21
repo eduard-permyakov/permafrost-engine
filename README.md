@@ -28,12 +28,13 @@ in the early phases of development.
 * Engine internals exposed to Python 2.7 for scripting
 * Event system
 * UI framework (Nuklear)
-* Efficient raycasting algorithm
+* Efficient raycasting
 * Map/Scene editor
 * Fast rendering of huge maps (map size only limited by memory)
 * RTS minimap
 * RTS-style unit selection
 * Map navigation graph/grid generation
+* Implementation of 'boids' steering/flocking behaviours
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##

@@ -3,6 +3,15 @@
 ********************************************************************************
 
 ================================================================================
+[Version 0.21.0] - 21.07.2018
+================================================================================
+    * Point-to-point animated movement of entities, directed by mouse clicks
+    * Implementation of various steering/flocking behaviours for coordinated 
+      movement
+    * Constants exposed from engine to Python instead of being hard-coded in 
+      different places
+
+================================================================================
 [Version 0.20.0] - 09.07.2018
 ================================================================================
     * Update cost field for arbitrary impassable objects based on objects' OBBs
