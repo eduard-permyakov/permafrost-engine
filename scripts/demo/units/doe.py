@@ -16,23 +16,17 @@
 #  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import pf
-from constants import *
+import anim_moveable as am
 
-class Sinbad(pf.AnimEntity):
+class Doe(am.AnimMoveable):
 
     def __init__(self, path, pfobj, name):
-        self.anim_idx = 0
-        self.anim_map = ["Dance", "JumpLoop"]
-        super(Sinbad, self).__init__(path, pfobj, name, self.anim_map[self.anim_idx])
-        self.register(EVENT_SINBAD_TOGGLE_ANIM, Sinbad.on_anim_toggle, self)
-        self.selectable = True
-        self.selection_radius = 3.25
-    
-    def __del__(self):
-        self.unregister(EVENT_SINBAD_TOGGLE_ANIM, Sinbad.on_anim_toggle)
-    
-    def on_anim_toggle(self, event):
-        self.anim_idx = (self.anim_idx + 1) % 2
-        self.play_anim(self.anim_map[self.anim_idx])
+        super(Doe, self).__init__(path, pfobj, name, self.idle_anim())
+        self.speed = 20.0
+
+    def idle_anim(self):
+        return "Idle"
+
+    def move_anim(self):
+        return "Run"
 

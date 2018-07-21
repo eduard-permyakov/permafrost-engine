@@ -71,6 +71,7 @@ struct flock{
 #define MOVE_ALIGN_FORCE_SCALE          (0.1f)
 #define SETTLE_SEPARATION_FORCE_SCALE   (3.2f)
 
+#define ARRIVE_THRESHOLD_DIST           (5.0f)
 #define MOVE_SEPARATION_BUFFER_DIST     (8.0f)
 #define SETTLE_SEPARATION_BUFFER_DIST   (14.0f)
 #define COHESION_NEIGHBOUR_RADIUS       (25.0f)
@@ -173,7 +174,12 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
                 .velocity = {0.0f}, 
                 .state = STATE_MOVING
             };
+            E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
+
         }else {
+
+            if(kh_value(s_entity_state_table, k).state == STATE_ARRIVED)
+                E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
             kh_value(s_entity_state_table, k).state = STATE_MOVING;
         }
     }
@@ -565,12 +571,13 @@ static void on_30hz_tick(void *user, void *event)
                 vec2_t diff_to_target;
                 vec2_t xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
                 PFM_Vec2_Sub(&kv_A(s_flocks, i).target_xz, &xz_pos, &diff_to_target);
-                if(PFM_Vec2_Len(&diff_to_target) < ADJACENCY_SEP_DIST){
+                if(PFM_Vec2_Len(&diff_to_target) < ARRIVE_THRESHOLD_DIST){
 
                     kh_value(s_entity_state_table, k) = (struct movestate) {
                         .state = STATE_ARRIVED,
                         .velocity = (vec2_t){0.0f}
                     };
+                    E_Entity_Notify(EVENT_MOTION_END, curr->uid, NULL, ES_ENGINE);
                 }
 
                 struct entity *adjacent[kh_size(kv_A(s_flocks, i).ents)]; 
@@ -598,6 +605,7 @@ static void on_30hz_tick(void *user, void *event)
                         .state = STATE_ARRIVED,
                         .velocity = (vec2_t){0.0f}
                     };
+                    E_Entity_Notify(EVENT_MOTION_END, curr->uid, NULL, ES_ENGINE);
                 }
                 break;
             }

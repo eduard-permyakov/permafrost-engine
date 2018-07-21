@@ -45,6 +45,8 @@ OBJECTS_LIST = [
         "scale"          : [0.8,  0.8,  0.8], 
         "selectable"     : True,
         "sel_radius"     : 3.25,
+        "class"          : "Knight",
+        "construct_args" : ["assets/models/knight", "knight.pfobj", "Knight"],
         "static"         : False,
         "collision"      : True
     },
@@ -55,6 +57,8 @@ OBJECTS_LIST = [
         "scale"          : [0.6,  0.6,  0.6], 
         "selectable"     : True,
         "sel_radius"     : 4.25,
+        "class"          : "Mage",
+        "construct_args" : ["assets/models/mage", "mage.pfobj", "Mage"],
         "static"         : False,
         "collision"      : True
     },
@@ -65,6 +69,8 @@ OBJECTS_LIST = [
         "scale"          : [0.7,  0.7,  0.7], 
         "selectable"     : True,
         "sel_radius"     : 3.00,
+        "class"          : "Berzerker",
+        "construct_args" : ["assets/models/berzerker", "berzerker.pfobj", "Berzerker"],
         "static"         : False,
         "collision"      : True
     },
@@ -75,6 +81,8 @@ OBJECTS_LIST = [
         "scale"          : [0.9,  0.9,  0.9],
         "selectable"     : True,
         "sel_radius"     : 3.00,
+        "class"          : "Goblin",
+        "construct_args" : ["assets/models/goblin", "goblin.pfobj", "Goblin"],
         "static"         : False,
         "collision"      : True
     },
@@ -85,6 +93,8 @@ OBJECTS_LIST = [
         "scale"          : [2.0,  2.0,  2.0],
         "selectable"     : True,
         "sel_radius"     : 3.25,
+        "class"          : "Doe",
+        "construct_args" : ["assets/models/deer", "doe.pfobj", "Doe"],
         "static"         : False,
         "collision"      : True
     },
@@ -95,6 +105,8 @@ OBJECTS_LIST = [
         "scale"          : [2.0,  2.0,  2.0],
         "selectable"     : True,
         "sel_radius"     : 3.25,
+        "class"          : "Deer",
+        "construct_args" : ["assets/models/deer", "deer.pfobj", "Deer"],
         "static"         : False,
         "collision"      : True
     },
@@ -105,6 +117,8 @@ OBJECTS_LIST = [
         "scale"          : [0.4,  0.4,  0.4],
         "selectable"     : True,
         "sel_radius"     : 1.50,
+        "class"          : "Chicken",
+        "construct_args" : ["assets/models/chicken", "chicken.pfobj", "Chicken"],
         "static"         : False,
         "collision"      : True
     },

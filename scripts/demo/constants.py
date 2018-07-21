@@ -23,6 +23,9 @@
 EVENT_CUSTOM             = 0x20000
 EVENT_SINBAD_TOGGLE_ANIM = 0x20001
 
+EVENT_MOTION_START       = 0x1000D
+EVENT_MOTION_END         = 0x1000E
+
 ############################################################
 # SDL Events used (from SDL_event.h)                       #
 ############################################################

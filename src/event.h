@@ -54,6 +54,8 @@ enum eventtype{
     EVENT_10HZ_TICK,
     EVENT_1HZ_TICK,
     EVENT_ANIM_FINISHED,
+    EVENT_MOTION_START,
+    EVENT_MOTION_END,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };

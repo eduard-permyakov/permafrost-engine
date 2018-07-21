@@ -18,9 +18,9 @@
 
 import pf
 import ui
-import sinbad
 
 from constants import *
+from units import *
 
 ############################################################
 # Global configs                                           #

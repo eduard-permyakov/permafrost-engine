@@ -52,6 +52,8 @@ static int       PyEntity_set_selectable(PyEntityObject *self, PyObject *value, 
 static PyObject *PyEntity_get_selection_radius(PyEntityObject *self, void *closure);
 static int       PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_speed(PyEntityObject *self, void *closure);
+static int       PyEntity_set_speed(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_activate(PyEntityObject *self);
 static PyObject *PyEntity_deactivate(PyEntityObject *self);
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args);
@@ -132,6 +134,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"pfobj_path",
     (getter)PyEntity_get_pfobj_path, NULL,
     "The relative path of the PFOBJ file used to instantiate the entity. Readonly.",
+    NULL},
+    {"speed",
+    (getter)PyEntity_get_speed, (setter)PyEntity_set_speed,
+    "Entity's movement speed (in OpenGL coordinates per second).",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -416,6 +422,22 @@ static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure)
     return PyString_FromString(buff); 
 }
 
+static PyObject *PyEntity_get_speed(PyEntityObject *self, void *closure)
+{
+    return PyFloat_FromDouble(self->ent->max_speed);
+}
+
+static int PyEntity_set_speed(PyEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Speed attribute must be a float.");
+        return -1;
+    }
+
+    self->ent->max_speed = PyFloat_AS_DOUBLE(value);
+    return 0;
+}
+
 static int PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure)
 {
     if(!PyFloat_Check(value)) {
@@ -635,6 +657,10 @@ static PyObject *s_new_custom_class(const char *name, const kvec_attr_t *constru
         return NULL;
     }
     PyObject *ret = PyObject_CallObject(class, args);
+    if(!ret) {
+        PyErr_Print();
+        exit(EXIT_FAILURE);
+    }
 
     Py_DECREF(class);
     Py_DECREF(args);
