@@ -662,7 +662,7 @@ void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *o
                 bounds.z + bounds.height/2.0f
             };
 
-            if(C_PointInsideScreenRect(center, bot_corners_2d[0], bot_corners_2d[1], 
+            if(C_PointInsideRect2D(center, bot_corners_2d[0], bot_corners_2d[1], 
                                                bot_corners_2d[2], bot_corners_2d[3])) {
                 priv->chunks[IDX(desc.chunk_r, priv->width, desc.chunk_c)]
                     .cost_base[desc.tile_r][desc.tile_c] = COST_IMPASSABLE;

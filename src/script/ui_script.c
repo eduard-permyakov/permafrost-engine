@@ -603,7 +603,7 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
     for(int i = 0; i < kv_size(s_active_windows); i++) {
 
         PyWindowObject *win = kv_A(s_active_windows, i);
-        if(C_PointInsideScreenRect(
+        if(C_PointInsideRect2D(
             (vec2_t){mouse_x,                       mouse_y                       },
             (vec2_t){win->rect.x,                   win->rect.y                   },
             (vec2_t){win->rect.x + win->rect.width, win->rect.y                   },

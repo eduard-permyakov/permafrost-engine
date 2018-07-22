@@ -222,6 +222,6 @@ bool M_MouseOverMinimap(const struct map *map)
     int x, y;
     SDL_GetMouseState(&x, &y);
     vec2_t mouse_pos = (vec2_t){x, y};
-    return C_PointInsideScreenRect(mouse_pos, a, b, c ,d);
+    return C_PointInsideRect2D(mouse_pos, a, b, c ,d);
 }
 

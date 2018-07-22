@@ -75,7 +75,7 @@ bool C_FrustumOBBIntersectionExact(const struct frustum *frustum, const struct o
 
 /* Note that the following assumes that AB is parallel to CD and BC is parallel to AD
  */
-bool C_PointInsideScreenRect(vec2_t point, vec2_t a, vec2_t b, vec2_t c, vec2_t d);
+bool C_PointInsideRect2D(vec2_t point, vec2_t a, vec2_t b, vec2_t c, vec2_t d);
 bool C_PointInsideTriangle2D(vec2_t point, vec2_t a, vec2_t b, vec2_t c);
 
 
