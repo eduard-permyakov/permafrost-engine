@@ -616,3 +616,35 @@ bool C_BoxPointIntersection(float px, float pz, struct box bounds)
         && (pz >= bounds.z && pz <= bounds.z + bounds.height);
 }
 
+bool C_LineCircleIntersection(struct line_seg_2d line, vec2_t center_xz, float radius, float *out_t)
+{
+    float cx = center_xz.raw[0];
+    float cz = center_xz.raw[1];
+
+    float dx = line.bx - line.ax;
+    float dz = line.bz - line.az;
+
+    float A = pow(dx, 2) + pow(dz, 2);
+    float B = 2 * (dx * (line.ax - cx) + dz * (line.az - cz));
+    float C = pow(line.ax - cx, 2) + pow(line.az - cz, 2) - pow(radius, 2);
+    float det = pow(B, 2) - (4 * A * C);
+
+    /* No real solutions */
+    if(det < 0.0f || A < EPSILON) {
+
+        return false;
+    /* One real solution */
+    }else if(det == 0.0f){
+        
+        *out_t = -B / (2 * A);
+        return true;
+    /* Two real solutions */
+    }else{
+
+        float t1 = -B + sqrt(det) / (2 * A);
+        float t2 = -B - sqrt(det) / (2 * A);
+        *out_t = MIN(t1, t2);
+        return true;
+    }
+}
+
