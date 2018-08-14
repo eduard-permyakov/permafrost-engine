@@ -22,6 +22,7 @@
 #include "selection.h"
 #include "timer_events.h"
 #include "movement.h"
+#include "game_private.h"
 #include "../render/public/render.h"
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
@@ -76,6 +77,7 @@ static void g_reset(void)
     });
 
     kh_clear(entity, s_gs.active);
+    kh_clear(entity, s_gs.dynamic);
     kv_reset(s_gs.visible);
     kv_reset(s_gs.visible_obbs);
 
@@ -123,15 +125,19 @@ static void g_init_map(void)
 
 bool G_Init(void)
 {
-    s_gs.active = kh_init(entity);
     kv_init(s_gs.visible);
     kv_init(s_gs.visible_obbs);
 
+    s_gs.active = kh_init(entity);
     if(!s_gs.active)
-        return false;
+        goto fail_active;
+
+    s_gs.dynamic = kh_init(entity);
+    if(!s_gs.dynamic)
+        goto fail_dynamic;
 
     if(g_init_cameras())
-        return false; 
+        goto fail_cams; 
 
     g_reset();
     G_Sel_Init();
@@ -139,6 +145,13 @@ bool G_Init(void)
     G_Timer_Init();
 
     return true;
+
+fail_cams:
+    kh_destroy(entity, s_gs.dynamic);
+fail_dynamic:
+    kh_destroy(entity, s_gs.active);
+fail_active:
+    return false;
 }
 
 bool G_NewGameWithMapString(const char *mapstr)
@@ -246,6 +259,7 @@ void G_Shutdown(void)
         Camera_Free(s_gs.cameras[i]);
 
     kh_destroy(entity, s_gs.active);
+    kh_destroy(entity, s_gs.dynamic);
     kv_destroy(s_gs.visible);
     kv_destroy(s_gs.visible_obbs);
 }
@@ -317,8 +331,15 @@ bool G_AddEntity(struct entity *ent)
     k = kh_put(entity, s_gs.active, ent->uid, &ret);
     if(ret == -1 || ret == 0)
         return false;
-
     kh_value(s_gs.active, k) = ent;
+
+    if(ent->flags & ENTITY_FLAG_STATIC)
+        return true;
+
+    k = kh_put(entity, s_gs.dynamic, ent->uid, &ret);
+    assert(ret != -1 && ret != 0);
+    kh_value(s_gs.dynamic, k) = ent;
+
     return true;
 }
 
@@ -327,11 +348,17 @@ bool G_RemoveEntity(struct entity *ent)
     khiter_t k = kh_get(entity, s_gs.active, ent->uid);
     if(k == kh_end(s_gs.active))
         return false;
+    kh_del(entity, s_gs.active, k);
 
     if(ent->flags & ENTITY_FLAG_SELECTABLE)
         G_Sel_Remove(ent);
 
-    kh_del(entity, s_gs.active, k);
+    if(!(ent->flags & ENTITY_FLAG_STATIC)) {
+        k = kh_get(entity, s_gs.dynamic, ent->uid);
+        assert(k != kh_end(s_gs.dynamic));
+        kh_del(entity, s_gs.dynamic, k);
+    }
+
     return true;
 }
 
@@ -359,5 +386,10 @@ bool G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string)
 bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
 {
     return M_AL_UpdateTile(s_gs.map, desc, tile);
+}
+
+const khash_t(entity) *G_GetDynamicEntsSet(void)
+{
+    return s_gs.dynamic;
 }
 

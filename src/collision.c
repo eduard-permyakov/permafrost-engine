@@ -630,21 +630,26 @@ bool C_LineCircleIntersection(struct line_seg_2d line, vec2_t center_xz, float r
     float det = pow(B, 2) - (4 * A * C);
 
     /* No real solutions */
+    float t;
     if(det < 0.0f || A < EPSILON) {
 
         return false;
     /* One real solution */
     }else if(det == 0.0f){
         
-        *out_t = -B / (2 * A);
-        return true;
+        t = -B / (2 * A);
     /* Two real solutions */
     }else{
 
-        float t1 = -B + sqrt(det) / (2 * A);
-        float t2 = -B - sqrt(det) / (2 * A);
-        *out_t = MIN(t1, t2);
-        return true;
+        float t1 = (-B + sqrt(det)) / (2 * A);
+        float t2 = (-B - sqrt(det)) / (2 * A);
+        t = MIN(t1, t2);
     }
+
+    if(t < 0.0f || t > 1.0f)
+        return false;
+
+    *out_t = t;
+    return true;
 }
 

@@ -46,6 +46,12 @@ struct gamestate{
      *-------------------------------------------------------------------------
      */
     kvec_t(struct obb)      visible_obbs;
+    /*-------------------------------------------------------------------------
+     * Up-to-date set of all non-static entities. (Subset of 'active' set). 
+     * Used for collision avoidance force computations.
+     *-------------------------------------------------------------------------
+     */
+    khash_t(entity)        *dynamic;
 };
 
 #endif
