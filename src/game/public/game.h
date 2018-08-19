@@ -22,6 +22,7 @@
 
 #include "../../map/public/map.h"
 #include "../../lib/public/kvec.h"
+#include "../../lib/public/khash.h"
 
 #include <stdbool.h>
 #include <SDL.h>
@@ -37,6 +38,7 @@ enum cam_mode{
 };
 
 typedef kvec_t(struct entity*) pentity_kvec_t;
+KHASH_DECLARE(entity, khint32_t, struct entity*)
 
 /*###########################################################################*/
 /* GAME GENERAL                                                              */

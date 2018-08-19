@@ -30,7 +30,6 @@
 #include "../render/public/render.h"
 #include "../map/public/map.h"
 #include "../lib/public/kvec.h"
-#include "../lib/public/khash.h"
 #include "../anim/public/anim.h"
 
 #include <assert.h>

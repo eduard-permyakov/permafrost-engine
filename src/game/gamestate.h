@@ -20,10 +20,8 @@
 #ifndef GAMESTATE_H
 #define GAMESTATE_H
 
-#include "../lib/public/khash.h"
+#include "public/game.h"
 #include "../lib/public/kvec.h"
-
-KHASH_MAP_INIT_INT(entity, struct entity *)
 
 #define NUM_CAMERAS 2
 
