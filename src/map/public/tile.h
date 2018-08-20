@@ -135,4 +135,7 @@ bool       M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inou
 int        M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos, 
                                             struct line_seg_2d line, struct tile_desc out[]);
 
+bool       M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos, 
+                                 vec2_t point, struct tile_desc *out);
+
 #endif

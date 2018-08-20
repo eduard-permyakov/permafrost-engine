@@ -45,48 +45,6 @@ static float line_len(float ax, float az, float bx, float bz)
     return sqrt( pow(bx - ax, 2) + pow(bz - az, 2) );
 }
 
-static bool tile_for_point_2d(struct map_resolution res, vec3_t map_pos, 
-                              float px, float pz, struct tile_desc *out)
-{
-    const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
-    const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
-
-    size_t width  = res.chunk_w * CHUNK_WIDTH;
-    size_t height = res.chunk_h * CHUNK_HEIGHT;
-    struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
-
-    /* Recall X increases to the left in our engine */
-    if(px > map_box.x || px < map_box.x - map_box.width)
-        return false;
-
-    if(pz < map_box.z || px > map_box.z + map_box.height)
-        return false;
-
-    int chunk_r, chunk_c;
-    chunk_r = fabs(map_box.z - pz) / CHUNK_WIDTH;
-    chunk_c = fabs(map_box.x - px) / CHUNK_HEIGHT;
-
-    assert(chunk_r >= 0 && chunk_r < res.chunk_h);
-    assert(chunk_c >= 0 && chunk_r < res.chunk_w);
-
-    float chunk_base_x, chunk_base_z;
-    chunk_base_x = map_box.x - (chunk_c * CHUNK_WIDTH);
-    chunk_base_z = map_box.z + (chunk_r * CHUNK_HEIGHT);
-
-    int tile_r, tile_c;
-    tile_r = fabs(chunk_base_z - pz) / TILE_X_DIM;
-    tile_c = fabs(chunk_base_x - px) / TILE_Z_DIM;
-
-    assert(tile_c >= 0 && tile_c < res.tile_w);
-    assert(tile_r >= 0 && tile_r < res.tile_h);
-
-    out->chunk_r = chunk_r;
-    out->chunk_c = chunk_c;
-    out->tile_r = tile_r;
-    out->tile_c = tile_c;
-    return true;
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -419,7 +377,7 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
         return 0;
     }
 
-    bool result = tile_for_point_2d(res, map_pos, start_x, start_z, &curr_tile_desc);
+    bool result = M_Tile_DescForPoint2D(res, map_pos, (vec2_t){start_x, start_z}, &curr_tile_desc);
     assert(result);
 
     assert(curr_tile_desc.chunk_r >= 0 && curr_tile_desc.chunk_r < res.chunk_h);
@@ -445,7 +403,7 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
     struct tile_desc final_tile_desc;
 
     if(line_ends_inside) {
-        int result = tile_for_point_2d(res, map_pos, line.bx, line.bz, &final_tile_desc);
+        int result = M_Tile_DescForPoint2D(res, map_pos, (vec2_t){line.bx, line.bz}, &final_tile_desc);
         assert(result);
     }
 
@@ -473,5 +431,47 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
     assert(ret < 1024);
 
     return ret;
+}
+
+bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos, 
+                           vec2_t point, struct tile_desc *out)
+{
+    const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
+    const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
+
+    size_t width  = res.chunk_w * CHUNK_WIDTH;
+    size_t height = res.chunk_h * CHUNK_HEIGHT;
+    struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
+
+    /* Recall X increases to the left in our engine */
+    if(point.raw[0] > map_box.x || point.raw[0] < map_box.x - map_box.width)
+        return false;
+
+    if(point.raw[1] < map_box.z || point.raw[0] > map_box.z + map_box.height)
+        return false;
+
+    int chunk_r, chunk_c;
+    chunk_r = fabs(map_box.z - point.raw[1]) / CHUNK_WIDTH;
+    chunk_c = fabs(map_box.x - point.raw[0]) / CHUNK_HEIGHT;
+
+    assert(chunk_r >= 0 && chunk_r < res.chunk_h);
+    assert(chunk_c >= 0 && chunk_r < res.chunk_w);
+
+    float chunk_base_x, chunk_base_z;
+    chunk_base_x = map_box.x - (chunk_c * CHUNK_WIDTH);
+    chunk_base_z = map_box.z + (chunk_r * CHUNK_HEIGHT);
+
+    int tile_r, tile_c;
+    tile_r = fabs(chunk_base_z - point.raw[1]) / TILE_X_DIM;
+    tile_c = fabs(chunk_base_x - point.raw[0]) / TILE_Z_DIM;
+
+    assert(tile_c >= 0 && tile_c < res.tile_w);
+    assert(tile_r >= 0 && tile_r < res.tile_h);
+
+    out->chunk_r = chunk_r;
+    out->chunk_c = chunk_c;
+    out->tile_r = tile_r;
+    out->tile_c = tile_c;
+    return true;
 }
 
