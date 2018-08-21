@@ -25,12 +25,44 @@
 
 #include <stdbool.h>
 
+struct nav_private;
 
 typedef kvec_t(struct coord) coord_vec_t;
+typedef kvec_t(const struct portal*) portal_vec_t;
 
+/* ------------------------------------------------------------------------
+ * Finds the shortest path in a rectangular cost field. Returns true if a 
+ * path is found, false otherwise. If returning true, 'out_path' holds the
+ * tiles to be traversed, in order.
+ * ------------------------------------------------------------------------
+ */
 bool AStar_GridPath(struct coord start, struct coord finish, 
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
                     coord_vec_t *out_path, float *out_cost);
+
+/* ------------------------------------------------------------------------
+ * Finds the shortest path between two nodes in a portal graph. Returns true
+ * if a path is found, false otherwise. If returning true, 'out_path' holds 
+ * the portal nodes to be traversed, in order.
+ * ------------------------------------------------------------------------
+ */
+bool AStar_PortalGraphPath(const struct portal *start, const struct portal *finish, 
+                           const struct nav_private *priv, 
+                           portal_vec_t *out_path, float *out_cost);
+
+/* ------------------------------------------------------------------------
+ * Returns true if there exists a path between 2 tiles in the same chunk.
+ * ------------------------------------------------------------------------
+ */
+bool AStar_TilesLinked(struct coord start, struct coord finish,
+                       const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C]);
+
+/* ------------------------------------------------------------------------
+ * Returns the nearest portal to a tile, NULL if there is no reachable portal.
+ * ------------------------------------------------------------------------
+ */
+const struct portal *AStar_NearestPortal(struct coord start,
+                                         const struct nav_chunk *chunk);
 
 #endif
 

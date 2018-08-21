@@ -29,8 +29,12 @@
 PQUEUE_TYPE(coord, struct coord)
 PQUEUE_IMPL(static, coord, struct coord)
 
-KHASH_MAP_INIT_INT64(coord_coord, struct coord)
-KHASH_MAP_INIT_INT64(coord_float, float)
+PQUEUE_TYPE(portal, const struct portal*)
+PQUEUE_IMPL(static, portal, const struct portal*)
+
+KHASH_MAP_INIT_INT64(key_coord, struct coord)
+KHASH_MAP_INIT_INT64(key_portal, const struct portal*)
+KHASH_MAP_INIT_INT64(key_float, float)
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define kh_put_val(name, table, key, val)               \
@@ -50,8 +54,18 @@ static uint64_t coord_to_key(struct coord c)
     return (((uint64_t)c.r) << 32 | ((uint64_t)c.c) & ~((uint32_t)0));
 }
 
-static int coord_get_neighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
-                                struct coord *out_neighbours, float *out_costs)
+static uint64_t portal_to_key(const struct portal *p)
+{
+    return (((uint64_t)p->chunk.r & 0xffff)      << 48)
+         | (((uint64_t)p->chunk.c & 0xffff)      << 32)
+         | (((uint64_t)p->endpoints[0].r & 0xff) << 24)
+         | (((uint64_t)p->endpoints[0].c & 0xff) << 16)
+         | (((uint64_t)p->endpoints[1].r & 0xff) <<  8)
+         | (((uint64_t)p->endpoints[1].c & 0xff) <<  0);
+}
+
+static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
+                           struct coord *out_neighbours, float *out_costs)
 {
     int ret = 0;
 
@@ -85,6 +99,26 @@ static int coord_get_neighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_
     return ret;
 }
 
+static int neighbours_portal_graph(const struct portal *portal,
+                                   const struct portal **out_neighbours, float *out_costs)
+{
+    int ret = 0;
+
+    for(int i = 0; i < portal->num_neighbours; i++) {
+
+        out_neighbours[ret] = portal->edges[i].neighbour;
+        out_costs[ret] = portal->edges[i].cost;
+        ret++;
+    }
+
+    out_neighbours[ret] = portal->connected;
+    out_costs[ret] = 1;
+    ret++;
+
+    assert(ret <= MAX_PORTALS_PER_CHUNK);
+    return ret;
+}
+
 static float heuristic(struct coord a, struct coord b)
 {
     /* Octile Distance:
@@ -109,16 +143,16 @@ bool AStar_GridPath(struct coord start, struct coord finish,
                     coord_vec_t *out_path, float *out_cost)
 {
     pq_coord_t            frontier;
-    khash_t(coord_coord) *came_from;
-    khash_t(coord_float) *running_cost;
+    khash_t(key_coord) *came_from;
+    khash_t(key_float) *running_cost;
     
     pq_coord_init(&frontier);
-    if(NULL == (came_from = kh_init(coord_coord)))
+    if(NULL == (came_from = kh_init(key_coord)))
         goto fail_came_from;
-    if(NULL == (running_cost = kh_init(coord_float)))
+    if(NULL == (running_cost = kh_init(key_float)))
         goto fail_running_cost;
 
-    kh_put_val(coord_float, running_cost, coord_to_key(start), 0.0f);
+    kh_put_val(key_float, running_cost, coord_to_key(start), 0.0f);
     pq_coord_push(&frontier, 0.0f, start);
 
     while(pq_size(&frontier) > 0) {
@@ -131,27 +165,27 @@ bool AStar_GridPath(struct coord start, struct coord finish,
 
         struct coord neighbours[8];
         float neighbour_costs[8];
-        int num_neighbours = coord_get_neighbours(cost_field, curr, neighbours, neighbour_costs);
+        int num_neighbours = neighbours_grid(cost_field, curr, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
             struct coord *next = &neighbours[i];
-            khiter_t k = kh_get(coord_float, running_cost, coord_to_key(curr));
+            khiter_t k = kh_get(key_float, running_cost, coord_to_key(curr));
             assert(k != kh_end(running_cost));
             float new_cost = kh_value(running_cost, k) + neighbour_costs[i];
 
-            if((k = kh_get(coord_float, running_cost, coord_to_key(*next))) == kh_end(running_cost)
+            if((k = kh_get(key_float, running_cost, coord_to_key(*next))) == kh_end(running_cost)
             || new_cost < kh_value(running_cost, k)) {
 
-                kh_put_val(coord_float, running_cost, coord_to_key(*next), new_cost);
+                kh_put_val(key_float, running_cost, coord_to_key(*next), new_cost);
                 float priority = new_cost + heuristic(finish, *next);
                 pq_coord_push(&frontier, priority, *next);
-                kh_put_val(coord_coord, came_from, coord_to_key(*next), curr);
+                kh_put_val(key_coord, came_from, coord_to_key(*next), curr);
             }
         }
     }
     
-    if(kh_get(coord_coord, came_from, coord_to_key(finish)) == kh_end(came_from))
+    if(kh_get(key_coord, came_from, coord_to_key(finish)) == kh_end(came_from))
         goto fail_find_path;
 
     kv_reset(*out_path);
@@ -162,7 +196,7 @@ bool AStar_GridPath(struct coord start, struct coord finish,
     while(0 != memcmp(&curr, &start, sizeof(struct coord))) {
 
         kv_push(struct coord, *out_path, curr);
-        khiter_t k = kh_get(coord_coord, came_from, coord_to_key(curr));
+        khiter_t k = kh_get(key_coord, came_from, coord_to_key(curr));
         assert(k != kh_end(came_from));
         curr = kh_value(came_from, k);
     }
@@ -175,21 +209,153 @@ bool AStar_GridPath(struct coord start, struct coord finish,
         kv_A(*out_path, j) = tmp;
     }
 
-    khiter_t k = kh_get(coord_float, running_cost, coord_to_key(finish));
+    khiter_t k = kh_get(key_float, running_cost, coord_to_key(finish));
     assert(k != kh_end(running_cost));
     *out_cost = kh_value(running_cost, k);
 
     pq_coord_destroy(&frontier);
-    kh_destroy(coord_float, running_cost);
-    kh_destroy(coord_coord, came_from);
+    kh_destroy(key_float, running_cost);
+    kh_destroy(key_coord, came_from);
     return true;
 
 fail_find_path:
     pq_coord_destroy(&frontier);
-    kh_destroy(coord_float, running_cost);
+    kh_destroy(key_float, running_cost);
 fail_running_cost:
-    kh_destroy(coord_coord, came_from);
+    kh_destroy(key_coord, came_from);
 fail_came_from:
     return false;
+}
+
+bool AStar_PortalGraphPath(const struct portal *start, const struct portal *finish, 
+                           const struct nav_private *priv, 
+                           portal_vec_t *out_path, float *out_cost)
+{
+    pq_portal_t           frontier;
+    khash_t(key_portal) *came_from;
+    khash_t(key_float) *running_cost;
+    
+    pq_portal_init(&frontier);
+    if(NULL == (came_from = kh_init(key_portal)))
+        goto fail_came_from;
+    if(NULL == (running_cost = kh_init(key_float)))
+        goto fail_running_cost;
+
+    kh_put_val(key_float, running_cost, portal_to_key(start), 0.0f);
+    pq_portal_push(&frontier, 0.0f, start);
+
+    while(pq_size(&frontier) > 0) {
+
+        const struct portal *curr;
+        pq_portal_pop(&frontier, &curr);
+
+        if(curr == finish)
+            break;
+
+        const struct portal *neighbours[MAX_PORTALS_PER_CHUNK];
+        float neighbour_costs[MAX_PORTALS_PER_CHUNK];
+        int num_neighbours = neighbours_portal_graph(curr, neighbours, neighbour_costs);
+
+        for(int i = 0; i < num_neighbours; i++) {
+
+            const struct portal *next = neighbours[i];
+            khiter_t k = kh_get(key_float, running_cost, portal_to_key(curr));
+            assert(k != kh_end(running_cost));
+            float new_cost = kh_value(running_cost, k) + neighbour_costs[i];
+
+            if((k = kh_get(key_float, running_cost, portal_to_key(next))) == kh_end(running_cost)
+            || new_cost < kh_value(running_cost, k)) {
+
+                kh_put_val(key_float, running_cost, portal_to_key(next), new_cost);
+                /* No heuristic used - effectively Dijkstra's algorithm */
+                float priority = new_cost;
+                pq_portal_push(&frontier, priority, next);
+                kh_put_val(key_portal, came_from, portal_to_key(next), curr);
+            }
+        }
+    }
+    
+    if(kh_get(key_portal, came_from, portal_to_key(finish)) == kh_end(came_from))
+        goto fail_find_path;
+
+    kv_reset(*out_path);
+
+    /* We have our path at this point. Walk backwards along the path to build a 
+     * vector of the nodes along the path. */
+    const struct portal *curr = finish;
+    while(curr != start) {
+
+        kv_push(const struct portal*, *out_path, curr);
+        khiter_t k = kh_get(key_portal, came_from, portal_to_key(curr));
+        assert(k != kh_end(came_from));
+        curr = kh_value(came_from, k);
+    }
+    kv_push(const struct portal*, *out_path, start);
+
+    /* Reverse the path vector */
+    for(int i = 0, j = kv_size(*out_path) - 1; i < j; i++, j--) {
+        const struct portal *tmp = kv_A(*out_path, i);
+        kv_A(*out_path, i) = kv_A(*out_path, j);
+        kv_A(*out_path, j) = tmp;
+    }
+
+    khiter_t k = kh_get(key_float, running_cost, portal_to_key(finish));
+    assert(k != kh_end(running_cost));
+    *out_cost = kh_value(running_cost, k);
+
+    pq_portal_destroy(&frontier);
+    kh_destroy(key_float, running_cost);
+    kh_destroy(key_portal, came_from);
+    return true;
+
+fail_find_path:
+    pq_portal_destroy(&frontier);
+    kh_destroy(key_float, running_cost);
+fail_running_cost:
+    kh_destroy(key_portal, came_from);
+fail_came_from:
+    return false;
+}
+
+const struct portal *AStar_NearestPortal(struct coord start,
+                                         const struct nav_chunk *chunk)
+{
+    coord_vec_t path;
+    kv_init(path);
+
+    float min_cost = INFINITY;
+    const struct portal *ret = NULL;
+
+    for(int i = 0; i < chunk->num_portals; i++) {
+
+        const struct portal *port = &chunk->portals[i];
+        struct coord port_center = (struct coord){
+            (port->endpoints[0].r + port->endpoints[1].r) / 2,
+            (port->endpoints[0].c + port->endpoints[1].c) / 2,
+        };
+        float cost;
+        bool found = AStar_GridPath(start, port_center, chunk->cost_base, &path, &cost);
+
+        if(found && cost < min_cost) {
+            min_cost = cost;
+            ret = port;
+        }
+    }
+
+    kv_destroy(path);
+    return ret;
+}
+
+bool AStar_TilesLinked(struct coord start, struct coord finish,
+                       const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C])
+{
+    coord_vec_t path;
+    kv_init(path);
+
+    float cost;
+    bool ret = AStar_GridPath(start, finish, cost_field, &path, &cost);
+
+    kv_destroy(path);
+    return cost;    
 }
 
