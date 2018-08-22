@@ -20,10 +20,13 @@
 #include "public/nav.h"
 #include "nav_private.h"
 #include "a_star.h"
+#include "field.h"
+#include "fieldcache.h"
 #include "../map/public/tile.h"
 #include "../render/public/render.h"
 #include "../pf_math.h"
 #include "../collision.h"
+#include "../entity.h"
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -480,6 +483,14 @@ static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_mode
     R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, num_tiles, chunk_model, map);
 }
 
+static dest_id_t n_dest_id(struct tile_desc dst_desc)
+{
+    return (((uint32_t)dst_desc.chunk_r) << 24)
+         | (((uint32_t)dst_desc.chunk_c) << 16)
+         | (((uint32_t)dst_desc.tile_r)  <<  8)
+         | (((uint32_t)dst_desc.tile_c)  <<  0);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -692,5 +703,136 @@ void N_UpdatePortals(void *nav_private)
             n_link_chunk_portals(curr_chunk);
         }
     }
+}
+
+bool N_RequestPath(void *nav_private, struct entity *ent, vec2_t xz_dest, 
+                   vec3_t map_pos, dest_id_t *out_dest_id)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    /* Convert source and destination positions to tile coordinates */
+    bool result;
+    struct tile_desc src_desc, dst_desc;
+    result = M_Tile_DescForPoint2D(res, map_pos, (vec2_t){ent->pos.x, ent->pos.z}, &src_desc);
+    assert(result);
+    result = M_Tile_DescForPoint2D(res, map_pos, xz_dest, &src_desc);
+    assert(result);
+
+    dest_id_t ret = n_dest_id(dst_desc);
+
+    /* Source and distination are in the same chunk, but unreachable */
+    if(src_desc.chunk_r == dst_desc.chunk_r 
+    && src_desc.chunk_c == dst_desc.chunk_c
+    && !AStar_TilesLinked((struct coord){src_desc.tile_r, src_desc.tile_c}, 
+                          (struct coord){dst_desc.tile_r, dst_desc.tile_c}, 
+                          priv->chunks[IDX(src_desc.chunk_r, priv->width, src_desc.chunk_c)].cost_base)) {
+        return false;
+    }
+
+    /* Generate the flow field for the destination chunk, if necessary */
+    ff_id_t id;
+    if(!N_FC_ContainsFlowField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)){
+
+        struct field_target target = (struct field_target){
+            .type = TARGET_TILE,
+            .tile = (struct coord){dst_desc.tile_r, dst_desc.tile_c}
+        };
+
+        const struct nav_chunk *chunk = &priv->chunks[IDX(dst_desc.chunk_r, priv->width, dst_desc.chunk_c)];
+        struct flow_field ff;
+        id = N_FlowField_ID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target);
+
+        N_FlowFieldInit((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &ff);
+        N_FlowFieldUpdate(chunk, target, &ff);
+        N_FC_SetFlowField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, id, &ff);
+    }
+
+    /* Source and destination positions are in the same chunk, and a path exists
+     * between them. In this case, we only need a single flow field. .*/
+    if(src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c){
+
+        *out_dest_id = ret;
+        return true;
+    }
+
+    const struct portal *src_port, *dst_port;
+    src_port = AStar_NearestPortal((struct coord){src_desc.tile_r, src_desc.tile_c}, 
+        &priv->chunks[IDX(src_desc.chunk_r, priv->width, src_desc.chunk_c)]);
+    dst_port = AStar_NearestPortal((struct coord){dst_desc.tile_r, dst_desc.tile_c}, 
+        &priv->chunks[IDX(dst_desc.chunk_r, priv->width, dst_desc.chunk_c)]);
+
+    if(!src_port || !dst_port)
+        return false; 
+
+    float cost;
+    portal_vec_t path;
+    kv_init(path);
+
+    bool path_exists = AStar_PortalGraphPath(src_port, dst_port, priv, &path, &cost);
+    if(!path_exists) {
+
+        kv_destroy(path);
+        return false; 
+    }
+
+    /* Traverse the portal path and generate the required fields, if they are not already 
+     * cached. Add the results to the fieldcache. */
+    for(int i = 0; i < kv_size(path)-1; i++) {
+
+        const struct portal *curr_node = kv_A(path, i);
+        const struct portal *next_hop = kv_A(path, i + 1);
+
+        if(curr_node->connected == next_hop)
+            continue;
+
+        struct coord chunk_coord = curr_node->chunk;
+        struct field_target target = (struct field_target){
+            .type = TARGET_PORTAL,
+            .port = next_hop
+        };
+
+        const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_coord.r, priv->width, chunk_coord.c)];
+        ff_id_t new_id = N_FlowField_ID(chunk_coord, target);
+        ff_id_t exist_id;
+        struct flow_field ff;
+
+        if(N_FC_ContainsFlowField(ret, chunk_coord, &exist_id)) {
+
+            /* The exact flow field we need has already been made */
+            if(new_id == exist_id)
+                continue;
+
+            /* This is the edge case when a path to a particular target takes us through
+             * the same chunk more than once. This can happen if a chunk is divided into
+             * 'islands' by unpathable barriers. */
+            const struct flow_field *exist_ff  = N_FC_FlowFieldAt(ret, chunk_coord);
+            memcpy(&ff, exist_ff, sizeof(struct flow_field));
+
+            N_FlowFieldUpdate(chunk, target, &ff);
+            /* We set the updated flow field for the new (least recently used) key. Since in 
+             * this case more than one flowfield ID maps to the same field but we only keep 
+             * one of the IDs, it may be possible that the same flowfield will be redundantly 
+             * updated at a later time. However, this is largely inconsequential. */
+            N_FC_SetFlowField(ret, chunk_coord, new_id, &ff);
+            continue;
+        }
+
+        N_FlowFieldInit(chunk_coord, &ff);
+        N_FlowFieldUpdate(chunk, target, &ff);
+        N_FC_SetFlowField(ret, chunk_coord, new_id, &ff);
+    }
+    kv_destroy(path);
+
+    *out_dest_id = ret; 
+    return true;
+}
+
+vec2_t N_DesiredVelocity(dest_id_t id, vec2_t curr_pos)
+{
+
 }
 

@@ -22,10 +22,14 @@
 
 #include "../../pf_math.h"
 #include <stddef.h>
+#include <stdbool.h>
 
 struct tile;
 struct map;
 struct obb;
+struct entity;
+
+typedef uint32_t dest_id_t;
 
 /*###########################################################################*/
 /* NAV GENERAL                                                               */
@@ -38,15 +42,15 @@ struct obb;
  * row-major order.
  * ------------------------------------------------------------------------
  */
-void *N_BuildForMapData(size_t w, size_t h, 
-                        size_t chunk_w, size_t chunk_h,
-                        const struct tile **chunk_tiles);
+void     *N_BuildForMapData(size_t w, size_t h, 
+                            size_t chunk_w, size_t chunk_h,
+                            const struct tile **chunk_tiles);
 
 /* ------------------------------------------------------------------------
  * Clean up resources allocated by 'N_BuildForMapData'.
  * ------------------------------------------------------------------------
  */
-void  N_FreePrivate(void *nav_private);
+void      N_FreePrivate(void *nav_private);
 
 /* ------------------------------------------------------------------------
  * Draw a translucent overlay over the map chunk, showing the pathable and 
@@ -54,16 +58,16 @@ void  N_FreePrivate(void *nav_private);
  * dimensions in OpenGL coordinates.
  * ------------------------------------------------------------------------
  */
-void  N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
-                            const struct map *map,
-                            int chunk_r, int chunk_c);
+void      N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
+                                const struct map *map,
+                                int chunk_r, int chunk_c);
 
 /* ------------------------------------------------------------------------
  * Make an impassable region in the cost field, completely covering the 
  * specified OBB.
  * ------------------------------------------------------------------------
  */
-void  N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *obb);
+void      N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *obb);
 
 /* ------------------------------------------------------------------------
  * Update portals and the links between them after there have been 
@@ -71,7 +75,24 @@ void  N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *
  * paths or removed obstructions could have opened up new ones.
  * ------------------------------------------------------------------------
  */
-void  N_UpdatePortals(void *nav_private);
+void      N_UpdatePortals(void *nav_private);
+
+/* ------------------------------------------------------------------------
+ * Generate the required flowfield and LOS sectors for moving towards the 
+ * specified destination.
+ * Returns true, if pathing is possible. In that case, 'out_dest_id' will
+ * be set to a handle that can be used to query relevant fields.
+ * ------------------------------------------------------------------------
+ */
+bool      N_RequestPath(void *nav_private, struct entity *ent, vec2_t xz_dest, 
+                        vec3_t map_pos, dest_id_t *out_dest_id);
+
+/* ------------------------------------------------------------------------
+ * Returns the desired velocity for an entity at 'curr_pos' for it to flow
+ * towards a particular destination.
+ * ------------------------------------------------------------------------
+ */
+vec2_t    N_DesiredVelocity(dest_id_t id, vec2_t curr_pos);
 
 #endif
 

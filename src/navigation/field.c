@@ -158,7 +158,7 @@ ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target)
     }
 }
 
-void N_InitFlowField(struct coord chunk, struct flow_field *out)
+void N_FlowFieldInit(struct coord chunk, struct flow_field *out)
 {
     for(int r = 0; r < FIELD_RES_R; r++) {
         for(int c = 0; c < FIELD_RES_C; c++) {
@@ -169,8 +169,8 @@ void N_InitFlowField(struct coord chunk, struct flow_field *out)
     out->chunk = chunk;
 }
 
-void N_UpdateFlowField(struct coord coord, const struct nav_chunk *chunk, 
-                       struct field_target target, struct flow_field *inout_flow)
+void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target, 
+                       struct flow_field *inout_flow)
 {
     pq_coord_t frontier;
     pq_coord_init(&frontier);
@@ -225,13 +225,18 @@ void N_UpdateFlowField(struct coord coord, const struct nav_chunk *chunk,
      * as they may have already been set in the case that a single chunk is divided into
      * multiple passable 'islands', but a computed path takes us through more than one of
      * these 'islands'. */
-    inout_flow->chunk = coord;
-
     for(int r = 0; r < FIELD_RES_R; r++) {
         for(int c = 0; c < FIELD_RES_C; c++) {
 
             if(integration_field[r][c] == 0xffff)
                 continue;
+
+            /* TODO: make portal 0s flow towards edge*/
+            if(integration_field[r][c] == 0) {
+
+                inout_flow->field[r][c].dir_idx = FD_NONE;
+                continue;
+            }
 
             inout_flow->field[r][c].dir_idx = flow_dir(integration_field, (struct coord){r, c});
         }

@@ -156,7 +156,7 @@ void N_FC_SetLosField(dest_id_t id, struct coord chunk_coord, const struct LOS_f
     };
 }
 
-bool N_FC_ContainsFlowField(dest_id_t id, struct coord chunk_coord)
+bool N_FC_ContainsFlowField(dest_id_t id, struct coord chunk_coord, ff_id_t *out_ffid)
 {
     khiter_t k;
 
@@ -169,6 +169,7 @@ bool N_FC_ContainsFlowField(dest_id_t id, struct coord chunk_coord)
     if(k == kh_end(s_flow_table))
         return false;
 
+    *out_ffid = key;
     return true;
 }
 
