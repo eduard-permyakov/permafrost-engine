@@ -20,8 +20,11 @@
 #ifndef FIELD_H
 #define FIELD_H
 
+#include "nav_data.h"
+#include "../pf_math.h"
+#include <stdbool.h>
 
-typedef uint32_t ff_id_t;
+typedef uint64_t ff_id_t;
 
 struct LOS_field{
     struct coord chunk;
@@ -33,8 +36,7 @@ struct LOS_field{
 struct flow_field{
     struct coord chunk;
     struct{
-        uint8_t x; 
-        uint8_t z;
+        unsigned dir_idx : 4;
     }field[FIELD_RES_R][FIELD_RES_C];
 };
 
@@ -49,7 +51,24 @@ struct field_target{
     };
 };
 
-ff_id_t N_Field_ID(struct coord chunk, struct field_target target);
+enum flow_dir{
+    FD_NONE = 0,
+    FD_NW,
+    FD_N,
+    FD_NE,
+    FD_W,
+    FD_E,
+    FD_SW,
+    FD_S,
+    FD_SE
+};
+
+extern vec2_t g_flow_dir_lookup[];
+
+ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target);
+void    N_InitFlowField(struct coord chunk, struct flow_field *out);
+void    N_UpdateFlowField(struct coord coord, const struct nav_chunk *chunk, 
+                          struct field_target target, struct flow_field *inout_flow);
 
 #endif
 
