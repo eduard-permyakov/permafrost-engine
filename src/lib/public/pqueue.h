@@ -23,7 +23,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdio.h>
-
+#include <stdlib.h>
 
 /***********************************************************************************************/
 
@@ -54,10 +54,11 @@
 
 #define PQUEUE_PROTOTYPES(scope, name, type)                                                    \
                                                                                                 \
-    scope void pq_##name##_init   (pq(name) *pqueue);                                           \
-    scope void pq_##name##_destroy(pq(name) *pqueue);                                           \
-    scope bool pq_##name##_push   (pq(name) *pqueue, float in_prio, type in);                   \
-    scope bool pq_##name##_pop    (pq(name) *pqueue, type *out);
+    scope void pq_##name##_init    (pq(name) *pqueue);                                          \
+    scope void pq_##name##_destroy (pq(name) *pqueue);                                          \
+    scope bool pq_##name##_push    (pq(name) *pqueue, float in_prio, type in);                  \
+    scope bool pq_##name##_pop     (pq(name) *pqueue, type *out);                               \
+    scope bool pq_##name##_contains(pq(name) *pqueue, type t);
 
 /***********************************************************************************************/
 
@@ -72,8 +73,7 @@
                                                                                                 \
     scope void pq_##name##_destroy(pq(name) *pqueue)                                            \
     {                                                                                           \
-        if(pqueue->nodes)                                                                       \
-            free(pqueue->nodes);                                                                \
+        free(pqueue->nodes);                                                                    \
     }                                                                                           \
                                                                                                 \
     scope bool pq_##name##_push(pq(name) *pqueue, float in_prio, type in)                       \
@@ -131,7 +131,16 @@
             curr_idx = target_idx;                                                              \
         }                                                                                       \
         return true;                                                                            \
-    }
+    }                                                                                           \
+                                                                                                \
+    scope bool pq_##name##_contains(pq(name) *pqueue, type t)                                   \
+    {                                                                                           \
+        for(int i = 0; i < pqueue->size; i++) {                                                 \
+            if(0 == memcmp(&pqueue->nodes[i].data, &t, sizeof(t)))                              \
+                return true;                                                                    \
+        }                                                                                       \
+        return false;                                                                           \
+    }                                                                                           \
 
 #endif
 
