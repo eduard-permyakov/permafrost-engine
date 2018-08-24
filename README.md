@@ -34,6 +34,7 @@ in the early phases of development.
 * RTS minimap
 * RTS-style unit selection
 * Map navigation graph/grid generation
+* Flow field generation for pathfinding
 * Implementation of 'boids' steering/flocking behaviours
 * Cross-platform (Linux and Windows)
 
