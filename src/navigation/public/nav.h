@@ -36,6 +36,18 @@ typedef uint32_t dest_id_t;
 /*###########################################################################*/
 
 /* ------------------------------------------------------------------------
+ * Intialize the navigation subsystem.
+ * ------------------------------------------------------------------------
+ */
+bool      N_Init(void);
+
+/* ------------------------------------------------------------------------
+ * Clean up resources acquired by 'N_Init'
+ * ------------------------------------------------------------------------
+ */
+void      N_Shutdown(void);
+
+/* ------------------------------------------------------------------------
  * Return a new navigation context for a map, containing pathability
  * information. 'w' and 'h' are the number of chunk columns/rows per map.
  * 'chunk_tiles' holds pointers to tile arrays for every chunk, in 
@@ -63,6 +75,16 @@ void      N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
                                 int chunk_r, int chunk_c);
 
 /* ------------------------------------------------------------------------
+ * Renders a flow field that will steer entities to the destination id for
+ * the specified chunk. If the desired flow field is not in the cache, no 
+ * action will take place.
+ * ------------------------------------------------------------------------
+ */
+void      N_RenderPathFlowField(void *nav_private, const struct map *map, 
+                                mat4x4_t *chunk_model, int chunk_r, int chunk_c, 
+                                dest_id_t id);
+
+/* ------------------------------------------------------------------------
  * Make an impassable region in the cost field, completely covering the 
  * specified OBB.
  * ------------------------------------------------------------------------
@@ -84,15 +106,8 @@ void      N_UpdatePortals(void *nav_private);
  * be set to a handle that can be used to query relevant fields.
  * ------------------------------------------------------------------------
  */
-bool      N_RequestPath(void *nav_private, struct entity *ent, vec2_t xz_dest, 
+bool      N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest, 
                         vec3_t map_pos, dest_id_t *out_dest_id);
-
-/* ------------------------------------------------------------------------
- * Returns the desired velocity for an entity at 'curr_pos' for it to flow
- * towards a particular destination.
- * ------------------------------------------------------------------------
- */
-vec2_t    N_DesiredVelocity(dest_id_t id, vec2_t curr_pos);
 
 #endif
 

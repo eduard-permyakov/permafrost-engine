@@ -356,6 +356,6 @@ bool AStar_TilesLinked(struct coord start, struct coord finish,
     bool ret = AStar_GridPath(start, finish, cost_field, &path, &cost);
 
     kv_destroy(path);
-    return cost;    
+    return ret;    
 }
 

@@ -109,6 +109,7 @@ bool N_FC_Init(void)
         goto fail_path;
 
     E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL);
+    return true;
 
 fail_path:
     kh_destroy(flow, s_flow_table);
@@ -195,14 +196,14 @@ void N_FC_SetFlowField(dest_id_t id, struct coord chunk_coord,
     int ret;
 
     k = kh_put(path, s_path_table, key_for_dest_and_chunk(id, chunk_coord), &ret);
-    assert(ret != -1 && ret != 0);
+    assert(ret != -1);
     kh_value(s_path_table, k) = (struct path_entry){
         .age = EVICTION_NUM_SECS,
         .id = field_id
     };
 
     k = kh_put(flow, s_flow_table, field_id, &ret);
-    assert(ret != -1 && ret != 0);
+    assert(ret != -1);
     kh_value(s_flow_table, k) = (struct flow_entry){
         .age = EVICTION_NUM_SECS,
         .ff = *ff

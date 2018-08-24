@@ -934,3 +934,85 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
+void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, size_t count,
+                        mat4x4_t *model, const struct map *map)
+{
+    GLint VAO, VBO;
+    GLint shader_prog;
+    GLuint loc;
+    vec3_t line_vbuff[count * 2];
+    vec3_t point_vbuff[count];
+
+    /* Setup line_vbuff */
+    for(size_t i = 0, line_vbuff_idx = 0; i < count; i++, line_vbuff_idx += 2) {
+
+        vec2_t tip = xz_positions[i];
+        vec2_t to_add = xz_directions[i];
+        PFM_Vec2_Scale(&to_add, 2.5f, &to_add);
+        PFM_Vec2_Add(&tip, &to_add, &tip);
+
+        vec4_t base_homo = (vec4_t){xz_positions[i].raw[0], 0.0f, xz_positions[i].raw[1], 1.0f};
+        vec4_t tip_homo = (vec4_t){tip.raw[0], 0.0f, tip.raw[1], 1.0f};
+
+        vec4_t base_ws_homo, tip_ws_homo;
+
+        PFM_Mat4x4_Mult4x1(model, &base_homo, &base_ws_homo);
+        base_ws_homo.x /= base_ws_homo.w;
+        base_ws_homo.z /= base_ws_homo.w;
+
+        PFM_Mat4x4_Mult4x1(model, &tip_homo, &tip_ws_homo);
+        tip_ws_homo.x /= base_ws_homo.w;
+        tip_ws_homo.z /= base_ws_homo.w;
+
+        line_vbuff[line_vbuff_idx] = (vec3_t){
+            xz_positions[i].raw[0],
+            M_HeightAtPoint(map, (vec2_t){base_ws_homo.x, base_ws_homo.z}) + 0.3, 
+            xz_positions[i].raw[1]
+        };
+        line_vbuff[line_vbuff_idx + 1] = (vec3_t){
+            tip.raw[0],
+            M_HeightAtPoint(map, (vec2_t){tip_ws_homo.x, tip_ws_homo.z}) + 0.3, 
+            tip.raw[1]
+        };
+        point_vbuff[i] = line_vbuff[line_vbuff_idx];
+    }
+
+    /* OpenGL setup */
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(0);  
+
+    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    glUseProgram(shader_prog);
+
+    /* Set uniforms */
+    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
+
+    vec4_t red = (vec4_t){1.0f, 0.0f, 0.0f, 1.0f};
+    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
+    glUniform4fv(loc, 1, red.raw);
+
+    GLfloat old_width;
+    glGetFloatv(GL_LINE_WIDTH, &old_width);
+    glLineWidth(5.0f);
+    glPointSize(10.0f);
+
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(line_vbuff) * sizeof(vec3_t), line_vbuff, GL_STATIC_DRAW);
+    glDrawArrays(GL_LINES, 0, ARR_SIZE(line_vbuff));
+
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(point_vbuff) * sizeof(vec3_t), point_vbuff, GL_STATIC_DRAW);
+    glDrawArrays(GL_POINTS, 0, ARR_SIZE(line_vbuff));
+
+cleanup:
+    glLineWidth(old_width);
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
+}
+

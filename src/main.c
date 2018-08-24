@@ -25,6 +25,7 @@
 #include "lib/public/kvec.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
+#include "navigation/public/nav.h"
 #include "event.h"
 #include "ui.h"
 
@@ -151,9 +152,9 @@ static bool engine_init(char **argv)
     if(!kv_resize(SDL_Event, s_prev_tick_events, 256))
         return false;
 
-    /* ---------------------------------- */
-    /* SDL Initialization                 */
-    /* ---------------------------------- */
+    /* ----------------------------------- */
+    /* SDL Initialization                  */
+    /* ----------------------------------- */
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
         result = false;
         goto fail_sdl;
@@ -182,9 +183,9 @@ static bool engine_init(char **argv)
     s_context = SDL_GL_CreateContext(s_window); 
     SDL_GL_SetSwapInterval(CONFIG_VSYNC ? 1 : 0); 
 
-    /* ---------------------------------- */
-    /* GLEW initialization                */
-    /* ---------------------------------- */
+    /* ----------------------------------- */
+    /* GLEW initialization                 */
+    /* ----------------------------------- */
     glewExperimental = GL_TRUE;
     if(glewInit() != GLEW_OK)
         goto fail_glew;
@@ -195,59 +196,67 @@ static bool engine_init(char **argv)
     glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
     glProvokingVertex(GL_FIRST_VERTEX_CONVENTION); 
 
-    /* ---------------------------------- */
-    /* nuklear initialization             */
-    /* ---------------------------------- */
+    /* ----------------------------------- */
+    /* nuklear initialization              */
+    /* ----------------------------------- */
     if( !(s_nk_ctx = UI_Init(argv[1], s_window)) ) 
         goto fail_nuklear;
 
-    /* ---------------------------------- */
-    /* stb_image initialization           */
-    /* ---------------------------------- */
+    /* ----------------------------------- */
+    /* stb_image initialization            */
+    /* ----------------------------------- */
     stbi_set_flip_vertically_on_load(true);
 
-    /* ---------------------------------- */
-    /* Asset Loading initialization       */
-    /* ---------------------------------- */
+    /* ----------------------------------- */
+    /* Asset Loading initialization        */
+    /* ----------------------------------- */
     if(!AL_Init())
         goto fail_al;
 
-    /* ---------------------------------- */
-    /* Cursor initialization              */
-    /* ---------------------------------- */
+    /* ----------------------------------- */
+    /* Cursor initialization               */
+    /* ----------------------------------- */
     if(!Cursor_InitAll(argv[1]))
         goto fail_cursor;
     Cursor_SetActive(CURSOR_POINTER);
 
-    /* ---------------------------------- */
-    /* Rendering subsystem initialization */
-    /* ---------------------------------- */
+    /* ----------------------------------- */
+    /* Rendering subsystem initialization  */
+    /* ----------------------------------- */
     if(!R_Init(argv[1]))
         goto fail_render;
 
-    /* ---------------------------------- */
-    /* Event subsystem intialization      */
-    /* ---------------------------------- */
+    /* ----------------------------------- */
+    /* Event subsystem intialization       */
+    /* ----------------------------------- */
     if(!E_Init())
         goto fail_game;
     Cursor_SetRTSMode(true);
     E_Global_Register(SDL_QUIT, on_user_quit, NULL);
 
-    /* ---------------------------------- */
-    /* Scripting subsystem initialization */
-    /* ---------------------------------- */
+    /* ----------------------------------- */
+    /* Scripting subsystem initialization  */
+    /* ----------------------------------- */
     if(!S_Init(argv[0], argv[1], s_nk_ctx))
         goto fail_script;
 
-    /* ---------------------------------- */
-    /* Game state initialization          */
-    /*  * depends on Event subsystem      */
-    /* ---------------------------------- */
+    /* ----------------------------------- */
+    /* Game state initialization           */
+    /*  * depends on Event subsystem       */
+    /* -----------------------------------*/
     if(!G_Init())
         goto fail_game;
 
+    /* ----------------------------------- */
+    /* Navigation subsystem initialization */
+    /* ----------------------------------- */
+    if(!N_Init())
+        goto fail_nav;
+
     return true;
 
+fail_nav:
+    G_Shutdown();
 fail_game:
 fail_script:
 fail_render:
@@ -266,6 +275,7 @@ fail_sdl:
 
 static void engine_shutdown(void)
 {
+    N_Shutdown();
     S_Shutdown();
 
     /* 'Game' must shut down after 'Scripting'. There are still 

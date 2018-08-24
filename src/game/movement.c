@@ -199,6 +199,14 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
         }
     }
 
+    uint32_t key;
+    struct entity *curr;
+    kh_foreach(new_flock.ents, key, curr, {
+
+        dest_id_t id;
+        M_NavRequestPath(s_map, (vec2_t){curr->pos.x, curr->pos.z}, target_xz, &id);
+    });
+
     kv_push(struct flock, s_flocks, new_flock);
     return true;
 }

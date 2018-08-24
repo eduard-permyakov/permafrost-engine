@@ -21,6 +21,7 @@
 #define MAP_H
 
 #include "../../pf_math.h"
+#include "../../navigation/public/nav.h" /* dest_id_t */
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -167,6 +168,37 @@ vec2_t M_ClampedMapCoordinate(const struct map *map, vec2_t xz);
  */
 float  M_HeightAtPoint(const struct map *map, vec2_t xz);
 
+/* ------------------------------------------------------------------------
+ * Make an impassable region in the navigation data, making it not possible 
+ * for pathable units to pass through the region underneath the OBB.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavCutoutStaticObject(const struct map *map, const struct obb *obb);
+
+/* ------------------------------------------------------------------------
+ * Update navigation private data after calls to 'M_NavCutoutStaticObject'.
+ * (ex. to remove a path in case it was blocked off by a placed object)
+ * ------------------------------------------------------------------------
+ */
+void   M_NavUpdatePortals(const struct map *map);
+
+/* ------------------------------------------------------------------------
+ * Makes a path request to the navigation subsystem, causing the required
+ * flowfields to be generated and cached. Returns true if a successful path
+ * has been made, false otherwise.
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavRequestPath(const struct map *map, vec2_t xz_src, vec2_t xz_dest, 
+                        dest_id_t *out_dest_id);
+
+/* ------------------------------------------------------------------------
+ * Render the flow field that will steer entities towards a particular 
+ * destination over the map surface.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera *cam, 
+                                       dest_id_t id);
+
 /*###########################################################################*/
 /* MINIMAP                                                                   */
 /*###########################################################################*/
@@ -208,20 +240,6 @@ void   M_RenderMinimap   (const struct map *map, const struct camera *cam);
  * ------------------------------------------------------------------------
  */
 bool   M_MouseOverMinimap(const struct map *map);
-
-/* ------------------------------------------------------------------------
- * Make an impassable region in the navigation data, making it not possible 
- * for pathable units to pass through the region underneath the OBB.
- * ------------------------------------------------------------------------
- */
-void   M_NavCutoutStaticObject(const struct map *map, const struct obb *obb);
-
-/* ------------------------------------------------------------------------
- * Update navigation private data after calls to 'M_NavCutoutStaticObject'.
- * (ex. to remove a path in case it was blocked off by a placed object)
- * ------------------------------------------------------------------------
- */
-void   M_NavUpdatePortals(const struct map *map);
 
 /*###########################################################################*/
 /* MAP ASSET LOADING                                                         */

@@ -485,15 +485,28 @@ static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_mode
 
 static dest_id_t n_dest_id(struct tile_desc dst_desc)
 {
-    return (((uint32_t)dst_desc.chunk_r) << 24)
-         | (((uint32_t)dst_desc.chunk_c) << 16)
-         | (((uint32_t)dst_desc.tile_r)  <<  8)
-         | (((uint32_t)dst_desc.tile_c)  <<  0);
+    return (((uint32_t)dst_desc.chunk_r & 0xf) << 24)
+         | (((uint32_t)dst_desc.chunk_c & 0xf) << 16)
+         | (((uint32_t)dst_desc.tile_r  & 0xf) <<  8)
+         | (((uint32_t)dst_desc.tile_c  & 0xf) <<  0);
 }
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
+
+bool N_Init(void)
+{
+    if(!N_FC_Init())
+        return false;
+
+    return true;
+}
+
+void N_Shutdown(void)
+{
+    N_FC_Shutdown();
+}
 
 void *N_BuildForMapData(size_t w, size_t h, 
                         size_t chunk_w, size_t chunk_h,
@@ -586,6 +599,46 @@ void N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
     assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
     R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
+}
+
+void N_RenderPathFlowField(void *nav_private, const struct map *map, 
+                           mat4x4_t *chunk_model, int chunk_r, int chunk_c, 
+                           dest_id_t id)
+{
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    const struct nav_private *priv = nav_private;
+    assert(chunk_r < priv->height);
+    assert(chunk_c < priv->width);
+
+    vec2_t positions_buff[FIELD_RES_R * FIELD_RES_C];
+    vec2_t dirs_buff[FIELD_RES_R * FIELD_RES_C];
+
+    ff_id_t field_id;
+    if(!N_FC_ContainsFlowField(id, (struct coord){chunk_r, chunk_c}, &field_id))
+        return;
+    const struct flow_field *ff = N_FC_FlowFieldAt(id, (struct coord){chunk_r, chunk_c});
+
+    for(int r = 0; r < FIELD_RES_R; r++) {
+        for(int c = 0; c < FIELD_RES_C; c++) {
+
+            /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
+            float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
+            float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
+            float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
+            float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+
+            positions_buff[r * FIELD_RES_C + c] = (vec2_t){
+                square_x - square_x_len / 2.0f,
+                square_z + square_z_len / 2.0f
+            };
+            dirs_buff[r * FIELD_RES_C + c] = g_flow_dir_lookup[ff->field[r][c].dir_idx];
+        }
+    }
+
+    /* we bout to draw it team */
+    R_GL_DrawFlowField(positions_buff, dirs_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
 }
 
 void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *obb)
@@ -705,7 +758,7 @@ void N_UpdatePortals(void *nav_private)
     }
 }
 
-bool N_RequestPath(void *nav_private, struct entity *ent, vec2_t xz_dest, 
+bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest, 
                    vec3_t map_pos, dest_id_t *out_dest_id)
 {
     struct nav_private *priv = nav_private;
@@ -717,21 +770,12 @@ bool N_RequestPath(void *nav_private, struct entity *ent, vec2_t xz_dest,
     /* Convert source and destination positions to tile coordinates */
     bool result;
     struct tile_desc src_desc, dst_desc;
-    result = M_Tile_DescForPoint2D(res, map_pos, (vec2_t){ent->pos.x, ent->pos.z}, &src_desc);
+    result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
     assert(result);
-    result = M_Tile_DescForPoint2D(res, map_pos, xz_dest, &src_desc);
+    result = M_Tile_DescForPoint2D(res, map_pos, xz_dest, &dst_desc);
     assert(result);
 
     dest_id_t ret = n_dest_id(dst_desc);
-
-    /* Source and distination are in the same chunk, but unreachable */
-    if(src_desc.chunk_r == dst_desc.chunk_r 
-    && src_desc.chunk_c == dst_desc.chunk_c
-    && !AStar_TilesLinked((struct coord){src_desc.tile_r, src_desc.tile_c}, 
-                          (struct coord){dst_desc.tile_r, dst_desc.tile_c}, 
-                          priv->chunks[IDX(src_desc.chunk_r, priv->width, src_desc.chunk_c)].cost_base)) {
-        return false;
-    }
 
     /* Generate the flow field for the destination chunk, if necessary */
     ff_id_t id;
@@ -753,7 +797,10 @@ bool N_RequestPath(void *nav_private, struct entity *ent, vec2_t xz_dest,
 
     /* Source and destination positions are in the same chunk, and a path exists
      * between them. In this case, we only need a single flow field. .*/
-    if(src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c){
+    if(src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c
+    && AStar_TilesLinked((struct coord){src_desc.tile_r, src_desc.tile_c}, 
+                         (struct coord){dst_desc.tile_r, dst_desc.tile_c}, 
+                         priv->chunks[IDX(src_desc.chunk_r, priv->width, src_desc.chunk_c)].cost_base)) {
 
         *out_dest_id = ret;
         return true;
@@ -765,8 +812,9 @@ bool N_RequestPath(void *nav_private, struct entity *ent, vec2_t xz_dest,
     dst_port = AStar_NearestPortal((struct coord){dst_desc.tile_r, dst_desc.tile_c}, 
         &priv->chunks[IDX(dst_desc.chunk_r, priv->width, dst_desc.chunk_c)]);
 
-    if(!src_port || !dst_port)
+    if(!src_port || !dst_port) {
         return false; 
+    }
 
     float cost;
     portal_vec_t path;
@@ -786,8 +834,23 @@ bool N_RequestPath(void *nav_private, struct entity *ent, vec2_t xz_dest,
         const struct portal *curr_node = kv_A(path, i);
         const struct portal *next_hop = kv_A(path, i + 1);
 
+        /* If the very first hop takes us into another chunk, that means that the 'nearest portal'
+         * to the source borders the 'next' chunk already. In this case, we must remember to
+         * still generate a flow field for the current chunk steering to this portal. */
+        if(i == 0 && (next_hop->chunk.r != src_desc.chunk_r || next_hop->chunk.c != src_desc.chunk_c))
+            next_hop = src_port;
+
         if(curr_node->connected == next_hop)
             continue;
+
+        /* Since we are moving from 'closest portal' to 'closest portal', it 
+         * may be possible that the very last hop takes us from another portal in the 
+         * destination chunk to the destination portal. This is not needed and will
+         * overwrite the destination flow field made earlier. */
+        if(curr_node->chunk.r == dst_desc.chunk_r 
+        && curr_node->chunk.c == dst_desc.chunk_c
+        && next_hop == dst_port)
+            break;
 
         struct coord chunk_coord = curr_node->chunk;
         struct field_target target = (struct field_target){
@@ -829,10 +892,5 @@ bool N_RequestPath(void *nav_private, struct entity *ent, vec2_t xz_dest,
 
     *out_dest_id = ret; 
     return true;
-}
-
-vec2_t N_DesiredVelocity(dest_id_t id, vec2_t curr_pos)
-{
-
 }
 

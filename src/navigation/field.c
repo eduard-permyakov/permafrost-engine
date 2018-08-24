@@ -48,7 +48,7 @@ vec2_t g_flow_dir_lookup[9] = {
 /*****************************************************************************/
 
 static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
-                           struct coord *out_neighbours, uint16_t *out_costs)
+                           struct coord *out_neighbours, float *out_costs)
 {
     int ret = 0;
 
@@ -71,9 +71,10 @@ static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], s
             if(diag && cost_field[abs_r][coord.c] == COST_IMPASSABLE 
                     && cost_field[coord.r][abs_c] == COST_IMPASSABLE)
                 continue;
+            float cost_mult = diag ? sqrt(2) : 1.0f;
 
             out_neighbours[ret] = (struct coord){abs_r, abs_c};
-            out_costs[ret] = cost_field[abs_r][abs_c];
+            out_costs[ret] = cost_field[abs_r][abs_c] * cost_mult;
             ret++;
         }
     }
@@ -81,10 +82,10 @@ static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], s
     return ret;
 }
 
-static enum flow_dir flow_dir(const uint16_t integration_field[FIELD_RES_R][FIELD_RES_C], 
+static enum flow_dir flow_dir(const float integration_field[FIELD_RES_R][FIELD_RES_C], 
                               struct coord coord)
 {
-    uint16_t min_cost = 0xffff;
+    float min_cost = INFINITY;
 
     for(int r = -1; r <= 1; r++) {
         for(int c = -1; c <= 1; c++) {
@@ -103,29 +104,30 @@ static enum flow_dir flow_dir(const uint16_t integration_field[FIELD_RES_R][FIEL
                 min_cost = integration_field[abs_r][abs_c];
         }
     }
-    assert(min_cost < 0xffff);
+    assert(min_cost < INFINITY);
 
-    if(coord.r > 0 && coord.c > 0 
-    && integration_field[coord.r-1][coord.c-1] == min_cost)
-        return FD_NW; 
-    else if(coord.r > 0 
+    /* Prioritize the cardinal directions over the diagonal ones */
+    if(coord.r > 0 
     && integration_field[coord.r-1][coord.c] == min_cost)
         return FD_N; 
-    else if(coord.r > 0 && coord.c < (FIELD_RES_C-1) 
-    && integration_field[coord.r-1][coord.c+1] == min_cost)
-        return FD_NE;
-    else if(coord.c > 0 
-    && integration_field[coord.r][coord.c-1] == min_cost)
-        return FD_W;
-    else if(coord.c < (FIELD_RES_C-1) 
-    && integration_field[coord.r][coord.c+1] == min_cost)
-        return FD_E;
-    else if(coord.r < (FIELD_RES_R-1) && coord.c > 0 
-    && integration_field[coord.r+1][coord.c-1] == min_cost)
-        return FD_SW;
     else if(coord.r < (FIELD_RES_R-1) 
     && integration_field[coord.r+1][coord.c] == min_cost)
         return FD_S;
+    else if(coord.c < (FIELD_RES_C-1) 
+    && integration_field[coord.r][coord.c+1] == min_cost)
+        return FD_E;
+    else if(coord.c > 0 
+    && integration_field[coord.r][coord.c-1] == min_cost)
+        return FD_W;
+    else if(coord.r > 0 && coord.c > 0 
+    && integration_field[coord.r-1][coord.c-1] == min_cost)
+        return FD_NW; 
+    else if(coord.r > 0 && coord.c < (FIELD_RES_C-1) 
+    && integration_field[coord.r-1][coord.c+1] == min_cost)
+        return FD_NE;
+    else if(coord.r < (FIELD_RES_R-1) && coord.c > 0 
+    && integration_field[coord.r+1][coord.c-1] == min_cost)
+        return FD_SW;
     else if(coord.r < (FIELD_RES_R-1) && coord.c < (FIELD_RES_R-1) 
     && integration_field[coord.r+1][coord.c+1] == min_cost)
         return FD_SE;
@@ -175,8 +177,10 @@ void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target
     pq_coord_t frontier;
     pq_coord_init(&frontier);
 
-    uint16_t integration_field[FIELD_RES_R][FIELD_RES_C];
-    memset(integration_field, 0xff, sizeof(integration_field));
+    float integration_field[FIELD_RES_R][FIELD_RES_C];
+    for(int r = 0; r < FIELD_RES_R; r++)
+        for(int c = 0; c < FIELD_RES_C; c++)
+            integration_field[r][c] = INFINITY;
 
     switch(target.type) {
     case TARGET_PORTAL: {
@@ -205,12 +209,12 @@ void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target
         pq_coord_pop(&frontier, &curr);
 
         struct coord neighbours[8];
-        uint16_t neighbour_costs[8];
+        float neighbour_costs[8];
         int num_neighbours = neighbours_grid(chunk->cost_base, curr, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
-            uint16_t total_cost = integration_field[curr.r][curr.c] + neighbour_costs[i];
+            float total_cost = integration_field[curr.r][curr.c] + neighbour_costs[i];
             if(total_cost < integration_field[neighbours[i].r][neighbours[i].c]) {
 
                 integration_field[neighbours[i].r][neighbours[i].c] = total_cost;
@@ -228,13 +232,33 @@ void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target
     for(int r = 0; r < FIELD_RES_R; r++) {
         for(int c = 0; c < FIELD_RES_C; c++) {
 
-            if(integration_field[r][c] == 0xffff)
+            if(integration_field[r][c] == INFINITY)
                 continue;
 
-            /* TODO: make portal 0s flow towards edge*/
-            if(integration_field[r][c] == 0) {
+            if(integration_field[r][c] == 0.0f) {
 
-                inout_flow->field[r][c].dir_idx = FD_NONE;
+                if(target.type != TARGET_PORTAL) {
+
+                    inout_flow->field[r][c].dir_idx = FD_NONE;
+                    continue;
+                }
+
+                bool up    = target.port->connected->chunk.r < target.port->chunk.r;
+                bool down  = target.port->connected->chunk.r > target.port->chunk.r;
+                bool left  = target.port->connected->chunk.c < target.port->chunk.c;
+                bool right = target.port->connected->chunk.c > target.port->chunk.c;
+                assert(up ^ down ^ left ^ right);
+
+                if(up)
+                    inout_flow->field[r][c].dir_idx = FD_N;
+                else if(down)
+                    inout_flow->field[r][c].dir_idx = FD_S;
+                else if(left)
+                    inout_flow->field[r][c].dir_idx = FD_W;
+                else if(right)
+                    inout_flow->field[r][c].dir_idx = FD_E;
+                else
+                    assert(0);
                 continue;
             }
 

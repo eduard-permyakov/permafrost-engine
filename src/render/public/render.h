@@ -174,6 +174,13 @@ void   R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t col
 void   R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, size_t count, mat4x4_t *model, 
                                 const struct map *map);
 
+/* ---------------------------------------------------------------------------
+ * Render an array of 2d vectors over the map surface. The positions are 
+ * specified in chunk coordinates.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, size_t count,
+                          mat4x4_t *model, const struct map *map);
 
 /*###########################################################################*/
 /* RENDER TILES                                                              */

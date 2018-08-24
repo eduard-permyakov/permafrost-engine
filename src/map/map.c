@@ -295,3 +295,30 @@ void M_NavUpdatePortals(const struct map *map)
     N_UpdatePortals(map->nav_private);
 }
 
+bool M_NavRequestPath(const struct map *map, vec2_t xz_src, vec2_t xz_dest, 
+                      dest_id_t *out_dest_id)
+{
+    return N_RequestPath(map->nav_private, xz_src, xz_dest, map->pos, out_dest_id);
+}
+
+void M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera *cam, dest_id_t id)
+{
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+        for(int c = 0; c < map->width; c++) {
+
+            struct aabb chunk_aabb;
+            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+                continue;
+
+            mat4x4_t chunk_model;
+            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+            N_RenderPathFlowField(map->nav_private, map, &chunk_model, r, c, id); 
+        }
+    }
+}
+
