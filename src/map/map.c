@@ -318,6 +318,7 @@ void M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera 
             mat4x4_t chunk_model;
             M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
             N_RenderPathFlowField(map->nav_private, map, &chunk_model, r, c, id); 
+            N_RenderLOSField(map->nav_private, map, &chunk_model, r, c, id);
         }
     }
 }

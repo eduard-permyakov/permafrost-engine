@@ -146,7 +146,7 @@ const struct LOS_field *N_FC_LOSFieldAt(dest_id_t id, struct coord chunk_coord)
     return &kh_value(s_los_table, k).lf;
 }
 
-void N_FC_SetLosField(dest_id_t id, struct coord chunk_coord, const struct LOS_field *lf)
+void N_FC_SetLOSField(dest_id_t id, struct coord chunk_coord, const struct LOS_field *lf)
 {
     int ret;
     khiter_t k = kh_put(los, s_los_table, key_for_dest_and_chunk(id, chunk_coord), &ret);
@@ -182,6 +182,8 @@ const struct flow_field *N_FC_FlowFieldAt(dest_id_t id, struct coord chunk_coord
     assert(k != kh_end(s_path_table));
 
     ff_id_t key = kh_value(s_path_table, k).id;
+    kh_value(s_path_table, k).age = EVICTION_NUM_SECS;
+
     k = kh_get(flow, s_flow_table, key);
     assert(k != kh_end(s_flow_table));
 

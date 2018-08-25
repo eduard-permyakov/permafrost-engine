@@ -36,7 +36,7 @@ bool                     N_FC_ContainsLOSField(dest_id_t id, struct coord chunk_
  * ------------------------------------------------------------------------
  */
 const struct LOS_field  *N_FC_LOSFieldAt(dest_id_t id, struct coord chunk_coord);
-void                     N_FC_SetLosField(dest_id_t id, struct coord chunk_coord, const struct LOS_field *lf);
+void                     N_FC_SetLOSField(dest_id_t id, struct coord chunk_coord, const struct LOS_field *lf);
 
 bool                     N_FC_ContainsFlowField(dest_id_t id, struct coord chunk_coord,
                                                 ff_id_t *out_ffid);

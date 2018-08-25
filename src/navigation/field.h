@@ -20,16 +20,20 @@
 #ifndef FIELD_H
 #define FIELD_H
 
+#include "public/nav.h"
 #include "nav_data.h"
 #include "../pf_math.h"
+#include "../map/public/tile.h"
 #include <stdbool.h>
 
 typedef uint64_t ff_id_t;
+struct nav_private;
 
 struct LOS_field{
     struct coord chunk;
     struct{
         unsigned int visible : 1;
+        unsigned int wavefront_blocked : 1;
     }field[FIELD_RES_R][FIELD_RES_C];
 };
 
@@ -69,6 +73,9 @@ ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target);
 void    N_FlowFieldInit(struct coord chunk, struct flow_field *out);
 void    N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target, 
                           struct flow_field *inout_flow);
+
+void    N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc target,
+                         const struct nav_private *priv, vec3_t map_pos, struct LOS_field *out_los);
 
 #endif
 

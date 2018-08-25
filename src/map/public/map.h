@@ -194,6 +194,7 @@ bool   M_NavRequestPath(const struct map *map, vec2_t xz_src, vec2_t xz_dest,
 /* ------------------------------------------------------------------------
  * Render the flow field that will steer entities towards a particular 
  * destination over the map surface.
+ * Also render the LOS field of tiles directly visible from the destination.
  * ------------------------------------------------------------------------
  */
 void   M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera *cam, 

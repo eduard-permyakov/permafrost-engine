@@ -85,6 +85,15 @@ void      N_RenderPathFlowField(void *nav_private, const struct map *map,
                                 dest_id_t id);
 
 /* ------------------------------------------------------------------------
+ * Debug rendering of the 'Line of Sight' field from a particular
+ * destination tile. Tiles that are directly visible from this tile without
+ * an obstruction blocking the way are highlighted in a different color.
+ * ------------------------------------------------------------------------
+ */
+void      N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *chunk_model, 
+                           int chunk_r, int chunk_c, dest_id_t id);
+
+/* ------------------------------------------------------------------------
  * Make an impassable region in the cost field, completely covering the 
  * specified OBB.
  * ------------------------------------------------------------------------
@@ -108,6 +117,13 @@ void      N_UpdatePortals(void *nav_private);
  */
 bool      N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest, 
                         vec3_t map_pos, dest_id_t *out_dest_id);
+
+/* ------------------------------------------------------------------------
+ * Returns the desired velocity for an entity at 'curr_pos' for it to flow
+ * towards a particular destination.
+ * ------------------------------------------------------------------------
+ */
+vec2_t    N_DesiredVelocity(dest_id_t id, vec2_t curr_pos);
 
 #endif
 

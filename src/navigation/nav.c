@@ -637,8 +637,54 @@ void N_RenderPathFlowField(void *nav_private, const struct map *map,
         }
     }
 
-    /* we bout to draw it team */
     R_GL_DrawFlowField(positions_buff, dirs_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
+}
+
+void N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *chunk_model, 
+                      int chunk_r, int chunk_c, dest_id_t id)
+{
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    const struct nav_private *priv = nav_private;
+    assert(chunk_r < priv->height);
+    assert(chunk_c < priv->width);
+
+    vec2_t corners_buff[4 * FIELD_RES_R * FIELD_RES_C];
+    vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
+    const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
+
+    if(!N_FC_ContainsLOSField(id, (struct coord){chunk_r, chunk_c}))
+        return;
+
+    const struct LOS_field *lf = N_FC_LOSFieldAt(id, (struct coord){chunk_r, chunk_c});
+    assert(lf);
+
+    vec2_t *corners_base = corners_buff;
+    vec3_t *colors_base = colors_buff; 
+
+    for(int r = 0; r < FIELD_RES_R; r++) {
+        for(int c = 0; c < FIELD_RES_C; c++) {
+
+            /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
+            float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
+            float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
+            float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
+            float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+
+            *corners_base++ = (vec2_t){square_x, square_z};
+            *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
+            *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
+            *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
+
+            *colors_base++ = lf->field[r][c].visible ? (vec3_t){1.0f, 1.0f, 0.0f}
+                                                     : (vec3_t){0.0f, 0.0f, 0.0f};
+        }
+    }
+
+    assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
+    assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
+    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
 }
 
 void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *obb)
@@ -795,6 +841,14 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         N_FC_SetFlowField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, id, &ff);
     }
 
+    /* Create the LOS field for the destination chunk, if necessary */
+    if(!N_FC_ContainsLOSField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c})) {
+
+        struct LOS_field lf;
+        N_LOSFieldCreate(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, dst_desc, priv, map_pos, &lf);
+        N_FC_SetLOSField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &lf);
+    }
+
     /* Source and destination positions are in the same chunk, and a path exists
      * between them. In this case, we only need a single flow field. .*/
     if(src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c
@@ -892,5 +946,10 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
 
     *out_dest_id = ret; 
     return true;
+}
+
+vec2_t N_DesiredVelocity(dest_id_t id, vec2_t curr_pos)
+{
+
 }
 

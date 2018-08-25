@@ -18,6 +18,7 @@
  */
 
 #include "field.h"
+#include "nav_private.h"
 #include "../lib/public/pqueue.h"
 
 #include <string.h>
@@ -48,7 +49,7 @@ vec2_t g_flow_dir_lookup[9] = {
 /*****************************************************************************/
 
 static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
-                           struct coord *out_neighbours, float *out_costs)
+                           struct coord *out_neighbours, uint8_t *out_costs)
 {
     int ret = 0;
 
@@ -66,15 +67,44 @@ static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], s
                 continue;
             if(cost_field[abs_r][abs_c] == COST_IMPASSABLE)
                 continue;
-
-            bool diag = (r == c) || (r == -c);
-            if(diag && cost_field[abs_r][coord.c] == COST_IMPASSABLE 
-                    && cost_field[coord.r][abs_c] == COST_IMPASSABLE)
+            if((r == c) || (r == -c)) /* diag */
                 continue;
-            float cost_mult = diag ? sqrt(2) : 1.0f;
 
             out_neighbours[ret] = (struct coord){abs_r, abs_c};
-            out_costs[ret] = cost_field[abs_r][abs_c] * cost_mult;
+            out_costs[ret] = cost_field[abs_r][abs_c];
+            ret++;
+        }
+    }
+    assert(ret < 9);
+    return ret;
+}
+
+static int neighbours_grid_LOS(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
+                               const struct LOS_field *los, struct coord coord, 
+                               struct coord *out_neighbours, uint8_t *out_costs)
+{
+    int ret = 0;
+
+    for(int r = -1; r <= 1; r++) {
+        for(int c = -1; c <= 1; c++) {
+
+            int abs_r = coord.r + r;
+            int abs_c = coord.c + c;
+
+            if(abs_r < 0 || abs_r >= FIELD_RES_R)
+                continue;
+            if(abs_c < 0 || abs_c >= FIELD_RES_C)
+                continue;
+            if(r == 0 && c == 0)
+                continue;
+            if((r == c) || (r == -c)) /* diag */
+                continue;
+
+            if(los->field[abs_r][abs_c].wavefront_blocked)
+                continue;
+
+            out_neighbours[ret] = (struct coord){abs_r, abs_c};
+            out_costs[ret] = cost_field[abs_r][abs_c];
             ret++;
         }
     }
@@ -133,6 +163,81 @@ static enum flow_dir flow_dir(const float integration_field[FIELD_RES_R][FIELD_R
         return FD_SE;
     else
         assert(0);
+}
+
+static bool is_LOS_corner(struct coord cell, const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C])
+{
+    if(cell.r > 0 && cell.r < FIELD_RES_R-1) {
+
+        bool left_blocked  = cost_field[cell.r - 1][cell.c] > 1;
+        bool right_blocked = cost_field[cell.r + 1][cell.c] > 1;
+        if(left_blocked ^ right_blocked)
+            return true;
+    }
+
+    if(cell.c > 0 && cell.c < FIELD_RES_C-1) {
+
+        bool top_blocked = cost_field[cell.r][cell.c - 1] > 1;
+        bool bot_blocked = cost_field[cell.r][cell.c + 1] > 1;
+        if(top_blocked ^ bot_blocked)
+            return true;
+    }
+    
+    return false;
+}
+
+static void create_wavefront_blocked_line(struct tile_desc target, struct tile_desc corner, 
+                                          const struct nav_private *priv, vec3_t map_pos, 
+                                          struct LOS_field *out_los)
+{
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    /* First determine the slope of the LOS blocker line in the XZ plane */
+    struct box target_bounds = M_Tile_Bounds(res, map_pos, target);
+    struct box corner_bounds = M_Tile_Bounds(res, map_pos, corner);
+
+    vec2_t target_center = (vec2_t){
+        target_bounds.x - target_bounds.width / 2.0f,
+        target_bounds.z + target_bounds.height / 2.0f
+    };
+    vec2_t corner_center = (vec2_t){
+        corner_bounds.x - corner_bounds.width / 2.0f,
+        corner_bounds.z + corner_bounds.height / 2.0f
+    };
+
+    vec2_t slope;
+    PFM_Vec2_Sub(&target_center, &corner_center, &slope);
+    PFM_Vec2_Normal(&slope, &slope);
+
+    /* Now use Bresenham's line drawing algorithm to follow a line 
+     * of the computed slope starting at the 'corner' until we hit the 
+     * edge of the field. 
+     * Multiply by 1_000 to convert slope to integer deltas, but keep 
+     * 3 digits of precision after the decimal.*/
+    int dx =  abs(slope.raw[0] * 1000);
+    int dy = -abs(slope.raw[1] * 1000);
+    int sx = slope.raw[0] > 0.0f ? 1 : -1;
+    int sy = slope.raw[1] < 0.0f ? 1 : -1;
+    int err = dx + dy, e2;
+
+    struct coord curr = (struct coord){corner.tile_r, corner.tile_c};
+    do {
+
+        out_los->field[curr.r][curr.c].wavefront_blocked = 1;
+        e2 = 2 * err;
+        if(e2 >= dy) {
+            err += dy;
+            curr.c += sx;
+        }
+        if(e2 <= dx) {
+            err += dx;
+            curr.r += sy;
+        }
+
+    }while(curr.r >= 0 && curr.r < FIELD_RES_R && curr.c >= 0 && curr.c < FIELD_RES_C);
 }
 
 /*****************************************************************************/
@@ -209,7 +314,7 @@ void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target
         pq_coord_pop(&frontier, &curr);
 
         struct coord neighbours[8];
-        float neighbour_costs[8];
+        uint8_t neighbour_costs[8];
         int num_neighbours = neighbours_grid(chunk->cost_base, curr, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
@@ -265,5 +370,70 @@ void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target
             inout_flow->field[r][c].dir_idx = flow_dir(integration_field, (struct coord){r, c});
         }
     }
+}
+
+void N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc target,
+                      const struct nav_private *priv, vec3_t map_pos, struct LOS_field *out_los)
+{
+    out_los->chunk = chunk_coord;
+    memset(out_los->field, 0x00, sizeof(out_los->field));
+
+    pq_coord_t frontier;
+    pq_coord_init(&frontier);
+    const struct nav_chunk *chunk = &priv->chunks[chunk_coord.r * priv->width + chunk_coord.c];
+
+    float integration_field[FIELD_RES_R][FIELD_RES_C];
+    for(int r = 0; r < FIELD_RES_R; r++)
+        for(int c = 0; c < FIELD_RES_C; c++)
+            integration_field[r][c] = INFINITY;
+
+    /* Case 1: LOS for the destination chunk */
+    if(chunk_coord.r == target.chunk_r && chunk_coord.c == target.chunk_c) {
+
+        pq_coord_push(&frontier, 0.0f, (struct coord){target.tile_r, target.tile_c});
+        integration_field[target.tile_r][target.tile_c] = 0.0f;
+    }else{
+        assert(0);
+    }
+
+    while(pq_size(&frontier) > 0) {
+
+        struct coord curr;
+        pq_coord_pop(&frontier, &curr);
+
+        struct coord neighbours[8];
+        uint8_t neighbour_costs[8];
+        int num_neighbours = neighbours_grid_LOS(chunk->cost_base, out_los, curr, neighbours, neighbour_costs);
+
+        for(int i = 0; i < num_neighbours; i++) {
+
+            int nr = neighbours[i].r, nc = neighbours[i].c;
+            if(neighbour_costs[i] > 1) {
+                
+                if(!is_LOS_corner(neighbours[i], chunk->cost_base))
+                    continue;
+
+                struct tile_desc src_desc = (struct tile_desc) {
+                    .chunk_r = chunk_coord.r,
+                    .chunk_c = chunk_coord.c,
+                    .tile_r = neighbours[i].r,
+                    .tile_c = neighbours[i].c
+                };
+                create_wavefront_blocked_line(target, src_desc, priv, map_pos, out_los);
+            }else{
+
+                float new_cost = integration_field[curr.r][curr.c] + 1;
+                out_los->field[nr][nc].visible = 1;
+
+                if(new_cost < integration_field[neighbours[i].r][neighbours[i].c]) {
+
+                    integration_field[nr][nc] = new_cost;
+                    if(!pq_coord_contains(&frontier, neighbours[i]))
+                        pq_coord_push(&frontier, new_cost, neighbours[i]);
+                }
+            }
+        }
+    }
+    pq_coord_destroy(&frontier);
 }
 
