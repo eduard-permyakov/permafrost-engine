@@ -373,7 +373,8 @@ void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target
 }
 
 void N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc target,
-                      const struct nav_private *priv, vec3_t map_pos, struct LOS_field *out_los)
+                      const struct nav_private *priv, vec3_t map_pos, 
+                      struct LOS_field *out_los, const struct LOS_field *prev_los)
 {
     out_los->chunk = chunk_coord;
     memset(out_los->field, 0x00, sizeof(out_los->field));
@@ -392,8 +393,83 @@ void N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc t
 
         pq_coord_push(&frontier, 0.0f, (struct coord){target.tile_r, target.tile_c});
         integration_field[target.tile_r][target.tile_c] = 0.0f;
+        assert(NULL == prev_los);
+
+    /* Case 2: LOS for a chunk other than the destination chunk 
+     * In this case, carry over the 'visible' and 'wavefront blocked' flags from 
+     * the shared edge with the previous chunk. Then treat each tile with the 
+     * 'wavefront blocked' flag as a LOS corner. This will make the LOS seamless
+     * accross chunk borders. */
     }else{
-        assert(0);
+        
+        assert(prev_los);
+        if(prev_los->chunk.r < chunk_coord.r) {
+
+            for(int c = 0; c < FIELD_RES_C; c++) {
+
+                out_los->field[0][c] = prev_los->field[FIELD_RES_R-1][c];
+                if(out_los->field[0][c].wavefront_blocked) {
+
+                    struct tile_desc src_desc = (struct tile_desc) {chunk_coord.r, chunk_coord.c, 0, c};
+                    create_wavefront_blocked_line(target, src_desc, priv, map_pos, out_los);
+                }
+                if(out_los->field[0][c].visible) {
+
+                    pq_coord_push(&frontier, 0.0f, (struct coord){0, c});
+                    integration_field[0][c] = 0.0f;
+                }
+            }
+        }else if(prev_los->chunk.r > chunk_coord.r) {
+
+            for(int c = 0; c < FIELD_RES_C; c++) {
+
+                out_los->field[FIELD_RES_R-1][c] = prev_los->field[0][c];
+                if(out_los->field[FIELD_RES_R-1][c].wavefront_blocked) {
+
+                    struct tile_desc src_desc = (struct tile_desc) {chunk_coord.r, chunk_coord.c, FIELD_RES_R-1, c};
+                    create_wavefront_blocked_line(target, src_desc, priv, map_pos, out_los);
+                }
+                if(out_los->field[FIELD_RES_R-1][c].visible) {
+
+                    pq_coord_push(&frontier, 0.0f, (struct coord){FIELD_RES_R-1, c});
+                    integration_field[FIELD_RES_R-1][c] = 0.0f;
+                }
+            }
+        }else if(prev_los->chunk.c < chunk_coord.c) {
+
+            for(int r = 0; r < FIELD_RES_R; r++) {
+
+                out_los->field[r][0] = prev_los->field[r][FIELD_RES_C-1];
+                if(out_los->field[r][0].wavefront_blocked) {
+
+                    struct tile_desc src_desc = (struct tile_desc) {chunk_coord.r, chunk_coord.c, r, 0};
+                    create_wavefront_blocked_line(target, src_desc, priv, map_pos, out_los);
+                }
+                if(out_los->field[r][0].visible) {
+
+                    pq_coord_push(&frontier, 0.0f, (struct coord){r, 0});
+                    integration_field[r][0] = 0.0f;
+                }
+            }
+        }else if(prev_los->chunk.c > chunk_coord.c) {
+
+            for(int r = 0; r < FIELD_RES_R; r++) {
+
+                out_los->field[r][FIELD_RES_C-1] = prev_los->field[r][0];
+                if(out_los->field[r][FIELD_RES_C-1].wavefront_blocked) {
+
+                    struct tile_desc src_desc = (struct tile_desc) {chunk_coord.r, chunk_coord.c, r, FIELD_RES_C-1};
+                    create_wavefront_blocked_line(target, src_desc, priv, map_pos, out_los);
+                }
+                if(out_los->field[r][FIELD_RES_C-1].visible) {
+
+                    pq_coord_push(&frontier, 0.0f, (struct coord){r, FIELD_RES_C-1});
+                    integration_field[r][FIELD_RES_C-1] = 0.0f;
+                }
+            }
+        }else{
+            assert(0);
+        }
     }
 
     while(pq_size(&frontier) > 0) {

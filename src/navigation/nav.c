@@ -845,7 +845,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
     if(!N_FC_ContainsLOSField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c})) {
 
         struct LOS_field lf;
-        N_LOSFieldCreate(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, dst_desc, priv, map_pos, &lf);
+        N_LOSFieldCreate(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, dst_desc, priv, map_pos, &lf, NULL);
         N_FC_SetLOSField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &lf);
     }
 
@@ -881,17 +881,19 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         return false; 
     }
 
-    /* Traverse the portal path and generate the required fields, if they are not already 
-     * cached. Add the results to the fieldcache. */
-    for(int i = 0; i < kv_size(path)-1; i++) {
+    struct coord prev_los_coord = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
 
-        const struct portal *curr_node = kv_A(path, i);
-        const struct portal *next_hop = kv_A(path, i + 1);
+    /* Traverse the portal path _backwards_ and generate the required fields, if they are not already 
+     * cached. Add the results to the fieldcache. */
+    for(int i = kv_size(path)-1; i > 0; i--) {
+
+        const struct portal *curr_node = kv_A(path, i - 1);
+        const struct portal *next_hop = kv_A(path, i);
 
         /* If the very first hop takes us into another chunk, that means that the 'nearest portal'
          * to the source borders the 'next' chunk already. In this case, we must remember to
          * still generate a flow field for the current chunk steering to this portal. */
-        if(i == 0 && (next_hop->chunk.r != src_desc.chunk_r || next_hop->chunk.c != src_desc.chunk_c))
+        if(i == 1 && (next_hop->chunk.r != src_desc.chunk_r || next_hop->chunk.c != src_desc.chunk_c))
             next_hop = src_port;
 
         if(curr_node->connected == next_hop)
@@ -904,7 +906,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         if(curr_node->chunk.r == dst_desc.chunk_r 
         && curr_node->chunk.c == dst_desc.chunk_c
         && next_hop == dst_port)
-            break;
+            continue;
 
         struct coord chunk_coord = curr_node->chunk;
         struct field_target target = (struct field_target){
@@ -941,6 +943,17 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         N_FlowFieldInit(chunk_coord, &ff);
         N_FlowFieldUpdate(chunk, target, &ff);
         N_FC_SetFlowField(ret, chunk_coord, new_id, &ff);
+
+        if(!N_FC_ContainsLOSField(ret, chunk_coord)) {
+
+            const struct LOS_field *prev_los = N_FC_LOSFieldAt(ret, prev_los_coord);
+            assert(prev_los);
+
+            struct LOS_field lf;
+            N_LOSFieldCreate(ret, chunk_coord, dst_desc, priv, map_pos, &lf, prev_los);
+            N_FC_SetLOSField(ret, chunk_coord, &lf);
+            prev_los_coord = chunk_coord;
+        }
     }
     kv_destroy(path);
 

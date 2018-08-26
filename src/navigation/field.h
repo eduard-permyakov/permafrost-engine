@@ -74,8 +74,19 @@ void    N_FlowFieldInit(struct coord chunk, struct flow_field *out);
 void    N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target, 
                           struct flow_field *inout_flow);
 
+/* ------------------------------------------------------------------------
+ * Create a line of sight field, indicating which tiles in this chunk are 
+ * directly visible from the 'target' tile. If the 'target' tile is not in
+ * the current chunk, the previous LOS field along the path must be 
+ * supplied in the 'prev_los' argument, so that the visibility information
+ * can be carried accross the chunk border. This means that the LOS fields 
+ * must be generated starting at the destination chunk (where 'prev_los' is 
+ * NULL) and and moving backwards along the path back to the 'source' chunk.
+ * ------------------------------------------------------------------------
+ */
 void    N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc target,
-                         const struct nav_private *priv, vec3_t map_pos, struct LOS_field *out_los);
+                         const struct nav_private *priv, vec3_t map_pos, 
+                         struct LOS_field *out_los, const struct LOS_field *prev_los);
 
 #endif
 
