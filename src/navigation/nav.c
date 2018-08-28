@@ -870,14 +870,21 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         return false; 
     }
 
-    float cost;
     portal_vec_t path;
-    kv_init(path);
+    bool path_exists;
 
-    bool path_exists = AStar_PortalGraphPath(src_port, dst_port, priv, &path, &cost);
+    if(N_FC_ContainsPortalPath(src_port, dst_port)) {
+
+        path_exists = N_FC_PortalPathForNodes(src_port, dst_port, &path);
+    }else{
+
+        float cost;
+        kv_init(path);
+        path_exists = AStar_PortalGraphPath(src_port, dst_port, priv, &path, &cost);
+        N_FC_SetPortalPath(src_port, dst_port, path_exists ? &path : NULL);
+    }
+
     if(!path_exists) {
-
-        kv_destroy(path);
         return false; 
     }
 
@@ -955,7 +962,6 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
             prev_los_coord = chunk_coord;
         }
     }
-    kv_destroy(path);
 
     *out_dest_id = ret; 
     return true;
