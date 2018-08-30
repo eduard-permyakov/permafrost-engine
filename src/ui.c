@@ -18,6 +18,7 @@
  */
 #include "ui.h"
 #include "config.h"
+#include "event.h"
 
 #include "lib/public/pf_nuklear.h"
 #include "lib/public/nuklear_sdl_gl3.h"
@@ -59,6 +60,26 @@ static void ui_draw_text(const struct text_desc desc)
         (struct nk_color){0,0,0,255}, rgba);
 }
 
+static void on_update_ui(void *user, void *event)
+{
+    struct nk_style *s = &s_nk_ctx->style;
+    nk_style_push_color(s_nk_ctx, &s->window.background, nk_rgba(0,0,0,0));
+    nk_style_push_style_item(s_nk_ctx, &s->window.fixed_background, nk_style_item_color(nk_rgba(0,0,0,0)));
+
+    if(nk_begin(s_nk_ctx, "__labels__", nk_rect(0, 0, CONFIG_RES_X, CONFIG_RES_Y), 
+       NK_WINDOW_NO_INPUT | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR)) {
+    
+       for(int i = 0; i < kv_size(s_curr_frame_labels); i++)
+            ui_draw_text(kv_A(s_curr_frame_labels, i)); 
+    }
+    nk_end(s_nk_ctx);
+
+    nk_style_pop_color(s_nk_ctx);
+    nk_style_pop_style_item(s_nk_ctx);
+
+    kv_reset(s_curr_frame_labels);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -82,6 +103,7 @@ struct nk_context *UI_Init(const char *basedir, SDL_Window *win)
     nk_sdl_font_stash_end();
 
     kv_init(s_curr_frame_labels);
+    E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL);
 
     s_nk_ctx = ctx;
     return ctx;
@@ -89,6 +111,7 @@ struct nk_context *UI_Init(const char *basedir, SDL_Window *win)
 
 void UI_Shutdown(void)
 {
+    E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     kv_destroy(s_curr_frame_labels);
     nk_sdl_shutdown();
 }
@@ -111,26 +134,6 @@ void UI_Render(void)
 void UI_HandleEvent(SDL_Event *event)
 {
     nk_sdl_handle_event(event);
-}
-
-void UI_ProcessText(void)
-{
-    struct nk_style *s = &s_nk_ctx->style;
-    nk_style_push_color(s_nk_ctx, &s->window.background, nk_rgba(0,0,0,0));
-    nk_style_push_style_item(s_nk_ctx, &s->window.fixed_background, nk_style_item_color(nk_rgba(0,0,0,0)));
-
-    if(nk_begin(s_nk_ctx, "__labels__", nk_rect(0, 0, CONFIG_RES_X, CONFIG_RES_Y), 
-       NK_WINDOW_NO_INPUT | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR)) {
-    
-       for(int i = 0; i < kv_size(s_curr_frame_labels); i++)
-            ui_draw_text(kv_A(s_curr_frame_labels, i)); 
-    }
-    nk_end(s_nk_ctx);
-
-    nk_style_pop_color(s_nk_ctx);
-    nk_style_pop_style_item(s_nk_ctx);
-
-    kv_reset(s_curr_frame_labels);
 }
 
 void UI_DrawText(const char *text, struct rect rect, struct rgba rgba)

@@ -39,7 +39,6 @@ void               UI_InputEnd(struct nk_context *ctx);
 void               UI_Render(void);
 void               UI_HandleEvent(SDL_Event *event);
 void               UI_DrawText(const char *text, struct rect rect, struct rgba rgba);
-void               UI_ProcessText(void);
 
 #endif
 

@@ -197,12 +197,6 @@ static bool engine_init(char **argv)
     glProvokingVertex(GL_FIRST_VERTEX_CONVENTION); 
 
     /* ----------------------------------- */
-    /* nuklear initialization              */
-    /* ----------------------------------- */
-    if( !(s_nk_ctx = UI_Init(argv[1], s_window)) ) 
-        goto fail_nuklear;
-
-    /* ----------------------------------- */
     /* stb_image initialization            */
     /* ----------------------------------- */
     stbi_set_flip_vertically_on_load(true);
@@ -230,9 +224,15 @@ static bool engine_init(char **argv)
     /* Event subsystem intialization       */
     /* ----------------------------------- */
     if(!E_Init())
-        goto fail_game;
+        goto fail_event;
     Cursor_SetRTSMode(true);
     E_Global_Register(SDL_QUIT, on_user_quit, NULL);
+
+    /* ----------------------------------- */
+    /* nuklear initialization              */
+    /* ----------------------------------- */
+    if( !(s_nk_ctx = UI_Init(argv[1], s_window)) ) 
+        goto fail_nuklear;
 
     /* ----------------------------------- */
     /* Scripting subsystem initialization  */
@@ -259,12 +259,13 @@ fail_nav:
     G_Shutdown();
 fail_game:
 fail_script:
+fail_nuklear:
+fail_event:
 fail_render:
     Cursor_FreeAll();
 fail_cursor:
     UI_Shutdown();
 fail_al:
-fail_nuklear:
 fail_glew:
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window);
@@ -286,11 +287,11 @@ static void engine_shutdown(void)
     G_Shutdown(); 
     Cursor_FreeAll();
     AL_Shutdown();
+    UI_Shutdown();
     E_Shutdown();
 
     kv_destroy(s_prev_tick_events);
 
-    UI_Shutdown();
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window); 
     SDL_Quit();
@@ -346,7 +347,6 @@ int main(int argc, char **argv)
         process_sdl_events();
         E_ServiceQueue();
         G_Update();
-        UI_ProcessText();
         render();
 
         uint32_t curr_time = SDL_GetTicks();
