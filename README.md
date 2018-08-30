@@ -1,7 +1,7 @@
 ## ![Logo](docs/images/logo.png) ##
 
-Permafrost Engine is an OpenGL 3.3 RTS game engine written in C. It is still
-in the early phases of development.
+Permafrost Engine is an OpenGL 3.3 RTS game engine written in C. It is made 
+in the image of old classics, but incorporating some modern ideas.
 
 ## Engine Showcase ##
 
@@ -15,6 +15,8 @@ in the early phases of development.
 ![Map Editor](docs/images/editor.png)
 ###### Baked Navigation Grid ######
 ![Navigation Grid](docs/images/navigation.png)
+###### Flocking + Flow Field Pathfinding ######
+![Navigation Grid](docs/images/pathfinding.gif)
 
 ## Engine Summary ##
 
@@ -27,15 +29,15 @@ in the early phases of development.
 * Export/Import of game entites to/from ASCII files
 * Engine internals exposed to Python 2.7 for scripting
 * Event system
-* UI framework (Nuklear)
+* UI framework (Nuklear-based)
 * Efficient raycasting
 * Map/Scene editor
 * Fast rendering of huge maps (map size only limited by memory)
 * RTS minimap
 * RTS-style unit selection
 * Map navigation graph/grid generation
-* Flow field generation for pathfinding
 * Implementation of 'boids' steering/flocking behaviours
+* Hierarchial flow field pathfinding
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
