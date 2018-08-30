@@ -323,3 +323,18 @@ void M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera 
     }
 }
 
+vec2_t M_NavDesiredVelocity(const struct map *map, dest_id_t id, vec2_t curr_pos, vec2_t xz_dest)
+{
+    return N_DesiredVelocity(id, curr_pos, xz_dest, map->nav_private, map->pos);
+}
+
+bool M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos)
+{
+    return N_HasDestLOS(id, curr_pos, map->nav_private, map->pos);
+}
+
+bool M_NavPositionPathable(const struct map *map, vec2_t xz_pos)
+{
+    return N_PositionPathable(xz_pos, map->nav_private, map->pos);
+}
+

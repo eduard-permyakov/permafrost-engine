@@ -24,7 +24,7 @@
 #include <assert.h>
 
 
-#define EVICTION_NUM_SECS (15)
+#define EVICTION_NUM_SECS (30)
 
 struct LOS_entry{
     unsigned int     age;

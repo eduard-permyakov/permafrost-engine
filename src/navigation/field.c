@@ -49,7 +49,7 @@ vec2_t g_flow_dir_lookup[9] = {
 /*****************************************************************************/
 
 static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
-                           struct coord *out_neighbours, uint8_t *out_costs)
+                           bool only_passable, struct coord *out_neighbours, uint8_t *out_costs)
 {
     int ret = 0;
 
@@ -65,7 +65,7 @@ static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], s
                 continue;
             if(r == 0 && c == 0)
                 continue;
-            if(cost_field[abs_r][abs_c] == COST_IMPASSABLE)
+            if(only_passable && cost_field[abs_r][abs_c] == COST_IMPASSABLE)
                 continue;
             if((r == c) || (r == -c)) /* diag */
                 continue;
@@ -240,6 +240,63 @@ static void create_wavefront_blocked_line(struct tile_desc target, struct tile_d
     }while(curr.r >= 0 && curr.r < FIELD_RES_R && curr.c >= 0 && curr.c < FIELD_RES_C);
 }
 
+/* Initialize the flow field to point towards the closest passable tile. This will make the 
+ * entities steer towards the nearest pathable tile in case they get pushed slightly off
+ * the passable area by another steering force. */
+static void flow_field_prepass(const struct nav_chunk *chunk, struct flow_field *out)
+{
+    pq_coord_t frontier;
+    pq_coord_init(&frontier);
+
+    float integration_field[FIELD_RES_R][FIELD_RES_C];
+    for(int r = 0; r < FIELD_RES_R; r++)
+        for(int c = 0; c < FIELD_RES_C; c++)
+            integration_field[r][c] = INFINITY;
+
+    for(int i = 0; i < chunk->num_portals; i++) {
+
+        const struct portal *port = &chunk->portals[i];
+        for(int r = port->endpoints[0].r; r <= port->endpoints[1].r; r++) {
+            for(int c = port->endpoints[0].c; c <= port->endpoints[1].c; c++) {
+
+                pq_coord_push(&frontier, 0.0f, (struct coord){r, c});
+                integration_field[r][c] = 0.0f;
+            }
+        }
+    }
+
+    /* Build the integration field */
+    while(pq_size(&frontier) > 0) {
+
+        struct coord curr;
+        pq_coord_pop(&frontier, &curr);
+
+        struct coord neighbours[8];
+        uint8_t neighbour_costs[8];
+        int num_neighbours = neighbours_grid(chunk->cost_base, curr, false, neighbours, neighbour_costs);
+
+        for(int i = 0; i < num_neighbours; i++) {
+
+            float total_cost = integration_field[curr.r][curr.c] + ((neighbour_costs[i] == COST_IMPASSABLE) ? 1 : 0);
+            if(total_cost < integration_field[neighbours[i].r][neighbours[i].c]) {
+
+                integration_field[neighbours[i].r][neighbours[i].c] = total_cost;
+                if(!pq_coord_contains(&frontier, neighbours[i]))
+                    pq_coord_push(&frontier, total_cost, neighbours[i]);
+            }
+        }
+    }
+    pq_coord_destroy(&frontier);
+
+    /* Build the flow field */
+    for(int r = 0; r < FIELD_RES_R; r++) {
+        for(int c = 0; c < FIELD_RES_C; c++) {
+            if(chunk->cost_base[r][c] == COST_IMPASSABLE)
+                out->field[r][c].dir_idx = flow_dir(integration_field, (struct coord){r, c});
+        }
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -265,7 +322,7 @@ ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target)
     }
 }
 
-void N_FlowFieldInit(struct coord chunk, struct flow_field *out)
+void N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct flow_field *out)
 {
     for(int r = 0; r < FIELD_RES_R; r++) {
         for(int c = 0; c < FIELD_RES_C; c++) {
@@ -273,7 +330,11 @@ void N_FlowFieldInit(struct coord chunk, struct flow_field *out)
             out->field[r][c].dir_idx = FD_NONE;
         }
     }
-    out->chunk = chunk;
+    out->chunk = chunk_coord;
+
+    const struct nav_private *priv = nav_private;
+    const struct nav_chunk *chunk = &priv->chunks[chunk_coord.r * priv->width + chunk_coord.c];
+    flow_field_prepass(chunk, out);
 }
 
 void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target, 
@@ -315,7 +376,7 @@ void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target
 
         struct coord neighbours[8];
         uint8_t neighbour_costs[8];
-        int num_neighbours = neighbours_grid(chunk->cost_base, curr, neighbours, neighbour_costs);
+        int num_neighbours = neighbours_grid(chunk->cost_base, curr, true, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 

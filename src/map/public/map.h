@@ -200,6 +200,28 @@ bool   M_NavRequestPath(const struct map *map, vec2_t xz_src, vec2_t xz_dest,
 void   M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera *cam, 
                                        dest_id_t id);
 
+/* ------------------------------------------------------------------------
+ * Returns the desired velocity vector for moving with the flow field 
+ * to the specified destination.
+ * ------------------------------------------------------------------------
+ */
+vec2_t M_NavDesiredVelocity(const struct map *map, dest_id_t id, 
+                            vec2_t curr_pos, vec2_t xz_dest);
+
+/* ------------------------------------------------------------------------
+ * Returns true if the specified coordinate is in direct line of sight of 
+ * the specified destination.
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos);
+
+/* ------------------------------------------------------------------------
+ * Returns true if the specified positions is pathable (i.e. a unit is 
+ * allowed to stand on this region of the map)
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavPositionPathable(const struct map *map, vec2_t xz_pos);
+
 /*###########################################################################*/
 /* MINIMAP                                                                   */
 /*###########################################################################*/

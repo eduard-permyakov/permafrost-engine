@@ -123,7 +123,21 @@ bool      N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
  * towards a particular destination.
  * ------------------------------------------------------------------------
  */
-vec2_t    N_DesiredVelocity(dest_id_t id, vec2_t curr_pos);
+vec2_t    N_DesiredVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest, 
+                            void *nav_private, vec3_t map_pos);
+
+/* ------------------------------------------------------------------------
+ * Returns true if the particular destination is in direct line of sight 
+ * of the specified position.
+ * ------------------------------------------------------------------------
+ */
+bool      N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_pos);
+
+/* ------------------------------------------------------------------------
+ * Returns true if the specified XZ position is pathable.
+ * ------------------------------------------------------------------------
+ */
+bool      N_PositionPathable(vec2_t xz_pos, void *nav_private, vec3_t map_pos);
 
 #endif
 

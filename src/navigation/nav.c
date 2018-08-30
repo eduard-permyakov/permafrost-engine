@@ -485,10 +485,10 @@ static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_mode
 
 static dest_id_t n_dest_id(struct tile_desc dst_desc)
 {
-    return (((uint32_t)dst_desc.chunk_r & 0xf) << 24)
-         | (((uint32_t)dst_desc.chunk_c & 0xf) << 16)
-         | (((uint32_t)dst_desc.tile_r  & 0xf) <<  8)
-         | (((uint32_t)dst_desc.tile_c  & 0xf) <<  0);
+    return (((uint32_t)dst_desc.chunk_r & 0xff) << 24)
+         | (((uint32_t)dst_desc.chunk_c & 0xff) << 16)
+         | (((uint32_t)dst_desc.tile_r  & 0xff) <<  8)
+         | (((uint32_t)dst_desc.tile_c  & 0xff) <<  0);
 }
 
 /*****************************************************************************/
@@ -836,7 +836,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         struct flow_field ff;
         id = N_FlowField_ID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target);
 
-        N_FlowFieldInit((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &ff);
+        N_FlowFieldInit((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, priv, &ff);
         N_FlowFieldUpdate(chunk, target, &ff);
         N_FC_SetFlowField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, id, &ff);
     }
@@ -937,11 +937,14 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
             continue;
         }
 
-        N_FlowFieldInit(chunk_coord, &ff);
+        N_FlowFieldInit(chunk_coord, priv, &ff);
         N_FlowFieldUpdate(chunk, target, &ff);
         N_FC_SetFlowField(ret, chunk_coord, new_id, &ff);
 
         if(!N_FC_ContainsLOSField(ret, chunk_coord)) {
+
+            if((abs(prev_los_coord.r - chunk_coord.r) + abs(prev_los_coord.c - chunk_coord.c)) > 1)
+                continue;
 
             const struct LOS_field *prev_los = N_FC_LOSFieldAt(ret, prev_los_coord);
             assert(prev_los);
@@ -958,8 +961,89 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
     return true;
 }
 
-vec2_t N_DesiredVelocity(dest_id_t id, vec2_t curr_pos)
+vec2_t N_DesiredVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest, 
+                         void *nav_private, vec3_t map_pos)
 {
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
 
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &tile);
+    assert(result);
+
+    ff_id_t ffid;
+    if(!N_FC_ContainsFlowField(id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid)) {
+
+        dest_id_t ret;
+        bool result = N_RequestPath(nav_private, curr_pos, xz_dest, map_pos, &ret);
+        if(!result)
+            return (vec2_t){0.0f};
+        assert(ret == id);
+    }
+
+    const struct flow_field *ff = N_FC_FlowFieldAt(id, (struct coord){tile.chunk_r, tile.chunk_c});
+    assert(ff);
+
+    unsigned dir_idx = ff->field[tile.tile_r][tile.tile_c].dir_idx;
+    /* If we get a 'FD_NONE' direction, this can only mean that a field has not been generated 
+     * for this tile yet and we are getting the default value to which the flow field is
+     * initialized. The only case where a 'FD_NONE' direction is valid is at the 
+     * destination tile, in which case we will be within direct line of sight of it. 
+     * Since a flow field for this chunk already exists, this means that our path took us 
+     * through another 'island' in this chunk, which is separated from the current one with an impassable 
+     * barrier.*/
+    if(dir_idx == FD_NONE) {
+
+        dest_id_t ret;
+        bool result = N_RequestPath(nav_private, curr_pos, xz_dest, map_pos, &ret);
+        if(!result)
+            return (vec2_t){0.0f};
+        assert(ret == id);
+    }
+
+    ff = N_FC_FlowFieldAt(id, (struct coord){tile.chunk_r, tile.chunk_c});
+    assert(ff);
+
+    dir_idx = ff->field[tile.tile_r][tile.tile_c].dir_idx;
+    return g_flow_dir_lookup[dir_idx];
+}
+
+bool N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_pos)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &tile);
+    assert(result);
+
+    if(!N_FC_ContainsLOSField(id, (struct coord){tile.chunk_r, tile.chunk_c}))
+        return false;
+
+    const struct LOS_field *lf = N_FC_LOSFieldAt(id, (struct coord){tile.chunk_r, tile.chunk_c});
+    assert(lf);
+    return lf->field[tile.tile_r][tile.tile_c].visible;
+}
+
+bool N_PositionPathable(vec2_t xz_pos, void *nav_private, vec3_t map_pos)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile);
+    assert(result);
+
+    const struct nav_chunk *chunk = &priv->chunks[IDX(tile.chunk_r, priv->width, tile.chunk_c)];
+    return chunk->cost_base[tile.tile_r][tile.tile_c] != COST_IMPASSABLE;
 }
 

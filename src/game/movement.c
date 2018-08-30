@@ -40,7 +40,7 @@
  * meaning they are accelerate the same amount when applied equal forces. */
 #define ENTITY_MASS (1.0f)
 #define EPSILON     (1.0f/1024)
-#define MAX_FORCE   (1.0f)
+#define MAX_FORCE   (0.2f)
 #define SIGNUM(x)   (((x) > 0) - ((x) < 0))
 
 #define MIN(a, b)   ((a) < (b) ? (a) : (b))
@@ -69,6 +69,7 @@ KHASH_MAP_INIT_INT(state, struct movestate)
 struct flock{
     khash_t(entity) *ents;
     vec2_t           target_xz; 
+    dest_id_t        dest_id;
 };
 
 /* Parameters controlling steering/flocking behaviours */
@@ -99,7 +100,6 @@ kvec_t(struct entity*)  s_move_markers;
 kvec_t(struct flock)    s_flocks;
 khash_t(state)         *s_entity_state_table;
 const struct map       *s_map;
-dest_id_t               g_dest_id;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -184,6 +184,13 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
     if(!new_flock.ents)
         return false;
 
+    /* Don't request a new path (flow field) for an entity that is adjacent to
+     * another entity for which a path has already been requested. This allows 
+     * saving pathfinding cycles, especially for large flocks. */
+    const struct entity *pathed_ents[kv_size(*sel)];
+    size_t num_pathed_ents = 0;
+    khiter_t k;
+
     for(int i = 0; i < kv_size(*sel); i++) {
 
         int ret;
@@ -192,55 +199,55 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
         if(curr_ent->flags & ENTITY_FLAG_STATIC || curr_ent->max_speed == 0.0f)
             continue;
 
-        khiter_t k = kh_put(entity, new_flock.ents, curr_ent->uid, &ret);
-        assert(ret != -1 && ret != 0);
-        kh_value(new_flock.ents, k) = (struct entity*)curr_ent;
+        dest_id_t id;
+        if(adjacent_to_any_in_set(curr_ent, pathed_ents, num_pathed_ents)
+        || M_NavRequestPath(s_map, (vec2_t){curr_ent->pos.x, curr_ent->pos.z}, target_xz, &id)) {
 
-        /* When entities are moved from one flock to another, they keep their existing velocity. 
-         * Otherwise, entities start out with a velocity of 0. */
-        if((k = kh_get(state, s_entity_state_table, curr_ent->uid)) == kh_end(s_entity_state_table)) {
+            pathed_ents[num_pathed_ents++] = curr_ent;
+            new_flock.dest_id = id;
 
-            k = kh_put(state, s_entity_state_table, curr_ent->uid, &ret);
+            k = kh_put(entity, new_flock.ents, curr_ent->uid, &ret);
             assert(ret != -1 && ret != 0);
-            kh_value(s_entity_state_table, k) = (struct movestate){ 
-                .velocity = {0.0f}, 
-                .state = STATE_MOVING,
-                .avoid_ticks_left = 0,
-                .avoid_force = (vec2_t){0.0f},
-            };
-            E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
+            kh_value(new_flock.ents, k) = (struct entity*)curr_ent;
 
-        }else {
+            /* When entities are moved from one flock to another, they keep their existing velocity. 
+             * Otherwise, entities start out with a velocity of 0. */
+            if((k = kh_get(state, s_entity_state_table, curr_ent->uid)) == kh_end(s_entity_state_table)) {
 
-            if(kh_value(s_entity_state_table, k).state == STATE_ARRIVED)
+                k = kh_put(state, s_entity_state_table, curr_ent->uid, &ret);
+                assert(ret != -1 && ret != 0);
+                kh_value(s_entity_state_table, k) = (struct movestate){ 
+                    .velocity = {0.0f}, 
+                    .state = STATE_MOVING,
+                    .avoid_ticks_left = 0,
+                    .avoid_force = (vec2_t){0.0f},
+                };
                 E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
-            kh_value(s_entity_state_table, k).state = STATE_MOVING;
+
+            }else {
+
+                if(kh_value(s_entity_state_table, k).state == STATE_ARRIVED)
+                    E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
+                kh_value(s_entity_state_table, k).state = STATE_MOVING;
+            }
+
+        }else if((k = kh_get(state, s_entity_state_table, curr_ent->uid)) != kh_end(s_entity_state_table)){
+
+            kh_value(s_entity_state_table, k) = (struct movestate) {
+                .state = STATE_ARRIVED,
+                .velocity = (vec2_t){0.0f}
+            };
+            E_Entity_Notify(EVENT_MOTION_END, curr_ent->uid, NULL, ES_ENGINE);
         }
     }
 
-    /* Don't request a new path (flow field) for an entity that is adjacent to
-     * another entity for which a path has already been requested. This allows 
-     * saving pathfinding cycles, especially for large flocks. */
-    const struct entity *pathed_ents[kh_size(new_flock.ents)];
-    size_t num_pathed_ents = 0;
-
-    uint32_t key;
-    struct entity *curr;
-    kh_foreach(new_flock.ents, key, curr, {
-
-        if(adjacent_to_any_in_set(curr, pathed_ents, num_pathed_ents)) {
-            pathed_ents[num_pathed_ents++] = curr;
-            continue;
-        }
-
-        dest_id_t id;
-        M_NavRequestPath(s_map, (vec2_t){curr->pos.x, curr->pos.z}, target_xz, &id);
-        pathed_ents[num_pathed_ents++] = curr;
-        g_dest_id = id;
-    });
-
-    kv_push(struct flock, s_flocks, new_flock);
-    return true;
+    if(kh_size(new_flock.ents) > 0) {
+        kv_push(struct flock, s_flocks, new_flock);
+        return true;
+    }else{
+        kh_destroy(entity, new_flock.ents);
+        return false;
+    }
 }
 
 size_t adjacent_flock_members(const struct entity *ent, const struct flock *flock, 
@@ -389,6 +396,9 @@ static vec2_t seek_force(const struct entity *ent, const struct flock *flock, in
 
 /* Arrival behaviour is like 'seek' but the entity decelerates and comes to a halt when it is 
  * within a threshold radius of the destination point.
+ * 
+ * When not within line of sight of the destination, this will steer the entity along the 
+ * flow field.
  */
 static vec2_t arrive_force(const struct entity *ent, const struct flock *flock, int tick_res)
 {
@@ -396,14 +406,20 @@ static vec2_t arrive_force(const struct entity *ent, const struct flock *flock, 
     vec2_t pos_xz = (vec2_t){ent->pos.x, ent->pos.z};
     float distance;
 
-    PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &pos_xz, &desired_velocity);
-    distance = PFM_Vec2_Len(&desired_velocity);
+    if(M_NavHasDestLOS(s_map, flock->dest_id, pos_xz)) {
 
-    PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
-    PFM_Vec2_Scale(&desired_velocity, ent->max_speed / tick_res, &desired_velocity);
+        PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &pos_xz, &desired_velocity);
+        distance = PFM_Vec2_Len(&desired_velocity);
+        PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
+        PFM_Vec2_Scale(&desired_velocity, ent->max_speed / tick_res, &desired_velocity);
 
-    if(distance < ARRIVE_SLOWING_RADIUS) {
-        PFM_Vec2_Scale(&desired_velocity, distance / ARRIVE_SLOWING_RADIUS, &desired_velocity);
+        if(distance < ARRIVE_SLOWING_RADIUS) {
+            PFM_Vec2_Scale(&desired_velocity, distance / ARRIVE_SLOWING_RADIUS, &desired_velocity);
+        }
+    }else{
+
+        desired_velocity = M_NavDesiredVelocity(s_map, flock->dest_id, pos_xz, flock->target_xz);
+        PFM_Vec2_Scale(&desired_velocity, ent->max_speed / tick_res, &desired_velocity);
     }
 
     khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
@@ -610,6 +626,14 @@ static vec2_t total_steering_force(const struct entity *ent, const struct flock 
     collision_avoid = kh_value(s_entity_state_table, k).avoid_ticks_left > 0
                     ? kh_value(s_entity_state_table, k).avoid_force
                     : collision_avoid;
+
+    /* When we get pushed onto an impassable tile, increase the proportion of the
+     * 'arrive' force, which will steer us back towards the nearest passable tile.*/
+    vec2_t xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
+    if(!M_NavPositionPathable(s_map, xz_pos)) {
+        PFM_Vec2_Scale(&arrive, 3.0f, &arrive);
+        PFM_Vec2_Scale(&alignment, 0.0f, &alignment);
+    }
 
     vec2_t ret = (vec2_t){0.0f};
     switch(state) {
