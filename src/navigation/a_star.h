@@ -21,6 +21,7 @@
 #define A_STAR_H
 
 #include "../lib/public/kvec.h"
+#include "../map/public/tile.h"
 #include "nav_data.h"
 
 #include <stdbool.h>
@@ -41,12 +42,12 @@ bool AStar_GridPath(struct coord start, struct coord finish,
                     coord_vec_t *out_path, float *out_cost);
 
 /* ------------------------------------------------------------------------
- * Finds the shortest path between two nodes in a portal graph. Returns true
- * if a path is found, false otherwise. If returning true, 'out_path' holds 
+ * Finds the shortest path between a tile and a node in a portal graph. Returns 
+ * true if a path is found, false otherwise. If returning true, 'out_path' holds 
  * the portal nodes to be traversed, in order.
  * ------------------------------------------------------------------------
  */
-bool AStar_PortalGraphPath(const struct portal *start, const struct portal *finish, 
+bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *finish, 
                            const struct nav_private *priv, 
                            portal_vec_t *out_path, float *out_cost);
 
@@ -58,11 +59,12 @@ bool AStar_TilesLinked(struct coord start, struct coord finish,
                        const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C]);
 
 /* ------------------------------------------------------------------------
- * Returns the nearest portal to a tile, NULL if there is no reachable portal.
+ * Returns a reachable portal in the chunk, NULL if no portal is reachable.
+ * The returned portal will not necessarily be the closest.
  * ------------------------------------------------------------------------
  */
-const struct portal *AStar_NearestPortal(struct coord start,
-                                         const struct nav_chunk *chunk);
+const struct portal *AStar_ReachablePortal(struct coord start,
+                                           const struct nav_chunk *chunk);
 
 #endif
 

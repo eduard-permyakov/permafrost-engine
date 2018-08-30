@@ -18,6 +18,7 @@
  */
 
 #include "a_star.h"
+#include "nav_private.h"
 #include "../lib/public/pqueue.h"
 #include "../lib/public/khash.h"
 
@@ -227,13 +228,13 @@ fail_came_from:
     return false;
 }
 
-bool AStar_PortalGraphPath(const struct portal *start, const struct portal *finish, 
+bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *finish, 
                            const struct nav_private *priv, 
                            portal_vec_t *out_path, float *out_cost)
 {
-    pq_portal_t           frontier;
+    pq_portal_t          frontier;
     khash_t(key_portal) *came_from;
-    khash_t(key_float) *running_cost;
+    khash_t(key_float)  *running_cost;
     
     pq_portal_init(&frontier);
     if(NULL == (came_from = kh_init(key_portal)))
@@ -241,8 +242,28 @@ bool AStar_PortalGraphPath(const struct portal *start, const struct portal *fini
     if(NULL == (running_cost = kh_init(key_float)))
         goto fail_running_cost;
 
-    kh_put_val(key_float, running_cost, portal_to_key(start), 0.0f);
-    pq_portal_push(&frontier, 0.0f, start);
+    const struct nav_chunk *chunk = &priv->chunks[start_tile.chunk_r * priv->width + start_tile.chunk_c];
+    coord_vec_t path;
+    kv_init(path);
+
+    /* Intitialize the frontier with all the portals in the source chunk that are 
+     * reachable from the source tile. */
+    for(int i = 0; i < chunk->num_portals; i++) {
+
+        const struct portal *port = &chunk->portals[i];
+        struct coord port_center = (struct coord){
+            (port->endpoints[0].r + port->endpoints[1].r) / 2,
+            (port->endpoints[0].c + port->endpoints[1].c) / 2,
+        };
+        float cost;
+        bool found = AStar_GridPath((struct coord){start_tile.tile_r, start_tile.tile_c}, port_center, chunk->cost_base, &path, &cost);
+		if(found){
+			
+            kh_put_val(key_float, running_cost, portal_to_key(port), cost);
+            pq_portal_push(&frontier, cost, port);
+		}
+    }
+	kv_destroy(path);
 
     while(pq_size(&frontier) > 0) {
 
@@ -283,14 +304,15 @@ bool AStar_PortalGraphPath(const struct portal *start, const struct portal *fini
     /* We have our path at this point. Walk backwards along the path to build a 
      * vector of the nodes along the path. */
     const struct portal *curr = finish;
-    while(curr != start) {
+    while(true) {
 
         kv_push(const struct portal*, *out_path, curr);
         khiter_t k = kh_get(key_portal, came_from, portal_to_key(curr));
-        assert(k != kh_end(came_from));
+        if(k == kh_end(came_from))
+            break;
         curr = kh_value(came_from, k);
     }
-    kv_push(const struct portal*, *out_path, start);
+    //kv_push(const struct portal*, *out_path, start);
 
     /* Reverse the path vector */
     for(int i = 0, j = kv_size(*out_path) - 1; i < j; i++, j--) {
@@ -317,14 +339,11 @@ fail_came_from:
     return false;
 }
 
-const struct portal *AStar_NearestPortal(struct coord start,
-                                         const struct nav_chunk *chunk)
+const struct portal *AStar_ReachablePortal(struct coord start,
+                                           const struct nav_chunk *chunk)
 {
     coord_vec_t path;
     kv_init(path);
-
-    float min_cost = INFINITY;
-    const struct portal *ret = NULL;
 
     for(int i = 0; i < chunk->num_portals; i++) {
 
@@ -335,15 +354,14 @@ const struct portal *AStar_NearestPortal(struct coord start,
         };
         float cost;
         bool found = AStar_GridPath(start, port_center, chunk->cost_base, &path, &cost);
-
-        if(found && cost < min_cost) {
-            min_cost = cost;
-            ret = port;
-        }
+		if(found){
+    		kv_destroy(path);
+			return port;
+		}
     }
 
-    kv_destroy(path);
-    return ret;
+	kv_destroy(path);
+    return NULL;
 }
 
 bool AStar_TilesLinked(struct coord start, struct coord finish,

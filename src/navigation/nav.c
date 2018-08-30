@@ -860,31 +860,21 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         return true;
     }
 
-    const struct portal *src_port, *dst_port;
-    src_port = AStar_NearestPortal((struct coord){src_desc.tile_r, src_desc.tile_c}, 
-        &priv->chunks[IDX(src_desc.chunk_r, priv->width, src_desc.chunk_c)]);
-    dst_port = AStar_NearestPortal((struct coord){dst_desc.tile_r, dst_desc.tile_c}, 
+    const struct portal *dst_port;
+    dst_port = AStar_ReachablePortal((struct coord){dst_desc.tile_r, dst_desc.tile_c}, 
         &priv->chunks[IDX(dst_desc.chunk_r, priv->width, dst_desc.chunk_c)]);
 
-    if(!src_port || !dst_port) {
+    if(!dst_port) {
         return false; 
     }
 
+    float cost;
     portal_vec_t path;
-    bool path_exists;
+    kv_init(path);
 
-    if(N_FC_ContainsPortalPath(src_port, dst_port)) {
-
-        path_exists = N_FC_PortalPathForNodes(src_port, dst_port, &path);
-    }else{
-
-        float cost;
-        kv_init(path);
-        path_exists = AStar_PortalGraphPath(src_port, dst_port, priv, &path, &cost);
-        N_FC_SetPortalPath(src_port, dst_port, path_exists ? &path : NULL);
-    }
-
+    bool path_exists = AStar_PortalGraphPath(src_desc, dst_port, priv, &path, &cost);
     if(!path_exists) {
+        kv_destroy(path);
         return false; 
     }
 
@@ -901,7 +891,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
          * to the source borders the 'next' chunk already. In this case, we must remember to
          * still generate a flow field for the current chunk steering to this portal. */
         if(i == 1 && (next_hop->chunk.r != src_desc.chunk_r || next_hop->chunk.c != src_desc.chunk_c))
-            next_hop = src_port;
+            next_hop = kv_A(path, 0);
 
         if(curr_node->connected == next_hop)
             continue;
@@ -962,6 +952,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
             prev_los_coord = chunk_coord;
         }
     }
+    kv_destroy(path);
 
     *out_dest_id = ret; 
     return true;

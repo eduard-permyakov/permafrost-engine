@@ -99,6 +99,7 @@ kvec_t(struct entity*)  s_move_markers;
 kvec_t(struct flock)    s_flocks;
 khash_t(state)         *s_entity_state_table;
 const struct map       *s_map;
+dest_id_t               g_dest_id;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -130,6 +131,24 @@ static void on_marker_anim_finish(void *user, void *event)
 
     E_Entity_Unregister(EVENT_ANIM_FINISHED, ent->uid, on_marker_anim_finish);
     AL_EntityFree(ent);
+}
+
+static bool adjacent_to_any_in_set(const struct entity *ent, const struct entity **set,
+                                   size_t set_size)
+{
+    vec2_t ent_xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
+
+    for(int i = 0; i < set_size; i++) {
+
+        vec2_t curr_xz_pos = (vec2_t){set[i]->pos.x, set[i]->pos.z};
+        vec2_t diff;
+        PFM_Vec2_Sub(&ent_xz_pos, &curr_xz_pos, &diff);
+
+        if(PFM_Vec2_Len(&diff) <= ent->selection_radius + set[i]->selection_radius + ADJACENCY_SEP_DIST)
+            return true;  
+    }
+
+    return false;
 }
 
 static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_xz)
@@ -199,12 +218,25 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
         }
     }
 
+    /* Don't request a new path (flow field) for an entity that is adjacent to
+     * another entity for which a path has already been requested. This allows 
+     * saving pathfinding cycles, especially for large flocks. */
+    const struct entity *pathed_ents[kh_size(new_flock.ents)];
+    size_t num_pathed_ents = 0;
+
     uint32_t key;
     struct entity *curr;
     kh_foreach(new_flock.ents, key, curr, {
 
+        if(adjacent_to_any_in_set(curr, pathed_ents, num_pathed_ents)) {
+            pathed_ents[num_pathed_ents++] = curr;
+            continue;
+        }
+
         dest_id_t id;
         M_NavRequestPath(s_map, (vec2_t){curr->pos.x, curr->pos.z}, target_xz, &id);
+        pathed_ents[num_pathed_ents++] = curr;
+        g_dest_id = id;
     });
 
     kv_push(struct flock, s_flocks, new_flock);
