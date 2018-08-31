@@ -1,4 +1,4 @@
-num_entities 312
+num_entities 336
 entity rock_1 assets/models/varied_rocks/rock_1.pfobj 8
    position vec3 52.475933 28.000000 -8.552010
    scale vec3 4.000000 4.000000 4.000000
@@ -1932,366 +1932,6 @@ entity obelisk_1 assets/models/props/obelisk_1.pfobj 8
    static bool 1
    collision bool 1
    selection_radius float 2.0
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -15.575935 12.000000 -218.568420
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -25.844265 12.000000 -218.703644
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -35.325256 12.000000 -217.424133
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.087156 0.000000 0.996195
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -17.532936 12.000000 -227.286041
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.087156 0.000000 0.996195
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -27.285145 12.000000 -226.754150
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -37.369610 12.000000 -225.382095
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -19.560635 12.000000 -236.531204
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -29.614925 12.000000 -234.200653
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.043619 0.000000 0.999048
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -39.382778 12.000000 -232.596558
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.087156 0.000000 0.996195
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -52.908325 12.000000 -197.349136
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.500000 0.000000 0.866025
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -57.303528 12.000000 -189.960754
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.500000 0.000000 0.866025
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -61.482868 12.000000 -182.092529
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.537300 0.000000 0.843391
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -64.838211 12.000000 -174.584137
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.537300 0.000000 0.843391
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -7.262569 12.368713 -220.670227
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.043619 0.000000 0.999048
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -7.568398 14.147827 -227.864075
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -8.920696 15.539642 -234.837708
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -61.554180 12.000000 -201.744537
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.537300 0.000000 0.843391
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -65.953766 12.000000 -194.741272
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.537300 0.000000 0.843391
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -70.049416 12.000000 -186.771667
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.573577 0.000000 0.819152
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -73.392967 12.000000 -178.914474
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.500000 0.000000 0.866025
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -69.129425 12.000000 -206.071594
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.500000 0.000000 0.866025
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -74.195206 12.000000 -198.863068
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.573577 0.000000 0.819152
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -77.821594 12.000000 -191.502045
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.500000 0.000000 0.866025
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -81.862503 12.000000 -183.248581
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 -0.537300 0.000000 0.843391
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
 entity grass_2 assets/models/grass/grass_2.pfobj 8
    position vec3 -92.821747 12.000000 -289.205963
    scale vec3 1.500000 1.500000 1.500000
@@ -2593,7 +2233,7 @@ entity cart assets/models/cart/cart.pfobj 8
    collision bool 1
    selection_radius float 3.75
 entity crate_2 assets/models/crate/crate_2.pfobj 8
-   position vec3 13.254417 16.000000 -218.100952
+   position vec3 -12.039577 16.000015 -253.539062
    scale vec3 4.000000 4.000000 4.000000
    rotation quat 0.000000 -0.382684 0.000000 0.923880
    animated bool 0
@@ -2602,7 +2242,7 @@ entity crate_2 assets/models/crate/crate_2.pfobj 8
    collision bool 1
    selection_radius float 3.25
 entity crate_2 assets/models/crate/crate_2.pfobj 8
-   position vec3 11.981892 16.000000 -212.924652
+   position vec3 -9.235126 16.000015 -247.311829
    scale vec3 4.000000 4.000000 4.000000
    rotation quat 0.000000 0.173648 0.000000 0.984808
    animated bool 0
@@ -2611,7 +2251,7 @@ entity crate_2 assets/models/crate/crate_2.pfobj 8
    collision bool 1
    selection_radius float 3.25
 entity crate_2 assets/models/crate/crate_2.pfobj 8
-   position vec3 16.108547 16.000000 -226.319061
+   position vec3 -12.389244 13.805389 -235.527145
    scale vec3 4.000000 4.000000 4.000000
    rotation quat 0.000000 0.000000 0.000000 1.000000
    animated bool 0
@@ -2620,7 +2260,7 @@ entity crate_2 assets/models/crate/crate_2.pfobj 8
    collision bool 1
    selection_radius float 3.25
 entity crate_1 assets/models/crate/crate_1.pfobj 8
-   position vec3 11.200104 16.000000 -223.994263
+   position vec3 -12.178949 12.000000 -227.401093
    scale vec3 4.000000 4.000000 4.000000
    rotation quat 0.000000 0.000000 0.000000 1.000000
    animated bool 0
@@ -2629,7 +2269,7 @@ entity crate_1 assets/models/crate/crate_1.pfobj 8
    collision bool 1
    selection_radius float 3.25
 entity crate_1 assets/models/crate/crate_1.pfobj 8
-   position vec3 6.891167 16.000000 -224.194397
+   position vec3 -16.417540 12.000000 -226.778503
    scale vec3 4.000000 4.000000 4.000000
    rotation quat 0.000000 0.000000 0.000000 1.000000
    animated bool 0
@@ -2638,7 +2278,7 @@ entity crate_1 assets/models/crate/crate_1.pfobj 8
    collision bool 1
    selection_radius float 3.25
 entity crate_1 assets/models/crate/crate_1.pfobj 8
-   position vec3 6.961712 16.000000 -219.734573
+   position vec3 -17.209766 12.000000 -231.171982
    scale vec3 4.000000 4.000000 4.000000
    rotation quat 0.000000 0.000000 0.000000 1.000000
    animated bool 0
@@ -2647,7 +2287,7 @@ entity crate_1 assets/models/crate/crate_1.pfobj 8
    collision bool 1
    selection_radius float 3.25
 entity barrel assets/models/barrel/barrel.pfobj 8
-   position vec3 10.733128 16.000000 -231.460907
+   position vec3 -6.050461 16.000000 -236.703979
    scale vec3 8.000000 8.000000 8.000000
    rotation quat 0.000000 0.000000 0.000000 1.000000
    animated bool 0
@@ -2656,7 +2296,7 @@ entity barrel assets/models/barrel/barrel.pfobj 8
    collision bool 1
    selection_radius float 3.25
 entity barrel assets/models/barrel/barrel.pfobj 8
-   position vec3 15.229000 16.000000 -232.327393
+   position vec3 -1.948099 16.000000 -237.229385
    scale vec3 8.000000 8.000000 8.000000
    rotation quat 0.000000 0.000000 0.000000 1.000000
    animated bool 0
@@ -2665,7 +2305,7 @@ entity barrel assets/models/barrel/barrel.pfobj 8
    collision bool 1
    selection_radius float 3.25
 entity barrel assets/models/barrel/barrel.pfobj 8
-   position vec3 12.069221 16.000000 -235.925568
+   position vec3 -4.572821 16.000000 -241.322937
    scale vec3 8.000000 8.000000 8.000000
    rotation quat 0.000000 0.000000 0.000000 1.000000
    animated bool 0
@@ -2763,96 +2403,6 @@ entity crate_2 assets/models/crate/crate_2.pfobj 8
    static bool 1
    collision bool 1
    selection_radius float 3.25
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 1.550625 12.000000 -188.318085
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -7.550812 12.000000 -187.245209
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 2.601559 12.000000 -181.784653
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 -5.691193 12.000000 -180.177460
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 10.313187 12.000000 -189.262802
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
-entity knight assets/models/knight/knight.pfobj 11
-   position vec3 11.039165 12.000000 -182.607269
-   scale vec3 0.800000 0.800000 0.800000
-   rotation quat 0.000000 0.000000 0.000000 1.000000
-   animated bool 1
-   selectable bool 1
-   static bool 0
-   collision bool 1
-   idle_clip string Idle
-   selection_radius float 3.25
-   class string Knight
-   constructor_arguments int 3
-       string assets/models/knight
-       string knight.pfobj
-       string Knight
 entity rock_1 assets/models/varied_rocks/rock_1.pfobj 8
    position vec3 -111.184105 12.000000 -273.967438
    scale vec3 4.000000 4.000000 4.000000
@@ -3177,3 +2727,585 @@ entity grass_3 assets/models/grass/grass_3.pfobj 8
    static bool 1
    collision bool 0
    selection_radius float 2.0
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 422.249268 12.000000 -390.156708
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.342020 0.000000 0.939693
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 416.073029 12.000000 -397.143555
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.422618 0.000000 0.906308
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 409.219818 12.000000 -405.614594
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.422618 0.000000 0.906308
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 401.920624 12.000000 -412.902893
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.342020 0.000000 0.939693
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 416.209106 12.000000 -384.060638
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.461749 0.000000 0.887011
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 409.790131 12.000000 -392.342285
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.382684 0.000000 0.923880
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 404.056183 12.000000 -399.420837
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.422618 0.000000 0.906308
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 397.245392 12.000000 -406.260437
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.342020 0.000000 0.939693
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 410.624969 12.000000 -378.267883
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.461749 0.000000 0.887011
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 403.960388 12.000000 -386.236542
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.461749 0.000000 0.887011
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 397.699402 12.000000 -392.836243
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.537300 0.000000 0.843391
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 391.207397 12.000000 -399.331207
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.537300 0.000000 0.843391
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 404.573578 12.000000 -371.327698
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.461749 0.000000 0.887011
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 397.734192 12.000000 -379.848999
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.422618 0.000000 0.906308
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 391.451141 12.000000 -387.356934
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.461749 0.000000 0.887011
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity goblin assets/models/goblin/goblin.pfobj 11
+   position vec3 384.220825 12.000000 -394.128387
+   scale vec3 0.900000 0.900000 0.900000
+   rotation quat 0.000000 0.461749 0.000000 0.887011
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   idle_clip string Idle
+   selection_radius float 3.0
+   class string Goblin
+   constructor_arguments int 3
+       string assets/models/goblin
+       string goblin.pfobj
+       string Goblin
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 385.924377 12.000000 -431.920471
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 371.547302 12.000000 -431.348450
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 441.271027 12.000000 -355.609924
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 369.297180 0.000000 -283.997223
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 378.587708 0.000000 -277.235168
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 371.408325 12.000000 -298.223297
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity oak_leafless assets/models/oak_tree/oak_leafless.pfobj 8
+   position vec3 332.443298 12.000000 -405.995880
+   scale vec3 1.600000 1.600000 1.600000
+   rotation quat 0.000000 0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 5.25
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 401.349152 12.674576 -111.399117
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 394.464050 12.000000 -104.718208
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 -0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 393.739716 0.000000 -120.201134
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 -0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 429.880707 16.000000 -38.090195
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 430.401123 16.000000 -51.861092
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.422618 0.000000 0.906308
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 444.005920 0.000000 -46.973473
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 414.591064 16.000000 -16.678404
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 8
+   position vec3 420.697632 12.000000 -5.229456
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 2.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 8
+   position vec3 428.555054 16.000000 -53.939991
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 8
+   position vec3 424.458160 16.000000 -36.906189
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 -0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 8
+   position vec3 399.661926 12.000000 -107.827698
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 8
+   position vec3 392.416504 16.000000 -280.749786
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 8
+   position vec3 396.252350 16.000000 -277.522247
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 3.5
+entity bush_1 assets/models/bushes/bush_1.pfobj 8
+   position vec3 333.748810 12.000000 -396.606506
+   scale vec3 9.500000 9.500000 9.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 3.5
+entity grass_3 assets/models/grass/grass_3.pfobj 8
+   position vec3 383.406677 12.000000 -428.125702
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 8
+   position vec3 351.517334 12.000000 -331.978088
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 8
+   position vec3 352.146515 12.000000 -312.740173
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 8
+   position vec3 435.789764 16.000000 -283.664581
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 8
+   position vec3 440.504364 16.000000 -269.174866
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 8
+   position vec3 419.084717 16.000000 -140.430801
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 8
+   position vec3 345.308228 12.000000 -13.718202
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 8
+   position vec3 348.399597 12.000000 -8.509068
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 2.0
+entity fern assets/models/fern/fern.pfobj 8
+   position vec3 441.602753 0.000000 -93.617966
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 2.5
+entity fern assets/models/fern/fern.pfobj 8
+   position vec3 450.203247 0.000000 -136.049408
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 2.5
+entity fern assets/models/fern/fern.pfobj 8
+   position vec3 448.997162 0.000000 -132.372559
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   selection_radius float 2.5
+entity well assets/models/well/well.pfobj 8
+   position vec3 372.547882 12.000000 -335.358154
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 3.25
+entity rock assets/models/rock/rock.pfobj 8
+   position vec3 423.101776 12.000000 -319.168549
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.382684 0.000000 0.923880
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 3.25
+entity rock_4 assets/models/varied_rocks/rock_4.pfobj 8
+   position vec3 397.138947 1.430511 49.352158
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.573577 0.000000 0.819152
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 3.75
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 8
+   position vec3 391.916138 4.000000 52.678848
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 3.0
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 8
+   position vec3 414.501068 0.921631 16.885555
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.461749 0.000000 0.887011
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 3.0
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 8
+   position vec3 388.125122 12.000000 -104.167969
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.258819 0.000000 0.965926
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   selection_radius float 3.0
