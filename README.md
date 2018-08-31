@@ -77,7 +77,7 @@ along with the game binary if desired.
 
 ## License ##
 
-GPLv3 with linking exception.
+Permafrost Engine is licensed under the GPLv3, with a special linking exception.
 
 ## Contributing ##
 
