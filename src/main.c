@@ -275,12 +275,12 @@ fail_nav:
     G_Shutdown();
 fail_game:
 fail_script:
+    UI_Shutdown();
 fail_nuklear:
 fail_event:
 fail_render:
     Cursor_FreeAll();
 fail_cursor:
-    UI_Shutdown();
 fail_al:
 fail_glew:
     SDL_GL_DeleteContext(s_context);
