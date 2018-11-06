@@ -74,6 +74,7 @@ static PyObject *PyWindow_edit_string(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_checkbox(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -148,6 +149,10 @@ static PyMethodDef PyWindow_methods[] = {
     {"checkbox", 
     (PyCFunction)PyWindow_checkbox, METH_VARARGS,
     "Checkbox which can be toggled. Returns True if checked."},
+
+    {"color_picker", 
+    (PyCFunction)PyWindow_color_picker, METH_VARARGS,
+    "Graphical color picker widget. Returns the selected color as an RGBA tuple."},
 
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
@@ -515,6 +520,28 @@ static PyObject *PyWindow_checkbox(PyWindowObject *self, PyObject *args)
 
     nk_checkbox_label(s_nk_ctx, label, &selected);
     return Py_BuildValue("i", selected);
+}
+
+static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args)
+{
+    struct nk_color color;
+    struct nk_colorf colorf;
+    struct nk_vec2 size;
+
+    if(!PyArg_ParseTuple(args, "(iiii)(ff)", &color.r, &color.g, &color.b, &color.a, &size.x, &size.y)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of 4 ints and a tuple of 2 floats.");
+        return NULL;
+    }
+
+    if(nk_combo_begin_color(s_nk_ctx, color, nk_vec2(size.x, size.y+10))) {
+    
+        nk_layout_row_dynamic(s_nk_ctx, size.y, 1);
+        colorf = nk_color_picker(s_nk_ctx, nk_color_cf(color), NK_RGB);
+        color = nk_rgba_cf(colorf);
+        nk_combo_end(s_nk_ctx);
+    }
+
+    return Py_BuildValue("(i,i,i,i)", color.r, color.g, color.b, color.a);
 }
 
 static PyObject *PyWindow_show(PyWindowObject *self)

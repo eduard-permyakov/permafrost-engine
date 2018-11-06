@@ -359,6 +359,9 @@ BUILT-IN CLASSES
         [checkbox]
         Checkbox which can be toggled. Returns True if checked.
 
+        [color_picker]
+        Graphical color picker widget. Returns the selected color as an RGBA tuple.
+
         [combo_box]
         Present a combo box with a list of selectable options.
 
