@@ -42,12 +42,14 @@ from math import cos, pi
 
 import view_controllers.terrain_tab_vc as ttvc
 import view_controllers.objects_tab_vc as otvc
+import view_controllers.diplomacy_tab_vc as dtvc
 import view_controllers.tab_bar_vc as tbvc
 import view_controllers.menu_vc as mvc
 
 import views.tab_bar_window as tbw
 import views.terrain_tab_window as ttw
 import views.objects_tab_window as otw
+import views.diplomacy_tab_window as dtw
 import views.menu_window as mw
 
 ############################################################
@@ -71,10 +73,12 @@ mouse_events.install()
 
 terrain_tab_vc = ttvc.TerrainTabVC(ttw.TerrainTabWindow())
 objects_tab_vc = otvc.ObjectsVC(otw.ObjectsTabWindow())
+diplo_tab_vc = dtvc.DiplomacyVC(dtw.DiplomacyTabWindow())
 
 tab_bar_vc = tbvc.TabBarVC(tbw.TabBarWindow())
 tab_bar_vc.push_child("Terrain", terrain_tab_vc)
 tab_bar_vc.push_child("Objects", objects_tab_vc)
+tab_bar_vc.push_child("Diplomacy", diplo_tab_vc)
 tab_bar_vc.activate()
 tab_bar_vc.view.show()
 

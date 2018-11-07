@@ -47,6 +47,8 @@ UI_TAB_BAR_COL_WIDTH = 120
 
 MINIMAP_PX_WIDTH = (pf.MINIMAP_SIZE + 6) #hard-coded 3px border
 
+DEFAULT_FACTION_COLOR = (255, 255, 255, 255)
+
 ############################################################
 # Editor-specific events                                   #
 ############################################################
@@ -78,4 +80,9 @@ EVENT_MOUSE_EXITED_MAP             = 0x20031
 
 EVENT_OLD_GAME_TEARDOWN_BEGIN      = 0x20040
 EVENT_OLD_GAME_TEARDOWN_END        = 0x20041
+
+EVENT_DIPLO_FAC_SELECTION_CHANGED  = 0x20050
+EVENT_DIPLO_FAC_REMOVED            = 0x20051
+EVENT_DIPLO_FAC_CHANGED            = 0x20052
+EVENT_DIPLO_FAC_NEW                = 0x20053
 

@@ -34,6 +34,7 @@
 
 import pf
 from constants import *
+import globals
 
 def format_str_for_numlist(numlist):
     ret = "["
@@ -56,6 +57,7 @@ class ObjectsTabWindow(pf.Window):
         self.mode = self.OBJECTS_MODE_PLACE
         self.objects_list = []
         self.selected_object_idx = 0
+        self.selected_faction_idx = 0
 
     def update(self):
 
@@ -75,6 +77,14 @@ class ObjectsTabWindow(pf.Window):
             pf.global_event(EVENT_OBJECTS_TAB_MODE_CHANGED, self.mode)
 
         if self.mode == self.OBJECTS_MODE_PLACE:
+            # Faction
+            self.layout_row_dynamic(20, 1)
+            self.label_colored_wrap("Faction:", (255, 255, 255))
+            self.layout_row_dynamic(25, 1)
+            fac_names = [fac.name for fac in globals.factions_list]
+            self.selected_faction_idx = self.combo_box(fac_names, self.selected_faction_idx, 25, (UI_LEFT_PANE_WIDTH-30, 200))
+            self.layout_row_dynamic(10, 1)
+            
             # Objects
             self.layout_row_dynamic(20, 1)
             self.label_colored_wrap("Objects:", (255, 255, 255))

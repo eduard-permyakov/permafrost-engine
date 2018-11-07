@@ -32,13 +32,9 @@
 #  statement from your version.
 #
 
-import map
-import pf
-from constants import *
-import faction
-
-active_map = map.Map(4, 4)
-active_objects_list = []
-factions_list = [faction.Faction("Mother Nature", DEFAULT_FACTION_COLOR)]
-scene_filename = None
+class Faction:
+    
+    def __init__(self, name, color):
+        self.name = name
+        self.color = color
 
