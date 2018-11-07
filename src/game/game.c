@@ -111,6 +111,8 @@ static void g_reset(void)
         g_reset_camera(s_gs.cameras[i]);
 
     G_ActivateCamera(0, CAM_MODE_RTS);
+
+    s_gs.num_factions = 0;
 }
 
 static bool g_init_cameras(void) 
@@ -378,6 +380,39 @@ bool G_RemoveEntity(struct entity *ent)
     }
 
     return true;
+}
+
+bool G_AddFaction(const char *name, vec3_t color)
+{
+    if(s_gs.num_factions == MAX_FACTIONS)
+        return false;
+    if(strlen(name) >= sizeof(s_gs.factions[0].name))
+        return false;
+
+    int new_fac_id = s_gs.num_factions;
+    strcpy(s_gs.factions[new_fac_id].name, name);
+    s_gs.factions[new_fac_id].color = color;
+    s_gs.num_factions++;
+
+    /* By default, a new faction is mutually at peace with 
+     * every other faction. */
+    for(int i = 0; i < new_fac_id; i++) {
+        s_gs.diplomacy_table[i][new_fac_id] = DIPLOMACY_STATE_PEACE;
+        s_gs.diplomacy_table[new_fac_id][i] = DIPLOMACY_STATE_PEACE;
+    }
+
+    return true;
+}
+
+int G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors)
+{
+    for(int i = 0; i < s_gs.num_factions; i++) {
+    
+        strncpy(out_names[i], s_gs.factions[i].name, MAX_FAC_NAME_LEN);
+        out_names[i][MAX_FAC_NAME_LEN-1] = '\0';
+        out_colors[i] = s_gs.factions[i].color;
+    }
+    return s_gs.num_factions;
 }
 
 bool G_ActivateCamera(int idx, enum cam_mode mode)

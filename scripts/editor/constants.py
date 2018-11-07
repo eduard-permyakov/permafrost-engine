@@ -48,6 +48,7 @@ UI_TAB_BAR_COL_WIDTH = 120
 MINIMAP_PX_WIDTH = (pf.MINIMAP_SIZE + 6) #hard-coded 3px border
 
 DEFAULT_FACTION_COLOR = (255, 255, 255, 255)
+DEFAULT_FACTION_NAME = "Mother Nature"
 
 ############################################################
 # Editor-specific events                                   #

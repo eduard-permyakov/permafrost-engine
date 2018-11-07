@@ -144,6 +144,10 @@ class ObjectsTabWindow(pf.Window):
                 self.layout_row_dynamic(20, 1)
                 self.label_colored_wrap(select_str, (255, 255, 255))
 
+                select_str = "Faction: {0}".format(globals.factions_list[sel_obj_list[0].faction_id].name)
+                self.layout_row_dynamic(20, 1)
+                self.label_colored_wrap(select_str, (255, 255, 255))
+
             def on_delete():
                 pf.global_event(EVENT_OBJECT_DELETE_SELECTION, None)
 

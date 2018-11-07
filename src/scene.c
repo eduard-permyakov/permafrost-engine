@@ -36,6 +36,7 @@
 #include "scene.h"
 #include "asset_load.h"
 #include "script/public/script.h"
+#include "game/public/game.h"
 
 #include <stdio.h>
 #include <SDL.h>
@@ -59,7 +60,7 @@ static void kh_update_str_keys(khash_t(attr) *table)
     }
 }
 
-bool scene_parse_att(SDL_RWops *stream, struct attr *out, bool anon)
+static bool scene_parse_att(SDL_RWops *stream, struct attr *out, bool anon)
 {
     char line[256];
     READ_LINE(stream, line, fail);
@@ -135,7 +136,7 @@ fail:
     return false;
 }
 
-bool scene_load_entity(SDL_RWops *stream)
+static bool scene_load_entity(SDL_RWops *stream)
 {
     char line[256];
     char name[128];
@@ -194,6 +195,30 @@ fail_alloc:
     return false;
 }
 
+
+static bool scene_load_faction(SDL_RWops *stream)
+{
+    char line[256];
+    char name[32];
+    struct attr color;
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, "faction \"%31[^\"]", name))
+        goto fail_parse;
+
+    if(!scene_parse_att(stream, &color, false))
+        goto fail_parse;
+
+    if(color.type != TYPE_VEC3)
+        goto fail_parse;
+
+    G_AddFaction(name, color.val.as_vec3);
+    return true;
+
+fail_parse:
+    return false;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -202,19 +227,30 @@ bool Scene_Load(const char *path)
 {
     SDL_RWops *stream;
     char line[128];
-    size_t num_ents;
+    size_t num_factions, num_ents;
 
     stream = SDL_RWFromFile(path, "r");
     if(!stream)
         goto fail_stream;
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, "num_factions%lu", &num_factions))
+        goto fail_parse;
+
+    for(int i = 0; i < num_factions; i++) {
+        if(!scene_load_faction(stream))    
+            goto fail_parse;
+    }
     
     READ_LINE(stream, line, fail_parse);
     if(!sscanf(line, "num_entities %lu", &num_ents))
         goto fail_parse;
 
     for(int i = 0; i < num_ents; i++) {
-        if(!scene_load_entity(stream))
+        if(!scene_load_entity(stream)){
+            printf("didn't parse entity\n");
             goto fail_parse;
+         }
     }
 
     SDL_RWclose(stream);

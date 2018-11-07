@@ -100,6 +100,7 @@ class ObjectsVC(vc.ViewController):
             return
         if event[0] == pf.SDL_BUTTON_LEFT:
             if self.current_object:
+                self.current_object.faction_id = self.view.selected_faction_idx
                 globals.active_objects_list.append(self.current_object)
                 self.current_object = self.__object_at_index(self.view.selected_object_idx)
                 if mouse_events.mouse_over_map:
@@ -158,6 +159,7 @@ class ObjectsVC(vc.ViewController):
             obj.rotation = pf.multiply_quaternions(obj.rotation, CW_ROT_5DEG)
 
     def __on_old_game_teardown_begin(self, event):
+        self.view.selected_faction_idx = 0
         self.current_object = None
 
     def activate(self):
@@ -178,6 +180,9 @@ class ObjectsVC(vc.ViewController):
             self.current_object = self.__object_at_index(self.view.selected_object_idx)
         else:
             self.current_object = None
+        # Handle the case where we deleted some factions so our view's index is now stale
+        if self.view.selected_faction_idx >= len(globals.factions_list):
+            self.view.selected_faction_idx = len(globals.factions_list)-1
 
     def deactivate(self):
         pf.unregister_event_handler(pf.SDL_MOUSEMOTION, ObjectsVC.__on_mousemove)

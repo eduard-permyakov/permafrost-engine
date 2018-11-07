@@ -43,10 +43,15 @@
 #include <stdbool.h>
 #include <SDL.h>
 
+
+#define MAX_FACTIONS     16
+#define MAX_FAC_NAME_LEN 32
+
 struct entity;
 struct map;
 struct tile_desc;
 struct tile;
+struct faction;
 
 enum cam_mode{
     CAM_MODE_FPS,
@@ -77,6 +82,9 @@ void G_MakeStaticObjsImpassable(void);
 
 bool G_AddEntity(struct entity *ent);
 bool G_RemoveEntity(struct entity *ent);
+
+bool G_AddFaction(const char *name, vec3_t color);
+int  G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors);
 
 bool G_ActivateCamera(int idx, enum cam_mode mode);
 void G_MoveActiveCamera(vec2_t xz_ground_pos);

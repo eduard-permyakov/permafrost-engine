@@ -799,6 +799,10 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
     && (k = kh_get(attr, attr_table, "selection_radius")) != kh_end(attr_table))
         PyObject_SetAttrString(ret, "selection_radius", s_obj_from_attr(&kh_value(attr_table, k)));
 
+    if(PyObject_HasAttrString(ret, "faction_id") 
+    && (k = kh_get(attr, attr_table, "faction_id")) != kh_end(attr_table))
+        PyObject_SetAttrString(ret, "faction_id", s_obj_from_attr(&kh_value(attr_table, k)));
+
     if(PyObject_HasAttrString(ret, "activate")) {
         PyObject *result = PyObject_CallMethod(ret, "activate", "");
         Py_XDECREF(result);

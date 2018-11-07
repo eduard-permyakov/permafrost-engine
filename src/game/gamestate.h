@@ -38,8 +38,9 @@
 
 #include "public/game.h"
 #include "../lib/public/kvec.h"
+#include "faction.h"
 
-#define NUM_CAMERAS 2
+#define NUM_CAMERAS  2
 
 struct gamestate{
     struct map             *map;
@@ -66,6 +67,14 @@ struct gamestate{
      *-------------------------------------------------------------------------
      */
     khash_t(entity)        *dynamic;
+    size_t                  num_factions;
+    struct faction          factions[MAX_FACTIONS];
+    /*-------------------------------------------------------------------------
+     * Holds the relationships between every 2 factions. Note that diplomatic
+     * relations don't necessarily need to be symmetric.
+     *-------------------------------------------------------------------------
+     */
+    enum diplomacy_state    diplomacy_table[MAX_FACTIONS][MAX_FACTIONS];
 };
 
 #endif

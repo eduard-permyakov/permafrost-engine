@@ -615,6 +615,7 @@ OBJECTS_LIST = [
     },
 ]
 
+
 def __meta_dict_for_path(path):
     import os
     for dict in OBJECTS_LIST:
@@ -625,9 +626,15 @@ def __meta_dict_for_path(path):
 
 def save_scene(filename):
     with open(filename, "w") as scenefile:
+
+        scenefile.write("num_factions {0}\n".format(len(globals.factions_list)))
+        for fac in globals.factions_list:
+            scenefile.write("faction \"{0}\"\n".format(fac.name))
+            scenefile.write("    color vec3 {0:.6f} {1:.6f} {2:.6f}\n".format(fac.color[0], fac.color[1], fac.color[2]))
+
         scenefile.write("num_entities {0}\n".format(len(globals.active_objects_list)))
         for obj in globals.active_objects_list:
-            num_atts = 7
+            num_atts = 8
             meta_dict = __meta_dict_for_path(obj.pfobj_path[len(MODELS_PREFIX_DIR) + 2:])
             assert(meta_dict is not None)
             if "idle" in meta_dict:
@@ -646,6 +653,7 @@ def save_scene(filename):
             scenefile.write("   selectable bool {0}\n".format(int(meta_dict["selectable"])))
             scenefile.write("   static bool {0}\n".format(int(meta_dict["static"])))
             scenefile.write("   collision bool {0}\n".format(int(meta_dict["collision"])))
+            scenefile.write("   faction_id int {0}\n".format(obj.faction_id))
             if "idle" in meta_dict:
                 scenefile.write("   idle_clip string {0}\n".format(meta_dict["idle"]))
             if "sel_radius" in meta_dict:

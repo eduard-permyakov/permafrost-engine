@@ -78,6 +78,9 @@ static PyObject *PyPf_disable_unit_selection(PyObject *self);
 static PyObject *PyPf_clear_unit_selection(PyObject *self);
 static PyObject *PyPf_get_unit_selection(PyObject *self);
 
+static PyObject *PyPf_get_factions_list(PyObject *self);
+static PyObject *PyPf_add_faction(PyObject *self, PyObject *args);
+
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args);
@@ -180,6 +183,15 @@ static PyMethodDef pf_module_methods[] = {
     {"get_unit_selection", 
     (PyCFunction)PyPf_get_unit_selection, METH_NOARGS,
     "Returns a list of objects currently selected by the player."},
+
+    {"get_factions_list",
+    (PyCFunction)PyPf_get_factions_list, METH_NOARGS,
+    "Returns a list of descriptors (dictionaries) for each faction in the game."},
+
+    {"add_faction",
+    (PyCFunction)PyPf_add_faction, METH_VARARGS,
+    "Add a new faction with the specified name and color. By default, this faction is mutually at peace with "
+    "every other existing faction."},
 
     {"update_chunk_materials", 
     (PyCFunction)PyPf_update_chunk_materials, METH_VARARGS,
@@ -509,13 +521,65 @@ static PyObject *PyPf_get_unit_selection(PyObject *self)
         return NULL;
 
     for(int i = 0; i < kv_size(*sel); i++) {
-        PyObject *ent =  S_Entity_ObjForUID(kv_A(*sel, i)->uid);
+        PyObject *ent = S_Entity_ObjForUID(kv_A(*sel, i)->uid);
         if(ent) {
             PyList_Append(ret, ent);
         }
     }
 
     return ret;
+}
+
+static PyObject *PyPf_get_factions_list(PyObject *self)
+{
+    char names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
+    vec3_t colors[MAX_FACTIONS];
+    size_t num_facs = G_GetFactions(names, colors);
+
+    PyObject *ret = PyList_New(num_facs);
+    if(!ret)
+        goto fail_list;
+
+    for(int i = 0; i < num_facs; i++) {
+        PyObject *fac_dict = PyDict_New();
+        if(!fac_dict)
+            goto fail_dict;
+        PyList_SetItem(ret, i, fac_dict); /* ret now owns fac_dict */
+
+        PyObject *name = PyString_FromString(names[i]);
+        if(!name)
+            goto fail_dict;
+        PyDict_SetItemString(fac_dict, "name", name);
+        Py_DECREF(name);
+
+        PyObject *color = Py_BuildValue("(iiii)", (int)colors[i].x, (int)colors[i].y, (int)colors[i].z, 255);
+        if(!color)
+            goto fail_dict;
+        PyDict_SetItemString(fac_dict, "color", color);
+        Py_DECREF(color);
+    }
+
+    return ret;
+
+fail_dict:
+    Py_DECREF(ret);
+fail_list:
+    return NULL;
+}
+
+static PyObject *PyPf_add_faction(PyObject *self, PyObject *args)
+{
+    const char *name;
+    int color_ints[4];
+
+    if(!PyArg_ParseTuple(args, "s(iiii)", &name, &color_ints[0], &color_ints[1], &color_ints[2], &color_ints[3])) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string and a tuple of 4 ints (RGBA color descriptor).");
+        return NULL;
+    }
+
+    vec3_t color = {color_ints[0], color_ints[1], color_ints[2]};
+    G_AddFaction(name, color);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args)

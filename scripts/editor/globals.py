@@ -39,6 +39,6 @@ import faction
 
 active_map = map.Map(4, 4)
 active_objects_list = []
-factions_list = [faction.Faction("Mother Nature", DEFAULT_FACTION_COLOR)]
+factions_list = []
 scene_filename = None
 
