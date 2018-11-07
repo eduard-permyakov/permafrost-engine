@@ -18,6 +18,11 @@ BUILT-IN FUNCTIONS
     0 is restricted to the map boundaries as it is expected to be the main RTS
     camera. The other cameras are unrestricted.
 
+    [add_faction]
+    --------------------------------------------------------------------------------
+    Add a new faction with the specified name and color. By default, this faction is
+    mutually at peace with every other existing faction.
+
     [clear_unit_selection]
     --------------------------------------------------------------------------------
     Clear the current unit seleciton.
@@ -35,6 +40,10 @@ BUILT-IN FUNCTIONS
     [get_basedir]
     --------------------------------------------------------------------------------
     Get the path to the top-level game resource folder (parent of 'assets').
+
+    [get_factions_list]
+    --------------------------------------------------------------------------------
+    Returns a list of descriptors (dictionaries) for each faction in the game.
 
     [get_mouse_pos]
     --------------------------------------------------------------------------------
@@ -147,6 +156,9 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
         [name]
         Custom name given to this enity.
 
@@ -213,6 +225,9 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
         [name]
         Custom name given to this enity.
 
