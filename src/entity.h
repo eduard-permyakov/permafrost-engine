@@ -63,6 +63,7 @@ struct entity{
     struct aabb  identity_aabb;
     float        selection_radius;
     float        max_speed; /* units: OpenGL coordinates / second */
+    int          faction_id;
 };
 
 void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);

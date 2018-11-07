@@ -70,6 +70,8 @@ static int       PyEntity_set_selection_radius(PyEntityObject *self, PyObject *v
 static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_speed(PyEntityObject *self, void *closure);
 static int       PyEntity_set_speed(PyEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyEntity_get_faction_id(PyEntityObject *self, void *closure);
+static int       PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_activate(PyEntityObject *self);
 static PyObject *PyEntity_deactivate(PyEntityObject *self);
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args);
@@ -154,6 +156,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"speed",
     (getter)PyEntity_get_speed, (setter)PyEntity_set_speed,
     "Entity's movement speed (in OpenGL coordinates per second).",
+    NULL},
+    {"faction_id",
+    (getter)PyEntity_get_faction_id, (setter)PyEntity_set_faction_id,
+    "Index of the faction that the entity belongs to.",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -451,6 +457,22 @@ static int PyEntity_set_speed(PyEntityObject *self, PyObject *value, void *closu
     }
 
     self->ent->max_speed = PyFloat_AS_DOUBLE(value);
+    return 0;
+}
+
+static PyObject *PyEntity_get_faction_id(PyEntityObject *self, void *closure)
+{
+    return Py_BuildValue("i", self->ent->faction_id);
+}
+
+static int PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "faction_id attribute must be an integer.");
+        return -1;
+    }
+
+    self->ent->faction_id = PyInt_AS_LONG(value);
     return 0;
 }
 

@@ -207,6 +207,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     ret->rotation = (quat_t){0.0f, 0.0f, 0.0f, 1.0f};
     ret->selection_radius = 0.0f;
     ret->max_speed = 0.0f;
+    ret->faction_id = 0; 
     ret->anim_ctx = (void*)(ret + 1);
 
     if(strlen(name) >= sizeof(ret->name))
