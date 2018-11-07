@@ -174,7 +174,10 @@ class ObjectsVC(vc.ViewController):
         pf.register_event_handler(EVENT_OBJECT_DELETE_SELECTION, ObjectsVC.__on_delete_selection, self)
         pf.register_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, ObjectsVC.__on_old_game_teardown_begin, self)
         self.__set_selection_for_mode()
-        self.current_object = self.__object_at_index(self.view.selected_object_idx)
+        if self.view.mode == self.view.OBJECTS_MODE_PLACE:
+            self.current_object = self.__object_at_index(self.view.selected_object_idx)
+        else:
+            self.current_object = None
 
     def deactivate(self):
         pf.unregister_event_handler(pf.SDL_MOUSEMOTION, ObjectsVC.__on_mousemove)
