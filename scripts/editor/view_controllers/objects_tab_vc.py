@@ -181,8 +181,9 @@ class ObjectsVC(vc.ViewController):
         else:
             self.current_object = None
         # Handle the case where we deleted some factions so our view's index is now stale
-        if self.view.selected_faction_idx >= len(globals.factions_list):
-            self.view.selected_faction_idx = len(globals.factions_list)-1
+        factions_list = pf.get_factions_list()
+        if self.view.selected_faction_idx >= len(factions_list):
+            self.view.selected_faction_idx = len(factions_list)-1
 
     def deactivate(self):
         pf.unregister_event_handler(pf.SDL_MOUSEMOTION, ObjectsVC.__on_mousemove)

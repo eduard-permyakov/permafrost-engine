@@ -35,10 +35,8 @@
 import map
 import pf
 from constants import *
-import faction
 
 active_map = map.Map(4, 4)
 active_objects_list = []
-factions_list = []
 scene_filename = None
 

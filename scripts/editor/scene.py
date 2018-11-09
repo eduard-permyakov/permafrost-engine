@@ -627,10 +627,11 @@ def __meta_dict_for_path(path):
 def save_scene(filename):
     with open(filename, "w") as scenefile:
 
-        scenefile.write("num_factions {0}\n".format(len(globals.factions_list)))
-        for fac in globals.factions_list:
-            scenefile.write("faction \"{0}\"\n".format(fac.name))
-            scenefile.write("    color vec3 {0:.6f} {1:.6f} {2:.6f}\n".format(fac.color[0], fac.color[1], fac.color[2]))
+        factions_list = pf.get_factions_list()
+        scenefile.write("num_factions {0}\n".format(len(factions_list)))
+        for fac in factions_list:
+            scenefile.write("faction \"{0}\"\n".format(fac["name"]))
+            scenefile.write("    color vec3 {0:.6f} {1:.6f} {2:.6f}\n".format(fac["color"][0], fac["color"][1], fac["color"][2]))
 
         scenefile.write("num_entities {0}\n".format(len(globals.active_objects_list)))
         for obj in globals.active_objects_list:

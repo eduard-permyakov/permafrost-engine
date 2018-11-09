@@ -404,6 +404,58 @@ bool G_AddFaction(const char *name, vec3_t color)
     return true;
 }
 
+bool G_RemoveFaction(int faction_id)
+{
+    if(s_gs.num_factions < 2) 
+        return false;
+    if(faction_id < 0 || faction_id >= s_gs.num_factions)
+        return false;
+
+    /* Remove all entities belonging to the faction. There is no problem
+     * with deleting an entry while iterating - the table bin simply gets 
+     * marked as 'deleted'. 
+     * Also, patch the faction_ids (which are used to index 's_gs.factions' 
+     * to account for the shift in entries in this array. */
+    for(khiter_t k = kh_begin(s_gs.active); k != kh_end(s_gs.active); k++) {
+
+        if(!kh_exist(s_gs.active, k))
+            continue;
+
+        struct entity *curr = kh_value(s_gs.active, k);
+        if(curr->faction_id == faction_id)
+            G_RemoveEntity(curr);
+        else if(curr->faction_id > faction_id) 
+            --curr->faction_id;
+    }
+
+    /* Reflect the faction_id changes in the diplomacy table */
+    memmove(&s_gs.diplomacy_table[faction_id], &s_gs.diplomacy_table[faction_id + 1],
+        sizeof(s_gs.diplomacy_table[0]) * (s_gs.num_factions - faction_id - 1));
+    for(int i = 0; i < s_gs.num_factions-1; i++) {
+
+        memmove(&s_gs.diplomacy_table[i][faction_id], &s_gs.diplomacy_table[i][faction_id + 1],
+            sizeof(enum diplomacy_state) * (s_gs.num_factions - faction_id - 1));
+    }
+
+    memmove(s_gs.factions + faction_id, s_gs.factions + faction_id + 1, 
+        sizeof(struct faction) * (s_gs.num_factions - faction_id - 1));
+    --s_gs.num_factions;
+
+    return true;
+}
+
+bool G_UpdateFaction(int faction_id, const char *name, vec3_t color)
+{
+    if(faction_id >= s_gs.num_factions)
+        return false;
+    if(strlen(name) >= sizeof(s_gs.factions[0].name))
+        return false;
+
+    strcpy(s_gs.factions[faction_id].name, name);
+    s_gs.factions[faction_id].color = color;
+    return true;
+}
+
 int G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors)
 {
     for(int i = 0; i < s_gs.num_factions; i++) {

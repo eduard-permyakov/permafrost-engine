@@ -84,6 +84,8 @@ bool G_AddEntity(struct entity *ent);
 bool G_RemoveEntity(struct entity *ent);
 
 bool G_AddFaction(const char *name, vec3_t color);
+bool G_RemoveFaction(int faction_id);
+bool G_UpdateFaction(int faction_id, const char *name, vec3_t color);
 int  G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors);
 
 bool G_ActivateCamera(int idx, enum cam_mode mode);

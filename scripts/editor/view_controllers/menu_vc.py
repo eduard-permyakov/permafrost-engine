@@ -40,7 +40,6 @@ import scene
 import view_controller as vc
 from math import cos, pi
 import traceback
-import faction
 
 import views.file_chooser_window as fc
 
@@ -60,7 +59,6 @@ class MenuVC(vc.ViewController):
     def __on_old_game_teardown_end(self, event):
         assert isinstance(event[0], map.Map)
         del globals.active_objects_list[:]
-        del globals.factions_list[:]
 
         globals.active_map = event[0]
         pf.new_game_string(globals.active_map.pfmap_str())
@@ -77,13 +75,11 @@ class MenuVC(vc.ViewController):
                 for obj in globals.active_objects_list:
                     obj.selectable = True
                 faction_descs = pf.get_factions_list() 
-                globals.factions_list = [faction.Faction(desc["name"], desc["color"]) for desc in faction_descs]
             except:
                 print("Failed to load scene! [{0}]".format(event[1]))
 
         if len(pf.get_factions_list()) == 0:
             pf.add_faction(DEFAULT_FACTION_NAME, DEFAULT_FACTION_COLOR)
-            globals.factions_list = [faction.Faction(desc["name"], desc["color"]) for desc in pf.get_factions_list()]
 
 
     def __on_new(self, event):

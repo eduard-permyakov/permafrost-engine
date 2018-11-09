@@ -35,7 +35,6 @@
 import pf
 from constants import *
 import globals
-import faction
 
 class DiplomacyTabWindow(pf.Window):
 
@@ -47,19 +46,24 @@ class DiplomacyTabWindow(pf.Window):
         super(DiplomacyTabWindow, self).__init__("DiplomacyTab", 
             (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, resy - UI_TAB_BAR_HEIGHT - 1), pf.NK_WINDOW_BORDER)
         self.selected_fac_idx = 0
-        self.fac_name = globals.factions_list[self.selected_fac_idx].name
-        self.fac_color = globals.factions_list[self.selected_fac_idx].color
+
+        factions_list = pf.get_factions_list()
+        assert len(factions_list) > 0
+        self.fac_name = factions_list[self.selected_fac_idx]["name"]
+        self.fac_color = factions_list[self.selected_fac_idx]["color"]
 
     def update(self):
+
+        factions_list = pf.get_factions_list()
 
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Factions:", (255, 255, 255))
 
         def factions_group():
             self.layout_row_static(25, UI_LEFT_PANE_WIDTH-60, 1)
-            for i in range(0, len(globals.factions_list)):
+            for i in range(0, len(factions_list)):
                 old = self.selected_fac_idx
-                on = self.selectable_label(globals.factions_list[i].name, 
+                on = self.selectable_label(factions_list[i]["name"], 
                     pf.NK_TEXT_ALIGN_LEFT, i == self.selected_fac_idx)
                 if on: 
                     self.selected_fac_idx = i
@@ -73,7 +77,7 @@ class DiplomacyTabWindow(pf.Window):
             pf.global_event(EVENT_DIPLO_FAC_REMOVED, self.selected_fac_idx)
 
         self.layout_row_dynamic(30, 1)
-        if len(globals.factions_list) > 1:
+        if len(factions_list) > 1:
             self.button_label("Delete Selected", on_delete_selected)
         else: #disabled - We cannot delete the very last faction
             old_style = (pf.button_style.normal, pf.button_style.hover, pf.button_style.active)

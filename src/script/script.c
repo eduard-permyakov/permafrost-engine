@@ -80,6 +80,8 @@ static PyObject *PyPf_get_unit_selection(PyObject *self);
 
 static PyObject *PyPf_get_factions_list(PyObject *self);
 static PyObject *PyPf_add_faction(PyObject *self, PyObject *args);
+static PyObject *PyPf_remove_faction(PyObject *self, PyObject *args);
+static PyObject *PyPf_update_faction(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
@@ -192,6 +194,15 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_add_faction, METH_VARARGS,
     "Add a new faction with the specified name and color. By default, this faction is mutually at peace with "
     "every other existing faction."},
+
+    {"remove_faction",
+    (PyCFunction)PyPf_remove_faction, METH_VARARGS,
+    "Remove the faction with the specified faction_id. This will remove all entities belonging to that faction. "
+    "This may change the values of some other entities' faction_ids."},
+
+    {"update_faction",
+    (PyCFunction)PyPf_update_faction, METH_VARARGS,
+    "Updates the name and color of the faction with the specified faction_id."},
 
     {"update_chunk_materials", 
     (PyCFunction)PyPf_update_chunk_materials, METH_VARARGS,
@@ -578,7 +589,47 @@ static PyObject *PyPf_add_faction(PyObject *self, PyObject *args)
     }
 
     vec3_t color = {color_ints[0], color_ints[1], color_ints[2]};
-    G_AddFaction(name, color);
+    if(!G_AddFaction(name, color)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to add the specified faction."); 
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_remove_faction(PyObject *self, PyObject *args)
+{
+    int faction_id;
+
+    if(!PyArg_ParseTuple(args, "i", &faction_id)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an integer.");
+        return NULL;
+    }
+
+    if(!G_RemoveFaction(faction_id)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to remove the specified faction."); 
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_update_faction(PyObject *self, PyObject *args)
+{
+    int faction_id;
+    const char *name;
+    int color_ints[4];
+
+    if(!PyArg_ParseTuple(args, "is(iiii)", &faction_id, &name, 
+        &color_ints[0], &color_ints[1], &color_ints[2], &color_ints[3])) {
+
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string and a tuple of 4 ints (RGBA color descriptor).");
+        return NULL;
+    }
+
+    vec3_t color = {color_ints[0], color_ints[1], color_ints[2]};
+    if(!G_UpdateFaction(faction_id, name, color)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to update the specified faction."); 
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 

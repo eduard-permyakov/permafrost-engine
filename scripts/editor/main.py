@@ -37,7 +37,6 @@ from constants import *
 import map
 import globals
 import mouse_events
-import faction
 
 from math import cos, pi
 
@@ -67,7 +66,6 @@ pf.set_minimap_position(UI_LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10,
 pf.disable_unit_selection()
 
 pf.add_faction(DEFAULT_FACTION_NAME, DEFAULT_FACTION_COLOR)
-globals.factions_list = [faction.Faction(desc["name"], desc["color"]) for desc in pf.get_factions_list()]
 
 mouse_events.install()
 

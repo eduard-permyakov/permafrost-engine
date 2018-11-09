@@ -81,7 +81,7 @@ class ObjectsTabWindow(pf.Window):
             self.layout_row_dynamic(20, 1)
             self.label_colored_wrap("Faction:", (255, 255, 255))
             self.layout_row_dynamic(25, 1)
-            fac_names = [fac.name for fac in globals.factions_list]
+            fac_names = [fac["name"] for fac in pf.get_factions_list()]
             self.selected_faction_idx = self.combo_box(fac_names, self.selected_faction_idx, 25, (UI_LEFT_PANE_WIDTH-30, 200))
             self.layout_row_dynamic(10, 1)
             
@@ -144,7 +144,7 @@ class ObjectsTabWindow(pf.Window):
                 self.layout_row_dynamic(20, 1)
                 self.label_colored_wrap(select_str, (255, 255, 255))
 
-                select_str = "Faction: {0}".format(globals.factions_list[sel_obj_list[0].faction_id].name)
+                select_str = "Faction: {0}".format(pf.get_factions_list()[sel_obj_list[0].faction_id]["name"])
                 self.layout_row_dynamic(20, 1)
                 self.label_colored_wrap(select_str, (255, 255, 255))
 

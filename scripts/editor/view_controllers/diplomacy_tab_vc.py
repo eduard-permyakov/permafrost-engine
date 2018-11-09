@@ -36,64 +36,61 @@ import pf
 from constants import *
 import view_controller as vc
 import globals
-import faction
 
 class DiplomacyVC(vc.ViewController):
+
+    MAX_NUM_FACTIONS=16
 
     def __init__(self, view):
         self.view = view
 
     def __on_fac_sel_changed(self, event):
-        self.view.fac_name = globals.factions_list[event].name
-        self.view.fac_color = globals.factions_list[event].color
+        factions_list = pf.get_factions_list()
+        self.view.fac_name = factions_list[event]["name"]
+        self.view.fac_color = factions_list[event]["color"]
 
     def __on_fac_removed(self, event):
-        # Remove all entities belonging to the removed faction
-        globals.active_objects_list = [obj for obj in globals.active_objects_list if obj.faction_id != event]
+        pf.remove_faction(event)
+        factions_list = pf.get_factions_list()
 
-        del globals.factions_list[event]
-        if event == len(globals.factions_list): # we removed the last element
-            self.view.selected_fac_idx = len(globals.factions_list)-1
-        self.view.fac_name = globals.factions_list[self.view.selected_fac_idx].name
-        self.view.fac_color = globals.factions_list[self.view.selected_fac_idx].color
+        if event == len(factions_list): # we removed the last element
+            self.view.selected_fac_idx = len(factions_list)-1
 
-        # Also pathch the 'faction_id's of all remaining entities. The 'faction_id' is used to 
-        # index the factions_list, which has now grown smaller. All indices greater than the
-        # deleted index should decrease by 1
-        for obj in globals.active_objects_list:
-            if obj.faction_id > event:
-                obj.faction_id = obj.faction_id-1
-
+        self.view.fac_name = factions_list[self.view.selected_fac_idx]["name"]
+        self.view.fac_color = factions_list[self.view.selected_fac_idx]["color"]
 
     def __on_fac_changed(self, event):
         idx = event[0]
         new_name = event[1]
         new_clr = event[2]
-        globals.factions_list[idx].name = new_name
-        globals.factions_list[idx].color = new_clr
+        pf.update_faction(idx, new_name, new_clr)
 
     def __on_fac_new(self, event):
+        if len(pf.get_factions_list()) == DiplomacyVC.MAX_NUM_FACTIONS:
+            print("Maximum number of factions reached!")
+            return
         new_name = event[0]
         new_clr = event[1]
-        globals.factions_list.append(faction.Faction(new_name, new_clr))
-        self.view.selected_fac_idx = len(globals.factions_list)-1
+        pf.add_faction(new_name, new_clr)
+        self.view.selected_fac_idx = len(pf.get_factions_list())-1
 
-    def __on_old_game_teardown_begin(self, event):
+    def __on_new_game(self, event):
         self.view.selected_fac_idx = 0
-        self.view.fac_name = globals.factions_list[0].name
-        self.view.fac_color= globals.factions_list[0].color
+        factions_list = pf.get_factions_list()
+        self.view.fac_name = factions_list[0]["name"]
+        self.view.fac_color= factions_list[0]["color"]
 
     def activate(self):
         pf.register_event_handler(EVENT_DIPLO_FAC_SELECTION_CHANGED, DiplomacyVC.__on_fac_sel_changed, self)
         pf.register_event_handler(EVENT_DIPLO_FAC_REMOVED, DiplomacyVC.__on_fac_removed, self)
         pf.register_event_handler(EVENT_DIPLO_FAC_CHANGED, DiplomacyVC.__on_fac_changed, self)
         pf.register_event_handler(EVENT_DIPLO_FAC_NEW, DiplomacyVC.__on_fac_new, self)
-        pf.register_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, DiplomacyVC.__on_old_game_teardown_begin, self)
+        pf.register_event_handler(pf.EVENT_NEW_GAME, DiplomacyVC.__on_new_game, self)
 
     def deactivate(self):
         pf.unregister_event_handler(EVENT_DIPLO_FAC_SELECTION_CHANGED, DiplomacyVC.__on_fac_sel_changed)
         pf.unregister_event_handler(EVENT_DIPLO_FAC_REMOVED, DiplomacyVC.__on_fac_removed)
         pf.unregister_event_handler(EVENT_DIPLO_FAC_CHANGED, DiplomacyVC.__on_fac_changed)
         pf.unregister_event_handler(EVENT_DIPLO_FAC_NEW, DiplomacyVC.__on_fac_new)
-        pf.unregister_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, DiplomacyVC.__on_old_game_teardown_begin)
+        pf.unregister_event_handler(pf.EVENT_NEW_GAME, DiplomacyVC.__on_new_game)
 
