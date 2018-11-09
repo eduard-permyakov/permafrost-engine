@@ -106,6 +106,12 @@ BUILT-IN FUNCTIONS
     --------------------------------------------------------------------------------
     Adds a script event handler to be called when the specified global event occurs.
 
+    [remove_faction]
+    --------------------------------------------------------------------------------
+    Remove the faction with the specified faction_id. This will remove all entities
+    belonging to that faction. This may change the values of some other
+    entities' faction_ids.
+
     [set_ambient_light_color]
     --------------------------------------------------------------------------------
     Sets the global ambient light color (specified as an RGB multiplier) for the
@@ -140,6 +146,10 @@ BUILT-IN FUNCTIONS
     --------------------------------------------------------------------------------
     Update the material list for a particular chunk. Expects a tuple of chunk
     coordinates and a PFMAP material section string as arguments.
+
+    [update_faction]
+    --------------------------------------------------------------------------------
+    Updates the name and color of the faction with the specified faction_id.
 
     [update_tile]
     --------------------------------------------------------------------------------
