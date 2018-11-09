@@ -215,12 +215,10 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
         if(curr_ent->flags & ENTITY_FLAG_STATIC || curr_ent->max_speed == 0.0f)
             continue;
 
-        dest_id_t id;
         if(adjacent_to_any_in_set(curr_ent, pathed_ents, num_pathed_ents)
-        || M_NavRequestPath(s_map, (vec2_t){curr_ent->pos.x, curr_ent->pos.z}, target_xz, &id)) {
+        || M_NavRequestPath(s_map, (vec2_t){curr_ent->pos.x, curr_ent->pos.z}, target_xz, &new_flock.dest_id)) {
 
             pathed_ents[num_pathed_ents++] = curr_ent;
-            new_flock.dest_id = id;
 
             k = kh_put(entity, new_flock.ents, curr_ent->uid, &ret);
             assert(ret != -1 && ret != 0);
