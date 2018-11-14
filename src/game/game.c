@@ -379,6 +379,7 @@ bool G_RemoveEntity(struct entity *ent)
         kh_del(entity, s_gs.dynamic, k);
     }
 
+    G_Move_RemoveEntity(ent);
     return true;
 }
 

@@ -39,9 +39,11 @@
 #include <stdbool.h>
 
 struct map;
+struct entity;
 
 bool G_Move_Init(const struct map *map);
 void G_Move_Shutdown(void);
+void G_Move_RemoveEntity(const struct entity *ent);
 
 #endif
 

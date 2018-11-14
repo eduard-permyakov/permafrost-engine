@@ -855,3 +855,30 @@ void G_Move_Shutdown(void)
     kh_destroy(state, s_entity_state_table);
 }
 
+void G_Move_RemoveEntity(const struct entity *ent)
+{
+    /* Remove this entity from any existing flocks */
+    for(int i = kv_size(s_flocks)-1; i >= 0; i--) {
+
+        uint32_t key;
+        struct entity *curr;
+        const struct flock *curr_flock = &kv_A(s_flocks, i);
+
+        kh_foreach(curr_flock->ents, key, curr, {
+        
+            if(curr == ent)
+                kh_del(entity, kv_A(s_flocks, i).ents, key);
+        });
+
+        if(kh_size(curr_flock->ents) == 0) {
+            kh_destroy(entity, curr_flock->ents);
+            kv_del(struct flock, s_flocks, i);
+        }
+    }
+
+    /* Remove the entry from the entity-state table */
+    khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
+    if(k != kh_end(s_entity_state_table))
+        kh_del(state, s_entity_state_table, k);
+}
+
