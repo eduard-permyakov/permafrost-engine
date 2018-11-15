@@ -33,11 +33,16 @@
 #
 
 import anim_moveable as am
+import anim_combatable as ac
 
-class Knight(am.AnimMoveable):
+class Knight(am.AnimMoveable, ac.AnimCombatable):
 
     def __init__(self, path, pfobj, name):
-        super(Knight, self).__init__(path, pfobj, name, self.idle_anim())
+        super(Knight, self).__init__(path, pfobj, name, 
+            idle_clip = self.idle_anim(),
+            max_hp = 150,
+            base_dmg = 50,
+            base_armour = 0.5)
         self.speed = 20.0
 
     def idle_anim(self):

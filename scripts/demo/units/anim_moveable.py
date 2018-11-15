@@ -39,8 +39,8 @@ from constants import *
 class AnimMoveable(pf.AnimEntity):
     __metaclass__ = ABCMeta
 
-    def __init__(self, path, pfobj, name, idle_anim):
-        super(AnimMoveable, self).__init__(path, pfobj, name, idle_anim)
+    def __init__(self, path, pfobj, name, **kwargs):
+        super(AnimMoveable, self).__init__(path, pfobj, name, **kwargs)
         self.moving = False
         self.register(pf.EVENT_MOTION_START, AnimMoveable.__on_motion_begin, self)
         self.register(pf.EVENT_MOTION_END, AnimMoveable.__on_motion_end, self)

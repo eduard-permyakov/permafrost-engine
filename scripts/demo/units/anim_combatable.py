@@ -32,17 +32,16 @@
 #  statement from your version.
 #
 
-import anim_moveable as am
+from abc import ABCMeta, abstractproperty
+import pf
+from constants import *
 
-class Mage(am.AnimMoveable):
+class AnimCombatable(pf.AnimEntity, pf.CombatableEntity):
+    __metaclass__ = ABCMeta
 
-    def __init__(self, path, pfobj, name):
-        super(Mage, self).__init__(path, pfobj, name, idle_clip=self.idle_anim())
-        self.speed = 20.0
+    def __init__(self, path, pfobj, name, **kwargs):
+        super(AnimCombatable, self).__init__(path, pfobj, name, **kwargs)
 
-    def idle_anim(self):
-        return "Idle"
-
-    def move_anim(self):
-        return "Walk"
+    def __del__(self):
+        super(AnimCombatable, self).__del__()
 

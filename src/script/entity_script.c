@@ -53,6 +53,10 @@ typedef struct {
     PyEntityObject super; 
 }PyAnimEntityObject;
 
+typedef struct {
+    PyEntityObject super; 
+}PyCombatableEntityObject;
+
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void      PyEntity_dealloc(PyEntityObject *self);
 static PyObject *PyEntity_get_name(PyEntityObject *self, void *closure);
@@ -83,9 +87,19 @@ static PyObject *PyEntity_deselect(PyEntityObject *self);
 static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args);
 
+static int       PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds);
+static PyObject *PyCombatableEntity_get_max_hp(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
+
+/* pf.Entity */
 
 static PyMethodDef PyEntity_methods[] = {
     {"activate", 
@@ -164,14 +178,6 @@ static PyGetSetDef PyEntity_getset[] = {
     {NULL}  /* Sentinel */
 };
 
-static PyMethodDef PyAnimEntity_methods[] = {
-    {"play_anim", 
-    (PyCFunction)PyAnimEntity_play_anim, METH_VARARGS,
-    "Play the animation clip with the specified name." },
-    {NULL}  /* Sentinel */
-};
-
-
 static PyTypeObject PyEntity_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "pf.Entity",               /* tp_name */
@@ -213,15 +219,58 @@ static PyTypeObject PyEntity_type = {
     PyEntity_new,              /* tp_new */
 };
 
+/* pf.AnimEntity */
+
+static PyMethodDef PyAnimEntity_methods[] = {
+    {"play_anim", 
+    (PyCFunction)PyAnimEntity_play_anim, METH_VARARGS,
+    "Play the animation clip with the specified name." },
+    {NULL}  /* Sentinel */
+};
+
 static PyTypeObject PyAnimEntity_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name      = "pf.AnimEntity",
     .tp_basicsize = sizeof(PyAnimEntityObject), 
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
-    .tp_doc       = "Permafrost Engine animated entity.",
+    .tp_doc       = "Permafrost Engine animated entity. This type requires the "
+                    "'idle_clip' keyword argument to be passed to __init__.",
     .tp_methods   = PyAnimEntity_methods,
     .tp_base      = &PyEntity_type,
     .tp_init      = (initproc)PyAnimEntity_init,
+};
+
+/* pf.CombatableEntity */
+
+static PyGetSetDef PyCombatableEntity_getset[] = {
+    {"max_hp",
+    (getter)PyCombatableEntity_get_max_hp, (setter)PyCombatableEntity_set_max_hp,
+    "The maximum number of hitpoints that the entity starts out with. "
+    "Only applicable to combatable entitities.",
+    NULL},
+    {"base_dmg",
+    (getter)PyCombatableEntity_get_base_dmg, (setter)PyCombatableEntity_set_base_dmg,
+    "The base damage for which this entity's attacks hit. "
+    "Only applicable to combatable entities.",
+    NULL},
+    {"base_armour",
+    (getter)PyCombatableEntity_get_base_armour, (setter)PyCombatableEntity_set_base_armour,
+    "The base armour (as a fraction from 0.0 to 1.0) specifying which percentage of incoming "
+    "damage is blocked. Only applicable to combatable entities.",
+    NULL},
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyCombatableEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.CombatableEntity",
+    .tp_basicsize = sizeof(PyCombatableEntityObject), 
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine entity which is able to take part in combat. This type "
+                    "requires the 'max_hp', 'base_dmg', and 'base_armour' keyword arguments to be "
+                    "passed to __init__.",
+    .tp_base      = &PyEntity_type,
+    .tp_init      = (initproc)PyCombatableEntity_init,
 };
 
 KHASH_MAP_INIT_INT(PyObject, PyObject*)
@@ -230,6 +279,55 @@ static khash_t(PyObject) *s_uid_pyobj_table;
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static PyObject *s_call_super_method(const char *method_name, PyObject *type, 
+                                     PyObject *self, PyObject *args, PyObject *kwds)
+{
+    PyObject *ret = NULL;
+
+    PyObject *builtins = PyImport_AddModule("__builtin__");
+    if(!builtins)
+        goto fail_builtins;
+
+    PyObject *super = PyObject_GetAttrString(builtins, "super");
+    if(!super) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to get 'super' builtin.");
+        goto fail_get_super;
+    }
+
+    PyObject *super_args = PyTuple_New(2);
+    Py_INCREF(type);
+    Py_INCREF(self);
+    PyTuple_SetItem(super_args, 0, type);
+    PyTuple_SetItem(super_args, 1, self);
+
+    PyObject *super_obj = PyObject_Call(super, super_args, NULL);
+    if(!super_obj) {
+        PyErr_SetString(PyExc_RuntimeError, "Call to 'super' failed.");
+        goto fail_call_super;
+    }
+
+    PyObject *method = PyObject_GetAttrString(super_obj, method_name);
+    if(!method) {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to get super method."); 
+        goto fail_get_method;
+    }
+
+    ret = PyObject_Call(method, args, kwds); 
+    if(!ret)
+        goto fail_call_method;
+
+fail_call_method:
+    Py_DECREF(method);
+fail_get_method:
+    Py_DECREF(super_obj);
+fail_call_super:
+    Py_DECREF(super_args);
+    Py_DECREF(super);
+fail_get_super:
+fail_builtins:
+    return ret;
+}
 
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
@@ -243,6 +341,7 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         return NULL;
 
     if(!PyArg_ParseTuple(first_args, "sss", &dirpath, &filename, &name)) {
+        PyErr_SetString(PyExc_TypeError, "First 3 arguments must be strings.");
         return NULL;
     }
     Py_DECREF(first_args);
@@ -254,11 +353,13 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     struct entity *ent = AL_EntityFromPFObj(entity_path, filename, name);
     if(!ent) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to initialize pf.Entity from the given arguments.");
         return NULL;
     }
 
     self = (PyEntityObject*)type->tp_alloc(type, 0);
     if(!self) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to allocate new pf.Entity.");
         AL_EntityFree(ent); 
         return NULL;
     }else{
@@ -435,6 +536,17 @@ static PyObject *PyEntity_get_selection_radius(PyEntityObject *self, void *closu
     return Py_BuildValue("f", self->ent->selection_radius);
 }
 
+static int PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
+        return -1;
+    }
+
+    self->ent->selection_radius = PyFloat_AsDouble(value);
+    return 0;
+}
+
 static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure)
 {
     char buff[sizeof(self->ent->basedir) + sizeof(self->ent->filename) + 2];
@@ -473,17 +585,6 @@ static int PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *
     }
 
     self->ent->faction_id = PyInt_AS_LONG(value);
-    return 0;
-}
-
-static int PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure)
-{
-    if(!PyFloat_Check(value)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
-        return -1;
-    }
-
-    self->ent->selection_radius = PyFloat_AsDouble(value);
     return 0;
 }
 
@@ -575,17 +676,27 @@ static PyObject *PyEntity_deselect(PyEntityObject *self)
 
 static int PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds)
 {
-    const char *dirpath, *filename, *name, *clipname;
-    PyObject *first_args = PyTuple_GetSlice(args, 0, 4);
-    if(!first_args)
-        return -1;
+    PyObject *idle_clip;
 
-    if(!PyArg_ParseTuple(first_args, "ssss", &dirpath, &filename, &name, &clipname)) {
+    if(!kwds || ((idle_clip = PyDict_GetItemString(kwds, "idle_clip")) == NULL)) {
+        PyErr_SetString(PyExc_TypeError, "'idle_clip' keyword argument required for initializing pf.AnimEntity types.");
         return -1;
     }
-    Py_DECREF(first_args);
 
-    A_InitCtx(self->super.ent, clipname, 24);
+    if(!PyString_Check(idle_clip)) {
+        PyErr_SetString(PyExc_TypeError, "'idle_clip' keyword argument must be a string.");
+        return -1; 
+    }
+
+    A_InitCtx(self->super.ent, PyString_AS_STRING(idle_clip), 24);
+
+    /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
+     * MRO to complete in cases when this class is one of multiple base classes of another type. 
+     * This allows this type to be used as one of many mix-in bases. */
+    PyObject *ret = s_call_super_method("__init__", (PyObject*)&PyAnimEntity_type, (PyObject*)self, args, kwds);
+    if(!ret)
+        return -1; /* Exception already set */
+    Py_DECREF(ret);
     return 0;
 }
 
@@ -599,6 +710,102 @@ static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args
 
     A_SetActiveClip(self->super.ent, clipname, ANIM_MODE_LOOP, 24);
     Py_RETURN_NONE;
+}
+
+static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds)
+{
+    PyObject *max_hp, *base_dmg, *base_armour;
+
+    if(!kwds 
+    || ((max_hp = PyDict_GetItemString(kwds, "max_hp")) == NULL)
+    || ((base_dmg = PyDict_GetItemString(kwds, "base_dmg")) == NULL)
+    || ((base_armour = PyDict_GetItemString(kwds, "base_armour")) == NULL)) {
+        PyErr_SetString(PyExc_TypeError, "'max_hp', 'base_dmg', and 'base_armour' keyword arguments "
+            "required for initializing pf.CombatableEntity types.");
+        return -1;
+    }
+
+    if((PyCombatableEntity_set_max_hp(self, max_hp, NULL) != 0)
+    || (PyCombatableEntity_set_base_dmg(self, base_dmg, NULL) != 0)
+    || (PyCombatableEntity_set_base_armour(self, base_armour, NULL) != 0))
+        return -1; /* Exception already set */ 
+
+    self->super.ent->flags |= ENTITY_FLAG_COMBATABLE;
+
+    /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
+     * MRO to complete in cases when this class is one of multiple base classes of another type. 
+     * This allows this type to be used as one of many mix-in bases. */
+    PyObject *ret = s_call_super_method("__init__", (PyObject*)&PyCombatableEntity_type, (PyObject*)self, args, kwds);
+    if(!ret)
+        return -1; /* Exception already set */
+    Py_DECREF(ret);
+    return 0;
+}
+
+static PyObject *PyCombatableEntity_get_max_hp(PyCombatableEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(self->super.ent->ca.max_hp);
+}
+
+static int PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "max_hp attribute must be an integer.");
+        return -1;
+    }
+    
+    int max_hp = PyInt_AS_LONG(value);
+    if(max_hp <= 0) {
+        PyErr_SetString(PyExc_RuntimeError, "max_hp must be greater than 0.");
+        return -1;
+    }
+
+    self->super.ent->ca.max_hp = max_hp;
+    return 0;
+}
+
+static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(self->super.ent->ca.base_dmg);
+}
+
+static int PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "base_dmg attribute must be an integer.");
+        return -1;
+    }
+    
+    int base_dmg = PyInt_AS_LONG(value);
+    if(base_dmg < 0) {
+        PyErr_SetString(PyExc_RuntimeError, "base_dmg must be greater than or equal to 0.");
+        return -1;
+    }
+
+    self->super.ent->ca.base_dmg = base_dmg;
+    return 0;
+}
+
+static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(self->super.ent->ca.base_armour_pc);
+}
+
+static int PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "base_armour attribute must be a float.");
+        return -1;
+    }
+    
+    float base_armour = PyFloat_AS_DOUBLE(value);
+    if(base_armour < 0.0f || base_armour > 1.0f) {
+        PyErr_SetString(PyExc_RuntimeError, "base_armour must be in the range of [0.0, 1.0].");
+        return -1;
+    }
+
+    self->super.ent->ca.base_armour_pc = base_armour;
+    return 0;
 }
 
 static PyObject *s_obj_from_attr(const struct attr *attr)
@@ -664,8 +871,16 @@ static PyObject *s_entity_from_atts(const char *path, const char *name, const kh
             Py_DECREF(args);
             return NULL;
         }
-        PyTuple_SetItem(args, 3, s_obj_from_attr(&kh_value(attr_table, k)));
-        ret = PyObject_CallObject((PyObject*)&PyAnimEntity_type, args);
+
+        PyObject *kwargs = PyDict_New();
+        if(!kwargs) {
+            Py_DECREF(args);
+            return NULL;
+        }
+
+        PyDict_SetItemString(kwargs, "idle_clip", s_obj_from_attr(&kh_value(attr_table, k)));
+        ret = PyObject_Call((PyObject*)&PyAnimEntity_type, args, kwargs);
+        Py_DECREF(kwargs);
     }else{
         ret = PyObject_CallObject((PyObject*)&PyEntity_type, args);
     }
@@ -721,6 +936,11 @@ void S_Entity_PyRegister(PyObject *module)
         return;
     Py_INCREF(&PyAnimEntity_type);
     PyModule_AddObject(module, "AnimEntity", (PyObject*)&PyAnimEntity_type);
+
+    if(PyType_Ready(&PyCombatableEntity_type) < 0)
+        return;
+    Py_INCREF(&PyCombatableEntity_type);
+    PyModule_AddObject(module, "CombatableEntity", (PyObject*)&PyCombatableEntity_type);
 }
 
 bool S_Entity_Init(void)

@@ -247,10 +247,8 @@ bool Scene_Load(const char *path)
         goto fail_parse;
 
     for(int i = 0; i < num_ents; i++) {
-        if(!scene_load_entity(stream)){
-            printf("didn't parse entity\n");
+        if(!scene_load_entity(stream))
             goto fail_parse;
-         }
     }
 
     SDL_RWclose(stream);

@@ -56,7 +56,7 @@ class ObjectsVC(vc.ViewController):
         pfobj_dir = os.path.join(split_path[:-1])[0]
         pfobj_filename = split_path[-1]
         if scene.OBJECTS_LIST[index]["anim"]:
-            ret = pf.AnimEntity(pfobj_dir, pfobj_filename, pfobj_filename.split(".")[0], scene.OBJECTS_LIST[index]["idle"])
+            ret = pf.AnimEntity(pfobj_dir, pfobj_filename, pfobj_filename.split(".")[0], idle_clip=scene.OBJECTS_LIST[index]["idle"])
         else:
             ret = pf.Entity(pfobj_dir, pfobj_filename, pfobj_filename.split(".")[0])
         ret.scale = scene.OBJECTS_LIST[index]["scale"]

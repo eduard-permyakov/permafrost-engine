@@ -37,7 +37,7 @@ import anim_moveable as am
 class Chicken(am.AnimMoveable):
 
     def __init__(self, path, pfobj, name):
-        super(Chicken, self).__init__(path, pfobj, name, self.idle_anim())
+        super(Chicken, self).__init__(path, pfobj, name, idle_clip=self.idle_anim())
         self.speed = 20.0
 
     def idle_anim(self):

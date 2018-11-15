@@ -41,10 +41,11 @@
 
 #include <stdbool.h>
 
-#define ENTITY_FLAG_ANIMATED    (1 << 0)
-#define ENTITY_FLAG_COLLISION   (1 << 1)
-#define ENTITY_FLAG_SELECTABLE  (1 << 2)
-#define ENTITY_FLAG_STATIC      (1 << 3)
+#define ENTITY_FLAG_ANIMATED      (1 << 0)
+#define ENTITY_FLAG_COLLISION     (1 << 1)
+#define ENTITY_FLAG_SELECTABLE    (1 << 2)
+#define ENTITY_FLAG_STATIC        (1 << 3)
+#define ENTITY_FLAG_COMBATABLE    (1 << 4)
 
 struct entity{
     uint32_t     uid;
@@ -61,9 +62,17 @@ struct entity{
     /* For animated entities, this is the bind pose AABB. Each
      * animation sample also has its' own AABB. */
     struct aabb  identity_aabb;
-    float        selection_radius;
-    float        max_speed; /* units: OpenGL coordinates / second */
-    int          faction_id;
+    float        selection_radius; /* The radius of the selection circle in OpenGL coordinates */
+    float        max_speed;        /* The base movement speed in units of OpenGL coords / second */
+    int          faction_id;       /* The faction to which this entity belongs to. */
+    /* The following struct ('combat attributes') holds attributes 
+     * which are only valid for entities for which 'ENTITY_FLAG_COMBATABLE' 
+     * is set. */
+    struct{
+    int          max_hp;           /* The maximum hitpoints that the entity starts out with */
+    int          base_dmg;         /* The base damage per hit */
+    float        base_armour_pc;   /* Percentage of damage blocked. Valid range: [0.0 - 1.0] */
+    }ca;
 };
 
 void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
