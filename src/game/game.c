@@ -468,6 +468,20 @@ int G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors)
     return s_gs.num_factions;
 }
 
+bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds)
+{
+    if(fac_id_a < 0 || fac_id_a >= s_gs.num_factions)
+        return false;
+    if(fac_id_b < 0 || fac_id_b >= s_gs.num_factions)
+        return false;
+    if(fac_id_a == fac_id_b)
+        return false;
+
+    s_gs.diplomacy_table[fac_id_a][fac_id_b] = ds;
+    s_gs.diplomacy_table[fac_id_b][fac_id_a] = ds;
+    return true;
+}
+
 bool G_ActivateCamera(int idx, enum cam_mode mode)
 {
     if( !(idx >= 0 && idx < NUM_CAMERAS) )
@@ -497,5 +511,10 @@ bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
 const khash_t(entity) *G_GetDynamicEntsSet(void)
 {
     return s_gs.dynamic;
+}
+
+const khash_t(entity) *G_GetAllEntsSet(void)
+{
+    return s_gs.active;
 }
 

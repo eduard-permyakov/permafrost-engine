@@ -44,10 +44,5 @@ struct faction{
     char   name[MAX_FAC_NAME_LEN];
 };
 
-enum diplomacy_state{
-    DIPLOMACY_STATE_PEACE,
-    DIPLOMACY_STATE_WAR
-};
-
 #endif
 

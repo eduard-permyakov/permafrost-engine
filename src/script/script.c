@@ -82,6 +82,7 @@ static PyObject *PyPf_get_factions_list(PyObject *self);
 static PyObject *PyPf_add_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_remove_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_faction(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_diplomacy_state(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
@@ -203,6 +204,10 @@ static PyMethodDef pf_module_methods[] = {
     {"update_faction",
     (PyCFunction)PyPf_update_faction, METH_VARARGS,
     "Updates the name and color of the faction with the specified faction_id."},
+
+    {"set_diplomacy_state",
+    (PyCFunction)PyPf_set_diplomacy_state, METH_VARARGS,
+    "Symmetrically sets the diplomacy state between two distinct factions (passed in as IDs)."},
 
     {"update_chunk_materials", 
     (PyCFunction)PyPf_update_chunk_materials, METH_VARARGS,
@@ -628,6 +633,23 @@ static PyObject *PyPf_update_faction(PyObject *self, PyObject *args)
     vec3_t color = {color_ints[0], color_ints[1], color_ints[2]};
     if(!G_UpdateFaction(faction_id, name, color)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to update the specified faction."); 
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_diplomacy_state(PyObject *self, PyObject *args)
+{
+    int fac_id_a, fac_id_b;
+    enum diplomacy_state ds;
+
+    if(!PyArg_ParseTuple(args, "iii", &fac_id_a, &fac_id_b, &ds)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a three integers.");
+        return NULL;
+    }
+
+    if(!G_SetDiplomacyState(fac_id_a, fac_id_b, ds)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to set the diplomacy state: invalid arguments.");
         return NULL;
     }
     Py_RETURN_NONE;

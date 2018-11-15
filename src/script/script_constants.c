@@ -38,6 +38,7 @@
 #include "../event.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
+#include "../game/public/game.h"
 
 #include <SDL.h>
 
@@ -431,6 +432,12 @@ static void s_expose_map_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, MINIMAP_SIZE);
 }
 
+static void s_expose_game_constants(PyObject *module)
+{
+    PY_EXPOSE_ENUM(module, DIPLOMACY_STATE_PEACE);
+    PY_EXPOSE_ENUM(module, DIPLOMACY_STATE_WAR);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -441,5 +448,6 @@ void S_Constants_Expose(PyObject *module)
     s_expose_nuklear_constants(module);
     s_expose_event_constants(module);
     s_expose_map_constants(module);
+    s_expose_game_constants(module);
 }
 

@@ -39,6 +39,7 @@
 #include "gamestate.h"
 
 const khash_t(entity) *G_GetDynamicEntsSet(void);
+const khash_t(entity) *G_GetAllEntsSet(void);
 
 #endif
 

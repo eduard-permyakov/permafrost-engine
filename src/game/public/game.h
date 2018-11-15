@@ -58,6 +58,11 @@ enum cam_mode{
     CAM_MODE_RTS
 };
 
+enum diplomacy_state{
+    DIPLOMACY_STATE_PEACE,
+    DIPLOMACY_STATE_WAR
+};
+
 typedef kvec_t(struct entity*) pentity_kvec_t;
 KHASH_DECLARE(entity, khint32_t, struct entity*)
 
@@ -87,6 +92,7 @@ bool G_AddFaction(const char *name, vec3_t color);
 bool G_RemoveFaction(int faction_id);
 bool G_UpdateFaction(int faction_id, const char *name, vec3_t color);
 int  G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors);
+bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds);
 
 bool G_ActivateCamera(int idx, enum cam_mode mode);
 void G_MoveActiveCamera(vec2_t xz_ground_pos);
