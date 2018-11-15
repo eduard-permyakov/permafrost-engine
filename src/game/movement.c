@@ -42,6 +42,7 @@
 #include "../event.h"
 #include "../entity.h"
 #include "../collision.h"
+#include "../cursor.h"
 #include "../script/public/script.h"
 #include "../render/public/render.h"
 #include "../map/public/map.h"
@@ -51,6 +52,8 @@
 #include <assert.h>
 #include <SDL.h>
 
+
+#define ATTACK_HOTKEY (SDL_SCANCODE_A)
 
 /* For the purpose of movement simulation, all entities have the same mass,
  * meaning they are accelerate the same amount when applied equal forces. */
@@ -112,10 +115,11 @@ struct flock{
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-kvec_t(struct entity*)  s_move_markers;
-kvec_t(struct flock)    s_flocks;
-khash_t(state)         *s_entity_state_table;
-const struct map       *s_map;
+static kvec_t(struct entity*)  s_move_markers;
+static kvec_t(struct flock)    s_flocks;
+static khash_t(state)         *s_entity_state_table;
+static const struct map       *s_map;
+static bool                    s_attack_on_lclick = false;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -167,7 +171,7 @@ static bool adjacent_to_any_in_set(const struct entity *ent, const struct entity
     return false;
 }
 
-static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_xz)
+static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_xz, bool attack)
 {
     /* First remove the entities in the selection from any active flocks */
     for(int i = 0; i < kv_size(*sel); i++) {
@@ -317,14 +321,15 @@ static const struct entity *most_threatening_obstacle(const struct entity *ent, 
     return ret;
 }
 
-static void move_marker_add(vec3_t pos)
+static void move_marker_add(vec3_t pos, bool attack)
 {
     extern const char *g_basepath;
     char path[256];
     strcpy(path, g_basepath);
     strcat(path, "assets/models/arrow");
 
-    struct entity *ent = AL_EntityFromPFObj(path, "arrow-green.pfobj", "__move_marker__");
+    struct entity *ent = attack ? AL_EntityFromPFObj(path, "arrow-red.pfobj", "__move_marker__") 
+                                : AL_EntityFromPFObj(path, "arrow-green.pfobj", "__move_marker__");
     assert(ent);
 
     ent->pos = pos;
@@ -341,13 +346,19 @@ static void on_mousedown(void *user, void *event)
 {
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
 
-    if(mouse_event->button != SDL_BUTTON_RIGHT)
-        return;
+    bool attack = s_attack_on_lclick && (mouse_event->button == SDL_BUTTON_LEFT);
+    bool move = (mouse_event->button == SDL_BUTTON_RIGHT);
+
+    s_attack_on_lclick = false;
+    Cursor_SetRTSPointer(CURSOR_POINTER);
 
     if(G_MouseOverMinimap())
         return;
 
     if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
+        return;
+
+    if(!attack && !move)
         return;
 
     vec3_t mouse_coord;
@@ -357,8 +368,23 @@ static void on_mousedown(void *user, void *event)
     const pentity_kvec_t *sel = G_Sel_Get();
     if(kv_size(*sel) > 0) {
 
-        move_marker_add(mouse_coord);
-        make_flock_from_selection(sel, (vec2_t){mouse_coord.x, mouse_coord.z});
+        move_marker_add(mouse_coord, attack);
+        make_flock_from_selection(sel, (vec2_t){mouse_coord.x, mouse_coord.z}, attack);
+    }
+}
+
+static void on_keydown(void *user, void *event)
+{
+    s_attack_on_lclick = false;
+    Cursor_SetRTSPointer(CURSOR_POINTER);
+
+    SDL_KeyboardEvent *key_event = &(((SDL_Event*)event)->key);
+    const pentity_kvec_t *sel = G_Sel_Get();
+
+    if(key_event->keysym.scancode == ATTACK_HOTKEY && kv_size(*sel) > 0) {
+
+        s_attack_on_lclick = true;
+        Cursor_SetRTSPointer(CURSOR_TARGET);
     }
 }
 
@@ -831,6 +857,7 @@ bool G_Move_Init(const struct map *map)
     kv_init(s_move_markers);
     kv_init(s_flocks);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL);
+    E_Global_Register(SDL_KEYDOWN, on_keydown, NULL);
     E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL);
     E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL);
 
@@ -844,6 +871,7 @@ void G_Move_Shutdown(void)
 
     E_Global_Unregister(EVENT_30HZ_TICK, on_30hz_tick);
     E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
+    E_Global_Unregister(SDL_KEYDOWN, on_keydown);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
 
     for(int i = 0; i < kv_size(s_move_markers); i++) {

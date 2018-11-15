@@ -119,13 +119,22 @@ static struct cursor_resource s_cursors[] = {
         .hot_x   = 0,
         .hot_y   = 0
     },
+    [CURSOR_TARGET] = {
+        .cursor  = NULL,
+        .surface = NULL,
+        .path    = "assets/cursors/target.bmp",
+        .hot_x   = 24,
+        .hot_y   = 24 
+    },
 };
+
+static enum cursortype s_rts_pointer = CURSOR_POINTER;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void cursor_rts_set_active(int mouse_x, int mouse_y)
+static void cursor_rts_set_active(int mouse_x, int mouse_y)
 {
     bool top = (mouse_y == 0);
     bool bot = (mouse_y == CONFIG_RES_Y - 1);
@@ -150,7 +159,7 @@ void cursor_rts_set_active(int mouse_x, int mouse_y)
     }else if(right) {
         Cursor_SetActive(CURSOR_SCROLL_RIGHT); 
     }else {
-        Cursor_SetActive(CURSOR_POINTER); 
+        Cursor_SetActive(s_rts_pointer); 
     }
 }
 
@@ -216,5 +225,14 @@ void Cursor_SetActive(enum cursortype type)
 {
     assert(type >= 0 && type < ARR_SIZE(s_cursors));
     SDL_SetCursor(s_cursors[type].cursor);
+}
+
+void Cursor_SetRTSPointer(enum cursortype type)
+{
+    s_rts_pointer = type;
+
+    int x, y;
+    SDL_GetMouseState(&x, &y);
+    cursor_rts_set_active(x, y);
 }
 

@@ -47,7 +47,8 @@ enum cursortype{
     CURSOR_SCROLL_BOT,
     CURSOR_SCROLL_BOT_LEFT,
     CURSOR_SCROLL_LEFT,
-    CURSOR_SCROLL_TOP_LEFT
+    CURSOR_SCROLL_TOP_LEFT,
+    CURSOR_TARGET
 };
 
 bool Cursor_InitAll(const char *basedir);
@@ -58,5 +59,6 @@ void Cursor_SetActive(enum cursortype type);
  * the correct scrolling icon for the cursor's current position on the screen 
  * Must be called after Event subsystem is initialized. */
 void Cursor_SetRTSMode(bool on);
+void Cursor_SetRTSPointer(enum cursortype type);
 
 #endif
