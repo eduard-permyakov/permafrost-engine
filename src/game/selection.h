@@ -45,10 +45,13 @@
 struct obb;
 struct camera;
 
+
+extern const vec3_t g_seltype_color_map[];
+
 typedef kvec_t(struct obb) obb_kvec_t;
 
 bool G_Sel_Init(void);
 void G_Sel_Shutdown(void);
-bool G_Sel_Update(struct camera *cam, const pentity_kvec_t *visible, const obb_kvec_t *visible_obbs);
+void G_Sel_Update(struct camera *cam, const pentity_kvec_t *visible, const obb_kvec_t *visible_obbs);
 
 #endif

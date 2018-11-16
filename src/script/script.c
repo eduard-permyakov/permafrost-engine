@@ -82,6 +82,7 @@ static PyObject *PyPf_get_factions_list(PyObject *self);
 static PyObject *PyPf_add_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_remove_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_faction(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_faction_controllable(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_diplomacy_state(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
@@ -194,7 +195,7 @@ static PyMethodDef pf_module_methods[] = {
     {"add_faction",
     (PyCFunction)PyPf_add_faction, METH_VARARGS,
     "Add a new faction with the specified name and color. By default, this faction is mutually at peace with "
-    "every other existing faction."},
+    "every other existing faction. By default, new factions are player-controllable."},
 
     {"remove_faction",
     (PyCFunction)PyPf_remove_faction, METH_VARARGS,
@@ -204,6 +205,10 @@ static PyMethodDef pf_module_methods[] = {
     {"update_faction",
     (PyCFunction)PyPf_update_faction, METH_VARARGS,
     "Updates the name and color of the faction with the specified faction_id."},
+
+    {"set_faction_controllable",
+    (PyCFunction)PyPf_set_faction_controllable, METH_VARARGS,
+    "Sets whether units of this faction can be controlled by the player or not."},
 
     {"set_diplomacy_state",
     (PyCFunction)PyPf_set_diplomacy_state, METH_VARARGS,
@@ -530,7 +535,8 @@ static PyObject *PyPf_clear_unit_selection(PyObject *self)
 
 static PyObject *PyPf_get_unit_selection(PyObject *self)
 {
-    const pentity_kvec_t *sel = G_Sel_Get();
+    enum selection_type sel_type;
+    const pentity_kvec_t *sel = G_Sel_Get(&sel_type);
 
     PyObject *ret = PyList_New(0);
     if(!ret)
@@ -550,7 +556,9 @@ static PyObject *PyPf_get_factions_list(PyObject *self)
 {
     char names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
     vec3_t colors[MAX_FACTIONS];
-    size_t num_facs = G_GetFactions(names, colors);
+    bool controllable[MAX_FACTIONS];
+
+    size_t num_facs = G_GetFactions(names, colors, controllable);
 
     PyObject *ret = PyList_New(num_facs);
     if(!ret)
@@ -631,7 +639,38 @@ static PyObject *PyPf_update_faction(PyObject *self, PyObject *args)
     }
 
     vec3_t color = {color_ints[0], color_ints[1], color_ints[2]};
-    if(!G_UpdateFaction(faction_id, name, color)) {
+
+    char names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
+    vec3_t colors[MAX_FACTIONS];
+    bool controllable[MAX_FACTIONS];
+
+    size_t num_facs = G_GetFactions(names, colors, controllable);
+
+    if(!G_UpdateFaction(faction_id, name, color, controllable[faction_id])) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to update the specified faction."); 
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_faction_controllable(PyObject *self, PyObject *args)
+{
+    int faction_id;
+    PyObject *new_controllable;
+
+    if(!PyArg_ParseTuple(args, "iO", &faction_id, &new_controllable)) {
+
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an integer and a boolean expression.");
+        return NULL;
+    }
+
+    char names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
+    vec3_t colors[MAX_FACTIONS];
+    bool controllable[MAX_FACTIONS];
+
+    size_t num_facs = G_GetFactions(names, colors, controllable);
+
+    if(!G_UpdateFaction(faction_id, names[faction_id], colors[faction_id], PyObject_IsTrue(new_controllable))) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to update the specified faction."); 
         return NULL;
     }

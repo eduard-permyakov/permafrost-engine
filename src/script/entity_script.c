@@ -234,7 +234,8 @@ static PyTypeObject PyAnimEntity_type = {
     .tp_basicsize = sizeof(PyAnimEntityObject), 
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc       = "Permafrost Engine animated entity. This type requires the "
-                    "'idle_clip' keyword argument to be passed to __init__.",
+                    "'idle_clip' keyword argument to be passed to __init__. "
+                    "This is a subclass of pf.Entity.",
     .tp_methods   = PyAnimEntity_methods,
     .tp_base      = &PyEntity_type,
     .tp_init      = (initproc)PyAnimEntity_init,
@@ -245,18 +246,16 @@ static PyTypeObject PyAnimEntity_type = {
 static PyGetSetDef PyCombatableEntity_getset[] = {
     {"max_hp",
     (getter)PyCombatableEntity_get_max_hp, (setter)PyCombatableEntity_set_max_hp,
-    "The maximum number of hitpoints that the entity starts out with. "
-    "Only applicable to combatable entitities.",
+    "The maximum number of hitpoints that the entity starts out with.",
     NULL},
     {"base_dmg",
     (getter)PyCombatableEntity_get_base_dmg, (setter)PyCombatableEntity_set_base_dmg,
-    "The base damage for which this entity's attacks hit. "
-    "Only applicable to combatable entities.",
+    "The base damage for which this entity's attacks hit.",
     NULL},
     {"base_armour",
     (getter)PyCombatableEntity_get_base_armour, (setter)PyCombatableEntity_set_base_armour,
     "The base armour (as a fraction from 0.0 to 1.0) specifying which percentage of incoming "
-    "damage is blocked. Only applicable to combatable entities.",
+    "damage is blocked.",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -268,7 +267,7 @@ static PyTypeObject PyCombatableEntity_type = {
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc       = "Permafrost Engine entity which is able to take part in combat. This type "
                     "requires the 'max_hp', 'base_dmg', and 'base_armour' keyword arguments to be "
-                    "passed to __init__.",
+                    "passed to __init__. This is a subclass of pf.Entity.",
     .tp_base      = &PyEntity_type,
     .tp_init      = (initproc)PyCombatableEntity_init,
 };

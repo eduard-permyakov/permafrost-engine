@@ -55,17 +55,6 @@
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static struct selection_ctx{
-    bool installed;
-    enum state{
-        STATE_MOUSE_SEL_UP = 0,
-        STATE_MOUSE_SEL_DOWN,
-        STATE_MOUSE_SEL_RELEASED,
-    }state;
-    vec2_t mouse_down_coord;
-    vec2_t mouse_up_coord;
-}s_ctx;
-
 /*                       Mouse down                  Mouse 
  *                      over map area               released
  * [start] ---> [MOUSE_SEL_UP] ---> [MOUSE_SEL_DOWN] ---> [MOUSE_SEL_RELEASED]
@@ -77,7 +66,29 @@ static struct selection_ctx{
  * re-calculate the current selection.
  */
 
-pentity_kvec_t s_selected;
+static struct selection_ctx{
+    bool installed;
+    enum state{
+        STATE_MOUSE_SEL_UP = 0,
+        STATE_MOUSE_SEL_DOWN,
+        STATE_MOUSE_SEL_RELEASED,
+    }state;
+    vec2_t mouse_down_coord;
+    vec2_t mouse_up_coord;
+    enum selection_type type;
+}s_ctx;
+
+static pentity_kvec_t s_selected;
+
+/*****************************************************************************/
+/* GLOBAL VARIABLES                                                          */
+/*****************************************************************************/
+
+const vec3_t g_seltype_color_map[] = {
+    [SELECTION_TYPE_PLAYER] = (vec3_t){0.95f, 0.95f, 0.95f},
+    [SELECTION_TYPE_ALLIED] = (vec3_t){ 0.0f,  1.0f,  0.0f},
+    [SELECTION_TYPE_ENEMY]  = (vec3_t){ 1.0f,  0.0f,  0.0f}
+};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -116,7 +127,7 @@ static void on_mouseup(void *user, void *event)
     s_ctx.mouse_up_coord = (vec2_t){mouse_event->x, mouse_event->y};
 }
 
-static void on_render(void *user, void *event)
+static void on_render_ui(void *user, void *event)
 {
     if(s_ctx.state != STATE_MOUSE_SEL_DOWN)
         return;
@@ -212,6 +223,92 @@ static bool pentities_equal(struct entity *const *a, struct entity *const *b)
     return ((*a) == (*b));
 }
 
+static bool allied_to_player_controllabe(const bool *controllable,
+                                         size_t num_facs, int faction_id)
+{
+    assert(!controllable[faction_id]);
+
+    for(int i = 0; i < num_facs; i++) {
+    
+        if(i == faction_id)
+            continue;
+
+        enum diplomacy_state ds;
+        G_GetDiplomacyState(faction_id, i, &ds);
+
+        if(controllable[i] && ds != DIPLOMACY_STATE_WAR)
+            return true;
+    }
+    return false;
+}
+
+/* Apply the following rules to the selection set:
+ * 
+ * 1) If there is at least one player-controllable entity in the selection set,
+ *    leave only player-controllable entities.
+ * 2) Else if there is at least one player ally in the selection set, leave only
+ *    allied units in the selection set.
+ * 3) Else we know there are only player enemy units in the selection set.
+ *
+ * The filtering should be performed after any addition to the 'selected' set
+ * to keep the state consistent.
+ */
+static void sel_filter_and_set_type(void)
+{
+    char names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
+    vec3_t colors[MAX_FACTIONS];
+    bool controllable[MAX_FACTIONS];
+
+    size_t num_facs = G_GetFactions(names, colors, controllable);
+
+    bool allied[MAX_FACTIONS];
+    for(int i = 0; i < num_facs; i++) {
+        for(int j = 0; j < num_facs; j++) {
+
+            enum diplomacy_state ds;
+            G_GetDiplomacyState(i, j, &ds);
+        }
+    }
+
+    bool has_player = false, has_allied = false;
+    for(int i = 0; i < kv_size(s_selected); i++) {
+        
+        const struct entity *curr = kv_A(s_selected, i);
+        assert(curr->faction_id >= 0 && curr->faction_id < num_facs);
+
+        if(controllable[curr->faction_id]) {
+            has_player = true; 
+            break;
+        }
+
+        if(allied_to_player_controllabe(controllable, num_facs, curr->faction_id)) {
+            has_allied = true;
+        }
+    }
+
+    if(has_player) {
+        s_ctx.type = SELECTION_TYPE_PLAYER;
+    }else if(has_allied) {
+        s_ctx.type = SELECTION_TYPE_ALLIED; 
+    }else {
+        s_ctx.type = SELECTION_TYPE_ENEMY; 
+    }
+
+    /* Iterate the vector backwards so we can delete while iterating. */
+    for(int i = kv_size(s_selected)-1; i >= 0; i--) {
+
+        const struct entity *curr = kv_A(s_selected, i);
+        if(has_player && !controllable[curr->faction_id]) {
+
+            kv_del(struct entity*, s_selected, i);
+        }else if(!has_player && has_allied
+        && !allied_to_player_controllabe(controllable, num_facs, curr->faction_id)) {
+
+            kv_del(struct entity*, s_selected, i);
+        }
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -235,7 +332,7 @@ void G_Sel_Enable(void)
 
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL);
     E_Global_Register(SDL_MOUSEBUTTONUP,   on_mouseup, NULL);
-    E_Global_Register(EVENT_RENDER_UI,     on_render, NULL);
+    E_Global_Register(EVENT_RENDER_UI,     on_render_ui, NULL);
 }
 
 void G_Sel_Disable(void)
@@ -244,19 +341,19 @@ void G_Sel_Disable(void)
         return;
     s_ctx.installed = false;
 
-    E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
+    E_Global_Unregister(EVENT_RENDER_UI,     on_render_ui);
     E_Global_Unregister(SDL_MOUSEBUTTONUP,   on_mouseup);
-    E_Global_Unregister(EVENT_RENDER_UI,     on_render);
+    E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
 
     G_Sel_Clear();
 }
 
 /* Note that the selection is only changed if there is at least one entity in the new selection. Otherwise
  * (ex. if the player is left-clicking on an empty part of the map), the previous selection is kept. */
-bool G_Sel_Update(struct camera *cam, const pentity_kvec_t *visible, const obb_kvec_t *visible_obbs)
+void G_Sel_Update(struct camera *cam, const pentity_kvec_t *visible, const obb_kvec_t *visible_obbs)
 {
     if(s_ctx.state != STATE_MOUSE_SEL_RELEASED)
-        return false;
+        return;
     s_ctx.state = STATE_MOUSE_SEL_UP;
 
     bool sel_empty = true;
@@ -293,8 +390,6 @@ bool G_Sel_Update(struct camera *cam, const pentity_kvec_t *visible, const obb_k
             }
         }
 
-        return false;
-    
     }else{
 
         /* Case 2: The mouse is pressed and released in different spots, meaning the OBBs must be tested against
@@ -316,14 +411,11 @@ bool G_Sel_Update(struct camera *cam, const pentity_kvec_t *visible, const obb_k
                 kv_push(struct entity*, s_selected, kv_A(*visible, i));
             }
         }
-        
     }
 
     if(!sel_empty) {
+        sel_filter_and_set_type();
         E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
-        return true;
-    }else{
-        return false;
     }
 }
 
@@ -344,6 +436,7 @@ void G_Sel_Add(struct entity *ent)
     kv_indexof(struct entity*, s_selected, ent, pentities_equal, idx);
     if(idx == -1) {
         kv_push(struct entity*, s_selected, ent);
+        sel_filter_and_set_type();
     }
 }
 
@@ -358,8 +451,9 @@ void G_Sel_Remove(struct entity *ent)
     }
 }
 
-const pentity_kvec_t *G_Sel_Get(void)
+const pentity_kvec_t *G_Sel_Get(enum selection_type *out_type)
 {
+    *out_type = s_ctx.type;
     return &s_selected;
 }
 

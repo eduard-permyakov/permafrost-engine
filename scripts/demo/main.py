@@ -54,9 +54,13 @@ pf.new_game("assets/maps", "demo.pfmap")
 pf.set_map_render_mode(pf.CHUNK_RENDER_MODE_PREBAKED)
 scene_objs = pf.load_scene("assets/maps/demo.pfscene")
 
-pf.set_diplomacy_state(0, 1, pf.DIPLOMACY_STATE_WAR)
-pf.set_diplomacy_state(0, 2, pf.DIPLOMACY_STATE_WAR)
 pf.set_diplomacy_state(1, 2, pf.DIPLOMACY_STATE_WAR)
+pf.set_diplomacy_state(1, 3, pf.DIPLOMACY_STATE_WAR)
+pf.set_diplomacy_state(2, 3, pf.DIPLOMACY_STATE_WAR)
+
+pf.set_faction_controllable(0, False)
+pf.set_faction_controllable(2, False)
+pf.set_faction_controllable(3, False)
 
 ############################################################
 # Setup global events                                      #
@@ -64,7 +68,7 @@ pf.set_diplomacy_state(1, 2, pf.DIPLOMACY_STATE_WAR)
 
 active_cam_idx = 0
 def toggle_camera(user, event):
-    mode_for_idx = [1, 0]
+    mode_for_idx = [pf.CAM_MODE_RTS, pf.CAM_MODE_FPS]
 
     if event[0] == pf.SDL_SCANCODE_C:
         global active_cam_idx

@@ -58,7 +58,6 @@
 #define CAM_SPEED           0.20f
 
 #define ACTIVE_CAM          (s_gs.cameras[s_gs.active_cam_idx])
-#define DEFAULT_SEL_COLOR   (vec3_t){0.95f, 0.95f, 0.95f}
 
 /* By default, the minimap is in the bottom left corner with 10 px padding. */
 #define DEFAULT_MINIMAP_POS (vec2_t) { \
@@ -329,11 +328,13 @@ void G_Render(void)
         R_GL_Draw(curr->render_private, &model);
     }
 
-    const pentity_kvec_t *selected = G_Sel_Get();
+    enum selection_type sel_type;
+    const pentity_kvec_t *selected = G_Sel_Get(&sel_type);
     for(int i = 0; i < kv_size(*selected); i++) {
 
         struct entity *curr = kv_A(*selected, i);
-        R_GL_DrawSelectionCircle((vec2_t){curr->pos.x, curr->pos.z}, curr->selection_radius, 0.4f, DEFAULT_SEL_COLOR, s_gs.map);
+        R_GL_DrawSelectionCircle((vec2_t){curr->pos.x, curr->pos.z}, curr->selection_radius, 0.4f, 
+            g_seltype_color_map[sel_type], s_gs.map);
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_3D, NULL, ES_ENGINE);
@@ -393,6 +394,7 @@ bool G_AddFaction(const char *name, vec3_t color)
     int new_fac_id = s_gs.num_factions;
     strcpy(s_gs.factions[new_fac_id].name, name);
     s_gs.factions[new_fac_id].color = color;
+    s_gs.factions[new_fac_id].controllable = true;
     s_gs.num_factions++;
 
     /* By default, a new faction is mutually at peace with 
@@ -445,7 +447,7 @@ bool G_RemoveFaction(int faction_id)
     return true;
 }
 
-bool G_UpdateFaction(int faction_id, const char *name, vec3_t color)
+bool G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool control)
 {
     if(faction_id >= s_gs.num_factions)
         return false;
@@ -454,16 +456,18 @@ bool G_UpdateFaction(int faction_id, const char *name, vec3_t color)
 
     strcpy(s_gs.factions[faction_id].name, name);
     s_gs.factions[faction_id].color = color;
+    s_gs.factions[faction_id].controllable = control;
     return true;
 }
 
-int G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors)
+int G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl)
 {
     for(int i = 0; i < s_gs.num_factions; i++) {
     
         strncpy(out_names[i], s_gs.factions[i].name, MAX_FAC_NAME_LEN);
         out_names[i][MAX_FAC_NAME_LEN-1] = '\0';
         out_colors[i] = s_gs.factions[i].color;
+        out_ctrl[i] = s_gs.factions[i].controllable;
     }
     return s_gs.num_factions;
 }
@@ -479,6 +483,19 @@ bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds)
 
     s_gs.diplomacy_table[fac_id_a][fac_id_b] = ds;
     s_gs.diplomacy_table[fac_id_b][fac_id_a] = ds;
+    return true;
+}
+
+bool G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out)
+{
+    if(fac_id_a < 0 || fac_id_a >= s_gs.num_factions)
+        return false;
+    if(fac_id_b < 0 || fac_id_b >= s_gs.num_factions)
+        return false;
+    if(fac_id_a == fac_id_b)
+        return false;
+
+    *out = s_gs.diplomacy_table[fac_id_a][fac_id_b];
     return true;
 }
 

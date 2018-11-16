@@ -71,7 +71,7 @@ struct gamestate{
     struct faction          factions[MAX_FACTIONS];
     /*-------------------------------------------------------------------------
      * Holds the relationships between every 2 factions. Note that diplomatic
-     * relations don't necessarily need to be symmetric.
+     * relations are always symmetric (i.e always 'mutually' at war or peace).
      *-------------------------------------------------------------------------
      */
     enum diplomacy_state    diplomacy_table[MAX_FACTIONS][MAX_FACTIONS];

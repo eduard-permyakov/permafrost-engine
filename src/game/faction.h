@@ -42,6 +42,7 @@
 struct faction{
     vec3_t color;
     char   name[MAX_FAC_NAME_LEN];
+    bool   controllable;
 };
 
 #endif

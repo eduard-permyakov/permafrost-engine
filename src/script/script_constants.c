@@ -434,6 +434,9 @@ static void s_expose_map_constants(PyObject *module)
 
 static void s_expose_game_constants(PyObject *module)
 {
+    PY_EXPOSE_ENUM(module, CAM_MODE_FPS);
+    PY_EXPOSE_ENUM(module, CAM_MODE_RTS);
+
     PY_EXPOSE_ENUM(module, DIPLOMACY_STATE_PEACE);
     PY_EXPOSE_ENUM(module, DIPLOMACY_STATE_WAR);
 }

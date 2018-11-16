@@ -365,8 +365,9 @@ static void on_mousedown(void *user, void *event)
     if(!M_Raycast_IntersecCoordinate(&mouse_coord))
         return;
 
-    const pentity_kvec_t *sel = G_Sel_Get();
-    if(kv_size(*sel) > 0) {
+    enum selection_type sel_type;
+    const pentity_kvec_t *sel = G_Sel_Get(&sel_type);
+    if(kv_size(*sel) > 0 && sel_type == SELECTION_TYPE_PLAYER) {
 
         move_marker_add(mouse_coord, attack);
         make_flock_from_selection(sel, (vec2_t){mouse_coord.x, mouse_coord.z}, attack);
@@ -379,9 +380,11 @@ static void on_keydown(void *user, void *event)
     Cursor_SetRTSPointer(CURSOR_POINTER);
 
     SDL_KeyboardEvent *key_event = &(((SDL_Event*)event)->key);
-    const pentity_kvec_t *sel = G_Sel_Get();
+    enum selection_type sel_type;
+    const pentity_kvec_t *sel = G_Sel_Get(&sel_type);
 
-    if(key_event->keysym.scancode == ATTACK_HOTKEY && kv_size(*sel) > 0) {
+    if(key_event->keysym.scancode == ATTACK_HOTKEY 
+    && kv_size(*sel) > 0 && sel_type == SELECTION_TYPE_PLAYER) {
 
         s_attack_on_lclick = true;
         Cursor_SetRTSPointer(CURSOR_TARGET);
