@@ -36,6 +36,7 @@
 #ifndef MOVEMENT_H
 #define MOVEMENT_H
 
+#include "../pf_math.h"
 #include <stdbool.h>
 
 struct map;
@@ -43,7 +44,12 @@ struct entity;
 
 bool G_Move_Init(const struct map *map);
 void G_Move_Shutdown(void);
+
 void G_Move_RemoveEntity(const struct entity *ent);
+
+bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz);
+void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz);
+
 
 #endif
 
