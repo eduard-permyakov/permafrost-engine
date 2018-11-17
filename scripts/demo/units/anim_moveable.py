@@ -35,6 +35,7 @@
 from abc import ABCMeta, abstractproperty
 import pf
 from constants import *
+import weakref
 
 class AnimMoveable(pf.AnimEntity):
     __metaclass__ = ABCMeta
@@ -61,10 +62,12 @@ class AnimMoveable(pf.AnimEntity):
         pass
 
     def __on_motion_begin(self, event):
+        assert not self.moving
         self.moving = True
         self.play_anim(self.move_anim())
 
     def __on_motion_end(self, event):
+        assert self.moving
         self.moving = False
         self.play_anim(self.idle_anim())
 

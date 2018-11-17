@@ -35,6 +35,7 @@
 
 #include "movement.h"
 #include "game_private.h"
+#include "combat.h"
 #include "public/game.h"
 #include "../config.h"
 #include "../camera.h"
@@ -217,6 +218,13 @@ static void vec2_truncate(vec2_t *inout, float max_len)
     }
 }
 
+static void entity_finish_moving(const struct entity *ent)
+{
+    E_Entity_Notify(EVENT_MOTION_END, ent->uid, NULL, ES_ENGINE);
+    if(ent->flags & ENTITY_FLAG_COMBATABLE)
+        G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
+}
+
 static void on_marker_anim_finish(void *user, void *event)
 {
     int idx;
@@ -272,7 +280,10 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
             }
         }
     }
-    
+
+    //TODO: if there is a flock with the same destination XZ, use it instead
+    //tag flocks with a 'faction_id' so no enemies in flock
+
     struct flock new_flock = (struct flock) {
         .ents = kh_init(entity),
         .target_xz = target_xz,
@@ -327,7 +338,7 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
                 .state = STATE_ARRIVED,
                 .velocity = (vec2_t){0.0f}
             };
-            E_Entity_Notify(EVENT_MOTION_END, curr_ent->uid, NULL, ES_ENGINE);
+            entity_finish_moving(curr_ent);
         }
     }
 
@@ -439,6 +450,16 @@ static void on_mousedown(void *user, void *event)
     enum selection_type sel_type;
     const pentity_kvec_t *sel = G_Sel_Get(&sel_type);
     if(kv_size(*sel) > 0 && sel_type == SELECTION_TYPE_PLAYER) {
+
+        for(int i = 0; i < kv_size(*sel); i++) {
+
+            const struct entity *curr = kv_A(*sel, i);
+            if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
+                continue;
+
+            G_Combat_ClearSavedMoveCmd(curr);
+            G_Combat_SetStance(curr, attack ? COMBAT_STANCE_AGGRESSIVE : COMBAT_STANCE_NO_ENGAGEMENT);
+        }
 
         move_marker_add(mouse_coord, attack);
         make_flock_from_selection(sel, (vec2_t){mouse_coord.x, mouse_coord.z}, attack);
@@ -716,32 +737,6 @@ static vec2_t collision_avoidance_force(const struct entity *ent, const struct f
     return right_dir;
 }
 
-/* Pursuing is a behaviour that causes agents to steer towards the future position of a target
- * in an attempt to intercept it.
- */
-static vec2_t pursuit_force(const struct entity *ent, const struct entity *target, int tick_res)
-{
-    assert(ent && target);
-    vec2_t target_xz = (vec2_t){target->pos.x, target->pos.z};
-
-    if(stationary(target))
-        return seek_force(ent, target_xz, tick_res);
-
-    struct movestate *ms;
-    if((ms = movestate_get(target)) == NULL || PFM_Vec2_Len(&ms->velocity) < EPSILON)
-        return seek_force(ent, target_xz, tick_res);
-
-    vec3_t dist;
-    PFM_Vec3_Sub((vec3_t*)&target->pos, (vec3_t*)&ent->pos, &dist);
-    float dist_mag = PFM_Vec3_Len(&dist);
-    float t_delta = dist_mag / PFM_Vec2_Len(&ms->velocity);
-
-    vec2_t future_pos, delta;
-    PFM_Vec2_Scale(&ms->velocity, t_delta, &delta);
-    PFM_Vec2_Add(&target_xz, &delta, &future_pos);
-    return seek_force(ent, future_pos, tick_res);
-}
-
 static vec2_t total_steering_force(const struct entity *ent, const struct flock *flock, int tick_res,
                                    vec2_t *out_col_avoid_force)
 {
@@ -892,7 +887,7 @@ static void on_30hz_tick(void *user, void *event)
                         .state = STATE_ARRIVED,
                         .velocity = (vec2_t){0.0f}
                     };
-                    E_Entity_Notify(EVENT_MOTION_END, curr->uid, NULL, ES_ENGINE);
+                    entity_finish_moving(curr);
                 }
 
                 struct entity *adjacent[kh_size(kv_A(s_flocks, i).ents)]; 
@@ -919,7 +914,7 @@ static void on_30hz_tick(void *user, void *event)
                         .state = STATE_ARRIVED,
                         .velocity = (vec2_t){0.0f}
                     };
-                    E_Entity_Notify(EVENT_MOTION_END, curr->uid, NULL, ES_ENGINE);
+                    entity_finish_moving(curr);
                 }
                 break;
             }
@@ -982,13 +977,8 @@ void G_Move_RemoveEntity(const struct entity *ent)
     /* Remove this entity from any existing flocks */
     for(int i = kv_size(s_flocks)-1; i >= 0; i--) {
 
-        const struct flock *curr_flock = &kv_A(s_flocks, i);
-
-        kh_foreach(curr_flock->ents, key, curr, {
-        
-            if(curr == ent)
-                kh_del(entity, kv_A(s_flocks, i).ents, key);
-        });
+        struct flock *curr_flock = &kv_A(s_flocks, i);
+        flock_try_remove(curr_flock, ent);
 
         if(kh_size(curr_flock->ents) == 0) {
             kh_destroy(entity, curr_flock->ents);
@@ -996,6 +986,10 @@ void G_Move_RemoveEntity(const struct entity *ent)
         }
     }
 
+    struct movestate *ms = movestate_get(ent);
+    if(ms && ms->state != STATE_ARRIVED) {
+        entity_finish_moving(ent);
+    }
     movestate_remove(ent);
 }
 
@@ -1013,22 +1007,10 @@ bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz)
 
 void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz)
 {
-    /* If there is already a flock moving to this point, simply 
-     * move this entity to this flock - it will make use of the 
-     * existing flow fields. */
-    struct flock *dst_flock = flock_for_target(dest_xz);
-    if(dst_flock) {
-
-        struct flock *src_flock = flock_for_ent(ent);
-        if(src_flock)
-            flock_try_remove(src_flock, ent);
-
-        flock_add(dst_flock, ent); 
-        return;
-    }
-
     pentity_kvec_t to_add;
     kv_init(to_add);
+    kv_push(struct entity*, to_add, (struct entity*)ent);
+
     make_flock_from_selection(&to_add, dest_xz, false);
     kv_destroy(to_add);
 }

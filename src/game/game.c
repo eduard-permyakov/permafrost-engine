@@ -39,6 +39,7 @@
 #include "timer_events.h"
 #include "movement.h"
 #include "game_private.h"
+#include "combat.h" 
 #include "../render/public/render.h"
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
@@ -103,6 +104,7 @@ static void g_reset(void)
         M_FreeMinimap(s_gs.map);
         AL_MapFree(s_gs.map);
         G_Move_Shutdown();
+        G_Combat_Shutdown();
         s_gs.map = NULL;
     }
 
@@ -136,6 +138,7 @@ static void g_init_map(void)
     M_Raycast_Install(s_gs.map, ACTIVE_CAM);
     M_InitMinimap(s_gs.map, DEFAULT_MINIMAP_POS);
     G_Move_Init(s_gs.map);
+    G_Combat_Init();
 }
 
 /*****************************************************************************/
@@ -361,6 +364,9 @@ bool G_AddEntity(struct entity *ent)
     assert(ret != -1 && ret != 0);
     kh_value(s_gs.dynamic, k) = ent;
 
+    if(ent->flags & ENTITY_FLAG_COMBATABLE)
+        G_Combat_AddEntity(ent, COMBAT_STANCE_AGGRESSIVE);
+
     return true;
 }
 
@@ -381,6 +387,7 @@ bool G_RemoveEntity(struct entity *ent)
     }
 
     G_Move_RemoveEntity(ent);
+    G_Combat_RemoveEntity(ent);
     return true;
 }
 
@@ -464,10 +471,16 @@ int G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *
 {
     for(int i = 0; i < s_gs.num_factions; i++) {
     
-        strncpy(out_names[i], s_gs.factions[i].name, MAX_FAC_NAME_LEN);
-        out_names[i][MAX_FAC_NAME_LEN-1] = '\0';
-        out_colors[i] = s_gs.factions[i].color;
-        out_ctrl[i] = s_gs.factions[i].controllable;
+        if(out_names) {
+            strncpy(out_names[i], s_gs.factions[i].name, MAX_FAC_NAME_LEN);
+            out_names[i][MAX_FAC_NAME_LEN-1] = '\0';
+        }
+        if(out_colors) {
+            out_colors[i] = s_gs.factions[i].color;
+        }
+        if(out_ctrl) {
+            out_ctrl[i] = s_gs.factions[i].controllable;
+        }
     }
     return s_gs.num_factions;
 }

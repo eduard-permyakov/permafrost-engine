@@ -32,28 +32,5 @@
 #  statement from your version.
 #
 
-import anim_moveable as am
-import anim_combatable as ac
-
-class Knight(am.AnimMoveable, ac.AnimCombatable):
-
-    def __init__(self, path, pfobj, name):
-        super(Knight, self).__init__(path, pfobj, name, 
-            idle_clip = self.idle_anim(),
-            max_hp = 150,
-            base_dmg = 200,
-            base_armour = 0.5)
-        self.speed = 20.0
-
-    def idle_anim(self):
-        return "Idle"
-
-    def move_anim(self):
-        return "Walk"
-
-    def attack_anim(self): 
-        return "Attack"
-
-    def death_anim(self): 
-        return "Die"
+scene_objs = []
 

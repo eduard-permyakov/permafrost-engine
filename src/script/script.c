@@ -556,9 +556,8 @@ static PyObject *PyPf_get_factions_list(PyObject *self)
 {
     char names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
     vec3_t colors[MAX_FACTIONS];
-    bool controllable[MAX_FACTIONS];
 
-    size_t num_facs = G_GetFactions(names, colors, controllable);
+    size_t num_facs = G_GetFactions(names, colors, NULL);
 
     PyObject *ret = PyList_New(num_facs);
     if(!ret)
@@ -640,11 +639,8 @@ static PyObject *PyPf_update_faction(PyObject *self, PyObject *args)
 
     vec3_t color = {color_ints[0], color_ints[1], color_ints[2]};
 
-    char names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
-    vec3_t colors[MAX_FACTIONS];
     bool controllable[MAX_FACTIONS];
-
-    size_t num_facs = G_GetFactions(names, colors, controllable);
+    size_t num_facs = G_GetFactions(NULL, NULL, controllable);
 
     if(!G_UpdateFaction(faction_id, name, color, controllable[faction_id])) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to update the specified faction."); 
@@ -666,9 +662,8 @@ static PyObject *PyPf_set_faction_controllable(PyObject *self, PyObject *args)
 
     char names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
     vec3_t colors[MAX_FACTIONS];
-    bool controllable[MAX_FACTIONS];
 
-    size_t num_facs = G_GetFactions(names, colors, controllable);
+    size_t num_facs = G_GetFactions(names, colors, NULL);
 
     if(!G_UpdateFaction(faction_id, names[faction_id], colors[faction_id], PyObject_IsTrue(new_controllable))) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to update the specified faction."); 

@@ -194,6 +194,10 @@ void A_Update(const struct entity *ent)
         ctx->curr_frame = (ctx->curr_frame + 1) % ctx->active->num_frames;
         ctx->curr_frame_start_ticks = curr_ticks;
 
+        if(ctx->curr_frame == 0) {
+            E_Entity_Notify(EVENT_ANIM_CYCLE_FINISHED, ent->uid, NULL, ES_ENGINE);
+        }
+
         if(ctx->curr_frame == 0 && ctx->mode == ANIM_MODE_ONCE) {
 
             E_Entity_Notify(EVENT_ANIM_FINISHED, ent->uid, NULL, ES_ENGINE);

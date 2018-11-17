@@ -35,13 +35,49 @@
 from abc import ABCMeta, abstractproperty
 import pf
 from constants import *
+import globals 
 
 class AnimCombatable(pf.AnimEntity, pf.CombatableEntity):
     __metaclass__ = ABCMeta
 
     def __init__(self, path, pfobj, name, **kwargs):
         super(AnimCombatable, self).__init__(path, pfobj, name, **kwargs)
+        self.attacking = False
+        self.register(pf.EVENT_ATTACK_START, AnimCombatable.__on_attack_begin, self)
+        self.register(pf.EVENT_ATTACK_END, AnimCombatable.__on_attack_end, self)
+        self.register(pf.EVENT_ENTITY_DEATH, AnimCombatable.__on_death, self)
 
     def __del__(self):
+        self.unregister(pf.EVENT_ENTITY_DEATH, AnimCombatable.__on_death)
+        self.unregister(pf.EVENT_ATTACK_END, AnimCombatable.__on_attack_end)
+        self.unregister(pf.EVENT_ATTACK_START, AnimCombatable.__on_attack_begin)
         super(AnimCombatable, self).__del__()
+
+    @abstractproperty
+    def attack_anim(self): 
+        """ Name of animation clip that should be played when attacking """
+        pass
+
+    @abstractproperty
+    def death_anim(self): 
+        """ Name of animation clip that should be played on death """
+        pass
+
+    def __on_attack_begin(self, event):
+        assert not self.attacking
+        self.attacking = True
+        self.play_anim(self.attack_anim())
+
+    def __on_attack_end(self, event):
+        assert self.attacking
+        self.attacking = False
+        self.play_anim(self.idle_anim())
+
+    def __on_death(self, event):
+        self.play_anim(self.death_anim())
+        self.register(pf.EVENT_ANIM_CYCLE_FINISHED, AnimCombatable.__on_death_anim_finish, self)
+
+    def __on_death_anim_finish(self, event):
+        self.unregister(pf.EVENT_ANIM_CYCLE_FINISHED, AnimCombatable.__on_death_anim_finish)
+        globals.scene_objs.remove(self)
 

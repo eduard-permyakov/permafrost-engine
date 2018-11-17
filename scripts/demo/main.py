@@ -34,6 +34,7 @@
 
 import pf
 import ui
+import globals
 
 from constants import *
 from units import *
@@ -52,7 +53,7 @@ pf.set_emit_light_pos([1024.0, 768.0, 768.0])
 
 pf.new_game("assets/maps", "demo.pfmap")
 pf.set_map_render_mode(pf.CHUNK_RENDER_MODE_PREBAKED)
-scene_objs = pf.load_scene("assets/maps/demo.pfscene")
+globals.scene_objs = pf.load_scene("assets/maps/demo.pfscene")
 
 pf.set_diplomacy_state(1, 2, pf.DIPLOMACY_STATE_WAR)
 pf.set_diplomacy_state(1, 3, pf.DIPLOMACY_STATE_WAR)
@@ -76,9 +77,8 @@ def toggle_camera(user, event):
         pf.activate_camera(active_cam_idx, mode_for_idx[active_cam_idx])
 
 def toggle_sinbad(user, event):
-    global scene_objs
     if event[0] == pf.SDL_SCANCODE_V:
-        for ent in [obj for obj in scene_objs if isinstance(obj, sinbad.Sinbad)]:
+        for ent in [obj for obj in globals.scene_objs if isinstance(obj, sinbad.Sinbad)]:
             ent.notify(EVENT_SINBAD_TOGGLE_ANIM, None)
 
 

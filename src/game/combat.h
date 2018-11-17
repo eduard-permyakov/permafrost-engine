@@ -36,6 +36,11 @@
 #ifndef COMBAT_H
 #define COMBAT_H
 
+#include <stdbool.h>
+
+struct entity;
+
+
 enum combat_stance{
     /* The entity will move to attack anyone within 
      * its' target acquisition radius. */
@@ -43,7 +48,18 @@ enum combat_stance{
     /* The entity will attack entities within its' attack
      * range but it will not move from its' current position. */
     COMBAT_STANCE_HOLD_POSITION,
+    /* The entity will not take part in combat. */
+    COMBAT_STANCE_NO_ENGAGEMENT,
 };
+
+
+bool G_Combat_Init(void);
+void G_Combat_Shutdown(void);
+
+void G_Combat_AddEntity(const struct entity *ent, enum combat_stance initial);
+void G_Combat_RemoveEntity(const struct entity *ent);
+bool G_Combat_SetStance(const struct entity *ent, enum combat_stance stance);
+void G_Combat_ClearSavedMoveCmd(const struct entity *ent);
 
 #endif
 
