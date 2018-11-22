@@ -37,6 +37,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * Fast rendering of huge maps (map size only limited by memory)
 * RTS minimap
 * RTS-style unit selection
+* RTS unit combat system
 * Map navigation graph/grid generation
 * Implementation of 'boids' steering/flocking behaviours
 * Hierarchial flow field pathfinding
