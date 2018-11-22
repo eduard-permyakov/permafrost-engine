@@ -291,6 +291,7 @@ static PyTypeObject PyCombatableEntity_type = {
                     "passed to __init__. This is a subclass of pf.Entity.",
     .tp_methods   = PyAnimEntity_methods,
     .tp_base      = &PyEntity_type,
+    .tp_getset    = PyCombatableEntity_getset,
     .tp_init      = (initproc)PyCombatableEntity_init,
 };
 

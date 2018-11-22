@@ -255,8 +255,18 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [base_armour]
+        The base armour (as a fraction from 0.0 to 1.0) specifying which percentage of
+        incoming damage is blocked.
+
+        [base_dmg]
+        The base damage for which this entity's attacks hit.
+
         [faction_id]
         Index of the faction that the entity belongs to.
+
+        [max_hp]
+        The maximum number of hitpoints that the entity starts out with.
 
         [name]
         Custom name given to this enity.
