@@ -33,15 +33,23 @@
 #
 
 import anim_moveable as am
+import anim_combatable as ac
 from constants import *
 import weakref
 
-class Sinbad(am.AnimMoveable):
+class Sinbad(am.AnimMoveable, ac.AnimCombatable):
 
     def __init__(self, path, pfobj, name):
         self.idle_idx = 0
         self.idle_map = ["Dance", "JumpLoop"]
-        super(Sinbad, self).__init__(path, pfobj, name, idle_clip=self.idle_anim())
+        self.attack_idx = 0
+        self.attack_map = ["SliceHorizontal", "SliceVertical"]
+
+        super(Sinbad, self).__init__(path, pfobj, name, 
+            idle_clip=self.idle_anim(),
+            max_hp = 250,
+            base_dmg = 80,
+            base_armour = 0.50)
         self.register(EVENT_SINBAD_TOGGLE_ANIM, Sinbad.on_anim_toggle, weakref.ref(self))
         self.speed = 20.0
     
@@ -50,7 +58,7 @@ class Sinbad(am.AnimMoveable):
         super(Sinbad, self).__del__()
     
     def on_anim_toggle(self, event):
-        self.idle_idx = (self.idle_idx + 1) % 2
+        self.idle_idx = (self.idle_idx + 1) % len(self.idle_map)
         if not self.moving:
             self.play_anim(self.idle_map[self.idle_idx])
 
@@ -59,4 +67,12 @@ class Sinbad(am.AnimMoveable):
 
     def move_anim(self):
         return "RunBase"
+
+    def attack_anim(self): 
+        ret = self.attack_map[self.attack_idx]
+        self.attack_idx = (self.attack_idx + 1) % len(self.attack_map)
+        return ret
+
+    def death_anim(self): 
+        return "JumpStart"
 

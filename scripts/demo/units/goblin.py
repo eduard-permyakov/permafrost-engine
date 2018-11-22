@@ -33,11 +33,17 @@
 #
 
 import anim_moveable as am
+import anim_combatable as ac
 
-class Goblin(am.AnimMoveable):
+class Goblin(am.AnimMoveable, ac.AnimCombatable):
 
     def __init__(self, path, pfobj, name):
-        super(Goblin, self).__init__(path, pfobj, name, idle_clip=self.idle_anim())
+        self.attack_anim_idx = 0
+        super(Goblin, self).__init__(path, pfobj, name, 
+            idle_clip=self.idle_anim(),
+            max_hp = 120,
+            base_dmg = 40,
+            base_armour = 0.30)
         self.speed = 20.0
 
     def idle_anim(self):
@@ -45,4 +51,13 @@ class Goblin(am.AnimMoveable):
 
     def move_anim(self):
         return "Walk"
+
+    def attack_anim(self): 
+        attack_anims = ["Attack.000", "Attack.001", "Attack.002"]
+        ret = attack_anims[self.attack_anim_idx]
+        self.attack_anim_idx = (self.attack_anim_idx + 1) % len(attack_anims)
+        return ret
+
+    def death_anim(self): 
+        return "Die"
 

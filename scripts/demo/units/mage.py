@@ -33,11 +33,16 @@
 #
 
 import anim_moveable as am
+import anim_combatable as ac
 
-class Mage(am.AnimMoveable):
+class Mage(am.AnimMoveable, ac.AnimCombatable):
 
     def __init__(self, path, pfobj, name):
-        super(Mage, self).__init__(path, pfobj, name, idle_clip=self.idle_anim())
+        super(Mage, self).__init__(path, pfobj, name, 
+            idle_clip=self.idle_anim(),
+            max_hp = 100,
+            base_dmg = 80,
+            base_armour = 0.10)
         self.speed = 20.0
 
     def idle_anim(self):
@@ -45,4 +50,10 @@ class Mage(am.AnimMoveable):
 
     def move_anim(self):
         return "Walk"
+
+    def attack_anim(self): 
+        return "Attack"
+
+    def death_anim(self): 
+        return "Die"
 
