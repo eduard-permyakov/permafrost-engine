@@ -357,16 +357,15 @@ bool G_AddEntity(struct entity *ent)
         return false;
     kh_value(s_gs.active, k) = ent;
 
+    if(ent->flags & ENTITY_FLAG_COMBATABLE)
+        G_Combat_AddEntity(ent, COMBAT_STANCE_AGGRESSIVE);
+
     if(ent->flags & ENTITY_FLAG_STATIC)
         return true;
 
     k = kh_put(entity, s_gs.dynamic, ent->uid, &ret);
     assert(ret != -1 && ret != 0);
     kh_value(s_gs.dynamic, k) = ent;
-
-    if(ent->flags & ENTITY_FLAG_COMBATABLE)
-        G_Combat_AddEntity(ent, COMBAT_STANCE_AGGRESSIVE);
-
     return true;
 }
 
