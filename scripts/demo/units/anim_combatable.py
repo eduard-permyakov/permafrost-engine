@@ -76,7 +76,7 @@ class AnimCombatable(pf.AnimEntity, pf.CombatableEntity):
 
     def __on_death(self, event):
         self.play_anim(self.death_anim())
-        self.register(pf.EVENT_ANIM_CYCLE_FINISHED, AnimCombatable.__on_death_anim_finish, self)
+        self.register(pf.EVENT_ANIM_CYCLE_FINISHED, AnimCombatable.__on_death_anim_finish, weakref.ref(self))
 
     def __on_death_anim_finish(self, event):
         self.unregister(pf.EVENT_ANIM_CYCLE_FINISHED, AnimCombatable.__on_death_anim_finish)
