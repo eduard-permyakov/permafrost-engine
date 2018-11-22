@@ -47,6 +47,7 @@
 #include "../script/public/script.h"
 #include "../render/public/render.h"
 #include "../map/public/map.h"
+#include "../map/public/tile.h"
 #include "../lib/public/kvec.h"
 #include "../anim/public/anim.h"
 
@@ -187,13 +188,12 @@ static struct flock *flock_for_ent(const struct entity *ent)
     return NULL;
 }
 
-static struct flock *flock_for_target(vec2_t target_xz)
+static struct flock *flock_for_dest(dest_id_t id)
 {
     for(int i = 0; i < kv_size(s_flocks); i++) {
 
         struct flock *curr_flock = &kv_A(s_flocks, i);            
-        if(curr_flock->target_xz.raw[0] == target_xz.raw[0]
-        && curr_flock->target_xz.raw[1] == target_xz.raw[1])
+        if(curr_flock->dest_id == id)
             return curr_flock;
     }
     return NULL;
@@ -239,21 +239,15 @@ static void on_marker_anim_finish(void *user, void *event)
     AL_EntityFree(ent);
 }
 
-static bool adjacent_to_any_in_set(const struct entity *ent, const struct entity **set,
-                                   size_t set_size)
+static bool same_chunk_as_any_in_set(struct tile_desc desc, const struct tile_desc *set,
+                                     size_t set_size)
 {
-    vec2_t ent_xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
-
     for(int i = 0; i < set_size; i++) {
 
-        vec2_t curr_xz_pos = (vec2_t){set[i]->pos.x, set[i]->pos.z};
-        vec2_t diff;
-        PFM_Vec2_Sub(&ent_xz_pos, &curr_xz_pos, &diff);
-
-        if(PFM_Vec2_Len(&diff) <= ent->selection_radius + set[i]->selection_radius + ADJACENCY_SEP_DIST)
-            return true;  
+        const struct tile_desc *curr = &set[i];
+        if(desc.chunk_r == curr->chunk_r && desc.chunk_c == curr->chunk_c) 
+            return true;
     }
-
     return false;
 }
 
@@ -281,9 +275,6 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
         }
     }
 
-    //TODO: if there is a flock with the same destination XZ, use it instead
-    //tag flocks with a 'faction_id' so no enemies in flock
-
     struct flock new_flock = (struct flock) {
         .ents = kh_init(entity),
         .target_xz = target_xz,
@@ -292,10 +283,12 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
     if(!new_flock.ents)
         return false;
 
-    /* Don't request a new path (flow field) for an entity that is adjacent to
-     * another entity for which a path has already been requested. This allows 
-     * saving pathfinding cycles, especially for large flocks. */
-    const struct entity *pathed_ents[kv_size(*sel)];
+    /* Don't request a new path (flow field) for an entity that is on the same
+     * chunk as another entity for which a path has already been requested. This 
+     * allows saving pathfinding cycles. In the case that an entity is on a different
+     * 'island' of the chunk than the one for which the flow field has been computed,
+     * the FF for this 'island' will be computed on demand. */
+    struct tile_desc pathed_ents_descs[kv_size(*sel)];
     size_t num_pathed_ents = 0;
 
     for(int i = 0; i < kv_size(*sel); i++) {
@@ -306,10 +299,13 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
         if(stationary(curr_ent))
             continue;
 
-        if(adjacent_to_any_in_set(curr_ent, pathed_ents, num_pathed_ents)
+        struct tile_desc curr_desc;
+        M_DescForPoint2D(s_map, (vec2_t){curr_ent->pos.x, curr_ent->pos.z}, &curr_desc);
+
+        if(same_chunk_as_any_in_set(curr_desc, pathed_ents_descs, num_pathed_ents)
         || M_NavRequestPath(s_map, (vec2_t){curr_ent->pos.x, curr_ent->pos.z}, target_xz, &new_flock.dest_id)) {
 
-            pathed_ents[num_pathed_ents++] = curr_ent;
+            pathed_ents_descs[num_pathed_ents++] = curr_desc;
             flock_add(&new_flock, curr_ent);
 
             /* When entities are moved from one flock to another, they keep their existing velocity. 
@@ -334,16 +330,30 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
 
         }else if((ms = movestate_get(curr_ent)) != NULL){
 
+            if(ms->state != STATE_ARRIVED) 
+                entity_finish_moving(curr_ent);
             *ms = (struct movestate) {
                 .state = STATE_ARRIVED,
                 .velocity = (vec2_t){0.0f}
             };
-            entity_finish_moving(curr_ent);
         }
     }
 
     if(kh_size(new_flock.ents) > 0) {
-        kv_push(struct flock, s_flocks, new_flock);
+
+        /* If there is another flock with the same dest_id, then we merge the two flocks. */
+        struct flock *merge_flock = flock_for_dest(new_flock.dest_id);
+        if(merge_flock) {
+
+            uint32_t key;
+            struct entity *curr;
+            kh_foreach(new_flock.ents, key, curr, { flock_add(merge_flock, curr); });
+            kh_destroy(entity, new_flock.ents);
+        
+        }else{
+            kv_push(struct flock, s_flocks, new_flock);
+        }
+
         return true;
     }else{
         kh_destroy(entity, new_flock.ents);
@@ -808,9 +818,7 @@ static void on_30hz_tick(void *user, void *event)
         uint32_t key;
         struct entity *curr;
 
-        /******************************************************************
-         * First, decide if we can disband this flock
-         *****************************************************************/
+        /* First, decide if we can disband this flock */
         bool disband = true;
         kh_foreach(kv_A(s_flocks, i).ents, key, curr, {
 
@@ -823,6 +831,8 @@ static void on_30hz_tick(void *user, void *event)
         });
 
         if(disband) {
+
+            kh_foreach(kv_A(s_flocks, i).ents, key, curr, { movestate_remove(curr); });
             kh_destroy(entity, kv_A(s_flocks, i).ents);
             kv_del(struct flock, s_flocks, i);
             continue;
@@ -833,24 +843,18 @@ static void on_30hz_tick(void *user, void *event)
             struct movestate *ms = movestate_get(curr);
             assert(ms);
 
-            /******************************************************************
-             * Compute acceleration 
-             *****************************************************************/
+            /* Compute acceleration */
             vec2_t col_avoid_force;
             vec2_t steer_accel, new_velocity; 
 
             vec2_t steer_force = total_steering_force(curr, &kv_A(s_flocks, i), TICK_RES, &col_avoid_force);
             PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &steer_accel);
 
-            /******************************************************************
-             * Compute new velocity
-             *****************************************************************/
+            /* Compute new velocity */
             PFM_Vec2_Add(&ms->velocity, &steer_accel, &new_velocity);
             vec2_truncate(&new_velocity, curr->max_speed / TICK_RES);
 
-            /******************************************************************
-             * Update position and rotation
-             *****************************************************************/
+            /* Update position and rotation */
             vec2_t xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
             vec2_t new_xz_pos;
             PFM_Vec2_Add(&xz_pos, &new_velocity, &new_xz_pos);
@@ -861,9 +865,7 @@ static void on_30hz_tick(void *user, void *event)
                 curr->rotation = dir_quat_from_velocity(new_velocity);
             }
 
-            /******************************************************************
-             * Update state of entity
-             *****************************************************************/
+            /* Update state of entity */
             ms->velocity = new_velocity;
 
             if(ms->avoid_ticks_left > 0) {

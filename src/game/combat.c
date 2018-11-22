@@ -259,7 +259,7 @@ static void on_30hz_tick(void *user, void *event)
                 cs->prev_target_pos = (vec2_t){enemy->pos.x, enemy->pos.z};
 
                 vec2_t move_dest_xz;
-                if(G_Move_GetDest(curr, &move_dest_xz)) {
+                if(!cs->move_cmd_interrupted && G_Move_GetDest(curr, &move_dest_xz)) {
                     cs->move_cmd_interrupted = true; 
                     cs->move_cmd_xz = move_dest_xz;
                 }
@@ -331,15 +331,16 @@ static void on_30hz_tick(void *user, void *event)
 
             /* Our target could have 'died' and had its' combatstate removed - check this first. */
             struct combatstate *target_cs;
-            if((target_cs = combatstate_get(cs->target)) == NULL) {
+            if((target_cs = combatstate_get(cs->target)) == NULL
+            || ents_distance(curr, cs->target) > ENEMY_MELEE_ATTACK_RANGE) {
 
                 cs->state = STATE_NOT_IN_COMBAT; 
                 E_Entity_Notify(EVENT_ATTACK_END, curr->uid, NULL, ES_ENGINE);
 
-            }else if(ents_distance(curr, cs->target) > ENEMY_MELEE_ATTACK_RANGE) {
-
-                cs->state = STATE_NOT_IN_COMBAT; 
-                E_Entity_Notify(EVENT_ATTACK_END, curr->uid, NULL, ES_ENGINE);
+                if(cs->move_cmd_interrupted) {
+                    G_Move_SetDest(curr, cs->move_cmd_xz);
+                    cs->move_cmd_interrupted = false;
+                }
 
             }else{
                 cs->state = STATE_ATTACK_ANIM_PLAYING;
