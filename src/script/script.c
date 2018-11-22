@@ -134,7 +134,8 @@ static PyMethodDef pf_module_methods[] = {
 
     {"register_event_handler", 
     (PyCFunction)PyPf_register_event_handler, METH_VARARGS,
-    "Adds a script event handler to be called when the specified global event occurs."},
+    "Adds a script event handler to be called when the specified global event occurs. "
+    "Any weakref user arguments are automatically unpacked before being passed to the handler."},
 
     {"unregister_event_handler", 
     (PyCFunction)PyPf_unregister_event_handler, METH_VARARGS,
@@ -142,7 +143,8 @@ static PyMethodDef pf_module_methods[] = {
 
     {"global_event", 
     (PyCFunction)PyPf_global_event, METH_VARARGS,
-    "Broadcast a global event so all handlers can get invoked."},
+    "Broadcast a global event so all handlers can get invoked. Any weakref argument is "
+    "automatically unpacked before being sent to the handler."},
 
     {"activate_camera", 
     (PyCFunction)PyPf_activate_camera, METH_VARARGS,
@@ -838,6 +840,18 @@ static bool s_sys_path_add_dir(const char *filename)
     return true;
 }
 
+static bool s_gc_all_ents(void)
+{
+    PyObject *list = S_Entity_GetAllList();
+
+    for(int i = 0; i < PyList_Size(list); i++) {
+    
+        PyObject *ent = PyList_GetItem(list, i);
+        Py_CLEAR(ent);
+    }
+    Py_CLEAR(list);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -871,6 +885,7 @@ bool S_Init(char *progname, const char *base_path, struct nk_context *ctx)
 
 void S_Shutdown(void)
 {
+    s_gc_all_ents();
     Py_Finalize();
     S_UI_Shutdown();
     S_Entity_Shutdown();
@@ -969,6 +984,15 @@ script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg)
         default:
             Py_RETURN_NONE;
     }
+}
+
+script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg)
+{
+    assert(arg);
+    if(PyWeakref_Check(arg)) {
+        return PyWeakref_GetObject(arg); 
+    }
+    return arg;
 }
 
 bool S_ObjectsEqual(script_opaque_t a, script_opaque_t b)

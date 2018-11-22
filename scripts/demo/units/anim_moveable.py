@@ -43,8 +43,8 @@ class AnimMoveable(pf.AnimEntity):
     def __init__(self, path, pfobj, name, **kwargs):
         super(AnimMoveable, self).__init__(path, pfobj, name, **kwargs)
         self.moving = False
-        self.register(pf.EVENT_MOTION_START, AnimMoveable.__on_motion_begin, self)
-        self.register(pf.EVENT_MOTION_END, AnimMoveable.__on_motion_end, self)
+        self.register(pf.EVENT_MOTION_START, AnimMoveable.__on_motion_begin, weakref.ref(self))
+        self.register(pf.EVENT_MOTION_END, AnimMoveable.__on_motion_end, weakref.ref(self))
 
     def __del__(self):
         self.unregister(pf.EVENT_MOTION_START, AnimMoveable.__on_motion_begin)

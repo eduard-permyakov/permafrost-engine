@@ -36,6 +36,7 @@ from abc import ABCMeta, abstractproperty
 import pf
 from constants import *
 import globals 
+import weakref
 
 class AnimCombatable(pf.AnimEntity, pf.CombatableEntity):
     __metaclass__ = ABCMeta
@@ -43,9 +44,9 @@ class AnimCombatable(pf.AnimEntity, pf.CombatableEntity):
     def __init__(self, path, pfobj, name, **kwargs):
         super(AnimCombatable, self).__init__(path, pfobj, name, **kwargs)
         self.attacking = False
-        self.register(pf.EVENT_ATTACK_START, AnimCombatable.__on_attack_begin, self)
-        self.register(pf.EVENT_ATTACK_END, AnimCombatable.__on_attack_end, self)
-        self.register(pf.EVENT_ENTITY_DEATH, AnimCombatable.__on_death, self)
+        self.register(pf.EVENT_ATTACK_START, AnimCombatable.__on_attack_begin, weakref.ref(self))
+        self.register(pf.EVENT_ATTACK_END, AnimCombatable.__on_attack_end, weakref.ref(self))
+        self.register(pf.EVENT_ENTITY_DEATH, AnimCombatable.__on_death, weakref.ref(self))
 
     def __del__(self):
         self.unregister(pf.EVENT_ENTITY_DEATH, AnimCombatable.__on_death)

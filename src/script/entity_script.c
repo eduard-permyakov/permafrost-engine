@@ -59,6 +59,7 @@ typedef struct {
 
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void      PyEntity_dealloc(PyEntityObject *self);
+static PyObject *PyEntity_del(PyEntityObject *self);
 static PyObject *PyEntity_get_name(PyEntityObject *self, void *closure);
 static int       PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure);
@@ -85,9 +86,11 @@ static PyObject *PyEntity_select(PyEntityObject *self);
 static PyObject *PyEntity_deselect(PyEntityObject *self);
 
 static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
+static PyObject *PyAnimEntity_del(PyAnimEntityObject *self);
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args);
 
 static int       PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds);
+static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self);
 static PyObject *PyCombatableEntity_get_max_hp(PyCombatableEntityObject *self, void *closure);
 static int       PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self, void *closure);
@@ -114,6 +117,10 @@ static PyMethodDef PyEntity_methods[] = {
     "Remove the entity from the game simulation and hiding it. The entity's state is "
     "preserved until it is activated again."},
 
+    {"__del__", 
+    (PyCFunction)PyEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
     {"register", 
     (PyCFunction)PyEntity_register, METH_VARARGS,
     "Registers the specified callable to be invoked when an event of the specified type "
@@ -125,7 +132,8 @@ static PyMethodDef PyEntity_methods[] = {
 
     {"notify", 
     (PyCFunction)PyEntity_notify, METH_VARARGS,
-    "Send a specific event to an entity in order to invoke the entity's event handlers."},
+    "Send a specific event to an entity in order to invoke the entity's event handlers. Weakref "
+    "arguments are automatically unpacked before being passed to the handler."},
 
     {"select", 
     (PyCFunction)PyEntity_select, METH_NOARGS,
@@ -225,6 +233,11 @@ static PyMethodDef PyAnimEntity_methods[] = {
     {"play_anim", 
     (PyCFunction)PyAnimEntity_play_anim, METH_VARARGS,
     "Play the animation clip with the specified name." },
+
+    {"__del__", 
+    (PyCFunction)PyAnimEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
     {NULL}  /* Sentinel */
 };
 
@@ -242,6 +255,14 @@ static PyTypeObject PyAnimEntity_type = {
 };
 
 /* pf.CombatableEntity */
+
+static PyMethodDef PyCombatableEntity_methods[] = {
+    {"__del__", 
+    (PyCFunction)PyCombatableEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {NULL}  /* Sentinel */
+};
 
 static PyGetSetDef PyCombatableEntity_getset[] = {
     {"max_hp",
@@ -268,6 +289,7 @@ static PyTypeObject PyCombatableEntity_type = {
     .tp_doc       = "Permafrost Engine entity which is able to take part in combat. This type "
                     "requires the 'max_hp', 'base_dmg', and 'base_armour' keyword arguments to be "
                     "passed to __init__. This is a subclass of pf.Entity.",
+    .tp_methods   = PyAnimEntity_methods,
     .tp_base      = &PyEntity_type,
     .tp_init      = (initproc)PyCombatableEntity_init,
 };
@@ -278,6 +300,43 @@ static khash_t(PyObject) *s_uid_pyobj_table;
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static bool s_has_super_method(const char *method_name, PyObject *type, PyObject *self)
+{
+    bool ret = false;
+
+    PyObject *builtins = PyImport_AddModule("__builtin__");
+    if(!builtins)
+        goto fail_builtins;
+
+    PyObject *super = PyObject_GetAttrString(builtins, "super");
+    if(!super) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to get 'super' builtin.");
+        goto fail_get_super;
+    }
+
+    PyObject *super_args = PyTuple_New(2);
+    Py_INCREF(type);
+    Py_INCREF(self);
+    PyTuple_SetItem(super_args, 0, type);
+    PyTuple_SetItem(super_args, 1, self);
+
+    PyObject *super_obj = PyObject_Call(super, super_args, NULL);
+    if(!super_obj) {
+        PyErr_SetString(PyExc_RuntimeError, "Call to 'super' failed.");
+        goto fail_call_super;
+    }
+
+    ret = PyObject_HasAttrString(super_obj, method_name);
+    Py_DECREF(super_obj);
+
+fail_call_super:
+    Py_DECREF(super_args);
+    Py_DECREF(super);
+fail_get_super:
+fail_builtins:
+    return ret;
+}
 
 static PyObject *s_call_super_method(const char *method_name, PyObject *type, 
                                      PyObject *self, PyObject *args, PyObject *kwds)
@@ -326,6 +385,17 @@ fail_call_super:
 fail_get_super:
 fail_builtins:
     return ret;
+}
+
+static PyObject *PyEntity_del(PyEntityObject *self)
+{
+    if(s_has_super_method("__del__", (PyObject*)&PyEntity_type, (PyObject*)self)) {
+        PyObject *args = PyTuple_New(0); 
+        PyObject *ret = s_call_super_method("__del__", (PyObject*)&PyEntity_type, (PyObject*)self, args, NULL);
+        Py_DECREF(args);
+        return ret;
+    }
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
@@ -699,6 +769,17 @@ static int PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject 
     return 0;
 }
 
+static PyObject *PyAnimEntity_del(PyAnimEntityObject *self)
+{
+    if(s_has_super_method("__del__", (PyObject*)&PyAnimEntity_type, (PyObject*)self)) {
+        PyObject *args = PyTuple_New(0); 
+        PyObject *ret = s_call_super_method("__del__", (PyObject*)&PyAnimEntity_type, (PyObject*)self, args, NULL);
+        Py_DECREF(args);
+        return ret;
+    }
+    Py_RETURN_NONE;
+}
+
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args)
 {
     const char *clipname;
@@ -739,6 +820,17 @@ static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *arg
         return -1; /* Exception already set */
     Py_DECREF(ret);
     return 0;
+}
+
+static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self)
+{
+    if(s_has_super_method("__del__", (PyObject*)&PyCombatableEntity_type, (PyObject*)self)) {
+        PyObject *args = PyTuple_New(0); 
+        PyObject *ret = s_call_super_method("__del__", (PyObject*)&PyCombatableEntity_type, (PyObject*)self, args, NULL);
+        Py_DECREF(args);
+        return ret;
+    }
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyCombatableEntity_get_max_hp(PyCombatableEntityObject *self, void *closure)

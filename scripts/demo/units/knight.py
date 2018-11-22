@@ -41,7 +41,7 @@ class Knight(am.AnimMoveable, ac.AnimCombatable):
         super(Knight, self).__init__(path, pfobj, name, 
             idle_clip = self.idle_anim(),
             max_hp = 150,
-            base_dmg = 200,
+            base_dmg = 50,
             base_armour = 0.5)
         self.speed = 20.0
 

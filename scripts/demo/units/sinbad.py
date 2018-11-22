@@ -34,6 +34,7 @@
 
 import anim_moveable as am
 from constants import *
+import weakref
 
 class Sinbad(am.AnimMoveable):
 
@@ -41,7 +42,7 @@ class Sinbad(am.AnimMoveable):
         self.idle_idx = 0
         self.idle_map = ["Dance", "JumpLoop"]
         super(Sinbad, self).__init__(path, pfobj, name, idle_clip=self.idle_anim())
-        self.register(EVENT_SINBAD_TOGGLE_ANIM, Sinbad.on_anim_toggle, self)
+        self.register(EVENT_SINBAD_TOGGLE_ANIM, Sinbad.on_anim_toggle, weakref.ref(self))
         self.speed = 20.0
     
     def __del__(self):
