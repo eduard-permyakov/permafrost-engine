@@ -301,6 +301,17 @@ float M_HeightAtPoint(const struct map *map, vec2_t xz)
     return M_Tile_HeightAtPos(tile, tile_frac_width, tile_frac_height);
 }
 
+bool M_DescForPoint2D(const struct map *map, vec2_t point_xz, struct tile_desc *out)
+{
+    struct map_resolution res = (struct map_resolution) {
+        .chunk_w = map->width,
+        .chunk_h = map->height,
+        .tile_w = TILES_PER_CHUNK_WIDTH,
+        .tile_h = TILES_PER_CHUNK_HEIGHT,
+    };
+    return M_Tile_DescForPoint2D(res, map->pos, point_xz, out);
+}
+
 void M_NavCutoutStaticObject(const struct map *map, const struct obb *obb)
 {
     N_CutoutStaticObject(map->nav_private, map->pos, obb);

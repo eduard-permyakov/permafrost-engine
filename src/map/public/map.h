@@ -185,6 +185,13 @@ vec2_t M_ClampedMapCoordinate(const struct map *map, vec2_t xz);
 float  M_HeightAtPoint(const struct map *map, vec2_t xz);
 
 /* ------------------------------------------------------------------------
+ * Sets 'out to a tile descriptor for an XZ point on a the map. 'out' is valid
+ * if the function returns true.
+ * ------------------------------------------------------------------------
+ */
+bool   M_DescForPoint2D(const struct map *map, vec2_t point_xz, struct tile_desc *out);
+
+/* ------------------------------------------------------------------------
  * Make an impassable region in the navigation data, making it not possible 
  * for pathable units to pass through the region underneath the OBB.
  * ------------------------------------------------------------------------
