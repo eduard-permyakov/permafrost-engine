@@ -216,7 +216,8 @@ void G_SetMinimapPos(float x, float y)
 
 bool G_MouseOverMinimap(void)
 {
-    assert(s_gs.map);
+    if(!s_gs.map)
+        return false;
     return M_MouseOverMinimap(s_gs.map);
 }
 
@@ -343,7 +344,9 @@ void G_Render(void)
     E_Global_NotifyImmediate(EVENT_RENDER_3D, NULL, ES_ENGINE);
 
     /* Render the minimap/HUD last. Screenspace rendering clobbers the view/projection uniforms. */
-    M_RenderMinimap(s_gs.map, ACTIVE_CAM);
+    if(s_gs.map) {
+        M_RenderMinimap(s_gs.map, ACTIVE_CAM);
+    }
     E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
 }
 
