@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2018 Eduard Permyakov 
+ *  Copyright (C) 2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,17 +33,7 @@
  *
  */
 
-#ifndef RENDER_PRIVATE_H
-#define RENDER_PRIVATE_H
+#version 330 core
 
-#include "mesh.h"
+void main() {}
 
-struct render_private{
-    struct mesh      mesh;
-    size_t           num_materials;
-    struct material *materials;
-    GLuint           shader_prog;
-    GLuint           shader_prog_dp; /* for the depth pass */
-};
-
-#endif

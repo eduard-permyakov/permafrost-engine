@@ -52,6 +52,11 @@ struct tile_desc;
 struct map;
 struct camera;
 
+enum render_pass{
+    RENDER_PASS_DEPTH,
+    RENDER_PASS_REGULAR
+};
+
 /* Each face is made of 2 independent triangles. The top face is an exception, and is made up of 4 
  * triangles. This is to give each triangle a vertex which lies at the center of the tile in the XZ
  * dimensions.
@@ -274,6 +279,31 @@ void  R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t
  */
 void  R_GL_MinimapFree(void);
 
+/*###########################################################################*/
+/* RENDER SHADOWS                                                            */
+/*###########################################################################*/
+
+/* ---------------------------------------------------------------------------
+ * Set up the rendering context for the depth pass. This _must_ be called
+ * before any calls to 'R_GL_RenderDepthMap'. Afterwards, there _must_ be 
+ * a matching call to 'R_GL_DepthPassEnd'.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_DepthPassBegin(void);
+
+/* ---------------------------------------------------------------------------
+ * Set up the rendering context for normal rendering. This _must_ be called
+ * after all calls to 'R_GL_RenderDepthMap' complete.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_DepthPassEnd(void);
+
+/* ---------------------------------------------------------------------------
+ * Update the depth map for the mesh. The depth map will then be used for 
+ * rendering shadows on the 'regular' render pass.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model);
 
 /*###########################################################################*/
 /* RENDER ASSET LOADING                                                      */

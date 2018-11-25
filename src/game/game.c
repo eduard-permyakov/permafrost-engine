@@ -141,6 +141,42 @@ static void g_init_map(void)
     G_Combat_Init();
 }
 
+static void g_render_pass(enum render_pass pass)
+{
+    if(pass == RENDER_PASS_DEPTH) {
+        R_GL_DepthPassBegin();
+    }
+
+    if(s_gs.map) {
+        M_RenderVisibleMap(s_gs.map, ACTIVE_CAM, pass);
+    }
+
+    for(int i = 0; i < kv_size(s_gs.visible); i++) {
+    
+        struct entity *curr = kv_A(s_gs.visible, i);
+
+        if(curr->flags & ENTITY_FLAG_ANIMATED)
+            A_Update(curr);
+
+        mat4x4_t model;
+        Entity_ModelMatrix(curr, &model);
+
+        switch(pass) {
+        case RENDER_PASS_DEPTH: 
+            R_GL_RenderDepthMap(curr->render_private, &model);
+            break;
+        case RENDER_PASS_REGULAR:
+            R_GL_Draw(curr->render_private, &model);
+            break;
+        default: assert(0);
+        }
+    }
+
+    if(pass == RENDER_PASS_DEPTH) {
+        R_GL_DepthPassEnd();
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -316,21 +352,8 @@ void G_Update(void)
 
 void G_Render(void)
 {
-    if(s_gs.map){
-        M_RenderVisibleMap(s_gs.map, ACTIVE_CAM);
-    }
-
-    for(int i = 0; i < kv_size(s_gs.visible); i++) {
-    
-        struct entity *curr = kv_A(s_gs.visible, i);
-
-        if(curr->flags & ENTITY_FLAG_ANIMATED)
-            A_Update(curr);
-
-        mat4x4_t model;
-        Entity_ModelMatrix(curr, &model);
-        R_GL_Draw(curr->render_private, &model);
-    }
+    g_render_pass(RENDER_PASS_DEPTH);
+    g_render_pass(RENDER_PASS_REGULAR);
 
     enum selection_type sel_type;
     const pentity_kvec_t *selected = G_Sel_Get(&sel_type);

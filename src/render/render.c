@@ -36,6 +36,7 @@
 #include "public/render.h"
 #include "shader.h"
 #include "texture.h"
+#include "render_gl.h"
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -43,11 +44,12 @@
 
 bool R_Init(const char *base_path)
 {
-    R_Texture_Init();
-
     if(!R_Shader_InitAll(base_path))
         return false;
 
-    return true;
+    R_Texture_Init();
+    R_GL_InitShadows();
+
+    return true; 
 }
 

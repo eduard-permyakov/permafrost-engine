@@ -56,6 +56,7 @@ struct camera;
 struct tile;
 struct tile_desc;
 struct obb;
+enum render_pass;
 
 enum chunk_render_mode{
 
@@ -77,17 +78,20 @@ enum chunk_render_mode{
 
 /* ------------------------------------------------------------------------
  * This renders all the chunks at once, which is wasteful when there are 
- * many off-screen chunks.
+ * many off-screen chunks. Depending on the 'pass' type, this will perform 
+ * a different rendering action.
  * ------------------------------------------------------------------------
  */
-void   M_RenderEntireMap    (const struct map *map);
+void   M_RenderEntireMap    (const struct map *map, enum render_pass pass);
 
 /* ------------------------------------------------------------------------
  * Renders the chunks of the map that are currently visible by the specified
- * camera using a frustrum-chunk intersection test.
+ * camera using a frustrum-chunk intersection test. Depending on the 'pass'
+ * type, this will perform a different action.
  * ------------------------------------------------------------------------
  */
-void   M_RenderVisibleMap   (const struct map *map, const struct camera *cam);
+void   M_RenderVisibleMap   (const struct map *map, const struct camera *cam,
+                             enum render_pass pass);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing which regions are 

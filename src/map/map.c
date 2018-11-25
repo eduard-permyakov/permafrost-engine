@@ -91,7 +91,7 @@ void M_ModelMatrixForChunk(const struct map *map, struct chunkpos p, mat4x4_t *o
     PFM_Mat4x4_MakeTrans(chunk_pos.x, chunk_pos.y, chunk_pos.z, out);
 }
 
-void M_RenderEntireMap(const struct map *map)
+void M_RenderEntireMap(const struct map *map, enum render_pass pass)
 {
     for(int r = 0; r < map->height; r++) {
         for(int c = 0; c < map->width; c++) {
@@ -103,12 +103,20 @@ void M_RenderEntireMap(const struct map *map)
                                                                   : chunk->render_private_prebaked;
 
             M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-            R_GL_Draw(render_private, &chunk_model);
+            switch(pass) {
+            case RENDER_PASS_DEPTH: 
+                R_GL_RenderDepthMap(render_private, &chunk_model);
+                break;
+            case RENDER_PASS_REGULAR:
+                R_GL_Draw(render_private, &chunk_model);
+                break;
+            default: assert(0);
+            }
         }
     }
 }
 
-void M_RenderVisibleMap(const struct map *map, const struct camera *cam)
+void M_RenderVisibleMap(const struct map *map, const struct camera *cam, enum render_pass pass)
 {
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
@@ -134,7 +142,15 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam)
                                                                   : chunk->render_private_prebaked;
 
             M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-            R_GL_Draw(render_private, &chunk_model);
+            switch(pass) {
+            case RENDER_PASS_DEPTH: 
+                R_GL_RenderDepthMap(render_private, &chunk_model);
+                break;
+            case RENDER_PASS_REGULAR:
+                R_GL_Draw(render_private, &chunk_model);
+                break;
+            default: assert(0);
+            }
         }
     }
 }

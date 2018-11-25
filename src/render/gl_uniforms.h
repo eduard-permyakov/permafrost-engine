@@ -76,4 +76,7 @@
 /* Used to toggle lighting in terrain shader */
 #define GL_U_SKIP_LIGHTING  "skip_lighting"
 
+/* Used for depth map rendering and testing */
+#define GL_U_LS_TRANS       "light_space_transform"
+
 #endif

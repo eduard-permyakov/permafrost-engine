@@ -64,6 +64,12 @@
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static vec3_t s_light_pos = (vec3_t){0.0f, 0.0f, 0.0f};
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
 static void r_gl_set_materials(GLuint shader_prog, size_t num_mats, const struct material *mats)
 {
     for(size_t i = 0; i < num_mats; i++) {
@@ -124,37 +130,26 @@ static void r_gl_set_uniform_vec4_array(vec4_t *data, size_t count,
     glUniform4fv(loc, count, (void*)data);
 }
 
-static void r_gl_set_view(const mat4x4_t *view, const char *shader_name)
+static void r_gl_set_mat4(const mat4x4_t *trans, const char *shader_name, const char *uname)
 {
     GLuint loc, shader_prog;
 
     shader_prog = R_Shader_GetProgForName(shader_name);
     glUseProgram(shader_prog);
 
-    loc = glGetUniformLocation(shader_prog, GL_U_VIEW);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, view->raw);
+    loc = glGetUniformLocation(shader_prog, uname);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, trans->raw);
 }
 
-static void r_gl_set_proj(const mat4x4_t *proj, const char *shader_name)
+static void r_gl_set_vec3(const vec3_t *vec, const char *shader_name, const char *uname)
 {
     GLuint loc, shader_prog;
 
     shader_prog = R_Shader_GetProgForName(shader_name);
     glUseProgram(shader_prog);
 
-    loc = glGetUniformLocation(shader_prog, GL_U_PROJECTION);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, proj->raw);
-}
-
-static void r_gl_set_view_pos(const vec3_t *pos, const char *shader_name)
-{
-    GLuint loc, shader_prog;
-
-    shader_prog = R_Shader_GetProgForName(shader_name);
-    glUseProgram(shader_prog);
-
-    loc = glGetUniformLocation(shader_prog, GL_U_VIEW_POS);
-    glUniform3fv(loc, 1, pos->raw);
+    loc = glGetUniformLocation(shader_prog, uname);
+    glUniform3fv(loc, 1, vec->raw);
 }
 
 /*****************************************************************************/
@@ -226,6 +221,13 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
     }
 
     priv->shader_prog = R_Shader_GetProgForName(shader);
+
+    if(0 == strcmp("mesh.animated.textured-phong", shader)) {
+        priv->shader_prog_dp = R_Shader_GetProgForName("mesh.animated.depth");
+    }else {
+        priv->shader_prog_dp = R_Shader_GetProgForName("mesh.static.depth");
+    }
+    assert(priv->shader_prog != -1 && priv->shader_prog_dp != -1);
 }
 
 void R_GL_Draw(const void *render_private, mat4x4_t *model)
@@ -265,8 +267,8 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
 
-        r_gl_set_view(view, shaders[i]);
-        r_gl_set_view_pos(pos, shaders[i]);
+        r_gl_set_mat4(view, shaders[i], GL_U_VIEW);
+        r_gl_set_vec3(pos, shaders[i], GL_U_VIEW_POS);
     }
 }
 
@@ -286,7 +288,18 @@ void R_GL_SetProj(const mat4x4_t *proj)
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++)
-        r_gl_set_proj(proj, shaders[i]);
+        r_gl_set_mat4(proj, shaders[i], GL_U_PROJECTION);
+}
+
+void R_GL_SetLightSpaceTrans(const mat4x4_t *trans)
+{
+    const char *shaders[] = {
+        "mesh.static.depth",
+        "mesh.animated.depth",
+    };
+
+    for(int i = 0; i < ARR_SIZE(shaders); i++)
+        r_gl_set_mat4(trans, shaders[i], GL_U_LS_TRANS);
 }
 
 void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, size_t count)
@@ -364,6 +377,13 @@ void R_GL_SetLightPos(vec3_t pos)
         loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_POS);
         glUniform3fv(loc, 1, pos.raw);
     }
+
+    s_light_pos = pos;
+}
+
+vec3_t R_GL_GetLightPos(void)
+{
+    return s_light_pos;
 }
 
 void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, const struct camera *cam)

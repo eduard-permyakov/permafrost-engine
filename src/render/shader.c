@@ -135,6 +135,20 @@ static struct shader_resource s_shaders[] = {
         .vertex_path = "shaders/vertex_colored.glsl",
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment_colored-per-vert.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "mesh.static.depth",
+        .vertex_path = "shaders/vertex_depth.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment_passthrough.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "mesh.animated.depth",
+        .vertex_path = "shaders/vertex_skinned-depth.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment_passthrough.glsl"
     }
 };
 
