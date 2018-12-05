@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2018 Eduard Permyakov 
+ *  Copyright (C) 2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -53,6 +53,7 @@ out VertexToFrag {
     flat int  mat_idx;
          vec3 world_pos;
          vec3 normal;
+         vec4 light_space_pos;
 }to_fragment;
 
 out VertexToGeo {
@@ -66,6 +67,7 @@ out VertexToGeo {
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+uniform mat4 light_space_transform;
 
 uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
 uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
@@ -93,8 +95,11 @@ void main()
     if(tot_weight == 0.0) {
 
         to_geometry.normal = normalize(vec3(projection * vec4(normal_matrix_geo * in_normal, 1.0)));
+
         to_fragment.normal = normalize(normal_matrix * in_normal);
         to_fragment.world_pos = (model * vec4(in_pos, 1.0)).xyz;
+        to_fragment.light_space_pos = light_space_transform * vec4(to_fragment.world_pos, 1.0);
+
         gl_Position = projection * view * model * vec4(in_pos, 1.0);
 
     }else {
@@ -123,8 +128,11 @@ void main()
         }
 
         to_geometry.normal = normalize(normal_matrix_geo * new_normal);
+
         to_fragment.normal = normalize(normal_matrix * new_normal);
         to_fragment.world_pos = (model * vec4(new_pos, 1.0)).xyz;
+        to_fragment.light_space_pos = light_space_transform * vec4(to_fragment.world_pos, 1.0);
+
         gl_Position = projection * view * model * vec4(new_pos, 1.0f);
 
     }

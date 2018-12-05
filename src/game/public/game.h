@@ -70,37 +70,38 @@ KHASH_DECLARE(entity, khint32_t, struct entity*)
 /* GAME GENERAL                                                              */
 /*###########################################################################*/
 
-bool G_Init(void);
-bool G_NewGameWithMap(const char *dir, const char *pfmap);
-bool G_NewGameWithMapString(const char *mapstr);
-void G_Shutdown(void);
+bool   G_Init(void);
+bool   G_NewGameWithMap(const char *dir, const char *pfmap);
+bool   G_NewGameWithMapString(const char *mapstr);
+void   G_Shutdown(void);
 
-void G_Update(void);
-void G_Render(void);
+void   G_Update(void);
+void   G_Render(void);
 
-void G_SetMapRenderMode(enum chunk_render_mode mode);
-void G_SetMinimapPos(float x, float y);
-bool G_MouseOverMinimap(void);
-bool G_MapHeightAtPoint(vec2_t xz, float *out_height);
+void   G_SetMapRenderMode(enum chunk_render_mode mode);
+void   G_SetMinimapPos(float x, float y);
+bool   G_MouseOverMinimap(void);
+bool   G_MapHeightAtPoint(vec2_t xz, float *out_height);
 
-void G_MakeStaticObjsImpassable(void);
+void   G_MakeStaticObjsImpassable(void);
 
-bool G_AddEntity(struct entity *ent);
-bool G_RemoveEntity(struct entity *ent);
+bool   G_AddEntity(struct entity *ent);
+bool   G_RemoveEntity(struct entity *ent);
 
-bool G_AddFaction(const char *name, vec3_t color);
-bool G_RemoveFaction(int faction_id);
-bool G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool control);
-int  G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl);
-bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds);
-bool G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out);
+bool   G_AddFaction(const char *name, vec3_t color);
+bool   G_RemoveFaction(int faction_id);
+bool   G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool control);
+int    G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl);
+bool   G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds);
+bool   G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out);
 
-bool G_ActivateCamera(int idx, enum cam_mode mode);
-void G_MoveActiveCamera(vec2_t xz_ground_pos);
+bool   G_ActivateCamera(int idx, enum cam_mode mode);
+void   G_MoveActiveCamera(vec2_t xz_ground_pos);
+vec3_t G_ActiveCamPos(void);
 
-bool G_UpdateMinimapChunk(int chunk_r, int chunk_c);
-bool G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string);
-bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
+bool   G_UpdateMinimapChunk(int chunk_r, int chunk_c);
+bool   G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string);
+bool   G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
 
 /*###########################################################################*/
 /* GAME SELECTION                                                            */

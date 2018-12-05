@@ -174,10 +174,21 @@ void   R_GL_DrawOBB(const struct entity *ent);
 void   R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color, float width);
 
 /* ---------------------------------------------------------------------------
- * Writes the framebuffer region (0, 0, width, height) to a PPM file.
+ * Writes the framebuffer color region (0, 0, width, height) to a PPM file.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height);
+void   R_GL_DumpFBColor_PPM(const char *filename, int width, int height);
+
+
+/* ---------------------------------------------------------------------------
+ * Writes the framebuffer depth region (0, 0, width, height) to a PPM file. 
+ * 'linearize' should be set to true when perspective projection is used. In 
+ * this case, 'near' and 'far' should be the near and far planes used for 
+ * perspective projection. If 'linearize' is false, they are ignored.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DumpFBDepth_PPM(const char *filename, int width, int height, 
+                            bool linearize, GLfloat near, GLfloat far);
 
 /* ---------------------------------------------------------------------------
  * Render a selection circle over the map surface.

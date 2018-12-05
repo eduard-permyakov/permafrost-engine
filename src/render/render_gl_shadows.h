@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2018 Eduard Permyakov 
+ *  Copyright (C) 2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,36 +33,14 @@
  *
  */
 
-#ifndef RENDER_GL_H
-#define RENDER_GL_H
-
-#include "../pf_math.h"
+#ifndef RENDER_GL_SHADOWS_H
+#define RENDER_GL_SHADOWS_H
 
 #include <GL/glew.h>
 
-#include <stddef.h>
-#include <stdbool.h>
+#define SHADOW_MAP_TUNIT (GL_TEXTURE15)
 
-struct render_private;
-struct vertex;
-struct tile;
-
-
-vec3_t R_GL_GetLightPos(void);
-void   R_GL_SetLightSpaceTrans(const mat4x4_t *trans);
-void   R_GL_SetShadowMap(const GLuint shadow_map_tex_id);
-
-void   R_GL_Init(struct render_private *priv, const char *shader, const struct vertex *vbuff);
-void   R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r, size_t c);
-
-/* ---------------------------------------------------------------------------
- * Patch the vertices for a particular tile to have adjacency information
- * about the neighboring tiles, to be used for smooth blending.
- * Tiles which border tiles with different materials will get blending
- * 'turned on' by setting a vertex attribute.
- * ---------------------------------------------------------------------------
- */
-void   R_GL_TilePatchVertsBlend(GLuint VBO, const struct tile *tiles, 
-                                int width, int height, int r, int c);
+void R_GL_InitShadows(void);
 
 #endif
+

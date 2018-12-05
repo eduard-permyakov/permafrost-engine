@@ -38,6 +38,7 @@
 #include "vertex.h"
 #include "material.h"
 #include "render_gl.h"
+#include "gl_assert.h"
 
 #include "../asset_load.h"
 #include "../map/public/tile.h"
@@ -110,7 +111,7 @@ fail:
     return false;
 }
 
-static bool al_read_material(SDL_RWops *stream, const char *basedir, struct material *out)
+static bool al_read_material(SDL_RWops *stream, const char *basedir, struct material *out, bool *out_null)
 {
     char line[MAX_LINE_LEN];
 
@@ -120,8 +121,10 @@ static bool al_read_material(SDL_RWops *stream, const char *basedir, struct mate
     char *saveptr;
     char *mat_name = strtok_r(line, " \t\n", &saveptr);
     mat_name = strtok_r(NULL, " \t\n", &saveptr);
-    if(0 == strcmp(mat_name, "__none__"))
+    if(0 == strcmp(mat_name, "__none__")) {
+        *out_null = true;
         return true;
+    }
 
     READ_LINE(stream, line, fail);
     if(!sscanf(line, " ambient %f", &out->ambient_intensity))
@@ -144,6 +147,7 @@ static bool al_read_material(SDL_RWops *stream, const char *basedir, struct mate
     && !R_Texture_Load(basedir, out->texname, &out->texture.id))
         goto fail;
 
+    *out_null = false;
     return true;
 
 fail:
@@ -207,13 +211,16 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
 
     for(int i = 0; i < header->num_materials; i++) {
 
+        bool null;
         priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
-        if(!al_read_material(stream, base_path, &priv->materials[i])) 
+        if(!al_read_material(stream, base_path, &priv->materials[i], &null)) 
             goto fail_parse;
+        assert(!null);
     }
 
     R_GL_Init(priv, (header->num_as > 0) ? "mesh.animated.textured-phong" : "mesh.static.textured-phong", vbuff);
     free(vbuff);
+    GL_ASSERT_OK();
     return priv;
 
 fail_parse:
@@ -297,7 +304,6 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
         goto fail_alloc;
 
     priv->mesh.num_verts = num_verts;
-    priv->num_materials = num_mats;
     priv->materials = (void*)unused_base;
 
     for(int r = 0; r < height; r++) {
@@ -310,17 +316,23 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
         }
     }
 
+    size_t num_null = 0;
     for(int i = 0; i < num_mats; i++) {
 
+        bool null;
         priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
-        if(!al_read_material(mats_stream, basedir, &priv->materials[i])) 
+        if(!al_read_material(mats_stream, basedir, &priv->materials[i], &null)) 
             goto fail_parse;
+        if(null)
+            ++num_null;
     }
+    priv->num_materials = num_mats - num_null;
 
     R_GL_Init(priv, "terrain", vbuff);
     al_patch_vbuff_adjacency_info(priv->mesh.VBO, tiles, width, height);
 
     free(vbuff);
+    GL_ASSERT_OK();
     return true;
 
 fail_parse:
@@ -336,9 +348,11 @@ bool R_AL_UpdateMats(SDL_RWops *mats_stream, size_t num_mats, void *priv_buff)
 
     for(int i = 0; i < num_mats; i++) {
 
+        bool null;
         priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
-        if(!al_read_material(mats_stream, g_basepath, &priv->materials[i])) 
+        if(!al_read_material(mats_stream, g_basepath, &priv->materials[i], &null)) 
             return false;
+        assert(!null);
     }
     return true;
 }

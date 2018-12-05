@@ -35,6 +35,15 @@
 
 #version 330 core
 
+#define MAX_MATERIALS 8
+
+/* TODO: Make these as material parameters */
+#define SPECULAR_STRENGTH  0.5
+#define SPECULAR_SHININESS 2
+
+#define SHADOW_MAP_BIAS 0.005
+#define SHADOW_MULTIPLIER 0.7
+
 /*****************************************************************************/
 /* INPUTS                                                                    */
 /*****************************************************************************/
@@ -44,6 +53,7 @@ in VertexToFrag {
     flat int  mat_idx;
          vec3 world_pos;
          vec3 normal;
+         vec4 light_space_pos;
 }from_vertex;
 
 /*****************************************************************************/
@@ -61,6 +71,8 @@ uniform vec3 light_color;
 uniform vec3 light_pos;
 uniform vec3 view_pos;
 
+uniform sampler2D shadow_map;
+
 uniform sampler2D texture0;
 uniform sampler2D texture1;
 uniform sampler2D texture2;
@@ -77,9 +89,29 @@ uniform sampler2D texture12;
 uniform sampler2D texture13;
 uniform sampler2D texture14;
 
+struct material{
+    float ambient_intensity;
+    vec3  diffuse_clr;
+    vec3  specular_clr;
+};
+
+uniform material materials[MAX_MATERIALS];
+
 /*****************************************************************************/
 /* PROGRAM                                                                   */
 /*****************************************************************************/
+
+float shadow_factor(vec4 light_space_pos)
+{
+    vec3 proj_coords = (light_space_pos.xyz / light_space_pos.w) * 0.5 + 0.5;
+    float closest_depth = texture(shadow_map, proj_coords.xy).r;
+    float current_depth = proj_coords.z;
+    if(current_depth - SHADOW_MAP_BIAS > closest_depth) {
+        return 1.0;
+    }else {
+        return 0.0;
+    }
+}
 
 void main()
 {
@@ -107,6 +139,25 @@ void main()
     if(tex_color.a== 0.0)
         discard;
 
-    o_frag_color = vec4(tex_color.xyz, 1.0);
+    /* Ambient calculations */
+    vec3 ambient = materials[from_vertex.mat_idx].ambient_intensity * ambient_color;
+
+    /* Diffuse calculations */
+    vec3 light_dir = normalize(light_pos - from_vertex.world_pos);  
+    float diff = max(dot(from_vertex.normal, light_dir), 0.0);
+    vec3 diffuse = light_color * (diff * materials[from_vertex.mat_idx].diffuse_clr);
+
+    /* Specular calculations */
+    vec3 view_dir = normalize(view_pos - from_vertex.world_pos);
+    vec3 reflect_dir = reflect(-light_dir, from_vertex.normal);  
+    float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
+    vec3 specular = SPECULAR_STRENGTH * light_color * (spec * materials[from_vertex.mat_idx].specular_clr);
+
+    float shadow = shadow_factor(from_vertex.light_space_pos);
+    if(shadow > 0.0) {
+        o_frag_color = vec4(tex_color.xyz * SHADOW_MULTIPLIER, 1.0);
+    }else{
+        o_frag_color = vec4(tex_color.xyz, 1.0);
+    }
 }
 

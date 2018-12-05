@@ -82,7 +82,6 @@ uniform sampler2D texture11;
 uniform sampler2D texture12;
 uniform sampler2D texture13;
 uniform sampler2D texture14;
-uniform sampler2D texture15;
 
 struct material{
     float ambient_intensity;
@@ -116,7 +115,6 @@ void main()
     case 12: tex_color = texture(texture12, from_vertex.uv); break;
     case 13: tex_color = texture(texture13, from_vertex.uv); break;
     case 14: tex_color = texture(texture14, from_vertex.uv); break;
-    case 15: tex_color = texture(texture15, from_vertex.uv); break;
     }
 
     /* Simple alpha test to reject transparent pixels */

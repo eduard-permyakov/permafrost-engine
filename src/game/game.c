@@ -553,6 +553,11 @@ bool G_ActivateCamera(int idx, enum cam_mode mode)
     return true;
 }
 
+vec3_t G_ActiveCamPos(void)
+{
+    return Camera_GetPos(ACTIVE_CAM);
+}
+
 bool G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string)
 {
     return M_AL_UpdateChunkMats(s_gs.map, chunk_r, chunk_c, mats_string);

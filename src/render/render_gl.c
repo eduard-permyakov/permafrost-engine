@@ -41,6 +41,7 @@
 #include "material.h"
 #include "gl_assert.h"
 #include "gl_uniforms.h"
+#include "render_gl_shadows.h"
 #include "public/render.h"
 #include "../entity.h"
 #include "../camera.h"
@@ -227,11 +228,14 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
     }else {
         priv->shader_prog_dp = R_Shader_GetProgForName("mesh.static.depth");
     }
+
     assert(priv->shader_prog != -1 && priv->shader_prog_dp != -1);
+    GL_ASSERT_OK();
 }
 
 void R_GL_Draw(const void *render_private, mat4x4_t *model)
 {
+    GL_ASSERT_OK();
     const struct render_private *priv = render_private;
     GLuint loc;
 
@@ -245,9 +249,11 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model)
     for(int i = 0; i < priv->num_materials; i++) {
         R_Texture_GL_Activate(&priv->materials[i].texture, priv->shader_prog);
     }
-
+    
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
+
+    GL_ASSERT_OK();
 }
 
 void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
@@ -263,6 +269,7 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
         "mesh.animated.normals.colored",
         "terrain",
         "terrain-baked",
+        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -270,6 +277,8 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
         r_gl_set_mat4(view, shaders[i], GL_U_VIEW);
         r_gl_set_vec3(pos, shaders[i], GL_U_VIEW_POS);
     }
+
+    GL_ASSERT_OK();
 }
 
 void R_GL_SetProj(const mat4x4_t *proj)
@@ -285,10 +294,13 @@ void R_GL_SetProj(const mat4x4_t *proj)
         "mesh.animated.normals.colored",
         "terrain",
         "terrain-baked",
+        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++)
         r_gl_set_mat4(proj, shaders[i], GL_U_PROJECTION);
+
+    GL_ASSERT_OK();
 }
 
 void R_GL_SetLightSpaceTrans(const mat4x4_t *trans)
@@ -296,16 +308,47 @@ void R_GL_SetLightSpaceTrans(const mat4x4_t *trans)
     const char *shaders[] = {
         "mesh.static.depth",
         "mesh.animated.depth",
+        "mesh.static.textured-phong-shadowed",
+        "mesh.animated.textured-phong-shadowed",
+        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++)
         r_gl_set_mat4(trans, shaders[i], GL_U_LS_TRANS);
+
+    GL_ASSERT_OK();
+}
+
+void R_GL_SetShadowMap(const GLuint shadow_map_tex_id)
+{
+    const char *shaders[] = {
+        "mesh.static.textured-phong-shadowed",
+        "mesh.animated.textured-phong-shadowed",
+        "terrain-baked-shadowed",
+    };
+
+    for(int i = 0; i < ARR_SIZE(shaders); i++) {
+
+        GLuint shader_prog, sampler_loc;
+
+        shader_prog = R_Shader_GetProgForName(shaders[i]);
+        glUseProgram(shader_prog);
+
+        sampler_loc = glGetUniformLocation(shader_prog, GL_U_SHADOW_MAP);
+        glActiveTexture(SHADOW_MAP_TUNIT);
+        glBindTexture(GL_TEXTURE_2D, shadow_map_tex_id);
+        glUniform1i(sampler_loc, SHADOW_MAP_TUNIT - GL_TEXTURE0);
+    }
+
+    GL_ASSERT_OK();
 }
 
 void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, size_t count)
 {
     const char *shaders[] = {
+        "mesh.animated.depth",
         "mesh.animated.textured-phong",
+        "mesh.animated.textured-phong-shadowed",
         "mesh.animated.normals.colored",
     };
 
@@ -314,15 +357,20 @@ void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, size_t
         r_gl_set_uniform_mat4x4_array(inv_bind_poses, count, GL_U_INV_BIND_MATS, shaders[i]);
         r_gl_set_uniform_mat4x4_array(curr_poses, count, GL_U_CURR_POSE_MATS, shaders[i]);
     }
+
+    GL_ASSERT_OK();
 }
 
 void R_GL_SetAmbientLightColor(vec3_t color)
 {
     const char *shaders[] = {
         "mesh.static.textured-phong",
+        "mesh.static.textured-phong-shadowed",
         "mesh.animated.textured-phong",
+        "mesh.animated.textured-phong-shadowed",
         "terrain",
         "terrain-baked",
+        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -335,15 +383,20 @@ void R_GL_SetAmbientLightColor(vec3_t color)
         loc = glGetUniformLocation(shader_prog, GL_U_AMBIENT_COLOR);
         glUniform3fv(loc, 1, color.raw);
     }
+
+    GL_ASSERT_OK();
 }
 
 void R_GL_SetLightEmitColor(vec3_t color)
 {
     const char *shaders[] = {
         "mesh.static.textured-phong",
+        "mesh.static.textured-phong-shadowed",
         "mesh.animated.textured-phong",
+        "mesh.animated.textured-phong-shadowed",
         "terrain",
         "terrain-baked",
+        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -356,15 +409,20 @@ void R_GL_SetLightEmitColor(vec3_t color)
         loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_COLOR);
         glUniform3fv(loc, 1, color.raw);
     }
+
+    GL_ASSERT_OK();
 }
 
 void R_GL_SetLightPos(vec3_t pos)
 {
     const char *shaders[] = {
         "mesh.static.textured-phong",
+        "mesh.static.textured-phong-shadowed",
         "mesh.animated.textured-phong",
+        "mesh.animated.textured-phong-shadowed",
         "terrain",
         "terrain-baked",
+        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -379,6 +437,7 @@ void R_GL_SetLightPos(vec3_t pos)
     }
 
     s_light_pos = pos;
+    GL_ASSERT_OK();
 }
 
 vec3_t R_GL_GetLightPos(void)
@@ -743,7 +802,7 @@ void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim)
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 }
 
-void R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height)
+void R_GL_DumpFBColor_PPM(const char *filename, int width, int height)
 {
     long img_size = width * height * 3;
     unsigned char *data = malloc(img_size);
@@ -751,7 +810,7 @@ void R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height)
         return;
     }
 
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, data);
 
     FILE *file = fopen(filename, "wb");
@@ -772,6 +831,52 @@ void R_GL_DumpFramebuffer_PPM(const char *filename, int width, int height)
         }
     }
 
+    GL_ASSERT_OK();
+    fclose(file);
+    free(data);
+}
+
+void R_GL_DumpFBDepth_PPM(const char *filename, int width, int height, 
+                          bool linearize, GLfloat near, GLfloat far)
+{
+    long img_size = width * height * sizeof(GLfloat);
+    GLfloat *data = malloc(img_size);
+    if(!data) {
+        return;
+    }
+
+    glReadPixels(0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT, data);
+
+    FILE *file = fopen(filename, "wb");
+    if(!file) {
+        free(data); 
+        return;
+    }
+
+    fprintf(file, "P6\n%d %d\n%d\n", width, height, 255);
+    for(int i = 0; i < height; i++) {
+        for(int j = 0; j < width; j++) {
+
+            GLfloat norm_depth = data[i * width + j];
+            assert(norm_depth >= 0.0f && norm_depth <= 1.0f);
+
+            GLfloat z;
+            if(linearize) {
+                z = (2 * near) / (far + near - norm_depth * (far - near));
+            }else{
+                z = norm_depth; 
+            }
+            assert(z >= 0 && z <= 1.0f);
+
+            static unsigned char color[3];
+            color[0] = z * 255;
+            color[1] = z * 255;
+            color[2] = z * 255; 
+            fwrite(color, 1, 3, file);
+        }
+    }
+
+    GL_ASSERT_OK();
     fclose(file);
     free(data);
 }

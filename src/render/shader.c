@@ -131,6 +131,13 @@ static struct shader_resource s_shaders[] = {
     },
     {
         .prog_id     = (intptr_t)NULL,
+        .name        = "terrain-baked-shadowed",
+        .vertex_path = "shaders/vertex_static-shadowed.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment_terrain-baked-shadowed.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.colored-per-vert",
         .vertex_path = "shaders/vertex_colored.glsl",
         .geo_path    = NULL,
@@ -149,6 +156,20 @@ static struct shader_resource s_shaders[] = {
         .vertex_path = "shaders/vertex_skinned-depth.glsl",
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment_passthrough.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "mesh.static.textured-phong-shadowed",
+        .vertex_path = "shaders/vertex_static-shadowed.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment_textured-phong-shadowed.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "mesh.animated.textured-phong-shadowed",
+        .vertex_path = "shaders/vertex_skinned-shadowed.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment_textured-phong-shadowed.glsl"
     }
 };
 

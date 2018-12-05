@@ -571,8 +571,8 @@ void R_GL_TilePatchVertsBlend(GLuint VBO, const struct tile *tiles, int width, i
         provoking[i]->adjacent_mat_indices[3] = curr.middle_mask;
     }
 
-    glFlushMappedNamedBufferRange(VBO, offset, length);
     glUnmapNamedBuffer(VBO);
+    GL_ASSERT_OK();
 }
 
 void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r, size_t c)
@@ -941,6 +941,7 @@ void *R_GL_TileBakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, 
                          int tiles_per_chunk_x, int tiles_per_chunk_z, const struct tile *tiles,
                          int chunk_r, int chunk_c)
 {
+    GL_ASSERT_OK();
     /* Note that we already include the phong lighting information in the pre-baked chunk. This
      * means that the pre-baked terrain cannot change lighting in real-time. It is possible 
      * to render the top surface texture with lighting disabled and then light in in real-time
@@ -1175,8 +1176,10 @@ void *R_GL_TileBakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, 
     ret->materials[top_mat_idx].texture.tunit = GL_TEXTURE0 + top_mat_idx;
 
     glDeleteFramebuffers(1, &fb);
-    R_GL_Init(ret, "terrain-baked", vbuff);
+    R_GL_Init(ret, "terrain-baked-shadowed", vbuff);
     free(vbuff);
+
+    GL_ASSERT_OK();
     return ret;
 
 fail_side_mats_count:

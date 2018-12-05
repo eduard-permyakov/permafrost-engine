@@ -38,6 +38,7 @@
 #include "texture.h"
 #include "shader.h"
 #include "gl_uniforms.h"
+#include "gl_assert.h"
 #include "public/render.h"
 #include "../map/public/tile.h"
 #include "../camera.h"
@@ -222,10 +223,10 @@ bool R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, s_ctx.minimap_texture.id, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         goto fail_fb;
-
-    glBindFramebuffer(GL_FRAMEBUFFER, fb);
 
     /* Render the map top-down view to the texture. */
     glViewport(0,0, MINIMAP_RES, MINIMAP_RES);
@@ -279,6 +280,7 @@ bool R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats,
         (void*)offsetof(struct vertex, uv));
     glEnableVertexAttribArray(1);
 
+    GL_ASSERT_OK();
     return true;
 
 fail_fb:
@@ -323,6 +325,7 @@ bool R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, mat4x4
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDeleteFramebuffers(1, &fb);
 
+    GL_ASSERT_OK();
     return true;
 
 fail_fb:
@@ -399,6 +402,7 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t 
 
     glDisable(GL_STENCIL_TEST);
     glEnable(GL_DEPTH_TEST);
+    GL_ASSERT_OK();
 }
 
 void R_GL_MinimapFree(void)

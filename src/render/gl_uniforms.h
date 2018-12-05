@@ -78,5 +78,6 @@
 
 /* Used for depth map rendering and testing */
 #define GL_U_LS_TRANS       "light_space_transform"
+#define GL_U_SHADOW_MAP     "shadow_map"
 
 #endif
