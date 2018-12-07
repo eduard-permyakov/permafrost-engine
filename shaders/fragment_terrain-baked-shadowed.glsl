@@ -41,7 +41,7 @@
 #define SPECULAR_STRENGTH  0.5
 #define SPECULAR_SHININESS 2
 
-#define SHADOW_MAP_BIAS 0.005
+#define SHADOW_MAP_BIAS 0.002
 #define SHADOW_MULTIPLIER 0.7
 
 /*****************************************************************************/

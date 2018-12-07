@@ -68,7 +68,8 @@ void R_GL_InitShadows(void)
     glGenTextures(1, &s_depth_map_tex);
     glBindTexture(GL_TEXTURE_2D, s_depth_map_tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, 
-                 CONFIG_RES_X, CONFIG_RES_Y, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+                 CONFIG_SHADOW_MAP_RES, CONFIG_SHADOW_MAP_RES, 
+                 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -125,8 +126,10 @@ void R_GL_DepthPassBegin(void)
     PFM_Mat4x4_Mult4x4(&light_proj, &light_view, &light_space_trans);
     R_GL_SetLightSpaceTrans(&light_space_trans);
 
+    glViewport(0, 0, CONFIG_SHADOW_MAP_RES, CONFIG_SHADOW_MAP_RES);
     glBindFramebuffer(GL_FRAMEBUFFER, s_depth_map_FBO);
     glClear(GL_DEPTH_BUFFER_BIT);
+
     GL_ASSERT_OK();
 }
 
@@ -136,7 +139,9 @@ void R_GL_DepthPassEnd(void)
     s_depth_pass_active = false;
 
     R_GL_SetShadowMap(s_depth_map_tex);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);  
+
+    glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     GL_ASSERT_OK();
 }

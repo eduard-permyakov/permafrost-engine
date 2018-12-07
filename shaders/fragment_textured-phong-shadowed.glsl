@@ -41,7 +41,7 @@
 #define SPECULAR_STRENGTH  0.5
 #define SPECULAR_SHININESS 2
 
-#define SHADOW_MAP_BIAS 0.005
+#define SHADOW_MAP_BIAS 0.002
 #define SHADOW_MULTIPLIER 0.7
 
 /*****************************************************************************/
@@ -136,7 +136,7 @@ void main()
     }
 
     /* Simple alpha test to reject transparent pixels */
-    if(tex_color.a== 0.0)
+    if(tex_color.a == 0.0)
         discard;
 
     /* Ambient calculations */

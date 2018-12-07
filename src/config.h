@@ -54,5 +54,6 @@ enum pf_window_flags{
 #define CONFIG_BAKED_TILE_TEX_RES   128
 #define CONFIG_WINDOWFLAGS          PF_WINDOWFLAGS_BORDERLESS_WINDOWED
 #define CONFIG_VSYNC                false
+#define CONFIG_SHADOW_MAP_RES       2048
 
 #endif
