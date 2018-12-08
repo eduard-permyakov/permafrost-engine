@@ -366,133 +366,13 @@ void Camera_MakeProjMat(const struct camera *cam, mat4x4_t *out)
     PFM_Mat4x4_MakePerspective(CAM_FOV_RAD, ((GLfloat)viewport[2])/viewport[3], 0.1f, CONFIG_DRAWDIST, out);
 }
 
-/* Useful information about frustrums here:
- * http://cgvr.informatik.uni-bremen.de/teaching/cg_literatur/lighthouse3d_view_frustum_culling/index.html
- * Note that our engine's coordinate system is left-handed.
- */
 void Camera_MakeFrustum(const struct camera *cam, struct frustum *out)
 {
     GLint viewport[4]; 
     glGetIntegerv(GL_VIEWPORT, viewport);
     const float aspect_ratio = ((float)viewport[2])/viewport[3];
 
-    const float near_dist = CAM_Z_NEAR_DIST;
-    const float far_dist = CONFIG_DRAWDIST;
-
-    const float near_height = 2 * tan(CAM_FOV_RAD/2.0f) * near_dist;
-    const float near_width = near_height * aspect_ratio;
-
-    const float far_height = 2 * tan(CAM_FOV_RAD/2.0f) * far_dist;
-    const float far_width = far_height * aspect_ratio;
-
-    vec3_t tmp;
-    vec3_t cam_right;
-    PFM_Vec3_Cross((vec3_t*)&cam->up, (vec3_t*)&cam->front, &cam_right);
-    PFM_Vec3_Normal(&cam_right, &cam_right);
-
-    vec3_t nc = cam->pos;
-    PFM_Vec3_Scale((vec3_t*)&cam->front, near_dist, &tmp);
-    PFM_Vec3_Add(&nc, &tmp, &nc);
-
-    vec3_t fc = cam->pos;
-    PFM_Vec3_Scale((vec3_t*)&cam->front, far_dist, &tmp);
-    PFM_Vec3_Add(&nc, &tmp, &fc);
-
-    vec3_t up_half_hfar;
-    PFM_Vec3_Scale((vec3_t*)&cam->up, far_height/2.0f, &up_half_hfar);
-
-    vec3_t right_half_wfar;
-    PFM_Vec3_Scale(&cam_right, far_width/2.0f, &right_half_wfar);
-
-    vec3_t up_half_hnear;
-    PFM_Vec3_Scale((vec3_t*)&cam->up, near_height/2.0f, &up_half_hnear);
-
-    vec3_t right_half_wnear;
-    PFM_Vec3_Scale(&cam_right, near_width/2.0f, &right_half_wnear);
-
-
-    /* Far Top Left corner */
-    PFM_Vec3_Add(&fc, &up_half_hfar, &tmp);
-    PFM_Vec3_Sub(&tmp, &right_half_wfar, &out->ftl);
-
-    /* Far Top Right corner */
-    PFM_Vec3_Add(&fc, &up_half_hfar, &tmp);
-    PFM_Vec3_Add(&tmp, &right_half_wfar, &out->ftr);
-
-    /* Far Bottom Left corner */
-    PFM_Vec3_Sub(&fc, &up_half_hfar, &tmp);
-    PFM_Vec3_Sub(&tmp, &right_half_wfar, &out->fbl);
-
-    /* Far Bottom Right corner */
-    PFM_Vec3_Sub(&fc, &up_half_hfar, &tmp);
-    PFM_Vec3_Add(&tmp, &right_half_wfar, &out->fbr);
-
-    /* Near Top Left corner */
-    PFM_Vec3_Add(&nc, &up_half_hnear, &tmp);
-    PFM_Vec3_Sub(&tmp, &right_half_wnear, &out->ntl);
-
-    /* Near Top Right corner */
-    PFM_Vec3_Add(&nc, &up_half_hnear, &tmp);
-    PFM_Vec3_Add(&tmp, &right_half_wnear, &out->ntr);
-
-    /* Near Bottom Left corner */
-    PFM_Vec3_Sub(&nc, &up_half_hnear, &tmp); 
-    PFM_Vec3_Sub(&tmp, &right_half_wnear, &out->nbl);
-
-    /* Near Bottom right corner */
-    PFM_Vec3_Sub(&nc, &up_half_hnear, &tmp);
-    PFM_Vec3_Add(&tmp, &right_half_wnear, &out->nbr);
-
-
-    /* Near plane */
-    out->near.point = nc;
-    out->near.normal = cam->front;
-
-    /* Far plane */
-    vec3_t negative_dir;
-    PFM_Vec3_Scale((vec3_t*)&cam->front, -1.0f, &negative_dir);
-
-    out->far.point = fc;
-    out->far.normal = negative_dir;
-
-    /* Right plane */
-    vec3_t p_to_near_right_edge;
-    PFM_Vec3_Scale(&cam_right, near_width / 2.0f, &tmp);
-    PFM_Vec3_Add(&nc, &tmp, &tmp);
-    PFM_Vec3_Sub(&tmp, (vec3_t*)&cam->pos, &p_to_near_right_edge);
-    PFM_Vec3_Normal(&p_to_near_right_edge, &p_to_near_right_edge);
-
-    out->right.point = cam->pos;
-    PFM_Vec3_Cross(&p_to_near_right_edge, (vec3_t*)&cam->up, &out->right.normal);
-
-    /* Left plane */
-    vec3_t p_to_near_left_edge;
-    PFM_Vec3_Scale(&cam_right, near_width / 2.0f, &tmp);
-    PFM_Vec3_Sub(&nc, &tmp, &tmp);
-    PFM_Vec3_Sub(&tmp, (vec3_t*)&cam->pos, &p_to_near_left_edge);
-    PFM_Vec3_Normal(&p_to_near_left_edge, &p_to_near_left_edge);
-
-    out->left.point = cam->pos;
-    PFM_Vec3_Cross((vec3_t*)&cam->up, &p_to_near_left_edge, &out->left.normal);
-
-    /* Top plane */
-    vec3_t p_to_near_top_edge;
-    PFM_Vec3_Scale((vec3_t*)&cam->up, near_height / 2.0f, &tmp);
-    PFM_Vec3_Add(&nc, &tmp, &tmp);
-    PFM_Vec3_Sub(&tmp, (vec3_t*)&cam->pos, &p_to_near_top_edge);
-    PFM_Vec3_Normal(&p_to_near_top_edge, &p_to_near_top_edge);
-
-    out->top.point = cam->pos;
-    PFM_Vec3_Cross(&cam_right, &p_to_near_top_edge, &out->top.normal);
-
-    /* Bot plane */
-    vec3_t p_to_near_bot_edge;
-    PFM_Vec3_Scale((vec3_t*)&cam->up, near_height / 2.0f, &tmp);
-    PFM_Vec3_Sub(&nc, &tmp, &tmp);
-    PFM_Vec3_Sub(&tmp, (vec3_t*)&cam->pos, &p_to_near_bot_edge);
-    PFM_Vec3_Normal(&p_to_near_bot_edge, &p_to_near_bot_edge);
-
-    out->bot.point = cam->pos;
-    PFM_Vec3_Cross(&p_to_near_bot_edge, &cam_right, &out->bot.normal);
+    C_MakeFrustum(cam->pos, cam->up, cam->front, aspect_ratio, CAM_FOV_RAD, 
+        CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, out);
 }
 
