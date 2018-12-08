@@ -149,6 +149,9 @@ static void g_shadow_pass(void)
         M_RenderVisibleMap(s_gs.map, ACTIVE_CAM, RENDER_PASS_DEPTH);
     }
 
+    struct frustum frust;
+    R_GL_GetLightFrustum(&frust);
+
     uint32_t key;
     struct entity *curr;
     kh_foreach(s_gs.active, key, curr, {
@@ -156,6 +159,12 @@ static void g_shadow_pass(void)
         if(!(curr->flags & ENTITY_FLAG_COLLISION))
             continue;
     
+        struct obb obb;
+        Entity_CurrentOBB(curr, &obb);
+
+        if(!(C_FrustumOBBIntersectionFast(&frust, &obb) != VOLUME_INTERSEC_OUTSIDE))
+            continue;
+
         if(curr->flags & ENTITY_FLAG_ANIMATED)
             A_Update(curr);
 

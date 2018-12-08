@@ -40,6 +40,7 @@
 #include "gl_assert.h"
 #include "../pf_math.h"
 #include "../config.h"
+#include "../collision.h"
 #include "../game/public/game.h"
 
 #include <GL/glew.h>
@@ -53,9 +54,10 @@
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static GLuint s_depth_map_FBO;
-static GLuint s_depth_map_tex;
-static bool   s_depth_pass_active = false;
+static GLuint         s_depth_map_FBO;
+static GLuint         s_depth_map_tex;
+static bool           s_depth_pass_active = false;
+static struct frustum s_light_frustum;
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -92,7 +94,7 @@ void R_GL_DepthPassBegin(void)
 
     mat4x4_t light_proj;
     PFM_Mat4x4_MakeOrthographic(-CONFIG_SHADOW_FOV, CONFIG_SHADOW_FOV, 
-        CONFIG_SHADOW_FOV, -CONFIG_SHADOW_FOV, -1.0f, CONFIG_SHADOW_DRAWDIST, &light_proj);
+        CONFIG_SHADOW_FOV, -CONFIG_SHADOW_FOV, 0.1f, CONFIG_SHADOW_DRAWDIST, &light_proj);
 
     vec3_t cam_pos = G_ActiveCamPos();
     vec3_t cam_dir = G_ActiveCamDir();
@@ -121,6 +123,8 @@ void R_GL_DepthPassBegin(void)
      * at the position where the camera ray intersects the ground plane. */
     mat4x4_t light_view;
     PFM_Mat4x4_MakeLookAt(&light_origin, &target, &up, &light_view);
+
+    C_MakeFrustum(light_origin, up, light_dir, 1.0f, M_PI/4.0f, 0.1f, CONFIG_SHADOW_DRAWDIST, &s_light_frustum);
 
     mat4x4_t light_space_trans;
     PFM_Mat4x4_Mult4x4(&light_proj, &light_view, &light_space_trans);
@@ -163,5 +167,10 @@ void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 
     GL_ASSERT_OK();
+}
+
+void R_GL_GetLightFrustum(struct frustum *out)
+{
+    *out = s_light_frustum;
 }
 

@@ -51,6 +51,7 @@ struct tile;
 struct tile_desc;
 struct map;
 struct camera;
+struct frustum;
 
 enum render_pass{
     RENDER_PASS_DEPTH,
@@ -315,6 +316,13 @@ void R_GL_DepthPassEnd(void);
  * ---------------------------------------------------------------------------
  */
 void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model);
+
+/* ---------------------------------------------------------------------------
+ * Return the frustum of the light source used for rendering the shadow map.
+ * An up-to-date frustum is generated during 'R_GL_DepthPassBegin'
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_GetLightFrustum(struct frustum *out);
 
 /*###########################################################################*/
 /* RENDER ASSET LOADING                                                      */
