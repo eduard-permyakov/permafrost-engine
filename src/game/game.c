@@ -372,7 +372,9 @@ void G_Update(void)
 
 void G_Render(void)
 {
+#if CONFIG_SHADOWS
     g_shadow_pass();
+#endif
     g_draw_pass();
 
     enum selection_type sel_type;
@@ -431,8 +433,8 @@ bool G_RemoveEntity(struct entity *ent)
         kh_del(entity, s_gs.dynamic, k);
     }
 
-    G_Move_RemoveEntity(ent);
     G_Combat_RemoveEntity(ent);
+    G_Move_RemoveEntity(ent);
     return true;
 }
 

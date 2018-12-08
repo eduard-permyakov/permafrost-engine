@@ -54,16 +54,20 @@ enum pf_window_flags{
 #define CONFIG_BAKED_TILE_TEX_RES   128
 #define CONFIG_WINDOWFLAGS          PF_WINDOWFLAGS_BORDERLESS_WINDOWED
 #define CONFIG_VSYNC                false
+
+#define CONFIG_SHADOWS              true
 #define CONFIG_SHADOW_MAP_RES       2048
 /* Determines the draw distance from the light source when creating the
- * shadow map. A higher drawdistance leads to more peterpanning. */
+ * shadow map. Note that a higher drawdistance leads to more peterpanning.
+ */
 #define CONFIG_SHADOW_DRAWDIST      512
 /* This is the half-width of the light source's frustum, in OpenGL coordinates.
  * A value is 128 is enough for all visible shadows to be rendered when 
  * viewing the scene from the standard RTS camera. When looking around with
  * an FPS camera, objects at the edges of the camera may not be properly
  * shadowed. However, increasing the FOV results in lower-quality shadows
- * for the same shadow map resolution. */
+ * for the same shadow map resolution. 
+ */
 #define CONFIG_SHADOW_FOV           128
 
 #endif

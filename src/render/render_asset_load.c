@@ -218,7 +218,11 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
         assert(!null);
     }
 
+#if CONFIG_SHADOWS
+    R_GL_Init(priv, (header->num_as > 0) ? "mesh.animated.textured-phong-shadowed" : "mesh.static.textured-phong-shadowed", vbuff);
+#else
     R_GL_Init(priv, (header->num_as > 0) ? "mesh.animated.textured-phong" : "mesh.static.textured-phong", vbuff);
+#endif
     free(vbuff);
     GL_ASSERT_OK();
     return priv;
@@ -305,6 +309,7 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
 
     priv->mesh.num_verts = num_verts;
     priv->materials = (void*)unused_base;
+    priv->num_materials = num_mats;
 
     for(int r = 0; r < height; r++) {
         for(int c = 0; c < width; c++) {
@@ -323,10 +328,11 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
         priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
         if(!al_read_material(mats_stream, basedir, &priv->materials[i], &null)) 
             goto fail_parse;
-        if(null)
-            ++num_null;
+        if(null) {
+            priv->materials[i].texture.id = 0;
+            priv->materials[i].texname[0] = '\0';
+        }
     }
-    priv->num_materials = num_mats - num_null;
 
     R_GL_Init(priv, "terrain", vbuff);
     al_patch_vbuff_adjacency_info(priv->mesh.VBO, tiles, width, height);
@@ -352,8 +358,13 @@ bool R_AL_UpdateMats(SDL_RWops *mats_stream, size_t num_mats, void *priv_buff)
         priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
         if(!al_read_material(mats_stream, g_basepath, &priv->materials[i], &null)) 
             return false;
-        assert(!null);
+        if(null) {
+            priv->materials[i].texture.id = 0;
+            priv->materials[i].texname[0] = '\0';
+        }
     }
+
+    priv->num_materials = 8;
     return true;
 }
 
