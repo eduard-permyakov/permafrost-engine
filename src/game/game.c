@@ -388,7 +388,7 @@ void G_Render(void)
 
     E_Global_NotifyImmediate(EVENT_RENDER_3D, NULL, ES_ENGINE);
 
-    /* Render the minimap/HUD last. Screenspace rendering clobbers the view/projection uniforms. */
+    R_GL_SetScreenspaceDrawMode();
     if(s_gs.map) {
         M_RenderMinimap(s_gs.map, ACTIVE_CAM);
     }

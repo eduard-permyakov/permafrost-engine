@@ -215,6 +215,15 @@ void   R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, size_t count
 void   R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, size_t count,
                           mat4x4_t *model, const struct map *map);
 
+/* ---------------------------------------------------------------------------
+ * Update shader uniforms for Screenspace rendering. This function should be
+ * called after all 3D rendering has completed and before any screenspace 
+ * rendering. After it has been called, all rendered triangles should have 
+ * 0 z-dimention. The x and y dimentions correspond to screenspace coordinates.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_SetScreenspaceDrawMode(void);
+
 /*###########################################################################*/
 /* RENDER TILES                                                              */
 /*###########################################################################*/

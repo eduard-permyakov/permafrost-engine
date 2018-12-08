@@ -334,15 +334,6 @@ fail_fb:
 
 void R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t center_pos)
 {
-    mat4x4_t ortho;
-    PFM_Mat4x4_MakeOrthographic(0.0f, CONFIG_RES_X, CONFIG_RES_Y, 0.0f, -1.0f, 1.0f, &ortho);
-    R_GL_SetProj(&ortho);
-
-    mat4x4_t identity;
-    PFM_Mat4x4_Identity(&identity);
-    vec3_t dummy_pos = (vec3_t){0.0f};
-    R_GL_SetViewMatAndPos(&identity, &dummy_pos);
-
     float horiz_width = MINIMAP_SIZE / cos(M_PI/4.0f);
 
     mat4x4_t tmp;
@@ -363,8 +354,6 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t 
 
     GLuint shader_prog;
     glBindVertexArray(s_ctx.minimap_mesh.VAO);
-
-    glDisable(GL_DEPTH_TEST);
 
     /* First render a slightly larger colored quad as the border */
     shader_prog = R_Shader_GetProgForName("mesh.static.colored");

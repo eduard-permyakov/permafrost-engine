@@ -444,6 +444,20 @@ vec3_t R_GL_GetLightPos(void)
     return s_light_pos;
 }
 
+void R_GL_SetScreenspaceDrawMode(void)
+{
+    mat4x4_t ortho;
+    PFM_Mat4x4_MakeOrthographic(0.0f, CONFIG_RES_X, CONFIG_RES_Y, 0.0f, -1.0f, 1.0f, &ortho);
+    R_GL_SetProj(&ortho);
+
+    mat4x4_t identity;
+    PFM_Mat4x4_Identity(&identity);
+    vec3_t dummy_pos = (vec3_t){0.0f};
+    R_GL_SetViewMatAndPos(&identity, &dummy_pos);
+
+    glDisable(GL_DEPTH_TEST);
+}
+
 void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, const struct camera *cam)
 {
     vec3_t *vbuff;
