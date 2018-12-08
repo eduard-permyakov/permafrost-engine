@@ -98,6 +98,7 @@ bool   G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out
 bool   G_ActivateCamera(int idx, enum cam_mode mode);
 void   G_MoveActiveCamera(vec2_t xz_ground_pos);
 vec3_t G_ActiveCamPos(void);
+vec3_t G_ActiveCamDir(void);
 
 bool   G_UpdateMinimapChunk(int chunk_r, int chunk_c);
 bool   G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string);

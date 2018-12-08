@@ -36,7 +36,7 @@
 #include "public/render.h"
 #include "shader.h"
 #include "texture.h"
-#include "render_gl_shadows.h"
+#include "render_gl.h"
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */

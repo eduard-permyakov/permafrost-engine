@@ -33,7 +33,6 @@
  *
  */
 
-#include "render_gl_shadows.h"
 #include "public/render.h"
 #include "render_gl.h"
 #include "render_private.h"
@@ -47,6 +46,8 @@
 
 #include <assert.h>
 
+
+#define LIGHT_POS_HEIGHT (200.0f)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -89,38 +90,37 @@ void R_GL_DepthPassBegin(void)
     assert(!s_depth_pass_active);
     s_depth_pass_active = true;
 
-    /* The parameters for the orthographic matrix are chosen such that the orthographic 
-     * frustum completely encapsulates the part of the scene seen by the RTS camera. 
-     * Note that when in first-person view, this means that some objects will not cast shadows
-     * as they are outside the light's view, especially if the camera is looking in the opposite
-     * direction of the light. This is a sacrifice we accept, as making a shadow map of the entire
-     * scene is expensive and will yield a lower-precision shadow map. */
     mat4x4_t light_proj;
-    PFM_Mat4x4_MakeOrthographic(-160.0f, 160.0f, 160.0f, -160.0f, -1.0f, 400.0f, &light_proj);
-
-    mat4x4_t light_view;
+    PFM_Mat4x4_MakeOrthographic(-CONFIG_SHADOW_FOV, CONFIG_SHADOW_FOV, 
+        CONFIG_SHADOW_FOV, -CONFIG_SHADOW_FOV, -1.0f, CONFIG_SHADOW_DRAWDIST, &light_proj);
 
     vec3_t cam_pos = G_ActiveCamPos();
-    vec3_t light_pos = R_GL_GetLightPos();
+    vec3_t cam_dir = G_ActiveCamDir();
 
-    vec3_t origin = (vec3_t){0.0f, 0.0f, 0.0f};
-    vec3_t right = (vec3_t){-1.0f, 0.0f, 0.0f};
+    float t = cam_pos.y / cam_dir.y;
+    vec3_t cam_ray_ground_isec = (vec3_t){cam_pos.x - t * cam_dir.x, 0.0f, cam_pos.z - t * cam_dir.z};
 
     vec3_t light_dir = R_GL_GetLightPos();
     PFM_Vec3_Normal(&light_dir, &light_dir);
     PFM_Vec3_Scale(&light_dir, -1.0f, &light_dir);
 
-    vec3_t up;
+    vec3_t right = (vec3_t){-1.0f, 0.0f, 0.0f}, up;
     PFM_Vec3_Cross(&light_dir, &right, &up);
 
+    t = fabs(LIGHT_POS_HEIGHT / light_dir.y);
+    vec3_t light_origin, delta;
+    PFM_Vec3_Scale(&light_dir, -t, &delta);
+    PFM_Vec3_Add(&cam_ray_ground_isec, &delta, &light_origin);
+
     vec3_t target;
-    PFM_Vec3_Add(&cam_pos, &light_dir, &target);
+    PFM_Vec3_Add(&light_origin, &light_dir, &target);
 
     /* Since, for shadow mapping, we treat our light source as a directional light, 
      * we only care about direction of the light rays, not the absolute position of 
-     * the light source. Thus, we render the shadow map from the position of the camera,
-     * just looking in the direction of the light source */
-    PFM_Mat4x4_MakeLookAt(&cam_pos, &target, &up, &light_view);
+     * the light source. Thus, we render the shadow map from a fixed height, looking 
+     * at the position where the camera ray intersects the ground plane. */
+    mat4x4_t light_view;
+    PFM_Mat4x4_MakeLookAt(&light_origin, &target, &up, &light_view);
 
     mat4x4_t light_space_trans;
     PFM_Mat4x4_Mult4x4(&light_proj, &light_view, &light_space_trans);

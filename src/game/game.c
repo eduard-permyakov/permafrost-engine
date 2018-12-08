@@ -141,14 +141,37 @@ static void g_init_map(void)
     G_Combat_Init();
 }
 
-static void g_render_pass(enum render_pass pass)
+static void g_shadow_pass(void)
 {
-    if(pass == RENDER_PASS_DEPTH) {
-        R_GL_DepthPassBegin();
-    }
+    R_GL_DepthPassBegin();
 
     if(s_gs.map) {
-        M_RenderVisibleMap(s_gs.map, ACTIVE_CAM, pass);
+        M_RenderVisibleMap(s_gs.map, ACTIVE_CAM, RENDER_PASS_DEPTH);
+    }
+
+    uint32_t key;
+    struct entity *curr;
+    kh_foreach(s_gs.active, key, curr, {
+
+        if(!(curr->flags & ENTITY_FLAG_COLLISION))
+            continue;
+    
+        if(curr->flags & ENTITY_FLAG_ANIMATED)
+            A_Update(curr);
+
+        mat4x4_t model;
+        Entity_ModelMatrix(curr, &model);
+
+        R_GL_RenderDepthMap(curr->render_private, &model);
+    });
+
+    R_GL_DepthPassEnd();
+}
+
+static void g_draw_pass(void)
+{
+    if(s_gs.map) {
+        M_RenderVisibleMap(s_gs.map, ACTIVE_CAM, RENDER_PASS_REGULAR);
     }
 
     for(int i = 0; i < kv_size(s_gs.visible); i++) {
@@ -161,19 +184,7 @@ static void g_render_pass(enum render_pass pass)
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
 
-        switch(pass) {
-        case RENDER_PASS_DEPTH: 
-            R_GL_RenderDepthMap(curr->render_private, &model);
-            break;
-        case RENDER_PASS_REGULAR:
-            R_GL_Draw(curr->render_private, &model);
-            break;
-        default: assert(0);
-        }
-    }
-
-    if(pass == RENDER_PASS_DEPTH) {
-        R_GL_DepthPassEnd();
+        R_GL_Draw(curr->render_private, &model);
     }
 }
 
@@ -352,8 +363,8 @@ void G_Update(void)
 
 void G_Render(void)
 {
-    g_render_pass(RENDER_PASS_DEPTH);
-    g_render_pass(RENDER_PASS_REGULAR);
+    g_shadow_pass();
+    g_draw_pass();
 
     enum selection_type sel_type;
     const pentity_kvec_t *selected = G_Sel_Get(&sel_type);
@@ -556,6 +567,15 @@ bool G_ActivateCamera(int idx, enum cam_mode mode)
 vec3_t G_ActiveCamPos(void)
 {
     return Camera_GetPos(ACTIVE_CAM);
+}
+
+vec3_t G_ActiveCamDir(void)
+{
+    mat4x4_t lookat;
+    Camera_MakeViewMat(ACTIVE_CAM, &lookat);
+    vec3_t ret = (vec3_t){-lookat.cols[0][2], -lookat.cols[1][2], -lookat.cols[2][2]};
+    PFM_Vec3_Normal(&ret, &ret);
+    return ret;
 }
 
 bool G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string)

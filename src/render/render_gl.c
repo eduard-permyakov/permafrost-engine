@@ -41,7 +41,6 @@
 #include "material.h"
 #include "gl_assert.h"
 #include "gl_uniforms.h"
-#include "render_gl_shadows.h"
 #include "public/render.h"
 #include "../entity.h"
 #include "../camera.h"
