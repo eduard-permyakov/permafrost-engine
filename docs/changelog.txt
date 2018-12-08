@@ -3,6 +3,11 @@
 ********************************************************************************
 
 ================================================================================
+[Version 0.27.0] - 08.12.2018
+================================================================================
+    * Implementation of directional light shadow mapping
+
+================================================================================
 [Version 0.26.0] - 22.11.2018
 ================================================================================
     * Implementation of combat system
@@ -153,8 +158,8 @@
 [Version 0.2.0] - 07.01.2018
 ================================================================================
     * Add rendering of tile-based maps parsed from ASCII file
-    --> different-height flat tiles, ramps, and corner tiles available
-    --> custom textures specified per tile
+        --> different-height flat tiles, ramps, and corner tiles available
+        --> custom textures specified per tile
 
 ================================================================================
 [Version 0.1.0] - 30.12.2017

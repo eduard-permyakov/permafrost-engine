@@ -26,6 +26,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * Custom ASCII model format with Blender export script
 * Skeletal animation with GPU skinning
 * Phong reflection model with materials
+* Directional light shadow mapping
 * RTS camera, FPS camera
 * Rendering of tile-based world parsed from ASCII file
 * Export/Import of game entites to/from ASCII files
@@ -35,12 +36,12 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * Efficient raycasting
 * Map/Scene editor
 * Fast rendering of huge maps (map size only limited by memory)
-* RTS minimap
-* RTS-style unit selection
-* RTS unit combat system
 * Map navigation graph/grid generation
 * Implementation of 'boids' steering/flocking behaviours
 * Hierarchial flow field pathfinding
+* RTS minimap
+* RTS-style unit selection
+* RTS unit combat system
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
