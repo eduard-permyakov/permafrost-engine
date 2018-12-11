@@ -160,6 +160,57 @@ static void render(void)
     SDL_GL_SwapWindow(s_window);
 }
 
+/* Fills the framebuffer with the loading screen using SDL's software renderer. 
+ * Used to set a loading screen immediately, even before the rendering subsystem 
+ * is initialized, */
+void early_loading_screen(void)
+{
+    assert(s_window);
+
+    SDL_Surface *win_surface = SDL_GetWindowSurface(s_window);
+    SDL_Renderer *sw_renderer = SDL_CreateSoftwareRenderer(win_surface);
+    if(!sw_renderer) {
+        fprintf(stderr, "Failed creating loading screen SDL software renderer: %s\n", SDL_GetError()); 
+        return;
+    }
+
+    SDL_SetRenderDrawColor(sw_renderer, 0xff, 0xff, 0xff, 0xff);
+    SDL_RenderClear(sw_renderer);
+
+    SDL_Rect draw_area;
+    SDL_RenderGetViewport(sw_renderer, &draw_area);
+
+    int width, height, orig_format;
+    unsigned char *image = stbi_load(CONFIG_LOADING_SCREEN, &width, &height, &orig_format, STBI_rgb);
+    if(!image) {
+        fprintf(stderr, "Failed to loading loading screen: %s\n", CONFIG_LOADING_SCREEN);
+        goto fail_load_image;
+    }
+
+    SDL_Surface *img_surface = SDL_CreateRGBSurfaceWithFormatFrom(image, width, height, 24, 3*width, SDL_PIXELFORMAT_RGB24);
+    if(!img_surface) {
+        fprintf(stderr, "Failed to create loading screen SDL surface: %s\n", SDL_GetError());    
+        goto fail_surface;
+    }
+
+    SDL_Texture *img_tex = SDL_CreateTextureFromSurface(sw_renderer, img_surface);
+    if(!img_tex) {
+        fprintf(stderr, "Failed to create loading screen SDL texture: %s\n", SDL_GetError());    
+        goto fail_texture;
+    }
+    SDL_FreeSurface(img_surface);
+
+    SDL_RenderCopy(sw_renderer, img_tex, NULL, NULL);
+    SDL_UpdateWindowSurface(s_window);
+    SDL_DestroyTexture(img_tex);
+
+fail_texture:
+fail_surface:
+    stbi_image_free(image);
+fail_load_image:
+    SDL_DestroyRenderer(sw_renderer);
+}
+
 static bool engine_init(char **argv)
 {
     bool result = true;
@@ -195,6 +246,8 @@ static bool engine_init(char **argv)
         CONFIG_RES_X, 
         CONFIG_RES_Y, 
         SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | CONFIG_WINDOWFLAGS);
+
+    early_loading_screen();
 
     s_context = SDL_GL_CreateContext(s_window); 
     SDL_GL_SetSwapInterval(CONFIG_VSYNC ? 1 : 0); 
