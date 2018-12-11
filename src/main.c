@@ -162,7 +162,7 @@ static void render(void)
 
 /* Fills the framebuffer with the loading screen using SDL's software renderer. 
  * Used to set a loading screen immediately, even before the rendering subsystem 
- * is initialized, */
+ * is initialized, The loading screen will be overwriten by the first 'render' call. */
 void early_loading_screen(void)
 {
     assert(s_window);
@@ -170,7 +170,7 @@ void early_loading_screen(void)
     SDL_Surface *win_surface = SDL_GetWindowSurface(s_window);
     SDL_Renderer *sw_renderer = SDL_CreateSoftwareRenderer(win_surface);
     if(!sw_renderer) {
-        fprintf(stderr, "Failed creating loading screen SDL software renderer: %s\n", SDL_GetError()); 
+        fprintf(stderr, "Loading Screen: Failed to create SDL software renderer: %s\n", SDL_GetError()); 
         return;
     }
 
@@ -183,28 +183,28 @@ void early_loading_screen(void)
     int width, height, orig_format;
     unsigned char *image = stbi_load(CONFIG_LOADING_SCREEN, &width, &height, &orig_format, STBI_rgb);
     if(!image) {
-        fprintf(stderr, "Failed to loading loading screen: %s\n", CONFIG_LOADING_SCREEN);
+        fprintf(stderr, "Loading Screen: Failed to load image: %s\n", CONFIG_LOADING_SCREEN);
         goto fail_load_image;
     }
 
     SDL_Surface *img_surface = SDL_CreateRGBSurfaceWithFormatFrom(image, width, height, 24, 3*width, SDL_PIXELFORMAT_RGB24);
     if(!img_surface) {
-        fprintf(stderr, "Failed to create loading screen SDL surface: %s\n", SDL_GetError());    
+        fprintf(stderr, "Loading Screen: Failed to create SDL surface: %s\n", SDL_GetError());    
         goto fail_surface;
     }
 
     SDL_Texture *img_tex = SDL_CreateTextureFromSurface(sw_renderer, img_surface);
     if(!img_tex) {
-        fprintf(stderr, "Failed to create loading screen SDL texture: %s\n", SDL_GetError());    
+        fprintf(stderr, "Loading Screen: Failed to create SDL texture: %s\n", SDL_GetError());
         goto fail_texture;
     }
-    SDL_FreeSurface(img_surface);
 
     SDL_RenderCopy(sw_renderer, img_tex, NULL, NULL);
     SDL_UpdateWindowSurface(s_window);
     SDL_DestroyTexture(img_tex);
 
 fail_texture:
+    SDL_FreeSurface(img_surface);
 fail_surface:
     stbi_image_free(image);
 fail_load_image:
@@ -213,17 +213,12 @@ fail_load_image:
 
 static bool engine_init(char **argv)
 {
-    bool result = true;
-
     kv_init(s_prev_tick_events);
     if(!kv_resize(SDL_Event, s_prev_tick_events, 256))
         return false;
 
-    /* ----------------------------------- */
-    /* SDL Initialization                  */
-    /* ----------------------------------- */
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
-        result = false;
+        fprintf(stderr, "Failed to initialize SDL: %s\n", SDL_GetError());
         goto fail_sdl;
     }
 
@@ -252,75 +247,65 @@ static bool engine_init(char **argv)
     s_context = SDL_GL_CreateContext(s_window); 
     SDL_GL_SetSwapInterval(CONFIG_VSYNC ? 1 : 0); 
 
-    /* ----------------------------------- */
-    /* GLEW initialization                 */
-    /* ----------------------------------- */
     glewExperimental = GL_TRUE;
-    if(glewInit() != GLEW_OK)
+    if(glewInit() != GLEW_OK) {
+        fprintf(stderr, "Failed to initialize GLEW\n");
         goto fail_glew;
+    }
 
-    if(!GLEW_VERSION_3_3)
+    if(!GLEW_VERSION_3_3) {
+        fprintf(stderr, "Required OpenGL version not supported in GLEW\n");
         goto fail_glew;
+    }
 
     glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
     glProvokingVertex(GL_FIRST_VERTEX_CONVENTION); 
 
-    /* ----------------------------------- */
-    /* stb_image initialization            */
-    /* ----------------------------------- */
     stbi_set_flip_vertically_on_load(true);
 
-    /* ----------------------------------- */
-    /* Asset Loading initialization        */
-    /* ----------------------------------- */
-    if(!AL_Init())
+    if(!AL_Init()) {
+        fprintf(stderr, "Failed to initialize asset-loading module.\n");
         goto fail_al;
+    }
 
-    /* ----------------------------------- */
-    /* Cursor initialization               */
-    /* ----------------------------------- */
-    if(!Cursor_InitAll(argv[1]))
+    if(!Cursor_InitAll(argv[1])) {
+        fprintf(stderr, "Failed to initialize cursor module\n");
         goto fail_cursor;
+    }
     Cursor_SetActive(CURSOR_POINTER);
 
-    /* ----------------------------------- */
-    /* Rendering subsystem initialization  */
-    /* ----------------------------------- */
-    if(!R_Init(argv[1]))
+    if(!R_Init(argv[1])) {
+        fprintf(stderr, "Failed to iniaialize rendering subsystem\n");
         goto fail_render;
+    }
 
-    /* ----------------------------------- */
-    /* Event subsystem intialization       */
-    /* ----------------------------------- */
-    if(!E_Init())
+    if(!E_Init()) {
+        fprintf(stderr, "Failed to initialize event subsystem\n");
         goto fail_event;
+    }
     Cursor_SetRTSMode(true);
     E_Global_Register(SDL_QUIT, on_user_quit, NULL);
 
-    /* ----------------------------------- */
-    /* nuklear initialization              */
-    /* ----------------------------------- */
-    if( !(s_nk_ctx = UI_Init(argv[1], s_window)) ) 
+    if( !(s_nk_ctx = UI_Init(argv[1], s_window)) ) {
+        fprintf(stderr, "Failed to initialize nuklear\n");
         goto fail_nuklear;
+    }
 
-    /* ----------------------------------- */
-    /* Scripting subsystem initialization  */
-    /* ----------------------------------- */
-    if(!S_Init(argv[0], argv[1], s_nk_ctx))
+    if(!S_Init(argv[0], argv[1], s_nk_ctx)) {
+        fprintf(stderr, "Failed to initialize scripting subsystem\n");
         goto fail_script;
+    }
 
-    /* ----------------------------------- */
-    /* Game state initialization           */
-    /*  * depends on Event subsystem       */
-    /* -----------------------------------*/
-    if(!G_Init())
+    /* depends on Event subsystem */
+    if(!G_Init()) {
+        fprintf(stderr, "Failedk to initialize game subsystem\n");
         goto fail_game;
+    }
 
-    /* ----------------------------------- */
-    /* Navigation subsystem initialization */
-    /* ----------------------------------- */
-    if(!N_Init())
+    if(!N_Init()) {
+        fprintf(stderr, "Failed to intialize navigation subsystem\n");
         goto fail_nav;
+    }
 
     return true;
 
