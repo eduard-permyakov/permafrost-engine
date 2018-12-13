@@ -32,6 +32,14 @@
 #  statement from your version.
 #
 
-import pf
-from constants import *
+from abc import ABCMeta, abstractmethod
+
+class ViewController:
+    __metaclass__ = ABCMeta 
+
+    @abstractmethod
+    def activate(self): pass 
+
+    @abstractmethod
+    def deactivate(self): pass 
 

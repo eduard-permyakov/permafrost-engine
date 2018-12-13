@@ -33,8 +33,13 @@
 #
 
 import pf
-import ui
 import globals
+
+import views.demo_window as dw
+import views.perf_stats_window as psw
+import views.action_pad_window as apw
+
+import view_controllers.action_pad_vc as apvc
 
 from constants import *
 from units import *
@@ -89,9 +94,12 @@ pf.register_event_handler(pf.SDL_KEYDOWN, toggle_sinbad, None)
 # Setup UI                                                 #
 ############################################################
 
-demo_win = ui.DemoWindow()
+demo_win = dw.DemoWindow()
 demo_win.show()
 
-perf_win = ui.PerfStatsWindow()
+perf_win = psw.PerfStatsWindow()
 perf_win.show()
+
+action_pad_vc = apvc.ActionPadVC(apw.ActionPadWindow())
+action_pad_vc.activate()
 

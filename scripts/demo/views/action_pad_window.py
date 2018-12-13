@@ -33,5 +33,35 @@
 #
 
 import pf
-from constants import *
+
+NUM_ROWS = 3
+NUM_COLS = 4
+BUTTON_WIDTH = 75
+BUTTON_PADDING = 6
+
+class ActionPadWindow(pf.Window):
+
+    def __init__(self):
+        # Each button also has a 1px border around it, hence the (NUM_COLS*2)
+        width = BUTTON_WIDTH * NUM_COLS + (NUM_COLS-1) * BUTTON_PADDING +(NUM_COLS*2) + 4
+        height = BUTTON_WIDTH * NUM_ROWS + (NUM_ROWS-1) * BUTTON_PADDING +(NUM_ROWS*2) + 6
+        resx, resy = pf.get_resolution()
+        super(ActionPadWindow, self).__init__("ActionPad", (resx - width - 10, resy - height - 10, 
+            width, height), pf.NK_WINDOW_BORDER | pf.NK_WINDOW_NO_SCROLLBAR)
+        self.spacing = (float(BUTTON_PADDING), float(BUTTON_PADDING))
+        self.padding = (2.0, 4.0)
+
+    def update(self):
+        og_bpad, og_bround = pf.button_style.padding, pf.button_style.rounding
+
+        pf.button_style.padding = (0.0, 0.0)
+        pf.button_style.rounding = 0.0
+
+        for r in range(0, NUM_ROWS):
+            self.layout_row_static(BUTTON_WIDTH, BUTTON_WIDTH, NUM_COLS)
+
+            for c in range(0, NUM_COLS):
+                self.button_label("", lambda: None)
+
+        pf.button_style.padding, pf.button_style.rounding = og_bpad, og_bround
 

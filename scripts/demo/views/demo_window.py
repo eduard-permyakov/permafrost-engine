@@ -33,5 +33,30 @@
 #
 
 import pf
-from constants import *
+
+class DemoWindow(pf.Window):
+
+    def __init__(self):
+        super(DemoWindow, self).__init__("Permafrost Engine Demo", (25, 25, 230, 200), 
+            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE)
+
+    def update(self):
+
+        def on_button_click():
+            pf.global_event(pf.SDL_QUIT, None)
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Demo Hotkeys:", (255, 255, 255));
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("    C - Toggle Camera", (255, 255, 255));
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("    V - Toggle Animation", (255, 255, 255));
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("    ESC - Exit Demo", (255, 255, 255));
+
+        self.layout_row_dynamic(30, 1)
+        self.button_label("Exit Demo", on_button_click)
 

@@ -33,5 +33,24 @@
 #
 
 import pf
-from constants import *
+import view_controller as vc
+
+class ActionPadVC(vc.ViewController):
+
+    def __init__(self, view):
+        self.view = view
+
+    def __on_selection_changed(self, event):
+        sel = pf.get_unit_selection()
+        if len(sel) > 0:
+            self.view.show()
+        else:
+            self.view.hide()
+
+    def activate(self):
+        pf.register_event_handler(pf.EVENT_UNIT_SELECTION_CHANGED, ActionPadVC.__on_selection_changed, self)
+        self.__on_selection_changed(None)
+
+    def deactivate(self):
+        pf.unregister_event_handler(pf.EVENT_UNIT_SELECTION_CHANGED, ActionPadVC.__on_selection_changed)
 
