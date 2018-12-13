@@ -448,6 +448,7 @@ void G_Sel_Remove(struct entity *ent)
     kv_indexof(struct entity*, s_selected, ent, pentities_equal, idx);
     if(idx != -1) {
         kv_del(struct entity*, s_selected, idx);
+        E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
     }
 }
 
