@@ -51,10 +51,11 @@ struct rect{
 
 typedef struct {
     PyObject_HEAD
-    const char  *name;
-    struct rect  rect;
-    int          flags;
-    bool         shown;
+    const char             *name;
+    struct rect             rect;
+    int                     flags;
+    bool                    shown;
+    struct nk_style_window  style;
 }PyWindowObject;
 
 static int       PyWindow_init(PyWindowObject *self, PyObject *args);
@@ -79,6 +80,13 @@ static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
 static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+
+static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure);
+static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure);
+static PyObject *PyWindow_get_spacing(PyWindowObject *self, void *closure);
+static int PyWindow_set_spacing(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_padding(PyWindowObject *self, void *closure);
+static int PyWindow_set_padding(PyWindowObject *self, PyObject *value, void *closure);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -170,6 +178,28 @@ static PyMethodDef PyWindow_methods[] = {
     {NULL}  /* Sentinel */
 };
 
+static PyGetSetDef PyWindow_getset[] = {
+    {"position",
+    (getter)PyWindow_get_pos, NULL,
+    "A tuple of two integers specifying the X and Y position of the window.",
+    NULL},
+    {"size",
+    (getter)PyWindow_get_size, NULL,
+    "A tuple of two integers specifying the width and height dimentions of the window.",
+    NULL},
+    {"spacing",
+    (getter)PyWindow_get_spacing, 
+    (setter)PyWindow_set_spacing,
+    "An (X, Y) tuple of floats to control the spacing within a window.", 
+    NULL},
+    {"padding",
+    (getter)PyWindow_get_padding, 
+    (setter)PyWindow_set_padding,
+    "An (X, Y) tuple of floats to control the padding of a window.", 
+    NULL},
+    {NULL}  /* Sentinel */
+};
+
 static PyTypeObject PyWindow_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "pf.Window",               /* tp_name */
@@ -200,7 +230,7 @@ static PyTypeObject PyWindow_type = {
     0,                         /* tp_iternext */
     PyWindow_methods,          /* tp_methods */
     0,                         /* tp_members */
-    0,                         /* tp_getset */
+    PyWindow_getset,           /* tp_getset */
     0,                         /* tp_base */
     0,                         /* tp_dict */
     0,                         /* tp_descr_get */
@@ -214,6 +244,25 @@ static PyTypeObject PyWindow_type = {
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static int parse_float_pair(PyObject *tuple, float *out_a, float *out_b)
+{
+    if(!PyTuple_Check(tuple))
+        return -1;
+
+    PyObject *a = PyTuple_GetItem(tuple, 0);
+    PyObject *b = PyTuple_GetItem(tuple, 1);
+
+    if(!a || !b)
+        return -1;
+
+    if(!PyFloat_Check(a) || !PyFloat_Check(b))
+        return -1;
+
+    *out_a = PyFloat_AsDouble(a);
+    *out_b = PyFloat_AsDouble(b);
+    return 0;
+}
 
 static int PyWindow_init(PyWindowObject *self, PyObject *args)
 {
@@ -230,6 +279,7 @@ static int PyWindow_init(PyWindowObject *self, PyObject *args)
     self->rect = rect;
     self->flags = flags;
     self->shown = false;
+    self->style = s_nk_ctx->style.window;
     return 0;
 }
 
@@ -584,6 +634,56 @@ static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     return self;
 }
 
+static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("(ii)", self->rect.x, self->rect.y);
+}
+
+static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("(ii)", self->rect.width, self->rect.height);
+}
+
+static PyObject *PyWindow_get_spacing(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("(f, f)",
+        self->style.spacing.x,
+        self->style.spacing.y); 
+}
+
+static int PyWindow_set_spacing(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style.spacing = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyWindow_get_padding(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("(f, f)",
+        self->style.padding.x,
+        self->style.padding.y);
+}
+
+static int PyWindow_set_padding(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style.padding = nk_vec2(x,y);
+    return 0;
+}
+
 static void active_windows_update(void *user, void *event)
 {
     (void)user;
@@ -592,6 +692,9 @@ static void active_windows_update(void *user, void *event)
     for(int i = 0; i < kv_size(s_active_windows); i++) {
     
         PyWindowObject *win = kv_A(s_active_windows, i);
+
+        struct nk_style_window saved_style = s_nk_ctx->style.window;
+        s_nk_ctx->style.window = win->style;
 
         if(nk_begin(s_nk_ctx, win->name, 
             nk_rect(win->rect.x, win->rect.y, win->rect.width, win->rect.height), win->flags)) {
@@ -607,7 +710,9 @@ static void active_windows_update(void *user, void *event)
             struct nk_vec2 size = nk_window_get_size(s_nk_ctx);
             win->rect = (struct rect){pos.x, pos.y, size.x, size.y};
         }
+
         nk_end(s_nk_ctx);
+        s_nk_ctx->style.window = saved_style;
     }
 }
 

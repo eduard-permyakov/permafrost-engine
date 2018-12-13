@@ -569,6 +569,7 @@ static int PyPf_UIButtonStyle_set_touch_padding(PyUIButtonStyleObject *self, PyO
 
 void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
 {
+    /* Button style */
     if(PyType_Ready(&PyUIButtonStyle_type) < 0)
         return;
     Py_INCREF(&PyUIButtonStyle_type);
