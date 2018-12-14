@@ -37,8 +37,10 @@ import pf
 from constants import *
 import globals 
 import weakref
+import action
+import controllable as cont
 
-class AnimCombatable(pf.AnimEntity, pf.CombatableEntity):
+class AnimCombatable(pf.AnimEntity, pf.CombatableEntity, cont.Controllable):
     __metaclass__ = ABCMeta
 
     def __init__(self, path, pfobj, name, **kwargs):
@@ -82,4 +84,19 @@ class AnimCombatable(pf.AnimEntity, pf.CombatableEntity):
     def __on_death_anim_finish(self, event):
         self.unregister(pf.EVENT_ANIM_CYCLE_FINISHED, AnimCombatable.__on_death_anim_finish)
         globals.scene_objs.remove(self)
+
+    def action(self, idx):
+        if idx == 2:
+            return action.ActionDesc(
+                icon_normal="assets/icons/glest/magic-actions/magic_hold_normal.bmp",
+                icon_hover="assets/icons/glest/magic-actions/magic_hold_hover.bmp",
+                icon_active="assets/icons/glest/magic-actions/magic_hold_active.bmp",
+                action = lambda: None)
+        if idx == 3:
+            return action.ActionDesc(
+                icon_normal="assets/icons/glest/magic-actions/magic_armor_attack_normal.bmp",
+                icon_hover="assets/icons/glest/magic-actions/magic_armor_attack_hover.bmp",
+                icon_active="assets/icons/glest/magic-actions/magic_armor_attack_active.bmp",
+                action = lambda: None)
+        return super(AnimCombatable, self).action(idx)
 

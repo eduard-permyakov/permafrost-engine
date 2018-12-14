@@ -36,8 +36,10 @@ from abc import ABCMeta, abstractproperty
 import pf
 from constants import *
 import weakref
+import controllable as cont
+import action
 
-class AnimMoveable(pf.AnimEntity):
+class AnimMoveable(pf.AnimEntity, cont.Controllable):
     __metaclass__ = ABCMeta
 
     def __init__(self, path, pfobj, name, **kwargs):
@@ -70,4 +72,19 @@ class AnimMoveable(pf.AnimEntity):
         assert self.moving
         self.moving = False
         self.play_anim(self.idle_anim())
+
+    def action(self, idx):
+        if idx == 0:
+            return action.ActionDesc(
+                icon_normal="assets/icons/glest/magic-actions/magic_move_normal.bmp",
+                icon_hover="assets/icons/glest/magic-actions/magic_move_hover.bmp",
+                icon_active="assets/icons/glest/magic-actions/magic_move_active.bmp",
+                action = lambda: None)
+        if idx == 1:
+            return action.ActionDesc(
+                icon_normal="assets/icons/glest/magic-actions/magic_stop_normal.bmp",
+                icon_hover="assets/icons/glest/magic-actions/magic_stop_hover.bmp",
+                icon_active="assets/icons/glest/magic-actions/magic_stop_active.bmp",
+                action = lambda: None)
+        return super(AnimMoveable, self).action(idx)
 

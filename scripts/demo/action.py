@@ -32,30 +32,12 @@
 #  statement from your version.
 #
 
-import pf
-from constants import *
-import view_controller as vc
-import units.controllable as cont
+class ActionDesc(object):
 
-class ActionPadVC(vc.ViewController):
-
-    def __init__(self, view):
-        self.view = view
-
-    def __on_selection_changed(self, event):
-        sel = pf.get_unit_selection()
-        controllable_sel = [ent for ent in sel if isinstance(ent, cont.Controllable)]
-        if len(controllable_sel) > 0:
-            first = controllable_sel[0]
-            self.view.actions = [first.action(i) for i in range(0, ACTION_NUM_ROWS * ACTION_NUM_COLS)]
-        else:
-            self.view.clear_actions()
-
-    def activate(self):
-        pf.register_event_handler(pf.EVENT_UNIT_SELECTION_CHANGED, ActionPadVC.__on_selection_changed, self)
-        self.view.show()
-
-    def deactivate(self):
-        self.view.hide()
-        pf.unregister_event_handler(pf.EVENT_UNIT_SELECTION_CHANGED, ActionPadVC.__on_selection_changed)
+    def __init__(self, icon_normal, icon_hover, icon_active, action, hotkey=None):
+        self.icon_normal = icon_normal
+        self.icon_hover = icon_hover
+        self.icon_active = icon_active
+        self.action = action
+        self.hotkey = hotkey
 

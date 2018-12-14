@@ -32,30 +32,33 @@
 #  statement from your version.
 #
 
+from abc import ABCMeta, abstractmethod
 import pf
 from constants import *
-import view_controller as vc
-import units.controllable as cont
+import action
 
-class ActionPadVC(vc.ViewController):
+class Controllable(pf.Entity):
+    __metaclass__ = ABCMeta
 
-    def __init__(self, view):
-        self.view = view
+    def __init__(self, path, pfobj, name, **kwargs):
+        super(Controllable, self).__init__(path, pfobj, name, **kwargs)
+        # Detect any conflicts in hotkeys
+        actions = []
+        for i in range(0, ACTION_NUM_ROWS * ACTION_NUM_COLS):
+            action = self.action(i)
+            if not action:
+                continue
+            if not action.hotkey:
+                continue
+            for other_action in actions:
+                if other_action.hotkey == action.hotkey:
+                    raise RuntimeError("Conflict in hotkeys for instance of %s" % type(self).__name__)
+            actions += action
 
-    def __on_selection_changed(self, event):
-        sel = pf.get_unit_selection()
-        controllable_sel = [ent for ent in sel if isinstance(ent, cont.Controllable)]
-        if len(controllable_sel) > 0:
-            first = controllable_sel[0]
-            self.view.actions = [first.action(i) for i in range(0, ACTION_NUM_ROWS * ACTION_NUM_COLS)]
-        else:
-            self.view.clear_actions()
-
-    def activate(self):
-        pf.register_event_handler(pf.EVENT_UNIT_SELECTION_CHANGED, ActionPadVC.__on_selection_changed, self)
-        self.view.show()
-
-    def deactivate(self):
-        self.view.hide()
-        pf.unregister_event_handler(pf.EVENT_UNIT_SELECTION_CHANGED, ActionPadVC.__on_selection_changed)
+    @abstractmethod
+    def action(self, idx):
+        """ Returns the action descriptor at the specified slot, or None for no action """
+        if not (idx >= 0 and idx < (ACTION_NUM_ROWS * ACTION_NUM_COLS)):
+            raise IndexError
+        return None
 
