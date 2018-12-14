@@ -35,6 +35,12 @@
 
 #include "ui_style_script.h"
 #include "../lib/public/nuklear.h"
+#include "../lib/public/khash.h"
+#include "../lib/public/stb_image.h"
+#include "../render/public/render.h"
+
+#include <string.h>
+#include <assert.h>
 
 
 typedef struct {
@@ -70,6 +76,10 @@ static PyObject *PyPf_UIButtonStyle_get_image_padding(PyUIButtonStyleObject *sel
 static int       PyPf_UIButtonStyle_set_image_padding(PyUIButtonStyleObject *self, PyObject *value, void *);
 static PyObject *PyPf_UIButtonStyle_get_touch_padding(PyUIButtonStyleObject *self, void *);
 static int       PyPf_UIButtonStyle_set_touch_padding(PyUIButtonStyleObject *self, PyObject *value, void *);
+
+struct image_resource{
+    char path[128];
+};
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -207,6 +217,9 @@ static PyTypeObject PyUIButtonStyle_type = {
     0,                         /* tp_new */
 };
 
+KHASH_MAP_INIT_INT(image_res, struct image_resource)
+khash_t(image_res) *s_id_path_table;
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -252,6 +265,63 @@ static int parse_rgba(PyObject *tuple, float out[4])
     return 0;
 }
 
+static bool image_load(const char *img_path, int *out_id)
+{
+    extern char *g_basepath;
+    char path[512];
+    char *name = NULL;
+
+    if(strlen(img_path) + strlen(g_basepath) >= 128) {
+        PyErr_SetString(PyExc_RuntimeError, "Image path too long.");
+        return false;
+    }
+    strcpy(path, g_basepath);
+    strcat(path, img_path);
+
+    char *end = path + strlen(path) - 1;
+    while(end > path && *end != '/')
+        --end;
+    if(end == path || end == path + strlen(path) - 1) {
+        PyErr_SetString(PyExc_RuntimeError, "Malformed path for image.");
+        return false;
+    }
+    name = end + 1;
+    *end = '\0';
+
+    stbi_set_flip_vertically_on_load(false);
+    bool result = R_Texture_Load(path, name, out_id);
+    stbi_set_flip_vertically_on_load(true);
+    if(!result) {
+        PyErr_SetString(PyExc_RuntimeError, "Not able to load image.");
+        return false;
+    }
+
+    struct image_resource res;
+    strcpy(res.path, img_path);
+
+    int put_ret;
+    khiter_t k = kh_put(image_res, s_id_path_table, *out_id, &put_ret);
+    assert(put_ret != -1 && put_ret != 0);
+    kh_value(s_id_path_table, k) = res;
+
+    return true;
+}
+
+static bool image_get_or_load(const char *img_path, int *out_id)
+{
+    int id;
+    struct image_resource curr;
+    kh_foreach(s_id_path_table, id, curr, {
+    
+        if(0 == strcmp(img_path, curr.path)) {
+            *out_id = id;    
+            return true;
+        }
+    });
+
+    return image_load(img_path, out_id);
+}
+
 static PyObject *PyPf_UIButtonStyle_get_normal(PyUIButtonStyleObject *self, void *closure)
 {
     if(self->style->normal.type == NK_STYLE_ITEM_COLOR) {
@@ -261,8 +331,10 @@ static PyObject *PyPf_UIButtonStyle_get_normal(PyUIButtonStyleObject *self, void
             self->style->normal.data.color.b,
             self->style->normal.data.color.a);
     }else{
-        //TODO 
-        return NULL;
+
+        khiter_t k = kh_get(image_res, s_id_path_table, self->style->normal.data.image.handle.id);
+        assert(k != kh_end(s_id_path_table));
+        return PyString_FromString(kh_value(s_id_path_table, k).path);
     }
 }
 
@@ -271,12 +343,21 @@ static int PyPf_UIButtonStyle_set_normal(PyUIButtonStyleObject *self, PyObject *
     float rgba[4];
 
     if(parse_rgba(value, rgba) == 0) {
+
         self->style->normal.type = NK_STYLE_ITEM_COLOR;
         self->style->normal.data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
         return 0;
+
     }else if(PyString_Check(value)) {
-        //TODO 
-        return -1;
+
+        int id;
+        if(!image_get_or_load(PyString_AS_STRING(value), &id))
+            return -1; /* Error already set */
+
+        self->style->normal.type = NK_STYLE_ITEM_IMAGE;
+        self->style->normal.data.image = nk_image_id(id);
+        return 0;
+
     }else{
         PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
         return -1; 
@@ -292,8 +373,10 @@ static PyObject *PyPf_UIButtonStyle_get_hover(PyUIButtonStyleObject *self, void 
             self->style->hover.data.color.b,
             self->style->hover.data.color.a);
     }else{
-        //TODO 
-        return NULL;
+
+        khiter_t k = kh_get(image_res, s_id_path_table, self->style->hover.data.image.handle.id);
+        assert(k != kh_end(s_id_path_table));
+        return PyString_FromString(kh_value(s_id_path_table, k).path);
     }
 }
 
@@ -302,12 +385,21 @@ static int PyPf_UIButtonStyle_set_hover(PyUIButtonStyleObject *self, PyObject *v
     float rgba[4];
 
     if(parse_rgba(value, rgba) == 0) {
+
         self->style->hover.type = NK_STYLE_ITEM_COLOR;
         self->style->hover.data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
         return 0;
+
     }else if(PyString_Check(value)) {
-        //TODO 
-        return -1;
+
+        int id;
+        if(!image_get_or_load(PyString_AS_STRING(value), &id))
+            return -1; /* Error already set */
+
+        self->style->hover.type = NK_STYLE_ITEM_IMAGE;
+        self->style->hover.data.image = nk_image_id(id);
+        return 0;
+
     }else{
         PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
         return -1; 
@@ -323,8 +415,10 @@ static PyObject *PyPf_UIButtonStyle_get_active(PyUIButtonStyleObject *self, void
             self->style->active.data.color.b,
             self->style->active.data.color.a);
     }else{
-        //TODO 
-        return NULL;
+
+        khiter_t k = kh_get(image_res, s_id_path_table, self->style->active.data.image.handle.id);
+        assert(k != kh_end(s_id_path_table));
+        return PyString_FromString(kh_value(s_id_path_table, k).path);
     }
 }
 
@@ -333,12 +427,21 @@ static int PyPf_UIButtonStyle_set_active(PyUIButtonStyleObject *self, PyObject *
     float rgba[4];
 
     if(parse_rgba(value, rgba) == 0) {
+
         self->style->active.type = NK_STYLE_ITEM_COLOR;
         self->style->active.data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
         return 0;
+
     }else if(PyString_Check(value)) {
-        //TODO 
-        return -1;
+
+        int id;
+        if(!image_get_or_load(PyString_AS_STRING(value), &id))
+            return -1; /* Error already set */
+
+        self->style->active.type = NK_STYLE_ITEM_IMAGE;
+        self->style->active.data.image = nk_image_id(id);
+        return 0;
+
     }else{
         PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
         return -1; 
@@ -581,5 +684,16 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
 
     int ret = PyObject_SetAttrString(module, "button_style", (PyObject*)global_button_style);
     assert(0 == ret);
+}
+
+bool S_UI_Style_Init(void)
+{
+    s_id_path_table = kh_init(image_res);
+    return (s_id_path_table != NULL);
+}
+
+void S_UI_Style_Shutdown(void)
+{
+    kh_destroy(image_res, s_id_path_table);
 }
 

@@ -37,9 +37,12 @@
 #define UI_STYLE_SCRIPT_H
 
 #include <Python.h> /* must be first */
+#include <stdbool.h>
 
 struct nk_context;
 
+bool S_UI_Style_Init(void);
+void S_UI_Style_Shutdown(void);
 void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx);
 
 #endif

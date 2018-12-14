@@ -190,12 +190,12 @@ static PyGetSetDef PyWindow_getset[] = {
     {"spacing",
     (getter)PyWindow_get_spacing, 
     (setter)PyWindow_set_spacing,
-    "An (X, Y) tuple of floats to control the spacing within a window.", 
+    "An (X, Y) tuple of floats to control the spacing (between components) within a window.", 
     NULL},
     {"padding",
     (getter)PyWindow_get_padding, 
     (setter)PyWindow_set_padding,
-    "An (X, Y) tuple of floats to control the padding of a window.", 
+    "An (X, Y) tuple of floats to control the padding (between border and content) of a window.", 
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -724,13 +724,18 @@ bool S_UI_Init(struct nk_context *ctx)
 {
     assert(ctx);
     s_nk_ctx = ctx;
-
     kv_init(s_active_windows);
-    return E_Global_Register(EVENT_UPDATE_UI, active_windows_update, NULL);
+
+    if(!E_Global_Register(EVENT_UPDATE_UI, active_windows_update, NULL))
+        return false;
+    if(!S_UI_Style_Init())
+        return false;
+    return true;
 }
 
 void S_UI_Shutdown(void)
 {
+    S_UI_Style_Shutdown();
     E_Global_Unregister(EVENT_UPDATE_UI, active_windows_update);
     kv_destroy(s_active_windows);
 }

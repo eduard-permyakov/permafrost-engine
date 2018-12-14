@@ -45,10 +45,7 @@ struct texture{
 };
 
 void R_Texture_Init(void);
-bool R_Texture_GetForName(const char *name, GLuint *out);
-bool R_Texture_Load(const char *basedir, const char *name, GLuint *out);
 bool R_Texture_AddExisting(const char *name, GLuint id);
-void R_Texture_Free(const char *name);
 void R_Texture_GL_Activate(const struct texture *text, GLuint shader_prog);
 
 #endif

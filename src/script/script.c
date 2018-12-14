@@ -925,8 +925,8 @@ void S_Shutdown(void)
 {
     s_gc_all_ents();
     Py_Finalize();
-    S_UI_Shutdown();
     S_Entity_Shutdown();
+    S_UI_Shutdown();
 }
 
 bool S_RunFile(const char *path)
