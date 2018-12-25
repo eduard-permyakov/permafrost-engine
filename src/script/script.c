@@ -333,7 +333,10 @@ static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    G_NewGameWithMapString(mapstr);
+    if(!G_NewGameWithMapString(mapstr)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to create new game with the specified map file.");
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 
@@ -355,10 +358,10 @@ static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args)
     vec3_t color;
 
     if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list))
-        return NULL;
+        return NULL; /* exception already set */
 
     if(!s_vec3_from_pylist_arg(list, &color))
-        return NULL;
+        return NULL; /* exception already set */
 
     R_GL_SetAmbientLightColor(color);
     Py_RETURN_NONE;
@@ -370,10 +373,10 @@ static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args)
     vec3_t color;
 
     if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list))
-        return NULL;
+        return NULL; /* exception already set */
 
     if(!s_vec3_from_pylist_arg(list, &color))
-        return NULL;
+        return NULL; /* exception already set */
 
     R_GL_SetLightEmitColor(color);
     Py_RETURN_NONE;
@@ -388,8 +391,10 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    if(!Scene_Load(path))
+    if(!Scene_Load(path)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to load scene from the specified file.");
         return NULL;
+    }
 
     G_MakeStaticObjsImpassable();
     return S_Entity_GetAllList();
@@ -401,10 +406,10 @@ static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)
     vec3_t pos;
 
     if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list))
-        return NULL;
+        return NULL; /* exception already set */
 
     if(!s_vec3_from_pylist_arg(list, &pos))
-        return NULL;
+        return NULL; /* exception already set */
 
     R_GL_SetLightPos(pos);
     Py_RETURN_NONE;
@@ -449,6 +454,10 @@ static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args)
     }
 
     bool ret = E_Global_ScriptUnregister(event, callable);
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not unregister the specified event handler.");
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 
@@ -558,8 +567,9 @@ static PyObject *PyPf_get_factions_list(PyObject *self)
 {
     char names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
     vec3_t colors[MAX_FACTIONS];
+    bool controllable[MAX_FACTIONS];
 
-    size_t num_facs = G_GetFactions(names, colors, NULL);
+    size_t num_facs = G_GetFactions(names, colors, controllable);
 
     PyObject *ret = PyList_New(num_facs);
     if(!ret)
@@ -582,6 +592,9 @@ static PyObject *PyPf_get_factions_list(PyObject *self)
             goto fail_dict;
         PyDict_SetItemString(fac_dict, "color", color);
         Py_DECREF(color);
+
+        PyObject *control = controllable[i] ? Py_True : Py_False;
+        PyDict_SetItemString(fac_dict, "controllable", control);
     }
 
     return ret;
@@ -702,10 +715,12 @@ static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args)
     }
 
     bool result = G_UpdateChunkMats(chunk_r, chunk_c, mats_str);
-    if(!result)
+    if(!result) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not update chunk material.");
         return NULL;
-    else
+    }else {
         Py_RETURN_NONE;
+    }
 }
 
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args)
@@ -724,11 +739,15 @@ static PyObject *PyPf_update_tile(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    if(!G_UpdateTile(&desc, tile))
+    if(!G_UpdateTile(&desc, tile)) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not update tile.");
         return NULL;
+    }
 
-    if(!G_UpdateMinimapChunk(desc.chunk_r, desc.chunk_c))
+    if(!G_UpdateMinimapChunk(desc.chunk_r, desc.chunk_c)) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not update minimap chunk.");
         return NULL;
+    }
 
     Py_RETURN_NONE;
 }
@@ -805,9 +824,9 @@ static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args)
     }
 
     if(!s_quat_from_pylist_arg(q1_list, &q1))
-        return NULL;
+        return NULL; /* exception already set */
     if(!s_quat_from_pylist_arg(q2_list, &q2))
-        return NULL;
+        return NULL; /* exception already set */
 
     PFM_Quat_MultQuat(&q1, &q2, &ret);
     PFM_Quat_Normal(&ret, &ret);
