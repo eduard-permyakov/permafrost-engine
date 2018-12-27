@@ -254,26 +254,28 @@ static void on_30hz_tick(void *user, void *event)
             struct entity *enemy;
             if((enemy = closest_enemy_in_range(curr, G_GetDynamicEntsSet() )) != NULL) {
 
-                cs->target = enemy;
-                cs->state = STATE_MOVING_TO_TARGET;
-                cs->prev_target_pos = (vec2_t){enemy->pos.x, enemy->pos.z};
-
-                vec2_t move_dest_xz;
-                if(!cs->move_cmd_interrupted && G_Move_GetDest(curr, &move_dest_xz)) {
-                    cs->move_cmd_interrupted = true; 
-                    cs->move_cmd_xz = move_dest_xz;
-                }
-
                 if(ents_distance(curr, enemy) <= ENEMY_MELEE_ATTACK_RANGE) {
 
                     assert(cs->stance == COMBAT_STANCE_AGGRESSIVE 
                         || cs->stance == COMBAT_STANCE_HOLD_POSITION);
+
+                    cs->target = enemy;
                     cs->state = STATE_CAN_ATTACK;
                     G_Move_RemoveEntity(curr);
                     entity_turn_to_target(curr, enemy);
                     E_Entity_Notify(EVENT_ATTACK_START, curr->uid, NULL, ES_ENGINE);
                 
                 }else if(cs->stance == COMBAT_STANCE_AGGRESSIVE) {
+
+                    cs->target = enemy;
+                    cs->state = STATE_MOVING_TO_TARGET;
+                    cs->prev_target_pos = (vec2_t){enemy->pos.x, enemy->pos.z};
+
+                    vec2_t move_dest_xz;
+                    if(!cs->move_cmd_interrupted && G_Move_GetDest(curr, &move_dest_xz)) {
+                        cs->move_cmd_interrupted = true; 
+                        cs->move_cmd_xz = move_dest_xz;
+                    }
                 
                     vec2_t enemy_pos_xz = (vec2_t){enemy->pos.x, enemy->pos.z};
                     G_Move_SetDest(curr, enemy_pos_xz);
@@ -401,6 +403,9 @@ void G_Combat_RemoveEntity(const struct entity *ent)
     assert(cs);
     if(cs->state == STATE_ATTACK_ANIM_PLAYING) {
         E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish);
+    }
+    if(cs->state == STATE_ATTACK_ANIM_PLAYING
+    || cs->state == STATE_CAN_ATTACK) {
         E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
     }
     combatstate_remove(ent);
@@ -416,22 +421,12 @@ bool G_Combat_SetStance(const struct entity *ent, enum combat_stance stance)
         return true;
 
     if(stance == COMBAT_STANCE_NO_ENGAGEMENT) {
-
-        if(cs->state == STATE_ATTACK_ANIM_PLAYING) {
-            E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish);
-            E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
-        }
-        cs->state = STATE_NOT_IN_COMBAT;
-        cs->target = NULL;
-
-        if(cs->move_cmd_interrupted) {
-            G_Move_SetDest(ent, cs->move_cmd_xz);
-            cs->move_cmd_interrupted = false;
-        }
+        G_Combat_StopAttack(ent);
     }
 
     if(stance == COMBAT_STANCE_HOLD_POSITION && cs->state == STATE_MOVING_TO_TARGET) {
 
+        G_Move_RemoveEntity(ent);
         cs->state = STATE_NOT_IN_COMBAT;
         cs->target = NULL;
         cs->move_cmd_interrupted = false;
@@ -441,11 +436,34 @@ bool G_Combat_SetStance(const struct entity *ent, enum combat_stance stance)
     return true;
 }
 
-
 void G_Combat_ClearSavedMoveCmd(const struct entity *ent)
 {
     struct combatstate *cs = combatstate_get(ent);
     if(cs) {
+        cs->move_cmd_interrupted = false;
+    }
+}
+
+void G_Combat_StopAttack(const struct entity *ent)
+{
+    struct combatstate *cs = combatstate_get(ent);
+    if(!cs)
+        return;
+
+    if(cs->state == STATE_ATTACK_ANIM_PLAYING) {
+        E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish);
+    }
+
+    if(cs->state == STATE_ATTACK_ANIM_PLAYING
+    || cs->state == STATE_CAN_ATTACK) {
+        E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
+    }
+
+    cs->state = STATE_NOT_IN_COMBAT;
+    cs->target = NULL;
+
+    if(cs->move_cmd_interrupted) {
+        G_Move_SetDest(ent, cs->move_cmd_xz);
         cs->move_cmd_interrupted = false;
     }
 }

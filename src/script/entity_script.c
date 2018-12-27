@@ -84,6 +84,8 @@ static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_select(PyEntityObject *self);
 static PyObject *PyEntity_deselect(PyEntityObject *self);
+static PyObject *PyEntity_stop(PyEntityObject *self);
+static PyObject *PyEntity_hold_position(PyEntityObject *self);
 
 static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_del(PyAnimEntityObject *self);
@@ -142,6 +144,14 @@ static PyMethodDef PyEntity_methods[] = {
     {"deselect", 
     (PyCFunction)PyEntity_deselect, METH_NOARGS,
     "Removes the entity from the current unit selection, if it is selected."},
+
+    {"stop", 
+    (PyCFunction)PyEntity_stop, METH_NOARGS,
+    "Issues a 'stop' command to the entity, stopping its' movement and attack. Cancels 'hold position' order."},
+
+    {"hold_position", 
+    (PyCFunction)PyEntity_hold_position, METH_NOARGS,
+    "Issues a 'hold position' order to the entity, stopping it and preventing it from moving to attack."},
 
     {NULL}  /* Sentinel */
 };
@@ -741,6 +751,21 @@ static PyObject *PyEntity_deselect(PyEntityObject *self)
 {
     assert(self->ent);
     G_Sel_Remove(self->ent);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_stop(PyEntityObject *self)
+{
+    assert(self->ent);
+    G_StopEntity(self->ent);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_hold_position(PyEntityObject *self)
+{
+    assert(self->ent);
+    G_StopEntity(self->ent);
+    G_Combat_SetStance(self->ent, COMBAT_STANCE_HOLD_POSITION);
     Py_RETURN_NONE;
 }
 

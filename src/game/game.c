@@ -438,6 +438,13 @@ bool G_RemoveEntity(struct entity *ent)
     return true;
 }
 
+void G_StopEntity(const struct entity *ent)
+{
+    G_Combat_StopAttack(ent);
+    G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
+    G_Move_RemoveEntity(ent);
+}
+
 bool G_AddFaction(const char *name, vec3_t color)
 {
     if(s_gs.num_factions == MAX_FACTIONS)

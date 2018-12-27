@@ -66,6 +66,7 @@ enum diplomacy_state{
 typedef kvec_t(struct entity*) pentity_kvec_t;
 KHASH_DECLARE(entity, khint32_t, struct entity*)
 
+
 /*###########################################################################*/
 /* GAME GENERAL                                                              */
 /*###########################################################################*/
@@ -87,6 +88,7 @@ void   G_MakeStaticObjsImpassable(void);
 
 bool   G_AddEntity(struct entity *ent);
 bool   G_RemoveEntity(struct entity *ent);
+void   G_StopEntity(const struct entity *ent);
 
 bool   G_AddFaction(const char *name, vec3_t color);
 bool   G_RemoveFaction(int faction_id);
@@ -103,6 +105,7 @@ vec3_t G_ActiveCamDir(void);
 bool   G_UpdateMinimapChunk(int chunk_r, int chunk_c);
 bool   G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string);
 bool   G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
+
 
 /*###########################################################################*/
 /* GAME SELECTION                                                            */
@@ -121,6 +124,32 @@ void                  G_Sel_Clear(void);
 void                  G_Sel_Add(struct entity *ent);
 void                  G_Sel_Remove(struct entity *ent);
 const pentity_kvec_t *G_Sel_Get(enum selection_type *out_type);
+
+
+/*###########################################################################*/
+/* GAME MOVEMENT                                                             */
+/*###########################################################################*/
+
+void G_Move_SetMoveOnLeftClick(void);
+void G_Move_SetAttackOnLeftClick(void);
+
+
+/*###########################################################################*/
+/* GAME COMBAT                                                               */
+/*###########################################################################*/
+
+enum combat_stance{
+    /* The entity will move to attack anyone within 
+     * its' target acquisition radius. */
+    COMBAT_STANCE_AGGRESSIVE,
+    /* The entity will attack entities within its' attack
+     * range but it will not move from its' current position. */
+    COMBAT_STANCE_HOLD_POSITION,
+    /* The entity will not take part in combat. */
+    COMBAT_STANCE_NO_ENGAGEMENT,
+};
+
+bool G_Combat_SetStance(const struct entity *ent, enum combat_stance stance);
 
 #endif
 

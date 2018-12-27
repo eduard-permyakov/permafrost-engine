@@ -55,8 +55,6 @@
 #include <SDL.h>
 
 
-#define ATTACK_HOTKEY (SDL_SCANCODE_A)
-
 /* For the purpose of movement simulation, all entities have the same mass,
  * meaning they are accelerate the same amount when applied equal forces. */
 #define ENTITY_MASS (1.0f)
@@ -119,6 +117,7 @@ struct flock{
 
 static const struct map       *s_map;
 static bool                    s_attack_on_lclick = false;
+static bool                    s_move_on_lclick = false;
 
 static kvec_t(struct entity*)  s_move_markers;
 static kvec_t(struct flock)    s_flocks;
@@ -438,10 +437,14 @@ static void on_mousedown(void *user, void *event)
 {
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
 
+    assert(!s_move_on_lclick || !s_attack_on_lclick);
     bool attack = s_attack_on_lclick && (mouse_event->button == SDL_BUTTON_LEFT);
-    bool move = (mouse_event->button == SDL_BUTTON_RIGHT);
+    bool move = s_move_on_lclick ? mouse_event->button == SDL_BUTTON_LEFT
+                                 : mouse_event->button == SDL_BUTTON_RIGHT;
+    assert(!attack || !move);
 
     s_attack_on_lclick = false;
+    s_move_on_lclick = false;
     Cursor_SetRTSPointer(CURSOR_POINTER);
 
     if(G_MouseOverMinimap())
@@ -473,23 +476,6 @@ static void on_mousedown(void *user, void *event)
 
         move_marker_add(mouse_coord, attack);
         make_flock_from_selection(sel, (vec2_t){mouse_coord.x, mouse_coord.z}, attack);
-    }
-}
-
-static void on_keydown(void *user, void *event)
-{
-    s_attack_on_lclick = false;
-    Cursor_SetRTSPointer(CURSOR_POINTER);
-
-    SDL_KeyboardEvent *key_event = &(((SDL_Event*)event)->key);
-    enum selection_type sel_type;
-    const pentity_kvec_t *sel = G_Sel_Get(&sel_type);
-
-    if(key_event->keysym.scancode == ATTACK_HOTKEY 
-    && kv_size(*sel) > 0 && sel_type == SELECTION_TYPE_PLAYER) {
-
-        s_attack_on_lclick = true;
-        Cursor_SetRTSPointer(CURSOR_TARGET);
     }
 }
 
@@ -944,7 +930,6 @@ bool G_Move_Init(const struct map *map)
     kv_init(s_flocks);
 
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL);
-    E_Global_Register(SDL_KEYDOWN, on_keydown, NULL);
     E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL);
     E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL);
 
@@ -958,7 +943,6 @@ void G_Move_Shutdown(void)
 
     E_Global_Unregister(EVENT_30HZ_TICK, on_30hz_tick);
     E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
-    E_Global_Unregister(SDL_KEYDOWN, on_keydown);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
 
     for(int i = 0; i < kv_size(s_move_markers); i++) {
@@ -972,6 +956,12 @@ void G_Move_Shutdown(void)
 }
 
 void G_Move_RemoveEntity(const struct entity *ent)
+{
+    G_Move_Stop(ent);
+    movestate_remove(ent);
+}
+
+void G_Move_Stop(const struct entity *ent)
 {
     uint32_t key;
     struct entity *curr;
@@ -990,9 +980,13 @@ void G_Move_RemoveEntity(const struct entity *ent)
 
     struct movestate *ms = movestate_get(ent);
     if(ms && ms->state != STATE_ARRIVED) {
+
+        *ms = (struct movestate) {
+            .state = STATE_ARRIVED,
+            .velocity = (vec2_t){0.0f}
+        };
         entity_finish_moving(ent);
     }
-    movestate_remove(ent);
 }
 
 bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz)
@@ -1015,5 +1009,19 @@ void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz)
 
     make_flock_from_selection(&to_add, dest_xz, false);
     kv_destroy(to_add);
+}
+
+void G_Move_SetMoveOnLeftClick(void)
+{
+    s_attack_on_lclick = false;
+    s_move_on_lclick = true;
+    Cursor_SetRTSPointer(CURSOR_TARGET);
+}
+
+void G_Move_SetAttackOnLeftClick(void)
+{
+    s_attack_on_lclick = true;
+    s_move_on_lclick = false;
+    Cursor_SetRTSPointer(CURSOR_TARGET);
 }
 

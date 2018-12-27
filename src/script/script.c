@@ -92,6 +92,8 @@ static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args);
 static PyObject *PyPf_mouse_over_minimap(PyObject *self);
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
+static PyObject *PyPf_set_move_on_left_click(PyObject *self);
+static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
 
 static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args);
 
@@ -247,6 +249,16 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_map_pos_under_cursor, METH_NOARGS,
     "Returns the XYZ coordinate of the point of the map underneath the cursor. Returns 'None' if "
     "the cursor is not over the map."},
+
+    {"set_move_on_left_click",
+    (PyCFunction)PyPf_set_move_on_left_click, METH_NOARGS,
+    "Set the cursor to target mode. The next left click will issue a move command to the location "
+    "under the cursor."},
+
+    {"set_attack_on_left_click",
+    (PyCFunction)PyPf_set_attack_on_left_click, METH_NOARGS,
+    "Set the cursor to target mode. The next left click will issue an attack command to the location "
+    "under the cursor."},
 
     {"multiply_quaternions",
     (PyCFunction)PyPf_multiply_quaternions, METH_VARARGS,
@@ -811,6 +823,18 @@ static PyObject *PyPf_map_pos_under_cursor(PyObject *self)
         return Py_BuildValue("[fff]", pos.x, pos.y, pos.z);
     else
         Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_move_on_left_click(PyObject *self)
+{
+    G_Move_SetMoveOnLeftClick();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_attack_on_left_click(PyObject *self)
+{
+    G_Move_SetAttackOnLeftClick();
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args)
