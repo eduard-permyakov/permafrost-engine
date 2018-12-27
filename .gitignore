@@ -21,6 +21,7 @@
 !/assets/fonts
 !/assets/map_textures
 !/assets/loading_screens
+!/assets/icons
 
 *.pyc
 *.pickle

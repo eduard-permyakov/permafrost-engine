@@ -1,0 +1,1 @@
+Glest icons by Jose Zanni from OpenGameArt.org are licensed under CC-BY-SA 3.0
