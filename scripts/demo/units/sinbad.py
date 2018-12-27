@@ -35,7 +35,9 @@
 import anim_moveable as am
 import anim_combatable as ac
 from constants import *
+import pf
 import weakref
+import action
 
 class Sinbad(am.AnimMoveable, ac.AnimCombatable):
 
@@ -50,14 +52,9 @@ class Sinbad(am.AnimMoveable, ac.AnimCombatable):
             max_hp = 250,
             base_dmg = 80,
             base_armour = 0.50)
-        self.register(EVENT_SINBAD_TOGGLE_ANIM, Sinbad.on_anim_toggle, weakref.ref(self))
         self.speed = 20.0
     
-    def __del__(self):
-        self.unregister(EVENT_SINBAD_TOGGLE_ANIM, Sinbad.on_anim_toggle)
-        super(Sinbad, self).__del__()
-    
-    def on_anim_toggle(self, event):
+    def anim_toggle(self):
         self.idle_idx = (self.idle_idx + 1) % len(self.idle_map)
         if not self.moving:
             self.play_anim(self.idle_map[self.idle_idx])
@@ -75,4 +72,20 @@ class Sinbad(am.AnimMoveable, ac.AnimCombatable):
 
     def death_anim(self): 
         return "JumpStart"
+
+    def action(self, idx):
+        if idx == 8:
+            return action.ActionDesc(
+                icon_normal="assets/icons/glest/magic-actions/summoner_daemon_normal.bmp",
+                icon_hover="assets/icons/glest/magic-actions/summoner_daemon_hover.bmp",
+                icon_active="assets/icons/glest/magic-actions/summoner_daemon_active.bmp",
+                action = Sinbad.__toggle_idle_action,
+                hotkey = pf.SDL_SCANCODE_V)
+        return super(Sinbad, self).action(idx)
+
+    @classmethod
+    def __toggle_idle_action(cls):
+        for ent in pf.get_unit_selection():
+            if isinstance(ent, Sinbad):
+                ent.anim_toggle()
 

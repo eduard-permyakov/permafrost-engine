@@ -40,6 +40,10 @@ import controllable as cont
 import action
 
 class AnimMoveable(pf.AnimEntity, cont.Controllable):
+    """ 
+    Mixin base that extends animated entities with behaviours for playing specific
+    animations on movement, as well as adds 'move' and 'stop' actions.
+    """
     __metaclass__ = ABCMeta
 
     def __init__(self, path, pfobj, name, **kwargs):

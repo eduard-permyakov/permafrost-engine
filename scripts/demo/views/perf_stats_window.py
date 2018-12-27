@@ -37,7 +37,7 @@ import pf
 class PerfStatsWindow(pf.Window):
 
     def __init__(self):
-        super(PerfStatsWindow, self).__init__("Performance", (280, 25, 600, 200), 
+        super(PerfStatsWindow, self).__init__("Performance", (300, 25, 600, 195), 
             pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE | pf.NK_WINDOW_NO_SCROLLBAR)
         self.tickindex = 0
         self.ticksum_ms = 0

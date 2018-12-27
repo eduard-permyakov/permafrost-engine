@@ -41,6 +41,12 @@ import action
 import controllable as cont
 
 class AnimCombatable(pf.AnimEntity, pf.CombatableEntity, cont.Controllable):
+    """ 
+    Mixin base that extends animated and combatable entities with behaviours for 
+    playing specific animations on attack and death, as well as adds 'hold positon'
+    and 'attack' actions.
+        
+    """
     __metaclass__ = ABCMeta
 
     def __init__(self, path, pfobj, name, **kwargs):

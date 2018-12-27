@@ -40,6 +40,7 @@ import views.perf_stats_window as psw
 import views.action_pad_window as apw
 
 import view_controllers.action_pad_vc as apvc
+import view_controllers.demo_vc as dvc
 
 from constants import *
 from units import *
@@ -81,24 +82,17 @@ def toggle_camera(user, event):
         active_cam_idx = (active_cam_idx + 1) % 2
         pf.activate_camera(active_cam_idx, mode_for_idx[active_cam_idx])
 
-def toggle_sinbad(user, event):
-    if event[0] == pf.SDL_SCANCODE_V:
-        for ent in [obj for obj in globals.scene_objs if isinstance(obj, sinbad.Sinbad)]:
-            ent.notify(EVENT_SINBAD_TOGGLE_ANIM, None)
-
-
 pf.register_event_handler(pf.SDL_KEYDOWN, toggle_camera, None)
-pf.register_event_handler(pf.SDL_KEYDOWN, toggle_sinbad, None)
 
 ############################################################
 # Setup UI                                                 #
 ############################################################
 
-demo_win = dw.DemoWindow()
-demo_win.show()
-
 perf_win = psw.PerfStatsWindow()
 perf_win.show()
+
+demo_vc = dvc.DemoVC(dw.DemoWindow())
+demo_vc.activate()
 
 action_pad_vc = apvc.ActionPadVC(apw.ActionPadWindow())
 action_pad_vc.activate()

@@ -40,8 +40,8 @@ ACTION_NUM_ROWS = 3
 ACTION_NUM_COLS = 4
 
 ############################################################
-# Demo-specific events                                     #
+# Demo specific events                                     #
 ############################################################
 
-EVENT_SINBAD_TOGGLE_ANIM = 0x20000
+EVENT_CONTROLLED_FACTION_CHANGED = 0x20000
 

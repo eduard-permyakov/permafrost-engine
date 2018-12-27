@@ -33,30 +33,42 @@
 #
 
 import pf
+from constants import *
 
 class DemoWindow(pf.Window):
 
+    WIDTH = 250
+    HEIGHT = 260
+
     def __init__(self):
-        super(DemoWindow, self).__init__("Permafrost Engine Demo", (25, 25, 230, 200), 
-            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE)
+        super(DemoWindow, self).__init__("Permafrost Engine Demo", (25, 25, DemoWindow.WIDTH, DemoWindow.HEIGHT), 
+            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE |  pf.NK_WINDOW_NO_SCROLLBAR)
+        self.fac_names = []
+        self.active_fac_idx = 0
 
     def update(self):
 
         def on_button_click():
             pf.global_event(pf.SDL_QUIT, None)
 
-        self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Demo Hotkeys:", (255, 255, 255));
+        def factions_group():
+            self.layout_row_dynamic(25, 1)
+            for i in range(0, len(self.fac_names)):
+                old = self.active_fac_idx
+                on = self.selectable_label(self.fac_names[i], 
+                pf.NK_TEXT_ALIGN_LEFT, i == self.active_fac_idx)
+                if on: 
+                    self.active_fac_idx = i
+                if self.active_fac_idx != old:
+                    pf.global_event(EVENT_CONTROLLED_FACTION_CHANGED, i)
 
         self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("    C - Toggle Camera", (255, 255, 255));
+        self.label_colored_wrap("Controlled Faction:", (255, 255, 255))
 
-        self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("    V - Toggle Animation", (255, 255, 255));
+        self.layout_row_dynamic(140, 1)
+        self.group("Controlled Faction", pf.NK_WINDOW_BORDER, factions_group)
 
-        self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("    ESC - Exit Demo", (255, 255, 255));
-
+        self.layout_row_dynamic(5, 1)
         self.layout_row_dynamic(30, 1)
         self.button_label("Exit Demo", on_button_click)
 

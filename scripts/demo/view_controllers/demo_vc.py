@@ -32,36 +32,29 @@
 #  statement from your version.
 #
 
-from abc import ABCMeta, abstractmethod
 import pf
 from constants import *
-import action
+import view_controller as vc
 
-class Controllable(pf.Entity):
-    """
-    Mixin base that adds the ability to customize the entity's actions in the action pad.
-    """
-    __metaclass__ = ABCMeta
+class DemoVC(vc.ViewController):
 
-    def __init__(self, path, pfobj, name, **kwargs):
-        super(Controllable, self).__init__(path, pfobj, name, **kwargs)
-        # Detect any conflicts in hotkeys
-        actions = []
-        for i in range(0, ACTION_NUM_ROWS * ACTION_NUM_COLS):
-            action = self.action(i)
-            if not action:
-                continue
-            if not action.hotkey:
-                continue
-            for other_action in actions:
-                if other_action.hotkey == action.hotkey:
-                    raise RuntimeError("Conflict in hotkeys for instance of %s" % type(self).__name__)
-            actions += [action]
+    def __init__(self, view):
+        self.__view = view
+        self.__view.fac_names = [fac["name"] for fac in pf.get_factions_list()]
+        assert len(self.__view.fac_names) >= 2
+        self.__view.active_fac_idx = 1
 
-    @abstractmethod
-    def action(self, idx):
-        """ Returns the action descriptor at the specified slot, or None for no action """
-        if not (idx >= 0 and idx < (ACTION_NUM_ROWS * ACTION_NUM_COLS)):
-            raise IndexError
-        return None
+    def __on_controlled_faction_chagned(self, event):
+        pf.clear_unit_selection()
+        for i in range(len(pf.get_factions_list())):
+            pf.set_faction_controllable(i, False) 
+        pf.set_faction_controllable(event, True)
+
+    def activate(self):
+        pf.register_event_handler(EVENT_CONTROLLED_FACTION_CHANGED, DemoVC.__on_controlled_faction_chagned, self)
+        self.__view.show()
+
+    def deactivate(self):
+        self.__view.hide()
+        pf.unregister_event_handler(EVENT_CONTROLLED_FACTION_CHANGED, DemoVC.__on_controlled_faction_chagned)
 
