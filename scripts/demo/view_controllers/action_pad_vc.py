@@ -36,26 +36,56 @@ import pf
 from constants import *
 import view_controller as vc
 import units.controllable as cont
+import weakref
 
 class ActionPadVC(vc.ViewController):
 
     def __init__(self, view):
-        self.view = view
+        self.__view = view
+        self.__hotkey_action_map = {}
+        self.__active_controllable = None
+
+    def __install_hotkeys(self, controllable):
+        for i in range(0, ACTION_NUM_ROWS * ACTION_NUM_COLS):
+            act = controllable.action(i)
+            if act and act.hotkey:
+                self.__hotkey_action_map[act.hotkey] = act.action
+    
+    def __uninstall_hotkeys(self, controllable):
+        for i in range(0, ACTION_NUM_ROWS * ACTION_NUM_COLS):
+            act = controllable.action(i)
+            if act and act.hotkey:
+                del self.__hotkey_action_map[act.hotkey]
 
     def __on_selection_changed(self, event):
+        self.__view.clear_actions()
+        if self.__active_controllable and self.__active_controllable():
+            self.__uninstall_hotkeys(self.__active_controllable())
+            self.__active_controllable = None
+
         sel = pf.get_unit_selection()
         controllable_sel = [ent for ent in sel if isinstance(ent, cont.Controllable)]
+
         if len(controllable_sel) > 0:
             first = controllable_sel[0]
-            self.view.actions = [first.action(i) for i in range(0, ACTION_NUM_ROWS * ACTION_NUM_COLS)]
-        else:
-            self.view.clear_actions()
+            fac_list = pf.get_factions_list()
+            if fac_list[first.faction_id]["controllable"]:
+                self.__active_controllable = weakref.ref(first)
+                self.__install_hotkeys(first)
+                self.__view.actions = [first.action(i) for i in range(0, ACTION_NUM_ROWS * ACTION_NUM_COLS)]
+
+    def __on_keydown(self, event):
+        scancode = event[0]
+        if scancode in self.__hotkey_action_map:
+            self.__hotkey_action_map[scancode]()
 
     def activate(self):
         pf.register_event_handler(pf.EVENT_UNIT_SELECTION_CHANGED, ActionPadVC.__on_selection_changed, self)
-        self.view.show()
+        pf.register_event_handler(pf.SDL_KEYDOWN, ActionPadVC.__on_keydown, self)
+        self.__view.show()
 
     def deactivate(self):
-        self.view.hide()
+        self.__view.hide()
+        pf.unregister_event_handler(pf.SDL_KEYDOWN, ActionPadVC.__on_keydown)
         pf.unregister_event_handler(pf.EVENT_UNIT_SELECTION_CHANGED, ActionPadVC.__on_selection_changed)
 

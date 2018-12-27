@@ -91,12 +91,23 @@ class AnimCombatable(pf.AnimEntity, pf.CombatableEntity, cont.Controllable):
                 icon_normal="assets/icons/glest/magic-actions/magic_hold_normal.bmp",
                 icon_hover="assets/icons/glest/magic-actions/magic_hold_hover.bmp",
                 icon_active="assets/icons/glest/magic-actions/magic_hold_active.bmp",
-                action = lambda: None)
+                action = AnimCombatable.__hold_position_action,
+                hotkey = pf.SDL_SCANCODE_H)
         if idx == 3:
             return action.ActionDesc(
                 icon_normal="assets/icons/glest/magic-actions/magic_armor_attack_normal.bmp",
                 icon_hover="assets/icons/glest/magic-actions/magic_armor_attack_hover.bmp",
                 icon_active="assets/icons/glest/magic-actions/magic_armor_attack_active.bmp",
-                action = lambda: None)
+                action = AnimCombatable.__attack_action,
+                hotkey = pf.SDL_SCANCODE_A)
         return super(AnimCombatable, self).action(idx)
+
+    @classmethod
+    def __attack_action(cls):
+        pf.set_attack_on_left_click()
+
+    @classmethod
+    def __hold_position_action(cls):
+        for ent in pf.get_unit_selection():
+            ent.hold_position()
 

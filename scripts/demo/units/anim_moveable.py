@@ -79,12 +79,23 @@ class AnimMoveable(pf.AnimEntity, cont.Controllable):
                 icon_normal="assets/icons/glest/magic-actions/magic_move_normal.bmp",
                 icon_hover="assets/icons/glest/magic-actions/magic_move_hover.bmp",
                 icon_active="assets/icons/glest/magic-actions/magic_move_active.bmp",
-                action = lambda: None)
-        if idx == 1:
+                action = AnimMoveable.__move_action,
+                hotkey = pf.SDL_SCANCODE_M)
+        if idx == 1 and super(AnimMoveable, self).action(1) is None:
             return action.ActionDesc(
                 icon_normal="assets/icons/glest/magic-actions/magic_stop_normal.bmp",
                 icon_hover="assets/icons/glest/magic-actions/magic_stop_hover.bmp",
                 icon_active="assets/icons/glest/magic-actions/magic_stop_active.bmp",
-                action = lambda: None)
+                action = AnimMoveable.__stop_action,
+                hotkey = pf.SDL_SCANCODE_S)
         return super(AnimMoveable, self).action(idx)
+
+    @classmethod
+    def __move_action(cls):
+        pf.set_move_on_left_click()
+
+    @classmethod
+    def __stop_action(cls):
+        for ent in pf.get_unit_selection():
+            ent.stop()
 

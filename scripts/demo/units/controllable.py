@@ -53,7 +53,7 @@ class Controllable(pf.Entity):
             for other_action in actions:
                 if other_action.hotkey == action.hotkey:
                     raise RuntimeError("Conflict in hotkeys for instance of %s" % type(self).__name__)
-            actions += action
+            actions += [action]
 
     @abstractmethod
     def action(self, idx):
