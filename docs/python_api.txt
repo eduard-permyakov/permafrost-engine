@@ -121,6 +121,11 @@ BUILT-IN FUNCTIONS
     Sets the global ambient light color (specified as an RGB multiplier) for the
     scene.
 
+    [set_attack_on_left_click]
+    --------------------------------------------------------------------------------
+    Set the cursor to target mode. The next left click will issue an attack command
+    to the location under the cursor.
+
     [set_diplomacy_state]
     --------------------------------------------------------------------------------
     Symmetrically sets the diplomacy state between two distinct factions (passed in
@@ -150,6 +155,11 @@ BUILT-IN FUNCTIONS
     [set_minimap_position]
     --------------------------------------------------------------------------------
     Set the center position of the minimap in screen coordinates.
+
+    [set_move_on_left_click]
+    --------------------------------------------------------------------------------
+    Set the cursor to target mode. The next left click will issue a move command to
+    the location under the cursor.
 
     [unregister_event_handler]
     --------------------------------------------------------------------------------
@@ -226,6 +236,10 @@ BUILT-IN CLASSES
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
+        [hold_position]
+        Issues a 'hold position' order to the entity, stopping it and preventing it from
+        moving to attack.
+
         [notify]
         Send a specific event to an entity in order to invoke the entity's event
         handlers. Weakref arguments are automatically unpacked before being
@@ -241,6 +255,10 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present there
         already.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and attack.
+        Cancels 'hold position' order.
 
         [unregister]
         Unregisters a callable previously registered to be invoked on the specified
@@ -311,6 +329,10 @@ BUILT-IN CLASSES
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
+        [hold_position]
+        Issues a 'hold position' order to the entity, stopping it and preventing it from
+        moving to attack.
+
         [notify]
         Send a specific event to an entity in order to invoke the entity's event
         handlers. Weakref arguments are automatically unpacked before being
@@ -326,6 +348,10 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present there
         already.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and attack.
+        Cancels 'hold position' order.
 
         [unregister]
         Unregisters a callable previously registered to be invoked on the specified
@@ -384,6 +410,10 @@ BUILT-IN CLASSES
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
+        [hold_position]
+        Issues a 'hold position' order to the entity, stopping it and preventing it from
+        moving to attack.
+
         [notify]
         Send a specific event to an entity in order to invoke the entity's event
         handlers. Weakref arguments are automatically unpacked before being
@@ -396,6 +426,10 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present there
         already.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and attack.
+        Cancels 'hold position' order.
 
         [unregister]
         Unregisters a callable previously registered to be invoked on the specified
@@ -481,6 +515,24 @@ BUILT-IN CLASSES
     [Window]
     --------------------------------------------------------------------------------
     Permafrost Engine UI window.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [padding]
+        An (X, Y) tuple of floats to control the padding (between border and content) of
+        a window.
+
+        [position]
+        A tuple of two integers specifying the X and Y position of the window.
+
+        [size]
+        A tuple of two integers specifying the width and height dimentions of the
+        window.
+
+        [spacing]
+        An (X, Y) tuple of floats to control the spacing (between components) within a
+        window.
 
         ************************************************************************
         METHODS
