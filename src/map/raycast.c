@@ -175,7 +175,7 @@ static void rc_find_intersection(void)
                 &s_ctx.map->chunks[cts[i].chunk_r * s_ctx.map->width + cts[i].chunk_c];
             M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){cts[i].chunk_r, cts[i].chunk_c}, &model);
 
-            int num_verts = R_GL_TileGetTriMesh(&cts[i], chunk->render_private_tiles, &model, 
+            int num_verts = R_GL_TileGetTriMesh(&cts[i], chunk->render_private, &model, 
                 TILES_PER_CHUNK_WIDTH, tile_mesh);
 
             if(C_RayIntersectsTriMesh(ray_origin, ray_dir, tile_mesh, num_verts, &t)) {
@@ -238,7 +238,7 @@ static void on_render(void *user, void *event)
                 mat4x4_t model;
 
                 M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){curr.chunk_r, curr.chunk_c}, &model);
-                R_GL_TileDrawSelected(&curr, chunk->render_private_tiles, &model, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT); 
+                R_GL_TileDrawSelected(&curr, chunk->render_private, &model, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT); 
             }
         }
     }

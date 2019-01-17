@@ -58,19 +58,6 @@ struct tile_desc;
 struct obb;
 enum render_pass;
 
-enum chunk_render_mode{
-
-    /* The first option for rendering a terrain chunk is using a shader-based 
-     * approach to draw individual tiles. Each tile gets a texture and the 
-     * texture is blended with adjacent tiles' textures. */
-    CHUNK_RENDER_MODE_REALTIME_BLEND,
-
-    /* The second option is to initially render the entire top face of the 
-     * chunk to a single texture and use that. As well, during the 'baking'
-     * process we also strip away any non-visible tile faces. This makes rendering
-     * much faster but it is not suitable for real-time terrain updates.*/
-    CHUNK_RENDER_MODE_PREBAKED,
-};
 
 /*###########################################################################*/
 /* MAP GENERAL                                                               */
@@ -141,21 +128,6 @@ void   M_Raycast_SetHighlightSize(size_t size);
  * ------------------------------------------------------------------------
  */
 bool   M_Raycast_IntersecCoordinate(vec3_t *out);
-
-/* ------------------------------------------------------------------------
- * Sets the rendering mode for a particular chunk. In the case that the 
- * mode is 'CHUNK_RENDER_MODE_PREBAKED', the baking will be performed in
- * this call.
- * ------------------------------------------------------------------------
- */
-void   M_SetChunkRenderMode(struct map *map, int chunk_r, int chunk_c, 
-                            enum chunk_render_mode mode);
-
-/* ------------------------------------------------------------------------
- * Sets the render mode for every chunk in the map.
- * ------------------------------------------------------------------------
- */
-void   M_SetMapRenderMode(struct map *map, enum chunk_render_mode mode);
 
 /* ------------------------------------------------------------------------
  * Utility function to convert an XZ worldspace coordinate to one in the 

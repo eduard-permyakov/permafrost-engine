@@ -58,7 +58,6 @@ pf.set_emit_light_pos([1024.0, 768.0, 768.0])
 ############################################################
 
 pf.new_game("assets/maps", "demo.pfmap")
-pf.set_map_render_mode(pf.CHUNK_RENDER_MODE_PREBAKED)
 globals.scene_objs = pf.load_scene("assets/maps/demo.pfscene")
 
 pf.set_diplomacy_state(1, 2, pf.DIPLOMACY_STATE_WAR)

@@ -267,8 +267,6 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
         "mesh.animated.textured-phong",
         "mesh.animated.normals.colored",
         "terrain",
-        "terrain-baked",
-        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -292,8 +290,6 @@ void R_GL_SetProj(const mat4x4_t *proj)
         "mesh.animated.textured-phong",
         "mesh.animated.normals.colored",
         "terrain",
-        "terrain-baked",
-        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++)
@@ -309,7 +305,6 @@ void R_GL_SetLightSpaceTrans(const mat4x4_t *trans)
         "mesh.animated.depth",
         "mesh.static.textured-phong-shadowed",
         "mesh.animated.textured-phong-shadowed",
-        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++)
@@ -323,7 +318,6 @@ void R_GL_SetShadowMap(const GLuint shadow_map_tex_id)
     const char *shaders[] = {
         "mesh.static.textured-phong-shadowed",
         "mesh.animated.textured-phong-shadowed",
-        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -368,8 +362,6 @@ void R_GL_SetAmbientLightColor(vec3_t color)
         "mesh.animated.textured-phong",
         "mesh.animated.textured-phong-shadowed",
         "terrain",
-        "terrain-baked",
-        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -394,8 +386,6 @@ void R_GL_SetLightEmitColor(vec3_t color)
         "mesh.animated.textured-phong",
         "mesh.animated.textured-phong-shadowed",
         "terrain",
-        "terrain-baked",
-        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -420,8 +410,6 @@ void R_GL_SetLightPos(vec3_t pos)
         "mesh.animated.textured-phong",
         "mesh.animated.textured-phong-shadowed",
         "terrain",
-        "terrain-baked",
-        "terrain-baked-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {

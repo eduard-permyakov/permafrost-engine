@@ -159,7 +159,7 @@ bool M_InitMinimap(struct map *map, vec2_t center_pos)
         for(int c = 0; c < map->width; c++) {
             
             const struct pfchunk *curr = &map->chunks[r * map->width + c];
-            chunk_rprivates[r * map->width + c] = curr->render_private_tiles;
+            chunk_rprivates[r * map->width + c] = curr->render_private;
             M_ModelMatrixForChunk(map, (struct chunkpos){r, c}, chunk_model_mats + (r * map->width + c));
         }
     }
@@ -190,7 +190,7 @@ bool M_UpdateMinimapChunk(const struct map *map, int chunk_r, int chunk_c)
     mat4x4_t model;
     M_ModelMatrixForChunk(map, (struct chunkpos){chunk_r, chunk_c}, &model);
 
-    return R_GL_MinimapUpdateChunk(map, map->chunks[chunk_r * map->width + chunk_c].render_private_tiles, &model,
+    return R_GL_MinimapUpdateChunk(map, map->chunks[chunk_r * map->width + chunk_c].render_private, &model,
         map_center, map_size);
 }
 

@@ -44,17 +44,12 @@
 
 struct pfchunk{
 
-    enum chunk_render_mode mode;
     /* ------------------------------------------------------------------------
      * Initialized and used by the rendering subsystem. Holds the mesh data 
      * and everything the rendering subsystem needs to render this PFChunk.
-     * 
-     * There are two rendering contexts. The one that is used to render the 
-     * chunk depends on the 'mode' attribute.
      * ------------------------------------------------------------------------
      */
-    void           *render_private_tiles;
-    void           *render_private_prebaked;
+    void           *render_private;
     /* ------------------------------------------------------------------------
      * Worldspace position of the top left corner. 
      * ------------------------------------------------------------------------

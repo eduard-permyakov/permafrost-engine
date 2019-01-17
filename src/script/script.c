@@ -56,7 +56,6 @@
 
 static PyObject *PyPf_new_game(PyObject *self, PyObject *args);
 static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args);
-static PyObject *PyPf_set_map_render_mode(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
@@ -113,10 +112,6 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_new_game_string, METH_VARARGS,
     "The same as 'new_game' but takes the map contents string as an argument instead of "
     "a path and filename."},
-
-    {"set_map_render_mode", 
-    (PyCFunction)PyPf_set_map_render_mode, METH_VARARGS, 
-    "Sets the rendering mode for every chunk in the currently active map."},
 
     {"set_ambient_light_color", 
     (PyCFunction)PyPf_set_ambient_light_color, METH_VARARGS,
@@ -349,18 +344,6 @@ static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args)
         PyErr_SetString(PyExc_RuntimeError, "Unable to create new game with the specified map file.");
         return NULL;
     }
-    Py_RETURN_NONE;
-}
-
-static PyObject *PyPf_set_map_render_mode(PyObject *self, PyObject *args)
-{
-    int mode; 
-    if(!PyArg_ParseTuple(args, "i", &mode)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must an integer.");
-        return NULL;
-    }
-
-    G_SetMapRenderMode(mode);
     Py_RETURN_NONE;
 }
 

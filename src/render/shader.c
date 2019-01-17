@@ -131,20 +131,6 @@ static struct shader_resource s_shaders[] = {
     },
     {
         .prog_id     = (intptr_t)NULL,
-        .name        = "terrain-baked",
-        .vertex_path = "shaders/vertex_static.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_terrain-baked.glsl"
-    },
-    {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "terrain-baked-shadowed",
-        .vertex_path = "shaders/vertex_static-shadowed.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_terrain-baked-shadowed.glsl"
-    },
-    {
-        .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.depth",
         .vertex_path = "shaders/vertex_depth.glsl",
         .geo_path    = NULL,

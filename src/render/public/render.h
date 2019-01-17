@@ -274,17 +274,6 @@ int    R_GL_TileGetTriMesh(const struct tile_desc *in, const void *chunk_rprivat
 void   R_GL_TileUpdate(void *chunk_rprivate, int r, int c, int tiles_width, int tiles_height, 
                        const struct tile *tiles);
 
-/* ---------------------------------------------------------------------------
- * Returns a new render context with a mesh that can be rendered much faster
- * than the original chunk mesh. It will use a single large texture for the 
- * top surface and have all non-visible tile faces removed.
- * ---------------------------------------------------------------------------
- */
-void  *R_GL_TileBakeChunk(const void *chunk_rprivate_tiles, vec3_t chunk_center, mat4x4_t *model,
-                          int tiles_per_chunk_x, int tiles_per_chunk_z, const struct tile *tiles,
-                          int chunk_r, int chunk_c);
-
-
 /*###########################################################################*/
 /* RENDER MINIMAP                                                            */
 /*###########################################################################*/
