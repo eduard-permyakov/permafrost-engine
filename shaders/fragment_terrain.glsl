@@ -90,6 +90,7 @@ uniform sampler2D texture11;
 uniform sampler2D texture12;
 uniform sampler2D texture13;
 uniform sampler2D texture14;
+uniform sampler2D texture15;
 
 struct material{
     float ambient_intensity;
@@ -122,6 +123,7 @@ vec4 texture_val(int mat_idx, vec2 uv)
     case 12: return texture2D(texture12, uv);
     case 13: return texture2D(texture13, uv);
     case 14: return texture2D(texture14, uv);
+    case 15: return texture2D(texture15, uv);
     default: return vec4(0.0);
     }
 }

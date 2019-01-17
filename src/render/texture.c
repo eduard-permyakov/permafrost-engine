@@ -249,6 +249,7 @@ void R_Texture_GL_Activate(const struct texture *text, GLuint shader_prog)
     case GL_TEXTURE12: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE12); break;
     case GL_TEXTURE13: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE13); break;
     case GL_TEXTURE14: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE14); break;
+    case GL_TEXTURE15: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE15); break;
 
     default: assert(0);
     }
