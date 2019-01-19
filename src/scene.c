@@ -62,7 +62,7 @@ static void kh_update_str_keys(khash_t(attr) *table)
 
 static bool scene_parse_att(SDL_RWops *stream, struct attr *out, bool anon)
 {
-    char line[256];
+    char line[MAX_LINE_LEN];
     READ_LINE(stream, line, fail);
     char *saveptr;
     char *token;
@@ -138,7 +138,7 @@ fail:
 
 static bool scene_load_entity(SDL_RWops *stream)
 {
-    char line[256];
+    char line[MAX_LINE_LEN];
     char name[128];
     char path[256];
     size_t num_atts;
@@ -198,7 +198,7 @@ fail_alloc:
 
 static bool scene_load_faction(SDL_RWops *stream)
 {
-    char line[256];
+    char line[MAX_LINE_LEN];
     char name[32];
     struct attr color;
 
