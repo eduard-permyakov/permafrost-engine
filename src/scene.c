@@ -226,7 +226,7 @@ fail_parse:
 bool Scene_Load(const char *path)
 {
     SDL_RWops *stream;
-    char line[128];
+    char line[MAX_LINE_LEN];
     size_t num_factions, num_ents;
 
     stream = SDL_RWFromFile(path, "r");
