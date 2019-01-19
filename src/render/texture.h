@@ -39,7 +39,14 @@
 #include <GL/glew.h>
 #include <stdbool.h>
 
+struct material;
+
 struct texture{
+    GLuint id;
+    GLuint tunit;
+};
+
+struct texture_arr{
     GLuint id;
     GLuint tunit;
 };
@@ -47,5 +54,9 @@ struct texture{
 void R_Texture_Init(void);
 bool R_Texture_AddExisting(const char *name, GLuint id);
 void R_Texture_GL_Activate(const struct texture *text, GLuint shader_prog);
+
+void R_Texture_MakeArray(const struct material *mats, size_t num_mats, 
+                         struct texture_arr *out);
+void R_Texture_GL_ActivateArray(const struct texture_arr *arr, GLuint shader_prog);
 
 #endif

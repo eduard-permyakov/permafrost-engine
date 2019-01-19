@@ -68,13 +68,13 @@
 #define GL_U_TEXTURE14      "texture14"
 #define GL_U_TEXTURE15      "texture15"
 
+/* 1 array texture slot */
+#define GL_U_TEX_ARRAY0     "tex_array0"
+
 /* Global light parameters - affect all models */
 #define GL_U_AMBIENT_COLOR  "ambient_color"
 #define GL_U_LIGHT_POS      "light_pos"
 #define GL_U_LIGHT_COLOR    "light_color"
-
-/* Used to toggle lighting in terrain shader */
-#define GL_U_SKIP_LIGHTING  "skip_lighting"
 
 /* Used for depth map rendering and testing */
 #define GL_U_LS_TRANS       "light_space_transform"

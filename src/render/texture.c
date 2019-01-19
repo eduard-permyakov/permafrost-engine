@@ -36,7 +36,10 @@
 #include "texture.h"
 #include "gl_uniforms.h"
 #include "gl_assert.h"
+#include "material.h"
 #include "../lib/public/stb_image.h"
+#include "../lib/public/stb_image_resize.h"
+#include "../config.h"
 
 #include <string.h>
 #include <assert.h>
@@ -257,6 +260,60 @@ void R_Texture_GL_Activate(const struct texture *text, GLuint shader_prog)
     glActiveTexture(text->tunit);
     glBindTexture(GL_TEXTURE_2D, text->id);
     glUniform1i(sampler_loc, text->tunit - GL_TEXTURE0);
+
+    GL_ASSERT_OK();
+}
+
+void R_Texture_MakeArray(const struct material *mats, size_t num_mats, 
+                         struct texture_arr *out)
+{
+    glActiveTexture(GL_TEXTURE0);
+    out->tunit = GL_TEXTURE0;
+    glGenTextures(1, &out->id);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
+
+    glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGB8, 
+        CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, num_mats);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+
+    for(int i = 0; i < num_mats; i++) {
+
+        if(mats[i].texture.id == 0)
+            continue;
+
+        glBindTexture(GL_TEXTURE_2D, mats[i].texture.id);
+
+        int w, h;
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+
+        GLbyte orig_data[w * h * 3]; 
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, orig_data);
+
+        GLbyte resized_data[CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3];
+        int res = stbir_resize_uint8(orig_data, w, h, 0, resized_data, CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, 0, 3);
+        assert(1 == res);
+
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_TILE_TEX_RES, 
+            CONFIG_TILE_TEX_RES, 1, GL_RGB, GL_UNSIGNED_BYTE, resized_data);
+    }
+
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    GL_ASSERT_OK();
+}
+
+void R_Texture_GL_ActivateArray(const struct texture_arr *arr, GLuint shader_prog)
+{
+    GLuint sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEX_ARRAY0);
+    glActiveTexture(arr->tunit);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, arr->id);
+    glUniform1i(sampler_loc, arr->tunit - GL_TEXTURE0);
 
     GL_ASSERT_OK();
 }

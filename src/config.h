@@ -51,7 +51,7 @@ enum pf_window_flags{
 #define CONFIG_DRAWDIST             1000
 #define CONFIG_RES_X                1920
 #define CONFIG_RES_Y                1080
-#define CONFIG_BAKED_TILE_TEX_RES   128
+#define CONFIG_TILE_TEX_RES         128
 #define CONFIG_WINDOWFLAGS          PF_WINDOWFLAGS_BORDERLESS_WINDOWED
 #define CONFIG_VSYNC                false
 #define CONFIG_LOADING_SCREEN       "assets/loading_screens/battle_of_kulikovo.png"

@@ -75,22 +75,7 @@ uniform vec3 light_color;
 uniform vec3 light_pos;
 uniform vec3 view_pos;
 
-uniform sampler2D texture0;
-uniform sampler2D texture1;
-uniform sampler2D texture2;
-uniform sampler2D texture3;
-uniform sampler2D texture4;
-uniform sampler2D texture5;
-uniform sampler2D texture6;
-uniform sampler2D texture7;
-uniform sampler2D texture8;
-uniform sampler2D texture9;
-uniform sampler2D texture10;
-uniform sampler2D texture11;
-uniform sampler2D texture12;
-uniform sampler2D texture13;
-uniform sampler2D texture14;
-uniform sampler2D texture15;
+uniform sampler2DArray tex_array0;
 
 struct material{
     float ambient_intensity;
@@ -99,7 +84,6 @@ struct material{
 };
 
 uniform material materials[MAX_MATERIALS];
-uniform bool skip_lighting = false;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
@@ -107,25 +91,7 @@ uniform bool skip_lighting = false;
 
 vec4 texture_val(int mat_idx, vec2 uv)
 {
-    switch(mat_idx) {
-    case 0:  return texture2D(texture0,  uv);
-    case 1:  return texture2D(texture1,  uv);
-    case 2:  return texture2D(texture2,  uv);
-    case 3:  return texture2D(texture3,  uv);
-    case 4:  return texture2D(texture4,  uv);
-    case 5:  return texture2D(texture5,  uv);
-    case 6:  return texture2D(texture6,  uv);
-    case 7:  return texture2D(texture7,  uv);
-    case 8:  return texture2D(texture8,  uv);
-    case 9:  return texture2D(texture9,  uv);
-    case 10: return texture2D(texture10, uv);
-    case 11: return texture2D(texture11, uv);
-    case 12: return texture2D(texture12, uv);
-    case 13: return texture2D(texture13, uv);
-    case 14: return texture2D(texture14, uv);
-    case 15: return texture2D(texture15, uv);
-    default: return vec4(0.0);
-    }
+    return texture(tex_array0, vec3(uv, mat_idx));
 }
 
 vec4 mixed_texture_val(int adjacency_mats, vec2 uv)
@@ -348,11 +314,6 @@ void main()
     if(tex_color.a == 0.0)
         discard;
 
-    if(skip_lighting) {
-        o_frag_color = vec4(tex_color.xyz, 1.0);
-        return;
-    }
-
     /* We increase the amount of ambient light that taller tiles get, in order to make
      * them not blend with lower terrain. */
     float height = from_vertex.world_pos.y / Y_COORDS_PER_TILE;
@@ -365,17 +326,11 @@ void main()
     float diff = max(dot(from_vertex.normal, light_dir), 0.0);
     vec3 diffuse = light_color * (diff * frag_material.diffuse_clr);
 
-    /* Since, for optimization reasons, we currently render the terrain top surface to a texture 
-     * with the lighting calculations already included, we skip the specular lighting, as it is 
-     * dependent on the camera position. */
-
     /* Specular calculations */
-    #if 0
     vec3 view_dir = normalize(view_pos - from_vertex.world_pos);
     vec3 reflect_dir = reflect(-light_dir, from_vertex.normal);  
     float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
     vec3 specular = SPECULAR_STRENGTH * light_color * (spec * frag_material.specular_clr);
-    #endif
 
     o_frag_color = vec4( (ambient + diffuse) * tex_color.xyz, 1.0);
 }

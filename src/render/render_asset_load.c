@@ -200,6 +200,7 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     if(!vbuff)
         goto fail_alloc_vbuff;
 
+    priv->tmode = TEXTURE_MODE_SEPARATE;
     priv->mesh.num_verts = header->num_verts;
     priv->num_materials = header->num_materials;
     priv->materials = (void*)(priv + 1);
@@ -307,6 +308,7 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
     if(!vbuff)
         goto fail_alloc;
 
+    priv->tmode = TEXTURE_MODE_ARRAY;
     priv->mesh.num_verts = num_verts;
     priv->materials = (void*)unused_base;
     priv->num_materials = num_mats;
@@ -334,6 +336,7 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
         }
     }
 
+    R_Texture_MakeArray(priv->materials, priv->num_materials, &priv->tarray);
     R_GL_Init(priv, "terrain", vbuff);
     al_patch_vbuff_adjacency_info(priv->mesh.VBO, tiles, width, height);
 
