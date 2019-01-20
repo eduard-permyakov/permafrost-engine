@@ -142,6 +142,7 @@ static void on_user_quit(void *user, void *event)
 static void gl_set_globals(void)
 {
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
 }
 
 static void render(void)
@@ -260,6 +261,8 @@ static bool engine_init(char **argv)
 
     glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
     glProvokingVertex(GL_FIRST_VERTEX_CONVENTION); 
+    glFrontFace(GL_CW);
+    glCullFace(GL_BACK);
 
     stbi_set_flip_vertically_on_load(true);
 

@@ -434,7 +434,6 @@ cleanup:
 
 void R_GL_TilePatchVertsBlend(GLuint VBO, const struct tile *tiles, int width, int height, int r, int c)
 {
-    GL_ASSERT_OK();
     const struct tile *curr_tile  = &tiles[r * width + c];
     const struct tile *top_tile   = (r > 0)          ? &tiles[(r - 1) * width + c] : NULL;
     const struct tile *bot_tile   = (r < height - 1) ? &tiles[(r + 1) * width + c] : NULL;
@@ -652,25 +651,25 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
                                 | ((tile->sides_mat_idx & 0xf) << 8) | ((tile->sides_mat_idx & 0xf) << 12);
     struct face back = {
         .nw = (struct vertex) {
-            .pos    = top.nw.pos,
+            .pos    = top.ne.pos,
             .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, back.nw.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .ne = (struct vertex) {
-            .pos    = top.ne.pos,
+            .pos    = top.nw.pos,
             .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, back.ne.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .se = (struct vertex) {
-            .pos    = bot.nw.pos,
+            .pos    = bot.ne.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .sw = (struct vertex) {
-            .pos    = bot.ne.pos,
+            .pos    = bot.nw.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
@@ -706,25 +705,25 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
 
     struct face left = {
         .nw = (struct vertex) {
-            .pos    = top.sw.pos,
+            .pos    = top.nw.pos,
             .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, left.nw.pos.y) },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .ne = (struct vertex) {
-            .pos    = top.nw.pos,
+            .pos    = top.sw.pos,
             .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, left.ne.pos.y) },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .se = (struct vertex) {
-            .pos    = bot.ne.pos,
+            .pos    = bot.se.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .sw = (struct vertex) {
-            .pos    = bot.se.pos,
+            .pos    = bot.ne.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
@@ -733,25 +732,25 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
 
     struct face right = {
         .nw = (struct vertex) {
-            .pos    = top.ne.pos,
+            .pos    = top.se.pos,
             .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, right.nw.pos.y) },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .ne = (struct vertex) {
-            .pos    = top.se.pos,
+            .pos    = top.ne.pos,
             .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, right.ne.pos.y) },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .se = (struct vertex) {
-            .pos    = bot.sw.pos,
+            .pos    = bot.nw.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .sw = (struct vertex) {
-            .pos    = bot.nw.pos,
+            .pos    = bot.sw.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
@@ -803,8 +802,8 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
     struct vertex *first_tri[3];
     struct vertex *second_tri[3];
 
-    first_tri[0] = &top.sw;
-    first_tri[1] = &top.se;
+    first_tri[0] = &top.se;
+    first_tri[1] = &top.sw;
     second_tri[0] = &top.nw;
     second_tri[1] = &top.ne;
 
@@ -854,9 +853,18 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
     memcpy(out + (5 * VERTS_PER_FACE) + 1, first_tri[1], sizeof(struct vertex));
     memcpy(out + (5 * VERTS_PER_FACE) + 2, &center_vert, sizeof(struct vertex));
 
-    memcpy(out + (5 * VERTS_PER_FACE) + 3, &center_vert, sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 4, first_tri[2], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 5, (top_tri_left_aligned ? first_tri[1] : first_tri[0]), sizeof(struct vertex));
+    /* Keep the appropriate winding order for face culling! */
+    if(top_tri_left_aligned) {
+    
+        memcpy(out + (5 * VERTS_PER_FACE) + 3, first_tri[0], sizeof(struct vertex));
+        memcpy(out + (5 * VERTS_PER_FACE) + 4, &center_vert, sizeof(struct vertex));
+        memcpy(out + (5 * VERTS_PER_FACE) + 5, first_tri[2], sizeof(struct vertex));
+    }else{
+    
+        memcpy(out + (5 * VERTS_PER_FACE) + 3, first_tri[1], sizeof(struct vertex));
+        memcpy(out + (5 * VERTS_PER_FACE) + 4, first_tri[2], sizeof(struct vertex));
+        memcpy(out + (5 * VERTS_PER_FACE) + 5, &center_vert, sizeof(struct vertex));
+    }
 
     /* Second 'major' triangle */
     use_side_mat = fabs(top_tri_normals[1].y) < 1.0 && (tile->ramp_height > 1);
@@ -874,10 +882,18 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
     memcpy(out + (5 * VERTS_PER_FACE) + 7, second_tri[1], sizeof(struct vertex));
     memcpy(out + (5 * VERTS_PER_FACE) + 8, &center_vert, sizeof(struct vertex));
 
-    memcpy(out + (5 * VERTS_PER_FACE) + 9, &center_vert, sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 10, second_tri[2], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 11, (top_tri_left_aligned ? second_tri[0] : second_tri[1]), sizeof(struct vertex));
-
+    /* Keep the appropriate winding order for face culling! */
+    if(top_tri_left_aligned) {
+    
+        memcpy(out + (5 * VERTS_PER_FACE) + 9, &center_vert, sizeof(struct vertex));
+        memcpy(out + (5 * VERTS_PER_FACE) + 10, second_tri[2], sizeof(struct vertex));
+        memcpy(out + (5 * VERTS_PER_FACE) + 11, second_tri[0], sizeof(struct vertex));
+    }else {
+    
+        memcpy(out + (5 * VERTS_PER_FACE) + 9, &center_vert, sizeof(struct vertex));
+        memcpy(out + (5 * VERTS_PER_FACE) + 10, second_tri[1], sizeof(struct vertex));
+        memcpy(out + (5 * VERTS_PER_FACE) + 11, second_tri[2], sizeof(struct vertex));
+    }
 }
 
 int R_GL_TileGetTriMesh(const struct tile_desc *in, const void *chunk_rprivate, 

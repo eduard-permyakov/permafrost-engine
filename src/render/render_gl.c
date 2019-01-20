@@ -452,6 +452,7 @@ void R_GL_SetScreenspaceDrawMode(void)
     R_GL_SetViewMatAndPos(&identity, &dummy_pos);
 
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
 }
 
 void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, const struct camera *cam)
