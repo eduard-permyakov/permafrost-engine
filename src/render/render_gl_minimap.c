@@ -39,6 +39,7 @@
 #include "shader.h"
 #include "gl_uniforms.h"
 #include "gl_assert.h"
+#include "render_private.h"
 #include "public/render.h"
 #include "../map/public/tile.h"
 #include "../camera.h"
@@ -233,7 +234,15 @@ bool R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats,
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     for(int r = 0; r < chunk_z; r++) {
         for(int c = 0; c < chunk_x; c++) {
-            R_GL_Draw(chunk_rprivates[r * chunk_x + c], chunk_model_mats + (r * chunk_x + c)); 
+
+            /* Always use 'terrain' shader for rendering to not draw any shadows */
+            struct render_private *priv = chunk_rprivates[r * chunk_x + c];
+            GLuint old_shader_prog = priv->shader_prog;
+            priv->shader_prog = R_Shader_GetProgForName("terrain");
+
+            R_GL_Draw(priv, chunk_model_mats + (r * chunk_x + c)); 
+
+            priv->shader_prog = old_shader_prog;
         }
     }
     glViewport(0,0, CONFIG_RES_X, CONFIG_RES_Y);
@@ -318,7 +327,13 @@ bool R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, mat4x4
         goto fail_fb;
 
     glViewport(0,0, MINIMAP_RES, MINIMAP_RES);
+    struct render_private *priv = chunk_rprivate;
+    GLuint old_shader_prog = priv->shader_prog;
+    priv->shader_prog = R_Shader_GetProgForName("terrain");
+
     R_GL_Draw(chunk_rprivate, chunk_model);
+
+    priv->shader_prog = old_shader_prog;
     glViewport(0,0, CONFIG_RES_X, CONFIG_RES_Y);
 
     /* Re-bind the default framebuffer when we're done rendering */

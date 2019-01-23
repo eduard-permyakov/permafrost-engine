@@ -58,7 +58,7 @@ import views.menu_window as mw
 
 pf.set_ambient_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_color([1.0, 1.0, 1.0])
-pf.set_emit_light_pos([1024.0, 512.0, 256.0])
+pf.set_emit_light_pos([1024.0, 768.0, 768.0])
 
 pf.new_game_string(globals.active_map.pfmap_str())
 pf.set_minimap_position(UI_LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10, 

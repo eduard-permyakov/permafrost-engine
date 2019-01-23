@@ -186,7 +186,7 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
         (void*)offsetof(struct vertex, material_idx));
     glEnableVertexAttribArray(3);
 
-    if(0 == strcmp("mesh.animated.textured-phong", shader)) {
+    if(strstr(shader, "animated")) {
 
         /* Here, we use 2 attributes to pass in an array of size 6 since we are 
          * limited to a maximum of 4 components per attribute. */
@@ -207,7 +207,7 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
             (void*)offsetof(struct vertex, weights) + 3*sizeof(GLfloat));
         glEnableVertexAttribArray(7);  
 
-    }else if(0 == strcmp("terrain", shader)) {
+    }else if(strstr(shader, "terrain")) {
 
         /* Attribute 4 - tile texture blend mode */
         glVertexAttribIPointer(4, 1, GL_INT, sizeof(struct vertex), 
@@ -222,7 +222,7 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
 
     priv->shader_prog = R_Shader_GetProgForName(shader);
 
-    if(0 == strcmp("mesh.animated.textured-phong", shader)) {
+    if(strstr(shader, "animated")) {
         priv->shader_prog_dp = R_Shader_GetProgForName("mesh.animated.depth");
     }else {
         priv->shader_prog_dp = R_Shader_GetProgForName("mesh.static.depth");
@@ -234,7 +234,6 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
 
 void R_GL_Draw(const void *render_private, mat4x4_t *model)
 {
-    GL_ASSERT_OK();
     const struct render_private *priv = render_private;
     GLuint loc;
 
@@ -261,11 +260,14 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
         "mesh.static.colored-per-vert",
         "mesh.static.textured",
         "mesh.static.textured-phong",
+        "mesh.static.textured-phong-shadowed",
         "mesh.static.tile-outline",
         "mesh.static.normals.colored",
         "mesh.animated.textured-phong",
+        "mesh.animated.textured-phong-shadowed",
         "mesh.animated.normals.colored",
         "terrain",
+        "terrain-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -284,11 +286,14 @@ void R_GL_SetProj(const mat4x4_t *proj)
         "mesh.static.colored-per-vert",
         "mesh.static.textured",
         "mesh.static.textured-phong",
+        "mesh.static.textured-phong-shadowed",
         "mesh.static.tile-outline",
         "mesh.static.normals.colored",
         "mesh.animated.textured-phong",
+        "mesh.animated.textured-phong-shadowed",
         "mesh.animated.normals.colored",
         "terrain",
+        "terrain-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++)
@@ -304,6 +309,7 @@ void R_GL_SetLightSpaceTrans(const mat4x4_t *trans)
         "mesh.animated.depth",
         "mesh.static.textured-phong-shadowed",
         "mesh.animated.textured-phong-shadowed",
+        "terrain-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++)
@@ -317,6 +323,7 @@ void R_GL_SetShadowMap(const GLuint shadow_map_tex_id)
     const char *shaders[] = {
         "mesh.static.textured-phong-shadowed",
         "mesh.animated.textured-phong-shadowed",
+        "terrain-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -361,6 +368,7 @@ void R_GL_SetAmbientLightColor(vec3_t color)
         "mesh.animated.textured-phong",
         "mesh.animated.textured-phong-shadowed",
         "terrain",
+        "terrain-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -385,6 +393,7 @@ void R_GL_SetLightEmitColor(vec3_t color)
         "mesh.animated.textured-phong",
         "mesh.animated.textured-phong-shadowed",
         "terrain",
+        "terrain-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -409,6 +418,7 @@ void R_GL_SetLightPos(vec3_t pos)
         "mesh.animated.textured-phong",
         "mesh.animated.textured-phong-shadowed",
         "terrain",
+        "terrain-shadowed",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {

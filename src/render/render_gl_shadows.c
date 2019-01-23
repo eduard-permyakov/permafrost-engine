@@ -133,6 +133,7 @@ void R_GL_DepthPassBegin(void)
     glViewport(0, 0, CONFIG_SHADOW_MAP_RES, CONFIG_SHADOW_MAP_RES);
     glBindFramebuffer(GL_FRAMEBUFFER, s_depth_map_FBO);
     glClear(GL_DEPTH_BUFFER_BIT);
+    glCullFace(GL_FRONT);
 
     GL_ASSERT_OK();
 }
@@ -146,6 +147,7 @@ void R_GL_DepthPassEnd(void)
 
     glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glCullFace(GL_BACK);
 
     GL_ASSERT_OK();
 }

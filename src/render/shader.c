@@ -131,6 +131,13 @@ static struct shader_resource s_shaders[] = {
     },
     {
         .prog_id     = (intptr_t)NULL,
+        .name        = "terrain-shadowed",
+        .vertex_path = "shaders/vertex/terrain-shadowed.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment/terrain-shadowed.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.depth",
         .vertex_path = "shaders/vertex/depth.glsl",
         .geo_path    = NULL,

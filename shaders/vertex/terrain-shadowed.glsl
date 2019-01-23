@@ -33,48 +33,58 @@
  *
  */
 
-#include "render_gl.h"
-#include "texture.h"
-#include "shader.h"
-#include "../config.h"
+#version 330 core
 
-#include <assert.h>
-
-/*****************************************************************************/
-/* STATIC VARIABLES                                                          */
-/*****************************************************************************/
-
-static struct texture_arr s_map_textures;
-static bool               s_map_ctx_active = false;
+layout (location = 0) in vec3  in_pos;
+layout (location = 1) in vec2  in_uv;
+layout (location = 2) in vec3  in_normal;
+layout (location = 3) in int   in_material_idx;
+layout (location = 4) in int   in_blend_mode;
+layout (location = 5) in ivec4 in_adjacent_mat_indices;
 
 /*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
+/* OUTPUTS                                                                   */
 /*****************************************************************************/
 
-bool R_GL_MapInit(const char map_texfiles[][256], size_t num_textures)
+out VertexToFrag {
+         vec2  uv;
+    flat int   mat_idx;
+         vec3  world_pos;
+         vec3  normal;
+    flat int   blend_mode;
+    flat ivec4 adjacent_mat_indices;
+         vec4  light_space_pos;
+}to_fragment;
+
+out VertexToGeo {
+    vec3 normal;
+}to_geometry;
+
+/*****************************************************************************/
+/* UNIFORMS                                                                  */
+/*****************************************************************************/
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+uniform mat4 light_space_transform;
+
+/*****************************************************************************/
+/* PROGRAM
+/*****************************************************************************/
+
+void main()
 {
-    return R_Texture_MakeArrayMap(map_texfiles, num_textures, &s_map_textures);
-}
+    to_fragment.uv = in_uv;
+    to_fragment.mat_idx = in_material_idx;
+    to_fragment.world_pos = (model * vec4(in_pos, 1.0)).xyz;
+    to_fragment.normal = normalize(mat3(model) * in_normal);
+    to_fragment.blend_mode = in_blend_mode;
+    to_fragment.adjacent_mat_indices = in_adjacent_mat_indices;
+    to_fragment.light_space_pos = light_space_transform * vec4(to_fragment.world_pos, 1.0);
 
-void R_GL_MapBegin(void)
-{
-    assert(!s_map_ctx_active);
+    to_geometry.normal = normalize(mat3(projection * view * model) * in_normal);
 
-    GLuint shader_prog;
-#if CONFIG_SHADOWS
-    shader_prog = R_Shader_GetProgForName("terrain-shadowed");
-#else
-    shader_prog = R_Shader_GetProgForName("terrain");
-#endif
-    assert(shader_prog != -1);
-    glUseProgram(shader_prog);
-    R_Texture_GL_ActivateArray(&s_map_textures, shader_prog);
-    s_map_ctx_active = true;
-}
-
-void R_GL_MapEnd(void)
-{
-    assert(s_map_ctx_active);
-    s_map_ctx_active = false;
+    gl_Position = projection * view * model * vec4(in_pos, 1.0);
 }
 

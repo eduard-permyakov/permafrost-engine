@@ -42,6 +42,7 @@
 
 #include "../asset_load.h"
 #include "../map/public/tile.h"
+#include "../config.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -320,7 +321,11 @@ bool R_AL_InitPrivFromTiles(const struct tile *tiles, size_t width, size_t heigh
         }
     }
 
+#if CONFIG_SHADOWS
+    R_GL_Init(priv, "terrain-shadowed", vbuff);
+#else
     R_GL_Init(priv, "terrain", vbuff);
+#endif
     al_patch_vbuff_adjacency_info(priv->mesh.VBO, tiles, width, height);
 
     free(vbuff);
