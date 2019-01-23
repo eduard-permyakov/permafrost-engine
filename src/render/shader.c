@@ -69,93 +69,93 @@ static struct shader_resource s_shaders[] = {
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.colored",
-        .vertex_path = "shaders/vertex_basic.glsl",
+        .vertex_path = "shaders/vertex/basic.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_colored.glsl"
+        .frag_path   = "shaders/fragment/colored.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.textured",
-        .vertex_path = "shaders/vertex_static.glsl",
+        .vertex_path = "shaders/vertex/static.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_textured.glsl"
+        .frag_path   = "shaders/fragment/textured.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.textured-phong",
-        .vertex_path = "shaders/vertex_static.glsl",
+        .vertex_path = "shaders/vertex/static.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_textured-phong.glsl"
+        .frag_path   = "shaders/fragment/textured-phong.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.tile-outline",
-        .vertex_path = "shaders/vertex_static.glsl",
+        .vertex_path = "shaders/vertex/static.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_tile-outline.glsl"
+        .frag_path   = "shaders/fragment/tile-outline.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.animated.textured-phong",
-        .vertex_path = "shaders/vertex_skinned.glsl",
+        .vertex_path = "shaders/vertex/skinned.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_textured-phong.glsl"
+        .frag_path   = "shaders/fragment/textured-phong.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.normals.colored",
-        .vertex_path = "shaders/vertex_static.glsl",
-        .geo_path    = "shaders/geometry_normals.glsl",
-        .frag_path   = "shaders/fragment_colored.glsl"
+        .vertex_path = "shaders/vertex/static.glsl",
+        .geo_path    = "shaders/geometry/normals.glsl",
+        .frag_path   = "shaders/fragment/colored.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.animated.normals.colored",
-        .vertex_path = "shaders/vertex_skinned.glsl",
-        .geo_path    = "shaders/geometry_normals.glsl",
-        .frag_path   = "shaders/fragment_colored.glsl"
+        .vertex_path = "shaders/vertex/skinned.glsl",
+        .geo_path    = "shaders/geometry/normals.glsl",
+        .frag_path   = "shaders/fragment/colored.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.colored-per-vert",
-        .vertex_path = "shaders/vertex_colored.glsl",
+        .vertex_path = "shaders/vertex/colored.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_colored-per-vert.glsl"
+        .frag_path   = "shaders/fragment/colored-per-vert.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "terrain",
-        .vertex_path = "shaders/vertex_terrain.glsl",
+        .vertex_path = "shaders/vertex/terrain.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_terrain.glsl"
+        .frag_path   = "shaders/fragment/terrain.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.depth",
-        .vertex_path = "shaders/vertex_depth.glsl",
+        .vertex_path = "shaders/vertex/depth.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_passthrough.glsl"
+        .frag_path   = "shaders/fragment/passthrough.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.animated.depth",
-        .vertex_path = "shaders/vertex_skinned-depth.glsl",
+        .vertex_path = "shaders/vertex/skinned-depth.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_passthrough.glsl"
+        .frag_path   = "shaders/fragment/passthrough.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.textured-phong-shadowed",
-        .vertex_path = "shaders/vertex_static-shadowed.glsl",
+        .vertex_path = "shaders/vertex/static-shadowed.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_textured-phong-shadowed.glsl"
+        .frag_path   = "shaders/fragment/textured-phong-shadowed.glsl"
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.animated.textured-phong-shadowed",
-        .vertex_path = "shaders/vertex_skinned-shadowed.glsl",
+        .vertex_path = "shaders/vertex/skinned-shadowed.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment_textured-phong-shadowed.glsl"
+        .frag_path   = "shaders/fragment/textured-phong-shadowed.glsl"
     }
 };
 
