@@ -980,10 +980,8 @@ bool S_RunFile(const char *path)
 
     /* The directory of the script file won't be automatically added by 'PyRun_SimpleFile'.
      * We add it manually to sys.path ourselves. */
-    if(!s_sys_path_add_dir(path)) {
-        fclose(script);
+    if(!s_sys_path_add_dir(path))
         return false;
-    }
 
     PyObject *PyFileObject = PyFile_FromString((char*)path, "r");
     PyRun_SimpleFile(PyFile_AsFile(PyFileObject), path);
