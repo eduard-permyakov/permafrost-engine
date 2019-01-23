@@ -93,6 +93,7 @@ void M_ModelMatrixForChunk(const struct map *map, struct chunkpos p, mat4x4_t *o
 
 void M_RenderEntireMap(const struct map *map, enum render_pass pass)
 {
+    R_GL_MapBegin();
     for(int r = 0; r < map->height; r++) {
         for(int c = 0; c < map->width; c++) {
         
@@ -111,6 +112,7 @@ void M_RenderEntireMap(const struct map *map, enum render_pass pass)
             }
         }
     }
+    R_GL_MapEnd();
 }
 
 void M_RenderVisibleMap(const struct map *map, const struct camera *cam, enum render_pass pass)
@@ -118,6 +120,7 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam, enum re
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
 
+    R_GL_MapBegin();
     for(int r = 0; r < map->height; r++) {
         for(int c = 0; c < map->width; c++) {
 
@@ -147,6 +150,7 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam, enum re
             }
         }
     }
+    R_GL_MapEnd();
 }
 
 void M_RenderVisiblePathableLayer(const struct map *map, const struct camera *cam)

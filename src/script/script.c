@@ -84,7 +84,6 @@ static PyObject *PyPf_update_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_faction_controllable(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_diplomacy_state(PyObject *self, PyObject *args);
 
-static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args);
@@ -213,11 +212,6 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_diplomacy_state, METH_VARARGS,
     "Symmetrically sets the diplomacy state between two distinct factions (passed in as IDs)."},
 
-    {"update_chunk_materials", 
-    (PyCFunction)PyPf_update_chunk_materials, METH_VARARGS,
-    "Update the material list for a particular chunk. Expects a tuple of chunk coordinates "
-    "and a PFMAP material section string as arguments."},
-
     {"update_tile", 
     (PyCFunction)PyPf_update_tile, METH_VARARGS,
     "Update the map tile at the specified coordinates to the new value."},
@@ -328,7 +322,10 @@ static PyObject *PyPf_new_game(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    G_NewGameWithMap(dir, pfmap);
+    if(!G_NewGameWithMap(dir, pfmap)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to create new game with the specified map file.");
+        return NULL; 
+    }
     Py_RETURN_NONE;
 }
 
@@ -697,25 +694,6 @@ static PyObject *PyPf_set_diplomacy_state(PyObject *self, PyObject *args)
         return NULL;
     }
     Py_RETURN_NONE;
-}
-
-static PyObject *PyPf_update_chunk_materials(PyObject *self, PyObject *args)
-{
-    int chunk_r, chunk_c;
-    const char *mats_str;
-
-    if(!PyArg_ParseTuple(args, "(ii)s", &chunk_r, &chunk_c, &mats_str)) {
-        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two integers and a string.");
-        return NULL;
-    }
-
-    bool result = G_UpdateChunkMats(chunk_r, chunk_c, mats_str);
-    if(!result) {
-        PyErr_SetString(PyExc_RuntimeError, "Could not update chunk material.");
-        return NULL;
-    }else {
-        Py_RETURN_NONE;
-    }
 }
 
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args)

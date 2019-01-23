@@ -590,11 +590,6 @@ vec3_t G_ActiveCamDir(void)
     return ret;
 }
 
-bool G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string)
-{
-    return M_AL_UpdateChunkMats(s_gs.map, chunk_r, chunk_c, mats_string);
-}
-
 bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
 {
     return M_AL_UpdateTile(s_gs.map, desc, tile);

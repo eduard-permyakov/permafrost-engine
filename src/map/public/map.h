@@ -45,7 +45,6 @@
 #include <SDL.h> /* for SDL_RWops */
 
 
-#define MATERIALS_PER_CHUNK  (8)
 #define MINIMAP_SIZE         (256)
 #define MAX_HEIGHT_LEVEL     (9)
 

@@ -106,26 +106,12 @@ def tile_bot_left_height(tile):
 
 class TerrainTabVC(vc.ViewController):
 
-    MATERIALS_LIST = [
-        map.Material("Grass",           "grass.png",            1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)), 
-        map.Material("Grass2",          "grass2.jpg",           1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)), 
-        map.Material("Cliffs",          "cliffs.png",           1.0, (0.4, 0.4, 0.4), (0.2, 0.2, 0.2)),
-        map.Material("Cobblestone",     "cobblestone.jpg",      1.0, (0.5, 0.5, 0.5), (0.2, 0.2, 0.2)),
-        map.Material("Dirty-Grass",     "dirty_grass.jpg",      1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)),
-        map.Material("Dirt-Road",       "dirt_road.jpg",        1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)),
-        map.Material("Cracked-Dirt",    "cracked_dirt.jpg",     1.0, (0.2, 0.2, 0.2), (0.1, 0.1, 0.1)),
-        map.Material("Metal-Platform",  "metal_platform.jpg",   1.0, (0.8, 0.8, 0.8), (0.5, 0.5, 0.5)),
-        map.Material("Snowy-Grass",     "snowy_grass.jpg",      1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1)),
-        map.Material("Lava-Ground",     "lava_ground.jpg",      1.0, (0.7, 0.7, 0.7), (0.4, 0.4, 0.4)),
-        map.Material("Sand",            "sand.jpg",             1.0, (0.2, 0.2, 0.2), (0.1, 0.1, 0.1)),
-    ]
-
     def __init__(self, view):
         self.view = view
         self.selected_tile = None
         self.painting = False
 
-        self.view.materials_list = TerrainTabVC.MATERIALS_LIST
+        self.view.materials_list = globals.active_map.materials
 
     def __update_objects_for_height_change(self):
         for obj in globals.active_objects_list:
@@ -149,7 +135,7 @@ class TerrainTabVC(vc.ViewController):
                 if tile_coords is not None:
 
                     if self.view.brush_type_idx == 0:
-                        globals.active_map.update_tile_mat(tile_coords, TerrainTabVC.MATERIALS_LIST[self.view.selected_mat_idx])
+                        globals.active_map.update_tile_mat(tile_coords, globals.active_map.materials[self.view.selected_mat_idx])
                     elif self.view.brush_type_idx == 1:
                         center_height = self.view.heights[self.view.selected_height_idx]
                         globals.active_map.update_tile(tile_coords, center_height, newtype=map.TILETYPE_FLAT)

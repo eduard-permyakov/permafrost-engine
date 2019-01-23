@@ -35,9 +35,7 @@
 
 #version 330 core
 
-#define MAX_MATERIALS 8
 
-/* TODO: Make these as material parameters */
 #define SPECULAR_STRENGTH  0.5
 #define SPECULAR_SHININESS 2
 
@@ -46,6 +44,10 @@
 
 #define BLEND_MODE_NOBLEND  0
 #define BLEND_MODE_BLUR     1
+
+#define TERRAIN_AMBIENT     float(1.0)
+#define TERRAIN_DIFFUSE     vec3(0.3, 0.3, 0.3)
+#define TERRAIN_SPECULAR    vec3(0.1, 0.1, 0.1)
 
 /*****************************************************************************/
 /* INPUTS                                                                    */
@@ -77,14 +79,6 @@ uniform vec3 view_pos;
 
 uniform sampler2DArray tex_array0;
 
-struct material{
-    float ambient_intensity;
-    vec3  diffuse_clr;
-    vec3  specular_clr;
-};
-
-uniform material materials[MAX_MATERIALS];
-
 /*****************************************************************************/
 /* PROGRAM                                                                   */
 /*****************************************************************************/
@@ -102,27 +96,6 @@ vec4 mixed_texture_val(int adjacency_mats, vec2 uv)
         ret += texture_val(idx, uv) * (1.0/8.0);
     }
     return ret;
-}
-
-material mixed_material_from_adj(int adjacency_mats)
-{
-    material ret = material(0.0, vec3(0.0), vec3(0.0));
-    for(int i = 0; i < 8; i++) {
-        int idx = (adjacency_mats >> (i * 4)) & 0xf;
-        ret.ambient_intensity += materials[idx].ambient_intensity * (1.0f/8.0f);
-        ret.diffuse_clr += materials[idx].diffuse_clr * (1.0f/8.0f);
-        ret.specular_clr += materials[idx].specular_clr * (1.0f/8.0f);
-    }
-    return ret;
-}
-
-material mix_materials(material x, material y, float a)
-{
-    return material(
-        x.ambient_intensity * (1.0 - a) + y.ambient_intensity * a, 
-        x.diffuse_clr       * (1.0 - a) + y.diffuse_clr       * a, 
-        x.specular_clr      * (1.0 - a) + y.specular_clr      * a
-    );
 }
 
 vec4 bilinear_interp_vec4
@@ -153,12 +126,10 @@ vec4 bilinear_interp_vec4
 void main()
 {
     vec4 tex_color;
-    material frag_material;
 
     switch(from_vertex.blend_mode) {
     case BLEND_MODE_NOBLEND: 
-        tex_color = texture_val(from_vertex.mat_idx, from_vertex.uv);     
-        frag_material = materials[from_vertex.mat_idx];
+        tex_color = texture_val(from_vertex.mat_idx, from_vertex.uv);
         break;
     case BLEND_MODE_BLUR:
 
@@ -217,26 +188,6 @@ void main()
 
         bool left_half = from_vertex.uv.x < 0.5f;
         bool bot_half = from_vertex.uv.y < 0.5f;
-
-        /***********************************************************************
-         * Set the fragment material 
-         **********************************************************************/
-
-        float alpha_edge = (bot)   ? (0.5f - from_vertex.uv.y)/0.5f
-                         : (top)   ? 1.0f - (1.0 - from_vertex.uv.y)/0.5f
-                         : (left)  ? (0.5f - from_vertex.uv.x)/0.5f
-                         : /*right*/ 1.0f - (1.0 - from_vertex.uv.x)/0.5f;
-
-        material m1 = mixed_material_from_adj(from_vertex.adjacent_mat_indices[0]);
-        material m2 = mixed_material_from_adj(from_vertex.adjacent_mat_indices[1]);
-
-        material edge_mat = mix_materials(m1, m2, (bot || top) ? from_vertex.uv.x : from_vertex.uv.y);
-        material tile_mat = mix_materials(
-            materials[(from_vertex.adjacent_mat_indices[3] >> 0) & 0xf], 
-            materials[(from_vertex.adjacent_mat_indices[3] >> 4) & 0xf], 
-            0.5
-        );
-        frag_material = mix_materials(tile_mat, edge_mat, alpha_edge);
 
         /***********************************************************************
          * Set the fragment texture color
@@ -319,18 +270,18 @@ void main()
     float height = from_vertex.world_pos.y / Y_COORDS_PER_TILE;
 
     /* Ambient calculations */
-    vec3 ambient = (frag_material.ambient_intensity + height * EXTRA_AMBIENT_PER_LEVEL) * ambient_color;
+    vec3 ambient = (TERRAIN_AMBIENT + height * EXTRA_AMBIENT_PER_LEVEL) * ambient_color;
 
     /* Diffuse calculations */
     vec3 light_dir = normalize(light_pos - from_vertex.world_pos);  
     float diff = max(dot(from_vertex.normal, light_dir), 0.0);
-    vec3 diffuse = light_color * (diff * frag_material.diffuse_clr);
+    vec3 diffuse = light_color * (diff * TERRAIN_DIFFUSE);
 
     /* Specular calculations */
     vec3 view_dir = normalize(view_pos - from_vertex.world_pos);
     vec3 reflect_dir = reflect(-light_dir, from_vertex.normal);  
     float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
-    vec3 specular = SPECULAR_STRENGTH * light_color * (spec * frag_material.specular_clr);
+    vec3 specular = SPECULAR_STRENGTH * light_color * (spec * TERRAIN_SPECULAR);
 
     o_frag_color = vec4( (ambient + diffuse) * tex_color.xyz, 1.0);
 }

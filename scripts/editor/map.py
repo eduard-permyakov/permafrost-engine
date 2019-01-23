@@ -62,9 +62,9 @@ def tile_to_string(tile):
     ret += str(tile.pathable)
     assert tile.base_height >= 0 and tile.base_height <= 9
     ret += str(tile.base_height)
-    assert tile.top_mat_idx >= 0 and tile.top_mat_idx <= pf.MATERIALS_PER_CHUNK
+    assert tile.top_mat_idx >= 0
     ret += str(tile.top_mat_idx)
-    assert tile.sides_mat_idx >= 0 and tile.sides_mat_idx <= pf.MATERIALS_PER_CHUNK
+    assert tile.sides_mat_idx >= 0
     ret += str(tile.sides_mat_idx)
     assert tile.ramp_height >= 0 and tile.ramp_height <= 9
     ret += str(tile.ramp_height)
@@ -84,50 +84,20 @@ def tile_from_string(string):
 
 class Material(object):
 
-    def __init__(self, name, texname, ambient, diffuse, specular):
-        self.refcount = 0
+    def __init__(self, name, texname):
         self.name = name
         self.texname = texname
-        self.ambient = ambient
-        self.diffuse = diffuse
-        self.specular = specular
-
-    def __eq__(self, other): 
-        if isinstance(other, Material):
-            # Ignore 'refcount' attribute when comparing equality
-            return  self.name == other.name \
-                and self.texname == other.texname \
-                and self.ambient == other.ambient \
-                and self.diffuse == other.diffuse \
-                and self.specular == other.specular
-        else:
-            return False
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def pfmap_str(self):
-        ret = ""
-        ret += "material " + self.name + "\n"
-        ret += "\tambient {0:.6f}\n".format(self.ambient)
-        ret += "\tdiffuse {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n".format(v=self.diffuse)
-        ret += "\tspecular {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n".format(v=self.specular)
-        ret += "\ttexture {0}\n".format(self.texname)
-        return ret
+        return "material " + self.name + " {0}\n".format(self.texname)
 
     @classmethod
-    def from_lines(cls, lines):
-        name = lines[0].split()[1]
-        texname = lines[4].split()[1]
-        ambient = float(lines[1].split()[1])
-        diffuse = tuple([float(s) for s in lines[2].split()[1:]])
-        specular = tuple([float(s) for s in lines[3].split()[1:]])
-        return Material(name, texname, ambient, diffuse, specular)
-
+    def from_string(cls, string):
+        name = string.split()[1]
+        texname = string.split()[2]
+        return Material(name, texname)
 
 class Chunk(object):
-    DEFAULT_TOP_MATERIAL  = Material("Grass",  "grass.png",  1.0, (0.3, 0.3, 0.3), (0.1, 0.1, 0.1))
-    DEFAULT_SIDE_MATERIAL = Material("Cliffs", "cliffs.png", 1.0, (0.4, 0.4, 0.4), (0.2, 0.2, 0.2))
 
     def __init__(self):
         """
@@ -142,47 +112,18 @@ class Chunk(object):
             row = [pf.Tile() for c in range(0, self.cols)]
             self.tiles.append(row)
 
-        self.materials = [None]*pf.MATERIALS_PER_CHUNK
-        self.materials[0] = copy.deepcopy(Chunk.DEFAULT_TOP_MATERIAL)
-        self.materials[0].refcount = self.rows * self.cols
-        self.materials[1] = copy.deepcopy(Chunk.DEFAULT_SIDE_MATERIAL)
-        self.materials[1].refcount = self.rows * self.cols
-
     def pfmap_str(self):
         ret = ""
         for r in range(0, self.rows):
             for c in range(0, self.cols):
                 ret += tile_to_string(self.tiles[r][c]) + " "
             ret += "\n"
-        ret += self.materials_str()
         return ret
-
-    def materials_str(self):
-        ret = ""
-        for m in self.materials:
-            if m is not None:
-                ret += m.pfmap_str()
-            else:
-                ret += "material __none__\n"
-        return ret
-
-    def index_for_mat(self, material):
-        try:
-            return self.materials.index(material)
-        except: 
-            return None
-
-    def free_material_slots(self):
-        return len([m for m in self.materials if m is None])
-
-    def free_material_slot_idx(self):
-        return self.materials.index(None)
 
     @classmethod
     def from_lines(cls, lines):
         ret = Chunk()
         ret.tiles = []
-        ret.materials = [None]*pf.MATERIALS_PER_CHUNK
         line_idx = 0
 
         for r in range(0, pf.TILES_PER_CHUNK_HEIGHT):
@@ -194,21 +135,24 @@ class Chunk(object):
             ret.tiles.append(tiles_row)
             line_idx += 1
 
-        for i in range(0, pf.MATERIALS_PER_CHUNK):
-            if lines[line_idx].split()[1] == "__none__":
-                line_idx += 1
-            else:
-                ret.materials[i] = Material.from_lines(lines[line_idx:line_idx+5])
-                line_idx += 5
-
-        for r in range(0, pf.TILES_PER_CHUNK_HEIGHT):
-            for c in range(0, pf.TILES_PER_CHUNK_WIDTH):
-                ret.materials[ret.tiles[r][c].top_mat_idx].refcount += 1
-                ret.materials[ret.tiles[r][c].sides_mat_idx].refcount += 1
         return ret
              
 
 class Map(object):
+
+    DEFAULT_MATERIALS_LIST = [
+        Material("Grass",           "grass.png"), 
+        Material("Cliffs",          "cliffs.png"),
+        Material("Grass2",          "grass2.jpg"), 
+        Material("Cobblestone",     "cobblestone.jpg"),
+        Material("Dirty-Grass",     "dirty_grass.jpg"),
+        Material("Dirt-Road",       "dirt_road.jpg"),
+        Material("Cracked-Dirt",    "cracked_dirt.jpg"),
+        Material("Metal-Platform",  "metal_platform.jpg"),
+        Material("Snowy-Grass",     "snowy_grass.jpg"),
+        Material("Lava-Ground",     "lava_ground.jpg"),
+        Material("Sand",            "sand.jpg"),
+    ]
 
     def __init__(self, chunk_rows, chunk_cols):
         self.filename = None
@@ -218,12 +162,17 @@ class Map(object):
         for r in range(0, self.chunk_rows):
             row = [Chunk() for c in range(0, self.chunk_cols)]
             self.chunks.append(row)
+        self.materials = Map.DEFAULT_MATERIALS_LIST
     
     def pfmap_str(self):
         ret = ""
         ret += "version " + str(EDITOR_PFMAP_VERSION) + "\n"
+        ret += "num_materials " + str(len(Map.DEFAULT_MATERIALS_LIST)) + "\n"
         ret += "num_rows " + str(self.chunk_rows) + "\n"
         ret += "num_cols " + str(self.chunk_cols) + "\n"
+
+        for mat in self.materials:
+            ret += mat.pfmap_str()
 
         for chunk_r in range(0, self.chunk_rows):
             for chunk_c in range(0, self.chunk_cols):
@@ -240,31 +189,10 @@ class Map(object):
         chunk = self.chunks[tile_coords[0][0]][tile_coords[0][1]]
         tile = chunk.tiles[tile_coords[1][0]][tile_coords[1][1]]
 
-        if chunk.materials[tile.top_mat_idx] != top_material:
-
-            chunk.materials[tile.top_mat_idx].refcount -= 1
-            mat_deleted = chunk.materials[tile.top_mat_idx].refcount == 0
-            if mat_deleted:
-                chunk.materials[tile.top_mat_idx] = None
-
-            mat_idx = chunk.index_for_mat(top_material)
-            if mat_idx is None and chunk.free_material_slots() == 0: 
-                print("Only {0} materials allowed per chunk!".format(pf.MATERIALS_PER_CHUNK))
-                return
-
-            mat_added = chunk.free_material_slots() > 0 and mat_idx is None
-            if mat_added:
-                mat_idx = chunk.free_material_slot_idx() 
-                chunk.materials[mat_idx] = copy.deepcopy(top_material)
-
-            assert mat_idx is not None
-            assert mat_idx >= 0 and mat_idx < pf.MATERIALS_PER_CHUNK
-            chunk.materials[mat_idx].refcount += 1
-            tile.top_mat_idx = mat_idx
+        new_idx = self.materials.index(top_material)
+        if tile.top_mat_idx != new_idx:
+            tile.top_mat_idx = new_idx 
             pf.update_tile(tile_coords[0], tile_coords[1], tile)
-
-            if mat_deleted or mat_added:
-                pf.update_chunk_materials(tile_coords[0], chunk.materials_str())
 
     def update_tile(self, tile_coords, newheight=None, newtype=None, new_ramp_height=None):
         chunk = self.chunks[tile_coords[0][0]][tile_coords[0][1]]
@@ -319,17 +247,25 @@ class Map(object):
 
         try:
             assert lines[0].split()[1] == str(EDITOR_PFMAP_VERSION)
-            ret.chunk_rows = int(lines[1].split()[1])
-            ret.chunk_cols = int(lines[2].split()[1])
-            line_idx += 3 #skip past header
+            num_mats = int(lines[1].split()[1])
+            ret.chunk_rows = int(lines[2].split()[1])
+            ret.chunk_cols = int(lines[3].split()[1])
+            line_idx += 4 #skip past header
+
+            ret.materials = []
+            for _ in range(0, num_mats):
+                ret.materials += [Material.from_string(lines[line_idx])]
+                line_idx += 1
+            for mat in Map.DEFAULT_MATERIALS_LIST:
+                if mat.name not in [m.name for m in ret.materials]:
+                    ret.materials += [mat]
 
             for r in range(0, ret.chunk_rows):
                 row = []
                 for c in range(0, ret.chunk_cols):
-                    new_chunk =  Chunk.from_lines(lines[line_idx:])
+                    new_chunk = Chunk.from_lines(lines[line_idx:])
                     row.append(new_chunk)
-                    num_mats = len([m for m in new_chunk.materials if m is not None])
-                    line_idx += pf.TILES_PER_CHUNK_HEIGHT + (num_mats * 5) + (pf.MATERIALS_PER_CHUNK - num_mats)
+                    line_idx += pf.TILES_PER_CHUNK_HEIGHT
                 ret.chunks.append(row)
         except:
             traceback.print_exc()
@@ -337,5 +273,4 @@ class Map(object):
             return None
 
         return ret
-
 

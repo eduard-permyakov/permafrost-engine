@@ -102,7 +102,6 @@ vec3_t G_ActiveCamPos(void);
 vec3_t G_ActiveCamDir(void);
 
 bool   G_UpdateMinimapChunk(int chunk_r, int chunk_c);
-bool   G_UpdateChunkMats(int chunk_r, int chunk_c, const char *mats_string);
 bool   G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
 
 

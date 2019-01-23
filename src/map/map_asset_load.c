@@ -54,7 +54,7 @@
 static bool m_al_parse_tile(const char *str, struct tile *out)
 {
     if(strlen(str) != 6)
-        goto fail;
+        return false;
 
     char type_hexstr[2] = {str[0], '\0'};
 
@@ -67,21 +67,16 @@ static bool m_al_parse_tile(const char *str, struct tile *out)
     out->ramp_height   = (int)           (str[5] - '0');
 
     return true;
-
-fail:
-    return false;
 }
 
 static bool m_al_read_row(SDL_RWops *stream, struct tile *out)
 {
     char line[MAX_LINE_LEN];
-
     READ_LINE(stream, line, fail); 
 
-    char *string = line;
     char *saveptr;
     /* String points to the first token - the first tile of this row */
-    string = strtok_r(line, " \t\n", &saveptr);
+    char *string = strtok_r(line, " \t\n", &saveptr);
 
     for(int i = 0; i < TILES_PER_CHUNK_WIDTH; i++) {
 
@@ -108,9 +103,27 @@ static bool m_al_read_pfchunk(SDL_RWops *stream, struct pfchunk *out)
     for(int i = 0; i < TILES_PER_CHUNK_HEIGHT; i++) {
         
         if(!m_al_read_row(stream, out->tiles + (i * TILES_PER_CHUNK_WIDTH)))
-            goto fail;
+            return false;
     }
 
+    return true;
+}
+
+static bool m_al_read_material(SDL_RWops *stream, char *out_texname)
+{
+    char line[MAX_LINE_LEN];
+    READ_LINE(stream, line, fail); 
+
+    char *saveptr;
+    char *string = strtok_r(line, " \t\n", &saveptr);
+
+    if(strcmp(string, "material") != 0)
+        goto fail;
+
+    string = strtok_r(NULL, " \t\n", &saveptr); /* skip name */
+    string = strtok_r(NULL, " \t\n", &saveptr);
+
+    strncpy(out_texname, string, MAX_LINE_LEN);
     return true;
 
 fail:
@@ -131,8 +144,19 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     map->height = header->num_rows;
     map->pos = (vec3_t) {0.0f, 0.0f, 0.0f};
 
-    size_t num_chunks = header->num_rows * header->num_cols;
+    /* Read materials */
+    char texnames[header->num_materials][256];
+    for(int i = 0; i < header->num_materials; i++) {
+        if(!m_al_read_material(stream, texnames[i]))
+            return false;
+    }
 
+    if(!R_GL_MapInit(texnames, header->num_materials)) {
+        return false; 
+    }
+
+    /* Read chunks */
+    size_t num_chunks = header->num_rows * header->num_cols;
     char *unused_base = (char*)(map + 1);
     unused_base += num_chunks * sizeof(struct pfchunk);
 
@@ -144,16 +168,16 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
             return false;
 
         size_t renderbuff_sz = R_AL_PrivBuffSizeForChunk(
-                               TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, MATERIALS_PER_CHUNK);
+                               TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, 0);
         unused_base += renderbuff_sz;
 
-        if(!R_AL_InitPrivFromTilesAndMats(stream, MATERIALS_PER_CHUNK, 
-                                          map->chunks[i].tiles, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
-                                          map->chunks[i].render_private, basedir)) {
+        if(!R_AL_InitPrivFromTiles(map->chunks[i].tiles, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
+                                   map->chunks[i].render_private, basedir)) {
             return false;
         }
     }
 
+    /* Build navigation grid */
     const struct tile *chunk_tiles[map->width * map->height];
     for(int r = 0; r < map->height; r++) {
         for(int c = 0; c < map->width; c++) {
@@ -174,18 +198,7 @@ size_t M_AL_BuffSizeFromHeader(const struct pfmap_hdr *header)
 
     return sizeof(struct map) + num_chunks * 
            (sizeof(struct pfchunk) + R_AL_PrivBuffSizeForChunk(
-                                     TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, MATERIALS_PER_CHUNK));
-}
-
-bool M_AL_UpdateChunkMats(const struct map *map, int chunk_r, int chunk_c, const char *mats_string)
-{
-    SDL_RWops *stream;
-    const struct pfchunk *chunk = &map->chunks[chunk_r * map->width + chunk_c];
-
-    stream = SDL_RWFromConstMem(mats_string, strlen(mats_string));
-    bool result = R_AL_UpdateMats(stream, MATERIALS_PER_CHUNK, chunk->render_private);
-    SDL_RWclose(stream);
-    return result;
+                                     TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, 0));
 }
 
 bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct tile *tile)

@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2018 Eduard Permyakov 
+ *  Copyright (C) 2019 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,62 +33,42 @@
  *
  */
 
-#ifndef ASSET_LOAD_H
-#define ASSET_LOAD_H
+#include "render_gl.h"
+#include "texture.h"
+#include "shader.h"
 
-#include <stddef.h>
-#include <stdbool.h>
+#include <assert.h>
 
-#include <SDL.h> /* for SDL_RWops */
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
 
-#define MAX_ANIM_SETS 16
-#define MAX_LINE_LEN  256
+static struct texture_arr s_map_textures;
+static bool               s_map_ctx_active = false;
 
-#if defined(_WIN32)
-    #define strtok_r strtok_s
-#endif
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
 
-#define READ_LINE(rwops, buff, fail_label)              \
-    do{                                                 \
-        if(!AL_ReadLine(rwops, buff))                   \
-            goto fail_label;                            \
-        buff[MAX_LINE_LEN - 1] = '\0';                  \
-    }while(0)
+bool R_GL_MapInit(const char map_texfiles[][256], size_t num_textures)
+{
+    return R_Texture_MakeArrayMap(map_texfiles, num_textures, &s_map_textures);
+}
 
+void R_GL_MapBegin(void)
+{
+    assert(!s_map_ctx_active);
 
-struct entity;
-struct map;
-struct aabb;
+    GLuint shader_prog = R_Shader_GetProgForName("terrain");
+    assert(shader_prog != -1);
+    glUseProgram(shader_prog);
+    R_Texture_GL_ActivateArray(&s_map_textures, shader_prog);
+    s_map_ctx_active = true;
+}
 
-struct pfobj_hdr{
-    float    version; 
-    unsigned num_verts;
-    unsigned num_joints;
-    unsigned num_materials;
-    unsigned num_as;
-    unsigned frame_counts[MAX_ANIM_SETS];
-    bool     has_collision;
-};
+void R_GL_MapEnd(void)
+{
+    assert(s_map_ctx_active);
+    s_map_ctx_active = false;
+}
 
-struct pfmap_hdr{
-    float    version;
-    unsigned num_materials;
-    unsigned num_rows;
-    unsigned num_cols;
-};
-
-
-bool           AL_Init(void);
-void           AL_Shutdown(void);
-
-struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name);
-void           AL_EntityFree(struct entity *entity);
-
-struct map    *AL_MapFromPFMap(const char *base_path, const char *pfmap_name);
-struct map    *AL_MapFromPFMapString(const char *str);
-void           AL_MapFree(struct map *map);
-
-bool           AL_ReadLine(SDL_RWops *stream, char *outbuff);
-bool           AL_ParseAABB(SDL_RWops *stream, struct aabb *out);
-
-#endif

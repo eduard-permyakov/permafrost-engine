@@ -39,19 +39,10 @@
 #include "mesh.h"
 #include "texture.h"
 
-enum texture_mode{
-    /* Each material has is its' own texture object. */
-    TEXTURE_MODE_SEPARATE,
-    /* All material textures are packed into a 1D texture array. */
-    TEXTURE_MODE_ARRAY
-};
-
 struct render_private{
     struct mesh         mesh;
-    enum texture_mode   tmode;
     size_t              num_materials;
     struct material    *materials;
-    struct texture_arr  tarray;         /* used when tmode == TEXTURE_MODE_ARRAY */
     GLuint              shader_prog;
     GLuint              shader_prog_dp; /* for the depth pass */
 };

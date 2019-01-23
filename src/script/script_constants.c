@@ -428,7 +428,6 @@ static void s_expose_event_constants(PyObject *module)
 
 static void s_expose_map_constants(PyObject *module)
 {
-    PY_EXPOSE_ENUM(module, MATERIALS_PER_CHUNK);
     PY_EXPOSE_ENUM(module, TILES_PER_CHUNK_WIDTH);
     PY_EXPOSE_ENUM(module, TILES_PER_CHUNK_HEIGHT);
     PY_EXPOSE_ENUM(module, MINIMAP_SIZE);

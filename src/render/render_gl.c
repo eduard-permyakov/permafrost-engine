@@ -244,17 +244,8 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model)
     glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
 
     r_gl_set_materials(priv->shader_prog, priv->num_materials, priv->materials);
-
-    switch(priv->tmode) {
-    case TEXTURE_MODE_SEPARATE:
-        for(int i = 0; i < priv->num_materials; i++) {
-            R_Texture_GL_Activate(&priv->materials[i].texture, priv->shader_prog);
-        }
-        break;
-    case TEXTURE_MODE_ARRAY:
-        R_Texture_GL_ActivateArray(&priv->tarray, priv->shader_prog);
-        break;
-    default: assert(0);
+    for(int i = 0; i < priv->num_materials; i++) {
+        R_Texture_GL_Activate(&priv->materials[i].texture, priv->shader_prog);
     }
     
     glBindVertexArray(priv->mesh.VAO);

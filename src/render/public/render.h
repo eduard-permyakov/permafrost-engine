@@ -311,6 +311,29 @@ void  R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t
 void  R_GL_MinimapFree(void);
 
 /*###########################################################################*/
+/* RENDER TERRAIN                                                            */
+/*###########################################################################*/
+
+/* ---------------------------------------------------------------------------
+ * Initialize map texture array with the specified list of textures.
+ * ---------------------------------------------------------------------------
+ */
+bool  R_GL_MapInit(const char map_texfiles[][256], size_t num_textures);
+
+/* ---------------------------------------------------------------------------
+ * Call prior to rendering any map chunks. Activates the map rendering context.
+ * Must be followed with a matching call to 'R_GL_MapEnd'.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_MapBegin(void);
+
+/* ---------------------------------------------------------------------------
+ * Call after finishing rendering all map chunks.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_MapEnd(void);
+
+/*###########################################################################*/
 /* RENDER SHADOWS                                                            */
 /*###########################################################################*/
 
@@ -372,19 +395,9 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
  *
  * This function will build the vertices and their vertices from the data
  * already parsed into the 'tiles'.
- * 
- * Material data is read from a separate stream.
  * ---------------------------------------------------------------------------
  */
-bool   R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats, 
-                                     const struct tile *tiles, size_t width, size_t height,
-                                     void *priv_buff, const char *basedir);
-
-/* ---------------------------------------------------------------------------
- * Update material data for a particular renderable object, parsed from a 
- * PFMAP material section stream.
- * ---------------------------------------------------------------------------
- */
-bool   R_AL_UpdateMats(SDL_RWops *mats_stream, size_t num_mats, void *priv_buff);
+bool   R_AL_InitPrivFromTiles(const struct tile *tiles, size_t width, size_t height,
+                              void *priv_buff, const char *basedir);
 
 #endif

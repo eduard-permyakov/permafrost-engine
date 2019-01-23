@@ -302,10 +302,61 @@ void R_Texture_MakeArray(const struct material *mats, size_t num_mats,
 
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
     GL_ASSERT_OK();
+}
+
+bool R_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures, 
+                            struct texture_arr *out)
+{
+    glActiveTexture(GL_TEXTURE0);
+    out->tunit = GL_TEXTURE0;
+    glGenTextures(1, &out->id);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
+
+    glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGB8, 
+        CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, num_textures);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+
+    for(int i = 0; i < num_textures; i++) {
+
+        extern const char *g_basepath;
+        char path[512];
+
+        strcpy(path, g_basepath);
+        strcat(path, "/assets/map_textures/");
+        strcat(path, texnames[i]);
+
+        int width, height, nr_channels;
+        unsigned char *orig_data = stbi_load(path, &width, &height, &nr_channels, 0);
+        if(!orig_data)
+            goto fail_load;
+
+        GLbyte resized_data[CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3];
+        int res = stbir_resize_uint8(orig_data, width, height, 0, resized_data, CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, 0, 3);
+
+        assert(1 == res);
+        stbi_image_free(orig_data);
+
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_TILE_TEX_RES, 
+            CONFIG_TILE_TEX_RES, 1, GL_RGB, GL_UNSIGNED_BYTE, resized_data);
+    }
+
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    GL_ASSERT_OK();
+    return true;
+
+fail_load:
+    glDeleteTextures(1, &out->id);
+    return false;
 }
 
 void R_Texture_GL_ActivateArray(const struct texture_arr *arr, GLuint shader_prog)

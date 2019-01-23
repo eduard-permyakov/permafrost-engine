@@ -200,7 +200,6 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     if(!vbuff)
         goto fail_alloc_vbuff;
 
-    priv->tmode = TEXTURE_MODE_SEPARATE;
     priv->mesh.num_verts = header->num_verts;
     priv->num_materials = header->num_materials;
     priv->materials = (void*)(priv + 1);
@@ -294,9 +293,8 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
     return ret;
 }
 
-bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats, 
-                                  const struct tile *tiles, size_t width, size_t height, 
-                                  void *priv_buff, const char *basedir)
+bool R_AL_InitPrivFromTiles(const struct tile *tiles, size_t width, size_t height, 
+                            void *priv_buff, const char *basedir)
 {
     size_t num_verts = VERTS_PER_TILE * (width * height);
 
@@ -308,10 +306,9 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
     if(!vbuff)
         goto fail_alloc;
 
-    priv->tmode = TEXTURE_MODE_ARRAY;
     priv->mesh.num_verts = num_verts;
     priv->materials = (void*)unused_base;
-    priv->num_materials = num_mats;
+    priv->num_materials = 0;
 
     for(int r = 0; r < height; r++) {
         for(int c = 0; c < width; c++) {
@@ -323,20 +320,6 @@ bool R_AL_InitPrivFromTilesAndMats(SDL_RWops *mats_stream, size_t num_mats,
         }
     }
 
-    size_t num_null = 0;
-    for(int i = 0; i < num_mats; i++) {
-
-        bool null;
-        priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
-        if(!al_read_material(mats_stream, basedir, &priv->materials[i], &null)) 
-            goto fail_parse;
-        if(null) {
-            priv->materials[i].texture.id = 0;
-            priv->materials[i].texname[0] = '\0';
-        }
-    }
-
-    R_Texture_MakeArray(priv->materials, priv->num_materials, &priv->tarray);
     R_GL_Init(priv, "terrain", vbuff);
     al_patch_vbuff_adjacency_info(priv->mesh.VBO, tiles, width, height);
 
@@ -348,26 +331,5 @@ fail_parse:
     free(vbuff);
 fail_alloc:
     return false;
-}
-
-bool R_AL_UpdateMats(SDL_RWops *mats_stream, size_t num_mats, void *priv_buff)
-{
-    struct render_private *priv = priv_buff;
-    extern const char *g_basepath;
-
-    for(int i = 0; i < num_mats; i++) {
-
-        bool null;
-        priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
-        if(!al_read_material(mats_stream, g_basepath, &priv->materials[i], &null)) 
-            return false;
-        if(null) {
-            priv->materials[i].texture.id = 0;
-            priv->materials[i].texname[0] = '\0';
-        }
-    }
-
-    priv->num_materials = 8;
-    return true;
 }
 
