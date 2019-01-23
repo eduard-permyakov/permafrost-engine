@@ -34,6 +34,7 @@
 
 import pf
 from constants import *
+import globals
 
 class TerrainTabWindow(pf.Window):
 
@@ -47,7 +48,6 @@ class TerrainTabWindow(pf.Window):
         self.brush_type_idx = 0
         self.edges_type_idx = 0
         self.selected_tile = None
-        self.materials_list = []
         self.heights = [h for h in range(0, 10)]
         self.selected_height_idx = 0
 
@@ -97,9 +97,9 @@ class TerrainTabWindow(pf.Window):
 
             def textures_group():
                 self.layout_row_static(25, UI_LEFT_PANE_WIDTH-60, 1)
-                for i in range(0, len(self.materials_list)):
+                for i in range(0, len(globals.active_map.materials)):
                     old = self.selected_mat_idx
-                    on = self.selectable_label(self.materials_list[i].name, 
+                    on = self.selectable_label(globals.active_map.materials[i].name, 
                         pf.NK_TEXT_ALIGN_LEFT, i == self.selected_mat_idx)
                     if on: 
                         self.selected_mat_idx = i

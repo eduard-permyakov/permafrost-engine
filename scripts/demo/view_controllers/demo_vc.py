@@ -41,8 +41,11 @@ class DemoVC(vc.ViewController):
     def __init__(self, view):
         self.__view = view
         self.__view.fac_names = [fac["name"] for fac in pf.get_factions_list()]
-        assert len(self.__view.fac_names) >= 2
-        self.__view.active_fac_idx = 1
+        assert len(self.__view.fac_names) > 0
+        if len(self.__view.fac_names) >= 2:
+            self.__view.active_fac_idx = 1
+        else:
+            self.__view.active_fac_idx = 0
 
     def __on_controlled_faction_chagned(self, event):
         pf.clear_unit_selection()

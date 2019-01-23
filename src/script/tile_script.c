@@ -48,6 +48,11 @@ typedef struct {
 static int PyTile_init(PyTileObject *self, PyObject *args);
 static PyObject *PyTile_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 
+static PyObject *PyTile_get_top_left_height(PyTileObject *self, void *closure);
+static PyObject *PyTile_get_top_right_height(PyTileObject *self, void *closure);
+static PyObject *PyTile_get_bot_left_height(PyTileObject *self, void *closure);
+static PyObject *PyTile_get_bot_right_height(PyTileObject *self, void *closure);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -69,6 +74,26 @@ static PyMemberDef PyTileMembers[] = {
     {NULL}  /* Sentinel */
 };
 
+static PyGetSetDef PyTile_getset[] = {
+    {"top_left_height",
+    (getter)PyTile_get_top_left_height, NULL,
+    "The height of the top left corner.",
+    NULL},
+    {"top_right_height",
+    (getter)PyTile_get_top_right_height, NULL,
+    "The height of the top right corner.",
+    NULL},
+    {"bot_left_height",
+    (getter)PyTile_get_bot_left_height, NULL,
+    "The height of the bot left corner.",
+    NULL},
+    {"bot_right_height",
+    (getter)PyTile_get_bot_right_height, NULL,
+    "The height of the bot right corner.",
+    NULL},
+    {NULL}  /* Sentinel */
+};
+
 static PyTypeObject PyTile_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name        = "pf.Tile",
@@ -76,6 +101,7 @@ static PyTypeObject PyTile_type = {
     .tp_flags       = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc         = "Map tile representation for Permafrost Engine maps.",
     .tp_members     = PyTileMembers,
+    .tp_getset      = PyTile_getset,
     .tp_init        = (initproc)PyTile_init,
     .tp_new         = PyTile_new,
 };
@@ -100,6 +126,26 @@ static PyObject *PyTile_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     PyObject *self = type->tp_alloc(type, 0);
     return self;
+}
+
+static PyObject *PyTile_get_top_left_height(PyTileObject *self, void *closure)
+{
+    return Py_BuildValue("i", M_Tile_NWHeight(&self->tile));
+}
+
+static PyObject *PyTile_get_top_right_height(PyTileObject *self, void *closure)
+{
+    return Py_BuildValue("i", M_Tile_NEHeight(&self->tile));
+}
+
+static PyObject *PyTile_get_bot_left_height(PyTileObject *self, void *closure)
+{
+    return Py_BuildValue("i", M_Tile_SWHeight(&self->tile));
+}
+
+static PyObject *PyTile_get_bot_right_height(PyTileObject *self, void *closure)
+{
+    return Py_BuildValue("i", M_Tile_SEHeight(&self->tile));
 }
 
 /*****************************************************************************/

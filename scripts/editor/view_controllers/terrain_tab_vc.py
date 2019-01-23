@@ -39,79 +39,12 @@ import globals
 import view_controller as vc
 
 
-def tile_left_height(tile):
-    if tile.type == map.TILETYPE_RAMP_EW \
-    or tile.type == map.TILETYPE_CORNER_CONVEX_NE \
-    or tile.type == map.TILETYPE_CORNER_CONVEX_SE:
-        return tile.base_height + tile.ramp_height
-    else: 
-        return tile.base_height
-
-def tile_right_height(tile):
-    if tile.type == map.TILETYPE_RAMP_WE \
-    or tile.type == map.TILETYPE_CORNER_CONVEX_NW \
-    or tile.type == map.TILETYPE_CORNER_CONVEX_SW:
-        return tile.base_height + tile.ramp_height
-    else:
-        return tile.base_height
-
-def tile_bot_height(tile):
-    if tile.type == map.TILETYPE_RAMP_NS \
-    or tile.type == map.TILETYPE_CORNER_CONVEX_NW \
-    or tile.type == map.TILETYPE_CORNER_CONVEX_NE:
-        return tile.base_height + tile.ramp_height
-    else:
-        return tile.base_height
-
-def tile_top_height(tile):
-    if tile.type == map.TILETYPE_RAMP_SN \
-    or tile.type == map.TILETYPE_CORNER_CONVEX_SW \
-    or tile.type == map.TILETYPE_CORNER_CONVEX_SE:
-        return tile.base_height + tile.ramp_height
-    else:
-        return tile.base_height
-
-def tile_top_left_height(tile):
-    if tile == None:
-        return None
-    if tile.type == map.TILETYPE_CORNER_CONCAVE_SE:
-        return tile.base_height + tile.ramp_height;
-    else:
-        return max(tile_top_height(tile), tile_left_height(tile))
-
-def tile_top_right_height(tile):
-    if tile == None:
-        return None
-    if tile.type == map.TILETYPE_CORNER_CONCAVE_SW:
-        return tile.base_height + tile.ramp_height;
-    else:
-        return max(tile_top_height(tile), tile_right_height(tile))
-
-def tile_bot_right_height(tile):
-    if tile == None:
-        return None
-    if tile.type == map.TILETYPE_CORNER_CONCAVE_NW:
-        return tile.base_height + tile.ramp_height
-    else:
-        return max(tile_bot_height(tile), tile_right_height(tile))
-
-def tile_bot_left_height(tile):
-    if tile == None:
-        return None
-    if tile.type == map.TILETYPE_CORNER_CONCAVE_NE:
-        return tile.base_height + tile.ramp_height
-    else:
-        return max(tile_bot_height(tile), tile_left_height(tile))
-
-
 class TerrainTabVC(vc.ViewController):
 
     def __init__(self, view):
         self.view = view
         self.selected_tile = None
         self.painting = False
-
-        self.view.materials_list = globals.active_map.materials
 
     def __update_objects_for_height_change(self):
         for obj in globals.active_objects_list:
@@ -138,7 +71,7 @@ class TerrainTabVC(vc.ViewController):
                         globals.active_map.update_tile_mat(tile_coords, globals.active_map.materials[self.view.selected_mat_idx])
                     elif self.view.brush_type_idx == 1:
                         center_height = self.view.heights[self.view.selected_height_idx]
-                        globals.active_map.update_tile(tile_coords, center_height, newtype=map.TILETYPE_FLAT)
+                        globals.active_map.update_tile(tile_coords, center_height, newtype=pf.TILETYPE_FLAT)
 
         if self.view.edges_type_idx == 1:
             self.__paint_smooth_border(self.view.brush_size_idx + 1, 'down')
@@ -177,53 +110,53 @@ class TerrainTabVC(vc.ViewController):
         global_c = tile_coords[0][1] * pf.TILES_PER_CHUNK_WIDTH  + tile_coords[1][1]
 
         tile_for_case = [
-            map.TILETYPE_FLAT,
-            map.TILETYPE_CORNER_CONCAVE_NE,
-            map.TILETYPE_CORNER_CONCAVE_NW,
-            map.TILETYPE_RAMP_NS,
-            map.TILETYPE_CORNER_CONCAVE_SW,
-            map.TILETYPE_FLAT, #ambiguous case
-            map.TILETYPE_RAMP_WE,
-            map.TILETYPE_CORNER_CONVEX_NW,
-            map.TILETYPE_CORNER_CONCAVE_SE,
-            map.TILETYPE_RAMP_EW,
-            map.TILETYPE_FLAT, #ambiguous case
-            map.TILETYPE_CORNER_CONVEX_NE,
-            map.TILETYPE_RAMP_SN,
-            map.TILETYPE_CORNER_CONVEX_SE,
-            map.TILETYPE_CORNER_CONVEX_SW,
-            map.TILETYPE_FLAT
+            pf.TILETYPE_FLAT,
+            pf.TILETYPE_CORNER_CONCAVE_NE,
+            pf.TILETYPE_CORNER_CONCAVE_NW,
+            pf.TILETYPE_RAMP_NS,
+            pf.TILETYPE_CORNER_CONCAVE_SW,
+            pf.TILETYPE_FLAT, #ambiguous case
+            pf.TILETYPE_RAMP_WE,
+            pf.TILETYPE_CORNER_CONVEX_NW,
+            pf.TILETYPE_CORNER_CONCAVE_SE,
+            pf.TILETYPE_RAMP_EW,
+            pf.TILETYPE_FLAT, #ambiguous case
+            pf.TILETYPE_CORNER_CONVEX_NE,
+            pf.TILETYPE_RAMP_SN,
+            pf.TILETYPE_CORNER_CONVEX_SE,
+            pf.TILETYPE_CORNER_CONVEX_SW,
+            pf.TILETYPE_FLAT
         ]
 
         tile = globals.active_map.tile_at_coords(*tile_coords)
         func = max if dir == 'up' else min
 
         nw_height = func([h for h in [
-            tile_top_right_height(globals.active_map.relative_tile(global_r, global_c,  0, -1)),
-            tile_bot_right_height(globals.active_map.relative_tile(global_r, global_c, -1, -1)),
-            tile_bot_left_height (globals.active_map.relative_tile(global_r, global_c, -1,  0)),
-            tile_top_left_height(tile)
+            getattr(globals.active_map.relative_tile(global_r, global_c,  0, -1), "top_right_height", None),
+            getattr(globals.active_map.relative_tile(global_r, global_c, -1, -1), "bot_right_height", None),
+            getattr(globals.active_map.relative_tile(global_r, global_c, -1,  0), "bot_left_height", None),
+            getattr(tile, "top_left_height", None)
         ] if h is not None])
 
         ne_height = func([h for h in [
-            tile_bot_right_height(globals.active_map.relative_tile(global_r, global_c, -1,  0)),
-            tile_bot_left_height (globals.active_map.relative_tile(global_r, global_c, -1,  1)),
-            tile_top_left_height (globals.active_map.relative_tile(global_r, global_c,  0,  1)),
-            tile_top_right_height(tile)
+            getattr(globals.active_map.relative_tile(global_r, global_c, -1,  0), "bot_right_height", None),
+            getattr(globals.active_map.relative_tile(global_r, global_c, -1,  1), "bot_left_height", None),
+            getattr(globals.active_map.relative_tile(global_r, global_c,  0,  1), "top_left_height", None),
+            getattr(tile, "top_right_height", None)
         ] if h is not None])
 
         se_height = func([h for h in [
-            tile_bot_left_height (globals.active_map.relative_tile(global_r, global_c,  0,  1)),
-            tile_top_left_height (globals.active_map.relative_tile(global_r, global_c,  1,  1)),
-            tile_top_right_height(globals.active_map.relative_tile(global_r, global_c,  1,  0)),
-            tile_bot_right_height(tile)
+            getattr(globals.active_map.relative_tile(global_r, global_c,  0,  1), "bot_left_height", None),
+            getattr(globals.active_map.relative_tile(global_r, global_c,  1,  1), "top_left_height", None),
+            getattr(globals.active_map.relative_tile(global_r, global_c,  1,  0), "top_right_height", None),
+            getattr(tile, "bot_right_height", None)
         ] if h is not None])
 
         sw_height = func([h for h in [
-            tile_top_left_height (globals.active_map.relative_tile(global_r, global_c,  1,  0)),
-            tile_top_right_height(globals.active_map.relative_tile(global_r, global_c,  1, -1)),
-            tile_bot_right_height(globals.active_map.relative_tile(global_r, global_c,  0, -1)),
-            tile_bot_left_height(tile)
+            getattr(globals.active_map.relative_tile(global_r, global_c,  1,  0), "top_left_height", None),
+            getattr(globals.active_map.relative_tile(global_r, global_c,  1, -1), "top_right_height", None),
+            getattr(globals.active_map.relative_tile(global_r, global_c,  0, -1), "bot_right_height", None),
+            getattr(tile, "bot_left_height", None)
         ] if h is not None]) 
 
         og_heights = [nw_height, ne_height, se_height, sw_height]

@@ -39,20 +39,6 @@ import copy
 
 EDITOR_PFMAP_VERSION = 1.0
 
-TILETYPE_FLAT              = 0x0
-TILETYPE_RAMP_SN           = 0x1
-TILETYPE_RAMP_NS           = 0x2
-TILETYPE_RAMP_EW           = 0x3
-TILETYPE_RAMP_WE           = 0x4
-TILETYPE_CORNER_CONCAVE_SW = 0x5
-TILETYPE_CORNER_CONVEX_SW  = 0x6
-TILETYPE_CORNER_CONCAVE_SE = 0x7
-TILETYPE_CORNER_CONVEX_SE  = 0x8
-TILETYPE_CORNER_CONCAVE_NW = 0x9
-TILETYPE_CORNER_CONVEX_NW  = 0xa
-TILETYPE_CORNER_CONCAVE_NE = 0xb
-TILETYPE_CORNER_CONVEX_NE  = 0xc
-
 
 def tile_to_string(tile):
     ret = ""
@@ -167,7 +153,7 @@ class Map(object):
     def pfmap_str(self):
         ret = ""
         ret += "version " + str(EDITOR_PFMAP_VERSION) + "\n"
-        ret += "num_materials " + str(len(Map.DEFAULT_MATERIALS_LIST)) + "\n"
+        ret += "num_materials " + str(len(self.materials)) + "\n"
         ret += "num_rows " + str(self.chunk_rows) + "\n"
         ret += "num_cols " + str(self.chunk_cols) + "\n"
 
@@ -257,7 +243,7 @@ class Map(object):
                 ret.materials += [Material.from_string(lines[line_idx])]
                 line_idx += 1
             for mat in Map.DEFAULT_MATERIALS_LIST:
-                if mat.name not in [m.name for m in ret.materials]:
+                if mat.texname not in [m.texname for m in ret.materials]:
                     ret.materials += [mat]
 
             for r in range(0, ret.chunk_rows):
