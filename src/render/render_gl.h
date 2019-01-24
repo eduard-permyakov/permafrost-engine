@@ -49,6 +49,8 @@
 struct render_private;
 struct vertex;
 struct tile;
+struct tile_desc;
+struct map;
 
 /* General */
 
@@ -64,15 +66,5 @@ void   R_GL_SetShadowMap(const GLuint shadow_map_tex_id);
 /* Tiles */
 
 void   R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r, size_t c);
-
-/* ---------------------------------------------------------------------------
- * Patch the vertices for a particular tile to have adjacency information
- * about the neighboring tiles, to be used for smooth blending.
- * Tiles which border tiles with different materials will get blending
- * 'turned on' by setting a vertex attribute.
- * ---------------------------------------------------------------------------
- */
-void   R_GL_TilePatchVertsBlend(GLuint VBO, const struct tile *tiles, 
-                                int width, int height, int r, int c);
 
 #endif

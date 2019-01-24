@@ -155,15 +155,6 @@ fail:
     return false;
 }
 
-void al_patch_vbuff_adjacency_info(GLuint VBO, const struct tile *tiles, size_t width, size_t height)
-{
-    for(int r = 0; r < height; r++) {
-        for(int c = 0; c < width; c++) {
-            R_GL_TilePatchVertsBlend(VBO, tiles, width, height, r, c);
-        }
-    }
-}
-
 size_t al_priv_buffsize_from_header(const struct pfobj_hdr *header)
 {
     size_t ret = 0;
@@ -173,7 +164,6 @@ size_t al_priv_buffsize_from_header(const struct pfobj_hdr *header)
 
     return ret;
 }
-
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -326,7 +316,6 @@ bool R_AL_InitPrivFromTiles(const struct tile *tiles, size_t width, size_t heigh
 #else
     R_GL_Init(priv, "terrain", vbuff);
 #endif
-    al_patch_vbuff_adjacency_info(priv->mesh.VBO, tiles, width, height);
 
     free(vbuff);
     GL_ASSERT_OK();

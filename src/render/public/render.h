@@ -271,8 +271,7 @@ int    R_GL_TileGetTriMesh(const struct tile_desc *in, const void *chunk_rprivat
  * Will also update surrounding tiles with new adjacency data.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_TileUpdate(void *chunk_rprivate, int r, int c, int tiles_width, int tiles_height, 
-                       const struct tile *tiles);
+void   R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, struct tile_desc desc);
 
 /*###########################################################################*/
 /* RENDER MINIMAP                                                            */
@@ -309,6 +308,15 @@ void  R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t
  * ---------------------------------------------------------------------------
  */
 void  R_GL_MinimapFree(void);
+
+/* ---------------------------------------------------------------------------
+ * Patch the vertices for a particular tile to have adjacency information
+ * about the neighboring tiles, to be used for smooth blending.
+ * Tiles which border tiles with different materials will get blending
+ * 'turned on' by setting a vertex attribute.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struct tile_desc tile);
 
 /*###########################################################################*/
 /* RENDER TERRAIN                                                            */

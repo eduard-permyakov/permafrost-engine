@@ -340,3 +340,27 @@ bool M_NavPositionPathable(const struct map *map, vec2_t xz_pos)
     return N_PositionPathable(xz_pos, map->nav_private, map->pos);
 }
 
+bool M_TileForDesc(const struct map *map, struct tile_desc desc, struct tile **out)
+{
+    if(desc.chunk_r < 0 || desc.chunk_r >= map->height)
+        return false;
+    if(desc.chunk_c < 0 || desc.chunk_c >= map->width)
+        return false;
+    if(desc.tile_r < 0 || desc.tile_r >= TILES_PER_CHUNK_HEIGHT)
+        return false;
+    if(desc.tile_c < 0 || desc.tile_c >= TILES_PER_CHUNK_WIDTH)
+        return false;
+
+    *out = (struct tile*)&map->chunks[desc.chunk_r * map->width + desc.chunk_c]
+        .tiles[desc.tile_r * TILES_PER_CHUNK_WIDTH + desc.tile_c];
+    return true;
+}
+
+void M_GetResolution(const struct map *map, struct map_resolution *out)
+{
+    out->chunk_w = map->width;
+    out->chunk_h = map->height;
+    out->tile_w = TILES_PER_CHUNK_WIDTH;
+    out->tile_h = TILES_PER_CHUNK_HEIGHT;
+}
+

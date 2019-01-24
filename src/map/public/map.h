@@ -56,6 +56,7 @@ struct tile;
 struct tile_desc;
 struct obb;
 enum render_pass;
+struct map_resolution;
 
 
 /*###########################################################################*/
@@ -219,6 +220,19 @@ bool   M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos);
  * ------------------------------------------------------------------------
  */
 bool   M_NavPositionPathable(const struct map *map, vec2_t xz_pos);
+
+/* ------------------------------------------------------------------------
+ * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 
+ * Returns 'true' on success, 'false' on failure.
+ * ------------------------------------------------------------------------
+ */
+bool   M_TileForDesc(const struct map *map, struct tile_desc desc, struct tile **out);
+
+/* ------------------------------------------------------------------------
+ * Get the resolution (chunks, tiles) of the specified map.
+ * ------------------------------------------------------------------------
+ */
+void   M_GetResolution(const struct map *map, struct map_resolution *out);
 
 /*###########################################################################*/
 /* MINIMAP                                                                   */

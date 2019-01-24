@@ -130,6 +130,21 @@ fail:
     return false;
 }
 
+static void m_al_patch_adjacency_info(struct map *map)
+{
+    for(int r = 0; r < map->height; r++) {
+    for(int c = 0; c < map->width; c++) {
+
+        void *chunk_rprivate = map->chunks[r * map->width + c].render_private;
+        for(int tile_r = 0; tile_r < TILES_PER_CHUNK_HEIGHT; tile_r++) {
+        for(int tile_c = 0; tile_c < TILES_PER_CHUNK_HEIGHT; tile_c++) {
+        
+            struct tile_desc desc = (struct tile_desc){r, c, tile_r, tile_c};
+            R_GL_TilePatchVertsBlend(chunk_rprivate, map, desc);
+        }}
+    }}
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -176,6 +191,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
             return false;
         }
     }
+    m_al_patch_adjacency_info(map);
 
     /* Build navigation grid */
     const struct tile *chunk_tiles[map->width * map->height];
@@ -208,8 +224,22 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
 
     struct pfchunk *chunk = &map->chunks[desc->chunk_r * map->width + desc->chunk_c];
     chunk->tiles[desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c] = *tile;
-    R_GL_TileUpdate(chunk->render_private, desc->tile_r, desc->tile_c, 
-        TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, chunk->tiles);
+
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
+    for(int dr = -1; dr <= 1; dr++) {
+        for(int dc = -1; dc <= 1; dc++) {
+        
+            struct tile_desc curr = *desc;
+            int ret = M_Tile_RelativeDesc(res, &curr, dc, dr);
+            if(ret) {
+            
+                struct pfchunk *chunk = &map->chunks[curr.chunk_r * map->width + curr.chunk_c];
+                R_GL_TileUpdate(chunk->render_private, map, curr);
+            }
+        }
+    }
 
     return true;
 }
@@ -247,7 +277,6 @@ void M_AL_DumpMap(FILE *stream, const struct map *map)
 void M_AL_FreePrivate(struct map *map)
 {
     //TODO: Clean up OpenGL buffers
-    //TODO: Clean up extra allocations by map
     assert(map->nav_private);
     N_FreePrivate(map->nav_private);
 }
