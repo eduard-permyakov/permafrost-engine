@@ -53,7 +53,7 @@
 
 static bool m_al_parse_tile(const char *str, struct tile *out)
 {
-    if(strlen(str) != 6)
+    if(strlen(str) != 8)
         return false;
 
     char type_hexstr[2] = {str[0], '\0'};
@@ -62,9 +62,9 @@ static bool m_al_parse_tile(const char *str, struct tile *out)
     out->type          = (enum tiletype) strtol(type_hexstr, NULL, 16);
     out->pathable      = (bool)          (str[1] - '0');
     out->base_height   = (int)           (str[2] - '0');
-    out->top_mat_idx   = (int)           (str[3] - '0');
-    out->sides_mat_idx = (int)           (str[4] - '0');
-    out->ramp_height   = (int)           (str[5] - '0');
+    out->top_mat_idx   = (int)           (10 * (str[3] - '0') + (str[4] - '0'));
+    out->sides_mat_idx = (int)           (10 * (str[5] - '0') + (str[6] - '0'));
+    out->ramp_height   = (int)           (str[7] - '0');
 
     return true;
 }
