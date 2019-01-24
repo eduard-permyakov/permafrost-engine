@@ -148,10 +148,6 @@ BUILT-IN FUNCTIONS
     Determines how many tiles around the currently hovered tile are highlighted. (0
     = none, 1 = single tile highlighted, 2 = 3x3 grid highlighted, etc.)
 
-    [set_map_render_mode]
-    --------------------------------------------------------------------------------
-    Sets the rendering mode for every chunk in the currently active map.
-
     [set_minimap_position]
     --------------------------------------------------------------------------------
     Set the center position of the minimap in screen coordinates.
@@ -164,11 +160,6 @@ BUILT-IN FUNCTIONS
     [unregister_event_handler]
     --------------------------------------------------------------------------------
     Removes a script event handler added by 'register_event_handler'.
-
-    [update_chunk_materials]
-    --------------------------------------------------------------------------------
-    Update the material list for a particular chunk. Expects a tuple of chunk
-    coordinates and a PFMAP material section string as arguments.
 
     [update_faction]
     --------------------------------------------------------------------------------
@@ -445,6 +436,12 @@ BUILT-IN CLASSES
         [base_height]
         The height level of the bottom plane of the tile.
 
+        [bot_left_height]
+        The height of the bot left corner.
+
+        [bot_right_height]
+        The height of the bot right corner.
+
         [pathable]
         Whether or not units can travel through this tile.
 
@@ -454,8 +451,14 @@ BUILT-IN CLASSES
         [sides_mat_idx]
         Material index for the side faces of the tile.
 
+        [top_left_height]
+        The height of the top left corner.
+
         [top_mat_idx]
         Material index for the top face of the tile.
+
+        [top_right_height]
+        The height of the top right corner.
 
         [type]
         Integer value specifying whether this tile is a ramp, which direction it faces,
@@ -604,8 +607,6 @@ BUILT-IN CONSTANTS
 
     CAM_MODE_FPS 0
     CAM_MODE_RTS 1
-    CHUNK_RENDER_MODE_PREBAKED 1
-    CHUNK_RENDER_MODE_REALTIME_BLEND 0
     DIPLOMACY_STATE_PEACE 0
     DIPLOMACY_STATE_WAR 1
     EVENT_10HZ_TICK 65546
@@ -628,7 +629,6 @@ BUILT-IN CONSTANTS
     EVENT_UPDATE_END 65537
     EVENT_UPDATE_START 65536
     EVENT_UPDATE_UI 65538
-    MATERIALS_PER_CHUNK 8
     MINIMAP_SIZE 256
     NK_CHART_COLUMN 1
     NK_CHART_LINES 0
@@ -966,3 +966,16 @@ BUILT-IN CONSTANTS
     SDL_WINDOWEVENT 512
     TILES_PER_CHUNK_HEIGHT 32
     TILES_PER_CHUNK_WIDTH 32
+    TILETYPE_CORNER_CONCAVE_NE 11
+    TILETYPE_CORNER_CONCAVE_NW 9
+    TILETYPE_CORNER_CONCAVE_SE 7
+    TILETYPE_CORNER_CONCAVE_SW 5
+    TILETYPE_CORNER_CONVEX_NE 12
+    TILETYPE_CORNER_CONVEX_NW 10
+    TILETYPE_CORNER_CONVEX_SE 8
+    TILETYPE_CORNER_CONVEX_SW 6
+    TILETYPE_FLAT 0
+    TILETYPE_RAMP_EW 3
+    TILETYPE_RAMP_NS 2
+    TILETYPE_RAMP_SN 1
+    TILETYPE_RAMP_WE 4

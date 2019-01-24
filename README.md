@@ -49,7 +49,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * SDL2 2.0.7
 * GLEW 2.1.0
 * python 2.7.13
-* stb_image.h
+* stb_image.h, stb_image_resize.h
 * khash.h, kvec.h
 * nuklear.h
 
