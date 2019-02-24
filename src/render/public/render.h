@@ -58,6 +58,13 @@ enum render_pass{
     RENDER_PASS_REGULAR
 };
 
+enum render_info{
+    RENDER_INFO_VENDOR,
+    RENDER_INFO_RENDERER,
+    RENDER_INFO_VERSION,
+    RENDER_INFO_SL_VERSION,
+};
+
 /* Each face is made of 2 independent triangles. The top face is an exception, and is made up of 4 
  * triangles. This is to give each triangle a vertex which lies at the center of the tile in the XZ
  * dimensions.
@@ -244,6 +251,12 @@ void   R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, size_t co
  * ---------------------------------------------------------------------------
  */
 void   R_GL_SetScreenspaceDrawMode(void);
+
+/* ---------------------------------------------------------------------------
+ * Returns a pointer (not to be freed or written to) to a information string.
+ * ---------------------------------------------------------------------------
+ */
+const char *R_GL_GetInfo(enum render_info attr);
 
 /*###########################################################################*/
 /* RENDER TILES                                                              */

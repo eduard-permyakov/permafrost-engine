@@ -69,6 +69,7 @@ static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args);
 static PyObject *PyPf_prev_frame_ms(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
 static PyObject *PyPf_get_basedir(PyObject *self);
+static PyObject *PyPf_get_render_info(PyObject *self);
 static PyObject *PyPf_get_mouse_pos(PyObject *self);
 static PyObject *PyPf_mouse_over_ui(PyObject *self);
 
@@ -161,6 +162,11 @@ static PyMethodDef pf_module_methods[] = {
     {"get_basedir", 
     (PyCFunction)PyPf_get_basedir, METH_NOARGS,
     "Get the path to the top-level game resource folder (parent of 'assets')."},
+
+    {"get_render_info", 
+    (PyCFunction)PyPf_get_render_info, METH_NOARGS,
+    "Returns a dictionary describing the renderer context. It will have the string keys "
+    "'renderer', 'version', 'shading_language_version', and 'vendor'."},
 
     {"get_mouse_pos", 
     (PyCFunction)PyPf_get_mouse_pos, METH_NOARGS,
@@ -498,6 +504,23 @@ static PyObject *PyPf_get_basedir(PyObject *self)
 {
     extern const char *g_basepath;
     return Py_BuildValue("s", g_basepath);
+}
+
+static PyObject *PyPf_get_render_info(PyObject *self)
+{
+    PyObject *ret = PyDict_New();
+    if(!ret) {
+        return NULL;
+    }
+
+    int rval = 0;
+    rval |= PyDict_SetItemString(ret, "version",  Py_BuildValue("s", R_GL_GetInfo(RENDER_INFO_VERSION)));
+    rval |= PyDict_SetItemString(ret, "vendor",   Py_BuildValue("s", R_GL_GetInfo(RENDER_INFO_VENDOR)));
+    rval |= PyDict_SetItemString(ret, "renderer", Py_BuildValue("s", R_GL_GetInfo(RENDER_INFO_RENDERER)));
+    rval |= PyDict_SetItemString(ret, "shading_language_version", Py_BuildValue("s", R_GL_GetInfo(RENDER_INFO_SL_VERSION)));
+    assert(0 == rval);
+
+    return ret;
 }
 
 static PyObject *PyPf_get_mouse_pos(PyObject *self)

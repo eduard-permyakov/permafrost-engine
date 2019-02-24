@@ -1168,3 +1168,14 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
+const char *R_GL_GetInfo(enum render_info attr)
+{
+    switch(attr) {
+    case RENDER_INFO_VENDOR:        return glGetString(GL_VENDOR);
+    case RENDER_INFO_RENDERER:      return glGetString(GL_RENDERER);
+    case RENDER_INFO_VERSION:       return glGetString(GL_VERSION);
+    case RENDER_INFO_SL_VERSION:    return glGetString(GL_SHADING_LANGUAGE_VERSION);
+    default: assert(0);             return NULL;
+    }
+}
+

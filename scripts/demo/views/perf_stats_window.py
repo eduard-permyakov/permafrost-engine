@@ -37,7 +37,7 @@ import pf
 class PerfStatsWindow(pf.Window):
 
     def __init__(self):
-        super(PerfStatsWindow, self).__init__("Performance", (300, 25, 600, 195), 
+        super(PerfStatsWindow, self).__init__("Performance", (300, 25, 600, 320), 
             pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE | pf.NK_WINDOW_NO_SCROLLBAR)
         self.tickindex = 0
         self.ticksum_ms = 0
@@ -64,8 +64,22 @@ class PerfStatsWindow(pf.Window):
             return
         
         fps = 1000/avg_frame_latency_ms
-        self.label_colored_wrap("FPS: {0}".format(int(fps)), (255, 255, 255));
+        self.label_colored_wrap("FPS: {0}".format(int(fps)), (255, 255, 0));
+
+        self.layout_row_dynamic(20, 2)
+        self.label_colored_wrap("Avg. Frame Latency: {0:.1f} ms".format(avg_frame_latency_ms), (255, 255, 0));
 
         self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Max frame latency: {0} ms".format(self.max_frame_latency), (255, 255, 255))
+        self.label_colored_wrap("Max Frame Latency: {0} ms".format(self.max_frame_latency), (255, 255, 0))
+
+        render_info = pf.get_render_info()
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Renderer: %s" % render_info["renderer"], (255, 255, 255))
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Version: %s" % render_info["version"], (255, 255, 255))
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Shading Language Version: %s" % render_info["shading_language_version"], (255, 255, 255))
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Vendor: %s" % render_info["vendor"], (255, 255, 255))
 
