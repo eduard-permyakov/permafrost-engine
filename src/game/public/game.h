@@ -148,6 +148,7 @@ enum combat_stance{
 };
 
 bool G_Combat_SetStance(const struct entity *ent, enum combat_stance stance);
+int  G_Combat_GetCurrentHP(const struct entity *ent);
 
 #endif
 

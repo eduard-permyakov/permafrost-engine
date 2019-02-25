@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2018 Eduard Permyakov 
+ *  Copyright (C) 2019 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,32 +33,48 @@
  *
  */
 
-#ifndef VERTEX_H
-#define VERTEX_H
+#version 330 core
 
-#include "../pf_math.h"
-#include <GL/glew.h>
+layout (location = 0) in vec3 in_pos;
+layout (location = 1) in vec2 in_uv;
 
-struct vertex{
-    vec3_t  pos;
-    vec2_t  uv;
-    vec3_t  normal;
-    GLint   material_idx;
-    GLint   joint_indices[6];
-    GLfloat weights[6];
-    /* The following attributes are used for terrain vertices. */
-    GLint   blend_mode;
-    GLint   adjacent_mat_indices[4];
-};
+#define MAX_HBS   (512)
 
-struct colored_vert{
-    vec3_t pos;
-    vec4_t color;
-};
+/* Must match the definition in the fragment shader */
+#define HB_WIDTH  (40.0)
+#define HB_HEIGHT (4.0)
 
-struct textured_vert{
-    vec3_t pos;
-    vec2_t uv;
-};
+/*****************************************************************************/
+/* OUTPUTS                                                                   */
+/*****************************************************************************/
 
-#endif
+out VertexToFrag {
+         vec2 uv;
+        float health_pc;
+}to_fragment;
+
+/*****************************************************************************/
+/* UNIFORMS                                                                  */
+/*****************************************************************************/
+
+/* Should be set up for screenspace rendering */
+uniform mat4 view;
+uniform mat4 projection;
+
+uniform vec2  ent_top_offsets_ss[MAX_HBS];
+uniform float ent_health_pc[MAX_HBS];
+
+/*****************************************************************************/
+/* PROGRAM
+/*****************************************************************************/
+
+void main()
+{
+    to_fragment.uv = in_uv;
+    to_fragment.health_pc = ent_health_pc[gl_InstanceID];
+
+    vec2 ss_pos = vec2(in_pos.x * HB_WIDTH, in_pos.y * HB_HEIGHT);
+    ss_pos += ent_top_offsets_ss[gl_InstanceID];
+    gl_Position = projection * view * vec4(ss_pos, 0.0, 1.0);
+}
+

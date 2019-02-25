@@ -70,5 +70,6 @@ enum pf_window_flags{
  * for the same shadow map resolution. 
  */
 #define CONFIG_SHADOW_FOV           128
+#define CONFIG_HEALTHBARS           true
 
 #endif

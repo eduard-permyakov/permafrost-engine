@@ -258,6 +258,17 @@ void   R_GL_SetScreenspaceDrawMode(void);
  */
 const char *R_GL_GetInfo(enum render_info attr);
 
+
+/* ---------------------------------------------------------------------------
+ * Draws the healthbars for the following 'num_ents'. 'ent_health_pc' must be
+ * initialized to a buffer of 'num_ents' floats (health percentages) and 
+ * 'ent_top_pos_ws' must be initialized to a buffer of 'num_ents' worldspace
+ * positions (the top center of the entity's OBB).
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawHealthbars(size_t num_ents, GLfloat *ent_health_pc, vec3_t *ent_top_pos_ws,
+                           const struct camera *cam);
+
 /*###########################################################################*/
 /* RENDER TILES                                                              */
 /*###########################################################################*/

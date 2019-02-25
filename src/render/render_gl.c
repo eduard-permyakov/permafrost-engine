@@ -268,6 +268,7 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
         "mesh.animated.normals.colored",
         "terrain",
         "terrain-shadowed",
+        "statusbar",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -294,6 +295,7 @@ void R_GL_SetProj(const mat4x4_t *proj)
         "mesh.animated.normals.colored",
         "terrain",
         "terrain-shadowed",
+        "statusbar",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++)

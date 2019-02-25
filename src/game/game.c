@@ -197,6 +197,33 @@ static void g_draw_pass(void)
     }
 }
 
+static void g_render_healthbars(void)
+{
+    size_t max_ents = kv_size(s_gs.visible);
+    size_t num_combat_visible = 0;
+
+    GLfloat ent_health_pc[max_ents];
+    vec3_t ent_top_pos_ws[max_ents];
+
+    for(int i = 0; i < max_ents; i++) {
+    
+        struct entity *curr = kv_A(s_gs.visible, i);
+
+        if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
+            continue;
+
+        int max_health = curr->ca.max_hp;
+        int curr_health = G_Combat_GetCurrentHP(curr);
+
+        ent_top_pos_ws[num_combat_visible] = Entity_TopCenterPointWS(curr);
+        ent_health_pc[num_combat_visible] = ((GLfloat)curr_health)/max_health;
+
+        num_combat_visible++;
+    }
+
+    R_GL_DrawHealthbars(num_combat_visible, ent_health_pc, ent_top_pos_ws, ACTIVE_CAM);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -383,10 +410,14 @@ void G_Render(void)
     E_Global_NotifyImmediate(EVENT_RENDER_3D, NULL, ES_ENGINE);
 
     R_GL_SetScreenspaceDrawMode();
+    E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
+
+#if CONFIG_HEALTHBARS
+    g_render_healthbars();
+#endif
     if(s_gs.map) {
         M_RenderMinimap(s_gs.map, ACTIVE_CAM);
     }
-    E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
 }
 
 bool G_AddEntity(struct entity *ent)

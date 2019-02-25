@@ -474,3 +474,12 @@ void G_Combat_StopAttack(const struct entity *ent)
     }
 }
 
+int G_Combat_GetCurrentHP(const struct entity *ent)
+{
+    assert(ent->flags & ENTITY_FLAG_COMBATABLE);
+
+    struct combatstate *cs = combatstate_get(ent);
+    assert(cs);
+    return cs->current_hp;
+}
+

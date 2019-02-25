@@ -120,3 +120,26 @@ void Entity_CurrentOBB(const struct entity *ent, struct obb *out)
     PFM_Vec3_Normal(&axis2, &out->axes[2]);
 }
 
+vec3_t Entity_TopCenterPointWS(const struct entity *ent)
+{
+    const struct aabb *aabb = &ent->identity_aabb;
+    vec4_t top_center_homo = (vec4_t) {
+        (aabb->x_min + aabb->x_max) / 2.0f,
+        aabb->y_max,
+        (aabb->z_min + aabb->z_max) / 2.0f,
+        1.0f
+    };
+
+    mat4x4_t model; 
+    vec4_t out_ws_homo;
+
+    Entity_ModelMatrix(ent, &model);
+    PFM_Mat4x4_Mult4x1(&model, &top_center_homo, &out_ws_homo);
+
+    return (vec3_t) {
+        out_ws_homo.x / out_ws_homo.w,
+        out_ws_homo.y / out_ws_homo.w,
+        out_ws_homo.z / out_ws_homo.w,
+    };
+}
+

@@ -163,6 +163,13 @@ static struct shader_resource s_shaders[] = {
         .vertex_path = "shaders/vertex/skinned-shadowed.glsl",
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment/textured-phong-shadowed.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "statusbar",
+        .vertex_path = "shaders/vertex/statusbar.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment/statusbar.glsl"
     }
 };
 
