@@ -705,11 +705,11 @@ static void active_windows_update(void *user, void *event)
                 PyErr_Print();
                 exit(EXIT_FAILURE);
             }
-
-            struct nk_vec2 pos = nk_window_get_position(s_nk_ctx);
-            struct nk_vec2 size = nk_window_get_size(s_nk_ctx);
-            win->rect = (struct rect){pos.x, pos.y, size.x, size.y};
         }
+
+        struct nk_vec2 pos = nk_window_get_position(s_nk_ctx);
+        struct nk_vec2 size = nk_window_get_size(s_nk_ctx);
+        win->rect = (struct rect){pos.x, pos.y, size.x, size.y};
 
         nk_end(s_nk_ctx);
         s_nk_ctx->style.window = saved_style;
@@ -756,12 +756,24 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
     for(int i = 0; i < kv_size(s_active_windows); i++) {
 
         PyWindowObject *win = kv_A(s_active_windows, i);
+        struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
+        struct nk_vec2 visible_size = {win->rect.width, win->rect.height};
+
+        /* For minimized windows, only the header is visible */
+        if(nkwin->flags & NK_WINDOW_MINIMIZED) {
+        
+            float header_height = s_nk_ctx->style.font->height
+                                + 2.0f * s_nk_ctx->style.window.header.padding.y
+                                + 2.0f * s_nk_ctx->style.window.header.label_padding.y;
+            visible_size.y = header_height;
+        }
+
         if(C_PointInsideRect2D(
-            (vec2_t){mouse_x,                       mouse_y                       },
-            (vec2_t){win->rect.x,                   win->rect.y                   },
-            (vec2_t){win->rect.x + win->rect.width, win->rect.y                   },
-            (vec2_t){win->rect.x + win->rect.width, win->rect.y + win->rect.height},
-            (vec2_t){win->rect.x,                   win->rect.y + win->rect.height}))
+            (vec2_t){mouse_x,                       mouse_y},
+            (vec2_t){win->rect.x,                   win->rect.y},
+            (vec2_t){win->rect.x + visible_size.x,  win->rect.y},
+            (vec2_t){win->rect.x + visible_size.x,  win->rect.y + visible_size.y},
+            (vec2_t){win->rect.x,                   win->rect.y + visible_size.y}))
             return true;
     }
 
