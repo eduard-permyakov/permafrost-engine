@@ -157,6 +157,7 @@ void    PFM_Mat4x4_MakeRotZ    (GLfloat radians, mat4x4_t *out);
 void    PFM_Mat4x4_RotFromQuat (const quat_t *quat, mat4x4_t *out);
 void    PFM_Mat4x4_RotFromEuler(GLfloat deg_x, GLfloat deg_y, GLfloat deg_z, mat4x4_t *out);
 void    PFM_Mat4x4_Inverse     (mat4x4_t *in, mat4x4_t *out);
+void    PFM_Mat4x4_Transpose   (mat4x4_t *in, mat4x4_t *out);
 
 void    PFM_Mat4x4_MakePerspective(GLfloat fov_radians, GLfloat aspect_ratio, 
                                    GLfloat z_near, GLfloat z_far, mat4x4_t *out);

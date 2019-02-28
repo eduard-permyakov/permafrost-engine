@@ -521,6 +521,18 @@ void PFM_Mat4x4_Inverse(mat4x4_t *in, mat4x4_t *out)
         out->raw[i] = inv[i] * det;
 }
 
+void PFM_Mat4x4_Transpose(mat4x4_t *in, mat4x4_t *out)
+{
+    for(int r = 0; r < 4; r++) {
+        for(int c = 0; c < 4; c++) {
+        
+            GLfloat tmp = out->cols[c][r];
+            out->cols[c][r] = in->cols[r][c];
+            in->cols[r][c] = tmp;
+        }
+    }
+}
+
 /* Algorithm from:  
  * http://www.euclideanspace.com/maths/geometry/rotations/conversions/quaternionToMatrix/ 
  */

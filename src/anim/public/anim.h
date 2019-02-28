@@ -77,11 +77,17 @@ void                   A_SetActiveClip(const struct entity *ent, const char *nam
                                        enum anim_mode mode, unsigned key_fps);
 
 /* ---------------------------------------------------------------------------
- * Should be called once per render loop, prior to rendering. Will update OpenGL
- * state based on the current active clip and time.
+ * Should be called once per render loop, prior to rendering. Will update the
+ * animation context based on the current time.
  * ---------------------------------------------------------------------------
  */
 void                   A_Update(const struct entity *ent);
+
+/* ---------------------------------------------------------------------------
+ * Will update OpenGL uniforms for the entity's current animation context.
+ * ---------------------------------------------------------------------------
+ */
+void                   A_SetRenderState(const struct entity *ent);
 
 /* ---------------------------------------------------------------------------
  * Simple utility to get a reference to the skeleton structure in its' default

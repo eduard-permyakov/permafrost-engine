@@ -130,22 +130,6 @@ static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struc
     *out = pose_trans;
 }
 
-void a_set_uniforms_curr_frame(const struct entity *ent)
-{
-    struct anim_data *priv = (struct anim_data*)ent->anim_private;
-
-    size_t float_per_mat = sizeof(mat4x4_t) / sizeof(float);
-    size_t num_joints = priv->skel.num_joints;
-
-    mat4x4_t curr_pose_mats[num_joints];
-    for(int j = 0; j < num_joints; j++) {
-        a_make_pose_mat(ent, j, &priv->skel, &curr_pose_mats[j]);
-    }
-
-    R_GL_SetAnimUniforms(priv->skel.inv_bind_poses, curr_pose_mats, num_joints);
-}
-
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -183,8 +167,6 @@ void A_Update(const struct entity *ent)
     struct anim_data *priv = ent->anim_private;
     struct anim_ctx *ctx = ent->anim_ctx;
 
-    a_set_uniforms_curr_frame(ent);
-
     float frame_period_secs = 1.0f/ctx->key_fps;
     uint32_t curr_ticks = SDL_GetTicks();
     float elapsed_secs = (curr_ticks - ctx->curr_frame_start_ticks)/1000.0f;
@@ -204,6 +186,26 @@ void A_Update(const struct entity *ent)
             A_SetActiveClip(ent, ctx->idle->name, ANIM_MODE_LOOP, ctx->key_fps);
         }
     }
+}
+
+void A_SetRenderState(const struct entity *ent)
+{
+    struct anim_data *priv = (struct anim_data*)ent->anim_private;
+
+    size_t float_per_mat = sizeof(mat4x4_t) / sizeof(float);
+    size_t num_joints = priv->skel.num_joints;
+    mat4x4_t curr_pose_mats[num_joints];
+
+    for(int j = 0; j < num_joints; j++) {
+        a_make_pose_mat(ent, j, &priv->skel, &curr_pose_mats[j]);
+    }
+
+    mat4x4_t model, normal;
+    Entity_ModelMatrix(ent, &model);
+    PFM_Mat4x4_Inverse(&model, &model);
+    PFM_Mat4x4_Transpose(&model, &normal);
+
+    R_GL_SetAnimUniforms(priv->skel.inv_bind_poses, curr_pose_mats, &normal, num_joints);
 }
 
 const struct skeleton *A_GetBindSkeleton(const struct entity *ent)

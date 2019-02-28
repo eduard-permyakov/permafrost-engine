@@ -52,7 +52,7 @@ uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
 uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
 
 /*****************************************************************************/
-/* PROGRAM
+/* PROGRAM                                                                   */
 /*****************************************************************************/
 
 void main()
@@ -85,7 +85,6 @@ void main()
             float fraction = in_joint_weights[r][c] / tot_weight;
 
             mat4 bone_mat = fraction * pose_mat * inv_bind_mat;
-            /* Should calculate the rot mat on the CPU as well... */
             mat3 rot_mat = fraction * mat3(transpose(inverse(pose_mat * inv_bind_mat)));
             
             new_pos += (bone_mat * vec4(in_pos, 1.0)).xyz;

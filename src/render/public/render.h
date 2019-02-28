@@ -131,11 +131,11 @@ void   R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos);
 void   R_GL_SetProj(const mat4x4_t *proj);
 
 /* ---------------------------------------------------------------------------
- * Set OpenGL inverse bind pose and pose matrices uniforms for animation-related 
- * shader programs.
+ * Set OpenGL uniforms for animation-related shader programs.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, size_t count);
+void   R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, 
+                            mat4x4_t *normal_mat, size_t count);
 
 /* ---------------------------------------------------------------------------
  * Set the global ambient color that will impact all models based on their 

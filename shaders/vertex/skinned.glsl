@@ -36,6 +36,7 @@
 #version 330 core
 
 #define MAX_JOINTS 96
+#define USE_GEOMETRY 0
 
 layout (location = 0) in vec3 in_pos;
 layout (location = 1) in vec2 in_uv;
@@ -69,6 +70,7 @@ uniform mat4 projection;
 
 uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
 uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
+uniform mat4 anim_normal_mat;
 
 /*****************************************************************************/
 /* PROGRAM
@@ -79,10 +81,10 @@ void main()
     to_fragment.uv = in_uv;
     to_fragment.mat_idx = in_material_idx;
 
-    /* TODO: compute normal matrix on CPU once per model each frame and pass as uniform 
-     */
+#if USE_GEOMETRY
     mat3 normal_matrix_geo = mat3(transpose(inverse(view * model)));
-    mat3 normal_matrix = mat3(transpose(inverse(model)));
+#endif
+    mat3 normal_matrix = mat3(anim_normal_mat);
 
     float tot_weight = in_joint_weights[0][0] + in_joint_weights[0][1] + in_joint_weights[0][2]
                      + in_joint_weights[1][0] + in_joint_weights[1][1] + in_joint_weights[1][2];
@@ -92,7 +94,9 @@ void main()
      */
     if(tot_weight == 0.0) {
 
+#if USE_GEOMETRY
         to_geometry.normal = normalize(vec3(projection * vec4(normal_matrix_geo * in_normal, 1.0)));
+#endif
         to_fragment.normal = normalize(normal_matrix * in_normal);
         to_fragment.world_pos = (model * vec4(in_pos, 1.0)).xyz;
         gl_Position = projection * view * model * vec4(in_pos, 1.0);
@@ -115,14 +119,15 @@ void main()
             float fraction = in_joint_weights[r][c] / tot_weight;
 
             mat4 bone_mat = fraction * pose_mat * inv_bind_mat;
-            /* Should calculate the rot mat on the CPU as well... */
             mat3 rot_mat = fraction * mat3(transpose(inverse(pose_mat * inv_bind_mat)));
             
             new_pos += (bone_mat * vec4(in_pos, 1.0)).xyz;
             new_normal += rot_mat * in_normal;
         }
 
+#if USE_GEOMETRY
         to_geometry.normal = normalize(normal_matrix_geo * new_normal);
+#endif
         to_fragment.normal = normalize(normal_matrix * new_normal);
         to_fragment.world_pos = (model * vec4(new_pos, 1.0)).xyz;
         gl_Position = projection * view * model * vec4(new_pos, 1.0f);

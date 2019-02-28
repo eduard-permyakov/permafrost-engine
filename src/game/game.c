@@ -166,7 +166,7 @@ static void g_shadow_pass(void)
             continue;
 
         if(curr->flags & ENTITY_FLAG_ANIMATED)
-            A_Update(curr);
+            A_SetRenderState(curr);
 
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
@@ -188,7 +188,7 @@ static void g_draw_pass(void)
         struct entity *curr = kv_A(s_gs.visible, i);
 
         if(curr->flags & ENTITY_FLAG_ANIMATED)
-            A_Update(curr);
+            A_SetRenderState(curr);
 
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
@@ -385,6 +385,9 @@ void G_Update(void)
             kv_push(struct entity *, s_gs.visible, curr);
             kv_push(struct obb, s_gs.visible_obbs, obb);
         }
+
+        if(curr->flags & ENTITY_FLAG_ANIMATED)
+            A_Update(curr);
     });
 
     /* Next, update the set of currently selected entities. */

@@ -344,7 +344,8 @@ void R_GL_SetShadowMap(const GLuint shadow_map_tex_id)
     GL_ASSERT_OK();
 }
 
-void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, size_t count)
+void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, 
+                          mat4x4_t *normal_mat, size_t count)
 {
     const char *shaders[] = {
         "mesh.animated.depth",
@@ -357,6 +358,7 @@ void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, size_t
 
         r_gl_set_uniform_mat4x4_array(inv_bind_poses, count, GL_U_INV_BIND_MATS, shaders[i]);
         r_gl_set_uniform_mat4x4_array(curr_poses, count, GL_U_CURR_POSE_MATS, shaders[i]);
+        r_gl_set_mat4(normal_mat, shaders[i], GL_U_NORMAL_MAT);
     }
 
     GL_ASSERT_OK();
