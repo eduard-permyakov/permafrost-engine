@@ -50,6 +50,11 @@ BUILT-IN FUNCTIONS
     --------------------------------------------------------------------------------
     Get the (x, y) cursor position on the screen.
 
+    [get_render_info]
+    --------------------------------------------------------------------------------
+    Returns a dictionary describing the renderer context. It will have the string
+    keys 'renderer', 'version', 'shading_language_version', and 'vendor'.
+
     [get_resolution]
     --------------------------------------------------------------------------------
     Get the currently set resolution of the game window.

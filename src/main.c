@@ -59,7 +59,7 @@
 
 
 #define PF_VER_MAJOR 0
-#define PF_VER_MINOR 29
+#define PF_VER_MINOR 30
 #define PF_VER_PATCH 0
 
 /*****************************************************************************/
@@ -409,7 +409,6 @@ int main(int argc, char **argv)
         uint32_t curr_time = SDL_GetTicks();
         g_last_frame_ms = curr_time - last_ts;
         last_ts = curr_time;
-
     }
 
     engine_shutdown();
