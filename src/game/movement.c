@@ -484,8 +484,13 @@ static void on_render_3d(void *user, void *event)
     for(int i = 0; i < kv_size(s_move_markers); i++) {
 
         const struct entity *curr = kv_A(s_move_markers, i);
-        if(curr->flags & ENTITY_FLAG_ANIMATED)
+        if(curr->flags & ENTITY_FLAG_ANIMATED) {
+
+            /* Set the render state before updating so we don't 
+             * render when the frame index overflows to 0. */
+            A_SetRenderState(curr);
             A_Update(curr);
+        }
 
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
