@@ -369,7 +369,7 @@ bool AL_ReadLine(SDL_RWops *stream, char *outbuff)
         }
         
         idx++; 
-    }while(idx < MAX_LINE_LEN);
+    }while(idx < MAX_LINE_LEN-1);
 
     return false;
 }
