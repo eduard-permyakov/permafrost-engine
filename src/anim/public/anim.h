@@ -48,7 +48,8 @@ struct skeleton;
 
 enum anim_mode{
     ANIM_MODE_LOOP,
-    ANIM_MODE_ONCE
+    ANIM_MODE_ONCE,
+    ANIM_MODE_ONCE_HIDE_ON_FINISH,
 };
 
 
@@ -81,7 +82,7 @@ void                   A_SetActiveClip(const struct entity *ent, const char *nam
  * animation context based on the current time.
  * ---------------------------------------------------------------------------
  */
-void                   A_Update(const struct entity *ent);
+void                   A_Update(struct entity *ent);
 
 /* ---------------------------------------------------------------------------
  * Will update OpenGL uniforms for the entity's current animation context.

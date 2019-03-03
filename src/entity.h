@@ -46,6 +46,7 @@
 #define ENTITY_FLAG_SELECTABLE    (1 << 2)
 #define ENTITY_FLAG_STATIC        (1 << 3)
 #define ENTITY_FLAG_COMBATABLE    (1 << 4)
+#define ENTITY_FLAG_INVISIBLE     (1 << 5)
 
 struct entity{
     uint32_t     uid;

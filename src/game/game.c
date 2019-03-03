@@ -158,6 +158,9 @@ static void g_shadow_pass(void)
 
         if(!(curr->flags & ENTITY_FLAG_COLLISION))
             continue;
+
+        if(curr->flags & ENTITY_FLAG_INVISIBLE)
+            continue;
     
         struct obb obb;
         Entity_CurrentOBB(curr, &obb);
@@ -186,6 +189,9 @@ static void g_draw_pass(void)
     for(int i = 0; i < kv_size(s_gs.visible); i++) {
     
         struct entity *curr = kv_A(s_gs.visible, i);
+
+        if(curr->flags & ENTITY_FLAG_INVISIBLE)
+            continue;
 
         if(curr->flags & ENTITY_FLAG_ANIMATED)
             A_SetRenderState(curr);

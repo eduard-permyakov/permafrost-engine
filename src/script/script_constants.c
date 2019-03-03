@@ -39,6 +39,7 @@
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
+#include "../anim/public/anim.h"
 
 #include <SDL.h>
 
@@ -456,6 +457,13 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, DIPLOMACY_STATE_WAR);
 }
 
+static void s_expose_anim_constants(PyObject *module)
+{
+    PY_EXPOSE_ENUM(module, ANIM_MODE_LOOP);
+    PY_EXPOSE_ENUM(module, ANIM_MODE_ONCE);
+    PY_EXPOSE_ENUM(module, ANIM_MODE_ONCE_HIDE_ON_FINISH);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -467,5 +475,6 @@ void S_Constants_Expose(PyObject *module)
     s_expose_event_constants(module);
     s_expose_map_constants(module);
     s_expose_game_constants(module);
+    s_expose_anim_constants(module);
 }
 

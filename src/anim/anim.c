@@ -162,7 +162,7 @@ void A_SetActiveClip(const struct entity *ent, const char *name,
     ctx->curr_frame_start_ticks = SDL_GetTicks();
 }
 
-void A_Update(const struct entity *ent)
+void A_Update(struct entity *ent)
 {
     struct anim_data *priv = ent->anim_private;
     struct anim_ctx *ctx = ent->anim_ctx;
@@ -178,12 +178,19 @@ void A_Update(const struct entity *ent)
 
         if(ctx->curr_frame == 0) {
             E_Entity_Notify(EVENT_ANIM_CYCLE_FINISHED, ent->uid, NULL, ES_ENGINE);
-        }
 
-        if(ctx->curr_frame == 0 && ctx->mode == ANIM_MODE_ONCE) {
+            switch(ctx->mode) {
+            case ANIM_MODE_ONCE_HIDE_ON_FINISH:
 
-            E_Entity_Notify(EVENT_ANIM_FINISHED, ent->uid, NULL, ES_ENGINE);
-            A_SetActiveClip(ent, ctx->idle->name, ANIM_MODE_LOOP, ctx->key_fps);
+                ent->flags |= ENTITY_FLAG_INVISIBLE;
+                /* Intentional fallthrough */
+
+            case ANIM_MODE_ONCE: 
+
+                E_Entity_Notify(EVENT_ANIM_FINISHED, ent->uid, NULL, ES_ENGINE);
+                A_SetActiveClip(ent, ctx->idle->name, ANIM_MODE_LOOP, ctx->key_fps);
+                break;
+            }
         }
     }
 }

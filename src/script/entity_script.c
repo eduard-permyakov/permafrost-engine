@@ -89,7 +89,7 @@ static PyObject *PyEntity_hold_position(PyEntityObject *self);
 
 static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_del(PyAnimEntityObject *self);
-static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args);
+static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 
 static int       PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self);
@@ -241,8 +241,9 @@ static PyTypeObject PyEntity_type = {
 
 static PyMethodDef PyAnimEntity_methods[] = {
     {"play_anim", 
-    (PyCFunction)PyAnimEntity_play_anim, METH_VARARGS,
-    "Play the animation clip with the specified name." },
+    (PyCFunction)PyAnimEntity_play_anim, METH_VARARGS | METH_KEYWORDS,
+    "Play the animation clip with the specified name. "
+    "Set kwarg 'mode=\%d' to set the animation mode. The default is ANIM_MODE_LOOP."},
 
     {"__del__", 
     (PyCFunction)PyAnimEntity_del, METH_NOARGS,
@@ -806,7 +807,7 @@ static PyObject *PyAnimEntity_del(PyAnimEntityObject *self)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args)
+static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args, PyObject *kwds)
 {
     const char *clipname;
     if(!PyArg_ParseTuple(args, "s", &clipname)) {
@@ -814,7 +815,20 @@ static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args
         return NULL;
     }
 
-    A_SetActiveClip(self->super.ent, clipname, ANIM_MODE_LOOP, 24);
+    enum anim_mode mode = ANIM_MODE_LOOP; /* default */
+    PyObject *mode_obj;
+
+    if(kwds && (mode_obj = PyDict_GetItemString(kwds, "mode"))) {
+    
+        if(!PyInt_Check(mode_obj)
+        || (mode = PyInt_AS_LONG(mode_obj)) > ANIM_MODE_ONCE_HIDE_ON_FINISH) {
+        
+            PyErr_SetString(PyExc_TypeError, "Mode kwarg must be a valid animation mode (int).");
+            return NULL;
+        }
+    }
+
+    A_SetActiveClip(self->super.ent, clipname, mode, 24);
     Py_RETURN_NONE;
 }
 

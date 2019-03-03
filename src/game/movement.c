@@ -428,7 +428,7 @@ static void move_marker_add(vec3_t pos, bool attack)
     E_Entity_Register(EVENT_ANIM_FINISHED, ent->uid, on_marker_anim_finish, ent);
 
     A_InitCtx(ent, "Converge", 48);
-    A_SetActiveClip(ent, "Converge", ANIM_MODE_ONCE, 48);
+    A_SetActiveClip(ent, "Converge", ANIM_MODE_ONCE_HIDE_ON_FINISH, 48);
 
     kv_push(struct entity*, s_move_markers, ent);
 }
@@ -483,14 +483,15 @@ static void on_render_3d(void *user, void *event)
 {
     for(int i = 0; i < kv_size(s_move_markers); i++) {
 
-        const struct entity *curr = kv_A(s_move_markers, i);
+        struct entity *curr = kv_A(s_move_markers, i);
         if(curr->flags & ENTITY_FLAG_ANIMATED) {
 
-            /* Set the render state before updating so we don't 
-             * render when the frame index overflows to 0. */
-            A_SetRenderState(curr);
             A_Update(curr);
+            A_SetRenderState(curr);
         }
+
+        if(curr->flags & ENTITY_FLAG_INVISIBLE)
+            continue;
 
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
