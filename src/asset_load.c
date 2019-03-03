@@ -61,12 +61,13 @@ struct shared_resource{
     struct aabb  aabb;
 };
 
+KHASH_MAP_INIT_STR(entity_res, struct shared_resource)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-KHASH_MAP_INIT_STR(entity_res, struct shared_resource)
-khash_t(entity_res) *s_name_resource_table;
+static khash_t(entity_res) *s_name_resource_table;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
