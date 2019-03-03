@@ -72,4 +72,7 @@ enum pf_window_flags{
 #define CONFIG_SHADOW_FOV           128
 #define CONFIG_HEALTHBARS           true
 
+#define CONFIG_SETTINGS_FILENAME    "pf.conf"
+
+
 #endif

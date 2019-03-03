@@ -44,6 +44,7 @@
 #include "navigation/public/nav.h"
 #include "event.h"
 #include "ui.h"
+#include "settings.h"
 
 #include <GL/glew.h>
 #include <SDL.h>
@@ -218,6 +219,13 @@ static bool engine_init(char **argv)
     if(!kv_resize(SDL_Event, s_prev_tick_events, 256))
         return false;
 
+    /* Initialize 'Settings' before any subsystem to allow all of them 
+     * to register settings. */
+    if(Settings_Init() != SS_OKAY) {
+        fprintf(stderr, "Failed to initialize settings module.\n");
+        goto fail_settings;
+    }
+
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
         fprintf(stderr, "Failed to initialize SDL: %s\n", SDL_GetError());
         goto fail_sdl;
@@ -323,6 +331,7 @@ fail_render:
     Cursor_FreeAll();
 fail_cursor:
 fail_al:
+fail_settings:
 fail_glew:
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window);
@@ -352,6 +361,8 @@ static void engine_shutdown(void)
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window); 
     SDL_Quit();
+
+    Settings_Shutdown();
 }
 
 /*****************************************************************************/
@@ -396,6 +407,12 @@ int main(int argc, char **argv)
         goto fail_init;
     }
 
+    ss_e status;
+    if((status = Settings_LoadFromFile()) != SS_OKAY) {
+        fprintf(stderr, "Could not load settings from file: %s [status: %d]\n", 
+            Settings_GetFile(), status);
+    }
+
     S_RunFile(argv[2]);
 
     uint32_t last_ts = SDL_GetTicks();
@@ -411,6 +428,10 @@ int main(int argc, char **argv)
         last_ts = curr_time;
     }
 
+    if((status = Settings_SaveToFile()) != SS_OKAY) {
+        fprintf(stderr, "Could not save settings to file: %s [status: %d]\n", 
+            Settings_GetFile(), status);
+    }
     engine_shutdown();
 fail_init:
 fail_args:
