@@ -47,6 +47,7 @@
 #include "../config.h"
 #include "../map/public/map.h"
 #include "../collision.h"
+#include "../settings.h"
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -58,7 +59,6 @@
 #define ARR_SIZE(a)          (sizeof(a)/sizeof(a[0])) 
 #define MINIMAP_RES          (1024)
 #define MINIMAP_BORDER_CLR   ((vec4_t){65.0f/255.0f, 65.0f/255.0f, 65.0f/255.0f, 1.0f})
-#define MINIMAP_BORDER_WIDTH (3.0f)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -245,7 +245,12 @@ bool R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats,
             priv->shader_prog = old_shader_prog;
         }
     }
-    glViewport(0,0, CONFIG_RES_X, CONFIG_RES_Y);
+
+    struct sval res;
+    ss_e status = Settings_Get("pf.video.resolution", &res);
+    assert(status == SS_OKAY);
+
+    glViewport(0,0, res.as_vec2.x, res.as_vec2.y);
 
     s_ctx.minimap_texture.tunit = GL_TEXTURE0;
     R_Texture_AddExisting("__minimap__", s_ctx.minimap_texture.id);
@@ -333,8 +338,12 @@ bool R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, mat4x4
 
     R_GL_Draw(chunk_rprivate, chunk_model);
 
+    struct sval res;
+    ss_e status = Settings_Get("pf.video.resolution", &res);
+    assert(status == SS_OKAY);
+
     priv->shader_prog = old_shader_prog;
-    glViewport(0,0, CONFIG_RES_X, CONFIG_RES_Y);
+    glViewport(0,0, res.as_vec2.x, res.as_vec2.y);
 
     /* Re-bind the default framebuffer when we're done rendering */
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

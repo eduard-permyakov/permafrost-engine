@@ -36,10 +36,12 @@
 #include "script_constants.h"
 #include "../lib/public/nuklear.h"
 #include "../event.h"
+#include "../config.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
 #include "../anim/public/anim.h"
+#include "../main.h"
 
 #include <SDL.h>
 
@@ -464,6 +466,13 @@ static void s_expose_anim_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, ANIM_MODE_ONCE_HIDE_ON_FINISH);
 }
 
+static void s_expose_engine_constants(PyObject *module)
+{
+    PY_EXPOSE_ENUM(module, PF_WF_FULLSCREEN);
+    PY_EXPOSE_ENUM(module, PF_WF_BORDERLESS_WIN);
+    PY_EXPOSE_ENUM(module, PF_WF_WINDOW);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -476,5 +485,6 @@ void S_Constants_Expose(PyObject *module)
     s_expose_map_constants(module);
     s_expose_game_constants(module);
     s_expose_anim_constants(module);
+    s_expose_engine_constants(module);
 }
 

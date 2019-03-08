@@ -46,6 +46,7 @@
 
 
 #define MINIMAP_SIZE         (256)
+#define MINIMAP_BORDER_WIDTH (3.0f)
 #define MAX_HEIGHT_LEVEL     (9)
 
 struct pfchunk;

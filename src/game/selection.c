@@ -40,6 +40,7 @@
 #include "../render/public/render.h"
 #include "../config.h"
 #include "../camera.h"
+#include "../settings.h"
 
 #include <string.h>
 #include <stdbool.h>
@@ -107,10 +108,14 @@ static void on_mousedown(void *user, void *event)
     if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
         return;
 
+    struct sval res;
+    ss_e status = Settings_Get("pf.video.resolution", &res);
+    assert(status == SS_OKAY);
+
     /* Don't allow dragging a selection box when the mouse is at the edges of 
      * the screen (camera pan action) which is mutually exclusive to unit selection. */
-    if(mouse_event->x == 0 || mouse_event->x == CONFIG_RES_X-1
-    || mouse_event->y == 0 || mouse_event->y == CONFIG_RES_Y-1)
+    if(mouse_event->x == 0 || mouse_event->x == res.as_vec2.x-1
+    || mouse_event->y == 0 || mouse_event->y == res.as_vec2.y-1)
         return;
 
     s_ctx.state = STATE_MOUSE_SEL_DOWN;
@@ -141,8 +146,12 @@ static void on_render_ui(void *user, void *event)
 
 static vec3_t sel_unproject_mouse_coords(struct camera *cam, vec2_t mouse_coords, float ndc_z)
 {
-    vec3_t ndc = (vec3_t){-1.0f + 2.0*(mouse_coords.raw[0]/CONFIG_RES_X),
-                           1.0f - 2.0*(mouse_coords.raw[1]/CONFIG_RES_Y),
+    struct sval res;
+    ss_e status = Settings_Get("pf.video.resolution", &res);
+    assert(status == SS_OKAY);
+
+    vec3_t ndc = (vec3_t){-1.0f + 2.0*(mouse_coords.raw[0]/res.as_vec2.x),
+                           1.0f - 2.0*(mouse_coords.raw[1]/res.as_vec2.y),
                            ndc_z};
     vec4_t clip = (vec4_t){ndc.x, ndc.y, ndc.z, 1.0f};
 

@@ -76,7 +76,6 @@ typedef enum settings_status{
     SS_OKAY = 0,
     SS_NO_SETTING,
     SS_INVALID_VAL,
-    SS_ALREADY_EXISTS,
     SS_FILE_ACCESS,
     SS_FILE_PARSING,
     SS_BADALLOC,
@@ -85,6 +84,8 @@ typedef enum settings_status{
 ss_e Settings_Init(void);
 void Settings_Shutdown(void);
 
+/* If a setting with this name already exists, its' value is preserved and 
+ * it is used to replace the provided default. */
 ss_e Settings_Create(struct setting sett);
 
 ss_e Settings_Get(const char *name, struct sval *out);

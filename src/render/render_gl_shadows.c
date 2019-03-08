@@ -41,6 +41,7 @@
 #include "../pf_math.h"
 #include "../config.h"
 #include "../collision.h"
+#include "../settings.h"
 #include "../game/public/game.h"
 
 #include <GL/glew.h>
@@ -145,7 +146,11 @@ void R_GL_DepthPassEnd(void)
 
     R_GL_SetShadowMap(s_depth_map_tex);
 
-    glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
+    struct sval res;
+    ss_e status = Settings_Get("pf.video.resolution", &res);
+    assert(status == SS_OKAY);
+
+    glViewport(0, 0, res.as_vec2.x, res.as_vec2.y);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glCullFace(GL_BACK);
 

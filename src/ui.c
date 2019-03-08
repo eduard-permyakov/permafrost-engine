@@ -36,6 +36,7 @@
 #include "ui.h"
 #include "config.h"
 #include "event.h"
+#include "settings.h"
 
 #include "lib/public/pf_nuklear.h"
 #include "lib/public/nuklear_sdl_gl3.h"
@@ -83,7 +84,11 @@ static void on_update_ui(void *user, void *event)
     nk_style_push_color(s_nk_ctx, &s->window.background, nk_rgba(0,0,0,0));
     nk_style_push_style_item(s_nk_ctx, &s->window.fixed_background, nk_style_item_color(nk_rgba(0,0,0,0)));
 
-    if(nk_begin(s_nk_ctx, "__labels__", nk_rect(0, 0, CONFIG_RES_X, CONFIG_RES_Y), 
+    struct sval res;
+    ss_e status = Settings_Get("pf.video.resolution", &res);
+    assert(status == SS_OKAY);
+
+    if(nk_begin(s_nk_ctx, "__labels__", nk_rect(0, 0, res.as_vec2.x, res.as_vec2.y), 
        NK_WINDOW_NO_INPUT | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR)) {
     
        for(int i = 0; i < kv_size(s_curr_frame_labels); i++)

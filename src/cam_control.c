@@ -36,6 +36,7 @@
 #include "cam_control.h"
 #include "config.h"
 #include "event.h"
+#include "settings.h"
 
 #include <stdbool.h>
 #include <assert.h>
@@ -133,11 +134,15 @@ static void rts_cam_on_mousemove(void *unused, void *event_arg)
 
     int mouse_x, mouse_y; 
     SDL_GetMouseState(&mouse_x, &mouse_y);
+
+    struct sval res;
+    ss_e status = Settings_Get("pf.video.resolution", &res);
+    assert(status == SS_OKAY);
     
     ctx->move_up    = (mouse_y == 0);
-    ctx->move_down  = (mouse_y == CONFIG_RES_Y - 1);
+    ctx->move_down  = (mouse_y == res.as_vec2.y - 1);
     ctx->move_left  = (mouse_x == 0);
-    ctx->move_right = (mouse_x == CONFIG_RES_X - 1);
+    ctx->move_right = (mouse_x == res.as_vec2.x - 1);
 }
 
 static void rts_cam_on_mousedown(void *unused, void *event_arg)

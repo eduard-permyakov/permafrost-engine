@@ -164,17 +164,27 @@ void Settings_Shutdown(void)
 
 ss_e Settings_Create(struct setting sett)
 {
-    int put_status;
-    khiter_t k = kh_put(setting, s_settings_table, sett.name, &put_status);
+    khiter_t k;
+    struct sval saved;
 
-    if(put_status == 0)
-        return SS_ALREADY_EXISTS;
-    if(put_status == -1)
-        return SS_BADALLOC;
+    if((k = kh_get(setting, s_settings_table, sett.name)) != kh_end(s_settings_table)
+    && (saved = kh_value(s_settings_table, k).val, true)
+    && (sett.validate && sett.validate(&saved)) ){
+    
+        sett.val = saved;
+
+    }else {
+
+        int put_status;
+        k = kh_put(setting, s_settings_table, sett.name, &put_status);
+
+        if(put_status == -1)
+            return SS_BADALLOC;
+
+        kh_update_str_keys(s_settings_table);
+    }
 
     kh_value(s_settings_table, k) = sett;
-    kh_update_str_keys(s_settings_table);
-
     return SS_OKAY;
 }
 
@@ -198,7 +208,7 @@ ss_e Settings_Set(const char *name, const struct sval *new_val)
     if(sett->validate && !sett->validate(new_val))
         return SS_INVALID_VAL;
 
-    kh_value(s_settings_table, k).val = *new_val;
+    sett->val = *new_val;
 
     if(sett->commit)
         sett->commit(new_val);

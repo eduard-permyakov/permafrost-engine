@@ -50,6 +50,7 @@
 #include "../event.h"
 #include "../config.h"
 #include "../collision.h"
+#include "../settings.h"
 
 #include <assert.h> 
 
@@ -59,12 +60,6 @@
 #define CAM_SPEED           0.20f
 
 #define ACTIVE_CAM          (s_gs.cameras[s_gs.active_cam_idx])
-
-/* By default, the minimap is in the bottom left corner with 10 px padding. */
-#define DEFAULT_MINIMAP_POS (vec2_t) { \
-    (MINIMAP_SIZE + 6)/cos(M_PI/4.0f)/2.0f + 10.0f, \
-    CONFIG_RES_Y - (MINIMAP_SIZE + 6)/cos(M_PI/4.0f)/2.0f - 10.0f \
-}
 
 __KHASH_IMPL(entity, extern, khint32_t, struct entity*, 1, kh_int_hash_func, kh_int_hash_equal)
 
@@ -77,6 +72,20 @@ static struct gamestate s_gs;
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static vec2_t g_default_minimap_pos(void)
+{
+    struct sval res;
+    ss_e status = Settings_Get("pf.video.resolution", &res);
+    assert(status == SS_OKAY);
+
+    const float PAD = 10.0f;
+    
+    return (vec2_t) {
+        (MINIMAP_SIZE + 2*MINIMAP_BORDER_WIDTH) / cos(M_PI/4.0f)/2 + PAD,
+        res.as_vec2.y - (MINIMAP_SIZE + 2*MINIMAP_BORDER_WIDTH) / cos(M_PI/4.0f)/2 - PAD,
+    };
+}
 
 static void g_reset_camera(struct camera *cam)
 {
@@ -136,7 +145,7 @@ static void g_init_map(void)
     M_CenterAtOrigin(s_gs.map);
     M_RestrictRTSCamToMap(s_gs.map, ACTIVE_CAM);
     M_Raycast_Install(s_gs.map, ACTIVE_CAM);
-    M_InitMinimap(s_gs.map, DEFAULT_MINIMAP_POS);
+    M_InitMinimap(s_gs.map, g_default_minimap_pos());
     G_Move_Init(s_gs.map);
     G_Combat_Init();
 }

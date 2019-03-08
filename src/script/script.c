@@ -48,6 +48,7 @@
 #include "../event.h"
 #include "../config.h"
 #include "../scene.h"
+#include "../settings.h"
 
 #include <SDL.h>
 
@@ -93,6 +94,9 @@ static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 static PyObject *PyPf_set_move_on_left_click(PyObject *self);
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
+
+static PyObject *PyPf_settings_get(PyObject *self, PyObject *args);
+static PyObject *PyPf_settings_set(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args);
 
@@ -254,6 +258,16 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_attack_on_left_click, METH_NOARGS,
     "Set the cursor to target mode. The next left click will issue an attack command to the location "
     "under the cursor."},
+
+    {"settings_get",
+    (PyCFunction)PyPf_settings_get, METH_VARARGS,
+    "Returns the value of the setting with the specified name. Will throw an exception if the setting is "
+    "not found."},
+
+    {"settings_set",
+    (PyCFunction)PyPf_settings_set, METH_VARARGS,
+    "Updates the value of the setting with the specified name. Will throw an exception if the setting is "
+    "not found or if the new value for the setting is invalid."},
 
     {"multiply_quaternions",
     (PyCFunction)PyPf_multiply_quaternions, METH_VARARGS,
@@ -497,7 +511,11 @@ static PyObject *PyPf_prev_frame_ms(PyObject *self)
 
 static PyObject *PyPf_get_resolution(PyObject *self)
 {
-    return Py_BuildValue("(i, i)", CONFIG_RES_X, CONFIG_RES_Y);
+    struct sval res;
+    ss_e status = Settings_Get("pf.video.resolution", &res);
+    assert(status == SS_OKAY);
+
+    return Py_BuildValue("(i, i)", (int)res.as_vec2.x, (int)res.as_vec2.y);
 }
 
 static PyObject *PyPf_get_basedir(PyObject *self)
@@ -818,6 +836,87 @@ static PyObject *PyPf_set_move_on_left_click(PyObject *self)
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self)
 {
     G_Move_SetAttackOnLeftClick();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_settings_get(PyObject *self, PyObject *args)
+{
+    const char *sname;
+
+    if(!PyArg_ParseTuple(args, "s", &sname)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
+        return NULL;
+    }
+
+    struct sval val;
+    ss_e status = Settings_Get(sname, &val);
+    if(status == SS_NO_SETTING) {
+        PyErr_SetString(PyExc_RuntimeError, "The setting with the given name does not exist.");
+        return NULL;
+    }
+
+    switch(val.type) {
+    case ST_TYPE_STRING:    return Py_BuildValue("s", val.as_string);
+    case ST_TYPE_FLOAT:     return Py_BuildValue("f", val.as_float);
+    case ST_TYPE_INT:       return Py_BuildValue("i", val.as_int);
+    case ST_TYPE_BOOL:      if(val.as_bool) Py_RETURN_TRUE; else Py_RETURN_FALSE;
+    case ST_TYPE_VEC2:      return Py_BuildValue("(f, f)", val.as_vec2.x, val.as_vec2.y);
+    default: assert(0);     Py_RETURN_NONE;
+    }
+}
+
+static PyObject *PyPf_settings_set(PyObject *self, PyObject *args)
+{
+    const char *sname;
+    PyObject *nvobj;
+
+    if(!PyArg_ParseTuple(args, "sO", &sname, &nvobj)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string and an object.");
+        return NULL;
+    }
+
+    struct sval newval;
+    vec2_t vecval;
+
+    if(PyString_Check(nvobj)) {
+
+        newval.type = ST_TYPE_STRING;
+        strncpy(newval.as_string, PyString_AS_STRING(nvobj), sizeof(newval.as_string));
+        newval.as_string[sizeof(newval.as_string)-1] = '\0';
+
+    }else if(PyFloat_Check(nvobj)) {
+    
+        newval.type = ST_TYPE_FLOAT;
+        newval.as_float = PyFloat_AS_DOUBLE(nvobj);
+
+    }else if(PyInt_Check(nvobj)) {
+    
+        newval.type = ST_TYPE_INT;
+        newval.as_int = PyInt_AS_LONG(nvobj);
+
+    }else if(PyBool_Check(nvobj)) {
+    
+        newval.type = ST_TYPE_BOOL;
+        newval.as_bool = PyObject_IsTrue(nvobj);
+
+    }else if(PyArg_ParseTuple(nvobj, "ff", &newval.as_vec2.x, &newval.as_vec2.y)) {
+    
+        newval.type = ST_TYPE_VEC2;
+
+    }else {
+        PyErr_SetString(PyExc_TypeError, "The new value is not one of the allowed types for settings.");
+        return NULL;
+    }
+
+    ss_e status = Settings_Set(sname, &newval);
+    if(status == SS_NO_SETTING) {
+        PyErr_SetString(PyExc_RuntimeError, "The setting with the given name does not exist.");
+        return NULL;
+    }else if(status == SS_INVALID_VAL) {
+        PyErr_SetString(PyExc_RuntimeError, "The new value is not allowed for this setting.");
+        return NULL;
+    }
+
     Py_RETURN_NONE;
 }
 

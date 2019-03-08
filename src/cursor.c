@@ -36,6 +36,7 @@
 #include "cursor.h"
 #include "config.h"
 #include "event.h"
+#include "settings.h"
 
 #include <SDL.h>
 
@@ -136,10 +137,14 @@ static enum cursortype s_rts_pointer = CURSOR_POINTER;
 
 static void cursor_rts_set_active(int mouse_x, int mouse_y)
 {
+    struct sval res;
+    ss_e status = Settings_Get("pf.video.resolution", &res);
+    assert(status == SS_OKAY);
+
     bool top = (mouse_y == 0);
-    bool bot = (mouse_y == CONFIG_RES_Y - 1);
+    bool bot = (mouse_y == res.as_vec2.y - 1);
     bool left  = (mouse_x == 0);
-    bool right = (mouse_x == CONFIG_RES_X - 1);
+    bool right = (mouse_x == res.as_vec2.x - 1);
 
     /* Check the corners first, then edges */
     if(top && left) {

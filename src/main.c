@@ -33,6 +33,7 @@
  *
  */
 
+#include "main.h"
 #include "asset_load.h"
 #include "config.h"
 #include "cursor.h"
@@ -44,10 +45,10 @@
 #include "navigation/public/nav.h"
 #include "event.h"
 #include "ui.h"
+#include "pf_math.h"
 #include "settings.h"
 
 #include <GL/glew.h>
-#include <SDL.h>
 #include <SDL_opengl.h>
 
 #include <stdbool.h>
@@ -165,7 +166,7 @@ static void render(void)
 /* Fills the framebuffer with the loading screen using SDL's software renderer. 
  * Used to set a loading screen immediately, even before the rendering subsystem 
  * is initialized, The loading screen will be overwriten by the first 'render' call. */
-void early_loading_screen(void)
+static void early_loading_screen(void)
 {
     assert(s_window);
 
@@ -226,9 +227,31 @@ static bool engine_init(char **argv)
         goto fail_settings;
     }
 
+    ss_e status;
+    if((status = Settings_LoadFromFile()) != SS_OKAY) {
+        fprintf(stderr, "Could not load settings from file: %s [status: %d]\n", 
+            Settings_GetFile(), status);
+    }
+
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
         fprintf(stderr, "Failed to initialize SDL: %s\n", SDL_GetError());
         goto fail_sdl;
+    }
+
+    SDL_DisplayMode dm;
+    SDL_GetDesktopDisplayMode(0, &dm);
+
+    struct sval setting;
+    int res[2] = {dm.w, dm.h};
+
+    if(Settings_Get("pf.video.resolution", &setting) == SS_OKAY) {
+        res[0] = (int)setting.as_vec2.x;
+        res[1] = (int)setting.as_vec2.y;
+    }
+
+    enum pf_window_flags wf = PF_WF_BORDERLESS_WIN;
+    if(Settings_Get("pf.video.display_mode", &setting) == SS_OKAY) {
+        wf = setting.as_int;
     }
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -247,9 +270,13 @@ static bool engine_init(char **argv)
         "Permafrost Engine",
         SDL_WINDOWPOS_UNDEFINED, 
         SDL_WINDOWPOS_UNDEFINED,
-        CONFIG_RES_X, 
-        CONFIG_RES_Y, 
-        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | CONFIG_WINDOWFLAGS);
+        res[0], 
+        res[1], 
+        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN 
+#ifdef __linux__
+            | SDL_WINDOW_ALWAYS_ON_TOP 
+#endif
+            | wf);
 
     early_loading_screen();
 
@@ -267,7 +294,7 @@ static bool engine_init(char **argv)
         goto fail_glew;
     }
 
-    glViewport(0, 0, CONFIG_RES_X, CONFIG_RES_Y);
+    glViewport(0, 0, res[0], res[1]);
     glProvokingVertex(GL_FIRST_VERTEX_CONVENTION); 
     glFrontFace(GL_CW);
     glCullFace(GL_BACK);
@@ -369,6 +396,27 @@ static void engine_shutdown(void)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+int Engine_SetRes(int w, int h)
+{
+    SDL_DisplayMode dm = (SDL_DisplayMode) {
+        .format = SDL_PIXELFORMAT_UNKNOWN,
+        .w = w,
+        .h = h,
+        .refresh_rate = 0, /* Unspecified */
+        .driverdata = NULL,
+    };
+
+    SDL_SetWindowSize(s_window, w, h);
+    SDL_SetWindowPosition(s_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    return SDL_SetWindowDisplayMode(s_window, &dm);
+}
+
+void Engine_SetDispMode(enum pf_window_flags wf)
+{
+    SDL_SetWindowBordered(s_window, !(wf & SDL_WINDOW_BORDERLESS));
+    SDL_SetWindowFullscreen(s_window, wf & SDL_WINDOW_FULLSCREEN);
+}
+
 #if defined(_WIN32)
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, 
                      LPSTR lpCmdLine, int nCmdShow)
@@ -407,12 +455,6 @@ int main(int argc, char **argv)
         goto fail_init;
     }
 
-    ss_e status;
-    if((status = Settings_LoadFromFile()) != SS_OKAY) {
-        fprintf(stderr, "Could not load settings from file: %s [status: %d]\n", 
-            Settings_GetFile(), status);
-    }
-
     S_RunFile(argv[2]);
 
     uint32_t last_ts = SDL_GetTicks();
@@ -428,6 +470,7 @@ int main(int argc, char **argv)
         last_ts = curr_time;
     }
 
+    ss_e status;
     if((status = Settings_SaveToFile()) != SS_OKAY) {
         fprintf(stderr, "Could not save settings to file: %s [status: %d]\n", 
             Settings_GetFile(), status);

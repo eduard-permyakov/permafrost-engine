@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2018 Eduard Permyakov 
+ *  Copyright (C) 2019 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,35 +33,26 @@
  *
  */
 
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef MAIN_H
+#define MAIN_H
 
 #include <SDL.h>
-#include <stdbool.h>
 
-/* The far end of the camera's clipping frustrum, in OpenGL coordinates */
-#define CONFIG_DRAWDIST             1000
-#define CONFIG_TILE_TEX_RES         128
-#define CONFIG_VSYNC                false
-#define CONFIG_LOADING_SCREEN       "assets/loading_screens/battle_of_kulikovo.png"
+extern const char *g_basepath;
+extern unsigned    g_last_frame_ms;
 
-#define CONFIG_SHADOWS              true
-#define CONFIG_SHADOW_MAP_RES       2048
-/* Determines the draw distance from the light source when creating the
- * shadow map. Note that a higher drawdistance leads to more peterpanning.
- */
-#define CONFIG_SHADOW_DRAWDIST      512
-/* This is the half-width of the light source's frustum, in OpenGL coordinates.
- * A value is 128 is enough for all visible shadows to be rendered when 
- * viewing the scene from the standard RTS camera. When looking around with
- * an FPS camera, objects at the edges of the camera may not be properly
- * shadowed. However, increasing the FOV results in lower-quality shadows
- * for the same shadow map resolution. 
- */
-#define CONFIG_SHADOW_FOV           128
-#define CONFIG_HEALTHBARS           true
+enum pf_window_flags {
 
-#define CONFIG_SETTINGS_FILENAME    "pf.conf"
+    PF_WF_FULLSCREEN     = SDL_WINDOW_FULLSCREEN 
+                         | SDL_WINDOW_INPUT_GRABBED,
+    PF_WF_BORDERLESS_WIN = SDL_WINDOW_BORDERLESS 
+                         | SDL_WINDOW_INPUT_GRABBED,
+    PF_WF_WINDOW         = SDL_WINDOW_INPUT_GRABBED,
+};
 
+
+int  Engine_SetRes(int w, int h);
+void Engine_SetDispMode(enum pf_window_flags wf);
 
 #endif
+

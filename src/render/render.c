@@ -37,6 +37,71 @@
 #include "shader.h"
 #include "texture.h"
 #include "render_gl.h"
+#include "../settings.h"
+#include "../main.h"
+
+#include <SDL.h>
+#include <assert.h>
+#include <math.h>
+
+#define EPSILON (1.0f/1024)
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static bool ar_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_VEC2)
+        return false;
+
+    int AR_MIN = 0.5f, AR_MAX = 2.5f;
+    return (new_val->as_vec2.x / new_val->as_vec2.y >= AR_MIN)
+        && (new_val->as_vec2.x / new_val->as_vec2.y <= AR_MAX);
+}
+
+static bool res_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_VEC2)
+        return false;
+
+    struct sval ar;
+    ss_e status = Settings_Get("pf.video.aspect_ratio", &ar);
+    if(status != SS_NO_SETTING) {
+
+        assert(status == SS_OKAY);
+        float set_ar = ar.as_vec2.x / ar.as_vec2.y;
+        if(fabs(new_val->as_vec2.x / new_val->as_vec2.y - set_ar) > EPSILON)
+            return false;
+    }
+
+    const int DIM_MIN = 360, DIM_MAX = 5120;
+
+    return (new_val->as_vec2.x >= DIM_MIN && new_val->as_vec2.x <= DIM_MAX)
+        && (new_val->as_vec2.y >= DIM_MIN && new_val->as_vec2.y <= DIM_MAX);
+}
+
+static void res_commit(const struct sval *new_val)
+{
+    int rval = Engine_SetRes(new_val->as_vec2.x, new_val->as_vec2.y);
+    assert(0 == rval || fprintf(stderr, "Failed to set window resolution:%s\n", SDL_GetError()));
+}
+
+static bool dm_validate(const struct sval *new_val)
+{
+    assert(new_val->type == ST_TYPE_INT);
+    if(new_val->type != ST_TYPE_INT)
+        return false;
+
+    return new_val->as_int == PF_WF_FULLSCREEN
+        || new_val->as_int == PF_WF_BORDERLESS_WIN
+        || new_val->as_int == PF_WF_WINDOW;
+}
+
+static void dm_commit(const struct sval *new_val)
+{
+    Engine_SetDispMode(new_val->as_int);
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -44,6 +109,42 @@
 
 bool R_Init(const char *base_path)
 {
+    ss_e status;
+    SDL_DisplayMode dm;
+    SDL_GetDesktopDisplayMode(0, &dm);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.aspect_ratio",
+        .val = (struct sval) {
+            .type = ST_TYPE_VEC2,
+            .as_vec2 = (vec2_t){dm.w, dm.h}
+        },
+        .validate = ar_validate,
+        .commit = NULL,
+    });
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.resolution",
+        .val = (struct sval) {
+            .type = ST_TYPE_VEC2,
+            .as_vec2 = (vec2_t){dm.w, dm.h}
+        },
+        .validate = res_validate,
+        .commit = res_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.display_mode",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = PF_WF_FULLSCREEN
+        },
+        .validate = dm_validate,
+        .commit = dm_commit,
+    });
+    assert(status == SS_OKAY);
+
     if(!R_Shader_InitAll(base_path))
         return false;
 
