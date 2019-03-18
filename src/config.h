@@ -36,7 +36,6 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <SDL.h>
 #include <stdbool.h>
 
 /* The far end of the camera's clipping frustrum, in OpenGL coordinates */
@@ -59,7 +58,6 @@
  * for the same shadow map resolution. 
  */
 #define CONFIG_SHADOW_FOV           128
-#define CONFIG_HEALTHBARS           true
 
 #define CONFIG_SETTINGS_FILENAME    "pf.conf"
 

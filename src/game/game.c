@@ -239,6 +239,11 @@ static void g_render_healthbars(void)
     R_GL_DrawHealthbars(num_combat_visible, ent_health_pc, ent_top_pos_ws, ACTIVE_CAM);
 }
 
+static bool hb_mode_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_BOOL);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -263,6 +268,17 @@ bool G_Init(void)
     G_Sel_Init();
     G_Sel_Enable();
     G_Timer_Init();
+
+    ss_e status = Settings_Create((struct setting){
+        .name = "pf.game.healthbar_mode",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true
+        },
+        .validate = hb_mode_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
 
     return true;
 
@@ -430,9 +446,13 @@ void G_Render(void)
     R_GL_SetScreenspaceDrawMode();
     E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
 
-#if CONFIG_HEALTHBARS
-    g_render_healthbars();
-#endif
+    struct sval hb_setting;
+    ss_e status = Settings_Get("pf.game.healthbar_mode", &hb_setting);
+    assert(status == SS_OKAY);
+    if(hb_setting.as_bool) {
+        g_render_healthbars();
+    }
+
     if(s_gs.map) {
         M_RenderMinimap(s_gs.map, ACTIVE_CAM);
     }

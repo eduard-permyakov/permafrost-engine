@@ -105,18 +105,18 @@ static bool named_val_from_line(char *line, struct named_val *out)
             goto fail;
         out->val.as_bool = tmp;
 
-    }else if(!strcmp(token, "float")) {
-
-        out->val.type = ST_TYPE_FLOAT;
-        token = strtok_r(NULL, " \t", &saveptr);
-        if(!sscanf(token, "%f\n", &out->val.as_float))
-            goto fail;
-
     }else if(!strcmp(token, "int")) {
 
         out->val.type = ST_TYPE_INT;
         token = strtok_r(NULL, " \t", &saveptr);
         if(!sscanf(token, "%d\n", &out->val.as_int))
+            goto fail;
+
+    }else if(!strcmp(token, "float")) {
+
+        out->val.type = ST_TYPE_FLOAT;
+        token = strtok_r(NULL, " \t", &saveptr);
+        if(!sscanf(token, "%f\n", &out->val.as_float))
             goto fail;
 
     }else {
@@ -175,16 +175,17 @@ ss_e Settings_Create(struct setting sett)
 
     }else {
 
+        assert((k = kh_get(setting, s_settings_table, sett.name)) == kh_end(s_settings_table));
         int put_status;
         k = kh_put(setting, s_settings_table, sett.name, &put_status);
 
         if(put_status == -1)
             return SS_BADALLOC;
-
-        kh_update_str_keys(s_settings_table);
     }
 
     kh_value(s_settings_table, k) = sett;
+    kh_update_str_keys(s_settings_table);
+
     return SS_OKAY;
 }
 

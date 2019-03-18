@@ -884,20 +884,20 @@ static PyObject *PyPf_settings_set(PyObject *self, PyObject *args)
         strncpy(newval.as_string, PyString_AS_STRING(nvobj), sizeof(newval.as_string));
         newval.as_string[sizeof(newval.as_string)-1] = '\0';
 
-    }else if(PyFloat_Check(nvobj)) {
+    }else if(PyBool_Check(nvobj)) {
     
-        newval.type = ST_TYPE_FLOAT;
-        newval.as_float = PyFloat_AS_DOUBLE(nvobj);
+        newval.type = ST_TYPE_BOOL;
+        newval.as_bool = PyObject_IsTrue(nvobj);
 
     }else if(PyInt_Check(nvobj)) {
     
         newval.type = ST_TYPE_INT;
         newval.as_int = PyInt_AS_LONG(nvobj);
 
-    }else if(PyBool_Check(nvobj)) {
+    }else if(PyFloat_Check(nvobj)) {
     
-        newval.type = ST_TYPE_BOOL;
-        newval.as_bool = PyObject_IsTrue(nvobj);
+        newval.type = ST_TYPE_FLOAT;
+        newval.as_float = PyFloat_AS_DOUBLE(nvobj);
 
     }else if(PyArg_ParseTuple(nvobj, "ff", &newval.as_vec2.x, &newval.as_vec2.y)) {
     
