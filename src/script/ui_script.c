@@ -62,6 +62,7 @@ static int       PyWindow_init(PyWindowObject *self, PyObject *args);
 
 static PyObject *PyWindow_layout_row_static(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_layout_row_dynamic(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_layout_row(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_layout_row_begin(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_layout_row_end(PyWindowObject *self);
 static PyObject *PyWindow_layout_row_push(PyWindowObject *self, PyObject *args);
@@ -83,10 +84,15 @@ static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
 static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure);
+static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_spacing(PyWindowObject *self, void *closure);
 static int PyWindow_set_spacing(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_padding(PyWindowObject *self, void *closure);
 static int PyWindow_set_padding(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_group_padding(PyWindowObject *self, void *closure);
+static int PyWindow_set_group_padding(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_border(PyWindowObject *self, void *closure);
+static int PyWindow_set_border(PyWindowObject *self, PyObject *value, void *closure);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -187,6 +193,10 @@ static PyGetSetDef PyWindow_getset[] = {
     (getter)PyWindow_get_size, NULL,
     "A tuple of two integers specifying the width and height dimentions of the window.",
     NULL},
+    {"header_height",
+    (getter)PyWindow_get_header_height, NULL,
+    "A float specifying the height of the window header in pixels.",
+    NULL},
     {"spacing",
     (getter)PyWindow_get_spacing, 
     (setter)PyWindow_set_spacing,
@@ -196,6 +206,16 @@ static PyGetSetDef PyWindow_getset[] = {
     (getter)PyWindow_get_padding, 
     (setter)PyWindow_set_padding,
     "An (X, Y) tuple of floats to control the padding (between border and content) of a window.", 
+    NULL},
+    {"group_padding",
+    (getter)PyWindow_get_group_padding, 
+    (setter)PyWindow_set_group_padding,
+    "An (X, Y) tuple of floats to control the padding around a group in a window.", 
+    NULL},
+    {"border",
+    (getter)PyWindow_get_border, 
+    (setter)PyWindow_set_border,
+    "A float to control the border width of a window.", 
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -507,7 +527,7 @@ static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args)
     PyObject *callable;
 
     if(!PyArg_ParseTuple(args, "siO", &name, &group_flags, &callable)) {
-        PyErr_SetString(PyExc_TypeError, "Arguments must be a string, an integer and an object object.");
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string, an integer and an object.");
         return NULL;
     }
 
@@ -644,6 +664,14 @@ static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure)
     return Py_BuildValue("(ii)", self->rect.width, self->rect.height);
 }
 
+static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure)
+{
+    float header_height = s_nk_ctx->style.font->height
+                        + 2.0f * self->style.header.padding.y
+                        + 2.0f * self->style.header.label_padding.y;
+    return Py_BuildValue("i", (int)header_height);
+}
+
 static PyObject *PyWindow_get_spacing(PyWindowObject *self, void *closure)
 {
     return Py_BuildValue("(f, f)",
@@ -681,6 +709,43 @@ static int PyWindow_set_padding(PyWindowObject *self, PyObject *value, void *clo
     }
 
     self->style.padding = nk_vec2(x,y);
+    return 0;
+}
+
+static PyObject *PyWindow_get_group_padding(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("(f, f)",
+        self->style.group_padding.x,
+        self->style.group_padding.y);
+}
+
+static int PyWindow_set_group_padding(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style.group_padding = nk_vec2(x,y);
+    return 0;
+}
+
+static PyObject *PyWindow_get_border(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style.border);
+}
+
+static int PyWindow_set_border(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float border;
+    if(!PyArg_ParseTuple(value, "f", &border)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
+        return -1;
+    }
+
+    self->style.border = border;
     return 0;
 }
 
