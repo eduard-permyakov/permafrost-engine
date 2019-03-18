@@ -1,6 +1,6 @@
 #
 #  This file is part of Permafrost Engine. 
-#  Copyright (C) 2018 Eduard Permyakov 
+#  Copyright (C) 2019 Eduard Permyakov 
 #
 #  Permafrost Engine is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -35,47 +35,29 @@
 import pf
 from constants import *
 
-class DemoWindow(pf.Window):
-
-    WIDTH = 250
-    HEIGHT = 290
+class GameSettingsWindow(pf.Window):
+    
+    WIDTH = 300
+    HEIGHT = 400
 
     def __init__(self):
-        super(DemoWindow, self).__init__("Permafrost Engine Demo", (25, 25, DemoWindow.WIDTH, DemoWindow.HEIGHT), 
-            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE |  pf.NK_WINDOW_NO_SCROLLBAR)
-        self.fac_names = []
-        self.active_fac_idx = 0
+        resx, resy = pf.get_resolution()
+        super(GameSettingsWindow, self).__init__("GameSettings", ((resx - GameSettingsWindow.WIDTH)/2, 
+            (resy - GameSettingsWindow.HEIGHT)/2, GameSettingsWindow.WIDTH, GameSettingsWindow.HEIGHT), 0)
+        self.hb_idx = 0
+        self.dirty = False
 
     def update(self):
-
-        def factions_group():
-            self.layout_row_dynamic(25, 1)
-            for i in range(0, len(self.fac_names)):
-                old = self.active_fac_idx
-                on = self.selectable_label(self.fac_names[i], 
-                pf.NK_TEXT_ALIGN_LEFT, i == self.active_fac_idx)
-                if on: 
-                    self.active_fac_idx = i
-                if self.active_fac_idx != old:
-                    pf.global_event(EVENT_CONTROLLED_FACTION_CHANGED, i)
-
         self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Controlled Faction:", (255, 255, 255))
-
-        self.layout_row_dynamic(140, 1)
-        self.group("Controlled Faction", pf.NK_WINDOW_BORDER, factions_group)
-
-        self.layout_row_dynamic(5, 1)
-
-        def on_exit():
-            pf.global_event(pf.SDL_QUIT, None)
-
-        def on_settings():
-            pf.global_event(EVENT_SETTINGS_SHOW, None)
-
-        self.layout_row_dynamic(30, 1)
-        self.button_label("Settings", on_settings)
-
-        self.layout_row_dynamic(30, 1)
-        self.button_label("Exit Demo", on_exit)
-
+        self.label_colored_wrap("Health Bars:", (255, 255, 255))
+        
+        old_hb_idx = self.hb_idx
+        self.layout_row_dynamic(20, 2)
+        if self.option_label("On", self.hb_idx == 0):
+            self.hb_idx = 0
+        if self.option_label("Off", self.hb_idx == 1):
+            self.hb_idx = 1
+        
+        if self.hb_idx != old_hb_idx:
+            pf.global_event(EVENT_SETTINGS_HB_MODE_CHANGED, self.hb_idx)
+         

@@ -1,6 +1,6 @@
 #
 #  This file is part of Permafrost Engine. 
-#  Copyright (C) 2018 Eduard Permyakov 
+#  Copyright (C) 2019 Eduard Permyakov 
 #
 #  Permafrost Engine is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -34,48 +34,36 @@
 
 import pf
 from constants import *
+import view_controller
 
-class DemoWindow(pf.Window):
+class TabBarVC(view_controller.ViewController):
 
-    WIDTH = 250
-    HEIGHT = 290
+    def __init__(self, view):
+        self.view = view
+        self.active_idx = 0
+        self.labels = []
+        self.children = []
 
-    def __init__(self):
-        super(DemoWindow, self).__init__("Permafrost Engine Demo", (25, 25, DemoWindow.WIDTH, DemoWindow.HEIGHT), 
-            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE |  pf.NK_WINDOW_NO_SCROLLBAR)
-        self.fac_names = []
-        self.active_fac_idx = 0
+    def __on_tab_changed(self, event):
+        assert self.active_idx >= 0 and self.active_idx < len(self.children)
+        assert event >= 0 and event < len(self.children)
+        self.children[self.active_idx].deactivate()
+        self.active_idx = event
+        self.children[self.active_idx].activate()
 
-    def update(self):
+    def push_child(self, label, vc):
+        assert isinstance(vc, view_controller.ViewController)
+        assert isinstance(label, basestring)
+        self.children.append(vc)
+        self.view.push_child(label, vc.view)
 
-        def factions_group():
-            self.layout_row_dynamic(25, 1)
-            for i in range(0, len(self.fac_names)):
-                old = self.active_fac_idx
-                on = self.selectable_label(self.fac_names[i], 
-                pf.NK_TEXT_ALIGN_LEFT, i == self.active_fac_idx)
-                if on: 
-                    self.active_fac_idx = i
-                if self.active_fac_idx != old:
-                    pf.global_event(EVENT_CONTROLLED_FACTION_CHANGED, i)
+    def activate(self):
+        pf.register_event_handler(EVENT_SETTINGS_TAB_SEL_CHANGED, TabBarVC.__on_tab_changed, self)
+        self.children[self.active_idx].activate()
+        self.view.show()
 
-        self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Controlled Faction:", (255, 255, 255))
-
-        self.layout_row_dynamic(140, 1)
-        self.group("Controlled Faction", pf.NK_WINDOW_BORDER, factions_group)
-
-        self.layout_row_dynamic(5, 1)
-
-        def on_exit():
-            pf.global_event(pf.SDL_QUIT, None)
-
-        def on_settings():
-            pf.global_event(EVENT_SETTINGS_SHOW, None)
-
-        self.layout_row_dynamic(30, 1)
-        self.button_label("Settings", on_settings)
-
-        self.layout_row_dynamic(30, 1)
-        self.button_label("Exit Demo", on_exit)
+    def deactivate(self):
+        self.view.hide()
+        self.children[self.active_idx].deactivate()
+        pf.unregister_event_handler(EVENT_SETTINGS_TAB_SEL_CHANGED, TabBarVC.__on_tab_changed)
 

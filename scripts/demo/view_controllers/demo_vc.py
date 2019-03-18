@@ -34,12 +34,25 @@
 
 import pf
 from constants import *
+
 import view_controller as vc
+import tab_bar_vc as tbvc
+import video_settings_vc as vsvc
+import game_settings_vc as gsvc
+
+import views.settings_tabbed_window as stw
+import views.video_settings_window as vsw
+import views.game_settings_window as gsw
 
 class DemoVC(vc.ViewController):
 
     def __init__(self, view):
         self.__view = view
+        self.__settings_vc = tbvc.TabBarVC(stw.SettingsTabbedWindow())
+        self.__settings_vc.push_child("Video", vsvc.VideoSettingsVC(vsw.VideoSettingsWindow()))
+        self.__settings_vc.push_child("Game", gsvc.GameSettingsVC(gsw.GameSettingsWindow()))
+        self.__settings_shown = False
+
         self.__view.fac_names = [fac["name"] for fac in pf.get_factions_list()]
         assert len(self.__view.fac_names) > 0
         if len(self.__view.fac_names) >= 2:
@@ -53,11 +66,25 @@ class DemoVC(vc.ViewController):
             pf.set_faction_controllable(i, False) 
         pf.set_faction_controllable(event, True)
 
+    def __on_settings_show(self, event):
+        if not self.__settings_shown:
+            self.__settings_vc.activate()
+            self.__settings_shown = True
+
+    def __on_settings_hide(self, event):
+        if self.__settings_shown:
+            self.__settings_vc.deactivate()
+            self.__settings_shown = False
+
     def activate(self):
         pf.register_event_handler(EVENT_CONTROLLED_FACTION_CHANGED, DemoVC.__on_controlled_faction_chagned, self)
+        pf.register_event_handler(EVENT_SETTINGS_SHOW, DemoVC.__on_settings_show, self)
+        pf.register_event_handler(EVENT_SETTINGS_HIDE, DemoVC.__on_settings_hide, self)
         self.__view.show()
 
     def deactivate(self):
         self.__view.hide()
+        pf.unregister_event_handler(EVENT_SETTINGS_HIDE, DemoVC.__on_settings_hide)
+        pf.unregister_event_handler(EVENT_SETTINGS_SHOW, DemoVC.__on_settings_show)
         pf.unregister_event_handler(EVENT_CONTROLLED_FACTION_CHANGED, DemoVC.__on_controlled_faction_chagned)
 

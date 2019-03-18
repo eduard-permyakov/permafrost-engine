@@ -1,6 +1,6 @@
 #
 #  This file is part of Permafrost Engine. 
-#  Copyright (C) 2018 Eduard Permyakov 
+#  Copyright (C) 2019 Eduard Permyakov 
 #
 #  Permafrost Engine is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -35,47 +35,56 @@
 import pf
 from constants import *
 
-class DemoWindow(pf.Window):
-
-    WIDTH = 250
-    HEIGHT = 290
+class VideoSettingsWindow(pf.Window):
+    
+    WIDTH = 300
+    HEIGHT = 400
 
     def __init__(self):
-        super(DemoWindow, self).__init__("Permafrost Engine Demo", (25, 25, DemoWindow.WIDTH, DemoWindow.HEIGHT), 
-            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE |  pf.NK_WINDOW_NO_SCROLLBAR)
-        self.fac_names = []
-        self.active_fac_idx = 0
+        resx, resy = pf.get_resolution()
+        super(VideoSettingsWindow, self).__init__("VideoSettings", ((resx - VideoSettingsWindow.WIDTH)/2, 
+            (resy - VideoSettingsWindow.HEIGHT)/2, VideoSettingsWindow.WIDTH, VideoSettingsWindow.HEIGHT), 0)
+
+        self.res_idx = 0
+        self.res_opts = [ 
+            (1920.0, 1080.0), 
+            (1280.0, 720.0),
+            (960.0, 540.0),
+            (640.0, 360.0) 
+        ]
+        self.res_opt_strings = ["{0}:{1}".format(int(opt[0]), int(opt[1])) for opt in self.res_opts]
+
+        self.mode_idx = 0
+        self.mode_opts = [
+            pf.PF_WF_FULLSCREEN,
+            pf.PF_WF_WINDOW,
+            pf.PF_WF_BORDERLESS_WIN,
+        ]
+        self.mode_opt_strings = [
+            "Fullscreen",
+            "Window",
+            "Borderless Window",
+        ]
+
+        self.dirty = False
 
     def update(self):
 
-        def factions_group():
-            self.layout_row_dynamic(25, 1)
-            for i in range(0, len(self.fac_names)):
-                old = self.active_fac_idx
-                on = self.selectable_label(self.fac_names[i], 
-                pf.NK_TEXT_ALIGN_LEFT, i == self.active_fac_idx)
-                if on: 
-                    self.active_fac_idx = i
-                if self.active_fac_idx != old:
-                    pf.global_event(EVENT_CONTROLLED_FACTION_CHANGED, i)
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Resolution:", (255, 255, 255))
+
+        self.layout_row_dynamic(25, 1)
+        old_res_idx = self.res_idx
+        self.res_idx = self.combo_box(self.res_opt_strings, self.res_idx, 25, (VideoSettingsWindow.WIDTH - 40, 200))
+        if old_res_idx != self.res_idx:
+            pf.global_event(EVENT_RES_SETTING_CHANGED, self.res_opts[self.res_idx])
 
         self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Controlled Faction:", (255, 255, 255))
+        self.label_colored_wrap("Window Mode:", (255, 255, 255))
 
-        self.layout_row_dynamic(140, 1)
-        self.group("Controlled Faction", pf.NK_WINDOW_BORDER, factions_group)
-
-        self.layout_row_dynamic(5, 1)
-
-        def on_exit():
-            pf.global_event(pf.SDL_QUIT, None)
-
-        def on_settings():
-            pf.global_event(EVENT_SETTINGS_SHOW, None)
-
-        self.layout_row_dynamic(30, 1)
-        self.button_label("Settings", on_settings)
-
-        self.layout_row_dynamic(30, 1)
-        self.button_label("Exit Demo", on_exit)
+        self.layout_row_dynamic(25, 1)
+        old_mode_idx = self.mode_idx
+        self.mode_idx = self.combo_box(self.mode_opt_strings, self.mode_idx, 25, (VideoSettingsWindow.WIDTH - 40, 200))
+        if old_mode_idx != self.mode_idx:
+            pf.global_event(EVENT_WINMODE_SETTING_CHANGED, self.mode_opts[self.mode_idx])
 

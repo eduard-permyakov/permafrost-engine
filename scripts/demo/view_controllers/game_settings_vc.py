@@ -1,6 +1,6 @@
 #
 #  This file is part of Permafrost Engine. 
-#  Copyright (C) 2018 Eduard Permyakov 
+#  Copyright (C) 2019 Eduard Permyakov 
 #
 #  Permafrost Engine is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -34,48 +34,50 @@
 
 import pf
 from constants import *
+import view_controller as vc
 
-class DemoWindow(pf.Window):
+class GameSettingsVC(vc.ViewController):
 
-    WIDTH = 250
-    HEIGHT = 290
+    def __init__(self, view):
+        self.view = view
+        self.__og_hb_idx = view.hb_idx
+        self.__load_selection()
 
-    def __init__(self):
-        super(DemoWindow, self).__init__("Permafrost Engine Demo", (25, 25, DemoWindow.WIDTH, DemoWindow.HEIGHT), 
-            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE |  pf.NK_WINDOW_NO_SCROLLBAR)
-        self.fac_names = []
-        self.active_fac_idx = 0
+    def __load_selection(self):
+        try:
+            hb_saved = pf.settings_get("pf.game.healthbar_mode")
+            if hb_saved == True:
+                self.view.hb_idx = 0
+            else:
+                self.view.hb_idx = 1
+            self.__og_hb_idx = self.view.hb_idx
+        except Exception as e:
+            print("Could not load settings:" + str(e))
+            raise
 
-    def update(self):
+    def __update_dirty_flag(self):
+        if self.view.hb_idx != self.__og_hb_idx:
+            self.view.dirty = True
+        else:
+            self.view.dirty = False
 
-        def factions_group():
-            self.layout_row_dynamic(25, 1)
-            for i in range(0, len(self.fac_names)):
-                old = self.active_fac_idx
-                on = self.selectable_label(self.fac_names[i], 
-                pf.NK_TEXT_ALIGN_LEFT, i == self.active_fac_idx)
-                if on: 
-                    self.active_fac_idx = i
-                if self.active_fac_idx != old:
-                    pf.global_event(EVENT_CONTROLLED_FACTION_CHANGED, i)
+    def __on_settings_apply(self, event):
+        if self.view.hb_idx != self.__og_hb_idx:
+            try:
+                pf.settings_set("pf.game.healthbar_mode", bool(self.view.hb_idx == 0))
+                self.__og_hb_idx = self.view.hb_idx
+            except Exception as e:
+                print("Could not set pf.game.healthbar_mode:" + str(e))
+        self.__update_dirty_flag()
 
-        self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Controlled Faction:", (255, 255, 255))
+    def __on_hb_mode_changed(self, event):
+        self.__update_dirty_flag() 
 
-        self.layout_row_dynamic(140, 1)
-        self.group("Controlled Faction", pf.NK_WINDOW_BORDER, factions_group)
+    def activate(self):
+        pf.register_event_handler(EVENT_SETTINGS_APPLY, GameSettingsVC.__on_settings_apply, self)
+        pf.register_event_handler(EVENT_SETTINGS_HB_MODE_CHANGED, GameSettingsVC.__on_hb_mode_changed, self)
 
-        self.layout_row_dynamic(5, 1)
-
-        def on_exit():
-            pf.global_event(pf.SDL_QUIT, None)
-
-        def on_settings():
-            pf.global_event(EVENT_SETTINGS_SHOW, None)
-
-        self.layout_row_dynamic(30, 1)
-        self.button_label("Settings", on_settings)
-
-        self.layout_row_dynamic(30, 1)
-        self.button_label("Exit Demo", on_exit)
+    def deactivate(self):
+        pf.unregister_event_handler(EVENT_SETTINGS_APPLY, GameSettingsVC.__on_settings_apply)
+        pf.unregister_event_handler(EVENT_SETTINGS_HB_MODE_CHANGED, GameSettingsVC.__on_hb_mode_changed)
 
