@@ -109,7 +109,7 @@ clean:
 	rm -rf $(PF_OBJS) $(PF_DEPS) $(BIN) 
 
 run:
-	@./bin/pf ./ ./scripts/demo/main.py
+	@./bin/pf ./ ./scripts/rts/main.py
 
 run_editor:
 	@./bin/pf ./ ./scripts/editor/main.py
