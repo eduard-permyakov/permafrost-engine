@@ -259,12 +259,12 @@ void M_AL_DumpMap(FILE *stream, const struct map *map)
                 assert(tile->type >= 0 && tile->type < 16);
                 snprintf(type_hex, sizeof(type_hex), "%1x", tile->type);
 
-                fprintf(stream, "%c%c%c%c%c%c", (char) type_hex[0],
-                                                (char) (tile->pathable)      + '0',
-                                                (char) (tile->base_height)   + '0',
-                                                (char) (tile->top_mat_idx)   + '0',
-                                                (char) (tile->sides_mat_idx) + '0',
-                                                (char) (tile->ramp_height)   + '0');
+                fprintf(stream, "%c%c%c%02x%02x%c", (char) type_hex[0],
+                                                    (char) (tile->pathable)      + '0',
+                                                    (char) (tile->base_height)   + '0',
+                                                    (int)  (tile->top_mat_idx)   + '0',
+                                                    (int)  (tile->sides_mat_idx) + '0',
+                                                    (char) (tile->ramp_height)   + '0');
 
                 if(c != (TILES_PER_CHUNK_WIDTH - 1))
                     fprintf(stream, " ");
