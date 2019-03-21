@@ -49,6 +49,7 @@
 #include "../config.h"
 #include "../scene.h"
 #include "../settings.h"
+#include "../main.h"
 
 #include <SDL.h>
 
@@ -1041,6 +1042,12 @@ bool S_Init(char *progname, const char *base_path, struct nk_context *ctx)
     if(!S_UI_Init(ctx))
         return false;
     if(!S_Entity_Init())
+        return false;
+
+    char script_dir[512];
+    strcpy(script_dir, g_basepath);
+    strcat(script_dir, "/scripts");
+    if(0 != PyList_Append(PySys_GetObject("path"), Py_BuildValue("s", script_dir)))
         return false;
 
     initpf();

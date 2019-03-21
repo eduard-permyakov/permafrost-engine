@@ -86,13 +86,25 @@ static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_spacing(PyWindowObject *self, void *closure);
-static int PyWindow_set_spacing(PyWindowObject *self, PyObject *value, void *closure);
+static int       PyWindow_set_spacing(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_padding(PyWindowObject *self, void *closure);
-static int PyWindow_set_padding(PyWindowObject *self, PyObject *value, void *closure);
+static int       PyWindow_set_padding(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_group_padding(PyWindowObject *self, void *closure);
-static int PyWindow_set_group_padding(PyWindowObject *self, PyObject *value, void *closure);
+static int       PyWindow_set_group_padding(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_combo_padding(PyWindowObject *self, void *closure);
+static int       PyWindow_set_combo_padding(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_border(PyWindowObject *self, void *closure);
-static int PyWindow_set_border(PyWindowObject *self, PyObject *value, void *closure);
+static int       PyWindow_set_border(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_group_border(PyWindowObject *self, void *closure);
+static int       PyWindow_set_group_border(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_combo_border(PyWindowObject *self, void *closure);
+static int       PyWindow_set_combo_border(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_min_row_height_padding(PyWindowObject *self, void *closure);
+static int       PyWindow_set_min_row_height_padding(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_scrollbar_size(PyWindowObject *self, void *closure);
+static int       PyWindow_set_scrollbar_size(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_min_size(PyWindowObject *self, void *closure);
+static int       PyWindow_set_min_size(PyWindowObject *self, PyObject *value, void *closure);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -212,10 +224,40 @@ static PyGetSetDef PyWindow_getset[] = {
     (setter)PyWindow_set_group_padding,
     "An (X, Y) tuple of floats to control the padding around a group in a window.", 
     NULL},
+    {"combo_padding",
+    (getter)PyWindow_get_combo_padding, 
+    (setter)PyWindow_set_combo_padding,
+    "An (X, Y) tuple of floats to control the padding around a combo section in a window.", 
+    NULL},
     {"border",
     (getter)PyWindow_get_border, 
     (setter)PyWindow_set_border,
     "A float to control the border width of a window.", 
+    NULL},
+    {"group_border",
+    (getter)PyWindow_get_group_border, 
+    (setter)PyWindow_set_group_border,
+    "A float to control the border width around a group.", 
+    NULL},
+    {"combo_border",
+    (getter)PyWindow_get_group_border, 
+    (setter)PyWindow_set_group_border,
+    "A float to control the border width around a combo section.",
+    NULL},
+    {"min_row_height_padding",
+    (getter)PyWindow_get_min_row_height_padding, 
+    (setter)PyWindow_set_min_row_height_padding,
+    "A float to control the minimum number of pixels of padding at the header and footer of a row..", 
+    NULL},
+    {"scrollbar_size",
+    (getter)PyWindow_get_scrollbar_size, 
+    (setter)PyWindow_set_scrollbar_size,
+    "An (X, Y) tuple of floats to control the size of the scrollbar.", 
+    NULL},
+    {"min_size",
+    (getter)PyWindow_get_min_size, 
+    (setter)PyWindow_set_min_size,
+    "An (X, Y) tuple of floats to control the minimum size of the window.", 
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -732,6 +774,26 @@ static int PyWindow_set_group_padding(PyWindowObject *self, PyObject *value, voi
     return 0;
 }
 
+static PyObject *PyWindow_get_combo_padding(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("(f, f)",
+        self->style.combo_padding.x,
+        self->style.combo_padding.y);
+}
+
+static int PyWindow_set_combo_padding(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style.combo_padding = nk_vec2(x,y);
+    return 0;
+}
+
 static PyObject *PyWindow_get_border(PyWindowObject *self, void *closure)
 {
     return Py_BuildValue("f", self->style.border);
@@ -746,6 +808,97 @@ static int PyWindow_set_border(PyWindowObject *self, PyObject *value, void *clos
     }
 
     self->style.border = border;
+    return 0;
+}
+
+static PyObject *PyWindow_get_group_border(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style.group_border);
+}
+
+static int PyWindow_set_group_border(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float border;
+    if(!PyArg_ParseTuple(value, "f", &border)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
+        return -1;
+    }
+
+    self->style.group_border = border;
+    return 0;
+}
+
+static PyObject *PyWindow_get_combo_border(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style.combo_border);
+}
+
+static int PyWindow_set_combo_border(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float border;
+    if(!PyArg_ParseTuple(value, "f", &border)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
+        return -1;
+    }
+
+    self->style.combo_border = border;
+    return 0;
+}
+
+static PyObject *PyWindow_get_min_row_height_padding(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style.min_row_height_padding);
+}
+
+static int PyWindow_set_min_row_height_padding(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float min;
+    if(!PyArg_ParseTuple(value, "f", &min)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
+        return -1;
+    }
+
+    self->style.min_row_height_padding = min;
+    return 0;
+}
+
+static PyObject *PyWindow_get_scrollbar_size(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("(f, f)", 
+        self->style.scrollbar_size.x, 
+        self->style.scrollbar_size.y);
+}
+
+static int PyWindow_set_scrollbar_size(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style.scrollbar_size = nk_vec2(x,y);
+    return 0;
+}
+
+static PyObject *PyWindow_get_min_size(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("(f, f)", 
+        self->style.min_size.x, 
+        self->style.min_size.y);
+}
+
+static int PyWindow_set_min_size(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style.min_size = nk_vec2(x,y);
     return 0;
 }
 
