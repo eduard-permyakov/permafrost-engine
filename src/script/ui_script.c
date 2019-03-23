@@ -54,7 +54,6 @@ typedef struct {
     const char             *name;
     struct rect             rect;
     int                     flags;
-    bool                    shown;
     struct nk_style_window  style;
 }PyWindowObject;
 
@@ -80,7 +79,9 @@ static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
+static PyObject *PyWindow_on_hide(PyWindowObject *self);
 static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+static void      PyWindow_dealloc(PyWindowObject *self);
 
 static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure);
@@ -105,6 +106,12 @@ static PyObject *PyWindow_get_scrollbar_size(PyWindowObject *self, void *closure
 static int       PyWindow_set_scrollbar_size(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_min_size(PyWindowObject *self, void *closure);
 static int       PyWindow_set_min_size(PyWindowObject *self, PyObject *value, void *closure);
+
+static PyObject *PyWindow_get_closed(PyWindowObject *self, void *closure);
+static PyObject *PyWindow_get_hidden(PyWindowObject *self, void *closure);
+static PyObject *PyWindow_get_minimized(PyWindowObject *self, void *closure);
+static PyObject *PyWindow_get_interactive(PyWindowObject *self, void *closure);
+static int       PyWindow_set_interactive(PyWindowObject *self, PyObject *value, void *closure);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -193,6 +200,10 @@ static PyMethodDef PyWindow_methods[] = {
     "Handles layout and state changes of the window. Default implementation is empty. "
     "This method should be overridden by subclasses to customize the window look and behavior."},
 
+    {"on_hide", 
+    (PyCFunction)PyWindow_on_hide, METH_NOARGS,
+    "Callback that gets invoked when the user hides the window with the close button."},
+
     {NULL}  /* Sentinel */
 };
 
@@ -259,6 +270,23 @@ static PyGetSetDef PyWindow_getset[] = {
     (setter)PyWindow_set_min_size,
     "An (X, Y) tuple of floats to control the minimum size of the window.", 
     NULL},
+    {"closed",
+    (getter)PyWindow_get_closed, NULL,
+    "A readonly bool indicating if this window is 'closed'.",
+    NULL},
+    {"hidden",
+    (getter)PyWindow_get_hidden, NULL,
+    "A readonly bool indicating if this window is 'hidden'.",
+    NULL},
+    {"minimized",
+    (getter)PyWindow_get_minimized, NULL,
+    "A readonly bool indicating if this window is 'minimized'.",
+    NULL},
+    {"interactive",
+    (getter)PyWindow_get_interactive, 
+    (setter)PyWindow_set_interactive,
+    "A read-write bool to enable or disable user interactivity for this window.",
+    NULL},
     {NULL}  /* Sentinel */
 };
 
@@ -267,7 +295,7 @@ static PyTypeObject PyWindow_type = {
     "pf.Window",               /* tp_name */
     sizeof(PyWindowObject),    /* tp_basicsize */
     0,                         /* tp_itemsize */
-    0,                         /* tp_dealloc */
+    (destructor)PyWindow_dealloc, /* tp_dealloc */
     0,                         /* tp_print */
     0,                         /* tp_getattr */
     0,                         /* tp_setattr */
@@ -307,6 +335,11 @@ static PyTypeObject PyWindow_type = {
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static bool equal(PyWindowObject *const *a, PyWindowObject *const *b)
+{
+    return *a == *b;
+}
+
 static int parse_float_pair(PyObject *tuple, float *out_a, float *out_b)
 {
     if(!PyTuple_Check(tuple))
@@ -340,8 +373,9 @@ static int PyWindow_init(PyWindowObject *self, PyObject *args)
     self->name = name;
     self->rect = rect;
     self->flags = flags;
-    self->shown = false;
     self->style = s_nk_ctx->style.window;
+
+    self->flags |= (NK_WINDOW_CLOSED | NK_WINDOW_HIDDEN); /* closed by default */
     return 0;
 }
 
@@ -658,30 +692,15 @@ static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args)
 
 static PyObject *PyWindow_show(PyWindowObject *self)
 {
-    if(self->shown)
-        Py_RETURN_NONE;
-
-    kv_push(PyWindowObject*, s_active_windows, self);
-    self->shown = true;
+    self->flags &= ~(NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED);
+    self->flags |= NK_WINDOW_REMOVE_ROM;
     nk_window_show(s_nk_ctx, self->name, NK_SHOWN);
     Py_RETURN_NONE;
 }
 
-static bool equal(PyWindowObject *const *a, PyWindowObject *const *b)
-{
-    return *a == *b;
-}
-
 static PyObject *PyWindow_hide(PyWindowObject *self)
 {
-    if(!self->shown)
-        Py_RETURN_NONE;
-
-    int idx;
-    kv_indexof(PyWindowObject*, s_active_windows, self, equal, idx);
-    kv_del(PyWindowObject*, s_active_windows, idx);
-    self->shown = false;
-    nk_window_show(s_nk_ctx, self->name, NK_HIDDEN);
+    self->flags |= (NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED);
     Py_RETURN_NONE;
 }
 
@@ -690,10 +709,26 @@ static PyObject *PyWindow_update(PyWindowObject *self)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyWindow_on_hide(PyWindowObject *self)
+{
+    Py_RETURN_NONE;
+}
+
 static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     PyObject *self = type->tp_alloc(type, 0);
+    kv_push(PyWindowObject*, s_active_windows, (PyWindowObject*)self);
     return self;
+}
+
+static void PyWindow_dealloc(PyWindowObject *self)
+{
+    int idx;
+    kv_indexof(PyWindowObject*, s_active_windows, self, equal, idx);
+    kv_del(PyWindowObject*, s_active_windows, idx);
+
+    nk_window_close(s_nk_ctx, self->name);
+    Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure)
@@ -902,6 +937,57 @@ static int PyWindow_set_min_size(PyWindowObject *self, PyObject *value, void *cl
     return 0;
 }
 
+static PyObject *PyWindow_get_closed(PyWindowObject *self, void *closure)
+{
+    if(self->flags & NK_WINDOW_CLOSED) 
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
+}
+
+static PyObject *PyWindow_get_hidden(PyWindowObject *self, void *closure)
+{
+    if(self->flags & NK_WINDOW_HIDDEN) 
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
+}
+
+static PyObject *PyWindow_get_minimized(PyWindowObject *self, void *closure)
+{
+    if(self->flags & NK_WINDOW_MINIMIZED)
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
+}
+
+static PyObject *PyWindow_get_interactive(PyWindowObject *self, void *closure)
+{
+    if(self->flags & NK_WINDOW_NOT_INTERACTIVE)
+        Py_RETURN_FALSE;
+    else
+        Py_RETURN_TRUE;
+}
+
+static int PyWindow_set_interactive(PyWindowObject *self, PyObject *value, void *closure)
+{
+    if(PyObject_IsTrue(value))
+        self->flags &= ~NK_WINDOW_NOT_INTERACTIVE;
+    else
+        self->flags |= NK_WINDOW_NOT_INTERACTIVE;
+    return 0;
+}
+
+static void call_critfail(PyObject *obj, char *method_name)
+{
+    PyObject *ret = PyObject_CallMethod(obj, method_name, NULL);
+    Py_XDECREF(ret);
+    if(!ret) {
+        PyErr_Print();
+        exit(EXIT_FAILURE);
+    }
+}
+
 static void active_windows_update(void *user, void *event)
 {
     (void)user;
@@ -917,17 +1003,22 @@ static void active_windows_update(void *user, void *event)
         if(nk_begin(s_nk_ctx, win->name, 
             nk_rect(win->rect.x, win->rect.y, win->rect.width, win->rect.height), win->flags)) {
 
-            PyObject *ret = PyObject_CallMethod((PyObject*)win, "update", NULL); 
-            Py_XDECREF(ret);
-            if(!ret) {
-                PyErr_Print();
-                exit(EXIT_FAILURE);
-            }
+            call_critfail((PyObject*)win, "update");
+        }
+
+        if(s_nk_ctx->current->flags & NK_WINDOW_HIDDEN && !(win->flags & NK_WINDOW_HIDDEN)) {
+        
+            call_critfail((PyObject*)win, "on_hide");
         }
 
         struct nk_vec2 pos = nk_window_get_position(s_nk_ctx);
         struct nk_vec2 size = nk_window_get_size(s_nk_ctx);
         win->rect = (struct rect){pos.x, pos.y, size.x, size.y};
+
+        int sample_mask = NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED;
+        win->flags &= ~sample_mask; 
+        win->flags |= (s_nk_ctx->current->flags & sample_mask);
+        win->flags &= ~NK_WINDOW_REMOVE_ROM;
 
         nk_end(s_nk_ctx);
         s_nk_ctx->style.window = saved_style;
@@ -974,11 +1065,16 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
     for(int i = 0; i < kv_size(s_active_windows); i++) {
 
         PyWindowObject *win = kv_A(s_active_windows, i);
-        struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
         struct nk_vec2 visible_size = {win->rect.width, win->rect.height};
 
+        if(win->flags & NK_WINDOW_HIDDEN
+        || win->flags & NK_WINDOW_CLOSED) {
+            continue; 
+        }
+
         /* For minimized windows, only the header is visible */
-        if(nkwin->flags & NK_WINDOW_MINIMIZED) {
+        struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
+        if(nkwin && nkwin->flags & NK_WINDOW_MINIMIZED) {
         
             float header_height = s_nk_ctx->style.font->height
                                 + 2.0f * s_nk_ctx->style.window.header.padding.y
