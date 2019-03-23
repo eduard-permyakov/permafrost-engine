@@ -270,15 +270,6 @@ static void sel_filter_and_set_type(void)
 
     size_t num_facs = G_GetFactions(names, colors, controllable);
 
-    bool allied[MAX_FACTIONS];
-    for(int i = 0; i < num_facs; i++) {
-        for(int j = 0; j < num_facs; j++) {
-
-            enum diplomacy_state ds;
-            G_GetDiplomacyState(i, j, &ds);
-        }
-    }
-
     bool has_player = false, has_allied = false;
     for(int i = 0; i < kv_size(s_selected); i++) {
         
