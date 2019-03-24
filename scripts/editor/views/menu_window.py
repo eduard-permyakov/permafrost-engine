@@ -55,7 +55,7 @@ class MenuButtonWindow(pf.Window):
 
 class Menu(pf.Window):
     WINDOW_WIDTH = 300
-    WINDOW_HEIGHT = 400
+    WINDOW_HEIGHT = 405
     menu_shown = False
 
     def __init__(self):

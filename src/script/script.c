@@ -70,6 +70,7 @@ static PyObject *PyPf_global_event(PyObject *self, PyObject *args);
 static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args);
 static PyObject *PyPf_prev_frame_ms(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
+static PyObject *PyPf_get_native_resolution(PyObject *self);
 static PyObject *PyPf_get_basedir(PyObject *self);
 static PyObject *PyPf_get_render_info(PyObject *self);
 static PyObject *PyPf_get_mouse_pos(PyObject *self);
@@ -163,6 +164,10 @@ static PyMethodDef pf_module_methods[] = {
     {"get_resolution", 
     (PyCFunction)PyPf_get_resolution, METH_NOARGS,
     "Get the currently set resolution of the game window."},
+
+    {"get_native_resolution", 
+    (PyCFunction)PyPf_get_native_resolution, METH_NOARGS,
+    "Returns the native resolution of the active monitor."},
 
     {"get_basedir", 
     (PyCFunction)PyPf_get_basedir, METH_NOARGS,
@@ -517,6 +522,13 @@ static PyObject *PyPf_get_resolution(PyObject *self)
     assert(status == SS_OKAY);
 
     return Py_BuildValue("(i, i)", (int)res.as_vec2.x, (int)res.as_vec2.y);
+}
+
+static PyObject *PyPf_get_native_resolution(PyObject *self)
+{
+    SDL_DisplayMode dm;
+    SDL_GetDesktopDisplayMode(0, &dm);
+    return Py_BuildValue("(i, i)", dm.w, dm.h);
 }
 
 static PyObject *PyPf_get_basedir(PyObject *self)

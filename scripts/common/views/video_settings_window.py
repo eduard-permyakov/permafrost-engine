@@ -45,12 +45,12 @@ class VideoSettingsWindow(pf.Window):
         super(VideoSettingsWindow, self).__init__("VideoSettings", ((resx - VideoSettingsWindow.WIDTH)/2, 
             (resy - VideoSettingsWindow.HEIGHT)/2, VideoSettingsWindow.WIDTH, VideoSettingsWindow.HEIGHT), 0)
 
+        nx, ny = pf.get_native_resolution()
         self.res_idx = 0
         self.res_opts = [ 
-            (1920.0, 1080.0), 
-            (1280.0, 720.0),
-            (960.0, 540.0),
-            (640.0, 360.0) 
+            (nx, ny), 
+            (nx * 3/4, ny * 3/4),
+            (nx / 2, ny / 2),
         ]
         self.res_opt_strings = ["{0}:{1}".format(int(opt[0]), int(opt[1])) for opt in self.res_opts]
 
