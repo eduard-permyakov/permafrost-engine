@@ -985,16 +985,9 @@ static bool s_sys_path_add_dir(const char *filename)
  * to perform an additional step of 'manual' garbage collection before handing 
  * off to 'Py_Finalize' to make sure all entity destructors are called and 
  * the interpreter can have a 'clean' shutdown. 
- * For a completely robust implementation, we should further recursively prune
- * all global objects for subsclasses of pf.Entity or any collections which 
- * hold them.
  */
 static void s_gc_all_ents(void)
 {
-    PyObject *list = S_Entity_GetAllList();
-
-    /* Remove any global variables that are holding references to the entity list. 
-     * These references will become invalidated by the subsequent list deletion. */
     PyObject *sys_mod_dict = PyImport_GetModuleDict();
     assert(sys_mod_dict);
     PyObject *modules = PyMapping_Values(sys_mod_dict);
@@ -1006,6 +999,11 @@ static void s_gc_all_ents(void)
         PyObject *module_dict = PyModule_GetDict(curr_module);
         if(!module_dict)
             continue;
+
+        if(!strncmp(PyModule_GetName(curr_module), "__", 2)
+        &&  strncmp(PyModule_GetName(curr_module), "__main__", strlen("__main__")))
+            continue;
+
         PyObject *module_vals = PyMapping_Values(module_dict);
         PyObject *val_names = PyMapping_Keys(module_dict);
         assert(module_vals && val_names);
@@ -1014,10 +1012,14 @@ static void s_gc_all_ents(void)
         
             PyObject *curr_val = PyList_GetItem(module_vals, j);
             PyObject *curr_name = PyList_GetItem(val_names, j);
-            if(PyObject_RichCompareBool(list, curr_val, Py_EQ)) {
 
-                PyMapping_DelItem(module_dict, curr_name);
-            }
+            if(!strncmp(PyString_AsString(curr_name), "__", 2))
+                continue;
+
+            if(PyCallable_Check(curr_val) || PyModule_Check(curr_val))
+                continue;
+
+            PyMapping_DelItem(module_dict, curr_name);
         }
         Py_DECREF(module_vals);
         Py_DECREF(val_names);
@@ -1026,6 +1028,7 @@ static void s_gc_all_ents(void)
 
     /* The list should own the last remaining references to living entities.
      * Free the list and its' entities. */
+    PyObject *list = S_Entity_GetAllList();
     Py_DECREF(list);
 }
 
