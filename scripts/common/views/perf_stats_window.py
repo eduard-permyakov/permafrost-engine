@@ -36,9 +36,15 @@ import pf
 
 class PerfStatsWindow(pf.Window):
 
+    WIDTH = 600
+    HEIGHT = 320
+
     def __init__(self):
-        super(PerfStatsWindow, self).__init__("Performance", (300, 25, 600, 320), 
-            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE | pf.NK_WINDOW_NO_SCROLLBAR)
+        resx, resy = pf.get_resolution()
+        super(PerfStatsWindow, self).__init__("Performance", 
+            (resx/2 - PerfStatsWindow.WIDTH/2, resy/2 - PerfStatsWindow.HEIGHT/2, PerfStatsWindow.WIDTH, PerfStatsWindow.HEIGHT), 
+            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE | 
+            pf.NK_WINDOW_CLOSABLE | pf.NK_WINDOW_NO_SCROLLBAR)
         self.tickindex = 0
         self.ticksum_ms = 0
         self.max_frame_latency = 0

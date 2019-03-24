@@ -36,7 +36,6 @@ import pf
 import globals
 
 import views.demo_window as dw
-import views.perf_stats_window as psw
 import views.action_pad_window as apw
 
 import view_controllers.action_pad_vc as apvc
@@ -86,9 +85,6 @@ pf.register_event_handler(pf.SDL_KEYDOWN, toggle_camera, None)
 ############################################################
 # Setup UI                                                 #
 ############################################################
-
-perf_win = psw.PerfStatsWindow()
-perf_win.show()
 
 demo_vc = dvc.DemoVC(dw.DemoWindow())
 demo_vc.activate()

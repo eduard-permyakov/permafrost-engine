@@ -36,7 +36,7 @@ import pf
 from constants import *
 import map
 import globals
-import view_controller as vc
+import common.view_controllers.view_controller as vc
 
 
 class TerrainTabVC(vc.ViewController):

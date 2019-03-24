@@ -37,7 +37,7 @@ from constants import *
 import os
 import mouse_events
 import globals
-import view_controller as vc
+import common.view_controllers.view_controller as vc
 import scene
 
 

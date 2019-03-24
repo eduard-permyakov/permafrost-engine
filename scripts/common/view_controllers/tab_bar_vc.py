@@ -1,6 +1,6 @@
 #
 #  This file is part of Permafrost Engine. 
-#  Copyright (C) 2018 Eduard Permyakov 
+#  Copyright (C) 2019 Eduard Permyakov 
 #
 #  Permafrost Engine is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -32,14 +32,40 @@
 #  statement from your version.
 #
 
-from abc import ABCMeta, abstractmethod
+import pf
+import view_controller
 
-class ViewController:
-    __metaclass__ = ABCMeta 
+class TabBarVC(view_controller.ViewController):
 
-    @abstractmethod
-    def activate(self): pass 
+    def __init__(self, view, tab_change_event):
+        self.view = view
+        self.__active_idx = 0
+        self.__labels = []
+        self.__children = []
+        self.__tce = tab_change_event
 
-    @abstractmethod
-    def deactivate(self): pass 
+    def __on_tab_changed(self, event):
+        assert self.__active_idx >= 0 and self.__active_idx < len(self.__children)
+        assert event >= 0 and event < len(self.__children)
+        self.__children[self.__active_idx].deactivate()
+        self.__active_idx = event
+        self.__children[self.__active_idx].activate()
+
+    def push_child(self, label, vc):
+        assert isinstance(vc, view_controller.ViewController)
+        assert isinstance(label, basestring)
+        self.__children.append(vc)
+        self.view.push_child(label, vc.view)
+
+    def activate(self):
+        pf.register_event_handler(self.__tce, TabBarVC.__on_tab_changed, self)
+        if len(self.__children) > 0:
+            self.__children[self.__active_idx].activate()
+        self.view.show()
+
+    def deactivate(self):
+        self.view.hide()
+        if len(self.__children) > 0:
+            self.__children[self.__active_idx].deactivate()
+        pf.unregister_event_handler(self.__tce, TabBarVC.__on_tab_changed)
 

@@ -68,8 +68,10 @@ EVENT_MENU_LOAD                    = 0x20010
 EVENT_MENU_SAVE                    = 0x20011
 EVENT_MENU_SAVE_AS                 = 0x20012
 EVENT_MENU_NEW                     = 0x20013
-EVENT_MENU_EXIT                    = 0x20014
-EVENT_MENU_CANCEL                  = 0x20015
+EVENT_MENU_SETTINGS_SHOW           = 0x20014
+EVENT_MENU_PERF_SHOW               = 0x20015
+EVENT_MENU_EXIT                    = 0x20016
+EVENT_MENU_CANCEL                  = 0x20017
 
 EVENT_OBJECTS_TAB_MODE_CHANGED     = 0x20020
 EVENT_OBJECT_SELECTION_CHANGED     = 0x20021

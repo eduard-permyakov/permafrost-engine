@@ -35,20 +35,25 @@
 import pf
 from constants import *
 
-import view_controller as vc
-import tab_bar_vc as tbvc
-import video_settings_vc as vsvc
-import game_settings_vc as gsvc
+import common.view_controllers.view_controller as vc
+import common.view_controllers.tab_bar_vc as tbvc
+import common.view_controllers.video_settings_vc as vsvc
+import common.view_controllers.game_settings_vc as gsvc
 
-import views.settings_tabbed_window as stw
-import views.video_settings_window as vsw
-import views.game_settings_window as gsw
+import common.views.settings_tabbed_window as stw
+import common.views.video_settings_window as vsw
+import common.views.game_settings_window as gsw
+import common.views.perf_stats_window as psw
+
+import common.constants
 
 class DemoVC(vc.ViewController):
 
     def __init__(self, view):
         self.__view = view
-        self.__settings_vc = tbvc.TabBarVC(stw.SettingsTabbedWindow())
+        self.__perf_view = psw.PerfStatsWindow()
+        self.__settings_vc = tbvc.TabBarVC(stw.SettingsTabbedWindow(), 
+            tab_change_event=common.constants.EVENT_SETTINGS_TAB_SEL_CHANGED)
         self.__settings_vc.push_child("Video", vsvc.VideoSettingsVC(vsw.VideoSettingsWindow()))
         self.__settings_vc.push_child("Game", gsvc.GameSettingsVC(gsw.GameSettingsWindow()))
         self.__settings_shown = False
@@ -76,15 +81,21 @@ class DemoVC(vc.ViewController):
             self.__settings_vc.deactivate()
             self.__settings_shown = False
 
+    def __on_perf_show(self, event):
+        if self.__perf_view.hidden:
+            self.__perf_view.show()
+
     def activate(self):
         pf.register_event_handler(EVENT_CONTROLLED_FACTION_CHANGED, DemoVC.__on_controlled_faction_chagned, self)
         pf.register_event_handler(EVENT_SETTINGS_SHOW, DemoVC.__on_settings_show, self)
-        pf.register_event_handler(EVENT_SETTINGS_HIDE, DemoVC.__on_settings_hide, self)
+        pf.register_event_handler(EVENT_PERF_SHOW, DemoVC.__on_perf_show, self)
+        pf.register_event_handler(common.constants.EVENT_SETTINGS_HIDE, DemoVC.__on_settings_hide, self)
         self.__view.show()
 
     def deactivate(self):
         self.__view.hide()
-        pf.unregister_event_handler(EVENT_SETTINGS_HIDE, DemoVC.__on_settings_hide)
+        pf.unregister_event_handler(common.constants.EVENT_SETTINGS_HIDE, DemoVC.__on_settings_hide)
+        pf.unregister_event_handler(EVENT_PERF_SHOW, DemoVC.__on_perf_show, self)
         pf.unregister_event_handler(EVENT_SETTINGS_SHOW, DemoVC.__on_settings_show)
         pf.unregister_event_handler(EVENT_CONTROLLED_FACTION_CHANGED, DemoVC.__on_controlled_faction_chagned)
 

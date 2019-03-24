@@ -32,52 +32,14 @@
 #  statement from your version.
 #
 
-import pf
-from constants import *
-import view_controller as vc
+############################################################
+# Common events                                            #
+############################################################
 
-class GameSettingsVC(vc.ViewController):
-
-    def __init__(self, view):
-        self.view = view
-        self.__og_hb_idx = view.hb_idx
-        self.__load_selection()
-
-    def __load_selection(self):
-        try:
-            hb_saved = pf.settings_get("pf.game.healthbar_mode")
-            if hb_saved == True:
-                self.view.hb_idx = 0
-            else:
-                self.view.hb_idx = 1
-            self.__og_hb_idx = self.view.hb_idx
-        except Exception as e:
-            print("Could not load settings:" + str(e))
-            raise
-
-    def __update_dirty_flag(self):
-        if self.view.hb_idx != self.__og_hb_idx:
-            self.view.dirty = True
-        else:
-            self.view.dirty = False
-
-    def __on_settings_apply(self, event):
-        if self.view.hb_idx != self.__og_hb_idx:
-            try:
-                pf.settings_set("pf.game.healthbar_mode", bool(self.view.hb_idx == 0))
-                self.__og_hb_idx = self.view.hb_idx
-            except Exception as e:
-                print("Could not set pf.game.healthbar_mode:" + str(e))
-        self.__update_dirty_flag()
-
-    def __on_hb_mode_changed(self, event):
-        self.__update_dirty_flag() 
-
-    def activate(self):
-        pf.register_event_handler(EVENT_SETTINGS_APPLY, GameSettingsVC.__on_settings_apply, self)
-        pf.register_event_handler(EVENT_SETTINGS_HB_MODE_CHANGED, GameSettingsVC.__on_hb_mode_changed, self)
-
-    def deactivate(self):
-        pf.unregister_event_handler(EVENT_SETTINGS_APPLY, GameSettingsVC.__on_settings_apply)
-        pf.unregister_event_handler(EVENT_SETTINGS_HB_MODE_CHANGED, GameSettingsVC.__on_hb_mode_changed)
+EVENT_SETTINGS_HIDE              = 0x2f001
+EVENT_SETTINGS_APPLY             = 0x2f002
+EVENT_RES_SETTING_CHANGED        = 0x2f003
+EVENT_WINMODE_SETTING_CHANGED    = 0x2f004
+EVENT_SETTINGS_TAB_SEL_CHANGED   = 0x2f005
+EVENT_SETTINGS_HB_MODE_CHANGED   = 0x2f006
 

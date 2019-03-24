@@ -91,5 +91,5 @@ class TabBarWindow(pf.Window):
             if idx == self.active_idx:
                 window.show()
             else:
-                window.hide() 
+                window.hide()
 

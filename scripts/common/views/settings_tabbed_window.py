@@ -33,7 +33,7 @@
 #
 
 import pf
-from constants import *
+from common.constants import *
 
 class SettingsTabbedWindow(pf.Window):
 
@@ -50,7 +50,7 @@ class SettingsTabbedWindow(pf.Window):
         dims = ((resx - SettingsTabbedWindow.WIDTH)/2, (resy - SettingsTabbedWindow.HEIGHT)/2, 
             SettingsTabbedWindow.WIDTH, SettingsTabbedWindow.HEIGHT)
         super(SettingsTabbedWindow, self).__init__("Settings", dims, 
-            pf.NK_WINDOW_NO_SCROLLBAR | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_BORDER | pf.NK_WINDOW_TITLE)
+            pf.NK_WINDOW_NO_SCROLLBAR | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_BORDER | pf.NK_WINDOW_TITLE | pf.NK_WINDOW_CLOSABLE)
         self.padding = (0.0, 0.0)
 
         self.active_idx = 0
@@ -63,6 +63,9 @@ class SettingsTabbedWindow(pf.Window):
 
         self.labels.append(label) 
         self.child_windows.append(window)
+
+    def on_hide(self):
+        pf.global_event(EVENT_SETTINGS_HIDE, None)
 
     def update(self):
 
@@ -115,7 +118,7 @@ class SettingsTabbedWindow(pf.Window):
         def apply_done_group():
             self.layout_row_dynamic(20, 1)
             if self.child_windows[self.active_idx].dirty:
-                self.label_colored_wrap("Unsaved changes will be lost.", (255, 0, 0))
+                self.label_colored_wrap("You have unsaved changes on this page.", (255, 0, 0))
             else:
                 self.label_colored_wrap("No unsaved changes.", (0, 255, 0))
             self.layout_row_dynamic(30, 2)

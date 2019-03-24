@@ -1,6 +1,6 @@
 #
 #  This file is part of Permafrost Engine. 
-#  Copyright (C) 2018 Eduard Permyakov 
+#  Copyright (C) 2019 Eduard Permyakov 
 #
 #  Permafrost Engine is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -33,36 +33,52 @@
 #
 
 import pf
-from constants import *
-import view_controller
+from common.constants import *
+import view_controller as vc
 
-class TabBarVC(view_controller.ViewController):
+class GameSettingsVC(vc.ViewController):
 
     def __init__(self, view):
         self.view = view
-        self.active_idx = 0
-        self.labels = []
-        self.children = []
+        self.view.dirty = False
+        self.__og_hb_idx = view.hb_idx
+        self.__load_selection()
 
-    def __on_tab_changed(self, event):
-        assert self.active_idx >= 0 and self.active_idx < len(self.children)
-        assert event >= 0 and event < len(self.children)
-        self.children[self.active_idx].deactivate()
-        self.active_idx = event
-        self.children[self.active_idx].activate()
+    def __load_selection(self):
+        try:
+            hb_saved = pf.settings_get("pf.game.healthbar_mode")
+            if hb_saved == True:
+                self.view.hb_idx = 0
+            else:
+                self.view.hb_idx = 1
+            self.__og_hb_idx = self.view.hb_idx
+        except Exception as e:
+            print("Could not load settings:" + str(e))
+            raise
 
-    def push_child(self, label, vc):
-        assert isinstance(vc, view_controller.ViewController)
-        assert isinstance(label, basestring)
-        self.children.append(vc)
-        self.view.labels.append(label)
-        self.view.child_windows.append(vc.view)
+    def __update_dirty_flag(self):
+        if self.view.hb_idx != self.__og_hb_idx:
+            self.view.dirty = True
+        else:
+            self.view.dirty = False
+
+    def __on_settings_apply(self, event):
+        if self.view.hb_idx != self.__og_hb_idx:
+            try:
+                pf.settings_set("pf.game.healthbar_mode", bool(self.view.hb_idx == 0))
+                self.__og_hb_idx = self.view.hb_idx
+            except Exception as e:
+                print("Could not set pf.game.healthbar_mode:" + str(e))
+        self.__update_dirty_flag()
+
+    def __on_hb_mode_changed(self, event):
+        self.__update_dirty_flag() 
 
     def activate(self):
-        pf.register_event_handler(EVENT_TOP_TAB_SELECTION_CHANGED, TabBarVC.__on_tab_changed, self)
-        self.children[self.active_idx].activate()
+        pf.register_event_handler(EVENT_SETTINGS_APPLY, GameSettingsVC.__on_settings_apply, self)
+        pf.register_event_handler(EVENT_SETTINGS_HB_MODE_CHANGED, GameSettingsVC.__on_hb_mode_changed, self)
 
     def deactivate(self):
-        self.children[self.active_idx].deactivate()
-        pf.unregister_event_handler(EVENT_TOP_TAB_SELECTION_CHANGED, TabBarVC.__on_tab_changed)
+        pf.unregister_event_handler(EVENT_SETTINGS_APPLY, GameSettingsVC.__on_settings_apply)
+        pf.unregister_event_handler(EVENT_SETTINGS_HB_MODE_CHANGED, GameSettingsVC.__on_hb_mode_changed)
 

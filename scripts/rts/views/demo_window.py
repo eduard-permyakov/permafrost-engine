@@ -38,7 +38,7 @@ from constants import *
 class DemoWindow(pf.Window):
 
     WIDTH = 250
-    HEIGHT = 290
+    HEIGHT = 325
 
     def __init__(self):
         super(DemoWindow, self).__init__("Permafrost Engine Demo", (25, 25, DemoWindow.WIDTH, DemoWindow.HEIGHT), 
@@ -73,8 +73,14 @@ class DemoWindow(pf.Window):
         def on_settings():
             pf.global_event(EVENT_SETTINGS_SHOW, None)
 
+        def on_performance():
+            pf.global_event(EVENT_PERF_SHOW, None)
+
         self.layout_row_dynamic(30, 1)
         self.button_label("Settings", on_settings)
+
+        self.layout_row_dynamic(30, 1)
+        self.button_label("Performance", on_performance)
 
         self.layout_row_dynamic(30, 1)
         self.button_label("Exit Demo", on_exit)

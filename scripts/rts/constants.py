@@ -33,22 +33,17 @@
 #
 
 ############################################################
-# Demo shared constants                                    #
+# Shared constants                                         #
 ############################################################
 
 ACTION_NUM_ROWS = 3
 ACTION_NUM_COLS = 4
 
 ############################################################
-# Demo specific events                                     #
+# Module-specific events                                   #
 ############################################################
 
 EVENT_CONTROLLED_FACTION_CHANGED = 0x20000
 EVENT_SETTINGS_SHOW              = 0x20001
-EVENT_SETTINGS_HIDE              = 0x20002
-EVENT_SETTINGS_APPLY             = 0x20003
-EVENT_RES_SETTING_CHANGED        = 0x20004
-EVENT_WINMODE_SETTING_CHANGED    = 0x20005
-EVENT_SETTINGS_TAB_SEL_CHANGED   = 0x20006
-EVENT_SETTINGS_HB_MODE_CHANGED   = 0x20007
+EVENT_PERF_SHOW                  = 0x20002
 

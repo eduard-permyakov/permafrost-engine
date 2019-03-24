@@ -34,7 +34,7 @@
 
 import pf
 from constants import *
-import view_controller as vc
+import common.view_controllers.view_controller as vc
 import globals
 
 class DiplomacyVC(vc.ViewController):

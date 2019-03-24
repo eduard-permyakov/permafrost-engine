@@ -33,7 +33,7 @@
 #
 
 import pf
-from constants import *
+from common.constants import *
 
 class VideoSettingsWindow(pf.Window):
     

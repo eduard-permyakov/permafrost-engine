@@ -89,6 +89,12 @@ class Menu(pf.Window):
         def on_save_as():
             pf.global_event(EVENT_MENU_SAVE_AS, None) 
 
+        def on_settings():
+            pf.global_event(EVENT_MENU_SETTINGS_SHOW, None) 
+
+        def on_performance():
+            pf.global_event(EVENT_MENU_PERF_SHOW, None)
+
         def on_exit():
             pf.global_event(EVENT_MENU_EXIT, None)
 
@@ -111,6 +117,14 @@ class Menu(pf.Window):
         self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
         self.layout_row_dynamic(UI_TAB_BAR_HEIGHT-10, 1)
         self.button_label("Save As", on_save_as)
+
+        self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
+        self.layout_row_dynamic(UI_TAB_BAR_HEIGHT-10, 1)
+        self.button_label("Settings", on_settings)
+
+        self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
+        self.layout_row_dynamic(UI_TAB_BAR_HEIGHT-10, 1)
+        self.button_label("Performance", on_performance)
 
         self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
         self.layout_row_dynamic(UI_TAB_BAR_HEIGHT-10, 1)

@@ -34,20 +34,37 @@
 
 import pf
 from constants import *
+import common.constants
 import map
 import globals
 import scene
-import view_controller as vc
 from math import cos, pi
 import traceback
 
+import common.view_controllers.view_controller as vc
+import common.view_controllers.tab_bar_vc as tbvc
+import common.view_controllers.video_settings_vc as vsvc
+import common.view_controllers.game_settings_vc as gsvc
+
 import views.file_chooser_window as fc
+
+import common.views.settings_tabbed_window as stw
+import common.views.video_settings_window as vsw
+import common.views.game_settings_window as gsw
+import common.views.perf_stats_window as psw
 
 class MenuVC(vc.ViewController):
 
     def __init__(self, view):
         self.view = view
         self.fc = None
+
+        self.__perf_window = psw.PerfStatsWindow()
+        self.__settings_vc = tbvc.TabBarVC(stw.SettingsTabbedWindow(), 
+            tab_change_event=common.constants.EVENT_SETTINGS_TAB_SEL_CHANGED)
+        self.__settings_vc.push_child("Video", vsvc.VideoSettingsVC(vsw.VideoSettingsWindow()))
+        self.__settings_vc.push_child("Game", gsvc.GameSettingsVC(gsw.GameSettingsWindow()))
+        self.__settings_shown = False
 
     ### NEW ###
 
@@ -191,6 +208,20 @@ class MenuVC(vc.ViewController):
 
     ### OTHER ###
 
+    def __on_settings_show(self, event):
+        if not self.__settings_shown:
+            self.__settings_vc.activate()
+            self.__settings_shown = True
+
+    def __on_settings_hide(self, event):
+        if self.__settings_shown:
+            self.__settings_vc.deactivate()
+            self.__settings_shown = False
+
+    def __on_perf_show(self, event):
+        if self.__perf_window.hidden:
+            self.__perf_window.show()
+
     def __on_exit(self, event):
         pf.global_event(pf.SDL_QUIT, None)
 
@@ -204,6 +235,9 @@ class MenuVC(vc.ViewController):
         pf.register_event_handler(EVENT_MENU_SAVE_AS, MenuVC.__on_save_as, self)
         pf.register_event_handler(EVENT_MENU_EXIT, MenuVC.__on_exit, self)
         pf.register_event_handler(EVENT_MENU_CANCEL, MenuVC.__on_cancel, self)
+        pf.register_event_handler(EVENT_MENU_SETTINGS_SHOW, MenuVC.__on_settings_show, self)
+        pf.register_event_handler(common.constants.EVENT_SETTINGS_HIDE, MenuVC.__on_settings_hide, self)
+        pf.register_event_handler(EVENT_MENU_PERF_SHOW, MenuVC.__on_perf_show, self)
         pf.register_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, MenuVC.__on_old_game_teardown_begin, self)
         pf.register_event_handler(EVENT_OLD_GAME_TEARDOWN_END, MenuVC.__on_old_game_teardown_end, self)
 
@@ -214,6 +248,9 @@ class MenuVC(vc.ViewController):
         pf.unregister_event_handler(EVENT_MENU_SAVE_AS, MenuVC.__on_save_as)
         pf.unregister_event_handler(EVENT_MENU_EXIT, MenuVC.__on_exit)
         pf.unregister_event_handler(EVENT_MENU_CANCEL, MenuVC.__on_cancel)
+        pf.unregister_event_handler(EVENT_MENU_SETTINGS_SHOW, MenuVC.__on_settings_show)
+        pf.unregister_event_handler(common.constants.EVENT_SETTINGS_HIDE, MenuVC.__on_settings_hide)
+        pf.unregister_event_handler(EVENT_MENU_PERF_SHOW, MenuVC.__on_perf_show)
         pf.unregister_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, MenuVC.__on_old_game_teardown_begin)
         pf.unregister_event_handler(EVENT_OLD_GAME_TEARDOWN_END, MenuVC.__on_old_game_teardown_end)
 

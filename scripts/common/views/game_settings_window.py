@@ -33,37 +33,31 @@
 #
 
 import pf
-from constants import *
-import view_controller
+from common.constants import *
 
-class TabBarVC(view_controller.ViewController):
+class GameSettingsWindow(pf.Window):
+    
+    WIDTH = 300
+    HEIGHT = 400
 
-    def __init__(self, view):
-        self.view = view
-        self.active_idx = 0
-        self.labels = []
-        self.children = []
+    def __init__(self):
+        resx, resy = pf.get_resolution()
+        super(GameSettingsWindow, self).__init__("GameSettings", ((resx - GameSettingsWindow.WIDTH)/2, 
+            (resy - GameSettingsWindow.HEIGHT)/2, GameSettingsWindow.WIDTH, GameSettingsWindow.HEIGHT), 0)
+        self.hb_idx = 0
+        self.dirty = False
 
-    def __on_tab_changed(self, event):
-        assert self.active_idx >= 0 and self.active_idx < len(self.children)
-        assert event >= 0 and event < len(self.children)
-        self.children[self.active_idx].deactivate()
-        self.active_idx = event
-        self.children[self.active_idx].activate()
-
-    def push_child(self, label, vc):
-        assert isinstance(vc, view_controller.ViewController)
-        assert isinstance(label, basestring)
-        self.children.append(vc)
-        self.view.push_child(label, vc.view)
-
-    def activate(self):
-        pf.register_event_handler(EVENT_SETTINGS_TAB_SEL_CHANGED, TabBarVC.__on_tab_changed, self)
-        self.children[self.active_idx].activate()
-        self.view.show()
-
-    def deactivate(self):
-        self.view.hide()
-        self.children[self.active_idx].deactivate()
-        pf.unregister_event_handler(EVENT_SETTINGS_TAB_SEL_CHANGED, TabBarVC.__on_tab_changed)
-
+    def update(self):
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Health Bars:", (255, 255, 255))
+        
+        old_hb_idx = self.hb_idx
+        self.layout_row_dynamic(20, 2)
+        if self.option_label("On", self.hb_idx == 0):
+            self.hb_idx = 0
+        if self.option_label("Off", self.hb_idx == 1):
+            self.hb_idx = 1
+        
+        if self.hb_idx != old_hb_idx:
+            pf.global_event(EVENT_SETTINGS_HB_MODE_CHANGED, self.hb_idx)
+         

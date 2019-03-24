@@ -33,7 +33,7 @@
 #
 
 import pf
-from constants import *
+from common.constants import *
 import view_controller as vc
 
 class VideoSettingsVC(vc.ViewController):

@@ -43,8 +43,8 @@ from math import cos, pi
 import view_controllers.terrain_tab_vc as ttvc
 import view_controllers.objects_tab_vc as otvc
 import view_controllers.diplomacy_tab_vc as dtvc
-import view_controllers.tab_bar_vc as tbvc
 import view_controllers.menu_vc as mvc
+import common.view_controllers.tab_bar_vc as tbvc
 
 import views.tab_bar_window as tbw
 import views.terrain_tab_window as ttw
@@ -77,7 +77,7 @@ terrain_tab_vc = ttvc.TerrainTabVC(ttw.TerrainTabWindow())
 objects_tab_vc = otvc.ObjectsVC(otw.ObjectsTabWindow())
 diplo_tab_vc = dtvc.DiplomacyVC(dtw.DiplomacyTabWindow())
 
-tab_bar_vc = tbvc.TabBarVC(tbw.TabBarWindow())
+tab_bar_vc = tbvc.TabBarVC(tbw.TabBarWindow(), EVENT_TOP_TAB_SELECTION_CHANGED)
 tab_bar_vc.push_child("Terrain", terrain_tab_vc)
 tab_bar_vc.push_child("Objects", objects_tab_vc)
 tab_bar_vc.push_child("Diplomacy", diplo_tab_vc)
