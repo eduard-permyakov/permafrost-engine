@@ -122,6 +122,7 @@ bool R_Init(const char *base_path)
         .validate = ar_validate,
         .commit = NULL,
     });
+    assert(status == SS_OKAY);
 
     status = Settings_Create((struct setting){
         .name = "pf.video.resolution",

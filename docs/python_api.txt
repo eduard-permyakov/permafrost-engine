@@ -50,6 +50,10 @@ BUILT-IN FUNCTIONS
     --------------------------------------------------------------------------------
     Get the (x, y) cursor position on the screen.
 
+    [get_native_resolution]
+    --------------------------------------------------------------------------------
+    Returns the native resolution of the active monitor.
+
     [get_render_info]
     --------------------------------------------------------------------------------
     Returns a dictionary describing the renderer context. It will have the string
@@ -162,6 +166,17 @@ BUILT-IN FUNCTIONS
     Set the cursor to target mode. The next left click will issue a move command to
     the location under the cursor.
 
+    [settings_get]
+    --------------------------------------------------------------------------------
+    Returns the value of the setting with the specified name. Will throw an
+    exception if the setting is not found.
+
+    [settings_set]
+    --------------------------------------------------------------------------------
+    Updates the value of the setting with the specified name. Will throw an
+    exception if the setting is not found or if the new value for the setting is
+    invalid.
+
     [unregister_event_handler]
     --------------------------------------------------------------------------------
     Removes a script event handler added by 'register_event_handler'.
@@ -242,7 +257,8 @@ BUILT-IN CLASSES
         passed to the handler.
 
         [play_anim]
-        Play the animation clip with the specified name.
+        Play the animation clip with the specified name. Set kwarg 'mode=%d' to set the
+        animation mode. The default is ANIM_MODE_LOOP.
 
         [register]
         Registers the specified callable to be invoked when an event of the specified
@@ -335,7 +351,8 @@ BUILT-IN CLASSES
         passed to the handler.
 
         [play_anim]
-        Play the animation clip with the specified name.
+        Play the animation clip with the specified name. Set kwarg 'mode=%d' to set the
+        animation mode. The default is ANIM_MODE_LOOP.
 
         [register]
         Registers the specified callable to be invoked when an event of the specified
@@ -527,12 +544,50 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [border]
+        A float to control the border width of a window.
+
+        [closed]
+        A readonly bool indicating if this window is 'closed'.
+
+        [combo_border]
+        A float to control the border width around a combo section.
+
+        [combo_padding]
+        An (X, Y) tuple of floats to control the padding around a combo section in a
+        window.
+
+        [group_border]
+        A float to control the border width around a group.
+
+        [group_padding]
+        An (X, Y) tuple of floats to control the padding around a group in a window.
+
+        [header_height]
+        A float specifying the height of the window header in pixels.
+
+        [hidden]
+        A readonly bool indicating if this window is 'hidden'.
+
+        [interactive]
+        A read-write bool to enable or disable user interactivity for this window.
+
+        [min_row_height_padding]
+        A float to control the minimum number of pixels of padding at the header and
+        footer of a row..
+
+        [min_size]
+        An (X, Y) tuple of floats to control the minimum size of the window.
+
         [padding]
         An (X, Y) tuple of floats to control the padding (between border and content) of
         a window.
 
         [position]
         A tuple of two integers specifying the X and Y position of the window.
+
+        [scrollbar_size]
+        An (X, Y) tuple of floats to control the size of the scrollbar.
 
         [size]
         A tuple of two integers specifying the width and height dimentions of the
@@ -588,6 +643,9 @@ BUILT-IN CLASSES
         [layout_row_static]
         Add a row with a static layout.
 
+        [on_hide]
+        Callback that gets invoked when the user hides the window with the close button.
+
         [option_label]
         Radio button with the specified text. Returns if the radio button is selected.
 
@@ -610,6 +668,9 @@ BUILT-IN CLASSES
 BUILT-IN CONSTANTS
 ********************************************************************************
 
+    ANIM_MODE_LOOP 0
+    ANIM_MODE_ONCE 1
+    ANIM_MODE_ONCE_HIDE_ON_FINISH 2
     CAM_MODE_FPS 0
     CAM_MODE_RTS 1
     DIPLOMACY_STATE_PEACE 0
@@ -677,6 +738,9 @@ BUILT-IN CONSTANTS
     NK_WINDOW_SCALE_LEFT 512
     NK_WINDOW_SCROLL_AUTO_HIDE 128
     NK_WINDOW_TITLE 64
+    PF_WF_BORDERLESS_WIN 272
+    PF_WF_FULLSCREEN 257
+    PF_WF_WINDOW 256
     SDL_APP_DIDENTERBACKGROUND 260
     SDL_APP_DIDENTERFOREGROUND 262
     SDL_APP_LOWMEMORY 258

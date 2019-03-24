@@ -63,7 +63,6 @@ along with the game binary if desired.
 1. `git clone https://github.com/eduard-permyakov/permafrost-engine.git`
 2. `cd permafrost-engine`
 3. `make deps` to build the shared library dependencies to `./lib`
-3. Optionally, set as few compile-time configurations in `./src/config.h`. Defaults are provided.
 4. `make pf`
 5. `make run` to run the demo or `make run_editor` to run the map editor
 
