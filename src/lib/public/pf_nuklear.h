@@ -36,7 +36,8 @@
 #ifndef PF_NUKLEAR_H
 #define PF_NUKLEAR_H
 
-/* Permafrost-engine specific configurations */
+#include <stdarg.h>
+
 #define NK_INCLUDE_FIXED_TYPES
 #define NK_INCLUDE_STANDARD_IO
 #define NK_INCLUDE_STANDARD_VARARGS
