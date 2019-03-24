@@ -80,8 +80,7 @@ along with the game binary if desired.
 
 Permafrost Engine is licensed under the GPLv3, with a special linking exception.
 
-## Contributing ##
+## Comments/Questions ##
 
-Wishing to contribute to the development of the project or simply wanting to make a question
-or comment regarding the source code? E-mail: edward.permyakov@gmail.com
+Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com
 
