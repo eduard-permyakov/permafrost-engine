@@ -109,7 +109,6 @@ static int       PyWindow_set_min_size(PyWindowObject *self, PyObject *value, vo
 
 static PyObject *PyWindow_get_closed(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_hidden(PyWindowObject *self, void *closure);
-static PyObject *PyWindow_get_minimized(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_interactive(PyWindowObject *self, void *closure);
 static int       PyWindow_set_interactive(PyWindowObject *self, PyObject *value, void *closure);
 
@@ -277,10 +276,6 @@ static PyGetSetDef PyWindow_getset[] = {
     {"hidden",
     (getter)PyWindow_get_hidden, NULL,
     "A readonly bool indicating if this window is 'hidden'.",
-    NULL},
-    {"minimized",
-    (getter)PyWindow_get_minimized, NULL,
-    "A readonly bool indicating if this window is 'minimized'.",
     NULL},
     {"interactive",
     (getter)PyWindow_get_interactive, 
@@ -693,7 +688,6 @@ static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args)
 static PyObject *PyWindow_show(PyWindowObject *self)
 {
     self->flags &= ~(NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED);
-    self->flags |= NK_WINDOW_REMOVE_ROM;
     nk_window_show(s_nk_ctx, self->name, NK_SHOWN);
     Py_RETURN_NONE;
 }
@@ -953,14 +947,6 @@ static PyObject *PyWindow_get_hidden(PyWindowObject *self, void *closure)
         Py_RETURN_FALSE;
 }
 
-static PyObject *PyWindow_get_minimized(PyWindowObject *self, void *closure)
-{
-    if(self->flags & NK_WINDOW_MINIMIZED)
-        Py_RETURN_TRUE;
-    else
-        Py_RETURN_FALSE;
-}
-
 static PyObject *PyWindow_get_interactive(PyWindowObject *self, void *closure)
 {
     if(self->flags & NK_WINDOW_NOT_INTERACTIVE)
@@ -996,9 +982,12 @@ static void active_windows_update(void *user, void *event)
     for(int i = 0; i < kv_size(s_active_windows); i++) {
     
         PyWindowObject *win = kv_A(s_active_windows, i);
+        if(win->flags & (NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED))
+            continue;
 
         struct nk_style_window saved_style = s_nk_ctx->style.window;
         s_nk_ctx->style.window = win->style;
+
 
         if(nk_begin(s_nk_ctx, win->name, 
             nk_rect(win->rect.x, win->rect.y, win->rect.width, win->rect.height), win->flags)) {
@@ -1018,7 +1007,6 @@ static void active_windows_update(void *user, void *event)
         int sample_mask = NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED;
         win->flags &= ~sample_mask; 
         win->flags |= (s_nk_ctx->current->flags & sample_mask);
-        win->flags &= ~NK_WINDOW_REMOVE_ROM;
 
         nk_end(s_nk_ctx);
         s_nk_ctx->style.window = saved_style;
