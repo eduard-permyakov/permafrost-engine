@@ -69,6 +69,16 @@ static char              s_settings_filepath[512];
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static char *pf_strdup(const char *str)
+{
+    char *ret = malloc(strlen(str) + 1);
+    if(!ret)
+        return ret;
+
+    strcpy(ret, str);
+    return ret;
+}
+
 static bool named_val_from_line(char *line, struct named_val *out)
 {
     char *saveptr;
@@ -128,17 +138,6 @@ fail:
     return false;
 }
 
-/* A copy of the key string is stored in the 'struct setting' itself. Make the key 
- * (string pointer) be a pointer to that buffer in order to avoid allocating/storing the key 
- * strings separately. All keys must be patched in case rehashing took place. */
-static void kh_update_str_keys(khash_t(setting) *table)
-{
-    for(khiter_t k = kh_begin(table); k != kh_end(table); k++) {
-        if(!kh_exist(table, k)) continue;
-        kh_key(table, k) = kh_value(table, k).name;
-    }
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -159,15 +158,21 @@ ss_e Settings_Init(void)
 
 void Settings_Shutdown(void)
 {
+    const char *key;
+    struct setting curr;
+
+    kh_foreach(s_settings_table, key, curr, {
+        free((char*)key);
+    });
     kh_destroy(setting, s_settings_table);
 }
 
 ss_e Settings_Create(struct setting sett)
 {
-    khiter_t k;
+    khiter_t k = kh_get(setting, s_settings_table, sett.name);
     struct sval saved;
 
-    if((k = kh_get(setting, s_settings_table, sett.name)) != kh_end(s_settings_table)
+    if((k != kh_end(s_settings_table))
     && (saved = kh_value(s_settings_table, k).val, true)
     && (sett.validate && sett.validate(&saved)) ){
     
@@ -175,18 +180,28 @@ ss_e Settings_Create(struct setting sett)
 
     }else {
 
-        assert((k = kh_get(setting, s_settings_table, sett.name)) == kh_end(s_settings_table));
+        const char *key = pf_strdup(sett.name);
+
         int put_status;
-        k = kh_put(setting, s_settings_table, sett.name, &put_status);
+        k = kh_put(setting, s_settings_table, key, &put_status);
 
         if(put_status == -1)
             return SS_BADALLOC;
     }
 
     kh_value(s_settings_table, k) = sett;
-    kh_update_str_keys(s_settings_table);
-
     return SS_OKAY;
+}
+
+ss_e Settings_Delete(const char *name)
+{
+    khiter_t k = kh_get(setting, s_settings_table, name);
+    if(k == kh_end(s_settings_table))
+        return SS_NO_SETTING;
+
+    free((char*)kh_key(s_settings_table, k));
+    kh_del(setting, s_settings_table, k);
+    return SS_OKAY; 
 }
 
 ss_e Settings_Get(const char *name, struct sval *out)
@@ -211,6 +226,19 @@ ss_e Settings_Set(const char *name, const struct sval *new_val)
 
     sett->val = *new_val;
 
+    if(sett->commit)
+        sett->commit(new_val);
+        
+    return SS_OKAY;
+}
+
+ss_e Settings_SetNoValidate(const char *name, const struct sval *new_val)
+{
+    khiter_t k = kh_get(setting, s_settings_table, name);
+    if(k == kh_end(s_settings_table))
+        return SS_NO_SETTING;
+
+    struct setting *sett = &kh_value(s_settings_table, k);
     if(sett->commit)
         sett->commit(new_val);
         

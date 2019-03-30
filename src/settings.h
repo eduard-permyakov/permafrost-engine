@@ -87,9 +87,11 @@ void Settings_Shutdown(void);
 /* If a setting with this name already exists, its' value is preserved and 
  * it is used to replace the provided default. */
 ss_e Settings_Create(struct setting sett);
+ss_e Settings_Delete(const char *name);
 
 ss_e Settings_Get(const char *name, struct sval *out);
 ss_e Settings_Set(const char *name, const struct sval *new_val);
+ss_e Settings_SetNoValidate(const char *name, const struct sval *new_val);
 
 ss_e Settings_SaveToFile(void);
 ss_e Settings_LoadFromFile(void);
