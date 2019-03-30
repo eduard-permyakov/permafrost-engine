@@ -79,54 +79,58 @@ static char *pf_strdup(const char *str)
     return ret;
 }
 
-static bool named_val_from_line(char *line, struct named_val *out)
+static bool parse_line(char *line, int *out_prio, struct named_val *out_val)
 {
     char *saveptr;
     char *token = strtok_r(line, " \t", &saveptr);
 
+    if(!sscanf(token, "%d", out_prio))
+        goto fail;
+
+    token = strtok_r(NULL, " \t", &saveptr);
     if(strlen(token) > SETT_NAME_LEN-1)
         goto fail;
-    strcpy(out->name, token);
+    strcpy(out_val->name, token);
 
     token = strtok_r(NULL, " \t", &saveptr);
     if(!strcmp(token, "string")) {
 
-        out->val.type = ST_TYPE_STRING;
+        out_val->val.type = ST_TYPE_STRING;
         token = strtok_r(NULL, " \t", &saveptr);
-        if(!sscanf(token, "%" STR(SETT_NAME_LEN) "s\n", out->val.as_string))
+        if(!sscanf(token, "%" STR(SETT_NAME_LEN) "s\n", out_val->val.as_string))
             goto fail;
 
     }else if(!strcmp(token, "vec2")) {
 
-        out->val.type = ST_TYPE_VEC2;
+        out_val->val.type = ST_TYPE_VEC2;
         token = token + strlen(token) + 1;
         if(!sscanf(token, "%f %f\n", 
-            &out->val.as_vec2.x, &out->val.as_vec2.y))
+            &out_val->val.as_vec2.x, &out_val->val.as_vec2.y))
             goto fail;
 
     }else if(!strcmp(token, "bool")) {
 
-        out->val.type = ST_TYPE_BOOL;
+        out_val->val.type = ST_TYPE_BOOL;
         token = strtok_r(NULL, " \t", &saveptr);
         int tmp;
         if(!sscanf(token, "%d\n", &tmp))
             goto fail;
         if(tmp != 0 && tmp != 1)
             goto fail;
-        out->val.as_bool = tmp;
+        out_val->val.as_bool = tmp;
 
     }else if(!strcmp(token, "int")) {
 
-        out->val.type = ST_TYPE_INT;
+        out_val->val.type = ST_TYPE_INT;
         token = strtok_r(NULL, " \t", &saveptr);
-        if(!sscanf(token, "%d\n", &out->val.as_int))
+        if(!sscanf(token, "%d\n", &out_val->val.as_int))
             goto fail;
 
     }else if(!strcmp(token, "float")) {
 
-        out->val.type = ST_TYPE_FLOAT;
+        out_val->val.type = ST_TYPE_FLOAT;
         token = strtok_r(NULL, " \t", &saveptr);
-        if(!sscanf(token, "%f\n", &out->val.as_float))
+        if(!sscanf(token, "%f\n", &out_val->val.as_float))
             goto fail;
 
     }else {
@@ -239,6 +243,8 @@ ss_e Settings_SetNoValidate(const char *name, const struct sval *new_val)
         return SS_NO_SETTING;
 
     struct setting *sett = &kh_value(s_settings_table, k);
+    sett->val = *new_val;
+
     if(sett->commit)
         sett->commit(new_val);
         
@@ -262,24 +268,24 @@ ss_e Settings_SaveToFile(void)
         char line[MAX_LINE_LEN];
         switch(curr.val.type) {
         case ST_TYPE_STRING: 
-            snprintf(line, sizeof(line), "%s %s %s\n",
-                name, "string", curr.val.as_string);
+            snprintf(line, sizeof(line), "%d %s %s %s\n",
+                curr.prio, name, "string", curr.val.as_string);
             break;
         case ST_TYPE_FLOAT:
-            snprintf(line, sizeof(line), "%s %s %.6f\n",
-                name, "float", curr.val.as_float);
+            snprintf(line, sizeof(line), "%d %s %s %.6f\n",
+                curr.prio, name, "float", curr.val.as_float);
             break;
         case ST_TYPE_VEC2:
-            snprintf(line, sizeof(line), "%s %s %.6f %.6f\n",
-                name, "vec2", curr.val.as_vec2.x, curr.val.as_vec2.y);
+            snprintf(line, sizeof(line), "%d %s %s %.6f %.6f\n",
+                curr.prio, name, "vec2", curr.val.as_vec2.x, curr.val.as_vec2.y);
             break;
         case ST_TYPE_BOOL:
-            snprintf(line, sizeof(line), "%s %s %d\n", 
-                name, "bool", curr.val.as_bool);
+            snprintf(line, sizeof(line), "%d %s %s %d\n", 
+                curr.prio, name, "bool", curr.val.as_bool);
             break;
         case ST_TYPE_INT:
-            snprintf(line, sizeof(line), "%s %s %d\n", 
-                name, "int", curr.val.as_int);
+            snprintf(line, sizeof(line), "%d %s %s %d\n", 
+                curr.prio, name, "int", curr.val.as_int);
             break;
         default: assert(0);
         }
@@ -309,27 +315,36 @@ ss_e Settings_LoadFromFile(void)
         goto fail_stream;
     }
 
-    char line[MAX_LINE_LEN];
-    while(AL_ReadLine(stream, line)) {
+    for(int i = 0; i < SETT_MAX_PRIO; i++) {
+    
+        char line[MAX_LINE_LEN];
+        while(AL_ReadLine(stream, line)) {
 
-        struct named_val nv;
-        if(!named_val_from_line(line, &nv)) {
-            ret = SS_FILE_PARSING;
-            goto fail_line;
-        }
+            int prio;
+            struct named_val nv;
 
-        khiter_t k;
-        if((k = kh_get(setting, s_settings_table, nv.name)) != kh_end(s_settings_table)) {
-        
-            Settings_Set(nv.name, &nv.val);
-        }else{
-            struct setting sett = (struct setting){
-                .val = nv.val,
-                .validate = NULL,
-                .commit = NULL,
-            };
-            strcpy(sett.name, nv.name);
-            Settings_Create(sett);
+            if(!parse_line(line, &prio, &nv)) {
+                ret = SS_FILE_PARSING;
+                goto fail_line;
+            }
+
+            if(prio < i)
+                continue;
+
+            khiter_t k;
+            if((k = kh_get(setting, s_settings_table, nv.name)) != kh_end(s_settings_table)) {
+            
+                Settings_Set(nv.name, &nv.val);
+            }else{
+                struct setting sett = (struct setting){
+                    .val = nv.val,
+                    .prio = prio,
+                    .validate = NULL,
+                    .commit = NULL,
+                };
+                strcpy(sett.name, nv.name);
+                Settings_Create(sett);
+            }
         }
     }
 

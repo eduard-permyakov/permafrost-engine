@@ -41,6 +41,7 @@
 #include <stdbool.h>
 
 #define SETT_NAME_LEN 128
+#define SETT_MAX_PRIO 2
 
 struct sval{
     enum{
@@ -62,6 +63,10 @@ struct sval{
 struct setting{
     char        name[SETT_NAME_LEN];
     struct sval val;
+    /* When reading the settings file, all settings with a lower priority number 
+     * will be read before settings with a higher priority number. This allows 
+     * creating some dependencies between settings. */
+    int         prio;
 
     /* Called before a new setting value is committed - if 'validate'
      * returns false, the update is aborted. Can be NULL. */

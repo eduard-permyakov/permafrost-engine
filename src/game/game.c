@@ -275,6 +275,7 @@ bool G_Init(void)
             .type = ST_TYPE_BOOL,
             .as_bool = true
         },
+        .prio = 0,
         .validate = hb_mode_validate,
         .commit = NULL,
     });
