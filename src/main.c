@@ -336,7 +336,7 @@ static bool engine_init(char **argv)
 
     /* depends on Event subsystem */
     if(!G_Init()) {
-        fprintf(stderr, "Failedk to initialize game subsystem\n");
+        fprintf(stderr, "Failed to initialize game subsystem\n");
         goto fail_game;
     }
 
@@ -413,8 +413,14 @@ int Engine_SetRes(int w, int h)
 
 void Engine_SetDispMode(enum pf_window_flags wf)
 {
-    SDL_SetWindowBordered(s_window, !(wf & SDL_WINDOW_BORDERLESS));
     SDL_SetWindowFullscreen(s_window, wf & SDL_WINDOW_FULLSCREEN);
+    SDL_SetWindowBordered(s_window, !(wf & (SDL_WINDOW_BORDERLESS | SDL_WINDOW_FULLSCREEN)));
+    SDL_SetWindowPosition(s_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+}
+
+void Engine_WinDrawableSize(int *out_w, int *out_h)
+{
+    SDL_GL_GetDrawableSize(s_window, out_w, out_h);
 }
 
 #if defined(_WIN32)

@@ -41,7 +41,7 @@
 #include "../camera.h"
 #include "../config.h"
 #include "../collision.h"
-#include "../settings.h"
+#include "../main.h"
 
 #include "../render/public/render.h"
 
@@ -111,13 +111,11 @@ static vec3_t rc_unproject_mouse_coords(void)
     int mouse_x, mouse_y;
     SDL_GetMouseState(&mouse_x, &mouse_y);
 
-    struct sval res;
-    ss_e status = Settings_Get("pf.video.resolution", &res);
-    assert(status == SS_OKAY);
-    assert(res.type == ST_TYPE_VEC2);
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
 
-    vec3_t ndc = (vec3_t){-1.0f + 2.0*((float)mouse_x/res.as_vec2.x),
-                           1.0f - 2.0*((float)mouse_y/res.as_vec2.y),
+    vec3_t ndc = (vec3_t){-1.0f + 2.0*((float)mouse_x/width),
+                           1.0f - 2.0*((float)mouse_y/height),
                           -1.0f};
     vec4_t clip = (vec4_t){ndc.x, ndc.y, ndc.z, 1.0f};
 

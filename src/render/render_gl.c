@@ -49,7 +49,7 @@
 #include "../anim/public/anim.h"
 #include "../ui.h"
 #include "../map/public/map.h"
-#include "../settings.h"
+#include "../main.h"
 
 #include <GL/glew.h>
 
@@ -448,12 +448,11 @@ vec3_t R_GL_GetLightPos(void)
 
 void R_GL_SetScreenspaceDrawMode(void)
 {
-    struct sval res;
-    ss_e status = Settings_Get("pf.video.resolution", &res);
-    assert(status == SS_OKAY);
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
 
     mat4x4_t ortho;
-    PFM_Mat4x4_MakeOrthographic(0.0f, res.as_vec2.x, res.as_vec2.y, 0.0f, -1.0f, 1.0f, &ortho);
+    PFM_Mat4x4_MakeOrthographic(0.0f, width, height, 0.0f, -1.0f, 1.0f, &ortho);
     R_GL_SetProj(&ortho);
 
     mat4x4_t identity;
@@ -473,9 +472,8 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
     GLuint loc;
     vec4_t green = (vec4_t){0.0f, 1.0f, 0.0f, 1.0f};
 
-    struct sval res;
-    ss_e status = Settings_Get("pf.video.resolution", &res);
-    assert(status == SS_OKAY);
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
 
     mat4x4_t model;
     Entity_ModelMatrix(ent, &model);
@@ -522,8 +520,8 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
         PFM_Mat4x4_Mult4x1(&proj, &tmpb, &clip);
         vec3_t ndc = (vec3_t){ clip.x / clip.w, clip.y / clip.w, clip.z / clip.w };
 
-        float screen_x = (ndc.x + 1.0f) * res.as_vec2.x/2.0f;
-        float screen_y = res.as_vec2.y - ((ndc.y + 1.0f) * res.as_vec2.y/2.0f);
+        float screen_x = (ndc.x + 1.0f) * width/2.0f;
+        float screen_y = height - ((ndc.y + 1.0f) * height/2.0f);
         UI_DrawText(curr->name, (struct rect){screen_x, screen_y, 100, 25}, (struct rgba){0, 255, 0, 255});
     }
  
@@ -757,13 +755,12 @@ void R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color, float w
         (vec3_t){screen_pos.x,                 screen_pos.y + signed_size.y, 0.0f},
     };
 
-    struct sval res;
-    ss_e status = Settings_Get("pf.video.resolution", &res);
-    assert(status == SS_OKAY);
+    int win_width, win_height;
+    Engine_WinDrawableSize(&win_width, &win_height);
 
     /* Set view and projection matrices for rendering in screen coordinates */
     mat4x4_t ortho;
-    PFM_Mat4x4_MakeOrthographic(0.0f, res.as_vec2.x, res.as_vec2.y, 0.0f, -1.0f, 1.0f, &ortho);
+    PFM_Mat4x4_MakeOrthographic(0.0f, win_width, win_height, 0.0f, -1.0f, 1.0f, &ortho);
     R_GL_SetProj(&ortho);
 
     mat4x4_t identity;

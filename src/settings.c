@@ -194,6 +194,10 @@ ss_e Settings_Create(struct setting sett)
     }
 
     kh_value(s_settings_table, k) = sett;
+
+    if(sett.commit)
+        sett.commit(&sett.val);
+
     return SS_OKAY;
 }
 
@@ -346,6 +350,8 @@ ss_e Settings_LoadFromFile(void)
                 Settings_Create(sett);
             }
         }
+
+        SDL_RWseek(stream, 0, RW_SEEK_SET);
     }
 
     stream->close(stream);

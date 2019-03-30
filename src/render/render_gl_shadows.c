@@ -38,6 +38,7 @@
 #include "render_private.h"
 #include "gl_uniforms.h"
 #include "gl_assert.h"
+#include "../main.h"
 #include "../pf_math.h"
 #include "../config.h"
 #include "../collision.h"
@@ -146,11 +147,10 @@ void R_GL_DepthPassEnd(void)
 
     R_GL_SetShadowMap(s_depth_map_tex);
 
-    struct sval res;
-    ss_e status = Settings_Get("pf.video.resolution", &res);
-    assert(status == SS_OKAY);
+    int dw, dh;
+    Engine_WinDrawableSize(&dw, &dh);
 
-    glViewport(0, 0, res.as_vec2.x, res.as_vec2.y);
+    glViewport(0, 0, dw, dh);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glCullFace(GL_BACK);
 

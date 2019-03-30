@@ -55,7 +55,7 @@ static bool ar_validate(const struct sval *new_val)
     if(new_val->type != ST_TYPE_VEC2)
         return false;
 
-    int AR_MIN = 0.5f, AR_MAX = 2.5f;
+    float AR_MIN = 0.5f, AR_MAX = 2.5f;
     return (new_val->as_vec2.x / new_val->as_vec2.y >= AR_MIN)
         && (new_val->as_vec2.x / new_val->as_vec2.y <= AR_MAX);
 }
@@ -117,10 +117,12 @@ static bool res_validate(const struct sval *new_val)
 
 static void res_commit(const struct sval *new_val)
 {
-    glViewport(0, 0, new_val->as_vec2.x, new_val->as_vec2.y);
-
     int rval = Engine_SetRes(new_val->as_vec2.x, new_val->as_vec2.y);
     assert(0 == rval || fprintf(stderr, "Failed to set window resolution:%s\n", SDL_GetError()));
+
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
+    glViewport(0, 0, width, height);
 }
 
 static bool dm_validate(const struct sval *new_val)
@@ -179,7 +181,7 @@ bool R_Init(const char *base_path)
             .type = ST_TYPE_VEC2,
             .as_vec2 = res_default
         },
-        .prio = 1, /* Depends on pf.aspect_ratio */
+        .prio = 1, /* Depends on aspect_ratio */
         .validate = res_validate,
         .commit = res_commit,
     });
@@ -189,7 +191,7 @@ bool R_Init(const char *base_path)
         .name = "pf.video.display_mode",
         .val = (struct sval) {
             .type = ST_TYPE_INT,
-            .as_int = PF_WF_FULLSCREEN
+            .as_int = PF_WF_BORDERLESS_WIN
         },
         .prio = 0,
         .validate = dm_validate,

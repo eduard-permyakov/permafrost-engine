@@ -53,6 +53,7 @@ enum pf_window_flags {
 
 int  Engine_SetRes(int w, int h);
 void Engine_SetDispMode(enum pf_window_flags wf);
+void Engine_WinDrawableSize(int *out_w, int *out_h);
 
 #endif
 

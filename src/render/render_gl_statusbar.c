@@ -40,7 +40,7 @@
 #include "../camera.h"
 #include "../pf_math.h"
 #include "../config.h"
-#include "../settings.h"
+#include "../main.h"
 
 #include <GL/glew.h>
 #include <assert.h>
@@ -55,9 +55,8 @@
 void R_GL_DrawHealthbars(size_t num_ents, GLfloat *ent_health_pc, vec3_t *ent_top_pos_ws,
                          const struct camera *cam)
 {
-    struct sval res;
-    ss_e status = Settings_Get("pf.video.resolution", &res);
-    assert(status == SS_OKAY);
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
 
     /* Convert the worldspace positions to SDL screenspace positions */
     vec2_t ent_top_pos_ss[num_ents]; /* Screen-space XY positions of the entity tops. */
@@ -75,8 +74,8 @@ void R_GL_DrawHealthbars(size_t num_ents, GLfloat *ent_health_pc, vec3_t *ent_to
         PFM_Mat4x4_Mult4x1(&proj, &tmp, &clip);
         vec3_t ndc = (vec3_t){clip.x / clip.w, clip.y / clip.w, clip.z / clip.w};
 
-        float screen_x = (ndc.x + 1.0f) * res.as_vec2.x/2.0f;
-        float screen_y = res.as_vec2.y - ((ndc.y + 1.0f) * res.as_vec2.y/2.0f);
+        float screen_x = (ndc.x + 1.0f) * width/2.0f;
+        float screen_y = height - ((ndc.y + 1.0f) * height/2.0f);
 
         ent_top_pos_ss[i] = (vec2_t){screen_x, screen_y};
     }

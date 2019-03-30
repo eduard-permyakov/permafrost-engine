@@ -47,7 +47,7 @@
 #include "../config.h"
 #include "../map/public/map.h"
 #include "../collision.h"
-#include "../settings.h"
+#include "../main.h"
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -246,11 +246,9 @@ bool R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats,
         }
     }
 
-    struct sval res;
-    ss_e status = Settings_Get("pf.video.resolution", &res);
-    assert(status == SS_OKAY);
-
-    glViewport(0,0, res.as_vec2.x, res.as_vec2.y);
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
+    glViewport(0,0, width, height);
 
     s_ctx.minimap_texture.tunit = GL_TEXTURE0;
     R_Texture_AddExisting("__minimap__", s_ctx.minimap_texture.id);
@@ -338,12 +336,11 @@ bool R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, mat4x4
 
     R_GL_Draw(chunk_rprivate, chunk_model);
 
-    struct sval res;
-    ss_e status = Settings_Get("pf.video.resolution", &res);
-    assert(status == SS_OKAY);
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
 
     priv->shader_prog = old_shader_prog;
-    glViewport(0,0, res.as_vec2.x, res.as_vec2.y);
+    glViewport(0,0, width, height);
 
     /* Re-bind the default framebuffer when we're done rendering */
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
