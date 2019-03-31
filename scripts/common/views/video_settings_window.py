@@ -55,12 +55,12 @@ class VideoSettingsWindow(pf.Window):
 
         nx, ny = pf.get_native_resolution()
         self.res_idx = 0
-        #self.res_opts = [ 
-        #    (nx, ny), 
-        #    (nx * 3/4, ny * 3/4),
-        #    (nx / 2, ny / 2),
-        #]
-        #self.res_opt_strings = ["{}:{}".format(int(opt[0]), int(opt[1])) for opt in self.res_opts]
+        self.res_opts = [ 
+            (nx, ny), 
+            (nx * 3/4, ny * 3/4),
+            (nx / 2, ny / 2),
+        ]
+        self.res_opt_strings = ["{}:{}".format(int(opt[0]), int(opt[1])) for opt in self.res_opts]
 
         self.mode_idx = 0
         self.mode_opts = [
@@ -74,6 +74,13 @@ class VideoSettingsWindow(pf.Window):
             "Borderless Window",
         ]
 
+        self.win_on_top_idx = 0
+        self.win_on_top_opts = [
+            True,
+            False
+        ]
+        self.__win_on_top_opt_strings = ["On", "Off"]
+
         self.dirty = False
 
     def update(self):
@@ -85,7 +92,7 @@ class VideoSettingsWindow(pf.Window):
         old_ar_idx = self.ar_idx
         self.ar_idx = self.combo_box(self.__ar_opt_strings, self.ar_idx, 25, (VideoSettingsWindow.WIDTH - 40, 200))
         if old_ar_idx != self.ar_idx:
-            pf.global_event(EVENT_AR_SETTING_CHANGED, self.res_opts[self.ar_idx])
+            pf.global_event(EVENT_AR_SETTING_CHANGED, self.ar_opts[self.ar_idx])
 
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Resolution:", (255, 255, 255))
@@ -104,4 +111,17 @@ class VideoSettingsWindow(pf.Window):
         self.mode_idx = self.combo_box(self.mode_opt_strings, self.mode_idx, 25, (VideoSettingsWindow.WIDTH - 40, 200))
         if old_mode_idx != self.mode_idx:
             pf.global_event(EVENT_WINMODE_SETTING_CHANGED, self.mode_opts[self.mode_idx])
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Window Always On Top (Requires Restart):", (255, 255, 255))
+
+        self.layout_row_dynamic(20, 2)
+        old_win_on_top_idx = self.win_on_top_idx
+        if self.option_label(self.__win_on_top_opt_strings[0], self.win_on_top_idx == 0):
+            self.win_on_top_idx = 0
+        if self.option_label(self.__win_on_top_opt_strings[1], self.win_on_top_idx == 1):
+            self.win_on_top_idx = 1
+        
+        if self.win_on_top_idx != old_win_on_top_idx:
+            pf.global_event(EVENT_WIN_TOP_SETTING_CHANGED, self.win_on_top_opts[self.win_on_top_idx])
 

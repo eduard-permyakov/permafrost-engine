@@ -249,9 +249,12 @@ static bool engine_init(char **argv)
         res[1] = (int)setting.as_vec2.y;
     }
 
-    enum pf_window_flags wf = PF_WF_BORDERLESS_WIN;
+    enum pf_window_flags wf = PF_WF_BORDERLESS_WIN, extra_flags = 0;
     if(Settings_Get("pf.video.display_mode", &setting) == SS_OKAY) {
         wf = setting.as_int;
+    }
+    if(Settings_Get("pf.video.window_always_on_top", &setting) == SS_OKAY) {
+        extra_flags = setting.as_bool ? SDL_WINDOW_ALWAYS_ON_TOP : 0;
     }
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -272,11 +275,7 @@ static bool engine_init(char **argv)
         SDL_WINDOWPOS_UNDEFINED,
         res[0], 
         res[1], 
-        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN 
-#ifdef __linux__
-            | SDL_WINDOW_ALWAYS_ON_TOP 
-#endif
-            | wf);
+        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | wf | extra_flags);
 
     early_loading_screen();
 

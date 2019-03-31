@@ -51,8 +51,8 @@ class GameSettingsWindow(pf.Window):
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Health Bars:", (255, 255, 255))
         
-        old_hb_idx = self.hb_idx
         self.layout_row_dynamic(20, 2)
+        old_hb_idx = self.hb_idx
         if self.option_label("On", self.hb_idx == 0):
             self.hb_idx = 0
         if self.option_label("Off", self.hb_idx == 1):

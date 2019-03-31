@@ -141,6 +141,11 @@ static void dm_commit(const struct sval *new_val)
     Engine_SetDispMode(new_val->as_int);
 }
 
+static bool win_on_top_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_BOOL);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -196,6 +201,18 @@ bool R_Init(const char *base_path)
         .prio = 0,
         .validate = dm_validate,
         .commit = dm_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.window_always_on_top",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false 
+        },
+        .prio = 0,
+        .validate = win_on_top_validate,
+        .commit = NULL,
     });
     assert(status == SS_OKAY);
 
