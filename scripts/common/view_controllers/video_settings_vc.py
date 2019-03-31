@@ -47,6 +47,7 @@ class VideoSettingsVC(vc.ViewController):
         self.__og_res_idx = self.view.res_idx
         self.__og_mode_idx = self.view.mode_idx
         self.__og_win_on_top_idx = self.view.win_on_top_idx
+        self.__og_vsync_ids = self.view.vsync_idx
         self.__update_res_opts()
         self.__load_selection()
 
@@ -84,6 +85,11 @@ class VideoSettingsVC(vc.ViewController):
             self.view.win_on_top_idx = int(wat_saved == 0)
             self.__og_win_on_top_idx = int(wat_saved == 0)
         except: err = lambda: sys.exc_info() if not err else err
+        try:
+            vsync_saved = pf.settings_get("pf.video.vsync")
+            self.view.vsync_idx = int(vsync_saved == 0)
+            self.__og_vsync_idx = int(vsync_saved == 0)
+        except: err = lambda: sys.exc_info() if not err else err
 
         if err:
             raise err[0], err[1], err[2]
@@ -92,7 +98,8 @@ class VideoSettingsVC(vc.ViewController):
         if self.view.res_idx != self.__og_res_idx \
         or self.view.mode_idx != self.__og_mode_idx \
         or self.view.win_on_top_idx != self.__og_win_on_top_idx \
-        or self.view.ar_idx != self.__og_ar_idx:
+        or self.view.ar_idx != self.__og_ar_idx \
+        or self.view.vsync_idx != self.__og_vsync_idx:
             self.view.dirty = True
         else:
             self.view.dirty = False
@@ -125,6 +132,13 @@ class VideoSettingsVC(vc.ViewController):
                 self.__og_win_on_top_idx = self.view.win_on_top_idx
             except Exception as e:
                 print("Could not set pf.video.window_always_on_top:" + str(e))
+
+        if self.view.vsync_idx != self.__og_vsync_idx:
+            try:
+                pf.settings_set("pf.video.vsync", self.view.vsync_opts[self.view.vsync_idx])
+                self.__og_vsync_idx = self.view.vsync_idx
+            except Exception as e:
+                print("Could not set pf.video.vsync:" + str(e))
 
         self.__update_res_opts()
         self.__load_selection()
@@ -168,14 +182,19 @@ class VideoSettingsVC(vc.ViewController):
     def __on_win_ontop_changed(self, event):
         self.__update_dirty_flag()
 
+    def __on_vsync_changed(self, event):
+        self.__update_dirty_flag()
+
     def activate(self):
         pf.register_event_handler(EVENT_SETTINGS_APPLY, VideoSettingsVC.__on_settings_apply, self)
         pf.register_event_handler(EVENT_RES_SETTING_CHANGED, VideoSettingsVC.__on_resolution_changed, self)
         pf.register_event_handler(EVENT_WINMODE_SETTING_CHANGED, VideoSettingsVC.__on_winmode_changed, self)
         pf.register_event_handler(EVENT_AR_SETTING_CHANGED, VideoSettingsVC.__on_aspect_ratio_changed, self)
         pf.register_event_handler(EVENT_WIN_TOP_SETTING_CHANGED, VideoSettingsVC.__on_win_ontop_changed, self)
+        pf.register_event_handler(EVENT_VSYNC_SETTING_CHANGED, VideoSettingsVC.__on_vsync_changed, self)
 
     def deactivate(self):
+        pf.unregister_event_handler(EVENT_VSYNC_SETTING_CHANGED, VideoSettingsVC.__on_vsync_changed)
         pf.unregister_event_handler(EVENT_WIN_TOP_SETTING_CHANGED, VideoSettingsVC.__on_win_ontop_changed)
         pf.unregister_event_handler(EVENT_AR_SETTING_CHANGED, VideoSettingsVC.__on_aspect_ratio_changed)
         pf.unregister_event_handler(EVENT_WINMODE_SETTING_CHANGED, VideoSettingsVC.__on_winmode_changed)

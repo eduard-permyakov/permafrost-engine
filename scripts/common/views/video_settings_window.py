@@ -81,6 +81,13 @@ class VideoSettingsWindow(pf.Window):
         ]
         self.__win_on_top_opt_strings = ["On", "Off"]
 
+        self.vsync_idx = 0
+        self.vsync_opts = [
+            True,
+            False
+        ]
+        self.__vsync_opt_strings = ["On", "Off"]
+
         self.dirty = False
 
     def update(self):
@@ -124,4 +131,17 @@ class VideoSettingsWindow(pf.Window):
         
         if self.win_on_top_idx != old_win_on_top_idx:
             pf.global_event(EVENT_WIN_TOP_SETTING_CHANGED, self.win_on_top_opts[self.win_on_top_idx])
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Vsync:", (255, 255, 255))
+
+        self.layout_row_dynamic(20, 2)
+        old_vsync_idx = self.vsync_idx
+        if self.option_label(self.__vsync_opt_strings[0], self.vsync_idx == 0):
+            self.vsync_idx = 0
+        if self.option_label(self.__vsync_opt_strings[1], self.vsync_idx == 1):
+            self.vsync_idx = 1
+        
+        if self.vsync_idx != old_vsync_idx:
+            pf.global_event(EVENT_VSYNC_SETTING_CHANGED, self.vsync_opts[self.vsync_idx])
 

@@ -278,9 +278,7 @@ static bool engine_init(char **argv)
         SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | wf | extra_flags);
 
     early_loading_screen();
-
-    s_context = SDL_GL_CreateContext(s_window); 
-    SDL_GL_SetSwapInterval(CONFIG_VSYNC ? 1 : 0); 
+    s_context = SDL_GL_CreateContext(s_window);
 
     glewExperimental = GL_TRUE;
     if(glewInit() != GLEW_OK) {

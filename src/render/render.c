@@ -146,6 +146,20 @@ static bool win_on_top_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_BOOL);
 }
 
+static bool vsync_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_BOOL);
+}
+
+static void vsync_commit(const struct sval *new_val)
+{
+    if(new_val->as_bool) {
+        SDL_GL_SetSwapInterval(1);
+    }else {
+        SDL_GL_SetSwapInterval(0);
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -213,6 +227,18 @@ bool R_Init(const char *base_path)
         .prio = 0,
         .validate = win_on_top_validate,
         .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.vsync",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false 
+        },
+        .prio = 0,
+        .validate = vsync_validate,
+        .commit = vsync_commit,
     });
     assert(status == SS_OKAY);
 
