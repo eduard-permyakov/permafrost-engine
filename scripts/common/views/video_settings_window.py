@@ -45,14 +45,22 @@ class VideoSettingsWindow(pf.Window):
         super(VideoSettingsWindow, self).__init__("VideoSettings", ((resx - VideoSettingsWindow.WIDTH)/2, 
             (resy - VideoSettingsWindow.HEIGHT)/2, VideoSettingsWindow.WIDTH, VideoSettingsWindow.HEIGHT), 0)
 
+        self.ar_idx = 0
+        self.ar_opts = [
+            (4, 3),
+            (16, 9),
+            (21, 9)
+        ]
+        self.__ar_opt_strings = ["{}:{}".format(*opt) for opt in self.ar_opts]
+
         nx, ny = pf.get_native_resolution()
         self.res_idx = 0
-        self.res_opts = [ 
-            (nx, ny), 
-            (nx * 3/4, ny * 3/4),
-            (nx / 2, ny / 2),
-        ]
-        self.res_opt_strings = ["{0}:{1}".format(int(opt[0]), int(opt[1])) for opt in self.res_opts]
+        #self.res_opts = [ 
+        #    (nx, ny), 
+        #    (nx * 3/4, ny * 3/4),
+        #    (nx / 2, ny / 2),
+        #]
+        #self.res_opt_strings = ["{}:{}".format(int(opt[0]), int(opt[1])) for opt in self.res_opts]
 
         self.mode_idx = 0
         self.mode_opts = [
@@ -69,6 +77,15 @@ class VideoSettingsWindow(pf.Window):
         self.dirty = False
 
     def update(self):
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Aspect Ratio:", (255, 255, 255))
+
+        self.layout_row_dynamic(25, 1)
+        old_ar_idx = self.ar_idx
+        self.ar_idx = self.combo_box(self.__ar_opt_strings, self.ar_idx, 25, (VideoSettingsWindow.WIDTH - 40, 200))
+        if old_ar_idx != self.ar_idx:
+            pf.global_event(EVENT_AR_SETTING_CHANGED, self.res_opts[self.ar_idx])
 
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Resolution:", (255, 255, 255))
