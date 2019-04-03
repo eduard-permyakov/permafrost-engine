@@ -38,6 +38,7 @@
 #include "render_private.h"
 #include "gl_uniforms.h"
 #include "gl_assert.h"
+#include "shader.h"
 #include "../main.h"
 #include "../pf_math.h"
 #include "../config.h"
@@ -49,8 +50,6 @@
 
 #include <assert.h>
 
-
-#define LIGHT_POS_HEIGHT (200.0f)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -111,7 +110,7 @@ void R_GL_DepthPassBegin(void)
     vec3_t right = (vec3_t){-1.0f, 0.0f, 0.0f}, up;
     PFM_Vec3_Cross(&light_dir, &right, &up);
 
-    t = fabs(LIGHT_POS_HEIGHT / light_dir.y);
+    t = fabs((cam_pos.y + 10.0)/ light_dir.y);
     vec3_t light_origin, delta;
     PFM_Vec3_Scale(&light_dir, -t, &delta);
     PFM_Vec3_Add(&cam_ray_ground_isec, &delta, &light_origin);
@@ -179,5 +178,28 @@ void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
 void R_GL_GetLightFrustum(struct frustum *out)
 {
     *out = s_light_frustum;
+}
+
+void R_GL_SetShadowsEnabled(void *render_private, bool on)
+{
+    struct render_private *priv = render_private;
+    const char *map[][2] = {
+        {"terrain",                      "terrain-shadowed"},
+        {"mesh.static.textured-phong",   "mesh.static.textured-phong-shadowed"},
+        {"mesh.animated.textured-phong", "mesh.animated.textured-phong-shadowed"}
+    };
+
+    for(int i = 0; i < sizeof(map)/sizeof(map[0]); i++) {
+
+        GLuint standard = R_Shader_GetProgForName(map[i][0]);
+        GLuint shadowed = R_Shader_GetProgForName(map[i][1]);
+        assert(standard >= 0 && shadowed >= 0);
+
+        GLuint from = on ? standard : shadowed;
+        GLuint to = on ? shadowed : standard;
+
+        if(priv->shader_prog == from)
+            priv->shader_prog = to;
+    }
 }
 

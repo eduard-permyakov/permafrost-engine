@@ -88,6 +88,13 @@ class VideoSettingsWindow(pf.Window):
         ]
         self.__vsync_opt_strings = ["On", "Off"]
 
+        self.shadows_idx = 0
+        self.shadows_opts = [
+            True,
+            False
+        ]
+        self.__shadows_opt_strings = ["On", "Off"]
+
         self.dirty = False
 
     def update(self):
@@ -144,4 +151,17 @@ class VideoSettingsWindow(pf.Window):
         
         if self.vsync_idx != old_vsync_idx:
             pf.global_event(EVENT_VSYNC_SETTING_CHANGED, self.vsync_opts[self.vsync_idx])
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Shadows:", (255, 255, 255))
+
+        self.layout_row_dynamic(20, 2)
+        old_shadows_idx = self.shadows_idx
+        if self.option_label(self.__shadows_opt_strings[0], self.shadows_idx == 0):
+            self.shadows_idx = 0
+        if self.option_label(self.__shadows_opt_strings[1], self.shadows_idx == 1):
+            self.shadows_idx = 1
+        
+        if self.shadows_idx != old_shadows_idx:
+            pf.global_event(EVENT_SHADOWS_SETTING_CHANGED, self.shadows_opts[self.shadows_idx])
 

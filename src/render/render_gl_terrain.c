@@ -36,7 +36,7 @@
 #include "render_gl.h"
 #include "texture.h"
 #include "shader.h"
-#include "../config.h"
+#include "../settings.h"
 
 #include <assert.h>
 
@@ -60,12 +60,16 @@ void R_GL_MapBegin(void)
 {
     assert(!s_map_ctx_active);
 
+    struct sval sh_setting;
+    ss_e status = Settings_Get("pf.video.shadows_enabled", &sh_setting);
+    assert(status == SS_OKAY);
+
     GLuint shader_prog;
-#if CONFIG_SHADOWS
-    shader_prog = R_Shader_GetProgForName("terrain-shadowed");
-#else
-    shader_prog = R_Shader_GetProgForName("terrain");
-#endif
+    if(sh_setting.as_bool) {
+        shader_prog = R_Shader_GetProgForName("terrain-shadowed");
+    }else {
+        shader_prog = R_Shader_GetProgForName("terrain");
+    }
     assert(shader_prog != -1);
     glUseProgram(shader_prog);
     R_Texture_GL_ActivateArray(&s_map_textures, shader_prog);

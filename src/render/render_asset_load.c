@@ -42,7 +42,7 @@
 
 #include "../asset_load.h"
 #include "../map/public/tile.h"
-#include "../config.h"
+#include "../settings.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -209,11 +209,16 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
         assert(!null);
     }
 
-#if CONFIG_SHADOWS
-    R_GL_Init(priv, (header->num_as > 0) ? "mesh.animated.textured-phong-shadowed" : "mesh.static.textured-phong-shadowed", vbuff);
-#else
-    R_GL_Init(priv, (header->num_as > 0) ? "mesh.animated.textured-phong" : "mesh.static.textured-phong", vbuff);
-#endif
+    struct sval sh_setting;
+    ss_e status = Settings_Get("pf.video.shadows_enabled", &sh_setting);
+    assert(status == SS_OKAY);
+
+    if(sh_setting.as_bool) {
+        R_GL_Init(priv, (header->num_as > 0) ? "mesh.animated.textured-phong-shadowed" : "mesh.static.textured-phong-shadowed", vbuff);
+    }else{
+        R_GL_Init(priv, (header->num_as > 0) ? "mesh.animated.textured-phong" : "mesh.static.textured-phong", vbuff);
+    }
+
     free(vbuff);
     GL_ASSERT_OK();
     return priv;
@@ -311,11 +316,15 @@ bool R_AL_InitPrivFromTiles(const struct tile *tiles, size_t width, size_t heigh
         }
     }
 
-#if CONFIG_SHADOWS
-    R_GL_Init(priv, "terrain-shadowed", vbuff);
-#else
-    R_GL_Init(priv, "terrain", vbuff);
-#endif
+    struct sval sh_setting;
+    ss_e status = Settings_Get("pf.video.shadows_enabled", &sh_setting);
+    assert(status == SS_OKAY);
+
+    if(sh_setting.as_bool) {
+        R_GL_Init(priv, "terrain-shadowed", vbuff);
+    }else {
+        R_GL_Init(priv, "terrain", vbuff);
+    }
 
     free(vbuff);
     GL_ASSERT_OK();

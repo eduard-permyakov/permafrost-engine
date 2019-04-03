@@ -48,6 +48,7 @@ class VideoSettingsVC(vc.ViewController):
         self.__og_mode_idx = self.view.mode_idx
         self.__og_win_on_top_idx = self.view.win_on_top_idx
         self.__og_vsync_ids = self.view.vsync_idx
+        self.__og_shadows_ids = self.view.vsync_idx
         self.__update_res_opts()
         self.__load_selection()
 
@@ -57,8 +58,9 @@ class VideoSettingsVC(vc.ViewController):
             ar_saved = pf.settings_get("pf.video.aspect_ratio")
             ar_saved = tuple( (int(num)) for num in ar_saved )
             gcd = fractions.gcd(ar_saved[0], ar_saved[1])
-            ar_saved = tuple( (num/gcd) for num in ar_saved )
+            ar_saved = tuple( (num//gcd) for num in ar_saved )
             for i, cand in enumerate(self.view.ar_opts):
+                cand = tuple( (num//gcd) for num in cand )
                 if cand == ar_saved:
                     self.view.ar_idx = i
                     self.__og_ar_idx = i
@@ -90,6 +92,11 @@ class VideoSettingsVC(vc.ViewController):
             self.view.vsync_idx = int(vsync_saved == 0)
             self.__og_vsync_idx = int(vsync_saved == 0)
         except: err = lambda: sys.exc_info() if not err else err
+        try:
+            shadows_saved = pf.settings_get("pf.video.shadows_enabled")
+            self.view.shadows_idx = int(shadows_saved == 0)
+            self.__og_shadows_idx = int(shadows_saved == 0)
+        except: err = lambda: sys.exc_info() if not err else err
 
         if err:
             raise err[0], err[1], err[2]
@@ -99,7 +106,8 @@ class VideoSettingsVC(vc.ViewController):
         or self.view.mode_idx != self.__og_mode_idx \
         or self.view.win_on_top_idx != self.__og_win_on_top_idx \
         or self.view.ar_idx != self.__og_ar_idx \
-        or self.view.vsync_idx != self.__og_vsync_idx:
+        or self.view.vsync_idx != self.__og_vsync_idx \
+        or self.view.shadows_idx != self.__og_shadows_idx:
             self.view.dirty = True
         else:
             self.view.dirty = False
@@ -140,6 +148,13 @@ class VideoSettingsVC(vc.ViewController):
             except Exception as e:
                 print("Could not set pf.video.vsync:" + str(e))
 
+        if self.view.shadows_idx != self.__og_shadows_idx:
+            try:
+                pf.settings_set("pf.video.shadows_enabled", self.view.shadows_opts[self.view.shadows_idx])
+                self.__og_shadows_idx = self.view.shadows_idx
+            except Exception as e:
+                print("Could not set pf.video.shadows_enabled:" + str(e))
+
         self.__update_res_opts()
         self.__load_selection()
         self.__update_dirty_flag()
@@ -166,6 +181,7 @@ class VideoSettingsVC(vc.ViewController):
         int_new_opts = [(int(o[0]), int(o[1])) for o in new_opts]
         if (int(res[0]), int(res[1])) not in int_new_opts:
             new_opts += [res]
+        new_opts.sort(reverse=True)
 
         self.view.res_opts = new_opts
         self.view.res_opt_strings = ["{}:{}".format(int(opt[0]), int(opt[1])) for opt in new_opts]
@@ -185,6 +201,9 @@ class VideoSettingsVC(vc.ViewController):
     def __on_vsync_changed(self, event):
         self.__update_dirty_flag()
 
+    def __on_shadows_changed(self, event):
+        self.__update_dirty_flag()
+
     def activate(self):
         pf.register_event_handler(EVENT_SETTINGS_APPLY, VideoSettingsVC.__on_settings_apply, self)
         pf.register_event_handler(EVENT_RES_SETTING_CHANGED, VideoSettingsVC.__on_resolution_changed, self)
@@ -192,8 +211,10 @@ class VideoSettingsVC(vc.ViewController):
         pf.register_event_handler(EVENT_AR_SETTING_CHANGED, VideoSettingsVC.__on_aspect_ratio_changed, self)
         pf.register_event_handler(EVENT_WIN_TOP_SETTING_CHANGED, VideoSettingsVC.__on_win_ontop_changed, self)
         pf.register_event_handler(EVENT_VSYNC_SETTING_CHANGED, VideoSettingsVC.__on_vsync_changed, self)
+        pf.register_event_handler(EVENT_SHADOWS_SETTING_CHANGED, VideoSettingsVC.__on_vsync_changed, self)
 
     def deactivate(self):
+        pf.unregister_event_handler(EVENT_SHADOWS_SETTING_CHANGED, VideoSettingsVC.__on_vsync_changed)
         pf.unregister_event_handler(EVENT_VSYNC_SETTING_CHANGED, VideoSettingsVC.__on_vsync_changed)
         pf.unregister_event_handler(EVENT_WIN_TOP_SETTING_CHANGED, VideoSettingsVC.__on_win_ontop_changed)
         pf.unregister_event_handler(EVENT_AR_SETTING_CHANGED, VideoSettingsVC.__on_aspect_ratio_changed)

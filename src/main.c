@@ -446,7 +446,7 @@ int main(int argc, char **argv)
     int ret = EXIT_SUCCESS;
 
     if(argc != 3) {
-        printf("Usage: %s [base directory path (which contains 'assets' and 'shaders' folders)] [script path]\n", argv[0]);
+        printf("Usage: %s [base directory path (containing 'assets', 'shaders' and 'scripts' folders)] [script path]\n", argv[0]);
         ret = EXIT_FAILURE;
         goto fail_args;
     }

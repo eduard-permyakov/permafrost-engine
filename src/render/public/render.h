@@ -398,6 +398,12 @@ void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model);
  */
 void R_GL_GetLightFrustum(struct frustum *out);
 
+/* ---------------------------------------------------------------------------
+ * Disable or enable shadows for a particular renderable object.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_SetShadowsEnabled(void *render_private, bool on);
+
 /*###########################################################################*/
 /* RENDER ASSET LOADING                                                      */
 /*###########################################################################*/

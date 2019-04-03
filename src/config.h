@@ -41,10 +41,8 @@
 /* The far end of the camera's clipping frustrum, in OpenGL coordinates */
 #define CONFIG_DRAWDIST             1000
 #define CONFIG_TILE_TEX_RES         128
-#define CONFIG_VSYNC                false
 #define CONFIG_LOADING_SCREEN       "assets/loading_screens/battle_of_kulikovo.png"
 
-#define CONFIG_SHADOWS              true
 #define CONFIG_SHADOW_MAP_RES       2048
 /* Determines the draw distance from the light source when creating the
  * shadow map. Note that a higher drawdistance leads to more peterpanning.
@@ -57,7 +55,7 @@
  * shadowed. However, increasing the FOV results in lower-quality shadows
  * for the same shadow map resolution. 
  */
-#define CONFIG_SHADOW_FOV           128
+#define CONFIG_SHADOW_FOV           160
 
 #define CONFIG_SETTINGS_FILENAME    "pf.conf"
 

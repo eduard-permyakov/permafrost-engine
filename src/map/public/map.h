@@ -235,6 +235,12 @@ bool   M_TileForDesc(const struct map *map, struct tile_desc desc, struct tile *
  */
 void   M_GetResolution(const struct map *map, struct map_resolution *out);
 
+/* ------------------------------------------------------------------------
+ * Enable or disable rendering shadows on the map.
+ * ------------------------------------------------------------------------
+ */
+void   M_SetShadowsEnabled(struct map *map, bool on);
+
 /*###########################################################################*/
 /* MINIMAP                                                                   */
 /*###########################################################################*/

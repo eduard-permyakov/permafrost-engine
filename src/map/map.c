@@ -364,3 +364,14 @@ void M_GetResolution(const struct map *map, struct map_resolution *out)
     out->tile_h = TILES_PER_CHUNK_HEIGHT;
 }
 
+void M_SetShadowsEnabled(struct map *map, bool on)
+{
+    for(int r = 0; r < map->height; r++) {
+        for(int c = 0; c < map->width; c++) {
+
+            const struct pfchunk *chunk = &map->chunks[r * map->width + c];
+            R_GL_SetShadowsEnabled(chunk->render_private, on);
+        }
+    }
+}
+

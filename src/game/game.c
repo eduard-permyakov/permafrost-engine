@@ -244,6 +244,28 @@ static bool hb_mode_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_BOOL);
 }
 
+static bool shadows_en_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_BOOL);
+}
+
+static void shadows_en_commit(const struct sval *new_val)
+{
+    bool on = new_val->as_bool;
+    if(s_gs.map) {
+        M_SetShadowsEnabled(s_gs.map, on);
+    }
+
+    if(!s_gs.active)
+        return;
+
+    uint32_t key;
+    struct entity *curr;
+    kh_foreach(s_gs.active, key, curr, {
+        R_GL_SetShadowsEnabled(curr->render_private, on);
+    });
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -278,6 +300,18 @@ bool G_Init(void)
         .prio = 0,
         .validate = hb_mode_validate,
         .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.video.shadows_enabled",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true 
+        },
+        .prio = 0,
+        .validate = shadows_en_validate,
+        .commit = shadows_en_commit,
     });
     assert(status == SS_OKAY);
 
@@ -428,9 +462,13 @@ void G_Update(void)
 
 void G_Render(void)
 {
-#if CONFIG_SHADOWS
-    g_shadow_pass();
-#endif
+    struct sval sh_setting;
+    ss_e status = Settings_Get("pf.video.shadows_enabled", &sh_setting);
+    assert(status == SS_OKAY);
+
+    if(sh_setting.as_bool) {
+        g_shadow_pass();
+    }
     g_draw_pass();
 
     enum selection_type sel_type;
@@ -448,8 +486,9 @@ void G_Render(void)
     E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
 
     struct sval hb_setting;
-    ss_e status = Settings_Get("pf.game.healthbar_mode", &hb_setting);
+    status = Settings_Get("pf.game.healthbar_mode", &hb_setting);
     assert(status == SS_OKAY);
+
     if(hb_setting.as_bool) {
         g_render_healthbars();
     }
