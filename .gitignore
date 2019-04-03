@@ -25,3 +25,5 @@
 
 *.pyc
 *.pickle
+
+pf.conf
