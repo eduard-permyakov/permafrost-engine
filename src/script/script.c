@@ -99,6 +99,8 @@ static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
 
 static PyObject *PyPf_settings_get(PyObject *self, PyObject *args);
 static PyObject *PyPf_settings_set(PyObject *self, PyObject *args);
+static PyObject *PyPf_settings_create(PyObject *self, PyObject *args);
+static PyObject *PyPf_settings_delete(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args);
 
@@ -274,6 +276,17 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_settings_set, METH_VARARGS,
     "Updates the value of the setting with the specified name. Will throw an exception if the setting is "
     "not found or if the new value for the setting is invalid."},
+
+    {"settings_create",
+    (PyCFunction)PyPf_settings_create, METH_VARARGS,
+    "Create a new setting, the value of which will be saved in the settings file and will be accessible "
+    "in another session. Settings may hold the following types: int, float, string, bool, and tuple "
+    "of 2 floats (vec2). Setting names beginning with 'pf' are reserved for the engine."},
+
+    {"settings_delete",
+    (PyCFunction)PyPf_settings_delete, METH_VARARGS,
+    "Delete a setting with the specified name. Setting names beginning with 'pf' are reserved for the "
+    "engine and may not be deleted."},
 
     {"multiply_quaternions",
     (PyCFunction)PyPf_multiply_quaternions, METH_VARARGS,
@@ -878,6 +891,39 @@ static PyObject *PyPf_settings_get(PyObject *self, PyObject *args)
     }
 }
 
+static bool sval_from_pyobj(PyObject *obj, struct sval *out)
+{
+    if(PyString_Check(obj)) {
+
+        out->type = ST_TYPE_STRING;
+        strncpy(out->as_string, PyString_AS_STRING(obj), sizeof(out->as_string));
+        out->as_string[sizeof(out->as_string)-1] = '\0';
+
+    }else if(PyBool_Check(obj)) {
+    
+        out->type = ST_TYPE_BOOL;
+        out->as_bool = PyObject_IsTrue(obj);
+
+    }else if(PyInt_Check(obj)) {
+    
+        out->type = ST_TYPE_INT;
+        out->as_int = PyInt_AS_LONG(obj);
+
+    }else if(PyFloat_Check(obj)) {
+    
+        out->type = ST_TYPE_FLOAT;
+        out->as_float = PyFloat_AS_DOUBLE(obj);
+
+    }else if(PyArg_ParseTuple(obj, "ff", &out->as_vec2.x, &out->as_vec2.y)) {
+    
+        out->type = ST_TYPE_VEC2;
+
+    }else {
+        return false;
+    }
+    return true;
+}
+
 static PyObject *PyPf_settings_set(PyObject *self, PyObject *args)
 {
     const char *sname;
@@ -889,34 +935,7 @@ static PyObject *PyPf_settings_set(PyObject *self, PyObject *args)
     }
 
     struct sval newval;
-    vec2_t vecval;
-
-    if(PyString_Check(nvobj)) {
-
-        newval.type = ST_TYPE_STRING;
-        strncpy(newval.as_string, PyString_AS_STRING(nvobj), sizeof(newval.as_string));
-        newval.as_string[sizeof(newval.as_string)-1] = '\0';
-
-    }else if(PyBool_Check(nvobj)) {
-    
-        newval.type = ST_TYPE_BOOL;
-        newval.as_bool = PyObject_IsTrue(nvobj);
-
-    }else if(PyInt_Check(nvobj)) {
-    
-        newval.type = ST_TYPE_INT;
-        newval.as_int = PyInt_AS_LONG(nvobj);
-
-    }else if(PyFloat_Check(nvobj)) {
-    
-        newval.type = ST_TYPE_FLOAT;
-        newval.as_float = PyFloat_AS_DOUBLE(nvobj);
-
-    }else if(PyArg_ParseTuple(nvobj, "ff", &newval.as_vec2.x, &newval.as_vec2.y)) {
-    
-        newval.type = ST_TYPE_VEC2;
-
-    }else {
+    if(!sval_from_pyobj(nvobj, &newval)) {
         PyErr_SetString(PyExc_TypeError, "The new value is not one of the allowed types for settings.");
         return NULL;
     }
@@ -927,6 +946,72 @@ static PyObject *PyPf_settings_set(PyObject *self, PyObject *args)
         return NULL;
     }else if(status == SS_INVALID_VAL) {
         PyErr_SetString(PyExc_RuntimeError, "The new value is not allowed for this setting.");
+        return NULL;
+    }
+
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_settings_create(PyObject *self, PyObject *args)
+{
+    const char *name;
+    PyObject *val;
+
+    if(!PyArg_ParseTuple(args, "sO", &name, &val)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string (name) and an object (value).");
+        return NULL;
+    }
+
+    if(0 == strncmp(name, "pf", 2)) {
+        PyErr_SetString(PyExc_RuntimeError, "Settings beginning with 'pf' are reserved for the engine.");
+        return NULL;
+    }
+
+    struct sval sett_val;
+    if(!sval_from_pyobj(val, &sett_val)) {
+        PyErr_SetString(PyExc_TypeError, "The new value is not one of the allowed types for settings.");
+        return NULL;
+    }
+
+    struct setting new_sett = (struct setting) {
+        .val = sett_val,
+        .prio = 2,
+        .validate = NULL,
+        .commit = NULL
+    };
+    strncpy(new_sett.name, name, sizeof(new_sett.name));
+    new_sett.name[sizeof(new_sett.name)-1] = '\0';
+
+    ss_e status = Settings_Create(new_sett);
+    if(status != SS_OKAY) {
+        char errstr[256];
+        sprintf(errstr, "Could not create setting. [err: %d]", status);
+        PyErr_SetString(PyExc_RuntimeError, errstr);
+        return NULL;
+    }
+
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_settings_delete(PyObject *self, PyObject *args)
+{
+    const char *name;
+
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string (name).");
+        return NULL;
+    }
+
+    if(0 == strncmp(name, "pf", 2)) {
+        PyErr_SetString(PyExc_RuntimeError, "Settings beginning with 'pf' are reserved for the engine.");
+        return NULL;
+    }
+
+    ss_e status = Settings_Delete(name);
+    if(status != SS_OKAY) {
+        char errstr[256];
+        sprintf(errstr, "Could not delete setting. [err: %d]", status);
+        PyErr_SetString(PyExc_RuntimeError, errstr);
         return NULL;
     }
 
