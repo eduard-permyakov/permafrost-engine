@@ -485,6 +485,14 @@ typedef int(*nk_plugin_filter)(const struct nk_text_edit*, nk_rune unicode);
 typedef void(*nk_plugin_paste)(nk_handle, struct nk_text_edit*);
 typedef void(*nk_plugin_copy)(nk_handle, const char*, int len);
 
+typedef struct nk_vec2i(*nk_get_drawable_size)(void);
+typedef struct nk_vec2i(*nk_get_screen_size)(void);
+
+struct nk_screen_ops{
+    nk_get_drawable_size get_drawable_size;
+    nk_get_screen_size get_screen_size;
+};
+
 struct nk_allocator {
     nk_handle userdata;
     nk_plugin_alloc alloc;
@@ -1477,6 +1485,11 @@ enum nk_panel_flags {
 /// until `nk_end` or `false(0)` otherwise for example if minimized
 */
 NK_API int nk_begin(struct nk_context *ctx, const char *title, struct nk_rect bounds, nk_flags flags);
+/*/// #### nk_begin_titled_with_vres
+/// Like nk_begin, but with an additional 'vres' parameter, specifying the virtual screen resolution used by the window.
+*/
+NK_API int nk_begin_with_vres(struct nk_context *ctx, const char *title, struct nk_rect bounds, nk_flags flags, struct nk_vec2i vres);
+
 /*/// #### nk_begin_titled
 /// Extended window start with separated title and identifier to allow multiple
 /// windows with same title but not name
@@ -1492,11 +1505,12 @@ NK_API int nk_begin(struct nk_context *ctx, const char *title, struct nk_rect bo
 /// __title__   | Window title displayed inside header if flag `NK_WINDOW_TITLE` or either `NK_WINDOW_CLOSABLE` or `NK_WINDOW_MINIMIZED` was set
 /// __bounds__  | Initial position and window size. However if you do not define `NK_WINDOW_SCALABLE` or `NK_WINDOW_MOVABLE` you can set window position and size every frame
 /// __flags__   | Window flags defined in the nk_panel_flags section with a number of different window behaviors
+/// __vres__    | The virtual screen resolution used by the window.
 ///
 /// Returns `true(1)` if the window can be filled up with widgets from this point
 /// until `nk_end` or `false(0)` otherwise for example if minimized
 */
-NK_API int nk_begin_titled(struct nk_context *ctx, const char *name, const char *title, struct nk_rect bounds, nk_flags flags);
+NK_API int nk_begin_titled(struct nk_context *ctx, const char *name, const char *title, struct nk_rect bounds, nk_flags flags, struct nk_vec2i vres);
 /*/// #### nk_end
 /// Needs to be called at the end of the window building process to process scaling, scrollbars and general cleanup.
 /// All widget calls after this functions will result in asserts or no state changes
@@ -4324,6 +4338,7 @@ enum nk_command_type {
     NK_COMMAND_POLYLINE,
     NK_COMMAND_TEXT,
     NK_COMMAND_IMAGE,
+    NK_COMMAND_SET_VRES,
     NK_COMMAND_CUSTOM
 };
 
@@ -4466,6 +4481,16 @@ struct nk_command_image {
     struct nk_color col;
 };
 
+struct nk_command_set_vres {
+    struct nk_command header;
+    unsigned short x, y;
+};
+
+struct nk_command_userdata {
+    enum nk_command_type type; 
+    union { struct nk_vec2i vec2i; };
+};
+
 typedef void (*nk_command_custom_callback)(void *canvas, short x,short y,
     unsigned short w, unsigned short h, nk_handle callback_data);
 struct nk_command_custom {
@@ -4558,7 +4583,10 @@ struct nk_keyboard {
 
 struct nk_input {
     struct nk_keyboard keyboard;
+    /* 'mouse' holds the mouse data transformed for the virtual resolution of the current window. */
     struct nk_mouse mouse;
+    /* 'window_mouse' holds the mouse data in physical window coordinates. */
+    struct nk_mouse window_mouse;
 };
 
 NK_API int nk_input_has_mouse_click(const struct nk_input*, enum nk_buttons);
@@ -4725,6 +4753,7 @@ NK_API void nk_draw_list_fill_poly_convex(struct nk_draw_list*, const struct nk_
 /* misc */
 NK_API void nk_draw_list_add_image(struct nk_draw_list*, struct nk_image texture, struct nk_rect rect, struct nk_color);
 NK_API void nk_draw_list_add_text(struct nk_draw_list*, const struct nk_user_font*, struct nk_rect, const char *text, int len, float font_height, struct nk_color);
+NK_API void nk_draw_list_add_set_vres(struct nk_draw_list *list, struct nk_vec2i vres);
 #ifdef NK_INCLUDE_COMMAND_USERDATA
 NK_API void nk_draw_list_push_userdata(struct nk_draw_list*, nk_handle userdata);
 #endif
@@ -5344,6 +5373,7 @@ struct nk_window {
     nk_hash name;
     char name_string[NK_WINDOW_MAX_NAME];
     nk_flags flags;
+    struct nk_vec2i vres;
 
     struct nk_rect bounds;
     struct nk_scroll scrollbar;
@@ -5506,6 +5536,7 @@ struct nk_context {
     struct nk_style style;
     struct nk_buffer memory;
     struct nk_clipboard clip;
+    struct nk_screen_ops screen;
     nk_flags last_widget_state;
     enum nk_button_behavior button_behavior;
     struct nk_configuration_stacks stacks;
@@ -10319,6 +10350,22 @@ nk_draw_list_add_text(struct nk_draw_list *list, const struct nk_user_font *font
         unicode = next;
     }
 }
+
+NK_API void
+nk_draw_list_add_set_vres(struct nk_draw_list *list, struct nk_vec2i vres)
+{
+    struct nk_draw_command *dcmd = nk_draw_list_push_command(list, list->clip_rect, (nk_handle){0});
+    NK_ASSERT(dcmd);
+    
+    dcmd->userdata.ptr = malloc(sizeof(struct nk_command_userdata));
+    if(!dcmd->userdata.ptr)
+        return;
+    *(struct nk_command_userdata*)(dcmd->userdata.ptr) = (struct nk_command_userdata) {
+        .type = NK_COMMAND_SET_VRES,
+        .vec2i = vres
+    };
+}
+
 NK_API nk_flags
 nk_convert(struct nk_context *ctx, struct nk_buffer *cmds,
     struct nk_buffer *vertices, struct nk_buffer *elements,
@@ -10452,6 +10499,10 @@ nk_convert(struct nk_context *ctx, struct nk_buffer *cmds,
         case NK_COMMAND_CUSTOM: {
             const struct nk_command_custom *c = (const struct nk_command_custom*)cmd;
             c->callback(&ctx->draw_list, c->x, c->y, c->w, c->h, c->callback_data);
+        } break;
+        case NK_COMMAND_SET_VRES: {
+            const struct nk_command_set_vres *c = (const struct nk_command_set_vres*)cmd;
+            nk_draw_list_add_set_vres(&ctx->draw_list, (struct nk_vec2i){c->x, c->y});
         } break;
         default: break;
         }
@@ -13879,14 +13930,14 @@ nk_input_begin(struct nk_context *ctx)
     if (!ctx) return;
     in = &ctx->input;
     for (i = 0; i < NK_BUTTON_MAX; ++i)
-        in->mouse.buttons[i].clicked = 0;
+        in->window_mouse.buttons[i].clicked = 0;
 
     in->keyboard.text_len = 0;
-    in->mouse.scroll_delta = nk_vec2(0,0);
-    in->mouse.prev.x = in->mouse.pos.x;
-    in->mouse.prev.y = in->mouse.pos.y;
-    in->mouse.delta.x = 0;
-    in->mouse.delta.y = 0;
+    in->window_mouse.scroll_delta = nk_vec2(0,0);
+    in->window_mouse.prev.x = in->window_mouse.pos.x;
+    in->window_mouse.prev.y = in->window_mouse.pos.y;
+    in->window_mouse.delta.x = 0;
+    in->window_mouse.delta.y = 0;
     for (i = 0; i < NK_KEY_MAX; i++)
         in->keyboard.keys[i].clicked = 0;
 }
@@ -13897,12 +13948,12 @@ nk_input_end(struct nk_context *ctx)
     NK_ASSERT(ctx);
     if (!ctx) return;
     in = &ctx->input;
-    if (in->mouse.grab)
-        in->mouse.grab = 0;
-    if (in->mouse.ungrab) {
-        in->mouse.grabbed = 0;
-        in->mouse.ungrab = 0;
-        in->mouse.grab = 0;
+    if (in->window_mouse.grab)
+        in->window_mouse.grab = 0;
+    if (in->window_mouse.ungrab) {
+        in->window_mouse.grabbed = 0;
+        in->window_mouse.ungrab = 0;
+        in->window_mouse.grab = 0;
     }
 }
 NK_API void
@@ -13912,10 +13963,10 @@ nk_input_motion(struct nk_context *ctx, int x, int y)
     NK_ASSERT(ctx);
     if (!ctx) return;
     in = &ctx->input;
-    in->mouse.pos.x = (float)x;
-    in->mouse.pos.y = (float)y;
-    in->mouse.delta.x = in->mouse.pos.x - in->mouse.prev.x;
-    in->mouse.delta.y = in->mouse.pos.y - in->mouse.prev.y;
+    in->window_mouse.pos.x = (float)x;
+    in->window_mouse.pos.y = (float)y;
+    in->window_mouse.delta.x = in->window_mouse.pos.x - in->window_mouse.prev.x;
+    in->window_mouse.delta.y = in->window_mouse.pos.y - in->window_mouse.prev.y;
 }
 NK_API void
 nk_input_key(struct nk_context *ctx, enum nk_keys key, int down)
@@ -13940,9 +13991,9 @@ nk_input_button(struct nk_context *ctx, enum nk_buttons id, int x, int y, int do
     NK_ASSERT(ctx);
     if (!ctx) return;
     in = &ctx->input;
-    if (in->mouse.buttons[id].down == down) return;
+    if (in->window_mouse.buttons[id].down == down) return;
 
-    btn = &in->mouse.buttons[id];
+    btn = &in->window_mouse.buttons[id];
     btn->clicked_pos.x = (float)x;
     btn->clicked_pos.y = (float)y;
     btn->down = down;
@@ -13953,8 +14004,8 @@ nk_input_scroll(struct nk_context *ctx, struct nk_vec2 val)
 {
     NK_ASSERT(ctx);
     if (!ctx) return;
-    ctx->input.mouse.scroll_delta.x += val.x;
-    ctx->input.mouse.scroll_delta.y += val.y;
+    ctx->input.window_mouse.scroll_delta.x += val.x;
+    ctx->input.window_mouse.scroll_delta.y += val.y;
 }
 NK_API void
 nk_input_glyph(struct nk_context *ctx, const nk_glyph glyph)
@@ -16188,15 +16239,90 @@ nk_remove_window(struct nk_context *ctx, struct nk_window *win)
     win->prev = 0;
     ctx->count--;
 }
+NK_LIB void
+nk_window_mouse_begin(struct nk_context *ctx, struct nk_vec2i vres)
+{
+    struct nk_vec2i curr_res = ctx->screen.get_drawable_size();
+
+    for(int i = 0; i < NK_BUTTON_MAX; i++) {
+        ctx->input.mouse.buttons[i].down = ctx->input.window_mouse.buttons[i].down;
+        ctx->input.mouse.buttons[i].clicked = ctx->input.window_mouse.buttons[i].clicked;
+        ctx->input.mouse.buttons[i].clicked_pos = (struct nk_vec2) {
+            ctx->input.window_mouse.buttons[i].clicked_pos.x / (float)curr_res.x * vres.x,
+            ctx->input.window_mouse.buttons[i].clicked_pos.y / (float)curr_res.y * vres.y
+        };
+    }
+    ctx->input.mouse.pos = (struct nk_vec2) {
+        ctx->input.window_mouse.pos.x / (float)curr_res.x * vres.x,
+        ctx->input.window_mouse.pos.y / (float)curr_res.y * vres.y,
+    };
+    ctx->input.mouse.prev = (struct nk_vec2) {
+        ctx->input.window_mouse.prev.x / (float)curr_res.x * vres.x,
+        ctx->input.window_mouse.prev.y / (float)curr_res.y * vres.y,
+    };
+    ctx->input.mouse.delta = (struct nk_vec2) {
+        ctx->input.window_mouse.delta.x / (float)curr_res.x * vres.x,
+        ctx->input.window_mouse.delta.y / (float)curr_res.y * vres.y,
+    };
+    ctx->input.mouse.scroll_delta = (struct nk_vec2) {
+        ctx->input.window_mouse.scroll_delta.x / (float)curr_res.x * vres.x,
+        ctx->input.window_mouse.scroll_delta.y / (float)curr_res.y * vres.y,
+    };
+    ctx->input.mouse.grab = ctx->input.window_mouse.grab;
+    ctx->input.mouse.grabbed = ctx->input.window_mouse.grabbed;
+    ctx->input.mouse.ungrab = ctx->input.window_mouse.ungrab;
+}
+NK_LIB void
+nk_window_mouse_end(struct nk_context *ctx, struct nk_vec2i vres)
+{
+    struct nk_vec2i curr_res = ctx->screen.get_drawable_size();
+
+    for(int i = 0; i < NK_BUTTON_MAX; i++) {
+        ctx->input.window_mouse.buttons[i].down = ctx->input.mouse.buttons[i].down;
+        ctx->input.window_mouse.buttons[i].clicked = ctx->input.mouse.buttons[i].clicked;
+        ctx->input.window_mouse.buttons[i].clicked_pos = (struct nk_vec2) {
+            ctx->input.mouse.buttons[i].clicked_pos.x / (float)vres.x * curr_res.x,
+            ctx->input.mouse.buttons[i].clicked_pos.y / (float)vres.y * curr_res.y
+        };
+    }
+    ctx->input.window_mouse.pos = (struct nk_vec2) {
+        ctx->input.mouse.pos.x / (float)vres.x * curr_res.x,
+        ctx->input.mouse.pos.y / (float)vres.y * curr_res.y,
+    };
+    ctx->input.window_mouse.prev = (struct nk_vec2) {
+        ctx->input.mouse.prev.x / (float)vres.x * curr_res.x,
+        ctx->input.mouse.prev.y / (float)vres.y * curr_res.y,
+    };
+    ctx->input.window_mouse.delta = (struct nk_vec2) {
+        ctx->input.mouse.delta.x / (float)vres.x * curr_res.x,
+        ctx->input.mouse.delta.y / (float)vres.y * curr_res.y,
+    };
+    ctx->input.window_mouse.scroll_delta = (struct nk_vec2) {
+        ctx->input.mouse.scroll_delta.x / (float)vres.x * curr_res.x,
+        ctx->input.mouse.scroll_delta.y / (float)vres.y * curr_res.y,
+    };
+    ctx->input.window_mouse.grab = ctx->input.mouse.grab;
+    ctx->input.window_mouse.grabbed = ctx->input.mouse.grabbed;
+    ctx->input.window_mouse.ungrab = ctx->input.mouse.ungrab;
+}
 NK_API int
 nk_begin(struct nk_context *ctx, const char *title,
     struct nk_rect bounds, nk_flags flags)
 {
-    return nk_begin_titled(ctx, title, title, bounds, flags);
+    struct nk_vec2i native_res = ctx->screen.get_screen_size();
+    return nk_begin_titled(ctx, title, title, bounds, flags, native_res);
 }
+
+NK_API int
+nk_begin_with_vres(struct nk_context *ctx, const char *title,
+    struct nk_rect bounds, nk_flags flags, struct nk_vec2i vres)
+{
+    return nk_begin_titled(ctx, title, title, bounds, flags, vres);
+}
+
 NK_API int
 nk_begin_titled(struct nk_context *ctx, const char *name, const char *title,
-    struct nk_rect bounds, nk_flags flags)
+    struct nk_rect bounds, nk_flags flags, struct nk_vec2i vres)
 {
     struct nk_window *win;
     struct nk_style *style;
@@ -16263,6 +16389,17 @@ nk_begin_titled(struct nk_context *ctx, const char *name, const char *title,
         win->layout = 0;
         return 0;
     } else nk_start(ctx, win);
+
+    win->vres = vres;
+    nk_window_mouse_begin(ctx, vres);
+
+    struct nk_command_set_vres *cmd;
+    cmd = (struct nk_command_set_vres*)
+        nk_command_buffer_push(&win->buffer, NK_COMMAND_SET_VRES, sizeof(*cmd));
+    if(cmd) {
+        cmd->x = win->vres.x;
+        cmd->y = win->vres.y;
+    }
 
     /* window overlapping */
     if (!(win->flags & NK_WINDOW_HIDDEN) && !(win->flags & NK_WINDOW_NO_INPUT))
@@ -16357,6 +16494,7 @@ nk_end(struct nk_context *ctx)
     if (!ctx || !ctx->current)
         return;
 
+    nk_window_mouse_end(ctx, ctx->current->vres);
     layout = ctx->current->layout;
     if (!layout || (layout->type == NK_PANEL_WINDOW && (ctx->current->flags & NK_WINDOW_HIDDEN))) {
         ctx->current = 0;
