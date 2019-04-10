@@ -41,9 +41,9 @@ class VideoSettingsWindow(pf.Window):
     HEIGHT = 400
 
     def __init__(self):
-        resx, resy = pf.get_resolution()
-        super(VideoSettingsWindow, self).__init__("VideoSettings", ((resx - VideoSettingsWindow.WIDTH)/2, 
-            (resy - VideoSettingsWindow.HEIGHT)/2, VideoSettingsWindow.WIDTH, VideoSettingsWindow.HEIGHT), 0)
+        vresx, vresy = (1920, 1080)
+        super(VideoSettingsWindow, self).__init__("VideoSettings", ((vresx - VideoSettingsWindow.WIDTH)/2, 
+            (vresy - VideoSettingsWindow.HEIGHT)/2, VideoSettingsWindow.WIDTH, VideoSettingsWindow.HEIGHT), 0, (vresx, vresy))
 
         self.ar_idx = 0
         self.ar_opts = [

@@ -45,12 +45,12 @@ class SettingsTabbedWindow(pf.Window):
     SELECTED_HOVER_COLOR = (75, 75, 75, 255)
 
     def __init__(self):
-        resx, resy = pf.get_resolution()
+        vresx, vresy = (1920, 1080)
 
-        dims = ((resx - SettingsTabbedWindow.WIDTH)/2, (resy - SettingsTabbedWindow.HEIGHT)/2, 
+        dims = ((vresx - SettingsTabbedWindow.WIDTH)/2, (vresy - SettingsTabbedWindow.HEIGHT)/2, 
             SettingsTabbedWindow.WIDTH, SettingsTabbedWindow.HEIGHT)
         super(SettingsTabbedWindow, self).__init__("Settings", dims, 
-            pf.NK_WINDOW_NO_SCROLLBAR | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_BORDER | pf.NK_WINDOW_TITLE | pf.NK_WINDOW_CLOSABLE)
+            pf.NK_WINDOW_NO_SCROLLBAR | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_BORDER | pf.NK_WINDOW_TITLE | pf.NK_WINDOW_CLOSABLE, (vresx, vresy))
         self.padding = (0.0, 0.0)
 
         self.active_idx = 0

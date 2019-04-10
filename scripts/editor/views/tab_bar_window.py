@@ -40,10 +40,10 @@ class TabBarWindow(pf.Window):
     SELECTED_HOVER_COLOR = (75, 75, 75, 255)
 
     def __init__(self):
-        resx, _ = pf.get_resolution()
+        vresx, vresy = (1920, 1080)
 
-        dims = (0, 0, resx - UI_TAB_BAR_COL_WIDTH, UI_TAB_BAR_HEIGHT)
-        super(TabBarWindow, self).__init__("TabBar", dims, pf.NK_WINDOW_NO_SCROLLBAR)
+        dims = (0, 0, vresx - UI_TAB_BAR_COL_WIDTH, UI_TAB_BAR_HEIGHT)
+        super(TabBarWindow, self).__init__("TabBar", dims, pf.NK_WINDOW_NO_SCROLLBAR, (vresx, vresy))
         self.active_idx = 0
         self.labels = []
         self.child_windows = []

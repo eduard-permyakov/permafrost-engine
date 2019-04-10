@@ -49,9 +49,9 @@ class ActionPadWindow(pf.Window):
             + (ACTION_NUM_COLS-1) * ActionPadWindow.BUTTON_PADDING +(ACTION_NUM_COLS*2) + 4
         height = ActionPadWindow.BUTTON_WIDTH * ACTION_NUM_ROWS \
             + (ACTION_NUM_ROWS-1) * ActionPadWindow.BUTTON_PADDING +(ACTION_NUM_ROWS*2) + 6
-        resx, resy = pf.get_resolution()
-        super(ActionPadWindow, self).__init__("ActionPad", (resx - width - 10, resy - height - 10, 
-            width, height), pf.NK_WINDOW_BORDER | pf.NK_WINDOW_NO_SCROLLBAR)
+        vresx, vresy = (1920, 1080)
+        super(ActionPadWindow, self).__init__("ActionPad", (vresx - width - 10, vresy - height - 10, 
+            width, height), pf.NK_WINDOW_BORDER | pf.NK_WINDOW_NO_SCROLLBAR, (vresx, vresy))
         self.spacing = (float(ActionPadWindow.BUTTON_PADDING), float(ActionPadWindow.BUTTON_PADDING))
         self.padding = (2.0, 4.0)
         self.clear_actions()

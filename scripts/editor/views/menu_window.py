@@ -38,9 +38,9 @@ from constants import *
 class MenuButtonWindow(pf.Window):
     
     def __init__(self, menu_window):
-        resx, _ = pf.get_resolution()
+        vresx, vresy = (1920, 1080)
         super(MenuButtonWindow, self).__init__("MenuButton", 
-            (resx - UI_TAB_BAR_COL_WIDTH, 0, UI_TAB_BAR_COL_WIDTH, UI_TAB_BAR_HEIGHT),
+            (vresx - UI_TAB_BAR_COL_WIDTH, 0, UI_TAB_BAR_COL_WIDTH, UI_TAB_BAR_HEIGHT, (vresx, vresy)),
             pf.NK_WINDOW_NO_SCROLLBAR)
         self.menu = menu_window
 

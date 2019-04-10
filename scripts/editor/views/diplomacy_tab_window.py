@@ -42,9 +42,9 @@ class DiplomacyTabWindow(pf.Window):
     DISABLED_TEXT_COLOR = (60, 60, 60, 255)
 
     def __init__(self):
-        _, resy = pf.get_resolution()
+        vresx, vresy = (1920, 1080)
         super(DiplomacyTabWindow, self).__init__("DiplomacyTab", 
-            (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, resy - UI_TAB_BAR_HEIGHT - 1), pf.NK_WINDOW_BORDER)
+            (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, vresy - UI_TAB_BAR_HEIGHT - 1), pf.NK_WINDOW_BORDER, (vresx, vresy))
         self.selected_fac_idx = 0
 
         factions_list = pf.get_factions_list()

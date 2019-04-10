@@ -41,9 +41,9 @@ class GameSettingsWindow(pf.Window):
     HEIGHT = 400
 
     def __init__(self):
-        resx, resy = pf.get_resolution()
-        super(GameSettingsWindow, self).__init__("GameSettings", ((resx - GameSettingsWindow.WIDTH)/2, 
-            (resy - GameSettingsWindow.HEIGHT)/2, GameSettingsWindow.WIDTH, GameSettingsWindow.HEIGHT), 0)
+        vresx, vresy = (1920, 1080)
+        super(GameSettingsWindow, self).__init__("GameSettings", ((vresx - GameSettingsWindow.WIDTH)/2, 
+            (vresy - GameSettingsWindow.HEIGHT)/2, GameSettingsWindow.WIDTH, GameSettingsWindow.HEIGHT), 0, (vresx, vresy))
         self.hb_idx = 0
         self.dirty = False
 

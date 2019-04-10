@@ -39,9 +39,9 @@ import globals
 class TerrainTabWindow(pf.Window):
 
     def __init__(self):
-        _, resy = pf.get_resolution()
+        vresx, vresy = (1920, 1080)
         super(TerrainTabWindow, self).__init__("TerrainTab", 
-            (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, resy - UI_TAB_BAR_HEIGHT - 1), pf.NK_WINDOW_BORDER)
+            (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, vresy - UI_TAB_BAR_HEIGHT - 1), pf.NK_WINDOW_BORDER, (vresx, vresy))
 
         self.selected_mat_idx = 0
         self.brush_size_idx = 0

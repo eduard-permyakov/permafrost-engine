@@ -40,11 +40,11 @@ class PerfStatsWindow(pf.Window):
     HEIGHT = 320
 
     def __init__(self):
-        resx, resy = pf.get_resolution()
+        vresx, vresy = (1920, 1080)
         super(PerfStatsWindow, self).__init__("Performance", 
-            (resx/2 - PerfStatsWindow.WIDTH/2, resy/2 - PerfStatsWindow.HEIGHT/2, PerfStatsWindow.WIDTH, PerfStatsWindow.HEIGHT), 
+            (vresx/2 - PerfStatsWindow.WIDTH/2, vresy/2 - PerfStatsWindow.HEIGHT/2, PerfStatsWindow.WIDTH, PerfStatsWindow.HEIGHT), 
             pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE | 
-            pf.NK_WINDOW_CLOSABLE | pf.NK_WINDOW_NO_SCROLLBAR)
+            pf.NK_WINDOW_CLOSABLE | pf.NK_WINDOW_NO_SCROLLBAR, (vresx, vresy))
         self.tickindex = 0
         self.ticksum_ms = 0
         self.max_frame_latency = 0

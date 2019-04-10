@@ -51,9 +51,9 @@ class ObjectsTabWindow(pf.Window):
     OBJECTS_MODE_SELECT = 1
 
     def __init__(self):
-        _, resy = pf.get_resolution()
+        vresx, vresy = (1920, 1080)
         super(ObjectsTabWindow, self).__init__("ObjectsTab", 
-            (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, resy - UI_TAB_BAR_HEIGHT - 1), pf.NK_WINDOW_BORDER)
+            (0, UI_TAB_BAR_HEIGHT + 1, UI_LEFT_PANE_WIDTH, vresy - UI_TAB_BAR_HEIGHT - 1), pf.NK_WINDOW_BORDER, (vresx, vresy))
         self.mode = self.OBJECTS_MODE_PLACE
         self.objects_list = []
         self.selected_object_idx = 0

@@ -40,10 +40,10 @@ class FileChooser(pf.Window):
     WINDOW_HEIGHT = 260
 
     def __init__(self, title):
-        resx, resy = pf.get_resolution()
+        vresx, vresy = (1920, 1080)
         super(FileChooser, self).__init__(title, 
-            (resx / 2 - FileChooser.WINDOW_WIDTH/ 2, resy / 2 - FileChooser.WINDOW_HEIGHT / 2, 
-            FileChooser.WINDOW_WIDTH, FileChooser.WINDOW_HEIGHT), pf.NK_WINDOW_BORDER | pf.NK_WINDOW_NO_SCROLLBAR | pf.NK_WINDOW_TITLE)
+            (vresx / 2 - FileChooser.WINDOW_WIDTH/ 2, vresy / 2 - FileChooser.WINDOW_HEIGHT / 2, 
+            FileChooser.WINDOW_WIDTH, FileChooser.WINDOW_HEIGHT), pf.NK_WINDOW_BORDER | pf.NK_WINDOW_NO_SCROLLBAR | pf.NK_WINDOW_TITLE, (vresx, vresy))
         import os 
         self.mapstring = os.path.realpath(pf.get_basedir()) + "/assets/maps/"
         self.scenestring = os.path.realpath(pf.get_basedir()) + "/assets/maps/"
