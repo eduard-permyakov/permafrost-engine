@@ -42,11 +42,11 @@
 #define BORDER_PX_WIDTH (1.0)
 
 /* Must match the definition in the vertex shader */
-#define HB_WIDTH  (40.0)
-#define HB_HEIGHT (4.0)
+#define HB_HEIGHT (4.0/1080)
+#define HB_WIDTH  (5.0*HB_HEIGHT)
 
-#define DIST_TO_WIDTH_PC(d)  ((d)/HB_WIDTH)
-#define DIST_TO_HEIGHT_PC(d) ((d)/HB_HEIGHT)
+#define CURR_HB_HEIGHT  (max(HB_HEIGHT * curr_res.y, 3))
+#define CURR_HB_WIDTH   (HB_WIDTH  * curr_res.x)
 
 /*****************************************************************************/
 /* INPUTS                                                                    */
@@ -67,6 +67,12 @@ out vec4 o_frag_color;
 /* UNIFORMS                                                                  */
 /*****************************************************************************/
 
+uniform ivec2 curr_res;
+
+/*****************************************************************************/
+/* PROGRAM                                                                   */
+/*****************************************************************************/
+
 void main()
 {
     vec4 bar_clr = mix(NO_HP_CLR, FULL_HP_CLR, from_vertex.health_pc);
@@ -76,10 +82,10 @@ void main()
         bar_clr *= 0.8;
 
     /* We are in the border region */
-    if(from_vertex.uv.y < DIST_TO_HEIGHT_PC(BORDER_PX_WIDTH) 
-    || from_vertex.uv.y > (1.0-DIST_TO_HEIGHT_PC(BORDER_PX_WIDTH))
-    || from_vertex.uv.x < DIST_TO_WIDTH_PC(BORDER_PX_WIDTH)
-    || from_vertex.uv.x > (1.0-DIST_TO_WIDTH_PC(BORDER_PX_WIDTH)))
+    if(from_vertex.uv.y < BORDER_PX_WIDTH/CURR_HB_HEIGHT
+    || from_vertex.uv.y > (1.0 - BORDER_PX_WIDTH/CURR_HB_HEIGHT)
+    || from_vertex.uv.x < BORDER_PX_WIDTH/CURR_HB_WIDTH
+    || from_vertex.uv.x > (1.0 - BORDER_PX_WIDTH/CURR_HB_WIDTH))
         o_frag_color = BG_CLR;
     /* We are in the region right of a partially full healthbar */
     else if(from_vertex.uv.x > from_vertex.health_pc)

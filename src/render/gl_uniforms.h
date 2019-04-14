@@ -84,5 +84,6 @@
 /* Used for rendering the status bars. */
 #define GL_U_ENT_TOP_OFFSETS_SS "ent_top_offsets_ss"
 #define GL_U_ENT_HEALTH_PC      "ent_health_pc"
+#define GL_U_CURR_RES           "curr_res"
 
 #endif

@@ -129,6 +129,11 @@ void R_GL_DrawHealthbars(size_t num_ents, GLfloat *ent_health_pc, vec3_t *ent_to
     shader_prog = R_Shader_GetProgForName("statusbar");
     glUseProgram(shader_prog);
 
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    GLuint loc = glGetUniformLocation(shader_prog, GL_U_CURR_RES);
+    glUniform2iv(loc, 1, (int[2]){w, h});
+
     /* Populate shader uniform arrays with screenspace offsets and health percentages. */
     for(int i = 0; i < num_ents; i++) {
     

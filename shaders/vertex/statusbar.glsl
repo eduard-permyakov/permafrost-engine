@@ -41,8 +41,11 @@ layout (location = 1) in vec2 in_uv;
 #define MAX_HBS   (512)
 
 /* Must match the definition in the fragment shader */
-#define HB_WIDTH  (40.0)
-#define HB_HEIGHT (4.0)
+#define HB_HEIGHT (4.0/1080)
+#define HB_WIDTH  (5.0*HB_HEIGHT)
+
+#define CURR_HB_HEIGHT  (max(HB_HEIGHT * curr_res.y, 3))
+#define CURR_HB_WIDTH   (HB_WIDTH  * curr_res.x)
 
 /*****************************************************************************/
 /* OUTPUTS                                                                   */
@@ -61,6 +64,8 @@ out VertexToFrag {
 uniform mat4 view;
 uniform mat4 projection;
 
+uniform ivec2 curr_res;
+
 uniform vec2  ent_top_offsets_ss[MAX_HBS];
 uniform float ent_health_pc[MAX_HBS];
 
@@ -73,7 +78,7 @@ void main()
     to_fragment.uv = in_uv;
     to_fragment.health_pc = ent_health_pc[gl_InstanceID];
 
-    vec2 ss_pos = vec2(in_pos.x * HB_WIDTH, in_pos.y * HB_HEIGHT);
+    vec2 ss_pos = vec2(in_pos.x * CURR_HB_WIDTH, in_pos.y * CURR_HB_HEIGHT);
     ss_pos += ent_top_offsets_ss[gl_InstanceID];
     gl_Position = projection * view * vec4(ss_pos, 0.0, 1.0);
 }
