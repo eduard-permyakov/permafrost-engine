@@ -42,6 +42,7 @@
 #include "../event.h"
 #include "../collision.h"
 #include "../config.h"
+#include "../main.h"
 
 #include <assert.h>
 
@@ -49,16 +50,30 @@ struct rect{
     int x, y, width, height;
 };
 
+enum ui_resize_opts{
+    PFNK_FLEX_LEFT_MARGIN       = (1 << 0),
+    PFNK_FLEX_WIDTH             = (1 << 1),
+    PFNK_FLEX_RIGHT_MARGIN      = (1 << 2),
+    PFNK_FLEX_TOP_MARGIN        = (1 << 3),
+    PFNK_FLEX_HEIGHT            = (1 << 4),
+    PFNK_FLEX_BOT_MARGIN        = (1 << 5)
+};
+
 typedef struct {
     PyObject_HEAD
     const char             *name;
-    struct rect             rect;
+    struct rect             rect; /* In virtual window coordinates */
     int                     flags;
     struct nk_style_window  style;
+    int                     resize_mask;
+    /* The resolution for which the position and size of the window are 
+     * defined. When the physical screen resolution changes to one that is
+     * not equal to this window's virtual resolution, the window bounds
+     * will be transformed according to the resize mask. */
+    struct nk_vec2i         virt_res;
 }PyWindowObject;
 
-static int       PyWindow_init(PyWindowObject *self, PyObject *args);
-
+static int       PyWindow_init(PyWindowObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_layout_row_static(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_layout_row_dynamic(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_layout_row(PyWindowObject *self, PyObject *args);
@@ -106,7 +121,6 @@ static PyObject *PyWindow_get_scrollbar_size(PyWindowObject *self, void *closure
 static int       PyWindow_set_scrollbar_size(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_min_size(PyWindowObject *self, void *closure);
 static int       PyWindow_set_min_size(PyWindowObject *self, PyObject *value, void *closure);
-
 static PyObject *PyWindow_get_closed(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_hidden(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_interactive(PyWindowObject *self, void *closure);
@@ -354,14 +368,18 @@ static int parse_float_pair(PyObject *tuple, float *out_a, float *out_b)
     return 0;
 }
 
-static int PyWindow_init(PyWindowObject *self, PyObject *args)
+static int PyWindow_init(PyWindowObject *self, PyObject *args, PyObject *kwargs)
 {
     const char *name;
     struct rect rect;
     int flags;
+    int vres[2];
+    int resize_mask = 0;
+    static char *kwlist[] = { "name", "bounds", "flags", "virtual_resolution", "resize_mask", NULL };
 
-    if(!PyArg_ParseTuple(args, "s(iiii)i", &name, &rect.x, &rect.y, &rect.width, &rect.height, &flags)) {
-        PyErr_SetString(PyExc_TypeError, "3 arguments expected: integer, tuple of 4 integers, and integer.");
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s(iiii)i(ii)|i", kwlist, &name, &rect.x, &rect.y, 
+                                    &rect.width, &rect.height, &flags, &vres[0], &vres[1], &resize_mask)) {
+        PyErr_SetString(PyExc_TypeError, "4 arguments expected: integer, tuple of 4 integers, integer, and a tuple of 2 integers.");
         return -1;
     }
 
@@ -369,6 +387,9 @@ static int PyWindow_init(PyWindowObject *self, PyObject *args)
     self->rect = rect;
     self->flags = flags;
     self->style = s_nk_ctx->style.window;
+    self->resize_mask = resize_mask;
+    self->virt_res.x = vres[0];
+    self->virt_res.y = vres[1];
 
     self->flags |= (NK_WINDOW_CLOSED | NK_WINDOW_HIDDEN); /* closed by default */
     return 0;
@@ -988,9 +1009,8 @@ static void active_windows_update(void *user, void *event)
         struct nk_style_window saved_style = s_nk_ctx->style.window;
         s_nk_ctx->style.window = win->style;
 
-
-        if(nk_begin(s_nk_ctx, win->name, 
-            nk_rect(win->rect.x, win->rect.y, win->rect.width, win->rect.height), win->flags)) {
+        if(nk_begin_with_vres(s_nk_ctx, win->name, 
+            nk_rect(win->rect.x, win->rect.y, win->rect.width, win->rect.height), win->flags, win->virt_res)) {
 
             call_critfail((PyObject*)win, "update");
         }
@@ -1050,6 +1070,9 @@ void S_UI_PyRegister(PyObject *module)
 
 bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
 {
+    int w, h;    
+    Engine_WinDrawableSize(&w, &h);
+
     for(int i = 0; i < kv_size(s_active_windows); i++) {
 
         PyWindowObject *win = kv_A(s_active_windows, i);
@@ -1059,6 +1082,9 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
         || win->flags & NK_WINDOW_CLOSED) {
             continue; 
         }
+
+        int vmouse_x = (float)mouse_x / w * win->virt_res.x;
+        int vmouse_y = (float)mouse_y / h * win->virt_res.y;
 
         /* For minimized windows, only the header is visible */
         struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
@@ -1071,7 +1097,7 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
         }
 
         if(C_PointInsideRect2D(
-            (vec2_t){mouse_x,                       mouse_y},
+            (vec2_t){vmouse_x,                      vmouse_y},
             (vec2_t){win->rect.x,                   win->rect.y},
             (vec2_t){win->rect.x + visible_size.x,  win->rect.y},
             (vec2_t){win->rect.x + visible_size.x,  win->rect.y + visible_size.y},

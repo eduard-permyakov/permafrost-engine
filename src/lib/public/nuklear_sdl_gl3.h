@@ -13,9 +13,14 @@
 #ifndef NK_SDL_GL3_H_
 #define NK_SDL_GL3_H_
 
+#include "../../main.h"
+#include "../../pf_math.h"
+
 #include <SDL.h>
 #include <SDL_opengl.h>
 
+static struct nk_vec2i nk_sdl_get_drawable_size(void);
+static struct nk_vec2i nk_sdl_get_screen_size(void);
 
 NK_API struct nk_context*   nk_sdl_init(SDL_Window *win);
 NK_API void                 nk_sdl_font_stash_begin(struct nk_font_atlas **atlas);
@@ -188,20 +193,12 @@ nk_sdl_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element_b
     struct nk_sdl_device *dev = &sdl.ogl;
     int width, height;
     int display_width, display_height;
-    struct nk_vec2 scale;
-    GLfloat ortho[4][4] = {
-        {2.0f, 0.0f, 0.0f, 0.0f},
-        {0.0f,-2.0f, 0.0f, 0.0f},
-        {0.0f, 0.0f,-1.0f, 0.0f},
-        {-1.0f,1.0f, 0.0f, 1.0f},
-    };
+
     SDL_GetWindowSize(sdl.win, &width, &height);
     SDL_GL_GetDrawableSize(sdl.win, &display_width, &display_height);
-    ortho[0][0] /= (GLfloat)width;
-    ortho[1][1] /= (GLfloat)height;
 
-    scale.x = (float)display_width/(float)width;
-    scale.y = (float)display_height/(float)height;
+    mat4x4_t ortho;
+    PFM_Mat4x4_MakeOrthographic(0.0f, width, height, 0.0f, -1.0f, 1.0f, &ortho);
 
     /* setup global state */
     glViewport(0,0,display_width,display_height);
@@ -216,7 +213,7 @@ nk_sdl_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element_b
     /* setup program */
     glUseProgram(dev->prog);
     glUniform1i(dev->uniform_tex, 0);
-    glUniformMatrix4fv(dev->uniform_proj, 1, GL_FALSE, &ortho[0][0]);
+    glUniformMatrix4fv(dev->uniform_proj, 1, GL_FALSE, ortho.raw);
     {
         /* convert from command queue into draw list and draw to screen */
         const struct nk_draw_command *cmd;
@@ -265,13 +262,28 @@ nk_sdl_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element_b
         glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
 
         /* iterate over and execute each draw command */
+        struct nk_vec2i curr_vres = nk_sdl_get_screen_size();
         nk_draw_foreach(cmd, &sdl.ctx, &dev->cmds) {
+
+            if(cmd->userdata.ptr 
+            && ((struct nk_command_userdata*)cmd->userdata.ptr)->type == NK_COMMAND_SET_VRES) {
+
+                struct nk_command_userdata *ud = (struct nk_command_userdata*)cmd->userdata.ptr;
+                curr_vres = ud->vec2i;
+
+                PFM_Mat4x4_MakeOrthographic(0.0f, ud->vec2i.x, ud->vec2i.y, 0.0f, -1.0f, 1.0f, &ortho);
+                glUniformMatrix4fv(dev->uniform_proj, 1, GL_FALSE, ortho.raw);
+
+                free(cmd->userdata.ptr);
+                continue;
+            }
+
             if (!cmd->elem_count) continue;
             glBindTexture(GL_TEXTURE_2D, (GLuint)cmd->texture.id);
-            glScissor((GLint)(cmd->clip_rect.x * scale.x),
-                (GLint)((height - (GLint)(cmd->clip_rect.y + cmd->clip_rect.h)) * scale.y),
-                (GLint)(cmd->clip_rect.w * scale.x),
-                (GLint)(cmd->clip_rect.h * scale.y));
+            glScissor((GLint)(cmd->clip_rect.x / (float)curr_vres.x * width),
+                height - (GLint)((cmd->clip_rect.y + cmd->clip_rect.h) / (float)curr_vres.y * height),
+                (GLint)(cmd->clip_rect.w / (float)curr_vres.x * width),
+                (GLint)(cmd->clip_rect.h / (float)curr_vres.y * height));
             glDrawElements(GL_TRIANGLES, (GLsizei)cmd->elem_count, GL_UNSIGNED_SHORT, offset);
             offset += cmd->elem_count;
         }
@@ -308,6 +320,20 @@ nk_sdl_clipboard_copy(nk_handle usr, const char *text, int len)
     free(str);
 }
 
+static struct nk_vec2i nk_sdl_get_drawable_size(void)
+{
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    return (struct nk_vec2i){w, h};
+}
+
+static struct nk_vec2i nk_sdl_get_screen_size(void)
+{
+    SDL_DisplayMode dm;
+    SDL_GetDesktopDisplayMode(0, &dm);
+    return (struct nk_vec2i){dm.w, dm.h};
+}
+
 NK_API struct nk_context*
 nk_sdl_init(SDL_Window *win)
 {
@@ -316,6 +342,8 @@ nk_sdl_init(SDL_Window *win)
     sdl.ctx.clip.copy = nk_sdl_clipboard_copy;
     sdl.ctx.clip.paste = nk_sdl_clipboard_paste;
     sdl.ctx.clip.userdata = nk_handle_ptr(0);
+    sdl.ctx.screen.get_drawable_size = nk_sdl_get_drawable_size;
+    sdl.ctx.screen.get_screen_size = nk_sdl_get_screen_size;
     nk_sdl_device_create();
     return &sdl.ctx;
 }

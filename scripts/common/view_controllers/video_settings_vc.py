@@ -57,9 +57,10 @@ class VideoSettingsVC(vc.ViewController):
         try:
             ar_saved = pf.settings_get("pf.video.aspect_ratio")
             ar_saved = tuple( (int(num)) for num in ar_saved )
-            gcd = fractions.gcd(ar_saved[0], ar_saved[1])
+            gcd = fractions.gcd(*ar_saved)
             ar_saved = tuple( (num//gcd) for num in ar_saved )
             for i, cand in enumerate(self.view.ar_opts):
+                gcd = fractions.gcd(*cand)
                 cand = tuple( (num//gcd) for num in cand )
                 if cand == ar_saved:
                     self.view.ar_idx = i
