@@ -46,6 +46,14 @@ BUILT-IN FUNCTIONS
     --------------------------------------------------------------------------------
     Returns a list of descriptors (dictionaries) for each faction in the game.
 
+    [get_minimap_position]
+    --------------------------------------------------------------------------------
+    Returns the current minimap position in virtual screen coordinates.
+
+    [get_minimap_size]
+    --------------------------------------------------------------------------------
+    Get the center position of the minimap in virtual screen coordinates.
+
     [get_mouse_pos]
     --------------------------------------------------------------------------------
     Get the (x, y) cursor position on the screen.
@@ -159,12 +167,28 @@ BUILT-IN FUNCTIONS
 
     [set_minimap_position]
     --------------------------------------------------------------------------------
-    Set the center position of the minimap in screen coordinates.
+    Set the center position of the minimap in virtual screen coordinates.
+
+    [set_minimap_size]
+    --------------------------------------------------------------------------------
+    Set the center position of the minimap in virtual screen coordinates.
 
     [set_move_on_left_click]
     --------------------------------------------------------------------------------
     Set the cursor to target mode. The next left click will issue a move command to
     the location under the cursor.
+
+    [settings_create]
+    --------------------------------------------------------------------------------
+    Create a new setting, the value of which will be saved in the settings file and
+    will be accessible in another session. Settings may hold the following
+    types: int, float, string, bool, and tuple of 2 floats (vec2). Setting names
+    beginning with 'pf' are reserved for the engine.
+
+    [settings_delete]
+    --------------------------------------------------------------------------------
+    Delete a setting with the specified name. Setting names beginning with 'pf' are
+    reserved for the engine and may not be deleted.
 
     [settings_get]
     --------------------------------------------------------------------------------
@@ -695,7 +719,6 @@ BUILT-IN CONSTANTS
     EVENT_UPDATE_END 65537
     EVENT_UPDATE_START 65536
     EVENT_UPDATE_UI 65538
-    MINIMAP_SIZE 256
     NK_CHART_COLUMN 1
     NK_CHART_LINES 0
     NK_CHART_MAX 2
