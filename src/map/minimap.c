@@ -39,6 +39,7 @@
 #include "../collision.h"
 #include "../game/public/game.h"
 #include "../event.h"
+#include "../main.h"
 
 #include <SDL.h>
 
@@ -58,11 +59,11 @@ static bool s_mouse_down_in_minimap = false;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static vec2_t m_minimap_mouse_coords_to_world(const struct map *map, vec2_t screen_coords)
+static vec2_t m_minimap_mouse_coords_to_world(const struct map *map, vec2_t virt_screen_coords)
 {
     /* a, b, c, d are given in screen coordinates ((0,0) in top left corner) */
     vec2_t a, b, c, d;
-    float minimap_axis_height = MINIMAP_SIZE/cos(M_PI/4.0f);
+    float minimap_axis_height = map->minimap_sz/cos(M_PI/4.0f);
 
     /*            b
      *            + 
@@ -81,7 +82,7 @@ static vec2_t m_minimap_mouse_coords_to_world(const struct map *map, vec2_t scre
     /* Now project the mouse coordinates (relative to A) on the AB line segment to get the X dimension fraction
      * and project onto the AD line segment to get the Z dimension fraction. */
     vec2_t ap, ab, ad;
-    PFM_Vec2_Sub(&screen_coords, &a, &ap);
+    PFM_Vec2_Sub(&virt_screen_coords, &a, &ap);
     PFM_Vec2_Sub(&b, &a, &ab);
     PFM_Vec2_Sub(&d, &a, &ad);
 
@@ -120,7 +121,14 @@ static void on_mouseclick(void *user, void *event)
     if(mouse_event->button.button != SDL_BUTTON_LEFT)
         return;
 
-    vec2_t ws_coords = m_minimap_mouse_coords_to_world(map, (vec2_t){mouse_event->button.x, mouse_event->button.y});
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    vec2_t virt_mouse_button = (vec2_t){
+        (float)mouse_event->button.x / w * map->minimap_vres.x,
+        (float)mouse_event->button.y / h * map->minimap_vres.y
+    };
+
+    vec2_t ws_coords = m_minimap_mouse_coords_to_world(map, virt_mouse_button);
     G_MoveActiveCamera(ws_coords);
 }
 
@@ -139,7 +147,14 @@ static void on_mousemove(void *user, void *event)
     if(!(mouse_event->motion.state & SDL_BUTTON_LMASK))
         return;
 
-    vec2_t ws_coords = m_minimap_mouse_coords_to_world(map, (vec2_t){mouse_event->motion.x, mouse_event->motion.y});
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    vec2_t virt_mouse_motion = (vec2_t){
+        (float)mouse_event->motion.x / w * map->minimap_vres.x,
+        (float)mouse_event->motion.y / h * map->minimap_vres.y
+    };
+
+    vec2_t ws_coords = m_minimap_mouse_coords_to_world(map, virt_mouse_motion);
     G_MoveActiveCamera(ws_coords);
 }
 
@@ -203,23 +218,56 @@ void M_FreeMinimap(struct map *map)
     s_mouse_down_in_minimap = false;
 }
 
+void M_GetMinimapVres(const struct map *map, vec2_t *out_vres)
+{
+    *out_vres = map->minimap_vres;
+}
+
+void M_SetMinimapVres(struct map *map, vec2_t vres)
+{
+    map->minimap_vres = vres;
+}
+
+void M_GetMinimapPos(const struct map *map, vec2_t *out_center_pos)
+{
+    *out_center_pos = map->minimap_center_pos;
+}
+
 void M_SetMinimapPos(struct map *map, vec2_t center_pos)
 {
     assert(map);
     map->minimap_center_pos = center_pos;
 }
 
+int M_GetMinimapSize(const struct map *map)
+{
+    return map->minimap_sz;
+}
+
+void M_SetMinimapSize(struct map *map, int side_len)
+{
+    map->minimap_sz = side_len;
+}
+
 void M_RenderMinimap(const struct map *map, const struct camera *cam)
 {
     assert(map);
-    R_GL_MinimapRender(map, cam, map->minimap_center_pos);
+
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+
+    vec2_t curr_pos = (vec2_t) {
+        map->minimap_center_pos.x / map->minimap_vres.x * w,
+        map->minimap_center_pos.y / map->minimap_vres.y * h,
+    };
+    R_GL_MinimapRender(map, cam, curr_pos, map->minimap_sz);
 }
 
 bool M_MouseOverMinimap(const struct map *map)
 {
     /* a, b, c, d are given in screen coordinates ((0,0) in top left corner) */
     vec2_t a, b, c, d;
-    float minimap_axis_height = MINIMAP_SIZE/cos(M_PI/4.0f);
+    float minimap_axis_height = map->minimap_sz/cos(M_PI/4.0f);
 
     /*      b
      *      + 
@@ -237,7 +285,14 @@ bool M_MouseOverMinimap(const struct map *map)
 
     int x, y;
     SDL_GetMouseState(&x, &y);
-    vec2_t mouse_pos = (vec2_t){x, y};
-    return C_PointInsideRect2D(mouse_pos, a, b, c ,d);
+
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+
+    vec2_t virt_mouse_pos = (vec2_t){
+        (float)x / w * map->minimap_vres.x,
+        (float)y / h * map->minimap_vres.y,
+    };
+    return C_PointInsideRect2D(virt_mouse_pos, a, b, c ,d);
 }
 

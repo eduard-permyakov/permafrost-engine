@@ -61,8 +61,8 @@ pf.set_emit_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_pos([1024.0, 768.0, 768.0])
 
 pf.new_game_string(globals.active_map.pfmap_str())
-pf.set_minimap_position(UI_LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10, 
-    pf.get_resolution()[1] - MINIMAP_PX_WIDTH/cos(pi/4)/2 - 10)
+minimap_pos = pf.get_minimap_position()
+pf.set_minimap_position(UI_LEFT_PANE_WIDTH + minimap_pos[0], minimap_pos[1])
 pf.disable_unit_selection()
 
 pf.add_faction(DEFAULT_FACTION_NAME, DEFAULT_FACTION_COLOR)

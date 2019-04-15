@@ -90,7 +90,10 @@ static PyObject *PyPf_set_diplomacy_state(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_minimap_position(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_minimap_size(PyObject *self);
+static PyObject *PyPf_set_minimap_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_mouse_over_minimap(PyObject *self);
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
@@ -239,9 +242,21 @@ static PyMethodDef pf_module_methods[] = {
     "Determines how many tiles around the currently hovered tile are highlighted. (0 = none, "
     "1 = single tile highlighted, 2 = 3x3 grid highlighted, etc.)"},
 
+    {"get_minimap_position", 
+    (PyCFunction)PyPf_get_minimap_position, METH_NOARGS,
+    "Returns the current minimap position in virtual screen coordinates."},
+
     {"set_minimap_position", 
     (PyCFunction)PyPf_set_minimap_position, METH_VARARGS,
-    "Set the center position of the minimap in screen coordinates."},
+    "Set the center position of the minimap in virtual screen coordinates."},
+
+    {"get_minimap_size", 
+    (PyCFunction)PyPf_get_minimap_size, METH_NOARGS,
+    "Get the center position of the minimap in virtual screen coordinates."},
+
+    {"set_minimap_size", 
+    (PyCFunction)PyPf_set_minimap_size, METH_VARARGS,
+    "Set the center position of the minimap in virtual screen coordinates."},
 
     {"mouse_over_minimap",
     (PyCFunction)PyPf_mouse_over_minimap, METH_NOARGS,
@@ -805,6 +820,13 @@ static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_get_minimap_position(PyObject *self, PyObject *args)
+{
+    float x, y;    
+    G_GetMinimapPos(&x, &y);
+    return Py_BuildValue("(f,f)", x, y);
+}
+
 static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args)
 {
     float x, y;
@@ -815,6 +837,24 @@ static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args)
     }
 
     G_SetMinimapPos(x, y);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_minimap_size(PyObject *self)
+{
+    return Py_BuildValue("i", G_GetMinimapSize());
+}
+
+static PyObject *PyPf_set_minimap_size(PyObject *self, PyObject *args)
+{
+    int size;
+
+    if(!PyArg_ParseTuple(args, "i", &size)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an integer.");
+        return NULL;
+    }
+
+    G_SetMinimapSize(size);
     Py_RETURN_NONE;
 }
 

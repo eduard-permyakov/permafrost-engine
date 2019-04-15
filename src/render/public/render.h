@@ -325,7 +325,8 @@ bool  R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, mat4x
  * box is drawn.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t center_pos);
+void  R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t center_pos, 
+                         int side_len_px);
 
 /* ---------------------------------------------------------------------------
  * Free the memory allocated by 'R_GL_MinimapBake'.

@@ -59,6 +59,7 @@
 #define ARR_SIZE(a)          (sizeof(a)/sizeof(a[0])) 
 #define MINIMAP_RES          (1024)
 #define MINIMAP_BORDER_CLR   ((vec4_t){65.0f/255.0f, 65.0f/255.0f, 65.0f/255.0f, 1.0f})
+#define MINIMAP_DFLT_SZ      (256f/1080f)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -353,24 +354,34 @@ fail_fb:
     return false;
 }
 
-void R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t center_pos)
+void R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t center_pos, int side_len_px)
 {
-    float horiz_width = MINIMAP_SIZE / cos(M_PI/4.0f);
+    float horiz_width = side_len_px / cos(M_PI/4.0f);
+
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
+
+    mat4x4_t res_scale;
+    vec2_t mm_vres;
+    M_GetMinimapVres(map, &mm_vres);
+    PFM_Mat4x4_MakeScale(width / mm_vres.x, height / mm_vres.y, 1.0f, &res_scale);
 
     mat4x4_t tmp;
     mat4x4_t tilt, trans, scale, model;
     PFM_Mat4x4_MakeRotZ(DEG_TO_RAD(-45.0f), &tilt);
-    PFM_Mat4x4_MakeScale(MINIMAP_SIZE/2.0f, MINIMAP_SIZE/2.0f, 1.0f, &scale);
+    PFM_Mat4x4_MakeScale(side_len_px/2.0f, side_len_px/2.0f, 1.0f, &tmp);
+    PFM_Mat4x4_Mult4x4(&tmp, &res_scale, &scale);
     PFM_Mat4x4_MakeTrans(center_pos.x, center_pos.y, 0.0f, &trans);
-    PFM_Mat4x4_Mult4x4(&tilt, &scale, &tmp);
+    PFM_Mat4x4_Mult4x4(&scale, &tilt, &tmp);
     PFM_Mat4x4_Mult4x4(&trans, &tmp, &model);
 
     /* We scale up the quad slightly and center it in the same position, then draw it behind 
      * the minimap to create the minimap border */
-    float scale_fac = (MINIMAP_SIZE + 2*MINIMAP_BORDER_WIDTH)/2.0f;
+    float scale_fac = (side_len_px + 2*MINIMAP_BORDER_WIDTH)/2.0f;
     mat4x4_t border_scale, border_model;
-    PFM_Mat4x4_MakeScale(scale_fac, scale_fac, scale_fac, &border_scale);
-    PFM_Mat4x4_Mult4x4(&tilt, &border_scale, &tmp);
+    PFM_Mat4x4_MakeScale(scale_fac, scale_fac, scale_fac, &tmp);
+    PFM_Mat4x4_Mult4x4(&tmp, &res_scale, &border_scale);
+    PFM_Mat4x4_Mult4x4(&border_scale, &tilt, &tmp);
     PFM_Mat4x4_Mult4x4(&trans, &tmp, &border_model);
 
     GLuint shader_prog;

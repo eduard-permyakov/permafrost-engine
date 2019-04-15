@@ -79,7 +79,10 @@ void   G_Shutdown(void);
 void   G_Update(void);
 void   G_Render(void);
 
+void   G_GetMinimapPos(float *out_x, float *out_y);
 void   G_SetMinimapPos(float x, float y);
+int    G_GetMinimapSize(void);
+void   G_SetMinimapSize(int size);
 bool   G_MouseOverMinimap(void);
 bool   G_MapHeightAtPoint(vec2_t xz, float *out_height);
 

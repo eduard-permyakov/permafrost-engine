@@ -159,6 +159,10 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     map->height = header->num_rows;
     map->pos = (vec3_t) {0.0f, 0.0f, 0.0f};
 
+    map->minimap_vres = (vec2_t){1920, 1080};
+    map->minimap_center_pos = (vec2_t){192, 1080-192};
+    map->minimap_sz = 256;
+
     /* Read materials */
     char texnames[header->num_materials][256];
     for(int i = 0; i < header->num_materials; i++) {

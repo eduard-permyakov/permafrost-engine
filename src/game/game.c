@@ -75,15 +75,16 @@ static struct gamestate s_gs;
 
 static vec2_t g_default_minimap_pos(void)
 {
-    struct sval res;
-    ss_e status = Settings_Get("pf.video.resolution", &res);
-    assert(status == SS_OKAY);
-
+    struct sval res = (struct sval){ 
+        .type = ST_TYPE_VEC2, 
+        .as_vec2 = (vec2_t){1920, 1080}
+    };
     const float PAD = 10.0f;
+    int size = 256;
     
     return (vec2_t) {
-        (MINIMAP_SIZE + 2*MINIMAP_BORDER_WIDTH) / cos(M_PI/4.0f)/2 + PAD,
-        res.as_vec2.y - (MINIMAP_SIZE + 2*MINIMAP_BORDER_WIDTH) / cos(M_PI/4.0f)/2 - PAD,
+        (size + 2*MINIMAP_BORDER_WIDTH) / cos(M_PI/4.0f)/2 + PAD,
+        res.as_vec2.y - (size + 2*MINIMAP_BORDER_WIDTH) / cos(M_PI/4.0f)/2 - PAD,
     };
 }
 
@@ -351,10 +352,31 @@ bool G_NewGameWithMap(const char *dir, const char *pfmap)
     return true;
 }
 
+void G_GetMinimapPos(float *out_x, float *out_y)
+{
+    assert(s_gs.map);
+    vec2_t center_pos;
+    M_GetMinimapPos(s_gs.map, &center_pos);
+    *out_x = center_pos.x;
+    *out_y = center_pos.y;
+}
+
 void G_SetMinimapPos(float x, float y)
 {
     assert(s_gs.map);
     M_SetMinimapPos(s_gs.map, (vec2_t){x, y});
+}
+
+int G_GetMinimapSize(void)
+{
+    assert(s_gs.map);
+    return M_GetMinimapSize(s_gs.map);
+}
+
+void G_SetMinimapSize(int size)
+{
+    assert(s_gs.map);
+    M_SetMinimapSize(s_gs.map, size);
 }
 
 bool G_MouseOverMinimap(void)

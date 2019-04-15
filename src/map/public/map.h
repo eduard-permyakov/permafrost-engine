@@ -44,10 +44,8 @@
 
 #include <SDL.h> /* for SDL_RWops */
 
-
-#define MINIMAP_SIZE         (256)
-#define MINIMAP_BORDER_WIDTH (3.0f)
-#define MAX_HEIGHT_LEVEL     (9)
+#define MINIMAP_BORDER_WIDTH    (3.0f)
+#define MAX_HEIGHT_LEVEL        (9)
 
 struct pfchunk;
 struct pfmap_hdr;
@@ -265,10 +263,26 @@ bool   M_UpdateMinimapChunk(const struct map *map, int chunk_r, int chunk_c);
 void   M_FreeMinimap     (struct map *map);
 
 /* ------------------------------------------------------------------------
- * Sets the position of the minimap center, in screen coordinates.
+ * Sets the virtual resolution. This determines how the other minimap 
+ * coordinates get mapped to the viewport.
  * ------------------------------------------------------------------------
  */
+void   M_GetMinimapVres  (const struct map *map, vec2_t *out_vres);
+void   M_SetMinimapVres  (struct map *map, vec2_t vres);
+
+/* ------------------------------------------------------------------------
+ * The minimap position, in virtual screen coordinates.
+ * ------------------------------------------------------------------------
+ */
+void   M_GetMinimapPos   (const struct map *map, vec2_t *out_center_pos);
 void   M_SetMinimapPos   (struct map *map, vec2_t center_pos);
+
+/* ------------------------------------------------------------------------
+ * The minimap size, in virtual screen coordinates.
+ * ------------------------------------------------------------------------
+ */
+int    M_GetMinimapSize(const struct map *map);
+void   M_SetMinimapSize(struct map *map, int side_len);
 
 /* ------------------------------------------------------------------------
  * Render the minimap at the location specified by 'M_SetMinimapPos' and 

@@ -51,10 +51,22 @@ struct map{
      */
     vec3_t pos;
     /* ------------------------------------------------------------------------
-     * Minimap center location, in screen coordinates.
+     * Virtual resolution used to draw the minimap.Other parameters
+     * assume that this is the screen resolution. The minimap is then scaled as 
+     * necessary for the current window resolution at the rendering stage.
+     * ------------------------------------------------------------------------
+     */
+    vec2_t minimap_vres;
+    /* ------------------------------------------------------------------------
+     * Minimap center location, in virtual screen coordinates.      
      * ------------------------------------------------------------------------
      */
     vec2_t minimap_center_pos;
+    /* ------------------------------------------------------------------------
+     * Minimap side length, in virtual screen coordinates.
+     * ------------------------------------------------------------------------
+     */
+    int minimap_sz;
     /* ------------------------------------------------------------------------
      * Navigation private data for the map.
      * ------------------------------------------------------------------------
