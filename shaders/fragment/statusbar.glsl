@@ -42,11 +42,8 @@
 #define BORDER_PX_WIDTH (1.0)
 
 /* Must match the definition in the vertex shader */
-#define HB_HEIGHT (4.0/1080)
-#define HB_WIDTH  (5.0*HB_HEIGHT)
-
-#define CURR_HB_HEIGHT  (max(HB_HEIGHT * curr_res.y, 3))
-#define CURR_HB_WIDTH   (HB_WIDTH  * curr_res.x)
+#define CURR_HB_HEIGHT  (max(4.0/1080 * curr_res.y, 4))
+#define CURR_HB_WIDTH   (40.0/1080 * curr_res.y)
 
 /*****************************************************************************/
 /* INPUTS                                                                    */
