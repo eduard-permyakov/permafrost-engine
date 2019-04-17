@@ -366,10 +366,11 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
     size_t offset = (in->tile_r * tiles_per_chunk_x + in->tile_c) * VERTS_PER_TILE * sizeof(struct vertex);
     size_t length = VERTS_PER_TILE * sizeof(struct vertex);
 
-    const struct vertex *vert_base = glMapNamedBufferRange(priv->mesh.VBO, offset, length, GL_MAP_READ_BIT);
+    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
+    const struct vertex *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_READ_BIT);
     assert(vert_base);
     memcpy(vbuff, vert_base, sizeof(vbuff));
-    glUnmapNamedBuffer(priv->mesh.VBO);
+    glUnmapBuffer(GL_ARRAY_BUFFER);
 
     /* Additionally, scale the tile selection mesh slightly around its' center. This is so that 
      * it is slightly larger than the actual tile underneath and can be rendered on top of it. */
@@ -594,7 +595,8 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
     size_t offset = VERTS_PER_TILE * (tile.tile_r * TILES_PER_CHUNK_WIDTH + tile.tile_c) * sizeof(struct vertex);
     size_t length = VERTS_PER_TILE * sizeof(struct vertex);
 
-    struct vertex *tile_verts_base = glMapNamedBufferRange(VBO, offset, length, GL_MAP_WRITE_BIT);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    struct vertex *tile_verts_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
     GL_ASSERT_OK();
     assert(tile_verts_base);
     struct vertex *south_provoking = tile_verts_base + (5 * VERTS_PER_FACE);
@@ -636,7 +638,7 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
         provoking[i]->adjacent_mat_indices[3] = curr.middle_mask;
     }
 
-    glUnmapNamedBuffer(VBO);
+    glUnmapBuffer(GL_ARRAY_BUFFER);
     GL_ASSERT_OK();
 }
 
@@ -968,7 +970,8 @@ int R_GL_TileGetTriMesh(const struct tile_desc *in, const void *chunk_rprivate,
 
     size_t offset = (in->tile_r * tiles_per_chunk_x + in->tile_c) * VERTS_PER_TILE * sizeof(struct vertex);
     size_t length = VERTS_PER_TILE * sizeof(struct vertex);
-    const struct vertex *vert_base = glMapNamedBufferRange(priv->mesh.VBO, offset, length, GL_MAP_READ_BIT);
+    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
+    const struct vertex *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_READ_BIT);
     assert(vert_base);
     int i = 0;
 
@@ -985,7 +988,7 @@ int R_GL_TileGetTriMesh(const struct tile_desc *in, const void *chunk_rprivate,
         };
     }
 
-    glUnmapNamedBuffer(priv->mesh.VBO);
+    glUnmapBuffer(GL_ARRAY_BUFFER);
     assert(i % 3 == 0);
     return i;
 }
@@ -1000,12 +1003,13 @@ void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, struct tile_de
 
     size_t offset = (desc.tile_r * TILES_PER_CHUNK_WIDTH + desc.tile_c) * VERTS_PER_TILE * sizeof(struct vertex);
     size_t length = VERTS_PER_TILE * sizeof(struct vertex);
-    struct vertex *vert_base = glMapNamedBufferRange(priv->mesh.VBO, offset, length, GL_MAP_WRITE_BIT);
+    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
+    struct vertex *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
     assert(vert_base);
     
     R_GL_TileGetVertices(tile, vert_base, desc.tile_r, desc.tile_c);
 
-    glUnmapNamedBuffer(priv->mesh.VBO);
+    glUnmapBuffer(GL_ARRAY_BUFFER);
     R_GL_TilePatchVertsBlend(chunk_rprivate, map, desc);
 
     GL_ASSERT_OK();
