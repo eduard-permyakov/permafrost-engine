@@ -87,7 +87,7 @@ struct tile_adj_info{
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void r_gl_tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[2], bool *out_tri_left)
+static void r_gl_tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[static 2], bool *out_tri_left)
 {
     switch(tile->type) {
     case TILETYPE_FLAT: {
@@ -269,6 +269,50 @@ static vec3_t r_gl_tile_middle_normal(const struct tile *tile)
 
     PFM_Vec3_Normal(&ret, &ret);
     return ret;
+}
+
+static void r_gl_tile_smooth_normals(struct tile *adj_cw[static 4], struct vertex *inout)
+{
+    enum{
+        ADJ_CW_IDX_TOP_LEFT  = 0,
+        ADJ_CW_IDX_TOP_RIGHT = 1,
+        ADJ_CW_IDX_BOT_RIGHT = 2,
+        ADJ_CW_IDX_BOT_LEFT  = 3,
+    };
+    vec3_t norm_total = {0};
+
+    for(int i = 0; i < 4; i++) {
+
+        if(!adj_cw[i])
+            continue;
+    
+        vec3_t normals[2];
+        bool top_tri_left_aligned;
+        r_gl_tile_top_normals(adj_cw[i], normals, &top_tri_left_aligned);
+
+        switch(i) {
+        case ADJ_CW_IDX_TOP_LEFT: 
+            PFM_Vec3_Add(&norm_total, normals + 1, &norm_total);
+            PFM_Vec3_Add(&norm_total, normals + (top_tri_left_aligned ? 1 : 0), &norm_total);
+            break;
+        case ADJ_CW_IDX_TOP_RIGHT:
+            PFM_Vec3_Add(&norm_total, normals + 1, &norm_total);
+            PFM_Vec3_Add(&norm_total, normals + (top_tri_left_aligned ? 0 : 1), &norm_total);
+            break;
+        case ADJ_CW_IDX_BOT_RIGHT:
+            PFM_Vec3_Add(&norm_total, normals + 0, &norm_total);
+            PFM_Vec3_Add(&norm_total, normals + (top_tri_left_aligned ? 0 : 1), &norm_total);
+            break;
+        case ADJ_CW_IDX_BOT_LEFT:
+            PFM_Vec3_Add(&norm_total, normals + 0, &norm_total);
+            PFM_Vec3_Add(&norm_total, normals + (top_tri_left_aligned ? 1 : 0), &norm_total);
+            break;
+        default: assert(0);
+        }
+    }
+
+    PFM_Vec3_Normal(&norm_total, &norm_total);
+    inout->normal = norm_total;
 }
 
 static void r_gl_tile_mat_indices(struct tile_adj_info *inout, bool *out_top_tri_left_aligned)
@@ -637,6 +681,102 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
         provoking[i]->adjacent_mat_indices[2] = adj_center_mask;
         provoking[i]->adjacent_mat_indices[3] = curr.middle_mask;
     }
+
+    glUnmapBuffer(GL_ARRAY_BUFFER);
+    GL_ASSERT_OK();
+}
+
+void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, struct tile_desc tile)
+{
+    const struct render_private *priv = chunk_rprivate;
+    GLuint VBO = priv->mesh.VBO;
+
+    size_t offset = VERTS_PER_TILE * (tile.tile_r * TILES_PER_CHUNK_WIDTH + tile.tile_c) * sizeof(struct vertex);
+    size_t length = VERTS_PER_TILE * sizeof(struct vertex);
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    struct vertex *tile_verts_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
+    GL_ASSERT_OK();
+    assert(tile_verts_base);
+    tile_verts_base += (5 * VERTS_PER_FACE);
+
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
+    struct tile *curr_tile = NULL;
+    M_TileForDesc(map, tile, &curr_tile);
+    assert(curr_tile);
+
+    vec3_t normals[2];
+    bool top_tri_left_aligned;
+    r_gl_tile_top_normals(curr_tile, normals, &top_tri_left_aligned);
+    
+    struct tile *tiles[4] = {0};
+    struct tile_desc td;
+
+    /*
+     * The following are the indices of the vertices
+     * positioned at the corresponding corner for all
+     * configurations (set in R_GL_TileGetVertices):
+     * +---------------------+---------------------+
+     * |Corner               |Vertex Indices       |
+     * +                     +----------+----------+
+     * |                     |Left-Align|not L.L.  |
+     * +---------------------+----------+----------+
+     * |NE                   |7,5       |7,10      |
+     * +---------------------+----------+----------+
+     * |NW                   |6,11      |6,4       |
+     * +---------------------+----------+----------+
+     * |SW                   |1,10      |1,3       |
+     * +---------------------+----------+----------+
+     * |SE                   |0,3       |0,11      |
+     * +---------------------+----------+----------+
+     * |Center               |2,4,8,9   |2,5,8,9   |
+     * +---------------------+----------+----------+
+     */
+
+    /* NW (top-left) corner */
+    td = tile; if(M_Tile_RelativeDesc(res, &td, -1, -1)) M_TileForDesc(map, td, &tiles[0]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[1]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[2]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[3]);
+    r_gl_tile_smooth_normals(tiles, tile_verts_base + 6);
+    r_gl_tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 11 : 4));
+
+    /* NE (top-right) corner */
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[0]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  1, -1)) M_TileForDesc(map, td, &tiles[1]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[2]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[3]);
+    r_gl_tile_smooth_normals(tiles, tile_verts_base + 7);
+    r_gl_tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 5 : 10));
+
+    /* SE (bot-right) corner */
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[0]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[1]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  1)) M_TileForDesc(map, td, &tiles[2]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[3]);
+    r_gl_tile_smooth_normals(tiles, tile_verts_base + 0);
+    r_gl_tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 3 : 11));
+
+    /* SW (bot-left) corner */
+    td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[0]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[1]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[2]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  1)) M_TileForDesc(map, td, &tiles[3]);
+    r_gl_tile_smooth_normals(tiles, tile_verts_base + 1);
+    r_gl_tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 10 : 3));
+
+    /* Center */
+    vec3_t center_norm = {0};
+    PFM_Vec3_Add(&center_norm, normals + 0, &center_norm);
+    PFM_Vec3_Add(&center_norm, normals + 1, &center_norm);
+    PFM_Vec3_Normal(&center_norm, &center_norm);
+
+    tile_verts_base[2].normal = center_norm;
+    tile_verts_base[top_tri_left_aligned ? 4 : 5].normal = center_norm;
+    tile_verts_base[8].normal = center_norm;
+    tile_verts_base[9].normal = center_norm;
 
     glUnmapBuffer(GL_ARRAY_BUFFER);
     GL_ASSERT_OK();

@@ -343,6 +343,13 @@ void  R_GL_MinimapFree(void);
  */
 void  R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struct tile_desc tile);
 
+/* ---------------------------------------------------------------------------
+ * Updated a tile's verticies to be the average of all normals at that location,
+ * thereby giving the appearance of smooth edges when lighting shading is applied.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, struct tile_desc tile);
+
 /*###########################################################################*/
 /* RENDER TERRAIN                                                            */
 /*###########################################################################*/
