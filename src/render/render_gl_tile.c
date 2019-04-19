@@ -87,7 +87,7 @@ struct tile_adj_info{
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void r_gl_tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[static 2], bool *out_tri_left)
+static void tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[static 2], bool *out_tri_left)
 {
     switch(tile->type) {
     case TILETYPE_FLAT: {
@@ -228,7 +228,7 @@ static void r_gl_tile_top_normals(const struct tile *tile, vec3_t out_tri_normal
     PFM_Vec3_Normal(out_tri_normals + 1, out_tri_normals + 1);
 }
 
-static vec3_t r_gl_tile_middle_normal(const struct tile *tile)
+static vec3_t tile_middle_normal(const struct tile *tile)
 {
     vec3_t ret;
     switch(tile->type) {
@@ -271,7 +271,7 @@ static vec3_t r_gl_tile_middle_normal(const struct tile *tile)
     return ret;
 }
 
-static void r_gl_tile_smooth_normals(struct tile *adj_cw[static 4], struct vertex *inout)
+static void tile_smooth_normals(struct tile *adj_cw[static 4], struct vertex *inout)
 {
     enum{
         ADJ_CW_IDX_TOP_LEFT  = 0,
@@ -288,7 +288,7 @@ static void r_gl_tile_smooth_normals(struct tile *adj_cw[static 4], struct verte
     
         vec3_t normals[2];
         bool top_tri_left_aligned;
-        r_gl_tile_top_normals(adj_cw[i], normals, &top_tri_left_aligned);
+        tile_top_normals(adj_cw[i], normals, &top_tri_left_aligned);
 
         switch(i) {
         case ADJ_CW_IDX_TOP_LEFT: 
@@ -315,13 +315,13 @@ static void r_gl_tile_smooth_normals(struct tile *adj_cw[static 4], struct verte
     inout->normal = norm_total;
 }
 
-static void r_gl_tile_mat_indices(struct tile_adj_info *inout, bool *out_top_tri_left_aligned)
+static void tile_mat_indices(struct tile_adj_info *inout, bool *out_top_tri_left_aligned)
 {
     assert(inout->tile);
 
     vec3_t top_tri_normals[2];
     bool   top_tri_left_aligned;
-    r_gl_tile_top_normals(inout->tile, top_tri_normals, out_top_tri_left_aligned);
+    tile_top_normals(inout->tile, top_tri_normals, out_top_tri_left_aligned);
 
     GLint tri_mats[2] = {
         fabs(top_tri_normals[0].y) < 1.0 && (inout->tile->ramp_height > 1) ? inout->tile->sides_mat_idx : inout->tile->top_mat_idx,
@@ -362,7 +362,7 @@ static void r_gl_tile_mat_indices(struct tile_adj_info *inout, bool *out_top_tri
     }
 }
 
-enum blend_mode r_gl_blendmode_for_provoking_vert(const struct vertex *vert)
+enum blend_mode blendmode_for_provoking_vert(const struct vertex *vert)
 {
     if(SAME_INDICES_32(vert->adjacent_mat_indices[0])
     && SAME_INDICES_32(vert->adjacent_mat_indices[1])
@@ -556,7 +556,7 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
 
     struct tile_adj_info curr = {.tile = curr_tile};
     bool top_tri_left_aligned;
-    r_gl_tile_mat_indices(&curr, &top_tri_left_aligned);
+    tile_mat_indices(&curr, &top_tri_left_aligned);
 
     /* It may be possible that some of the adjacent tiles are NULL, such as when the current
      * tile as at a chunk edge. In that case, we have no neighbor tile to blend with. In 
@@ -597,7 +597,7 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
     for(int i = 0; i < ARR_SIZE(adjacent); i++) {
         bool tmp;
         if(adjacent[i]->tile) {
-            r_gl_tile_mat_indices(adjacent[i], &tmp);
+            tile_mat_indices(adjacent[i], &tmp);
         }
     }
     
@@ -652,21 +652,21 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
         INDICES_MASK_32(bot.top_left_mask, bot_left.top_right_mask, left.bot_right_mask, curr.bot_left_mask);
     south_provoking->adjacent_mat_indices[1] = 
         INDICES_MASK_32(bot_right.top_left_mask, bot.top_right_mask, curr.bot_right_mask, right.bot_left_mask);
-    south_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(south_provoking);
+    south_provoking->blend_mode = blendmode_for_provoking_vert(south_provoking);
 
     north_provoking->adjacent_mat_indices[0] = 
         INDICES_MASK_32(curr.top_left_mask, left.top_right_mask, top_left.bot_right_mask, top.bot_left_mask);
     north_provoking->adjacent_mat_indices[1] = 
         INDICES_MASK_32(right.top_left_mask, curr.top_right_mask, top.bot_right_mask, top_right.bot_left_mask);
-    north_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(north_provoking);
+    north_provoking->blend_mode = blendmode_for_provoking_vert(north_provoking);
 
     west_provoking->adjacent_mat_indices[0] = south_provoking->adjacent_mat_indices[0];
     west_provoking->adjacent_mat_indices[1] = north_provoking->adjacent_mat_indices[0];
-    west_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(west_provoking);
+    west_provoking->blend_mode = blendmode_for_provoking_vert(west_provoking);
 
     east_provoking->adjacent_mat_indices[0] = south_provoking->adjacent_mat_indices[1];
     east_provoking->adjacent_mat_indices[1] = north_provoking->adjacent_mat_indices[1];
-    east_provoking->blend_mode = r_gl_blendmode_for_provoking_vert(east_provoking);
+    east_provoking->blend_mode = blendmode_for_provoking_vert(east_provoking);
 
     GLint adj_center_mask = INDICES_MASK_32(
         INDICES_MASK_8(curr.top_center_idx,     top.bot_center_idx),
@@ -709,7 +709,7 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, stru
 
     vec3_t normals[2];
     bool top_tri_left_aligned;
-    r_gl_tile_top_normals(curr_tile, normals, &top_tri_left_aligned);
+    tile_top_normals(curr_tile, normals, &top_tri_left_aligned);
     
     struct tile *tiles[4] = {0};
     struct tile_desc td;
@@ -740,32 +740,32 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, stru
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[1]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[2]);
     td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[3]);
-    r_gl_tile_smooth_normals(tiles, tile_verts_base + 6);
-    r_gl_tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 11 : 4));
+    tile_smooth_normals(tiles, tile_verts_base + 6);
+    tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 11 : 4));
 
     /* NE (top-right) corner */
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[0]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  1, -1)) M_TileForDesc(map, td, &tiles[1]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[2]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[3]);
-    r_gl_tile_smooth_normals(tiles, tile_verts_base + 7);
-    r_gl_tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 5 : 10));
+    tile_smooth_normals(tiles, tile_verts_base + 7);
+    tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 5 : 10));
 
     /* SE (bot-right) corner */
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[0]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[1]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  1)) M_TileForDesc(map, td, &tiles[2]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[3]);
-    r_gl_tile_smooth_normals(tiles, tile_verts_base + 0);
-    r_gl_tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 3 : 11));
+    tile_smooth_normals(tiles, tile_verts_base + 0);
+    tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 3 : 11));
 
     /* SW (bot-left) corner */
     td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[0]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[1]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[2]);
     td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  1)) M_TileForDesc(map, td, &tiles[3]);
-    r_gl_tile_smooth_normals(tiles, tile_verts_base + 1);
-    r_gl_tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 10 : 3));
+    tile_smooth_normals(tiles, tile_verts_base + 1);
+    tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 10 : 3));
 
     /* Center */
     vec3_t center_norm = {0};
@@ -992,7 +992,7 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
 
     vec3_t top_tri_normals[2];
     bool   top_tri_left_aligned;
-    r_gl_tile_top_normals(tile, top_tri_normals, &top_tri_left_aligned);
+    tile_top_normals(tile, top_tri_normals, &top_tri_left_aligned);
 
     /*
      * CONFIG 1 (left-aligned)   CONFIG 2
@@ -1036,7 +1036,7 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
     };
     struct vertex center_vert = (struct vertex) {
         .uv     = (vec2_t) {0.5f, 0.5f},
-        .normal = r_gl_tile_middle_normal(tile),
+        .normal = tile_middle_normal(tile),
     };
 
     /* First 'major' triangle */
