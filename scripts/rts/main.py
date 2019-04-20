@@ -50,7 +50,7 @@ from units import *
 
 pf.set_ambient_light_color([1.0, 1.0, 1.0])
 pf.set_emit_light_color([1.0, 1.0, 1.0])
-pf.set_emit_light_pos([1024.0, 768.0, 768.0])
+pf.set_emit_light_pos([1664.0, 1024.0, 384.0])
 
 ############################################################
 # Setup map/scene                                          #

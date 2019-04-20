@@ -176,7 +176,7 @@ float shadow_factor_poisson(vec4 light_space_pos)
 
     for(int i = 0; i < 4; i++) {
     
-        float depth = texture(shadow_map, proj_coords.xy + poisson_disk[i]/256.0).r; 
+        float depth = texture(shadow_map, proj_coords.xy + poisson_disk[i]/500.0).r; 
         if(current_depth - SHADOW_MAP_BIAS <= depth)
             visibility -= 0.25;
     }
@@ -349,7 +349,7 @@ void main()
     vec4 final_color = vec4( (ambient + diffuse + specular) * tex_color.xyz, 1.0);
     float shadow = shadow_factor_poisson(from_vertex.light_space_pos);
     if(shadow > 0.0) {
-        o_frag_color = vec4(final_color.xyz * (SHADOW_MULTIPLIER + (1.0 - shadow) * (1.0 - SHADOW_MULTIPLIER)), 1.0);
+        o_frag_color = vec4(final_color.xyz * (SHADOW_MULTIPLIER + shadow * (1.0 - SHADOW_MULTIPLIER)), 1.0);
     }else{
         o_frag_color = vec4(final_color.xyz, 1.0);
     }

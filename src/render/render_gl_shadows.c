@@ -74,6 +74,8 @@ void R_GL_InitShadows(void)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, 
                  CONFIG_SHADOW_MAP_RES, CONFIG_SHADOW_MAP_RES, 
                  0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -110,7 +112,7 @@ void R_GL_DepthPassBegin(void)
     vec3_t right = (vec3_t){-1.0f, 0.0f, 0.0f}, up;
     PFM_Vec3_Cross(&light_dir, &right, &up);
 
-    t = fabs((cam_pos.y + 10.0)/ light_dir.y);
+    t = fabs((cam_pos.y + 150.0)/ light_dir.y);
     vec3_t light_origin, delta;
     PFM_Vec3_Scale(&light_dir, -t, &delta);
     PFM_Vec3_Add(&cam_ray_ground_isec, &delta, &light_origin);
