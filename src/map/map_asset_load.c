@@ -141,6 +141,7 @@ static void m_al_patch_adjacency_info(struct map *map)
         
             struct tile_desc desc = (struct tile_desc){r, c, tile_r, tile_c};
             R_GL_TilePatchVertsBlend(chunk_rprivate, map, desc);
+            R_GL_TilePatchVertsSmooth(chunk_rprivate, map, desc);
         }}
     }}
 }

@@ -79,8 +79,89 @@ struct face{
 
 struct tile_adj_info{
     const struct tile *tile;
-    uint8_t middle_mask, top_left_mask, top_right_mask, bot_left_mask, bot_right_mask;
-    int top_center_idx, bot_center_idx, left_center_idx, right_center_idx;
+    uint8_t middle_mask; 
+    uint8_t top_left_mask;
+    uint8_t top_right_mask;
+    uint8_t bot_left_mask;
+    uint8_t bot_right_mask;
+    int top_center_idx;
+    int bot_center_idx;
+    int left_center_idx;
+    int right_center_idx;
+};
+
+struct tri{
+    struct vertex verts[3];
+};
+
+/* Each top face is made up of 8 triangles, in the following configuration:
+ *   +------+------+
+ *   |\     |     /|
+ *   |  \   |   /  |
+ *   |    \ | /    |
+ *   +------+------+
+ *   |    / | \    |
+ *   |  /   |   \  |
+ *   |/     |     \|
+ *   +------+------+
+ * Each face can be thought of as being made of of 4 "major" triangles,
+ * each of which has its' own adjacency info as a flat attribute. The 4 major
+ * triangles are the minimal configuration that is necessary for the blending
+ * system to work.
+ *   +------+------+
+ *   |\           /|
+ *   |  \   2   /  |
+ *   |    \   /    |
+ *   +  1  >+<  3  +
+ *   |    /   \    |
+ *   |  /   0   \  |
+ *   |/           \|
+ *   +------+------+
+ * The "major" trinagles can be futher subdivided. The triangles they are divided 
+ * into must inherit the flat adjacency attributes and interpolate their positions, 
+ * uv coorinates, and normals. In our case, we futher subdivide each of the major
+ * triangles into 2 triangles. This is to give an extra vertex on the midpoint 
+ * of each edge. When smoothing the normals, this extra point having its' own 
+ * normal is essential. Care must be taken to ensure the appropriate winding order
+ * for each triangle for backface culling!
+ */
+union top_face_vbuff{
+    struct vertex verts[VERTS_PER_TOP_FACE];
+    struct tri tris[VERTS_PER_TOP_FACE/3];
+    struct{
+        /* Tri 0 */
+        struct vertex se0; 
+        struct vertex s0;
+        struct vertex center0;
+        /* Tri 1 */
+        struct vertex center1;
+        struct vertex s1;
+        struct vertex sw0;
+        /* Tri 2 */
+        struct vertex sw1;
+        struct vertex w0;
+        struct vertex center2;
+        /* Tri 3 */
+        struct vertex center3;
+        struct vertex w1;
+        struct vertex nw0;
+        /* Tri 4 */
+        struct vertex nw1;
+        struct vertex n0;
+        struct vertex center4;
+        /* Tri 5 */
+        struct vertex center5;
+        struct vertex n1;
+        struct vertex ne0;
+        /* Tri 6 */
+        struct vertex ne1;
+        struct vertex e0;
+        struct vertex center6;
+        /* Tri 7 */
+        struct vertex center7;
+        struct vertex e1;
+        struct vertex se1;
+    };
 };
 
 /*****************************************************************************/
@@ -228,50 +309,7 @@ static void tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[sta
     PFM_Vec3_Normal(out_tri_normals + 1, out_tri_normals + 1);
 }
 
-static vec3_t tile_middle_normal(const struct tile *tile)
-{
-    vec3_t ret;
-    switch(tile->type) {
-    case TILETYPE_FLAT: {
-    case TILETYPE_CORNER_CONCAVE_SW:
-    case TILETYPE_CORNER_CONVEX_SW:
-    case TILETYPE_CORNER_CONCAVE_SE:
-    case TILETYPE_CORNER_CONVEX_SE:
-    case TILETYPE_CORNER_CONCAVE_NW:
-    case TILETYPE_CORNER_CONVEX_NW:
-    case TILETYPE_CORNER_CONCAVE_NE:
-    case TILETYPE_CORNER_CONVEX_NE:
-        ret = (vec3_t) {0.0f, 1.0f, 0.0f}; 
-        break;
-    }
-    case TILETYPE_RAMP_SN: {
-        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, Z_COORDS_PER_TILE);
-        ret = (vec3_t) {0.0f, sin(normal_angle), cos(normal_angle)};
-        break;
-    }
-    case TILETYPE_RAMP_NS: {
-        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, Z_COORDS_PER_TILE);
-        ret = (vec3_t) {0.0f, sin(normal_angle), -cos(normal_angle)};
-        break;
-    }
-    case TILETYPE_RAMP_EW: {
-        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, X_COORDS_PER_TILE);
-        ret = (vec3_t) {-cos(normal_angle), sin(normal_angle), 0.0f};
-        break;
-    }
-    case TILETYPE_RAMP_WE: {
-        float normal_angle = M_PI/2.0f - atan2(tile->ramp_height * Y_COORDS_PER_TILE, X_COORDS_PER_TILE);
-        ret = (vec3_t) {cos(normal_angle), sin(normal_angle), 0.0f};
-        break;
-    }
-    default: assert(0); 
-    }
-
-    PFM_Vec3_Normal(&ret, &ret);
-    return ret;
-}
-
-static void tile_smooth_normals(struct tile *adj_cw[static 4], struct vertex *inout)
+static void tile_smooth_normals_corner(struct tile *adj_cw[static 4], struct vertex *inout)
 {
     enum{
         ADJ_CW_IDX_TOP_LEFT  = 0,
@@ -311,6 +349,29 @@ static void tile_smooth_normals(struct tile *adj_cw[static 4], struct vertex *in
         }
     }
 
+    PFM_Vec3_Normal(&norm_total, &norm_total);
+    inout->normal = norm_total;
+}
+
+static void tile_smooth_normals_edge(struct tile *adj_lrtb[static 4], struct vertex *inout)
+{
+    vec3_t norm_total = {0};
+    assert((!!adj_lrtb[0] + !!adj_lrtb[1] + !!adj_lrtb[2] + !!adj_lrtb[3]) <= 2);
+
+    for(int i = 0; i < 4; i++) {
+
+        if(!adj_lrtb[i])
+            continue;
+    
+        vec3_t normals[2];
+        bool top_tri_left_aligned;
+        tile_top_normals(adj_lrtb[i], normals, &top_tri_left_aligned);
+
+        PFM_Vec3_Add(&norm_total, normals + 0, &norm_total);
+        PFM_Vec3_Add(&norm_total, normals + 1, &norm_total);
+    }
+
+    assert(PFM_Vec3_Len(&norm_total) > 0);
     PFM_Vec3_Normal(&norm_total, &norm_total);
     inout->normal = norm_total;
 }
@@ -621,7 +682,7 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
                                            : INDICES_MASK_8(curr.left_center_idx, left.right_center_idx);
     }
 
-    /* Now, update all 4 triangles of the top face 
+    /* Now, update all triangles of the top face 
      *
      * Since 'adjacent_mat_indices' is a flat attribute, we only need to set 
      * it for the provoking vertex of each triangle.
@@ -643,30 +704,43 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
     struct vertex *tile_verts_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
     GL_ASSERT_OK();
     assert(tile_verts_base);
-    struct vertex *south_provoking = tile_verts_base + (5 * VERTS_PER_FACE);
-    struct vertex *north_provoking = tile_verts_base + (5 * VERTS_PER_FACE) + 2*3;
-    struct vertex *west_provoking  = tile_verts_base + (5 * VERTS_PER_FACE) + (top_tri_left_aligned ?  3*3 : 3*1);
-    struct vertex *east_provoking  = tile_verts_base + (5 * VERTS_PER_FACE) + (top_tri_left_aligned ?  3*1 : 3*3);
 
-    south_provoking->adjacent_mat_indices[0] = 
-        INDICES_MASK_32(bot.top_left_mask, bot_left.top_right_mask, left.bot_right_mask, curr.bot_left_mask);
-    south_provoking->adjacent_mat_indices[1] = 
-        INDICES_MASK_32(bot_right.top_left_mask, bot.top_right_mask, curr.bot_right_mask, right.bot_left_mask);
-    south_provoking->blend_mode = blendmode_for_provoking_vert(south_provoking);
+    struct vertex *south_provoking[2] = {tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 0*3,
+                                         tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 1*3};
+    struct vertex *west_provoking[2]  = {tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 2*3,
+                                         tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 3*3};
+    struct vertex *north_provoking[2] = {tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 4*3,
+                                         tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 5*3};
+    struct vertex *east_provoking[2]  = {tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 6*3,
+                                         tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 7*3};
 
-    north_provoking->adjacent_mat_indices[0] = 
-        INDICES_MASK_32(curr.top_left_mask, left.top_right_mask, top_left.bot_right_mask, top.bot_left_mask);
-    north_provoking->adjacent_mat_indices[1] = 
-        INDICES_MASK_32(right.top_left_mask, curr.top_right_mask, top.bot_right_mask, top_right.bot_left_mask);
-    north_provoking->blend_mode = blendmode_for_provoking_vert(north_provoking);
+    for(int i = 0; i < 2; i++) {
+        south_provoking[i]->adjacent_mat_indices[0] = 
+            INDICES_MASK_32(bot.top_left_mask, bot_left.top_right_mask, left.bot_right_mask, curr.bot_left_mask);
+        south_provoking[i]->adjacent_mat_indices[1] = 
+            INDICES_MASK_32(bot_right.top_left_mask, bot.top_right_mask, curr.bot_right_mask, right.bot_left_mask);
+        south_provoking[i]->blend_mode = blendmode_for_provoking_vert(south_provoking[i]);
+    }
 
-    west_provoking->adjacent_mat_indices[0] = south_provoking->adjacent_mat_indices[0];
-    west_provoking->adjacent_mat_indices[1] = north_provoking->adjacent_mat_indices[0];
-    west_provoking->blend_mode = blendmode_for_provoking_vert(west_provoking);
+    for(int i = 0; i < 2; i++) {
+        north_provoking[i]->adjacent_mat_indices[0] = 
+            INDICES_MASK_32(curr.top_left_mask, left.top_right_mask, top_left.bot_right_mask, top.bot_left_mask);
+        north_provoking[i]->adjacent_mat_indices[1] = 
+            INDICES_MASK_32(right.top_left_mask, curr.top_right_mask, top.bot_right_mask, top_right.bot_left_mask);
+        north_provoking[i]->blend_mode = blendmode_for_provoking_vert(north_provoking[i]);
+    }
 
-    east_provoking->adjacent_mat_indices[0] = south_provoking->adjacent_mat_indices[1];
-    east_provoking->adjacent_mat_indices[1] = north_provoking->adjacent_mat_indices[1];
-    east_provoking->blend_mode = blendmode_for_provoking_vert(east_provoking);
+    for(int i = 0; i < 2; i++) {
+        west_provoking[i]->adjacent_mat_indices[0] = south_provoking[0]->adjacent_mat_indices[0];
+        west_provoking[i]->adjacent_mat_indices[1] = north_provoking[0]->adjacent_mat_indices[0];
+        west_provoking[i]->blend_mode = blendmode_for_provoking_vert(west_provoking[i]);
+    }
+
+    for(int i = 0; i < 2; i++) {
+        east_provoking[i]->adjacent_mat_indices[0] = south_provoking[0]->adjacent_mat_indices[1];
+        east_provoking[i]->adjacent_mat_indices[1] = north_provoking[0]->adjacent_mat_indices[1];
+        east_provoking[i]->blend_mode = blendmode_for_provoking_vert(east_provoking[i]);
+    }
 
     GLint adj_center_mask = INDICES_MASK_32(
         INDICES_MASK_8(curr.top_center_idx,     top.bot_center_idx),
@@ -675,7 +749,8 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
         INDICES_MASK_8(curr.left_center_idx,    left.right_center_idx)
     );
 
-    struct vertex *provoking[] = {south_provoking, north_provoking, west_provoking, east_provoking};
+    struct vertex *provoking[] = {south_provoking[0], south_provoking[1], north_provoking[0], north_provoking[1], 
+                                  west_provoking[0], west_provoking[1], east_provoking[0], east_provoking[1]};
     for(int i = 0; i < ARR_SIZE(provoking); i++) {
 
         provoking[i]->adjacent_mat_indices[2] = adj_center_mask;
@@ -695,10 +770,10 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, stru
     size_t length = VERTS_PER_TILE * sizeof(struct vertex);
 
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    struct vertex *tile_verts_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
+    union top_face_vbuff *tfvb = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
     GL_ASSERT_OK();
-    assert(tile_verts_base);
-    tile_verts_base += (5 * VERTS_PER_FACE);
+    assert(tfvb);
+    tfvb = (union top_face_vbuff*)(((struct vertex*)tfvb) + (5 * VERTS_PER_SIDE_FACE));
 
     struct map_resolution res;
     M_GetResolution(map, &res);
@@ -714,58 +789,69 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, stru
     struct tile *tiles[4] = {0};
     struct tile_desc td;
 
-    /*
-     * The following are the indices of the vertices
-     * positioned at the corresponding corner for all
-     * configurations (set in R_GL_TileGetVertices):
-     * +---------------------+---------------------+
-     * |Corner               |Vertex Indices       |
-     * +                     +----------+----------+
-     * |                     |Left-Align|not L.L.  |
-     * +---------------------+----------+----------+
-     * |NE                   |7,5       |7,10      |
-     * +---------------------+----------+----------+
-     * |NW                   |6,11      |6,4       |
-     * +---------------------+----------+----------+
-     * |SW                   |1,10      |1,3       |
-     * +---------------------+----------+----------+
-     * |SE                   |0,3       |0,11      |
-     * +---------------------+----------+----------+
-     * |Center               |2,4,8,9   |2,5,8,9   |
-     * +---------------------+----------+----------+
-     */
-
     /* NW (top-left) corner */
+    memset(tiles, 0, sizeof(tiles));
     td = tile; if(M_Tile_RelativeDesc(res, &td, -1, -1)) M_TileForDesc(map, td, &tiles[0]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[1]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[2]);
     td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[3]);
-    tile_smooth_normals(tiles, tile_verts_base + 6);
-    tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 11 : 4));
+    tile_smooth_normals_corner(tiles, &tfvb->nw0);
+    tile_smooth_normals_corner(tiles, &tfvb->nw1);
 
     /* NE (top-right) corner */
+    memset(tiles, 0, sizeof(tiles));
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[0]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  1, -1)) M_TileForDesc(map, td, &tiles[1]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[2]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[3]);
-    tile_smooth_normals(tiles, tile_verts_base + 7);
-    tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 5 : 10));
+    tile_smooth_normals_corner(tiles, &tfvb->ne0);
+    tile_smooth_normals_corner(tiles, &tfvb->ne1);
 
     /* SE (bot-right) corner */
+    memset(tiles, 0, sizeof(tiles));
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[0]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[1]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  1)) M_TileForDesc(map, td, &tiles[2]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[3]);
-    tile_smooth_normals(tiles, tile_verts_base + 0);
-    tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 3 : 11));
+    tile_smooth_normals_corner(tiles, &tfvb->se0);
+    tile_smooth_normals_corner(tiles, &tfvb->se1);
 
     /* SW (bot-left) corner */
+    memset(tiles, 0, sizeof(tiles));
     td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[0]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[1]);
     td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[2]);
     td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  1)) M_TileForDesc(map, td, &tiles[3]);
-    tile_smooth_normals(tiles, tile_verts_base + 1);
-    tile_smooth_normals(tiles, tile_verts_base + (top_tri_left_aligned ? 10 : 3));
+    tile_smooth_normals_corner(tiles, &tfvb->sw0);
+    tile_smooth_normals_corner(tiles, &tfvb->sw1);
+
+    /* Top edge */
+    memset(tiles, 0, sizeof(tiles));
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[2]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[3]);
+    tile_smooth_normals_edge(tiles, &tfvb->n0);
+    tile_smooth_normals_edge(tiles, &tfvb->n1);
+
+    /* Bot edge */
+    memset(tiles, 0, sizeof(tiles));
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[2]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[3]);
+    tile_smooth_normals_edge(tiles, &tfvb->s0);
+    tile_smooth_normals_edge(tiles, &tfvb->s1);
+
+    /* Left edge */
+    memset(tiles, 0, sizeof(tiles));
+    td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[0]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[1]);
+    tile_smooth_normals_edge(tiles, &tfvb->w0);
+    tile_smooth_normals_edge(tiles, &tfvb->w1);
+
+    /* Right edge */
+    memset(tiles, 0, sizeof(tiles));
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[0]);
+    td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[1]);
+    tile_smooth_normals_edge(tiles, &tfvb->e0);
+    tile_smooth_normals_edge(tiles, &tfvb->e1);
 
     /* Center */
     vec3_t center_norm = {0};
@@ -773,10 +859,14 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, stru
     PFM_Vec3_Add(&center_norm, normals + 1, &center_norm);
     PFM_Vec3_Normal(&center_norm, &center_norm);
 
-    tile_verts_base[2].normal = center_norm;
-    tile_verts_base[top_tri_left_aligned ? 4 : 5].normal = center_norm;
-    tile_verts_base[8].normal = center_norm;
-    tile_verts_base[9].normal = center_norm;
+    tfvb->center0.normal = center_norm;
+    tfvb->center1.normal = center_norm;
+    tfvb->center2.normal = center_norm;
+    tfvb->center3.normal = center_norm;
+    tfvb->center4.normal = center_norm;
+    tfvb->center5.normal = center_norm;
+    tfvb->center6.normal = center_norm;
+    tfvb->center7.normal = center_norm;
 
     glUnmapBuffer(GL_ARRAY_BUFFER);
     GL_ASSERT_OK();
@@ -975,14 +1065,14 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
         struct face *curr = faces[i];
 
         /* First triangle */
-        memcpy(out + (i * VERTS_PER_FACE) + 0, &curr->nw, sizeof(struct vertex));
-        memcpy(out + (i * VERTS_PER_FACE) + 1, &curr->ne, sizeof(struct vertex));
-        memcpy(out + (i * VERTS_PER_FACE) + 2, &curr->sw, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 0, &curr->nw, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 1, &curr->ne, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 2, &curr->sw, sizeof(struct vertex));
 
         /* Second triangle */
-        memcpy(out + (i * VERTS_PER_FACE) + 3, &curr->se, sizeof(struct vertex));
-        memcpy(out + (i * VERTS_PER_FACE) + 4, &curr->sw, sizeof(struct vertex));
-        memcpy(out + (i * VERTS_PER_FACE) + 5, &curr->ne, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 3, &curr->se, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 4, &curr->sw, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 5, &curr->ne, sizeof(struct vertex));
     }
 
     /* Lastly, the top face. Unlike the other five faces, it can have different 
@@ -998,31 +1088,13 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
      * CONFIG 1 (left-aligned)   CONFIG 2
      * (nw)      (ne)            (nw)      (ne)
      * +---------+               +---------+
-     * |       / |               | \       |
+     * |Tri1   / |               | \   Tri1|
      * |     /   |               |   \     |
      * |   /     |               |     \   |
-     * | /       |               |       \ |
+     * | /   Tri0|               |Tri0   \ |
      * +---------+               +---------+
      * (sw)      (se)            (sw)      (se)
      */
-
-    struct vertex *first_tri[3];
-    struct vertex *second_tri[3];
-
-    first_tri[0] = &top.se;
-    first_tri[1] = &top.sw;
-    second_tri[0] = &top.nw;
-    second_tri[1] = &top.ne;
-
-    if(top_tri_left_aligned) {
-
-        first_tri[2] = &top.ne;
-        second_tri[2] = &top.sw;
-    }else {
-
-        first_tri[2] = &top.nw; 
-        second_tri[2] = &top.se;
-    }
 
     float center_height = 
           TILETYPE_IS_RAMP(tile->type)          ? (tile->base_height + tile->ramp_height / 2.0f) 
@@ -1034,72 +1106,136 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
         center_height * Y_COORDS_PER_TILE, 
         top.nw.pos.z + Z_COORDS_PER_TILE / 2.0f
     };
-    struct vertex center_vert = (struct vertex) {
-        .uv     = (vec2_t) {0.5f, 0.5f},
-        .normal = tile_middle_normal(tile),
+
+    bool tri0_side_mat = fabs(top_tri_normals[0].y) < 1.0 && (tile->ramp_height > 1);
+    bool tri1_side_mat = fabs(top_tri_normals[1].y) < 1.0 && (tile->ramp_height > 1);
+	int tri0_idx = tri0_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+	int tri1_idx = tri1_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+
+    struct vertex center_vert_tri0 = (struct vertex) {
+        .pos    = center_vert_pos,
+        .uv     = (vec2_t){0.5f, 0.5f},
+        .normal = top_tri_normals[0],
+        .material_idx = tri0_idx
+    };
+    struct vertex center_vert_tri1 = (struct vertex) {
+        .pos    = center_vert_pos,
+        .uv     = (vec2_t){0.5f, 0.5f},
+        .normal = top_tri_normals[1],
+        .material_idx = tri1_idx
     };
 
-    /* First 'major' triangle */
-    bool use_side_mat = fabs(top_tri_normals[0].y) < 1.0 && (tile->ramp_height > 1);
-    int mat_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
+    struct vertex north_vert = (struct vertex) {
+        .pos    = (vec3_t){
+            (top.ne.pos.x + top.nw.pos.x)/2, 
+            (top.ne.pos.y + top.nw.pos.y)/2, 
+            (top.ne.pos.z + top.nw.pos.z)/2},
+        .uv     = (vec2_t){0.5f, 1.0f}, 
+        .normal = top_tri_normals[1],
+        .material_idx = tri1_idx
+    };
+    struct vertex south_vert = (struct vertex) {
+        .pos    = (vec3_t){
+            (top.se.pos.x + top.sw.pos.x)/2, 
+            (top.se.pos.y + top.sw.pos.y)/2, 
+            (top.se.pos.z + top.sw.pos.z)/2},
+        .uv     = (vec2_t){0.5f, 0.0f},
+        .normal = top_tri_normals[0],
+        .material_idx = tri0_idx
+    };
+    struct vertex west_vert = (struct vertex) {
+        .pos    = (vec3_t){
+            (top.sw.pos.x + top.nw.pos.x)/2, 
+            (top.sw.pos.y + top.nw.pos.y)/2, 
+            (top.sw.pos.z + top.nw.pos.z)/2},
+        .uv     = (vec2_t){0.0f, 0.5f},
+        .normal = top_tri_left_aligned ? top_tri_normals[1] : top_tri_normals[0],
+        .material_idx = (top_tri_left_aligned ? tri1_idx : tri0_idx),
+    };
+    struct vertex east_vert = (struct vertex) {
+        .pos    = (vec3_t){
+            (top.se.pos.x + top.ne.pos.x)/2, 
+            (top.se.pos.y + top.ne.pos.y)/2, 
+            (top.se.pos.z + top.ne.pos.z)/2},
+        .uv     = (vec2_t){1.0f, 0.5f},
+        .normal = top_tri_left_aligned ? top_tri_normals[0] : top_tri_normals[1],
+        .material_idx = (top_tri_left_aligned ? tri0_idx : tri1_idx),
+    };
 
-    for(int i = 0; i < 3; i++) {
-        first_tri[i]->normal = top_tri_normals[0];
-        first_tri[i]->material_idx = mat_idx;
-    }
-    center_vert.material_idx = mat_idx;
-    center_vert.normal = top_tri_normals[0];
-    /* When all 4 of the top face triangles share the exact same center vertex, there is potential for 
-     * there to be a single texel-wide line in between the different triangles due to imprecision in
-     * interpolation. To fix this, we make the triangles have a very slight overlap by moving the 
-     * center vertex very slightly for the different triangles. The top face will look the same but 
-     * this will guarantee that there are no artifacts. */
-    center_vert.pos = (vec3_t){center_vert_pos.x, center_vert_pos.y, center_vert_pos.z - 0.005};
+    assert(sizeof(union top_face_vbuff) == VERTS_PER_TOP_FACE * sizeof(struct vertex));
+    union top_face_vbuff *tfvb = (union top_face_vbuff*)(out + 5 * VERTS_PER_SIDE_FACE);
+    tfvb->se0 = top.se;
+    tfvb->s0 = south_vert;
+    tfvb->center0 = center_vert_tri0;
+    tfvb->center1 = center_vert_tri0;
+    tfvb->s1 = south_vert;
+    tfvb->sw0 = top.sw;
+    tfvb->sw1 = top.sw;
+    tfvb->w0 = west_vert;
+    tfvb->center2 = top_tri_left_aligned ? center_vert_tri1 : center_vert_tri0;
+    tfvb->center3 = top_tri_left_aligned ? center_vert_tri1 : center_vert_tri0;
+    tfvb->w1 = west_vert;
+    tfvb->nw0 = top.nw;
+    tfvb->nw1 = top.nw;
+    tfvb->n0 = north_vert;
+    tfvb->center4 = center_vert_tri1;
+    tfvb->center5 = center_vert_tri1;
+    tfvb->n1 = north_vert;
+    tfvb->ne0 = top.ne;
+    tfvb->ne1 = top.ne;
+    tfvb->e0 = east_vert;
+    tfvb->center6 = top_tri_left_aligned ? center_vert_tri0 : center_vert_tri1;
+    tfvb->center7 = top_tri_left_aligned ? center_vert_tri0 : center_vert_tri1;
+    tfvb->e1 = east_vert;
+    tfvb->se1 = top.se;
 
-    memcpy(out + (5 * VERTS_PER_FACE) + 0, first_tri[0], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 1, first_tri[1], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 2, &center_vert, sizeof(struct vertex));
+    /* Give a slight overlap to the triangles of the top face to make sure there 
+     * no gap can appear between adjacent triangles due to interpolation errors */
+    tfvb->center0.pos.z -= 0.005;
+    tfvb->center1.pos.z -= 0.005;
+    tfvb->center2.pos.x -= 0.005;
+    tfvb->center3.pos.x -= 0.005;
+    tfvb->center4.pos.z += 0.005;
+    tfvb->center5.pos.z += 0.005;
+    tfvb->center6.pos.x += 0.005;
+    tfvb->center7.pos.x += 0.005;
 
-    /* Keep the appropriate winding order for face culling! */
     if(top_tri_left_aligned) {
-    
-        memcpy(out + (5 * VERTS_PER_FACE) + 3, first_tri[0], sizeof(struct vertex));
-        memcpy(out + (5 * VERTS_PER_FACE) + 4, &center_vert, sizeof(struct vertex));
-        memcpy(out + (5 * VERTS_PER_FACE) + 5, first_tri[2], sizeof(struct vertex));
+        tfvb->se0.material_idx = tri0_idx;
+        tfvb->sw0.material_idx = tri0_idx;
+        tfvb->sw1.material_idx = tri1_idx;
+        tfvb->nw0.material_idx = tri1_idx;
+        tfvb->nw1.material_idx = tri1_idx;
+        tfvb->ne0.material_idx = tri1_idx;
+        tfvb->ne1.material_idx = tri1_idx;
+        tfvb->se1.material_idx = tri1_idx;
+
+        tfvb->se0.normal = top_tri_normals[0];
+        tfvb->sw0.normal = top_tri_normals[0];
+        tfvb->sw1.normal = top_tri_normals[1];
+        tfvb->nw0.normal = top_tri_normals[1];
+        tfvb->nw1.normal = top_tri_normals[1];
+        tfvb->ne0.normal = top_tri_normals[1];
+        tfvb->ne1.normal = top_tri_normals[0];
+        tfvb->se1.normal = top_tri_normals[0];
     }else{
-    
-        memcpy(out + (5 * VERTS_PER_FACE) + 3, first_tri[1], sizeof(struct vertex));
-        memcpy(out + (5 * VERTS_PER_FACE) + 4, first_tri[2], sizeof(struct vertex));
-        memcpy(out + (5 * VERTS_PER_FACE) + 5, &center_vert, sizeof(struct vertex));
-    }
+        tfvb->se0.material_idx = tri0_idx;
+        tfvb->sw0.material_idx = tri0_idx;
+        tfvb->sw1.material_idx = tri0_idx;
+        tfvb->nw0.material_idx = tri0_idx;
+        tfvb->nw1.material_idx = tri1_idx;
+        tfvb->ne0.material_idx = tri1_idx;
+        tfvb->ne1.material_idx = tri1_idx;
+        tfvb->se1.material_idx = tri1_idx;
 
-    /* Second 'major' triangle */
-    use_side_mat = fabs(top_tri_normals[1].y) < 1.0 && (tile->ramp_height > 1);
-    mat_idx = use_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
-
-    for(int i = 0; i < 3; i++) {
-        second_tri[i]->normal = top_tri_normals[1];
-        second_tri[i]->material_idx = mat_idx;
-    }
-    center_vert.material_idx = mat_idx;
-    center_vert.normal = top_tri_normals[1];
-    center_vert.pos = (vec3_t){center_vert_pos.x, center_vert_pos.y, center_vert_pos.z + 0.005};
-
-    memcpy(out + (5 * VERTS_PER_FACE) + 6, second_tri[0], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 7, second_tri[1], sizeof(struct vertex));
-    memcpy(out + (5 * VERTS_PER_FACE) + 8, &center_vert, sizeof(struct vertex));
-
-    /* Keep the appropriate winding order for face culling! */
-    if(top_tri_left_aligned) {
-    
-        memcpy(out + (5 * VERTS_PER_FACE) + 9, &center_vert, sizeof(struct vertex));
-        memcpy(out + (5 * VERTS_PER_FACE) + 10, second_tri[2], sizeof(struct vertex));
-        memcpy(out + (5 * VERTS_PER_FACE) + 11, second_tri[0], sizeof(struct vertex));
-    }else {
-    
-        memcpy(out + (5 * VERTS_PER_FACE) + 9, &center_vert, sizeof(struct vertex));
-        memcpy(out + (5 * VERTS_PER_FACE) + 10, second_tri[1], sizeof(struct vertex));
-        memcpy(out + (5 * VERTS_PER_FACE) + 11, second_tri[2], sizeof(struct vertex));
+        tfvb->se0.normal = top_tri_normals[0];
+        tfvb->sw0.normal = top_tri_normals[0];
+        tfvb->sw1.normal = top_tri_normals[0];
+        tfvb->nw0.normal = top_tri_normals[0];
+        tfvb->nw1.normal = top_tri_normals[1];
+        tfvb->ne0.normal = top_tri_normals[1];
+        tfvb->ne1.normal = top_tri_normals[1];
+        tfvb->se1.normal = top_tri_normals[1];
     }
 }
 
@@ -1151,6 +1287,7 @@ void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, struct tile_de
 
     glUnmapBuffer(GL_ARRAY_BUFFER);
     R_GL_TilePatchVertsBlend(chunk_rprivate, map, desc);
+    R_GL_TilePatchVertsSmooth(chunk_rprivate, map, desc);
 
     GL_ASSERT_OK();
 }

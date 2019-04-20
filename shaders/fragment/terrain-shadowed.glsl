@@ -45,8 +45,8 @@
 #define BLEND_MODE_NOBLEND  0
 #define BLEND_MODE_BLUR     1
 
-#define TERRAIN_AMBIENT     float(1.0)
-#define TERRAIN_DIFFUSE     vec3(0.3, 0.3, 0.3)
+#define TERRAIN_AMBIENT     float(0.7)
+#define TERRAIN_DIFFUSE     vec3(0.9, 0.9, 0.9)
 #define TERRAIN_SPECULAR    vec3(0.1, 0.1, 0.1)
 
 #define SHADOW_MAP_BIAS 0.002
@@ -156,6 +156,9 @@ void main()
          * based on adjacency information of neighboring tiles' materials.
          *
          * Our top tile faces are made up of 4 triangles in the following configuration:
+         * (Note that the 4 "major" triangles may be further subdivided. In that case, the 
+         * triangles it is subdivided to must inherit the flat adjacency attributes. The
+         * other attributes will be interpolated. This is a detail not discussed further on.)
          *
          *  +----+----+
          *  | \ top / |

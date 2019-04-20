@@ -65,14 +65,9 @@ enum render_info{
     RENDER_INFO_SL_VERSION,
 };
 
-/* Each face is made of 2 independent triangles. The top face is an exception, and is made up of 4 
- * triangles. This is to give each triangle a vertex which lies at the center of the tile in the XZ
- * dimensions.
- * This center vertex will have its' own texture coordinate (used for blending edges between tiles).
- * As well, the center vertex can have its' own normal for potentially "smooth" corner and ramp tiles. 
- */
-#define VERTS_PER_FACE 6
-#define VERTS_PER_TILE ((5 * VERTS_PER_FACE) + (4 * 3))
+#define VERTS_PER_SIDE_FACE (6)
+#define VERTS_PER_TOP_FACE  (24)
+#define VERTS_PER_TILE      (5 * VERTS_PER_SIDE_FACE + VERTS_PER_TOP_FACE)
 
 
 /*###########################################################################*/
