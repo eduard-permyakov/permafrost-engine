@@ -65,6 +65,8 @@ static bool m_al_parse_tile(const char *str, struct tile *out)
     out->top_mat_idx   = (int)           (10 * (str[3] - '0') + (str[4] - '0'));
     out->sides_mat_idx = (int)           (10 * (str[5] - '0') + (str[6] - '0'));
     out->ramp_height   = (int)           (str[7] - '0');
+    out->blend_mode    = BLEND_MODE_BLUR;
+    out->blend_normals = true;
 
     return true;
 }
@@ -140,8 +142,12 @@ static void m_al_patch_adjacency_info(struct map *map)
         for(int tile_c = 0; tile_c < TILES_PER_CHUNK_HEIGHT; tile_c++) {
         
             struct tile_desc desc = (struct tile_desc){r, c, tile_r, tile_c};
+            const struct tile *tile = &map->chunks[r * map->width + c].tiles[tile_r * TILES_PER_CHUNK_WIDTH + tile_c];
+
             R_GL_TilePatchVertsBlend(chunk_rprivate, map, desc);
-            R_GL_TilePatchVertsSmooth(chunk_rprivate, map, desc);
+            if(tile->blend_normals) {
+                R_GL_TilePatchVertsSmooth(chunk_rprivate, map, desc);
+            }
         }}
     }}
 }

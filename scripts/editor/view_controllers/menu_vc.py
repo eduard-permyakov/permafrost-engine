@@ -79,8 +79,8 @@ class MenuVC(vc.ViewController):
 
         globals.active_map = event[0]
         pf.new_game_string(globals.active_map.pfmap_str())
-        pf.set_minimap_position(UI_LEFT_PANE_WIDTH + MINIMAP_PX_WIDTH/cos(pi/4)/2 + 10, 
-            pf.get_resolution()[1] - MINIMAP_PX_WIDTH/cos(pi/4)/2 - 10)
+        minimap_pos = pf.get_minimap_position()
+        pf.set_minimap_position(UI_LEFT_PANE_WIDTH + minimap_pos[0], minimap_pos[1])
         self.view.hide()
 
         import os

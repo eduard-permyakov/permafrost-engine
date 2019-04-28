@@ -71,8 +71,14 @@ static PyMemberDef PyTileMembers[] = {
     "Material index for the side faces of the tile."},
     {"ramp_height",     T_INT, BASE + offsetof(struct tile, ramp_height),      0,
     "The height of the top edge of the ramp or corner above the base_height."},
+    {"blend_mode",      T_INT, BASE + offsetof(struct tile, blend_mode),       0,
+    "The mode which determines how this tile's texture is blended with adjacent tiles' textures."},
+    {"blend_normals",   T_UBYTE, BASE + offsetof(struct tile, blend_normals),  0,
+    "A boolean which determines if this tile's normals are averaged together with adjacent normals "
+    "to create a 'smooth' terrain look."},
     {NULL}  /* Sentinel */
 };
+#undef BASE
 
 static PyGetSetDef PyTile_getset[] = {
     {"top_left_height",
@@ -118,6 +124,8 @@ static int PyTile_init(PyTileObject *self, PyObject *args)
     self->tile.ramp_height = 0;
     self->tile.top_mat_idx = 0;
     self->tile.sides_mat_idx = 1;
+    self->tile.blend_mode = BLEND_MODE_BLUR;
+    self->tile.blend_normals = true;
 
     return 0;
 }

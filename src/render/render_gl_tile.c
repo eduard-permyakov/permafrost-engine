@@ -423,7 +423,9 @@ static void tile_mat_indices(struct tile_adj_info *inout, bool *out_top_tri_left
     }
 }
 
-enum blend_mode blendmode_for_provoking_vert(const struct vertex *vert)
+/* When all the materials for the tile are the same, we don't have to perform 
+ * blending in the shader. This aids performance. */
+enum blend_mode optimal_blendmode(const struct vertex *vert)
 {
     if(SAME_INDICES_32(vert->adjacent_mat_indices[0])
     && SAME_INDICES_32(vert->adjacent_mat_indices[1])
@@ -432,7 +434,7 @@ enum blend_mode blendmode_for_provoking_vert(const struct vertex *vert)
     
         return BLEND_MODE_NOBLEND;
     }else{
-        return BLEND_MODE_BLUR; 
+        return vert->blend_mode; 
     }
 }
 
@@ -719,7 +721,7 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
             INDICES_MASK_32(bot.top_left_mask, bot_left.top_right_mask, left.bot_right_mask, curr.bot_left_mask);
         south_provoking[i]->adjacent_mat_indices[1] = 
             INDICES_MASK_32(bot_right.top_left_mask, bot.top_right_mask, curr.bot_right_mask, right.bot_left_mask);
-        south_provoking[i]->blend_mode = blendmode_for_provoking_vert(south_provoking[i]);
+        south_provoking[i]->blend_mode = optimal_blendmode(south_provoking[i]);
     }
 
     for(int i = 0; i < 2; i++) {
@@ -727,19 +729,19 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
             INDICES_MASK_32(curr.top_left_mask, left.top_right_mask, top_left.bot_right_mask, top.bot_left_mask);
         north_provoking[i]->adjacent_mat_indices[1] = 
             INDICES_MASK_32(right.top_left_mask, curr.top_right_mask, top.bot_right_mask, top_right.bot_left_mask);
-        north_provoking[i]->blend_mode = blendmode_for_provoking_vert(north_provoking[i]);
+        north_provoking[i]->blend_mode = optimal_blendmode(north_provoking[i]);
     }
 
     for(int i = 0; i < 2; i++) {
         west_provoking[i]->adjacent_mat_indices[0] = south_provoking[0]->adjacent_mat_indices[0];
         west_provoking[i]->adjacent_mat_indices[1] = north_provoking[0]->adjacent_mat_indices[0];
-        west_provoking[i]->blend_mode = blendmode_for_provoking_vert(west_provoking[i]);
+        west_provoking[i]->blend_mode = optimal_blendmode(west_provoking[i]);
     }
 
     for(int i = 0; i < 2; i++) {
         east_provoking[i]->adjacent_mat_indices[0] = south_provoking[0]->adjacent_mat_indices[1];
         east_provoking[i]->adjacent_mat_indices[1] = north_provoking[0]->adjacent_mat_indices[1];
-        east_provoking[i]->blend_mode = blendmode_for_provoking_vert(east_provoking[i]);
+        east_provoking[i]->blend_mode = optimal_blendmode(east_provoking[i]);
     }
 
     GLint adj_center_mask = INDICES_MASK_32(
@@ -1207,8 +1209,8 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
         tfvb->nw0.material_idx = tri1_idx;
         tfvb->nw1.material_idx = tri1_idx;
         tfvb->ne0.material_idx = tri1_idx;
-        tfvb->ne1.material_idx = tri1_idx;
-        tfvb->se1.material_idx = tri1_idx;
+        tfvb->ne1.material_idx = tri0_idx;
+        tfvb->se1.material_idx = tri0_idx;
 
         tfvb->se0.normal = top_tri_normals[0];
         tfvb->sw0.normal = top_tri_normals[0];
@@ -1236,6 +1238,19 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
         tfvb->ne0.normal = top_tri_normals[1];
         tfvb->ne1.normal = top_tri_normals[1];
         tfvb->se1.normal = top_tri_normals[1];
+    }
+
+    for(struct vertex *curr_provoking = out; 
+        curr_provoking < out + (5 * VERTS_PER_SIDE_FACE); 
+        curr_provoking += 3) {
+
+        curr_provoking->blend_mode = BLEND_MODE_NOBLEND;
+    }
+    for(struct vertex *curr_provoking = out + (5 * VERTS_PER_SIDE_FACE); 
+        curr_provoking < out + VERTS_PER_TILE; 
+        curr_provoking += 3) {
+
+        curr_provoking->blend_mode = tile->blend_mode;
     }
 }
 
@@ -1284,10 +1299,12 @@ void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, struct tile_de
     assert(vert_base);
     
     R_GL_TileGetVertices(tile, vert_base, desc.tile_r, desc.tile_c);
-
     glUnmapBuffer(GL_ARRAY_BUFFER);
+
     R_GL_TilePatchVertsBlend(chunk_rprivate, map, desc);
-    R_GL_TilePatchVertsSmooth(chunk_rprivate, map, desc);
+    if(tile->blend_normals) {
+        R_GL_TilePatchVertsSmooth(chunk_rprivate, map, desc);
+    }
 
     GL_ASSERT_OK();
 }

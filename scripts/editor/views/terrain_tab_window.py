@@ -50,6 +50,8 @@ class TerrainTabWindow(pf.Window):
         self.selected_tile = None
         self.heights = [h for h in range(0, 10)]
         self.selected_height_idx = 0
+        self.blend_textures = True
+        self.blend_normals = True
 
     def update(self):
         self.layout_row_dynamic(20, 1)
@@ -60,20 +62,22 @@ class TerrainTabWindow(pf.Window):
             else "Chunk: {0} Tile: {1}".format(self.selected_tile[0], self.selected_tile[1])
         self.label_colored_wrap(label, (200, 200, 0))
 
-        # Brush type
+        # Blend options
         self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Brush Type:", (255, 255, 255))
+        self.label_colored_wrap("Blending Options:", (255, 255, 255))
 
-        old_brush_type_idx = self.brush_type_idx
-        self.layout_row_dynamic(20, 2)
-        if self.option_label("Texture", self.brush_type_idx == 0):
-            self.brush_type_idx = 0
-        if self.option_label("Elevation", self.brush_type_idx == 1):
-            self.brush_type_idx = 1
+        old_blend_textures = self.blend_textures
+        self.layout_row_dynamic(20, 1)
+        self.blend_textures = self.checkbox("Blend Textures", self.blend_textures)
+        if old_blend_textures != self.blend_textures:
+            pf.global_event(EVENT_TERRAIN_TEX_BLEND_CHANGED, self.blend_textures)
+
+        old_blend_normals = self.blend_normals
+        self.layout_row_dynamic(20, 1)
+        self.blend_normals = self.checkbox("Blend Normals", self.blend_normals)
+        if old_blend_normals != self.blend_normals:
+            pf.global_event(EVENT_TERRAIN_NORMAL_BLEND_CHANGED, self.blend_normals)
         self.layout_row_dynamic(10, 1)
-
-        if self.brush_type_idx != old_brush_type_idx:
-            pf.global_event(EVENT_TERRAIN_BRUSH_TYPE_CHANGED, self.brush_type_idx)
 
         # Brush size
         self.layout_row_dynamic(20, 1)
@@ -89,6 +93,21 @@ class TerrainTabWindow(pf.Window):
 
         if self.brush_size_idx != old_brush_size_idx:
             pf.global_event(EVENT_TERRAIN_BRUSH_SIZE_CHANGED, self.brush_size_idx)
+
+        # Brush type
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Brush Type:", (255, 255, 255))
+
+        old_brush_type_idx = self.brush_type_idx
+        self.layout_row_dynamic(20, 2)
+        if self.option_label("Texture", self.brush_type_idx == 0):
+            self.brush_type_idx = 0
+        if self.option_label("Elevation", self.brush_type_idx == 1):
+            self.brush_type_idx = 1
+        self.layout_row_dynamic(10, 1)
+
+        if self.brush_type_idx != old_brush_type_idx:
+            pf.global_event(EVENT_TERRAIN_BRUSH_TYPE_CHANGED, self.brush_type_idx)
 
         if self.brush_type_idx == 0:
             # Texture

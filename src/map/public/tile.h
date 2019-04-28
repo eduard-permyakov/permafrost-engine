@@ -77,21 +77,23 @@ enum blend_mode{
 };
 
 struct tile{
-    bool          pathable;    
-    enum tiletype type;
-    int           base_height;
+    bool            pathable;    
+    enum tiletype   type;
+    int             base_height;
     /* ------------------------------------------------------------------------
      * Only valid when 'type' is a ramp or corner tile.
      * ------------------------------------------------------------------------
      */
-    int           ramp_height;
+    int             ramp_height;
     /* ------------------------------------------------------------------------
      * Render-specific tile attributes. Only used for populating private render
      * data.
      * ------------------------------------------------------------------------
      */
-    int           top_mat_idx;
-    int           sides_mat_idx;
+    int             top_mat_idx;
+    int             sides_mat_idx;
+    enum blend_mode blend_mode;
+    bool            blend_normals;
 };
 
 struct tile_desc{

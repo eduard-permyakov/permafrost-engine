@@ -171,25 +171,26 @@ class Map(object):
             with open(self.filename, "w") as mapfile:
                 mapfile.write(self.pfmap_str())
 
-    def update_tile_mat(self, tile_coords, top_material):
+    def update_tile_mat(self, tile_coords, top_material, blend_mode, blend_normals):
 
         chunk = self.chunks[tile_coords[0][0]][tile_coords[0][1]]
         tile = chunk.tiles[tile_coords[1][0]][tile_coords[1][1]]
 
         new_idx = self.materials.index(top_material)
-        if tile.top_mat_idx != new_idx:
-            tile.top_mat_idx = new_idx 
-            pf.update_tile(tile_coords[0], tile_coords[1], tile)
+        tile.top_mat_idx = new_idx
+        tile.blend_mode = blend_mode
+        tile.blend_normals = blend_normals
 
-    def update_tile(self, tile_coords, newheight=None, newtype=None, new_ramp_height=None):
+        pf.update_tile(tile_coords[0], tile_coords[1], tile)
+
+    def update_tile(self, tile_coords, newheight, newtype, new_ramp_height, new_blend_mode, new_blend_normals):
         chunk = self.chunks[tile_coords[0][0]][tile_coords[0][1]]
         tile = chunk.tiles[tile_coords[1][0]][tile_coords[1][1]]
-        if newheight is not None:
-            tile.base_height = newheight
-        if newtype is not None:
-            tile.type = newtype
-        if new_ramp_height is not None:
-            tile.ramp_height = new_ramp_height
+        tile.base_height = newheight
+        tile.type = newtype
+        tile.ramp_height = new_ramp_height
+        tile.blend_mode = new_blend_mode
+        tile.blend_normals = new_blend_normals
         pf.update_tile(tile_coords[0], tile_coords[1], tile)
 
     def relative_tile_coords(self, global_r, global_c, dr, dc):
