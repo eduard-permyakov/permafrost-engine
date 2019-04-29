@@ -1,0 +1,138 @@
+********************************************************************************
+* OUTLINE                                                                      *
+********************************************************************************
+
+    1. Version and Changelog
+    2. About
+    3. File structure
+        3.1 Header
+        3.2 Material List
+        3.3 Tile List
+
+********************************************************************************
+* 1. VERSION AND CHANGELOG                                                     *
+********************************************************************************
+
+    Current version: 1.0 
+
+********************************************************************************
+* 2. ABOUT                                                                     *
+********************************************************************************
+
+    PFMAP is a custom ASCII file format for storing map data for the Permafrost
+    Engine. The format deals strictly with the terrain. Objects are added to 
+    a map by loading a scene, which has its' own PFSCENE format. The PFMAP 
+    format contains a material/texture list and a list of tiles, organized into
+    32x32 chunks. Each tile has some attributes which determine how it will be 
+    rendered and any additional behaviours it might have.
+
+********************************************************************************
+* 3. FILE STRUCTURE                                                            *
+********************************************************************************
+
+    ----------
+    3.1 Header
+    ----------
+
+    The header is exactly 4 lines, in the following order:
+
+    version         <PFMAP version number (float)> 
+    num_materials   <number of materials in material list>
+    num_rows        <the height of the map, in number of chunks>
+    num_cols        <the width of the map, in number of chunks>
+
+    -----------------
+    3.1 Material List
+    -----------------
+
+    Next is a list of exacty <num_materials> number of materials, each one 
+    being exactly one line long. Each line is the identifier "material" followed 
+    by the material name (without spaces) and the filename of the material 
+    texture (also without spaces). An example material line is the following:
+
+    material Lava-Ground lava_ground.jpg
+
+    -------------
+    3.2 Tile List
+    -------------
+
+    Next is a list of <num_rows>*<num_cols>*32*32 tiles. Each tile is a string 
+    of exactly 24 characters. The tiles may be delimited by spaces, tabs, or 
+    newlines. This means that the tile list can occupy a variable number of 
+    lines, depending on how many tiles are packed into a single line. However, 
+    the first tile of each new row in a chunk must begin on a new line. The tiles 
+    are grouped by chunks. The chunks appear in the file in row-major order. This 
+    means that the first 32x32 tiles belong to the chunk at row 0 and column 0, 
+    the next 32x32 tiles belong to the chunk at row 0 and column 1, and so on. 
+    Within a chunk, all the tiles are also in row-major order. So all the tiles 
+    for the first row appear in the list before all the tiles of the second row.
+
+    Each 24 character tile can be broken down into the following fields:
+
+            +-+-+--+--+---+---+-+-+-+---------+
+    Region: |A|B|C |D |E  |F  |G|H|I|J        |
+    Size:   |1|1|2 |2 |3  |3  |1|1|1|9        |
+            +-+-+--+--+---+---+-+-+-+---------+
+            
+    A - Tile Type
+    This is a hexadecimal number having a legal range of values between 0 and C. 
+    The decoding is the following:
+
+        TILETYPE_FLAT              = 0x0
+        TILETYPE_RAMP_SN           = 0x1
+        TILETYPE_RAMP_NS           = 0x2
+        TILETYPE_RAMP_EW           = 0x3
+        TILETYPE_RAMP_WE           = 0x4
+        TILETYPE_CORNER_CONCAVE_SW = 0x5
+        TILETYPE_CORNER_CONVEX_SW  = 0x6
+        TILETYPE_CORNER_CONCAVE_SE = 0x7
+        TILETYPE_CORNER_CONVEX_SE  = 0x8
+        TILETYPE_CORNER_CONCAVE_NW = 0x9
+        TILETYPE_CORNER_CONVEX_NW  = 0xa
+        TILETYPE_CORNER_CONCAVE_NE = 0xb
+        TILETYPE_CORNER_CONVEX_NE  = 0xc
+
+    The convention is that 'North' is 'Up' (increasing Z in the engine) and 'West' 
+    is 'Left' (increasing X in the engine). For ramps, the second letter (ex. 'N' 
+    in 'SN') is the raised end. For corners, the direction in the name is that of 
+    the central lowered corner. 'Convex' corners are mostly raised except for a
+    single point, while 'Concave' corners are mostly lowed except for a single 
+    point.
+
+    B - Base Height Sign
+    The legal value for this is either '+' or '-'. Allows for negative base heights.
+
+    C - Base Height
+    This is a 2-digit, 0-padded decimal number signifying the base height of the 
+    tile. When the base sign is '-', it is multiplied by -1.
+
+    D - Ramp Height
+    This is a 2-digit, 0-padded decimal number specifying the tile's ramp height. 
+    This value is ignored for non-ramp and non-corner tiles.
+
+    E - Top Material Index
+    This is a 3-digit, 0-padded decimal index into the material list that is used 
+    to select the texture for the top face of the tile.
+
+    F - Side Material Index
+    This is a 3-digit, 0-padded decimal index into the material list that is used 
+    to select the texture for the side faces of the tile. When the ramp height is 
+    greater than 1, the side material will also be applied to the sloped faces of 
+    the tile.
+
+    G - Pathable Flag
+    Has a value of either '0' or '1'. When it is '1', the tile is passable when it 
+    has no obstructions, otherwise it is always impassable.
+
+    H - Blend Mode
+    This is one of 'BLEND_MODE_NOBLEND' (0) or 'BLEND_MODE_BLUR' (1). This controls 
+    how the texture on the tile's top face is blended with adjacent tiles.
+
+    H - Normal Blending Flag
+    Has a value of either '0' or '1'. When it is '1', the normals of the tile's top 
+    face are averaged with surrounding normals to create smooth, continuous edges.
+
+    J - Reserved
+    These characters are reserved for future expansions to the PFMAP format. They
+    are ignored by the engine.
+

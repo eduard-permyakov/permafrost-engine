@@ -482,6 +482,14 @@ BUILT-IN CLASSES
         [base_height]
         The height level of the bottom plane of the tile.
 
+        [blend_mode]
+        The mode which determines how this tile's texture is blended with adjacent
+        tiles' textures.
+
+        [blend_normals]
+        A boolean which determines if this tile's normals are averaged together with
+        adjacent normals to create a 'smooth' terrain look.
+
         [bot_left_height]
         The height of the bot left corner.
 
@@ -695,6 +703,8 @@ BUILT-IN CONSTANTS
     ANIM_MODE_LOOP 0
     ANIM_MODE_ONCE 1
     ANIM_MODE_ONCE_HIDE_ON_FINISH 2
+    BLEND_MODE_BLUR 1
+    BLEND_MODE_NOBLEND 0
     CAM_MODE_FPS 0
     CAM_MODE_RTS 1
     DIPLOMACY_STATE_PEACE 0

@@ -61,7 +61,7 @@
 
 
 #define PF_VER_MAJOR 0
-#define PF_VER_MINOR 32
+#define PF_VER_MINOR 33
 #define PF_VER_PATCH 0
 
 /*****************************************************************************/
@@ -478,6 +478,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "Could not save settings to file: %s [status: %d]\n", 
             Settings_GetFile(), status);
     }
+
     engine_shutdown();
 fail_init:
 fail_args:
