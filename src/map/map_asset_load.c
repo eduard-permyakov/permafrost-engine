@@ -47,31 +47,34 @@
 #endif
 #include <string.h>
 
+/* ASCII to integer - argument must be an ascii digit */
+#define A2I(_a) ((_a) - '0')
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
 static bool m_al_parse_tile(const char *str, struct tile *out)
 {
-    if(strlen(str) != 8)
+    if(strlen(str) != 24)
         return false;
 
     char type_hexstr[2] = {str[0], '\0'};
 
     memset(out, 0, sizeof(struct tile));
     out->type          = (enum tiletype) strtol(type_hexstr, NULL, 16);
-    out->pathable      = (bool)          (str[1] - '0');
-    out->base_height   = (int)           (str[2] - '0');
-    out->top_mat_idx   = (int)           (10 * (str[3] - '0') + (str[4] - '0'));
-    out->sides_mat_idx = (int)           (10 * (str[5] - '0') + (str[6] - '0'));
-    out->ramp_height   = (int)           (str[7] - '0');
-    out->blend_mode    = BLEND_MODE_BLUR;
-    out->blend_normals = true;
+    out->base_height   = (int)           (str[1] == '-' ? -1 : 1) * (10  * A2I(str[2]) + A2I(str[3]));
+    out->ramp_height   = (int)           (10  * A2I(str[4]) + A2I(str[5]));
+    out->top_mat_idx   = (int)           (100 * A2I(str[6]) + 10 * A2I(str[7 ]) + A2I(str[8 ]));
+    out->sides_mat_idx = (int)           (100 * A2I(str[9]) + 10 * A2I(str[10]) + A2I(str[11]));
+    out->pathable      = (bool)          A2I(str[12]);
+    out->blend_mode    = (int)           A2I(str[13]);
+    out->blend_normals = (bool)          A2I(str[14]);
 
     return true;
 }
 
-static bool m_al_read_row(SDL_RWops *stream, struct tile *out)
+static bool m_al_read_row(SDL_RWops *stream, struct tile *out, size_t *out_nread)
 {
     char line[MAX_LINE_LEN];
     READ_LINE(stream, line, fail); 
@@ -79,20 +82,16 @@ static bool m_al_read_row(SDL_RWops *stream, struct tile *out)
     char *saveptr;
     /* String points to the first token - the first tile of this row */
     char *string = strtok_r(line, " \t\n", &saveptr);
+    assert(out_nread);
+    *out_nread = 0;
 
-    for(int i = 0; i < TILES_PER_CHUNK_WIDTH; i++) {
+    while(string) {
 
-        if(!string)
+        if(!m_al_parse_tile(string, out + *out_nread))
             goto fail;
-
-        if(!m_al_parse_tile(string, out + i))
-            goto fail;
+        (*out_nread)++;
         string = strtok_r(NULL, " \t\n", &saveptr);
     }
-
-    /* That should have been it for this line */
-    if(string != NULL)
-        goto fail;
 
     return true;
 
@@ -102,10 +101,13 @@ fail:
 
 static bool m_al_read_pfchunk(SDL_RWops *stream, struct pfchunk *out)
 {
-    for(int i = 0; i < TILES_PER_CHUNK_HEIGHT; i++) {
+    size_t tiles_read = 0;
+    while(tiles_read < TILES_PER_CHUNK_WIDTH * TILES_PER_CHUNK_HEIGHT) {
         
-        if(!m_al_read_row(stream, out->tiles + (i * TILES_PER_CHUNK_WIDTH)))
+        size_t tiles_in_row;
+        if(!m_al_read_row(stream, out->tiles + tiles_read, &tiles_in_row))
             return false;
+        tiles_read += tiles_in_row;
     }
 
     return true;
@@ -253,36 +255,6 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
     }
 
     return true;
-}
-
-void M_AL_DumpMap(FILE *stream, const struct map *map)
-{
-    for(int i = 0; i < (map->width * map->height); i++) {
-
-        const struct pfchunk *curr = &map->chunks[i];
-    
-        for(int r = 0; r < TILES_PER_CHUNK_HEIGHT; r++) {
-            for(int c = 0; c < TILES_PER_CHUNK_WIDTH; c++) {
-
-                const struct tile *tile = &curr->tiles[r * TILES_PER_CHUNK_WIDTH + c];
-
-                char type_hex[2];
-                assert(tile->type >= 0 && tile->type < 16);
-                snprintf(type_hex, sizeof(type_hex), "%1x", tile->type);
-
-                fprintf(stream, "%c%c%c%02x%02x%c", (char) type_hex[0],
-                                                    (char) (tile->pathable)      + '0',
-                                                    (char) (tile->base_height)   + '0',
-                                                    (int)  (tile->top_mat_idx)   + '0',
-                                                    (int)  (tile->sides_mat_idx) + '0',
-                                                    (char) (tile->ramp_height)   + '0');
-
-                if(c != (TILES_PER_CHUNK_WIDTH - 1))
-                    fprintf(stream, " ");
-            }
-            fprintf(stream, "\n");
-        }
-    }
 }
 
 void M_AL_FreePrivate(struct map *map)

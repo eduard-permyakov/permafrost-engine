@@ -44,28 +44,39 @@ def tile_to_string(tile):
     ret = ""
     assert tile.type >= 0 and tile.type < 16
     ret += "{0:1X}".format(tile.type)
+    assert tile.base_height >= -99 and tile.base_height <= 99
+    ret += "+" if tile.base_height >= 0 else "-"
+    ret += "{0:02d}".format(abs(tile.base_height))
+    assert tile.ramp_height >= 0 and tile.ramp_height <= 99
+    ret += "{0:02d}".format(tile.ramp_height)
+    assert tile.top_mat_idx >= 0 and tile.top_mat_idx <= 999
+    ret += "{0:03d}".format(tile.top_mat_idx)
+    assert tile.sides_mat_idx >= 0 and tile.sides_mat_idx <= 999
+    ret += "{0:03d}".format(tile.sides_mat_idx)
     assert tile.pathable >= 0 and tile.pathable <= 1
     ret += str(tile.pathable)
-    assert tile.base_height >= 0 and tile.base_height <= 9
-    ret += str(tile.base_height)
-    assert tile.top_mat_idx >= 0 and tile.top_mat_idx <= 99
-    ret += "{0:02d}".format(tile.top_mat_idx)
-    assert tile.sides_mat_idx >= 0 and tile.sides_mat_idx <= 99
-    ret += "{0:02d}".format(tile.sides_mat_idx)
-    assert tile.ramp_height >= 0 and tile.ramp_height <= 9
-    ret += str(tile.ramp_height)
-    assert len(ret) == 8
+    assert tile.blend_mode in [pf.BLEND_MODE_BLUR, pf.BLEND_MODE_NOBLEND]
+    ret += str(tile.blend_mode)
+    assert tile.blend_normals >= 0 and tile.blend_normals <= 1
+    ret += str(tile.blend_normals)
+    # The rest of the 24 characters are reserved for future expansion
+    ret += "000000000"
+    assert len(ret) == 24
     return ret
 
 def tile_from_string(string):
-    assert len(string) == 8
+    assert len(string) == 24
     ret = pf.Tile()
     ret.type = int(string[0], 16)
-    ret.pathable = int(string[1])
-    ret.base_height = int(string[2])
-    ret.top_mat_idx = int(string[3:5])
-    ret.sides_mat_idx = int(string[5:7])
-    ret.ramp_height = int(string[7])
+    ret.base_height = int(string[2:4])
+    if string[1] == '-':
+        ret.base_height *= -1
+    ret.ramp_height= int(string[4:6])
+    ret.top_mat_idx = int(string[6:9])
+    ret.sides_mat_idx = int(string[9:12])
+    ret.pathable = int(string[12])
+    ret.blend_mode = int(string[13])
+    ret.blend_normals = int(string[14])
     return ret
 
 
@@ -91,20 +102,26 @@ class Chunk(object):
         A default chunk starts with all tiles set to flat type and 0 height. 
         All tiles will use index 0 for the top material and index 1 for the side material.
         """
-        self.rows = pf.TILES_PER_CHUNK_WIDTH
-        self.cols = pf.TILES_PER_CHUNK_HEIGHT
+        self.rows = pf.TILES_PER_CHUNK_HEIGHT
+        self.cols = pf.TILES_PER_CHUNK_WIDTH
 
         self.tiles = []
         for r in range(0, self.rows):
             row = [pf.Tile() for c in range(0, self.cols)]
             self.tiles.append(row)
+        assert(len(self.tiles) == self.rows)
 
     def pfmap_str(self):
         ret = ""
+        num_tiles_written = 0
         for r in range(0, self.rows):
             for c in range(0, self.cols):
-                ret += tile_to_string(self.tiles[r][c]) + " "
-            ret += "\n"
+                ret += tile_to_string(self.tiles[r][c])
+                num_tiles_written += 1
+                if num_tiles_written % 4 == 0:
+                    ret += "\n"
+                else:
+                    ret += " "
         return ret
 
     @classmethod
@@ -113,16 +130,21 @@ class Chunk(object):
         ret.tiles = []
         line_idx = 0
 
-        for r in range(0, pf.TILES_PER_CHUNK_HEIGHT):
-            tile_strings = lines[line_idx].split()
+        rows_read = 0
+        while rows_read < pf.TILES_PER_CHUNK_HEIGHT:
+            tiles_read = 0
             tiles_row = []
-            for c in range(0, pf.TILES_PER_CHUNK_WIDTH):
-                tile = tile_from_string(tile_strings[c])
-                tiles_row.append(tile)
+            while tiles_read < pf.TILES_PER_CHUNK_WIDTH:
+                tile_strings = lines[line_idx].split()
+                tiles_read += len(tile_strings)
+                for c in range(0, len(tile_strings)):
+                    tile = tile_from_string(tile_strings[c])
+                    tiles_row.append(tile)
+                line_idx += 1
             ret.tiles.append(tiles_row)
-            line_idx += 1
+            rows_read += 1
 
-        return ret
+        return ret, line_idx
              
 
 class Map(object):
@@ -150,7 +172,7 @@ class Map(object):
             row = [Chunk() for c in range(0, self.chunk_cols)]
             self.chunks.append(row)
         self.materials = Map.DEFAULT_MATERIALS_LIST
-    
+
     def pfmap_str(self):
         ret = ""
         ret += "version " + str(EDITOR_PFMAP_VERSION) + "\n"
@@ -251,9 +273,9 @@ class Map(object):
             for r in range(0, ret.chunk_rows):
                 row = []
                 for c in range(0, ret.chunk_cols):
-                    new_chunk = Chunk.from_lines(lines[line_idx:])
+                    new_chunk, lines_read = Chunk.from_lines(lines[line_idx:])
                     row.append(new_chunk)
-                    line_idx += pf.TILES_PER_CHUNK_HEIGHT
+                    line_idx += lines_read
                 ret.chunks.append(row)
         except:
             traceback.print_exc()
