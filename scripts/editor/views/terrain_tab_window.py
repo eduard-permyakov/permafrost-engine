@@ -52,8 +52,10 @@ class TerrainTabWindow(pf.Window):
         self.selected_height_idx = 0
         self.blend_textures = True
         self.blend_normals = True
+        self.selected_side_mat_idx = 1
 
     def update(self):
+
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Selected Tile:", (255, 255, 255))
 
@@ -151,4 +153,14 @@ class TerrainTabWindow(pf.Window):
             self.selected_height_idx = self.combo_box([str(h) for h in self.heights], self.selected_height_idx, 25, (UI_LEFT_PANE_WIDTH - 30, 200))
             if old_height_idx != self.selected_height_idx:
                 pf.global_event(EVENT_HEIGHT_SELECTION_CHANGED, self.heights[self.selected_height_idx])
+            self.layout_row_dynamic(10, 1)
+
+            self.layout_row_dynamic(20, 1)
+            self.label_colored_wrap("Side Texture:", (255, 255, 255))
+
+            self.layout_row_static(25, UI_LEFT_PANE_WIDTH - 30, 1)
+            old_side_mat_idx = self.selected_side_mat_idx
+            self.selected_side_mat_idx = self.combo_box([mat.name for mat in globals.active_map.materials], self.selected_side_mat_idx, 25, (UI_LEFT_PANE_WIDTH - 30, 200))
+            if old_side_mat_idx != self.selected_side_mat_idx:
+                pf.global_event(EVENT_SIDE_MAT_SEL_CHANGED, globals.active_map.materials[self.selected_side_mat_idx])
 

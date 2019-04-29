@@ -72,12 +72,14 @@ class TerrainTabVC(vc.ViewController):
                 tile_coords = globals.active_map.relative_tile_coords(global_r, global_c, r, c)
                 if tile_coords is not None:
 
+                    top_mat = globals.active_map.materials[self.view.selected_mat_idx]
+                    side_mat = globals.active_map.materials[self.view.selected_side_mat_idx]
+
                     if self.view.brush_type_idx == 0:
-                        globals.active_map.update_tile_mat(tile_coords, globals.active_map.materials[self.view.selected_mat_idx], \
-                        bm, self.view.blend_normals)
+                        globals.active_map.update_tile_mat(tile_coords, top_mat, bm, self.view.blend_normals)
                     elif self.view.brush_type_idx == 1:
                         center_height = self.view.heights[self.view.selected_height_idx]
-                        globals.active_map.update_tile(tile_coords, center_height, pf.TILETYPE_FLAT, 0, bm, self.view.blend_normals)
+                        globals.active_map.update_tile(tile_coords, center_height, pf.TILETYPE_FLAT, side_mat, 0, bm, self.view.blend_normals)
 
         if (self.view.brush_type_idx == 1 and self.view.edges_type_idx == 1):
             self.__paint_smooth_border(self.view.brush_size_idx + 1, 'down')
@@ -176,7 +178,8 @@ class TerrainTabVC(vc.ViewController):
         base_height = min(heights)
         ramp_height = max(heights) - base_height
         new_type = tile_for_case[index]
-        return base_height, new_type, ramp_height, tile.blend_mode, tile.blend_normals
+        side_mat = globals.active_map.materials[self.view.selected_side_mat_idx]
+        return base_height, new_type, side_mat, ramp_height, tile.blend_mode, tile.blend_normals
 
     def __paint_smooth_border(self, radius, dir='up'):
         assert self.selected_tile is not None

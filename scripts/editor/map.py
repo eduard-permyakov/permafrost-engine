@@ -198,18 +198,18 @@ class Map(object):
         chunk = self.chunks[tile_coords[0][0]][tile_coords[0][1]]
         tile = chunk.tiles[tile_coords[1][0]][tile_coords[1][1]]
 
-        new_idx = self.materials.index(top_material)
-        tile.top_mat_idx = new_idx
+        tile.top_mat_idx = self.materials.index(top_material)
         tile.blend_mode = blend_mode
         tile.blend_normals = blend_normals
 
         pf.update_tile(tile_coords[0], tile_coords[1], tile)
 
-    def update_tile(self, tile_coords, newheight, newtype, new_ramp_height, new_blend_mode, new_blend_normals):
+    def update_tile(self, tile_coords, newheight, newtype, new_side_mat, new_ramp_height, new_blend_mode, new_blend_normals):
         chunk = self.chunks[tile_coords[0][0]][tile_coords[0][1]]
         tile = chunk.tiles[tile_coords[1][0]][tile_coords[1][1]]
         tile.base_height = newheight
         tile.type = newtype
+        tile.sides_mat_idx = self.materials.index(new_side_mat)
         tile.ramp_height = new_ramp_height
         tile.blend_mode = new_blend_mode
         tile.blend_normals = new_blend_normals
