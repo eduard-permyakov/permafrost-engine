@@ -1013,7 +1013,6 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, size_t count, 
                 verts[i].raw[1]
             };
         }
-        verts_3d[5] = verts_3d[1];
 
         vec4_t surf_color = (vec4_t){colors->x, colors->y, colors->z, 0.25};
         vec4_t line_color = (vec4_t){colors->x, colors->y, colors->z, 0.75};
@@ -1070,6 +1069,7 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, size_t count, 
     shader_prog = R_Shader_GetProgForName("mesh.static.colored-per-vert");
     glUseProgram(shader_prog);
 
+    glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -1095,6 +1095,7 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, size_t count, 
     glLineWidth(old_width);
 
 cleanup:
+    glEnable(GL_CULL_FACE);
     glDisable(GL_BLEND);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);

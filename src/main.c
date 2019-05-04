@@ -347,14 +347,18 @@ static bool engine_init(char **argv)
 fail_nav:
     G_Shutdown();
 fail_game:
+    S_Shutdown();
 fail_script:
     UI_Shutdown();
 fail_nuklear:
+    E_Shutdown();
 fail_event:
 fail_render:
     Cursor_FreeAll();
 fail_cursor:
+    AL_Shutdown();
 fail_al:
+    Settings_Shutdown();
 fail_settings:
 fail_glew:
     SDL_GL_DeleteContext(s_context);

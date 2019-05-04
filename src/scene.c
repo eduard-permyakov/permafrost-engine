@@ -198,7 +198,7 @@ fail_alloc:
 
 static bool scene_load_faction(SDL_RWops *stream)
 {
-    char line[256];
+    char line[MAX_LINE_LEN];
     char name[32];
     struct attr color;
 

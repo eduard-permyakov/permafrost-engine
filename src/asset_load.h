@@ -42,7 +42,7 @@
 #include <SDL.h> /* for SDL_RWops */
 
 #define MAX_ANIM_SETS 16
-#define MAX_LINE_LEN  320
+#define MAX_LINE_LEN  256
 
 #if defined(_WIN32)
     #define strtok_r strtok_s

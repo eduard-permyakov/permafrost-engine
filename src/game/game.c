@@ -139,6 +139,7 @@ static bool g_init_cameras(void)
         Camera_SetSens (s_gs.cameras[i], 0.05f);
         g_reset_camera(s_gs.cameras[i]);
     }
+    return true;
 }
 
 static void g_init_map(void)
@@ -284,7 +285,7 @@ bool G_Init(void)
     if(!s_gs.dynamic)
         goto fail_dynamic;
 
-    if(g_init_cameras())
+    if(!g_init_cameras())
         goto fail_cams; 
 
     g_reset();
