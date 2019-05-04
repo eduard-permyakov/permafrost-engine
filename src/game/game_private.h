@@ -38,8 +38,11 @@
 
 #include "gamestate.h"
 
+struct camera;
+
 const khash_t(entity) *G_GetDynamicEntsSet(void);
 const khash_t(entity) *G_GetAllEntsSet(void);
+const struct camera   *G_GetActiveCamera(void);
 
 #endif
 

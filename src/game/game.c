@@ -241,12 +241,7 @@ static void g_render_healthbars(void)
     R_GL_DrawHealthbars(num_combat_visible, ent_health_pc, ent_top_pos_ws, ACTIVE_CAM);
 }
 
-static bool hb_mode_validate(const struct sval *new_val)
-{
-    return (new_val->type == ST_TYPE_BOOL);
-}
-
-static bool shadows_en_validate(const struct sval *new_val)
+static bool bool_val_validate(const struct sval *new_val)
 {
     return (new_val->type == ST_TYPE_BOOL);
 }
@@ -300,7 +295,7 @@ bool G_Init(void)
             .as_bool = true
         },
         .prio = 0,
-        .validate = hb_mode_validate,
+        .validate = bool_val_validate,
         .commit = NULL,
     });
     assert(status == SS_OKAY);
@@ -312,8 +307,32 @@ bool G_Init(void)
             .as_bool = true 
         },
         .prio = 0,
-        .validate = shadows_en_validate,
+        .validate = bool_val_validate,
         .commit = shadows_en_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_navigation_grid",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_last_cmd_flow_field",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
     });
     assert(status == SS_OKAY);
 
@@ -485,14 +504,20 @@ void G_Update(void)
 
 void G_Render(void)
 {
-    struct sval sh_setting;
-    ss_e status = Settings_Get("pf.video.shadows_enabled", &sh_setting);
+    struct sval setting;
+    ss_e status = Settings_Get("pf.video.shadows_enabled", &setting);
     assert(status == SS_OKAY);
 
-    if(sh_setting.as_bool) {
+    if(setting.as_bool) {
         g_shadow_pass();
     }
     g_draw_pass();
+
+    status = Settings_Get("pf.debug.show_navigation_grid", &setting);
+    assert(status == SS_OKAY);
+    if(setting.as_bool && s_gs.map) {
+        M_RenderVisiblePathableLayer(s_gs.map, ACTIVE_CAM);
+    }
 
     enum selection_type sel_type;
     const pentity_kvec_t *selected = G_Sel_Get(&sel_type);
@@ -711,6 +736,11 @@ bool G_ActivateCamera(int idx, enum cam_mode mode)
 vec3_t G_ActiveCamPos(void)
 {
     return Camera_GetPos(ACTIVE_CAM);
+}
+
+const struct camera *G_GetActiveCamera(void)
+{
+    return ACTIVE_CAM;
 }
 
 vec3_t G_ActiveCamDir(void)

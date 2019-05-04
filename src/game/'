@@ -44,7 +44,6 @@
 #include "../entity.h"
 #include "../collision.h"
 #include "../cursor.h"
-#include "../settings.h"
 #include "../script/public/script.h"
 #include "../render/public/render.h"
 #include "../map/public/map.h"
@@ -124,7 +123,7 @@ static kvec_t(struct entity*)  s_move_markers;
 static kvec_t(struct flock)    s_flocks;
 static khash_t(state)         *s_entity_state_table;
 
-/* Store the most recently issued move command location for debug rendering */
+/**/
 static bool                    s_last_cmd_dest_valid = false;
 static dest_id_t               s_last_cmd_dest;
 
@@ -358,9 +357,6 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
             kv_push(struct flock, s_flocks, new_flock);
         }
 
-        s_last_cmd_dest_valid = true;
-        s_last_cmd_dest = new_flock.dest_id;
-
         return true;
     }else{
         kh_destroy(entity, new_flock.ents);
@@ -489,16 +485,6 @@ static void on_mousedown(void *user, void *event)
 
 static void on_render_3d(void *user, void *event)
 {
-    struct sval setting;
-    ss_e status = Settings_Get("pf.debug.show_last_cmd_flow_field", &setting);
-    assert(status == SS_OKAY);
-
-    if(setting.as_bool && s_last_cmd_dest_valid) {
-
-        const struct camera *cam = G_GetActiveCamera();
-        M_NavRenderVisiblePathFlowField(s_map, cam, s_last_cmd_dest);
-    }
-
     for(int i = 0; i < kv_size(s_move_markers); i++) {
 
         struct entity *curr = kv_A(s_move_markers, i);
