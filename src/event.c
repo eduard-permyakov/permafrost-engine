@@ -41,8 +41,6 @@
 #include <assert.h>
 
 
-#define EVENT_QUEUE_SIZE_DEAULT 2048
-
 enum handler_type{
     HANDLER_TYPE_ENGINE,
     HANDLER_TYPE_SCRIPT,
@@ -73,12 +71,15 @@ struct event{
 typedef kvec_t(struct handler_desc) kvec_handler_desc_t;
 KHASH_MAP_INIT_INT64(handler_desc, kvec_handler_desc_t)
 
+QUEUE_TYPE(event, struct event)
+QUEUE_IMPL(static, event, struct event)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
 static khash_t(handler_desc) *s_event_handler_table;
-static queue_t               *s_event_queue;
+static queue(event)           s_event_queue;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -194,9 +195,8 @@ bool E_Init(void)
     if(!s_event_handler_table)
         goto fail_table;
 
-    s_event_queue = queue_init(sizeof(struct event), EVENT_QUEUE_SIZE_DEAULT);
-    if(!s_event_queue)
-        goto fail_queue; 
+    if(!queue_event_init(&s_event_queue, 2048))
+        goto fail_queue;
 
     return true;
         
@@ -221,7 +221,7 @@ void E_Shutdown(void)
     }
 
     kh_destroy(handler_desc, s_event_handler_table);
-    queue_free(s_event_queue);
+    queue_event_destroy(&s_event_queue);
 }
 
 void E_ServiceQueue(void)
@@ -229,7 +229,7 @@ void E_ServiceQueue(void)
     e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID} );
 
     struct event event;
-    while(0 == queue_pop(s_event_queue, &event)) {
+    while(queue_event_pop(&s_event_queue, &event)) {
     
         e_handle_event(event);
         /* event arg already released */
@@ -246,7 +246,7 @@ void E_ServiceQueue(void)
 void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source source)
 {
     struct event e = (struct event){event, event_arg, source, GLOBAL_ID};
-    queue_push(s_event_queue, &e);
+    queue_event_push(&s_event_queue, &e);
 }
 
 bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg)
@@ -341,6 +341,6 @@ void E_Entity_Notify(enum eventtype event, uint32_t ent_uid, void *event_arg,
                      enum event_source source)
 {
     struct event e = (struct event){event, event_arg, source, ent_uid};
-    queue_push(s_event_queue, &e);
+    queue_event_push(&s_event_queue, &e);
 }
 
