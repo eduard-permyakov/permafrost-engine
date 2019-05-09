@@ -34,72 +34,44 @@
  */
 
 #include "fieldcache.h"
+#include "../lib/public/lru_cache.h"
 #include "../lib/public/khash.h"
 #include "../event.h"
 
 #include <assert.h>
 
 
-#define EVICTION_NUM_SECS (30)
+#define LOS_CACHE_SZ    (2048)
+#define FLOW_CAHCE_SZ   (2048)
+#define PATH_CACHE_SZ   (16384)
 
-struct LOS_entry{
-    unsigned int     age;
-    struct LOS_field lf;
-};
+LRU_CACHE_TYPE(los, struct LOS_field)
+LRU_CACHE_PROTOTYPES(static, los, struct LOS_field)
+LRU_CACHE_IMPL(static, los, struct LOS_field)
 
-struct flow_entry{
-    unsigned int      age;
-    struct flow_field ff;
-};
+LRU_CACHE_TYPE(flow, struct flow_field)
+LRU_CACHE_PROTOTYPES(static, flow, struct flow_field)
+LRU_CACHE_IMPL(static, flow, struct flow_field)
 
-struct path_entry{
-    unsigned int age;
-    ff_id_t      id;
-};
-
-KHASH_MAP_INIT_INT64(los, struct LOS_entry)
-KHASH_MAP_INIT_INT64(flow, struct flow_entry)
-KHASH_MAP_INIT_INT64(dest_flow, struct path_entry)
+LRU_CACHE_TYPE(path, ff_id_t)
+LRU_CACHE_PROTOTYPES(static, path, ff_id_t)
+LRU_CACHE_IMPL(static, path, ff_id_t)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-khash_t(los)         *s_los_table;
-khash_t(flow)        *s_flow_table;
-/* The dest_flow table maps a (dest_id, chunk coordinate) tuple to a flow field ID,
- * which could be used to retreive the relevant field from the flow table. 
+lru(los)  s_los_cache;
+lru(flow) s_flow_cache;
+/* The path cache maps a (dest_id, chunk coordinate) tuple to a flow field ID,
+ * which could be used to retreive the relevant field from the flow cache. 
  * The reason for this is that the same flow field chunk can be shared between
  * many different paths. */
-khash_t(dest_flow)   *s_dest_flow_table;
+lru(path) s_path_cache;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
-
-static void on_1hz_tick(void *unused1, void *unused2)
-{
-    for(khiter_t k = kh_begin(s_los_table); k != kh_end(s_los_table); k++) {
-        if(!kh_exist(s_los_table, k))
-            continue;
-        if(--kh_value(s_los_table, k).age == 0)
-            kh_del(los, s_los_table, k);
-    }
-
-    for(khiter_t k = kh_begin(s_flow_table); k != kh_end(s_flow_table); k++) {
-        if(!kh_exist(s_flow_table, k))
-            continue;
-        if(--kh_value(s_flow_table, k).age == 0)
-            kh_del(flow, s_flow_table, k);
-    }
-
-    for(khiter_t k = kh_begin(s_dest_flow_table); k != kh_end(s_dest_flow_table); k++) {
-        if(!kh_exist(s_dest_flow_table, k))
-            continue;
-        if(--kh_value(s_dest_flow_table, k).age == 0)
-            kh_del(dest_flow, s_dest_flow_table, k);
-    }
-}
 
 uint64_t key_for_dest_and_chunk(dest_id_t id, struct coord chunk)
 {
@@ -112,119 +84,74 @@ uint64_t key_for_dest_and_chunk(dest_id_t id, struct coord chunk)
 
 bool N_FC_Init(void)
 {
-    s_los_table = kh_init(los);
-    if(!s_los_table)
+    if(!lru_los_init(&s_los_cache, LOS_CACHE_SZ))
         goto fail_los;
 
-    s_flow_table = kh_init(flow);
-    if(!s_flow_table)
+    if(!lru_flow_init(&s_flow_cache, FLOW_CAHCE_SZ))
         goto fail_flow;
 
-    s_dest_flow_table = kh_init(dest_flow);
-    if(!s_dest_flow_table)
-        goto fail_dest_flow;
+    if(!lru_path_init(&s_path_cache, PATH_CACHE_SZ))
+        goto fail_path;
 
-    E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL);
     return true;
 
-fail_dest_flow:
-    kh_destroy(flow, s_flow_table);
+fail_path:
+    lru_flow_destroy(&s_flow_cache);
 fail_flow:
-    kh_destroy(los, s_los_table);
+    lru_los_destroy(&s_los_cache);
 fail_los:
     return false;
 }
 
 void N_FC_Shutdown(void)
 {
-    E_Global_Unregister(EVENT_1HZ_TICK, on_1hz_tick);
-
-    kh_destroy(los, s_los_table);
-    kh_destroy(flow, s_flow_table);
-    kh_destroy(dest_flow, s_dest_flow_table);
+    lru_los_destroy(&s_los_cache);
+    lru_flow_destroy(&s_flow_cache);
+    lru_path_destroy(&s_path_cache);
 }
 
 bool N_FC_ContainsLOSField(dest_id_t id, struct coord chunk_coord)
 {
-    khiter_t k = kh_get(los, s_los_table, key_for_dest_and_chunk(id, chunk_coord));
-    if(k == kh_end(s_los_table))
-        return false;
-
-    return true;
+    uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
+    return lru_los_contains(&s_los_cache, key);
 }
 
 const struct LOS_field *N_FC_LOSFieldAt(dest_id_t id, struct coord chunk_coord)
 {
-    khiter_t k = kh_get(los, s_los_table, key_for_dest_and_chunk(id, chunk_coord));
-    assert(k != kh_end(s_los_table));
-
-    kh_value(s_los_table, k).age = EVICTION_NUM_SECS;
-    return &kh_value(s_los_table, k).lf;
+    uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
+    return lru_los_at(&s_los_cache, key);
 }
 
-void N_FC_SetLOSField(dest_id_t id, struct coord chunk_coord, const struct LOS_field *lf)
+void N_FC_PutLOSField(dest_id_t id, struct coord chunk_coord, const struct LOS_field *lf)
 {
-    int ret;
-    khiter_t k = kh_put(los, s_los_table, key_for_dest_and_chunk(id, chunk_coord), &ret);
-    assert(ret != -1 && ret != 0);
-    kh_value(s_los_table, k) = (struct LOS_entry){
-        .age = EVICTION_NUM_SECS,
-        .lf = *lf
-    };
+    uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
+    lru_los_put(&s_los_cache, key, lf);
 }
 
-bool N_FC_ContainsFlowField(dest_id_t id, struct coord chunk_coord, ff_id_t *out_ffid)
+bool N_FC_ContainsFlowField(ff_id_t ffid)
 {
-    khiter_t k;
-
-    k = kh_get(dest_flow, s_dest_flow_table, key_for_dest_and_chunk(id, chunk_coord));
-    if(k == kh_end(s_dest_flow_table))
-        return false;
-
-    ff_id_t key = kh_value(s_dest_flow_table, k).id;
-    k = kh_get(flow, s_flow_table, key);
-    if(k == kh_end(s_flow_table))
-        return false;
-
-    *out_ffid = key;
-    return true;
+    return lru_flow_contains(&s_flow_cache, ffid);
 }
 
-const struct flow_field *N_FC_FlowFieldAt(dest_id_t id, struct coord chunk_coord)
+const struct flow_field *N_FC_FlowFieldAt(ff_id_t ffid)
 {
-    khiter_t k;
-
-    k = kh_get(dest_flow, s_dest_flow_table, key_for_dest_and_chunk(id, chunk_coord));
-    assert(k != kh_end(s_dest_flow_table));
-
-    ff_id_t key = kh_value(s_dest_flow_table, k).id;
-    kh_value(s_dest_flow_table, k).age = EVICTION_NUM_SECS;
-
-    k = kh_get(flow, s_flow_table, key);
-    assert(k != kh_end(s_flow_table));
-
-    kh_value(s_flow_table, k).age = EVICTION_NUM_SECS;
-    return &kh_value(s_flow_table, k).ff;
+    return lru_flow_at(&s_flow_cache, ffid);
 }
 
-void N_FC_SetFlowField(dest_id_t id, struct coord chunk_coord, 
-                       ff_id_t field_id, const struct flow_field *ff)
+void N_FC_PutFlowField(ff_id_t ffid, const struct flow_field *ff)
 {
-    khiter_t k;
-    int ret;
+    lru_flow_put(&s_flow_cache, ffid, ff);
+}
 
-    k = kh_put(dest_flow, s_dest_flow_table, key_for_dest_and_chunk(id, chunk_coord), &ret);
-    assert(ret != -1);
-    kh_value(s_dest_flow_table, k) = (struct path_entry){
-        .age = EVICTION_NUM_SECS,
-        .id = field_id
-    };
+bool N_FC_GetDestFFMapping(dest_id_t id, struct coord chunk_coord, ff_id_t *out_ff)
+{
+    uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
+    return lru_path_get(&s_path_cache, key, out_ff);
+}
 
-    k = kh_put(flow, s_flow_table, field_id, &ret);
-    assert(ret != -1);
-    kh_value(s_flow_table, k) = (struct flow_entry){
-        .age = EVICTION_NUM_SECS,
-        .ff = *ff
-    };
+void N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, ff_id_t ffid)
+{
+    uint64_t key = key_for_dest_and_chunk(dest_id, chunk_coord);
+    lru_path_put(&s_path_cache, key, &ffid);
 }
 

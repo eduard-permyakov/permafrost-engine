@@ -48,41 +48,33 @@
 /* FC GENERAL                                                                */
 /*###########################################################################*/
 
-bool                     N_FC_Init(void);
-void                     N_FC_Shutdown(void);
+bool N_FC_Init(void);
+void N_FC_Shutdown(void);
 
 /*###########################################################################*/
 /* LOS FIELD CACHING                                                         */
 /*###########################################################################*/
 
-bool                     N_FC_ContainsLOSField(dest_id_t id, struct coord chunk_coord);
-
-/* ------------------------------------------------------------------------
- * Updates the 'age' of the entry, which is used for determining which 
- * entries to evict. Returned pointer should not be stored, as it may become 
- * invalid after eviction.
- * ------------------------------------------------------------------------
+/* Returned pointer should not be cached, as it may become invalid after eviction. 
  */
 const struct LOS_field  *N_FC_LOSFieldAt(dest_id_t id, struct coord chunk_coord);
-void                     N_FC_SetLOSField(dest_id_t id, struct coord chunk_coord, 
-                                          const struct LOS_field *lf);
+
+bool N_FC_ContainsLOSField(dest_id_t id, struct coord chunk_coord);
+void N_FC_PutLOSField(dest_id_t id, struct coord chunk_coord, const struct LOS_field *lf);
 
 /*###########################################################################*/
 /* FLOW FIELD CACHING                                                        */
 /*###########################################################################*/
 
-bool                     N_FC_ContainsFlowField(dest_id_t id, struct coord chunk_coord,
-                                                ff_id_t *out_ffid);
-
-/* ------------------------------------------------------------------------
- * Updates the 'age' of the entry, which is used for determining which 
- * entries to evict. Returned pointer should not be stored, as it may become 
- * invalid after eviction.
- * ------------------------------------------------------------------------
+/* Returned pointer should not be cached, as it may become invalid after eviction. 
  */
-const struct flow_field *N_FC_FlowFieldAt(dest_id_t id, struct coord chunk_coord);
-void                     N_FC_SetFlowField(dest_id_t id, struct coord chunk_coord, 
-                                           ff_id_t field_id, const struct flow_field *ff);
+const struct flow_field *N_FC_FlowFieldAt(ff_id_t ffid);
+
+bool N_FC_ContainsFlowField(ff_id_t ffid);
+void N_FC_PutFlowField(ff_id_t ffid, const struct flow_field *ff);
+
+bool N_FC_GetDestFFMapping(dest_id_t id, struct coord chunk_coord, ff_id_t *out_ff);
+void N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, ff_id_t ffid);
 
 #endif
 

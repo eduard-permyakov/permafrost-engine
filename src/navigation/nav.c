@@ -632,9 +632,9 @@ void N_RenderPathFlowField(void *nav_private, const struct map *map,
     vec2_t dirs_buff[FIELD_RES_R * FIELD_RES_C];
 
     ff_id_t field_id;
-    if(!N_FC_ContainsFlowField(id, (struct coord){chunk_r, chunk_c}, &field_id))
+    if(!N_FC_GetDestFFMapping(id, (struct coord){chunk_r, chunk_c}, &field_id))
         return;
-    const struct flow_field *ff = N_FC_FlowFieldAt(id, (struct coord){chunk_r, chunk_c});
+    const struct flow_field *ff = N_FC_FlowFieldAt(field_id);
 
     for(int r = 0; r < FIELD_RES_R; r++) {
         for(int c = 0; c < FIELD_RES_C; c++) {
@@ -839,9 +839,8 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
 
     dest_id_t ret = n_dest_id(dst_desc);
 
-    /* Generate the flow field for the destination chunk, if necessary */
     ff_id_t id;
-    if(!N_FC_ContainsFlowField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)){
+    if(!N_FC_GetDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)) {
 
         struct field_target target = (struct field_target){
             .type = TARGET_TILE,
@@ -852,9 +851,14 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         struct flow_field ff;
         id = N_FlowField_ID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target);
 
-        N_FlowFieldInit((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, priv, &ff);
-        N_FlowFieldUpdate(chunk, target, &ff);
-        N_FC_SetFlowField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, id, &ff);
+        if(!N_FC_ContainsFlowField(id)) {
+        
+            N_FlowFieldInit((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, priv, &ff);
+            N_FlowFieldUpdate(chunk, target, &ff);
+            N_FC_PutFlowField(id, &ff);
+        }
+
+        N_FC_PutDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, id);
     }
 
     /* Create the LOS field for the destination chunk, if necessary */
@@ -862,7 +866,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
 
         struct LOS_field lf;
         N_LOSFieldCreate(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, dst_desc, priv, map_pos, &lf, NULL);
-        N_FC_SetLOSField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &lf);
+        N_FC_PutLOSField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &lf);
     }
 
     /* Source and destination positions are in the same chunk, and a path exists
@@ -932,7 +936,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         ff_id_t exist_id;
         struct flow_field ff;
 
-        if(N_FC_ContainsFlowField(ret, chunk_coord, &exist_id)) {
+        if(N_FC_GetDestFFMapping(ret, chunk_coord, &exist_id)) {
 
             /* The exact flow field we need has already been made */
             if(new_id == exist_id)
@@ -941,7 +945,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
             /* This is the edge case when a path to a particular target takes us through
              * the same chunk more than once. This can happen if a chunk is divided into
              * 'islands' by unpathable barriers. */
-            const struct flow_field *exist_ff  = N_FC_FlowFieldAt(ret, chunk_coord);
+            const struct flow_field *exist_ff  = N_FC_FlowFieldAt(exist_id);
             memcpy(&ff, exist_ff, sizeof(struct flow_field));
 
             N_FlowFieldUpdate(chunk, target, &ff);
@@ -949,13 +953,19 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
              * this case more than one flowfield ID maps to the same field but we only keep 
              * one of the IDs, it may be possible that the same flowfield will be redundantly 
              * updated at a later time. However, this is largely inconsequential. */
-            N_FC_SetFlowField(ret, chunk_coord, new_id, &ff);
+            N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
+            N_FC_PutFlowField(new_id, &ff);
+
             continue;
         }
 
-        N_FlowFieldInit(chunk_coord, priv, &ff);
-        N_FlowFieldUpdate(chunk, target, &ff);
-        N_FC_SetFlowField(ret, chunk_coord, new_id, &ff);
+        N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
+        if(!N_FC_ContainsFlowField(new_id)) {
+        
+            N_FlowFieldInit(chunk_coord, priv, &ff);
+            N_FlowFieldUpdate(chunk, target, &ff);
+            N_FC_PutFlowField(new_id, &ff);
+        }
 
         if(!N_FC_ContainsLOSField(ret, chunk_coord)) {
 
@@ -967,7 +977,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
 
             struct LOS_field lf;
             N_LOSFieldCreate(ret, chunk_coord, dst_desc, priv, map_pos, &lf, prev_los);
-            N_FC_SetLOSField(ret, chunk_coord, &lf);
+            N_FC_PutLOSField(ret, chunk_coord, &lf);
             prev_los_coord = chunk_coord;
         }
     }
@@ -991,16 +1001,17 @@ vec2_t N_DesiredVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
     assert(result);
 
     ff_id_t ffid;
-    if(!N_FC_ContainsFlowField(id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid)) {
+    if(!N_FC_GetDestFFMapping(id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid)) {
 
         dest_id_t ret;
         bool result = N_RequestPath(nav_private, curr_pos, xz_dest, map_pos, &ret);
         if(!result)
             return (vec2_t){0.0f};
         assert(ret == id);
+        N_FC_GetDestFFMapping(id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid);
     }
 
-    const struct flow_field *ff = N_FC_FlowFieldAt(id, (struct coord){tile.chunk_r, tile.chunk_c});
+    const struct flow_field *ff = N_FC_FlowFieldAt(ffid);
     assert(ff);
 
     unsigned dir_idx = ff->field[tile.tile_r][tile.tile_c].dir_idx;
@@ -1020,7 +1031,7 @@ vec2_t N_DesiredVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
         assert(ret == id);
     }
 
-    ff = N_FC_FlowFieldAt(id, (struct coord){tile.chunk_r, tile.chunk_c});
+    ff = N_FC_FlowFieldAt(ffid);
     assert(ff);
 
     dir_idx = ff->field[tile.tile_r][tile.tile_c].dir_idx;
