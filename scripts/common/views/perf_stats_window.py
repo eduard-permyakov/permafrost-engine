@@ -37,7 +37,7 @@ import pf
 class PerfStatsWindow(pf.Window):
 
     WIDTH = 600
-    HEIGHT = 320
+    HEIGHT = 420
 
     def __init__(self):
         vresx, vresy = (1920, 1080)
@@ -78,6 +78,7 @@ class PerfStatsWindow(pf.Window):
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Max Frame Latency: {0} ms".format(self.max_frame_latency), (255, 255, 0))
 
+        self.layout_row_dynamic(10, 1)
         render_info = pf.get_render_info()
 
         self.layout_row_dynamic(20, 1)
@@ -88,4 +89,21 @@ class PerfStatsWindow(pf.Window):
         self.label_colored_wrap("Shading Language Version: %s" % render_info["shading_language_version"], (255, 255, 255))
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Vendor: %s" % render_info["vendor"], (255, 255, 255))
+
+        self.layout_row_dynamic(10, 1)
+        nav_stats = pf.get_nav_perfstats()
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("[LOS Field Cache]   Used: {used:04d}/{cap:04d}  Hit Rate: {hr:02.03f}" \
+            .format(used=nav_stats["los_used"], cap=nav_stats["los_max"], hr=nav_stats["los_hit_rate"]), \
+            (0, 255, 0))
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("[Flow Field Cache]   Used: {used:04d}/{cap:04d}   Hit Rate: {hr:02.03f}" \
+            .format(used=nav_stats["flow_used"], cap=nav_stats["flow_max"], hr=nav_stats["flow_hit_rate"]), \
+            (0, 255, 0))
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("[Dest:Field Mapping Cache] Used: {used:04d}/{cap:04d}   Hit Rate: {hr:02.03f}" \
+            .format(used=nav_stats["path_used"], cap=nav_stats["path_max"], hr=nav_stats["path_hit_rate"]), \
+            (0, 255, 0))
 

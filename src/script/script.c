@@ -43,6 +43,7 @@
 #include "../entity.h"
 #include "../game/public/game.h"
 #include "../render/public/render.h"
+#include "../navigation/public/nav.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../event.h"
@@ -73,6 +74,7 @@ static PyObject *PyPf_get_resolution(PyObject *self);
 static PyObject *PyPf_get_native_resolution(PyObject *self);
 static PyObject *PyPf_get_basedir(PyObject *self);
 static PyObject *PyPf_get_render_info(PyObject *self);
+static PyObject *PyPf_get_nav_perfstats(PyObject *self);
 static PyObject *PyPf_get_mouse_pos(PyObject *self);
 static PyObject *PyPf_mouse_over_ui(PyObject *self);
 
@@ -182,6 +184,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_get_render_info, METH_NOARGS,
     "Returns a dictionary describing the renderer context. It will have the string keys "
     "'renderer', 'version', 'shading_language_version', and 'vendor'."},
+
+    {"get_nav_perfstats", 
+    (PyCFunction)PyPf_get_nav_perfstats, METH_NOARGS,
+    "Returns a dictionary holding various performance couners for the navigation subsystem."},
 
     {"get_mouse_pos", 
     (PyCFunction)PyPf_get_mouse_pos, METH_NOARGS,
@@ -577,6 +583,31 @@ static PyObject *PyPf_get_render_info(PyObject *self)
     rval |= PyDict_SetItemString(ret, "vendor",   Py_BuildValue("s", R_GL_GetInfo(RENDER_INFO_VENDOR)));
     rval |= PyDict_SetItemString(ret, "renderer", Py_BuildValue("s", R_GL_GetInfo(RENDER_INFO_RENDERER)));
     rval |= PyDict_SetItemString(ret, "shading_language_version", Py_BuildValue("s", R_GL_GetInfo(RENDER_INFO_SL_VERSION)));
+    assert(0 == rval);
+
+    return ret;
+}
+
+static PyObject *PyPf_get_nav_perfstats(PyObject *self)
+{
+    PyObject *ret = PyDict_New();
+    if(!ret) {
+        return NULL;
+    }
+
+    struct fc_stats stats;
+    N_FC_GetStats(&stats);
+
+    int rval = 0;
+    rval |= PyDict_SetItemString(ret, "los_used",      Py_BuildValue("i", stats.los_used));
+    rval |= PyDict_SetItemString(ret, "los_max",       Py_BuildValue("i", stats.los_max));
+    rval |= PyDict_SetItemString(ret, "los_hit_rate",  Py_BuildValue("f", stats.los_hit_rate));
+    rval |= PyDict_SetItemString(ret, "flow_used",     Py_BuildValue("i", stats.flow_used));
+    rval |= PyDict_SetItemString(ret, "flow_max",      Py_BuildValue("i", stats.flow_max));
+    rval |= PyDict_SetItemString(ret, "flow_hit_rate", Py_BuildValue("f", stats.flow_hit_rate));
+    rval |= PyDict_SetItemString(ret, "path_used",     Py_BuildValue("i", stats.path_used));
+    rval |= PyDict_SetItemString(ret, "path_max",      Py_BuildValue("i", stats.path_max));
+    rval |= PyDict_SetItemString(ret, "path_hit_rate", Py_BuildValue("f", stats.path_hit_rate));
     assert(0 == rval);
 
     return ret;

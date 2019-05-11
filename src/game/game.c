@@ -150,6 +150,7 @@ static void g_init_map(void)
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
     G_Move_Init(s_gs.map);
     G_Combat_Init();
+    N_FC_ClearStats();
 }
 
 static void g_shadow_pass(void)

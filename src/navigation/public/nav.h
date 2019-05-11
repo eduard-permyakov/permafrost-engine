@@ -47,6 +47,18 @@ struct entity;
 
 typedef uint32_t dest_id_t;
 
+struct fc_stats{
+    unsigned los_used;
+    unsigned los_max;
+    float    los_hit_rate;
+    unsigned flow_used;
+    unsigned flow_max;
+    float    flow_hit_rate;
+    unsigned path_used;
+    unsigned path_max;
+    float    path_hit_rate;
+};
+
 /*###########################################################################*/
 /* NAV GENERAL                                                               */
 /*###########################################################################*/
@@ -154,6 +166,22 @@ bool      N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t 
  * ------------------------------------------------------------------------
  */
 bool      N_PositionPathable(vec2_t xz_pos, void *nav_private, vec3_t map_pos);
+
+/*###########################################################################*/
+/* NAV FIELD CACHE                                                           */
+/*###########################################################################*/
+
+/* ------------------------------------------------------------------------
+ * Reset the field cache performance counters.
+ * ------------------------------------------------------------------------
+ */
+void      N_FC_ClearStats(void);
+
+/* ------------------------------------------------------------------------
+ * Get up-to-date performance counters for the field/path caches.
+ * ------------------------------------------------------------------------
+ */
+void      N_FC_GetStats(struct fc_stats *out_stats);
 
 #endif
 

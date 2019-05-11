@@ -61,13 +61,22 @@ LRU_CACHE_IMPL(static, path, ff_id_t)
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-lru(los)  s_los_cache;
-lru(flow) s_flow_cache;
+static lru(los)  s_los_cache;
+static lru(flow) s_flow_cache;
 /* The path cache maps a (dest_id, chunk coordinate) tuple to a flow field ID,
  * which could be used to retreive the relevant field from the flow cache. 
  * The reason for this is that the same flow field chunk can be shared between
  * many different paths. */
-lru(path) s_path_cache;
+static lru(path) s_path_cache;
+
+static struct priv_fc_stats{
+    unsigned los_query;
+    unsigned los_hit;
+    unsigned flow_query;
+    unsigned flow_hit;
+    unsigned path_query;
+    unsigned path_hit;
+}s_perfstats = {0};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -110,10 +119,35 @@ void N_FC_Shutdown(void)
     lru_path_destroy(&s_path_cache);
 }
 
+void N_FC_ClearStats(void)
+{
+    memset(&s_perfstats, 0, sizeof(s_perfstats));
+}
+
+void N_FC_GetStats(struct fc_stats *out_stats)
+{
+    out_stats->los_used = s_los_cache.used;
+    out_stats->los_max = s_los_cache.capacity;
+    out_stats->los_hit_rate = !s_perfstats.los_query ? 0
+                            : ((float)s_perfstats.los_hit) / s_perfstats.los_query;
+    out_stats->flow_used = s_flow_cache.used;
+    out_stats->flow_max = s_flow_cache.capacity;
+    out_stats->flow_hit_rate = !s_perfstats.flow_query ? 0
+                             : ((float)s_perfstats.flow_hit) / s_perfstats.flow_query;
+    out_stats->path_used = s_path_cache.used;
+    out_stats->path_max = s_path_cache.capacity;
+    out_stats->path_hit_rate = !s_perfstats.path_hit ? 0
+                             : ((float)s_perfstats.path_hit) / s_perfstats.path_query;
+}
+
 bool N_FC_ContainsLOSField(dest_id_t id, struct coord chunk_coord)
 {
     uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
-    return lru_los_contains(&s_los_cache, key);
+    bool ret = lru_los_contains(&s_los_cache, key);
+
+    s_perfstats.los_query++;
+    s_perfstats.los_hit += !!ret;
+    return ret;
 }
 
 const struct LOS_field *N_FC_LOSFieldAt(dest_id_t id, struct coord chunk_coord)
@@ -130,7 +164,11 @@ void N_FC_PutLOSField(dest_id_t id, struct coord chunk_coord, const struct LOS_f
 
 bool N_FC_ContainsFlowField(ff_id_t ffid)
 {
-    return lru_flow_contains(&s_flow_cache, ffid);
+    bool ret = lru_flow_contains(&s_flow_cache, ffid);
+
+    s_perfstats.flow_query++;
+    s_perfstats.flow_hit += !!ret;
+    return ret;
 }
 
 const struct flow_field *N_FC_FlowFieldAt(ff_id_t ffid)
@@ -146,7 +184,11 @@ void N_FC_PutFlowField(ff_id_t ffid, const struct flow_field *ff)
 bool N_FC_GetDestFFMapping(dest_id_t id, struct coord chunk_coord, ff_id_t *out_ff)
 {
     uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
-    return lru_path_get(&s_path_cache, key, out_ff);
+    bool ret = lru_path_get(&s_path_cache, key, out_ff);
+
+    s_perfstats.path_query++;
+    s_perfstats.path_hit += !!ret;
+    return ret;
 }
 
 void N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, ff_id_t ffid)
