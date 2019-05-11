@@ -39,23 +39,26 @@
 #include <stdbool.h>
 
 /* The far end of the camera's clipping frustrum, in OpenGL coordinates */
-#define CONFIG_DRAWDIST             1000
-#define CONFIG_TILE_TEX_RES         128
+#define CONFIG_DRAWDIST             (1000)
+#define CONFIG_TILE_TEX_RES         (128)
 #define CONFIG_LOADING_SCREEN       "assets/loading_screens/battle_of_kulikovo.png"
 
-#define CONFIG_SHADOW_MAP_RES       2048
+#define CONFIG_SHADOW_MAP_RES       (2048)
 /* Determines the draw distance from the light source when creating the
  * shadow map. Note that a higher drawdistance leads to more peterpanning.
  */
-#define CONFIG_SHADOW_DRAWDIST      832
+#define CONFIG_SHADOW_DRAWDIST      (832)
 /* This is the half-width of the light source's frustum, in OpenGL coordinates.
  * When looking around with an FPS camera, objects at the edges of the camera may 
  * not be properly shadowed. However, increasing the FOV results in lower-quality 
  * shadows for the same shadow map resolution. 
  */
-#define CONFIG_SHADOW_FOV           160
+#define CONFIG_SHADOW_FOV           (160)
 
 #define CONFIG_SETTINGS_FILENAME    "pf.conf"
 
+#define CONFIG_LOS_CACHE_SZ         (2048)
+#define CONFIG_FLOW_CAHCE_SZ        (2048)
+#define CONFIG_PATH_CACHE_SZ        (16384)
 
 #endif

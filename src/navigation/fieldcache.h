@@ -39,7 +39,6 @@
 #include "public/nav.h"
 #include "nav_data.h"
 #include "field.h"
-#include "a_star.h"
 
 #include <stdbool.h>
 
