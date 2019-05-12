@@ -37,6 +37,7 @@
 #include "nav_private.h"
 #include "../lib/public/pqueue.h"
 #include "../lib/public/khash.h"
+#include "fieldcache.h"
 
 #include <assert.h>
 #include <string.h>
@@ -155,11 +156,24 @@ static float heuristic(struct coord a, struct coord b)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool AStar_GridPath(struct coord start, struct coord finish, 
+bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
                     coord_vec_t *out_path, float *out_cost)
 {
-    pq_coord_t            frontier;
+    struct grid_path_desc gp = {0};
+    kv_init(gp.path);
+
+    if(N_FC_GetGridPath(start, finish, chunk, &gp)) {
+
+        if(!gp.exists)
+            return false;
+
+        *out_cost = gp.cost;
+        kv_copy(struct coord, *out_path, gp.path);
+        return true;
+    }
+
+    pq_coord_t          frontier;
     khash_t(key_coord) *came_from;
     khash_t(key_float) *running_cost;
     
@@ -233,9 +247,18 @@ bool AStar_GridPath(struct coord start, struct coord finish,
     pq_coord_destroy(&frontier);
     kh_destroy(key_float, running_cost);
     kh_destroy(key_coord, came_from);
+
+    /* Cache the result */
+    gp.exists = true;
+    kv_copy(struct coord, gp.path, *out_path);
+    gp.cost = *out_cost;
+    N_FC_PutGridPath(start, finish, chunk, &gp);
     return true;
 
 fail_find_path:
+    gp.exists = false;
+    N_FC_PutGridPath(start, finish, chunk, &gp);
+
     pq_coord_destroy(&frontier);
     kh_destroy(key_float, running_cost);
 fail_running_cost:
@@ -271,8 +294,12 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
             (port->endpoints[0].r + port->endpoints[1].r) / 2,
             (port->endpoints[0].c + port->endpoints[1].c) / 2,
         };
+
+        struct coord chunk_coord = (struct coord){start_tile.chunk_r, start_tile.chunk_c};
+        struct coord tile_coord = (struct coord){start_tile.tile_r, start_tile.tile_c};
+
         float cost;
-        bool found = AStar_GridPath((struct coord){start_tile.tile_r, start_tile.tile_c}, port_center, chunk->cost_base, &path, &cost);
+        bool found = AStar_GridPath(tile_coord, port_center, chunk_coord, chunk->cost_base, &path, &cost);
 		if(found){
 			
             kh_put_val(key_float, running_cost, portal_to_key(port), cost);
@@ -328,7 +355,6 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
             break;
         curr = kh_value(came_from, k);
     }
-    //kv_push(const struct portal*, *out_path, start);
 
     /* Reverse the path vector */
     for(int i = 0, j = kv_size(*out_path) - 1; i < j; i++, j--) {
@@ -355,21 +381,21 @@ fail_came_from:
     return false;
 }
 
-const struct portal *AStar_ReachablePortal(struct coord start,
-                                           const struct nav_chunk *chunk)
+const struct portal *AStar_ReachablePortal(struct coord start, struct coord chunk,
+                                           const struct nav_chunk *nchunk)
 {
     coord_vec_t path;
     kv_init(path);
 
-    for(int i = 0; i < chunk->num_portals; i++) {
+    for(int i = 0; i < nchunk->num_portals; i++) {
 
-        const struct portal *port = &chunk->portals[i];
+        const struct portal *port = &nchunk->portals[i];
         struct coord port_center = (struct coord){
             (port->endpoints[0].r + port->endpoints[1].r) / 2,
             (port->endpoints[0].c + port->endpoints[1].c) / 2,
         };
         float cost;
-        bool found = AStar_GridPath(start, port_center, chunk->cost_base, &path, &cost);
+        bool found = AStar_GridPath(start, port_center, chunk, nchunk->cost_base, &path, &cost);
 		if(found){
     		kv_destroy(path);
 			return port;
@@ -380,14 +406,14 @@ const struct portal *AStar_ReachablePortal(struct coord start,
     return NULL;
 }
 
-bool AStar_TilesLinked(struct coord start, struct coord finish,
+bool AStar_TilesLinked(struct coord start, struct coord finish, struct coord chunk,
                        const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C])
 {
     coord_vec_t path;
     kv_init(path);
 
     float cost;
-    bool ret = AStar_GridPath(start, finish, cost_field, &path, &cost);
+    bool ret = AStar_GridPath(start, finish, chunk, cost_field, &path, &cost);
 
     kv_destroy(path);
     return ret;    

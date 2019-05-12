@@ -54,9 +54,12 @@ struct fc_stats{
     unsigned flow_used;
     unsigned flow_max;
     float    flow_hit_rate;
-    unsigned path_used;
-    unsigned path_max;
-    float    path_hit_rate;
+    unsigned mapping_used;
+    unsigned mapping_max;
+    float    mapping_hit_rate;
+    unsigned grid_path_used;
+    unsigned grid_path_max;
+    float    grid_path_hit_rate;
 };
 
 /*###########################################################################*/
@@ -182,6 +185,12 @@ void      N_FC_ClearStats(void);
  * ------------------------------------------------------------------------
  */
 void      N_FC_GetStats(struct fc_stats *out_stats);
+
+/* ------------------------------------------------------------------------
+ * Reset the contents of all the caches.
+ * ------------------------------------------------------------------------
+ */
+void      N_FC_ClearAll(void);
 
 #endif
 

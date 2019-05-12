@@ -37,7 +37,7 @@ import pf
 class PerfStatsWindow(pf.Window):
 
     WIDTH = 600
-    HEIGHT = 420
+    HEIGHT = 440
 
     def __init__(self):
         vresx, vresy = (1920, 1080)
@@ -102,8 +102,14 @@ class PerfStatsWindow(pf.Window):
         self.label_colored_wrap("[Flow Field Cache]   Used: {used:04d}/{cap:04d}   Hit Rate: {hr:02.03f}" \
             .format(used=nav_stats["flow_used"], cap=nav_stats["flow_max"], hr=nav_stats["flow_hit_rate"]), \
             (0, 255, 0))
+
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("[Dest:Field Mapping Cache] Used: {used:04d}/{cap:04d}   Hit Rate: {hr:02.03f}" \
-            .format(used=nav_stats["path_used"], cap=nav_stats["path_max"], hr=nav_stats["path_hit_rate"]), \
+            .format(used=nav_stats["mapping_used"], cap=nav_stats["mapping_max"], hr=nav_stats["mapping_hit_rate"]), \
+            (0, 255, 0))
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("[Grid Path Cache] Used: {used:04d}/{cap:04d}   Hit Rate: {hr:02.03f}" \
+            .format(used=nav_stats["grid_path_used"], cap=nav_stats["grid_path_max"], hr=nav_stats["grid_path_hit_rate"]), \
             (0, 255, 0))
 

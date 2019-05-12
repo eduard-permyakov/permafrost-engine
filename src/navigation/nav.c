@@ -384,7 +384,7 @@ static void n_create_portals(struct nav_private *priv)
     assert(n_links == (priv->width)*(priv->width-1) + (priv->height)*(priv->height-1));
 }
 
-static void n_link_chunk_portals(struct nav_chunk *chunk)
+static void n_link_chunk_portals(struct nav_chunk *chunk, struct coord chunk_coord)
 {
     coord_vec_t path;
     kv_init(path);
@@ -408,7 +408,7 @@ static void n_link_chunk_portals(struct nav_chunk *chunk)
             };
 
             float cost;
-            bool has_path = AStar_GridPath(a, b, chunk->cost_base, &path, &cost);
+            bool has_path = AStar_GridPath(a, b, chunk_coord, chunk->cost_base, &path, &cost);
             if(has_path) {
                 port->edges[port->num_neighbours] = (struct edge){link_candidate, cost};
                 port->num_neighbours++;    
@@ -815,7 +815,7 @@ void N_UpdatePortals(void *nav_private)
         for(int chunk_c = 0; chunk_c < priv->width; chunk_c++){
             
             struct nav_chunk *curr_chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
-            n_link_chunk_portals(curr_chunk);
+            n_link_chunk_portals(curr_chunk, (struct coord){chunk_r, chunk_c});
         }
     }
 }
@@ -874,6 +874,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
     if(src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c
     && AStar_TilesLinked((struct coord){src_desc.tile_r, src_desc.tile_c}, 
                          (struct coord){dst_desc.tile_r, dst_desc.tile_c}, 
+                         (struct coord){src_desc.chunk_r, src_desc.chunk_c},
                          priv->chunks[IDX(src_desc.chunk_r, priv->width, src_desc.chunk_c)].cost_base)) {
 
         *out_dest_id = ret;
@@ -882,6 +883,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
 
     const struct portal *dst_port;
     dst_port = AStar_ReachablePortal((struct coord){dst_desc.tile_r, dst_desc.tile_c}, 
+        (struct coord){dst_desc.chunk_r, dst_desc.chunk_c},
         &priv->chunks[IDX(dst_desc.chunk_r, priv->width, dst_desc.chunk_c)]);
 
     if(!dst_port) {

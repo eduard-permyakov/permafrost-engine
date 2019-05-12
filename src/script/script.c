@@ -599,15 +599,18 @@ static PyObject *PyPf_get_nav_perfstats(PyObject *self)
     N_FC_GetStats(&stats);
 
     int rval = 0;
-    rval |= PyDict_SetItemString(ret, "los_used",      Py_BuildValue("i", stats.los_used));
-    rval |= PyDict_SetItemString(ret, "los_max",       Py_BuildValue("i", stats.los_max));
-    rval |= PyDict_SetItemString(ret, "los_hit_rate",  Py_BuildValue("f", stats.los_hit_rate));
-    rval |= PyDict_SetItemString(ret, "flow_used",     Py_BuildValue("i", stats.flow_used));
-    rval |= PyDict_SetItemString(ret, "flow_max",      Py_BuildValue("i", stats.flow_max));
-    rval |= PyDict_SetItemString(ret, "flow_hit_rate", Py_BuildValue("f", stats.flow_hit_rate));
-    rval |= PyDict_SetItemString(ret, "path_used",     Py_BuildValue("i", stats.path_used));
-    rval |= PyDict_SetItemString(ret, "path_max",      Py_BuildValue("i", stats.path_max));
-    rval |= PyDict_SetItemString(ret, "path_hit_rate", Py_BuildValue("f", stats.path_hit_rate));
+    rval |= PyDict_SetItemString(ret, "los_used",           Py_BuildValue("i", stats.los_used));
+    rval |= PyDict_SetItemString(ret, "los_max",            Py_BuildValue("i", stats.los_max));
+    rval |= PyDict_SetItemString(ret, "los_hit_rate",       Py_BuildValue("f", stats.los_hit_rate));
+    rval |= PyDict_SetItemString(ret, "flow_used",          Py_BuildValue("i", stats.flow_used));
+    rval |= PyDict_SetItemString(ret, "flow_max",           Py_BuildValue("i", stats.flow_max));
+    rval |= PyDict_SetItemString(ret, "flow_hit_rate",      Py_BuildValue("f", stats.flow_hit_rate));
+    rval |= PyDict_SetItemString(ret, "mapping_used",       Py_BuildValue("i", stats.mapping_used));
+    rval |= PyDict_SetItemString(ret, "mapping_max",        Py_BuildValue("i", stats.mapping_max));
+    rval |= PyDict_SetItemString(ret, "mapping_hit_rate",   Py_BuildValue("f", stats.mapping_hit_rate));
+    rval |= PyDict_SetItemString(ret, "grid_path_used",     Py_BuildValue("i", stats.grid_path_used));
+    rval |= PyDict_SetItemString(ret, "grid_path_max",      Py_BuildValue("i", stats.grid_path_max));
+    rval |= PyDict_SetItemString(ret, "grid_path_hit_rate", Py_BuildValue("f", stats.grid_path_hit_rate));
     assert(0 == rval);
 
     return ret;
@@ -1285,46 +1288,46 @@ void S_Release(script_opaque_t obj)
 script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg)
 {
     switch(e) {
-        case SDL_KEYDOWN:
-        case SDL_KEYUP:
-            return Py_BuildValue("(i)", 
-                ((SDL_Event*)arg)->key.keysym.scancode);
+    case SDL_KEYDOWN:
+    case SDL_KEYUP:
+        return Py_BuildValue("(i)", 
+            ((SDL_Event*)arg)->key.keysym.scancode);
 
-        case SDL_MOUSEMOTION:
-            return Py_BuildValue("(i,i), (i,i)",
-                ((SDL_Event*)arg)->motion.x,
-                ((SDL_Event*)arg)->motion.y,
-                ((SDL_Event*)arg)->motion.xrel,
-                ((SDL_Event*)arg)->motion.xrel);
+    case SDL_MOUSEMOTION:
+        return Py_BuildValue("(i,i), (i,i)",
+            ((SDL_Event*)arg)->motion.x,
+            ((SDL_Event*)arg)->motion.y,
+            ((SDL_Event*)arg)->motion.xrel,
+            ((SDL_Event*)arg)->motion.xrel);
 
-        case SDL_MOUSEBUTTONDOWN:
-            return Py_BuildValue("(i, i)",
-                ((SDL_Event*)arg)->button.button,
-                ((SDL_Event*)arg)->button.state);
+    case SDL_MOUSEBUTTONDOWN:
+        return Py_BuildValue("(i, i)",
+            ((SDL_Event*)arg)->button.button,
+            ((SDL_Event*)arg)->button.state);
 
-        case SDL_MOUSEBUTTONUP:
-            return Py_BuildValue("(i, i)",
-                ((SDL_Event*)arg)->button.button,
-                ((SDL_Event*)arg)->button.state);
+    case SDL_MOUSEBUTTONUP:
+        return Py_BuildValue("(i, i)",
+            ((SDL_Event*)arg)->button.button,
+            ((SDL_Event*)arg)->button.state);
 
-        case SDL_MOUSEWHEEL:
-        {
-            uint32_t dir = ((SDL_Event*)arg)->wheel.direction;
-            return Py_BuildValue("(i, i)",
-                ((SDL_Event*)arg)->wheel.x * (dir == SDL_MOUSEWHEEL_NORMAL ? 1 : -1),
-                ((SDL_Event*)arg)->wheel.y * (dir == SDL_MOUSEWHEEL_NORMAL ? 1 : -1));
-        }
-        case EVENT_SELECTED_TILE_CHANGED:
-            if(!arg)
-                Py_RETURN_NONE;
-            return Py_BuildValue("(i,i), (i,i)", 
-                ((struct tile_desc*)arg)->chunk_r,
-                ((struct tile_desc*)arg)->chunk_c,
-                ((struct tile_desc*)arg)->tile_r,
-                ((struct tile_desc*)arg)->tile_c);
-
-        default:
+    case SDL_MOUSEWHEEL:
+    {
+        uint32_t dir = ((SDL_Event*)arg)->wheel.direction;
+        return Py_BuildValue("(i, i)",
+            ((SDL_Event*)arg)->wheel.x * (dir == SDL_MOUSEWHEEL_NORMAL ? 1 : -1),
+            ((SDL_Event*)arg)->wheel.y * (dir == SDL_MOUSEWHEEL_NORMAL ? 1 : -1));
+    }
+    case EVENT_SELECTED_TILE_CHANGED:
+        if(!arg)
             Py_RETURN_NONE;
+        return Py_BuildValue("(i,i), (i,i)", 
+            ((struct tile_desc*)arg)->chunk_r,
+            ((struct tile_desc*)arg)->chunk_c,
+            ((struct tile_desc*)arg)->tile_r,
+            ((struct tile_desc*)arg)->tile_c);
+
+    default:
+        Py_RETURN_NONE;
     }
 }
 

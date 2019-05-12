@@ -50,9 +50,13 @@ LRU_CACHE_TYPE(flow, struct flow_field)
 LRU_CACHE_PROTOTYPES(static, flow, struct flow_field)
 LRU_CACHE_IMPL(static, flow, struct flow_field)
 
-LRU_CACHE_TYPE(path, ff_id_t)
-LRU_CACHE_PROTOTYPES(static, path, ff_id_t)
-LRU_CACHE_IMPL(static, path, ff_id_t)
+LRU_CACHE_TYPE(mapping, ff_id_t)
+LRU_CACHE_PROTOTYPES(static, mapping, ff_id_t)
+LRU_CACHE_IMPL(static, mapping, ff_id_t)
+
+LRU_CACHE_TYPE(grid_path, struct grid_path_desc)
+LRU_CACHE_PROTOTYPES(static, grid_path, struct grid_path_desc)
+LRU_CACHE_IMPL(static, grid_path, struct grid_path_desc)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -60,19 +64,22 @@ LRU_CACHE_IMPL(static, path, ff_id_t)
 
 static lru(los)  s_los_cache;
 static lru(flow) s_flow_cache;
-/* The path cache maps a (dest_id, chunk coordinate) tuple to a flow field ID,
+/* The mapping cache maps a (dest_id, chunk coordinate) tuple to a flow field ID,
  * which could be used to retreive the relevant field from the flow cache. 
  * The reason for this is that the same flow field chunk can be shared between
- * many different paths. */
-static lru(path) s_path_cache;
+ * many different mappings. */
+static lru(mapping) s_mapping_cache;
+static lru(grid_path) s_grid_path_cache;
 
 static struct priv_fc_stats{
     unsigned los_query;
     unsigned los_hit;
     unsigned flow_query;
     unsigned flow_hit;
-    unsigned path_query;
-    unsigned path_hit;
+    unsigned mapping_query;
+    unsigned mapping_hit;
+    unsigned grid_path_query;
+    unsigned grid_path_hit;
 }s_perfstats = {0};
 
 /*****************************************************************************/
@@ -84,24 +91,45 @@ uint64_t key_for_dest_and_chunk(dest_id_t id, struct coord chunk)
     return ((((uint64_t)id) << 32) | (((uint64_t)chunk.r) << 16) | (((uint64_t)chunk.c) & 0xffff));
 }
 
+uint64_t grid_path_key(struct coord local_start, struct coord local_dest,
+                       struct coord chunk)
+{
+    return ((( ((uint64_t)local_start.r) & 0xff  ) <<  0)
+         |  (( ((uint64_t)local_start.c) & 0xff  ) <<  8)
+         |  (( ((uint64_t)local_dest.r)  & 0xff  ) << 16)
+         |  (( ((uint64_t)local_dest.c)  & 0xff  ) << 24)
+         |  (( ((uint64_t)chunk.r)       & 0xffff) << 32)
+         |  (( ((uint64_t)chunk.c)       & 0xffff) << 48));
+}
+
+static void on_grid_path_evict(struct grid_path_desc *victim)
+{
+    kv_destroy(victim->path);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
 bool N_FC_Init(void)
 {
-    if(!lru_los_init(&s_los_cache, CONFIG_LOS_CACHE_SZ))
+    if(!lru_los_init(&s_los_cache, CONFIG_LOS_CACHE_SZ, NULL))
         goto fail_los;
 
-    if(!lru_flow_init(&s_flow_cache, CONFIG_FLOW_CAHCE_SZ))
+    if(!lru_flow_init(&s_flow_cache, CONFIG_FLOW_CAHCE_SZ, NULL))
         goto fail_flow;
 
-    if(!lru_path_init(&s_path_cache, CONFIG_PATH_CACHE_SZ))
-        goto fail_path;
+    if(!lru_mapping_init(&s_mapping_cache, CONFIG_MAPPING_CACHE_SZ, NULL))
+        goto fail_mapping;
+
+    if(!lru_grid_path_init(&s_grid_path_cache, CONFIG_GRID_PATH_CACHE_SZ, on_grid_path_evict))
+        goto fail_grid_path;
 
     return true;
 
-fail_path:
+fail_grid_path:
+    lru_mapping_destroy(&s_mapping_cache);
+fail_mapping:
     lru_flow_destroy(&s_flow_cache);
 fail_flow:
     lru_los_destroy(&s_los_cache);
@@ -113,7 +141,16 @@ void N_FC_Shutdown(void)
 {
     lru_los_destroy(&s_los_cache);
     lru_flow_destroy(&s_flow_cache);
-    lru_path_destroy(&s_path_cache);
+    lru_mapping_destroy(&s_mapping_cache);
+    lru_grid_path_destroy(&s_grid_path_cache);
+}
+
+void N_FC_ClearAll(void)
+{
+    lru_los_clear(&s_los_cache);
+    lru_flow_clear(&s_flow_cache);
+    lru_mapping_clear(&s_mapping_cache);
+    lru_grid_path_clear(&s_grid_path_cache);
 }
 
 void N_FC_ClearStats(void)
@@ -126,15 +163,22 @@ void N_FC_GetStats(struct fc_stats *out_stats)
     out_stats->los_used = s_los_cache.used;
     out_stats->los_max = s_los_cache.capacity;
     out_stats->los_hit_rate = !s_perfstats.los_query ? 0
-                            : ((float)s_perfstats.los_hit) / s_perfstats.los_query;
+        : ((float)s_perfstats.los_hit) / s_perfstats.los_query;
+
     out_stats->flow_used = s_flow_cache.used;
     out_stats->flow_max = s_flow_cache.capacity;
     out_stats->flow_hit_rate = !s_perfstats.flow_query ? 0
-                             : ((float)s_perfstats.flow_hit) / s_perfstats.flow_query;
-    out_stats->path_used = s_path_cache.used;
-    out_stats->path_max = s_path_cache.capacity;
-    out_stats->path_hit_rate = !s_perfstats.path_hit ? 0
-                             : ((float)s_perfstats.path_hit) / s_perfstats.path_query;
+        : ((float)s_perfstats.flow_hit) / s_perfstats.flow_query;
+
+    out_stats->mapping_used = s_mapping_cache.used;
+    out_stats->mapping_max = s_mapping_cache.capacity;
+    out_stats->mapping_hit_rate = !s_perfstats.mapping_hit ? 0
+        : ((float)s_perfstats.mapping_hit) / s_perfstats.mapping_query;
+
+    out_stats->grid_path_used = s_grid_path_cache.used;
+    out_stats->grid_path_max = s_grid_path_cache.capacity;
+    out_stats->grid_path_hit_rate = !s_perfstats.grid_path_hit ? 0
+        : ((float)s_perfstats.grid_path_hit) / s_perfstats.grid_path_query;
 }
 
 bool N_FC_ContainsLOSField(dest_id_t id, struct coord chunk_coord)
@@ -181,16 +225,34 @@ void N_FC_PutFlowField(ff_id_t ffid, const struct flow_field *ff)
 bool N_FC_GetDestFFMapping(dest_id_t id, struct coord chunk_coord, ff_id_t *out_ff)
 {
     uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
-    bool ret = lru_path_get(&s_path_cache, key, out_ff);
+    bool ret = lru_mapping_get(&s_mapping_cache, key, out_ff);
 
-    s_perfstats.path_query++;
-    s_perfstats.path_hit += !!ret;
+    s_perfstats.mapping_query++;
+    s_perfstats.mapping_hit += !!ret;
     return ret;
 }
 
 void N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, ff_id_t ffid)
 {
     uint64_t key = key_for_dest_and_chunk(dest_id, chunk_coord);
-    lru_path_put(&s_path_cache, key, &ffid);
+    lru_mapping_put(&s_mapping_cache, key, &ffid);
+}
+
+bool N_FC_GetGridPath(struct coord local_start, struct coord local_dest,
+                      struct coord chunk, struct grid_path_desc *out)
+{
+    uint64_t key = grid_path_key(local_start, local_dest, chunk);
+    bool ret = lru_grid_path_get(&s_grid_path_cache, key, out);
+
+    s_perfstats.grid_path_query++;
+    s_perfstats.grid_path_hit += !!ret;
+    return ret;
+}
+
+void N_FC_PutGridPath(struct coord local_start, struct coord local_dest,
+                      struct coord chunk, const struct grid_path_desc *in)
+{
+    uint64_t key = grid_path_key(local_start, local_dest, chunk);
+    lru_grid_path_put(&s_grid_path_cache, key, in);
 }
 

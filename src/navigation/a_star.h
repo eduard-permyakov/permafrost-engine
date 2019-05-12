@@ -53,7 +53,7 @@ typedef kvec_t(const struct portal*) portal_vec_t;
  * tiles to be traversed, in order.
  * ------------------------------------------------------------------------
  */
-bool AStar_GridPath(struct coord start, struct coord finish, 
+bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
                     coord_vec_t *out_path, float *out_cost);
 
@@ -71,7 +71,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
  * Returns true if there exists a path between 2 tiles in the same chunk.
  * ------------------------------------------------------------------------
  */
-bool AStar_TilesLinked(struct coord start, struct coord finish,
+bool AStar_TilesLinked(struct coord start, struct coord finish, struct coord chunk,
                        const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C]);
 
 /* ------------------------------------------------------------------------
@@ -79,8 +79,8 @@ bool AStar_TilesLinked(struct coord start, struct coord finish,
  * The returned portal will not necessarily be the closest.
  * ------------------------------------------------------------------------
  */
-const struct portal *AStar_ReachablePortal(struct coord start,
-                                           const struct nav_chunk *chunk);
+const struct portal *AStar_ReachablePortal(struct coord start, struct coord chunk,
+                                           const struct nav_chunk *nchunk);
 
 #endif
 
