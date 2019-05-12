@@ -49,6 +49,7 @@
     typedef struct lru_##name##_node_s {                                                        \
         mp_ref_t next;                                                                          \
         mp_ref_t prev;                                                                          \
+        khint64_t key;                                                                          \
         type entry;                                                                             \
     } lru_##name##_node_t;                                                                      \
                                                                                                 \
@@ -62,6 +63,8 @@
         mp_ref_t       ilru_tail;                                                               \
         khash_t(name) *key_node_table;                                                          \
         mp(name)       node_pool;                                                               \
+        /* Optional hook to clean up entries' resources before eviction */                      \
+        void           (*on_evict)(type *victim);                                               \
     } lru_##name##_t;
 
 /***********************************************************************************************/
@@ -80,7 +83,8 @@
 	__KHASH_PROTOTYPES(name, khint64_t, mp_ref_t)                                               \
                                                                                                 \
     static void _lru_##name##_reference(lru(name) *lru, mp_ref_t ref);                          \
-    scope  bool  lru_##name##_init     (lru(name) *lru, size_t capacity);                       \
+    scope  bool  lru_##name##_init     (lru(name) *lru, size_t capacity,                        \
+                                        void (*on_evict)(type *victim));                        \
     scope  void  lru_##name##_destroy  (lru(name) *lru);                                        \
     scope  void  lru_##name##_clear    (lru(name) *lru);                                        \
     scope  bool  lru_##name##_get      (lru(name) *lru, uint64_t key, type *out);               \
@@ -128,7 +132,8 @@
         }                                                                                       \
     }                                                                                           \
                                                                                                 \
-    scope bool lru_##name##_init(lru(name) *lru, size_t capacity)                               \
+    scope bool lru_##name##_init(lru(name) *lru, size_t capacity,                               \
+                                     void (*on_evict)(type *victim))                            \
     {                                                                                           \
         memset(lru, 0, sizeof(*lru));                                                           \
         lru->key_node_table = kh_init(name);                                                    \
@@ -142,11 +147,13 @@
             return false;                                                                       \
         }                                                                                       \
         lru->capacity = capacity;                                                               \
+        lru->on_evict = on_evict;                                                               \
         return true;                                                                            \
     }                                                                                           \
                                                                                                 \
     scope void lru_##name##_destroy(lru(name) *lru)                                             \
     {                                                                                           \
+        lru_##name##_clear(lru);                                                                \
         kh_destroy(name, lru->key_node_table);                                                  \
         mp_##name##_destroy(&lru->node_pool);                                                   \
         memset(lru, 0, sizeof(*lru));                                                           \
@@ -154,6 +161,16 @@
                                                                                                 \
     scope void lru_##name##_clear(lru(name) *lru)                                               \
     {                                                                                           \
+        uint64_t key;                                                                           \
+        mp_ref_t curr;                                                                          \
+        kh_foreach(lru->key_node_table, key, curr, {                                            \
+                                                                                                \
+            if(!lru->on_evict)                                                                  \
+                continue;                                                                       \
+            lru_node(name) *vict = &lru->node_pool.pool[curr].entry;                            \
+            lru->on_evict(&vict->entry);                                                        \
+        });                                                                                     \
+                                                                                                \
         kh_clear(name, lru->key_node_table);                                                    \
         lru->ilru_head = 0;                                                                     \
         lru->ilru_tail = 0;                                                                     \
@@ -199,19 +216,25 @@
             /* There is no existing entry for this key */                                       \
                                                                                                 \
             mp_ref_t new_ref = 0;                                                               \
+            lru_node(name) *new_node = NULL;                                                    \
             if(lru->used == 0) {                                                                \
                                                                                                 \
                 new_ref = mp_##name##_alloc(&lru->node_pool);                                   \
-                lru_node(name) *new_node = mp_##name##_entry(&lru->node_pool, new_ref);         \
+                new_node = mp_##name##_entry(&lru->node_pool, new_ref);                         \
                 new_node->prev = 0;                                                             \
                 new_node->next = 0;                                                             \
-                new_node->entry = *in;                                                          \
                 lru->ilru_head = lru->ilru_tail = new_ref;                                      \
+                ++(lru->used);                                                                  \
                                                                                                 \
             }else if(lru->used == lru->capacity) {                                              \
                                                                                                 \
+                lru_node(name) *vict = mp_##name##_entry(&lru->node_pool, lru->ilru_tail);      \
+                kh_del(name, lru->key_node_table, vict->key);                                   \
+                if(lru->on_evict)                                                               \
+                    lru->on_evict(&vict->entry);                                                \
+                                                                                                \
                 new_ref = lru->ilru_tail;                                                       \
-                lru_node(name) *new_node = mp_##name##_entry(&lru->node_pool, new_ref);         \
+                new_node = mp_##name##_entry(&lru->node_pool, new_ref);                         \
                 lru_node(name) *new_tail = mp_##name##_entry(&lru->node_pool, new_node->prev);  \
                                                                                                 \
                 new_tail->next = 0;                                                             \
@@ -219,32 +242,36 @@
                                                                                                 \
                 new_node->prev = 0;                                                             \
                 new_node->next = lru->ilru_head;                                                \
-                new_node->entry = *in;                                                          \
                 lru->ilru_head = new_ref;                                                       \
                                                                                                 \
             }else {                                                                             \
                                                                                                 \
                 new_ref = mp_##name##_alloc(&lru->node_pool);                                   \
-                lru_node(name) *new_node = mp_##name##_entry(&lru->node_pool, new_ref);         \
+                new_node = mp_##name##_entry(&lru->node_pool, new_ref);                         \
                 lru_node(name) *old_head = mp_##name##_entry(&lru->node_pool, lru->ilru_head);  \
                                                                                                 \
                 new_node->prev = 0;                                                             \
                 new_node->next = lru->ilru_head;                                                \
-                new_node->entry = *in;                                                          \
                 lru->ilru_head = new_ref;                                                       \
                 old_head->prev = new_ref;                                                       \
+                ++(lru->used);                                                                  \
             }                                                                                   \
+                                                                                                \
+            new_node->entry = *in;                                                              \
+            new_node->key = key;                                                                \
                                                                                                 \
             int ret;                                                                            \
             k = kh_put(name, lru->key_node_table, key, &ret);                                   \
             kh_value(lru->key_node_table, k) = new_ref;                                         \
-            ++(lru->used);                                                                      \
                                                                                                 \
         }else {                                                                                 \
             /* There is an existing entry for this key - overwrite it and reference it */       \
                                                                                                 \
             mp_ref_t ref = kh_val(lru->key_node_table, k);                                      \
             lru_node(name) *mpn = mp_##name##_entry(&lru->node_pool, ref);                      \
+                                                                                                \
+            if(lru->on_evict)                                                                   \
+                lru->on_evict(&mpn->entry);                                                     \
                                                                                                 \
             mpn->entry = *in;                                                                   \
             _lru_##name##_reference(lru, ref);                                                  \
