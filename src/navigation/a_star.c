@@ -43,6 +43,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <float.h>
 
 PQUEUE_TYPE(coord, struct coord)
 PQUEUE_IMPL(static, coord, struct coord)
@@ -300,13 +301,13 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
 
         float cost;
         bool found = AStar_GridPath(tile_coord, port_center, chunk_coord, chunk->cost_base, &path, &cost);
-		if(found){
-			
+        if(found){
+
             kh_put_val(key_float, running_cost, portal_to_key(port), cost);
             pq_portal_push(&frontier, cost, port);
-		}
+        }
     }
-	kv_destroy(path);
+    kv_destroy(path);
 
     while(pq_size(&frontier) > 0) {
 
@@ -370,6 +371,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
     pq_portal_destroy(&frontier);
     kh_destroy(key_float, running_cost);
     kh_destroy(key_portal, came_from);
+
     return true;
 
 fail_find_path:
@@ -387,6 +389,9 @@ const struct portal *AStar_ReachablePortal(struct coord start, struct coord chun
     coord_vec_t path;
     kv_init(path);
 
+    float min_cost = FLT_MAX;
+    const struct portal *ret = NULL;
+
     for(int i = 0; i < nchunk->num_portals; i++) {
 
         const struct portal *port = &nchunk->portals[i];
@@ -396,14 +401,14 @@ const struct portal *AStar_ReachablePortal(struct coord start, struct coord chun
         };
         float cost;
         bool found = AStar_GridPath(start, port_center, chunk, nchunk->cost_base, &path, &cost);
-		if(found){
-    		kv_destroy(path);
-			return port;
-		}
+        if(found && cost < min_cost) {
+            ret = port;	
+            min_cost = cost;	
+        }
     }
 
-	kv_destroy(path);
-    return NULL;
+    kv_destroy(path);
+    return ret;
 }
 
 bool AStar_TilesLinked(struct coord start, struct coord finish, struct coord chunk,

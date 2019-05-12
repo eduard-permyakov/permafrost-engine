@@ -75,8 +75,8 @@ bool AStar_TilesLinked(struct coord start, struct coord finish, struct coord chu
                        const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C]);
 
 /* ------------------------------------------------------------------------
- * Returns a reachable portal in the chunk, NULL if no portal is reachable.
- * The returned portal will not necessarily be the closest.
+ * Returns the closest reachable portal in the chunk, NULL if no portal 
+ * is reachable. 
  * ------------------------------------------------------------------------
  */
 const struct portal *AStar_ReachablePortal(struct coord start, struct coord chunk,
