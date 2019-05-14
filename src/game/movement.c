@@ -556,9 +556,13 @@ static vec2_t seek_force(const struct entity *ent, vec2_t target_xz, int tick_re
  */
 static vec2_t arrive_force(const struct entity *ent, const struct flock *flock, int tick_res)
 {
+    assert(0 == (ent->flags & ENTITY_FLAG_STATIC));
     vec2_t ret, desired_velocity;
     vec2_t pos_xz = (vec2_t){ent->pos.x, ent->pos.z};
     float distance;
+
+    struct movestate *ms = movestate_get(ent);
+    assert(ms);
 
     if(M_NavHasDestLOS(s_map, flock->dest_id, pos_xz)) {
 
@@ -570,14 +574,12 @@ static vec2_t arrive_force(const struct entity *ent, const struct flock *flock, 
         if(distance < ARRIVE_SLOWING_RADIUS) {
             PFM_Vec2_Scale(&desired_velocity, distance / ARRIVE_SLOWING_RADIUS, &desired_velocity);
         }
+
     }else{
 
         desired_velocity = M_NavDesiredVelocity(s_map, flock->dest_id, pos_xz, flock->target_xz);
         PFM_Vec2_Scale(&desired_velocity, ent->max_speed / tick_res, &desired_velocity);
     }
-
-    struct movestate *ms = movestate_get(ent);
-    assert(ms);
 
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
     vec2_truncate(&ret, MAX_FORCE);
@@ -772,14 +774,6 @@ static vec2_t total_steering_force(const struct entity *ent, const struct flock 
     unsigned ca_ticks_left = ms->avoid_ticks_left > 0 ? (ms->avoid_ticks_left - 1) : COLLISION_AVOID_MAX_TICKS;
     collision_avoid = ms->avoid_ticks_left > 0 ? ms->avoid_force : collision_avoid;
 
-    /* When we get pushed onto an impassable tile, increase the proportion of the
-     * 'arrive' force, which will steer us back towards the nearest passable tile.*/
-    vec2_t xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
-    if(!M_NavPositionPathable(s_map, xz_pos)) {
-        PFM_Vec2_Scale(&arrive, 3.0f, &arrive);
-        PFM_Vec2_Scale(&alignment, 0.0f, &alignment);
-    }
-
     vec2_t ret = (vec2_t){0.0f};
     switch(ms->state) {
     case STATE_MOVING: {
@@ -827,6 +821,7 @@ static void on_30hz_tick(void *user, void *event)
 
         uint32_t key;
         struct entity *curr;
+        struct flock *flock = &kv_A(s_flocks, i);
 
         /* First, decide if we can disband this flock */
         bool disband = true;
@@ -850,33 +845,47 @@ static void on_30hz_tick(void *user, void *event)
 
         kh_foreach(kv_A(s_flocks, i).ents, key, curr, {
 
+            vec2_t xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
             struct movestate *ms = movestate_get(curr);
             assert(ms);
 
-            /* Compute acceleration */
+            /* Compute the new velocity and position based on the steering force */
             vec2_t col_avoid_force;
-            vec2_t steer_accel, new_velocity; 
+            vec2_t steer_force = total_steering_force(curr, flock, TICK_RES, &col_avoid_force);
 
-            vec2_t steer_force = total_steering_force(curr, &kv_A(s_flocks, i), TICK_RES, &col_avoid_force);
-            PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &steer_accel);
+            vec2_t accel, new_vel, new_pos; 
+            PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
-            /* Compute new velocity */
-            PFM_Vec2_Add(&ms->velocity, &steer_accel, &new_velocity);
-            vec2_truncate(&new_velocity, curr->max_speed / TICK_RES);
+            PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
+            vec2_truncate(&new_vel, curr->max_speed / TICK_RES);
 
-            /* Update position and rotation */
-            vec2_t xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
-            vec2_t new_xz_pos;
-            PFM_Vec2_Add(&xz_pos, &new_velocity, &new_xz_pos);
-            new_xz_pos = M_ClampedMapCoordinate(s_map, new_xz_pos);
-            curr->pos = (vec3_t){new_xz_pos.raw[0], M_HeightAtPoint(s_map, new_xz_pos), new_xz_pos.raw[1]};
+            PFM_Vec2_Add(&xz_pos, &new_vel, &new_pos);
+            new_pos = M_ClampedMapCoordinate(s_map, new_pos);
 
-            if(PFM_Vec2_Len(&new_velocity) > EPSILON) {
-                curr->rotation = dir_quat_from_velocity(new_velocity);
+            /* If this takes us outside the pathable area, fall back to just following
+             * the flow field. The flow field never guides towards impassable areas. Thus
+             * we edge forward along the flow field until we're constrained by other forces.
+             * Eventually, we should be able to make progress.
+             */
+            if(!M_NavPositionPathable(s_map, new_pos)) {
+                
+                vec2_t desired_velocity = M_NavDesiredVelocity(s_map, flock->dest_id, xz_pos, flock->target_xz);
+                PFM_Vec2_Scale(&desired_velocity, curr->max_speed / TICK_RES, &desired_velocity);
+                vec2_truncate(&desired_velocity, MAX_FORCE);
+
+                new_vel = desired_velocity;
+                PFM_Vec2_Add(&xz_pos, &new_vel, &new_pos);
+                new_pos = M_ClampedMapCoordinate(s_map, new_pos);
             }
+            assert(M_NavPositionPathable(s_map, new_pos));
 
             /* Update state of entity */
-            ms->velocity = new_velocity;
+            if(PFM_Vec2_Len(&new_vel) > EPSILON) {
+                curr->rotation = dir_quat_from_velocity(new_vel);
+            }
+
+            curr->pos = (vec3_t){new_pos.raw[0], M_HeightAtPoint(s_map, new_pos), new_pos.raw[1]};
+            ms->velocity = new_vel;
 
             if(ms->avoid_ticks_left > 0) {
                 --ms->avoid_ticks_left;
@@ -920,7 +929,7 @@ static void on_30hz_tick(void *user, void *event)
             }
             case STATE_SETTLING: {
 
-                if(PFM_Vec2_Len(&new_velocity) < SETTLE_STOP_TOLERANCE * curr->max_speed)  {
+                if(PFM_Vec2_Len(&new_vel) < SETTLE_STOP_TOLERANCE * curr->max_speed)  {
 
                     *ms = (struct movestate) {
                         .state = STATE_ARRIVED,
