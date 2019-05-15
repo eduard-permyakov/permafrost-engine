@@ -37,6 +37,7 @@
 #include "asset_load.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
+#include "lib/public/pf_string.h"
 
 #include <stdio.h>
 #include <SDL.h>
@@ -68,20 +69,20 @@ static bool scene_parse_att(SDL_RWops *stream, struct attr *out, bool anon)
     char *token;
 
     if(!anon) {
-        token = strtok_r(line, " \t", &saveptr);
+        token = pf_strtok_r(line, " \t", &saveptr);
 
         strncpy(out->key, token, sizeof(out->key)); 
         out->key[sizeof(out->key)-1] = '\0';
 
-        token = strtok_r(NULL, " \t", &saveptr);
+        token = pf_strtok_r(NULL, " \t", &saveptr);
     }else{
-        token = strtok_r(line, " \t", &saveptr);
+        token = pf_strtok_r(line, " \t", &saveptr);
     }
 
     if(!strcmp(token, "string")) {
 
         out->type = TYPE_STRING;
-        token = strtok_r(NULL, " \t", &saveptr);
+        token = pf_strtok_r(NULL, " \t", &saveptr);
         if(!sscanf(token, "%63s", out->val.as_string))
             goto fail;
 
@@ -104,7 +105,7 @@ static bool scene_parse_att(SDL_RWops *stream, struct attr *out, bool anon)
     }else if(!strcmp(token, "bool")) {
 
         out->type = TYPE_BOOL;
-        token = strtok_r(NULL, " \t", &saveptr);
+        token = pf_strtok_r(NULL, " \t", &saveptr);
         int tmp;
         if(!sscanf(token, "%d", &tmp))
             goto fail;
@@ -115,14 +116,14 @@ static bool scene_parse_att(SDL_RWops *stream, struct attr *out, bool anon)
     }else if(!strcmp(token, "float")) {
 
         out->type = TYPE_FLOAT;
-        token = strtok_r(NULL, " \t", &saveptr);
+        token = pf_strtok_r(NULL, " \t", &saveptr);
         if(!sscanf(token, "%f", &out->val.as_float))
             goto fail;
 
     }else if(!strcmp(token, "int")) {
 
         out->type = TYPE_INT;
-        token = strtok_r(NULL, " \t", &saveptr);
+        token = pf_strtok_r(NULL, " \t", &saveptr);
         if(!sscanf(token, "%d", &out->val.as_int))
             goto fail;
 

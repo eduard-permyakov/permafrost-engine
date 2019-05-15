@@ -43,10 +43,10 @@
 #include "../asset_load.h"
 #include "../map/public/tile.h"
 #include "../settings.h"
+#include "../lib/public/pf_string.h"
 
 #include <assert.h>
 #include <ctype.h>
-#define __USE_POSIX
 #include <string.h>
 
 #define STREVAL(a) STR(a)
@@ -88,10 +88,10 @@ static bool al_read_vertex(SDL_RWops *stream, struct vertex *out)
     memset(out->joint_indices, 0, sizeof(out->joint_indices));
 
     /* Consume the first token, the attribute name 'vw' */
-    string = strtok_r(line, " \t", &saveptr);
+    string = pf_strtok_r(line, " \t", &saveptr);
     for(i = 0; i < 6; i++) {
 
-        string = strtok_r(NULL, " \t", &saveptr);
+        string = pf_strtok_r(NULL, " \t", &saveptr);
         if(!string)
             break;
 
@@ -120,8 +120,8 @@ static bool al_read_material(SDL_RWops *stream, const char *basedir, struct mate
     READ_LINE(stream, line, fail);
 
     char *saveptr;
-    char *mat_name = strtok_r(line, " \t\n", &saveptr);
-    mat_name = strtok_r(NULL, " \t\n", &saveptr);
+    char *mat_name = pf_strtok_r(line, " \t\n", &saveptr);
+    mat_name = pf_strtok_r(NULL, " \t\n", &saveptr);
     if(0 == strcmp(mat_name, "__none__")) {
         *out_null = true;
         return true;

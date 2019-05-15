@@ -37,11 +37,9 @@
 #include "settings.h"
 #include "config.h"
 #include "asset_load.h"
-#ifndef __USE_POSIX
-    #define __USE_POSIX /* strtok_r */
-#endif
 #include "lib/public/khash.h"
 #include "lib/public/kvec.h"
+#include "lib/public/pf_string.h"
 
 #include <SDL.h>
 #include <string.h>
@@ -69,34 +67,24 @@ static char              s_settings_filepath[512];
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static char *pf_strdup(const char *str)
-{
-    char *ret = malloc(strlen(str) + 1);
-    if(!ret)
-        return ret;
-
-    strcpy(ret, str);
-    return ret;
-}
-
 static bool parse_line(char *line, int *out_prio, struct named_val *out_val)
 {
     char *saveptr;
-    char *token = strtok_r(line, " \t", &saveptr);
+    char *token = pf_strtok_r(line, " \t", &saveptr);
 
     if(!sscanf(token, "%d", out_prio))
         goto fail;
 
-    token = strtok_r(NULL, " \t", &saveptr);
+    token = pf_strtok_r(NULL, " \t", &saveptr);
     if(strlen(token) > SETT_NAME_LEN-1)
         goto fail;
     strcpy(out_val->name, token);
 
-    token = strtok_r(NULL, " \t", &saveptr);
+    token = pf_strtok_r(NULL, " \t", &saveptr);
     if(!strcmp(token, "string")) {
 
         out_val->val.type = ST_TYPE_STRING;
-        token = strtok_r(NULL, " \t", &saveptr);
+        token = pf_strtok_r(NULL, " \t", &saveptr);
         if(!sscanf(token, "%" STR(SETT_NAME_LEN) "s\n", out_val->val.as_string))
             goto fail;
 
@@ -111,7 +99,7 @@ static bool parse_line(char *line, int *out_prio, struct named_val *out_val)
     }else if(!strcmp(token, "bool")) {
 
         out_val->val.type = ST_TYPE_BOOL;
-        token = strtok_r(NULL, " \t", &saveptr);
+        token = pf_strtok_r(NULL, " \t", &saveptr);
         int tmp;
         if(!sscanf(token, "%d\n", &tmp))
             goto fail;
@@ -122,14 +110,14 @@ static bool parse_line(char *line, int *out_prio, struct named_val *out_val)
     }else if(!strcmp(token, "int")) {
 
         out_val->val.type = ST_TYPE_INT;
-        token = strtok_r(NULL, " \t", &saveptr);
+        token = pf_strtok_r(NULL, " \t", &saveptr);
         if(!sscanf(token, "%d\n", &out_val->val.as_int))
             goto fail;
 
     }else if(!strcmp(token, "float")) {
 
         out_val->val.type = ST_TYPE_FLOAT;
-        token = strtok_r(NULL, " \t", &saveptr);
+        token = pf_strtok_r(NULL, " \t", &saveptr);
         if(!sscanf(token, "%f\n", &out_val->val.as_float))
             goto fail;
 

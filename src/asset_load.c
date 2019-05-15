@@ -39,10 +39,8 @@
 #include "render/public/render.h"
 #include "anim/public/anim.h"
 #include "map/public/map.h"
-#ifndef __USE_POSIX
-    #define __USE_POSIX /* strtok_r */
-#endif
 #include "lib/public/khash.h"
+#include "lib/public/pf_string.h"
 
 #include <SDL.h>
 
@@ -119,10 +117,10 @@ static bool al_parse_pfobj_header(SDL_RWops *stream, struct pfobj_hdr *out)
     char *saveptr;
 
     /* Consume the first token, the property name 'frame_counts' */
-    string = strtok_r(line, " \t", &saveptr);
+    string = pf_strtok_r(line, " \t", &saveptr);
     for(int i = 0; i < out->num_as; i++) {
 
-        string = strtok_r(NULL, " \t", &saveptr);
+        string = pf_strtok_r(NULL, " \t", &saveptr);
         if(!string)
             goto fail;
 

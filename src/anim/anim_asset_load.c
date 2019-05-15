@@ -39,8 +39,8 @@
 #include "anim_ctx.h"
 
 #include "../asset_load.h"
+#include "../lib/public/pf_string.h"
 
-#define __USE_POSIX
 #include <string.h>
 
 
@@ -63,26 +63,26 @@ static bool al_read_joint(SDL_RWops *stream, struct joint *out, struct SQT *out_
     char *saveptr;
 
     /* Consume the first 3 tokens, 'j', '<parent idx>', '<name>' */
-    strtok_r(line, " \t", &saveptr);
-    strtok_r(NULL, " \t", &saveptr);
-    strtok_r(NULL, " \t", &saveptr);
+    pf_strtok_r(line, " \t", &saveptr);
+    pf_strtok_r(NULL, " \t", &saveptr);
+    pf_strtok_r(NULL, " \t", &saveptr);
 
-    string = strtok_r(NULL, " \t", &saveptr);  
+    string = pf_strtok_r(NULL, " \t", &saveptr);  
     if(!sscanf(string, "%f/%f/%f", 
         &out_bind->scale.x, &out_bind->scale.y, &out_bind->scale.z))
         goto fail;
 
-    string = strtok_r(NULL, " \t", &saveptr);  
+    string = pf_strtok_r(NULL, " \t", &saveptr);  
     if(!sscanf(string, "%f/%f/%f/%f", &out_bind->quat_rotation.x, &out_bind->quat_rotation.y, 
         &out_bind->quat_rotation.z, &out_bind->quat_rotation.w))
         goto fail;
 
-    string = strtok_r(NULL, " \t", &saveptr);  
+    string = pf_strtok_r(NULL, " \t", &saveptr);  
     if(!sscanf(string, "%f/%f/%f", 
         &out_bind->trans.x, &out_bind->trans.y, &out_bind->trans.z))
         goto fail;
 
-    string = strtok_r(NULL, " \t", &saveptr);  
+    string = pf_strtok_r(NULL, " \t", &saveptr);  
     if(!sscanf(string, "%f/%f/%f", &out->tip.x, &out->tip.y, &out->tip.z))
         goto fail;
 

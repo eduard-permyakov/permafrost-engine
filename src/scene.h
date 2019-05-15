@@ -38,9 +38,6 @@
 
 #include "pf_math.h"
 #include "lib/public/kvec.h"
-#ifndef __USE_POSIX
-    #define __USE_POSIX /* strtok_r */
-#endif
 #include "lib/public/khash.h"
 
 #include <stdbool.h>

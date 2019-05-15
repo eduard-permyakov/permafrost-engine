@@ -38,13 +38,11 @@
 #include "../asset_load.h"
 #include "../render/public/render.h"
 #include "../navigation/public/nav.h"
+#include "../lib/public/pf_string.h"
 #include "map_private.h"
 
 #include <stdlib.h>
 #include <assert.h>
-#ifndef __USE_POSIX
-    #define __USE_POSIX /* strtok_r */
-#endif
 #include <string.h>
 
 /* ASCII to integer - argument must be an ascii digit */
@@ -81,7 +79,7 @@ static bool m_al_read_row(SDL_RWops *stream, struct tile *out, size_t *out_nread
 
     char *saveptr;
     /* String points to the first token - the first tile of this row */
-    char *string = strtok_r(line, " \t\n", &saveptr);
+    char *string = pf_strtok_r(line, " \t\n", &saveptr);
     assert(out_nread);
     *out_nread = 0;
 
@@ -90,7 +88,7 @@ static bool m_al_read_row(SDL_RWops *stream, struct tile *out, size_t *out_nread
         if(!m_al_parse_tile(string, out + *out_nread))
             goto fail;
         (*out_nread)++;
-        string = strtok_r(NULL, " \t\n", &saveptr);
+        string = pf_strtok_r(NULL, " \t\n", &saveptr);
     }
 
     return true;
@@ -119,13 +117,13 @@ static bool m_al_read_material(SDL_RWops *stream, char *out_texname)
     READ_LINE(stream, line, fail); 
 
     char *saveptr;
-    char *string = strtok_r(line, " \t\n", &saveptr);
+    char *string = pf_strtok_r(line, " \t\n", &saveptr);
 
     if(strcmp(string, "material") != 0)
         goto fail;
 
-    string = strtok_r(NULL, " \t\n", &saveptr); /* skip name */
-    string = strtok_r(NULL, " \t\n", &saveptr);
+    string = pf_strtok_r(NULL, " \t\n", &saveptr); /* skip name */
+    string = pf_strtok_r(NULL, " \t\n", &saveptr);
 
     strncpy(out_texname, string, MAX_LINE_LEN);
     return true;
