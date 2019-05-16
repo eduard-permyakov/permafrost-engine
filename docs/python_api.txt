@@ -62,6 +62,11 @@ BUILT-IN FUNCTIONS
     --------------------------------------------------------------------------------
     Returns the native resolution of the active monitor.
 
+    [get_nav_perfstats]
+    --------------------------------------------------------------------------------
+    Returns a dictionary holding various performance couners for the navigation
+    subsystem.
+
     [get_render_info]
     --------------------------------------------------------------------------------
     Returns a dictionary describing the renderer context. It will have the string

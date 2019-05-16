@@ -56,16 +56,18 @@
     3.2 Tile List
     -------------
 
-    Next is a list of <num_rows>*<num_cols>*32*32 tiles. Each tile is a string 
-    of exactly 24 characters. The tiles may be delimited by spaces, tabs, or 
-    newlines. This means that the tile list can occupy a variable number of 
-    lines, depending on how many tiles are packed into a single line. However, 
-    the first tile of each new row in a chunk must begin on a new line. The tiles 
-    are grouped by chunks. The chunks appear in the file in row-major order. This 
-    means that the first 32x32 tiles belong to the chunk at row 0 and column 0, 
-    the next 32x32 tiles belong to the chunk at row 0 and column 1, and so on. 
-    Within a chunk, all the tiles are also in row-major order. So all the tiles 
-    for the first row appear in the list before all the tiles of the second row.
+    Next is a list of <num_rows>*<num_cols>*32*32 tiles. Each tile is a string of 
+    exactly 24 characters. The tiles may be delimited by spaces, tabs, or newlines. 
+    This means that the tile list can occupy a variable number of lines, depending 
+    on how many tiles are packed into a single line. However, the first tile of 
+    each new row in a chunk must begin on a new line. As well, the maximum line 
+    size supported by the engine is 255 characters, including the newline. PFMAP 
+    file lines must not exceed this size. The tiles are grouped by chunks. The 
+    chunks appear in the file in row-major order. This means that the first 32x32 
+    tiles belong to the chunk at row 0 and column 0, the next 32x32 tiles belong to 
+    the chunk at row 0 and column 1, and so on.  Within a chunk, all the tiles are 
+    also in row-major order. So all the tiles for the first row appear in the list 
+    before all the tiles of the second row.
 
     Each 24 character tile can be broken down into the following fields:
 
@@ -128,7 +130,7 @@
     This is one of 'BLEND_MODE_NOBLEND' (0) or 'BLEND_MODE_BLUR' (1). This controls 
     how the texture on the tile's top face is blended with adjacent tiles.
 
-    H - Normal Blending Flag
+    I - Normal Blending Flag
     Has a value of either '0' or '1'. When it is '1', the normals of the tile's top 
     face are averaged with surrounding normals to create smooth, continuous edges.
 
