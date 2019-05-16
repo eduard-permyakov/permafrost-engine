@@ -38,7 +38,7 @@
 layout (location = 0) in vec3 in_pos;
 layout (location = 1) in vec2 in_uv;
 
-#define MAX_HBS   (512)
+#define MAX_HBS   (256)
 
 /* Must match the definition in the fragment shader */
 #define CURR_HB_HEIGHT  (max(4.0/1080 * curr_res.y, 4))
