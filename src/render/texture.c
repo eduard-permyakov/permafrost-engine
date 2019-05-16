@@ -40,6 +40,7 @@
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/pf_string.h"
 #include "../config.h"
 #include "../main.h"
 
@@ -144,7 +145,7 @@ bool R_Texture_Load(const char *basedir, const char *name, GLuint *out)
         goto fail;
 
     int put_ret;
-    k = kh_put(tex, s_name_tex_table, name, &put_ret);
+    k = kh_put(tex, s_name_tex_table, pf_strdup(name), &put_ret);
     assert(put_ret != -1 && put_ret != 0);
     kh_value(s_name_tex_table, k) = ret;
 
@@ -163,7 +164,7 @@ bool R_Texture_AddExisting(const char *name, GLuint id)
         return false;
 
     int put_ret;
-    k = kh_put(tex, s_name_tex_table, name, &put_ret);
+    k = kh_put(tex, s_name_tex_table, pf_strdup(name), &put_ret);
     assert(put_ret != -1 && put_ret != 0);
     kh_value(s_name_tex_table, k) = id;
     return true;
@@ -173,9 +174,10 @@ void R_Texture_Free(const char *name)
 {
     khiter_t k;
     if((k = kh_get(tex, s_name_tex_table, name)) != kh_end(s_name_tex_table)) {
-    
+
         GLuint id = kh_val(s_name_tex_table, k);
         glDeleteTextures(1, &id);
+        free((void*)kh_key(s_name_tex_table, k));
         kh_del(tex, s_name_tex_table, k);
     }
 
