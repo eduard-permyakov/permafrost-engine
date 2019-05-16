@@ -39,30 +39,21 @@
 #include "material.h"
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
+#include "../lib/public/khash.h"
 #include "../config.h"
+#include "../main.h"
 
 #include <string.h>
 #include <assert.h>
 
-#define MAX_NUM_TEXTURE  2048
-#define MAX_TEX_NAME_LEN 64
 
-
-struct texture_resource{
-    char                     name[MAX_TEX_NAME_LEN];
-    GLint                    texture_id;
-    struct texture_resource *next_free;
-    struct texture_resource *prev_free;
-    bool                     free;
-};
+KHASH_MAP_INIT_STR(tex, GLuint)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static struct texture_resource  s_tex_resources[MAX_NUM_TEXTURE];
-static struct texture_resource *s_free_head = &s_tex_resources[0];
-
+static khash_t(tex) *s_name_tex_table;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -109,61 +100,34 @@ fail_load:
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_Texture_Init(void)
+bool R_Texture_Init(void)
 {
-    for(int i = 0; i < MAX_NUM_TEXTURE; i++) {
-
-        struct texture_resource *res = &s_tex_resources[i];
-
-        res->free = true;
-        memset(res->name, 0, sizeof(res->name));
-
-        if(i + 1 < MAX_NUM_TEXTURE) {
-         
-            struct texture_resource *next = &s_tex_resources[i+1];
-
-            res->next_free = next;
-            next->prev_free = res;
-        }
-    }
+    s_name_tex_table = kh_init(tex);
+    return (s_name_tex_table != NULL);
 }
 
 bool R_Texture_GetForName(const char *name, GLuint *out)
 {
-    for(int i = 0; i < MAX_NUM_TEXTURE; i++) {
+    khiter_t k;
+    if((k = kh_get(tex, s_name_tex_table, name)) == kh_end(s_name_tex_table))
+        return false;
 
-        struct texture_resource *curr = &s_tex_resources[i];
-
-        if(!strcmp(name, curr->name) && !curr->free) {
-            *out = curr->texture_id;
-            return true;
-        }
-    }
-
-    return false;
+    *out = kh_val(s_name_tex_table, k);
+    return true;
 }
 
 bool R_Texture_Load(const char *basedir, const char *name, GLuint *out)
 {
-    if(!s_free_head)
-        return false;
-
-    struct texture_resource *alloc = s_free_head;
-    alloc->free = false;
-
-    s_free_head = alloc->next_free;
-    if(s_free_head)
-        s_free_head->prev_free = NULL;
-
-    assert( strlen(name) < MAX_TEX_NAME_LEN );
-    strcpy(alloc->name, name);
-
+    GLuint ret;
+    khiter_t k;
     char texture_path[512], texture_path_maps[512];
+
+    if((k = kh_get(tex, s_name_tex_table, name)) != kh_end(s_name_tex_table))
+        goto fail;
 
     if(basedir) {
     
         assert( strlen(basedir) + strlen(name) < sizeof(texture_path) );
-
         strcpy(texture_path, basedir);
         strcat(texture_path, "/");
         strcat(texture_path, name);
@@ -171,19 +135,20 @@ bool R_Texture_Load(const char *basedir, const char *name, GLuint *out)
         texture_path[0] = '\0';
     }
 
-    extern const char *g_basepath;
     strcpy(texture_path_maps, g_basepath);
     strcat(texture_path_maps, "assets/map_textures/");
     strcat(texture_path_maps, name);
 
-    GLuint ret;
     if(!r_texture_gl_init(texture_path, &ret)
     && !r_texture_gl_init(texture_path_maps, &ret))
         goto fail;
 
-    alloc->texture_id = ret;
-    *out = ret;
+    int put_ret;
+    k = kh_put(tex, s_name_tex_table, name, &put_ret);
+    assert(put_ret != -1 && put_ret != 0);
+    kh_value(s_name_tex_table, k) = ret;
 
+    *out = ret;
     GL_ASSERT_OK();
     return true;
 
@@ -193,42 +158,27 @@ fail:
 
 bool R_Texture_AddExisting(const char *name, GLuint id)
 {
-    if(!s_free_head)
+    khiter_t k;
+    if((k = kh_get(tex, s_name_tex_table, name)) != kh_end(s_name_tex_table))
         return false;
 
-    struct texture_resource *alloc = s_free_head;
-    alloc->free = false;
-
-    s_free_head = alloc->next_free;
-    if(s_free_head)
-        s_free_head->prev_free = NULL;
-
-    assert( strlen(name) < MAX_TEX_NAME_LEN );
-    strcpy(alloc->name, name);
-
-    alloc->texture_id = id;
+    int put_ret;
+    k = kh_put(tex, s_name_tex_table, name, &put_ret);
+    assert(put_ret != -1 && put_ret != 0);
+    kh_value(s_name_tex_table, k) = id;
     return true;
 }
 
 void R_Texture_Free(const char *name)
 {
-    for(int i = 0; i < MAX_NUM_TEXTURE - 1; i++) {
-
-        struct texture_resource *curr = &s_tex_resources[i];
-
-        if(!strcmp(name, curr->name) && !curr->free) {
-
-            glDeleteTextures(1, &curr->texture_id);
-            curr->free = true;
-
-            struct texture_resource *tmp = s_free_head;
-            s_free_head = curr;
-            s_free_head->next_free = tmp;
-            if(tmp)
-                tmp->prev_free = s_free_head;
-            break;
-        }
+    khiter_t k;
+    if((k = kh_get(tex, s_name_tex_table, name)) != kh_end(s_name_tex_table)) {
+    
+        GLuint id = kh_val(s_name_tex_table, k);
+        glDeleteTextures(1, &id);
+        kh_del(tex, s_name_tex_table, k);
     }
+
     GL_ASSERT_OK();
 }
 

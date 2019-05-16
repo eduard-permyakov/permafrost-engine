@@ -245,9 +245,10 @@ bool R_Init(const char *base_path)
     if(!R_Shader_InitAll(base_path))
         return false;
 
-    R_Texture_Init();
-    R_GL_InitShadows();
+    if(!R_Texture_Init())
+        return false;
 
+    R_GL_InitShadows();
     return true; 
 }
 

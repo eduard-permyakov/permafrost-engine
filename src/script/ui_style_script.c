@@ -289,7 +289,7 @@ static bool image_load(const char *img_path, int *out_id)
     *end = '\0';
 
     stbi_set_flip_vertically_on_load(false);
-    bool result = R_Texture_Load(path, name, out_id);
+    bool result = R_Texture_GetForName(name, out_id) || R_Texture_Load(path, name, out_id);
     stbi_set_flip_vertically_on_load(true);
     if(!result) {
         PyErr_SetString(PyExc_RuntimeError, "Not able to load image.");
@@ -301,7 +301,7 @@ static bool image_load(const char *img_path, int *out_id)
 
     int put_ret;
     khiter_t k = kh_put(image_res, s_id_path_table, *out_id, &put_ret);
-    assert(put_ret != -1 && put_ret != 0);
+    assert(put_ret != -1);
     kh_value(s_id_path_table, k) = res;
 
     return true;

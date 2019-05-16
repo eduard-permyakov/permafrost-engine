@@ -51,7 +51,7 @@ struct texture_arr{
     GLuint tunit;
 };
 
-void R_Texture_Init(void);
+bool R_Texture_Init(void);
 bool R_Texture_AddExisting(const char *name, GLuint id);
 
 void R_Texture_MakeArray(const struct material *mats, size_t num_mats, 
