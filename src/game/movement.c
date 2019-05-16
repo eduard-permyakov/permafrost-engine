@@ -327,15 +327,17 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
 
             }else{
 
-                if(ms->state == STATE_ARRIVED) 
+                if(ms->state == STATE_ARRIVED) {
                     E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
+                }
                 ms->state = STATE_MOVING;
             }
 
         }else if((ms = movestate_get(curr_ent)) != NULL){
 
-            if(ms->state != STATE_ARRIVED) 
+            if(ms->state != STATE_ARRIVED) {
                 entity_finish_moving(curr_ent);
+            }
             *ms = (struct movestate) {
                 .state = STATE_ARRIVED,
                 .velocity = (vec2_t){0.0f}
@@ -909,6 +911,7 @@ static void on_30hz_tick(void *user, void *event)
                         .velocity = (vec2_t){0.0f}
                     };
                     entity_finish_moving(curr);
+                    break;
                 }
 
                 struct entity *adjacent[kh_size(kv_A(s_flocks, i).ents)]; 
