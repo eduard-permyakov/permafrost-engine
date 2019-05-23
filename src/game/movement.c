@@ -78,10 +78,6 @@ enum arrival_state{
 struct movestate{
     vec2_t             velocity;
     enum arrival_state state;
-    /* After an obstacle is detected and a collision force is applied, 
-     * it decays linearly over a fixed number of ticks.*/
-    vec2_t             avoid_force;
-    unsigned           avoid_ticks_left;
 };
 
 KHASH_MAP_INIT_INT(state, struct movestate)
@@ -319,8 +315,6 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
                 struct movestate new_ms = (struct movestate) {
                     .velocity = {0.0f}, 
                     .state = STATE_MOVING,
-                    .avoid_ticks_left = 0,
-                    .avoid_force = (vec2_t){0.0f},
                 };
                 movestate_set(curr_ent, &new_ms);
                 E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
@@ -711,58 +705,7 @@ static vec2_t separation_force(const struct entity *ent, const struct flock *flo
     return ret;
 }
 
-/* Collision avoidance is a behaviour that causes agents to steer around obstacles in front of them.
- */
-static vec2_t collision_avoidance_force(const struct entity *ent, const struct flock *flock, int tick_res)
-{
-    struct movestate *ms = movestate_get(ent);
-    assert(ms);
-
-    if(PFM_Vec2_Len(&ms->velocity) < EPSILON)
-        return (vec2_t){0.0f};
-
-    vec2_t line;
-    PFM_Vec2_Normal(&ms->velocity, &line);
-    PFM_Vec2_Scale(&line, ent->selection_radius + COLLISION_MAX_SEE_AHEAD, &line);
-
-    struct line_seg_2d ahead = {
-        .ax = ent->pos.x,
-        .az = ent->pos.z,
-        .bx = ent->pos.x + line.raw[0],
-        .bz = ent->pos.z + line.raw[1]
-    };
-
-    const struct entity *threat = most_threatening_obstacle(ent, ahead, flock);
-    if(!threat)
-        return (vec2_t){0.0f};
-
-    vec2_t threat_center = (vec2_t){threat->pos.x, threat->pos.z};
-    vec2_t ahead_tip = (vec2_t){ahead.bx, ahead.bz};
-
-    vec2_t right_dir = (vec2_t){-(ahead.bz - ahead.az), ahead.bx - ahead.ax};
-    PFM_Vec2_Normal(&right_dir, &right_dir);
-
-    /* Return a rightward avoidance force which is scaled depending on how 
-     * sharply the entity must turn. */
-    vec2_t right_off = right_dir;
-    assert(threat->selection_radius > 0.0f && ent->selection_radius > 0.0f);
-    float collision_dist = ent->selection_radius + threat->selection_radius;
-    PFM_Vec2_Scale(&right_off, collision_dist, &right_off);
-
-    vec2_t diff;
-    PFM_Vec2_Sub(&ahead_tip, &threat_center, &diff);
-    vec2_t proj_tip_right = right_off;
-    float coeff = PFM_Vec2_Dot(&diff, &right_off) / pow(PFM_Vec2_Len(&right_off), 2);
-    PFM_Vec2_Scale(&proj_tip_right, coeff, &proj_tip_right);
-
-    float frac = ((PFM_Vec2_Len(&proj_tip_right) / collision_dist * SIGNUM(coeff)) + 1.0f) / 2.0f;
-    PFM_Vec2_Scale(&right_dir, MAX_FORCE * frac, &right_dir);
-    vec2_truncate(&right_dir, MAX_FORCE);
-    return right_dir;
-}
-
-static vec2_t total_steering_force(const struct entity *ent, const struct flock *flock, int tick_res,
-                                   vec2_t *out_col_avoid_force)
+static vec2_t total_steering_force(const struct entity *ent, const struct flock *flock, int tick_res)
 {
     struct movestate *ms = movestate_get(ent);
     assert(ms);
@@ -770,26 +713,17 @@ static vec2_t total_steering_force(const struct entity *ent, const struct flock 
     vec2_t arrive = arrive_force(ent, flock, tick_res);
     vec2_t cohesion = cohesion_force(ent, flock, tick_res);
     vec2_t alignment = alignment_force(ent, flock, tick_res);
-    vec2_t collision_avoid = collision_avoidance_force(ent, flock, tick_res);
-    *out_col_avoid_force = collision_avoid;
-
-    unsigned ca_ticks_left = ms->avoid_ticks_left > 0 ? (ms->avoid_ticks_left - 1) : COLLISION_AVOID_MAX_TICKS;
-    collision_avoid = ms->avoid_ticks_left > 0 ? ms->avoid_force : collision_avoid;
 
     vec2_t ret = (vec2_t){0.0f};
     switch(ms->state) {
     case STATE_MOVING: {
         vec2_t separation = separation_force(ent, flock, tick_res, MOVE_SEPARATION_BUFFER_DIST);
 
-        PFM_Vec2_Scale(&collision_avoid, MOVE_COL_AVOID_FORCE_SCALE,  &collision_avoid);
         PFM_Vec2_Scale(&separation,      MOVE_SEPARATION_FORCE_SCALE, &separation);
         PFM_Vec2_Scale(&arrive,          MOVE_ARRIVE_FORCE_SCALE,     &arrive);
         PFM_Vec2_Scale(&cohesion,        MOVE_COHESION_FORCE_SCALE,   &cohesion);
         PFM_Vec2_Scale(&alignment,       MOVE_ALIGN_FORCE_SCALE,      &alignment);
 
-        PFM_Vec2_Scale(&collision_avoid, ca_ticks_left / COLLISION_AVOID_MAX_TICKS, &collision_avoid);
-
-        PFM_Vec2_Add(&ret, &collision_avoid, &ret);
         PFM_Vec2_Add(&ret, &separation, &ret);
         PFM_Vec2_Add(&ret, &arrive, &ret);
         PFM_Vec2_Add(&ret, &cohesion, &ret);
@@ -852,8 +786,7 @@ static void on_30hz_tick(void *user, void *event)
             assert(ms);
 
             /* Compute the new velocity and position based on the steering force */
-            vec2_t col_avoid_force;
-            vec2_t steer_force = total_steering_force(curr, flock, TICK_RES, &col_avoid_force);
+            vec2_t steer_force = total_steering_force(curr, flock, TICK_RES);
 
             vec2_t accel, new_vel, new_pos; 
             PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
@@ -888,15 +821,6 @@ static void on_30hz_tick(void *user, void *event)
 
             curr->pos = (vec3_t){new_pos.raw[0], M_HeightAtPoint(s_map, new_pos), new_pos.raw[1]};
             ms->velocity = new_vel;
-
-            if(ms->avoid_ticks_left > 0) {
-                --ms->avoid_ticks_left;
-            }
-
-            if(PFM_Vec2_Len(&col_avoid_force) > 0.0f) {
-                ms->avoid_ticks_left = COLLISION_AVOID_MAX_TICKS;
-                ms->avoid_force = col_avoid_force;
-            }
 
             switch(ms->state) {
             case STATE_MOVING: {
