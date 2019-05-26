@@ -109,12 +109,19 @@ struct line_seg_2d{
     float bx, bz;
 };
 
+struct line_2d{
+    vec2_t point; 
+    vec2_t dir; 
+};
+
 bool C_LineLineIntersection(struct line_seg_2d l1, struct line_seg_2d l2, vec2_t *out_xz);
 int  C_LineBoxIntersection (struct line_seg_2d line, struct box bounds, vec2_t out_xz[2]);
 bool C_BoxPointIntersection(float px, float pz, struct box bounds);
 /* 'out_t' gets set to the value corresponding to the _closest_ intersection in the 
  * case that there is more than one intersection. */
 bool C_LineCircleIntersection(struct line_seg_2d line, vec2_t center_xz, float radius, float *out_t);
+bool C_InfiniteLineIntersection(struct line_2d l1, struct line_2d l2, vec2_t *out_xz);
+bool C_RayRayIntersection2D(struct line_2d l1, struct line_2d l2, vec2_t *out_xz);
 
 #endif
 

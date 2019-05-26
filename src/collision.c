@@ -704,6 +704,58 @@ bool C_LineLineIntersection(struct line_seg_2d l1, struct line_seg_2d l2, vec2_t
     return false; /* No intersection */
 }
 
+bool C_InfiniteLineIntersection(struct line_2d l1, struct line_2d l2, vec2_t *out_xz)
+{
+    float l1_slope = fabs(l1.dir.raw[0]) < EPSILON ? NAN : (l1.dir.raw[1] / l1.dir.raw[0]);
+    float l2_slope = fabs(l2.dir.raw[0]) < EPSILON ? NAN : (l2.dir.raw[1] / l2.dir.raw[0]);
+
+    /* Lines are parallel or coincident */
+    if(fabs(l1_slope - l2_slope) < EPSILON)
+        return false;
+
+    if(l1_slope == NAN && l2_slope != NAN) {
+    
+        out_xz->raw[0] = l1.point.raw[0];
+        out_xz->raw[1] = (l1.point.raw[0] - l2.point.raw[0]) * l2_slope + l2.point.raw[1];
+
+    }else if(l1_slope != NAN && l2_slope == NAN) {
+
+        out_xz->raw[0] = l2.point.raw[0];
+        out_xz->raw[1] = (l2.point.raw[0] - l1.point.raw[0]) * l1_slope + l2.point.raw[1];
+    
+    }else{
+    
+        out_xz->raw[0] = (l1_slope * l1.point.raw[0] - l2_slope * l2.point.raw[0] 
+            + l2.point.raw[1] - l1.point.raw[1]) / (l1_slope - l2_slope);
+        out_xz->raw[1] = l2_slope * (out_xz->raw[0] - l2.point.raw[0]) + l2.point.raw[1];
+    }
+
+    return true;
+}
+
+bool C_RayRayIntersection2D(struct line_2d l1, struct line_2d l2, vec2_t *out_xz)
+{
+    vec2_t intersec_point;
+    if(!C_InfiniteLineIntersection(l1, l2, &intersec_point))
+        return false;
+
+    /* Now check if the intersection point is within the bounds of both rays */
+    if((intersec_point.raw[0] - l1.point.raw[0]) / l1.dir.raw[0] < 0.0f)
+        return false;
+
+    if((intersec_point.raw[1] - l1.point.raw[1]) / l1.dir.raw[1] < 0.0f)
+        return false;
+
+    if((intersec_point.raw[0] - l2.point.raw[0]) / l2.dir.raw[0] < 0.0f)
+        return false;
+
+    if((intersec_point.raw[1] - l2.point.raw[1]) / l2.dir.raw[1] < 0.0f)
+        return false;
+
+	*out_xz = intersec_point;
+    return true;
+}
+
 int C_LineBoxIntersection(struct line_seg_2d line, struct box bounds, vec2_t out_xz[2])
 {
     int ret = 0;
