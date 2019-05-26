@@ -1076,3 +1076,13 @@ bool N_PositionPathable(vec2_t xz_pos, void *nav_private, vec3_t map_pos)
     return chunk->cost_base[tile.tile_r][tile.tile_c] != COST_IMPASSABLE;
 }
 
+vec2_t N_TileDims(void)
+{
+    float x_ratio = (float)TILES_PER_CHUNK_WIDTH / FIELD_RES_C;
+    float z_ratio = (float)TILES_PER_CHUNK_HEIGHT / FIELD_RES_R;
+    return (vec2_t) {
+        x_ratio * X_COORDS_PER_TILE,
+        z_ratio * Z_COORDS_PER_TILE
+    };
+}
+

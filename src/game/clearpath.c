@@ -43,6 +43,7 @@
 
 #include "clearpath.h"
 #include "public/game.h"
+#include "movement.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../collision.h"
@@ -110,7 +111,7 @@ static void compute_vo_edges(struct cp_ent ent, struct cp_ent neighb,
     PFM_Vec2_Normal(&ent_to_nb, &ent_to_nb);
 
     right = (vec2_t){-ent_to_nb.raw[1], ent_to_nb.raw[0]};
-    PFM_Vec2_Scale(&right, neighb.radius + ent.radius, &right);
+    PFM_Vec2_Scale(&right, neighb.radius + ent.radius + CLEARPATH_BUFFER_RADIUS, &right);
 
     vec2_t right_tangent, left_tangent;
     PFM_Vec2_Add(&neighb.xz_pos, &right, &right_tangent);
@@ -395,7 +396,6 @@ static void on_render_3d(void *user, void *event)
     const struct map *map = user;
     const struct cp_ent *cpent = &s_debug_saved.cpent;
     const size_t n_vos = s_debug_saved.n_hrvos + s_debug_saved.n_vos;
-    const int TICK_RES = 30;
 
     vec3_t yellow = (vec3_t){1.0f, 1.0f, 0.0f};
     vec3_t blue = (vec3_t){0.0f, 0.0f, 1.0f};
@@ -433,12 +433,12 @@ static void on_render_3d(void *user, void *event)
     vec2_t des_v = s_debug_saved.ent_des_v;
     vec3_t des_vel_dir = (vec3_t){des_v.raw[0], 0.0f, des_v.raw[1]};
     PFM_Vec3_Normal(&des_vel_dir, &des_vel_dir);
-    R_GL_DrawRay(origin_pos, des_vel_dir, &ident, blue, PFM_Vec2_Len(&des_v) * TICK_RES);
+    R_GL_DrawRay(origin_pos, des_vel_dir, &ident, blue, PFM_Vec2_Len(&des_v) * MOVE_TICK_RES);
 
     vec2_t v_new = s_debug_saved.v_new;
     vec3_t vel_dir = (vec3_t){v_new.raw[0], 0.0f, v_new.raw[1]};
     PFM_Vec3_Normal(&vel_dir, &vel_dir);
-    R_GL_DrawRay(origin_pos, vel_dir, &ident, green, PFM_Vec2_Len(&v_new) * TICK_RES);
+    R_GL_DrawRay(origin_pos, vel_dir, &ident, green, PFM_Vec2_Len(&v_new) * MOVE_TICK_RES);
 
     for(int i = 0; i < kv_size(s_debug_saved.xpoints); i++) {
         vec2_t xp = kv_A(s_debug_saved.xpoints, i);

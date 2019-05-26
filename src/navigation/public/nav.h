@@ -170,6 +170,13 @@ bool      N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t 
  */
 bool      N_PositionPathable(vec2_t xz_pos, void *nav_private, vec3_t map_pos);
 
+/* ------------------------------------------------------------------------
+ * Returns the X and Z dimentions (in OpenGL coordinates) of a single 
+ * navigation tile.
+ * ------------------------------------------------------------------------
+ */
+vec2_t    N_TileDims(void);
+
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */
 /*###########################################################################*/

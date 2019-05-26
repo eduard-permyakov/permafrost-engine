@@ -40,13 +40,17 @@
 #include "../lib/public/kvec.h"
 
 
-#define CLEARPATH_NEIGHBOUR_RADIUS (25.0f)
+#define CLEARPATH_NEIGHBOUR_RADIUS (15.0f)
+/* This is added to the entity's radius so that it will take wider turns 
+ * and leave this as a buffer between it and the obstacle.
+ */
+#define CLEARPATH_BUFFER_RADIUS    (2.0f)
 
 struct map;
 
 struct cp_ent{
     vec2_t xz_pos;
-    vec2_t xz_vel;
+    vec2_t xz_vel; /* specified per pathfinding tick */
     float  radius;
 };
 

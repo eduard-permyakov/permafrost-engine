@@ -40,6 +40,7 @@
 #include "movement.h"
 #include "game_private.h"
 #include "combat.h" 
+#include "clearpath.h"
 #include "../render/public/render.h"
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
@@ -115,6 +116,7 @@ static void g_reset(void)
         AL_MapFree(s_gs.map);
         G_Move_Shutdown();
         G_Combat_Shutdown();
+        G_ClearPath_Shutdown();
         s_gs.map = NULL;
     }
 
@@ -150,6 +152,7 @@ static void g_init_map(void)
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
     G_Move_Init(s_gs.map);
     G_Combat_Init();
+    G_ClearPath_Init(s_gs.map);
     N_FC_ClearAll();
     N_FC_ClearStats();
 }
@@ -337,6 +340,17 @@ bool G_Init(void)
         .commit = NULL,
     });
     assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_first_sel_combined_hrvo",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false 
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
 
     s_gs.ss = G_RUNNING;
     return true;

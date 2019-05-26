@@ -39,6 +39,8 @@
 #include "../pf_math.h"
 #include <stdbool.h>
 
+#define MOVE_TICK_RES (30)
+
 struct map;
 struct entity;
 
