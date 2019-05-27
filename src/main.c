@@ -319,7 +319,8 @@ static bool engine_init(char **argv)
         goto fail_event;
     }
     Cursor_SetRTSMode(true);
-    E_Global_Register(SDL_QUIT, on_user_quit, NULL);
+    E_Global_Register(SDL_QUIT, on_user_quit, NULL, 
+        G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
 
     if( !(s_nk_ctx = UI_Init(argv[1], s_window)) ) {
         fprintf(stderr, "Failed to initialize nuklear\n");

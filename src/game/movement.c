@@ -889,9 +889,9 @@ bool G_Move_Init(const struct map *map)
     kv_init(s_move_markers);
     kv_init(s_flocks);
 
-    E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL);
-    E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL);
-    E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL);
+    E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
+    E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL, G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
+    E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
 
     s_map = map;
     return true;

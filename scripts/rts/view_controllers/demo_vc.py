@@ -85,15 +85,21 @@ class DemoVC(vc.ViewController):
         if self.__perf_view.hidden:
             self.__perf_view.show()
 
+    def __on_ss_change(self, event):
+        self.__view.paused = (event != pf.G_RUNNING)
+        pf.set_simstate(event)
+
     def activate(self):
-        pf.register_event_handler(EVENT_CONTROLLED_FACTION_CHANGED, DemoVC.__on_controlled_faction_chagned, self)
-        pf.register_event_handler(EVENT_SETTINGS_SHOW, DemoVC.__on_settings_show, self)
-        pf.register_event_handler(EVENT_PERF_SHOW, DemoVC.__on_perf_show, self)
-        pf.register_event_handler(common.constants.EVENT_SETTINGS_HIDE, DemoVC.__on_settings_hide, self)
+        pf.register_ui_event_handler(EVENT_CONTROLLED_FACTION_CHANGED, DemoVC.__on_controlled_faction_chagned, self)
+        pf.register_ui_event_handler(EVENT_SETTINGS_SHOW, DemoVC.__on_settings_show, self)
+        pf.register_ui_event_handler(EVENT_PERF_SHOW, DemoVC.__on_perf_show, self)
+        pf.register_ui_event_handler(common.constants.EVENT_SETTINGS_HIDE, DemoVC.__on_settings_hide, self)
+        pf.register_ui_event_handler(EVENT_SIMSTATE_CHANGE, DemoVC.__on_ss_change, self)
         self.__view.show()
 
     def deactivate(self):
         self.__view.hide()
+        pf.unregister_event_handler(EVENT_SIMSTATE_CHANGE, DemoVC.__on_ss_change)
         pf.unregister_event_handler(common.constants.EVENT_SETTINGS_HIDE, DemoVC.__on_settings_hide)
         pf.unregister_event_handler(EVENT_PERF_SHOW, DemoVC.__on_perf_show, self)
         pf.unregister_event_handler(EVENT_SETTINGS_SHOW, DemoVC.__on_settings_show)

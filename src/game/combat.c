@@ -375,7 +375,7 @@ bool G_Combat_Init(void)
     if(NULL == (s_entity_state_table = kh_init(state)))
         return false;
 
-    E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL);
+    E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
     return true;
 }
 

@@ -63,6 +63,12 @@ enum diplomacy_state{
     DIPLOMACY_STATE_WAR
 };
 
+enum simstate{
+    G_RUNNING           = (1 << 0),
+    G_PAUSED_FULL       = (1 << 1),
+    G_PAUSED_UI_RUNNING = (1 << 2),
+};
+
 typedef kvec_t(struct entity*) pentity_kvec_t;
 KHASH_DECLARE(entity, khint32_t, struct entity*)
 
@@ -106,6 +112,9 @@ vec3_t G_ActiveCamDir(void);
 
 bool   G_UpdateMinimapChunk(int chunk_r, int chunk_c);
 bool   G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
+
+void          G_SetSimState(enum simstate ss);
+enum simstate G_GetSimState(void);
 
 
 /*###########################################################################*/

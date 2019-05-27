@@ -41,6 +41,7 @@
 #include "lib/public/pf_nuklear.h"
 #include "lib/public/nuklear_sdl_gl3.h"
 #include "lib/public/kvec.h"
+#include "game/public/game.h"
 
 #include <stdbool.h>
 #include <string.h>
@@ -124,7 +125,7 @@ struct nk_context *UI_Init(const char *basedir, SDL_Window *win)
     nk_sdl_font_stash_end();
 
     kv_init(s_curr_frame_labels);
-    E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL);
+    E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING);
 
     s_nk_ctx = ctx;
     return ctx;

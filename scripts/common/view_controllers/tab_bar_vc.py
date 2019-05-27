@@ -58,7 +58,7 @@ class TabBarVC(view_controller.ViewController):
         self.view.push_child(label, vc.view)
 
     def activate(self):
-        pf.register_event_handler(self.__tce, TabBarVC.__on_tab_changed, self)
+        pf.register_ui_event_handler(self.__tce, TabBarVC.__on_tab_changed, self)
         if len(self.__children) > 0:
             self.__children[self.__active_idx].activate()
         self.view.show()

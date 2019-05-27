@@ -328,9 +328,9 @@ void G_Sel_Enable(void)
         return;
     s_ctx.installed = true;
 
-    E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL);
-    E_Global_Register(SDL_MOUSEBUTTONUP,   on_mouseup, NULL);
-    E_Global_Register(EVENT_RENDER_UI,     on_render_ui, NULL);
+    E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
+    E_Global_Register(SDL_MOUSEBUTTONUP,   on_mouseup, NULL, G_RUNNING);
+    E_Global_Register(EVENT_RENDER_UI,     on_render_ui, NULL, G_RUNNING);
 }
 
 void G_Sel_Disable(void)

@@ -75,8 +75,8 @@ class GameSettingsVC(vc.ViewController):
         self.__update_dirty_flag() 
 
     def activate(self):
-        pf.register_event_handler(EVENT_SETTINGS_APPLY, GameSettingsVC.__on_settings_apply, self)
-        pf.register_event_handler(EVENT_SETTINGS_HB_MODE_CHANGED, GameSettingsVC.__on_hb_mode_changed, self)
+        pf.register_ui_event_handler(EVENT_SETTINGS_APPLY, GameSettingsVC.__on_settings_apply, self)
+        pf.register_ui_event_handler(EVENT_SETTINGS_HB_MODE_CHANGED, GameSettingsVC.__on_hb_mode_changed, self)
 
     def deactivate(self):
         pf.unregister_event_handler(EVENT_SETTINGS_APPLY, GameSettingsVC.__on_settings_apply)

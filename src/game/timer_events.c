@@ -33,6 +33,7 @@
  *
  */
 
+#include "public/game.h"
 #include "timer_events.h"
 #include "../event.h"
 
@@ -106,7 +107,10 @@ bool G_Timer_Init(void)
     if(0 == s_60hz_timer)
         return false;
 
-    E_Global_Register(EVENT_60HZ_TICK, timer_60hz_handler, NULL);
+    /* We will still generate timer events while the simulation is paused.
+     * Most handlers should be masked out, however. */
+    E_Global_Register(EVENT_60HZ_TICK, timer_60hz_handler, NULL, 
+        G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     return true;
 }
 

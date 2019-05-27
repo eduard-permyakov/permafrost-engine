@@ -189,8 +189,8 @@ bool M_InitMinimap(struct map *map, vec2_t center_pos)
         map->width, map->height, map_center, map_size);
 
     if(ret) {
-        E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mouseclick, map);
-        E_Global_Register(SDL_MOUSEMOTION,     on_mousemove,  map);
+        E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mouseclick, map, G_RUNNING);
+        E_Global_Register(SDL_MOUSEMOTION,     on_mousemove,  map, G_RUNNING);
     }
     return ret;
 }

@@ -338,6 +338,7 @@ bool G_Init(void)
     });
     assert(status == SS_OKAY);
 
+    s_gs.ss = G_RUNNING;
     return true;
 
 fail_cams:
@@ -767,5 +768,18 @@ const khash_t(entity) *G_GetDynamicEntsSet(void)
 const khash_t(entity) *G_GetAllEntsSet(void)
 {
     return s_gs.active;
+}
+
+void G_SetSimState(enum simstate ss)
+{
+    if(ss != s_gs.ss) {
+        E_Global_Notify(EVENT_GAME_SIMSTATE_CHANGED, (void*)ss, ES_ENGINE);
+    }
+    s_gs.ss = ss;
+}
+
+enum simstate G_GetSimState(void)
+{
+    return s_gs.ss;
 }
 

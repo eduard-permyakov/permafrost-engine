@@ -44,6 +44,7 @@
 #include "../main.h"
 
 #include "../render/public/render.h"
+#include "../game/public/game.h"
 
 #include <SDL.h>
 #include <assert.h>
@@ -262,9 +263,9 @@ int M_Raycast_Install(struct map *map, struct camera *cam)
     s_ctx.map = map; 
     s_ctx.cam = cam;
 
-    E_Global_Register(SDL_MOUSEMOTION, on_mousemove, NULL);
-    E_Global_Register(EVENT_RENDER_3D, on_render, NULL);
-    E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL);
+    E_Global_Register(SDL_MOUSEMOTION, on_mousemove, NULL, G_RUNNING);
+    E_Global_Register(EVENT_RENDER_3D, on_render, NULL, G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
+    E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_RUNNING);
 
     return 0;
 }

@@ -80,6 +80,7 @@ class ActionPadVC(vc.ViewController):
             self.__hotkey_action_map[scancode]()
 
     def activate(self):
+        # Don't use 'register_ui_event_handler' as we want the action pad to be disabled/frozen when paused
         pf.register_event_handler(pf.EVENT_UNIT_SELECTION_CHANGED, ActionPadVC.__on_selection_changed, self)
         pf.register_event_handler(pf.SDL_KEYDOWN, ActionPadVC.__on_keydown, self)
         self.__view.show()

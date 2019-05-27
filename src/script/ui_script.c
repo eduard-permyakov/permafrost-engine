@@ -39,6 +39,7 @@
 #include "ui_style_script.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/kvec.h"
+#include "../game/public/game.h"
 #include "../event.h"
 #include "../collision.h"
 #include "../config.h"
@@ -1043,7 +1044,7 @@ bool S_UI_Init(struct nk_context *ctx)
     s_nk_ctx = ctx;
     kv_init(s_active_windows);
 
-    if(!E_Global_Register(EVENT_UPDATE_UI, active_windows_update, NULL))
+    if(!E_Global_Register(EVENT_UPDATE_UI, active_windows_update, NULL, G_RUNNING | G_PAUSED_UI_RUNNING))
         return false;
     if(!S_UI_Style_Init())
         return false;

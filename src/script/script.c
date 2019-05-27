@@ -65,6 +65,7 @@ static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
 static PyObject *PyPf_load_scene(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args);
+static PyObject *PyPf_register_ui_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_global_event(PyObject *self, PyObject *args);
 
@@ -107,6 +108,9 @@ static PyObject *PyPf_settings_set(PyObject *self, PyObject *args);
 static PyObject *PyPf_settings_create(PyObject *self, PyObject *args);
 static PyObject *PyPf_settings_delete(PyObject *self, PyObject *args);
 
+static PyObject *PyPf_get_simstate(PyObject *self);
+static PyObject *PyPf_set_simstate(PyObject *self, PyObject *args);
+
 static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
@@ -146,6 +150,12 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_register_event_handler, METH_VARARGS,
     "Adds a script event handler to be called when the specified global event occurs. "
     "Any weakref user arguments are automatically unpacked before being passed to the handler."},
+
+    {"register_ui_event_handler", 
+    (PyCFunction)PyPf_register_ui_event_handler, METH_VARARGS,
+    "Same as 'register_event_handler' but the handler will also be run when the simulation state "
+    "is pf.G_PAUSED_UI_RUNNING. This is for UI callbacks that should still be invoked even when "
+    "the game is in a 'paused' state."},
 
     {"unregister_event_handler", 
     (PyCFunction)PyPf_unregister_event_handler, METH_VARARGS,
@@ -309,6 +319,14 @@ static PyMethodDef pf_module_methods[] = {
     "Delete a setting with the specified name. Setting names beginning with 'pf' are reserved for the "
     "engine and may not be deleted."},
 
+    {"get_simstate",
+    (PyCFunction)PyPf_get_simstate, METH_NOARGS,
+    "Returns the current simulation state."},
+
+    {"set_simstate",
+    (PyCFunction)PyPf_set_simstate, METH_VARARGS,
+    "Set the current simulation state."},
+
     {"multiply_quaternions",
     (PyCFunction)PyPf_multiply_quaternions, METH_VARARGS,
     "Returns the normalized result of multiplying 2 quaternions (specified as a list of 4 floats - XYZW order)."},
@@ -467,7 +485,7 @@ static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args)
+static PyObject *register_handler(PyObject *self, PyObject *args, int simmask)
 {
     enum eventtype event;
     PyObject *callable, *user_arg;
@@ -485,9 +503,19 @@ static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args)
     Py_INCREF(callable);
     Py_INCREF(user_arg);
 
-    bool ret = E_Global_ScriptRegister(event, callable, user_arg);
+    bool ret = E_Global_ScriptRegister(event, callable, user_arg, simmask);
     assert(ret == true);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args)
+{
+    return register_handler(self, args, G_RUNNING);
+}
+
+static PyObject *PyPf_register_ui_event_handler(PyObject *self, PyObject *args)
+{
+    return register_handler(self, args, G_RUNNING | G_PAUSED_UI_RUNNING);
 }
 
 static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args)
@@ -1092,6 +1120,25 @@ static PyObject *PyPf_settings_delete(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_get_simstate(PyObject *self)
+{
+    return Py_BuildValue("i", G_GetSimState());
+}
+
+static PyObject *PyPf_set_simstate(PyObject *self, PyObject *args)
+{
+    enum simstate ss;
+
+    if(!PyArg_ParseTuple(args, "i", &ss)
+    || (ss != G_RUNNING && ss != G_PAUSED_FULL && ss != G_PAUSED_UI_RUNNING)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer (valid simulation state value)");
+        return NULL;
+    }
+
+    G_SetSimState(ss);
+    Py_RETURN_NONE;
+}
+
 static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args)
 {
     PyObject *q1_list, *q2_list;
@@ -1325,6 +1372,9 @@ script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg)
             ((struct tile_desc*)arg)->chunk_c,
             ((struct tile_desc*)arg)->tile_r,
             ((struct tile_desc*)arg)->tile_c);
+
+    case EVENT_GAME_SIMSTATE_CHANGED:
+        return Py_BuildValue("(i)", (intptr_t)arg);
 
     default:
         Py_RETURN_NONE;

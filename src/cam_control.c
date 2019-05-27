@@ -37,6 +37,7 @@
 #include "config.h"
 #include "event.h"
 #include "main.h"
+#include "game/public/game.h"
 
 #include <stdbool.h>
 #include <assert.h>
@@ -231,10 +232,11 @@ void CamControl_FPS_Install(struct camera *cam)
 {
     CamControl_UninstallActive();
 
-    E_Global_Register(SDL_KEYDOWN,      fps_cam_on_keydown,    NULL);
-    E_Global_Register(SDL_KEYUP,        fps_cam_on_keyup,      NULL);
-    E_Global_Register(SDL_MOUSEMOTION,  fps_cam_on_mousemove,  NULL);
-    E_Global_Register(EVENT_UPDATE_END, fps_cam_on_update_end, NULL);
+    E_Global_Register(SDL_KEYDOWN,      fps_cam_on_keydown,    NULL, G_RUNNING | G_PAUSED_UI_RUNNING);
+    E_Global_Register(SDL_KEYUP,        fps_cam_on_keyup,      NULL, G_RUNNING | G_PAUSED_UI_RUNNING);
+    E_Global_Register(SDL_MOUSEMOTION,  fps_cam_on_mousemove,  NULL, G_RUNNING | G_PAUSED_UI_RUNNING);
+    E_Global_Register(EVENT_UPDATE_END, fps_cam_on_update_end, NULL, 
+        G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
 
     s_cam_ctx.installed_on_keydown    = fps_cam_on_keydown;
     s_cam_ctx.installed_on_keyup      = fps_cam_on_keyup;
@@ -249,10 +251,11 @@ void CamControl_RTS_Install(struct camera *cam)
 {
     CamControl_UninstallActive();
 
-    E_Global_Register(SDL_MOUSEMOTION,     rts_cam_on_mousemove,  NULL);
-    E_Global_Register(SDL_MOUSEBUTTONDOWN, rts_cam_on_mousedown,  NULL);
-    E_Global_Register(SDL_MOUSEBUTTONUP,   rts_cam_on_mouseup,    NULL);
-    E_Global_Register(EVENT_UPDATE_END,    rts_cam_on_update_end, NULL);
+    E_Global_Register(SDL_MOUSEMOTION,     rts_cam_on_mousemove,  NULL, G_RUNNING);
+    E_Global_Register(SDL_MOUSEBUTTONDOWN, rts_cam_on_mousedown,  NULL, G_RUNNING);
+    E_Global_Register(SDL_MOUSEBUTTONUP,   rts_cam_on_mouseup,    NULL, G_RUNNING);
+    E_Global_Register(EVENT_UPDATE_END,    rts_cam_on_update_end, NULL, 
+        G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
 
     s_cam_ctx.installed_on_mousemove  = rts_cam_on_mousemove;
     s_cam_ctx.installed_on_mousedown  = rts_cam_on_mousedown;

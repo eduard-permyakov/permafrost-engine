@@ -37,6 +37,7 @@
 #include "config.h"
 #include "event.h"
 #include "main.h"
+#include "game/public/game.h"
 
 #include <SDL.h>
 
@@ -182,7 +183,7 @@ static void cursor_on_mousemove(void *unused1, void *unused2)
 void Cursor_SetRTSMode(bool on)
 {
     if(on) {
-        E_Global_Register(SDL_MOUSEMOTION, cursor_on_mousemove, NULL);
+        E_Global_Register(SDL_MOUSEMOTION, cursor_on_mousemove, NULL, G_RUNNING);
     }else {
         E_Global_Unregister(SDL_MOUSEMOTION, cursor_on_mousemove);
     }

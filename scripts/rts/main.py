@@ -80,7 +80,7 @@ def toggle_camera(user, event):
         active_cam_idx = (active_cam_idx + 1) % 2
         pf.activate_camera(active_cam_idx, mode_for_idx[active_cam_idx])
 
-pf.register_event_handler(pf.SDL_KEYDOWN, toggle_camera, None)
+pf.register_ui_event_handler(pf.SDL_KEYDOWN, toggle_camera, None)
 
 ############################################################
 # Setup UI                                                 #

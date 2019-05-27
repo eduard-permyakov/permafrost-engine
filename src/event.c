@@ -37,6 +37,7 @@
 #include "lib/public/khash.h"
 #include "lib/public/kvec.h"
 #include "lib/public/queue.h"
+#include "game/public/game.h"
 
 #include <assert.h>
 
@@ -53,6 +54,8 @@ struct handler_desc{
         script_opaque_t as_script_callable;
     }handler;
     void *user_arg;
+    /* Specifies during which simulation states the handler gets invoked */
+    int simmask;
 };
 
 struct event{
@@ -160,6 +163,7 @@ static void e_handle_event(struct event event)
     khiter_t k;
     uint64_t key = e_key(event.receiver_id, event.type);
     k = kh_get(handler_desc, s_event_handler_table, key);
+    enum simstate ss = G_GetSimState();
     
     if(k == kh_end(s_event_handler_table))
         return; 
@@ -169,6 +173,9 @@ static void e_handle_event(struct event event)
     for(int i = 0; i < kv_size(vec); i++) {
     
         struct handler_desc *elem = &kv_A(vec, i);
+
+        if((elem->simmask & ss) == 0)
+            continue;
     
         if(elem->type == HANDLER_TYPE_ENGINE) {
             elem->handler.as_function(elem->user_arg, event.arg);
@@ -249,12 +256,13 @@ void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source so
     queue_event_push(&s_event_queue, &e);
 }
 
-bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg)
+bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg, int simmask)
 {
     struct handler_desc hd;
     hd.type = HANDLER_TYPE_ENGINE;
     hd.handler.as_function = handler;
     hd.user_arg = user_arg;
+    hd.simmask = simmask;
 
     return e_register_handler(e_key(GLOBAL_ID, event), &hd);
 }
@@ -268,12 +276,14 @@ bool E_Global_Unregister(enum eventtype event, handler_t handler)
     return e_unregister_handler(e_key(GLOBAL_ID, event), &hd);
 }
 
-bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, script_opaque_t user_arg)
+bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, 
+                             script_opaque_t user_arg, int simmask)
 {
     struct handler_desc hd;
     hd.type = HANDLER_TYPE_SCRIPT;
     hd.handler.as_script_callable = handler;
     hd.user_arg = user_arg;
+    hd.simmask = simmask;
 
     return e_register_handler(e_key(GLOBAL_ID, event), &hd);
 }

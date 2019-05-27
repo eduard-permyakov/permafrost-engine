@@ -43,6 +43,7 @@
 #define NUM_CAMERAS  2
 
 struct gamestate{
+    enum simstate           ss;
     struct map             *map;
     int                     active_cam_idx;
     struct camera          *cameras[NUM_CAMERAS];

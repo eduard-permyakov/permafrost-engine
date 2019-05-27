@@ -459,6 +459,10 @@ static void s_expose_game_constants(PyObject *module)
 
     PY_EXPOSE_ENUM(module, DIPLOMACY_STATE_PEACE);
     PY_EXPOSE_ENUM(module, DIPLOMACY_STATE_WAR);
+
+    PY_EXPOSE_ENUM(module, G_RUNNING);
+    PY_EXPOSE_ENUM(module, G_PAUSED_FULL);
+    PY_EXPOSE_ENUM(module, G_PAUSED_UI_RUNNING);
 }
 
 static void s_expose_anim_constants(PyObject *module)

@@ -76,6 +76,7 @@ enum eventtype{
     EVENT_ATTACK_START,
     EVENT_ENTITY_DEATH,
     EVENT_ATTACK_END,
+    EVENT_GAME_SIMSTATE_CHANGED,
 
     EVENT_ENGINE_LAST = 0x1ffff,
 };
@@ -102,11 +103,12 @@ void E_Shutdown(void);
 void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source);
 void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_source);
 
-bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg);
+bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg,
+                       int simmask);
 bool E_Global_Unregister(enum eventtype event, handler_t handler);
 
 bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler, 
-                             script_opaque_t user_arg);
+                             script_opaque_t user_arg, int simmask);
 bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler);
 
 

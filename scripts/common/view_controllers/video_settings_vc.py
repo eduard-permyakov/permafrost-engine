@@ -206,13 +206,13 @@ class VideoSettingsVC(vc.ViewController):
         self.__update_dirty_flag()
 
     def activate(self):
-        pf.register_event_handler(EVENT_SETTINGS_APPLY, VideoSettingsVC.__on_settings_apply, self)
-        pf.register_event_handler(EVENT_RES_SETTING_CHANGED, VideoSettingsVC.__on_resolution_changed, self)
-        pf.register_event_handler(EVENT_WINMODE_SETTING_CHANGED, VideoSettingsVC.__on_winmode_changed, self)
-        pf.register_event_handler(EVENT_AR_SETTING_CHANGED, VideoSettingsVC.__on_aspect_ratio_changed, self)
-        pf.register_event_handler(EVENT_WIN_TOP_SETTING_CHANGED, VideoSettingsVC.__on_win_ontop_changed, self)
-        pf.register_event_handler(EVENT_VSYNC_SETTING_CHANGED, VideoSettingsVC.__on_vsync_changed, self)
-        pf.register_event_handler(EVENT_SHADOWS_SETTING_CHANGED, VideoSettingsVC.__on_vsync_changed, self)
+        pf.register_ui_event_handler(EVENT_SETTINGS_APPLY, VideoSettingsVC.__on_settings_apply, self)
+        pf.register_ui_event_handler(EVENT_RES_SETTING_CHANGED, VideoSettingsVC.__on_resolution_changed, self)
+        pf.register_ui_event_handler(EVENT_WINMODE_SETTING_CHANGED, VideoSettingsVC.__on_winmode_changed, self)
+        pf.register_ui_event_handler(EVENT_AR_SETTING_CHANGED, VideoSettingsVC.__on_aspect_ratio_changed, self)
+        pf.register_ui_event_handler(EVENT_WIN_TOP_SETTING_CHANGED, VideoSettingsVC.__on_win_ontop_changed, self)
+        pf.register_ui_event_handler(EVENT_VSYNC_SETTING_CHANGED, VideoSettingsVC.__on_vsync_changed, self)
+        pf.register_ui_event_handler(EVENT_SHADOWS_SETTING_CHANGED, VideoSettingsVC.__on_vsync_changed, self)
 
     def deactivate(self):
         pf.unregister_event_handler(EVENT_SHADOWS_SETTING_CHANGED, VideoSettingsVC.__on_vsync_changed)
