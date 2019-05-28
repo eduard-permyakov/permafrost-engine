@@ -59,6 +59,7 @@
 #include <string.h>
 
 
+#define EPSILON                     (1.0f/1024)
 #define ARR_SIZE(a)                 (sizeof(a)/sizeof(a[0]))
 
 /*****************************************************************************/
@@ -1192,5 +1193,93 @@ const char *R_GL_GetInfo(enum render_info attr)
     case RENDER_INFO_SL_VERSION:    return glGetString(GL_SHADING_LANGUAGE_VERSION);
     default: assert(0);             return NULL;
     }
+}
+
+void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays, 
+                           size_t num_vos, const struct map *map)
+{
+    const float RAY_LEN = 150.0f;
+    const int NUM_SAMPLES = 150;
+
+    GLint VAO, VBO;
+    GLint shader_prog;
+    GLuint loc;
+
+    mat4x4_t model;
+    PFM_Mat4x4_Identity(&model); /* points are already in world space */
+
+    vec3_t ray_vbuff[num_vos * (NUM_SAMPLES - 1) * 4];
+    int vbuff_idx = 0;
+
+    for(int i = 0; i < num_vos; i++) {
+        for(int s = 0; s < NUM_SAMPLES-1; s++) {
+        
+            /* Left ray segment */
+            assert(fabs(PFM_Vec2_Len(&left_rays[i]) - 1.0) < EPSILON);
+            vec2_t xz_off_a = left_rays[i], xz_off_b = left_rays[i];
+            PFM_Vec2_Scale(&xz_off_a, ((float)s / NUM_SAMPLES) * RAY_LEN, &xz_off_a);
+            PFM_Vec2_Scale(&xz_off_b, ((float)(s + 1) / NUM_SAMPLES) * RAY_LEN, &xz_off_b);
+
+            vec2_t xz_pos_a, xz_pos_b;
+            PFM_Vec2_Add(&apexes[i], &xz_off_a, &xz_pos_a);
+            PFM_Vec2_Add(&apexes[i], &xz_off_b, &xz_pos_b);
+            xz_pos_a = M_ClampedMapCoordinate(map, xz_pos_a);
+            xz_pos_b = M_ClampedMapCoordinate(map, xz_pos_b);
+
+            ray_vbuff[vbuff_idx + 0] = (vec3_t){xz_pos_a.raw[0], M_HeightAtPoint(map, xz_pos_a) + 0.1, xz_pos_a.raw[1]};
+            ray_vbuff[vbuff_idx + 1] = (vec3_t){xz_pos_b.raw[0], M_HeightAtPoint(map, xz_pos_b) + 0.1, xz_pos_b.raw[1]};
+
+            /* Right ray segment */
+            assert(fabs(PFM_Vec2_Len(&right_rays[i]) - 1.0) < EPSILON);
+            xz_off_a = right_rays[i], xz_off_b = right_rays[i];
+            PFM_Vec2_Scale(&xz_off_a, ((float)s / NUM_SAMPLES) * RAY_LEN, &xz_off_a);
+            PFM_Vec2_Scale(&xz_off_b, ((float)(s + 1) / NUM_SAMPLES) * RAY_LEN, &xz_off_b);
+
+            PFM_Vec2_Add(&apexes[i], &xz_off_a, &xz_pos_a);
+            PFM_Vec2_Add(&apexes[i], &xz_off_b, &xz_pos_b);
+            xz_pos_a = M_ClampedMapCoordinate(map, xz_pos_a);
+            xz_pos_b = M_ClampedMapCoordinate(map, xz_pos_b);
+
+            ray_vbuff[vbuff_idx + 2] = (vec3_t){xz_pos_a.raw[0], M_HeightAtPoint(map, xz_pos_a) + 0.1, xz_pos_a.raw[1]};
+            ray_vbuff[vbuff_idx + 3] = (vec3_t){xz_pos_b.raw[0], M_HeightAtPoint(map, xz_pos_b) + 0.1, xz_pos_b.raw[1]};
+
+            vbuff_idx += 4;
+        }
+    }
+    assert(vbuff_idx == ARR_SIZE(ray_vbuff));
+
+    /* OpenGL setup */
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    glUseProgram(shader_prog);
+
+    /* Set uniforms */
+    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
+
+    vec4_t red = (vec4_t){1.0f, 0.0f, 0.0f, 1.0f};
+    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
+    glUniform4fv(loc, 1, red.raw);
+
+    GLfloat old_width;
+    glGetFloatv(GL_LINE_WIDTH, &old_width);
+    glLineWidth(2.0f);
+
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(ray_vbuff) * sizeof(vec3_t), ray_vbuff, GL_STATIC_DRAW);
+    glDrawArrays(GL_LINES, 0, ARR_SIZE(ray_vbuff));
+
+cleanup:
+    glLineWidth(old_width);
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
 }
 

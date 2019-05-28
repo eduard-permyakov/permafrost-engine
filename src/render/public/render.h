@@ -264,6 +264,16 @@ const char *R_GL_GetInfo(enum render_info attr);
 void   R_GL_DrawHealthbars(size_t num_ents, GLfloat *ent_health_pc, vec3_t *ent_top_pos_ws,
                            const struct camera *cam);
 
+/* ---------------------------------------------------------------------------
+ * Render an entity's combined hybrid reciprocal velocity obstacle. (the union
+ * of all dynamic neighbours' HRVOs and static neighbours' VOs). There should
+ * be exactly 'num_vos' elements in the 'apexes' 'left_rays' and 'right_rays'
+ * input arrays.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays, 
+                             size_t num_vos, const struct map *map);
+
 /*###########################################################################*/
 /* RENDER TILES                                                              */
 /*###########################################################################*/
