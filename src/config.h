@@ -37,6 +37,7 @@
 #define CONFIG_H
 
 #include <stdbool.h>
+#include <SDL.h>
 
 /* The far end of the camera's clipping frustrum, in OpenGL coordinates */
 #define CONFIG_DRAWDIST             (1000)
@@ -61,5 +62,7 @@
 #define CONFIG_FLOW_CAHCE_SZ        (2048)
 #define CONFIG_MAPPING_CACHE_SZ     (8192)
 #define CONFIG_GRID_PATH_CACHE_SZ   (8192)
+
+#define CONFIG_FRAME_STEP_HOTKEY    (SDL_SCANCODE_SPACE)
 
 #endif

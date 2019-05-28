@@ -80,6 +80,10 @@ unsigned                   g_last_frame_ms = 0;
 static SDL_Window         *s_window;
 static SDL_GLContext       s_context;
 
+/* Flag to perform a single step of the simulation while the game is paused. 
+ * Cleared at after performing the step. 
+ */
+static bool                s_step_frame = false;
 static bool                s_quit = false; 
 static kvec_t(SDL_Event)   s_prev_tick_events;
 
@@ -118,13 +122,17 @@ static void process_sdl_events(void)
         case SDL_KEYDOWN:
             switch(event.key.keysym.scancode) {
 
-            case SDL_SCANCODE_ESCAPE: s_quit = true; break;
+            case SDL_SCANCODE_ESCAPE: 
+                s_quit = true; 
+                break;
             }
             break;
 
         case SDL_USEREVENT:
             switch(event.user.code) {
-            case 0: E_Global_Notify(EVENT_60HZ_TICK, NULL, ES_ENGINE); break;
+            case 0: 
+                E_Global_Notify(EVENT_60HZ_TICK, NULL, ES_ENGINE); 
+                break;
             }
             break;
         }
@@ -161,6 +169,29 @@ static void render(void)
     UI_Render();
 
     SDL_GL_SwapWindow(s_window);
+}
+
+static void fs_on_key_press(void *user, void *event)
+{
+    SDL_KeyboardEvent *key = &((SDL_Event*)event)->key;
+    if(key->keysym.scancode != CONFIG_FRAME_STEP_HOTKEY)
+        return;
+    s_step_frame = true;
+}
+
+static bool frame_step_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_BOOL);
+}
+
+static void frame_step_commit(const struct sval *new_val)
+{
+    if(new_val->as_bool) {
+        E_Global_Register(SDL_KEYDOWN, fs_on_key_press, NULL, 
+            G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
+    }else{
+        E_Global_Unregister(SDL_KEYDOWN, fs_on_key_press); 
+    }
 }
 
 /* Fills the framebuffer with the loading screen using SDL's software renderer. 
@@ -212,6 +243,21 @@ fail_surface:
     stbi_image_free(image);
 fail_load_image:
     SDL_DestroyRenderer(sw_renderer);
+}
+
+static void engine_create_settings(void)
+{
+    ss_e status = Settings_Create((struct setting){
+        .name = "pf.debug.paused_frame_step_enabled",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false 
+        },
+        .prio = 0,
+        .validate = frame_step_validate,
+        .commit = frame_step_commit,
+    });
+    assert(status == SS_OKAY);
 }
 
 static bool engine_init(char **argv)
@@ -343,6 +389,7 @@ static bool engine_init(char **argv)
         goto fail_nav;
     }
 
+    engine_create_settings();
     return true;
 
 fail_nav:
@@ -468,10 +515,23 @@ int main(int argc, char **argv)
     uint32_t last_ts = SDL_GetTicks();
     while(!s_quit) {
 
+        enum simstate curr_ss = G_GetSimState();
+        bool prev_step_frame = s_step_frame;
+
+        if(prev_step_frame) {
+            assert(curr_ss != G_RUNNING); 
+            G_SetSimState(G_RUNNING);
+        }
+
         process_sdl_events();
         E_ServiceQueue();
         G_Update();
         render();
+
+        if(prev_step_frame) {
+            G_SetSimState(curr_ss);
+            s_step_frame = false;
+        }
 
         uint32_t curr_time = SDL_GetTicks();
         g_last_frame_ms = curr_time - last_ts;
