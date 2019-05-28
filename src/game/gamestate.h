@@ -40,10 +40,17 @@
 #include "../lib/public/kvec.h"
 #include "faction.h"
 
+#include <stdint.h>
+
 #define NUM_CAMERAS  2
 
 struct gamestate{
     enum simstate           ss;
+    /*-------------------------------------------------------------------------
+     * The SDL tick during which we last changed simulation states.
+     *-------------------------------------------------------------------------
+     */
+    uint32_t                ss_change_tick;
     struct map             *map;
     int                     active_cam_idx;
     struct camera          *cameras[NUM_CAMERAS];

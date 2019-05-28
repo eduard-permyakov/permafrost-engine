@@ -115,6 +115,13 @@ const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent);
  */
 const struct aabb     *A_GetCurrPoseAABB(const struct entity *ent);
 
+/* ---------------------------------------------------------------------------
+ * Add a time delta (in SDL ticks) to the start time of the previous frame.
+ * This is used to shift the timestamps after pausing and resuming the game.
+ * ---------------------------------------------------------------------------
+ */
+void                   A_AddTimeDelta(const struct entity *ent, uint32_t dt);
+
 
 /*###########################################################################*/
 /* ANIM ASSET LOADING                                                        */

@@ -291,3 +291,11 @@ const struct aabb *A_GetCurrPoseAABB(const struct entity *ent)
     return &ctx->active->samples[ctx->curr_frame].sample_aabb;
 }
 
+void A_AddTimeDelta(const struct entity *ent, uint32_t dt)
+{
+    struct anim_data *priv = ent->anim_private;
+    struct anim_ctx *ctx = ent->anim_ctx;
+
+    ctx->curr_frame_start_ticks += dt;
+}
+

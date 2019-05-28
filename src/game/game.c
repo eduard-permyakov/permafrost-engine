@@ -497,7 +497,7 @@ void G_Update(void)
             kv_push(struct obb, s_gs.visible_obbs, obb);
         }
 
-        if(curr->flags & ENTITY_FLAG_ANIMATED)
+        if(s_gs.ss == G_RUNNING && (curr->flags & ENTITY_FLAG_ANIMATED))
             A_Update(curr);
     });
 
@@ -772,9 +772,24 @@ const khash_t(entity) *G_GetAllEntsSet(void)
 
 void G_SetSimState(enum simstate ss)
 {
-    if(ss != s_gs.ss) {
-        E_Global_Notify(EVENT_GAME_SIMSTATE_CHANGED, (void*)ss, ES_ENGINE);
+    if(ss == s_gs.ss)
+        return;
+
+    uint32_t curr_tick = SDL_GetTicks();
+    if(ss == G_RUNNING) {
+    
+        uint32_t key;
+        struct entity *curr;
+        kh_foreach(s_gs.active, key, curr, {
+           
+            if(!(curr->flags & ENTITY_FLAG_ANIMATED))
+                continue;
+            A_AddTimeDelta(curr, curr_tick - s_gs.ss_change_tick);
+        });
     }
+
+    E_Global_Notify(EVENT_GAME_SIMSTATE_CHANGED, (void*)ss, ES_ENGINE);
+    s_gs.ss_change_tick = curr_tick;
     s_gs.ss = ss;
 }
 
