@@ -74,11 +74,18 @@ class ActionPadWindow(pf.Window):
 
     def __image_button(self, img_normal, img_hover, img_active, action):
         old = pf.button_style.normal, pf.button_style.hover, pf.button_style.active
+        ss = pf.get_simstate()
 
-        pf.button_style.normal = img_normal
-        pf.button_style.hover = img_hover
-        pf.button_style.active = img_active
-        self.button_label("", action)
+        if ss == pf.G_RUNNING:
+            pf.button_style.normal = img_normal
+            pf.button_style.hover = img_hover
+            pf.button_style.active = img_active
+            self.button_label("", action)
+        else:
+            pf.button_style.normal = img_normal
+            pf.button_style.hover = img_normal
+            pf.button_style.active = img_normal
+            self.button_label("", lambda: None)
 
         pf.button_style.normal, pf.button_style.hover, pf.button_style.active = old
 
