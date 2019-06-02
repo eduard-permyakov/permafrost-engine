@@ -80,7 +80,17 @@ def toggle_camera(user, event):
         active_cam_idx = (active_cam_idx + 1) % 2
         pf.activate_camera(active_cam_idx, mode_for_idx[active_cam_idx])
 
+def toggle_pause(user, event):
+
+    if event[0] == pf.SDL_SCANCODE_P:
+        ss = pf.get_simstate()
+        if ss == pf.G_RUNNING:
+            pf.set_simstate(pf.G_PAUSED_UI_RUNNING)
+        else:
+            pf.set_simstate(pf.G_RUNNING)
+
 pf.register_ui_event_handler(pf.SDL_KEYDOWN, toggle_camera, None)
+pf.register_ui_event_handler(pf.SDL_KEYDOWN, toggle_pause, None)
 
 ############################################################
 # Setup UI                                                 #
