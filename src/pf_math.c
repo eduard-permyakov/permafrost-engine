@@ -61,7 +61,7 @@ void PFM_Vec2_Scale(vec2_t *op1, GLfloat scale, vec2_t *out)
     out->y = op1->y * scale;
 }
 
-GLfloat PFM_Vec2_Len(vec2_t *op1)
+GLfloat PFM_Vec2_Len(const vec2_t *op1)
 {
     return sqrt(op1->x * op1->x + 
                 op1->y * op1->y);
@@ -112,7 +112,7 @@ void PFM_Vec3_Scale(vec3_t *op1, GLfloat scale, vec3_t *out)
         out->raw[i] = op1->raw[i] * scale;
 }
 
-GLfloat PFM_Vec3_Len(vec3_t *op1)
+GLfloat PFM_Vec3_Len(const vec3_t *op1)
 {
     return sqrt(op1->x * op1->x + 
                 op1->y * op1->y +
@@ -158,7 +158,7 @@ void PFM_Vec4_Scale(vec4_t *op1, GLfloat scale, vec4_t *out)
         out->raw[i] = op1->raw[i] * scale;
 }
 
-GLfloat PFM_Vec4_Len(vec4_t *op1)
+GLfloat PFM_Vec4_Len(const vec4_t *op1)
 {
     return sqrt(op1->x * op1->x + 
                 op1->y * op1->y +

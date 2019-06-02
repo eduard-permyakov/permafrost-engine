@@ -102,7 +102,7 @@ GLfloat PFM_Vec2_Dot       (vec2_t *op1, vec2_t *op2);
 void    PFM_Vec2_Add       (vec2_t *op1, vec2_t *op2, vec2_t *out);
 void    PFM_Vec2_Sub       (vec2_t *op1, vec2_t *op2, vec2_t *out);
 void    PFM_Vec2_Scale     (vec2_t *op1, GLfloat scale, vec2_t *out);
-GLfloat PFM_Vec2_Len       (vec2_t *op1);
+GLfloat PFM_Vec2_Len       (const vec2_t *op1);
 void    PFM_Vec2_Normal    (vec2_t *op1,  vec2_t *out);
 void    PFM_Vec2_Dump(vec2_t *vec, FILE *dumpfile);
 
@@ -115,7 +115,7 @@ GLfloat PFM_Vec3_Dot       (vec3_t *op1, vec3_t *op2);
 void    PFM_Vec3_Add       (vec3_t *op1, vec3_t *op2, vec3_t *out);
 void    PFM_Vec3_Sub       (vec3_t *op1, vec3_t *op2, vec3_t *out);
 void    PFM_Vec3_Scale     (vec3_t *op1, GLfloat scale, vec3_t *out);
-GLfloat PFM_Vec3_Len       (vec3_t *op1);
+GLfloat PFM_Vec3_Len       (const vec3_t *op1);
 void    PFM_Vec3_Normal    (vec3_t *op1, vec3_t *out);
 void    PFM_Vec3_Dump      (vec3_t *vec, FILE *dumpfile);
 
@@ -127,7 +127,7 @@ GLfloat PFM_Vec4_Dot       (vec4_t *op1, vec4_t *op2, vec4_t *out);
 void    PFM_Vec4_Add       (vec4_t *op1, vec4_t *op2, vec4_t *out);
 void    PFM_Vec4_Sub       (vec4_t *op1, vec4_t *op2, vec4_t *out);
 void    PFM_Vec4_Scale     (vec4_t *op1, GLfloat scale, vec4_t *out);
-GLfloat PFM_Vec4_Len       (vec4_t *op1);
+GLfloat PFM_Vec4_Len       (const vec4_t *op1);
 void    PFM_Vec4_Normal    (vec4_t *op1, vec4_t *out);
 void    PFM_Vec4_Dump      (vec4_t *vec, FILE *dumpfile);
 
