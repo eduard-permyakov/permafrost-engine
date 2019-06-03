@@ -701,7 +701,7 @@ static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args)
     Py_INCREF(callable);
     Py_INCREF(user_arg);
 
-    bool ret = E_Entity_ScriptRegister(event, self->ent->uid, callable, user_arg);
+    bool ret = E_Entity_ScriptRegister(event, self->ent->uid, callable, user_arg, G_RUNNING);
     assert(ret == true);
     Py_RETURN_NONE;
 }

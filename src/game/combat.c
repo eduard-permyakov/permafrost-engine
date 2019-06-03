@@ -352,7 +352,7 @@ static void on_30hz_tick(void *user, void *event)
 
             }else{
                 cs->state = STATE_ATTACK_ANIM_PLAYING;
-                E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, curr->uid, on_attack_anim_finish, curr);
+                E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, curr->uid, on_attack_anim_finish, curr, G_RUNNING);
             }
 
             break;

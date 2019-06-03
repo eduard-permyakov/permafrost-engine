@@ -117,11 +117,11 @@ bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler);
 /*###########################################################################*/
 
 bool E_Entity_Register(enum eventtype event, uint32_t ent_uid, handler_t handler, 
-                       void *user_arg);
+                       void *user_arg, int simmask);
 bool E_Entity_Unregister(enum eventtype event, uint32_t ent_uid, handler_t handler);
 
 bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid, 
-                             script_opaque_t handler, script_opaque_t user_arg);
+                             script_opaque_t handler, script_opaque_t user_arg, int simmask);
 bool E_Entity_ScriptUnregister(enum eventtype event, uint32_t ent_uid, 
                                script_opaque_t handler);
 void E_Entity_Notify(enum eventtype, uint32_t ent_uid, void *event_arg, enum event_source);
