@@ -267,6 +267,7 @@ static void create_wavefront_blocked_line(struct tile_desc target, struct tile_d
     do {
 
         out_los->field[curr.r][curr.c].wavefront_blocked = 1;
+
         e2 = 2 * err;
         if(e2 >= dy) {
             err += dy;
@@ -278,6 +279,26 @@ static void create_wavefront_blocked_line(struct tile_desc target, struct tile_d
         }
 
     }while(curr.r >= 0 && curr.r < FIELD_RES_R && curr.c >= 0 && curr.c < FIELD_RES_C);
+}
+
+static void pad_wavefront(struct LOS_field *out_los)
+{
+    for(int r = 0; r < FIELD_RES_R; r++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
+
+        if(out_los->field[r][c].wavefront_blocked) {
+        
+            for(int rr = r-1; rr <= r+1; rr++) {
+            for(int cc = c-1; cc <= c+1; cc++) {
+            
+                if(rr < 0 || rr > FIELD_RES_R-1)
+                    continue;
+                if(cc < 0 || cc > FIELD_RES_C-1)
+                    continue;
+                out_los->field[rr][cc].visible = 0;
+            }}
+        }
+    }}
 }
 
 /*****************************************************************************/
@@ -551,5 +572,13 @@ void N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc t
         }
     }
     pq_coord_destroy(&frontier);
+
+    /* Add a single tile-wide padding of invisible tiles around the wavefront. This is 
+     * because we want to be conservative and not mark any tiles visible from which we
+     * can't raycast to the destination point from any point within the tile without 
+     * the ray going over impassable terrain. This is a nice property for the movement
+     * code. */
+    pad_wavefront(out_los);
 }
+
 
