@@ -342,9 +342,6 @@ static size_t compute_vdes_proj_points(struct line_2d *rays, size_t n_rays,
 
 static vec2_t compute_vnew(const vec2_vec_t *outside_points, vec2_t des_v, vec2_t ent_xz_pos)
 {
-    if(kv_size(*outside_points) == 0)
-        return (vec2_t){0.0f, 0.0f};
-
     float min_dist = INFINITY, len;
     vec2_t ret;
 
@@ -365,6 +362,35 @@ static vec2_t compute_vnew(const vec2_vec_t *outside_points, vec2_t des_v, vec2_
 
     assert(min_dist < INFINITY);
     return ret;
+}
+
+static void remove_furthest(vec2_t xz_pos, cp_ent_vec_t *dyn_inout, cp_ent_vec_t *stat_inout)
+{
+    float max_dist = -INFINITY;
+    cp_ent_vec_t *del_vec = NULL;
+    int del_idx;
+
+    for(int i = 0; i < 2; i++) {
+    
+        cp_ent_vec_t *curr_vec = (i == 0) ? dyn_inout : stat_inout;
+        for(int j = 0; j < kv_size(*curr_vec); j++) {
+        
+            float len;
+            vec2_t diff;
+            struct cp_ent *ent = &kv_A(*curr_vec, j);
+
+            PFM_Vec2_Sub(&xz_pos, &ent->xz_pos, &diff);
+            if((len = PFM_Vec2_Len(&diff)) > max_dist) {
+                max_dist = len; 
+                del_vec = curr_vec;
+                del_idx = j;
+            }
+        }
+    }
+
+    if(max_dist > -INFINITY) {
+        kv_del(vec2_t, *del_vec, del_idx);
+    }
 }
 
 /* Save the combined HRVO of the first selected entity for debug rendering */
@@ -453,28 +479,12 @@ static void on_render_3d(void *user, void *event)
     UI_DrawText(strbuff, (struct rect){5,5,200,50}, text_color);
 }
 
-/*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
-/*****************************************************************************/
-
-void G_ClearPath_Init(const struct map *map)
-{
-    E_Global_Register(EVENT_RENDER_3D, on_render_3d, (struct map*)map, 
-        G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
-    kv_init(s_debug_saved.xpoints);
-}
-
-void G_ClearPath_Shutdown(void)
-{
-    E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
-    kv_destroy(s_debug_saved.xpoints);
-}
-
-vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
-                               uint32_t ent_uid,
-                               vec2_t ent_des_v,
-                               cp_ent_vec_t dyn_neighbs,
-                               cp_ent_vec_t stat_neighbs)
+static bool clearpath_new_velocity(struct cp_ent cpent,
+                                   uint32_t ent_uid,
+                                   vec2_t ent_des_v,
+                                   const cp_ent_vec_t dyn_neighbs,
+                                   const cp_ent_vec_t stat_neighbs,
+                                   vec2_t *out)
 {
     struct HRVO dyn_hrvos[kv_size(dyn_neighbs)];
     struct VO stat_vos[kv_size(stat_neighbs)];
@@ -516,7 +526,8 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
     if(!inside_pcr(rays, n_rays, des_v_ws)) {
 
         s_debug_saved.des_v_in_pcr = false;
-        return ent_des_v;
+        *out = ent_des_v;
+        return true;
     }
 
     vec2_vec_t xpoints;
@@ -536,6 +547,10 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
      */
     compute_vdes_proj_points(rays, n_rays, ent_des_v, &xpoints);
 
+    if(kv_size(xpoints) == 0) {
+        return false;    
+    }
+
     vec2_t ret = compute_vnew(&xpoints, ent_des_v, cpent.xz_pos);
 
     if(should_save_debug(ent_uid)) {
@@ -546,6 +561,43 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
     }
 
     kv_destroy(xpoints);
-    return ret;
+    *out = ret;
+    return true;
+}
+
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
+void G_ClearPath_Init(const struct map *map)
+{
+    E_Global_Register(EVENT_RENDER_3D, on_render_3d, (struct map*)map, 
+        G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
+    kv_init(s_debug_saved.xpoints);
+}
+
+void G_ClearPath_Shutdown(void)
+{
+    E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
+    kv_destroy(s_debug_saved.xpoints);
+}
+
+vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
+                               uint32_t ent_uid,
+                               vec2_t ent_des_v,
+                               cp_ent_vec_t dyn_neighbs,
+                               cp_ent_vec_t stat_neighbs)
+{
+    do{
+        vec2_t ret;
+        bool found = clearpath_new_velocity(cpent, ent_uid, ent_des_v, dyn_neighbs, stat_neighbs, &ret);
+        if(found)
+            return ret;
+
+        remove_furthest(cpent.xz_pos, &dyn_neighbs, &stat_neighbs);
+
+    }while(kv_size(dyn_neighbs) > 0 && kv_size(stat_neighbs) > 0);
+
+    return (vec2_t){0.0f, 0.0f};
 }
 
