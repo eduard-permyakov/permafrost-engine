@@ -44,7 +44,7 @@
 /* This is added to the entity's radius so that it will take wider turns 
  * and leave this as a buffer between it and the obstacle.
  */
-#define CLEARPATH_BUFFER_RADIUS    (2.0f)
+#define CLEARPATH_BUFFER_RADIUS    (2.5f)
 
 struct map;
 
