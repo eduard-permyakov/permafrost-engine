@@ -15,10 +15,6 @@ It is made in the image of old classics, but incorporating some modern ideas.
 ![Map Editor](docs/images/editor.png)
 ###### Baked Navigation Grid ######
 ![Navigation Grid](docs/images/navigation.png)
-###### Unit Selection + Flocking ######
-![Navigation Grid](docs/images/flock.gif)
-###### Flow Field Pathfinding ######
-![Navigation Grid](docs/images/pathfinding.gif)
 
 ## Engine Summary ##
 
