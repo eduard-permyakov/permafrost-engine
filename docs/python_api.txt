@@ -76,6 +76,10 @@ BUILT-IN FUNCTIONS
     --------------------------------------------------------------------------------
     Get the currently set resolution of the game window.
 
+    [get_simstate]
+    --------------------------------------------------------------------------------
+    Returns the current simulation state.
+
     [get_unit_selection]
     --------------------------------------------------------------------------------
     Returns a list of objects currently selected by the player.
@@ -132,6 +136,12 @@ BUILT-IN FUNCTIONS
     Any weakref user arguments are automatically unpacked before being passed to
     the handler.
 
+    [register_ui_event_handler]
+    --------------------------------------------------------------------------------
+    Same as 'register_event_handler' but the handler will also be run when the
+    simulation state is pf.G_PAUSED_UI_RUNNING. This is for UI callbacks that
+    should still be invoked even when the game is in a 'paused' state.
+
     [remove_faction]
     --------------------------------------------------------------------------------
     Remove the faction with the specified faction_id. This will remove all entities
@@ -182,6 +192,10 @@ BUILT-IN FUNCTIONS
     --------------------------------------------------------------------------------
     Set the cursor to target mode. The next left click will issue a move command to
     the location under the cursor.
+
+    [set_simstate]
+    --------------------------------------------------------------------------------
+    Set the current simulation state.
 
     [settings_create]
     --------------------------------------------------------------------------------
@@ -734,6 +748,9 @@ BUILT-IN CONSTANTS
     EVENT_UPDATE_END 65537
     EVENT_UPDATE_START 65536
     EVENT_UPDATE_UI 65538
+    G_PAUSED_FULL 2
+    G_PAUSED_UI_RUNNING 4
+    G_RUNNING 1
     NK_CHART_COLUMN 1
     NK_CHART_LINES 0
     NK_CHART_MAX 2

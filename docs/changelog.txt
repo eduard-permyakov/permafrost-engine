@@ -3,6 +3,14 @@
 ********************************************************************************
 
 ================================================================================
+[Version 0.35.0] - 07.06.2019
+================================================================================
+    * Implement pause/resume system
+    * Implement dynamic collision avoidance of multiple entites using Hybrid
+      Reciprocal Velocity Obstacles and the ClearPath algorithm
+    * Various tweaks to movement/flocking behaviours
+
+================================================================================
 [Version 0.34.0] - 15.05.2019
 ================================================================================
     * Implement LRU cache and memory pool generic data structures

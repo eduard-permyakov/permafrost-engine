@@ -35,10 +35,12 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * UI framework (Nuklear-based)
 * Efficient raycasting
 * Map/Scene editor
+* Pause/Resume system
 * Fast rendering of huge maps (map size only limited by memory)
 * Map navigation graph/grid generation
 * Implementation of 'boids' steering/flocking behaviours
 * Hierarchial flow field pathfinding
+* Dynamic collision avoidance of multiple entities using Hybrid Reciprocal Velocity Obstacles and the ClearPath algorithm
 * RTS minimap
 * RTS-style unit selection
 * RTS unit combat system
