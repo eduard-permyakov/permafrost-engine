@@ -10358,6 +10358,7 @@ nk_draw_list_add_set_vres(struct nk_draw_list *list, struct nk_vec2i vres)
     NK_ASSERT(dcmd);
     
     dcmd->userdata.ptr = malloc(sizeof(struct nk_command_userdata));
+    dcmd->elem_count = 1; /* Needed so that our userdata pointer doesn't get overwritten later */
     if(!dcmd->userdata.ptr)
         return;
     *(struct nk_command_userdata*)(dcmd->userdata.ptr) = (struct nk_command_userdata) {

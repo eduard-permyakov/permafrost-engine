@@ -42,6 +42,7 @@
 #include "../game/public/game.h"
 #include "../anim/public/anim.h"
 #include "../main.h"
+#include "../ui.h"
 
 #include <SDL.h>
 
@@ -479,6 +480,19 @@ static void s_expose_engine_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, PF_WF_WINDOW);
 }
 
+static void s_expose_ui_constants(PyObject *module)
+{
+    PY_EXPOSE_ENUM(module, ANCHOR_X_LEFT);
+    PY_EXPOSE_ENUM(module, ANCHOR_X_RIGHT);
+    PY_EXPOSE_ENUM(module, ANCHOR_X_CENTER);
+    PY_EXPOSE_ENUM(module, ANCHOR_Y_TOP);
+    PY_EXPOSE_ENUM(module, ANCHOR_Y_BOT);
+    PY_EXPOSE_ENUM(module, ANCHOR_Y_CENTER);
+    PY_EXPOSE_ENUM(module, ANCHOR_DEFAULT);
+    PY_EXPOSE_ENUM(module, ANCHOR_X_MASK);
+    PY_EXPOSE_ENUM(module, ANCHOR_Y_MASK);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -492,5 +506,6 @@ void S_Constants_Expose(PyObject *module)
     s_expose_game_constants(module);
     s_expose_anim_constants(module);
     s_expose_engine_constants(module);
+    s_expose_ui_constants(module);
 }
 

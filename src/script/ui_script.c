@@ -44,12 +44,12 @@
 #include "../collision.h"
 #include "../config.h"
 #include "../main.h"
+#include "../ui.h"
 
 #include <assert.h>
 
-struct rect{
-    int x, y, width, height;
-};
+#define TO_VEC2T(_nk_vec2i) ((vec2_t){_nk_vec2i.x, _nk_vec2i.y})
+#define TO_VEC2I(_pf_vec2t) ((struct nk_vec2i){_pf_vec2t.x, _pf_vec2t.y})
 
 enum ui_resize_opts{
     PFNK_FLEX_LEFT_MARGIN       = (1 << 0),
@@ -375,12 +375,19 @@ static int PyWindow_init(PyWindowObject *self, PyObject *args, PyObject *kwargs)
     struct rect rect;
     int flags;
     int vres[2];
-    int resize_mask = 0;
+    int resize_mask = ANCHOR_DEFAULT;
     static char *kwlist[] = { "name", "bounds", "flags", "virtual_resolution", "resize_mask", NULL };
 
     if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s(iiii)i(ii)|i", kwlist, &name, &rect.x, &rect.y, 
-                                    &rect.width, &rect.height, &flags, &vres[0], &vres[1], &resize_mask)) {
+                                    &rect.w, &rect.h, &flags, &vres[0], &vres[1], &resize_mask)) {
         PyErr_SetString(PyExc_TypeError, "4 arguments expected: integer, tuple of 4 integers, integer, and a tuple of 2 integers.");
+        return -1;
+    }
+
+    if((resize_mask & ANCHOR_X_MASK) == 0
+    || (resize_mask & ANCHOR_Y_MASK) == 0) {
+
+        PyErr_SetString(PyExc_RuntimeError, "Invalid reisize mask: the window must have at least one anchor in each dimension.");
         return -1;
     }
 
@@ -754,7 +761,7 @@ static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure)
 
 static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure)
 {
-    return Py_BuildValue("(ii)", self->rect.width, self->rect.height);
+    return Py_BuildValue("(ii)", self->rect.w, self->rect.h);
 }
 
 static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure)
@@ -1010,8 +1017,12 @@ static void active_windows_update(void *user, void *event)
         struct nk_style_window saved_style = s_nk_ctx->style.window;
         s_nk_ctx->style.window = win->style;
 
+        struct nk_vec2i adj_vres = TO_VEC2I(UI_AdjustedVRes(TO_VEC2T(win->virt_res)));
+        struct rect adj_bounds = UI_BoundsForAspectRatio(win->rect, 
+            TO_VEC2T(win->virt_res), TO_VEC2T(adj_vres), win->resize_mask);
+
         if(nk_begin_with_vres(s_nk_ctx, win->name, 
-            nk_rect(win->rect.x, win->rect.y, win->rect.width, win->rect.height), win->flags, win->virt_res)) {
+            nk_rect(adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h), win->flags, adj_vres)) {
 
             call_critfail((PyObject*)win, "update");
         }
@@ -1023,7 +1034,8 @@ static void active_windows_update(void *user, void *event)
 
         struct nk_vec2 pos = nk_window_get_position(s_nk_ctx);
         struct nk_vec2 size = nk_window_get_size(s_nk_ctx);
-        win->rect = (struct rect){pos.x, pos.y, size.x, size.y};
+        adj_bounds = (struct rect){pos.x, pos.y, size.x, size.y};
+        win->rect = UI_BoundsForAspectRatio(adj_bounds, TO_VEC2T(adj_vres), TO_VEC2T(win->virt_res), win->resize_mask);
 
         int sample_mask = NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED;
         win->flags &= ~sample_mask; 
@@ -1077,7 +1089,7 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
     for(int i = 0; i < kv_size(s_active_windows); i++) {
 
         PyWindowObject *win = kv_A(s_active_windows, i);
-        struct nk_vec2 visible_size = {win->rect.width, win->rect.height};
+        struct nk_vec2 visible_size = {win->rect.w, win->rect.h};
 
         if(win->flags & NK_WINDOW_HIDDEN
         || win->flags & NK_WINDOW_CLOSED) {
