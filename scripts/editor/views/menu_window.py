@@ -41,7 +41,8 @@ class MenuButtonWindow(pf.Window):
         vresx, vresy = (1920, 1080)
         super(MenuButtonWindow, self).__init__("MenuButton", 
             (vresx - UI_TAB_BAR_COL_WIDTH, 0, UI_TAB_BAR_COL_WIDTH, UI_TAB_BAR_HEIGHT),
-            pf.NK_WINDOW_NO_SCROLLBAR, (vresx, vresy))
+            pf.NK_WINDOW_NO_SCROLLBAR, (vresx, vresy),
+            resize_mask = pf.ANCHOR_X_RIGHT | pf.ANCHOR_Y_TOP)
         self.menu = menu_window
 
     def update(self):
@@ -62,7 +63,8 @@ class Menu(pf.Window):
         vresx, vresy = (1920, 1080)
         super(Menu, self).__init__("Menu", 
             (vresx / 2 - Menu.WINDOW_WIDTH/ 2, vresy / 2 - Menu.WINDOW_HEIGHT / 2, Menu.WINDOW_WIDTH, Menu.WINDOW_HEIGHT), 
-            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_NO_SCROLLBAR, (vresx, vresy))
+            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_NO_SCROLLBAR, (vresx, vresy),
+            resize_mask = pf.ANCHOR_X_CENTER | pf.ANCHOR_Y_CENTER)
 
     def show(self):
         super(Menu, self).show()

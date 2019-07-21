@@ -160,7 +160,7 @@ static int top_y_point(struct rect from_bounds, vec2_t from_res, vec2_t to_res, 
     int y_res_mask = resize_mask & ANCHOR_Y_MASK;
     int from_top_margin = from_bounds.y;
     int from_bot_margin = from_res.y - (from_bounds.y + from_bounds.h);
-    int from_center_off = (from_res.y / 2) - (from_bounds.y + from_bounds.h/2);
+    int from_center_off = (from_res.y / 2) - (from_bounds.y + from_bounds.h / 2);
 
     if(y_res_mask & ANCHOR_Y_TOP)
         return from_top_margin;
@@ -170,7 +170,7 @@ static int top_y_point(struct rect from_bounds, vec2_t from_res, vec2_t to_res, 
         return to_res.y - from_bot_margin - from_bounds.h;
     case ANCHOR_Y_CENTER: {
         int to_center_y = to_res.y / 2 + from_center_off;
-        return to_center_y - from_bounds.w / 2;
+        return to_center_y - from_bounds.h / 2;
     }
     case ANCHOR_Y_CENTER | ANCHOR_Y_BOT: {
         int to_half_height = (to_res.y - from_bot_margin) - (to_res.y / 2 + from_center_off);
@@ -186,7 +186,7 @@ static int bot_y_point(struct rect from_bounds, vec2_t from_res, vec2_t to_res, 
     int y_res_mask = resize_mask & ANCHOR_Y_MASK;
     int from_top_margin = from_bounds.y;
     int from_bot_margin = from_res.y - (from_bounds.y + from_bounds.h);
-    int from_center_off = (from_res.y / 2) - (from_bounds.y + from_bounds.h/2);
+    int from_center_off = (from_res.y / 2) - (from_bounds.y + from_bounds.h / 2);
 
     if(y_res_mask & ANCHOR_Y_BOT)
         return to_res.y - from_bot_margin;
@@ -196,7 +196,7 @@ static int bot_y_point(struct rect from_bounds, vec2_t from_res, vec2_t to_res, 
         return from_top_margin + from_bounds.h;
     case ANCHOR_Y_CENTER: {
         int to_center_y = to_res.y / 2 + from_center_off;
-        return to_center_y + from_bounds.w / 2;
+        return to_center_y + from_bounds.h / 2;
     }
     case ANCHOR_Y_TOP | ANCHOR_Y_CENTER: {
         int to_half_height = (to_res.y / 2 + from_center_off) - from_top_margin;

@@ -43,7 +43,8 @@ class TabBarWindow(pf.Window):
         vresx, vresy = (1920, 1080)
 
         dims = (0, 0, vresx - UI_TAB_BAR_COL_WIDTH, UI_TAB_BAR_HEIGHT)
-        super(TabBarWindow, self).__init__("TabBar", dims, pf.NK_WINDOW_NO_SCROLLBAR, (vresx, vresy))
+        super(TabBarWindow, self).__init__("TabBar", dims, pf.NK_WINDOW_NO_SCROLLBAR, (vresx, vresy),
+            resize_mask = pf.ANCHOR_X_LEFT | pf.ANCHOR_X_RIGHT | pf.ANCHOR_Y_TOP)
         self.active_idx = 0
         self.labels = []
         self.child_windows = []
