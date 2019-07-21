@@ -184,6 +184,11 @@ BUILT-IN FUNCTIONS
     --------------------------------------------------------------------------------
     Set the center position of the minimap in virtual screen coordinates.
 
+    [set_minimap_resize_mask]
+    --------------------------------------------------------------------------------
+    Set the anchor points for the minimap, to control its bounds as the screen
+    resizes.
+
     [set_minimap_size]
     --------------------------------------------------------------------------------
     Set the center position of the minimap in virtual screen coordinates.
@@ -719,6 +724,15 @@ BUILT-IN CLASSES
 BUILT-IN CONSTANTS
 ********************************************************************************
 
+    ANCHOR_DEFAULT 9
+    ANCHOR_X_CENTER 4
+    ANCHOR_X_LEFT 1
+    ANCHOR_X_MASK 7
+    ANCHOR_X_RIGHT 2
+    ANCHOR_Y_BOT 16
+    ANCHOR_Y_CENTER 32
+    ANCHOR_Y_MASK 56
+    ANCHOR_Y_TOP 8
     ANIM_MODE_LOOP 0
     ANIM_MODE_ONCE 1
     ANIM_MODE_ONCE_HIDE_ON_FINISH 2

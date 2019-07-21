@@ -40,6 +40,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * RTS minimap
 * RTS-style unit selection
 * RTS unit combat system
+* Support for different resolutions and aspect ratios
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
