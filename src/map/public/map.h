@@ -267,8 +267,13 @@ void   M_FreeMinimap     (struct map *map);
  * coordinates get mapped to the viewport.
  * ------------------------------------------------------------------------
  */
-void   M_GetMinimapVres  (const struct map *map, vec2_t *out_vres);
-void   M_SetMinimapVres  (struct map *map, vec2_t vres);
+void   M_SetMinimapVres(struct map *map, vec2_t vres);
+/* ------------------------------------------------------------------------
+ * This returns the bounds for the current aspect ratio based on the 
+ * resize mask.
+ * ------------------------------------------------------------------------
+ */
+void   M_GetMinimapAdjVres(const struct map *map, vec2_t *out_vres);
 
 /* ------------------------------------------------------------------------
  * The minimap position, in virtual screen coordinates.
@@ -283,6 +288,12 @@ void   M_SetMinimapPos   (struct map *map, vec2_t center_pos);
  */
 int    M_GetMinimapSize(const struct map *map);
 void   M_SetMinimapSize(struct map *map, int side_len);
+
+/* ------------------------------------------------------------------------
+ * Controls the minimap bounds as the screen resizes. See ui.h
+ * ------------------------------------------------------------------------
+ */
+void   M_SetMinimapResizeMask(struct map *map, int resize_mask);
 
 /* ------------------------------------------------------------------------
  * Render the minimap at the location specified by 'M_SetMinimapPos' and 

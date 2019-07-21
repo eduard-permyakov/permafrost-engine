@@ -76,6 +76,10 @@ void               UI_Render(void);
 void               UI_HandleEvent(SDL_Event *event);
 void               UI_DrawText(const char *text, struct rect rect, struct rgba rgba);
 
+/* Returns a trimmed version of the virtual resolution when the aspect ratio of the window is 
+ * different than the virtual resolution aspect ratio. The adjusted resolution has the same
+ * aspect ratio as the window and has the largest possible dimensions such that it still 'fits'
+ * into the original virtual resolution. */
 vec2_t             UI_AdjustedVRes(vec2_t vres);
 struct rect        UI_BoundsForAspectRatio(struct rect from_bounds, vec2_t from_res, 
                                            vec2_t to_res, int resize_mask);

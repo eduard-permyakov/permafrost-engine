@@ -59,7 +59,6 @@
 #define ARR_SIZE(a)          (sizeof(a)/sizeof(a[0])) 
 #define MINIMAP_RES          (1024)
 #define MINIMAP_BORDER_CLR   ((vec4_t){65.0f/255.0f, 65.0f/255.0f, 65.0f/255.0f, 1.0f})
-#define MINIMAP_DFLT_SZ      (256f/1080f)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -363,8 +362,11 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t 
 
     mat4x4_t res_scale;
     vec2_t mm_vres;
-    M_GetMinimapVres(map, &mm_vres);
+    M_GetMinimapAdjVres(map, &mm_vres);
     PFM_Mat4x4_MakeScale(width / mm_vres.x, height / mm_vres.y, 1.0f, &res_scale);
+
+    center_pos.x *= (width / mm_vres.x);
+    center_pos.y *= (height / mm_vres.y);
 
     mat4x4_t tmp;
     mat4x4_t tilt, trans, scale, model;

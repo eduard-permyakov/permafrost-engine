@@ -51,6 +51,7 @@
 #include "../scene.h"
 #include "../settings.h"
 #include "../main.h"
+#include "../ui.h"
 
 #include <SDL.h>
 
@@ -95,6 +96,7 @@ static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_minimap_position(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_minimap_resize_mask(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_minimap_size(PyObject *self);
 static PyObject *PyPf_set_minimap_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_mouse_over_minimap(PyObject *self);
@@ -265,6 +267,10 @@ static PyMethodDef pf_module_methods[] = {
     {"set_minimap_position", 
     (PyCFunction)PyPf_set_minimap_position, METH_VARARGS,
     "Set the center position of the minimap in virtual screen coordinates."},
+
+    {"set_minimap_resize_mask", 
+    (PyCFunction)PyPf_set_minimap_resize_mask, METH_VARARGS,
+    "Set the anchor points for the minimap, to control its bounds as the screen resizes."},
 
     {"get_minimap_size", 
     (PyCFunction)PyPf_get_minimap_size, METH_NOARGS,
@@ -899,6 +905,25 @@ static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args)
     }
 
     G_SetMinimapPos(x, y);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_minimap_resize_mask(PyObject *self, PyObject *args)
+{
+    int resize_mask;
+
+    if(!PyArg_ParseTuple(args, "i", &resize_mask)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer.");
+        return NULL;
+    }
+
+    if((resize_mask & ANCHOR_X_MASK) == 0
+    || (resize_mask & ANCHOR_Y_MASK) == 0) {
+        PyErr_SetString(PyExc_RuntimeError, "Invalid reisize mask: the window must have at least one anchor in each dimension.");
+        return NULL;
+    }
+
+    G_SetMinimapResizeMask(resize_mask);
     Py_RETURN_NONE;
 }
 

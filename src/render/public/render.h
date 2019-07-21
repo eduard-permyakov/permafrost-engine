@@ -324,10 +324,10 @@ bool  R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, mat4x
                               vec3_t map_center, vec2_t map_size);
 
 /* ---------------------------------------------------------------------------
- * Render the minimap centered at the specified screenscape coordinate.
- * This function will also render a box over the minimap that indicates the
- * region currently visible by the specified camera. If camera is NULL, no
- * box is drawn.
+ * Render the minimap centered at the specified (virtual) screenscape coordinate.
+ * The map's virtual minimap resolution will be used. This function will also 
+ * render a box over the minimap that indicates the region currently visible by 
+ * the specified camera. If camera is NULL, no box is drawn.
  * ---------------------------------------------------------------------------
  */
 void  R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t center_pos, 

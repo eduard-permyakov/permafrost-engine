@@ -416,6 +416,12 @@ void G_SetMinimapSize(int size)
     M_SetMinimapSize(s_gs.map, size);
 }
 
+void G_SetMinimapResizeMask(int mask)
+{
+    assert(s_gs.map);
+    M_SetMinimapResizeMask(s_gs.map, mask);
+}
+
 bool G_MouseOverMinimap(void)
 {
     if(!s_gs.map)

@@ -40,6 +40,7 @@
 #include "../navigation/public/nav.h"
 #include "../lib/public/pf_string.h"
 #include "map_private.h"
+#include "../ui.h"
 
 #include <stdlib.h>
 #include <assert.h>
@@ -47,6 +48,7 @@
 
 /* ASCII to integer - argument must be an ascii digit */
 #define A2I(_a) ((_a) - '0')
+#define MINIMAP_DFLT_SZ (256)
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -167,8 +169,11 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     map->pos = (vec3_t) {0.0f, 0.0f, 0.0f};
 
     map->minimap_vres = (vec2_t){1920, 1080};
-    map->minimap_center_pos = (vec2_t){192, 1080-192};
-    map->minimap_sz = 256;
+    map->minimap_sz = MINIMAP_DFLT_SZ;
+    map->minimap_center_pos = (vec2_t){
+        MINIMAP_DFLT_SZ * cos(M_PI/4.0) + 10, 
+        1080 - (MINIMAP_DFLT_SZ * cos(M_PI/4.0) + 10)};
+    map->minimap_resize_mask = ANCHOR_X_LEFT | ANCHOR_Y_BOT;
 
     /* Read materials */
     char texnames[header->num_materials][256];

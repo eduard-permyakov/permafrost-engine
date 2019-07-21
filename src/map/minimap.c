@@ -40,6 +40,7 @@
 #include "../game/public/game.h"
 #include "../event.h"
 #include "../main.h"
+#include "../ui.h"
 
 #include <SDL.h>
 
@@ -59,11 +60,27 @@ static bool s_mouse_down_in_minimap = false;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+/* Fixup the minimap position and size based on how the virtual resolution aspect
+ * ratio differs from the screen resolution aspect ration and the resize mask.
+ */
+static struct rect m_curr_bounds(const struct map *map)
+{
+    struct rect orig_bounds = (struct rect) {
+        map->minimap_center_pos.x, map->minimap_center_pos.y,
+        map->minimap_sz, map->minimap_sz
+    };
+
+    return UI_BoundsForAspectRatio(orig_bounds, map->minimap_vres, 
+        UI_AdjustedVRes(map->minimap_vres), map->minimap_resize_mask);
+}
+
 static vec2_t m_minimap_mouse_coords_to_world(const struct map *map, vec2_t virt_screen_coords)
 {
     /* a, b, c, d are given in screen coordinates ((0,0) in top left corner) */
     vec2_t a, b, c, d;
-    float minimap_axis_height = map->minimap_sz/cos(M_PI/4.0f);
+
+    struct rect curr_bounds = m_curr_bounds(map);
+    float minimap_axis_height = curr_bounds.w / cos(M_PI/4.0f);
 
     /*            b
      *            + 
@@ -74,10 +91,10 @@ static vec2_t m_minimap_mouse_coords_to_world(const struct map *map, vec2_t virt
      *            d
      */
 
-    a = (vec2_t) { map->minimap_center_pos.x - minimap_axis_height/2.0f, map->minimap_center_pos.y };
-    b = (vec2_t) { map->minimap_center_pos.x, map->minimap_center_pos.y - minimap_axis_height/2.0f };
-    c = (vec2_t) { map->minimap_center_pos.x + minimap_axis_height/2.0f, map->minimap_center_pos.y };
-    d = (vec2_t) { map->minimap_center_pos.x, map->minimap_center_pos.y + minimap_axis_height/2.0f };
+    a = (vec2_t) { curr_bounds.x - minimap_axis_height/2.0f, curr_bounds.y };
+    b = (vec2_t) { curr_bounds.x, curr_bounds.y - minimap_axis_height/2.0f };
+    c = (vec2_t) { curr_bounds.x + minimap_axis_height/2.0f, curr_bounds.y };
+    d = (vec2_t) { curr_bounds.x, curr_bounds.y + minimap_axis_height/2.0f };
 
     /* Now project the mouse coordinates (relative to A) on the AB line segment to get the X dimension fraction
      * and project onto the AD line segment to get the Z dimension fraction. */
@@ -124,8 +141,8 @@ static void on_mouseclick(void *user, void *event)
     int w, h;
     Engine_WinDrawableSize(&w, &h);
     vec2_t virt_mouse_button = (vec2_t){
-        (float)mouse_event->button.x / w * map->minimap_vres.x,
-        (float)mouse_event->button.y / h * map->minimap_vres.y
+        (float)mouse_event->button.x / w * UI_AdjustedVRes(map->minimap_vres).x,
+        (float)mouse_event->button.y / h * UI_AdjustedVRes(map->minimap_vres).y
     };
 
     vec2_t ws_coords = m_minimap_mouse_coords_to_world(map, virt_mouse_button);
@@ -150,8 +167,8 @@ static void on_mousemove(void *user, void *event)
     int w, h;
     Engine_WinDrawableSize(&w, &h);
     vec2_t virt_mouse_motion = (vec2_t){
-        (float)mouse_event->motion.x / w * map->minimap_vres.x,
-        (float)mouse_event->motion.y / h * map->minimap_vres.y
+        (float)mouse_event->motion.x / w * UI_AdjustedVRes(map->minimap_vres).x,
+        (float)mouse_event->motion.y / h * UI_AdjustedVRes(map->minimap_vres).y
     };
 
     vec2_t ws_coords = m_minimap_mouse_coords_to_world(map, virt_mouse_motion);
@@ -218,14 +235,19 @@ void M_FreeMinimap(struct map *map)
     s_mouse_down_in_minimap = false;
 }
 
-void M_GetMinimapVres(const struct map *map, vec2_t *out_vres)
+void M_GetMinimapAdjVres(const struct map *map, vec2_t *out_vres)
 {
-    *out_vres = map->minimap_vres;
+    *out_vres = UI_AdjustedVRes(map->minimap_vres);
 }
 
 void M_SetMinimapVres(struct map *map, vec2_t vres)
 {
     map->minimap_vres = vres;
+}
+
+void M_SetMinimapResizeMask(struct map *map, int resize_mask)
+{
+    map->minimap_resize_mask = resize_mask;
 }
 
 void M_GetMinimapPos(const struct map *map, vec2_t *out_center_pos)
@@ -253,21 +275,17 @@ void M_RenderMinimap(const struct map *map, const struct camera *cam)
 {
     assert(map);
 
-    int w, h;
-    Engine_WinDrawableSize(&w, &h);
-
-    vec2_t curr_pos = (vec2_t) {
-        map->minimap_center_pos.x / map->minimap_vres.x * w,
-        map->minimap_center_pos.y / map->minimap_vres.y * h,
-    };
-    R_GL_MinimapRender(map, cam, curr_pos, map->minimap_sz);
+    struct rect curr_bounds = m_curr_bounds(map);
+    R_GL_MinimapRender(map, cam, (vec2_t){curr_bounds.x, curr_bounds.y}, curr_bounds.w);
 }
 
 bool M_MouseOverMinimap(const struct map *map)
 {
     /* a, b, c, d are given in screen coordinates ((0,0) in top left corner) */
     vec2_t a, b, c, d;
-    float minimap_axis_height = map->minimap_sz/cos(M_PI/4.0f);
+
+    struct rect curr_bounds = m_curr_bounds(map);
+    float minimap_axis_height = curr_bounds.w / cos(M_PI/4.0f);
 
     /*      b
      *      + 
@@ -278,10 +296,10 @@ bool M_MouseOverMinimap(const struct map *map)
      *      d
      */
 
-    a = (vec2_t) { map->minimap_center_pos.x - minimap_axis_height/2.0f, map->minimap_center_pos.y };
-    b = (vec2_t) { map->minimap_center_pos.x, map->minimap_center_pos.y - minimap_axis_height/2.0f };
-    c = (vec2_t) { map->minimap_center_pos.x + minimap_axis_height/2.0f, map->minimap_center_pos.y };
-    d = (vec2_t) { map->minimap_center_pos.x, map->minimap_center_pos.y + minimap_axis_height/2.0f };
+    a = (vec2_t) { curr_bounds.x - minimap_axis_height/2.0f, curr_bounds.y };
+    b = (vec2_t) { curr_bounds.x, curr_bounds.y - minimap_axis_height/2.0f };
+    c = (vec2_t) { curr_bounds.x + minimap_axis_height/2.0f, curr_bounds.y };
+    d = (vec2_t) { curr_bounds.x, curr_bounds.y + minimap_axis_height/2.0f };
 
     int x, y;
     SDL_GetMouseState(&x, &y);
@@ -290,8 +308,8 @@ bool M_MouseOverMinimap(const struct map *map)
     Engine_WinDrawableSize(&w, &h);
 
     vec2_t virt_mouse_pos = (vec2_t){
-        (float)x / w * map->minimap_vres.x,
-        (float)y / h * map->minimap_vres.y,
+        ((float)x) / w * UI_AdjustedVRes(map->minimap_vres).x,
+        ((float)y) / h * UI_AdjustedVRes(map->minimap_vres).y,
     };
     return C_PointInsideRect2D(virt_mouse_pos, a, b, c ,d);
 }
