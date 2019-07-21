@@ -1017,7 +1017,7 @@ static void active_windows_update(void *user, void *event)
         struct nk_style_window saved_style = s_nk_ctx->style.window;
         s_nk_ctx->style.window = win->style;
 
-        struct nk_vec2i adj_vres = TO_VEC2I(UI_AdjustedVRes(TO_VEC2T(win->virt_res)));
+        struct nk_vec2i adj_vres = TO_VEC2I(UI_ArAdjustedVRes(TO_VEC2T(win->virt_res)));
         struct rect adj_bounds = UI_BoundsForAspectRatio(win->rect, 
             TO_VEC2T(win->virt_res), TO_VEC2T(adj_vres), win->resize_mask);
 
@@ -1089,15 +1089,17 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
     for(int i = 0; i < kv_size(s_active_windows); i++) {
 
         PyWindowObject *win = kv_A(s_active_windows, i);
-        struct nk_vec2 visible_size = {win->rect.w, win->rect.h};
+        struct rect adj_bounds = UI_BoundsForAspectRatio(win->rect, TO_VEC2T(win->virt_res),
+            UI_ArAdjustedVRes(TO_VEC2T(win->virt_res)), win->resize_mask);
+        struct nk_vec2 visible_size = {adj_bounds.w, adj_bounds.h};
 
         if(win->flags & NK_WINDOW_HIDDEN
         || win->flags & NK_WINDOW_CLOSED) {
             continue; 
         }
 
-        int vmouse_x = (float)mouse_x / w * win->virt_res.x;
-        int vmouse_y = (float)mouse_y / h * win->virt_res.y;
+        int vmouse_x = (float)mouse_x / w * UI_ArAdjustedVRes(TO_VEC2T(win->virt_res)).x;
+        int vmouse_y = (float)mouse_y / h * UI_ArAdjustedVRes(TO_VEC2T(win->virt_res)).y;
 
         /* For minimized windows, only the header is visible */
         struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
@@ -1111,10 +1113,10 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
 
         if(C_PointInsideRect2D(
             (vec2_t){vmouse_x,                      vmouse_y},
-            (vec2_t){win->rect.x,                   win->rect.y},
-            (vec2_t){win->rect.x + visible_size.x,  win->rect.y},
-            (vec2_t){win->rect.x + visible_size.x,  win->rect.y + visible_size.y},
-            (vec2_t){win->rect.x,                   win->rect.y + visible_size.y}))
+            (vec2_t){adj_bounds.x,                  adj_bounds.y},
+            (vec2_t){adj_bounds.x + visible_size.x, adj_bounds.y},
+            (vec2_t){adj_bounds.x + visible_size.x, adj_bounds.y + visible_size.y},
+            (vec2_t){adj_bounds.x,                  adj_bounds.y + visible_size.y}))
             return true;
     }
 

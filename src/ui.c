@@ -88,7 +88,6 @@ static void on_update_ui(void *user, void *event)
     int width, height;
     Engine_WinDrawableSize(&width, &height);
 
-    //TODO: use vres here as well
     if(nk_begin(s_nk_ctx, "__labels__", nk_rect(0, 0, width, height), 
        NK_WINDOW_NO_INPUT | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR)) {
     
@@ -272,7 +271,7 @@ void UI_DrawText(const char *text, struct rect rect, struct rgba rgba)
     kv_push(struct text_desc, s_curr_frame_labels, d);
 }
 
-vec2_t UI_AdjustedVRes(vec2_t vres)
+vec2_t UI_ArAdjustedVRes(vec2_t vres)
 {
     int winw, winh;
     Engine_WinDrawableSize(&winw, &winh);
