@@ -36,6 +36,12 @@ import pf
 from constants import *
 import globals
 
+class Brush(object):
+    TEXTURE = 0
+    ELEVATION = 1
+    SHALLOW_WAT = 2
+    DEEP_WAT = 3
+
 class TerrainTabWindow(pf.Window):
 
     def __init__(self):
@@ -103,10 +109,16 @@ class TerrainTabWindow(pf.Window):
 
         old_brush_type_idx = self.brush_type_idx
         self.layout_row_dynamic(20, 2)
-        if self.option_label("Texture", self.brush_type_idx == 0):
-            self.brush_type_idx = 0
-        if self.option_label("Elevation", self.brush_type_idx == 1):
-            self.brush_type_idx = 1
+        if self.option_label("Texture", self.brush_type_idx == Brush.TEXTURE):
+            self.brush_type_idx = Brush.TEXTURE
+        if self.option_label("Elevation", self.brush_type_idx == Brush.ELEVATION):
+            self.brush_type_idx = Brush.ELEVATION
+        self.layout_row_dynamic(20, 1)
+        if self.option_label("Shallow Water", self.brush_type_idx == Brush.SHALLOW_WAT):
+            self.brush_type_idx = Brush.SHALLOW_WAT
+        self.layout_row_dynamic(20, 1)
+        if self.option_label("Deep Water", self.brush_type_idx == Brush.DEEP_WAT):
+            self.brush_type_idx = Brush.DEEP_WAT
         self.layout_row_dynamic(10, 1)
 
         if self.brush_type_idx != old_brush_type_idx:

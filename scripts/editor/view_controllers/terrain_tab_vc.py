@@ -37,7 +37,10 @@ from constants import *
 import map
 import globals
 import common.view_controllers.view_controller as vc
+from views.terrain_tab_window import Brush
 
+SHALLOW_WAT_ELEV = -1
+DEEP_WAT_ELEV = -3
 
 class TerrainTabVC(vc.ViewController):
 
@@ -75,13 +78,18 @@ class TerrainTabVC(vc.ViewController):
                     top_mat = globals.active_map.materials[self.view.selected_mat_idx]
                     side_mat = globals.active_map.materials[self.view.selected_side_mat_idx]
 
-                    if self.view.brush_type_idx == 0:
+                    if self.view.brush_type_idx == Brush.TEXTURE:
                         globals.active_map.update_tile_mat(tile_coords, top_mat, bm, self.view.blend_normals)
-                    elif self.view.brush_type_idx == 1:
+                    elif self.view.brush_type_idx == Brush.ELEVATION:
                         center_height = self.view.heights[self.view.selected_height_idx]
                         globals.active_map.update_tile(tile_coords, center_height, pf.TILETYPE_FLAT, side_mat, 0, bm, self.view.blend_normals)
+                    elif self.view.brush_type_idx == Brush.SHALLOW_WAT:
+                        globals.active_map.update_tile(tile_coords, SHALLOW_WAT_ELEV, pf.TILETYPE_FLAT, side_mat, 0, bm, self.view.blend_normals)
+                    elif self.view.brush_type_idx == Brush.DEEP_WAT:
+                        globals.active_map.update_tile(tile_coords, DEEP_WAT_ELEV, pf.TILETYPE_FLAT, side_mat, 0, bm, self.view.blend_normals)
 
-        if (self.view.brush_type_idx == 1 and self.view.edges_type_idx == 1):
+        if ((self.view.brush_type_idx == Brush.ELEVATION and self.view.edges_type_idx == 1) \
+        or  (self.view.brush_type_idx in [Brush.SHALLOW_WAT, Brush.DEEP_WAT])):
             self.__paint_smooth_border(self.view.brush_size_idx + 1, 'down')
             self.__paint_smooth_border(self.view.brush_size_idx + 1, 'up')
             self.__update_objects_for_height_change()
