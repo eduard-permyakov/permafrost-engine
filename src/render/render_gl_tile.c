@@ -488,7 +488,7 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
 
     vec3_t center = (vec3_t){
         ( 0.0f - (in->tile_c* X_COORDS_PER_TILE) - X_COORDS_PER_TILE/2.0f ), 
-        (-1.0f * Y_COORDS_PER_TILE + Y_COORDS_PER_TILE/2.0f), 
+        (-TILE_DEPTH * Y_COORDS_PER_TILE - Y_COORDS_PER_TILE/2.0f), 
         ( 0.0f + (in->tile_r* Z_COORDS_PER_TILE) + Z_COORDS_PER_TILE/2.0f),
     };
     PFM_Mat4x4_MakeTrans(-center.x, -center.y, -center.z, &trans);
@@ -883,28 +883,28 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
 
     struct face bot = {
         .nw = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (-1.0f * Y_COORDS_PER_TILE), 
+            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (-TILE_DEPTH * Y_COORDS_PER_TILE), 
                                  0.0f + (r * Z_COORDS_PER_TILE) },
             .uv     = (vec2_t) { 0.0f, 1.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
         .ne = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (-1.0f * Y_COORDS_PER_TILE), 
+            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (-TILE_DEPTH * Y_COORDS_PER_TILE), 
                                  0.0f + (r * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 1.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
         .se = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (-1.0f * Y_COORDS_PER_TILE), 
+            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (-TILE_DEPTH * Y_COORDS_PER_TILE), 
                                  0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
         .sw = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (-1.0f * Y_COORDS_PER_TILE), 
+            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (-TILE_DEPTH * Y_COORDS_PER_TILE), 
                                  0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },

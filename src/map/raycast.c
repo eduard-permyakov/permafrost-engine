@@ -100,8 +100,8 @@ struct aabb aabb_for_tile(struct tile_desc desc, const struct map *map)
     return (struct aabb) {
         .x_min = tile_bounds.x - tile_bounds.width,
         .x_max = tile_bounds.x,
-        .y_min = 0.0f,
-        .y_max = (tile->base_height + (tile->type == TILETYPE_FLAT ? 0.0f : tile->ramp_height)) * Y_COORDS_PER_TILE,
+        .y_min = -TILE_DEPTH * Y_COORDS_PER_TILE,
+        .y_max = (tile->base_height + (tile->type == TILETYPE_FLAT ? 0 : tile->ramp_height)) * Y_COORDS_PER_TILE,
         .z_min = tile_bounds.z,
         .z_max = tile_bounds.z + tile_bounds.height,
     };
@@ -149,9 +149,9 @@ static void rc_find_intersection(void)
         TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT
     };
 
-    /* Project the ray on the Y=0 plane between the camera position and where the 
-     * ray intersects the Y=0 plane. */
-    float t = fabs(ray_origin.y / ray_dir.y);
+    /* Project the ray on the Y=(-TILE_DEPTH*Y_COORDS_PER_TILE) plane between the camera position and where the 
+     * ray intersects the Y=(-TILE_DEPTH*Y_COORDS_PER_TILE) plane. */
+    float t = fabs((ray_origin.y + TILE_DEPTH*Y_COORDS_PER_TILE) / ray_dir.y);
     struct line_seg_2d y_eq_0_seg = {
         ray_origin.x, 
         ray_origin.z,

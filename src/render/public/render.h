@@ -68,6 +68,7 @@ enum render_info{
 #define VERTS_PER_SIDE_FACE (6)
 #define VERTS_PER_TOP_FACE  (24)
 #define VERTS_PER_TILE      (5 * VERTS_PER_SIDE_FACE + VERTS_PER_TOP_FACE)
+#define TILE_DEPTH          (3)
 
 
 /*###########################################################################*/
