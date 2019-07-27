@@ -375,3 +375,14 @@ void M_SetShadowsEnabled(struct map *map, bool on)
     }
 }
 
+vec3_t M_GetCenterPos(const struct map *map)
+{
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+    return (vec3_t){
+        map->pos.x - (res.chunk_w * res.tile_w * X_COORDS_PER_TILE)/2.0f,
+        map->pos.y,
+        map->pos.z + (res.chunk_h * res.tile_h * Z_COORDS_PER_TILE)/2.0f,
+    };
+}
+

@@ -200,6 +200,7 @@ static void g_draw_pass(void)
 {
     if(s_gs.map) {
         M_RenderVisibleMap(s_gs.map, ACTIVE_CAM, RENDER_PASS_REGULAR);
+        R_GL_DrawWater(s_gs.map);
     }
 
     for(int i = 0; i < kv_size(s_gs.visible); i++) {
@@ -292,6 +293,7 @@ bool G_Init(void)
     G_Sel_Init();
     G_Sel_Enable();
     G_Timer_Init();
+    R_GL_WaterInit();
 
     ss_e status = Settings_Create((struct setting){
         .name = "pf.game.healthbar_mode",
@@ -483,6 +485,7 @@ void G_Shutdown(void)
 {
     g_reset();
 
+    R_GL_WaterShutdown();
     G_Timer_Shutdown();
     G_Sel_Shutdown();
 

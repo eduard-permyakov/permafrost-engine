@@ -239,6 +239,12 @@ void   M_GetResolution(const struct map *map, struct map_resolution *out);
  */
 void   M_SetShadowsEnabled(struct map *map, bool on);
 
+/* ------------------------------------------------------------------------
+ * Returns the center point of the map, in world space.
+ * ------------------------------------------------------------------------
+ */
+vec3_t M_GetCenterPos(const struct map *map);
+
 /*###########################################################################*/
 /* MINIMAP                                                                   */
 /*###########################################################################*/
