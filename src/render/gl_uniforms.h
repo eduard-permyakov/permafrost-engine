@@ -43,7 +43,6 @@
 
 /* Written to by render subsystem for every entity */
 #define GL_U_MODEL          "model"
-#define GL_U_COLOR          "color"
 #define GL_U_MATERIALS      "materials"
 
 /* Written by anim subsystem for every entity */
@@ -85,5 +84,11 @@
 #define GL_U_ENT_TOP_OFFSETS_SS "ent_top_offsets_ss"
 #define GL_U_ENT_HEALTH_PC      "ent_health_pc"
 #define GL_U_CURR_RES           "curr_res"
+
+#define GL_U_COLOR          "color"
+
+/* Used by some shaders to compute gl_ClipDistance[0] when it's enabled.
+ * It uses the same format as the vector supplied to the legacy glClipPlane() */
+#define GL_U_CLIP_PLANE0    "clip_plane0"
 
 #endif

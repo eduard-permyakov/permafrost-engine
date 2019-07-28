@@ -71,6 +71,7 @@ uniform mat4 projection;
 uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
 uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
 uniform mat4 anim_normal_mat;
+uniform vec4 clip_plane0;
 
 /*****************************************************************************/
 /* PROGRAM
@@ -100,6 +101,7 @@ void main()
         to_fragment.normal = normalize(normal_matrix * in_normal);
         to_fragment.world_pos = (model * vec4(in_pos, 1.0)).xyz;
         gl_Position = projection * view * model * vec4(in_pos, 1.0);
+        gl_ClipDistance[0] = dot(model * gl_Position, clip_plane0);
 
     }else {
 
@@ -131,6 +133,7 @@ void main()
         to_fragment.normal = normalize(normal_matrix * new_normal);
         to_fragment.world_pos = (model * vec4(new_pos, 1.0)).xyz;
         gl_Position = projection * view * model * vec4(new_pos, 1.0f);
+        gl_ClipDistance[0] = dot(model * gl_Position, clip_plane0);
 
     }
 }

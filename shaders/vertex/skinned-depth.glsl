@@ -47,6 +47,7 @@ layout (location = 6) in mat2x3 in_joint_weights; /* 2x3 mat to alias array of 6
 
 uniform mat4 model;
 uniform mat4 light_space_transform;
+uniform vec4 clip_plane0;
 
 uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
 uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
@@ -66,6 +67,7 @@ void main()
     if(tot_weight == 0.0) {
 
         gl_Position = light_space_transform * model * vec4(in_pos, 1.0);
+        gl_ClipDistance[0] = dot(model * gl_Position, clip_plane0);
 
     }else {
 
@@ -91,6 +93,7 @@ void main()
         }
 
         gl_Position = light_space_transform * model * vec4(new_pos, 1.0f);
+        gl_ClipDistance[0] = dot(model * gl_Position, clip_plane0);
     }
 }
 
