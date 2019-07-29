@@ -119,6 +119,20 @@ void Camera_SetPos(struct camera *cam, vec3_t pos)
     assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 
+void Camera_SetDir(struct camera *cam, vec3_t dir)
+{
+    PFM_Vec3_Normal(&dir, &dir);
+    cam->front = dir;
+
+    /* Find a vector that is orthogonal to 'front' in the XZ plane */
+    vec3_t xz = (vec3_t){cam->front.z, 0.0f, -cam->front.x};
+    PFM_Vec3_Cross(&cam->front, &xz, &cam->up);
+    PFM_Vec3_Normal(&cam->up, &cam->up);
+
+    cam->pitch = -RAD_TO_DEG(asin(-dir.y));
+    cam->yaw = -RAD_TO_DEG(atan2(dir.x, dir.z));
+}
+
 void Camera_SetPitchAndYaw(struct camera *cam, float pitch, float yaw)
 {
     cam->pitch = pitch;

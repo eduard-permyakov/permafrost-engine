@@ -67,4 +67,8 @@ void   R_GL_SetShadowMap(const GLuint shadow_map_tex_id);
 
 void   R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r, size_t c);
 
+/* Water */
+
+void   R_GL_SetClipPlane(vec4_t plane_eq);
+
 #endif

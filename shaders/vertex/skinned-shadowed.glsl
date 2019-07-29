@@ -69,6 +69,7 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 uniform mat4 light_space_transform;
+uniform vec4 clip_plane0;
 
 uniform mat4 anim_curr_pose_mats[MAX_JOINTS];
 uniform mat4 anim_inv_bind_mats [MAX_JOINTS];
@@ -105,6 +106,7 @@ void main()
         to_fragment.light_space_pos = light_space_transform * vec4(to_fragment.world_pos, 1.0);
 
         gl_Position = projection * view * model * vec4(in_pos, 1.0);
+        gl_ClipDistance[0] = dot(model * vec4(in_pos, 1.0), clip_plane0);
 
     }else {
 
@@ -139,7 +141,7 @@ void main()
         to_fragment.light_space_pos = light_space_transform * vec4(to_fragment.world_pos, 1.0);
 
         gl_Position = projection * view * model * vec4(new_pos, 1.0f);
-
+        gl_ClipDistance[0] = dot(model * vec4(in_pos, 1.0), clip_plane0);
     }
 }
 

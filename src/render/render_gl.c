@@ -154,6 +154,17 @@ static void r_gl_set_vec3(const vec3_t *vec, const char *shader_name, const char
     glUniform3fv(loc, 1, vec->raw);
 }
 
+static void r_gl_set_vec4(const vec4_t *vec, const char *shader_name, const char *uname)
+{
+    GLuint loc, shader_prog;
+
+    shader_prog = R_Shader_GetProgForName(shader_name);
+    glUseProgram(shader_prog);
+
+    loc = glGetUniformLocation(shader_prog, uname);
+    glUniform4fv(loc, 1, vec->raw);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -342,6 +353,23 @@ void R_GL_SetShadowMap(const GLuint shadow_map_tex_id)
         glBindTexture(GL_TEXTURE_2D, shadow_map_tex_id);
         glUniform1i(sampler_loc, SHADOW_MAP_TUNIT - GL_TEXTURE0);
     }
+
+    GL_ASSERT_OK();
+}
+
+void R_GL_SetClipPlane(vec4_t plane_eq)
+{
+    const char *shaders[] = {
+        "terrain",
+        "terrain-shadowed",
+        "mesh.static.textured-phong",
+        "mesh.static.textured-phong-shadowed",
+        "mesh.animated.textured-phong",
+        "mesh.animated.textured-phong-shadowed",
+    };
+
+    for(int i = 0; i < ARR_SIZE(shaders); i++)
+        r_gl_set_vec4(&plane_eq, shaders[i], GL_U_CLIP_PLANE0);
 
     GL_ASSERT_OK();
 }

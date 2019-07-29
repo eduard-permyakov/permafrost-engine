@@ -85,6 +85,11 @@ void   G_Shutdown(void);
 void   G_Update(void);
 void   G_Render(void);
 
+/* Render only the map surface and entities, omitting things like the HUD
+ * and health bars. This is used, for example, in creating the refraction
+ * buffer for water rendering. */
+void   G_RenderMapAndEntities(void);
+
 void   G_GetMinimapPos(float *out_x, float *out_y);
 void   G_SetMinimapPos(float x, float y);
 int    G_GetMinimapSize(void);

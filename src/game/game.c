@@ -200,7 +200,6 @@ static void g_draw_pass(void)
 {
     if(s_gs.map) {
         M_RenderVisibleMap(s_gs.map, ACTIVE_CAM, RENDER_PASS_REGULAR);
-        R_GL_DrawWater(s_gs.map);
     }
 
     for(int i = 0; i < kv_size(s_gs.visible); i++) {
@@ -530,17 +529,16 @@ void G_Update(void)
 
 void G_Render(void)
 {
-    struct sval setting;
-    ss_e status = Settings_Get("pf.video.shadows_enabled", &setting);
-    assert(status == SS_OKAY);
+    G_RenderMapAndEntities();
 
-    if(setting.as_bool) {
-        g_shadow_pass();
+    if(s_gs.map) {
+        R_GL_DrawWater(s_gs.map);
     }
-    g_draw_pass();
 
-    status = Settings_Get("pf.debug.show_navigation_grid", &setting);
+    struct sval setting;
+    ss_e status = Settings_Get("pf.debug.show_navigation_grid", &setting);
     assert(status == SS_OKAY);
+
     if(setting.as_bool && s_gs.map) {
         M_RenderVisiblePathableLayer(s_gs.map, ACTIVE_CAM);
     }
@@ -555,7 +553,6 @@ void G_Render(void)
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_3D, NULL, ES_ENGINE);
-
     R_GL_SetScreenspaceDrawMode();
     E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
 
@@ -570,6 +567,18 @@ void G_Render(void)
     if(s_gs.map) {
         M_RenderMinimap(s_gs.map, ACTIVE_CAM);
     }
+}
+
+void G_RenderMapAndEntities(void)
+{
+    struct sval setting;
+    ss_e status = Settings_Get("pf.video.shadows_enabled", &setting);
+    assert(status == SS_OKAY);
+
+    if(setting.as_bool) {
+        g_shadow_pass();
+    }
+    g_draw_pass();
 }
 
 bool G_AddEntity(struct entity *ent)

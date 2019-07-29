@@ -47,9 +47,13 @@
 #include "../game/public/game.h"
 
 #include <GL/glew.h>
-
 #include <assert.h>
 
+
+struct shadow_gl_state{
+    GLint viewport[4];
+    GLint fb;
+};
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -59,6 +63,7 @@ static GLuint         s_depth_map_FBO;
 static GLuint         s_depth_map_tex;
 static bool           s_depth_pass_active = false;
 static struct frustum s_light_frustum;
+static struct shadow_gl_state s_saved;
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -94,6 +99,9 @@ void R_GL_DepthPassBegin(void)
 {
     assert(!s_depth_pass_active);
     s_depth_pass_active = true;
+
+    glGetIntegerv(GL_VIEWPORT, s_saved.viewport);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &s_saved.fb);
 
     mat4x4_t light_proj;
     PFM_Mat4x4_MakeOrthographic(-CONFIG_SHADOW_FOV, CONFIG_SHADOW_FOV, 
@@ -148,11 +156,8 @@ void R_GL_DepthPassEnd(void)
 
     R_GL_SetShadowMap(s_depth_map_tex);
 
-    int dw, dh;
-    Engine_WinDrawableSize(&dw, &dh);
-
-    glViewport(0, 0, dw, dh);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(s_saved.viewport[0], s_saved.viewport[1], s_saved.viewport[2], s_saved.viewport[3]);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_saved.fb);
     glCullFace(GL_BACK);
 
     GL_ASSERT_OK();

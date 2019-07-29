@@ -1,5 +1,4 @@
-/*
- *  This file is part of Permafrost Engine. 
+/* *  This file is part of Permafrost Engine. 
  *  Copyright (C) 2019 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
@@ -41,9 +40,12 @@
 #include "gl_assert.h"
 #include "gl_uniforms.h"
 #include "public/render.h"
+#include "../camera.h"
+#include "../config.h"
 #include "../main.h"
 #include "../map/public/tile.h"
 #include "../map/public/map.h"
+#include "../game/public/game.h"
 
 #include <assert.h>
 #include <string.h>
@@ -55,16 +57,159 @@ struct render_water_ctx{
     struct texture normal;
 };
 
+struct water_gl_state{
+    GLint    viewport[4];
+    GLint    fb;
+};
+
 #define WATER_LVL       (-1.0f * Y_COORDS_PER_TILE + 2.0f)
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0])) 
 #define DUDV_PATH       "assets/water_textures/dudvmap.png"
 #define NORM_PATH       "assets/water_textures/normalmap.png"
+#define WBUFF_RES_X     800
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
 static struct render_water_ctx s_ctx;
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static void save_gl_state(struct water_gl_state *out)
+{
+    glGetIntegerv(GL_VIEWPORT, out->viewport);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &out->fb);
+}
+
+static void restore_gl_state(const struct water_gl_state *in)
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, in->fb);
+    glViewport(in->viewport[0], in->viewport[1], in->viewport[2], in->viewport[3]);
+
+    /* Restore the view matrix and camera position uniforms as 
+     * they have been clobbered by the reflection texture rendering */
+    DECL_CAMERA_STACK(cam);
+    memset(cam, 0, sizeof(cam));
+    Camera_SetPos((struct camera*)cam, G_ActiveCamPos());
+    Camera_SetDir((struct camera*)cam, G_ActiveCamDir());
+    Camera_TickFinishPerspective((struct camera*)cam);
+}
+
+static int height_for_width(int width)
+{
+    int viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    float ar = (float)viewport[2] / viewport[3];
+    return width / ar;
+}
+
+static GLuint make_new_tex(int width, int height)
+{
+    GLuint ret;
+    glGenTextures(1, &ret);
+    glBindTexture(GL_TEXTURE_2D, ret);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+    GL_ASSERT_OK();
+    return ret;
+}
+
+static void render_refraction_tex(GLuint tex)
+{
+    GLint texw, texh;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texh);
+
+    /* Create framebuffer object */
+    GLuint fb;
+    glGenFramebuffers(1, &fb);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+
+    GLuint depth_rb;
+    glGenRenderbuffers(1, &depth_rb);
+    glBindRenderbuffer(GL_RENDERBUFFER, depth_rb);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, texw, texh);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_rb);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex, 0);
+
+    GLenum draw_buffs[1] = {GL_COLOR_ATTACHMENT0};
+    glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
+    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+    /* Clip everything above the water surface */
+    glEnable(GL_CLIP_DISTANCE0);
+    vec4_t plane_eq = (vec4_t){0.0f, -1.0f, 0.0f, WATER_LVL};
+    R_GL_SetClipPlane(plane_eq);
+
+    /* Render to the texture */
+    glViewport(0, 0, texw, texh);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    G_RenderMapAndEntities();
+
+    /* Clean up framebuffer */
+    glDeleteRenderbuffers(1, &depth_rb);
+    glDeleteFramebuffers(1, &fb);
+    glDisable(GL_CLIP_DISTANCE0);
+
+    GL_ASSERT_OK();
+}
+
+static void render_reflection_tex(GLuint tex)
+{
+    GLint texw, texh;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texh);
+
+    DECL_CAMERA_STACK(cam);
+    memset(cam, 0, sizeof(cam));
+    vec3_t cam_pos = G_ActiveCamPos();
+    vec3_t cam_dir = G_ActiveCamDir();
+    cam_pos.y -= (cam_pos.y - WATER_LVL) * 2.0f;
+    cam_dir.y *= -1.0f;
+    Camera_SetPos((struct camera*)cam, cam_pos);
+    Camera_SetDir((struct camera*)cam, cam_dir);
+    Camera_TickFinishPerspective((struct camera*)cam);
+
+    /* Create framebuffer object */
+    GLuint fb;
+    glGenFramebuffers(1, &fb);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+
+    GLuint depth_rb;
+    glGenRenderbuffers(1, &depth_rb);
+    glBindRenderbuffer(GL_RENDERBUFFER, depth_rb);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, texw, texh);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_rb);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex, 0);
+
+    GLenum draw_buffs[1] = {GL_COLOR_ATTACHMENT0};
+    glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
+    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+    /* Clip everything below the water surface */
+    glEnable(GL_CLIP_DISTANCE0);
+    vec4_t plane_eq = (vec4_t){0.0f, 1.0f, 0.0f, WATER_LVL};
+    R_GL_SetClipPlane(plane_eq);
+
+    /* Render to the texture */
+    glViewport(0, 0, texw, texh);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    G_RenderMapAndEntities();
+
+    /* Clean up framebuffer */
+    glDeleteRenderbuffers(1, &depth_rb);
+    glDeleteFramebuffers(1, &fb);
+    glDisable(GL_CLIP_DISTANCE0);
+
+    GL_ASSERT_OK();
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -132,6 +277,19 @@ void R_GL_WaterShutdown(void)
 
 void R_GL_DrawWater(const struct map *map)
 {
+    struct water_gl_state state;
+    save_gl_state(&state);
+
+    GLuint refract_tex = make_new_tex(WBUFF_RES_X, height_for_width(WBUFF_RES_X));
+    assert(refract_tex > 0);
+    render_refraction_tex(refract_tex);
+
+    GLuint reflect_tex = make_new_tex(WBUFF_RES_X, height_for_width(WBUFF_RES_X));
+    assert(reflect_tex > 0);
+    render_reflection_tex(reflect_tex);
+
+    restore_gl_state(&state);
+
     GLuint shader_prog = R_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
@@ -163,6 +321,11 @@ void R_GL_DrawWater(const struct map *map)
 
     glBindVertexArray(s_ctx.surface.VAO);
     glDrawArrays(GL_TRIANGLES, 0, s_ctx.surface.num_verts);
+
+cleanup:
+    glDeleteTextures(1, &refract_tex);
+    glDeleteTextures(1, &reflect_tex);
+
     GL_ASSERT_OK();
 }
 

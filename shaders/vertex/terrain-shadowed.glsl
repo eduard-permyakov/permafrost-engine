@@ -87,6 +87,6 @@ void main()
     to_geometry.normal = normalize(mat3(projection * view * model) * in_normal);
 
     gl_Position = projection * view * model * vec4(in_pos, 1.0);
-    gl_ClipDistance[0] = dot(model * gl_Position, clip_plane0);
+    gl_ClipDistance[0] = dot(model * vec4(in_pos, 1.0), clip_plane0);
 }
 

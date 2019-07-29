@@ -59,6 +59,7 @@ struct camera *Camera_New (void);
 void           Camera_Free(struct camera *cam);
 
 void           Camera_SetPos       (struct camera *cam, vec3_t pos);
+void           Camera_SetDir       (struct camera *cam, vec3_t dir);
 void           Camera_SetPitchAndYaw(struct camera *cam, float pitch, float yaw);
 void           Camera_SetSpeed     (struct camera *cam, float speed);
 void           Camera_SetSens      (struct camera *cam, float sensitivity);
