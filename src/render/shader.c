@@ -170,6 +170,13 @@ static struct shader_resource s_shaders[] = {
         .vertex_path = "shaders/vertex/statusbar.glsl",
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment/statusbar.glsl"
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "water",
+        .vertex_path = "shaders/vertex/water.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment/water.glsl"
     }
 };
 

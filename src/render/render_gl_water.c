@@ -62,11 +62,15 @@ struct water_gl_state{
     GLint    fb;
 };
 
-#define WATER_LVL       (-1.0f * Y_COORDS_PER_TILE + 2.0f)
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0])) 
+
+#define WATER_LVL       (-1.0f * Y_COORDS_PER_TILE + 2.0f)
 #define DUDV_PATH       "assets/water_textures/dudvmap.png"
 #define NORM_PATH       "assets/water_textures/normalmap.png"
 #define WBUFF_RES_X     800
+
+#define REFLECT_TUNIT   GL_TEXTURE2
+#define REFRACT_TUNIT   GL_TEXTURE3
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -193,6 +197,9 @@ static void render_reflection_tex(GLuint tex)
     glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
+    /* Flip the front face winding order since we're looking from below the scene */
+    glFrontFace(GL_CCW); 
+
     /* Clip everything below the water surface */
     glEnable(GL_CLIP_DISTANCE0);
     vec4_t plane_eq = (vec4_t){0.0f, 1.0f, 0.0f, WATER_LVL};
@@ -207,8 +214,45 @@ static void render_reflection_tex(GLuint tex)
     glDeleteRenderbuffers(1, &depth_rb);
     glDeleteFramebuffers(1, &fb);
     glDisable(GL_CLIP_DISTANCE0);
+    glFrontFace(GL_CW);
 
     GL_ASSERT_OK();
+}
+
+static void setup_texture_uniforms(GLuint shader_prog, GLuint refract_tex, GLuint reflect_tex)
+{
+    GLuint sampler_loc;
+
+    sampler_loc = glGetUniformLocation(shader_prog, GL_U_REFRACT_TEX);
+    glActiveTexture(REFRACT_TUNIT);
+    glBindTexture(GL_TEXTURE_2D, refract_tex);
+    glUniform1i(sampler_loc, REFRACT_TUNIT - GL_TEXTURE0);
+
+    sampler_loc = glGetUniformLocation(shader_prog, GL_U_REFLECT_TEX);
+    glActiveTexture(REFLECT_TUNIT);
+    glBindTexture(GL_TEXTURE_2D, reflect_tex);
+    glUniform1i(sampler_loc, REFLECT_TUNIT - GL_TEXTURE0);
+}
+
+static void setup_model_mat(GLuint shader_prog, const struct map *map)
+{
+    vec3_t pos = M_GetCenterPos(map);
+    mat4x4_t trans;
+    PFM_Mat4x4_MakeTrans(pos.x, pos.y, pos.z, &trans);
+
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+    float half_x = (res.chunk_w * res.tile_w * X_COORDS_PER_TILE) / 2.0f;
+    float half_z = (res.chunk_h * res.tile_h * Z_COORDS_PER_TILE) / 2.0f;
+
+    mat4x4_t scale;
+    PFM_Mat4x4_MakeScale(half_x, 1.0f, half_z, &scale);
+
+    mat4x4_t model;
+    PFM_Mat4x4_Mult4x4(&trans, &scale, &model);
+
+    GLuint loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
 }
 
 /*****************************************************************************/
@@ -290,34 +334,11 @@ void R_GL_DrawWater(const struct map *map)
 
     restore_gl_state(&state);
 
-    GLuint shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    GLuint shader_prog = R_Shader_GetProgForName("water");
     glUseProgram(shader_prog);
 
-    vec4_t blue = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
-
-    GLuint loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, blue.raw);
-
-    R_Texture_GL_Activate(&s_ctx.dudv, shader_prog);
-    R_Texture_GL_Activate(&s_ctx.normal, shader_prog);
-
-    vec3_t pos = M_GetCenterPos(map);
-    mat4x4_t trans;
-    PFM_Mat4x4_MakeTrans(pos.x, pos.y, pos.z, &trans);
-
-    struct map_resolution res;
-    M_GetResolution(map, &res);
-    float half_x = (res.chunk_w * res.tile_w * X_COORDS_PER_TILE) / 2.0f;
-    float half_z = (res.chunk_h * res.tile_h * Z_COORDS_PER_TILE) / 2.0f;
-
-    mat4x4_t scale;
-    PFM_Mat4x4_MakeScale(half_x, 1.0f, half_z, &scale);
-
-    mat4x4_t model;
-    PFM_Mat4x4_Mult4x4(&trans, &scale, &model);
-
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
+    setup_texture_uniforms(shader_prog, refract_tex, reflect_tex);
+    setup_model_mat(shader_prog, map);
 
     glBindVertexArray(s_ctx.surface.VAO);
     glDrawArrays(GL_TRIANGLES, 0, s_ctx.surface.num_verts);
