@@ -1,5 +1,4 @@
-/*
- *  This file is part of Permafrost Engine. 
+/* *  This file is part of Permafrost Engine. 
  *  Copyright (C) 2019 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
@@ -35,12 +34,16 @@
 
 #version 330 core
 
+#define WAVE_STRENGTH   (0.005)
+#define WATER_TINT_CLR  vec4(0.0, 0.3, 0.5, 0.1)
+
 /*****************************************************************************/
 /* INPUTS                                                                    */
 /*****************************************************************************/
 
 in VertexToFrag {
     vec4 clip_space_pos;
+    vec2 uv;
 }from_vertex;
 
 /*****************************************************************************/
@@ -53,8 +56,12 @@ out vec4 o_frag_color;
 /* UNIFORMS                                                                  */
 /*****************************************************************************/
 
+uniform sampler2D water_dudv_map;
+uniform sampler2D water_normal_map;
 uniform sampler2D refraction_tex;
 uniform sampler2D reflection_tex;
+
+uniform float water_move_factor;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
@@ -63,9 +70,22 @@ uniform sampler2D reflection_tex;
 void main()
 {
     vec2 ndc_pos = (from_vertex.clip_space_pos.xy / from_vertex.clip_space_pos.w)/2.0 + 0.5;
-    vec4 refract_clr = texture(refraction_tex, ndc_pos);
-    vec4 reflect_clr = texture(reflection_tex, vec2(ndc_pos.x, -ndc_pos.y));
+
+    vec2 dudv_uv1 = vec2(from_vertex.uv.x + water_move_factor, from_vertex.uv.y);
+    vec2 distortion1 = (texture(water_dudv_map, dudv_uv1).rg * 2.0 - 1.0) * WAVE_STRENGTH;
+    vec2 dudv_uv2 = vec2(-from_vertex.uv.x + water_move_factor, from_vertex.uv.y + water_move_factor);
+    vec2 distortion2 = (texture(water_dudv_map, dudv_uv2).rg * 2.0 - 1.0) * WAVE_STRENGTH;
+    vec2 tot_dist = distortion1 + distortion2;
+
+    vec2 refract_uv = clamp(ndc_pos + tot_dist, 0.001, 0.999);
+    vec4 refract_clr = texture(refraction_tex, refract_uv);
+
+    vec2 reflect_uv = vec2(ndc_pos.x, -ndc_pos.y) + tot_dist;
+    reflect_uv.x = clamp(reflect_uv.x, 0.001, 0.999);
+    reflect_uv.y = clamp(reflect_uv.y, -0.999, -0.001);
+    vec4 reflect_clr = texture(reflection_tex, reflect_uv);
 
     o_frag_color = mix(refract_clr, reflect_clr, 0.5);
+    o_frag_color = mix(o_frag_color, WATER_TINT_CLR, 0.1);
 }
 

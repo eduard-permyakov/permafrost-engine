@@ -47,14 +47,18 @@
 #include "../map/public/map.h"
 #include "../game/public/game.h"
 
+#include <SDL.h>
 #include <assert.h>
 #include <string.h>
+#include <math.h>
 
 
 struct render_water_ctx{
     struct mesh    surface;
     struct texture dudv;
     struct texture normal;
+    GLfloat        move_factor;
+    uint32_t       prev_frame_tick;
 };
 
 struct water_gl_state{
@@ -68,6 +72,7 @@ struct water_gl_state{
 #define DUDV_PATH       "assets/water_textures/dudvmap.png"
 #define NORM_PATH       "assets/water_textures/normalmap.png"
 #define WBUFF_RES_X     800
+#define WAVE_SPEED      (0.015f)
 
 #define REFLECT_TUNIT   GL_TEXTURE2
 #define REFRACT_TUNIT   GL_TEXTURE3
@@ -234,6 +239,21 @@ static void setup_texture_uniforms(GLuint shader_prog, GLuint refract_tex, GLuin
     glUniform1i(sampler_loc, REFLECT_TUNIT - GL_TEXTURE0);
 }
 
+static void setup_map_uniforms(GLuint shader_prog)
+{
+    GLuint sampler_loc;
+
+    sampler_loc = glGetUniformLocation(shader_prog, GL_U_DUDV_MAP);
+    glActiveTexture(s_ctx.dudv.tunit);
+    glBindTexture(GL_TEXTURE_2D, s_ctx.dudv.id);
+    glUniform1i(sampler_loc, s_ctx.dudv.tunit - GL_TEXTURE0);
+
+    sampler_loc = glGetUniformLocation(shader_prog, GL_U_NORMAL_MAP);
+    glActiveTexture(s_ctx.normal.tunit);
+    glBindTexture(GL_TEXTURE_2D, s_ctx.normal.id);
+    glUniform1i(sampler_loc, s_ctx.normal.tunit - GL_TEXTURE0);
+}
+
 static void setup_model_mat(GLuint shader_prog, const struct map *map)
 {
     vec3_t pos = M_GetCenterPos(map);
@@ -253,6 +273,20 @@ static void setup_model_mat(GLuint shader_prog, const struct map *map)
 
     GLuint loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
+}
+
+static void setup_move_factor(GLuint shader_prog)
+{
+    double intpart;
+    uint32_t curr = SDL_GetTicks();
+    uint32_t delta = curr - s_ctx.prev_frame_tick;
+    s_ctx.prev_frame_tick = curr;
+
+    s_ctx.move_factor += WAVE_SPEED * (delta/1000.0f);
+    s_ctx.move_factor = modf(s_ctx.move_factor, &intpart);
+
+    GLuint sampler_loc = glGetUniformLocation(shader_prog, GL_U_MOVE_FACTOR);
+    glUniform1f(sampler_loc, s_ctx.move_factor);
 }
 
 /*****************************************************************************/
@@ -337,8 +371,10 @@ void R_GL_DrawWater(const struct map *map)
     GLuint shader_prog = R_Shader_GetProgForName("water");
     glUseProgram(shader_prog);
 
+    setup_map_uniforms(shader_prog);
     setup_texture_uniforms(shader_prog, refract_tex, reflect_tex);
     setup_model_mat(shader_prog, map);
+    setup_move_factor(shader_prog);
 
     glBindVertexArray(s_ctx.surface.VAO);
     glDrawArrays(GL_TRIANGLES, 0, s_ctx.surface.num_verts);

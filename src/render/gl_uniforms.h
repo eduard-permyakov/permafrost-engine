@@ -94,6 +94,9 @@
 #define GL_U_CLIP_PLANE0    "clip_plane0"
 
 /* Used by water shader */
+#define GL_U_MOVE_FACTOR    "water_move_factor"
+#define GL_U_DUDV_MAP       "water_dudv_map"
+#define GL_U_NORMAL_MAP     "water_normal_map"
 #define GL_U_REFRACT_TEX    "refraction_tex"
 #define GL_U_REFLECT_TEX    "reflection_tex"
 

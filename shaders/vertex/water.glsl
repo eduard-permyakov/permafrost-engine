@@ -35,6 +35,8 @@
 
 #version 330 core
 
+#define TILING (6.0)
+
 layout (location = 0) in vec3 in_pos;
 
 /*****************************************************************************/
@@ -43,6 +45,7 @@ layout (location = 0) in vec3 in_pos;
 
 out VertexToFrag {
     vec4 clip_space_pos;
+    vec2 uv;
 }to_fragment;
 
 /*****************************************************************************/
@@ -61,6 +64,7 @@ void main()
 {
     vec4 clip_space_pos = projection * view * model * vec4(in_pos, 1.0);
     to_fragment.clip_space_pos = clip_space_pos;
+    to_fragment.uv = vec2(in_pos.x/2.0 + 0.5, in_pos.z/2.0 + 0.5) * TILING;
     gl_Position = clip_space_pos;
 }
 
