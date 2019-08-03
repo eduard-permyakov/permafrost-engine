@@ -202,8 +202,9 @@ static void render_reflection_tex(GLuint tex)
     glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
-    /* Flip the front face winding order since we're looking from below the scene */
-    glFrontFace(GL_CCW); 
+    /* Face culling is problematic when we're looking from below - changing 
+     * the winding order does not work in all cases. */
+    glDisable(GL_CULL_FACE);
 
     /* Clip everything below the water surface */
     glEnable(GL_CLIP_DISTANCE0);
@@ -219,7 +220,7 @@ static void render_reflection_tex(GLuint tex)
     glDeleteRenderbuffers(1, &depth_rb);
     glDeleteFramebuffers(1, &fb);
     glDisable(GL_CLIP_DISTANCE0);
-    glFrontFace(GL_CW);
+    glEnable(GL_CULL_FACE);
 
     GL_ASSERT_OK();
 }

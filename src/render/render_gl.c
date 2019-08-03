@@ -430,6 +430,7 @@ void R_GL_SetLightEmitColor(vec3_t color)
         "mesh.animated.textured-phong-shadowed",
         "terrain",
         "terrain-shadowed",
+        "water",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
@@ -455,6 +456,7 @@ void R_GL_SetLightPos(vec3_t pos)
         "mesh.animated.textured-phong-shadowed",
         "terrain",
         "terrain-shadowed",
+        "water",
     };
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {

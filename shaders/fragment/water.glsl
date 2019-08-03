@@ -37,6 +37,9 @@
 #define WAVE_STRENGTH   (0.005)
 #define WATER_TINT_CLR  vec4(0.0, 0.3, 0.5, 0.1)
 
+#define SPECULAR_STRENGTH  0.15
+#define SPECULAR_SHININESS 0.8
+
 /*****************************************************************************/
 /* INPUTS                                                                    */
 /*****************************************************************************/
@@ -44,6 +47,8 @@
 in VertexToFrag {
     vec4 clip_space_pos;
     vec2 uv;
+    vec3 view_dir;
+    vec3 light_dir;
 }from_vertex;
 
 /*****************************************************************************/
@@ -63,6 +68,8 @@ uniform sampler2D reflection_tex;
 
 uniform float water_move_factor;
 
+uniform vec3 light_color;
+
 /*****************************************************************************/
 /* PROGRAM                                                                   */
 /*****************************************************************************/
@@ -71,11 +78,10 @@ void main()
 {
     vec2 ndc_pos = (from_vertex.clip_space_pos.xy / from_vertex.clip_space_pos.w)/2.0 + 0.5;
 
-    vec2 dudv_uv1 = vec2(from_vertex.uv.x + water_move_factor, from_vertex.uv.y);
-    vec2 distortion1 = (texture(water_dudv_map, dudv_uv1).rg * 2.0 - 1.0) * WAVE_STRENGTH;
-    vec2 dudv_uv2 = vec2(-from_vertex.uv.x + water_move_factor, from_vertex.uv.y + water_move_factor);
-    vec2 distortion2 = (texture(water_dudv_map, dudv_uv2).rg * 2.0 - 1.0) * WAVE_STRENGTH;
-    vec2 tot_dist = distortion1 + distortion2;
+    vec2 distorted_uv = vec2(from_vertex.uv.x + water_move_factor, from_vertex.uv.y);
+    distorted_uv = texture(water_dudv_map, distorted_uv).rg * 0.1;
+    distorted_uv = from_vertex.uv + vec2(distorted_uv.x, distorted_uv.y + water_move_factor);
+    vec2 tot_dist = (texture(water_dudv_map, distorted_uv).rg * 2.0 - 1.0) * WAVE_STRENGTH;
 
     vec2 refract_uv = clamp(ndc_pos + tot_dist, 0.001, 0.999);
     vec4 refract_clr = texture(refraction_tex, refract_uv);
@@ -85,7 +91,14 @@ void main()
     reflect_uv.y = clamp(reflect_uv.y, -0.999, -0.001);
     vec4 reflect_clr = texture(reflection_tex, reflect_uv);
 
+    vec4 norm_map_clr = texture(water_normal_map, distorted_uv);
+    vec3 normal = vec3(norm_map_clr.r * 2.0 - 1.0, norm_map_clr.b, norm_map_clr.g * 2.0 - 1.0);
+
+    vec3 reflect_dir = reflect(-from_vertex.light_dir, normal);
+    float spec = pow(max(dot(from_vertex.view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
+    vec3 specular = SPECULAR_STRENGTH * spec * light_color;
+
     o_frag_color = mix(refract_clr, reflect_clr, 0.5);
-    o_frag_color = mix(o_frag_color, WATER_TINT_CLR, 0.1);
+    o_frag_color = mix(o_frag_color, WATER_TINT_CLR, 0.1) + vec4(specular, 0.0);
 }
 
