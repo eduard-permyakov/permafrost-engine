@@ -784,14 +784,14 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
     GL_ASSERT_OK();
     assert(tile_verts_base);
 
-    struct vertex *south_provoking[2] = {tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 0*3,
-                                         tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 1*3};
-    struct vertex *west_provoking[2]  = {tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 2*3,
-                                         tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 3*3};
-    struct vertex *north_provoking[2] = {tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 4*3,
-                                         tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 5*3};
-    struct vertex *east_provoking[2]  = {tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 6*3,
-                                         tile_verts_base + (5 * VERTS_PER_SIDE_FACE) + 7*3};
+    struct vertex *south_provoking[2] = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 0*3,
+                                         tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 1*3};
+    struct vertex *west_provoking[2]  = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 2*3,
+                                         tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 3*3};
+    struct vertex *north_provoking[2] = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 4*3,
+                                         tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 5*3};
+    struct vertex *east_provoking[2]  = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 6*3,
+                                         tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 7*3};
 
     for(int i = 0; i < 2; i++) {
         south_provoking[i]->adjacent_mat_indices[0] = 
@@ -852,7 +852,7 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, stru
     union top_face_vbuff *tfvb = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
     GL_ASSERT_OK();
     assert(tfvb);
-    tfvb = (union top_face_vbuff*)(((struct vertex*)tfvb) + (5 * VERTS_PER_SIDE_FACE));
+    tfvb = (union top_face_vbuff*)(((struct vertex*)tfvb) + (4 * VERTS_PER_SIDE_FACE));
 
     struct map_resolution res;
     M_GetResolution(map, &res);
@@ -1148,7 +1148,7 @@ void R_GL_TileGetVertices(const struct map *map, struct tile_desc td, struct ver
 #undef V_COORD
 
     struct face *faces[] = {
-        &bot, &front, &back, &left, &right 
+        &front, &back, &left, &right 
     };
 
     for(int i = 0; i < ARR_SIZE(faces); i++) {
@@ -1254,7 +1254,7 @@ void R_GL_TileGetVertices(const struct map *map, struct tile_desc td, struct ver
     };
 
     assert(sizeof(union top_face_vbuff) == VERTS_PER_TOP_FACE * sizeof(struct vertex));
-    union top_face_vbuff *tfvb = (union top_face_vbuff*)(out + 5 * VERTS_PER_SIDE_FACE);
+    union top_face_vbuff *tfvb = (union top_face_vbuff*)(out + 4 * VERTS_PER_SIDE_FACE);
     tfvb->se0 = top.se;
     tfvb->s0 = south_vert;
     tfvb->center0 = center_vert_tri0;
@@ -1330,12 +1330,12 @@ void R_GL_TileGetVertices(const struct map *map, struct tile_desc td, struct ver
     }
 
     for(struct vertex *curr_provoking = out; 
-        curr_provoking < out + (5 * VERTS_PER_SIDE_FACE); 
+        curr_provoking < out + (4 * VERTS_PER_SIDE_FACE); 
         curr_provoking += 3) {
 
         curr_provoking->blend_mode = BLEND_MODE_NOBLEND;
     }
-    for(struct vertex *curr_provoking = out + (5 * VERTS_PER_SIDE_FACE); 
+    for(struct vertex *curr_provoking = out + (4 * VERTS_PER_SIDE_FACE); 
         curr_provoking < out + VERTS_PER_TILE; 
         curr_provoking += 3) {
 
