@@ -36,6 +36,7 @@
 #ifndef RENDER_GL_H
 #define RENDER_GL_H
 
+#include "public/render.h"
 #include "../pf_math.h"
 
 #include <GL/glew.h>
@@ -65,7 +66,7 @@ void   R_GL_SetShadowMap(const GLuint shadow_map_tex_id);
 
 /* Tiles */
 
-void   R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r, size_t c);
+void   R_GL_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex *out);
 
 /* Water */
 

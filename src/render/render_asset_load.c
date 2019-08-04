@@ -289,7 +289,8 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
     return ret;
 }
 
-bool R_AL_InitPrivFromTiles(const struct tile *tiles, size_t width, size_t height, 
+bool R_AL_InitPrivFromTiles(const struct map *map, struct chunk_coord cc,
+                            const struct tile *tiles, size_t width, size_t height,
                             void *priv_buff, const char *basedir)
 {
     size_t num_verts = VERTS_PER_TILE * (width * height);
@@ -312,7 +313,8 @@ bool R_AL_InitPrivFromTiles(const struct tile *tiles, size_t width, size_t heigh
             const struct tile *curr = &tiles[r * width + c];
             struct vertex *vert_base = &vbuff[ (r * width + c) * VERTS_PER_TILE ];
 
-            R_GL_TileGetVertices(curr, vert_base, r, c);
+            struct tile_desc td = (struct tile_desc){cc.r, cc.c, r, c};
+            R_GL_TileGetVertices(map, td, vert_base);
         }
     }
 

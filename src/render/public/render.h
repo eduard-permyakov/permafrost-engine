@@ -65,6 +65,10 @@ enum render_info{
     RENDER_INFO_SL_VERSION,
 };
 
+struct chunk_coord{
+    int r, c;
+};
+
 #define VERTS_PER_SIDE_FACE (6)
 #define VERTS_PER_TOP_FACE  (24)
 #define VERTS_PER_TILE      (5 * VERTS_PER_SIDE_FACE + VERTS_PER_TOP_FACE)
@@ -471,7 +475,8 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
  * already parsed into the 'tiles'.
  * ---------------------------------------------------------------------------
  */
-bool   R_AL_InitPrivFromTiles(const struct tile *tiles, size_t width, size_t height,
+bool   R_AL_InitPrivFromTiles(const struct map *map, struct chunk_coord cc,
+                              const struct tile *tiles, size_t width, size_t height,
                               void *priv_buff, const char *basedir);
 
 #endif

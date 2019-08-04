@@ -57,18 +57,20 @@
   
 
 #define ARR_SIZE(a)                 (sizeof(a)/sizeof(a[0]))
-
 #define MAG(x, y)                   sqrt(pow(x,2) + pow(y,2))
-
 #define VEC3_EQUAL(a, b)            (0 == memcmp((a).raw, (b).raw, sizeof((a).raw)))
 
-#define INDICES_MASK_8(a, b)        (uint8_t)( (((a) & 0xf) << 4) | ((b) & 0xf) )
+#define INDICES_MASK_8(a, b)        (uint8_t)( (((a) & 0xf) << 4) \
+                                              | ((b) & 0xf) << 0)
 
-#define INDICES_MASK_32(a, b, c, d) (uint32_t)( (((a) & 0xff) << 24) | (((b) & 0xff) << 16) | (((c) & 0xff) << 8) | (((d) & 0xff) << 0) )
+#define INDICES_MASK_32(a, b, c, d) (uint32_t)( (((a) & 0xff) << 24) \
+                                              | (((b) & 0xff) << 16) \
+                                              | (((c) & 0xff) << 8) \
+                                              | (((d) & 0xff) << 0) )
 
-#define SAME_INDICES_32(i)          (  (( (i) >> 0) & 0xffff) == (( (i) >> 16) & 0xfffff) \
-                                    && (( (i) >> 0) & 0xff  ) == (( (i) >> 8 ) & 0xff   ) \
-                                    && (( (i) >> 0) & 0xf   ) == (( (i) >> 4 ) & 0xf    ) )
+#define SAME_INDICES_32(i)          (  ((i) & 0xffff) == (( (i) >> 16) & 0xfffff) \
+                                    && ((i) & 0xff  ) == (( (i) >> 8 ) & 0xff   ) \
+                                    && ((i) & 0xf   ) == (( (i) >> 4 ) & 0xf    ) )
 
 /* We take the directions to be relative to a normal vector facing outwards
  * from the plane of the face. West is to the right, east is to the left,
@@ -447,13 +449,88 @@ static bool arr_contains(int *array, size_t size, int elem)
     return false;
 }
 
-static int arr_indexof(int *array, size_t size, int elem)
+static int arr_indexof(const int *array, size_t size, int elem)
 {
     for(int i = 0; i < size; i++) {
         if(array[i] == elem) 
             return i;
     }
     return -1;
+}
+
+static int arr_min(const int array[static 1], size_t size)
+{
+    int min = array[0];
+    for(int i = 1; i < size; i++) {
+        if(array[i] < min)
+            min = array[i];
+    }
+    return min;
+}
+
+static float tile_min_visible_height(const struct map *map, struct tile_desc tile)
+{
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
+    struct tile *curr_tile  = NULL,
+                *top_tile   = NULL,
+                *bot_tile   = NULL,
+                *left_tile  = NULL,
+                *right_tile = NULL;
+
+    int ret = M_TileForDesc(map, tile, &curr_tile);
+    assert(ret);
+
+    struct tile_desc ref = tile;
+    ret = M_Tile_RelativeDesc(res, &ref, 0, -1);
+    if(ret) {
+        ret = M_TileForDesc(map, ref, &top_tile); 
+        assert(ret);
+    }
+
+    ref = tile;
+    ret = M_Tile_RelativeDesc(res, &ref, 0, 1);
+    if(ret) {
+        ret = M_TileForDesc(map, ref, &bot_tile); 
+        assert(ret);
+    }
+
+    ref = tile;
+    ret = M_Tile_RelativeDesc(res, &ref, -1, 0);
+    if(ret) {
+        ret = M_TileForDesc(map, ref, &left_tile); 
+        assert(ret);
+    }
+
+    ref = tile;
+    ret = M_Tile_RelativeDesc(res, &ref, 1, 0);
+    if(ret) {
+        ret = M_TileForDesc(map, ref, &right_tile); 
+        assert(ret);
+    }
+
+    int heights[] = {
+
+        M_Tile_NWHeight(curr_tile),
+        M_Tile_NEHeight(curr_tile),
+        M_Tile_SEHeight(curr_tile),
+        M_Tile_SWHeight(curr_tile),
+
+        left_tile ? M_Tile_NEHeight(left_tile) : -1,
+        left_tile ? M_Tile_SEHeight(left_tile) : -1,
+
+        top_tile ? M_Tile_SWHeight(top_tile) : -1,
+        top_tile ? M_Tile_SEHeight(top_tile) : -1,
+
+        right_tile ? M_Tile_NWHeight(right_tile) : -1,
+        right_tile ? M_Tile_SWHeight(right_tile) : -1,
+
+        bot_tile  ? M_Tile_NWHeight(bot_tile) : -1,
+        bot_tile  ? M_Tile_NEHeight(bot_tile) : -1,
+    };
+
+    return arr_min(heights, ARR_SIZE(heights)) * Y_COORDS_PER_TILE;
 }
 
 /*****************************************************************************/
@@ -874,8 +951,16 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, stru
     GL_ASSERT_OK();
 }
 
-void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r, size_t c)
+void R_GL_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex *out)
 {
+    struct tile *tile;
+    int ret = M_TileForDesc(map, td, &tile);
+    assert(ret);
+
+    /* Use the smallest possible size for the side faces of the tile. This saves us 
+     * some fragment processing by not drawing side faces that are not visible. */
+    float min_vis_height = tile_min_visible_height(map, td);
+
     /* Bottom face is always the same (just shifted over based on row and column), and the 
      * front, back, left, right faces just connect the top and bottom faces. The only 
      * variations are in the top face, which has some corners raised based on tile type. 
@@ -883,29 +968,33 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
 
     struct face bot = {
         .nw = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (-TILE_DEPTH * Y_COORDS_PER_TILE), 
-                                 0.0f + (r * Z_COORDS_PER_TILE) },
+            .pos    = (vec3_t) { 0.0f - ((td.tile_c+1) * X_COORDS_PER_TILE), 
+                                 min_vis_height,
+                                 0.0f + (td.tile_r * Z_COORDS_PER_TILE) },
             .uv     = (vec2_t) { 0.0f, 1.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
         .ne = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (-TILE_DEPTH * Y_COORDS_PER_TILE), 
-                                 0.0f + (r * Z_COORDS_PER_TILE) }, 
+            .pos    = (vec3_t) { 0.0f - (td.tile_c * X_COORDS_PER_TILE), 
+                                 min_vis_height, 
+                                 0.0f + (td.tile_r * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 1.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
         .se = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), (-TILE_DEPTH * Y_COORDS_PER_TILE), 
-                                 0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
+            .pos    = (vec3_t) { 0.0f - (td.tile_c * X_COORDS_PER_TILE), 
+                                 min_vis_height, 
+                                 0.0f + ((td.tile_r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
         .sw = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), (-TILE_DEPTH * Y_COORDS_PER_TILE), 
-                                 0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
+            .pos    = (vec3_t) { 0.0f - ((td.tile_c+1) * X_COORDS_PER_TILE),
+                                 min_vis_height, 
+                                 0.0f + ((td.tile_r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
@@ -915,30 +1004,30 @@ void R_GL_TileGetVertices(const struct tile *tile, struct vertex *out, size_t r,
     /* Normals for top face get set at the end */
     struct face top = {
         .nw = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE),
+            .pos    = (vec3_t) { 0.0f - (td.tile_c * X_COORDS_PER_TILE),
                                  M_Tile_NWHeight(tile) * Y_COORDS_PER_TILE,
-                                 0.0f + (r * Z_COORDS_PER_TILE) },
+                                 0.0f + (td.tile_r * Z_COORDS_PER_TILE) },
             .uv     = (vec2_t) { 0.0f, 1.0f },
             .material_idx  = tile->top_mat_idx,
         },
         .ne = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), 
+            .pos    = (vec3_t) { 0.0f - ((td.tile_c+1) * X_COORDS_PER_TILE), 
                                  M_Tile_NEHeight(tile) * Y_COORDS_PER_TILE,
-                                 0.0f + (r * Z_COORDS_PER_TILE) }, 
+                                 0.0f + (td.tile_r * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 1.0f },
             .material_idx  = tile->top_mat_idx,
         },
         .se = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - ((c+1) * X_COORDS_PER_TILE), 
+            .pos    = (vec3_t) { 0.0f - ((td.tile_c+1) * X_COORDS_PER_TILE), 
                                  M_Tile_SEHeight(tile) * Y_COORDS_PER_TILE,
-                                 0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
+                                 0.0f + ((td.tile_r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
         .sw = (struct vertex) {
-            .pos    = (vec3_t) { 0.0f - (c * X_COORDS_PER_TILE), 
+            .pos    = (vec3_t) { 0.0f - (td.tile_c * X_COORDS_PER_TILE), 
                                  M_Tile_SWHeight(tile) * Y_COORDS_PER_TILE,
-                                 0.0f + ((r+1) * Z_COORDS_PER_TILE) }, 
+                                 0.0f + ((td.tile_r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
@@ -1298,7 +1387,7 @@ void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, struct tile_de
     struct vertex *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
     assert(vert_base);
     
-    R_GL_TileGetVertices(tile, vert_base, desc.tile_r, desc.tile_c);
+    R_GL_TileGetVertices(map, desc, vert_base);
     glUnmapBuffer(GL_ARRAY_BUFFER);
 
     R_GL_TilePatchVertsBlend(chunk_rprivate, map, desc);

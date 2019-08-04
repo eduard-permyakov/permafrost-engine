@@ -193,20 +193,25 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
 
     for(int i = 0; i < num_chunks; i++) {
 
-        map->chunks[i].render_private = (void*)unused_base;
-
         if(!m_al_read_pfchunk(stream, map->chunks + i))
             return false;
+    }
 
+    for(int i = 0; i < num_chunks; i++) {
+    
+        map->chunks[i].render_private = (void*)unused_base;
         size_t renderbuff_sz = R_AL_PrivBuffSizeForChunk(
                                TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, 0);
         unused_base += renderbuff_sz;
 
-        if(!R_AL_InitPrivFromTiles(map->chunks[i].tiles, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
+        struct chunk_coord cc = (struct chunk_coord){i / header->num_cols, i % header->num_cols};
+        if(!R_AL_InitPrivFromTiles(map, cc, map->chunks[i].tiles, 
+                                   TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
                                    map->chunks[i].render_private, basedir)) {
             return false;
         }
     }
+
     m_al_patch_adjacency_info(map);
 
     /* Build navigation grid */
