@@ -40,6 +40,8 @@
 #define SPECULAR_STRENGTH  0.15
 #define SPECULAR_SHININESS 0.8
 
+#define BOUNDARY_THRESH 0.00025
+
 /*****************************************************************************/
 /* INPUTS                                                                    */
 /*****************************************************************************/
@@ -65,8 +67,11 @@ uniform sampler2D water_dudv_map;
 uniform sampler2D water_normal_map;
 uniform sampler2D refraction_tex;
 uniform sampler2D reflection_tex;
+uniform sampler2D refraction_depth;
 
 uniform float water_move_factor;
+uniform float cam_near;
+uniform float cam_far;
 
 uniform vec3 light_color;
 
@@ -74,9 +79,47 @@ uniform vec3 light_color;
 /* PROGRAM                                                                   */
 /*****************************************************************************/
 
+float linearize_depth(float z)
+{
+    return 2.0 * cam_near * cam_far / (cam_far + cam_near - (2.0 * z - 1.0) * (cam_far - cam_near));
+}
+
+/* The refraction texture is rendered at a lower resoulution than the scene in which the 
+ * water quad is rendered and textured. Thus, when we use projective texturing to texture 
+ * the water quad with the refraction texture, there may be some aliasing aftifacts at 
+ * the very edges of the water. There will sometimes be a single pixel-wide line where the 
+ * water plane meets the ground that isn't properly textured. We use the depth buffer to 
+ * discard these disconinuous pixels at the edges. 
+ */
+bool should_discard(vec2 ndc_pos)
+{
+    float depth = linearize_depth(texture(refraction_depth, ndc_pos).r);
+    float top = linearize_depth(texture(refraction_depth, vec2(ndc_pos.x, ndc_pos.y + BOUNDARY_THRESH)).r);
+    float bot = linearize_depth(texture(refraction_depth, vec2(ndc_pos.x, ndc_pos.y - BOUNDARY_THRESH)).r);
+    float left = linearize_depth(texture(refraction_depth, vec2(ndc_pos.x - BOUNDARY_THRESH, ndc_pos.y)).r);
+    float right = linearize_depth(texture(refraction_depth, vec2(ndc_pos.x + BOUNDARY_THRESH, ndc_pos.y - BOUNDARY_THRESH)).r);
+    if(abs(depth - top) > 5.0)
+        return true;
+    if(abs(depth - bot) > 5.0)
+        return true;
+    if(abs(depth - left) > 5.0)
+        return true;
+    if(abs(depth - right) > 5.0)
+        return true;
+    return false;
+}
+
 void main()
 {
     vec2 ndc_pos = (from_vertex.clip_space_pos.xy / from_vertex.clip_space_pos.w)/2.0 + 0.5;
+
+    if(should_discard(ndc_pos))
+        discard;
+
+    float ground_dist = linearize_depth(texture(refraction_depth, ndc_pos).r);
+    float water_dist = linearize_depth(gl_FragCoord.z);
+    float water_depth = ground_dist - water_dist;
+    float depth_damping_factor = clamp(water_depth/2.5, 0.0, 1.0);
 
     vec2 distorted_uv = vec2(from_vertex.uv.x + water_move_factor, from_vertex.uv.y);
     distorted_uv = texture(water_dudv_map, distorted_uv).rg * 0.1;
@@ -100,5 +143,6 @@ void main()
 
     o_frag_color = mix(refract_clr, reflect_clr, 0.5);
     o_frag_color = mix(o_frag_color, WATER_TINT_CLR, 0.1) + vec4(specular, 0.0);
+    o_frag_color.a = depth_damping_factor;
 }
 

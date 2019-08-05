@@ -71,11 +71,11 @@ struct water_gl_state{
 #define WATER_LVL       (-1.0f * Y_COORDS_PER_TILE + 2.0f)
 #define DUDV_PATH       "assets/water_textures/dudvmap.png"
 #define NORM_PATH       "assets/water_textures/normalmap.png"
-#define WBUFF_RES_X     800
 #define WAVE_SPEED      (0.015f)
 
-#define REFLECT_TUNIT   GL_TEXTURE2
-#define REFRACT_TUNIT   GL_TEXTURE3
+#define REFLECT_TUNIT       GL_TEXTURE2
+#define REFRACT_TUNIT       GL_TEXTURE3
+#define REFRACT_DEPTH_TUNIT GL_TEXTURE4
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -107,7 +107,14 @@ static void restore_gl_state(const struct water_gl_state *in)
     Camera_TickFinishPerspective((struct camera*)cam);
 }
 
-static int height_for_width(int width)
+static int wbuff_width(void)
+{
+    int viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    return viewport[2] / 2.5f;
+}
+
+static int wbuff_height(int width)
 {
     int viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
@@ -128,10 +135,26 @@ static GLuint make_new_tex(int width, int height)
     return ret;
 }
 
-static void render_refraction_tex(GLuint tex)
+static GLuint make_new_depth_tex(int width, int height)
+{
+    GLuint ret;
+    glGenTextures(1, &ret);
+    glBindTexture(GL_TEXTURE_2D, ret);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, width, height, 0, 
+        GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    GL_ASSERT_OK();
+    return ret;
+}
+
+static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex)
 {
     GLint texw, texh;
-    glBindTexture(GL_TEXTURE_2D, tex);
+    glBindTexture(GL_TEXTURE_2D, clr_tex);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texw);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texh);
 
@@ -140,15 +163,12 @@ static void render_refraction_tex(GLuint tex)
     glGenFramebuffers(1, &fb);
     glBindFramebuffer(GL_FRAMEBUFFER, fb);
 
-    GLuint depth_rb;
-    glGenRenderbuffers(1, &depth_rb);
-    glBindRenderbuffer(GL_RENDERBUFFER, depth_rb);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, texw, texh);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_rb);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex, 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depth_tex, 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, clr_tex, 0);
 
     GLenum draw_buffs[1] = {GL_COLOR_ATTACHMENT0};
     glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
+
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
     /* Clip everything above the water surface */
@@ -162,7 +182,6 @@ static void render_refraction_tex(GLuint tex)
     G_RenderMapAndEntities();
 
     /* Clean up framebuffer */
-    glDeleteRenderbuffers(1, &depth_rb);
     glDeleteFramebuffers(1, &fb);
     glDisable(GL_CLIP_DISTANCE0);
 
@@ -225,7 +244,8 @@ static void render_reflection_tex(GLuint tex)
     GL_ASSERT_OK();
 }
 
-static void setup_texture_uniforms(GLuint shader_prog, GLuint refract_tex, GLuint reflect_tex)
+static void setup_texture_uniforms(GLuint shader_prog, GLuint refract_tex, 
+                                   GLuint refract_depth, GLuint reflect_tex)
 {
     GLuint sampler_loc;
 
@@ -233,6 +253,11 @@ static void setup_texture_uniforms(GLuint shader_prog, GLuint refract_tex, GLuin
     glActiveTexture(REFRACT_TUNIT);
     glBindTexture(GL_TEXTURE_2D, refract_tex);
     glUniform1i(sampler_loc, REFRACT_TUNIT - GL_TEXTURE0);
+
+    sampler_loc = glGetUniformLocation(shader_prog, GL_U_REFRACT_DEPTH);
+    glActiveTexture(REFRACT_DEPTH_TUNIT);
+    glBindTexture(GL_TEXTURE_2D, refract_depth);
+    glUniform1i(sampler_loc, REFRACT_DEPTH_TUNIT - GL_TEXTURE0);
 
     sampler_loc = glGetUniformLocation(shader_prog, GL_U_REFLECT_TEX);
     glActiveTexture(REFLECT_TUNIT);
@@ -253,6 +278,17 @@ static void setup_map_uniforms(GLuint shader_prog)
     glActiveTexture(s_ctx.normal.tunit);
     glBindTexture(GL_TEXTURE_2D, s_ctx.normal.id);
     glUniform1i(sampler_loc, s_ctx.normal.tunit - GL_TEXTURE0);
+}
+
+static void setup_cam_uniforms(GLuint shader_prog)
+{
+    GLuint sampler_loc;
+
+    sampler_loc = glGetUniformLocation(shader_prog, GL_U_CAM_NEAR);
+    glUniform1f(sampler_loc, CAM_Z_NEAR_DIST);
+
+    sampler_loc = glGetUniformLocation(shader_prog, GL_U_CAM_FAR);
+    glUniform1f(sampler_loc, CONFIG_DRAWDIST);
 }
 
 static void setup_model_mat(GLuint shader_prog, const struct map *map)
@@ -359,11 +395,18 @@ void R_GL_DrawWater(const struct map *map)
     struct water_gl_state state;
     save_gl_state(&state);
 
-    GLuint refract_tex = make_new_tex(WBUFF_RES_X, height_for_width(WBUFF_RES_X));
-    assert(refract_tex > 0);
-    render_refraction_tex(refract_tex);
+    int w = wbuff_width();
+    int h = wbuff_height(w);
 
-    GLuint reflect_tex = make_new_tex(WBUFF_RES_X, height_for_width(WBUFF_RES_X));
+    GLuint refract_tex = make_new_tex(w, h);
+    assert(refract_tex > 0);
+
+    GLuint refract_depth = make_new_depth_tex(w, h);
+    assert(refract_depth > 0);
+
+    render_refraction_tex(refract_tex, refract_depth);
+
+    GLuint reflect_tex = make_new_tex(w, h);
     assert(reflect_tex > 0);
     render_reflection_tex(reflect_tex);
 
@@ -373,15 +416,24 @@ void R_GL_DrawWater(const struct map *map)
     glUseProgram(shader_prog);
 
     setup_map_uniforms(shader_prog);
-    setup_texture_uniforms(shader_prog, refract_tex, reflect_tex);
+    setup_cam_uniforms(shader_prog);
+    setup_texture_uniforms(shader_prog, refract_tex, refract_depth, reflect_tex);
     setup_model_mat(shader_prog, map);
     setup_move_factor(shader_prog);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
 
     glBindVertexArray(s_ctx.surface.VAO);
     glDrawArrays(GL_TRIANGLES, 0, s_ctx.surface.num_verts);
 
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+
 cleanup:
     glDeleteTextures(1, &refract_tex);
+    glDeleteTextures(1, &refract_depth);
     glDeleteTextures(1, &reflect_tex);
 
     GL_ASSERT_OK();

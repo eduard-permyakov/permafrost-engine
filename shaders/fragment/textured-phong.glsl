@@ -1,5 +1,4 @@
-/*
- *  This file is part of Permafrost Engine. 
+/* *  This file is part of Permafrost Engine. 
  *  Copyright (C) 2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify

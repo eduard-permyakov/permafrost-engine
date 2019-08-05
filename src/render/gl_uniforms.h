@@ -99,5 +99,8 @@
 #define GL_U_NORMAL_MAP     "water_normal_map"
 #define GL_U_REFRACT_TEX    "refraction_tex"
 #define GL_U_REFLECT_TEX    "reflection_tex"
+#define GL_U_REFRACT_DEPTH  "refraction_depth"
+#define GL_U_CAM_NEAR       "cam_near"
+#define GL_U_CAM_FAR        "cam_far"
 
 #endif
