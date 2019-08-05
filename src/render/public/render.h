@@ -316,17 +316,16 @@ void   R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, struct tile_
  * for rendering later.
  * ---------------------------------------------------------------------------
  */
-bool  R_GL_MinimapBake(void **chunk_rprivates, mat4x4_t *chunk_model_mats, 
-                       size_t chunk_x, size_t chunk_z,
-                       vec3_t map_center, vec2_t map_size);
+bool  R_GL_MinimapBake(const struct map *map, void **chunk_rprivates, 
+                       mat4x4_t *chunk_model_mats);
 
 /* ---------------------------------------------------------------------------
  * Update a chunk-sized region of the minimap texture with up-to-date mesh 
  * data.
  * ---------------------------------------------------------------------------
  */
-bool  R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, mat4x4_t *chunk_model, 
-                              vec3_t map_center, vec2_t map_size);
+bool  R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, 
+                              mat4x4_t *chunk_model, struct chunk_coord cc);
 
 /* ---------------------------------------------------------------------------
  * Render the minimap centered at the specified (virtual) screenscape coordinate.

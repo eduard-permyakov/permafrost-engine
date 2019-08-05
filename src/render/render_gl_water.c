@@ -44,7 +44,6 @@
 #include "../camera.h"
 #include "../config.h"
 #include "../main.h"
-#include "../map/public/tile.h"
 #include "../map/public/map.h"
 #include "../game/public/game.h"
 
@@ -66,6 +65,8 @@ struct water_gl_state{
     GLint    viewport[4];
     GLint    fb;
     GLfloat  clear_clr[4];
+    vec3_t   u_cam_pos;
+    mat4x4_t u_view;
 };
 
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0])) 
@@ -90,11 +91,17 @@ static struct render_water_ctx s_ctx;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void save_gl_state(struct water_gl_state *out)
+static void save_gl_state(struct water_gl_state *out, GLuint shader_prog)
 {
     glGetIntegerv(GL_VIEWPORT, out->viewport);
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &out->fb);
     glGetFloatv(GL_COLOR_CLEAR_VALUE, out->clear_clr);
+
+    GLuint sampler_loc = glGetUniformLocation(shader_prog, GL_U_VIEW_POS);
+    glGetnUniformfv(shader_prog, sampler_loc, sizeof(out->u_cam_pos), out->u_cam_pos.raw);
+
+    sampler_loc = glGetUniformLocation(shader_prog, GL_U_VIEW);
+    glGetnUniformfv(shader_prog, sampler_loc, sizeof(out->u_view), out->u_view.raw);
 }
 
 static void restore_gl_state(const struct water_gl_state *in)
@@ -102,14 +109,7 @@ static void restore_gl_state(const struct water_gl_state *in)
     glBindFramebuffer(GL_FRAMEBUFFER, in->fb);
     glViewport(in->viewport[0], in->viewport[1], in->viewport[2], in->viewport[3]);
     glClearColor(in->clear_clr[0], in->clear_clr[1], in->clear_clr[2], in->clear_clr[3]);
-
-    /* Restore the view matrix and camera position uniforms as 
-     * they have been clobbered by the reflection texture rendering */
-    DECL_CAMERA_STACK(cam);
-    memset(cam, 0, sizeof(cam));
-    Camera_SetPos((struct camera*)cam, G_ActiveCamPos());
-    Camera_SetDir((struct camera*)cam, G_ActiveCamDir());
-    Camera_TickFinishPerspective((struct camera*)cam);
+    R_GL_SetViewMatAndPos(&in->u_view, &in->u_cam_pos);
 }
 
 static int wbuff_width(void)
@@ -163,6 +163,10 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex)
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texw);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texh);
 
+    struct sval setting;
+    ss_e status = Settings_Get("pf.video.water_refraction", &setting);
+    assert(status == SS_OKAY);
+
     /* Create framebuffer object */
     GLuint fb;
     glGenFramebuffers(1, &fb);
@@ -173,7 +177,6 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex)
 
     GLenum draw_buffs[1] = {GL_COLOR_ATTACHMENT0};
     glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
-
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
     /* Clip everything above the water surface */
@@ -184,7 +187,10 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex)
     /* Render to the texture */
     glViewport(0, 0, texw, texh);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    G_RenderMapAndEntities();
+
+    if(setting.as_bool) {
+        G_RenderMapAndEntities();
+    }
 
     /* Clean up framebuffer */
     glDeleteFramebuffers(1, &fb);
@@ -402,6 +408,18 @@ bool R_GL_WaterInit(void)
     });
     assert(status == SS_OKAY);
 
+    status = Settings_Create((struct setting){
+        .name = "pf.video.water_refraction",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true 
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
     return ret;
 
 fail_normal:
@@ -427,8 +445,11 @@ void R_GL_WaterShutdown(void)
 
 void R_GL_DrawWater(const struct map *map)
 {
+    GLuint shader_prog = R_Shader_GetProgForName("water");
+    glUseProgram(shader_prog);
+
     struct water_gl_state state;
-    save_gl_state(&state);
+    save_gl_state(&state, shader_prog);
 
     int w = wbuff_width();
     int h = wbuff_height(w);
@@ -446,9 +467,6 @@ void R_GL_DrawWater(const struct map *map)
     render_reflection_tex(reflect_tex);
 
     restore_gl_state(&state);
-
-    GLuint shader_prog = R_Shader_GetProgForName("water");
-    glUseProgram(shader_prog);
 
     setup_map_uniforms(shader_prog);
     setup_cam_uniforms(shader_prog);

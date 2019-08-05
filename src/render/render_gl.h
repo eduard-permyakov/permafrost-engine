@@ -37,6 +37,7 @@
 #define RENDER_GL_H
 
 #include "public/render.h"
+#include "../map/public/tile.h"
 #include "../pf_math.h"
 
 #include <GL/glew.h>

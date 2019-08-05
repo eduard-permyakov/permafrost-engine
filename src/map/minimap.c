@@ -196,14 +196,7 @@ bool M_InitMinimap(struct map *map, vec2_t center_pos)
         }
     }
     
-    vec2_t map_size = (vec2_t) {
-        map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE, 
-        map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE
-    };
-    vec3_t map_center = (vec3_t){ map->pos.x - map_size.raw[0]/2.0f, map->pos.y, map->pos.z + map_size.raw[1]/2.0f };
-
-    bool ret = R_GL_MinimapBake(chunk_rprivates, chunk_model_mats, 
-        map->width, map->height, map_center, map_size);
+    bool ret = R_GL_MinimapBake(map, chunk_rprivates, chunk_model_mats);
 
     if(ret) {
         E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mouseclick, map, G_RUNNING);
@@ -214,16 +207,11 @@ bool M_InitMinimap(struct map *map, vec2_t center_pos)
 
 bool M_UpdateMinimapChunk(const struct map *map, int chunk_r, int chunk_c)
 {
-    vec2_t map_size = (vec2_t) {
-        map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE, 
-        map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE
-    };
-    vec3_t map_center = (vec3_t){ map->pos.x - map_size.raw[0]/2.0f, map->pos.y, map->pos.z + map_size.raw[1]/2.0f };
     mat4x4_t model;
     M_ModelMatrixForChunk(map, (struct chunkpos){chunk_r, chunk_c}, &model);
 
     return R_GL_MinimapUpdateChunk(map, map->chunks[chunk_r * map->width + chunk_c].render_private, &model,
-        map_center, map_size);
+        (struct chunk_coord){chunk_r, chunk_c});
 }
 
 void M_FreeMinimap(struct map *map)
