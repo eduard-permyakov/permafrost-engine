@@ -95,10 +95,18 @@ class VideoSettingsWindow(pf.Window):
         ]
         self.__shadows_opt_strings = ["On", "Off"]
 
+        self.water_reflect_idx = 0
+        self.water_reflect_opts = [
+            True,
+            False
+        ]
+        self.__water_reflect_opt_strings = ["On", "Off"]
+
         self.dirty = False
 
     def update(self):
 
+        # AR 
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Aspect Ratio:", (255, 255, 255))
 
@@ -108,6 +116,7 @@ class VideoSettingsWindow(pf.Window):
         if old_ar_idx != self.ar_idx:
             pf.global_event(EVENT_AR_SETTING_CHANGED, self.ar_opts[self.ar_idx])
 
+        # Resolution 
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Resolution:", (255, 255, 255))
 
@@ -117,6 +126,7 @@ class VideoSettingsWindow(pf.Window):
         if old_res_idx != self.res_idx:
             pf.global_event(EVENT_RES_SETTING_CHANGED, self.res_opts[self.res_idx])
 
+        # Window Mode
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Window Mode:", (255, 255, 255))
 
@@ -126,6 +136,7 @@ class VideoSettingsWindow(pf.Window):
         if old_mode_idx != self.mode_idx:
             pf.global_event(EVENT_WINMODE_SETTING_CHANGED, self.mode_opts[self.mode_idx])
 
+        # Window Always On Top
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Window Always On Top (Requires Restart):", (255, 255, 255))
 
@@ -139,6 +150,7 @@ class VideoSettingsWindow(pf.Window):
         if self.win_on_top_idx != old_win_on_top_idx:
             pf.global_event(EVENT_WIN_TOP_SETTING_CHANGED, self.win_on_top_opts[self.win_on_top_idx])
 
+        # Vsync
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Vsync:", (255, 255, 255))
 
@@ -152,6 +164,7 @@ class VideoSettingsWindow(pf.Window):
         if self.vsync_idx != old_vsync_idx:
             pf.global_event(EVENT_VSYNC_SETTING_CHANGED, self.vsync_opts[self.vsync_idx])
 
+        # Shadows
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Shadows:", (255, 255, 255))
 
@@ -164,4 +177,18 @@ class VideoSettingsWindow(pf.Window):
         
         if self.shadows_idx != old_shadows_idx:
             pf.global_event(EVENT_SHADOWS_SETTING_CHANGED, self.shadows_opts[self.shadows_idx])
+
+        # Water Reflections
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Water Reflections:", (255, 255, 255))
+
+        self.layout_row_dynamic(20, 2)
+        old_water_reflect_idx = self.water_reflect_idx
+        if self.option_label(self.__water_reflect_opt_strings[0], self.water_reflect_idx == 0):
+            self.water_reflect_idx = 0
+        if self.option_label(self.__water_reflect_opt_strings[1], self.water_reflect_idx == 1):
+            self.water_reflect_idx = 1
+        
+        if self.water_reflect_idx != old_water_reflect_idx:
+            pf.global_event(EVENT_WATER_REF_SETTING_CHANGED, self.water_reflect_opts[self.water_reflect_idx])
 

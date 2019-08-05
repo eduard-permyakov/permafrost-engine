@@ -40,6 +40,7 @@
 #include "gl_assert.h"
 #include "gl_uniforms.h"
 #include "public/render.h"
+#include "../settings.h"
 #include "../camera.h"
 #include "../config.h"
 #include "../main.h"
@@ -64,6 +65,7 @@ struct render_water_ctx{
 struct water_gl_state{
     GLint    viewport[4];
     GLint    fb;
+    GLfloat  clear_clr[4];
 };
 
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0])) 
@@ -72,6 +74,7 @@ struct water_gl_state{
 #define DUDV_PATH       "assets/water_textures/dudvmap.png"
 #define NORM_PATH       "assets/water_textures/normalmap.png"
 #define WAVE_SPEED      (0.015f)
+#define SKY_CLR         ((GLfloat[4]){0.2f, 0.3f, 0.3f, 1.0f})
 
 #define REFLECT_TUNIT       GL_TEXTURE2
 #define REFRACT_TUNIT       GL_TEXTURE3
@@ -91,12 +94,14 @@ static void save_gl_state(struct water_gl_state *out)
 {
     glGetIntegerv(GL_VIEWPORT, out->viewport);
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &out->fb);
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, out->clear_clr);
 }
 
 static void restore_gl_state(const struct water_gl_state *in)
 {
     glBindFramebuffer(GL_FRAMEBUFFER, in->fb);
     glViewport(in->viewport[0], in->viewport[1], in->viewport[2], in->viewport[3]);
+    glClearColor(in->clear_clr[0], in->clear_clr[1], in->clear_clr[2], in->clear_clr[3]);
 
     /* Restore the view matrix and camera position uniforms as 
      * they have been clobbered by the reflection texture rendering */
@@ -195,15 +200,9 @@ static void render_reflection_tex(GLuint tex)
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texw);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texh);
 
-    DECL_CAMERA_STACK(cam);
-    memset(cam, 0, sizeof(cam));
-    vec3_t cam_pos = G_ActiveCamPos();
-    vec3_t cam_dir = G_ActiveCamDir();
-    cam_pos.y -= (cam_pos.y - WATER_LVL) * 2.0f;
-    cam_dir.y *= -1.0f;
-    Camera_SetPos((struct camera*)cam, cam_pos);
-    Camera_SetDir((struct camera*)cam, cam_dir);
-    Camera_TickFinishPerspective((struct camera*)cam);
+    struct sval setting;
+    ss_e status = Settings_Get("pf.video.water_reflection", &setting);
+    assert(status == SS_OKAY);
 
     /* Create framebuffer object */
     GLuint fb;
@@ -221,6 +220,26 @@ static void render_reflection_tex(GLuint tex)
     glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
+    /* Claer buffers */
+    glViewport(0, 0, texw, texh);
+    glClearColor(SKY_CLR[0], SKY_CLR[1], SKY_CLR[2], SKY_CLR[3]);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    if(!setting.as_bool) {
+        return; 
+    }
+
+    /* Flip camera over the water's surface */
+    DECL_CAMERA_STACK(cam);
+    memset(cam, 0, sizeof(cam));
+    vec3_t cam_pos = G_ActiveCamPos();
+    vec3_t cam_dir = G_ActiveCamDir();
+    cam_pos.y -= (cam_pos.y - WATER_LVL) * 2.0f;
+    cam_dir.y *= -1.0f;
+    Camera_SetPos((struct camera*)cam, cam_pos);
+    Camera_SetDir((struct camera*)cam, cam_dir);
+    Camera_TickFinishPerspective((struct camera*)cam);
+
     /* Face culling is problematic when we're looking from below - changing 
      * the winding order does not work in all cases. */
     glDisable(GL_CULL_FACE);
@@ -231,8 +250,6 @@ static void render_reflection_tex(GLuint tex)
     R_GL_SetClipPlane(plane_eq);
 
     /* Render to the texture */
-    glViewport(0, 0, texw, texh);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     G_RenderMapAndEntities();
 
     /* Clean up framebuffer */
@@ -326,6 +343,11 @@ static void setup_move_factor(GLuint shader_prog)
     glUniform1f(sampler_loc, s_ctx.move_factor);
 }
 
+static bool bool_val_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_BOOL);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -367,6 +389,19 @@ bool R_GL_WaterInit(void)
     glEnableVertexAttribArray(0);
 
     GL_ASSERT_OK();
+
+    ss_e status = Settings_Create((struct setting){
+        .name = "pf.video.water_reflection",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true 
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
     return ret;
 
 fail_normal:
