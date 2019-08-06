@@ -206,10 +206,6 @@ static void render_reflection_tex(GLuint tex)
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texw);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texh);
 
-    struct sval setting;
-    ss_e status = Settings_Get("pf.video.water_reflection", &setting);
-    assert(status == SS_OKAY);
-
     /* Create framebuffer object */
     GLuint fb;
     glGenFramebuffers(1, &fb);
@@ -231,7 +227,15 @@ static void render_reflection_tex(GLuint tex)
     glClearColor(SKY_CLR[0], SKY_CLR[1], SKY_CLR[2], SKY_CLR[3]);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    struct sval setting;
+    ss_e status = Settings_Get("pf.video.water_reflection", &setting);
+    assert(status == SS_OKAY);
+
     if(!setting.as_bool) {
+
+        glDeleteRenderbuffers(1, &depth_rb);
+        glDeleteFramebuffers(1, &fb);
+        GL_ASSERT_OK();
         return; 
     }
 
