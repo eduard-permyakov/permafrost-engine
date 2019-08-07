@@ -108,9 +108,10 @@ class TerrainTabWindow(pf.Window):
         self.label_colored_wrap("Brush Type:", (255, 255, 255))
 
         old_brush_type_idx = self.brush_type_idx
-        self.layout_row_dynamic(20, 2)
+        self.layout_row_dynamic(20, 1)
         if self.option_label("Texture", self.brush_type_idx == Brush.TEXTURE):
             self.brush_type_idx = Brush.TEXTURE
+        self.layout_row_dynamic(20, 1)
         if self.option_label("Elevation", self.brush_type_idx == Brush.ELEVATION):
             self.brush_type_idx = Brush.ELEVATION
         self.layout_row_dynamic(20, 1)
@@ -124,7 +125,7 @@ class TerrainTabWindow(pf.Window):
         if self.brush_type_idx != old_brush_type_idx:
             pf.global_event(EVENT_TERRAIN_BRUSH_TYPE_CHANGED, self.brush_type_idx)
 
-        if self.brush_type_idx == 0:
+        if self.brush_type_idx == Brush.TEXTURE:
             # Texture
             self.layout_row_dynamic(20, 1)
             self.label_colored_wrap("Texture:", (255, 255, 255))
@@ -149,24 +150,26 @@ class TerrainTabWindow(pf.Window):
 
             old_edges_type_idx = self.edges_type_idx
             self.layout_row_dynamic(20, 2)
-            if self.option_label("Hard", self.edges_type_idx == 0):
+            if self.option_label("Smooth", self.edges_type_idx == 0):
                 self.edges_type_idx = 0
-            if self.option_label("Smooth", self.edges_type_idx == 1):
+            if self.option_label("Hard", self.edges_type_idx == 1):
                 self.edges_type_idx = 1
             self.layout_row_dynamic(10, 1)
 
             if old_edges_type_idx != self.edges_type_idx:
                 pf.global_event(EVENT_TERRAIN_EDGE_TYPE_CHANGED, self.edges_type_idx)
 
-            self.layout_row_dynamic(20, 1)
-            self.label_colored_wrap("Height:", (255, 255, 255))
+            if self.brush_type_idx == Brush.ELEVATION:            
 
-            self.layout_row_static(25, UI_LEFT_PANE_WIDTH - 30, 1)
-            old_height_idx = self.selected_height_idx
-            self.selected_height_idx = self.combo_box([str(h) for h in self.heights], self.selected_height_idx, 25, (UI_LEFT_PANE_WIDTH - 30, 200))
-            if old_height_idx != self.selected_height_idx:
-                pf.global_event(EVENT_HEIGHT_SELECTION_CHANGED, self.heights[self.selected_height_idx])
-            self.layout_row_dynamic(10, 1)
+                self.layout_row_dynamic(20, 1)
+                self.label_colored_wrap("Height:", (255, 255, 255))
+
+                self.layout_row_static(25, UI_LEFT_PANE_WIDTH - 30, 1)
+                old_height_idx = self.selected_height_idx
+                self.selected_height_idx = self.combo_box([str(h) for h in self.heights], self.selected_height_idx, 25, (UI_LEFT_PANE_WIDTH - 30, 200))
+                if old_height_idx != self.selected_height_idx:
+                    pf.global_event(EVENT_HEIGHT_SELECTION_CHANGED, self.heights[self.selected_height_idx])
+                self.layout_row_dynamic(10, 1)
 
             self.layout_row_dynamic(20, 1)
             self.label_colored_wrap("Side Texture:", (255, 255, 255))

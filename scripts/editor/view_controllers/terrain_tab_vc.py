@@ -88,7 +88,7 @@ class TerrainTabVC(vc.ViewController):
                     elif self.view.brush_type_idx == Brush.DEEP_WAT:
                         globals.active_map.update_tile(tile_coords, DEEP_WAT_ELEV, pf.TILETYPE_FLAT, side_mat, 0, bm, self.view.blend_normals)
 
-        if ((self.view.brush_type_idx == Brush.ELEVATION and self.view.edges_type_idx == 1) \
+        if ((self.view.brush_type_idx == Brush.ELEVATION and self.view.edges_type_idx == 0) \
         or  (self.view.brush_type_idx in [Brush.SHALLOW_WAT, Brush.DEEP_WAT])):
             self.__paint_smooth_border(self.view.brush_size_idx + 1, 'down')
             self.__paint_smooth_border(self.view.brush_size_idx + 1, 'up')
