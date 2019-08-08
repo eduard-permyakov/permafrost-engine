@@ -102,5 +102,6 @@
 #define GL_U_REFRACT_DEPTH  "refraction_depth"
 #define GL_U_CAM_NEAR       "cam_near"
 #define GL_U_CAM_FAR        "cam_far"
+#define GL_U_WATER_TILING   "water_tiling"
 
 #endif

@@ -318,6 +318,16 @@ static void setup_cam_uniforms(GLuint shader_prog)
     glUniform1f(sampler_loc, CONFIG_DRAWDIST);
 }
 
+static void setup_tiling_uniforms(GLuint shader_prog, const struct map *map)
+{
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+    vec2_t val = (vec2_t){ res.chunk_w * 1.5f, res.chunk_h * 1.5f };
+
+    GLuint sampler_loc = glGetUniformLocation(shader_prog, GL_U_WATER_TILING);
+    glUniform2fv(sampler_loc, 1, val.raw);
+}
+
 static void setup_model_mat(GLuint shader_prog, const struct map *map)
 {
     vec3_t pos = M_GetCenterPos(map);
@@ -477,6 +487,7 @@ void R_GL_DrawWater(const struct map *map)
     setup_texture_uniforms(shader_prog, refract_tex, refract_depth, reflect_tex);
     setup_model_mat(shader_prog, map);
     setup_move_factor(shader_prog);
+    setup_tiling_uniforms(shader_prog, map);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
