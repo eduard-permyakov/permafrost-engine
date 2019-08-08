@@ -25,6 +25,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * Directional light shadow mapping
 * RTS camera, FPS camera
 * Rendering of tile-based world parsed from ASCII file
+* Water rendering (including reflection, refraction, soft edge effects)
 * Export/Import of game entites to/from ASCII files
 * Engine internals exposed to Python 2.7 for scripting
 * Event system
@@ -32,7 +33,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * Efficient raycasting
 * Map/Scene editor
 * Pause/Resume system
-* Fast rendering of huge maps (map size only limited by memory)
+* Fast rendering of huge maps
 * Map navigation graph/grid generation
 * Implementation of 'boids' steering/flocking behaviours
 * Hierarchial flow field pathfinding
@@ -41,6 +42,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * RTS-style unit selection
 * RTS unit combat system
 * Support for different resolutions and aspect ratios
+* Configurable graphics settings
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
