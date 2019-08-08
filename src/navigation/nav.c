@@ -381,7 +381,7 @@ static void n_create_portals(struct nav_private *priv)
         }
     }
 
-    assert(n_links == (priv->width)*(priv->width-1) + (priv->height)*(priv->height-1));
+    assert(n_links == (priv->height)*(priv->width-1) + (priv->width)*(priv->height-1));
 }
 
 static void n_link_chunk_portals(struct nav_chunk *chunk, struct coord chunk_coord)

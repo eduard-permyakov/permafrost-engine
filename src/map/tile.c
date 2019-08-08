@@ -46,6 +46,10 @@
 #define CHUNK_HEIGHT (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE)
 #define EPSILON      (1.0f / 1024.0)
 
+#define MIN(a, b)          ((a) < (b) ? (a) : (b))
+#define MAX(a, b)          ((a) > (b) ? (a) : (b))
+#define CLAMP(a, min, max) ((a), MIN(MAX((a), (min)), (max)))
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -381,11 +385,11 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
                < line_len(intersect_xz[1].raw[0], intersect_xz[1].raw[1], line.ax, line.az) ) {
          
             start_x = intersect_xz[0].raw[0] + EPSILON * line_dir.raw[0];
-            start_z = intersect_xz[0].raw[0] + EPSILON * line_dir.raw[1];
+            start_z = intersect_xz[0].raw[1] + EPSILON * line_dir.raw[1];
 
          }else{
          
-            start_x = intersect_xz[1].raw[1] + EPSILON * line_dir.raw[0];
+            start_x = intersect_xz[1].raw[0] + EPSILON * line_dir.raw[0];
             start_z = intersect_xz[1].raw[1] + EPSILON * line_dir.raw[1];
          }
 
@@ -463,15 +467,17 @@ bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos,
     if(point.raw[0] > map_box.x || point.raw[0] < map_box.x - map_box.width)
         return false;
 
-    if(point.raw[1] < map_box.z || point.raw[0] > map_box.z + map_box.height)
+    if(point.raw[1] < map_box.z || point.raw[1] > map_box.z + map_box.height)
         return false;
 
     int chunk_r, chunk_c;
     chunk_r = fabs(map_box.z - point.raw[1]) / CHUNK_WIDTH;
     chunk_c = fabs(map_box.x - point.raw[0]) / CHUNK_HEIGHT;
 
-    assert(chunk_r >= 0 && chunk_r < res.chunk_h);
-    assert(chunk_c >= 0 && chunk_r < res.chunk_w);
+    /* Need to account for rounding imprecision when we're at the
+     * razor's edge of the map. */
+    chunk_r = CLAMP(chunk_r, 0, res.chunk_h-1);  
+    chunk_c = CLAMP(chunk_c, 0, res.chunk_w-1);
 
     float chunk_base_x, chunk_base_z;
     chunk_base_x = map_box.x - (chunk_c * CHUNK_WIDTH);

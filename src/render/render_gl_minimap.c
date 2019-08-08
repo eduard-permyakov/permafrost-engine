@@ -57,6 +57,7 @@
 #include <assert.h>
 
 #define MAX(a, b)            ((a) > (b) ? (a) : (b))
+#define MIN(a, b)            ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)          (sizeof(a)/sizeof(a[0])) 
 #define MINIMAP_RES          (1024)
 #define MINIMAP_BORDER_CLR   ((vec4_t){65.0f/255.0f, 65.0f/255.0f, 65.0f/255.0f, 1.0f})
@@ -218,9 +219,13 @@ static void draw_minimap_water(const struct map *map, struct chunk_coord cc)
     struct map_resolution res;
     M_GetResolution(map, &res);
 
-    float chunk_width_px = (float)MINIMAP_RES / res.chunk_w;
-    float chunk_height_px = (float)MINIMAP_RES / res.chunk_h;
-    glScissor(cc.c * chunk_width_px, cc.r * chunk_height_px, chunk_width_px, chunk_height_px);
+    float chunk_width_px = MIN((float)MINIMAP_RES / res.chunk_w, (float)MINIMAP_RES / res.chunk_h);
+    vec2_t center = (vec2_t){MINIMAP_RES/2.0f, MINIMAP_RES/2.0f}; 
+    float center_rel_r = cc.r - res.chunk_h / 2.0f;
+    float center_rel_c = cc.c - res.chunk_w / 2.0f;
+    glScissor(center.x + center_rel_c * chunk_width_px, 
+              center.y + center_rel_r * chunk_width_px, 
+              chunk_width_px, chunk_width_px);
 
     int viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
