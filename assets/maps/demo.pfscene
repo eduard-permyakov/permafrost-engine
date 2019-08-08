@@ -7,7 +7,7 @@ faction "Goblin Confederacy"
     color vec3 42.000000 94.000000 17.000000
 faction "Wild Barbarians"
     color vec3 220.000000 27.000000 27.000000
-num_entities 344
+num_entities 388
 entity rock_1 assets/models/varied_rocks/rock_1.pfobj 9
    position vec3 52.475933 28.000000 -8.552010
    scale vec3 4.000000 4.000000 4.000000
@@ -2469,7 +2469,7 @@ entity cart assets/models/cart/cart.pfobj 9
    faction_id int 0
    selection_radius float 3.75
 entity crate_2 assets/models/crate/crate_2.pfobj 9
-   position vec3 -12.039577 16.000015 -253.539062
+   position vec3 -12.039577 16.000000 -253.539062
    scale vec3 4.000000 4.000000 4.000000
    rotation quat 0.000000 -0.382684 0.000000 0.923880
    animated bool 0
@@ -2479,7 +2479,7 @@ entity crate_2 assets/models/crate/crate_2.pfobj 9
    faction_id int 0
    selection_radius float 3.25
 entity crate_2 assets/models/crate/crate_2.pfobj 9
-   position vec3 -9.235126 16.000015 -247.311829
+   position vec3 -9.235126 16.000000 -247.311829
    scale vec3 4.000000 4.000000 4.000000
    rotation quat 0.000000 0.173648 0.000000 0.984808
    animated bool 0
@@ -3615,7 +3615,7 @@ entity rock assets/models/rock/rock.pfobj 9
    faction_id int 0
    selection_radius float 3.25
 entity rock_4 assets/models/varied_rocks/rock_4.pfobj 9
-   position vec3 397.138947 1.430511 49.352158
+   position vec3 397.138947 1.430527 49.352158
    scale vec3 4.000000 4.000000 4.000000
    rotation quat 0.000000 -0.573577 0.000000 0.819152
    animated bool 0
@@ -3635,7 +3635,7 @@ entity rock_2 assets/models/varied_rocks/rock_2.pfobj 9
    faction_id int 0
    selection_radius float 3.0
 entity rock_2 assets/models/varied_rocks/rock_2.pfobj 9
-   position vec3 414.501068 0.921631 16.885555
+   position vec3 414.501068 0.920059 16.885555
    scale vec3 4.000000 4.000000 4.000000
    rotation quat 0.000000 -0.461749 0.000000 0.887011
    animated bool 0
@@ -3767,7 +3767,7 @@ entity berzerker assets/models/berzerker/berzerker.pfobj 12
        string berzerker.pfobj
        string Berzerker
 entity berzerker assets/models/berzerker/berzerker.pfobj 12
-   position vec3 184.136429 0.000015 -471.900879
+   position vec3 184.136429 0.000000 -471.900879
    scale vec3 0.700000 0.700000 0.700000
    rotation quat 0.000000 -0.043619 0.000000 0.999048
    animated bool 1
@@ -3782,3 +3782,443 @@ entity berzerker assets/models/berzerker/berzerker.pfobj 12
        string assets/models/berzerker
        string berzerker.pfobj
        string Berzerker
+entity oak_tree assets/models/oak_tree/oak_tree.pfobj 9
+   position vec3 297.530670 0.000000 -284.972656
+   scale vec3 1.600000 1.600000 1.600000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 5.25
+entity oak_tree assets/models/oak_tree/oak_tree.pfobj 9
+   position vec3 291.857788 0.000000 -144.662186
+   scale vec3 1.600000 1.600000 1.600000
+   rotation quat 0.000000 0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 5.25
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 225.217392 0.000000 -274.599976
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 181.605392 0.000000 -235.372543
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 197.626572 0.000000 -248.853241
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 256.787201 0.000000 -302.449890
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 248.583588 0.000000 -288.655029
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.087156 0.000000 0.996195
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 205.105789 0.000000 -153.269806
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 231.815033 0.000000 -134.248779
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 204.832535 0.000000 -140.680481
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 284.458649 0.702793 -218.135773
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 285.970490 0.000000 -201.240570
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 260.170624 4.000000 -239.979248
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 248.744247 4.000000 -212.618240
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 -0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
+   position vec3 261.748657 0.000000 -194.266602
+   scale vec3 15.000000 15.000000 15.000000
+   rotation quat 0.000000 0.382684 0.000000 0.923880
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 2.5
+entity obelisk_3 assets/models/props/obelisk_3.pfobj 9
+   position vec3 256.830505 8.000000 -218.352631
+   scale vec3 3.000000 3.000000 3.000000
+   rotation quat 0.000000 -0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 4.0
+entity grass_3 assets/models/grass/grass_3.pfobj 9
+   position vec3 285.959076 0.266525 -217.507889
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 9
+   position vec3 260.857452 7.527130 -215.054260
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 9
+   position vec3 261.450714 8.000000 -220.418762
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 9
+   position vec3 262.589905 4.000000 -237.360718
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 9
+   position vec3 303.811798 0.000000 -280.562195
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 9
+   position vec3 208.079987 -0.119980 -153.096786
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.300706 0.000000 0.953717
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 9
+   position vec3 209.342255 0.000000 -142.691208
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.608762 0.000000 0.793353
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_3 assets/models/grass/grass_3.pfobj 9
+   position vec3 200.146790 -0.220184 -255.277069
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.422618 0.000000 0.906308
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity fern assets/models/fern/fern.pfobj 9
+   position vec3 238.882751 -0.817562 -286.337708
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.5
+entity fern assets/models/fern/fern.pfobj 9
+   position vec3 268.553192 0.048172 -243.350464
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.5
+entity fern assets/models/fern/fern.pfobj 9
+   position vec3 302.326721 0.000000 -148.687866
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.5
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 9
+   position vec3 295.104065 -12.000000 -256.765869
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 3.0
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 9
+   position vec3 240.352783 -12.000000 -173.163544
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.422618 0.000000 0.906308
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 3.0
+entity rock_2 assets/models/varied_rocks/rock_2.pfobj 9
+   position vec3 197.077179 -12.000000 -219.864685
+   scale vec3 4.000000 4.000000 4.000000
+   rotation quat 0.000000 -0.258819 0.000000 0.965926
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 3.0
+entity rock assets/models/rock/rock.pfobj 9
+   position vec3 280.849335 0.000000 -197.697586
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 -0.766045 0.000000 0.642787
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 3.25
+entity oak_leafless assets/models/oak_tree/oak_leafless.pfobj 9
+   position vec3 119.536263 -4.000000 -387.800995
+   scale vec3 1.600000 1.600000 1.600000
+   rotation quat 0.000000 0.130526 0.000000 0.991445
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 1
+   faction_id int 0
+   selection_radius float 5.25
+entity fern assets/models/fern/fern.pfobj 9
+   position vec3 200.721130 -2.411453 -395.897339
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.5
+entity fern assets/models/fern/fern.pfobj 9
+   position vec3 293.881683 -1.059174 -478.245972
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.5
+entity fern assets/models/fern/fern.pfobj 9
+   position vec3 295.230072 -0.384476 -473.108521
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.5
+entity grass_2 assets/models/grass/grass_2.pfobj 9
+   position vec3 265.615082 -2.034790 -469.543518
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.300706 0.000000 0.953717
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_2 assets/models/grass/grass_2.pfobj 9
+   position vec3 261.605469 -2.287079 -465.032593
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.500000 0.000000 0.866025
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_2 assets/models/grass/grass_2.pfobj 9
+   position vec3 105.034943 -1.846436 -413.340729
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.300706 0.000000 0.953717
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_2 assets/models/grass/grass_2.pfobj 9
+   position vec3 103.818787 -3.339371 -409.321259
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.382684 0.000000 0.923880
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_2 assets/models/grass/grass_2.pfobj 9
+   position vec3 56.530151 -1.044342 -401.559204
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.300706 0.000000 0.953717
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_2 assets/models/grass/grass_2.pfobj 9
+   position vec3 54.226486 0.000000 -397.779358
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.173648 0.000000 0.984808
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_2 assets/models/grass/grass_2.pfobj 9
+   position vec3 130.158508 -4.000000 -390.843872
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.500000 0.000000 0.866025
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_2 assets/models/grass/grass_2.pfobj 9
+   position vec3 122.059685 -4.000015 -379.008514
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.216440 0.000000 0.976296
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
+entity grass_2 assets/models/grass/grass_2.pfobj 9
+   position vec3 -50.335052 -2.833923 -410.672089
+   scale vec3 1.500000 1.500000 1.500000
+   rotation quat 0.000000 -0.461749 0.000000 0.887011
+   animated bool 0
+   selectable bool 0
+   static bool 1
+   collision bool 0
+   faction_id int 0
+   selection_radius float 2.0
