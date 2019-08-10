@@ -337,6 +337,16 @@ bool M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos)
 
 bool M_NavPositionPathable(const struct map *map, vec2_t xz_pos)
 {
+    struct box map_box = (struct  box){
+        map->pos.x,
+        map->pos.z,
+        map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE,
+        map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE,
+    };
+
+    if(!C_BoxPointIntersection(xz_pos.raw[0], xz_pos.raw[1], map_box))
+        return false; 
+
     return N_PositionPathable(xz_pos, map->nav_private, map->pos);
 }
 
