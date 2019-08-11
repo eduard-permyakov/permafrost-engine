@@ -61,7 +61,7 @@
  * meaning they are accelerate the same amount when applied equal forces. */
 #define ENTITY_MASS  (1.0f)
 #define EPSILON      (1.0f/1024)
-#define MAX_FORCE    (0.2f)
+#define MAX_FORCE    (0.5f)
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MIN(a, b)    ((a) < (b) ? (a) : (b))
@@ -91,13 +91,13 @@ struct flock{
 };
 
 /* Parameters controlling steering/flocking behaviours */
-#define MOVE_SEPARATION_FORCE_SCALE     (2.0f)
+#define MOVE_SEPARATION_FORCE_SCALE     (2.5f)
 #define MOVE_ARRIVE_FORCE_SCALE         (0.7f)
-#define MOVE_COHESION_FORCE_SCALE       (0.4f)
-#define SETTLE_SEPARATION_FORCE_SCALE   (1.6f)
+#define MOVE_COHESION_FORCE_SCALE       (0.1f)
+#define SETTLE_SEPARATION_FORCE_SCALE   (2.5f)
 
 #define ARRIVE_THRESHOLD_DIST           (5.0f)
-#define MOVE_SEPARATION_BUFFER_DIST     (0.7f)
+#define MOVE_SEPARATION_BUFFER_DIST     (2.5f)
 #define SETTLE_SEPARATION_BUFFER_DIST   (4.0f)
 #define COHESION_NEIGHBOUR_RADIUS       (50.0f)
 #define ARRIVE_SLOWING_RADIUS           (10.0f)
@@ -106,7 +106,7 @@ struct flock{
 
 #define SETTLE_STOP_TOLERANCE           (0.1f)
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
-#define MAX_CLEARPATH_ACCEL             (0.1f)
+#define MAX_CLEARPATH_ACCEL             (250.0f)
 #define THREAT_RADIUS                   (3.0f)
 
 /*****************************************************************************/
@@ -617,12 +617,15 @@ static vec2_t cohesion_force(const struct entity *ent, const struct flock *flock
         vec2_t curr_xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
 
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
-        if(PFM_Vec2_Len(&diff) < COHESION_NEIGHBOUR_RADIUS) {
 
-            vec2_t xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
-            PFM_Vec2_Add(&COM, &xz_pos, &COM);
-            neighbour_count++;
-        }
+        float t = (PFM_Vec2_Len(&diff) - COHESION_NEIGHBOUR_RADIUS*0.75) / COHESION_NEIGHBOUR_RADIUS;
+        float scale = exp(-6.0f * t);
+
+        vec2_t xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
+        PFM_Vec2_Scale(&xz_pos, scale, &xz_pos);
+
+        PFM_Vec2_Add(&COM, &xz_pos, &COM);
+        neighbour_count++;
     });
 
     if(0 == neighbour_count)
@@ -658,16 +661,14 @@ static vec2_t separation_force(const struct entity *ent, const struct flock *flo
 
         float radius = ent->selection_radius + curr->selection_radius + buffer_dist;
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
-        if(PFM_Vec2_Len(&diff) < radius * 2.5f) {
 
-            /* Exponential decay with y=1 when diff = radius*0.75 */
-            float t = (PFM_Vec2_Len(&diff) - radius*0.75) / radius;
-            float scale = exp(-6.0f * t);
-            PFM_Vec2_Scale(&diff, scale, &diff);
+        /* Exponential decay with y=1 when diff = radius*0.75 */
+        float t = (PFM_Vec2_Len(&diff) - radius*0.75) / radius;
+        float scale = exp(-5.0f * t);
+        PFM_Vec2_Scale(&diff, scale, &diff);
 
-            PFM_Vec2_Add(&ret, &diff, &ret);
-            neighbour_count++;
-        }
+        PFM_Vec2_Add(&ret, &diff, &ret);
+        neighbour_count++;
     });
 
     if(0 == neighbour_count)
@@ -766,11 +767,11 @@ static vec2_t total_steering_force(const struct entity *ent, const struct flock 
 
         PFM_Vec2_Add(&ret, &arrive, &ret);
 
-        if(!threat_exists(ent, flock)) {
+        //if(!threat_exists(ent, flock)) {
         
             PFM_Vec2_Add(&ret, &separation, &ret);
             PFM_Vec2_Add(&ret, &cohesion, &ret);
-        }
+        //}
 
         break;
     }
