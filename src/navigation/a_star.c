@@ -153,6 +153,19 @@ static float heuristic(struct coord a, struct coord b)
     return D * (dx + dy) + (D2 - 2 * D) * MIN(dx, dy);
 }
 
+/* Add a constant pentalty to every portal node on top of the existing 
+ * cost of the edge between two portals. This will prioritize paths
+ * with the fewest number of hops over paths with the shortest distance,
+ * unless the pentalty for doing this is significant. If this is increased 
+ * such that the edge cost is insignificant in comparison, the pathfinding 
+ * will essentially find the path with the fewest number of hops.
+ * Since our costs are distances are between portal centers and thus not 
+ * precise, this typically gives better behaviour overall.  */
+static float portal_node_penalty(void)
+{
+    return sqrt(pow(FIELD_RES_R, 2.0f) + pow(FIELD_RES_C, 2.0f));
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -326,7 +339,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
             const struct portal *next = neighbours[i];
             khiter_t k = kh_get(key_float, running_cost, portal_to_key(curr));
             assert(k != kh_end(running_cost));
-            float new_cost = kh_value(running_cost, k) + neighbour_costs[i];
+            float new_cost = kh_value(running_cost, k) + neighbour_costs[i] + portal_node_penalty();
 
             if((k = kh_get(key_float, running_cost, portal_to_key(next))) == kh_end(running_cost)
             || new_cost < kh_value(running_cost, k)) {
