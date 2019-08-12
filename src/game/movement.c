@@ -66,6 +66,8 @@
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MIN(a, b)    ((a) < (b) ? (a) : (b))
 
+#define VEL_HIST_LEN (16)
+
 enum arrival_state{
     /* Entity is moving towards the flock's destination point */
     STATE_MOVING,
@@ -80,6 +82,8 @@ struct movestate{
     vec2_t             vnew;
     vec2_t             velocity;
     enum arrival_state state;
+    vec2_t             vel_hist[VEL_HIST_LEN];
+    int                vel_hist_idx;
 };
 
 KHASH_MAP_INIT_INT(state, struct movestate)
@@ -91,14 +95,12 @@ struct flock{
 };
 
 /* Parameters controlling steering/flocking behaviours */
-#define MOVE_SEPARATION_FORCE_SCALE     (2.5f)
+#define SEPARATION_FORCE_SCALE          (2.5f)
 #define MOVE_ARRIVE_FORCE_SCALE         (0.7f)
 #define MOVE_COHESION_FORCE_SCALE       (0.1f)
-#define SETTLE_SEPARATION_FORCE_SCALE   (2.5f)
 
 #define ARRIVE_THRESHOLD_DIST           (5.0f)
-#define MOVE_SEPARATION_BUFFER_DIST     (2.5f)
-#define SETTLE_SEPARATION_BUFFER_DIST   (4.0f)
+#define SEPARATION_BUFFER_DIST          (2.5f)
 #define COHESION_NEIGHBOUR_RADIUS       (50.0f)
 #define ARRIVE_SLOWING_RADIUS           (10.0f)
 #define ADJACENCY_SEP_DIST              (5.0f)
@@ -106,8 +108,6 @@ struct flock{
 
 #define SETTLE_STOP_TOLERANCE           (0.1f)
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
-#define MAX_CLEARPATH_ACCEL             (250.0f)
-#define THREAT_RADIUS                   (3.0f)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -316,7 +316,9 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
                 struct movestate new_ms = (struct movestate) {
                     .velocity = {0.0f}, 
                     .state = STATE_MOVING,
+                    .vel_hist_idx = 0,
                 };
+                memset(new_ms.vel_hist, 0, sizeof(new_ms.vel_hist));
                 movestate_set(curr_ent, &new_ms);
                 E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
 
@@ -662,7 +664,10 @@ static vec2_t separation_force(const struct entity *ent, const struct flock *flo
         float radius = ent->selection_radius + curr->selection_radius + buffer_dist;
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
-        /* Exponential decay with y=1 when diff = radius*0.75 */
+        /* Exponential decay with y=1 when diff = radius*0.75 
+         * Use smooth decay curves in order to curb the 'toggling' or oscillating 
+         * behaviour that may arise when there are discontinuities in the forces. 
+         */
         float t = (PFM_Vec2_Len(&diff) - radius*0.75) / radius;
         float scale = exp(-5.0f * t);
         PFM_Vec2_Scale(&diff, scale, &diff);
@@ -679,75 +684,6 @@ static vec2_t separation_force(const struct entity *ent, const struct flock *flo
     return ret;
 }
 
-static const struct entity *most_threatening_obstacle(const struct entity *ent, struct line_seg_2d ahead,
-                                                      const struct flock *flock)
-{
-    const khash_t(entity) *dynamic = G_GetDynamicEntsSet();
-    float min_t = INFINITY;
-    const struct entity *ret = NULL;
-
-    uint32_t key;
-    struct entity *curr;
-    kh_foreach(dynamic, key, curr, {
-
-        if(flock_contains(flock, curr))
-            continue;
-
-        float t;
-        vec2_t xz_center = (vec2_t){curr->pos.x, curr->pos.z};
-        if(C_LineCircleIntersection(ahead, xz_center, curr->selection_radius + ent->selection_radius, &t)){
-
-            if(t < min_t) {
-                min_t = t;
-                ret = curr;
-            }
-        }
-    });
-
-    assert(min_t < INFINITY ? (NULL != ret) : (NULL == ret));
-    return ret;
-}
-
-static bool threat_exists(const struct entity *ent, const struct flock *flock)
-{
-    const khash_t(entity) *dynamic = G_GetDynamicEntsSet();
-    struct movestate *ms = movestate_get(ent);
-    assert(ms);
-
-    if(PFM_Vec2_Len(&ms->velocity) < EPSILON)
-        return false;
-
-    uint32_t key;
-    struct entity *curr;
-    kh_foreach(dynamic, key, curr, {
-
-        if(flock_contains(flock, curr))
-            continue;
-    
-        vec2_t diff;
-        vec2_t ent_xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
-        vec2_t curr_xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
-
-        PFM_Vec2_Sub(&ent_xz_pos, &curr_xz_pos, &diff);
-        if(PFM_Vec2_Len(&diff) < ent->selection_radius + THREAT_RADIUS)
-            return true;
-    });
-
-    vec2_t line;
-    PFM_Vec2_Normal(&ms->velocity, &line);
-    PFM_Vec2_Scale(&line, ent->selection_radius + COLLISION_MAX_SEE_AHEAD, &line);
-
-    struct line_seg_2d ahead = {
-        .ax = ent->pos.x,
-        .az = ent->pos.z,
-        .bx = ent->pos.x + line.raw[0],
-        .bz = ent->pos.z + line.raw[1]
-    };
-
-    const struct entity *threat = most_threatening_obstacle(ent, ahead, flock);
-    return (threat != NULL);
-}
-
 static vec2_t total_steering_force(const struct entity *ent, const struct flock *flock)
 {
     struct movestate *ms = movestate_get(ent);
@@ -755,30 +691,25 @@ static vec2_t total_steering_force(const struct entity *ent, const struct flock 
 
     vec2_t arrive = arrive_force(ent, flock);
     vec2_t cohesion = cohesion_force(ent, flock);
+    vec2_t separation = separation_force(ent, flock, SEPARATION_BUFFER_DIST);
+
+    PFM_Vec2_Scale(&arrive,     MOVE_ARRIVE_FORCE_SCALE,   &arrive);
+    PFM_Vec2_Scale(&cohesion,   MOVE_COHESION_FORCE_SCALE, &cohesion);
+    PFM_Vec2_Scale(&separation, SEPARATION_FORCE_SCALE,    &separation);
 
     vec2_t ret = (vec2_t){0.0f};
     switch(ms->state) {
     case STATE_MOVING: {
-        vec2_t separation = separation_force(ent, flock, MOVE_SEPARATION_BUFFER_DIST);
 
-        PFM_Vec2_Scale(&separation,      MOVE_SEPARATION_FORCE_SCALE, &separation);
-        PFM_Vec2_Scale(&arrive,          MOVE_ARRIVE_FORCE_SCALE,     &arrive);
-        PFM_Vec2_Scale(&cohesion,        MOVE_COHESION_FORCE_SCALE,   &cohesion);
 
         PFM_Vec2_Add(&ret, &arrive, &ret);
-
-        //if(!threat_exists(ent, flock)) {
-        
-            PFM_Vec2_Add(&ret, &separation, &ret);
-            PFM_Vec2_Add(&ret, &cohesion, &ret);
-        //}
+        PFM_Vec2_Add(&ret, &separation, &ret);
+        PFM_Vec2_Add(&ret, &cohesion, &ret);
 
         break;
     }
     case STATE_SETTLING: {
-        vec2_t separation = separation_force(ent, flock, SETTLE_SEPARATION_BUFFER_DIST);
 
-        PFM_Vec2_Scale(&separation, SETTLE_SEPARATION_FORCE_SCALE, &separation);
         PFM_Vec2_Add(&ret, &separation, &ret);
 
         break;
@@ -845,6 +776,41 @@ static vec2_t calculate_vpref(const struct entity *ent, const struct flock *floc
     return new_vel;
 }
 
+static void update_vel_hist(struct movestate *ms, vec2_t vnew)
+{
+    assert(ms->vel_hist >= 0 && ms->vel_hist_idx < VEL_HIST_LEN);
+    ms->vel_hist[ms->vel_hist_idx] = vnew;
+    ms->vel_hist_idx = (++ms->vel_hist_idx % VEL_HIST_LEN);
+}
+
+/* Simple Moving Average */
+static vec2_t vel_sma(const struct movestate *ms)
+{
+    vec2_t ret = {0};
+    for(int i = 0; i < VEL_HIST_LEN; i++)
+        PFM_Vec2_Add(&ret, (vec2_t*)&ms->vel_hist[i], &ret); 
+    PFM_Vec2_Scale(&ret, 1.0f/VEL_HIST_LEN, &ret);
+    return ret;
+}
+
+/* Weighted Moving Average */
+static vec2_t vel_wma(const struct movestate *ms)
+{
+    vec2_t ret = {0};
+    float denom = 0.0f;
+
+    for(int i = 0; i < VEL_HIST_LEN; i++) {
+
+        vec2_t term = ms->vel_hist[i];
+        PFM_Vec2_Scale(&term, VEL_HIST_LEN-i, &term);
+        PFM_Vec2_Add(&ret, &term, &ret);
+        denom += (VEL_HIST_LEN-i);
+    }
+
+    PFM_Vec2_Scale(&ret, 1.0f/denom, &ret);
+    return ret;
+}
+
 static void entity_update(struct entity *ent, const struct flock *flock, vec2_t new_vel)
 {
     struct movestate *ms = movestate_get(ent);
@@ -859,8 +825,13 @@ static void entity_update(struct entity *ent, const struct flock *flock, vec2_t 
         ent->pos = (vec3_t){new_pos.raw[0], M_HeightAtPoint(s_map, new_pos), new_pos.raw[1]};
         ms->velocity = new_vel;
 
-        if(PFM_Vec2_Len(&new_vel) > EPSILON) {
-            ent->rotation = dir_quat_from_velocity(new_vel);
+        /* Use a weighted average of past velocities ot set the entity's orientation. This means that 
+         * the entity's visible orientation lags behind its' true orientation slightly. However, this 
+         * greatly smooths the turning of the entity, giving a more natural look to the movemment. 
+         */
+        vec2_t sma = vel_wma(ms);
+        if(PFM_Vec2_Len(&sma) > EPSILON) {
+            ent->rotation = dir_quat_from_velocity(sma);
         }
     }else{
         ms->velocity = (vec2_t){0.0f, 0.0f}; 
@@ -1012,10 +983,10 @@ static void on_30hz_tick(void *user, void *event)
             find_neighbours(curr, &dyn, &stat);
 
             ms->vnew = G_ClearPath_NewVelocity(curr_cp, key, vpref, dyn, stat);
+            update_vel_hist(ms, ms->vnew);
 
             vec2_t vel_diff;
             PFM_Vec2_Sub(&ms->vnew, &ms->velocity, &vel_diff);
-            vec2_truncate(&vel_diff, MAX_CLEARPATH_ACCEL);
 
             PFM_Vec2_Add(&ms->velocity, &vel_diff, &ms->vnew);
             vec2_truncate(&ms->vnew, curr->max_speed / MOVE_TICK_RES);
