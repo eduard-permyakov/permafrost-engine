@@ -600,6 +600,8 @@ bool G_AddEntity(struct entity *ent)
     k = kh_put(entity, s_gs.dynamic, ent->uid, &ret);
     assert(ret != -1 && ret != 0);
     kh_value(s_gs.dynamic, k) = ent;
+
+    G_Move_AddEntity(ent);
     return true;
 }
 
@@ -628,7 +630,7 @@ void G_StopEntity(const struct entity *ent)
 {
     G_Combat_StopAttack(ent);
     G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
-    G_Move_RemoveEntity(ent);
+    G_Move_Stop(ent);
 }
 
 bool G_AddFaction(const char *name, vec3_t color)

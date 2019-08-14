@@ -140,21 +140,6 @@ static struct movestate *movestate_get(const struct entity *ent)
     return &kh_value(s_entity_state_table, k);
 }
 
-static void movestate_set(const struct entity *ent, const struct movestate *ms)
-{
-    int ret;
-    khiter_t k = kh_put(state, s_entity_state_table, ent->uid, &ret);
-    assert(ret != -1 && ret != 0);
-    kh_value(s_entity_state_table, k) = *ms;
-}
-
-static void movestate_remove(const struct entity *ent)
-{
-    khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
-    if(k != kh_end(s_entity_state_table))
-        kh_del(state, s_entity_state_table, k);
-}
-
 static void flock_try_remove(struct flock *flock, const struct entity *ent)
 {
     khiter_t k;
@@ -295,7 +280,8 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
     for(int i = 0; i < kv_size(*sel); i++) {
 
         const struct entity *curr_ent = kv_A(*sel, i);
-        struct movestate *ms;
+        struct movestate *ms = movestate_get(curr_ent);
+        assert(ms);
 
         if(stationary(curr_ent))
             continue;
@@ -309,28 +295,13 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
             pathed_ents_descs[num_pathed_ents++] = curr_desc;
             flock_add(&new_flock, curr_ent);
 
-            /* When entities are moved from one flock to another, they keep their existing velocity. 
-             * Otherwise, entities start out with a velocity of 0. */
-            if((ms = movestate_get(curr_ent)) == NULL) {
-
-                struct movestate new_ms = (struct movestate) {
-                    .velocity = {0.0f}, 
-                    .state = STATE_MOVING,
-                    .vel_hist_idx = 0,
-                };
-                memset(new_ms.vel_hist, 0, sizeof(new_ms.vel_hist));
-                movestate_set(curr_ent, &new_ms);
+            /* When entities are moved from one flock to another, they keep their existing velocity.*/
+            if(ms->state == STATE_ARRIVED) {
                 E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
-
-            }else{
-
-                if(ms->state == STATE_ARRIVED) {
-                    E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
-                }
-                ms->state = STATE_MOVING;
             }
+            ms->state = STATE_MOVING;
 
-        }else if((ms = movestate_get(curr_ent)) != NULL){
+        }else {
 
             if(ms->state != STATE_ARRIVED) {
                 entity_finish_moving(curr_ent);
@@ -644,7 +615,7 @@ static vec2_t cohesion_force(const struct entity *ent, const struct flock *flock
 
 /* Separation is a behaviour that causes agents to steer away from nearby agents.
  */
-static vec2_t separation_force(const struct entity *ent, const struct flock *flock, float buffer_dist)
+static vec2_t separation_force(const struct entity *ent, float buffer_dist)
 {
     vec2_t ret = (vec2_t){0.0f};
     size_t neighbour_count = 0;
@@ -691,7 +662,7 @@ static vec2_t total_steering_force(const struct entity *ent, const struct flock 
 
     vec2_t arrive = arrive_force(ent, flock);
     vec2_t cohesion = cohesion_force(ent, flock);
-    vec2_t separation = separation_force(ent, flock, SEPARATION_BUFFER_DIST);
+    vec2_t separation = separation_force(ent, SEPARATION_BUFFER_DIST);
 
     PFM_Vec2_Scale(&arrive,     MOVE_ARRIVE_FORCE_SCALE,   &arrive);
     PFM_Vec2_Scale(&cohesion,   MOVE_COHESION_FORCE_SCALE, &cohesion);
@@ -700,7 +671,6 @@ static vec2_t total_steering_force(const struct entity *ent, const struct flock 
     vec2_t ret = (vec2_t){0.0f};
     switch(ms->state) {
     case STATE_MOVING: {
-
 
         PFM_Vec2_Add(&ret, &arrive, &ret);
         PFM_Vec2_Add(&ret, &separation, &ret);
@@ -829,9 +799,9 @@ static void entity_update(struct entity *ent, const struct flock *flock, vec2_t 
          * the entity's visible orientation lags behind its' true orientation slightly. However, this 
          * greatly smooths the turning of the entity, giving a more natural look to the movemment. 
          */
-        vec2_t sma = vel_wma(ms);
-        if(PFM_Vec2_Len(&sma) > EPSILON) {
-            ent->rotation = dir_quat_from_velocity(sma);
+        vec2_t wma = vel_wma(ms);
+        if(PFM_Vec2_Len(&wma) > EPSILON) {
+            ent->rotation = dir_quat_from_velocity(wma);
         }
     }else{
         ms->velocity = (vec2_t){0.0f, 0.0f}; 
@@ -907,22 +877,23 @@ static void find_neighbours(const struct entity *ent,
 
         if(curr->uid == ent->uid)
             continue;
-    
+
         vec2_t diff;
         vec2_t ent_xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
         vec2_t curr_xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
         struct movestate *ms = movestate_get(curr); /* May be NULL */
+        assert(ms);
 
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
         if(PFM_Vec2_Len(&diff) < CLEARPATH_NEIGHBOUR_RADIUS) {
         
             struct cp_ent newdesc = (struct cp_ent) {
                 .xz_pos = curr_xz_pos,
-                .xz_vel = ms ? ms->velocity : (vec2_t){0.0f, 0.0f},
+                .xz_vel = ms->velocity,
                 .radius = curr->selection_radius
             };
 
-            if(!ms || ms->state == STATE_ARRIVED) {
+            if(ms->state == STATE_ARRIVED) {
             
                 kv_push(struct cp_ent, *out_stat, newdesc);
             }else{
@@ -939,11 +910,13 @@ static void on_30hz_tick(void *user, void *event)
     kv_init(dyn);
     kv_init(stat);
 
+    uint32_t key;
+    struct entity *curr;
+    const khash_t(entity) *dynamic = G_GetDynamicEntsSet();
+
     /* Iterate vector backwards so we can delete entries while iterating. */
     for(int i = kv_size(s_flocks)-1; i >= 0; i--) {
 
-        uint32_t key;
-        struct entity *curr;
         struct flock *flock = &kv_A(s_flocks, i);
 
         /* First, decide if we can disband this flock */
@@ -960,7 +933,6 @@ static void on_30hz_tick(void *user, void *event)
 
         if(disband) {
 
-            kh_foreach(kv_A(s_flocks, i).ents, key, curr, { movestate_remove(curr); });
             kh_destroy(entity, kv_A(s_flocks, i).ents);
             kv_del(struct flock, s_flocks, i);
             continue;
@@ -970,8 +942,8 @@ static void on_30hz_tick(void *user, void *event)
 
             struct movestate *ms = movestate_get(curr);
             assert(ms);
-
             vec2_t vpref = calculate_vpref(curr, flock);
+
             struct cp_ent curr_cp = (struct cp_ent) {
                 .xz_pos = (vec2_t){curr->pos.x, curr->pos.z},
                 .xz_vel = ms->velocity,
@@ -1006,6 +978,9 @@ static void on_30hz_tick(void *user, void *event)
             entity_update(curr, flock, ms->vnew);
         });
     }
+
+    kv_destroy(dyn);
+    kv_destroy(stat);
 }
 
 /*****************************************************************************/
@@ -1047,10 +1022,28 @@ void G_Move_Shutdown(void)
     kh_destroy(state, s_entity_state_table);
 }
 
+void G_Move_AddEntity(const struct entity *ent)
+{
+    struct movestate new_ms = (struct movestate) {
+        .velocity = {0.0f}, 
+        .state = STATE_ARRIVED,
+        .vel_hist_idx = 0,
+    };
+    memset(new_ms.vel_hist, 0, sizeof(new_ms.vel_hist));
+
+    int ret;
+    khiter_t k = kh_put(state, s_entity_state_table, ent->uid, &ret);
+    assert(ret != -1 && ret != 0);
+    kh_value(s_entity_state_table, k) = new_ms;
+}
+
 void G_Move_RemoveEntity(const struct entity *ent)
 {
     G_Move_Stop(ent);
-    movestate_remove(ent);
+
+    khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
+    if(k != kh_end(s_entity_state_table))
+        kh_del(state, s_entity_state_table, k);
 }
 
 void G_Move_Stop(const struct entity *ent)
@@ -1083,12 +1076,9 @@ void G_Move_Stop(const struct entity *ent)
 
 bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz)
 {
-    struct movestate *ms = movestate_get(ent);
-    if(!ms) 
-        return false;
-
     struct flock *fl = flock_for_ent(ent);
-    assert(fl);
+    if(!fl)
+        return false;
     *out_xz = fl->target_xz;
     return true;
 }

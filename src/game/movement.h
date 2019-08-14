@@ -47,6 +47,7 @@ struct entity;
 bool G_Move_Init(const struct map *map);
 void G_Move_Shutdown(void);
 
+void G_Move_AddEntity(const struct entity *ent);
 void G_Move_RemoveEntity(const struct entity *ent);
 void G_Move_Stop(const struct entity *ent);
 

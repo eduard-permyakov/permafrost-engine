@@ -224,7 +224,7 @@ static void on_attack_anim_finish(void *user, void *event)
         if(target_cs->current_hp == 0.0f) {
 
             G_Combat_RemoveEntity(cs->target);
-            G_Move_RemoveEntity(cs->target);
+            G_Move_Stop(cs->target);
             E_Entity_Notify(EVENT_ENTITY_DEATH, cs->target->uid, NULL, ES_ENGINE);
             cs->target->flags &= ~ENTITY_FLAG_COMBATABLE;
 
@@ -267,7 +267,7 @@ static void on_30hz_tick(void *user, void *event)
 
                     cs->target = enemy;
                     cs->state = STATE_CAN_ATTACK;
-                    G_Move_RemoveEntity(curr);
+                    G_Move_Stop(curr);
                     entity_turn_to_target(curr, enemy);
                     E_Entity_Notify(EVENT_ATTACK_START, curr->uid, NULL, ES_ENGINE);
                 
@@ -317,7 +317,7 @@ static void on_30hz_tick(void *user, void *event)
             if(ents_distance(curr, cs->target) <= ENEMY_MELEE_ATTACK_RANGE) {
 
                 cs->state = STATE_CAN_ATTACK;
-                G_Move_RemoveEntity(curr);
+                G_Move_Stop(curr);
                 entity_turn_to_target(curr, enemy);
                 E_Entity_Notify(EVENT_ATTACK_START, curr->uid, NULL, ES_ENGINE);
 
