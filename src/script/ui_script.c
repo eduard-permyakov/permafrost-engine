@@ -51,15 +51,6 @@
 #define TO_VEC2T(_nk_vec2i) ((vec2_t){_nk_vec2i.x, _nk_vec2i.y})
 #define TO_VEC2I(_pf_vec2t) ((struct nk_vec2i){_pf_vec2t.x, _pf_vec2t.y})
 
-enum ui_resize_opts{
-    PFNK_FLEX_LEFT_MARGIN       = (1 << 0),
-    PFNK_FLEX_WIDTH             = (1 << 1),
-    PFNK_FLEX_RIGHT_MARGIN      = (1 << 2),
-    PFNK_FLEX_TOP_MARGIN        = (1 << 3),
-    PFNK_FLEX_HEIGHT            = (1 << 4),
-    PFNK_FLEX_BOT_MARGIN        = (1 << 5)
-};
-
 typedef struct {
     PyObject_HEAD
     const char             *name;
