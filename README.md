@@ -51,7 +51,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * GLEW 2.1.0
 * python 2.7.13
 * stb_image.h, stb_image_resize.h
-* khash.h, kvec.h
+* khash.h
 * nuklear.h
 
 All dependencies can be built from source and distributed
