@@ -184,6 +184,15 @@ bool      N_PositionPathable(vec2_t xz_pos, void *nav_private, vec3_t map_pos);
  */
 vec2_t    N_TileDims(void);
 
+/* ------------------------------------------------------------------------
+ * Returns the worldspace XZ position of the closest reachable point on the
+ * map to the specified destination. If the destination is reachable, it is
+ * returned.
+ * ------------------------------------------------------------------------
+ */
+vec2_t    N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
+                                 vec2_t xz_dst);
+
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */
 /*###########################################################################*/

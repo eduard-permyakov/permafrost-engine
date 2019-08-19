@@ -228,6 +228,14 @@ bool   M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos);
 bool   M_NavPositionPathable(const struct map *map, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
+ * Returns the closest position to the destination that is pathable to from
+ * the (valid) source position. In the best case, this is the destination
+ * itself.
+ * ------------------------------------------------------------------------
+ */
+vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz_dst);
+
+/* ------------------------------------------------------------------------
  * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 
  * Returns 'true' on success, 'false' on failure.
  * ------------------------------------------------------------------------

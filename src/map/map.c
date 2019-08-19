@@ -355,6 +355,12 @@ bool M_NavPositionPathable(const struct map *map, vec2_t xz_pos)
     return N_PositionPathable(xz_pos, map->nav_private, map->pos);
 }
 
+vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz_dst)
+{
+    assert(M_NavPositionPathable(map, xz_src));
+    return N_ClosestReachableDest(map->nav_private, map->pos, xz_src, xz_dst);
+}
+
 bool M_TileForDesc(const struct map *map, struct tile_desc desc, struct tile **out)
 {
     if(desc.chunk_r < 0 || desc.chunk_r >= map->height)

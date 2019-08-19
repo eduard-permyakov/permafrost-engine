@@ -239,6 +239,15 @@ static bool same_chunk_as_any_in_set(struct tile_desc desc, const struct tile_de
 
 static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_xz, bool attack)
 {
+    if(kv_size(*sel) == 0)
+        return false;
+
+    /* The following won't be optimal when the entities in the selection are on different 
+     * 'islands'. Handling that case is not a top priority. 
+     */
+    vec2_t first_ent_pos_xz = (vec2_t){kv_A(*sel, 0)->pos.x, kv_A(*sel, 0)->pos.z};
+    target_xz = M_NavClosestReachableDest(s_map, first_ent_pos_xz, target_xz);
+
     /* First remove the entities in the selection from any active flocks */
     for(int i = 0; i < kv_size(*sel); i++) {
 
@@ -247,7 +256,8 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
             continue;
         /* Remove any flocks which may have become empty. Iterate vector in backwards order 
          * so that we can delete while iterating, since the last element in the vector takes
-         * the place of the deleted one. */
+         * the place of the deleted one. 
+         */
         for(int j = kv_size(s_flocks)-1; j >= 0; j--) {
 
             khiter_t k;
@@ -273,7 +283,8 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
      * chunk as another entity for which a path has already been requested. This 
      * allows saving pathfinding cycles. In the case that an entity is on a different
      * 'island' of the chunk than the one for which the flow field has been computed,
-     * the FF for this 'island' will be computed on demand. */
+     * the FF for this 'island' will be computed on demand. 
+     */
     struct tile_desc pathed_ents_descs[kv_size(*sel)];
     size_t num_pathed_ents = 0;
 

@@ -558,6 +558,61 @@ static void n_visit_island(struct nav_private *priv, uint16_t id, struct tile_de
     queue_td_destroy(&frontier);
 }
 
+static struct tile_desc n_closest_island_tile(const struct nav_private *priv, 
+                                              struct tile_desc target, uint16_t island_id)
+{
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    /* Breadth-first search to find the closest tile with the desired island_id */
+    queue_td_t frontier;
+    queue_td_init(&frontier, 1024);
+    queue_td_push(&frontier, &target);
+
+    bool visited[res.chunk_h][res.chunk_w][res.tile_h][res.tile_w];
+    memset(visited, 0, sizeof(visited));
+    visited[target.chunk_r][target.chunk_c][target.tile_r][target.tile_c] = true;
+
+    while(queue_size(frontier) > 0) {
+    
+        struct tile_desc curr;
+        queue_td_pop(&frontier, &curr);
+
+        struct coord deltas[] = {
+            { 0, -1},
+            { 0, +1},
+            {-1,  0},
+            {+1,  0},
+        };
+
+        for(int i = 0; i < ARR_SIZE(deltas); i++) {
+        
+            struct tile_desc neighb = curr;
+            if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
+                continue;
+
+            assert(memcmp(&curr, &neighb, sizeof(struct tile_desc)) != 0);
+            const struct nav_chunk *chunk = &priv->chunks[IDX(neighb.chunk_r, priv->width, neighb.chunk_c)];
+
+            if(chunk->islands[neighb.tile_r][neighb.tile_c] == island_id) {
+            
+                queue_td_destroy(&frontier);
+                return neighb;
+            }
+
+            if(!visited[neighb.chunk_r][neighb.chunk_c][neighb.tile_r][neighb.tile_c]) {
+            
+                visited[neighb.chunk_r][neighb.chunk_c][neighb.tile_r][neighb.tile_c] = true;
+                queue_td_push(&frontier, &neighb);
+            }
+        }
+    }
+
+    assert(0); 
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -932,6 +987,17 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
 
     dest_id_t ret = n_dest_id(dst_desc);
 
+    /* Handle the case where no path exists between the source and destination 
+     * (i.e. they are on different 'islands'). 
+     */
+    const struct nav_chunk *src_chunk = &priv->chunks[src_desc.chunk_r * priv->width + src_desc.chunk_c];
+    const struct nav_chunk *dst_chunk = &priv->chunks[dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
+    uint16_t src_iid = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
+    uint16_t dst_iid = dst_chunk->islands[dst_desc.tile_r][dst_desc.tile_c];
+
+    if(src_iid != dst_iid)
+        return false; 
+
     ff_id_t id;
     if(!N_FC_GetDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)) {
 
@@ -1167,6 +1233,40 @@ bool N_PositionPathable(vec2_t xz_pos, void *nav_private, vec3_t map_pos)
 
     const struct nav_chunk *chunk = &priv->chunks[IDX(tile.chunk_r, priv->width, tile.chunk_c)];
     return chunk->cost_base[tile.tile_r][tile.tile_c] != COST_IMPASSABLE;
+}
+
+vec2_t N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_src, vec2_t xz_dst)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    /* Convert source and destination positions to tile coordinates */
+    bool result;
+    struct tile_desc src_desc, dst_desc;
+    result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
+    assert(result);
+    result = M_Tile_DescForPoint2D(res, map_pos, xz_dst, &dst_desc);
+    assert(result);
+
+    const struct nav_chunk *src_chunk = &priv->chunks[src_desc.chunk_r * priv->width + src_desc.chunk_c];
+    const struct nav_chunk *dst_chunk = &priv->chunks[dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
+    uint16_t src_iid = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
+    uint16_t dst_iid = dst_chunk->islands[dst_desc.tile_r][dst_desc.tile_c];
+
+    if(src_iid == dst_iid)
+        return xz_dst;
+
+    /* Get the worldspace coordinates of the tile's center */
+    vec2_t tile_dims = N_TileDims(); 
+    struct tile_desc closest_td = n_closest_island_tile(priv, dst_desc, src_iid);
+    vec2_t ret = {
+        map_pos.x - (closest_td.chunk_c * FIELD_RES_C + closest_td.tile_c + 0.5f) * tile_dims.raw[0],
+        map_pos.z + (closest_td.chunk_r * FIELD_RES_R + closest_td.tile_r + 0.5f) * tile_dims.raw[1],
+    };
+    return ret;
 }
 
 vec2_t N_TileDims(void)
