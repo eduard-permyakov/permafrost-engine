@@ -43,6 +43,7 @@
 #include "../pf_math.h"
 #include "../collision.h"
 #include "../entity.h"
+#include "../lib/public/queue.h"
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -98,6 +99,9 @@ struct col_desc{
 #define MAX_COL(a, b)          MORE_RIGHT((a), (b)) ? (a) : (b)
 #define MAX_COL_4(a, b, c, d)  MAX_COL(MAX_COL((a), (b)), MAX_COL((c), (d)))
 
+QUEUE_TYPE(td, struct tile_desc)
+QUEUE_IMPL(static, td, struct tile_desc)
+
 enum edge_type{
     EDGE_BOT   = (1 << 0),
     EDGE_LEFT  = (1 << 1),
@@ -114,7 +118,7 @@ static bool n_tile_pathable(const struct tile *tile)
     if(!tile->pathable)
         return false;
 
-    if(!tile->type == TILETYPE_FLAT && tile->ramp_height > 1)
+    if(tile->type != TILETYPE_FLAT && tile->ramp_height > 1)
         return false;
 
     return true;
@@ -507,6 +511,53 @@ static dest_id_t n_dest_id(struct tile_desc dst_desc)
          | (((uint32_t)dst_desc.tile_c  & 0xff) <<  0);
 }
 
+static void n_visit_island(struct nav_private *priv, uint16_t id, struct tile_desc start)
+{
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct nav_chunk *chunk = &priv->chunks[IDX(start.chunk_r, priv->width, start.chunk_c)];
+    chunk->islands[start.tile_r][start.tile_c] = id;
+
+    queue_td_t frontier;
+    queue_td_init(&frontier, 1024);
+    queue_td_push(&frontier, &start);
+
+    while(queue_size(frontier) > 0) {
+    
+        struct tile_desc curr;
+        queue_td_pop(&frontier, &curr);
+
+        struct coord deltas[] = {
+            { 0, -1},
+            { 0, +1},
+            {-1,  0},
+            {+1,  0},
+        };
+
+        for(int i = 0; i < ARR_SIZE(deltas); i++) {
+        
+            struct tile_desc neighb = curr;
+            if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
+                continue;
+
+            assert(memcmp(&curr, &neighb, sizeof(struct tile_desc)) != 0);
+            chunk = &priv->chunks[IDX(neighb.chunk_r, priv->width, neighb.chunk_c)];
+
+            if(chunk->islands[neighb.tile_r][neighb.tile_c] == ISLAND_NONE
+            && chunk->cost_base[neighb.tile_r][neighb.tile_c] != COST_IMPASSABLE) {
+            
+                chunk->islands[neighb.tile_r][neighb.tile_c] = id;
+                queue_td_push(&frontier, &neighb);
+            }
+        }
+    }
+
+    queue_td_destroy(&frontier);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -561,6 +612,7 @@ void *N_BuildForMapData(size_t w, size_t h,
 
     n_make_cliff_edges(ret, chunk_tiles, chunk_w, chunk_h);
     N_UpdatePortals(ret);
+    N_UpdateIslandsField(ret);
     return ret;
 
 fail_alloc:
@@ -818,6 +870,47 @@ void N_UpdatePortals(void *nav_private)
             n_link_chunk_portals(curr_chunk, (struct coord){chunk_r, chunk_c});
         }
     }
+}
+
+void N_UpdateIslandsField(void *nav_private)
+{
+    /* We assign a unique ID to each set of tiles that are mutually connected
+     * (i.e. are on the same 'island'). The tile's 'island ID' can then be 
+     * queried from the 'islands' field using the coordinate. 
+     * To build the field, we treat every tile in the cost field as a node in
+     * a graph, with cardinally adjacent pathable tiles being the 'neighbors'. 
+     * Then we solve an instance of the 'coonected components' problem. 
+     */
+
+    struct nav_private *priv = nav_private;
+    uint16_t island_id = 0;
+
+    /* Initialize every node as 'unvisited' */
+    for(int chunk_r = 0; chunk_r < priv->height; chunk_r++) {
+    for(int chunk_c = 0; chunk_c < priv->width;  chunk_c++) {
+
+        struct nav_chunk *curr_chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
+        memset(curr_chunk->islands, 0xff, sizeof(curr_chunk->islands));
+    }}
+
+    for(int chunk_r = 0; chunk_r < priv->height; chunk_r++) {
+    for(int chunk_c = 0; chunk_c < priv->width;  chunk_c++) {
+
+        struct nav_chunk *curr_chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
+        for(int tile_r = 0; tile_r < FIELD_RES_R; tile_r++) {
+        for(int tile_c = 0; tile_c < FIELD_RES_C; tile_c++) {
+
+            if(curr_chunk->islands[tile_r][tile_c] != ISLAND_NONE)
+                continue;
+
+            if(curr_chunk->cost_base[tile_r][tile_c] == COST_IMPASSABLE)
+                continue;
+
+            struct tile_desc td = {chunk_r, chunk_c, tile_r, tile_c};
+            n_visit_island(priv, island_id, td);
+            island_id++;
+        }}
+    }}
 }
 
 bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest, 

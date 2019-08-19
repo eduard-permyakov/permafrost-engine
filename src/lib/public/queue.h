@@ -57,6 +57,9 @@
 #define queue(name)                                                                             \
     queue_##name##_t
 
+#define queue_size(queue)                                                                       \
+    ((queue).size)
+
 /***********************************************************************************************/
 
 #define QUEUE_PROTOTYPES(scope, name, type)                                                     \
@@ -64,7 +67,7 @@
     static bool _queue_##name##_resize  (queue(name) *queue, size_t new_cap);                   \
     scope  bool  queue_##name##_init    (queue(name) *queue, size_t init_cap);                  \
     scope  void  queue_##name##_destroy (queue(name) *queue);                                   \
-    scope  bool  queue_##name##_push    (queue(name) *queue, type entry);                       \
+    scope  bool  queue_##name##_push    (queue(name) *queue, type *entry);                      \
     scope  bool  queue_##name##_pop     (queue(name) *queue, type *out);
 
 /***********************************************************************************************/

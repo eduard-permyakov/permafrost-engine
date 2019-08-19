@@ -472,7 +472,7 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    G_MakeStaticObjsImpassable();
+    G_BakeNavDataForScene();
     return S_Entity_GetAllList();
 }
 

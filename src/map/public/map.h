@@ -174,11 +174,18 @@ bool   M_DescForPoint2D(const struct map *map, vec2_t point_xz, struct tile_desc
 void   M_NavCutoutStaticObject(const struct map *map, const struct obb *obb);
 
 /* ------------------------------------------------------------------------
- * Update navigation private data after calls to 'M_NavCutoutStaticObject'.
+ * Update navigation private data after changes to the cost field.
  * (ex. to remove a path in case it was blocked off by a placed object)
  * ------------------------------------------------------------------------
  */
 void   M_NavUpdatePortals(const struct map *map);
+
+/* ------------------------------------------------------------------------
+ * Update navigation private data (regarding which tile is reachanble from
+ * which other tiles) after changes to the cost field.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavUpdateIslandsField(const struct map *map);
 
 /* ------------------------------------------------------------------------
  * Makes a path request to the navigation subsystem, causing the required

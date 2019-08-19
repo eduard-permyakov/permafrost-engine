@@ -43,6 +43,7 @@
 #define FIELD_RES_R           64
 #define FIELD_RES_C           64
 #define COST_IMPASSABLE       0xff
+#define ISLAND_NONE           0xffff
 
 struct coord{
     int r, c;
@@ -67,6 +68,10 @@ struct nav_chunk{
     size_t        num_portals; 
     struct portal portals[MAX_PORTALS_PER_CHUNK];
     uint8_t       cost_base[FIELD_RES_R][FIELD_RES_C]; 
+    /* An 'island' is a collection of tiles that are all reachable 
+     * from one another. Each island has a unique ID. 
+     */
+    uint16_t      islands[FIELD_RES_R][FIELD_RES_C];
 };
 
 #endif

@@ -297,6 +297,11 @@ void M_NavUpdatePortals(const struct map *map)
     N_UpdatePortals(map->nav_private);
 }
 
+void M_NavUpdateIslandsField(const struct map *map)
+{
+    N_UpdateIslandsField(map->nav_private);
+}
+
 bool M_NavRequestPath(const struct map *map, vec2_t xz_src, vec2_t xz_dest, 
                       dest_id_t *out_dest_id)
 {

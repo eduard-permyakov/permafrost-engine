@@ -441,7 +441,7 @@ bool G_MapHeightAtPoint(vec2_t xz, float *out_height)
     return true;
 }
 
-void G_MakeStaticObjsImpassable(void)
+void G_BakeNavDataForScene(void)
 {
     uint32_t key;
     struct entity *curr;
@@ -455,7 +455,9 @@ void G_MakeStaticObjsImpassable(void)
         Entity_CurrentOBB(curr, &obb);
         M_NavCutoutStaticObject(s_gs.map, &obb);
     });
+
     M_NavUpdatePortals(s_gs.map);
+    M_NavUpdateIslandsField(s_gs.map);
 }
 
 bool G_UpdateMinimapChunk(int chunk_r, int chunk_c)

@@ -98,7 +98,7 @@ void   G_SetMinimapResizeMask(int mask);
 bool   G_MouseOverMinimap(void);
 bool   G_MapHeightAtPoint(vec2_t xz, float *out_height);
 
-void   G_MakeStaticObjsImpassable(void);
+void   G_BakeNavDataForScene(void);
 
 bool   G_AddEntity(struct entity *ent);
 bool   G_RemoveEntity(struct entity *ent);

@@ -140,6 +140,13 @@ void      N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct o
 void      N_UpdatePortals(void *nav_private);
 
 /* ------------------------------------------------------------------------
+ * Update the islands (sets of tiles which are reachable from one another)
+ * information after there have been changes to the cost field.
+ * ------------------------------------------------------------------------
+ */
+void      N_UpdateIslandsField(void *nav_private);
+
+/* ------------------------------------------------------------------------
  * Generate the required flowfield and LOS sectors for moving towards the 
  * specified destination.
  * Returns true, if pathing is possible. In that case, 'out_dest_id' will
