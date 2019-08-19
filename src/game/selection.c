@@ -79,7 +79,7 @@ static struct selection_ctx{
     enum selection_type type;
 }s_ctx;
 
-static pentity_kvec_t s_selected;
+static vec_pentity_t s_selected;
 
 /*****************************************************************************/
 /* GLOBAL VARIABLES                                                          */
@@ -269,9 +269,9 @@ static void sel_filter_and_set_type(void)
     size_t num_facs = G_GetFactions(names, colors, controllable);
 
     bool has_player = false, has_allied = false;
-    for(int i = 0; i < kv_size(s_selected); i++) {
+    for(int i = 0; i < vec_size(&s_selected); i++) {
         
-        const struct entity *curr = kv_A(s_selected, i);
+        const struct entity *curr = vec_AT(&s_selected, i);
         assert(curr->faction_id >= 0 && curr->faction_id < num_facs);
 
         if(controllable[curr->faction_id]) {
@@ -293,16 +293,16 @@ static void sel_filter_and_set_type(void)
     }
 
     /* Iterate the vector backwards so we can delete while iterating. */
-    for(int i = kv_size(s_selected)-1; i >= 0; i--) {
+    for(int i = vec_size(&s_selected)-1; i >= 0; i--) {
 
-        const struct entity *curr = kv_A(s_selected, i);
+        const struct entity *curr = vec_AT(&s_selected, i);
         if(has_player && !controllable[curr->faction_id]) {
 
-            kv_del(struct entity*, s_selected, i);
+            vec_pentity_del(&s_selected, i);
         }else if(!has_player && has_allied
         && !allied_to_player_controllabe(controllable, num_facs, curr->faction_id)) {
 
-            kv_del(struct entity*, s_selected, i);
+            vec_pentity_del(&s_selected, i);
         }
     }
 }
@@ -313,13 +313,13 @@ static void sel_filter_and_set_type(void)
 
 bool G_Sel_Init(void)
 {
-    kv_init(s_selected);
+    vec_pentity_init(&s_selected);
 }
 
 void G_Sel_Shutdown(void)
 {
     G_Sel_Disable();
-    kv_destroy(s_selected);
+    vec_pentity_destroy(&s_selected);
 }
 
 void G_Sel_Enable(void)
@@ -348,7 +348,7 @@ void G_Sel_Disable(void)
 
 /* Note that the selection is only changed if there is at least one entity in the new selection. Otherwise
  * (ex. if the player is left-clicking on an empty part of the map), the previous selection is kept. */
-void G_Sel_Update(struct camera *cam, const pentity_kvec_t *visible, const obb_kvec_t *visible_obbs)
+void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_obb_t *visible_obbs)
 {
     if(s_ctx.state != STATE_MOUSE_SEL_RELEASED)
         return;
@@ -371,19 +371,19 @@ void G_Sel_Update(struct camera *cam, const pentity_kvec_t *visible, const obb_k
         PFM_Vec3_Normal(&ray_dir, &ray_dir);
 
         float t_min = FLT_MAX;
-        for(int i = 0; i < kv_size(*visible_obbs); i++) {
+        for(int i = 0; i < vec_size(visible_obbs); i++) {
 
-            if(!(kv_A(*visible, i)->flags & ENTITY_FLAG_SELECTABLE))
+            if(!(vec_AT(visible, i)->flags & ENTITY_FLAG_SELECTABLE))
                 continue;
         
             float t;
-            if(C_RayIntersectsOBB(ray_origin, ray_dir, kv_A(*visible_obbs, i), &t)) {
+            if(C_RayIntersectsOBB(ray_origin, ray_dir, vec_AT(visible_obbs, i), &t)) {
 
                 sel_empty = false;
                 if(t < t_min) {
                     t_min = t;
-                    kv_reset(s_selected);                
-                    kv_push(struct entity*, s_selected, kv_A(*visible, i));
+                    vec_pentity_reset(&s_selected);                
+                    vec_pentity_push(&s_selected, vec_AT(visible, i));
                 }
             }
         }
@@ -395,18 +395,18 @@ void G_Sel_Update(struct camera *cam, const pentity_kvec_t *visible, const obb_k
         struct frustum frust;
         sel_make_frustum(cam, s_ctx.mouse_down_coord, s_ctx.mouse_up_coord, &frust);
 
-        for(int i = 0; i < kv_size(*visible_obbs); i++) {
+        for(int i = 0; i < vec_size(visible_obbs); i++) {
 
-            if(!(kv_A(*visible, i)->flags & ENTITY_FLAG_SELECTABLE))
+            if(!(vec_AT(visible, i)->flags & ENTITY_FLAG_SELECTABLE))
                 continue;
 
-            if(C_FrustumOBBIntersectionExact(&frust, &kv_A(*visible_obbs, i))) {
+            if(C_FrustumOBBIntersectionExact(&frust, &vec_AT(visible_obbs, i))) {
 
                 if(sel_empty) {
-                    kv_reset(s_selected);
+                    vec_pentity_reset(&s_selected);
                     sel_empty = false;
                 }
-                kv_push(struct entity*, s_selected, kv_A(*visible, i));
+                vec_pentity_push(&s_selected, vec_AT(visible, i));
             }
         }
     }
@@ -423,7 +423,7 @@ void G_Sel_Clear(void)
     memset(&s_ctx, 0, sizeof(s_ctx));
     s_ctx.installed = installed;
 
-    kv_reset(s_selected);
+    vec_pentity_reset(&s_selected);
 }
 
 void G_Sel_Add(struct entity *ent)
@@ -431,9 +431,9 @@ void G_Sel_Add(struct entity *ent)
     assert(ent->flags & ENTITY_FLAG_SELECTABLE);
 
     int idx;
-    kv_indexof(struct entity*, s_selected, ent, pentities_equal, idx);
+    vec_pentity_indexof(&s_selected, ent, pentities_equal, &idx);
     if(idx == -1) {
-        kv_push(struct entity*, s_selected, ent);
+        vec_pentity_push(&s_selected, ent);
         sel_filter_and_set_type();
     }
 }
@@ -443,14 +443,14 @@ void G_Sel_Remove(struct entity *ent)
     assert(ent->flags & ENTITY_FLAG_SELECTABLE);
 
     int idx;
-    kv_indexof(struct entity*, s_selected, ent, pentities_equal, idx);
+    vec_pentity_indexof(&s_selected, ent, pentities_equal, &idx);
     if(idx != -1) {
-        kv_del(struct entity*, s_selected, idx);
+        vec_pentity_del(&s_selected, idx);
         E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
     }
 }
 
-const pentity_kvec_t *G_Sel_Get(enum selection_type *out_type)
+const vec_pentity_t *G_Sel_Get(enum selection_type *out_type)
 {
     *out_type = s_ctx.type;
     return &s_selected;

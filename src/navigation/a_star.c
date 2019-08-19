@@ -172,10 +172,10 @@ static float portal_node_penalty(void)
 
 bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
-                    coord_vec_t *out_path, float *out_cost)
+                    vec_coord_t *out_path, float *out_cost)
 {
     struct grid_path_desc gp = {0};
-    kv_init(gp.path);
+    vec_coord_init(&gp.path);
 
     if(N_FC_GetGridPath(start, finish, chunk, &gp)) {
 
@@ -183,7 +183,7 @@ bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
             return false;
 
         *out_cost = gp.cost;
-        kv_copy(struct coord, *out_path, gp.path);
+        vec_coord_copy(out_path, &gp.path);
         return true;
     }
 
@@ -233,25 +233,25 @@ bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
     if(kh_get(key_coord, came_from, coord_to_key(finish)) == kh_end(came_from))
         goto fail_find_path;
 
-    kv_reset(*out_path);
+    vec_coord_reset(out_path);
 
     /* We have our path at this point. Walk backwards along the path to build a 
      * vector of the nodes along the path. */
     struct coord curr = finish;
     while(0 != memcmp(&curr, &start, sizeof(struct coord))) {
 
-        kv_push(struct coord, *out_path, curr);
+        vec_coord_push(out_path, curr);
         khiter_t k = kh_get(key_coord, came_from, coord_to_key(curr));
         assert(k != kh_end(came_from));
         curr = kh_value(came_from, k);
     }
-    kv_push(struct coord, *out_path, start);
+    vec_coord_push(out_path, start);
 
     /* Reverse the path vector */
-    for(int i = 0, j = kv_size(*out_path) - 1; i < j; i++, j--) {
-        struct coord tmp = kv_A(*out_path, i);
-        kv_A(*out_path, i) = kv_A(*out_path, j);
-        kv_A(*out_path, j) = tmp;
+    for(int i = 0, j = vec_size(out_path) - 1; i < j; i++, j--) {
+        struct coord tmp = vec_AT(out_path, i);
+        vec_AT(out_path, i) = vec_AT(out_path, j);
+        vec_AT(out_path, j) = tmp;
     }
 
     khiter_t k = kh_get(key_float, running_cost, coord_to_key(finish));
@@ -264,7 +264,7 @@ bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
 
     /* Cache the result */
     gp.exists = true;
-    kv_copy(struct coord, gp.path, *out_path);
+    vec_coord_copy(&gp.path, out_path);
     gp.cost = *out_cost;
     N_FC_PutGridPath(start, finish, chunk, &gp);
     return true;
@@ -283,7 +283,7 @@ fail_came_from:
 
 bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *finish, 
                            const struct nav_private *priv, 
-                           portal_vec_t *out_path, float *out_cost)
+                           vec_portal_t *out_path, float *out_cost)
 {
     pq_portal_t          frontier;
     khash_t(key_portal) *came_from;
@@ -296,8 +296,8 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
         goto fail_running_cost;
 
     const struct nav_chunk *chunk = &priv->chunks[start_tile.chunk_r * priv->width + start_tile.chunk_c];
-    coord_vec_t path;
-    kv_init(path);
+    vec_coord_t path;
+    vec_coord_init(&path);
 
     /* Intitialize the frontier with all the portals in the source chunk that are 
      * reachable from the source tile. */
@@ -320,7 +320,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
             pq_portal_push(&frontier, cost, port);
         }
     }
-    kv_destroy(path);
+    vec_coord_destroy(&path);
 
     while(pq_size(&frontier) > 0) {
 
@@ -356,14 +356,14 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
     if(kh_get(key_portal, came_from, portal_to_key(finish)) == kh_end(came_from))
         goto fail_find_path;
 
-    kv_reset(*out_path);
+    vec_portal_reset(out_path);
 
     /* We have our path at this point. Walk backwards along the path to build a 
      * vector of the nodes along the path. */
     const struct portal *curr = finish;
     while(true) {
 
-        kv_push(const struct portal*, *out_path, curr);
+        vec_portal_push(out_path, (struct portal*)curr);
         khiter_t k = kh_get(key_portal, came_from, portal_to_key(curr));
         if(k == kh_end(came_from))
             break;
@@ -371,10 +371,10 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
     }
 
     /* Reverse the path vector */
-    for(int i = 0, j = kv_size(*out_path) - 1; i < j; i++, j--) {
-        const struct portal *tmp = kv_A(*out_path, i);
-        kv_A(*out_path, i) = kv_A(*out_path, j);
-        kv_A(*out_path, j) = tmp;
+    for(int i = 0, j = vec_size(out_path) - 1; i < j; i++, j--) {
+        struct portal *tmp = vec_AT(out_path, i);
+        vec_AT(out_path, i) = vec_AT(out_path, j);
+        vec_AT(out_path, j) = tmp;
     }
 
     khiter_t k = kh_get(key_float, running_cost, portal_to_key(finish));
@@ -399,8 +399,8 @@ fail_came_from:
 const struct portal *AStar_ReachablePortal(struct coord start, struct coord chunk,
                                            const struct nav_chunk *nchunk)
 {
-    coord_vec_t path;
-    kv_init(path);
+    vec_coord_t path;
+    vec_coord_init(&path);
 
     float min_cost = FLT_MAX;
     const struct portal *ret = NULL;
@@ -420,20 +420,20 @@ const struct portal *AStar_ReachablePortal(struct coord start, struct coord chun
         }
     }
 
-    kv_destroy(path);
+    vec_coord_destroy(&path);
     return ret;
 }
 
 bool AStar_TilesLinked(struct coord start, struct coord finish, struct coord chunk,
                        const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C])
 {
-    coord_vec_t path;
-    kv_init(path);
+    vec_coord_t path;
+    vec_coord_init(&path);
 
     float cost;
     bool ret = AStar_GridPath(start, finish, chunk, cost_field, &path, &cost);
 
-    kv_destroy(path);
+    vec_coord_destroy(&path);
     return ret;    
 }
 

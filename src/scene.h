@@ -37,7 +37,7 @@
 #define SCENE_H
 
 #include "pf_math.h"
-#include "lib/public/kvec.h"
+#include "lib/public/vec.h"
 #include "lib/public/khash.h"
 
 #include <stdbool.h>
@@ -63,7 +63,9 @@ struct attr{
 };
 
 KHASH_DECLARE(attr, kh_cstr_t, struct attr)
-typedef kvec_t(struct attr) kvec_attr_t;
+
+VEC_TYPE(attr, struct attr)
+VEC_PROTOTYPES(extern, attr, struct attr)
 
 bool Scene_Load(const char *path);
 

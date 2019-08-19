@@ -60,7 +60,8 @@
 #define EPSILON         (1.0/1024)
 #define MAX_SAVED_VOS   (512)
 
-typedef kvec_t(vec2_t) vec2_vec_t;
+VEC_TYPE(vec2, vec2_t)
+VEC_IMPL(static inline, vec2, vec2_t)
 
 struct VO{
     vec2_t xz_apex;
@@ -88,7 +89,7 @@ struct saved_ctx{
     size_t        n_hrvos;
     size_t        n_vos;
     vec2_t        v_new;
-    vec2_vec_t    xpoints;
+    vec_vec2_t    xpoints;
     bool          des_v_in_pcr;
     bool          valid;
 };
@@ -187,13 +188,13 @@ static struct HRVO compute_hrvo(struct cp_ent ent, struct cp_ent neighb)
     return ret;
 }
 
-static size_t compute_all_vos(struct cp_ent ent, cp_ent_vec_t stat_neighbs, 
+static size_t compute_all_vos(struct cp_ent ent, vec_cp_ent_t stat_neighbs, 
                               struct VO *out)
 {
     size_t ret = 0; 
 
-    for(struct cp_ent *nb = stat_neighbs.a; 
-        nb < stat_neighbs.a + kv_size(stat_neighbs); nb++) {
+    for(struct cp_ent *nb = stat_neighbs.array; 
+        nb < stat_neighbs.array + vec_size(&stat_neighbs); nb++) {
         
         out[ret++] = compute_vo(ent, *nb);
     }
@@ -201,13 +202,13 @@ static size_t compute_all_vos(struct cp_ent ent, cp_ent_vec_t stat_neighbs,
     return ret;
 }
 
-static size_t compute_all_hrvos(struct cp_ent ent, cp_ent_vec_t dyn_neighbs, 
+static size_t compute_all_hrvos(struct cp_ent ent, vec_cp_ent_t dyn_neighbs, 
                                 struct HRVO *out)
 {
     size_t ret = 0; 
 
-    for(struct cp_ent *nb = dyn_neighbs.a; 
-        nb < dyn_neighbs.a + kv_size(dyn_neighbs); nb++) {
+    for(struct cp_ent *nb = dyn_neighbs.array; 
+        nb < dyn_neighbs.array + vec_size(&dyn_neighbs); nb++) {
         
         out[ret++] = compute_hrvo(ent, *nb);
     }
@@ -291,7 +292,7 @@ static void rays_repr(const struct HRVO *hrvos, size_t n_hrvos,
 }
 
 static size_t compute_vo_xpoints(struct line_2d *rays, size_t n_rays,
-                                 vec2_vec_t *inout)
+                                 vec_vec2_t *inout)
 {
     size_t ret = 0;
 
@@ -308,7 +309,7 @@ static size_t compute_vo_xpoints(struct line_2d *rays, size_t n_rays,
             if(inside_pcr(rays, n_rays, isec_point))
                 continue;
 
-            kv_push(vec2_t, *inout, isec_point);
+            vec_vec2_push(inout, isec_point);
             ret++;
         }
     }
@@ -317,7 +318,7 @@ static size_t compute_vo_xpoints(struct line_2d *rays, size_t n_rays,
 }
 
 static size_t compute_vdes_proj_points(struct line_2d *rays, size_t n_rays,
-                                       vec2_t des_v, vec2_vec_t *inout)
+                                       vec2_t des_v, vec_vec2_t *inout)
 {
     vec2_t proj;
     size_t ret = 0;
@@ -332,7 +333,7 @@ static size_t compute_vdes_proj_points(struct line_2d *rays, size_t n_rays,
 
         if(!inside_pcr(rays, n_rays, proj)) {
         
-            kv_push(vec2_t, *inout, proj);
+            vec_vec2_push(inout, proj);
             ret++;
         }
     }
@@ -340,16 +341,16 @@ static size_t compute_vdes_proj_points(struct line_2d *rays, size_t n_rays,
     return ret;
 }
 
-static vec2_t compute_vnew(const vec2_vec_t *outside_points, vec2_t des_v, vec2_t ent_xz_pos)
+static vec2_t compute_vnew(const vec_vec2_t *outside_points, vec2_t des_v, vec2_t ent_xz_pos)
 {
     float min_dist = INFINITY, len;
     vec2_t ret;
 
-    for(int i = 0; i < kv_size(*outside_points); i++) {
+    for(int i = 0; i < vec_size(outside_points); i++) {
 
         /* The points are in worldspace coordinates. Convert them to the entity's 
          * local space to get the adimissible velocities. */
-        vec2_t curr = kv_A(*outside_points, i), diff;
+        vec2_t curr = vec_AT(outside_points, i), diff;
         PFM_Vec2_Sub(&curr, &ent_xz_pos, &curr);
 
         PFM_Vec2_Sub(&des_v, &curr, &diff);
@@ -364,20 +365,20 @@ static vec2_t compute_vnew(const vec2_vec_t *outside_points, vec2_t des_v, vec2_
     return ret;
 }
 
-static void remove_furthest(vec2_t xz_pos, cp_ent_vec_t *dyn_inout, cp_ent_vec_t *stat_inout)
+static void remove_furthest(vec2_t xz_pos, vec_cp_ent_t *dyn_inout, vec_cp_ent_t *stat_inout)
 {
     float max_dist = -INFINITY;
-    cp_ent_vec_t *del_vec = NULL;
+    vec_cp_ent_t *del_vec = NULL;
     int del_idx;
 
     for(int i = 0; i < 2; i++) {
     
-        cp_ent_vec_t *curr_vec = (i == 0) ? dyn_inout : stat_inout;
-        for(int j = 0; j < kv_size(*curr_vec); j++) {
+        vec_cp_ent_t *curr_vec = (i == 0) ? dyn_inout : stat_inout;
+        for(int j = 0; j < vec_size(curr_vec); j++) {
         
             float len;
             vec2_t diff;
-            struct cp_ent *ent = &kv_A(*curr_vec, j);
+            struct cp_ent *ent = &vec_AT(curr_vec, j);
 
             PFM_Vec2_Sub(&xz_pos, &ent->xz_pos, &diff);
             if((len = PFM_Vec2_Len(&diff)) > max_dist) {
@@ -389,7 +390,7 @@ static void remove_furthest(vec2_t xz_pos, cp_ent_vec_t *dyn_inout, cp_ent_vec_t
     }
 
     if(max_dist > -INFINITY) {
-        kv_del(vec2_t, *del_vec, del_idx);
+        vec_cp_ent_del(del_vec, del_idx);
     }
 }
 
@@ -404,9 +405,9 @@ static bool should_save_debug(uint32_t ent_uid)
         return false;
 
     enum selection_type seltype;
-    const pentity_kvec_t *sel = G_Sel_Get(&seltype);
+    const vec_pentity_t *sel = G_Sel_Get(&seltype);
 
-    if(kv_size(*sel) == 0)
+    if(vec_size(sel) == 0)
         return false; 
 
     return true;
@@ -466,9 +467,9 @@ static void on_render_3d(void *user, void *event)
     PFM_Vec3_Normal(&vel_dir, &vel_dir);
     R_GL_DrawRay(origin_pos, vel_dir, &ident, green, PFM_Vec2_Len(&v_new) * MOVE_TICK_RES);
 
-    for(int i = 0; i < kv_size(s_debug_saved.xpoints); i++) {
-        vec2_t xp = kv_A(s_debug_saved.xpoints, i);
-        R_GL_DrawSelectionCircle(kv_A(s_debug_saved.xpoints, i), 1.0f, 1.0f, green, map);
+    for(int i = 0; i < vec_size(&s_debug_saved.xpoints); i++) {
+        vec2_t xp = vec_AT(&s_debug_saved.xpoints, i);
+        R_GL_DrawSelectionCircle(vec_AT(&s_debug_saved.xpoints, i), 1.0f, 1.0f, green, map);
     }
 
     char strbuff[256];
@@ -482,18 +483,18 @@ static void on_render_3d(void *user, void *event)
 static bool clearpath_new_velocity(struct cp_ent cpent,
                                    uint32_t ent_uid,
                                    vec2_t ent_des_v,
-                                   const cp_ent_vec_t dyn_neighbs,
-                                   const cp_ent_vec_t stat_neighbs,
+                                   const vec_cp_ent_t dyn_neighbs,
+                                   const vec_cp_ent_t stat_neighbs,
                                    vec2_t *out)
 {
-    struct HRVO dyn_hrvos[kv_size(dyn_neighbs)];
-    struct VO stat_vos[kv_size(stat_neighbs)];
+    struct HRVO dyn_hrvos[vec_size(&dyn_neighbs)];
+    struct VO stat_vos[vec_size(&stat_neighbs)];
 
     size_t n_hrvos = compute_all_hrvos(cpent, dyn_neighbs, dyn_hrvos);
     size_t n_vos = compute_all_vos(cpent, stat_neighbs, stat_vos);
 
-    assert(n_hrvos == kv_size(dyn_neighbs));
-    assert(n_vos == kv_size(stat_neighbs));
+    assert(n_hrvos == vec_size(&dyn_neighbs));
+    assert(n_vos == vec_size(&stat_neighbs));
 
     /* Following the ClearPath approach, which is applicable to many variations 
      * of velocity obstacles, we represent the combined hybrid reciprocal velocity 
@@ -513,7 +514,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
         memcpy(s_debug_saved.vos, stat_vos, nsaved_vos * sizeof(struct VO));
         s_debug_saved.n_vos = nsaved_vos;
 
-        kv_reset(s_debug_saved.xpoints);
+        vec_vec2_reset(&s_debug_saved.xpoints);
 
         s_debug_saved.cpent = cpent;
         s_debug_saved.ent_des_v = ent_des_v;
@@ -530,8 +531,8 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
         return true;
     }
 
-    vec2_vec_t xpoints;
-    kv_init(xpoints);
+    vec_vec2_t xpoints;
+    vec_vec2_init(&xpoints);
 
     /* The line segments are intersected pairwise and the intersection points 
      * inside the combined hybrid reciprocal velocity obstacle are discarded. 
@@ -547,7 +548,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
      */
     compute_vdes_proj_points(rays, n_rays, ent_des_v, &xpoints);
 
-    if(kv_size(xpoints) == 0) {
+    if(vec_size(&xpoints) == 0) {
         return false;    
     }
 
@@ -555,12 +556,12 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
 
     if(should_save_debug(ent_uid)) {
     
-        kv_copy(vec2_t, s_debug_saved.xpoints, xpoints);
+        vec_vec2_copy(&s_debug_saved.xpoints, &xpoints);
         s_debug_saved.v_new = ret;
         s_debug_saved.des_v_in_pcr = true;
     }
 
-    kv_destroy(xpoints);
+    vec_vec2_destroy(&xpoints);
     *out = ret;
     return true;
 }
@@ -573,20 +574,20 @@ void G_ClearPath_Init(const struct map *map)
 {
     E_Global_Register(EVENT_RENDER_3D, on_render_3d, (struct map*)map, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
-    kv_init(s_debug_saved.xpoints);
+    vec_vec2_init(&s_debug_saved.xpoints);
 }
 
 void G_ClearPath_Shutdown(void)
 {
     E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
-    kv_destroy(s_debug_saved.xpoints);
+    vec_vec2_destroy(&s_debug_saved.xpoints);
 }
 
 vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
                                uint32_t ent_uid,
                                vec2_t ent_des_v,
-                               cp_ent_vec_t dyn_neighbs,
-                               cp_ent_vec_t stat_neighbs)
+                               vec_cp_ent_t dyn_neighbs,
+                               vec_cp_ent_t stat_neighbs)
 {
     do{
         vec2_t ret;
@@ -596,7 +597,7 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
 
         remove_furthest(cpent.xz_pos, &dyn_neighbs, &stat_neighbs);
 
-    }while(kv_size(dyn_neighbs) > 0 && kv_size(stat_neighbs) > 0);
+    }while(vec_size(&dyn_neighbs) > 0 && vec_size(&stat_neighbs) > 0);
 
     return (vec2_t){0.0f, 0.0f};
 }

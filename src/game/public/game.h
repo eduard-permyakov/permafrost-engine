@@ -37,7 +37,7 @@
 #define GAME_H
 
 #include "../../map/public/map.h"
-#include "../../lib/public/kvec.h"
+#include "../../lib/public/vec.h"
 #include "../../lib/public/khash.h"
 
 #include <stdbool.h>
@@ -69,7 +69,9 @@ enum simstate{
     G_PAUSED_UI_RUNNING = (1 << 2),
 };
 
-typedef kvec_t(struct entity*) pentity_kvec_t;
+VEC_TYPE(pentity, struct entity *)
+VEC_PROTOTYPES(extern, pentity, struct entity *)
+
 KHASH_DECLARE(entity, khint32_t, struct entity*)
 
 
@@ -139,7 +141,7 @@ void                  G_Sel_Disable(void);
 void                  G_Sel_Clear(void);
 void                  G_Sel_Add(struct entity *ent);
 void                  G_Sel_Remove(struct entity *ent);
-const pentity_kvec_t *G_Sel_Get(enum selection_type *out_type);
+const vec_pentity_t  *G_Sel_Get(enum selection_type *out_type);
 
 
 /*###########################################################################*/

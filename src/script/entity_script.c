@@ -953,14 +953,14 @@ static PyObject *s_obj_from_attr(const struct attr *attr)
     }
 }
 
-static PyObject *s_tuple_from_attr_vec(const kvec_attr_t *attr_vec)
+static PyObject *s_tuple_from_attr_vec(const vec_attr_t *attr_vec)
 {
-    PyObject *ret = PyTuple_New(kv_size(*attr_vec));
+    PyObject *ret = PyTuple_New(vec_size(attr_vec));
     if(!ret)
         return NULL;
 
-    for(int i = 0; i < kv_size(*attr_vec); i++) {
-        PyTuple_SetItem(ret, i, s_obj_from_attr(&kv_A(*attr_vec, i)));
+    for(int i = 0; i < vec_size(attr_vec); i++) {
+        PyTuple_SetItem(ret, i, s_obj_from_attr(&vec_AT(attr_vec, i)));
     }
 
     return ret;
@@ -1020,7 +1020,7 @@ static PyObject *s_entity_from_atts(const char *path, const char *name, const kh
     return ret;
 }
 
-static PyObject *s_new_custom_class(const char *name, const kvec_attr_t *construct_args)
+static PyObject *s_new_custom_class(const char *name, const vec_attr_t *construct_args)
 {
     PyObject *sys_mod_dict = PyImport_GetModuleDict();
     PyObject *modules = PyMapping_Values(sys_mod_dict);
@@ -1096,7 +1096,7 @@ PyObject *S_Entity_ObjForUID(uint32_t uid)
 
 script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
                                      const khash_t(attr) *attr_table, 
-                                     const kvec_attr_t *construct_args)
+                                     const vec_attr_t *construct_args)
 {
     khiter_t k;
     PyObject *ret = NULL;

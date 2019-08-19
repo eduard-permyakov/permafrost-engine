@@ -62,6 +62,8 @@
 
 #define ACTIVE_CAM          (s_gs.cameras[s_gs.active_cam_idx])
 
+VEC_IMPL(extern, pentity, struct entity *)
+VEC_IMPL(extern, obb, struct obb)
 __KHASH_IMPL(entity, extern, khint32_t, struct entity*, 1, kh_int_hash_func, kh_int_hash_equal)
 
 /*****************************************************************************/
@@ -107,8 +109,8 @@ static void g_reset(void)
 
     kh_clear(entity, s_gs.active);
     kh_clear(entity, s_gs.dynamic);
-    kv_reset(s_gs.visible);
-    kv_reset(s_gs.visible_obbs);
+    vec_pentity_reset(&s_gs.visible);
+    vec_obb_reset(&s_gs.visible_obbs);
 
     if(s_gs.map) {
         M_Raycast_Uninstall();
@@ -202,9 +204,9 @@ static void g_draw_pass(void)
         M_RenderVisibleMap(s_gs.map, ACTIVE_CAM, RENDER_PASS_REGULAR);
     }
 
-    for(int i = 0; i < kv_size(s_gs.visible); i++) {
+    for(int i = 0; i < vec_size(&s_gs.visible); i++) {
     
-        struct entity *curr = kv_A(s_gs.visible, i);
+        struct entity *curr = vec_AT(&s_gs.visible, i);
 
         if(curr->flags & ENTITY_FLAG_INVISIBLE)
             continue;
@@ -221,7 +223,7 @@ static void g_draw_pass(void)
 
 static void g_render_healthbars(void)
 {
-    size_t max_ents = kv_size(s_gs.visible);
+    size_t max_ents = vec_size(&s_gs.visible);
     size_t num_combat_visible = 0;
 
     GLfloat ent_health_pc[max_ents];
@@ -229,7 +231,7 @@ static void g_render_healthbars(void)
 
     for(int i = 0; i < max_ents; i++) {
     
-        struct entity *curr = kv_A(s_gs.visible, i);
+        struct entity *curr = vec_AT(&s_gs.visible, i);
 
         if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
             continue;
@@ -274,8 +276,8 @@ static void shadows_en_commit(const struct sval *new_val)
 
 bool G_Init(void)
 {
-    kv_init(s_gs.visible);
-    kv_init(s_gs.visible_obbs);
+    vec_pentity_init(&s_gs.visible);
+    vec_obb_init(&s_gs.visible_obbs);
 
     s_gs.active = kh_init(entity);
     if(!s_gs.active)
@@ -495,16 +497,16 @@ void G_Shutdown(void)
 
     kh_destroy(entity, s_gs.active);
     kh_destroy(entity, s_gs.dynamic);
-    kv_destroy(s_gs.visible);
-    kv_destroy(s_gs.visible_obbs);
+    vec_pentity_destroy(&s_gs.visible);
+    vec_obb_destroy(&s_gs.visible_obbs);
 }
 
 void G_Update(void)
 {
     /* Build the set of currently visible entities. Note that there may be some false positives due to 
        using the fast frustum cull. */
-    kv_reset(s_gs.visible);
-    kv_reset(s_gs.visible_obbs);
+    vec_pentity_reset(&s_gs.visible);
+    vec_obb_reset(&s_gs.visible_obbs);
 
     struct frustum frust;
     Camera_MakeFrustum(ACTIVE_CAM, &frust);
@@ -517,8 +519,8 @@ void G_Update(void)
         Entity_CurrentOBB(curr, &obb);
 
         if(C_FrustumOBBIntersectionFast(&frust, &obb) != VOLUME_INTERSEC_OUTSIDE) {
-            kv_push(struct entity *, s_gs.visible, curr);
-            kv_push(struct obb, s_gs.visible_obbs, obb);
+            vec_pentity_push(&s_gs.visible, curr);
+            vec_obb_push(&s_gs.visible_obbs, obb);
         }
 
         if(s_gs.ss == G_RUNNING && (curr->flags & ENTITY_FLAG_ANIMATED))
@@ -526,7 +528,7 @@ void G_Update(void)
     });
 
     /* Next, update the set of currently selected entities. */
-    G_Sel_Update(ACTIVE_CAM, (const pentity_kvec_t*)&s_gs.visible, (obb_kvec_t*)&s_gs.visible_obbs);
+    G_Sel_Update(ACTIVE_CAM, &s_gs.visible, &s_gs.visible_obbs);
 }
 
 void G_Render(void)
@@ -546,10 +548,10 @@ void G_Render(void)
     }
 
     enum selection_type sel_type;
-    const pentity_kvec_t *selected = G_Sel_Get(&sel_type);
-    for(int i = 0; i < kv_size(*selected); i++) {
+    const vec_pentity_t *selected = G_Sel_Get(&sel_type);
+    for(int i = 0; i < vec_size(selected); i++) {
 
-        struct entity *curr = kv_A(*selected, i);
+        struct entity *curr = vec_AT(selected, i);
         R_GL_DrawSelectionCircle((vec2_t){curr->pos.x, curr->pos.z}, curr->selection_radius, 0.4f, 
             g_seltype_color_map[sel_type], s_gs.map);
     }

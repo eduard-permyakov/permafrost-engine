@@ -36,7 +36,7 @@
 #ifndef A_STAR_H
 #define A_STAR_H
 
-#include "../lib/public/kvec.h"
+#include "../lib/public/vec.h"
 #include "../map/public/tile.h"
 #include "nav_data.h"
 
@@ -44,8 +44,12 @@
 
 struct nav_private;
 
-typedef kvec_t(struct coord) coord_vec_t;
-typedef kvec_t(const struct portal*) portal_vec_t;
+VEC_TYPE(coord, struct coord)
+VEC_IMPL(static inline, coord, struct coord)
+
+VEC_TYPE(portal, struct portal *)
+VEC_IMPL(static inline, portal, struct portal *)
+
 
 /* ------------------------------------------------------------------------
  * Finds the shortest path in a rectangular cost field. Returns true if a 
@@ -55,7 +59,7 @@ typedef kvec_t(const struct portal*) portal_vec_t;
  */
 bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
-                    coord_vec_t *out_path, float *out_cost);
+                    vec_coord_t *out_path, float *out_cost);
 
 /* ------------------------------------------------------------------------
  * Finds the shortest path between a tile and a node in a portal graph. Returns 
@@ -65,7 +69,7 @@ bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
  */
 bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *finish, 
                            const struct nav_private *priv, 
-                           portal_vec_t *out_path, float *out_cost);
+                           vec_portal_t *out_path, float *out_cost);
 
 /* ------------------------------------------------------------------------
  * Returns true if there exists a path between 2 tiles in the same chunk.

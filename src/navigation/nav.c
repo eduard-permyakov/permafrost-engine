@@ -390,8 +390,8 @@ static void n_create_portals(struct nav_private *priv)
 
 static void n_link_chunk_portals(struct nav_chunk *chunk, struct coord chunk_coord)
 {
-    coord_vec_t path;
-    kv_init(path);
+    vec_coord_t path;
+    vec_coord_init(&path);
 
     for(int i = 0; i < chunk->num_portals; i++) {
 
@@ -420,24 +420,24 @@ static void n_link_chunk_portals(struct nav_chunk *chunk, struct coord chunk_coo
         }
     }
 
-    kv_destroy(path);
+    vec_coord_destroy(&path);
 }
 
 static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
-                               const struct map *map, coord_vec_t *path)
+                               const struct map *map, vec_coord_t *path)
 {
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 
-    vec2_t corners_buff[4 * kv_size(*path)];
-    vec3_t colors_buff[kv_size(*path)];
+    vec2_t corners_buff[4 * vec_size(path)];
+    vec3_t colors_buff[vec_size(path)];
 
     vec2_t *corners_base = corners_buff;
     vec3_t *colors_base = colors_buff; 
 
-    for(int i = 0, r = kv_A(*path, i).r, c = kv_A(*path, i).c; 
-        i < kv_size(*path); 
-        i++, r = kv_A(*path, i).r, c = kv_A(*path, i).c) {
+    for(int i = 0, r = vec_AT(path, i).r, c = vec_AT(path, i).c; 
+        i < vec_size(path); 
+        i++, r = vec_AT(path, i).r, c = vec_AT(path, i).c) {
 
         /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
         float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
@@ -455,7 +455,7 @@ static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
 
     assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
-    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, kv_size(*path), chunk_model, map);
+    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, vec_size(path), chunk_model, map);
 }
 
 static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_model,
@@ -1050,12 +1050,12 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
     }
 
     float cost;
-    portal_vec_t path;
-    kv_init(path);
+    vec_portal_t path;
+    vec_portal_init(&path);
 
     bool path_exists = AStar_PortalGraphPath(src_desc, dst_port, priv, &path, &cost);
     if(!path_exists) {
-        kv_destroy(path);
+        vec_portal_destroy(&path);
         return false; 
     }
 
@@ -1063,16 +1063,16 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
 
     /* Traverse the portal path _backwards_ and generate the required fields, if they are not already 
      * cached. Add the results to the fieldcache. */
-    for(int i = kv_size(path)-1; i > 0; i--) {
+    for(int i = vec_size(&path)-1; i > 0; i--) {
 
-        const struct portal *curr_node = kv_A(path, i - 1);
-        const struct portal *next_hop = kv_A(path, i);
+        const struct portal *curr_node = vec_AT(&path, i - 1);
+        const struct portal *next_hop = vec_AT(&path, i);
 
         /* If the very first hop takes us into another chunk, that means that the 'nearest portal'
          * to the source borders the 'next' chunk already. In this case, we must remember to
          * still generate a flow field for the current chunk steering to this portal. */
         if(i == 1 && (next_hop->chunk.r != src_desc.chunk_r || next_hop->chunk.c != src_desc.chunk_c))
-            next_hop = kv_A(path, 0);
+            next_hop = vec_AT(&path, 0);
 
         if(curr_node->connected == next_hop)
             continue;
@@ -1142,7 +1142,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
             prev_los_coord = chunk_coord;
         }
     }
-    kv_destroy(path);
+    vec_portal_destroy(&path);
 
     *out_dest_id = ret; 
     return true;

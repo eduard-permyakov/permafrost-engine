@@ -38,7 +38,6 @@
 #include "config.h"
 #include "asset_load.h"
 #include "lib/public/khash.h"
-#include "lib/public/kvec.h"
 #include "lib/public/pf_string.h"
 
 #include <SDL.h>

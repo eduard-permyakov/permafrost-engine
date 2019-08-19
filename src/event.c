@@ -35,7 +35,7 @@
 
 #include "event.h"
 #include "lib/public/khash.h"
-#include "lib/public/kvec.h"
+#include "lib/public/vec.h"
 #include "lib/public/queue.h"
 #include "game/public/game.h"
 
@@ -71,8 +71,10 @@ struct event{
  */
 #define GLOBAL_ID (~((uint32_t)0))
 
-typedef kvec_t(struct handler_desc) kvec_handler_desc_t;
-KHASH_MAP_INIT_INT64(handler_desc, kvec_handler_desc_t)
+VEC_TYPE(hd, struct handler_desc)
+VEC_IMPL(static inline, hd, struct handler_desc)
+
+KHASH_MAP_INIT_INT64(handler_desc, vec_hd_t)
 
 QUEUE_TYPE(event, struct event)
 QUEUE_IMPL(static, event, struct event)
@@ -111,9 +113,9 @@ static bool e_register_handler(uint64_t key, struct handler_desc *desc)
 
     if(k == kh_end(s_event_handler_table)) {
 
-        kvec_handler_desc_t newv;
-        kv_init(newv);
-        kv_push(struct handler_desc, newv, *desc);
+        vec_hd_t newv;
+        vec_hd_init(&newv);
+        vec_hd_push(&newv, *desc);
 
         int ret;
         k = kh_put(handler_desc, s_event_handler_table, key, &ret);
@@ -122,8 +124,8 @@ static bool e_register_handler(uint64_t key, struct handler_desc *desc)
 
     }else{
     
-        kvec_handler_desc_t vec = kh_value(s_event_handler_table, k);
-        kv_push(struct handler_desc, vec, *desc);
+        vec_hd_t vec = kh_value(s_event_handler_table, k);
+        vec_hd_push(&vec, *desc);
         kh_value(s_event_handler_table, k) = vec;
     }
 
@@ -138,13 +140,13 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
     if(k == kh_end(s_event_handler_table))
         return false;
 
-    kvec_handler_desc_t vec = kh_value(s_event_handler_table, k);
+    vec_hd_t vec = kh_value(s_event_handler_table, k);
 
     int idx;
-    kv_indexof(struct handler_desc, vec, *desc, handlers_equal, idx);
+    vec_hd_indexof(&vec, *desc, handlers_equal, &idx);
     if(idx == -1)
         return false;
-    struct handler_desc to_del = kv_A(vec, idx);
+    struct handler_desc to_del = vec_AT(&vec, idx);
 
     if(to_del.type == HANDLER_TYPE_SCRIPT) {
 
@@ -152,7 +154,7 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
         S_Release(to_del.user_arg); 
     }
 
-    kv_del(struct handler_desc, vec, idx);
+    vec_hd_del(&vec, idx);
     kh_value(s_event_handler_table, k) = vec;
 
     return true;
@@ -168,11 +170,11 @@ static void e_handle_event(struct event event)
     if(k == kh_end(s_event_handler_table))
         return; 
     
-    kvec_handler_desc_t vec = kh_value(s_event_handler_table, k);
+    vec_hd_t vec = kh_value(s_event_handler_table, k);
 
-    for(int i = 0; i < kv_size(vec); i++) {
+    for(int i = 0; i < vec_size(&vec); i++) {
     
-        struct handler_desc *elem = &kv_A(vec, i);
+        struct handler_desc *elem = &vec_AT(&vec, i);
 
         if((elem->simmask & ss) == 0)
             continue;
@@ -222,8 +224,8 @@ void E_Shutdown(void)
     
         if (kh_exist(s_event_handler_table, k)) {
         
-            kvec_handler_desc_t vec = kh_value(s_event_handler_table, k);
-            kv_destroy(vec);
+            vec_hd_t vec = kh_value(s_event_handler_table, k);
+            vec_hd_destroy(&vec);
         }
     }
 

@@ -40,7 +40,7 @@
 
 #include "lib/public/pf_nuklear.h"
 #include "lib/public/nuklear_sdl_gl3.h"
-#include "lib/public/kvec.h"
+#include "lib/public/vec.h"
 #include "game/public/game.h"
 
 #include <stdbool.h>
@@ -56,12 +56,15 @@ struct text_desc{
     struct rgba rgba;
 };
 
+VEC_TYPE(td, struct text_desc)
+VEC_IMPL(static inline, td, struct text_desc)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static struct nk_context        *s_nk_ctx;
-static kvec_t(struct text_desc)  s_curr_frame_labels;
+static struct nk_context *s_nk_ctx;
+static vec_td_t           s_curr_frame_labels;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -91,15 +94,15 @@ static void on_update_ui(void *user, void *event)
     if(nk_begin(s_nk_ctx, "__labels__", nk_rect(0, 0, width, height), 
        NK_WINDOW_NO_INPUT | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR)) {
     
-       for(int i = 0; i < kv_size(s_curr_frame_labels); i++)
-            ui_draw_text(kv_A(s_curr_frame_labels, i)); 
+       for(int i = 0; i < vec_size(&s_curr_frame_labels); i++)
+            ui_draw_text(vec_AT(&s_curr_frame_labels, i)); 
     }
     nk_end(s_nk_ctx);
 
     nk_style_pop_color(s_nk_ctx);
     nk_style_pop_style_item(s_nk_ctx);
 
-    kv_reset(s_curr_frame_labels);
+    vec_td_reset(&s_curr_frame_labels);
 }
 
 static int left_x_point(struct rect from_bounds, vec2_t from_res, vec2_t to_res, int resize_mask)
@@ -229,7 +232,7 @@ struct nk_context *UI_Init(const char *basedir, SDL_Window *win)
     atlas->default_font = optimus_princeps;
     nk_sdl_font_stash_end();
 
-    kv_init(s_curr_frame_labels);
+    vec_td_init(&s_curr_frame_labels);
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING);
 
     s_nk_ctx = ctx;
@@ -239,7 +242,7 @@ struct nk_context *UI_Init(const char *basedir, SDL_Window *win)
 void UI_Shutdown(void)
 {
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
-    kv_destroy(s_curr_frame_labels);
+    vec_td_destroy(&s_curr_frame_labels);
     nk_sdl_shutdown();
 }
 
@@ -268,7 +271,7 @@ void UI_DrawText(const char *text, struct rect rect, struct rgba rgba)
     struct text_desc d = (struct text_desc){.rect = rect, .rgba = rgba};
     strncpy(d.text, text, sizeof(d.text));
     d.text[sizeof(d.text)-1] = '\0';
-    kv_push(struct text_desc, s_curr_frame_labels, d);
+    vec_td_push(&s_curr_frame_labels, d);
 }
 
 vec2_t UI_ArAdjustedVRes(vec2_t vres)

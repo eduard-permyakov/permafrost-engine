@@ -37,7 +37,7 @@
 #define CLEARPATH_H
 
 #include "../pf_math.h"
-#include "../lib/public/kvec.h"
+#include "../lib/public/vec.h"
 
 
 #define CLEARPATH_NEIGHBOUR_RADIUS (10.0f)
@@ -54,8 +54,8 @@ struct cp_ent{
     float  radius;
 };
 
-typedef kvec_t(struct cp_ent) cp_ent_vec_t;
-
+VEC_TYPE(cp_ent, struct cp_ent)
+VEC_IMPL(static inline, cp_ent, struct cp_ent)
 
 void G_ClearPath_Init(const struct map *map);
 void G_ClearPath_Shutdown(void);
@@ -63,8 +63,8 @@ void G_ClearPath_Shutdown(void);
 vec2_t G_ClearPath_NewVelocity(struct cp_ent ent,
                                uint32_t ent_uid,
                                vec2_t ent_des_v,
-                               cp_ent_vec_t dyn_neighbs,
-                               cp_ent_vec_t stat_neighbs);
+                               vec_cp_ent_t dyn_neighbs,
+                               vec_cp_ent_t stat_neighbs);
 
 #endif
 

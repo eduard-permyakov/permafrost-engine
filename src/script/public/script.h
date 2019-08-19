@@ -80,7 +80,7 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y);
 
 script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
                                      const khash_t(attr) *attr_table, 
-                                     const kvec_attr_t *construct_args);
+                                     const vec_attr_t *construct_args);
 
 #endif
 

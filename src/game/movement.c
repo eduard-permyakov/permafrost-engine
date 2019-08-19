@@ -50,7 +50,7 @@
 #include "../render/public/render.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
-#include "../lib/public/kvec.h"
+#include "../lib/public/vec.h"
 #include "../anim/public/anim.h"
 
 #include <assert.h>
@@ -94,6 +94,9 @@ struct flock{
     dest_id_t        dest_id;
 };
 
+VEC_TYPE(flock, struct flock)
+VEC_IMPL(static inline, flock, struct flock)
+
 /* Parameters controlling steering/flocking behaviours */
 #define SEPARATION_FORCE_SCALE          (2.5f)
 #define MOVE_ARRIVE_FORCE_SCALE         (0.7f)
@@ -117,8 +120,8 @@ static const struct map       *s_map;
 static bool                    s_attack_on_lclick = false;
 static bool                    s_move_on_lclick = false;
 
-static kvec_t(struct entity*)  s_move_markers;
-static kvec_t(struct flock)    s_flocks;
+static vec_pentity_t          s_move_markers;
+static vec_flock_t            s_flocks;
 static khash_t(state)         *s_entity_state_table;
 
 /* Store the most recently issued move command location for debug rendering */
@@ -165,9 +168,9 @@ static bool flock_contains(const struct flock *flock, const struct entity *ent)
 
 static struct flock *flock_for_ent(const struct entity *ent)
 {
-    for(int i = 0; i < kv_size(s_flocks); i++) {
+    for(int i = 0; i < vec_size(&s_flocks); i++) {
 
-        struct flock *curr_flock = &kv_A(s_flocks, i);            
+        struct flock *curr_flock = &vec_AT(&s_flocks, i);            
         if(flock_contains(curr_flock, ent))
             return curr_flock;
     }
@@ -176,9 +179,9 @@ static struct flock *flock_for_ent(const struct entity *ent)
 
 static struct flock *flock_for_dest(dest_id_t id)
 {
-    for(int i = 0; i < kv_size(s_flocks); i++) {
+    for(int i = 0; i < vec_size(&s_flocks); i++) {
 
-        struct flock *curr_flock = &kv_A(s_flocks, i);            
+        struct flock *curr_flock = &vec_AT(&s_flocks, i);            
         if(curr_flock->dest_id == id)
             return curr_flock;
     }
@@ -217,9 +220,9 @@ static void on_marker_anim_finish(void *user, void *event)
     struct entity *ent = user;
     assert(ent);
 
-    kv_indexof(struct entity*, s_move_markers, ent, entities_equal, idx);
+    vec_pentity_indexof(&s_move_markers, ent, entities_equal, &idx);
     assert(idx != -1);
-    kv_del(struct entity*, s_move_markers, idx);
+    vec_pentity_del(&s_move_markers, idx);
 
     E_Entity_Unregister(EVENT_ANIM_FINISHED, ent->uid, on_marker_anim_finish);
     AL_EntityFree(ent);
@@ -237,36 +240,36 @@ static bool same_chunk_as_any_in_set(struct tile_desc desc, const struct tile_de
     return false;
 }
 
-static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_xz, bool attack)
+static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz, bool attack)
 {
-    if(kv_size(*sel) == 0)
+    if(vec_size(sel) == 0)
         return false;
 
     /* The following won't be optimal when the entities in the selection are on different 
      * 'islands'. Handling that case is not a top priority. 
      */
-    vec2_t first_ent_pos_xz = (vec2_t){kv_A(*sel, 0)->pos.x, kv_A(*sel, 0)->pos.z};
+    vec2_t first_ent_pos_xz = (vec2_t){vec_AT(sel, 0)->pos.x, vec_AT(sel, 0)->pos.z};
     target_xz = M_NavClosestReachableDest(s_map, first_ent_pos_xz, target_xz);
 
     /* First remove the entities in the selection from any active flocks */
-    for(int i = 0; i < kv_size(*sel); i++) {
+    for(int i = 0; i < vec_size(sel); i++) {
 
-        const struct entity *curr_ent = kv_A(*sel, i);
+        const struct entity *curr_ent = vec_AT(sel, i);
         if(stationary(curr_ent))
             continue;
         /* Remove any flocks which may have become empty. Iterate vector in backwards order 
          * so that we can delete while iterating, since the last element in the vector takes
          * the place of the deleted one. 
          */
-        for(int j = kv_size(s_flocks)-1; j >= 0; j--) {
+        for(int j = vec_size(&s_flocks)-1; j >= 0; j--) {
 
             khiter_t k;
-            struct flock *curr_flock = &kv_A(s_flocks, j);
+            struct flock *curr_flock = &vec_AT(&s_flocks, j);
             flock_try_remove(curr_flock, curr_ent);
 
             if(kh_size(curr_flock->ents) == 0) {
                 kh_destroy(entity, curr_flock->ents);
-                kv_del(struct flock, s_flocks, j);
+                vec_flock_del(&s_flocks, j);
             }
         }
     }
@@ -285,12 +288,12 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
      * 'island' of the chunk than the one for which the flow field has been computed,
      * the FF for this 'island' will be computed on demand. 
      */
-    struct tile_desc pathed_ents_descs[kv_size(*sel)];
+    struct tile_desc pathed_ents_descs[vec_size(sel)];
     size_t num_pathed_ents = 0;
 
-    for(int i = 0; i < kv_size(*sel); i++) {
+    for(int i = 0; i < vec_size(sel); i++) {
 
-        const struct entity *curr_ent = kv_A(*sel, i);
+        const struct entity *curr_ent = vec_AT(sel, i);
         struct movestate *ms = movestate_get(curr_ent);
         assert(ms);
 
@@ -336,7 +339,7 @@ static bool make_flock_from_selection(const pentity_kvec_t *sel, vec2_t target_x
             kh_destroy(entity, new_flock.ents);
         
         }else{
-            kv_push(struct flock, s_flocks, new_flock);
+            vec_flock_push(&s_flocks, new_flock);
         }
 
         s_last_cmd_dest_valid = true;
@@ -390,7 +393,7 @@ static void move_marker_add(vec3_t pos, bool attack)
     A_InitCtx(ent, "Converge", 48);
     A_SetActiveClip(ent, "Converge", ANIM_MODE_ONCE_HIDE_ON_FINISH, 48);
 
-    kv_push(struct entity*, s_move_markers, ent);
+    vec_pentity_push(&s_move_markers, ent);
 }
 
 static void on_mousedown(void *user, void *event)
@@ -421,12 +424,12 @@ static void on_mousedown(void *user, void *event)
         return;
 
     enum selection_type sel_type;
-    const pentity_kvec_t *sel = G_Sel_Get(&sel_type);
-    if(kv_size(*sel) > 0 && sel_type == SELECTION_TYPE_PLAYER) {
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+    if(vec_size(sel) > 0 && sel_type == SELECTION_TYPE_PLAYER) {
 
-        for(int i = 0; i < kv_size(*sel); i++) {
+        for(int i = 0; i < vec_size(sel); i++) {
 
-            const struct entity *curr = kv_A(*sel, i);
+            const struct entity *curr = vec_AT(sel, i);
             if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
                 continue;
 
@@ -451,9 +454,9 @@ static void on_render_3d(void *user, void *event)
         M_NavRenderVisiblePathFlowField(s_map, cam, s_last_cmd_dest);
     }
 
-    for(int i = 0; i < kv_size(s_move_markers); i++) {
+    for(int i = 0; i < vec_size(&s_move_markers); i++) {
 
-        struct entity *curr = kv_A(s_move_markers, i);
+        struct entity *curr = vec_AT(&s_move_markers, i);
         if(curr->flags & ENTITY_FLAG_ANIMATED) {
 
             A_Update(curr);
@@ -871,8 +874,8 @@ static void entity_update(struct entity *ent, const struct flock *flock, vec2_t 
 }
 
 static void find_neighbours(const struct entity *ent,
-                            cp_ent_vec_t *out_dyn,
-                            cp_ent_vec_t *out_stat)
+                            vec_cp_ent_t *out_dyn,
+                            vec_cp_ent_t *out_stat)
 {
     /* For the ClearPath algorithm, we only consider entities without
      * ENTITY_FLAG_STATIC set, as they are the only ones that may need
@@ -906,10 +909,10 @@ static void find_neighbours(const struct entity *ent,
 
             if(ms->state == STATE_ARRIVED) {
             
-                kv_push(struct cp_ent, *out_stat, newdesc);
+                vec_cp_ent_push(out_stat, newdesc);
             }else{
             
-                kv_push(struct cp_ent, *out_dyn, newdesc);
+                vec_cp_ent_push(out_dyn, newdesc);
             }
         }
     });
@@ -917,22 +920,22 @@ static void find_neighbours(const struct entity *ent,
 
 static void on_30hz_tick(void *user, void *event)
 {
-    cp_ent_vec_t dyn, stat;
-    kv_init(dyn);
-    kv_init(stat);
+    vec_cp_ent_t dyn, stat;
+    vec_cp_ent_init(&dyn);
+    vec_cp_ent_init(&stat);
 
     uint32_t key;
     struct entity *curr;
     const khash_t(entity) *dynamic = G_GetDynamicEntsSet();
 
     /* Iterate vector backwards so we can delete entries while iterating. */
-    for(int i = kv_size(s_flocks)-1; i >= 0; i--) {
+    for(int i = vec_size(&s_flocks)-1; i >= 0; i--) {
 
-        struct flock *flock = &kv_A(s_flocks, i);
+        struct flock *flock = &vec_AT(&s_flocks, i);
 
         /* First, decide if we can disband this flock */
         bool disband = true;
-        kh_foreach(kv_A(s_flocks, i).ents, key, curr, {
+        kh_foreach(vec_AT(&s_flocks, i).ents, key, curr, {
 
             struct movestate *ms = movestate_get(curr);
             assert(ms);
@@ -944,12 +947,12 @@ static void on_30hz_tick(void *user, void *event)
 
         if(disband) {
 
-            kh_destroy(entity, kv_A(s_flocks, i).ents);
-            kv_del(struct flock, s_flocks, i);
+            kh_destroy(entity, vec_AT(&s_flocks, i).ents);
+            vec_flock_del(&s_flocks, i);
             continue;
         }
 
-        kh_foreach(kv_A(s_flocks, i).ents, key, curr, {
+        kh_foreach(vec_AT(&s_flocks, i).ents, key, curr, {
 
             struct movestate *ms = movestate_get(curr);
             assert(ms);
@@ -961,8 +964,8 @@ static void on_30hz_tick(void *user, void *event)
                 .radius = curr->selection_radius,
             };
 
-            kv_reset(dyn);
-            kv_reset(stat);
+            vec_cp_ent_reset(&dyn);
+            vec_cp_ent_reset(&stat);
             find_neighbours(curr, &dyn, &stat);
 
             ms->vnew = G_ClearPath_NewVelocity(curr_cp, key, vpref, dyn, stat);
@@ -976,13 +979,13 @@ static void on_30hz_tick(void *user, void *event)
         });
     }
 
-    for(int i = kv_size(s_flocks)-1; i >= 0; i--) {
+    for(int i = vec_size(&s_flocks)-1; i >= 0; i--) {
 
         uint32_t key;
         struct entity *curr;
-        struct flock *flock = &kv_A(s_flocks, i);
+        struct flock *flock = &vec_AT(&s_flocks, i);
     
-        kh_foreach(kv_A(s_flocks, i).ents, key, curr, {
+        kh_foreach(vec_AT(&s_flocks, i).ents, key, curr, {
 
             struct movestate *ms = movestate_get(curr);
             assert(ms);
@@ -990,8 +993,8 @@ static void on_30hz_tick(void *user, void *event)
         });
     }
 
-    kv_destroy(dyn);
-    kv_destroy(stat);
+    vec_cp_ent_destroy(&dyn);
+    vec_cp_ent_destroy(&stat);
 }
 
 /*****************************************************************************/
@@ -1004,8 +1007,8 @@ bool G_Move_Init(const struct map *map)
     if(NULL == (s_entity_state_table = kh_init(state))) {
         return false;
     }
-    kv_init(s_move_markers);
-    kv_init(s_flocks);
+    vec_pentity_init(&s_move_markers);
+    vec_flock_init(&s_flocks);
 
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL, G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
@@ -1023,13 +1026,13 @@ void G_Move_Shutdown(void)
     E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
 
-    for(int i = 0; i < kv_size(s_move_markers); i++) {
-        E_Entity_Unregister(EVENT_ANIM_FINISHED, kv_A(s_move_markers, i)->uid, on_marker_anim_finish);
-        AL_EntityFree(kv_A(s_move_markers, i));
+    for(int i = 0; i < vec_size(&s_move_markers); i++) {
+        E_Entity_Unregister(EVENT_ANIM_FINISHED, vec_AT(&s_move_markers, i)->uid, on_marker_anim_finish);
+        AL_EntityFree(vec_AT(&s_move_markers, i));
     }
 
-    kv_destroy(s_flocks);
-    kv_destroy(s_move_markers);
+    vec_flock_destroy(&s_flocks);
+    vec_pentity_destroy(&s_move_markers);
     kh_destroy(state, s_entity_state_table);
 }
 
@@ -1063,14 +1066,14 @@ void G_Move_Stop(const struct entity *ent)
     struct entity *curr;
 
     /* Remove this entity from any existing flocks */
-    for(int i = kv_size(s_flocks)-1; i >= 0; i--) {
+    for(int i = vec_size(&s_flocks)-1; i >= 0; i--) {
 
-        struct flock *curr_flock = &kv_A(s_flocks, i);
+        struct flock *curr_flock = &vec_AT(&s_flocks, i);
         flock_try_remove(curr_flock, ent);
 
         if(kh_size(curr_flock->ents) == 0) {
             kh_destroy(entity, curr_flock->ents);
-            kv_del(struct flock, s_flocks, i);
+            vec_flock_del(&s_flocks, i);
         }
     }
 
@@ -1096,12 +1099,12 @@ bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz)
 
 void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz)
 {
-    pentity_kvec_t to_add;
-    kv_init(to_add);
-    kv_push(struct entity*, to_add, (struct entity*)ent);
+    vec_pentity_t to_add;
+    vec_pentity_init(&to_add);
+    vec_pentity_push(&to_add, (struct entity*)ent);
 
     make_flock_from_selection(&to_add, dest_xz, false);
-    kv_destroy(to_add);
+    vec_pentity_destroy(&to_add);
 }
 
 void G_Move_SetMoveOnLeftClick(void)

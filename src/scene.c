@@ -44,6 +44,7 @@
 #include <assert.h>
 
 
+VEC_IMPL(extern, attr, struct attr)
 __KHASH_IMPL(attr, extern, kh_cstr_t, struct attr, 1, kh_str_hash_func, kh_str_hash_equal)
 
 /*****************************************************************************/
@@ -148,8 +149,8 @@ static bool scene_load_entity(SDL_RWops *stream)
     if(!attr_table)
         goto fail_alloc;
 
-    kvec_attr_t constructor_args;
-    kv_init(constructor_args);
+    vec_attr_t constructor_args;
+    vec_attr_init(&constructor_args);
 
     READ_LINE(stream, line, fail_parse);
     if(!sscanf(line, "entity %s %s %lu", name, path, &num_atts))
@@ -173,10 +174,10 @@ static bool scene_load_entity(SDL_RWops *stream)
             
             for(int j = 0; j < num_args; j++) {
                 if(!scene_parse_att(stream, &const_arg, true)) {
-                    kv_destroy(constructor_args);
+                    vec_attr_destroy(&constructor_args);
                     goto fail_parse;
                 }
-                kv_push(struct attr, constructor_args, const_arg);
+                vec_attr_push(&constructor_args, const_arg);
             }
         }
     }
@@ -185,11 +186,11 @@ static bool scene_load_entity(SDL_RWops *stream)
         goto fail_init;
     
     kh_destroy(attr, attr_table);
-    kv_destroy(constructor_args);
+    vec_attr_destroy(&constructor_args);
     return true;
 
 fail_init:
-    kv_destroy(constructor_args);
+    vec_attr_destroy(&constructor_args);
 fail_parse:
     kh_destroy(attr, attr_table);
 fail_alloc:

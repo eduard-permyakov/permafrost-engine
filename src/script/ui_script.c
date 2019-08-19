@@ -38,7 +38,7 @@
 #include "public/script.h"
 #include "ui_style_script.h"
 #include "../lib/public/pf_nuklear.h"
-#include "../lib/public/kvec.h"
+#include "../lib/public/vec.h"
 #include "../game/public/game.h"
 #include "../event.h"
 #include "../collision.h"
@@ -64,6 +64,9 @@ typedef struct {
      * will be transformed according to the resize mask. */
     struct nk_vec2i         virt_res;
 }PyWindowObject;
+
+VEC_TYPE(win, PyWindowObject*)
+VEC_IMPL(static inline, win, PyWindowObject*)
 
 static int       PyWindow_init(PyWindowObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_layout_row_static(PyWindowObject *self, PyObject *args);
@@ -122,8 +125,8 @@ static int       PyWindow_set_interactive(PyWindowObject *self, PyObject *value,
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static struct nk_context       *s_nk_ctx;
-static kvec_t(PyWindowObject*)  s_active_windows;
+static struct nk_context *s_nk_ctx;
+static vec_win_t          s_active_windows;
 
 static PyMethodDef PyWindow_methods[] = {
     {"layout_row_static", 
@@ -731,15 +734,15 @@ static PyObject *PyWindow_on_hide(PyWindowObject *self)
 static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     PyObject *self = type->tp_alloc(type, 0);
-    kv_push(PyWindowObject*, s_active_windows, (PyWindowObject*)self);
+    vec_win_push(&s_active_windows, (PyWindowObject*)self);
     return self;
 }
 
 static void PyWindow_dealloc(PyWindowObject *self)
 {
     int idx;
-    kv_indexof(PyWindowObject*, s_active_windows, self, equal, idx);
-    kv_del(PyWindowObject*, s_active_windows, idx);
+    vec_win_indexof(&s_active_windows, self, equal, &idx);
+    vec_win_del(&s_active_windows, idx);
 
     nk_window_close(s_nk_ctx, self->name);
     Py_TYPE(self)->tp_free((PyObject*)self);
@@ -999,9 +1002,9 @@ static void active_windows_update(void *user, void *event)
     (void)user;
     (void)event;
 
-    for(int i = 0; i < kv_size(s_active_windows); i++) {
+    for(int i = 0; i < vec_size(&s_active_windows); i++) {
     
-        PyWindowObject *win = kv_A(s_active_windows, i);
+        PyWindowObject *win = vec_AT(&s_active_windows, i);
         if(win->flags & (NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED))
             continue;
 
@@ -1045,7 +1048,7 @@ bool S_UI_Init(struct nk_context *ctx)
 {
     assert(ctx);
     s_nk_ctx = ctx;
-    kv_init(s_active_windows);
+    vec_win_init(&s_active_windows);
 
     if(!E_Global_Register(EVENT_UPDATE_UI, active_windows_update, NULL, G_RUNNING | G_PAUSED_UI_RUNNING))
         return false;
@@ -1058,7 +1061,7 @@ void S_UI_Shutdown(void)
 {
     S_UI_Style_Shutdown();
     E_Global_Unregister(EVENT_UPDATE_UI, active_windows_update);
-    kv_destroy(s_active_windows);
+    vec_win_destroy(&s_active_windows);
 }
 
 void S_UI_PyRegister(PyObject *module)
@@ -1077,9 +1080,9 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
     int w, h;    
     Engine_WinDrawableSize(&w, &h);
 
-    for(int i = 0; i < kv_size(s_active_windows); i++) {
+    for(int i = 0; i < vec_size(&s_active_windows); i++) {
 
-        PyWindowObject *win = kv_A(s_active_windows, i);
+        PyWindowObject *win = vec_AT(&s_active_windows, i);
         struct rect adj_bounds = UI_BoundsForAspectRatio(win->rect, TO_VEC2T(win->virt_res),
             UI_ArAdjustedVRes(TO_VEC2T(win->virt_res)), win->resize_mask);
         struct nk_vec2 visible_size = {adj_bounds.w, adj_bounds.h};

@@ -37,7 +37,7 @@
 #define SELECTION_H
 
 #include "public/game.h"
-#include "../lib/public/kvec.h"
+#include "../lib/public/vec.h"
 #include "../entity.h"
 
 #include <stdbool.h>
@@ -45,13 +45,13 @@
 struct obb;
 struct camera;
 
+VEC_TYPE(obb, struct obb)
+VEC_PROTOTYPES(extern, obb, struct obb)
 
 extern const vec3_t g_seltype_color_map[];
 
-typedef kvec_t(struct obb) obb_kvec_t;
-
 bool G_Sel_Init(void);
 void G_Sel_Shutdown(void);
-void G_Sel_Update(struct camera *cam, const pentity_kvec_t *visible, const obb_kvec_t *visible_obbs);
+void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_obb_t *visible_obbs);
 
 #endif

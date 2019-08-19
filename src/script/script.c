@@ -689,14 +689,14 @@ static PyObject *PyPf_clear_unit_selection(PyObject *self)
 static PyObject *PyPf_get_unit_selection(PyObject *self)
 {
     enum selection_type sel_type;
-    const pentity_kvec_t *sel = G_Sel_Get(&sel_type);
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
 
     PyObject *ret = PyList_New(0);
     if(!ret)
         return NULL;
 
-    for(int i = 0; i < kv_size(*sel); i++) {
-        PyObject *ent = S_Entity_ObjForUID(kv_A(*sel, i)->uid);
+    for(int i = 0; i < vec_size(sel); i++) {
+        PyObject *ent = S_Entity_ObjForUID(vec_AT(sel, i)->uid);
         if(ent) {
             PyList_Append(ret, ent);
         }

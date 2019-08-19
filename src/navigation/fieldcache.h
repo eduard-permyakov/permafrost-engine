@@ -85,7 +85,7 @@ void N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, ff_id_t 
 
 struct grid_path_desc{
     bool exists;
-    coord_vec_t path;
+    vec_coord_t path;
     float cost;
 };
 

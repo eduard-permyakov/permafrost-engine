@@ -37,8 +37,9 @@
 #define GAMESTATE_H
 
 #include "public/game.h"
-#include "../lib/public/kvec.h"
+#include "../lib/public/vec.h"
 #include "faction.h"
+#include "selection.h"
 
 #include <stdint.h>
 
@@ -63,12 +64,12 @@ struct gamestate{
      * The set of entities potentially visible by the active camera.
      *-------------------------------------------------------------------------
      */
-    kvec_t(struct entity*)  visible;
+    vec_pentity_t           visible;
     /*-------------------------------------------------------------------------
      * Cache of current-frame OBBs for visible entities.
      *-------------------------------------------------------------------------
      */
-    kvec_t(struct obb)      visible_obbs;
+    vec_obb_t               visible_obbs;
     /*-------------------------------------------------------------------------
      * Up-to-date set of all non-static entities. (Subset of 'active' set). 
      * Used for collision avoidance force computations.

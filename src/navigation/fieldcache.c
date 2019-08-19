@@ -104,7 +104,7 @@ uint64_t grid_path_key(struct coord local_start, struct coord local_dest,
 
 static void on_grid_path_evict(struct grid_path_desc *victim)
 {
-    kv_destroy(victim->path);
+    vec_coord_destroy(&victim->path);
 }
 
 /*****************************************************************************/

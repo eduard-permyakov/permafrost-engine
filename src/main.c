@@ -39,7 +39,7 @@
 #include "cursor.h"
 #include "render/public/render.h"
 #include "lib/public/stb_image.h"
-#include "lib/public/kvec.h"
+#include "lib/public/vec.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
 #include "navigation/public/nav.h"
@@ -64,6 +64,9 @@
 #define PF_VER_MINOR 37
 #define PF_VER_PATCH 0
 
+VEC_TYPE(event, SDL_Event)
+VEC_IMPL(static inline, event, SDL_Event)
+
 /*****************************************************************************/
 /* GLOBAL VARIABLES                                                          */
 /*****************************************************************************/
@@ -85,7 +88,7 @@ static SDL_GLContext       s_context;
  */
 static bool                s_step_frame = false;
 static bool                s_quit = false; 
-static kvec_t(SDL_Event)   s_prev_tick_events;
+static vec_event_t         s_prev_tick_events;
 
 static struct nk_context  *s_nk_ctx;
 
@@ -97,15 +100,15 @@ static void process_sdl_events(void)
 {
     UI_InputBegin(s_nk_ctx);
 
-    kv_reset(s_prev_tick_events);
+    vec_event_reset(&s_prev_tick_events);
     SDL_Event event;    
    
     while(SDL_PollEvent(&event)) {
 
         UI_HandleEvent(&event);
 
-        kv_push(SDL_Event, s_prev_tick_events, event);
-        E_Global_Notify(event.type, &kv_A(s_prev_tick_events, kv_size(s_prev_tick_events)-1), 
+        vec_event_push(&s_prev_tick_events, event);
+        E_Global_Notify(event.type, &vec_AT(&s_prev_tick_events, vec_size(&s_prev_tick_events)-1),
             ES_ENGINE);
 
         switch(event.type) {
@@ -262,8 +265,8 @@ static void engine_create_settings(void)
 
 static bool engine_init(char **argv)
 {
-    kv_init(s_prev_tick_events);
-    if(!kv_resize(SDL_Event, s_prev_tick_events, 256))
+    vec_event_init(&s_prev_tick_events);
+    if(!vec_event_resize(&s_prev_tick_events, 256))
         return false;
 
     /* Initialize 'Settings' before any subsystem to allow all of them 
@@ -432,7 +435,7 @@ static void engine_shutdown(void)
     UI_Shutdown();
     E_Shutdown();
 
-    kv_destroy(s_prev_tick_events);
+    vec_event_destroy(&s_prev_tick_events);
 
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window); 
