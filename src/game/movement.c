@@ -726,8 +726,17 @@ static vec2_t total_steering_force(const struct entity *ent, const struct flock 
         ret.raw[1] = 0.0f;
 
     float new_mag = PFM_Vec2_Len(&ret);
-    if(new_mag < EPSILON)
-        return ret;
+    if(new_mag < EPSILON) {
+
+        /* When both components of the force are truncated due to steering the entity
+         * off the pathable terrain, return a very slight flow field following force.
+         * This force is guaranteed not to guide the entity off pathable terrain. If
+         * we simply return a zero force, the entity can get stuck. The following 
+         * guarantees we make eventual progress in those cases.
+         */
+        vec2_truncate(&arrive, MAX_FORCE * 0.02f);
+        return arrive;
+    }
 
     PFM_Vec2_Scale(&ret, old_mag / new_mag, &ret);
     assert(fabs(PFM_Vec2_Len(&ret) - old_mag) < EPSILON);
