@@ -98,12 +98,12 @@ VEC_TYPE(flock, struct flock)
 VEC_IMPL(static inline, flock, struct flock)
 
 /* Parameters controlling steering/flocking behaviours */
-#define SEPARATION_FORCE_SCALE          (2.5f)
+#define SEPARATION_FORCE_SCALE          (2.0f)
 #define MOVE_ARRIVE_FORCE_SCALE         (0.7f)
-#define MOVE_COHESION_FORCE_SCALE       (0.1f)
+#define MOVE_COHESION_FORCE_SCALE       (0.15f)
 
 #define ARRIVE_THRESHOLD_DIST           (5.0f)
-#define SEPARATION_BUFFER_DIST          (2.5f)
+#define SEPARATION_BUFFER_DIST          (0.0f)
 #define COHESION_NEIGHBOUR_RADIUS       (50.0f)
 #define ARRIVE_SLOWING_RADIUS           (10.0f)
 #define ADJACENCY_SEP_DIST              (5.0f)
@@ -649,11 +649,11 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
         float radius = ent->selection_radius + curr->selection_radius + buffer_dist;
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
-        /* Exponential decay with y=1 when diff = radius*0.75 
+        /* Exponential decay with y=1 when diff = radius*0.95 
          * Use smooth decay curves in order to curb the 'toggling' or oscillating 
          * behaviour that may arise when there are discontinuities in the forces. 
          */
-        float t = (PFM_Vec2_Len(&diff) - radius*0.75) / radius;
+        float t = (PFM_Vec2_Len(&diff) - radius*0.95) / radius;
         float scale = exp(-5.0f * t);
         PFM_Vec2_Scale(&diff, scale, &diff);
 
