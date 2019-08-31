@@ -10,24 +10,24 @@ PF_SRCS = $(foreach dir,$(PF_DIRS),$(wildcard $(dir)/*.c))
 PF_OBJS = $(PF_SRCS:./src/%.c=./obj/%.o)
 PF_DEPS = $(PF_OBJS:%.o=%.d)
 
-GLEW_SRC = ./deps/glew-2.1.0
+GLEW_SRC = ./deps/GLEW
 ifeq ($(OS),Windows_NT)
 GLEW_LIB = glew32.dll
 else
-GLEW_LIB = libGLEW.so.2.1
+GLEW_LIB = libGLEW.so.2.2
 endif
-GLEW_VER = 2.1.0
+GLEW_VER = 2.2.0
 
-SDL2_SRC = ./deps/SDL2-2.0.7
+SDL2_SRC = ./deps/SDL2
 ifeq ($(OS),Windows_NT)
 SDL2_LIB = SDL2.dll
 else
 SDL2_LIB = libSDL2-2.0.so.0
 endif
 SDL2_VER_MAJOR = 2.0
-SDL2_VER_MINOR = 0.7.0
+SDL2_VER_MINOR = 0.10.0
 
-PYTHON_SRC = ./deps/Python-2.7.13
+PYTHON_SRC = ./deps/Python
 ifeq ($(OS),Windows_NT)
 PYTHON_LIB = python27.dll
 else
@@ -37,7 +37,6 @@ PYTHON_VER_MAJOR = 2.7
 
 CFLAGS  = -std=c99 -I$(GLEW_SRC)/include -I$(SDL2_SRC)/include -I$(PYTHON_SRC)/Include -I$(PYTHON_SRC)/build \
 		   -fno-strict-aliasing -march=native -O2 -pipe -fwrapv -g
-DEFS  	=
 LDFLAGS = -L./lib/ -lm -lpthread -lm
 ifeq ($(OS),Windows_NT)
 LDFLAGS += -lmingw32 -lSDL2 -lglew32 -lpython27 -lopengl32
@@ -48,7 +47,11 @@ DEPS = ./lib/$(GLEW_LIB) ./lib/$(SDL2_LIB) ./lib/$(PYTHON_LIB)
 
 deps: $(DEPS)
 
-./lib/$(GLEW_LIB): 
+.PHONY: glew_extensions
+glew_extensions:
+	make -C $(GLEW_SRC) extensions
+
+./lib/$(GLEW_LIB): glew_extensions
 	mkdir -p ./lib
 	make -C $(GLEW_SRC) glew.lib.shared
 ifeq ($(OS),Windows_NT)
@@ -95,15 +98,11 @@ pf: $(PF_OBJS)
 
 -include $(PF_DEPS)
 
-.PHONY: clean run clean_deps
-
-.IGNORE: clean_deps
+.PHONY: clean run run_editor clean_deps
 
 clean_deps:
+	git submodule foreach git reset --hard	
 	rm -rf ./lib/*
-	cd $(GLEW_SRC) && make clean
-	cd $(SDL2_SRC)/build && make clean
-	cd $(PYTHON_SRC)/build && make clean
 
 clean:
 	rm -rf $(PF_OBJS) $(PF_DEPS) $(BIN) 
