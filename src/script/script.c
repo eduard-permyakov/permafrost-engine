@@ -39,6 +39,7 @@
 #include "ui_script.h"
 #include "tile_script.h"
 #include "script_constants.h"
+#include "script_pickle.h"
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
@@ -52,6 +53,7 @@
 #include "../settings.h"
 #include "../main.h"
 #include "../ui.h"
+#include "../lib/public/SDL_vec_rwops.h"
 
 #include <SDL.h>
 
@@ -114,6 +116,9 @@ static PyObject *PyPf_get_simstate(PyObject *self);
 static PyObject *PyPf_set_simstate(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args);
+
+static PyObject *PyPf_pickle_object(PyObject *self, PyObject *args);
+static PyObject *PyPf_unpickle_object(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -336,6 +341,15 @@ static PyMethodDef pf_module_methods[] = {
     {"multiply_quaternions",
     (PyCFunction)PyPf_multiply_quaternions, METH_VARARGS,
     "Returns the normalized result of multiplying 2 quaternions (specified as a list of 4 floats - XYZW order)."},
+
+    {"pickle_object",
+    (PyCFunction)PyPf_pickle_object, METH_VARARGS,
+    "Returns an ASCII string holding the serialized representation of the object graph."},
+
+    {"unpickle_object",
+    (PyCFunction)PyPf_unpickle_object, METH_VARARGS,
+    "Returns a new reference to an object built from its' serialized representation. The argument string must "
+    "an earlier return value of 'pf.pickle_object'."},
 
     {NULL}  /* Sentinel */
 };
@@ -1183,6 +1197,55 @@ static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args)
     PFM_Quat_Normal(&ret, &ret);
 
     return Py_BuildValue("[ffff]", ret.x, ret.y, ret.z, ret.w);
+}
+
+static PyObject *PyPf_pickle_object(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    if(!PyArg_ParseTuple(args, "O", &obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single object.");
+        return NULL;
+    }
+
+    SDL_RWops *vops = PFSDL_VectorRWOps();
+    bool success = S_PickleObjgraph(obj, vops);
+    if(!success) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not pickle specified object.");
+        vops->close(vops);
+        return NULL;
+    }
+
+    PyObject *ret = PyString_FromString("");
+    assert(ret);
+    if(_PyString_Resize(&ret, vops->size(vops)-1) < 0) {
+        vops->close(vops);
+        return NULL;
+    }
+
+    vops->seek(vops, 0, RW_SEEK_SET);
+    vops->read(vops, PyString_AS_STRING(ret), 1, vops->size(vops));
+    vops->close(vops);
+    return ret;
+}
+
+static PyObject *PyPf_unpickle_object(PyObject *self, PyObject *args)
+{
+    const char *str;
+    if(!PyArg_ParseTuple(args, "s", &str)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
+        return NULL;
+    }
+
+    SDL_RWops *cmops = SDL_RWFromConstMem(str, strlen(str));
+    PyObject *ret = S_UnpickleObjgraph(cmops);
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not unpickle specified pickle stream.");
+        cmops->close(cmops);
+        return NULL;
+    }
+
+    cmops->close(cmops);
+    return ret;
 }
 
 static bool s_sys_path_add_dir(const char *filename)

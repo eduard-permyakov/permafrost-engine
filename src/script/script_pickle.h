@@ -42,11 +42,15 @@
 #include <stdbool.h>
 
 
-bool S_PickleInit(void);
-void S_PickleShutdown(void);
+bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream);
+bool S_PickleObjgraphByName(const char *module, const char *name, SDL_RWops *stream);
 
-bool S_PickleObjgraph(const char *module, const char *name, SDL_RWops *stream);
-bool S_UnpickleObjgraph(const char *module, const char *name, SDL_RWops *stream);
+/* Returns a new reference */
+PyObject *S_UnpickleObjgraph(SDL_RWops *stream);
+
+/* Sets the object as the value of the attribute in the specified module, potentially
+ * overwriting an existing value. */
+bool S_UnpickleObjgraphByName(const char *module, const char *name, SDL_RWops *stream);
 
 #endif
 
