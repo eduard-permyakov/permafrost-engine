@@ -84,11 +84,45 @@ def test_pickle_tuple():
     t2 = pf.unpickle_object(s)
     assert t1 == t2 
 
+    #Self referencing
+    l = []
+    t1 = (1, 2, l)
+    l.append(t1)
+    s = pf.pickle_object(t1)
+    t2 = pf.unpickle_object(s)
+    assert t1.__repr__() == t2.__repr__() # Can't compare direcly due to recursive def
+    assert id(t2) == id(t2[2][0])
+
     print "Tuple pickling OK!"
 
-test_pickle_int()
-test_pickle_string()
-test_pickle_tuple()
+def test_pickle_list():
 
-pf.global_event(pf.SDL_QUIT, None)
+    l1 = []
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    assert l1 == l2
+
+    l1 = [1, 2, 3, "Hello", "World", (1, 2), [3], [[[9]]], "!", (1, [120])]
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    assert l1 == l2
+
+    #self referencing
+    l1 = []
+    l1.append(l1)
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    assert l1.__repr__() == l2.__repr__() # Can't compare direcly due to recursive def
+    assert id(l2) == id(l2[0])
+
+    print "List pickling OK!"
+
+
+try:
+    test_pickle_int()
+    test_pickle_string()
+    test_pickle_tuple()
+    test_pickle_list()
+finally:
+    pf.global_event(pf.SDL_QUIT, None)
 

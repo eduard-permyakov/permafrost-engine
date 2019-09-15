@@ -96,12 +96,12 @@
 
 #define PF_EXTEND       'x' /* Interpret the next opcode as a Permafrost Engine extension opcode */
 /* The extension opcodes: */
-#define PF_PROTO        'p' /* identify pickle protocol                             */
-#define PF_TRUE         't' /* push True                                            */
-#define PF_FALSE        'f' /* push False                                           */
-#define PF_NEWOBJ       'n' /* build object by applying cls.__new__ to argtuple     */
-#define PF_NAMEDREF     'r' /* create named attribute from topmost stack items      */
-#define PF_NAMEDWEAKREF 'w' /* create named weakref attribute from topmost stack items */
+#define PF_PROTO        'a' /* identify pickle protocol version                     */
+#define PF_TRUE         'b' /* push True                                            */
+#define PF_FALSE        'c' /* push False                                           */
+#define PF_NEWOBJ       'd' /* build object by applying cls.__new__ to argtuple     */
+#define PF_NAMEDREF     'e' /* create named attribute from topmost stack items      */
+#define PF_NAMEDWEAKREF 'f' /* create named weakref attribute from topmost stack items */
 
 #define PF_MODULE       'A' /* Create module object from topmost stack items        */
 /* TBD ... */
@@ -145,10 +145,11 @@ extern PyTypeObject PySTEntry_Type;
 
 
 static bool pickle_obj(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *stream);
+static void memoize(struct pickle_ctx *ctx, PyObject *obj);
 static bool memo_contains(const struct pickle_ctx *ctx, PyObject *obj);
 static int memo_idx(const struct pickle_ctx *ctx, PyObject *obj);
-static void emit_get(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
-static void emit_put(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
+static bool emit_get(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
+static bool emit_put(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
 
 /* Pickling functions */
 static int type_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *);
@@ -234,6 +235,8 @@ static int op_mark          (struct unpickle_ctx *, SDL_RWops *);
 static int op_pop_mark      (struct unpickle_ctx *, SDL_RWops *);
 static int op_tuple         (struct unpickle_ctx *, SDL_RWops *);
 static int op_empty_tuple   (struct unpickle_ctx *, SDL_RWops *);
+static int op_empty_list    (struct unpickle_ctx *, SDL_RWops *);
+static int op_appends       (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -425,6 +428,8 @@ static unpickle_func_t s_op_dispatch_table[256] = {
     [POP_MARK] = op_pop_mark,
     [TUPLE] = op_tuple,
     [EMPTY_TUPLE] = op_empty_tuple,
+    [EMPTY_LIST] = op_empty_list,
+    [APPENDS] = op_appends,
 };
 
 /*****************************************************************************/
@@ -446,9 +451,9 @@ static int string_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
     if(rw->write(rw, &op, 1, 1) < 0)
         goto fail;
-    if (rw->write(rw, repr_str, strlen(repr_str), 1) < 0)
+    if(rw->write(rw, repr_str, strlen(repr_str), 1) < 0)
         goto fail;
-    if (rw->write(rw, "\n", 1, 1) < 0)
+    if(rw->write(rw, "\n", 1, 1) < 0)
         goto fail;
 
     Py_XDECREF(repr);
@@ -460,7 +465,43 @@ fail:
 }
 
 static int byte_array_pickle  (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
-static int list_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
+
+static int list_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    const char empty_list = EMPTY_LIST;
+    const char appends = APPENDS;
+    const char mark = MARK;
+
+    assert(PyList_Check(obj));
+
+    if(rw->write(rw, &empty_list, 1, 1) < 0)
+        return -1;
+
+    if(PyList_Size(obj) == 0)
+        return 0;
+
+    /* Memoize the empty list before pickling the elements. The elements may 
+     * reference the list itself. */
+    memoize(ctx, obj);
+    emit_put(ctx, obj, rw);
+
+    if(rw->write(rw, &mark, 1, 1) < 0)
+        return -1;
+
+    for(int i = 0; i < PyList_Size(obj); i++) {
+    
+        PyObject *elem = PyList_GET_ITEM(obj, i);
+        assert(elem);
+        if(pickle_obj(ctx, elem, rw) < 0)
+            return -1;
+    }
+
+    if(rw->write(rw, &appends, 1, 1) < 0)
+        return -1;
+
+    return 0;
+}
+
 static int super_pickle       (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
 static int base_obj_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
 static int range_pickle       (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
@@ -496,7 +537,6 @@ static int property_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops 
 static int memory_view_pickle (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
 
 
-//TODO FIXME test recursive cases
 /* From cPickle:
  * Tuples are the only builtin immutable type that can be recursive
  * (a tuple can be reached from itself), and that requires some subtle
@@ -513,7 +553,8 @@ static int tuple_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     if(len == 0) {
 
         char str[] = {EMPTY_TUPLE};
-        rw->write(rw, str, 1, ARR_SIZE(str));
+        if(rw->write(rw, str, 1, ARR_SIZE(str)) < 0)
+            return -1;
         return 0;
     }
 
@@ -526,7 +567,8 @@ static int tuple_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     const char mark = MARK;
     const char pmark = POP_MARK;
     const char tuple = TUPLE;
-    rw->write(rw, &mark, 1, 1);
+    if(rw->write(rw, &mark, 1, 1) < 0)
+        return -1;
 
     for(int i = 0; i < len; i++) {
 
@@ -539,13 +581,15 @@ static int tuple_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     if(memo_contains(ctx, obj)) {
     
         /* pop the stack stuff we pushed */
-        rw->write(rw, &pmark, 1, 1);
+        if(rw->write(rw, &pmark, 1, 1) < 0)
+            return -1;
         /* fetch from memo */
         emit_get(ctx, obj, rw);
     }
 
     /* Not recursive. */
-    rw->write(rw, &tuple, 1, 1);
+    if(rw->write(rw, &tuple, 1, 1) < 0)
+        return -1;
     return 0;
 }
 
@@ -668,10 +712,11 @@ static int op_put(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     char *end;
     int idx = strtol(buff, &end, 10);
-    if(!idx && end != buff + strlen(buff))
-        return false;
+    if(!idx && end != buff + strlen(buff)-1) /* - newline */
+        return assert(0), false;
 
     vec_pobj_resize(&ctx->memo, idx + 1);
+    ctx->memo.size = idx + 1;    
     vec_AT(&ctx->memo, idx) = TOP(&ctx->stack);
     return true;
 
@@ -686,7 +731,7 @@ static int op_get(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     char *end;
     int idx = strtol(buff, &end, 10);
-    if(!idx && end != buff + strlen(buff))
+    if(!idx && end != buff + strlen(buff) - 1) /* - newline */
         return false;
 
     if(vec_size(&ctx->memo) <= idx)
@@ -713,7 +758,11 @@ static int op_pop_mark(struct unpickle_ctx *ctx, SDL_RWops *rw)
     if(vec_size(&ctx->stack) < mark)
         return -1;
 
-    ctx->stack.size = mark;
+    while(vec_size(&ctx->stack) > mark) {
+    
+        PyObject *obj = vec_pobj_pop(&ctx->stack);
+        Py_DECREF(obj);
+    }
     return 0;
 }
 
@@ -731,7 +780,9 @@ static int op_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
     assert(tuple);
 
     for(int i = 0; i < tup_len; i++) {
-        PyTuple_SET_ITEM(tuple, tup_len - i - 1, vec_pobj_pop(&ctx->stack));
+        PyObject *elem = vec_pobj_pop(&ctx->stack);
+        Py_INCREF(elem);
+        PyTuple_SET_ITEM(tuple, tup_len - i - 1, elem);
     }
 
     vec_pobj_push(&ctx->stack, tuple);
@@ -741,7 +792,48 @@ static int op_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_empty_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     PyObject *tuple = PyTuple_New(0);
+    if(!tuple)
+        return -1;
     vec_pobj_push(&ctx->stack, tuple);
+    return 0;
+}
+
+static int op_empty_list(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    PyObject *list = PyList_New(0);
+    if(!list)
+        return -1;
+    vec_pobj_push(&ctx->stack, list);
+    return 0;
+}
+
+static int op_appends(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    if(vec_size(&ctx->mark_stack) == 0)
+        return -1;
+
+    int mark = vec_int_pop(&ctx->mark_stack);
+    if(vec_size(&ctx->stack) < mark-1)
+        return -1;
+
+    size_t extra_len = vec_size(&ctx->stack) - mark;
+    PyObject *list = vec_AT(&ctx->stack, mark-1);
+    if(!PyList_Check(list))
+        return -1;
+
+    PyObject *append = PyList_New(extra_len);
+    if(!append) 
+        return -1;
+
+    for(int i = 0; i < extra_len; i++) {
+        PyObject *elem = vec_pobj_pop(&ctx->stack);
+        Py_INCREF(elem);
+        PyList_SetItem(append, extra_len - i - 1, elem);
+    }
+
+    size_t og_len = PyList_Size(list);
+    PyList_SetSlice(list, og_len, og_len, append);
+    Py_DECREF(append);
     return 0;
 }
 
@@ -820,20 +912,20 @@ static void memoize(struct pickle_ctx *ctx, PyObject *obj)
     kh_value(ctx->memo, k) = (struct memo_entry){idx, obj};
 }
 
-static void emit_get(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+static bool emit_get(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     char str[32];
     snprintf(str, ARR_SIZE(str), "%c%d\n", GET, memo_idx(ctx, obj));
     str[ARR_SIZE(str)-1] = '\0';
-    rw->write(rw, str, 1, strlen(str));
+    return rw->write(rw, str, 1, strlen(str));
 }
 
-static void emit_put(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+static bool emit_put(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     char str[32];
     snprintf(str, ARR_SIZE(str), "%c%d\n", PUT, memo_idx(ctx, obj));
     str[ARR_SIZE(str)-1] = '\0';
-    rw->write(rw, str, 1, strlen(str));
+    return rw->write(rw, str, 1, strlen(str));
 }
 
 static bool pickle_obj(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *stream)
@@ -850,8 +942,11 @@ static bool pickle_obj(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *stream)
     if(0 != pf(ctx, obj, stream))
         return false; 
 
-    memoize(ctx, obj);
-    emit_put(ctx, obj, stream);
+    /* Some objects (eg. lists) may already be memoized */
+    if(!memo_contains(ctx, obj)) {
+        memoize(ctx, obj);
+        emit_put(ctx, obj, stream);
+    }
 
     return true;
 }
