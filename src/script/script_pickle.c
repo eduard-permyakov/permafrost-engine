@@ -33,6 +33,8 @@
  *
  */
 
+/* Some of the code is derived from the cPickle module implementation */
+
 #include "script_pickle.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
@@ -44,6 +46,7 @@
 
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+#define TOP(_stk)   (vec_AT(_stk, vec_size(_stk)-1))
 
 /* The original protocol 0 ASCII opcodes */
 
@@ -103,25 +106,31 @@
 #define PF_MODULE       'A' /* Create module object from topmost stack items        */
 /* TBD ... */
 
+struct memo_entry{
+    int idx;
+    PyObject *obj;
+};
+
 VEC_TYPE(pobj, PyObject*)
 VEC_IMPL(static inline, pobj, PyObject*)
 
+VEC_TYPE(int, int)
+VEC_IMPL(static inline, int, int)
+
+KHASH_MAP_INIT_INT64(memo, struct memo_entry)
+
 struct pickle_ctx{
-    //stack
-    //memo
-    //mapping of builtins
+    khash_t(memo) *memo;
 };
 
 struct unpickle_ctx{
-    //stack
     vec_pobj_t stack;
-    //memo
-    //mapping of builtins
-    //marks
-    bool stop;
+    vec_pobj_t memo;
+    vec_int_t  mark_stack;
+    bool       stop;
 };
 
-typedef int (*pickle_func_t)(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *stream);
+typedef int (*pickle_func_t)(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *stream);
 typedef int (*unpickle_func_t)(struct unpickle_ctx *ctx, SDL_RWops *stream);
 
 struct pickle_entry{
@@ -134,83 +143,97 @@ extern PyTypeObject PyListRevIter_Type;
 extern PyTypeObject PyTupleIter_Type;
 extern PyTypeObject PySTEntry_Type;
 
+
+static bool pickle_obj(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *stream);
+static bool memo_contains(const struct pickle_ctx *ctx, PyObject *obj);
+static int memo_idx(const struct pickle_ctx *ctx, PyObject *obj);
+static void emit_get(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
+static void emit_put(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
+
 /* Pickling functions */
-static int type_pickle        (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int bool_pickle        (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int string_pickle      (struct pickle_ctx *, const PyObject *, SDL_RWops *); 
-static int byte_array_pickle  (struct pickle_ctx *, const PyObject *, SDL_RWops *); 
-static int list_pickle        (struct pickle_ctx *, const PyObject *, SDL_RWops *); 
-static int super_pickle       (struct pickle_ctx *, const PyObject *, SDL_RWops *); 
-static int base_obj_pickle    (struct pickle_ctx *, const PyObject *, SDL_RWops *); 
-static int range_pickle       (struct pickle_ctx *, const PyObject *, SDL_RWops *); 
-static int dict_pickle        (struct pickle_ctx *, const PyObject *, SDL_RWops *); 
-static int set_pickle         (struct pickle_ctx *, const PyObject *, SDL_RWops *);
+static int type_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int bool_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int string_pickle      (struct pickle_ctx *, PyObject *, SDL_RWops *); 
+static int byte_array_pickle  (struct pickle_ctx *, PyObject *, SDL_RWops *); 
+static int list_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *); 
+static int super_pickle       (struct pickle_ctx *, PyObject *, SDL_RWops *); 
+static int base_obj_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *); 
+static int range_pickle       (struct pickle_ctx *, PyObject *, SDL_RWops *); 
+static int dict_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *); 
+static int set_pickle         (struct pickle_ctx *, PyObject *, SDL_RWops *);
 #ifdef Py_USING_UNICODE
-static int unicode_pickle     (struct pickle_ctx *, const PyObject *, SDL_RWops *); 
+static int unicode_pickle     (struct pickle_ctx *, PyObject *, SDL_RWops *); 
 #endif
-static int slice_pickle       (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int static_method_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
+static int slice_pickle       (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int static_method_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
 #ifndef WITHOUT_COMPLEX
-static int complex_pickle     (struct pickle_ctx *, const PyObject *, SDL_RWops *);
+static int complex_pickle     (struct pickle_ctx *, PyObject *, SDL_RWops *);
 #endif
-static int float_pickle       (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int buffer_pickle      (struct pickle_ctx *, const PyObject *, SDL_RWops *); 
-static int long_pickle        (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int int_pickle         (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int frozen_set_pickle  (struct pickle_ctx *, const PyObject *, SDL_RWops *); 
-static int property_pickle    (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int memory_view_pickle (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int tuple_pickle       (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int enum_pickle        (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int reversed_pickle    (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int method_pickle      (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int function_pickle    (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int class_pickle       (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int gen_pickle         (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int instance_pickle    (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int file_pickle        (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int cell_pickle        (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int get_set_descr_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int wrapper_descr_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int member_descr_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int dict_proxy_pickle  (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int cfunction_pickle   (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int code_pickle        (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int traceback_pickle   (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int frame_pickle       (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int not_implemented_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int none_pickle        (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int ellipsis_pickle    (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int weakref_ref_pickle (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int weakref_callable_proxy_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int weakref_proxy_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int match_pickle       (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int pattern_pickle     (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int scanner_pickle     (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int zip_importer_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int st_entry_pickle    (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int class_method_descr_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int class_method_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int dict_items_pickle  (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int dict_keys_pickle   (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int dict_values_pickle (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int method_descr_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int call_iter_pickle   (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int seq_iter_pickle    (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int byte_array_iter_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int dict_iter_item_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int dict_iter_key_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int dict_iter_value_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int field_name_iter_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int formatter_iter_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int list_iter_pickle   (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int list_rev_iter_pickle(struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int set_iter_pickle    (struct pickle_ctx *, const PyObject *, SDL_RWops *);
-static int tuple_iter_pickle  (struct pickle_ctx *, const PyObject *, SDL_RWops *);
+static int float_pickle       (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int buffer_pickle      (struct pickle_ctx *, PyObject *, SDL_RWops *); 
+static int long_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int int_pickle         (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int frozen_set_pickle  (struct pickle_ctx *, PyObject *, SDL_RWops *); 
+static int property_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int memory_view_pickle (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int tuple_pickle       (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int enum_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int reversed_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int method_pickle      (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int function_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int class_pickle       (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int gen_pickle         (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int instance_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int file_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int cell_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int get_set_descr_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int wrapper_descr_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int member_descr_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int dict_proxy_pickle  (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int cfunction_pickle   (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int code_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int traceback_pickle   (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int frame_pickle       (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int not_implemented_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int none_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int ellipsis_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int weakref_ref_pickle (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int weakref_callable_proxy_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int weakref_proxy_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int match_pickle       (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int pattern_pickle     (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int scanner_pickle     (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int zip_importer_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int st_entry_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int class_method_descr_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int class_method_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int dict_items_pickle  (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int dict_keys_pickle   (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int dict_values_pickle (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int method_descr_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int call_iter_pickle   (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int seq_iter_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int byte_array_iter_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int dict_iter_item_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int dict_iter_key_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int dict_iter_value_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int field_name_iter_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int formatter_iter_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int list_iter_pickle   (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int list_rev_iter_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int set_iter_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int tuple_iter_pickle  (struct pickle_ctx *, PyObject *, SDL_RWops *);
 
 /* Unpickling functions */
-static int load_int           (struct unpickle_ctx *, SDL_RWops *);
-static int load_stop          (struct unpickle_ctx *, SDL_RWops *);
+static int op_int           (struct unpickle_ctx *, SDL_RWops *);
+static int op_stop          (struct unpickle_ctx *, SDL_RWops *);
+static int op_string        (struct unpickle_ctx *, SDL_RWops *);
+static int op_put           (struct unpickle_ctx *, SDL_RWops *);
+static int op_get           (struct unpickle_ctx *, SDL_RWops *);
+static int op_mark          (struct unpickle_ctx *, SDL_RWops *);
+static int op_pop_mark      (struct unpickle_ctx *, SDL_RWops *);
+static int op_tuple         (struct unpickle_ctx *, SDL_RWops *);
+static int op_empty_tuple   (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -393,101 +416,187 @@ static const struct pickle_entry s_type_dispatch_table[] = {
 };
 
 static unpickle_func_t s_op_dispatch_table[256] = {
-    [INT]   = load_int,
-    [STOP]  = load_stop,
+    [INT]   = op_int,
+    [STOP]  = op_stop,
+    [STRING] = op_string,
+    [GET]   = op_get,
+    [PUT]   = op_put,
+    [MARK]  = op_mark,
+    [POP_MARK] = op_pop_mark,
+    [TUPLE] = op_tuple,
+    [EMPTY_TUPLE] = op_empty_tuple,
 };
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static int type_pickle        (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int bool_pickle        (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int string_pickle      (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {} 
-static int byte_array_pickle  (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {} 
-static int list_pickle        (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {} 
-static int super_pickle       (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {} 
-static int base_obj_pickle    (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {} 
-static int range_pickle       (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {} 
-static int dict_pickle        (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {} 
-static int set_pickle         (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-#ifdef Py_USING_UNICODE
-static int unicode_pickle     (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {} 
-#endif
-static int slice_pickle       (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int static_method_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-#ifndef WITHOUT_COMPLEX
-static int complex_pickle     (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-#endif
-static int float_pickle       (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int buffer_pickle      (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {} 
-static int long_pickle        (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
+static int type_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int bool_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
 
-static int int_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw)
+static int string_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
-    char c_str[32];
+    char op = STRING;
+    char *repr_str;
+    PyObject *repr = NULL;
+
+    if (NULL == (repr = PyObject_Repr((PyObject*)obj)))
+        return -1;
+    repr_str = PyString_AS_STRING((PyStringObject *)repr);
+
+    if(rw->write(rw, &op, 1, 1) < 0)
+        goto fail;
+    if (rw->write(rw, repr_str, strlen(repr_str), 1) < 0)
+        goto fail;
+    if (rw->write(rw, "\n", 1, 1) < 0)
+        goto fail;
+
+    Py_XDECREF(repr);
+    return 0;
+
+fail:
+    Py_XDECREF(repr);
+    return -1;
+}
+
+static int byte_array_pickle  (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
+static int list_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
+static int super_pickle       (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
+static int base_obj_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
+static int range_pickle       (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
+static int dict_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
+static int set_pickle         (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+#ifdef Py_USING_UNICODE
+static int unicode_pickle     (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
+#endif
+static int slice_pickle       (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int static_method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+#ifndef WITHOUT_COMPLEX
+static int complex_pickle     (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+#endif
+static int float_pickle       (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int buffer_pickle      (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
+static int long_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+
+static int int_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    char str[32];
     long l = PyInt_AS_LONG((PyIntObject *)obj);
     Py_ssize_t len = 0;
 
-    c_str[0] = INT;
-    PyOS_snprintf(c_str + 1, sizeof(c_str) - 1, "%ld\n", l);
-    if(rw->write(rw, c_str, 1, strlen(c_str)) < 0)
+    str[0] = INT;
+    PyOS_snprintf(str + 1, sizeof(str) - 1, "%ld\n", l);
+    if(rw->write(rw, str, 1, strlen(str)) < 0)
         return -1;
     return 0;
 }
 
-static int frozen_set_pickle  (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {} 
-static int property_pickle    (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int memory_view_pickle (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int tuple_pickle       (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int enum_pickle        (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int reversed_pickle    (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int method_pickle      (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int function_pickle    (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int class_pickle       (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int gen_pickle         (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int instance_pickle    (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int file_pickle        (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int cell_pickle        (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int get_set_descr_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int wrapper_descr_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int member_descr_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int dict_proxy_pickle  (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int cfunction_pickle   (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int code_pickle        (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int traceback_pickle   (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int frame_pickle       (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int not_implemented_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int none_pickle        (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int ellipsis_pickle    (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int weakref_ref_pickle (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int weakref_callable_proxy_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int weakref_proxy_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int match_pickle       (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int pattern_pickle     (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int scanner_pickle     (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int zip_importer_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int st_entry_pickle    (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int class_method_descr_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int class_method_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int dict_items_pickle  (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int dict_keys_pickle   (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int dict_values_pickle (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int method_descr_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int call_iter_pickle   (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int seq_iter_pickle    (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int byte_array_iter_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int dict_iter_item_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int dict_iter_key_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int dict_iter_value_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int field_name_iter_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int formatter_iter_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int list_iter_pickle   (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int list_rev_iter_pickle(struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int set_iter_pickle    (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
-static int tuple_iter_pickle  (struct pickle_ctx *ctx, const PyObject *obj, SDL_RWops *rw) {}
+static int frozen_set_pickle  (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
+static int property_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int memory_view_pickle (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
 
-static int load_int(struct unpickle_ctx *ctx, SDL_RWops *rw)
+
+//TODO FIXME test recursive cases
+/* From cPickle:
+ * Tuples are the only builtin immutable type that can be recursive
+ * (a tuple can be reached from itself), and that requires some subtle
+ * magic so that it works in all cases.  IOW, this is a long routine.
+ */
+static int tuple_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    Py_ssize_t len, i;
+
+    assert(PyTuple_Check(obj));
+    len = PyTuple_Size((PyObject*)obj);
+    Py_INCREF(obj);
+
+    if(len == 0) {
+
+        char str[] = {EMPTY_TUPLE};
+        rw->write(rw, str, 1, ARR_SIZE(str));
+        return 0;
+    }
+
+    /* id(tuple) isn't in the memo now.  If it shows up there after
+     * saving the tuple elements, the tuple must be recursive, in
+     * which case we'll pop everything we put on the stack, and fetch
+     * its value from the memo.
+     */
+
+    const char mark = MARK;
+    const char pmark = POP_MARK;
+    const char tuple = TUPLE;
+    rw->write(rw, &mark, 1, 1);
+
+    for(int i = 0; i < len; i++) {
+
+        PyObject *elem = PyTuple_GET_ITEM(obj, i);
+        assert(elem);
+        if(pickle_obj(ctx, elem, rw) < 0)
+            return -1;
+    }
+
+    if(memo_contains(ctx, obj)) {
+    
+        /* pop the stack stuff we pushed */
+        rw->write(rw, &pmark, 1, 1);
+        /* fetch from memo */
+        emit_get(ctx, obj, rw);
+    }
+
+    /* Not recursive. */
+    rw->write(rw, &tuple, 1, 1);
+    return 0;
+}
+
+static int enum_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int reversed_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int method_pickle      (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int function_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int class_pickle       (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int gen_pickle         (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int instance_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int file_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int cell_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int get_set_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int wrapper_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int member_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int dict_proxy_pickle  (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int cfunction_pickle   (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int code_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int traceback_pickle   (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int frame_pickle       (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int not_implemented_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int none_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int ellipsis_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int weakref_ref_pickle (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int weakref_callable_proxy_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int weakref_proxy_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int match_pickle       (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int pattern_pickle     (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int scanner_pickle     (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int zip_importer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int st_entry_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int class_method_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int class_method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int dict_items_pickle  (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int dict_keys_pickle   (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int dict_values_pickle (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int method_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int call_iter_pickle   (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int seq_iter_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int byte_array_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int dict_iter_item_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int dict_iter_key_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int dict_iter_value_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int field_name_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int formatter_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int list_iter_pickle   (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int list_rev_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int set_iter_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int tuple_iter_pickle  (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+
+static int op_int(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     char buff[MAX_LINE_LEN];
     READ_LINE(rw, buff, fail);
@@ -505,13 +614,138 @@ fail:
     return -1;
 }
 
-static int load_stop(struct unpickle_ctx *ctx, SDL_RWops *rw)
+static int op_stop(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     ctx->stop = true;
     return 0;
 }
 
-static bool picklable(const PyObject *obj)
+static int op_string(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    PyObject *str = 0;
+    Py_ssize_t len;
+
+    char buff[MAX_LINE_LEN];
+    READ_LINE(rw, buff, fail);
+    len = strlen(buff);
+    char *p = buff;
+
+    /* Strip trailing whitespace */
+    while (len > 0 && p[len-1] <= ' ')
+        len--;
+
+    /* Strip outermost quotes */
+    if (len > 1 && p[0] == '"' && p[len-1] == '"') {
+        p[len-1] = '\0';
+        p += 1;
+        len -= 2;
+    } else if (len > 1 && p[0] == '\'' && p[len-1] == '\'') {
+        p[len-1] = '\0';
+        p += 1;
+        len -= 2;
+    }else {
+        goto fail; /* Strings returned by __repr__ should be wrapped in quotes */
+    }
+
+    str = PyString_DecodeEscape(p, len, NULL, 0, NULL);
+    if(!str)
+        goto fail;
+
+    vec_pobj_push(&ctx->stack, str);
+    return 0;
+
+fail:
+    return -1;
+}
+
+static int op_put(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    char buff[MAX_LINE_LEN];
+    READ_LINE(rw, buff, fail);
+
+    if(vec_size(&ctx->stack) < 1)
+        return false;
+
+    char *end;
+    int idx = strtol(buff, &end, 10);
+    if(!idx && end != buff + strlen(buff))
+        return false;
+
+    vec_pobj_resize(&ctx->memo, idx + 1);
+    vec_AT(&ctx->memo, idx) = TOP(&ctx->stack);
+    return true;
+
+fail:
+    return false;
+}
+
+static int op_get(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    char buff[MAX_LINE_LEN];
+    READ_LINE(rw, buff, fail);
+
+    char *end;
+    int idx = strtol(buff, &end, 10);
+    if(!idx && end != buff + strlen(buff))
+        return false;
+
+    if(vec_size(&ctx->memo) <= idx)
+        return false;
+
+    vec_pobj_push(&ctx->stack, vec_AT(&ctx->memo, idx));
+    return true;
+
+fail:
+    return false;
+}
+
+static int op_mark(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    return vec_int_push(&ctx->mark_stack, vec_size(&ctx->stack));
+}
+
+static int op_pop_mark(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    if(vec_size(&ctx->mark_stack) == 0)
+        return -1;
+
+    int mark = vec_int_pop(&ctx->mark_stack);
+    if(vec_size(&ctx->stack) < mark)
+        return -1;
+
+    ctx->stack.size = mark;
+    return 0;
+}
+
+static int op_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    if(vec_size(&ctx->mark_stack) == 0)
+        return -1;
+
+    int mark = vec_int_pop(&ctx->mark_stack);
+    if(vec_size(&ctx->stack) < mark)
+        return -1;
+
+    size_t tup_len = vec_size(&ctx->stack) - mark;
+    PyObject *tuple = PyTuple_New(tup_len);
+    assert(tuple);
+
+    for(int i = 0; i < tup_len; i++) {
+        PyTuple_SET_ITEM(tuple, tup_len - i - 1, vec_pobj_pop(&ctx->stack));
+    }
+
+    vec_pobj_push(&ctx->stack, tuple);
+    return 0;
+}
+
+static int op_empty_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    PyObject *tuple = PyTuple_New(0);
+    vec_pobj_push(&ctx->stack, tuple);
+    return 0;
+}
+
+static bool picklable(PyObject *obj)
 {
     for(int i = 0; i < ARR_SIZE(s_type_dispatch_table); i++) {
 
@@ -521,7 +755,7 @@ static bool picklable(const PyObject *obj)
     return false;
 }
 
-static pickle_func_t picklefunc_for_type(const PyObject *obj)
+static pickle_func_t picklefunc_for_type(PyObject *obj)
 {
     for(int i = 0; i < ARR_SIZE(s_type_dispatch_table); i++) {
     
@@ -531,16 +765,95 @@ static pickle_func_t picklefunc_for_type(const PyObject *obj)
     return assert(0), NULL;
 }
 
+static bool pickle_ctx_init(struct pickle_ctx *ctx)
+{
+    if(NULL == (ctx->memo = kh_init(memo)))
+        return false;
+    return true;
+}
+
+static void pickle_ctx_destroy(struct pickle_ctx *ctx)
+{
+    kh_destroy(memo, ctx->memo);
+}
+
 static bool unpickle_ctx_init(struct unpickle_ctx *ctx)
 {
     vec_pobj_init(&ctx->stack);
+    vec_pobj_init(&ctx->memo);
+    vec_int_init(&ctx->mark_stack);
     ctx->stop = false;
     return true;
 }
 
 static void unpickle_ctx_destroy(struct unpickle_ctx *ctx)
 {
+    vec_int_destroy(&ctx->mark_stack);
+    vec_pobj_destroy(&ctx->memo);
     vec_pobj_destroy(&ctx->stack);
+}
+
+static bool memo_contains(const struct pickle_ctx *ctx, PyObject *obj)
+{
+    uintptr_t id = (uintptr_t)obj;
+    khiter_t k = kh_get(memo, ctx->memo, id);
+    if(k != kh_end(ctx->memo))
+        return true;
+    return false;
+}
+
+static int memo_idx(const struct pickle_ctx *ctx, PyObject *obj)
+{
+    uintptr_t id = (uintptr_t)obj;
+    khiter_t k = kh_get(memo, ctx->memo, id);
+    assert(kh_exist(ctx->memo, k));
+    return kh_value(ctx->memo, k).idx;
+}
+
+static void memoize(struct pickle_ctx *ctx, PyObject *obj)
+{
+    int ret;
+    int idx = kh_size(ctx->memo);
+
+    khiter_t k = kh_put(memo, ctx->memo, (uintptr_t)obj, &ret);
+    assert(ret != -1 && ret != 0);
+    kh_value(ctx->memo, k) = (struct memo_entry){idx, obj};
+}
+
+static void emit_get(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    char str[32];
+    snprintf(str, ARR_SIZE(str), "%c%d\n", GET, memo_idx(ctx, obj));
+    str[ARR_SIZE(str)-1] = '\0';
+    rw->write(rw, str, 1, strlen(str));
+}
+
+static void emit_put(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    char str[32];
+    snprintf(str, ARR_SIZE(str), "%c%d\n", PUT, memo_idx(ctx, obj));
+    str[ARR_SIZE(str)-1] = '\0';
+    rw->write(rw, str, 1, strlen(str));
+}
+
+static bool pickle_obj(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *stream)
+{
+    pickle_func_t pf;
+
+    if(memo_contains(ctx, obj)) {
+        emit_get(ctx, obj, stream);
+        return true;
+    }
+
+    if(NULL == (pf = picklefunc_for_type(obj)))
+        return false;
+    if(0 != pf(ctx, obj, stream))
+        return false; 
+
+    memoize(ctx, obj);
+    emit_put(ctx, obj, stream);
+
+    return true;
 }
 
 /*****************************************************************************/
@@ -550,12 +863,21 @@ static void unpickle_ctx_destroy(struct unpickle_ctx *ctx)
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream)
 {
     struct pickle_ctx ctx;
-    if(0 != picklefunc_for_type(obj)(&ctx, obj, stream))
-        return false;
+    int ret = pickle_ctx_init(&ctx);
+    assert(ret);
+
+    if(!pickle_obj(&ctx, obj, stream))
+        goto err;
 
     char term[] = {STOP, '\0'};
     stream->write(stream, term, 1, ARR_SIZE(term));
+
+    pickle_ctx_destroy(&ctx);
     return true;
+
+err:
+    pickle_ctx_destroy(&ctx);
+    return false;
 }
 
 bool S_PickleObjgraphByName(const char *module, const char *name, SDL_RWops *stream)
