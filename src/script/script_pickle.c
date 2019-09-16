@@ -237,6 +237,8 @@ static int op_tuple         (struct unpickle_ctx *, SDL_RWops *);
 static int op_empty_tuple   (struct unpickle_ctx *, SDL_RWops *);
 static int op_empty_list    (struct unpickle_ctx *, SDL_RWops *);
 static int op_appends       (struct unpickle_ctx *, SDL_RWops *);
+static int op_empty_dict    (struct unpickle_ctx *, SDL_RWops *);
+static int op_setitems      (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -419,17 +421,19 @@ static const struct pickle_entry s_type_dispatch_table[] = {
 };
 
 static unpickle_func_t s_op_dispatch_table[256] = {
-    [INT]   = op_int,
-    [STOP]  = op_stop,
+    [INT] = op_int,
+    [STOP] = op_stop,
     [STRING] = op_string,
-    [GET]   = op_get,
-    [PUT]   = op_put,
-    [MARK]  = op_mark,
+    [GET] = op_get,
+    [PUT] = op_put,
+    [MARK] = op_mark,
     [POP_MARK] = op_pop_mark,
     [TUPLE] = op_tuple,
     [EMPTY_TUPLE] = op_empty_tuple,
     [EMPTY_LIST] = op_empty_list,
     [APPENDS] = op_appends,
+    [EMPTY_DICT] = op_empty_dict,
+    [SETITEMS] = op_setitems,
 };
 
 /*****************************************************************************/
@@ -505,7 +509,60 @@ static int list_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 static int super_pickle       (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
 static int base_obj_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
 static int range_pickle       (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
-static int dict_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
+
+static int dict_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    const char empty_dict = EMPTY_DICT;
+    const char setitems = SETITEMS;
+    const char mark = MARK;
+
+    assert(PyDict_Check(obj));
+
+    if(rw->write(rw, &empty_dict, 1, 1) < 0)
+        return -1;
+
+    if(PyDict_Size(obj) == 0)
+        return 0;
+
+    /* Memoize the empty dict before pickling the elements. The elements may 
+     * reference the list itself. */
+    memoize(ctx, obj);
+    emit_put(ctx, obj, rw);
+
+    if(rw->write(rw, &mark, 1, 1) < 0)
+        return -1;
+
+    PyObject *iter = PyObject_CallMethod(obj, "iteritems", "()");
+    assert(iter);
+
+    for(PyObject *curr = PyIter_Next(iter); curr; curr = PyIter_Next(iter)) {
+    
+        assert(PyTuple_Check(curr) && PyTuple_Size(curr) == 2);
+
+        PyObject *key = PyTuple_GET_ITEM(curr, 0);
+        if(pickle_obj(ctx, key, rw) < 0) {
+            Py_DECREF(curr);
+            Py_DECREF(iter);
+            return -1;
+        }
+
+        PyObject *val = PyTuple_GET_ITEM(curr, 1);
+        if(pickle_obj(ctx, val, rw) < 0) {
+            Py_DECREF(curr);
+            Py_DECREF(iter);
+            return -1;
+        }
+
+        Py_DECREF(curr);
+    }
+    Py_DECREF(iter);
+
+    if(rw->write(rw, &setitems, 1, 1) < 0)
+        return -1;
+
+    return 0;
+}
+
 static int set_pickle         (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
 #ifdef Py_USING_UNICODE
 static int unicode_pickle     (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {} 
@@ -738,6 +795,7 @@ static int op_get(struct unpickle_ctx *ctx, SDL_RWops *rw)
         return false;
 
     vec_pobj_push(&ctx->stack, vec_AT(&ctx->memo, idx));
+    Py_INCREF(TOP(&ctx->stack));
     return true;
 
 fail:
@@ -834,6 +892,44 @@ static int op_appends(struct unpickle_ctx *ctx, SDL_RWops *rw)
     size_t og_len = PyList_Size(list);
     PyList_SetSlice(list, og_len, og_len, append);
     Py_DECREF(append);
+    return 0;
+}
+
+static int op_empty_dict(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    PyObject *dict = PyDict_New();
+    if(!dict)
+        return -1;
+    vec_pobj_push(&ctx->stack, dict);
+    return 0;
+}
+
+static int op_setitems(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    if(vec_size(&ctx->mark_stack) == 0)
+        return -1;
+
+    int mark = vec_int_pop(&ctx->mark_stack);
+    if(vec_size(&ctx->stack) < mark-1)
+        return -1;
+
+    size_t nitems = vec_size(&ctx->stack) - mark;
+    if(nitems % 2)
+        return -1;
+    nitems /= 2;
+
+    PyObject *dict = vec_AT(&ctx->stack, mark-1);
+    if(!PyDict_Check(dict))
+        return -1;
+
+    for(int i = 0; i < nitems; i++) {
+
+        PyObject *val = vec_pobj_pop(&ctx->stack);
+        PyObject *key = vec_pobj_pop(&ctx->stack);
+        PyDict_SetItem(dict, key, val);
+        Py_DECREF(key);
+        Py_DECREF(val);
+    }
     return 0;
 }
 

@@ -93,6 +93,14 @@ def test_pickle_tuple():
     assert t1.__repr__() == t2.__repr__() # Can't compare direcly due to recursive def
     assert id(t2) == id(t2[2][0])
 
+    a = 1
+    t1 = (a, a, a)
+    s = pf.pickle_object(t1)
+    t2 = pf.unpickle_object(s)
+    assert t1 == t2
+    assert id(t2[0]) == id(t2[1])
+    assert id(t2[1]) == id(t2[2])
+
     print "Tuple pickling OK!"
 
 def test_pickle_list():
@@ -117,12 +125,42 @@ def test_pickle_list():
 
     print "List pickling OK!"
 
+def test_pickle_dict():
+
+    d1 = {}
+    s = pf.pickle_object(d1)
+    d2 = pf.unpickle_object(s)
+    assert d1 == d2
+
+    a = "same",
+    d1 = {
+        "Hello" : "World",
+        "Apple" : "Orange",
+        a       : a,
+        99      : 12356,
+        100     : (1, 2, 3),
+        101     : {0 : {}, 1 : {}}
+    }
+    s = pf.pickle_object(d1)
+    d2 = pf.unpickle_object(s)
+    assert d1 == d2
+
+    #self referencing
+    d1 = {}
+    d1["key"] = d1
+    s = pf.pickle_object(d1)
+    d2 = pf.unpickle_object(s)
+    assert d1.__repr__() == d2.__repr__()
+    assert id(d2) == id(d2["key"])
+
+    print "Dict pickling OK!"
 
 try:
     test_pickle_int()
     test_pickle_string()
     test_pickle_tuple()
     test_pickle_list()
+    test_pickle_dict()
 finally:
     pf.global_event(pf.SDL_QUIT, None)
 
