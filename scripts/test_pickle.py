@@ -155,12 +155,29 @@ def test_pickle_dict():
 
     print "Dict pickling OK!"
 
+def test_pickle_cfunction():
+
+    f1 = locals
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1 == f2
+
+    f1 = globals
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1 == f2
+
+    print "Built-in function pickling OK!"
+
 try:
     test_pickle_int()
     test_pickle_string()
     test_pickle_tuple()
     test_pickle_list()
     test_pickle_dict()
+    test_pickle_cfunction()
+except Exception as e:
+    print(e)
 finally:
     pf.global_event(pf.SDL_QUIT, None)
 

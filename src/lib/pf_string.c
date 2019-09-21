@@ -37,6 +37,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <assert.h>
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -74,6 +75,17 @@ char *pf_strdup(const char *str)
     char *ret = malloc(strlen(str) + 1);
     if(ret)
         strcpy(ret, str);
+    return ret;
+}
+
+char *pf_strapp(char *str, const char *append)
+{
+    size_t len = strlen(str) + strlen(append) + 1;
+    char *ret = realloc((void*)str, len);
+    if(!ret)
+        return NULL;
+    strcat(ret, append);
+    assert(ret[len-1] == '\0');
     return ret;
 }
 

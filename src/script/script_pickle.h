@@ -37,10 +37,14 @@
 #define SCRIPT_PICKLE_H
 
 #include <Python.h> /* Must be included first */
+
+#include "../lib/public/khash.h"
 #include <SDL.h> /* for SDL_RWops */
 
 #include <stdbool.h>
 
+bool S_Pickle_Init(void);
+void S_Pickle_Shutdown(void);
 
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream);
 bool S_PickleObjgraphByName(const char *module, const char *name, SDL_RWops *stream);

@@ -38,6 +38,7 @@
 
 char *pf_strtok_r(char *str, const char *delim, char **saveptr);
 char *pf_strdup(const char *str);
+char *pf_strapp(char *str, const char *append);
 
 #endif
 

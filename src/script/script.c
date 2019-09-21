@@ -1210,7 +1210,7 @@ static PyObject *PyPf_pickle_object(PyObject *self, PyObject *args)
     SDL_RWops *vops = PFSDL_VectorRWOps();
     bool success = S_PickleObjgraph(obj, vops);
     if(!success) {
-        PyErr_SetString(PyExc_RuntimeError, "Could not pickle specified object.");
+        assert(PyErr_Occurred());
         vops->close(vops);
         return NULL;
     }
@@ -1239,7 +1239,7 @@ static PyObject *PyPf_unpickle_object(PyObject *self, PyObject *args)
     SDL_RWops *cmops = SDL_RWFromConstMem(str, strlen(str));
     PyObject *ret = S_UnpickleObjgraph(cmops);
     if(!ret) {
-        PyErr_SetString(PyExc_RuntimeError, "Could not unpickle specified pickle stream.");
+        assert(PyErr_Occurred());
         cmops->close(cmops);
         return NULL;
     }
@@ -1360,6 +1360,12 @@ bool S_Init(char *progname, const char *base_path, struct nk_context *ctx)
         return false;
 
     initpf();
+
+    /* Initialize the pickler after registering all the built-ins, so that they can
+     * be indexed. */
+    if(!S_Pickle_Init())
+        return false;
+
     return true;
 }
 
@@ -1367,6 +1373,7 @@ void S_Shutdown(void)
 {
     s_gc_all_ents();
     Py_Finalize();
+    S_Pickle_Shutdown();
     S_Entity_Shutdown();
     S_UI_Shutdown();
 }

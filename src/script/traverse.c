@@ -34,15 +34,20 @@
  */
 
 #include "traverse.h"
-#include "../lib/public/khash.h"
+#include "../lib/public/pf_string.h"
 
 KHASH_SET_INIT_INT64(id)
 
 struct visit_ctx{
     khash_t(id) *visited;
     int          depth;
+    PyObject    *parent;
+    const char  *attrname;
     void        *user;
 };
+
+__KHASH_IMPL(str,  extern, khint64_t, const char*, 1, kh_int_hash_func, kh_int_hash_equal)
+__KHASH_IMPL(pobj, extern, kh_cstr_t, PyObject*,   1, kh_str_hash_func, kh_str_hash_equal)
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -50,6 +55,8 @@ struct visit_ctx{
 
 void s_traverse(PyObject *root, visitproc visit, struct visit_ctx *ctx)
 {
+    struct visit_ctx saved;
+
     khiter_t k = kh_get(id, ctx->visited, (uintptr_t)root);
     if(k != kh_end(ctx->visited))
         return;
@@ -89,10 +96,19 @@ void s_traverse(PyObject *root, visitproc visit, struct visit_ctx *ctx)
             continue;
         }
 
-        ++(ctx->depth);
-        s_traverse(child, visit, ctx);
-        --(ctx->depth);
+        /* Push state */
+        saved = *ctx;
 
+        ctx->depth = ctx->depth + 1;
+        ctx->parent = root;
+        ctx->attrname = PyString_AS_STRING(attr);
+
+        s_traverse(child, visit, ctx);
+
+        /* Pop state */
+        *ctx = saved;
+
+        assert(child->ob_refcnt > 1);
         Py_DECREF(child);
     }
 
@@ -113,6 +129,59 @@ static int visit_print(PyObject *obj, void *ctx)
     return 0;
 }
 
+static int visit_index_qualname(PyObject *obj, void *ctx)
+{
+    struct visit_ctx *vctx = ctx;
+    khash_t(str) *id_qualname_map = vctx->user;
+
+    char *qname = NULL;
+    uintptr_t id = (uintptr_t)obj;
+    khiter_t k;
+
+    if(!vctx->parent) {
+
+        assert(PyModule_Check(obj)); 
+        qname = strdup(PyModule_GetName(obj));
+
+    }else{
+
+        assert(vctx->attrname);
+        uintptr_t pid = (uintptr_t)vctx->parent;
+
+        k = kh_get(str, id_qualname_map, pid);
+        assert(k != kh_end(id_qualname_map));
+
+        qname = strdup(kh_value(id_qualname_map, k));
+        qname = pf_strapp(qname, ".");
+        qname = pf_strapp(qname, vctx->attrname);
+    }
+
+    k = kh_get(id, vctx->visited, id);
+    assert(k == kh_end(vctx->visited));
+
+    int ret;
+    k = kh_put(str, id_qualname_map, id, &ret);
+    assert(ret != -1);
+    kh_value(id_qualname_map, k) = qname;
+
+    return 0;
+}
+
+bool s_traverse_with_visited(PyObject *root, visitproc visit, void *user,
+                             khash_t(id) *inout_visited)
+{
+    struct visit_ctx ctx;
+
+    ctx.depth = 0;
+    ctx.user = user;
+    ctx.parent = NULL;
+    ctx.attrname = NULL;
+    ctx.visited = inout_visited;
+
+    s_traverse(root, visit, &ctx);
+    return true;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -128,6 +197,8 @@ bool S_Traverse(PyObject *root, visitproc visit, void *user)
 
     ctx.depth = 0;
     ctx.user = user;
+    ctx.parent = NULL;
+    ctx.attrname = NULL;
     s_traverse(root, visit, &ctx);
     ret = true;
 
@@ -139,5 +210,35 @@ fail_alloc:
 bool S_Traverse_PrintDFT(PyObject *root)
 {
     return S_Traverse(root, visit_print, NULL);
+}
+
+bool S_Traverse_IndexQualnames(khash_t(str) *inout)
+{
+    PyObject *modules_dict = PySys_GetObject("modules"); /* borrowed */
+    assert(modules_dict);
+    bool ret = false;
+
+    khash_t(id) *visited = kh_init(id);
+    if(!visited)
+        goto fail_alloc;
+
+    PyObject *key, *value;
+    Py_ssize_t pos = 0;
+
+    while (PyDict_Next(modules_dict, &pos, &key, &value)) {
+
+        if(!PyModule_Check(value))
+            continue;
+        bool ret = s_traverse_with_visited(value, visit_index_qualname, 
+                                           inout, visited);
+        if(!ret)
+            goto fail_traverse;
+    }
+
+    ret = true;
+fail_traverse:
+    kh_destroy(id, visited);
+fail_alloc:
+    return ret;
 }
 
