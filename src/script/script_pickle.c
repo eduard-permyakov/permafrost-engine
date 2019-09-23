@@ -119,12 +119,10 @@
 #define PF_PROTO        'a' /* identify pickle protocol version                     */
 #define PF_TRUE         'b' /* push True                                            */
 #define PF_FALSE        'c' /* push False                                           */
-#define PF_NEWOBJ       'd' /* build object by applying cls.__new__ to argtuple     */
-#define PF_NAMEDREF     'e' /* create named attribute from topmost stack items      */
-#define PF_NAMEDWEAKREF 'f' /* create named weakref attribute from topmost stack items */
+#define PF_GETATTR      'd' /* Get new reference to attribute(TOS) of object(TOS-1) and push it on the stack */
 
 #define PF_BUILTIN      'A' /* Push new reference to built-in that is identified by its' fully-qualified name */
-/* TBD ... */
+#define PF_TYPE         'B' /* Push new class created from the top 3 stack items (name, bases, methods) */
 
 struct memo_entry{
     int idx;
@@ -141,6 +139,14 @@ KHASH_MAP_INIT_INT64(memo, struct memo_entry)
 
 struct pickle_ctx{
     khash_t(memo) *memo;
+    /* Any objects newly created during serialization must 
+     * get pushed onto this buffer, to be decref'd during context
+     * destruction. We wish to pickle them using the normal flow,
+     * using memoization but if the references are not retained, 
+     * the memory backing the object may be given to another object,
+     * causing our memo entry to change unexpectedly. So we retain
+     * all newly-created objects until pickling is done. */
+    vec_pobj_t     to_free;
 };
 
 struct unpickle_ctx{
@@ -261,6 +267,8 @@ static int op_empty_dict    (struct unpickle_ctx *, SDL_RWops *);
 static int op_setitems      (struct unpickle_ctx *, SDL_RWops *);
 
 static int op_ext_builtin   (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_type      (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_getattr   (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -271,7 +279,7 @@ static khash_t(str)  *s_id_qualname_map;
 // TODO: categorize into 'primal' objects which can be instantiated directly in a script
 //       and 'derived' objects, which must be derived from an existing object (primal or builtin)
 
-static const struct pickle_entry s_type_dispatch_table[] = {
+static struct pickle_entry s_type_dispatch_table[] = {
     /* The Python 2.7 public built-in types. These types may be instantiated directly 
      * in any script. 
      */
@@ -462,11 +470,62 @@ static unpickle_func_t s_op_dispatch_table[256] = {
 
 static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_BUILTIN] = op_ext_builtin,
+    [PF_TYPE] = op_ext_type,
+    [PF_GETATTR] = op_ext_getattr,
 };
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static bool type_is_builtin(PyObject *type)
+{
+    assert(PyType_CheckExact(type));
+
+    for(int i = 0; i < ARR_SIZE(s_type_dispatch_table); i++) {
+
+        if(s_type_dispatch_table[i].type == (PyTypeObject*)type)
+            return true;
+    }
+    return false;
+}
+
+static int dispatch_idx_for_picklefunc(pickle_func_t pf)
+{
+    for(int i = 0; i < ARR_SIZE(s_type_dispatch_table); i++) {
+        if(s_type_dispatch_table[i].picklefunc == pf)
+            return i;
+    }
+    return -1;
+}
+
+/* Some of the built-in types are declared 'static' but can still be referenced
+ * via scripting. An example is the 'method_descriptor' type. We can still get 
+ * a pointer to the type via the API and use that for matching purposes.
+ */
+static void load_private_type_refs(void)
+{
+    int idx;
+    PyObject *tmp = NULL;
+
+    /* PyMethodDescr_Type */
+    idx = dispatch_idx_for_picklefunc(method_descr_pickle);
+    assert(idx >= 0);
+    tmp = PyDescr_NewMethod(&PyType_Type, PyType_Type.tp_methods);
+    assert(tmp);
+    assert(!strcmp(tmp->ob_type->tp_name, "method_descriptor"));
+    s_type_dispatch_table[idx].type = tmp->ob_type;
+    Py_DECREF(tmp);
+
+    /* PyClassMethodDescr_Type */
+    idx = dispatch_idx_for_picklefunc(class_method_descr_pickle);
+    assert(idx >= 0);
+    tmp = PyDescr_NewClassMethod(&PyType_Type, PyType_Type.tp_methods);
+    assert(tmp);
+    assert(!strcmp(tmp->ob_type->tp_name, "classmethod_descriptor"));
+    s_type_dispatch_table[idx].type = tmp->ob_type;
+    Py_DECREF(tmp);
+}
 
 static PyObject *qualname_new_ref(const char *qualname)
 {
@@ -494,8 +553,6 @@ static PyObject *qualname_new_ref(const char *qualname)
             *end++ = '\0';
     
         if(!PyObject_HasAttrString(parent, curr)) {
-            PyObject_Print(parent, stdout, 0);
-            printf("\n");
             Py_DECREF(parent);
             SET_RUNTIME_EXC("Could not look up attribute %s in qualified name %s", curr, qualname);
             return NULL;
@@ -510,7 +567,150 @@ static PyObject *qualname_new_ref(const char *qualname)
     return parent;
 }
 
-static int type_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+/* Non-derived attributes are those that don't return a new 
+ * object on attribute lookup. 
+ * This function returns a new reference.
+ */
+static PyObject *nonderived_writable_attrs(PyObject *obj)
+{
+    PyObject *attrs = PyObject_Dir(obj);
+    assert(attrs);
+    PyObject *ret = PyDict_New();
+    assert(ret);
+
+    for(int i = 0; i < PyList_Size(attrs); i++) {
+
+        PyObject *name = PyList_GET_ITEM(attrs, i);
+        assert(PyString_Check(name));
+        if(!PyObject_HasAttr(obj, name))
+            continue;
+
+        PyObject *attr = PyObject_GetAttr(obj, name);
+        assert(attr);
+
+        /* This is a 'derived' attribute */
+        if(attr->ob_refcnt == 1) {
+            Py_DECREF(attr);
+            continue;
+        }
+
+        /* Try to write the attribute to itself. This will throw TypeError
+         * or AttributeError if the attribute is not writable. */
+        if(0 != PyObject_SetAttr(obj, name, attr)) {
+            assert(PyErr_Occurred());        
+            assert(PyErr_ExceptionMatches(PyExc_TypeError)
+                || PyErr_ExceptionMatches(PyExc_AttributeError));
+            PyErr_Clear();
+            Py_DECREF(attr);
+            continue;
+        }
+
+        Py_INCREF(name);
+        PyDict_SetItem(ret, name, attr);
+    }
+
+    Py_DECREF(attrs);
+    return ret;
+}
+
+static void filter_out_referencing(PyObject *dict, PyObject *reftest)
+{
+    assert(PyDict_Check(dict));
+
+    PyObject *key, *value;
+    Py_ssize_t pos = 0;
+
+    size_t nkeys_to_del = 0;
+    PyObject *keys_to_del[PyDict_Size(dict)];
+
+    while(PyDict_Next(dict, &pos, &key, &value)) {
+
+        bool references = false;
+        S_Traverse_ReferencesObj(value, reftest, &references);
+        if(references)
+            keys_to_del[nkeys_to_del++] = key;
+    }
+
+    for(int i = 0; i < nkeys_to_del; i++) {
+
+        PyObject *curr = keys_to_del[i]; 
+        PyDict_DelItem(dict, curr);
+    }
+}
+
+static int builtin_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    uintptr_t id = (uintptr_t)obj;
+    khiter_t k = kh_get(str, s_id_qualname_map, id);
+    if(k == kh_end(s_id_qualname_map)) {
+    
+        PyObject *repr = PyObject_Repr(obj);
+        SET_RUNTIME_EXC("Could not find built-in qualified name in index: %s", 
+            PyString_AS_STRING(repr));
+        Py_DECREF(repr);
+        return -1;
+    }
+
+    const char xtend = PF_EXTEND;
+    const char builtin = PF_BUILTIN;
+    const char *qname = kh_value(s_id_qualname_map, k);
+
+    CHK_TRUE(rw->write(rw, &xtend, 1, 1), fail);
+    CHK_TRUE(rw->write(rw, &builtin, 1, 1), fail);
+    CHK_TRUE(rw->write(rw, qname, strlen(qname), 1), fail);
+    CHK_TRUE(rw->write(rw, "\n", 1, 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
+
+static int type_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    if(type_is_builtin(obj))
+        return builtin_pickle(ctx, obj, rw); 
+
+    assert(PyType_Check(obj));
+    PyTypeObject *type = (PyTypeObject*)obj;
+
+    /* push name */
+    PyObject *name = PyString_FromString(type->tp_name);
+    vec_pobj_push(&ctx->to_free, name);
+    if(!pickle_obj(ctx, name, rw))
+        goto fail;
+
+    /* push tuple of base classes */
+    PyObject *bases = type->tp_bases;
+    assert(bases);
+    assert(PyTuple_Check(bases));
+
+    if(!pickle_obj(ctx, bases, rw))
+        goto fail;
+
+    /* push attributes dict */
+    PyObject *ndw_attrs = nonderived_writable_attrs(obj);
+    if(!ndw_attrs)
+        goto fail;
+    vec_pobj_push(&ctx->to_free, ndw_attrs);
+
+    /* Filter out any attributes which directly or indirectly reference
+     * the type object before it is created. We will get into an infinite
+     * recursion cycle if we attempt to pickle these attributes. */
+    filter_out_referencing(ndw_attrs, obj);
+
+    if(!pickle_obj(ctx, ndw_attrs, rw))
+        goto fail;
+
+    const char ops[] = {PF_EXTEND, PF_TYPE};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
+
 static int bool_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
 
 static int string_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -737,35 +937,48 @@ static int gen_pickle         (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops 
 static int instance_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
 static int file_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
 static int cell_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
-static int get_set_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
-static int wrapper_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
-static int member_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
-static int dict_proxy_pickle  (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
 
-static int cfunction_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+static int get_set_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     uintptr_t id = (uintptr_t)obj;
     khiter_t k = kh_get(str, s_id_qualname_map, id);
-    if(k == kh_end(s_id_qualname_map)) {
-    
-        SET_RUNTIME_EXC("Could not find built-in function qualified name in index: %s", 
-            ((PyCFunctionObject*)obj)->m_ml->ml_name);
+    if(k != kh_end(s_id_qualname_map))
+        return builtin_pickle(ctx, obj, rw);
+
+    /* The getset_descriptor is not indexed because it was dynamically created 
+     * at the same time that the user-defined type was created. Descriptor
+     * objects hold a type and an attribute name, which we can save and use
+     * to get a reference to the getset_descriptor during unpickling.
+     */
+    assert(obj->ob_type == &PyGetSetDescr_Type);
+    PyGetSetDescrObject *desc = (PyGetSetDescrObject*)obj;
+
+    if(!pickle_obj(ctx, (PyObject*)desc->d_type, rw))
         return -1;
-    }
 
-    const char xtend = PF_EXTEND;
-    const char builtin = PF_BUILTIN;
-    const char *qname = kh_value(s_id_qualname_map, k);
+    if(!pickle_obj(ctx, desc->d_name, rw))
+        return -1;
 
-    CHK_TRUE(rw->write(rw, &xtend, 1, 1), fail);
-    CHK_TRUE(rw->write(rw, &builtin, 1, 1), fail);
-    CHK_TRUE(rw->write(rw, qname, strlen(qname), 1), fail);
-    CHK_TRUE(rw->write(rw, "\n", 1, 1), fail);
+    const char getattr = PF_GETATTR;
+    CHK_TRUE(rw->write(rw, &getattr, 1, 1), fail);
     return 0;
 
 fail:
     DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
     return -1;
+}
+
+static int wrapper_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    return builtin_pickle(ctx, obj, rw);
+}
+
+static int member_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+static int dict_proxy_pickle  (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+
+static int cfunction_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    return builtin_pickle(ctx, obj, rw);
 }
 
 static int code_pickle        (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
@@ -787,7 +1000,12 @@ static int class_method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops 
 static int dict_items_pickle  (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
 static int dict_keys_pickle   (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
 static int dict_values_pickle (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
-static int method_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
+
+static int method_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    return builtin_pickle(ctx, obj, rw);
+}
+
 static int call_iter_pickle   (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
 static int seq_iter_pickle    (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
 static int byte_array_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) {}
@@ -1104,6 +1322,29 @@ fail:
     return -1;
 }
 
+static int op_ext_type(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    printf("op_ext_type\n");
+    vec_pobj_pop(&ctx->stack);
+    vec_pobj_pop(&ctx->stack);
+    vec_pobj_pop(&ctx->stack);
+
+    vec_pobj_push(&ctx->stack, Py_None);
+    Py_INCREF(Py_None);
+    return 0;
+}
+
+static int op_ext_getattr(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    printf("op_ext_getattr\n");
+    vec_pobj_pop(&ctx->stack);
+    vec_pobj_pop(&ctx->stack);
+
+    vec_pobj_push(&ctx->stack, Py_None);
+    Py_INCREF(Py_None);
+    return 0;
+}
+
 static pickle_func_t picklefunc_for_type(PyObject *obj)
 {
     for(int i = 0; i < ARR_SIZE(s_type_dispatch_table); i++) {
@@ -1121,6 +1362,7 @@ static bool pickle_ctx_init(struct pickle_ctx *ctx)
         goto fail_memo;
     }
 
+    vec_pobj_init(&ctx->to_free);
     return true;
 
 fail_memo:
@@ -1129,6 +1371,11 @@ fail_memo:
 
 static void pickle_ctx_destroy(struct pickle_ctx *ctx)
 {
+    for(int i = 0; i < vec_size(&ctx->to_free); i++) {
+        Py_DECREF(vec_AT(&ctx->to_free, i));    
+    }
+
+    vec_pobj_destroy(&ctx->to_free);
     kh_destroy(memo, ctx->memo);
 }
 
@@ -1244,6 +1491,7 @@ bool S_Pickle_Init(void)
     if(!S_Traverse_IndexQualnames(s_id_qualname_map))
         goto fail_traverse;
 
+    load_private_type_refs();
     return true;
 
 fail_traverse:
@@ -1337,7 +1585,10 @@ PyObject *S_UnpickleObjgraph(SDL_RWops *stream)
 
         unpickle_func_t upf = xtend ? s_ext_op_dispatch_table[op]
                                     : s_op_dispatch_table[op];
-        CHK_TRUE(upf, err);
+        if(!upf) {
+            SET_RUNTIME_EXC("Bad opcode %c", op); 
+            goto err;
+        }
         CHK_TRUE(upf(&ctx, stream) == 0, err);
     }
 
@@ -1353,7 +1604,7 @@ PyObject *S_UnpickleObjgraph(SDL_RWops *stream)
     return ret;
 
 err:
-    assert(PyErr_Occurred());
+    DEFAULT_ERR(PyExc_IOError, "Error reading from pickle stream");
     unpickle_ctx_destroy(&ctx);
     return NULL;
 }

@@ -49,6 +49,7 @@ __KHASH_PROTOTYPES(pobj, kh_cstr_t, PyObject*)
 bool S_Traverse(PyObject *root, visitproc visit, void *user);
 bool S_Traverse_PrintDFT(PyObject *root);
 bool S_Traverse_IndexQualnames(khash_t(str) *inout);
+bool S_Traverse_ReferencesObj(PyObject *root, PyObject *obj, bool *out);
 
 #endif
 

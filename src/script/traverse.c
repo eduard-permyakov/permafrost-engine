@@ -46,6 +46,11 @@ struct visit_ctx{
     void        *user;
 };
 
+struct contains_ctx{
+    const PyObject *const test;
+    bool                  contains;
+};
+
 __KHASH_IMPL(str,  extern, khint64_t, const char*, 1, kh_int_hash_func, kh_int_hash_equal)
 __KHASH_IMPL(pobj, extern, kh_cstr_t, PyObject*,   1, kh_str_hash_func, kh_str_hash_equal)
 
@@ -167,6 +172,16 @@ static int visit_index_qualname(PyObject *obj, void *ctx)
     return 0;
 }
 
+static int visit_contains(PyObject *obj, void *ctx)
+{
+    struct visit_ctx *vctx = ctx;
+    struct contains_ctx *cctx = vctx->user;
+
+    if(obj == cctx->test)
+        cctx->contains = true;
+    return 0;
+}
+
 bool s_traverse_with_visited(PyObject *root, visitproc visit, void *user,
                              khash_t(id) *inout_visited)
 {
@@ -240,5 +255,15 @@ fail_traverse:
     kh_destroy(id, visited);
 fail_alloc:
     return ret;
+}
+
+bool S_Traverse_ReferencesObj(PyObject *root, PyObject *obj, bool *out)
+{
+    struct contains_ctx cctx = {obj, false};
+    bool ret = S_Traverse(root, visit_contains, &cctx);
+    if(!ret)
+        return false;
+    *out = cctx.contains;
+    return true;
 }
 
