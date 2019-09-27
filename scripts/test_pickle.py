@@ -33,6 +33,7 @@
 #
 
 import pf
+import traceback
 
 def test_pickle_int():
 
@@ -167,7 +168,75 @@ def test_pickle_cfunction():
     f2 = pf.unpickle_object(s)
     assert f1 == f2
 
+    f1 = pf.pickle_object
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1 == f2
+
     print "Built-in function pickling OK!"
+
+def test_pickle_code():
+
+    def testfunc(a, b):
+        return a + b  
+
+    c1 = testfunc.func_code
+    s = pf.pickle_object(c1)
+    c2 = pf.unpickle_object(s);
+    assert c1 == c2
+
+    print "Code pickling OK!"
+
+def test_pickle_function():
+
+    def testfunc(a, b):
+        return a + b  
+
+    f1 = testfunc
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1 == f2
+    assert f1(1, 3) == f2(1, 3)
+
+    #TODO: test pickling default args
+    #TODO: test pickling closure
+
+    print "Function pickling OK!"
+
+def test_pickle_type():
+
+    # Built-in types
+    t1 = object
+    s = pf.pickle_object(t1)
+    t2 = pf.unpickle_object(s)
+    assert t1 == t2
+
+    t1 = dict
+    s = pf.pickle_object(t1)
+    t2 = pf.unpickle_object(s)
+    assert t1 == t2
+
+    #User-defined types (i.e. new-style classes)
+    class TestClass(object):
+        clsattr = 'Hello'
+        def __init__(self):
+            self.a = 1
+            self.b = 2
+            self.c = 3
+    t1 = TestClass
+    s = pf.pickle_object(t1)
+    #t2 = pf.unpickle_object(s)
+
+    #assert t1.clsattr == t2.clsattr
+    i1, i2 = t1(), t2()
+    #We need to pickle the functions as well
+    #print dir(i1)
+    #print dir(i2)
+    #assert i1.a == i2.a
+    #assert i1.b == i2.b
+    #assert i1.c == i2.c
+
+    print "Type pickling OK!"
 
 try:
     test_pickle_int()
@@ -176,8 +245,10 @@ try:
     test_pickle_list()
     test_pickle_dict()
     test_pickle_cfunction()
+    test_pickle_code()
+    test_pickle_type()
 except Exception as e:
-    print(e)
+    traceback.print_exc()
 finally:
     pf.global_event(pf.SDL_QUIT, None)
 
