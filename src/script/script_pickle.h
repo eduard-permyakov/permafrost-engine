@@ -43,7 +43,7 @@
 
 #include <stdbool.h>
 
-bool S_Pickle_Init(void);
+bool S_Pickle_Init(PyObject *module);
 void S_Pickle_Shutdown(void);
 
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream);

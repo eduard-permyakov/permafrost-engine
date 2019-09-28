@@ -1361,9 +1361,11 @@ bool S_Init(char *progname, const char *base_path, struct nk_context *ctx)
 
     initpf();
 
+    PyObject *module = PyDict_GetItemString(PySys_GetObject("modules"), "pf");
+    assert(module);
     /* Initialize the pickler after registering all the built-ins, so that they can
      * be indexed. */
-    if(!S_Pickle_Init())
+    if(!S_Pickle_Init(module))
         return false;
 
     return true;

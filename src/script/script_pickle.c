@@ -68,6 +68,16 @@
         SET_EXC(_type, __VA_ARGS__);                                            \
     }while(0)
 
+#define TRACE_OP(op, ctx)                                                       \
+    do{                                                                         \
+        PyObject *mod = PyDict_GetItemString(PySys_GetObject("modules"), "pf"); \
+        PyObject *flag = PyObject_GetAttrString(mod, "trace_pickling");         \
+        if(flag && !PyObject_IsTrue(flag))                                      \
+            break;                                                              \
+        printf("%-14s: [stack size: %4zu] [mark stack size: %4zu]\n",           \
+            #op, vec_size(&ctx->stack), vec_size(&ctx->mark_stack));            \
+    }while(0)
+
 /* The original protocol 0 ASCII opcodes */
 
 #define MARK            '(' /* push special markobject on stack                     */
@@ -125,6 +135,8 @@
 #define PF_TYPE         'B' /* Push new class created from the top 3 stack items (name, bases, methods) */
 #define PF_CODE         'C' /* Push code object from the 14 TOS items (the args to PyCode_New) */
 #define PF_FUNCTION     'D' /* Push function object from TOS items */
+#define PF_EMPTY_CELL   'E' /* Push empty cell */
+#define PF_CELL         'E' /* Push cell with TOS contents */
 
 struct memo_entry{
     int idx;
@@ -136,6 +148,9 @@ VEC_IMPL(static inline, pobj, PyObject*)
 
 VEC_TYPE(int, int)
 VEC_IMPL(static inline, int, int)
+
+VEC_TYPE(char, char)
+VEC_IMPL(static inline, char, char)
 
 KHASH_MAP_INIT_INT64(memo, struct memo_entry)
 
@@ -275,12 +290,14 @@ static int op_ext_type      (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_getattr   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_code      (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_function  (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_empty_cell(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_cell      (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static khash_t(str)  *s_id_qualname_map;
+static khash_t(str) *s_id_qualname_map;
 
 // TODO: categorize into 'primal' objects which can be instantiated directly in a script
 //       and 'derived' objects, which must be derived from an existing object (primal or builtin)
@@ -485,6 +502,8 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_GETATTR] = op_ext_getattr,
     [PF_CODE] = op_ext_code,
     [PF_FUNCTION] = op_ext_function,
+    [PF_EMPTY_CELL] = op_ext_empty_cell,
+    [PF_CELL] = op_ext_cell,
 };
 
 /*****************************************************************************/
@@ -883,32 +902,21 @@ static int dict_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     CHK_TRUE(emit_put(ctx, obj, rw), fail);
     CHK_TRUE(rw->write(rw, &mark, 1, 1), fail);
 
-    PyObject *iter = PyObject_CallMethod(obj, "iteritems", "()");
-    assert(iter);
+    PyObject *key, *value;
+    Py_ssize_t pos = 0;
 
-    for(PyObject *curr = PyIter_Next(iter); curr; curr = PyIter_Next(iter)) {
+    while(PyDict_Next(obj, &pos, &key, &value)) {
     
-        assert(PyTuple_Check(curr) && PyTuple_Size(curr) == 2);
-
-        PyObject *key = PyTuple_GET_ITEM(curr, 0);
         if(!pickle_obj(ctx, key, rw)) {
-            Py_DECREF(curr);
-            Py_DECREF(iter);
             assert(PyErr_Occurred());
             return -1;
         }
 
-        PyObject *val = PyTuple_GET_ITEM(curr, 1);
-        if(!pickle_obj(ctx, val, rw)) {
-            Py_DECREF(curr);
-            Py_DECREF(iter);
+        if(!pickle_obj(ctx, value, rw)) {
             assert(PyErr_Occurred());
             return -1;
         }
-
-        Py_DECREF(curr);
     }
-    Py_DECREF(iter);
 
     CHK_TRUE(rw->write(rw, &setitems, 1, 1), fail);
     return 0;
@@ -1131,6 +1139,8 @@ static int function_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
         CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
     }
 
+    const char ops[] = {PF_EXTEND, PF_FUNCTION};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
 
 fail:
@@ -1172,10 +1182,22 @@ static int file_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int cell_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(PyCell_Check(obj));
+    PyCellObject *cell = (PyCellObject*)obj;
+    const char ec_ops[] = {PF_EXTEND, PF_EMPTY_CELL};
+    const char ops[] = {PF_EXTEND, PF_CELL};
+
+    if(cell->ob_ref == NULL) {
+        CHK_TRUE(rw->write(rw, ec_ops, ARR_SIZE(ec_ops), 1), fail);
+    }else{
+        CHK_TRUE(pickle_obj(ctx, cell->ob_ref, rw), fail);
+        CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ec_ops), 1), fail);
+    }
     return 0;
+    
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int module_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -1218,6 +1240,7 @@ fail:
 
 static int wrapper_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    //TODO: same treatment as get_set_descr_pickle (?)
     return builtin_pickle(ctx, obj, rw);
 }
 
@@ -1536,6 +1559,8 @@ static int tuple_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *r
 
 static int op_int(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(INT, ctx);
+
     char buff[MAX_LINE_LEN];
     READ_LINE(rw, buff, fail);
 
@@ -1557,19 +1582,31 @@ fail:
 
 static int op_stop(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(STOP, ctx);
     ctx->stop = true;
     return 0;
 }
 
 static int op_string(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
-    PyObject *str = 0;
+    TRACE_OP(STRING, ctx);
+
+    PyObject *strobj = 0;
     Py_ssize_t len;
 
-    char buff[MAX_LINE_LEN];
-    READ_LINE(rw, buff, fail);
-    len = strlen(buff);
-    char *p = buff;
+    vec_char_t str;
+    vec_char_init(&str);
+    char c;
+    do { 
+        if(!SDL_RWread(rw, &c, 1, 1))
+            goto fail; 
+        if(!vec_char_push(&str, c))
+            goto fail;
+    }while(c != '\n');
+    vec_AT(&str, vec_size(&str)-1) = '\0';
+
+    char *p = str.array;
+    len = vec_size(&str)-1;
 
     /* Strip trailing whitespace */
     while (len > 0 && p[len-1] <= ' ')
@@ -1585,17 +1622,17 @@ static int op_string(struct unpickle_ctx *ctx, SDL_RWops *rw)
         p += 1;
         len -= 2;
     }else {
-        SET_RUNTIME_EXC("Pickle string not wrapped in quotes:%s", buff);
+        SET_RUNTIME_EXC("Pickle string not wrapped in quotes:%s", str.array);
         goto fail; /* Strings returned by __repr__ should be wrapped in quotes */
     }
 
-    str = PyString_DecodeEscape(p, len, NULL, 0, NULL);
-    if(!str) {
+    strobj = PyString_DecodeEscape(p, len, NULL, 0, NULL);
+    if(!strobj) {
         assert(PyErr_Occurred()); 
         goto fail;
     }
 
-    vec_pobj_push(&ctx->stack, str);
+    vec_pobj_push(&ctx->stack, strobj);
     return 0;
 
 fail:
@@ -1605,6 +1642,8 @@ fail:
 
 static int op_put(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(PUT, ctx);
+
     char buff[MAX_LINE_LEN];
     READ_LINE(rw, buff, fail);
 
@@ -1632,6 +1671,8 @@ fail:
 
 static int op_get(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(GET, ctx);
+
     char buff[MAX_LINE_LEN];
     READ_LINE(rw, buff, fail);
 
@@ -1658,11 +1699,13 @@ fail:
 
 static int op_mark(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(MARK, ctx);
     return vec_int_push(&ctx->mark_stack, vec_size(&ctx->stack)) ? 0 : -1;
 }
 
 static int op_pop_mark(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(POP_MARK, ctx);
     if(vec_size(&ctx->mark_stack) == 0) {
         SET_RUNTIME_EXC("Mark stack underflow");
         return -1;
@@ -1684,6 +1727,7 @@ static int op_pop_mark(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 static int op_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(TUPLE, ctx);
     if(vec_size(&ctx->mark_stack) == 0) {
         SET_RUNTIME_EXC("Mark stack underflow");
         return -1;
@@ -1711,6 +1755,7 @@ static int op_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 static int op_empty_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(EMPTY_TUPLE, ctx);
     PyObject *tuple = PyTuple_New(0);
     if(!tuple) {
         assert(PyErr_Occurred());
@@ -1722,6 +1767,7 @@ static int op_empty_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 static int op_empty_list(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(EMPTY_LIST, ctx);
     PyObject *list = PyList_New(0);
     if(!list) {
         assert(PyErr_Occurred());
@@ -1733,6 +1779,7 @@ static int op_empty_list(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 static int op_appends(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(APPENDS, ctx);
     if(vec_size(&ctx->mark_stack) == 0) {
         SET_RUNTIME_EXC("Mark stack underflow");
         return -1;
@@ -1771,6 +1818,7 @@ static int op_appends(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 static int op_empty_dict(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(EMPTY_DICT, ctx);
     PyObject *dict = PyDict_New();
     if(!dict) {
         assert(PyErr_Occurred());
@@ -1782,6 +1830,7 @@ static int op_empty_dict(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 static int op_setitems(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(SETITEMS, ctx);
     if(vec_size(&ctx->mark_stack) == 0) {
         SET_RUNTIME_EXC("Mark stack underflow");
         return -1;
@@ -1819,6 +1868,7 @@ static int op_setitems(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 static int op_none(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(NONE, ctx);
     Py_INCREF(Py_None);
     vec_pobj_push(&ctx->stack, Py_None);
     return 0;
@@ -1826,6 +1876,8 @@ static int op_none(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 static int op_ext_builtin(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(PF_BUILTIN, ctx);
+
     char buff[MAX_LINE_LEN];
     READ_LINE(rw, buff, fail);
     buff[strlen(buff)-1] = '\0'; /* Strip newline */
@@ -1846,6 +1898,8 @@ fail:
 
 static int op_ext_type(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(PF_TYPE, ctx);
+
     int ret = -1;
     if(vec_size(&ctx->stack) < 3) {
         SET_RUNTIME_EXC("Stack underflow");
@@ -1892,6 +1946,7 @@ fail_underflow:
 
 static int op_ext_getattr(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(PF_GETATTR, ctx);
     printf("op_ext_getattr\n");
     vec_pobj_pop(&ctx->stack);
     vec_pobj_pop(&ctx->stack);
@@ -1903,6 +1958,7 @@ static int op_ext_getattr(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 static int op_ext_code(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(PF_CODE, ctx);
     if(vec_size(&ctx->stack) < 14) {
         SET_RUNTIME_EXC("Stack underflow"); 
         return -1;
@@ -1960,6 +2016,7 @@ static int op_ext_code(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 static int op_ext_function(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(PF_FUNCTION, ctx);
     if(vec_size(&ctx->stack) < 4) {
         SET_RUNTIME_EXC("Stack underflow"); 
         return -1;
@@ -2000,6 +2057,30 @@ static int op_ext_function(struct unpickle_ctx *ctx, SDL_RWops *rw)
 fail_set:
     Py_DECREF(ret);
     return -1;
+}
+
+static int op_ext_empty_cell(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_EMPTY_CELL, ctx);
+    PyObject *cell = PyCell_New(NULL);
+    assert(cell); 
+    vec_pobj_push(&ctx->stack, cell);
+    return 0;
+}
+
+static int op_ext_cell(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_CELL, ctx);
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow"); 
+        return -1;
+    }
+
+    PyObject *cell = PyCell_New(vec_pobj_pop(&ctx->stack));
+    assert(cell);
+    vec_pobj_push(&ctx->stack, cell);
+    return 0;
 }
 
 static pickle_func_t picklefunc_for_type(PyObject *obj)
@@ -2132,7 +2213,7 @@ fail:
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool S_Pickle_Init(void)
+bool S_Pickle_Init(PyObject *module)
 {
     /* Set up the id: qualname map at initialization time, _after_ registering
      * all the engine builtins (as we wish to be able to look up builtins in
@@ -2144,6 +2225,9 @@ bool S_Pickle_Init(void)
     s_id_qualname_map = kh_init(str);
     if(!s_id_qualname_map)
         goto fail_id_qualname;
+
+    Py_INCREF(Py_False);
+    PyModule_AddObject(module, "trace_pickling", Py_False);
 
     if(!S_Traverse_IndexQualnames(s_id_qualname_map))
         goto fail_traverse;

@@ -195,11 +195,44 @@ def test_pickle_function():
     f1 = testfunc
     s = pf.pickle_object(f1)
     f2 = pf.unpickle_object(s)
-    assert f1 == f2
     assert f1(1, 3) == f2(1, 3)
 
-    #TODO: test pickling default args
-    #TODO: test pickling closure
+    #test closure
+    def outer():
+        a = 5
+        def inner(num):
+            return a + num
+        return inner
+
+    f1 = outer()
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1(15) == f2(15)
+
+    #test function decorator
+    def test_decorator(func):
+        def triple(num):
+            return 3*func(num)
+        return triple
+
+    @test_decorator
+    def double(num):
+        return 2*num 
+
+    f1 = double
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1(9) == f2(9)
+
+    #test pickling default args
+    def testfunc2(num=5, word='test'):
+        return num*word
+
+    f1 = testfunc2
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1() == f2()
+    assert f1(num=3) == f2(num=3)
 
     print "Function pickling OK!"
 
@@ -225,16 +258,13 @@ def test_pickle_type():
             self.c = 3
     t1 = TestClass
     s = pf.pickle_object(t1)
-    #t2 = pf.unpickle_object(s)
+    t2 = pf.unpickle_object(s)
 
-    #assert t1.clsattr == t2.clsattr
+    assert t1.clsattr == t2.clsattr
     i1, i2 = t1(), t2()
-    #We need to pickle the functions as well
-    #print dir(i1)
-    #print dir(i2)
-    #assert i1.a == i2.a
-    #assert i1.b == i2.b
-    #assert i1.c == i2.c
+    assert i1.a == i2.a
+    assert i1.b == i2.b
+    assert i1.c == i2.c
 
     print "Type pickling OK!"
 
@@ -246,6 +276,7 @@ try:
     test_pickle_dict()
     test_pickle_cfunction()
     test_pickle_code()
+    test_pickle_function()
     test_pickle_type()
 except Exception as e:
     traceback.print_exc()
