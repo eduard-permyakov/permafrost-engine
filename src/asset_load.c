@@ -356,8 +356,7 @@ bool AL_ReadLine(SDL_RWops *stream, char *outbuff)
 {
     bool done = false;
     int idx = 0;
-    do {
-         
+    do { 
         if(!SDL_RWread(stream, outbuff + idx, 1, 1))
             return false; 
 

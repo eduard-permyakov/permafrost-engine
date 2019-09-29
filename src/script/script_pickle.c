@@ -37,6 +37,7 @@
 
 #include "script_pickle.h"
 #include "traverse.h"
+#include "private_types.h"
 #include "../lib/public/vec.h"
 #include "../asset_load.h"
 
@@ -74,8 +75,20 @@
         PyObject *flag = PyObject_GetAttrString(mod, "trace_pickling");         \
         if(flag && !PyObject_IsTrue(flag))                                      \
             break;                                                              \
-        printf("%-14s: [stack size: %4zu] [mark stack size: %4zu]\n",           \
-            #op, vec_size(&ctx->stack), vec_size(&ctx->mark_stack));            \
+        printf("[U] %-14s: [stack size: %4zu] [mark stack size: %4zu] (%s:%d)\n", \
+            #op, vec_size(&ctx->stack), vec_size(&ctx->mark_stack),             \
+            __FILE__, __LINE__);                                                \
+    }while(0)
+
+#define TRACE_PICKLE(obj)                                                       \
+    do{                                                                         \
+        PyObject *mod = PyDict_GetItemString(PySys_GetObject("modules"), "pf"); \
+        PyObject *flag = PyObject_GetAttrString(mod, "trace_pickling");         \
+        if(flag && !PyObject_IsTrue(flag))                                      \
+            break;                                                              \
+        PyObject *repr = PyObject_Repr(obj);                                    \
+        printf("[P] %-24s: [0x%08lx] %s (%s:%d)\n", obj->ob_type->tp_name,      \
+            (uintptr_t)obj, PyString_AS_STRING(repr), __FILE__, __LINE__);      \
     }while(0)
 
 /* The original protocol 0 ASCII opcodes */
@@ -130,6 +143,7 @@
 #define PF_TRUE         'b' /* push True                                            */
 #define PF_FALSE        'c' /* push False                                           */
 #define PF_GETATTR      'd' /* Get new reference to attribute(TOS) of object(TOS1) and push it on the stack */
+#define PF_POPMARK      'e' /* Discard the top mark on the mark stack */
 
 #define PF_BUILTIN      'A' /* Push new reference to built-in that is identified by its' fully-qualified name */
 #define PF_TYPE         'B' /* Push new class created from the top 3 stack items (name, bases, methods) */
@@ -137,6 +151,9 @@
 #define PF_FUNCTION     'D' /* Push function object from TOS items */
 #define PF_EMPTY_CELL   'E' /* Push empty cell */
 #define PF_CELL         'E' /* Push cell with TOS contents */
+#define PF_BYTEARRAY    'F' /* Push byte array from encoded string on TOS */
+#define PF_SUPER        'G' /* Push super from 2 TOS items */
+#define PF_EMPTYFUNC    'H' /* Push dummy function object */
 
 struct memo_entry{
     int idx;
@@ -198,7 +215,7 @@ static bool emit_put(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 static int type_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int bool_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int string_pickle      (struct pickle_ctx *, PyObject *, SDL_RWops *); 
-static int byte_array_pickle  (struct pickle_ctx *, PyObject *, SDL_RWops *); 
+static int bytearray_pickle  (struct pickle_ctx *, PyObject *, SDL_RWops *); 
 static int list_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *); 
 static int super_pickle       (struct pickle_ctx *, PyObject *, SDL_RWops *); 
 static int base_obj_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *); 
@@ -276,6 +293,7 @@ static int op_string        (struct unpickle_ctx *, SDL_RWops *);
 static int op_put           (struct unpickle_ctx *, SDL_RWops *);
 static int op_get           (struct unpickle_ctx *, SDL_RWops *);
 static int op_mark          (struct unpickle_ctx *, SDL_RWops *);
+static int op_pop           (struct unpickle_ctx *, SDL_RWops *);
 static int op_pop_mark      (struct unpickle_ctx *, SDL_RWops *);
 static int op_tuple         (struct unpickle_ctx *, SDL_RWops *);
 static int op_empty_tuple   (struct unpickle_ctx *, SDL_RWops *);
@@ -292,6 +310,12 @@ static int op_ext_code      (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_function  (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_empty_cell(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_cell      (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_true      (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_false     (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_bytearray (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_super     (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_popmark   (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_emptyfunc (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -309,7 +333,7 @@ static struct pickle_entry s_type_dispatch_table[] = {
     {.type = &PyType_Type,                  .picklefunc = type_pickle                   }, /* type() */
     {.type = &PyBool_Type,                  .picklefunc = bool_pickle                   }, /* bool() */
     {.type = &PyString_Type,                .picklefunc = string_pickle                 }, /* str() */
-    {.type = &PyByteArray_Type,             .picklefunc = byte_array_pickle             }, /* bytearray() */
+    {.type = &PyByteArray_Type,             .picklefunc = bytearray_pickle              }, /* bytearray() */
     {.type = &PyList_Type,                  .picklefunc = list_pickle                   }, /* list() */
     {.type = &PySuper_Type,                 .picklefunc = super_pickle                  }, /* super() */
     {.type = &PyBaseObject_Type,            .picklefunc = base_obj_pickle               }, /* object() */
@@ -486,6 +510,7 @@ static unpickle_func_t s_op_dispatch_table[256] = {
     [GET] = op_get,
     [PUT] = op_put,
     [MARK] = op_mark,
+    [POP] = op_pop,
     [POP_MARK] = op_pop_mark,
     [TUPLE] = op_tuple,
     [EMPTY_TUPLE] = op_empty_tuple,
@@ -504,6 +529,12 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_FUNCTION] = op_ext_function,
     [PF_EMPTY_CELL] = op_ext_empty_cell,
     [PF_CELL] = op_ext_cell,
+    [PF_TRUE] = op_ext_true,
+    [PF_FALSE] = op_ext_false,
+    [PF_BYTEARRAY] = op_ext_bytearray,
+    [PF_SUPER] = op_ext_super,
+    [PF_POPMARK] = op_ext_popmark,
+    [PF_EMPTYFUNC] = op_ext_emptyfunc,
 };
 
 /*****************************************************************************/
@@ -708,6 +739,8 @@ static PyObject *method_funcs(PyObject *obj)
 
 static int builtin_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
+
     uintptr_t id = (uintptr_t)obj;
     khiter_t k = kh_get(str, s_id_qualname_map, id);
     if(k == kh_end(s_id_qualname_map)) {
@@ -736,6 +769,7 @@ fail:
 
 static int type_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     if(type_is_builtin(obj))
         return builtin_pickle(ctx, obj, rw); 
 
@@ -785,14 +819,26 @@ fail:
 
 static int bool_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    TRACE_PICKLE(obj);
+    assert(obj == Py_True || obj == Py_False);
+    const char true_ops[] = {PF_EXTEND, PF_TRUE};
+    const char false_ops[] = {PF_EXTEND, PF_FALSE};
+
+    if(obj == Py_True) {
+        CHK_TRUE(rw->write(rw, true_ops, ARR_SIZE(true_ops), 1), fail);
+    }else {
+        CHK_TRUE(rw->write(rw, false_ops, ARR_SIZE(false_ops), 1), fail);
+    }
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int string_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     char op = STRING;
     char *repr_str;
     PyObject *repr = NULL;
@@ -816,16 +862,32 @@ fail:
     return -1;
 }
 
-static int byte_array_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+static int bytearray_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    TRACE_PICKLE(obj);
+
+    char *buff = PyByteArray_AS_STRING(obj);
+    size_t len = PyByteArray_GET_SIZE(obj);
+    PyObject *str = PyString_Encode(buff, len, "UTF-8", "strict");
+    if(!str)
+        goto fail;
+    vec_pobj_push(&ctx->to_free, str);
+    if(!pickle_obj(ctx, str, rw))
+        goto fail;
+
+    const char ops[] = {PF_EXTEND, PF_BYTEARRAY};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
-} 
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
 
 static int list_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
+
     const char empty_list = EMPTY_LIST;
     const char appends = APPENDS;
     const char mark = MARK;
@@ -864,13 +926,24 @@ fail:
 
 static int super_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    TRACE_PICKLE(obj);
+
+    superobject *su = (superobject*)obj;
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)su->type, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, su->obj, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_SUPER};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
+
 static int base_obj_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -878,6 +951,7 @@ static int base_obj_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 }
 static int range_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -886,6 +960,8 @@ static int range_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int dict_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
+
     const char empty_dict = EMPTY_DICT;
     const char setitems = SETITEMS;
     const char mark = MARK;
@@ -928,6 +1004,7 @@ fail:
 
 static int set_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -937,6 +1014,7 @@ static int set_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 #ifdef Py_USING_UNICODE
 static int unicode_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -946,6 +1024,7 @@ static int unicode_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int slice_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -954,6 +1033,7 @@ static int slice_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int static_method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -963,6 +1043,7 @@ static int static_method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops
 #ifndef WITHOUT_COMPLEX
 static int complex_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -972,6 +1053,7 @@ static int complex_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int float_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -980,6 +1062,7 @@ static int float_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int buffer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -988,6 +1071,7 @@ static int buffer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int long_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -996,6 +1080,8 @@ static int long_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int int_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
+
     char str[32];
     long l = PyInt_AS_LONG((PyIntObject *)obj);
     Py_ssize_t len = 0;
@@ -1012,6 +1098,7 @@ fail:
 
 static int frozen_set_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1020,6 +1107,7 @@ static int frozen_set_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *r
 
 static int property_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1028,6 +1116,7 @@ static int property_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int memory_view_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1041,6 +1130,7 @@ static int memory_view_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *
  */
 static int tuple_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     Py_ssize_t len, i;
 
     assert(PyTuple_Check(obj));
@@ -1095,6 +1185,7 @@ fail:
 
 static int enum_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1103,6 +1194,7 @@ static int enum_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int reversed_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1111,6 +1203,7 @@ static int reversed_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) 
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1119,8 +1212,20 @@ static int method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int function_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
+
     assert(PyFunction_Check(obj));
     PyFunctionObject *func = (PyFunctionObject*)obj;
+
+    const char emptyfunc[] = {PF_EXTEND, PF_EMPTYFUNC};
+    CHK_TRUE(rw->write(rw, emptyfunc, ARR_SIZE(emptyfunc), 1), fail);
+
+    /* Memoize the function object before recursing into its' attributes 
+     * as the function may be self-referencing. This is why we need to 
+     * first create a 'dummy' function object and set its' 'code' and 
+     * 'dict' attributes after. */
+    memoize(ctx, obj);
+    CHK_TRUE(emit_put(ctx, obj, rw), fail);
 
     CHK_TRUE(pickle_obj(ctx, func->func_code, rw), fail);
     CHK_TRUE(pickle_obj(ctx, func->func_globals, rw), fail);
@@ -1150,6 +1255,7 @@ fail:
 
 static int class_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1158,6 +1264,7 @@ static int class_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int gen_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1166,6 +1273,7 @@ static int gen_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int instance_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1174,6 +1282,7 @@ static int instance_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int file_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1182,6 +1291,8 @@ static int file_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int cell_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
+
     assert(PyCell_Check(obj));
     PyCellObject *cell = (PyCellObject*)obj;
     const char ec_ops[] = {PF_EXTEND, PF_EMPTY_CELL};
@@ -1202,6 +1313,7 @@ fail:
 
 static int module_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1214,6 +1326,8 @@ static int get_set_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops
     khiter_t k = kh_get(str, s_id_qualname_map, id);
     if(k != kh_end(s_id_qualname_map))
         return builtin_pickle(ctx, obj, rw);
+
+    TRACE_PICKLE(obj);
 
     /* The getset_descriptor is not indexed because it was dynamically created 
      * at the same time that the user-defined type was created. Descriptor
@@ -1240,12 +1354,15 @@ fail:
 
 static int wrapper_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
+
     //TODO: same treatment as get_set_descr_pickle (?)
     return builtin_pickle(ctx, obj, rw);
 }
 
 static int member_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1254,6 +1371,7 @@ static int member_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops 
 
 static int dict_proxy_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1267,6 +1385,7 @@ static int cfunction_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw
 
 static int code_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     assert(PyCode_Check(obj));
     PyCodeObject *co = (PyCodeObject*)obj;
 
@@ -1311,6 +1430,7 @@ fail:
 
 static int traceback_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1319,6 +1439,7 @@ static int traceback_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw
 
 static int frame_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1327,6 +1448,7 @@ static int frame_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int not_implemented_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1335,6 +1457,7 @@ static int not_implemented_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWo
 
 static int none_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) 
 {
+    TRACE_PICKLE(obj);
     assert(obj == Py_None);
     const char none = NONE;
     CHK_TRUE(rw->write(rw, &none, 1, 1), fail);
@@ -1346,6 +1469,7 @@ fail:
 
 static int ellipsis_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) 
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1354,6 +1478,7 @@ static int ellipsis_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int weakref_ref_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1362,6 +1487,7 @@ static int weakref_ref_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *
 
 static int weakref_callable_proxy_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) 
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1370,6 +1496,7 @@ static int weakref_callable_proxy_pickle(struct pickle_ctx *ctx, PyObject *obj, 
 
 static int weakref_proxy_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1378,6 +1505,7 @@ static int weakref_proxy_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops
 
 static int match_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1386,6 +1514,7 @@ static int match_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int pattern_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1394,6 +1523,7 @@ static int pattern_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int scanner_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) 
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1402,6 +1532,7 @@ static int scanner_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int zip_importer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1410,6 +1541,7 @@ static int zip_importer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops 
 
 static int st_entry_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1418,6 +1550,7 @@ static int st_entry_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int class_method_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1426,6 +1559,7 @@ static int class_method_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_
 
 static int class_method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1434,6 +1568,7 @@ static int class_method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops 
 
 static int dict_items_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1442,6 +1577,7 @@ static int dict_items_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *r
 
 static int dict_keys_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1450,6 +1586,7 @@ static int dict_keys_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw
 
 static int dict_values_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1463,6 +1600,7 @@ static int method_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops 
 
 static int call_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1471,6 +1609,7 @@ static int call_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw
 
 static int seq_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1479,6 +1618,7 @@ static int seq_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int byte_array_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1487,6 +1627,7 @@ static int byte_array_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWo
 
 static int dict_iter_item_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1495,6 +1636,7 @@ static int dict_iter_item_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWop
 
 static int dict_iter_key_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) 
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1503,6 +1645,7 @@ static int dict_iter_key_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops
 
 static int dict_iter_value_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1511,6 +1654,7 @@ static int dict_iter_value_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWo
 
 static int field_name_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1519,6 +1663,7 @@ static int field_name_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWo
 
 static int formatter_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1527,6 +1672,7 @@ static int formatter_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWop
 
 static int list_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1535,6 +1681,7 @@ static int list_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw
 
 static int list_rev_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1543,6 +1690,7 @@ static int list_rev_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops
 
 static int set_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) 
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1551,6 +1699,7 @@ static int set_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
 static int tuple_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
@@ -1701,6 +1850,17 @@ static int op_mark(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(MARK, ctx);
     return vec_int_push(&ctx->mark_stack, vec_size(&ctx->stack)) ? 0 : -1;
+}
+
+static int op_pop(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(POP, ctx);
+    if(vec_size(&ctx->stack) == 0) {
+        SET_RUNTIME_EXC("Stack underflow");
+        return -1;
+    }
+    vec_pobj_pop(&ctx->stack);
+    return 0;
 }
 
 static int op_pop_mark(struct unpickle_ctx *ctx, SDL_RWops *rw)
@@ -1964,6 +2124,7 @@ static int op_ext_code(struct unpickle_ctx *ctx, SDL_RWops *rw)
         return -1;
     }
 
+    int rval = -1;
     PyObject *lnotab = vec_pobj_pop(&ctx->stack);
     PyObject *firstlineno = vec_pobj_pop(&ctx->stack);
     PyObject *name = vec_pobj_pop(&ctx->stack);
@@ -1984,8 +2145,8 @@ static int op_ext_code(struct unpickle_ctx *ctx, SDL_RWops *rw)
     || !PyInt_Check(stacksize)
     || !PyInt_Check(flags)
     || !PyInt_Check(firstlineno)) {
-        SET_RUNTIME_EXC("PF_EXT_CODE: argcount, nlocals, stacksize, flags, firstlinenoe must be an integers"); 
-        return -1;
+        SET_RUNTIME_EXC("PF_CODE: argcount, nlocals, stacksize, flags, firstlinenoe must be an integers"); 
+        goto fail;
     }
 
     PyObject *ret = (PyObject*)PyCode_New(
@@ -2006,18 +2167,35 @@ static int op_ext_code(struct unpickle_ctx *ctx, SDL_RWops *rw)
     );
 
     if(!ret) {
-        SET_RUNTIME_EXC("PF_EXT_CODE: argcount, nlocals, stacksize, flags, firstlinenoe must be an integers"); 
-        return -1;
+        SET_RUNTIME_EXC("PF_CODE: argcount, nlocals, stacksize, flags, firstlinenoe must be an integers"); 
+        goto fail;
     }
 
     vec_pobj_push(&ctx->stack, ret);
-    return 0;
+    rval = 0;
+
+fail:
+    Py_DECREF(lnotab);
+    Py_DECREF(firstlineno);
+    Py_DECREF(name);
+    Py_DECREF(filename);
+    Py_DECREF(cellvars);
+    Py_DECREF(freevars);
+    Py_DECREF(varnames);
+    Py_DECREF(names);
+    Py_DECREF(consts);
+    Py_DECREF(code);
+    Py_DECREF(flags);
+    Py_DECREF(stacksize);
+    Py_DECREF(nlocals);
+    Py_DECREF(argcount);
+    return rval;
 }
 
 static int op_ext_function(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_FUNCTION, ctx);
-    if(vec_size(&ctx->stack) < 4) {
+    if(vec_size(&ctx->stack) < 5) {
         SET_RUNTIME_EXC("Stack underflow"); 
         return -1;
     }
@@ -2026,36 +2204,82 @@ static int op_ext_function(struct unpickle_ctx *ctx, SDL_RWops *rw)
     PyObject *closure = vec_pobj_pop(&ctx->stack);
     PyObject *globals = vec_pobj_pop(&ctx->stack);
     PyObject *code = vec_pobj_pop(&ctx->stack);
+    PyFunctionObject *op = (PyFunctionObject*)vec_pobj_pop(&ctx->stack);
 
-    PyObject *ret = PyFunction_New(code, globals);
-    if(!ret) {
-        assert(PyErr_Occurred()); 
-        return -1;
+    /* Set the code and globals of the empty function object. This is 
+     * the exact same flow as if the code and globals were passed to
+     * 'PyFunction_New'. We just wanted to memoize the function object
+     * before pickling its' members to handle self-referencing. 
+     *
+     * The following is ripped from PyFunction_New in funcobject.c:
+     */
+
+    PyObject *__name__ = NULL;
+    PyObject *doc;
+    PyObject *consts;
+    PyObject *module;
+    op->func_weakreflist = NULL;
+    op->func_code = code; /* Steal ref */
+    op->func_globals = globals; /* Steal ref */
+    op->func_name = ((PyCodeObject *)code)->co_name;
+    Py_INCREF(op->func_name);
+    op->func_defaults = NULL; /* No default arguments */
+    op->func_closure = NULL;
+    consts = ((PyCodeObject *)code)->co_consts;
+    if (PyTuple_Size(consts) >= 1) {
+        doc = PyTuple_GetItem(consts, 0);
+        if (!PyString_Check(doc) && !PyUnicode_Check(doc))
+            doc = Py_None;
     }
+    else
+        doc = Py_None;
+    Py_INCREF(doc);
+    op->func_doc = doc;
+    op->func_dict = NULL;
+    op->func_module = NULL;
 
-    if(closure == Py_None) {
-        Py_DECREF(closure);
-    }else if(!PyTuple_Check(closure)){
+    /* __module__: If module name is in globals, use it.
+       Otherwise, use None.
+    */
+    if (!__name__) {
+        __name__ = PyString_InternFromString("__name__");
+        if (!__name__) {
+            assert(PyErr_Occurred());
+            goto fail;
+        }
+    }
+    module = PyDict_GetItem(globals, __name__);
+    if (module) {
+        Py_INCREF(module);
+        op->func_module = module;
+    }
+    /* End PyFunction_New */
+
+    if(closure != Py_None && !PyTuple_Check(closure)){
         SET_RUNTIME_EXC("Closure must be a tuple or None");
-        goto fail_set;
-    }else if(0 != PyFunction_SetClosure(ret, closure)){
-        return -1; 
+        goto fail;
+    }else if(closure != Py_None 
+    && (0 != PyFunction_SetClosure((PyObject*)op, closure))){
+        goto fail; 
     }
 
-    if(defaults == Py_None) {
-        Py_DECREF(defaults);
-    }else if(!PyTuple_Check(defaults)){
+    if(defaults != Py_None && !PyTuple_Check(defaults)){
         SET_RUNTIME_EXC("Defaults must be a tuple or None");
-        goto fail_set;
-    }else if(0 != PyFunction_SetDefaults(ret, defaults)){
-        goto fail_set; 
+        goto fail;
+    }else if(defaults != Py_None 
+    && (0 != PyFunction_SetDefaults((PyObject*)op, defaults))){
+        goto fail; 
     }
 
-    vec_pobj_push(&ctx->stack, ret);
+    Py_DECREF(closure);
+    Py_DECREF(defaults);
+    vec_pobj_push(&ctx->stack, (PyObject*)op);
     return 0;
 
-fail_set:
-    Py_DECREF(ret);
+fail:
+    Py_DECREF(closure);
+    Py_DECREF(defaults);
+    Py_DECREF(op);
     return -1;
 }
 
@@ -2080,6 +2304,106 @@ static int op_ext_cell(struct unpickle_ctx *ctx, SDL_RWops *rw)
     PyObject *cell = PyCell_New(vec_pobj_pop(&ctx->stack));
     assert(cell);
     vec_pobj_push(&ctx->stack, cell);
+    return 0;
+}
+
+static int op_ext_true(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_TRUE, ctx);
+    Py_INCREF(Py_True);
+    vec_pobj_push(&ctx->stack, Py_True);
+    return 0;
+}
+
+static int op_ext_false(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_FALSE, ctx);
+    Py_INCREF(Py_False);
+    vec_pobj_push(&ctx->stack, Py_False);
+    return 0;
+}
+
+static int op_ext_bytearray(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_BYTEARRAY, ctx);
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow"); 
+        return -1;
+    }
+
+    PyObject *encoded = vec_pobj_pop(&ctx->stack);
+    if(!PyString_Check(encoded)) {
+        SET_RUNTIME_EXC("PF_BYTEARRAY: Expecting string at TOS"); 
+        return -1;
+    }
+
+    PyObject *bytes = PyString_AsDecodedString(encoded, "UTF-8", "strict");
+    if(!bytes) {
+        Py_DECREF(encoded);
+        return -1;
+    }
+    Py_DECREF(encoded);
+
+    PyObject *ret = PyByteArray_FromStringAndSize(PyString_AS_STRING(bytes), PyString_GET_SIZE(bytes));
+    assert(ret);
+    Py_DECREF(bytes);
+    vec_pobj_push(&ctx->stack, ret);
+    return 0;
+}
+
+static int op_ext_super(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_SUPER, ctx);
+
+    if(vec_size(&ctx->stack) < 2) {
+        SET_RUNTIME_EXC("Stack underflow"); 
+        return -1;
+    }
+
+    PyObject *obj = vec_pobj_pop(&ctx->stack);
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    Py_INCREF(obj);
+    Py_INCREF(type);
+    PyObject *args = PyTuple_New(2);
+    PyTuple_SetItem(args, 0, type);
+    PyTuple_SetItem(args, 1, obj);
+
+    PyObject *ret = PyType_Type.tp_call((PyObject*)&PySuper_Type, args, NULL);
+    Py_DECREF(args);
+    if(!ret)
+        return -1;
+
+    vec_pobj_push(&ctx->stack, ret);
+    return 0;
+}
+
+static int op_ext_popmark(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_POPMARK, ctx);
+
+    if(vec_size(&ctx->mark_stack) < 1) {
+        SET_RUNTIME_EXC("Mark stack underflow"); 
+        return -1;
+    }
+
+    vec_int_pop(&ctx->mark_stack);
+    return 0;
+}
+
+static int op_ext_emptyfunc(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_EMPTYFUNC, ctx);
+
+    PyFunctionObject *ret = PyObject_GC_New(PyFunctionObject, &PyFunction_Type);
+    assert(ret);
+
+    size_t extra = sizeof(PyFunctionObject) - sizeof(PyObject);
+    memset(((PyObject*)ret)+1, 0, extra);
+
+    _PyObject_GC_TRACK(ret);
+    vec_pobj_push(&ctx->stack, (PyObject*)ret);
     return 0;
 }
 

@@ -268,6 +268,54 @@ def test_pickle_type():
 
     print "Type pickling OK!"
 
+def test_pickle_bool():
+
+    b1 = True
+    s = pf.pickle_object(b1)
+    b2 = pf.unpickle_object(s)
+    assert b1 == b2
+
+    b1 = False
+    s = pf.pickle_object(b1)
+    b2 = pf.unpickle_object(s)
+    assert b1 == b2
+
+    print "Bool pickling OK!"
+
+def test_pickle_bytearray():
+
+    b1 = bytearray('\x00\x01\x02\0\x03', 'UTF-8')
+    s = pf.pickle_object(b1)
+    b2 = pf.unpickle_object(s)
+    assert b1 == b2
+
+    print "Bytearray pickling OK!"
+
+def test_pickle_super():
+
+    class Root(object):
+        def foo(self):
+            return "Root.foo"
+
+    class Left(Root):
+        def foo(self):
+            return "Left.foo-" + super(Left, self).foo()
+
+    class Right(Root):
+        def foo(self):
+            return "Right.foo-" + super(Right, self).foo()
+
+    class Final(Left, Right):
+        def foo(self):
+            return "Final.foo-" + super(Final, self).foo()
+
+    f = Final()
+
+    s1 = super(Final, f)
+    s = pf.pickle_object(s1)
+
+    print "Super pickling OK!"
+
 try:
     test_pickle_int()
     test_pickle_string()
@@ -278,6 +326,9 @@ try:
     test_pickle_code()
     test_pickle_function()
     test_pickle_type()
+    test_pickle_bool()
+    test_pickle_bytearray()
+    test_pickle_super()
 except Exception as e:
     traceback.print_exc()
 finally:
