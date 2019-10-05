@@ -34,6 +34,9 @@
 
 import pf
 import traceback
+import sys
+import imp
+
 
 def test_pickle_int():
 
@@ -291,6 +294,73 @@ def test_pickle_bytearray():
 
     print "Bytearray pickling OK!"
 
+def test_pickle_baseobject():
+
+    o1 = object()
+    s = pf.pickle_object(o1)
+    o2 = pf.unpickle_object(s)
+    assert type(o1) == type(o2)
+
+    print "Base object pickling OK!"
+
+def test_pickle_notimplemented():
+
+    n1 = NotImplemented
+    s = pf.pickle_object(n1)
+    n2 = pf.unpickle_object(s)
+
+    print "NotImplemented pickling OK!"
+
+def test_pickle_ellipsis():
+
+    e1 = Ellipsis
+    s = pf.pickle_object(e1)
+    e2 = pf.unpickle_object(s)
+
+    print "Ellipsis pickling OK!"
+
+def test_pickle_syslonginfo():
+
+    l1 = sys.long_info
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    assert l1 == l2
+
+    print "sys.long_info pickling OK!"
+
+def test_pickle_sysfloatinfo():
+
+    l1 = sys.float_info
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    assert l1 == l2
+
+    print "sys.float_info pickling OK!"
+
+def test_pickle_nullimporter():
+
+    n1 = imp.NullImporter("...")
+    s = pf.pickle_object(n1)
+    n2 = pf.unpickle_object(s)
+    assert type(n1) == type(n2)
+    assert n2.find_module() == None
+
+    print "imp.NullImporter pickling OK!"
+
+def test_pickle_sys_singleton_nametuples():
+
+    o1 = sys.version_info
+    s = pf.pickle_object(o1)
+    o2 = pf.unpickle_object(s)
+    assert o1 == o2
+
+    o1 = sys.flags
+    s = pf.pickle_object(o1)
+    o2 = pf.unpickle_object(s)
+    assert o1 == o2
+
+    print "sys singleton named tuple pickling OK!"
+
 def test_pickle_super():
 
     class Root(object):
@@ -328,6 +398,13 @@ try:
     test_pickle_type()
     test_pickle_bool()
     test_pickle_bytearray()
+    test_pickle_baseobject()
+    test_pickle_notimplemented()
+    test_pickle_ellipsis()
+    test_pickle_nullimporter()
+    test_pickle_syslonginfo()
+    test_pickle_sysfloatinfo()
+    test_pickle_sys_singleton_nametuples()
     test_pickle_super()
 except Exception as e:
     traceback.print_exc()
