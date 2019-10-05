@@ -166,8 +166,10 @@
 #define PF_EMPTYFUNC    'H' /* Push dummy function object */
 #define PF_BASEOBJ      'I' /* Push an 'object' instance */
 #define PF_SYSLONGINFO  'J' /* Push a 'sys.long_info' instance */
-#define PF_NULLIMPORTER 'I' /* Push an imp.NullImporter instance */
-#define PF_SYSFLOATINFO 'K' /* Push a 'sys.float_info' instance */
+#define PF_NULLIMPORTER 'K' /* Push an imp.NullImporter instance */
+#define PF_SYSFLOATINFO 'L' /* Push a 'sys.float_info' instance */
+#define PF_SET          'M' /* Push a set from TOS tuple */
+#define PF_FROZENSET    'N' /* Push a frozenset from TOS tuple */
 
 struct memo_entry{
     int idx;
@@ -308,6 +310,7 @@ static int newclass_instance_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *
 
 /* Unpickling functions */
 static int op_int           (struct unpickle_ctx *, SDL_RWops *);
+static int op_long          (struct unpickle_ctx *, SDL_RWops *);
 static int op_stop          (struct unpickle_ctx *, SDL_RWops *);
 static int op_string        (struct unpickle_ctx *, SDL_RWops *);
 static int op_put           (struct unpickle_ctx *, SDL_RWops *);
@@ -322,6 +325,7 @@ static int op_appends       (struct unpickle_ctx *, SDL_RWops *);
 static int op_empty_dict    (struct unpickle_ctx *, SDL_RWops *);
 static int op_setitems      (struct unpickle_ctx *, SDL_RWops *);
 static int op_none          (struct unpickle_ctx *, SDL_RWops *);
+static int op_unicode       (struct unpickle_ctx *, SDL_RWops *);
 
 static int op_ext_builtin   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_type      (struct unpickle_ctx *, SDL_RWops *);
@@ -343,6 +347,8 @@ static int op_ext_ellipsis  (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_syslonginfo(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_sysfloatinfo(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_nullimporter(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_set       (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_frozenset (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -548,6 +554,7 @@ static struct pickle_entry s_pf_dispatch_table[] = {
 
 static unpickle_func_t s_op_dispatch_table[256] = {
     [INT] = op_int,
+    [LONG] = op_long,
     [STOP] = op_stop,
     [STRING] = op_string,
     [GET] = op_get,
@@ -562,6 +569,7 @@ static unpickle_func_t s_op_dispatch_table[256] = {
     [EMPTY_DICT] = op_empty_dict,
     [SETITEMS] = op_setitems,
     [NONE] = op_none,
+    [UNICODE] = op_unicode,
 };
 
 static unpickle_func_t s_ext_op_dispatch_table[256] = {
@@ -585,6 +593,8 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_SYSLONGINFO] = op_ext_syslonginfo,
     [PF_NULLIMPORTER] = op_ext_nullimporter,
     [PF_SYSFLOATINFO] = op_ext_sysfloatinfo,
+    [PF_SET] = op_ext_set,
+    [PF_FROZENSET] = op_ext_frozenset,
 };
 
 /* Standard modules not imported on initialization which also contain C builtins */
@@ -1141,24 +1151,155 @@ fail:
     return -1;
 }
 
+static int set_elems_pickle(struct pickle_ctx *ctx, PyObject *anyset, SDL_RWops *rw)
+{
+    size_t nitems = PySet_Size(anyset);
+    PyObject *ret = PyTuple_New(nitems);
+    CHK_TRUE(ret, fail);
+    vec_pobj_push(&ctx->to_free, ret);
+
+    PyObject *key;
+    Py_ssize_t pos = 0;
+    int i = 0;
+
+    while(_PySet_Next(anyset, &pos, &key)) {
+
+        Py_INCREF(key);
+        PyTuple_SET_ITEM(ret, i++, key);
+    }
+    CHK_TRUE(pickle_obj(ctx, ret, rw), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
+
 static int set_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+
+    assert(PySet_Check(obj));
+    CHK_TRUE(0 == set_elems_pickle(ctx, obj, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_SET};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 #ifdef Py_USING_UNICODE
+
+/* from cPickle:
+   A copy of PyUnicode_EncodeRawUnicodeEscape() that also translates
+   backslash and newline characters to \uXXXX escapes. */
+static PyObject *
+modified_EncodeRawUnicodeEscape(const Py_UNICODE *s, Py_ssize_t size)
+{
+    PyObject *repr;
+    char *p;
+    char *q;
+
+    static const char *hexdigit = "0123456789abcdef";
+#ifdef Py_UNICODE_WIDE
+    const Py_ssize_t expandsize = 10;
+#else
+    const Py_ssize_t expandsize = 6;
+#endif
+
+    if (size > PY_SSIZE_T_MAX / expandsize)
+        return PyErr_NoMemory();
+
+    repr = PyString_FromStringAndSize(NULL, expandsize * size);
+    if (repr == NULL)
+        return NULL;
+    if (size == 0)
+        return repr;
+
+    p = q = PyString_AS_STRING(repr);
+    while (size-- > 0) {
+        Py_UNICODE ch = *s++;
+#ifdef Py_UNICODE_WIDE
+        /* Map 32-bit characters to '\Uxxxxxxxx' */
+        if (ch >= 0x10000) {
+            *p++ = '\\';
+            *p++ = 'U';
+            *p++ = hexdigit[(ch >> 28) & 0xf];
+            *p++ = hexdigit[(ch >> 24) & 0xf];
+            *p++ = hexdigit[(ch >> 20) & 0xf];
+            *p++ = hexdigit[(ch >> 16) & 0xf];
+            *p++ = hexdigit[(ch >> 12) & 0xf];
+            *p++ = hexdigit[(ch >> 8) & 0xf];
+            *p++ = hexdigit[(ch >> 4) & 0xf];
+            *p++ = hexdigit[ch & 15];
+        }
+        else
+#else
+        /* Map UTF-16 surrogate pairs to '\U00xxxxxx' */
+        if (ch >= 0xD800 && ch < 0xDC00) {
+            Py_UNICODE ch2;
+            Py_UCS4 ucs;
+
+            ch2 = *s++;
+            size--;
+            if (ch2 >= 0xDC00 && ch2 <= 0xDFFF) {
+                ucs = (((ch & 0x03FF) << 10) | (ch2 & 0x03FF)) + 0x00010000;
+                *p++ = '\\';
+                *p++ = 'U';
+                *p++ = hexdigit[(ucs >> 28) & 0xf];
+                *p++ = hexdigit[(ucs >> 24) & 0xf];
+                *p++ = hexdigit[(ucs >> 20) & 0xf];
+                *p++ = hexdigit[(ucs >> 16) & 0xf];
+                *p++ = hexdigit[(ucs >> 12) & 0xf];
+                *p++ = hexdigit[(ucs >> 8) & 0xf];
+                *p++ = hexdigit[(ucs >> 4) & 0xf];
+                *p++ = hexdigit[ucs & 0xf];
+                continue;
+            }
+            /* Fall through: isolated surrogates are copied as-is */
+            s--;
+            size++;
+        }
+#endif
+        /* Map 16-bit characters to '\uxxxx' */
+        if (ch >= 256 || ch == '\\' || ch == '\n') {
+            *p++ = '\\';
+            *p++ = 'u';
+            *p++ = hexdigit[(ch >> 12) & 0xf];
+            *p++ = hexdigit[(ch >> 8) & 0xf];
+            *p++ = hexdigit[(ch >> 4) & 0xf];
+            *p++ = hexdigit[ch & 15];
+        }
+        /* Copy everything else as-is */
+        else
+            *p++ = (char) ch;
+    }
+    *p = '\0';
+    _PyString_Resize(&repr, p - q);
+    return repr;
+}
+
 static int unicode_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+
+    const char unicode = UNICODE;
+    CHK_TRUE(rw->write(rw, &unicode, 1, 1), fail);
+
+    PyObject *repr = modified_EncodeRawUnicodeEscape(PyUnicode_AS_UNICODE(obj),
+        PyUnicode_GET_SIZE(obj));
+    CHK_TRUE(repr, fail);
+    CHK_TRUE(rw->write(rw, PyString_AS_STRING(repr), PyString_GET_SIZE(repr), 1), fail);
+    CHK_TRUE(rw->write(rw, "\n", 1, 1), fail);
     return 0;
-} 
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
 #endif
 
 static int slice_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -1211,10 +1352,19 @@ static int buffer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 static int long_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+
+    char str[32];
+    long l = PyInt_AS_LONG((PyIntObject *)obj);
+    Py_ssize_t len = 0;
+
+    str[0] = LONG;
+    PyOS_snprintf(str + 1, sizeof(str) - 1, "%ld\n", l);
+    CHK_TRUE(rw->write(rw, str, 1, strlen(str)), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int int_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -1238,10 +1388,17 @@ fail:
 static int frozen_set_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+
+    assert(PyFrozenSet_Check(obj));
+    CHK_TRUE(0 == set_elems_pickle(ctx, obj, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_FROZENSET};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 } 
 
 static int property_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -1923,6 +2080,29 @@ fail:
     return -1;
 }
 
+static int op_long(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(LONG, ctx);
+
+    char buff[MAX_LINE_LEN];
+    READ_LINE(rw, buff, fail);
+
+    errno = 0;
+    char *endptr;
+    long l = strtol(buff, &endptr, 0);
+    if (errno || (*endptr != '\n') || (endptr[1] != '\0')) {
+        SET_RUNTIME_EXC("Bad long in pickle stream [offset: %ld]", rw->seek(rw, RW_SEEK_CUR, 0));
+        goto fail;
+    }
+
+    vec_pobj_push(&ctx->stack, PyLong_FromLong(l));
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error reading from pickle stream");
+    return -1;
+}
+
 static int op_stop(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(STOP, ctx);
@@ -1941,10 +2121,8 @@ static int op_string(struct unpickle_ctx *ctx, SDL_RWops *rw)
     vec_char_init(&str);
     char c;
     do { 
-        if(!SDL_RWread(rw, &c, 1, 1))
-            goto fail; 
-        if(!vec_char_push(&str, c))
-            goto fail;
+        CHK_TRUE(SDL_RWread(rw, &c, 1, 1), fail);
+        CHK_TRUE(vec_char_push(&str, c), fail);
     }while(c != '\n');
     vec_AT(&str, vec_size(&str)-1) = '\0';
 
@@ -1975,11 +2153,13 @@ static int op_string(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail;
     }
 
+    vec_char_destroy(&str);
     vec_pobj_push(&ctx->stack, strobj);
     return 0;
 
 fail:
     DEFAULT_ERR(PyExc_IOError, "Error reading from pickle stream");
+    vec_char_destroy(&str);
     return -1;
 }
 
@@ -2228,6 +2408,32 @@ static int op_none(struct unpickle_ctx *ctx, SDL_RWops *rw)
     Py_INCREF(Py_None);
     vec_pobj_push(&ctx->stack, Py_None);
     return 0;
+}
+
+static int op_unicode(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(UNICODE, ctx);
+
+    vec_char_t str;
+    vec_char_init(&str);
+    char c;
+    do { 
+        CHK_TRUE(SDL_RWread(rw, &c, 1, 1), fail);
+        CHK_TRUE(vec_char_push(&str, c), fail);
+    }while(c != '\n');
+    vec_AT(&str, vec_size(&str)-1) = '\0';
+
+    PyObject *unicode = PyUnicode_DecodeRawUnicodeEscape(str.array, vec_size(&str)-1, NULL);
+    CHK_TRUE(unicode, fail);
+
+    vec_pobj_push(&ctx->stack, unicode);
+    vec_char_destroy(&str);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error reading from pickle stream");
+    vec_char_destroy(&str);
+    return -1;
 }
 
 static int op_ext_builtin(struct unpickle_ctx *ctx, SDL_RWops *rw)
@@ -2680,6 +2886,7 @@ static int op_ext_ellipsis(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 static int op_ext_syslonginfo(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(PF_SYSLONGINFO, ctx);
     PyObject *ret = PyLong_GetInfo();
     assert(ret);
     vec_pobj_push(&ctx->stack, ret);
@@ -2688,8 +2895,55 @@ static int op_ext_syslonginfo(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 static int op_ext_sysfloatinfo(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
+    TRACE_OP(PF_SYSFLOATINFO, ctx);
     PyObject *ret = PyFloat_GetInfo();
     assert(ret);
+    vec_pobj_push(&ctx->stack, ret);
+    return 0;
+}
+
+static int op_ext_set(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_SET, ctx);
+    if(vec_size(&ctx->stack) == 0) {
+        SET_RUNTIME_EXC("Stack underflow");
+        return -1;
+    }
+    PyObject *items = vec_pobj_pop(&ctx->stack);
+    if(!PyTuple_Check(items)) {
+        SET_RUNTIME_EXC("PF_SET: Expecting a tuple of set items on TOS");
+        return -1;
+    }
+    PyObject *ret = PySet_New(items);
+    if(!ret) {
+        assert(PyErr_Occurred());
+        return -1;
+    }
+
+    Py_DECREF(items);
+    vec_pobj_push(&ctx->stack, ret);
+    return 0;
+}
+
+static int op_ext_frozenset(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_SET, ctx);
+    if(vec_size(&ctx->stack) == 0) {
+        SET_RUNTIME_EXC("Stack underflow");
+        return -1;
+    }
+    PyObject *items = vec_pobj_pop(&ctx->stack);
+    if(!PyTuple_Check(items)) {
+        SET_RUNTIME_EXC("PF_FROZENSET: Expecting a tuple of set items on TOS");
+        return -1;
+    }
+    PyObject *ret = PyFrozenSet_New(items);
+    if(!ret) {
+        assert(PyErr_Occurred());
+        return -1;
+    }
+
+    Py_DECREF(items);
     vec_pobj_push(&ctx->stack, ret);
     return 0;
 }
@@ -2872,10 +3126,12 @@ static bool pickle_obj(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *stream)
         CHK_TRUE(emit_put(ctx, obj, stream), fail);
     }
 
+#if 0 //temp disable
     if(pickle_attrs(ctx, obj, stream)) {
         assert(PyErr_Occurred());
         return false; 
     }
+#endif
 
     assert(!PyErr_Occurred());
     return true;

@@ -37,7 +37,6 @@ import traceback
 import sys
 import imp
 
-
 def test_pickle_int():
 
     i1 = -259
@@ -51,6 +50,15 @@ def test_pickle_int():
     assert i1 == i2
 
     print "Int picking OK!"
+
+def test_pickle_long():
+
+    l1 = 1 << 31
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    assert l1 == l2
+
+    print "Long picking OK!"
 
 def test_pickle_string():
     
@@ -70,6 +78,25 @@ def test_pickle_string():
     assert s1 == s2 
 
     print "String pickling OK!"
+
+def test_pickle_unicode():
+
+    u1 = u'abcdefg'
+    s = pf.pickle_object(u1)
+    u2 = pf.unpickle_object(s)
+    assert u1 == u2
+
+    u1 = u'\u043F\u0440\u0438\u0432\u0435\u0442'
+    s = pf.pickle_object(u1)
+    u2 = pf.unpickle_object(s)
+    assert u1 == u2
+
+    u1 = u'\n\n'
+    s = pf.pickle_object(u1)
+    u2 = pf.unpickle_object(s)
+    assert u1 == u2
+
+    print "Unicode pickling OK!"
 
 def test_pickle_tuple():
 
@@ -158,6 +185,24 @@ def test_pickle_dict():
     assert id(d2) == id(d2["key"])
 
     print "Dict pickling OK!"
+
+def test_pickle_set():
+
+    s1 = set({1,2,3,4,5,"Hello World"})
+    s = pf.pickle_object(s1)
+    s2 = pf.unpickle_object(s)
+    assert s1 == s2
+
+    print "Set pickling OK!"
+
+def test_pickle_frozenset():
+
+    f1 = frozenset({1,2,3,4,5,"Hello World"})
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1 == f2
+
+    print "Frozenset pickling OK!"
 
 def test_pickle_cfunction():
 
@@ -347,7 +392,7 @@ def test_pickle_nullimporter():
 
     print "imp.NullImporter pickling OK!"
 
-def test_pickle_sys_singleton_nametuples():
+def test_pickle_sys_singleton_namedtuples():
 
     o1 = sys.version_info
     s = pf.pickle_object(o1)
@@ -383,15 +428,20 @@ def test_pickle_super():
 
     s1 = super(Final, f)
     s = pf.pickle_object(s1)
+    #TODO ...
 
     print "Super pickling OK!"
 
 try:
     test_pickle_int()
+    test_pickle_long()
     test_pickle_string()
+    test_pickle_unicode()
     test_pickle_tuple()
     test_pickle_list()
     test_pickle_dict()
+    test_pickle_set()
+    test_pickle_frozenset()
     test_pickle_cfunction()
     test_pickle_code()
     test_pickle_function()
@@ -404,7 +454,7 @@ try:
     test_pickle_nullimporter()
     test_pickle_syslonginfo()
     test_pickle_sysfloatinfo()
-    test_pickle_sys_singleton_nametuples()
+    test_pickle_sys_singleton_namedtuples()
     test_pickle_super()
 except Exception as e:
     traceback.print_exc()
