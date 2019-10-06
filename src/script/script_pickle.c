@@ -172,6 +172,7 @@
 #define PF_FROZENSET    'N' /* Push a frozenset from TOS tuple */
 #define PF_CLASS        'O' /* Push an old class created from the top 3 stack items (name, bases, methods) */
 #define PF_INST         'P' /* Push 'instance' from 'classobj' and 'dict' on TOS */
+#define PF_GETSETDESC   'Q' /* Push 'getset_descriptor' instance from top 3 stack items */
 
 struct memo_entry{
     int idx;
@@ -353,6 +354,7 @@ static int op_ext_set       (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_frozenset (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_class     (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_inst      (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_getsetdesc(struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -601,6 +603,7 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_FROZENSET] = op_ext_frozenset,
     [PF_CLASS] = op_ext_class,
     [PF_INST] = op_ext_inst,
+    [PF_GETSETDESC] = op_ext_getsetdesc,
 };
 
 /* Standard modules not imported on initialization which also contain C builtins */
@@ -614,7 +617,7 @@ static const char *s_extra_indexed_mods[] = {
 
 static bool type_is_builtin(PyObject *type)
 {
-    assert(PyType_CheckExact(type));
+    assert(PyType_Check(type));
 
     for(int i = 0; i < ARR_SIZE(s_type_dispatch_table); i++) {
 
@@ -1630,37 +1633,27 @@ fail:
 
 static int module_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
-    TRACE_PICKLE(obj);
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
-    return none_pickle(ctx, Py_None, rw);
+    return base_obj_pickle(ctx, Py_None, rw);
 }
 
 static int get_set_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
-    uintptr_t id = (uintptr_t)obj;
-    khiter_t k = kh_get(str, s_id_qualname_map, id);
-    if(k != kh_end(s_id_qualname_map))
-        return builtin_pickle(ctx, obj, rw);
-
-    TRACE_PICKLE(obj);
-
-    /* The getset_descriptor is not indexed because it was dynamically created 
-     * at the same time that the user-defined type was created. Descriptor
-     * objects hold a type and an attribute name, which we can save and use
-     * to get a reference to the getset_descriptor during unpickling.
-     */
     assert(obj->ob_type == &PyGetSetDescr_Type);
     PyGetSetDescrObject *desc = (PyGetSetDescrObject*)obj;
 
-    if(!pickle_obj(ctx, (PyObject*)desc->d_type, rw))
-        return -1;
+    if(type_is_builtin((PyObject*)desc->d_type))
+        return builtin_pickle(ctx, obj, rw);
 
-    if(!pickle_obj(ctx, desc->d_name, rw))
-        return -1;
+    /* The getset_descriptor is not indexed because it was dynamically created */
+    TRACE_PICKLE(obj);
 
-    const char getattr[] = {PF_EXTEND, PF_GETATTR};
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)desc->d_type, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, desc->d_name, rw), fail);
+
+    const char getattr[] = {PF_EXTEND, PF_GETSETDESC};
     CHK_TRUE(rw->write(rw, getattr, ARR_SIZE(getattr), 1), fail);
     return 0;
 
@@ -1671,17 +1664,12 @@ fail:
 
 static int wrapper_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
-    //TODO: same treatment as get_set_descr_pickle (?)
     return builtin_pickle(ctx, obj, rw);
 }
 
 static int member_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
-    TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return 0;
+    return builtin_pickle(ctx, obj, rw);
 }
 
 static int dict_proxy_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -2531,13 +2519,34 @@ fail_underflow:
 static int op_ext_getattr(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_GETATTR, ctx);
-    printf("op_ext_getattr\n");
-    vec_pobj_pop(&ctx->stack);
-    vec_pobj_pop(&ctx->stack);
+    if(vec_size(&ctx->stack) < 2) {
+        SET_RUNTIME_EXC("Stack underflow"); 
+        return -1;
+    }
+    PyObject *name = vec_pobj_pop(&ctx->stack);
+    PyObject *obj = vec_pobj_pop(&ctx->stack);
 
-    Py_INCREF(Py_None);
-    vec_pobj_push(&ctx->stack, Py_None);
-    return 0;
+    int ret = -1;
+    if(!PyString_Check(name)) {
+        SET_RUNTIME_EXC("PF_GETATTR: Expecting string (name) at TOS");
+        goto fail_typecheck;
+    }
+
+    PyObject *attr = PyObject_GetAttr(obj, name);
+    CHK_TRUE(attr, fail_get);
+
+    PyObject *repr = PyObject_Repr(attr);
+    printf("  -->  PF_GETATTR:%s\n", PyString_AS_STRING(repr));
+    Py_DECREF(repr);
+
+    vec_pobj_push(&ctx->stack, attr);
+    ret = 0;
+
+fail_get:
+fail_typecheck:
+    Py_DECREF(name);
+    Py_DECREF(obj);
+    return ret;
 }
 
 static int op_ext_code(struct unpickle_ctx *ctx, SDL_RWops *rw)
@@ -3052,6 +3061,53 @@ fail_underflow:
     return ret;
 }
 
+static int op_ext_getsetdesc(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_GETSETDESC, ctx);
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 2) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *name = vec_pobj_pop(&ctx->stack);
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    if(!PyString_Check(name)) {
+        SET_RUNTIME_EXC("PF_GETSETDESC: Expecting string at TOS");
+        goto fail_typecheck;
+    }
+
+    PyTypeObject *tp_type = (PyTypeObject*)type;
+    PyGetSetDef *found = NULL;
+    for(PyGetSetDef *curr = tp_type->tp_getset; curr->name; curr++) {
+    
+        if(0 == strcmp(curr->name, PyString_AS_STRING(name))) {
+            found = curr; 
+            break;
+        }
+    }
+
+    if(!found) {
+        SET_RUNTIME_EXC("Could not find getset_descriptor (%s) of type (%s)",
+            PyString_AS_STRING(name), tp_type->tp_name);
+        goto fail_desc;
+    }
+
+    PyObject *desc = PyDescr_NewGetSet(tp_type, found);
+    CHK_TRUE(desc, fail_desc);
+    vec_pobj_push(&ctx->stack, desc);
+    ret = 0;
+
+fail_desc:
+fail_typecheck:
+    Py_DECREF(name);
+    Py_DECREF(type);
+fail_underflow:
+    assert((ret && PyErr_Occurred()) || (!ret && !PyErr_Occurred()));
+    return ret;
+}
+
 static int op_ext_nullimporter(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_NULLIMPORTER, ctx);
@@ -3230,12 +3286,10 @@ static bool pickle_obj(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *stream)
         CHK_TRUE(emit_put(ctx, obj, stream), fail);
     }
 
-#if 0 //temp disable
     if(pickle_attrs(ctx, obj, stream)) {
         assert(PyErr_Occurred());
         return false; 
     }
-#endif
 
     assert(!PyErr_Occurred());
     return true;
