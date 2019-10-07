@@ -36,6 +36,7 @@ import pf
 import traceback
 import sys
 import imp
+import exceptions
 
 def test_pickle_int():
 
@@ -284,6 +285,42 @@ def test_pickle_function():
 
     print "Function pickling OK!"
 
+def test_pickle_class():
+
+    class TestClass:
+        clsattr = 'Hello'
+        def __init__(self):
+            self.a = 1
+            self.b = 2
+            self.c = ("Hello World", 1, 2)
+
+    c1 = TestClass
+    s = pf.pickle_object(c1)
+    c2 = pf.unpickle_object(s)
+    assert c1.clsattr == c2.clsattr
+
+
+    print "Class pickling OK!"
+
+def test_pickle_instance():
+
+    class TestClass:
+        clsattr = 'Hello'
+        def __init__(self, a, b):
+            self.a = a
+            self.b = b
+
+    i1 = TestClass(25, 'Test123')
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert type(i1) == type(i2)
+    assert i1.__class__.__name__ == i2.__class__.__name__
+    assert i1.clsattr == i2.clsattr
+    assert i1.a == i2.a
+    assert i1.b == i2.b
+
+    print "Instance pickling OK!"
+
 def test_pickle_type():
 
     # Built-in types
@@ -304,12 +341,17 @@ def test_pickle_type():
             self.a = 1
             self.b = 2
             self.c = 3
+
     t1 = TestClass
     s = pf.pickle_object(t1)
     t2 = pf.unpickle_object(s)
 
     assert t1.clsattr == t2.clsattr
     i1, i2 = t1(), t2()
+    print dir(t1)
+    print "init: %s" % repr(t1.__init__)
+    print dir(t2)
+    print "init: %s" % repr(t2.__init__)
     assert i1.a == i2.a
     assert i1.b == i2.b
     assert i1.c == i2.c
@@ -406,6 +448,59 @@ def test_pickle_sys_singleton_namedtuples():
 
     print "sys singleton named tuple pickling OK!"
 
+def test_pickle_cell():
+
+    def outer():
+        a = 5
+        def inner(num):
+            return a + num
+        return inner
+
+    c1 = outer().__closure__
+    s = pf.pickle_object(c1)
+    c2 = pf.unpickle_object(s)
+    assert c1 == c2
+
+    print "Cell pickling OK!"
+
+def test_pickle_member_descriptor():
+
+    m1 = exceptions.SyntaxError.text
+    assert repr(m1)[1:].startswith('member')
+    s = pf.pickle_object(m1)
+    m2 = pf.unpickle_object(s)
+    assert m1 == m2
+
+    class Subclass(exceptions.SyntaxError):
+        pass
+
+    m1 = Subclass.text
+    assert repr(m1)[1:].startswith('member')
+    s = pf.pickle_object(m1)
+    m2 = pf.unpickle_object(s)
+    assert m1 == m2
+
+    print "Member descriptor pickling OK!"
+
+def test_pickle_getset_descriptor():
+
+    class TestClass(object):
+        clsattr = 'Hello'
+        def __init__(self):
+            self.a = 1
+            self.b = 2
+            self.c = 3
+
+    d1 = TestClass.__dict__['__dict__']
+    assert repr(d1)[1:].startswith('attribute')
+    s = pf.pickle_object(d1)
+    d2 = pf.unpickle_object(s)
+    assert type(d1) == type(d2)
+    assert d1.__name__ == d2.__name__
+    assert d1.__objclass__.__name__ == d2.__objclass__.__name__
+
+    print "GetSet descriptor pickling OK!"
+
 def test_pickle_super():
 
     class Root(object):
@@ -428,7 +523,8 @@ def test_pickle_super():
 
     s1 = super(Final, f)
     s = pf.pickle_object(s1)
-    #TODO ...
+    # This will work when we are able to set all the object's attributes
+    # s2 = pf.unpickle_object(s)
 
     print "Super pickling OK!"
 
@@ -445,6 +541,8 @@ try:
     test_pickle_cfunction()
     test_pickle_code()
     test_pickle_function()
+    test_pickle_class()
+    test_pickle_instance()
     test_pickle_type()
     test_pickle_bool()
     test_pickle_bytearray()
@@ -455,6 +553,9 @@ try:
     test_pickle_syslonginfo()
     test_pickle_sysfloatinfo()
     test_pickle_sys_singleton_namedtuples()
+    test_pickle_cell()
+    test_pickle_member_descriptor()
+    test_pickle_getset_descriptor()
     test_pickle_super()
 except Exception as e:
     traceback.print_exc()
