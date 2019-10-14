@@ -958,21 +958,40 @@ fail:
     return -1;
 }
 
-static PyObject *method_func(PyObject *obj, const char *name)
+static PyObject *method_funcs(PyObject *obj)
 {
-    PyObject *attr = PyObject_GetAttrString(obj, name);
-    assert(attr);
+    PyObject *attrs = PyObject_Dir(obj);
+    assert(attrs);
+    PyObject *ret = PyDict_New();
+    assert(ret);
 
-    if(PyMethod_Check(attr)) {
+    for(int i = 0; i < PyList_Size(attrs); i++) {
+
+        PyObject *name = PyList_GET_ITEM(attrs, i); /* borrowed */
+        assert(PyString_Check(name));
+        if(!PyObject_HasAttr(obj, name))
+            continue;
+
+        PyObject *attr = PyObject_GetAttr(obj, name);
+        assert(attr);
+
+        if(!PyMethod_Check(attr)) {
+            Py_DECREF(attr);
+            continue;
+        }
 
         PyMethodObject *meth = (PyMethodObject*)attr;
-        Py_INCREF(meth->im_func);
-        Py_DECREF(attr);
-        return meth->im_func;
+        if(meth->im_class != (PyObject*)obj) {
+            Py_DECREF(attr);
+            continue;
+        }
 
-    }else{
-        return attr;
+        PyDict_SetItem(ret, name, meth->im_func);
+        Py_DECREF(attr);
     }
+
+    Py_DECREF(attrs);
+    return ret;
 }
 
 static int type_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -981,6 +1000,7 @@ static int type_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
         return builtin_pickle(ctx, obj, rw); 
 
     TRACE_PICKLE(obj);
+    assert(!memo_contains(ctx, obj));
     assert(PyType_Check(obj));
     PyTypeObject *type = (PyTypeObject*)obj;
 
@@ -996,27 +1016,8 @@ static int type_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     CHK_TRUE(pickle_obj(ctx, bases, rw), fail);
 
     /* Push dict */
-    PyObject *dict = PyDict_New();
+    PyObject *dict = method_funcs(obj);
     vec_pobj_push(&ctx->to_free, dict);
-
-    if(PyObject_HasAttrString(obj, "__slots__")) {
-        PyObject *slots = PyObject_GetAttrString(obj, "__slots__");
-        PyDict_SetItemString(dict, "__slots__", slots);
-        Py_DECREF(slots);
-    }
-
-    if(PyObject_HasAttrString(obj, "__init__")) {
-        PyObject *init = method_func(obj, "__init__");
-        PyDict_SetItemString(dict, "__init__", init);
-        Py_DECREF(init);
-    }
-
-    if(PyObject_HasAttrString(obj, "__new__")) {
-        PyObject *newm = method_func(obj, "__new__");
-        PyDict_SetItemString(dict, "__new__", newm);
-        Py_DECREF(newm);
-    }
-
     CHK_TRUE(pickle_obj(ctx, dict, rw), fail);
 
     /* Push metaclass: The '__metaclass__' attribute if it exists, else 'type' */
@@ -1029,6 +1030,20 @@ static int type_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
         CHK_TRUE(ret, fail);
     }else{
         CHK_TRUE(pickle_obj(ctx, (PyObject*)&PyType_Type, rw), fail);
+    }
+
+    /* If the type is found in the memo now, that means one of 
+     * it recursively references itself via one of its' attributes.
+     * In that case, pop the things we were going to use to construct
+     * the type, and fetch it from the memo instead.
+     */
+    if(memo_contains(ctx, obj)) {
+        /* Pop the stuff we just pushed */
+        const char pops[] = {POP, POP, POP, POP};
+        CHK_TRUE(rw->write(rw, pops, ARR_SIZE(pops), 1), fail);
+        /* Get the type from the memo */
+        CHK_TRUE(emit_get(ctx, obj, rw), fail);
+        return 0;
     }
 
     const char ops[] = {PF_EXTEND, PF_TYPE};
@@ -1686,11 +1701,20 @@ fail:
 
 static int file_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
+    assert(PyFile_Check(obj));
+    PyFileObject *file = (PyFileObject*)obj;
+    assert(PyString_Check(file->f_name));
+
+    if(file->f_fp == stdin
+    || file->f_fp == stdout
+    || file->f_fp == stderr) {
+        return builtin_pickle(ctx, obj, rw);    
+    }
+
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return placeholder_inst_pickle(ctx, obj, rw);
+    SET_RUNTIME_EXC("Could not pickle file: %s. Only stdin, stdout, and stderr are supported.", 
+        PyString_AS_STRING(file->f_name));
+    return -1;
 }
 
 static int cell_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -2663,6 +2687,8 @@ static int op_ext_type(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     if((retval = PyType_Type.tp_new((PyTypeObject*)meta, args, NULL)) == NULL)
         goto fail_build;
+    if(PyType_Type.tp_init(retval, args, NULL))
+        goto fail_build;
 
     vec_pobj_push(&ctx->stack, retval);
     ret = 0;
@@ -2796,6 +2822,12 @@ static int op_ext_function(struct unpickle_ctx *ctx, SDL_RWops *rw)
     PyObject *globals = vec_pobj_pop(&ctx->stack);
     PyObject *code = vec_pobj_pop(&ctx->stack);
     PyFunctionObject *op = (PyFunctionObject*)vec_pobj_pop(&ctx->stack);
+
+    /* Clear the placeholder values */
+    Py_DECREF(op->func_code); 
+    Py_DECREF(op->func_globals);
+    Py_DECREF(op->func_name);
+    Py_DECREF(op->func_doc);
 
     /* Set the code and globals of the empty function object. This is 
      * the exact same flow as if the code and globals were passed to
@@ -2987,13 +3019,15 @@ static int op_ext_emptyfunc(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_EMPTYFUNC, ctx);
 
-    PyFunctionObject *ret = PyObject_GC_New(PyFunctionObject, &PyFunction_Type);
+    PyObject *code = (PyObject*)PyCode_NewEmpty("__placeholder__", "__placeholder__", 0);
+    PyObject *globals = PyDict_New();
+
+    PyObject *ret = PyFunction_New(code, globals);
     assert(ret);
 
-    size_t extra = sizeof(PyFunctionObject) - sizeof(PyObject);
-    memset(((PyObject*)ret)+1, 0, extra);
+    Py_DECREF(globals);
+    Py_DECREF(code);
 
-    _PyObject_GC_TRACK(ret);
     vec_pobj_push(&ctx->stack, (PyObject*)ret);
     return 0;
 }
@@ -3561,11 +3595,11 @@ static bool pickle_attrs(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
      */
     if(has_cls) {
         key = PyString_FromString("__class__");
+        vec_pobj_push(&ctx->to_free, key);
         value = PyDict_GetItem(ndw_attrs, key);
         assert(value);
 
         int res = pickle_obj(ctx, key, rw);
-        Py_DECREF(key);
         CHK_TRUE(res, fail);
         CHK_TRUE(pickle_obj(ctx, value, rw), fail);
     }

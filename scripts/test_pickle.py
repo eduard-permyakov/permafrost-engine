@@ -348,10 +348,6 @@ def test_pickle_type():
 
     assert t1.clsattr == t2.clsattr
     i1, i2 = t1(), t2()
-    print dir(t1)
-    print "init: %s" % repr(t1.__init__)
-    print dir(t2)
-    print "init: %s" % repr(t2.__init__)
     assert i1.a == i2.a
     assert i1.b == i2.b
     assert i1.c == i2.c
@@ -501,6 +497,16 @@ def test_pickle_getset_descriptor():
 
     print "GetSet descriptor pickling OK!"
 
+def test_pickle_file():
+
+    for f in [sys.stdin, sys.stdout, sys.stderr]:
+        f1 = f
+        s = pf.pickle_object(f1)
+        f2 = pf.unpickle_object(s)
+        assert f1 == f2
+
+    print "File pickling OK!"
+
 def test_pickle_super():
 
     class Root(object):
@@ -523,8 +529,13 @@ def test_pickle_super():
 
     s1 = super(Final, f)
     s = pf.pickle_object(s1)
-    # This will work when we are able to set all the object's attributes
-    # s2 = pf.unpickle_object(s)
+    s2 = pf.unpickle_object(s)
+    #assert s1.foo() == s2.foo()
+
+    s1 = super(Left, f)
+    s = pf.pickle_object(s1)
+    s2 = pf.unpickle_object(s)
+    #assert s1.foo() == s2.foo()
 
     print "Super pickling OK!"
 
@@ -556,6 +567,7 @@ try:
     test_pickle_cell()
     test_pickle_member_descriptor()
     test_pickle_getset_descriptor()
+    test_pickle_file()
     test_pickle_super()
 except Exception as e:
     traceback.print_exc()
