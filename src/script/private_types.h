@@ -44,6 +44,13 @@ typedef struct {
     PyObject *dict;
 }proxyobject;
 
+/* from Objects/descrobject.c */
+typedef struct {
+    PyObject_HEAD
+    PyWrapperDescrObject *descr;
+    PyObject *self;
+} wrapperobject;
+
 /* from Objects/typeobject.c */
 typedef struct {
     PyObject_HEAD

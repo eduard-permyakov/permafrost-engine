@@ -38,6 +38,7 @@ import sys
 import imp
 import exceptions
 
+
 def test_pickle_int():
 
     i1 = -259
@@ -352,6 +353,43 @@ def test_pickle_type():
     assert i1.b == i2.b
     assert i1.c == i2.c
 
+    #Sublcasses of builtins
+    class UserDict(dict):
+        def __init__(self, *args):
+            super(UserDict, self).__init__(*args)
+            self.customattr = 123
+
+    t1 = UserDict
+    s = pf.pickle_object(t1)
+    t2 = pf.unpickle_object(s)
+
+    i1 = t1({'a':1})
+    i2 = t2({'a':1})
+    assert i1.customattr == i2.customattr
+    assert i1['a'] == i2['a']
+
+    #Type with '__slots__'
+    class SlotsType(object):
+        __slots__ = ['a', 'b']
+        def __init__(self):
+            self.a = 1
+            self.b = 2
+
+    t1 = SlotsType
+    s = pf.pickle_object(t1)
+    t2 = pf.unpickle_object(s)
+    assert t1.__slots__ == t2.__slots__
+
+    i1, i2 = t1(), t2()
+    assert i1.a == i2.a
+    assert i1.b == i2.b
+    try:
+        setattr(i2, 'c', 3)
+    except AttributeError:
+        pass
+    else:
+        raise Exception("Able to set non-slot attribute: __slots__ not properly saved")
+
     print "Type pickling OK!"
 
 def test_pickle_bool():
@@ -530,14 +568,68 @@ def test_pickle_super():
     s1 = super(Final, f)
     s = pf.pickle_object(s1)
     s2 = pf.unpickle_object(s)
-    #assert s1.foo() == s2.foo()
+    assert s1.foo() == s2.foo()
 
     s1 = super(Left, f)
     s = pf.pickle_object(s1)
     s2 = pf.unpickle_object(s)
-    #assert s1.foo() == s2.foo()
+    assert s1.foo() == s2.foo()
+
+    s1 = super(Right, f)
+    s = pf.pickle_object(s1)
+    s2 = pf.unpickle_object(s)
+    assert s1.foo() == s2.foo()
 
     print "Super pickling OK!"
+
+def test_pickle_classmethod():
+
+    class ClassMethodTestClass(object):
+        @classmethod
+        def test_cls_method(cls):
+            return 'this is a %s class method' % str(cls)
+
+        def test_instance(self):
+            return 'this is a %s instance method' % str(self)
+
+    c1 = classmethod(ClassMethodTestClass.test_cls_method)
+    assert repr(c1)[1:].startswith("classmethod")
+    s = pf.pickle_object(c1)
+    c2 = pf.unpickle_object(s)
+    assert c1.__func__.__name__ == c2.__func__.__name__
+
+    cls1 = ClassMethodTestClass
+    s = pf.pickle_object(cls1)
+    cls2 = pf.unpickle_object(s)
+    assert cls1.test_cls_method() == cls2.test_cls_method()
+
+    print "Classmethod pickling OK!"
+
+def test_pickle_wrapper_descriptor():
+
+    d1 = object.__delattr__
+    assert repr(d1)[1:].startswith("slot wrapper")
+    s = pf.pickle_object(d1)
+    d2 = pf.unpickle_object(s)
+    assert d1 == d2
+
+    print "Wrapper descriptor pickling OK!"
+
+def test_pickle_method_wrapper():
+
+    class TestClass(object): pass
+    inst = TestClass()
+
+    d1 = inst.__setattr__
+    assert repr(d1)[1:].startswith("method-wrapper")
+    s = pf.pickle_object(d1)
+    d2 = pf.unpickle_object(s)
+
+    assert d1.__name__ == d2.__name__
+    d2('test', 123)
+    assert d2.__self__.test == 123
+
+    print "Method-wrapper (slot method) pickling OK!"
 
 try:
     test_pickle_int()
@@ -569,6 +661,9 @@ try:
     test_pickle_getset_descriptor()
     test_pickle_file()
     test_pickle_super()
+    test_pickle_classmethod()
+    test_pickle_wrapper_descriptor()
+    test_pickle_method_wrapper()
 except Exception as e:
     traceback.print_exc()
 finally:
