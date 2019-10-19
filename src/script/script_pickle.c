@@ -185,6 +185,8 @@
 #define PF_RANGE        'X' /* Push range object from top 3 TOS items */
 #define PF_SLICE        'Z' /* Push a slice object from top 3 TOS items */
 #define PF_STATMETHOD   '0' /* Push a staticmethod object from TOS item */
+#define PF_BUFFER       '1' /* Push a buffer object from top 4 TOS items */
+#define PF_MEMVIEW      '2' /* Push a memoryview object from TOS item */
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -381,6 +383,8 @@ static int op_ext_method_wrapper(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_range     (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_slice     (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_staticmethod(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_buffer    (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_memview   (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -650,6 +654,8 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_RANGE] = op_ext_range,
     [PF_SLICE] = op_ext_slice,
     [PF_STATMETHOD] = op_ext_staticmethod,
+    [PF_BUFFER] op_ext_buffer,
+    [PF_MEMVIEW] = op_ext_memview,
 };
 
 /* Standard modules not imported on initialization which also contain C builtins */
@@ -1575,11 +1581,43 @@ static int float_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 static int buffer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(PyBuffer_Check(obj));
+    PyBufferObject *buff = (PyBufferObject*)obj;
+
+    /* A buffer object may be created from the C API via the PyBuffer_FromMemory 
+     * and PyBuffer_FromReadWriteMemory calls. However, no object of this type 
+     * are exposed to the user scripts. As well, it is not possible to create a 
+     * raw memory buffer object from scripting. So the only place where these may 
+     * pop up is in 3rd party C extensions, which are not supported, in a general 
+     * case. */
+    if(buff->b_ptr) {
+        assert(!buff->b_base);
+        SET_RUNTIME_EXC("Picking raw memory buffer objects is not supported. Only buffer objects instantiated "
+            "with an object supporting the buffer protocol are supported.");
+        return -1;
+    }
+    assert(buff->b_base);
+
+    PyObject *size = PyLong_FromLong(buff->b_size);
+    PyObject *offset = PyLong_FromLong(buff->b_offset);
+    PyObject *readonly = PyLong_FromLong(buff->b_readonly);
+    vec_pobj_push(&ctx->to_free, size);
+    vec_pobj_push(&ctx->to_free, offset);
+    vec_pobj_push(&ctx->to_free, readonly);
+
+    CHK_TRUE(pickle_obj(ctx, buff->b_base, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, size, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, offset, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, readonly, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_BUFFER};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
-} 
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
 
 static int long_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
@@ -1645,10 +1683,28 @@ static int property_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 static int memory_view_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(PyMemoryView_Check(obj));
+    PyMemoryViewObject *mview = (PyMemoryViewObject*)obj;
+
+    /* Similar to legacy 'buffer' objects, raw-byte based memory views (created 
+     * via the PyMemoryView_FromBuffer API) are not able to be created directly 
+     * from scripting. They may be used by some C implementations (such as 
+     * BufferedIO). However, memory view object handles should not leak to 
+     * scripts. If a 3rd party C extension leaks them, we don't support it. */
+    if(NULL == mview->base) {
+        SET_RUNTIME_EXC("raw-byte memoryview objects are not supported");
+        goto fail;
+    }
+
+    CHK_TRUE(pickle_obj(ctx, mview->base, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_MEMVIEW};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 /* From cPickle:
@@ -3867,6 +3923,68 @@ static int op_ext_staticmethod(struct unpickle_ctx *ctx, SDL_RWops *rw)
 fail_method:
 fail_typecheck:
     Py_DECREF(callable);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_buffer(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_BUFFER, ctx);
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 4) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *readonly = vec_pobj_pop(&ctx->stack);
+    PyObject *offset = vec_pobj_pop(&ctx->stack);
+    PyObject *size = vec_pobj_pop(&ctx->stack);
+    PyObject *base = vec_pobj_pop(&ctx->stack);
+
+    if(!PyLong_Check(readonly)
+    || !PyLong_Check(offset)
+    || !PyLong_Check(size)) {
+        SET_RUNTIME_EXC("PF_BUFFER: Expecting long objects as top 3 stack items");
+        goto fail_typecheck;
+    }
+
+    PyObject *retval = NULL;
+    if(PyLong_AsLong(readonly)) {
+        retval = PyBuffer_FromObject(base, PyLong_AsLong(offset), PyLong_AsLong(size));
+    }else{
+        retval = PyBuffer_FromReadWriteObject(base, PyLong_AsLong(offset), PyLong_AsLong(size));
+    }
+    CHK_TRUE(retval, fail_buffer);
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_buffer:
+fail_typecheck:
+    Py_DECREF(readonly);
+    Py_DECREF(offset);
+    Py_DECREF(size);
+    Py_DECREF(base);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_memview(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_MEMVIEW, ctx);
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *base = vec_pobj_pop(&ctx->stack);
+    PyObject *retval = PyMemoryView_FromObject(base);
+    CHK_TRUE(retval, fail_memview);
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_memview:
+    Py_DECREF(base);
 fail_underflow:
     return ret;
 }

@@ -685,6 +685,31 @@ def test_pickle_staticmethod():
    
     print "staticmethod pickling OK!"
 
+def test_pickle_buffer():
+
+    text = 'Hello World'
+
+    b1 = buffer(text, 6, 5)
+    s = pf.pickle_object(b1)
+    b2 = pf.unpickle_object(s)
+    assert str(b2) == 'World'
+
+    print "buffer pickling OK!"
+
+def test_pickle_memoryview():
+
+    bytes = bytearray('\x00\x01\x02\x03\x04\x05\x06\x07', 'UTF-8')
+
+    m1 = memoryview(bytes)
+    s = pf.pickle_object(m1)
+    m2 = pf.unpickle_object(s)
+
+    assert len(m1) == len(m2)
+    for i in range(len(m1)):
+        assert m1[i] == m2[i]
+
+    print "memoryview pickling OK!"
+
 try:
     test_pickle_int()
     test_pickle_long()
@@ -721,6 +746,8 @@ try:
     test_pickle_range()
     test_pickle_slice()
     test_pickle_staticmethod()
+    test_pickle_buffer()
+    test_pickle_memoryview()
 except Exception as e:
     traceback.print_exc()
 finally:
