@@ -55,7 +55,7 @@ def test_pickle_int():
 
 def test_pickle_long():
 
-    l1 = 1 << 31
+    l1 = long(1 << 32)
     s = pf.pickle_object(l1)
     l2 = pf.unpickle_object(s)
     assert l1 == l2
@@ -631,6 +631,60 @@ def test_pickle_method_wrapper():
 
     print "Method-wrapper (slot method) pickling OK!"
 
+def test_pickle_range():
+
+    r1 = xrange(1, 10, 2)
+    s = pf.pickle_object(r1)
+    r2 = pf.unpickle_object(s)
+    assert repr(r1) == repr(r2)
+    assert next(r1.__iter__()) == next(r2.__iter__())
+
+    print "Range pickling OK!"
+
+def test_pickle_slice():
+
+    s1 = slice(2, 6, 2)
+    s = pf.pickle_object(s1)
+    s2 = pf.unpickle_object(s)
+    assert repr(s1) == repr(s2)
+
+    l = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert l[s2] == [2, 4]
+
+    s1 = slice('Hello World', slice(1, 5), 123)
+    s = pf.pickle_object(s1)
+    s2 = pf.unpickle_object(s)
+    assert repr(s1) == repr(s2)
+
+    print "Slice pickling OK!"
+
+def test_pickle_staticmethod():
+
+    class TestClass(object):
+        def __new__(cls):
+            ret = object.__new__(cls)
+            ret.myattr = 'Hello World'
+            return ret
+        @staticmethod
+        def test_static_method(a):
+            return "staticmethod with arg %s" % repr(a)
+
+    s1 = staticmethod(TestClass.test_static_method)
+    assert repr(s1)[1:].startswith('staticmethod')
+    s = pf.pickle_object(s1)
+    s2 = pf.unpickle_object(s)
+    assert repr(s2)[1:].startswith('staticmethod')
+
+    c1 = TestClass
+    s = pf.pickle_object(c1)
+    c2 = pf.unpickle_object(s)
+    assert c1.test_static_method(123) == c2.test_static_method(123)
+
+    inst = c2()
+    assert inst.myattr == 'Hello World'
+   
+    print "staticmethod pickling OK!"
+
 try:
     test_pickle_int()
     test_pickle_long()
@@ -664,6 +718,9 @@ try:
     test_pickle_classmethod()
     test_pickle_wrapper_descriptor()
     test_pickle_method_wrapper()
+    test_pickle_range()
+    test_pickle_slice()
+    test_pickle_staticmethod()
 except Exception as e:
     traceback.print_exc()
 finally:

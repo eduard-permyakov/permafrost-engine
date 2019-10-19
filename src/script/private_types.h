@@ -42,7 +42,7 @@
 typedef struct {
     PyObject_HEAD
     PyObject *dict;
-}proxyobject;
+} proxyobject;
 
 /* from Objects/descrobject.c */
 typedef struct {
@@ -57,7 +57,21 @@ typedef struct {
     PyTypeObject *type;
     PyObject *obj;
     PyTypeObject *obj_type;
-}superobject;
+} superobject;
+
+/* from Objects/rangeobject.c */
+typedef struct {
+    PyObject_HEAD
+    long        start;
+    long        step;
+    long        len;
+} rangeobject;
+
+/* from Objects/funcobject.c */
+typedef struct {
+    PyObject_HEAD
+    PyObject *sm_callable;
+} staticmethod;
 
 #endif
 

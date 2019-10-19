@@ -182,6 +182,9 @@
 #define PF_INSTMETHOD   'U' /* Pusn an instancemethod instance from TOS */
 #define PF_MEMDESC      'V' /* Push a 'member_descriptor' instance */
 #define PF_METHWRAP     'W' /* Push a 'method-wrapper' instance from top 2 TOS items */
+#define PF_RANGE        'X' /* Push range object from top 3 TOS items */
+#define PF_SLICE        'Z' /* Push a slice object from top 3 TOS items */
+#define PF_STATMETHOD   '0' /* Push a staticmethod object from TOS item */
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -375,6 +378,9 @@ static int op_ext_clsmethod (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_instmethod(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_memdesc   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_method_wrapper(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_range     (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_slice     (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_staticmethod(struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -423,7 +429,7 @@ static struct pickle_entry s_type_dispatch_table[] = {
     {.type = &PyClassMethod_Type,           .picklefunc = class_method_pickle           }, /* classmethod() */
 
     {.type = &PyCell_Type,                  .picklefunc = cell_pickle                   }, /* indirectly: used for closures */
-    {.type = &PyModule_Type,                .picklefunc = module_pickle,                },
+    {.type = &PyModule_Type,                .picklefunc = module_pickle,                }, /* indirectly: via import */
 
     /* These are from accessing the attributes of built-in types; created via PyDescr_ API*/
     {.type = &PyGetSetDescr_Type,           .picklefunc = get_set_descr_pickle          }, /* Wrapper around PyGetSetDef */
@@ -440,7 +446,6 @@ static struct pickle_entry s_type_dispatch_table[] = {
 
     /* This is a reference to C code. As such, we pickle by reference. */
     {.type = &PyCFunction_Type,             .picklefunc = cfunction_pickle              },
-    /* Derived from function objects */
     {.type = &PyCode_Type,                  .picklefunc = code_pickle                   },
     /* These can be retained from sys.exc_info(): XXX: see creation paths */
     {.type = &PyTraceBack_Type,             .picklefunc = traceback_pickle              },
@@ -507,6 +512,7 @@ static struct pickle_entry s_type_dispatch_table[] = {
      * extension modules. As it is a wrapper around a raw memory address exported 
      * by some module, we cannot reliablly save and restore it 
      */
+     //TODO: unsupported_pickle func to throw an EXC
     {.type = &PyCObject_Type,               .picklefunc = NULL                          },
     /* Newer version of CObject */
     {.type = &PyCapsule_Type,               .picklefunc = NULL                          },
@@ -641,6 +647,9 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_INSTMETHOD] = op_ext_instmethod,
     [PF_MEMDESC] = op_ext_memdesc,
     [PF_METHWRAP] = op_ext_method_wrapper,
+    [PF_RANGE] = op_ext_range,
+    [PF_SLICE] = op_ext_slice,
+    [PF_STATMETHOD] = op_ext_staticmethod,
 };
 
 /* Standard modules not imported on initialization which also contain C builtins */
@@ -913,6 +922,45 @@ static PyObject *qualname_new_ref(const char *qualname)
     return parent;
 }
 
+/* Due to some attributes implementing the descriptor protocol, it is possible
+ * that reading an attribute from an object and then writing it back changes 
+ * the attribute. An example is static methods of a class. 'getting' the attribute
+ * returns a function, but setting this attribute to a function object will cause
+ * Python to wrap it in a method. Thus, when we read back the attribute, it will
+ * be an 'unbound method' rather than a function object. This routine handles 
+ * such special cases, setting the attribute such that its' original value is 
+ * preserved. */
+static int setattr_nondestructive(PyObject *obj, PyObject *name, PyObject *val)
+{
+    assert(PyString_Check(name));
+    if(PyType_Check(obj) && PyFunction_Check(val)) {
+    
+        PyObject *sm = PyStaticMethod_New(val);
+        PyObject_SetAttr(obj, name, sm);
+        Py_DECREF(sm);
+    }else{
+        PyObject_SetAttr(obj, name, val);
+    }
+
+    if(PyErr_Occurred())
+        return -1;
+
+    int ret = 0;
+    PyObject *readback = PyObject_GetAttr(obj, name);
+
+    if(readback != val) {
+
+        PyObject *repr = PyObject_Repr(obj);
+        SET_RUNTIME_EXC("Unexpected attribute desctriction: [%s] of [%s]",
+            PyString_AS_STRING(name), PyString_AS_STRING(repr));
+        Py_DECREF(repr);
+        ret = -1;
+    }
+
+    Py_DECREF(readback);
+    return ret;
+}
+
 /* Non-derived attributes are those that don't return a new 
  * object on attribute lookup. 
  * This function returns a new reference.
@@ -942,7 +990,7 @@ static PyObject *nonderived_writable_attrs(PyObject *obj)
 
         /* Try to write the attribute to itself. This will throw TypeError
          * or AttributeError if the attribute is not writable. */
-        if(0 != PyObject_SetAttr(obj, name, attr)) {
+        if(0 != setattr_nondestructive(obj, name, attr)) {
             assert(PyErr_Occurred());        
             assert(PyErr_ExceptionMatches(PyExc_TypeError)
                 || PyErr_ExceptionMatches(PyExc_AttributeError));
@@ -1006,6 +1054,15 @@ static PyObject *method_funcs(PyObject *obj)
 
         PyObject *attr = PyObject_GetAttr(obj, name);
         assert(attr);
+
+        if(PyFunction_Check(attr)) {
+            PyObject *sm = PyStaticMethod_New(attr);
+            assert(sm);
+            PyDict_SetItem(ret, name, sm);
+            Py_DECREF(sm);
+            Py_DECREF(attr);
+            continue;
+        }
 
         if(!PyMethod_Check(attr)) {
             Py_DECREF(attr);
@@ -1240,11 +1297,28 @@ fail:
 static int range_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(PyRange_Check(obj));
+    rangeobject *range = (rangeobject*)obj;
+
+    PyObject *ilow = PyLong_FromLong(range->start);
+    PyObject *ihigh = PyLong_FromLong(range->start + (range->len * range->step));
+    PyObject *step = PyLong_FromLong(range->step);
+    vec_pobj_push(&ctx->to_free, ilow);
+    vec_pobj_push(&ctx->to_free, ihigh);
+    vec_pobj_push(&ctx->to_free, step);
+
+    CHK_TRUE(pickle_obj(ctx, ilow, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, ihigh, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, step, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_RANGE};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
-} 
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
 
 static int dict_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
@@ -1444,19 +1518,38 @@ fail:
 static int slice_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(PySlice_Check(obj));
+    PySliceObject *slice = (PySliceObject*)obj;
+
+    CHK_TRUE(pickle_obj(ctx, slice->start, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, slice->stop, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, slice->step, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_SLICE};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int static_method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return placeholder_inst_pickle(ctx, obj, rw);
+    assert(obj->ob_type == &PyStaticMethod_Type);
+    staticmethod *method = (staticmethod*)obj;
+
+    assert(method->sm_callable);
+    CHK_TRUE(pickle_obj(ctx, method->sm_callable, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_STATMETHOD};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 #ifndef WITHOUT_COMPLEX
@@ -1493,7 +1586,7 @@ static int long_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     TRACE_PICKLE(obj);
 
     char str[32];
-    long l = PyInt_AS_LONG((PyIntObject *)obj);
+    long l = PyLong_AsLong(obj);
     Py_ssize_t len = 0;
 
     str[0] = LONG;
@@ -1643,7 +1736,11 @@ static int method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     PyMethodObject *meth = (PyMethodObject*)obj;
 
     CHK_TRUE(pickle_obj(ctx, meth->im_func, rw), fail);
-    CHK_TRUE(pickle_obj(ctx, meth->im_self, rw), fail);
+    if(!meth->im_self) {
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+    }else{
+        CHK_TRUE(pickle_obj(ctx, meth->im_self, rw), fail);
+    }
     CHK_TRUE(pickle_obj(ctx, meth->im_class, rw), fail);
 
     const char ops[] = {PF_EXTEND, PF_INSTMETHOD};
@@ -3176,7 +3273,7 @@ static int op_ext_setattrs(struct unpickle_ctx *ctx, SDL_RWops *rw)
         PyObject *val = vec_pobj_pop(&ctx->stack);
         PyObject *key = vec_pobj_pop(&ctx->stack);
 
-        ret = (0 == PyObject_SetAttr(obj, key, val)) ? 0 : -1;
+        ret = (0 == setattr_nondestructive(obj, key, val)) ? 0 : -1;
 
         Py_DECREF(key);
         Py_DECREF(val);
@@ -3588,7 +3685,7 @@ static int op_ext_instmethod(struct unpickle_ctx *ctx, SDL_RWops *rw)
     PyObject *self = vec_pobj_pop(&ctx->stack);
     PyObject *func = vec_pobj_pop(&ctx->stack);
 
-    PyObject *newmeth = PyMethod_New(func, self, klass);
+    PyObject *newmeth = PyMethod_New(func, (self == Py_None ? NULL : self), klass);
     CHK_TRUE(newmeth, fail);
     vec_pobj_push(&ctx->stack, newmeth);
     ret = 0;
@@ -3679,6 +3776,97 @@ fail_method:
 fail_typecheck:
     Py_DECREF(self);
     Py_DECREF(desc);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_range(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_RANGE, ctx);
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 3) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *step = vec_pobj_pop(&ctx->stack);
+    PyObject *ihigh = vec_pobj_pop(&ctx->stack);
+    PyObject *ilow = vec_pobj_pop(&ctx->stack);
+
+    if(!PyLong_Check(ilow)
+    || !PyLong_Check(ihigh)
+    || !PyLong_Check(step)) {
+
+        SET_RUNTIME_EXC("PF_RANGE: Expecting long objects as the top 3 TOS items");
+        goto fail_typecheck;
+    }
+
+    PyObject *retval = PyObject_CallFunction((PyObject*)&PyRange_Type, "(OOO)", ilow, ihigh, step);
+    CHK_TRUE(retval, fail_range);
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_range:
+fail_typecheck:
+    Py_DECREF(ilow);
+    Py_DECREF(ihigh);
+    Py_DECREF(step);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_slice(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_SLICE, ctx);
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 3) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    /* These can actually be of any type */
+    PyObject *step = vec_pobj_pop(&ctx->stack);
+    PyObject *stop = vec_pobj_pop(&ctx->stack);
+    PyObject *start = vec_pobj_pop(&ctx->stack);
+
+    PyObject *retval = PySlice_New(start, stop, step);
+    CHK_TRUE(retval, fail_slice);
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_slice:
+    Py_DECREF(step);
+    Py_DECREF(stop);
+    Py_DECREF(start);
+fail_underflow:
+    return ret;
+}
+
+
+static int op_ext_staticmethod(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_STATMETHOD, ctx);
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *callable = vec_pobj_pop(&ctx->stack);
+
+    if(!PyCallable_Check(callable)) {
+        SET_RUNTIME_EXC("PF_STATMETHOD: Expecting callable object on TOS");
+        goto fail_typecheck;
+    }
+
+    PyObject *retval = PyStaticMethod_New(callable);
+    CHK_TRUE(retval, fail_method);
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_method:
+fail_typecheck:
+    Py_DECREF(callable);
 fail_underflow:
     return ret;
 }
@@ -3921,7 +4109,7 @@ bool S_Pickle_Init(PyObject *module)
         goto fail_traverse;
     post_build_index();
 
-    /* Temporary user-defined class to use as a stub until we support all types */
+    /* Dummy user-defined class to use for creating stubs */
     PyObject *args = Py_BuildValue("(s(O){})", "__placeholder__", (PyObject*)&PyBaseObject_Type);
     s_placeholder_type = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
     Py_DECREF(args);
