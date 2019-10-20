@@ -83,8 +83,10 @@ def test_pickle_string():
 
 def test_pickle_unicode():
 
+    #pf.trace_pickling = True
     u1 = u'abcdefg'
     s = pf.pickle_object(u1)
+    print s
     u2 = pf.unpickle_object(s)
     assert u1 == u2
 
@@ -781,6 +783,39 @@ def test_pickle_enumerate():
 
     print "enumerate pickling OK!"
 
+def test_pickle_float():
+
+    f1 = 15934.234349
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1 == f2
+
+    print "Float pickling OK!"
+
+def test_pickle_complex():
+
+    c1 = complex(1.23223, 0.09833)
+    s = pf.pickle_object(c1)
+    c2 = pf.unpickle_object(s)
+    assert c1 == c2
+
+    print "Complex pickling OK!"
+
+def test_pickle_dictproxy():
+
+    class TestClass(object): 
+        """ Test docstring """
+        pass
+
+    d1 = TestClass.__dict__
+    assert repr(d1).startswith("dict_proxy")
+    s = pf.pickle_object(d1)
+    d2 = pf.unpickle_object(s)
+    assert type(d1) == type(d2)
+    assert d1['__doc__'] == d2['__doc__']
+
+    print "dictproxy pickling OK!"
+
 try:
     test_pickle_int()
     test_pickle_long()
@@ -822,6 +857,9 @@ try:
     test_pickle_property()
     test_pickle_listiter()
     test_pickle_enumerate()
+    test_pickle_float()
+    test_pickle_complex()
+    test_pickle_dictproxy()
 except Exception as e:
     traceback.print_exc()
 finally:

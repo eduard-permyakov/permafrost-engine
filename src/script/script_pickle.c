@@ -190,6 +190,8 @@
 #define PF_PROPERTY     '3' /* Push a property object from top 4 TOS items */
 #define PF_ENUMERATE    '4' /* Push an enuerate object from top 4 TOS items */
 #define PF_LISTITER     '5' /* Push listiterator object from top 2 TOS items */
+#define PF_COMPLEX      '6' /* Push a 'complex' object from top 2 TOS items */
+#define PF_DICTPROXY    '7' /* Push a 'dictproxy' object from the TOS dict */
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -351,6 +353,7 @@ static int op_empty_dict    (struct unpickle_ctx *, SDL_RWops *);
 static int op_setitems      (struct unpickle_ctx *, SDL_RWops *);
 static int op_none          (struct unpickle_ctx *, SDL_RWops *);
 static int op_unicode       (struct unpickle_ctx *, SDL_RWops *);
+static int op_float         (struct unpickle_ctx *, SDL_RWops *);
 
 static int op_ext_builtin   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_type      (struct unpickle_ctx *, SDL_RWops *);
@@ -391,6 +394,8 @@ static int op_ext_memview   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_property  (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_enumerate (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_listiter  (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_complex   (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_dictproxy (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -399,8 +404,11 @@ static int op_ext_listiter  (struct unpickle_ctx *, SDL_RWops *);
 static khash_t(str) *s_id_qualname_map;
 
 static struct pickle_entry s_type_dispatch_table[] = {
-    /* The Python 2.7 public built-in types. These types may be instantiated directly 
-     * in any script. 
+    /* The Python 2.7 public built-in types. Some of these types may be 
+     * instantiated directly in any script. Others are additional builtin 
+     * types that are used internally in CPython and modules compiled into 
+     * the library. Python code may gain references to these 'opaque' objects 
+     * but they may not be instantiated directly from scripts. 
      */
     {.type = &PyType_Type,                  .picklefunc = type_pickle                   }, /* type() */
     {.type = &PyBool_Type,                  .picklefunc = bool_pickle                   }, /* bool() */
@@ -483,12 +491,9 @@ static struct pickle_entry s_type_dispatch_table[] = {
     {.type = NULL /* &Scanner_Type */,      .picklefunc = scanner_pickle                },
     {.type = NULL /* &ZipImporter_Type */,  .picklefunc = zip_importer_pickle           },
 
-    /* These are additional builtin types that are used internally in CPython
-     * and modules compiled into the library. Python code may gain references to 
-     * these 'opaque' objects but they may not be instantiated directly from scripts. 
-     */
-
-    /* This is derived from an existing dictionary object using the PyDictProxy API */
+    /* This is derived from an existing dictionary object using the PyDictProxy API. 
+     * The only way to get a dictproxy object via scripting is to access the __dict__
+     * attribute of a type object. */
     {.type = &PyDictProxy_Type,             .picklefunc = dict_proxy_pickle             },
 
     /* Built-in struct sequences (i.e. 'named tuples') */
@@ -592,7 +597,7 @@ static struct pickle_entry s_type_dispatch_table[] = {
     { EXC_END_MAGIC },
 };
 
-/* An 'empty' user-defined type that acts as a placeholder for engine-defiend types for now */
+/* An 'empty' user-defined type that acts as a placeholder */
 static PyObject *s_placeholder_type = NULL;
 
 /* The permafrost engine built-in types: defer handling of these for now */
@@ -622,7 +627,10 @@ static unpickle_func_t s_op_dispatch_table[256] = {
     [EMPTY_DICT] = op_empty_dict,
     [SETITEMS] = op_setitems,
     [NONE] = op_none,
+#ifdef Py_USING_UNICODE
     [UNICODE] = op_unicode,
+#endif
+    [FLOAT] = op_float,
 };
 
 static unpickle_func_t s_ext_op_dispatch_table[256] = {
@@ -665,6 +673,10 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_PROPERTY] = op_ext_property,
     [PF_ENUMERATE] = op_ext_enumerate,
     [PF_LISTITER] = op_ext_listiter,
+#ifndef WITHOUT_COMPLEX
+    [PF_COMPLEX] = op_ext_complex,
+#endif
+    [PF_DICTPROXY] = op_ext_dictproxy,
 };
 
 /* Standard modules not imported on initialization which also contain C builtins */
@@ -1571,20 +1583,56 @@ fail:
 static int complex_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(PyComplex_Check(obj));
+    PyComplexObject *cmplx = (PyComplexObject*)obj;
+
+    PyObject *real = PyFloat_FromDouble(cmplx->cval.real);
+    PyObject *imag = PyFloat_FromDouble(cmplx->cval.imag);
+    vec_pobj_push(&ctx->to_free, real);
+    vec_pobj_push(&ctx->to_free, imag);
+
+    CHK_TRUE(pickle_obj(ctx, real, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, imag, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_COMPLEX};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 #endif
 
 static int float_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return placeholder_inst_pickle(ctx, obj, rw);
+
+    assert(PyFloat_Check(obj));
+    double d = PyFloat_AS_DOUBLE(obj);
+
+    const char ops[] = {FLOAT};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+
+    char *buff = PyOS_double_to_string(d, 'g', 17, 0, NULL);
+    if(!buff) {
+        PyErr_NoMemory();
+        goto fail;
+    }
+
+    if(!rw->write(rw, buff, strlen(buff), 1)) {
+        PyMem_Free(buff);
+        goto fail;
+    }
+    PyMem_Free(buff);
+    buff = NULL;
+
+    CHK_TRUE(rw->write(rw, "\n", 1, 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int buffer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -2087,10 +2135,18 @@ fail:
 static int dict_proxy_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(obj->ob_type == &PyDictProxy_Type);
+    proxyobject *proxy = (proxyobject*)obj;
+
+    CHK_TRUE(pickle_obj(ctx, proxy->dict, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_DICTPROXY};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int long_info_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -2924,6 +2980,7 @@ static int op_none(struct unpickle_ctx *ctx, SDL_RWops *rw)
     return 0;
 }
 
+#ifdef Py_USING_UNICODE
 static int op_unicode(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(UNICODE, ctx);
@@ -2947,6 +3004,28 @@ static int op_unicode(struct unpickle_ctx *ctx, SDL_RWops *rw)
 fail:
     DEFAULT_ERR(PyExc_IOError, "Error reading from pickle stream");
     vec_char_destroy(&str);
+    return -1;
+}
+#endif
+
+static int op_float(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(FLOAT, ctx);
+
+    char line[MAX_LINE_LEN];
+    READ_LINE(rw, line, fail);
+    line[strlen(line)-1] = '\0'; /* trim newline */
+
+    double d = PyOS_string_to_double(line, NULL, PyExc_OverflowError);
+    CHK_TRUE(!PyErr_Occurred(), fail);
+
+    PyObject *retval = PyFloat_FromDouble(d);
+    CHK_TRUE(retval, fail);
+    vec_pobj_push(&ctx->stack, retval);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error reading from pickle stream");
     return -1;
 }
 
@@ -4193,6 +4272,67 @@ fail_iter:
 fail_typecheck:
     Py_DECREF(seq);
     Py_DECREF(index);
+fail_underflow:
+    return ret;
+}
+
+#ifndef WITHOUT_COMPLEX
+static int op_ext_complex(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_COMPLEX, ctx);
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 2) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *imag = vec_pobj_pop(&ctx->stack);
+    PyObject *real = vec_pobj_pop(&ctx->stack);
+
+    if(!PyFloat_Check(imag)
+    || !PyFloat_Check(real)) {
+        SET_RUNTIME_EXC("PF_COMPLEX: Expecting float objects as top 2 TOS items");
+        goto fail_typecheck;
+    }
+
+    PyObject *retval = PyComplex_FromDoubles(PyFloat_AS_DOUBLE(real), PyFloat_AS_DOUBLE(imag));
+    CHK_TRUE(retval, fail_complex);
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_complex:
+fail_typecheck:
+    Py_DECREF(imag);
+    Py_DECREF(real);
+fail_underflow:
+    return ret;
+}
+#endif
+
+static int op_ext_dictproxy(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_DICTPROXY, ctx); 
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *dict = vec_pobj_pop(&ctx->stack);
+
+    if(!PyDict_Check(dict)) {
+        SET_RUNTIME_EXC("PF_DICTPROXY: Expecting dict on TOS");
+        goto fail_typecheck;
+    }
+
+    PyObject *retval = PyDictProxy_New(dict);
+    CHK_TRUE(retval, fail_dictproxy);
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_dictproxy:
+fail_typecheck:
+    Py_DECREF(dict);
 fail_underflow:
     return ret;
 }
