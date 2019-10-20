@@ -187,6 +187,9 @@
 #define PF_STATMETHOD   '0' /* Push a staticmethod object from TOS item */
 #define PF_BUFFER       '1' /* Push a buffer object from top 4 TOS items */
 #define PF_MEMVIEW      '2' /* Push a memoryview object from TOS item */
+#define PF_PROPERTY     '3' /* Push a property object from top 4 TOS items */
+#define PF_ENUMERATE    '4' /* Push an enuerate object from top 4 TOS items */
+#define PF_LISTITER     '5' /* Push listiterator object from top 2 TOS items */
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -385,6 +388,9 @@ static int op_ext_slice     (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_staticmethod(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_buffer    (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_memview   (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_property  (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_enumerate (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_listiter  (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -656,6 +662,9 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_STATMETHOD] = op_ext_staticmethod,
     [PF_BUFFER] op_ext_buffer,
     [PF_MEMVIEW] = op_ext_memview,
+    [PF_PROPERTY] = op_ext_property,
+    [PF_ENUMERATE] = op_ext_enumerate,
+    [PF_LISTITER] = op_ext_listiter,
 };
 
 /* Standard modules not imported on initialization which also contain C builtins */
@@ -1575,7 +1584,7 @@ static int float_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     PyObject *repr = PyObject_Repr(obj);
     printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
     Py_DECREF(repr);
-    return 0;
+    return placeholder_inst_pickle(ctx, obj, rw);
 }
 
 static int buffer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -1674,10 +1683,36 @@ fail:
 static int property_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    propertyobject *prop = (propertyobject*)obj;
+
+    if(prop->prop_get) {
+        CHK_TRUE(pickle_obj(ctx, prop->prop_get, rw), fail);
+    }else{
+        CHK_TRUE(0 == none_pickle(ctx, Py_None, rw), fail);
+    }
+
+    if(prop->prop_set) {
+        CHK_TRUE(pickle_obj(ctx, prop->prop_set, rw), fail);
+    }else{
+        CHK_TRUE(0 == none_pickle(ctx, Py_None, rw), fail);
+    }
+
+    if(prop->prop_del) {
+        CHK_TRUE(pickle_obj(ctx, prop->prop_del, rw), fail);
+    }else{
+        CHK_TRUE(0 == none_pickle(ctx, Py_None, rw), fail);
+    }
+
+    assert(prop->prop_doc);
+    CHK_TRUE(pickle_obj(ctx, prop->prop_doc, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_PROPERTY};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int memory_view_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -1770,10 +1805,34 @@ fail:
 static int enum_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(obj->ob_type == &PyEnum_Type);
+    enumobject *en = (enumobject*)obj;
+
+    PyObject *index = PyLong_FromLong(en->en_index);
+    vec_pobj_push(&ctx->to_free, index);
+
+    CHK_TRUE(pickle_obj(ctx, index, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, en->en_sit, rw), fail);
+
+    if(en->en_result) {
+        CHK_TRUE(pickle_obj(ctx, en->en_result, rw), fail);
+    }else{
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+    }
+
+    if(en->en_longindex) {
+        CHK_TRUE(pickle_obj(ctx, en->en_longindex, rw), fail);
+    }else{
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+    }
+
+    const char ops[] = {PF_EXTEND, PF_ENUMERATE};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int reversed_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -2403,10 +2462,22 @@ static int formatter_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWop
 static int list_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(obj->ob_type == &PyListIter_Type);
+    listiterobject *iter = (listiterobject*)obj;
+
+    PyObject *index = PyLong_FromLong(iter->it_index);
+    vec_pobj_push(&ctx->to_free, index);
+
+    CHK_TRUE(pickle_obj(ctx, index, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)iter->it_seq, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_LISTITER};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int list_rev_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -3985,6 +4056,143 @@ static int op_ext_memview(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 fail_memview:
     Py_DECREF(base);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_property(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_PROPERTY, ctx);
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 4) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *doc = vec_pobj_pop(&ctx->stack);
+    PyObject *del = vec_pobj_pop(&ctx->stack);
+    PyObject *set = vec_pobj_pop(&ctx->stack);
+    PyObject *get = vec_pobj_pop(&ctx->stack);
+
+    PyObject *prop = PyObject_CallFunction((PyObject*)&PyProperty_Type, "(OOOO)", get, set, del, doc);
+    CHK_TRUE(prop, fail_prop);
+    vec_pobj_push(&ctx->stack, prop);
+    ret = 0;
+
+fail_prop:
+    Py_DECREF(doc);
+    Py_DECREF(del);
+    Py_DECREF(set);
+    Py_DECREF(get);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_enumerate(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_ENUMERATE, ctx);
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 4) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *longindex = vec_pobj_pop(&ctx->stack);
+    PyObject *result = vec_pobj_pop(&ctx->stack);
+    PyObject *sit = vec_pobj_pop(&ctx->stack);
+    PyObject *index = vec_pobj_pop(&ctx->stack);
+
+    if(longindex != Py_None && !_PyAnyInt_Check(longindex)) {
+        SET_RUNTIME_EXC("PF_ENUMERATE: expecting integer (int,long) or None type on TOS");
+        goto fail_typecheck;
+    }
+
+    if(result != Py_None && !PyTuple_Check(result)) {
+        SET_RUNTIME_EXC("PF_ENUMERATE: expecting tuple or None on TOS1");
+        goto fail_typecheck;
+    }
+
+    if(!PyIter_Check(sit)) {
+        SET_RUNTIME_EXC("PF_ENUMERATE: expecting iterator on TOS2");
+        goto fail_typecheck;
+    }
+
+    if(!PyLong_Check(index)) {
+        SET_RUNTIME_EXC("PF_ENUMERATE: expecting long on TOS3");
+        goto fail_typecheck;
+    }
+
+    /* The following is ripped from enumobject.c:enum_new
+     * (The 'enumerate' new method takes a sequence and a start index.
+     * The sequence is not saved. So hijack the creation path and set
+     * the iterator directly. */
+    enumobject *en = (enumobject *)PyEnum_Type.tp_alloc(&PyEnum_Type, 0);
+    en->en_index = PyLong_AsSsize_t(index);
+    en->en_sit = sit;
+    Py_INCREF(en->en_sit);
+    en->en_result = (result != Py_None ? result : NULL);
+    if(en->en_result) {
+        Py_INCREF(en->en_result); 
+    }
+    en->en_longindex = (longindex != Py_None ? longindex : NULL);
+    if(en->en_longindex) {
+        Py_INCREF(en->en_longindex);
+    }
+
+    vec_pobj_push(&ctx->stack, (PyObject*)en);
+    ret = 0;
+
+fail_enum:
+fail_typecheck:
+    Py_DECREF(longindex);
+    Py_DECREF(result);
+    Py_DECREF(sit);
+    Py_DECREF(index);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_listiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_LISTITER, ctx);
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 2) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *seq = vec_pobj_pop(&ctx->stack);
+    PyObject *index = vec_pobj_pop(&ctx->stack);
+
+    if(!PyList_Check(seq)) {
+        SET_RUNTIME_EXC("PF_LISTITER: Expecting list object on TOS");
+        goto fail_typecheck;
+    }
+
+    if(!PyLong_Check(index)) {
+        SET_RUNTIME_EXC("PF_LISTITER: Expecting long object on TOS1");
+        goto fail_typecheck;
+    }
+
+    /* From listobject.c:list_iter 
+     * Basically a call to iter(seq) but without the check for bad args */
+    listiterobject *it = PyObject_GC_New(listiterobject, &PyListIter_Type);
+    CHK_TRUE(it, fail_iter);
+    _PyObject_GC_TRACK(it);
+
+    it->it_index = PyLong_AsSsize_t(index);
+    it->it_seq = (seq == Py_None ? NULL : (PyListObject*)seq);
+    if(it->it_seq) {
+        Py_INCREF(it->it_seq);
+    }
+
+    vec_pobj_push(&ctx->stack, (PyObject*)it);
+    ret = 0;
+
+fail_iter:
+fail_typecheck:
+    Py_DECREF(seq);
+    Py_DECREF(index);
 fail_underflow:
     return ret;
 }

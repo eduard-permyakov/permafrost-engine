@@ -710,6 +710,77 @@ def test_pickle_memoryview():
 
     print "memoryview pickling OK!"
 
+def test_pickle_property():
+
+    class PropertyClass(object):
+
+        def __init__(self):
+            self.__dict__['prop'] = 'default'
+
+        @property
+        def prop(self):
+            return 'GET.' + self.__dict__['prop']
+
+        @prop.setter
+        def prop(self, val):
+            self.__dict__['prop'] = 'SET.' + val
+
+        @prop.deleter
+        def prop(self):
+            self.__dict__['prop'] = 'DEL.' + self.__dict__['prop']
+
+    p1 = PropertyClass.prop
+    assert repr(p1)[1:].startswith('property')
+    s = pf.pickle_object(p1)
+    p2 = pf.unpickle_object(s)
+
+    obj = PropertyClass()
+    val = p2.fget(obj)
+    assert val == 'GET.default'
+    p2.fset(obj, 'permafrost engine')
+    val = p2.fget(obj)
+    assert val == 'GET.SET.permafrost engine'
+
+    print "property pickling OK!"
+
+def test_pickle_listiter():
+
+    l1 = iter([1,2,3])
+    assert l1.next() == 1
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    assert l2.next() == 2
+    assert l2.next() == 3
+    try:
+        l2.next()
+    except StopIteration:
+        pass
+    else:
+        raise Exception("Unexpected item returned by iterator")
+
+    l1 = iter([])
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    try:
+        l2.next()
+    except StopIteration:
+        pass
+    else:
+        raise Exception("Unexpected item returned by iterator")
+
+    print "List iterator pickling OK!"
+
+def test_pickle_enumerate():
+
+    e1 = enumerate([0,1,9], 0)
+    assert e1.next() == (0, 0)
+    s = pf.pickle_object(e1)
+    e2 = pf.unpickle_object(s)
+    assert e2.next() == (1, 1)
+    assert e2.next() == (2, 9)
+
+    print "enumerate pickling OK!"
+
 try:
     test_pickle_int()
     test_pickle_long()
@@ -748,6 +819,9 @@ try:
     test_pickle_staticmethod()
     test_pickle_buffer()
     test_pickle_memoryview()
+    test_pickle_property()
+    test_pickle_listiter()
+    test_pickle_enumerate()
 except Exception as e:
     traceback.print_exc()
 finally:

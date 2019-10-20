@@ -84,5 +84,31 @@ typedef struct {
     long b_hash;
 } PyBufferObject;
 
+/* from Objects/descrobject.c */
+typedef struct {
+    PyObject_HEAD
+    PyObject *prop_get;
+    PyObject *prop_set;
+    PyObject *prop_del;
+    PyObject *prop_doc;
+    int getter_doc;
+} propertyobject;
+
+/* from Objects/enumobject.c */
+typedef struct {
+    PyObject_HEAD
+    Py_ssize_t en_index;           /* current index of enumeration */
+    PyObject* en_sit;          /* secondary iterator of enumeration */
+    PyObject* en_result;           /* result tuple  */
+    PyObject* en_longindex;        /* index for sequences >= PY_SSIZE_T_MAX */
+} enumobject;
+
+/* from Objects/listobject.c */
+typedef struct {
+    PyObject_HEAD
+    long it_index;
+    PyListObject *it_seq; /* Set to NULL when iterator is exhausted */
+} listiterobject;
+
 #endif
 
