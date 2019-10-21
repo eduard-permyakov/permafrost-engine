@@ -49,7 +49,7 @@
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 #define TOP(_stk)   (vec_AT(_stk, vec_size(_stk)-1))
-#define CHK_TRUE(_pred, _label) if(!(_pred)) goto _label
+#define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
 #define MIN(a, b)   ((a) < (b) ? (a) : (b))
 
 #define SET_EXC(_type, ...)                                                     \
@@ -148,6 +148,7 @@
 /* Permafrost Engine extensions to protocol 0 */
 
 #define PF_EXTEND       'x' /* Interpret the next opcode as a Permafrost Engine extension opcode */
+
 /* The extension opcodes: */
 #define PF_PROTO        'a' /* identify pickle protocol version */
 #define PF_TRUE         'b' /* push True */
@@ -157,41 +158,44 @@
 #define PF_SETATTRS     'f' /* Set attributes of object on TOS1 with dict at TOS */
 #define PF_NOTIMPL      'g' /* Push NotImplemented */
 #define PF_ELLIPSIS     'h' /* Push Ellipsis */
-
-#define PF_BUILTIN      'A' /* Push new reference to built-in that is identified by its' fully-qualified name */
-#define PF_TYPE         'B' /* Push new class created from the top 4 stack items (name, bases, dict, metaclass) */
-#define PF_CODE         'C' /* Push code object from the 14 TOS items (the args to PyCode_New) */
-#define PF_FUNCTION     'D' /* Push function object from TOS items */
-#define PF_EMPTY_CELL   'E' /* Push empty cell */
-#define PF_CELL         'E' /* Push cell with TOS contents */
-#define PF_BYTEARRAY    'F' /* Push byte array from encoded string on TOS */
-#define PF_SUPER        'G' /* Push super from 2 TOS items */
-#define PF_EMPTYFUNC    'H' /* Push dummy function object */
-#define PF_BASEOBJ      'I' /* Push an 'object' instance */
-#define PF_SYSLONGINFO  'J' /* Push a 'sys.long_info' instance */
-#define PF_NULLIMPORTER 'K' /* Push an imp.NullImporter instance */
-#define PF_SYSFLOATINFO 'L' /* Push a 'sys.float_info' instance */
-#define PF_SET          'M' /* Push a set from TOS tuple */
-#define PF_FROZENSET    'N' /* Push a frozenset from TOS tuple */
-#define PF_CLASS        'O' /* Push an old class created from the top 3 stack items (name, bases, methods) */
-#define PF_INST         'P' /* Push 'instance' from 'classobj' and 'dict' on TOS */
-#define PF_GETSETDESC   'Q' /* Push 'getset_descriptor' instance from top 3 stack items */
-#define PF_MODULE       'R' /* PUsh module with name on TOS */
-#define PF_NEWINST      'S' /* Create new-style instance with type on TOS and a builtin instance of the outer-most base on TOS1 */
-#define PF_CLSMETHOD    'T' /* Push a classmethod instance from TOS */
-#define PF_INSTMETHOD   'U' /* Pusn an instancemethod instance from TOS */
-#define PF_MEMDESC      'V' /* Push a 'member_descriptor' instance */
-#define PF_METHWRAP     'W' /* Push a 'method-wrapper' instance from top 2 TOS items */
-#define PF_RANGE        'X' /* Push range object from top 3 TOS items */
-#define PF_SLICE        'Z' /* Push a slice object from top 3 TOS items */
-#define PF_STATMETHOD   '0' /* Push a staticmethod object from TOS item */
-#define PF_BUFFER       '1' /* Push a buffer object from top 4 TOS items */
-#define PF_MEMVIEW      '2' /* Push a memoryview object from TOS item */
-#define PF_PROPERTY     '3' /* Push a property object from top 4 TOS items */
-#define PF_ENUMERATE    '4' /* Push an enuerate object from top 4 TOS items */
-#define PF_LISTITER     '5' /* Push listiterator object from top 2 TOS items */
-#define PF_COMPLEX      '6' /* Push a 'complex' object from top 2 TOS items */
-#define PF_DICTPROXY    '7' /* Push a 'dictproxy' object from the TOS dict */
+#define PF_BUILTIN      'i' /* Push new reference to built-in that is identified by its' fully-qualified name */
+#define PF_TYPE         'j' /* Push new class created from the top 4 stack items (name, bases, dict, metaclass) */
+#define PF_CODE         'k' /* Push code object from the 14 TOS items (the args to PyCode_New) */
+#define PF_FUNCTION     'l' /* Push function object from TOS items */
+#define PF_EMPTY_CELL   'm' /* Push empty cell */
+#define PF_CELL         'n' /* Push cell with TOS contents */
+#define PF_BYTEARRAY    'o' /* Push byte array from encoded string on TOS */
+#define PF_SUPER        'p' /* Push super from 2 TOS items */
+#define PF_EMPTYFUNC    'q' /* Push dummy function object */
+#define PF_BASEOBJ      'r' /* Push an 'object' instance */
+#define PF_SYSLONGINFO  's' /* Push a 'sys.long_info' instance */
+#define PF_NULLIMPORTER 't' /* Push an imp.NullImporter instance */
+#define PF_SYSFLOATINFO 'u' /* Push a 'sys.float_info' instance */
+#define PF_SET          'v' /* Push a set from TOS tuple */
+#define PF_FROZENSET    'w' /* Push a frozenset from TOS tuple */
+#define PF_CLASS        'x' /* Push an old class created from the top 3 stack items (name, bases, methods) */
+#define PF_INST         'y' /* Push 'instance' from 'classobj' and 'dict' on TOS */
+#define PF_GETSETDESC   'z' /* Push 'getset_descriptor' instance from top 3 stack items */
+#define PF_MODULE       'A' /* PUsh module with name on TOS */
+#define PF_NEWINST      'B' /* Create new-style instance with type on TOS and a builtin instance of the outer-most base on TOS1 */
+#define PF_CLSMETHOD    'C' /* Push a classmethod instance from TOS */
+#define PF_INSTMETHOD   'D' /* Pusn an instancemethod instance from TOS */
+#define PF_MEMDESC      'E' /* Push a 'member_descriptor' instance */
+#define PF_METHWRAP     'F' /* Push a 'method-wrapper' instance from top 2 stack items */
+#define PF_RANGE        'G' /* Push range object from top 3 stack items */
+#define PF_SLICE        'H' /* Push a slice object from top 3 stack items */
+#define PF_STATMETHOD   'I' /* Push a staticmethod object from stack item */
+#define PF_BUFFER       'J' /* Push a buffer object from top 4 stack items */
+#define PF_MEMVIEW      'K' /* Push a memoryview object from stack item */
+#define PF_PROPERTY     'L' /* Push a property object from top 4 stack items */
+#define PF_ENUMERATE    'M' /* Push an enuerate object from top 4 stack items */
+#define PF_LISTITER     'N' /* Push listiterator object from top 2 stack items */
+#define PF_COMPLEX      'O' /* Push a 'complex' object from top 2 stack items */
+#define PF_DICTPROXY    'P' /* Push a 'dictproxy' object from the stack dict */
+#define PF_REVERSED     'Q' /* Push a 'reversed' object from the top 2 stack items */
+#define PF_GEN          'R' /* Push a generator object from top TOS */
+#define PF_FRAME        'S' /* Push a frame object from variable number of TOS items */
+#define PF_NULLVAL      'T' /* Push a dummy object onto the stack, indicating a NULL value */
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -396,6 +400,10 @@ static int op_ext_enumerate (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_listiter  (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_complex   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_dictproxy (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_reversed  (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_gen       (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_frame     (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_nullval   (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -437,7 +445,7 @@ static struct pickle_entry s_type_dispatch_table[] = {
     {.type = &PyMemoryView_Type,            .picklefunc = memory_view_pickle            }, /* memoryview() */
     {.type = &PyTuple_Type,                 .picklefunc = tuple_pickle                  }, /* tuple() */
     {.type = &PyEnum_Type,                  .picklefunc = enum_pickle                   }, /* enumerate() */
-    {.type = &PyReversed_Type,              .picklefunc = reversed_pickle               }, /* reversed() */
+    {.type = &PyReversed_Type,              .picklefunc = reversed_pickle               }, /* reversed(()) */
     {.type = &PyMethod_Type,                .picklefunc = method_pickle                 }, /* indirectly: instance methods */ 
     {.type = &PyFunction_Type,              .picklefunc = function_pickle               }, /* indirectly: function */
     {.type = &PyClass_Type,                 .picklefunc = class_pickle                  }, /* indirectly: Old-style class */
@@ -677,6 +685,10 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_COMPLEX] = op_ext_complex,
 #endif
     [PF_DICTPROXY] = op_ext_dictproxy,
+    [PF_REVERSED] = op_ext_reversed,
+    [PF_GEN] = op_ext_gen,
+    [PF_FRAME] = op_ext_frame,
+    [PF_NULLVAL] = op_ext_nullval,
 };
 
 /* Standard modules not imported on initialization which also contain C builtins */
@@ -1886,10 +1898,26 @@ fail:
 static int reversed_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(obj->ob_type == &PyReversed_Type);
+    reversedobject *rev = (reversedobject*)obj;
+
+    PyObject *index = PyLong_FromSsize_t(rev->index);
+    vec_pobj_push(&ctx->to_free, index);
+
+    CHK_TRUE(pickle_obj(ctx, index, rw), fail);
+    if(rev->seq) {
+        CHK_TRUE(pickle_obj(ctx, rev->seq, rw), fail);
+    }else{
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+    }
+
+    const char ops[] = {PF_EXTEND, PF_REVERSED};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) 
@@ -1991,10 +2019,27 @@ fail:
 static int gen_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(PyGen_Check(obj));
+    PyGenObject *gen = (PyGenObject*)obj;
+
+    /* When a generator is exhausted, its' 'gi_frame' field is set 
+     * to NULL. However, the generator still retains a reference
+     * to the code object. In this case, pickle the code object 
+     * instead. */
+    assert(gen->gi_code);
+    if(gen->gi_frame) {
+        CHK_TRUE(pickle_obj(ctx, (PyObject*)gen->gi_frame, rw), fail);
+    }else{
+        CHK_TRUE(pickle_obj(ctx, gen->gi_code, rw), fail);
+    }
+
+    const char ops[] = {PF_EXTEND, PF_GEN};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int instance_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -2245,10 +2290,107 @@ static int traceback_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw
 static int frame_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(PyFrame_Check(obj));
+    PyFrameObject *f = (PyFrameObject*)obj;
+
+    if(f->f_tstate
+    && f->f_tstate != PyThreadState_Get()) {
+        SET_RUNTIME_EXC("Pickling frames from another thread is not yet supported.");
+        goto fail;
+    }
+
+    /* The code, globals, and locals are all we need to construct a new 
+     * frame object. Additionally, pickle the frame's stack workarea 
+     * (valuestack), the last instruction pointer, the blockstack, and 
+     * the 'fast' locals namespace. This captures the state of frames 
+     * that have been suspened by a yeild statement, or have been evaluated 
+     * already. 
+     */
+    size_t nvals = (f->f_stacktop == NULL) ? 0 : (f->f_stacktop - f->f_valuestack);
+    /* None to signal a NULL f_stackstop, which indicates that a frame
+     * has already been evaluated. */
+    PyObject *nv = f->f_stacktop == NULL ? (Py_INCREF(Py_None), Py_None) 
+                                         : PyInt_FromLong(nvals);
+    vec_pobj_push(&ctx->to_free, nv);
+    CHK_TRUE(pickle_obj(ctx, nv, rw), fail);
+
+    const char mark[] = {MARK};
+    CHK_TRUE(rw->write(rw, mark, ARR_SIZE(mark), 1), fail);
+    
+    /* Some of the local state is in the valuestack. For example, if the 
+     * yield statement is inside a for loop over a list, the listiterator
+     * (which keeps track of the current index) will be on the valuestack. 
+     */
+    for(int i = nvals-1; i >= 0; i--) {
+        CHK_TRUE(pickle_obj(ctx, f->f_valuestack[i], rw), fail);
+    }
+
+    CHK_TRUE(rw->write(rw, mark, ARR_SIZE(mark), 1), fail);
+    for(int i = f->f_iblock-1; i >= 0; i--) {
+
+        const PyTryBlock *b = &f->f_blockstack[i];
+        PyObject *type = PyInt_FromLong(b->b_type);
+        PyObject *handler = PyInt_FromLong(b->b_handler);
+        PyObject *level = PyInt_FromLong(b->b_level);
+
+        vec_pobj_push(&ctx->to_free, type);
+        vec_pobj_push(&ctx->to_free, handler);
+        vec_pobj_push(&ctx->to_free, level);
+
+        CHK_TRUE(pickle_obj(ctx, type, rw), fail);
+        CHK_TRUE(pickle_obj(ctx, handler, rw), fail);
+        CHK_TRUE(pickle_obj(ctx, level, rw), fail);
+    }
+
+    /* Pickle the 'fast' locals namespace */
+    const size_t ncells = PyTuple_GET_SIZE(f->f_code->co_cellvars);
+    const size_t nfrees = PyTuple_GET_SIZE(f->f_code->co_freevars);
+    size_t extras = f->f_code->co_nlocals + ncells + nfrees;
+
+    CHK_TRUE(rw->write(rw, mark, ARR_SIZE(mark), 1), fail);
+    for(int i = extras-1; i >= 0; i--) {
+
+        PyObject *curr = f->f_localsplus[i];
+        if(!curr) {
+            const char ops[] = {PF_EXTEND, PF_NULLVAL}; 
+            CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+        }else{
+            CHK_TRUE(pickle_obj(ctx, curr, rw), fail);
+        }
+    }
+
+    PyObject *lasti = PyInt_FromLong(f->f_lasti);
+    vec_pobj_push(&ctx->to_free, lasti);
+    CHK_TRUE(pickle_obj(ctx, lasti, rw), fail);
+
+    PyObject *lineno = PyInt_FromLong(f->f_lineno);
+    vec_pobj_push(&ctx->to_free, lineno);
+    CHK_TRUE(pickle_obj(ctx, lineno, rw), fail);
+
+    if(f->f_back) {
+        CHK_TRUE(pickle_obj(ctx, (PyObject*)f->f_back, rw), fail);
+    }else{
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+    }
+
+    /* Pickle the constructor args last, so that during unpickling 
+     * we can construct the frame and pop directly into it. */
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)f->f_code, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, f->f_globals, rw), fail);
+
+    if(f->f_locals) {
+        CHK_TRUE(pickle_obj(ctx, f->f_locals, rw), fail);
+    }else {
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+    }
+
+    const char ops[] = {PF_EXTEND, PF_FRAME};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int null_importer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -4335,6 +4477,258 @@ fail_typecheck:
     Py_DECREF(dict);
 fail_underflow:
     return ret;
+}
+
+static int op_ext_reversed(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_REVERSED, ctx); 
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 2) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *seq = vec_pobj_pop(&ctx->stack);
+    PyObject *index = vec_pobj_pop(&ctx->stack);
+
+    if(seq != Py_None && !PySequence_Check(seq)) {
+        SET_RUNTIME_EXC("PF_REVERSED: TOS item must be None or a sequence");
+        goto fail_typecheck;
+    }
+
+    if(!PyLong_Check(index)) {
+        SET_RUNTIME_EXC("PF_REVERSED: Expecting long object on TOS1"); 
+        goto fail_typecheck;
+    }
+
+    reversedobject *rev = (reversedobject*)PyReversed_Type.tp_alloc(&PyReversed_Type, 0);
+    CHK_TRUE(rev, fail_rev);
+    rev->index = PyLong_AsSsize_t(index);
+    if(seq != Py_None) {
+        rev->seq = seq;
+        Py_INCREF(seq);
+    }else{
+        rev->seq = NULL; 
+    }
+
+    vec_pobj_push(&ctx->stack, (PyObject*)rev);
+    ret = 0;
+ 
+fail_rev:
+fail_typecheck:
+    Py_DECREF(seq);
+    Py_DECREF(index);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_gen(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_GEN, ctx);
+
+    int ret = -1;
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *top = vec_pobj_pop(&ctx->stack);
+
+    if(!PyCode_Check(top) && !PyFrame_Check(top)) {
+        SET_RUNTIME_EXC("PF_GEN: Expecting code or frame object on TOS");
+        goto fail_typecheck;
+    }
+
+    PyObject *retval = NULL;
+    Py_INCREF(top);
+
+    if(PyFrame_Check(top)) {
+
+        retval = PyGen_New((PyFrameObject*)top); /* steals 'top' ref */
+        CHK_TRUE(retval, fail_gen);
+    }else{
+        PyGenObject *gen = PyObject_GC_New(PyGenObject, &PyGen_Type);
+        CHK_TRUE(gen, fail_gen);
+
+        gen->gi_frame = NULL;
+        gen->gi_code = top; /* steals 'top' ref */
+        gen->gi_running = 0;
+        gen->gi_weakreflist = NULL;
+        _PyObject_GC_TRACK(gen);
+        retval = (PyObject*)gen;
+    }
+
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_gen:
+fail_typecheck:
+    Py_DECREF(top);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_frame(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_FRAME, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 6) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+
+    if(vec_size(&ctx->mark_stack) < 3) {
+        SET_RUNTIME_EXC("Mark stack underflow");
+        goto fail_underflow;
+    }
+
+    PyObject *locals = vec_pobj_pop(&ctx->stack);
+    PyObject *globals = vec_pobj_pop(&ctx->stack);
+    PyObject *code = vec_pobj_pop(&ctx->stack);
+    PyObject *back = vec_pobj_pop(&ctx->stack);
+    PyObject *lineno = vec_pobj_pop(&ctx->stack);
+    PyObject *lasti = vec_pobj_pop(&ctx->stack);
+
+    if(locals != Py_None && !PyMapping_Check(locals)) {
+        SET_RUNTIME_EXC("PF_FRAME: Expecting mapping or None on TOS");
+        goto fail_typecheck;
+    }
+
+    if(!PyDict_Check(globals)) {
+        SET_RUNTIME_EXC("PF_FRAME: Expecting dict on TOS1");
+        goto fail_typecheck;
+    }
+
+    if(!PyCode_Check(code)) {
+        SET_RUNTIME_EXC("PF_FRAME: Expecting code object on TOS2");
+        goto fail_typecheck;
+    }
+
+    if(back != Py_None && !PyFrame_Check(back)) {
+        SET_RUNTIME_EXC("PF_FRAME: Expecting frame or None on TOS3");
+        goto fail_typecheck;
+    }
+
+    if(!PyInt_Check(lineno)
+    || !PyInt_Check(lasti)) {
+        SET_RUNTIME_EXC("PF_FRAME: Expecting int objects on TOS4 and TOS5");
+        goto fail_typecheck;
+    }
+
+    PyThreadState *tstate = PyThreadState_GET();
+    PyFrameObject *frame = PyFrame_New(tstate, (PyCodeObject*)code, globals,
+        locals == Py_None ? NULL : locals);
+    CHK_TRUE(frame, fail_frame);
+
+    /* Forcefully set attrs */
+    Py_XDECREF(frame->f_back);
+    frame->f_back = back == Py_None ? NULL : (PyFrameObject*)back;
+    Py_XINCREF(frame->f_back);
+    frame->f_lasti = PyInt_AsLong(lasti);
+    frame->f_lineno = PyInt_AsLong(lineno);
+
+    /* Pop the fast locals namespace */
+    int mark = vec_int_pop(&ctx->mark_stack);
+    size_t nitems = vec_size(&ctx->stack) - mark;
+
+    if(vec_size(&ctx->stack) < mark) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_frame;
+    }
+
+    for(int i = 0; i < nitems; i++) {
+
+        PyObject *val = vec_pobj_pop(&ctx->stack);
+        if(!val)
+            continue;
+        frame->f_localsplus[i] = val;
+    }
+
+    /* Pop all the PyTryBlocks */
+    mark = vec_int_pop(&ctx->mark_stack);
+    nitems = vec_size(&ctx->stack) - mark;
+
+    if(vec_size(&ctx->stack) < mark) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_frame;
+    }
+    if(nitems % 3 != 0) {
+        SET_RUNTIME_EXC("PF_FRAME: Number of stack items for the block stack not divisible by 3");
+        goto fail_frame;
+    }
+    nitems /= 3;
+
+    for(int i = 0; i < nitems; i++) {
+
+        PyObject *level = vec_pobj_pop(&ctx->stack);
+        PyObject *handler = vec_pobj_pop(&ctx->stack);
+        PyObject *type = vec_pobj_pop(&ctx->stack);
+
+        if(!PyInt_Check(level)
+        || !PyInt_Check(handler)
+        || !PyInt_Check(type)) {
+            SET_RUNTIME_EXC("PF_FRAME: Got non-int blockstack item fields");
+            goto fail_inner;
+        }
+
+        PyFrame_BlockSetup(frame, PyInt_AS_LONG(type),
+            PyInt_AS_LONG(handler), PyInt_AS_LONG(level));
+
+    fail_inner:
+        Py_DECREF(level);
+        Py_DECREF(handler);
+        Py_DECREF(type);
+        if(PyErr_Occurred())
+            goto fail_frame;
+    }
+
+    /* Pop the valuestack */
+    mark = vec_int_pop(&ctx->mark_stack);
+    nitems = vec_size(&ctx->stack) - mark;
+
+    if(vec_size(&ctx->stack) < mark-1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_frame;
+    }
+
+    assert(frame->f_stacktop == frame->f_valuestack);
+    for(int i = 0; i < nitems; i++) {
+        *(frame->f_stacktop++) = vec_pobj_pop(&ctx->stack);
+    }
+
+    PyObject *sent = vec_pobj_pop(&ctx->stack);
+    if(PyInt_Check(sent) && PyInt_AS_LONG(sent) != nitems) {
+
+        SET_RUNTIME_EXC("PF_FRAME: Sentinel reports incorrect number of items on valuestack [exp: %zu, act: %ld]",
+            nitems, PyInt_AS_LONG(sent));
+        goto fail_sent;
+    }
+
+    if(sent == Py_None) {
+        frame->f_stacktop = NULL;
+    }
+
+    vec_pobj_push(&ctx->stack, (PyObject*)frame);
+    ret = 0;
+
+fail_sent:
+    Py_DECREF(sent);
+fail_frame: 
+fail_typecheck:
+    Py_DECREF(locals);
+    Py_DECREF(globals);
+    Py_DECREF(code);
+    Py_DECREF(back);
+    Py_DECREF(lasti);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_nullval(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_NULLVAL, ctx);
+    vec_pobj_push(&ctx->stack, NULL);
+    return 0;
 }
 
 static int op_ext_nullimporter(struct unpickle_ctx *ctx, SDL_RWops *rw)

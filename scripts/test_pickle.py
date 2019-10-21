@@ -37,6 +37,7 @@ import traceback
 import sys
 import imp
 import exceptions
+import weakref
 
 
 def test_pickle_int():
@@ -816,6 +817,79 @@ def test_pickle_dictproxy():
 
     print "dictproxy pickling OK!"
 
+def test_pickle_reversed():
+
+    r1 = reversed((1,2,3))
+    assert r1.next() == 3
+    assert repr(r1)[1:].startswith('reversed')
+    s = pf.pickle_object(r1)
+    r2 = pf.unpickle_object(s)
+    assert r2.next() == 2
+    assert r2.next() == 1
+    try:
+        r2.next()
+    except StopIteration:
+        pass
+    else:
+        raise Exception("Unexpected item from reversed object")
+
+    print "reversed pickling OK!"
+
+def test_pickle_generator():
+
+    def whole_nums_gen():
+        num = 0
+        while True:
+            yield num
+            num += 1
+
+    g1 =  whole_nums_gen()
+    assert repr(g1)[1:].startswith('generator')
+    assert g1.next() == 0
+    s = pf.pickle_object(g1)
+    g2 = pf.unpickle_object(s)
+    assert g2.next() == 1
+    assert g2.next() == 2
+
+    def mult_inputs():
+        # the iterators for the 2 lists will be on the
+        # generator frame's valuestack
+        for i in [1,2]:
+            for j in [9,4]:
+                x = yield
+                yield x * (i + j)
+
+    g1 = mult_inputs()
+    g1.send(None)
+    assert g1.send(4) == 4*(1+9)
+    g1.next()
+    assert g1.send(2) == 2*(1+4)
+
+    s = pf.pickle_object(g1)
+    g2 = pf.unpickle_object(s)
+
+    g2.next()
+    assert g2.send(8) == 8*(2+9)
+    g2.next()
+    assert g2.send(1) == 1*(2+4)
+    try:
+        g2.send(0)
+    except StopIteration:
+        pass
+    else:
+        raise Exception("Unpickled generator yielded unexpected value")
+
+    s = pf.pickle_object(g2)
+    g2 = pf.unpickle_object(s)
+    try:
+        g2.send(0)
+    except StopIteration:
+        pass
+    else:
+        raise Exception("Unpickled generator yielded unexpected value")
+
+    print "Generator pickling OK!"
+
 try:
     test_pickle_int()
     test_pickle_long()
@@ -860,6 +934,8 @@ try:
     test_pickle_float()
     test_pickle_complex()
     test_pickle_dictproxy()
+    test_pickle_reversed()
+    test_pickle_generator()
 except Exception as e:
     traceback.print_exc()
 finally:

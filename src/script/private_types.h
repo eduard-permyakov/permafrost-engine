@@ -110,5 +110,12 @@ typedef struct {
     PyListObject *it_seq; /* Set to NULL when iterator is exhausted */
 } listiterobject;
 
+/* from Objects/enumobject.c */
+typedef struct {
+    PyObject_HEAD
+    Py_ssize_t      index;
+    PyObject* seq;
+} reversedobject;
+
 #endif
 
