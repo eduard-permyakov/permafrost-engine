@@ -890,6 +890,51 @@ def test_pickle_generator():
 
     print "Generator pickling OK!"
 
+def test_pickle_frame():
+
+    # get the current stack frame (the one we are in)
+    # storing a reference to the frame in the frame's own locals creates a cyclic reference
+    f1 = sys._getframe()
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1.f_code.co_code == f2.f_code.co_code
+
+    def func():
+        loc1 = 2 * 2
+        loc2 = 'Hello' + ' ' + 'World'
+        s = pf.pickle_object(sys._getframe())
+        loc3 = 'Should not be in frame snapshot'
+        loc4 = 'Should not be in frame snapshot'
+        return s
+
+    s = func()
+    f2 = pf.unpickle_object(s)
+    print f2.f_code.co_name
+    print func.func_code.co_name
+    assert f2.f_code.co_code == func.func_code.co_code
+    assert len(f2.f_locals) == 2
+    assert f2.f_locals['loc1'] == 4
+    assert f2.f_locals['loc2'] == 'Hello World'
+
+    print "Frame pickling OK!"
+
+def test_pickle_traceback():
+
+    try:
+        1/0
+    except:
+        t1 = sys.exc_info()[2]
+
+    assert repr(t1)[1:].startswith('traceback')
+    s = pf.pickle_object(t1)
+    t2 = pf.unpickle_object(s)
+
+    assert t2.tb_frame.f_code.co_code == t1.tb_frame.f_code.co_code
+    assert t2.tb_lasti == t1.tb_lasti
+    assert t2.tb_lineno == t1.tb_lineno
+
+    print "Traceback pickling OK!"
+
 try:
     test_pickle_int()
     test_pickle_long()
@@ -936,6 +981,8 @@ try:
     test_pickle_dictproxy()
     test_pickle_reversed()
     test_pickle_generator()
+    test_pickle_frame()
+    test_pickle_traceback()
 except Exception as e:
     traceback.print_exc()
 finally:

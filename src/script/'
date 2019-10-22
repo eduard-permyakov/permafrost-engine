@@ -196,7 +196,7 @@
 #define PF_GEN          'R' /* Push a generator object from top TOS */
 #define PF_FRAME        'S' /* Push a frame object from variable number of TOS items */
 #define PF_NULLVAL      'T' /* Push a dummy object onto the stack, indicating a NULL value */
-#define PF_TRACEBACK    'U' /* Push a traceback object from top 4 TOS items */
+#define PF_TRACEBACK    'U' /* Push a traceback object from top 2 TOS items */
 #define PF_EMPTYFRAME   'V' /* Push a dummy frame object with valuestack size from TOS */
 
 #define EXC_START_MAGIC ((void*)0x1234)
@@ -590,7 +590,7 @@ static struct pickle_entry s_type_dispatch_table[] = {
     {.type = NULL /* PyExc_ArithmeticError */,            .picklefunc = NULL            },
     {.type = NULL /* PyExc_FloatingPointError */,         .picklefunc = NULL            },
     {.type = NULL /* PyExc_OverflowError */,              .picklefunc = NULL            },
-    {.type = NULL /* PyExc_ZeroDivisionError */,          .picklefunc = placeholder_inst_pickle },
+    {.type = NULL /* PyExc_ZeroDivisionError */,          .picklefunc = NULL            },
     {.type = NULL /* PyExc_SystemError */,                .picklefunc = NULL            },
     {.type = NULL /* PyExc_ReferenceError */,             .picklefunc = NULL            },
     {.type = NULL /* PyExc_MemoryError */,                .picklefunc = NULL            },
@@ -2297,14 +2297,6 @@ static int traceback_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw
 
     CHK_TRUE(pickle_obj(ctx, (PyObject*)tb->tb_frame, rw), fail);
 
-    PyObject *lineno = PyInt_FromLong(tb->tb_lineno);
-    PyObject *lasti = PyInt_FromLong(tb->tb_lasti);
-    vec_pobj_push(&ctx->to_free, lineno);
-    vec_pobj_push(&ctx->to_free, lasti);
-
-    CHK_TRUE(pickle_obj(ctx, lineno, rw), fail);
-    CHK_TRUE(pickle_obj(ctx, lasti, rw), fail);
-
     const char ops[] = {PF_EXTEND, PF_TRACEBACK};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
@@ -2314,7 +2306,7 @@ fail:
     return -1;
 }
 
-static Py_ssize_t frame_extra_size(PyFrameObject *frame)
+static Py_ssize_t frame_valuestack_size(PyFrameObject *frame)
 {
     Py_ssize_t extras, ncells, nfrees;
     ncells = PyTuple_GET_SIZE(frame->f_code->co_cellvars);
@@ -2336,7 +2328,7 @@ static int frame_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
         goto fail;
     }
 
-    PyObject *valsize = PyInt_FromSsize_t(frame_extra_size(f));
+    PyObject *valsize = PyInt_FromSsize_t(frame_valuestack_size(f));
     vec_pobj_push(&ctx->to_free, valsize);
     CHK_TRUE(pickle_obj(ctx, valsize, rw), fail);
 
@@ -4624,8 +4616,8 @@ fail_underflow:
 }
 
 /* Patch a dummy frame. Some of this logic is ripped from frameobject.c */
-static int convert_frame(PyFrameObject *frame, PyCodeObject *code,
-                         PyObject *globals, PyObject *locals)
+static int setup_frame(PyFrameObject *frame, PyCodeObject *code,
+                        PyObject *globals, PyObject *locals)
 {
     assert(frame->f_code && frame->f_globals && frame->f_locals);
     size_t old_valsize = frame->f_code->co_stacksize;
@@ -4669,6 +4661,8 @@ static int convert_frame(PyFrameObject *frame, PyCodeObject *code,
         Py_INCREF(builtins);
     }
     frame->f_builtins = builtins;
+    printf("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
+    printf("####### builtins: %s\n", PyObject_REPR(frame->f_builtins));
     Py_DECREF(bi_name);
 
     /* Set code */
@@ -4696,17 +4690,19 @@ static int convert_frame(PyFrameObject *frame, PyCodeObject *code,
     }
 
     /* Setup valuestack */
-    if(old_valsize != frame_extra_size(frame))
+    if(old_valsize != frame_valuestack_size(frame))
         return -1;
 
-    size_t extras = frame_extra_size(frame) - code->co_stacksize;
-    frame->f_valuestack = frame->f_localsplus + extras;
-    for(int i = 0; i < extras; i++)
+    frame->f_valuestack = frame->f_localsplus + frame_valuestack_size(frame);
+    for(int i = 0; i < frame_valuestack_size(frame); i++)
         frame->f_localsplus[i] = NULL;
     frame->f_stacktop = frame->f_valuestack;
 
-    assert(frame->f_builtins && frame->f_code && frame->f_globals);
+    frame->f_tstate = tstate;
+    frame->f_lasti = -1;
+    frame->f_lineno = code->co_firstlineno;
     frame->f_iblock = 0;
+
     return 0;
 }
 
@@ -4764,8 +4760,13 @@ static int op_ext_frame(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail_typecheck;
     }
 
+    //PyThreadState *tstate = PyThreadState_GET();
+    //frame = PyFrame_New(tstate, (PyCodeObject*)code, globals,
+    //    locals == Py_None ? NULL : locals);
+    //CHK_TRUE(frame, fail_frame);
+
     /* Forcefully set attrs */
-   CHK_TRUE(0 == convert_frame(frame, code, globals, locals == Py_None ? NULL : locals), fail_frame);
+    CHK_TRUE(0 == setup_frame(frame, code, globals, locals), fail_frame);
 
     Py_XDECREF(frame->f_back);
     frame->f_back = back == Py_None ? NULL : (PyFrameObject*)back;
@@ -4884,28 +4885,20 @@ static int op_ext_traceback(struct unpickle_ctx *ctx, SDL_RWops *rw)
     TRACE_OP(PF_TRACEBACK, ctx);
     int ret = -1;
 
-    if(vec_size(&ctx->stack) < 4) {
+    if(vec_size(&ctx->stack) < 2) {
         SET_RUNTIME_EXC("Stack underflow");
         goto fail_underflow;
     }
-    PyObject *lasti = vec_pobj_pop(&ctx->stack);
-    PyObject *lineno = vec_pobj_pop(&ctx->stack);
     PyObject *frame = vec_pobj_pop(&ctx->stack);
     PyObject *next = vec_pobj_pop(&ctx->stack);
 
-    if(!PyInt_Check(lasti)
-    || !PyInt_Check(lineno)) {
-        SET_RUNTIME_EXC("PF_TRACEBACK: Expecting int objects on TOS and TOS1");
-        goto fail_typecheck;
-    }
-
     if(!PyFrame_Check(frame)) {
-        SET_RUNTIME_EXC("PF_TRACEBACK: Expecting frame object on TOS2");
+        SET_RUNTIME_EXC("PF_TRACEBACK: Expecting frame object on TOS");
         goto fail_typecheck;
     }
 
     if(next != Py_None && !PyTraceBack_Check(next)) {
-        SET_RUNTIME_EXC("PF_TRACEBACK: Expecting tracebakc or None object on TOS3");
+        SET_RUNTIME_EXC("PF_TRACEBACK: Expecting tracebakc or None object on TOS1");
         goto fail_typecheck;
     }
 
@@ -4919,8 +4912,8 @@ static int op_ext_traceback(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }
     Py_INCREF(frame);
     tb->tb_frame = (struct _frame*)frame;
-    tb->tb_lasti = PyInt_AsLong(lasti);
-    tb->tb_lineno = PyInt_AsLong(lineno);
+    tb->tb_lasti = ((struct _frame*)frame)->f_lasti;
+    tb->tb_lineno = PyFrame_GetLineNumber((PyFrameObject*)frame);
     PyObject_GC_Track(tb);
 
     vec_pobj_push(&ctx->stack, (PyObject*)tb);
