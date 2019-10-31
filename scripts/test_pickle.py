@@ -84,10 +84,8 @@ def test_pickle_string():
 
 def test_pickle_unicode():
 
-    #pf.trace_pickling = True
     u1 = u'abcdefg'
     s = pf.pickle_object(u1)
-    print s
     u2 = pf.unpickle_object(s)
     assert u1 == u2
 
@@ -506,7 +504,8 @@ def test_pickle_member_descriptor():
     assert repr(m1)[1:].startswith('member')
     s = pf.pickle_object(m1)
     m2 = pf.unpickle_object(s)
-    assert m1 == m2
+    assert type(m1) == type(m2)
+    assert m1.__name__ == m2.__name__
 
     class Subclass(exceptions.SyntaxError):
         pass
@@ -515,7 +514,8 @@ def test_pickle_member_descriptor():
     assert repr(m1)[1:].startswith('member')
     s = pf.pickle_object(m1)
     m2 = pf.unpickle_object(s)
-    assert m1 == m2
+    assert type(m1) == type(m2)
+    assert m1.__name__ == m2.__name__
 
     print "Member descriptor pickling OK!"
 
@@ -909,8 +909,6 @@ def test_pickle_frame():
 
     s = func()
     f2 = pf.unpickle_object(s)
-    print f2.f_code.co_name
-    print func.func_code.co_name
     assert f2.f_code.co_code == func.func_code.co_code
     assert len(f2.f_locals) == 2
     assert f2.f_locals['loc1'] == 4
@@ -934,6 +932,37 @@ def test_pickle_traceback():
     assert t2.tb_lineno == t1.tb_lineno
 
     print "Traceback pickling OK!"
+
+def test_pickle_weakref():
+
+    class TestWeakrefClass(object):
+        def __init__(self, a):
+            self.a = a
+
+    a = TestWeakrefClass(456123)
+
+    w1 = weakref.ref(a)
+    s = pf.pickle_object(w1)
+    w2 = pf.unpickle_object(s)
+
+    # w2 should be 'None' when dereferenced. This makes sense
+    # since when the root of the picked heirarchy is a weak
+    # reference, it alone will not retain the objects it is
+    # referencing. They will be pickled and unpickled, but
+    # will have their reference counting reach 0 during 
+    # unpickling
+    assert w2() == None
+
+    # But if something else retains the referent, the weakref
+    # relationship should be preserved
+    l1 = [a, w1]
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+
+    assert type(l2[1]) == type(w1)
+    assert l2[0] == l2[1]()
+
+    print "Weakref pickling OK!"
 
 try:
     test_pickle_int()
@@ -983,6 +1012,7 @@ try:
     test_pickle_generator()
     test_pickle_frame()
     test_pickle_traceback()
+    test_pickle_weakref()
 except Exception as e:
     traceback.print_exc()
 finally:
