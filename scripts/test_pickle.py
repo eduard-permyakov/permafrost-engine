@@ -964,6 +964,38 @@ def test_pickle_weakref():
 
     print "Weakref pickling OK!"
 
+def test_pickle_weak_proxy():
+
+    def func():
+        return 'Hello World'
+
+    w1 = weakref.proxy(func)
+    assert 'weakcallableproxy' in repr(type(w1))
+    s = pf.pickle_object(w1)
+    w2 = pf.unpickle_object(s)
+    try:
+        print w2()
+    except ReferenceError:
+        pass
+    else:
+        raise Exception("Unexpected dereferencing possible!")
+
+    class Wrapper(object):
+        pass
+
+    obj = Wrapper()
+    wo = weakref.proxy(obj)
+    assert 'weakproxy' in repr(type(wo))
+
+    l1 = [func, w1, obj, wo]
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+
+    assert l2[0]() == l2[1]()
+    assert l2[2].__repr__.__self__ == l2[3].__repr__.__self__
+
+    print "Weak Proxy pickling OK!"
+
 try:
     test_pickle_int()
     test_pickle_long()
@@ -1013,6 +1045,7 @@ try:
     test_pickle_frame()
     test_pickle_traceback()
     test_pickle_weakref()
+    test_pickle_weak_proxy()
 except Exception as e:
     traceback.print_exc()
 finally:

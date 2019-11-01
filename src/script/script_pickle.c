@@ -201,6 +201,7 @@
 #define PF_EMPTYFRAME   'V' /* Push a dummy frame object with valuestack size from TOS */
 #define PF_WEAKREF      'W' /* Push a weakref.ref object from top 2 TOS items */
 #define PF_EMPTYINST    'X' /* Push a dummy newclass instance, with the right amount of memory allocated for the final instance, and having its' builtin fields  */
+#define PF_PROXY        'Y' /* Push a weakproxy instance from top 2 TOS items */
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -410,6 +411,7 @@ static int op_ext_traceback (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_emptyframe(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_weakref   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_emptyinst (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_weakproxy (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -594,7 +596,7 @@ static struct pickle_entry s_type_dispatch_table[] = {
     {.type = NULL /* PyExc_OverflowError */,              .picklefunc = NULL            },
     {.type = NULL /* PyExc_ZeroDivisionError */,          .picklefunc = placeholder_inst_pickle },
     {.type = NULL /* PyExc_SystemError */,                .picklefunc = NULL            },
-    {.type = NULL /* PyExc_ReferenceError */,             .picklefunc = NULL            },
+    {.type = NULL /* PyExc_ReferenceError */,             .picklefunc = placeholder_inst_pickle },
     {.type = NULL /* PyExc_MemoryError */,                .picklefunc = NULL            },
     {.type = NULL /* PyExc_BufferError */,                .picklefunc = NULL            },
     {.type = NULL /* PyExc_Warning */,                    .picklefunc = NULL            },
@@ -698,6 +700,7 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_EMPTYFRAME] = op_ext_emptyframe,
     [PF_WEAKREF] = op_ext_weakref,
     [PF_EMPTYINST] = op_ext_emptyinst,
+    [PF_PROXY] = op_ext_weakproxy,
 };
 
 /* Standard modules not imported on initialization which also contain C builtins */
@@ -1052,6 +1055,12 @@ static int setattr_nondestructive(PyObject *obj, PyObject *name, PyObject *val)
  */
 static PyObject *nonderived_writable_attrs(PyObject *obj)
 {
+    /* Calling 'dir' on a proxy object will get the attributes of 
+     * the object it is referencing. We don't want this. */
+    if(PyWeakref_CheckProxy(obj)) {
+        return PyDict_New();
+    }
+
     PyObject *attrs = PyObject_Dir(obj);
     assert(attrs);
     PyObject *ret = PyDict_New();
@@ -2557,20 +2566,29 @@ fail:
 
 static int weakref_callable_proxy_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) 
 {
-    TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return 0;
+    return weakref_proxy_pickle(ctx, obj, rw);
 }
 
 static int weakref_proxy_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    PyWeakReference *ref = (PyWeakReference*)obj;
+
+    CHK_TRUE(pickle_obj(ctx, ref->wr_object, rw), fail);
+
+    if(ref->wr_callback) {
+        CHK_TRUE(pickle_obj(ctx, ref->wr_callback, rw), fail);
+    }else{
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+    }
+
+    const char ops[] = {PF_EXTEND, PF_PROXY};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int zip_importer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -5056,7 +5074,16 @@ static int op_ext_weakref(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail_typecheck;
     }
 
-    PyObject *retval = PyWeakref_NewRef(referent, callback);
+    /* If the referent is 'None', that means it has been GC'd already */
+    PyObject *retval = NULL;
+    if(referent == Py_None) {
+
+        PyObject *dummy = PyObject_CallFunction(s_placeholder_type, "()");
+        retval = PyWeakref_NewRef(dummy, callback);
+        Py_DECREF(dummy);
+    }else{
+        retval = PyWeakref_NewRef(referent, callback);
+    }
     CHK_TRUE(retval, fail_ref);
 
     vec_pobj_push(&ctx->stack, retval);
@@ -5111,6 +5138,46 @@ fail_inst:
 fail_typecheck:
     Py_DECREF(basetype);
     Py_DECREF(size);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_weakproxy(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_PROXY, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 2) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *callback = vec_pobj_pop(&ctx->stack);
+    PyObject *referent = vec_pobj_pop(&ctx->stack);
+
+    if(callback != Py_None && !PyCallable_Check(callback)) {
+        SET_RUNTIME_EXC("PF_PROXY: Expecting callable or none on TOS");
+        goto fail_typecheck;
+    }
+
+    /* If the referent is 'None', that means it has been GC'd already */
+    PyObject *retval = NULL;
+    if(referent == Py_None) {
+
+        PyObject *dummy = PyObject_CallFunction(s_placeholder_type, "()");
+        retval = PyWeakref_NewProxy(dummy, callback);
+        Py_DECREF(dummy);
+    }else{
+        retval = PyWeakref_NewProxy(referent, callback);
+    }
+    CHK_TRUE(retval, fail_proxy);
+
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_proxy:
+fail_typecheck:
+    Py_DECREF(callback);
+    Py_DECREF(referent);
 fail_underflow:
     return ret;
 }
