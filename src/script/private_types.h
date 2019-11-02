@@ -117,5 +117,13 @@ typedef struct {
     PyObject* seq;
 } reversedobject;
 
+/* from Modules/zipimport.c */
+struct _zipimporter {
+    PyObject_HEAD
+    PyObject *archive;  /* pathname of the Zip archive */
+    PyObject *prefix;   /* file prefix: "a/sub/directory/" */
+    PyObject *files;    /* dict with file info {path: toc_entry} */
+};
+
 #endif
 

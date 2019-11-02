@@ -37,6 +37,11 @@
 #define SCRIPT_PICKLE_H
 
 #include <Python.h> /* Must be included first */
+/* Both Python.h and Python-ast.h try to pull these definitions in... */
+#undef false
+#undef true
+#undef bool
+#include <Python-ast.h>
 
 #include "../lib/public/khash.h"
 #include <SDL.h> /* for SDL_RWops */

@@ -41,8 +41,10 @@
 #include "../lib/public/vec.h"
 #include "../asset_load.h"
 
+/* Additional Python headers */
 #include <frameobject.h>
 #include <structmember.h>
+#include <symtable.h>
 
 #include <assert.h>
 
@@ -202,6 +204,8 @@
 #define PF_WEAKREF      'W' /* Push a weakref.ref object from top 2 TOS items */
 #define PF_EMPTYINST    'X' /* Push a dummy newclass instance, with the right amount of memory allocated for the final instance, and having its' builtin fields  */
 #define PF_PROXY        'Y' /* Push a weakproxy instance from top 2 TOS items */
+#define PF_STENTRY      'Z' /* Push a symtable entry instance from top 16 TOS items */
+#define PF_ZIPIMPORTER  '0' /* Push a zipimport.zipimporter instance from top 3 TOS items */
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -412,6 +416,8 @@ static int op_ext_emptyframe(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_weakref   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_emptyinst (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_weakproxy (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_stentry   (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_zipimporter(struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -701,11 +707,16 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_WEAKREF] = op_ext_weakref,
     [PF_EMPTYINST] = op_ext_emptyinst,
     [PF_PROXY] = op_ext_weakproxy,
+    [PF_STENTRY] = op_ext_stentry,
+    [PF_ZIPIMPORTER] = op_ext_zipimporter,
 };
 
 /* Standard modules not imported on initialization which also contain C builtins */
 static const char *s_extra_indexed_mods[] = {
     "imp",
+    "_symtable",
+    "weakref",
+    "zipimport",
 };
 
 /*****************************************************************************/
@@ -810,6 +821,15 @@ static void load_private_type_refs(void)
     tmp = PySys_GetObject("version_info"); /* borrowed */
     assert(!strcmp(tmp->ob_type->tp_name, "sys.version_info"));
     s_type_dispatch_table[idx].type = tmp->ob_type;
+
+    /* ZipImporter_Type */
+    idx = dispatch_idx_for_picklefunc(zip_importer_pickle);
+    tmp = PySys_GetObject("modules"); /* borrowed */
+    PyObject *zi_mod = PyDict_GetItemString(tmp, "zipimport"); /* borrowed */
+    assert(zi_mod);
+    s_type_dispatch_table[idx].type = (PyTypeObject*)PyObject_GetAttrString(zi_mod, "zipimporter");
+    assert(s_type_dispatch_table[idx].type);
+    Py_DECREF(s_type_dispatch_table[idx].type); /* safe to do since we know type is statically allocated */
 
     assert(!PyErr_Occurred());
 }
@@ -2594,19 +2614,76 @@ fail:
 static int zip_importer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    struct _zipimporter *zip = (struct _zipimporter*)obj;
+
+    CHK_TRUE(pickle_obj(ctx, zip->archive, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, zip->prefix, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, zip->files, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_ZIPIMPORTER};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int st_entry_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(PySTEntry_Check(obj));
+    PySTEntryObject *entry = (PySTEntryObject*)obj;
+
+    CHK_TRUE(pickle_obj(ctx, entry->ste_id, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, entry->ste_symbols, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, entry->ste_name, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, entry->ste_varnames, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, entry->ste_children, rw), fail);
+
+    PyObject *ste_type = PyInt_FromLong(entry->ste_type);
+    PyObject *ste_unoptimized = PyInt_FromLong(entry->ste_unoptimized);
+    PyObject *ste_nested = PyInt_FromLong(entry->ste_nested);
+    PyObject *ste_free = PyInt_FromLong(entry->ste_free);
+    PyObject *ste_child_free = PyInt_FromLong(entry->ste_child_free);
+    PyObject *ste_generator = PyInt_FromLong(entry->ste_generator);
+    PyObject *ste_varargs = PyInt_FromLong(entry->ste_varargs);
+    PyObject *ste_varkeywords = PyInt_FromLong(entry->ste_varkeywords);
+    PyObject *ste_returns_value = PyInt_FromLong(entry->ste_returns_value);
+    PyObject *ste_lineno = PyInt_FromLong(entry->ste_lineno);
+    PyObject *ste_tmpname = PyInt_FromLong(entry->ste_tmpname);
+
+    vec_pobj_push(&ctx->to_free, ste_type);
+    vec_pobj_push(&ctx->to_free, ste_unoptimized);
+    vec_pobj_push(&ctx->to_free, ste_nested);
+    vec_pobj_push(&ctx->to_free, ste_free);
+    vec_pobj_push(&ctx->to_free, ste_child_free);
+    vec_pobj_push(&ctx->to_free, ste_generator);
+    vec_pobj_push(&ctx->to_free, ste_varargs);
+    vec_pobj_push(&ctx->to_free, ste_varkeywords);
+    vec_pobj_push(&ctx->to_free, ste_returns_value);
+    vec_pobj_push(&ctx->to_free, ste_lineno);
+    vec_pobj_push(&ctx->to_free, ste_tmpname);
+
+    CHK_TRUE(pickle_obj(ctx, ste_type, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, ste_unoptimized, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, ste_nested, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, ste_free, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, ste_child_free, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, ste_generator, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, ste_varargs, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, ste_varkeywords, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, ste_returns_value, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, ste_lineno, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, ste_tmpname, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_STENTRY};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int class_method_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -5182,6 +5259,155 @@ fail_underflow:
     return ret;
 }
 
+static int op_ext_stentry(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_STENTRY, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 16) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *ste_tmpname = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_lineno = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_returns_value = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_varkeywords = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_varargs = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_generator = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_child_free = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_free = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_nested = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_unoptimized = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_type = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_children = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_varnames = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_name = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_symbols = vec_pobj_pop(&ctx->stack);
+    PyObject *ste_id = vec_pobj_pop(&ctx->stack);
+
+    if(!PyInt_Check(ste_id)) {
+        SET_RUNTIME_EXC("PF_STENTRY: Expecting int object on TOS15");
+        goto fail_typecheck;
+    }
+
+    if(!PyDict_Check(ste_symbols)) {
+        SET_RUNTIME_EXC("PF_STENTRY: Expecting dict object on TOS14");
+        goto fail_typecheck;
+    }
+
+    if(!PyString_Check(ste_name)) {
+        SET_RUNTIME_EXC("PF_STENTRY: Expecting string object on TOS13");
+        goto fail_typecheck;
+    }
+
+    if(!PyList_Check(ste_varnames) && !PyList_Check(ste_children)) {
+        SET_RUNTIME_EXC("PF_STENTRY: Expecting list objects on TOS12 and TOS11");
+        goto fail_typecheck;
+    }
+
+    if(!PyInt_Check(ste_type) 
+    && !PyInt_Check(ste_unoptimized)
+    && !PyInt_Check(ste_nested)
+    && !PyInt_Check(ste_free)
+    && !PyInt_Check(ste_child_free)
+    && !PyInt_Check(ste_generator)
+    && !PyInt_Check(ste_varargs)
+    && !PyInt_Check(ste_returns_value)
+    && !PyInt_Check(ste_lineno)
+    && !PyInt_Check(ste_tmpname)) {
+        SET_RUNTIME_EXC("PF_STENTRY: Expecting int objects on TOS10 through TOS");
+        goto fail_typecheck;
+    }
+
+    PySTEntryObject *retval = PyObject_New(PySTEntryObject, &PySTEntry_Type);
+    CHK_TRUE(retval, fail_entry);
+
+    retval->ste_id = ste_id;
+    retval->ste_symbols = ste_symbols;
+    retval->ste_name = ste_name;
+    retval->ste_varnames = ste_varnames;
+    retval->ste_children = ste_children;
+    retval->ste_type = PyInt_AS_LONG(ste_type);
+    retval->ste_unoptimized = PyInt_AS_LONG(ste_unoptimized);
+    retval->ste_nested = PyInt_AS_LONG(ste_nested);
+    retval->ste_free = PyInt_AS_LONG(ste_free);
+    retval->ste_child_free = PyInt_AS_LONG(ste_child_free);
+    retval->ste_generator = PyInt_AS_LONG(ste_generator);
+    retval->ste_varargs = PyInt_AS_LONG(ste_varargs);
+    retval->ste_varkeywords = PyInt_AS_LONG(ste_varkeywords);
+    retval->ste_returns_value = PyInt_AS_LONG(ste_returns_value);
+    retval->ste_lineno = PyInt_AS_LONG(ste_lineno);
+    retval->ste_tmpname = PyInt_AS_LONG(ste_tmpname);
+
+    Py_INCREF(ste_id);
+    Py_INCREF(ste_symbols);
+    Py_INCREF(ste_name);
+    Py_INCREF(ste_varnames);
+    Py_INCREF(ste_children);
+
+    vec_pobj_push(&ctx->stack, (PyObject*)retval);
+    ret = 0;
+
+fail_entry:
+fail_typecheck:
+    Py_DECREF(ste_tmpname);
+    Py_DECREF(ste_lineno);
+    Py_DECREF(ste_returns_value);
+    Py_DECREF(ste_varkeywords);
+    Py_DECREF(ste_varargs);
+    Py_DECREF(ste_generator);
+    Py_DECREF(ste_child_free);
+    Py_DECREF(ste_free);
+    Py_DECREF(ste_nested);
+    Py_DECREF(ste_unoptimized);
+    Py_DECREF(ste_type);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_zipimporter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_ZIPIMPORTER, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 3) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *files = vec_pobj_pop(&ctx->stack);
+    PyObject *prefix = vec_pobj_pop(&ctx->stack);
+    PyObject *archive = vec_pobj_pop(&ctx->stack);
+
+    int idx = dispatch_idx_for_picklefunc(zip_importer_pickle);
+    PyTypeObject *zip_type = s_type_dispatch_table[idx].type;
+
+    PyObject *args = PyTuple_New(0);
+    CHK_TRUE(args, fail_zip);
+    struct _zipimporter *retval = PyObject_GC_New(struct _zipimporter, zip_type);
+
+    Py_DECREF(args);
+    CHK_TRUE(retval, fail_zip);
+
+    retval->archive = archive;
+    retval->prefix = prefix;
+    retval->files = files;
+    _PyObject_GC_TRACK(retval);
+
+    Py_INCREF(archive);
+    Py_INCREF(prefix);
+    Py_INCREF(files);
+
+    vec_pobj_push(&ctx->stack, (PyObject*)retval);
+    ret = 0;
+
+fail_zip:
+    Py_DECREF(files);
+    Py_DECREF(prefix);
+    Py_DECREF(archive);
+fail_underflow:
+    return ret;
+}
+
 static int op_ext_nullimporter(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_NULLIMPORTER, ctx);
@@ -5430,14 +5656,16 @@ bool S_Pickle_Init(PyObject *module)
     Py_DECREF(args);
     assert(s_placeholder_type);
 
+    pre_build_index();
+
     load_private_type_refs();
     load_exception_types();
     load_engine_builtin_types();
     reference_all_types();
 
-    pre_build_index();
     if(!S_Traverse_IndexQualnames(s_id_qualname_map))
         goto fail_traverse;
+
     post_build_index();
 
     return true;
