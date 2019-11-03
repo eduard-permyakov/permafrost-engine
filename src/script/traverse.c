@@ -35,6 +35,8 @@
 
 #include "traverse.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/queue.h"
+
 
 KHASH_SET_INIT_INT64(id)
 
@@ -46,19 +48,33 @@ struct visit_ctx{
     void        *user;
 };
 
+struct visit_meta{
+    int          depth;
+    PyObject    *parent;
+    const char  *attrname;
+};
+
 struct contains_ctx{
     const PyObject *const test;
     bool                  contains;
 };
 
+QUEUE_TYPE(vm, struct visit_meta)
+QUEUE_IMPL(static, vm, struct visit_meta)
+
+QUEUE_TYPE(pobj, PyObject*)
+QUEUE_IMPL(static, pobj, PyObject*)
+
 __KHASH_IMPL(str,  extern, khint64_t, const char*, 1, kh_int_hash_func, kh_int_hash_equal)
 __KHASH_IMPL(pobj, extern, kh_cstr_t, PyObject*,   1, kh_str_hash_func, kh_str_hash_equal)
+
+typedef void (*traversefunc)(PyObject*, visitproc, struct visit_ctx*);
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void s_traverse(PyObject *root, visitproc visit, struct visit_ctx *ctx)
+static void s_traverse_df(PyObject *root, visitproc visit, struct visit_ctx *ctx)
 {
     struct visit_ctx saved;
 
@@ -108,7 +124,7 @@ void s_traverse(PyObject *root, visitproc visit, struct visit_ctx *ctx)
         ctx->parent = root;
         ctx->attrname = PyString_AS_STRING(attr);
 
-        s_traverse(child, visit, ctx);
+        s_traverse_df(child, visit, ctx);
 
         /* Pop state */
         *ctx = saved;
@@ -118,6 +134,90 @@ void s_traverse(PyObject *root, visitproc visit, struct visit_ctx *ctx)
     }
 
     Py_DECREF(attrs);
+}
+
+static void s_traverse_bf(PyObject *root, visitproc visit, struct visit_ctx *ctx)
+{
+    khiter_t k = kh_get(id, ctx->visited, (uintptr_t)root);
+    if(k != kh_end(ctx->visited))
+        return;
+
+    struct visit_ctx saved;
+    queue_pobj_t frontier;
+    queue_vm_t meta;
+
+    queue_pobj_init(&frontier, 0);
+    queue_vm_init(&meta, 0);
+
+    queue_pobj_push(&frontier, &root);
+
+    struct visit_meta root_meta = {0, NULL, NULL};
+    queue_vm_push(&meta, &root_meta);
+
+    while(queue_size(frontier) > 0) {
+    
+        PyObject *curr;
+        struct visit_meta curr_meta;
+
+        queue_pobj_pop(&frontier, &curr);
+        queue_vm_pop(&meta, &curr_meta);
+
+        if((k = kh_get(id, ctx->visited, (uintptr_t)curr)) != kh_end(ctx->visited))
+            continue;
+
+        ctx->depth = curr_meta.depth;
+        ctx->parent = curr_meta.parent;
+        ctx->attrname = curr_meta.attrname;
+
+        visit(curr, ctx);
+
+        int ret;
+        k = kh_put(id, ctx->visited, (uintptr_t)curr, &ret);
+        assert(ret != -1 && ret != 0);
+
+        PyObject *attrs = PyObject_Dir(curr);
+        assert(attrs);
+
+        for(int i = 0; i < PyList_Size(attrs); i++) {
+
+            PyObject *attr = PyList_GET_ITEM(attrs, i);
+            assert(PyString_Check(attr));
+            if(!PyObject_HasAttr(curr, attr))
+                continue;
+
+            PyObject *child = PyObject_GetAttr(curr, attr);
+            assert(child);
+
+            if(child->ob_refcnt == 1) {
+            
+                Py_DECREF(child);
+                continue;
+            }
+
+            k = kh_get(id, ctx->visited, (uintptr_t)child);
+            if(k != kh_end(ctx->visited)) {
+            
+                Py_DECREF(child);
+                continue;
+            }
+
+            struct visit_meta child_meta = {
+                curr_meta.depth + 1,     
+                curr,
+                PyString_AS_STRING(attr),
+            };
+
+            queue_pobj_push(&frontier, &child);
+            queue_vm_push(&meta, &child_meta);
+
+            Py_DECREF(child);
+        }
+
+        Py_DECREF(attrs);
+    }
+
+    queue_pobj_destroy(&frontier);
+    queue_vm_destroy(&meta);
 }
 
 static int visit_print(PyObject *obj, void *ctx)
@@ -182,8 +282,8 @@ static int visit_contains(PyObject *obj, void *ctx)
     return 0;
 }
 
-bool s_traverse_with_visited(PyObject *root, visitproc visit, void *user,
-                             khash_t(id) *inout_visited)
+bool s_traverse_bf_with_visited(PyObject *root, visitproc visit, void *user,
+                                khash_t(id) *inout_visited)
 {
     struct visit_ctx ctx;
 
@@ -193,15 +293,11 @@ bool s_traverse_with_visited(PyObject *root, visitproc visit, void *user,
     ctx.attrname = NULL;
     ctx.visited = inout_visited;
 
-    s_traverse(root, visit, &ctx);
+    s_traverse_bf(root, visit, &ctx);
     return true;
 }
 
-/*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
-/*****************************************************************************/
-
-bool S_Traverse(PyObject *root, visitproc visit, void *user)
+static bool s_traverse(PyObject *root, visitproc visit, void *user, traversefunc t)
 {
     int ret = false;
     struct visit_ctx ctx;
@@ -214,7 +310,7 @@ bool S_Traverse(PyObject *root, visitproc visit, void *user)
     ctx.user = user;
     ctx.parent = NULL;
     ctx.attrname = NULL;
-    s_traverse(root, visit, &ctx);
+    t(root, visit, &ctx);
     ret = true;
 
     kh_destroy(id, ctx.visited);
@@ -222,9 +318,28 @@ fail_alloc:
     return ret;
 }
 
-bool S_Traverse_PrintDFT(PyObject *root)
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
+bool S_Traverse_DF(PyObject *root, visitproc visit, void *user)
 {
-    return S_Traverse(root, visit_print, NULL);
+    return s_traverse(root, visit, user, s_traverse_df);
+}
+
+bool S_Traverse_BF(PyObject *root, visitproc visit, void *user)
+{
+    return s_traverse(root, visit, user, s_traverse_bf);
+}
+
+bool S_Traverse_PrintDF(PyObject *root)
+{
+    return S_Traverse_DF(root, visit_print, NULL);
+}
+
+bool S_Traverse_PrintBF(PyObject *root)
+{
+    return S_Traverse_BF(root, visit_print, NULL);
 }
 
 bool S_Traverse_IndexQualnames(khash_t(str) *inout)
@@ -244,8 +359,8 @@ bool S_Traverse_IndexQualnames(khash_t(str) *inout)
 
         if(!PyModule_Check(value))
             continue;
-        bool ret = s_traverse_with_visited(value, visit_index_qualname, 
-                                           inout, visited);
+        bool ret = s_traverse_bf_with_visited(value, visit_index_qualname, 
+                                              inout, visited);
         if(!ret)
             goto fail_traverse;
     }
@@ -260,7 +375,7 @@ fail_alloc:
 bool S_Traverse_ReferencesObj(PyObject *root, PyObject *obj, bool *out)
 {
     struct contains_ctx cctx = {obj, false};
-    bool ret = S_Traverse(root, visit_contains, &cctx);
+    bool ret = S_Traverse_DF(root, visit_contains, &cctx);
     if(!ret)
         return false;
     *out = cctx.contains;
