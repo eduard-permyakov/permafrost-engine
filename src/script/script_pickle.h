@@ -52,14 +52,8 @@ bool S_Pickle_Init(PyObject *module);
 void S_Pickle_Shutdown(void);
 
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream);
-bool S_PickleObjgraphByName(const char *module, const char *name, SDL_RWops *stream);
-
 /* Returns a new reference */
 PyObject *S_UnpickleObjgraph(SDL_RWops *stream);
-
-/* Sets the object as the value of the attribute in the specified module, potentially
- * overwriting an existing value. */
-bool S_UnpickleObjgraphByName(const char *module, const char *name, SDL_RWops *stream);
 
 #endif
 

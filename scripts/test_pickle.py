@@ -392,6 +392,13 @@ def test_pickle_type():
     else:
         raise Exception("Able to set non-slot attribute: __slots__ not properly saved")
 
+    # Make sure excess attributes are deleted
+    e1 = Exception('test123')
+    del e1.message # By default, new Exception instances have this attribute
+    s = pf.pickle_object(e1)
+    e2 = pf.unpickle_object(s)
+    assert not hasattr(e2, 'message')
+
     print "Type pickling OK!"
 
 def test_pickle_bool():
@@ -1180,6 +1187,34 @@ def test_pickle_iterators():
 
     print "iterator pickling OK!"
 
+def test_pickle_exceptions():
+
+    e1 = Exception('test123')
+    s = pf.pickle_object(e1)
+    e2 = pf.unpickle_object(s)
+    assert type(e1) == type(e2)
+    assert e1.message == e2.message
+
+    e1 = StopIteration(123)
+    s = pf.pickle_object(e1)
+    e2 = pf.unpickle_object(s)
+    assert type(e1) == type(e2)
+    assert e1.message == e2.message
+
+    e1 = BytesWarning(123)
+    s = pf.pickle_object(e1)
+    e2 = pf.unpickle_object(s)
+    assert type(e1) == type(e2)
+    assert e1.message == e2.message
+
+    e1 = KeyboardInterrupt(123)
+    s = pf.pickle_object(e1)
+    e2 = pf.unpickle_object(s)
+    assert type(e1) == type(e2)
+    assert e1.message == e2.message
+
+    print "Exception pickling OK!"
+
 try:
     test_pickle_int()
     test_pickle_long()
@@ -1233,6 +1268,7 @@ try:
     test_pickle_zipimporter()
     test_pickle_dictviews()
     test_pickle_iterators()
+    test_pickle_exceptions()
 except Exception as e:
     traceback.print_exc()
 finally:

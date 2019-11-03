@@ -106,49 +106,26 @@
         Py_DECREF(repr);                                                        \
     }while(0)
 
-/* The original protocol 0 ASCII opcodes */
+/* The subset of the original protocol 0 ASCII opcodes that are used. */
 
 #define MARK            '(' /* push special markobject on stack                     */
 #define STOP            '.' /* every pickle ends with STOP                          */
 #define POP             '0' /* discard topmost stack item                           */
 #define POP_MARK        '1' /* discard stack top through topmost markobject         */
-#define DUP             '2' /* duplicate top stack item                             */
 #define FLOAT           'F' /* push float object; decimal string argument           */
 #define INT             'I' /* push integer or bool; decimal string argument        */
-#define BININT          'J' /* push four-byte signed int                            */
-#define BININT1         'K' /* push 1-byte unsigned int                             */
 #define LONG            'L' /* push long; decimal string argument                   */
-#define BININT2         'M' /* push 2-byte unsigned int                             */
 #define NONE            'N' /* push None                                            */
-#define PERSID          'P' /* push persistent object; id is taken from string arg  */
-#define BINPERSID       'Q' /*  "       "         "  ;  "  "   "     "  stack       */
-#define REDUCE          'R' /* apply callable to argtuple, both on stack            */
 #define STRING          'S' /* push string; NL-terminated string argument           */
-#define BINSTRING       'T' /* push string; counted binary string argument          */
-#define SHORT_BINSTRING 'U' /*  "     "   ;    "      "       "      " < 256 bytes  */
 #define UNICODE         'V' /* push Unicode string; raw-unicode-escaped'd argument  */
-#define BINUNICODE      'X' /*   "     "       "  ; counted UTF-8 string argument   */
-#define APPEND          'a' /* append stack top to list below it                    */
-#define BUILD           'b' /* call __setstate__ or __dict__.update()               */
-#define GLOBAL          'c' /* push self.find_class(modname, name); 2 string args   */
-#define DICT            'd' /* build a dict from stack items                        */
 #define EMPTY_DICT      '}' /* push empty dict                                      */
 #define APPENDS         'e' /* extend list on stack by topmost stack slice          */
 #define GET             'g' /* push item from memo on stack; index is string arg    */
-#define BINGET          'h' /*   "    "    "    "   "   "  ;   "    " 1-byte arg    */
-#define INST            'i' /* build & push class instance                          */
-#define LONG_BINGET     'j' /* push item from memo on stack; index is 4-byte arg    */
-#define LIST            'l' /* build list from topmost stack items                  */
 #define EMPTY_LIST      ']' /* push empty list                                      */
-#define OBJ             'o' /* build & push class instance                          */
 #define PUT             'p' /* store stack top in memo; index is string arg         */
-#define BINPUT          'q' /*   "     "    "   "   " ;   "    " 1-byte arg         */
-#define LONG_BINPUT     'r' /*   "     "    "   "   " ;   "    " 4-byte arg         */
-#define SETITEM         's' /* add key+value pair to dict                           */
 #define TUPLE           't' /* build tuple from topmost stack items                 */
 #define EMPTY_TUPLE     ')' /* push empty tuple                                     */
 #define SETITEMS        'u' /* modify dict by adding topmost key+value pairs        */
-#define BINFLOAT        'G' /* push float; arg is 8-byte float encoding             */
 
 /* Permafrost Engine extensions to protocol 0 */
 
@@ -222,6 +199,7 @@
 #define PF_SETITER      '#' /* Push a setiterator from top 4 TOS items */
 #define PF_FIELDNAMEITER '$' /* Push a fieldnameiterator from top 4 TOS items */
 #define PF_FORMATITER   '%' /* Push a formatteriterator from top 3 TOS items */
+#define PF_EXCEPTION    '^' 
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -361,6 +339,7 @@ static int set_iter_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int tuple_iter_pickle  (struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int newclass_instance_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int placeholder_inst_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int exception_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
 
 /* Unpickling functions */
 static int op_int           (struct unpickle_ctx *, SDL_RWops *);
@@ -448,6 +427,7 @@ static int op_ext_dictitemiter(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_setiter   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_fieldnameiter(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_formatiter(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_exception (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -589,62 +569,62 @@ static struct pickle_entry s_type_dispatch_table[] = {
 
     /* The built-in exception types. All of them can be instantiated directly.  */
     { EXC_START_MAGIC },
-    {.type = NULL /* PyExc_BaseException */,              .picklefunc = NULL            },
-    {.type = NULL /* PyExc_Exception */,                  .picklefunc = NULL            },
-    {.type = NULL /* PyExc_StandardError */,              .picklefunc = NULL            },
-    {.type = NULL /* PyExc_TypeError */,                  .picklefunc = NULL            },
-    {.type = NULL /* PyExc_StopIteration */,              .picklefunc = placeholder_inst_pickle },
-    {.type = NULL /* PyExc_GeneratorExit */,              .picklefunc = NULL            },
-    {.type = NULL /* PyExc_SystemExit */,                 .picklefunc = NULL            },
-    {.type = NULL /* PyExc_KeyboardInterrupt */,          .picklefunc = NULL            },
-    {.type = NULL /* PyExc_ImportError */,                .picklefunc = NULL            },
-    {.type = NULL /* PyExc_EnvironmentError */,           .picklefunc = NULL            },
-    {.type = NULL /* PyExc_IOError */,                    .picklefunc = NULL            },
-    {.type = NULL /* PyExc_OSError */,                    .picklefunc = NULL            },
+    {.type = NULL /* PyExc_BaseException */,              .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_Exception */,                  .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_StandardError */,              .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_TypeError */,                  .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_StopIteration */,              .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_GeneratorExit */,              .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_SystemExit */,                 .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_KeyboardInterrupt */,          .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_ImportError */,                .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_EnvironmentError */,           .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_IOError */,                    .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_OSError */,                    .picklefunc = exception_pickle},
 #ifdef MS_WINDOWS
-    {.type = NULL /* PyExc_WindowsError */,               .picklefunc = NULL            },
+    {.type = NULL /* PyExc_WindowsError */,               .picklefunc = exception_pickle},
 #endif
 #ifdef __VMS
-    {.type = NULL /* PyExc_VMSError */,                   .picklefunc = NULL            },
+    {.type = NULL /* PyExc_VMSError */,                   .picklefunc = exception_pickle},
 #endif
-    {.type = NULL /* PyExc_EOFError */,                   .picklefunc = NULL            },
-    {.type = NULL /* PyExc_RuntimeError */,               .picklefunc = NULL            },
-    {.type = NULL /* PyExc_NotImplementedError */,        .picklefunc = NULL            },
-    {.type = NULL /* PyExc_NameError */,                  .picklefunc = NULL            },
-    {.type = NULL /* PyExc_UnboundLocalError */,          .picklefunc = NULL            },
-    {.type = NULL /* PyExc_AttributeError */,             .picklefunc = NULL            },
-    {.type = NULL /* PyExc_SyntaxError */,                .picklefunc = NULL            },
-    {.type = NULL /* PyExc_IndentationError */,           .picklefunc = NULL            },
-    {.type = NULL /* PyExc_TabError */,                   .picklefunc = NULL            },
-    {.type = NULL /* PyExc_LookupError */,                .picklefunc = NULL            },
-    {.type = NULL /* PyExc_IndexError */,                 .picklefunc = NULL            },
-    {.type = NULL /* PyExc_KeyError */,                   .picklefunc = NULL            },
-    {.type = NULL /* PyExc_ValueError */,                 .picklefunc = NULL            },
-    {.type = NULL /* PyExc_UnicodeError */,               .picklefunc = NULL            },
+    {.type = NULL /* PyExc_EOFError */,                   .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_RuntimeError */,               .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_NotImplementedError */,        .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_NameError */,                  .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_UnboundLocalError */,          .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_AttributeError */,             .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_SyntaxError */,                .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_IndentationError */,           .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_TabError */,                   .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_LookupError */,                .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_IndexError */,                 .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_KeyError */,                   .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_ValueError */,                 .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_UnicodeError */,               .picklefunc = exception_pickle},
 #ifdef Py_USING_UNICODE
-    {.type = NULL /* PyExc_UnicodeEncodeError */,         .picklefunc = NULL            },
-    {.type = NULL /* PyExc_UnicodeDecodeError */,         .picklefunc = NULL            },
-    {.type = NULL /* PyExc_UnicodeTranslateError */,      .picklefunc = NULL            },
+    {.type = NULL /* PyExc_UnicodeEncodeError */,         .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_UnicodeDecodeError */,         .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_UnicodeTranslateError */,      .picklefunc = exception_pickle},
 #endif
-    {.type = NULL /* PyExc_AssertionError */,             .picklefunc = NULL            },
-    {.type = NULL /* PyExc_ArithmeticError */,            .picklefunc = NULL            },
-    {.type = NULL /* PyExc_FloatingPointError */,         .picklefunc = NULL            },
-    {.type = NULL /* PyExc_OverflowError */,              .picklefunc = NULL            },
-    {.type = NULL /* PyExc_ZeroDivisionError */,          .picklefunc = placeholder_inst_pickle },
-    {.type = NULL /* PyExc_SystemError */,                .picklefunc = NULL            },
-    {.type = NULL /* PyExc_ReferenceError */,             .picklefunc = placeholder_inst_pickle },
-    {.type = NULL /* PyExc_MemoryError */,                .picklefunc = NULL            },
-    {.type = NULL /* PyExc_BufferError */,                .picklefunc = NULL            },
-    {.type = NULL /* PyExc_Warning */,                    .picklefunc = NULL            },
-    {.type = NULL /* PyExc_UserWarning */,                .picklefunc = NULL            },
-    {.type = NULL /* PyExc_DeprecationWarning */,         .picklefunc = NULL            },
-    {.type = NULL /* PyExc_PendingDeprecationWarning */,  .picklefunc = NULL            },
-    {.type = NULL /* PyExc_SyntaxWarning */,              .picklefunc = NULL            },
-    {.type = NULL /* PyExc_RuntimeWarning */,             .picklefunc = NULL            },
-    {.type = NULL /* PyExc_FutureWarning */,              .picklefunc = NULL            },
-    {.type = NULL /* PyExc_ImportWarning */,              .picklefunc = NULL            },
-    {.type = NULL /* PyExc_UnicodeWarning */,             .picklefunc = NULL            },
-    {.type = NULL /* PyExc_BytesWarning */,               .picklefunc = NULL            },
+    {.type = NULL /* PyExc_AssertionError */,             .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_ArithmeticError */,            .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_FloatingPointError */,         .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_OverflowError */,              .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_ZeroDivisionError */,          .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_SystemError */,                .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_ReferenceError */,             .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_MemoryError */,                .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_BufferError */,                .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_Warning */,                    .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_UserWarning */,                .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_DeprecationWarning */,         .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_PendingDeprecationWarning */,  .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_SyntaxWarning */,              .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_RuntimeWarning */,             .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_FutureWarning */,              .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_ImportWarning */,              .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_UnicodeWarning */,             .picklefunc = exception_pickle},
+    {.type = NULL /* PyExc_BytesWarning */,               .picklefunc = exception_pickle},
     { EXC_END_MAGIC },
 };
 
@@ -753,6 +733,7 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_SETITER] = op_ext_setiter,
     [PF_FIELDNAMEITER] = op_ext_fieldnameiter,
     [PF_FORMATITER] = op_ext_formatiter,
+    [PF_EXCEPTION] = op_ext_exception,
 };
 
 /* Standard modules not imported on initialization which also contain C builtins */
@@ -766,6 +747,14 @@ static const char *s_extra_indexed_mods[] = {
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static bool strarr_contains(const char **arr, size_t len, const char *item)
+{
+    for(int i = 0; i < len; i++)
+        if(!strcmp(arr[i], item))
+            return true;
+    return false;
+}
 
 static bool type_is_builtin(PyObject *type)
 {
@@ -1065,7 +1054,6 @@ fail:
     return -1;
 }
 
-//TODO: dynamically loads mods from s_extra_indexed_mods
 static PyObject *qualname_new_ref(const char *qualname)
 {
     char copy[strlen(qualname)];
@@ -1080,6 +1068,11 @@ static PyObject *qualname_new_ref(const char *qualname)
     assert(modules_dict);
     PyObject *mod = PyDict_GetItemString(modules_dict, modname);
     Py_XINCREF(mod);
+
+    if(!mod && strarr_contains(s_extra_indexed_mods, ARR_SIZE(s_extra_indexed_mods), modname)) {
+        mod = PyImport_ImportModule(modname);
+    }
+
     if(!mod) {
         SET_RUNTIME_EXC("Could not find module %s for qualified name %s", modname, qualname);
         return NULL;
@@ -1220,6 +1213,22 @@ static int builtin_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     CHK_TRUE(rw->write(rw, &builtin, 1, 1), fail);
     CHK_TRUE(rw->write(rw, qname, strlen(qname), 1), fail);
     CHK_TRUE(rw->write(rw, "\n", 1, 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
+
+static int exception_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    TRACE_PICKLE(obj);
+    assert(PyExceptionInstance_Check(obj));
+
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_EXCEPTION};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
 
 fail:
@@ -4060,6 +4069,50 @@ static int op_ext_baseobj(struct unpickle_ctx *ctx, SDL_RWops *rw)
     return 0;
 }
 
+static void del_extra_attrs(PyObject *obj, PyObject **attrs_base, size_t npairs)
+{
+    PyObject *ndw_attrs = nonderived_writable_attrs(obj);
+
+    PyObject *key, *value;
+    Py_ssize_t pos = 0;
+
+    size_t ndel = 0;
+    PyObject *todel[PyDict_Size(ndw_attrs)];
+
+    while(PyDict_Next(ndw_attrs, &pos, &key, &value)) {
+
+        bool contains = false;
+        for(int i = 0; i < npairs * 2; i += 2) {
+
+            PyObject *attr_key = attrs_base[i];
+
+            if(PyObject_RichCompareBool(key, attr_key, Py_EQ)) {
+                contains = true;
+                break;
+            }
+        }
+
+        if(!contains) {
+            Py_INCREF(key);
+            todel[ndel++] = key;
+        }
+    }
+
+    for(int i = 0; i < ndel; i++) {
+
+        assert(!PyErr_Occurred());
+        PyObject_DelAttr(obj, todel[i]);
+        Py_DECREF(todel[i]);
+
+        if(PyErr_Occurred() 
+        && (PyErr_ExceptionMatches(PyExc_AttributeError) || PyErr_ExceptionMatches(PyExc_TypeError))) {
+            PyErr_Clear(); 
+        }
+    }
+
+    Py_DECREF(ndw_attrs);
+}
+
 static int op_ext_setattrs(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_SETATTRS, ctx);
@@ -4085,6 +4138,8 @@ static int op_ext_setattrs(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }
 
     PyObject *const obj = vec_AT(&ctx->stack, mark - 1);
+    del_extra_attrs(obj, &vec_AT(&ctx->stack, mark), nitems);
+
     for(int i = 0; i < nitems; i++) {
     
         PyObject *val = vec_pobj_pop(&ctx->stack);
@@ -4099,8 +4154,6 @@ static int op_ext_setattrs(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }
     PyObject *top = vec_pobj_pop(&ctx->stack);
     assert(obj == top);
-
-    //TODO: also delete any NDW attributes not in the dict
 
     vec_pobj_push(&ctx->stack, obj);
     return 0;
@@ -6043,6 +6096,35 @@ fail_underflow:
     return ret;
 }
 
+static int op_ext_exception(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_EXCEPTION, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    if(!PyType_Check(type) || !PyExceptionClass_Check(type)) {
+        SET_RUNTIME_EXC("PF_EXCEPTION: Expecting type that is a non-strict subclass of Exception on TOS"); 
+        goto fail_typecheck;
+    }
+
+    PyObject *retval = PyObject_CallFunction(type, "()");
+    CHK_TRUE(retval, fail_exc);
+
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_exc:
+fail_typecheck:
+    Py_DECREF(type);
+fail_underflow:
+    return ret;
+}
+
 static int op_ext_nullimporter(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_NULLIMPORTER, ctx);
@@ -6347,36 +6429,6 @@ err:
     return false;
 }
 
-bool S_PickleObjgraphByName(const char *module, const char *name, SDL_RWops *stream)
-{
-    PyObject *modules_dict = PySys_GetObject("modules");
-    assert(modules_dict);
-
-    if(!PyMapping_HasKeyString(modules_dict, (char*)module)) {
-        SET_EXC(PyExc_NameError, "Module not found");
-        goto fail_mod_key;
-    }
-
-    PyObject *mod = PyMapping_GetItemString(modules_dict, (char*)module);
-    assert(mod);
-
-    if(!PyObject_HasAttrString(mod, name)) {
-        SET_EXC(PyExc_NameError, "Attribute not found");
-        goto fail_attr_key;
-    }
-
-    PyObject *obj = PyObject_GetAttrString(mod, name);
-    int ret = S_PickleObjgraph(obj, stream);
-    Py_DECREF(obj);
-    Py_DECREF(mod);
-    return ret;
-
-fail_attr_key:
-    Py_DECREF(mod);
-fail_mod_key:
-    return false;
-}
-
 PyObject *S_UnpickleObjgraph(SDL_RWops *stream)
 {
     struct unpickle_ctx ctx;
@@ -6419,10 +6471,5 @@ err:
     DEFAULT_ERR(PyExc_IOError, "Error reading from pickle stream");
     unpickle_ctx_destroy(&ctx);
     return NULL;
-}
-
-bool S_UnpickleObjgraphByName(const char *module, const char *name, SDL_RWops *stream)
-{
-
 }
 
