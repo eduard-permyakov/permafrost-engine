@@ -41,7 +41,10 @@
 #include "../lib/public/vec.h"
 #include "../asset_load.h"
 
+
 /* Additional Python headers */
+typedef void *mod_ty; //symtable.h wants this
+
 #include <frameobject.h>
 #include <structmember.h>
 #include <symtable.h>
