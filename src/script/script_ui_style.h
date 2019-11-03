@@ -33,8 +33,8 @@
  *
  */
 
-#ifndef UI_STYLE_SCRIPT_H
-#define UI_STYLE_SCRIPT_H
+#ifndef SCRIPT_UI_STYLE_H
+#define SCRIPT_UI_STYLE_H
 
 #include <Python.h> /* must be first */
 #include <stdbool.h>

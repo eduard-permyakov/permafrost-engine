@@ -34,7 +34,7 @@
  */
 
 #include <Python.h> /* must be first */
-#include "entity_script.h" 
+#include "script_entity.h" 
 #include "../entity.h"
 #include "../event.h"
 #include "../asset_load.h"
@@ -317,25 +317,9 @@ static bool s_has_super_method(const char *method_name, PyObject *type, PyObject
 {
     bool ret = false;
 
-    PyObject *builtins = PyImport_AddModule("__builtin__");
-    if(!builtins)
-        goto fail_builtins;
-
-    PyObject *super = PyObject_GetAttrString(builtins, "super");
-    if(!super) {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to get 'super' builtin.");
-        goto fail_get_super;
-    }
-
-    PyObject *super_args = PyTuple_New(2);
-    Py_INCREF(type);
-    Py_INCREF(self);
-    PyTuple_SetItem(super_args, 0, type);
-    PyTuple_SetItem(super_args, 1, self);
-
-    PyObject *super_obj = PyObject_Call(super, super_args, NULL);
+    PyObject *super_obj = PyObject_CallFunction((PyObject*)&PySuper_Type, "(OO)", type, self);
     if(!super_obj) {
-        PyErr_SetString(PyExc_RuntimeError, "Call to 'super' failed.");
+        assert(PyErr_Occurred());
         goto fail_call_super;
     }
 
@@ -343,10 +327,6 @@ static bool s_has_super_method(const char *method_name, PyObject *type, PyObject
     Py_DECREF(super_obj);
 
 fail_call_super:
-    Py_DECREF(super_args);
-    Py_DECREF(super);
-fail_get_super:
-fail_builtins:
     return ret;
 }
 
@@ -355,25 +335,9 @@ static PyObject *s_call_super_method(const char *method_name, PyObject *type,
 {
     PyObject *ret = NULL;
 
-    PyObject *builtins = PyImport_AddModule("__builtin__");
-    if(!builtins)
-        goto fail_builtins;
-
-    PyObject *super = PyObject_GetAttrString(builtins, "super");
-    if(!super) {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to get 'super' builtin.");
-        goto fail_get_super;
-    }
-
-    PyObject *super_args = PyTuple_New(2);
-    Py_INCREF(type);
-    Py_INCREF(self);
-    PyTuple_SetItem(super_args, 0, type);
-    PyTuple_SetItem(super_args, 1, self);
-
-    PyObject *super_obj = PyObject_Call(super, super_args, NULL);
+    PyObject *super_obj = PyObject_CallFunction((PyObject*)&PySuper_Type, "(OO)", type, self);
     if(!super_obj) {
-        PyErr_SetString(PyExc_RuntimeError, "Call to 'super' failed.");
+        assert(PyErr_Occurred());
         goto fail_call_super;
     }
 
@@ -384,30 +348,28 @@ static PyObject *s_call_super_method(const char *method_name, PyObject *type,
     }
 
     ret = PyObject_Call(method, args, kwds); 
-    if(!ret)
-        goto fail_call_method;
-
-fail_call_method:
     Py_DECREF(method);
+
 fail_get_method:
     Py_DECREF(super_obj);
 fail_call_super:
-    Py_DECREF(super_args);
-    Py_DECREF(super);
-fail_get_super:
-fail_builtins:
+    return ret;
+}
+
+static PyObject *s_super_del(PyObject *self, PyTypeObject *type)
+{
+    if(!s_has_super_method("__del__", (PyObject*)type, self))
+        Py_RETURN_NONE;
+
+    PyObject *args = PyTuple_New(0);
+    PyObject *ret = s_call_super_method("__del__", (PyObject*)type, self, args, NULL);
+    Py_DECREF(args);
     return ret;
 }
 
 static PyObject *PyEntity_del(PyEntityObject *self)
 {
-    if(s_has_super_method("__del__", (PyObject*)&PyEntity_type, (PyObject*)self)) {
-        PyObject *args = PyTuple_New(0); 
-        PyObject *ret = s_call_super_method("__del__", (PyObject*)&PyEntity_type, (PyObject*)self, args, NULL);
-        Py_DECREF(args);
-        return ret;
-    }
-    Py_RETURN_NONE;
+    return s_super_del((PyObject*)self, &PyEntity_type);
 }
 
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
@@ -798,13 +760,7 @@ static int PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject 
 
 static PyObject *PyAnimEntity_del(PyAnimEntityObject *self)
 {
-    if(s_has_super_method("__del__", (PyObject*)&PyAnimEntity_type, (PyObject*)self)) {
-        PyObject *args = PyTuple_New(0); 
-        PyObject *ret = s_call_super_method("__del__", (PyObject*)&PyAnimEntity_type, (PyObject*)self, args, NULL);
-        Py_DECREF(args);
-        return ret;
-    }
-    Py_RETURN_NONE;
+    return s_super_del((PyObject*)self, &PyAnimEntity_type);
 }
 
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args, PyObject *kwds)
@@ -864,13 +820,7 @@ static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *arg
 
 static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self)
 {
-    if(s_has_super_method("__del__", (PyObject*)&PyCombatableEntity_type, (PyObject*)self)) {
-        PyObject *args = PyTuple_New(0); 
-        PyObject *ret = s_call_super_method("__del__", (PyObject*)&PyCombatableEntity_type, (PyObject*)self, args, NULL);
-        Py_DECREF(args);
-        return ret;
-    }
-    Py_RETURN_NONE;
+    return s_super_del((PyObject*)self, &PyCombatableEntity_type);
 }
 
 static PyObject *PyCombatableEntity_get_max_hp(PyCombatableEntityObject *self, void *closure)

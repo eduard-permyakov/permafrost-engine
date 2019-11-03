@@ -33,8 +33,8 @@
  *
  */
 
-#ifndef ENTITY_SCRIPT_H
-#define ENTITY_SCRIPT_H
+#ifndef SCRIPT_ENTITY_H
+#define SCRIPT_ENTITY_H
 
 #include <Python.h> /* Must be first */
 #include <stdbool.h>

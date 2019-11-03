@@ -33,14 +33,18 @@
  *
  */
 
-#ifndef TILE_SCRIPT_H
-#define TILE_SCRIPT_H
+#ifndef SCRIPT_UI_H
+#define SCRIPT_UI_H
 
 #include <Python.h> /* must be first */
+#include <stdbool.h>
 
-struct tile;
+struct nk_context;
 
-void               S_Tile_PyRegister(PyObject *module);
-const struct tile *S_Tile_GetTile(PyObject *tile_obj);
+bool S_UI_Init(struct nk_context *ctx);
+void S_UI_Shutdown(void);
+void S_UI_Update(void);
+void S_UI_PyRegister(PyObject *module);
 
 #endif
+

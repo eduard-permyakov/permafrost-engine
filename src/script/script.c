@@ -35,9 +35,9 @@
 
 #include <Python.h> /* Must be included first */
 
-#include "entity_script.h"
-#include "ui_script.h"
-#include "tile_script.h"
+#include "script_entity.h"
+#include "script_ui.h"
+#include "script_tile.h"
 #include "script_constants.h"
 #include "script_pickle.h"
 #include "public/script.h"

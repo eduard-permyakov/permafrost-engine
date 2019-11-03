@@ -33,7 +33,7 @@
  *
  */
 
-#include "tile_script.h"
+#include "script_tile.h"
 #include "../map/public/tile.h"
 #include "../map/public/map.h"
 

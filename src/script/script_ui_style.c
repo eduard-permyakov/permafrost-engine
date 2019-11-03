@@ -33,7 +33,7 @@
  *
  */
 
-#include "ui_style_script.h"
+#include "script_ui_style.h"
 #include "../lib/public/nuklear.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/stb_image.h"
