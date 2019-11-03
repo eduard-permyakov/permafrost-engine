@@ -45,6 +45,8 @@
 #include <frameobject.h>
 #include <structmember.h>
 #include <symtable.h>
+#include <../Objects/stringlib/stringdefs.h>
+#include <../Objects/stringlib/string_format.h>
 
 #include <assert.h>
 
@@ -206,6 +208,20 @@
 #define PF_PROXY        'Y' /* Push a weakproxy instance from top 2 TOS items */
 #define PF_STENTRY      'Z' /* Push a symtable entry instance from top 16 TOS items */
 #define PF_ZIPIMPORTER  '0' /* Push a zipimport.zipimporter instance from top 3 TOS items */
+#define PF_DICTKEYS     '1' /* Push a dict_keys instance from TOS dict */
+#define PF_DICTVALS     '2' /* Push a dict_values instance from TOS dict */
+#define PF_DICTITEMS    '3' /* Push a dict_items instance from TOS dict */
+#define PF_CALLITER     '4' /* Push a callable-iterator instance from top 2 TOS items */
+#define PF_SEQITER      '5' /* Push an iterator instance from top 2 TOS items */
+#define PF_BYTEARRITER  '6' /* Push a bytearray iterator instance from top 2 TOS items */
+#define PF_TUPLEITER    '7' /* Push a tuple iterator instance from top 2 TOS items */
+#define PF_LISTREVITER  '8' /* Push a reversed list iterator instance from top 2 TOS items */ 
+#define PF_DICTKEYITER  '9' /* Push a dictionary-keyiterator instance from top 5 TOS items */
+#define PF_DICTVALITER  '!' /* Push a dictionary-valueiterator instance from top 5 TOS items */
+#define PF_DICTITEMITER '@' /* Push a dictionary-itemiterator instance from top 5 TOS items */
+#define PF_SETITER      '#' /* Push a setiterator from top 4 TOS items */
+#define PF_FIELDNAMEITER '$' /* Push a fieldnameiterator from top 4 TOS items */
+#define PF_FORMATITER   '%' /* Push a formatteriterator from top 3 TOS items */
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -418,6 +434,20 @@ static int op_ext_emptyinst (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_weakproxy (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_stentry   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_zipimporter(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_dictkeys  (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_dictvalues(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_dictitems (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_calliter  (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_seqiter   (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_bytearriter(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_tupleiter (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_revlistiter(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_dictkeyiter(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_dictvaliter(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_dictitemiter(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_setiter   (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_fieldnameiter(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_formatiter(struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -563,7 +593,7 @@ static struct pickle_entry s_type_dispatch_table[] = {
     {.type = NULL /* PyExc_Exception */,                  .picklefunc = NULL            },
     {.type = NULL /* PyExc_StandardError */,              .picklefunc = NULL            },
     {.type = NULL /* PyExc_TypeError */,                  .picklefunc = NULL            },
-    {.type = NULL /* PyExc_StopIteration */,              .picklefunc = NULL            },
+    {.type = NULL /* PyExc_StopIteration */,              .picklefunc = placeholder_inst_pickle },
     {.type = NULL /* PyExc_GeneratorExit */,              .picklefunc = NULL            },
     {.type = NULL /* PyExc_SystemExit */,                 .picklefunc = NULL            },
     {.type = NULL /* PyExc_KeyboardInterrupt */,          .picklefunc = NULL            },
@@ -709,13 +739,27 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_PROXY] = op_ext_weakproxy,
     [PF_STENTRY] = op_ext_stentry,
     [PF_ZIPIMPORTER] = op_ext_zipimporter,
+    [PF_DICTKEYS] = op_ext_dictkeys,
+    [PF_DICTVALS] = op_ext_dictvalues,
+    [PF_DICTITEMS] = op_ext_dictitems,
+    [PF_CALLITER] = op_ext_calliter,
+    [PF_SEQITER] = op_ext_seqiter,
+    [PF_BYTEARRITER] = op_ext_bytearriter,
+    [PF_TUPLEITER] = op_ext_tupleiter,
+    [PF_LISTREVITER] = op_ext_revlistiter,
+    [PF_DICTKEYITER] = op_ext_dictkeyiter,
+    [PF_DICTVALITER] = op_ext_dictvaliter,
+    [PF_DICTITEMITER] = op_ext_dictitemiter,
+    [PF_SETITER] = op_ext_setiter,
+    [PF_FIELDNAMEITER] = op_ext_fieldnameiter,
+    [PF_FORMATITER] = op_ext_formatiter,
 };
 
 /* Standard modules not imported on initialization which also contain C builtins */
 static const char *s_extra_indexed_mods[] = {
     "imp",
     "_symtable",
-    "weakref",
+    "_weakref",
     "zipimport",
 };
 
@@ -830,6 +874,38 @@ static void load_private_type_refs(void)
     s_type_dispatch_table[idx].type = (PyTypeObject*)PyObject_GetAttrString(zi_mod, "zipimporter");
     assert(s_type_dispatch_table[idx].type);
     Py_DECREF(s_type_dispatch_table[idx].type); /* safe to do since we know type is statically allocated */
+
+    /* PySetIter_Type */
+    idx = dispatch_idx_for_picklefunc(set_iter_pickle);
+    PyObject *set = PyObject_CallFunction((PyObject*)&PySet_Type, "()");
+    assert(set);
+    PyObject *iter = PySet_Type.tp_iter(set);
+    assert(iter);
+    Py_DECREF(set);
+    s_type_dispatch_table[idx].type = iter->ob_type;
+    assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "setiterator"));
+    Py_DECREF(iter);
+
+    /* PyFieldNameIter_Type */
+    idx = dispatch_idx_for_picklefunc(field_name_iter_pickle);
+    PyObject *string = PyString_FromString("test");
+    assert(string);
+    PyObject *tuple = PyObject_CallMethod(string, "_formatter_field_name_split", "()");
+    assert(tuple && PyTuple_GET_SIZE(tuple) > 1);
+    s_type_dispatch_table[idx].type = PyTuple_GET_ITEM(tuple, 1)->ob_type;
+    assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "fieldnameiterator"));
+    Py_DECREF(tuple);
+    Py_DECREF(string);
+
+    /* PyFormatterIter_Type */
+    idx = dispatch_idx_for_picklefunc(formatter_iter_pickle);
+    string = PyString_FromString("test");
+    assert(string);
+    iter = PyObject_CallMethod(string, "_formatter_parser", "()");
+    assert(iter);
+    s_type_dispatch_table[idx].type = iter->ob_type;
+    assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "formatteriterator"));
+    Py_DECREF(string);
 
     assert(!PyErr_Occurred());
 }
@@ -2713,28 +2789,52 @@ fail:
 static int dict_items_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(PyDictItems_Check(obj));
+    dictviewobject *dv = (dictviewobject*)obj;
+
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)dv->dv_dict, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_DICTITEMS};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int dict_keys_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(PyDictKeys_Check(obj));
+    dictviewobject *dv = (dictviewobject*)obj;
+
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)dv->dv_dict, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_DICTKEYS};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int dict_values_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    assert(PyDictValues_Check(obj));
+    dictviewobject *dv = (dictviewobject*)obj;
+
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)dv->dv_dict, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_DICTVALS};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int method_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -2762,88 +2862,20 @@ fail:
 static int call_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return 0;
-}
+    assert(PyCallIter_Check(obj));
+    calliterobject *ci = (calliterobject*)obj;
 
-static int seq_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
-{
-    TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return 0;
-}
+    if(ci->it_callable)
+        CHK_TRUE(pickle_obj(ctx, ci->it_callable, rw), fail);
+    else
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
 
-static int byte_array_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
-{
-    TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return 0;
-}
+    if(ci->it_sentinel)
+        CHK_TRUE(pickle_obj(ctx, ci->it_sentinel, rw), fail);
+    else
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
 
-static int dict_iter_item_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
-{
-    TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return 0;
-}
-
-static int dict_iter_key_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) 
-{
-    TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return 0;
-}
-
-static int dict_iter_value_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
-{
-    TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return 0;
-}
-
-static int field_name_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
-{
-    TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return 0;
-}
-
-static int formatter_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
-{
-    TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return 0;
-}
-
-static int list_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
-{
-    TRACE_PICKLE(obj);
-    assert(obj->ob_type == &PyListIter_Type);
-    listiterobject *iter = (listiterobject*)obj;
-
-    PyObject *index = PyLong_FromLong(iter->it_index);
-    vec_pobj_push(&ctx->to_free, index);
-
-    CHK_TRUE(pickle_obj(ctx, index, rw), fail);
-    CHK_TRUE(pickle_obj(ctx, (PyObject*)iter->it_seq, rw), fail);
-
-    const char ops[] = {PF_EXTEND, PF_LISTITER};
+    const char ops[] = {PF_EXTEND, PF_CALLITER};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
 
@@ -2852,31 +2884,237 @@ fail:
     return -1;
 }
 
+static int seq_iter_pickle_with_op(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw, 
+                                   char ext_op)
+{
+    seqiterobject *seq  = (seqiterobject*)obj;
+
+    PyObject *index = PyLong_FromLong(seq->it_index);
+    CHK_TRUE(index, fail);
+    vec_pobj_push(&ctx->to_free, index);
+    CHK_TRUE(pickle_obj(ctx, index, rw), fail);
+
+    if(seq->it_seq)
+        CHK_TRUE(pickle_obj(ctx, seq->it_seq, rw), fail);
+    else
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+
+    const char ops[]= {PF_EXTEND, ext_op};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
+
+static int dict_iter_pickle_with_op(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw,
+                                    char ext_op)
+{
+    dictiterobject *iter = (dictiterobject*)obj;
+
+    if(iter->di_dict)
+        CHK_TRUE(pickle_obj(ctx, (PyObject*)iter->di_dict, rw), fail);
+    else
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+
+    PyObject *di_used = PyLong_FromSsize_t(iter->di_used);
+    CHK_TRUE(di_used, fail);
+    vec_pobj_push(&ctx->to_free, di_used);
+
+    PyObject *di_pos = PyLong_FromSsize_t(iter->di_pos);
+    CHK_TRUE(di_pos, fail);
+    vec_pobj_push(&ctx->to_free, di_pos);
+
+    CHK_TRUE(pickle_obj(ctx, di_used, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, di_pos, rw), fail);
+    if(iter->di_result)
+        CHK_TRUE(pickle_obj(ctx, iter->di_result, rw), fail);
+    else
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+
+    PyObject *len = PyLong_FromSsize_t(iter->len);
+    CHK_TRUE(len, fail);
+    vec_pobj_push(&ctx->to_free, len);
+
+    CHK_TRUE(pickle_obj(ctx, len, rw), fail);
+
+    const char ops[] = {PF_EXTEND, ext_op};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
+
+static int seq_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    TRACE_PICKLE(obj);
+    return seq_iter_pickle_with_op(ctx, obj, rw, PF_SEQITER);
+}
+
+static int byte_array_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    TRACE_PICKLE(obj);
+    return seq_iter_pickle_with_op(ctx, obj, rw, PF_BYTEARRITER);
+}
+
+static int dict_iter_item_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    TRACE_PICKLE(obj);
+    return dict_iter_pickle_with_op(ctx, obj, rw, PF_DICTITEMITER);
+}
+
+static int dict_iter_key_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) 
+{
+    TRACE_PICKLE(obj);
+    return dict_iter_pickle_with_op(ctx, obj, rw, PF_DICTKEYITER);
+}
+
+static int dict_iter_value_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    TRACE_PICKLE(obj);
+    return dict_iter_pickle_with_op(ctx, obj, rw, PF_DICTVALITER);
+}
+
+static int field_name_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    TRACE_PICKLE(obj);
+    fieldnameiterobject *iter = (fieldnameiterobject*)obj;
+
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)iter->str, rw), fail);
+
+    const char *raw = PyString_AS_STRING(iter->str);
+    const size_t rawlen = strlen(raw);
+
+    assert(iter->it_field.ptr >= raw && iter->it_field.ptr < raw + rawlen);
+    assert(iter->it_field.str.ptr >= raw && iter->it_field.str.ptr < raw + rawlen);
+    assert(iter->it_field.str.end >= raw && iter->it_field.str.end <= raw + rawlen);
+
+    size_t swiz_ptr = iter->it_field.ptr - raw;
+    size_t swiz_str_ptr = iter->it_field.str.ptr - raw;
+    size_t swiz_str_end = iter->it_field.str.end - raw;
+
+    assert(swiz_ptr < rawlen);
+    assert(swiz_str_ptr < rawlen);
+    assert(swiz_str_end <= rawlen);
+
+    PyObject *ptr = PyLong_FromSsize_t(swiz_ptr);
+    CHK_TRUE(ptr, fail);
+    vec_pobj_push(&ctx->to_free, ptr);
+
+    PyObject *str_ptr = PyLong_FromSsize_t(swiz_str_ptr);
+    CHK_TRUE(str_ptr, fail);
+    vec_pobj_push(&ctx->to_free, str_ptr);
+
+    PyObject *str_end = PyLong_FromSsize_t(swiz_str_end);
+    CHK_TRUE(str_end, fail);
+    vec_pobj_push(&ctx->to_free, str_end);
+
+    CHK_TRUE(pickle_obj(ctx, ptr, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, str_ptr, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, str_end, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_FIELDNAMEITER};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
+
+static int formatter_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    TRACE_PICKLE(obj);
+    formatteriterobject *iter = (formatteriterobject*)obj;
+
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)iter->str, rw), fail);
+
+    const char *raw = PyString_AS_STRING(iter->str);
+    const size_t rawlen = strlen(raw);
+
+    assert(iter->it_markup.str.ptr >= raw && iter->it_markup.str.ptr < raw + rawlen);
+    assert(iter->it_markup.str.end >= raw && iter->it_markup.str.end <= raw + rawlen);
+
+    size_t swiz_str_ptr = iter->it_markup.str.ptr - raw;
+    size_t swiz_str_end = iter->it_markup.str.end - raw;
+
+    assert(swiz_str_ptr < rawlen);
+    assert(swiz_str_end <= rawlen);
+
+    PyObject *str_ptr = PyLong_FromSsize_t(swiz_str_ptr);
+    CHK_TRUE(str_ptr, fail);
+    vec_pobj_push(&ctx->to_free, str_ptr);
+
+    PyObject *str_end = PyLong_FromSsize_t(swiz_str_end);
+    CHK_TRUE(str_end, fail);
+    vec_pobj_push(&ctx->to_free, str_end);
+
+    CHK_TRUE(pickle_obj(ctx, str_ptr, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, str_end, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_FORMATITER};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
+
+static int list_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    TRACE_PICKLE(obj);
+    return seq_iter_pickle_with_op(ctx, obj, rw, PF_LISTITER);
+}
+
 static int list_rev_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return 0;
+    return seq_iter_pickle_with_op(ctx, obj, rw, PF_LISTREVITER);
 }
 
 static int set_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw) 
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
+    setiterobject *si = (setiterobject*)obj;
+
+    if(si->si_set)
+        CHK_TRUE(pickle_obj(ctx, (PyObject*)si->si_set, rw), fail);
+    else
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+
+    PyObject *si_used = PyLong_FromSsize_t(si->si_used);
+    CHK_TRUE(si_used, fail);
+    vec_pobj_push(&ctx->to_free, si_used);
+
+    PyObject *si_pos = PyLong_FromSsize_t(si->si_pos);
+    CHK_TRUE(si_pos, fail);
+    vec_pobj_push(&ctx->to_free, si_pos);
+
+    PyObject *len = PyLong_FromSsize_t(si->len);
+    CHK_TRUE(len, fail);
+    vec_pobj_push(&ctx->to_free, len);
+
+    CHK_TRUE(pickle_obj(ctx, si_used, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, si_pos, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, len, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_SETITER};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int tuple_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    PyObject *repr = PyObject_Repr(obj);
-    printf("%s: %s\n", __func__, PyString_AS_STRING(repr));
-    Py_DECREF(repr);
-    return 0;
+    return seq_iter_pickle_with_op(ctx, obj, rw, PF_TUPLEITER);
 }
 
 static PyObject *newclass_inst_args(PyObject *obj, PyTypeObject *basetype)
@@ -4576,11 +4814,10 @@ fail_underflow:
     return ret;
 }
 
-static int op_ext_listiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+static int op_ext_seqiter_with_type(struct unpickle_ctx *ctx, SDL_RWops *rw, PyTypeObject *type)
 {
-    TRACE_OP(PF_LISTITER, ctx);
-
     int ret = -1;
+
     if(vec_size(&ctx->stack) < 2) {
         SET_RUNTIME_EXC("Stack underflow");
         goto fail_underflow;
@@ -4588,37 +4825,42 @@ static int op_ext_listiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
     PyObject *seq = vec_pobj_pop(&ctx->stack);
     PyObject *index = vec_pobj_pop(&ctx->stack);
 
-    if(!PyList_Check(seq)) {
-        SET_RUNTIME_EXC("PF_LISTITER: Expecting list object on TOS");
+    if(seq != Py_None && !PySequence_Check(seq)) {
+        SET_RUNTIME_EXC("Expecting sequence or None at TOS");
         goto fail_typecheck;
     }
 
     if(!PyLong_Check(index)) {
-        SET_RUNTIME_EXC("PF_LISTITER: Expecting long object on TOS1");
+        SET_RUNTIME_EXC("Expecting long at TOS1"); 
         goto fail_typecheck;
     }
 
-    /* From listobject.c:list_iter 
-     * Basically a call to iter(seq) but without the check for bad args */
-    listiterobject *it = PyObject_GC_New(listiterobject, &PyListIter_Type);
-    CHK_TRUE(it, fail_iter);
-    _PyObject_GC_TRACK(it);
-
-    it->it_index = PyLong_AsSsize_t(index);
-    it->it_seq = (seq == Py_None ? NULL : (PyListObject*)seq);
-    if(it->it_seq) {
-        Py_INCREF(it->it_seq);
+    seqiterobject *retval = PyObject_GC_New(seqiterobject, type);
+    CHK_TRUE(retval, fail_seq);
+    if(seq != Py_None) {
+        retval->it_seq = seq;
+        Py_INCREF(seq);
+    }else{
+        retval->it_seq = seq; 
     }
+    retval->it_index = PyLong_AsLong(index);
+    _PyObject_GC_TRACK(retval);
 
-    vec_pobj_push(&ctx->stack, (PyObject*)it);
+    vec_pobj_push(&ctx->stack, (PyObject*)retval);
     ret = 0;
 
-fail_iter:
+fail_seq:
 fail_typecheck:
     Py_DECREF(seq);
     Py_DECREF(index);
 fail_underflow:
     return ret;
+}
+
+static int op_ext_listiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_LISTITER, ctx);
+    return op_ext_seqiter_with_type(ctx, rw, &PyListIter_Type);
 }
 
 #ifndef WITHOUT_COMPLEX
@@ -5381,11 +5623,7 @@ static int op_ext_zipimporter(struct unpickle_ctx *ctx, SDL_RWops *rw)
     int idx = dispatch_idx_for_picklefunc(zip_importer_pickle);
     PyTypeObject *zip_type = s_type_dispatch_table[idx].type;
 
-    PyObject *args = PyTuple_New(0);
-    CHK_TRUE(args, fail_zip);
     struct _zipimporter *retval = PyObject_GC_New(struct _zipimporter, zip_type);
-
-    Py_DECREF(args);
     CHK_TRUE(retval, fail_zip);
 
     retval->archive = archive;
@@ -5404,6 +5642,403 @@ fail_zip:
     Py_DECREF(files);
     Py_DECREF(prefix);
     Py_DECREF(archive);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_dictkeys(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_DICTKEYS, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *dict = vec_pobj_pop(&ctx->stack);
+
+    if(!PyDict_Check(dict)) {
+        SET_RUNTIME_EXC("PF_DICTKEYS: Expecting dict object at TOS");
+        goto fail_typecheck;
+    }
+
+    PyObject *method = PyObject_GetAttrString(dict, "viewkeys");
+    PyObject *retval = PyObject_CallFunction(method, "()");
+    Py_DECREF(method);
+    CHK_TRUE(retval, fail_view);
+
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_view:
+fail_typecheck:
+    Py_DECREF(dict);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_dictvalues(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_DICTVALUES, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *dict = vec_pobj_pop(&ctx->stack);
+
+    if(!PyDict_Check(dict)) {
+        SET_RUNTIME_EXC("PF_VALUES: Expecting dict object at TOS");
+        goto fail_typecheck;
+    }
+
+    PyObject *method = PyObject_GetAttrString(dict, "viewvalues");
+    PyObject *retval = PyObject_CallFunction(method, "()");
+    Py_DECREF(method);
+    CHK_TRUE(retval, fail_view);
+
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_view:
+fail_typecheck:
+    Py_DECREF(dict);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_dictitems(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_DICTITEMS, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *dict = vec_pobj_pop(&ctx->stack);
+
+    if(!PyDict_Check(dict)) {
+        SET_RUNTIME_EXC("PF_DICTKEYS: Expecting dict object at TOS");
+        goto fail_typecheck;
+    }
+
+    PyObject *method = PyObject_GetAttrString(dict, "viewitems");
+    PyObject *retval = PyObject_CallFunction(method, "()");
+    Py_DECREF(method);
+    CHK_TRUE(retval, fail_view);
+
+    vec_pobj_push(&ctx->stack, retval);
+    ret = 0;
+
+fail_view:
+fail_typecheck:
+    Py_DECREF(dict);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_calliter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_CALLITER, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 2) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *sent = vec_pobj_pop(&ctx->stack);
+    PyObject *call = vec_pobj_pop(&ctx->stack);
+
+    /* Don't check for 'callable' - placeholders may not have 
+     * had their '__call__ attribute set yet' */
+
+    calliterobject *retval = PyObject_GC_New(calliterobject, &PyCallIter_Type);
+    CHK_TRUE(retval, fail_iter);
+
+    if(call != Py_None) {
+        retval->it_callable = call; 
+        Py_INCREF(call);
+    }else{
+        retval->it_callable = NULL;
+    }
+
+    if(sent != Py_None) {
+        retval->it_sentinel = sent; 
+        Py_INCREF(sent);
+    }else{
+        retval->it_sentinel = NULL;
+    }
+    _PyObject_GC_TRACK(retval);
+
+    vec_pobj_push(&ctx->stack, (PyObject*)retval);
+    ret = 0;
+
+fail_iter:
+fail_typecheck:
+    Py_DECREF(sent);
+    Py_DECREF(call);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_seqiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_SEQITER, ctx);
+    return op_ext_seqiter_with_type(ctx, rw, &PySeqIter_Type);
+}
+
+static int op_ext_bytearriter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_BYTEARRITER, ctx);
+    return op_ext_seqiter_with_type(ctx, rw, &PyByteArrayIter_Type);
+}
+
+static int op_ext_tupleiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_TUPLEITER, ctx);
+    return op_ext_seqiter_with_type(ctx, rw, &PyTupleIter_Type);
+}
+
+static int op_ext_revlistiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_LISTREVITER, ctx);
+    return op_ext_seqiter_with_type(ctx, rw, &PyListRevIter_Type);
+}
+
+static int op_ext_dictiter_with_type(struct unpickle_ctx *ctx, SDL_RWops *rw,
+                                     PyTypeObject *type)
+{
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 5) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *len = vec_pobj_pop(&ctx->stack);
+    PyObject *di_result = vec_pobj_pop(&ctx->stack);
+    PyObject *di_pos = vec_pobj_pop(&ctx->stack);
+    PyObject *di_used = vec_pobj_pop(&ctx->stack);
+    PyObject *di_dict = vec_pobj_pop(&ctx->stack);
+
+    if(!PyLong_Check(len)
+    || !PyLong_Check(di_pos)
+    || !PyLong_Check(di_pos)) {
+        SET_RUNTIME_EXC("Expecting long objects on TOS, TOS2, and TOS3");
+        goto fail_typecheck;
+    }
+
+    if(di_result != Py_None && !PyTuple_Check(di_result)) {
+        SET_RUNTIME_EXC("Expecting tuple object or None on TOS1");
+        goto fail_typecheck;
+    }
+
+    if(di_dict != Py_None && !PyDict_Check(di_dict)) {
+        SET_RUNTIME_EXC("Expecting dict object on TOS1");
+        goto fail_typecheck;
+    }
+
+    dictiterobject *retval = PyObject_GC_New(dictiterobject, type);
+    CHK_TRUE(retval, fail_iter);
+    if(di_dict != Py_None) {
+        retval->di_dict = (PyDictObject*)di_dict; 
+        Py_INCREF(di_dict);
+    }else{
+        retval->di_dict = NULL; 
+    }
+    retval->di_used = PyLong_AsSsize_t(di_used);
+    retval->di_pos = PyLong_AsSsize_t(di_pos);
+    if(di_result != Py_None) {
+        retval->di_result = di_result;
+        Py_INCREF(di_result);
+    }else{
+        retval->di_result = NULL; 
+    }
+    retval->len = PyLong_AsSsize_t(len);
+    _PyObject_GC_TRACK(retval);
+
+    vec_pobj_push(&ctx->stack, (PyObject*)retval);
+    ret = 0;
+
+fail_iter:
+fail_typecheck:
+    Py_DECREF(len);
+    Py_DECREF(di_result);
+    Py_DECREF(di_pos);
+    Py_DECREF(di_used);
+    Py_DECREF(di_dict);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_dictkeyiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_DICTKEYITER, ctx);
+    return op_ext_dictiter_with_type(ctx, rw, &PyDictIterKey_Type);
+}
+
+static int op_ext_dictvaliter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_DICTVALITER, ctx);
+    return op_ext_dictiter_with_type(ctx, rw, &PyDictIterValue_Type);
+}
+
+static int op_ext_dictitemiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_DICTITEMITER, ctx);
+    return op_ext_dictiter_with_type(ctx, rw, &PyDictIterItem_Type);
+}
+
+static int op_ext_setiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_SETITER, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 4) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *len = vec_pobj_pop(&ctx->stack);
+    PyObject *si_pos = vec_pobj_pop(&ctx->stack);
+    PyObject *si_used = vec_pobj_pop(&ctx->stack);
+    PyObject *si_set = vec_pobj_pop(&ctx->stack);
+
+    if(!PyLong_Check(len)
+    || !PyLong_Check(si_pos)
+    || !PyLong_Check(si_used)) {
+        SET_RUNTIME_EXC("PF_SETITER: Expecting long objects for the top 3 TOS items");
+        goto fail_typecheck;
+    }
+
+    if(!PySet_Check(si_set)) {
+        SET_RUNTIME_EXC("PF_SETITER: Expecting set object at TOS3"); 
+        goto fail_typecheck;
+    }
+
+    int idx = dispatch_idx_for_picklefunc(set_iter_pickle);
+    PyTypeObject *setiter_type = s_type_dispatch_table[idx].type;
+    setiterobject *retval = PyObject_GC_New(setiterobject, setiter_type);
+    CHK_TRUE(retval, fail_iter);
+
+    if(si_set != Py_None) {
+        retval->si_set = (PySetObject*)si_set;
+        Py_INCREF(si_set);
+    }else{
+        retval->si_set = NULL;
+    }
+    retval->si_used = PyLong_AsSsize_t(si_used);
+    retval->si_pos = PyLong_AsSsize_t(si_pos);
+    retval->len = PyLong_AsSsize_t(len);
+    _PyObject_GC_TRACK(retval);
+
+    vec_pobj_push(&ctx->stack, (PyObject*)retval);
+    ret = 0;
+
+fail_iter:
+fail_typecheck:
+    Py_DECREF(len);
+    Py_DECREF(si_pos);
+    Py_DECREF(si_used);
+    Py_DECREF(si_set);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_fieldnameiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_FIELDNAMEITER, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 4) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *str_end = vec_pobj_pop(&ctx->stack);
+    PyObject *str_ptr = vec_pobj_pop(&ctx->stack);
+    PyObject *ptr = vec_pobj_pop(&ctx->stack);
+    PyObject *str = vec_pobj_pop(&ctx->stack);
+
+    if(!PyLong_Check(str_end)
+    || !PyLong_Check(str_ptr)
+    || !PyLong_Check(ptr)) {
+        SET_RUNTIME_EXC("PF_FIELDNAMEITER: Expecting long objects as top 3 TOS items"); 
+        goto fail_typecheck;
+    }
+
+    if(!PyString_Check(str)) {
+        SET_RUNTIME_EXC("PF_FIELDNAMEITER: Expecting string object at TOS3");
+        goto fail_typecheck;
+    }
+
+    int idx = dispatch_idx_for_picklefunc(field_name_iter_pickle);
+    PyTypeObject *iter_type = s_type_dispatch_table[idx].type;
+    fieldnameiterobject *retval = PyObject_New(fieldnameiterobject, iter_type);
+    CHK_TRUE(retval, fail_iter);
+
+    retval->str = (PyStringObject*)str;
+    Py_INCREF(str);
+    char *raw = PyString_AS_STRING(str);
+    retval->it_field.ptr = raw + PyLong_AsLong(ptr);
+    retval->it_field.str.ptr = raw + PyLong_AsLong(str_ptr);
+    retval->it_field.str.end = raw + PyLong_AsLong(str_end);
+
+    vec_pobj_push(&ctx->stack, (PyObject*)retval);
+    ret = 0;
+
+fail_iter:
+fail_typecheck:
+    Py_DECREF(str_end);
+    Py_DECREF(str_ptr);
+    Py_DECREF(ptr);
+    Py_DECREF(str);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_formatiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_FIELDNAMEITER, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 3) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *str_end = vec_pobj_pop(&ctx->stack);
+    PyObject *str_ptr = vec_pobj_pop(&ctx->stack);
+    PyObject *str = vec_pobj_pop(&ctx->stack);
+
+    if(!PyLong_Check(str_end)
+    || !PyLong_Check(str_ptr)) {
+        SET_RUNTIME_EXC("PF_FIELDNAMEITER: Expecting long objects as top 2 TOS items"); 
+        goto fail_typecheck;
+    }
+
+    if(!PyString_Check(str)) {
+        SET_RUNTIME_EXC("PF_FIELDNAMEITER: Expecting string object at TOS2");
+        goto fail_typecheck;
+    }
+
+    int idx = dispatch_idx_for_picklefunc(formatter_iter_pickle);
+    PyTypeObject *iter_type = s_type_dispatch_table[idx].type;
+    formatteriterobject *retval = PyObject_New(formatteriterobject, iter_type);
+    CHK_TRUE(retval, fail_iter);
+
+    retval->str = (PyStringObject*)str;
+    Py_INCREF(str);
+    char *raw = PyString_AS_STRING(str);
+    retval->it_markup.str.ptr = raw + PyLong_AsLong(str_ptr);
+    retval->it_markup.str.end = raw + PyLong_AsLong(str_end);
+
+    vec_pobj_push(&ctx->stack, (PyObject*)retval);
+    ret = 0;
+
+fail_iter:
+fail_typecheck:
+    Py_DECREF(str_end);
+    Py_DECREF(str_ptr);
+    Py_DECREF(str);
 fail_underflow:
     return ret;
 }

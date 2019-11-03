@@ -103,13 +103,6 @@ typedef struct {
     PyObject* en_longindex;        /* index for sequences >= PY_SSIZE_T_MAX */
 } enumobject;
 
-/* from Objects/listobject.c */
-typedef struct {
-    PyObject_HEAD
-    long it_index;
-    PyListObject *it_seq; /* Set to NULL when iterator is exhausted */
-} listiterobject;
-
 /* from Objects/enumobject.c */
 typedef struct {
     PyObject_HEAD
@@ -124,6 +117,45 @@ struct _zipimporter {
     PyObject *prefix;   /* file prefix: "a/sub/directory/" */
     PyObject *files;    /* dict with file info {path: toc_entry} */
 };
+
+/* from Objects/dictobject.c */
+typedef struct {
+    PyObject_HEAD
+    PyDictObject *dv_dict;
+} dictviewobject;
+
+/* from Objects/iterobject.c */
+typedef struct {
+    PyObject_HEAD
+    PyObject *it_callable; /* Set to NULL when iterator is exhausted */
+    PyObject *it_sentinel; /* Set to NULL when iterator is exhausted */
+} calliterobject;
+
+/* from Objects/iterobject.c */
+typedef struct {
+    PyObject_HEAD
+    long      it_index;
+    PyObject *it_seq; /* Set to NULL when iterator is exhausted */
+} seqiterobject;
+
+/* from Objects/dictobject.c */
+typedef struct {
+    PyObject_HEAD
+    PyDictObject *di_dict; /* Set to NULL when iterator is exhausted */
+    Py_ssize_t di_used;
+    Py_ssize_t di_pos;
+    PyObject* di_result; /* reusable result tuple for iteritems */
+    Py_ssize_t len;
+} dictiterobject;
+
+/* from Objects/setobject.c */
+typedef struct {
+    PyObject_HEAD
+    PySetObject *si_set; /* Set to NULL when iterator is exhausted */
+    Py_ssize_t si_used;
+    Py_ssize_t si_pos;
+    Py_ssize_t len;
+} setiterobject;
 
 #endif
 

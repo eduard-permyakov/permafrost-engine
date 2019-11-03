@@ -747,33 +747,6 @@ def test_pickle_property():
 
     print "property pickling OK!"
 
-def test_pickle_listiter():
-
-    l1 = iter([1,2,3])
-    assert l1.next() == 1
-    s = pf.pickle_object(l1)
-    l2 = pf.unpickle_object(s)
-    assert l2.next() == 2
-    assert l2.next() == 3
-    try:
-        l2.next()
-    except StopIteration:
-        pass
-    else:
-        raise Exception("Unexpected item returned by iterator")
-
-    l1 = iter([])
-    s = pf.pickle_object(l1)
-    l2 = pf.unpickle_object(s)
-    try:
-        l2.next()
-    except StopIteration:
-        pass
-    else:
-        raise Exception("Unexpected item returned by iterator")
-
-    print "List iterator pickling OK!"
-
 def test_pickle_enumerate():
 
     e1 = enumerate([0,1,9], 0)
@@ -1016,7 +989,7 @@ def test_pickle_zipimporter():
 
     libdir = [d for d in sys.path if d.endswith('lib/python2.7')][0]
     z1 = zipimport.zipimporter(libdir + '/test/zipdir.zip')
-    s = pf.pickle_object(z1);
+    s = pf.pickle_object(z1)
     z2 = pf.unpickle_object(s)
 
     assert type(z1) == type(z2)
@@ -1025,6 +998,187 @@ def test_pickle_zipimporter():
     assert z1._files == z2._files
 
     print "zipimport.zipimporter pickling OK!"
+
+def test_pickle_dictviews():
+
+    d = {
+        'a' : 1,
+        'b' : 2,
+        'c' : 3,
+    }
+
+    d1 = d.viewkeys()
+    s = pf.pickle_object(d1)
+    d2 = pf.unpickle_object(s)
+    assert len(d1) == len(d2)
+    for k in d2:
+        assert k in d1
+
+    d1 = d.viewvalues()
+    s = pf.pickle_object(d1)
+    d2 = pf.unpickle_object(s)
+    assert len(d1) == len(d2)
+    for k in d2:
+        assert k in d1
+
+    d1 = d.viewitems()
+    s = pf.pickle_object(d1)
+    d2 = pf.unpickle_object(s)
+    assert len(d1) == len(d2)
+    for k in d2:
+        assert k in d1
+
+    print "dict view pickling OK!"
+
+def test_pickle_iterators():
+
+    #listiterator
+    l1 = iter([1,2,3])
+    assert l1.next() == 1
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    assert l2.next() == 2
+    assert l2.next() == 3
+    try:
+        l2.next()
+    except StopIteration:
+        pass
+    else:
+        raise Exception("Unexpected item returned by iterator")
+
+    l1 = iter([])
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    try:
+        l2.next()
+    except StopIteration:
+        pass
+    else:
+        raise Exception("Unexpected item returned by iterator")
+
+    #callable-iterator
+    class Counter(object):
+        def __init__(self):
+            self.idx = 0
+        def __call__(self):
+            ret = self.idx
+            self.idx += 1
+            return ret
+
+    i1 = iter(Counter(), 5)
+    assert i1.next() == 0
+    assert i1.next() == 1
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert i2.next() == 2
+    assert i2.next() == 3
+    assert i2.next() == 4
+    try:
+        i2.next()
+    except StopIteration:
+        pass
+    else:
+        raise Exception("callable-iterator yielded unexpected value")
+
+    #iterator
+    m = memoryview('Hello')
+    i1 = iter(m)
+    assert i1.next() == 'H'
+    assert i1.next() == 'e'
+    assert i1.next() == 'l'
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert i2.next() == 'l'
+    assert i2.next() == 'o'
+    try:
+        i2.next()
+    except StopIteration:
+        pass
+    else:
+        raise Exception("iterator yielded unexpected value")
+
+    #bytearray_iterator
+    b = bytearray('\x01\x02')
+    i1 = iter(b)
+    assert i1.next() == 1
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert i2.next() == 2
+
+    #tupleiterator
+    t = (1,2,3)
+    i1 = iter(t)
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert i2.next() == 1
+    assert i2.next() == 2
+    assert i2.next() == 3
+
+    #listreverseiterator
+    i1 = iter(reversed([1,2,3]))
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert i2.next() == 3
+    assert i2.next() == 2
+    assert i2.next() == 1
+
+    d = {'a' : 1, 'b' : 2, 'c' : 3}
+
+    #dictionary-keyiterator
+    i1 = iter(d.viewkeys())
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert i1.next() == i2.next()
+    assert i1.next() == i2.next()
+    assert i1.next() == i2.next()
+
+    #dictionary-valueiterator
+    i1 = iter(d.viewvalues())
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert i1.next() == i2.next()
+    assert i1.next() == i2.next()
+    assert i1.next() == i2.next()
+
+    #dictionary-itemiterator
+    i1 = iter(d.viewitems())
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert i1.next() == i2.next()
+    assert i1.next() == i2.next()
+    assert i1.next() == i2.next()
+
+    #setiterator
+    i1 = iter(set((1,2,3)))
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert i1.next() == i2.next()
+    assert i1.next() == i2.next()
+    assert i1.next() == i2.next()
+
+    #fieldnameiterator
+    i1 = "{arr[0].} {arr[1].}"._formatter_field_name_split()[1]
+    assert i1.next() == (False, 0L)
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert i2.next() == (True, '} {arr')
+    assert i2.next() == (False, 1L)
+    assert i2.next() == (True, '}')
+
+    #formatteriterator
+    i1 = "{arr[0].} {arr[1].}"._formatter_parser()
+    assert i1.next() == ('', 'arr[0].', '', None)
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert i2.next() == (' ', 'arr[1].', '', None)
+    try:
+        i2.next()
+    except StopIteration:
+        pass
+    else:
+        raise Exception("formatteriterator yeilded unexpected item")
+
+    print "iterator pickling OK!"
 
 try:
     test_pickle_int()
@@ -1065,7 +1219,6 @@ try:
     test_pickle_buffer()
     test_pickle_memoryview()
     test_pickle_property()
-    test_pickle_listiter()
     test_pickle_enumerate()
     test_pickle_float()
     test_pickle_complex()
@@ -1078,6 +1231,8 @@ try:
     test_pickle_weak_proxy()
     test_pickle_stentry()
     test_pickle_zipimporter()
+    test_pickle_dictviews()
+    test_pickle_iterators()
 except Exception as e:
     traceback.print_exc()
 finally:
