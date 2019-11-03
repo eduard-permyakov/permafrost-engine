@@ -43,6 +43,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * RTS unit combat system
 * Support for different resolutions and aspect ratios
 * Configurable graphics settings
+* Serialization and deserialization of the Python interpreter state
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
@@ -61,7 +62,7 @@ along with the game binary if desired.
 
 #### On Linux ####
 
-1. `git clone https://github.com/eduard-permyakov/permafrost-engine.git`
+1. `git clone --recursive https://github.com/eduard-permyakov/permafrost-engine.git`
 2. `cd permafrost-engine`
 3. `make deps` to build the shared library dependencies to `./lib`
 4. `make pf`

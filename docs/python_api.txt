@@ -11,230 +11,241 @@ BUILT-IN FUNCTIONS
 ********************************************************************************
 
     [activate_camera]
-    --------------------------------------------------------------------------------
-    Set the camera specified by the index to be the active camera, meaning the scene
-    is being rendered from the camera's point of view. The second argument is
-    teh camera control mode (0 = FPS, 1 = RTS). Note that the position of camera
-    0 is restricted to the map boundaries as it is expected to be the main RTS
-    camera. The other cameras are unrestricted.
+    ----------------------------------------------------------------------------
+    Set the camera specified by the index to be the active camera, meaning the
+    scene is being rendered from the camera's point of view. The second argument
+    is teh camera control mode (0 = FPS, 1 = RTS). Note that the position of
+    camera 0 is restricted to the map boundaries as it is expected to be the
+    main RTS camera. The other cameras are unrestricted.
 
     [add_faction]
-    --------------------------------------------------------------------------------
-    Add a new faction with the specified name and color. By default, this faction is
-    mutually at peace with every other existing faction. By default, new
-    factions are player-controllable.
+    ----------------------------------------------------------------------------
+    Add a new faction with the specified name and color. By default, this
+    faction is mutually at peace with every other existing faction. By default,
+    new factions are player-controllable.
 
     [clear_unit_selection]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Clear the current unit seleciton.
 
     [disable_unit_selection]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Make it impossible to select units with the mouse. Disable drawing of a
     selection box when dragging the mouse.
 
     [enable_unit_selection]
-    --------------------------------------------------------------------------------
-    Make it possible to select units with the mouse. Enable drawing of a selection
-    box when dragging the mouse.
+    ----------------------------------------------------------------------------
+    Make it possible to select units with the mouse. Enable drawing of a
+    selection box when dragging the mouse.
 
     [get_basedir]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Get the path to the top-level game resource folder (parent of 'assets').
 
     [get_factions_list]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Returns a list of descriptors (dictionaries) for each faction in the game.
 
     [get_minimap_position]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Returns the current minimap position in virtual screen coordinates.
 
     [get_minimap_size]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Get the center position of the minimap in virtual screen coordinates.
 
     [get_mouse_pos]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Get the (x, y) cursor position on the screen.
 
     [get_native_resolution]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Returns the native resolution of the active monitor.
 
     [get_nav_perfstats]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Returns a dictionary holding various performance couners for the navigation
     subsystem.
 
     [get_render_info]
-    --------------------------------------------------------------------------------
-    Returns a dictionary describing the renderer context. It will have the string
-    keys 'renderer', 'version', 'shading_language_version', and 'vendor'.
+    ----------------------------------------------------------------------------
+    Returns a dictionary describing the renderer context. It will have the
+    string keys 'renderer', 'version', 'shading_language_version', and 'vendor'.
 
     [get_resolution]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Get the currently set resolution of the game window.
 
     [get_simstate]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Returns the current simulation state.
 
     [get_unit_selection]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Returns a list of objects currently selected by the player.
 
     [global_event]
-    --------------------------------------------------------------------------------
-    Broadcast a global event so all handlers can get invoked. Any weakref argument
-    is automatically unpacked before being sent to the handler.
+    ----------------------------------------------------------------------------
+    Broadcast a global event so all handlers can get invoked. Any weakref
+    argument is automatically unpacked before being sent to the handler.
 
     [load_scene]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Import list of entities from a PFSCENE file (specified as a path string).
 
     [map_height_at_point]
-    --------------------------------------------------------------------------------
-    Returns the Y-dimension map height at the specified XZ coordinate. Returns None
-    if the specified coordinate is outside the map bounds.
+    ----------------------------------------------------------------------------
+    Returns the Y-dimension map height at the specified XZ coordinate. Returns
+    None if the specified coordinate is outside the map bounds.
 
     [map_pos_under_cursor]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Returns the XYZ coordinate of the point of the map underneath the cursor.
     Returns 'None' if the cursor is not over the map.
 
     [mouse_over_minimap]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Returns true if the mouse cursor is over the minimap, false otherwise.
 
     [mouse_over_ui]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Returns True if the mouse cursor is within the bounds of any UI windows.
 
     [multiply_quaternions]
-    --------------------------------------------------------------------------------
-    Returns the normalized result of multiplying 2 quaternions (specified as a list
-    of 4 floats - XYZW order).
+    ----------------------------------------------------------------------------
+    Returns the normalized result of multiplying 2 quaternions (specified as a
+    list of 4 floats - XYZW order).
 
     [new_game]
-    --------------------------------------------------------------------------------
-    Loads the specified map and creates an empty scene. Note that all references to
-    existing _active_ entities _MUST_ be deleted before creating a new game.
+    ----------------------------------------------------------------------------
+    Loads the specified map and creates an empty scene. Note that all references
+    to existing _active_ entities _MUST_ be deleted before creating a new game.
 
     [new_game_string]
-    --------------------------------------------------------------------------------
-    The same as 'new_game' but takes the map contents string as an argument instead
-    of a path and filename.
+    ----------------------------------------------------------------------------
+    The same as 'new_game' but takes the map contents string as an argument
+    instead of a path and filename.
+
+    [pickle_object]
+    ----------------------------------------------------------------------------
+    Returns an ASCII string holding the serialized representation of the object
+    graph.
 
     [prev_frame_ms]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Get the duration of the previous game frame in milliseconds.
 
     [register_event_handler]
-    --------------------------------------------------------------------------------
-    Adds a script event handler to be called when the specified global event occurs.
-    Any weakref user arguments are automatically unpacked before being passed to
-    the handler.
+    ----------------------------------------------------------------------------
+    Adds a script event handler to be called when the specified global event
+    occurs. Any weakref user arguments are automatically unpacked before being
+    passed to the handler.
 
     [register_ui_event_handler]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Same as 'register_event_handler' but the handler will also be run when the
     simulation state is pf.G_PAUSED_UI_RUNNING. This is for UI callbacks that
     should still be invoked even when the game is in a 'paused' state.
 
     [remove_faction]
-    --------------------------------------------------------------------------------
-    Remove the faction with the specified faction_id. This will remove all entities
-    belonging to that faction. This may change the values of some other
+    ----------------------------------------------------------------------------
+    Remove the faction with the specified faction_id. This will remove all
+    entities belonging to that faction. This may change the values of some other
     entities' faction_ids.
 
     [set_ambient_light_color]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Sets the global ambient light color (specified as an RGB multiplier) for the
     scene.
 
     [set_attack_on_left_click]
-    --------------------------------------------------------------------------------
-    Set the cursor to target mode. The next left click will issue an attack command
-    to the location under the cursor.
+    ----------------------------------------------------------------------------
+    Set the cursor to target mode. The next left click will issue an attack
+    command to the location under the cursor.
 
     [set_diplomacy_state]
-    --------------------------------------------------------------------------------
-    Symmetrically sets the diplomacy state between two distinct factions (passed in
-    as IDs).
+    ----------------------------------------------------------------------------
+    Symmetrically sets the diplomacy state between two distinct factions (passed
+    in as IDs).
 
     [set_emit_light_color]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Sets the color (specified as an RGB multiplier) for the global light source.
 
     [set_emit_light_pos]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Sets the position (in XYZ worldspace coordinates)
 
     [set_faction_controllable]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Sets whether units of this faction can be controlled by the player or not.
 
     [set_map_highlight_size]
-    --------------------------------------------------------------------------------
-    Determines how many tiles around the currently hovered tile are highlighted. (0
-    = none, 1 = single tile highlighted, 2 = 3x3 grid highlighted, etc.)
+    ----------------------------------------------------------------------------
+    Determines how many tiles around the currently hovered tile are highlighted.
+    (0 = none, 1 = single tile highlighted, 2 = 3x3 grid highlighted, etc.)
 
     [set_minimap_position]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Set the center position of the minimap in virtual screen coordinates.
 
     [set_minimap_resize_mask]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Set the anchor points for the minimap, to control its bounds as the screen
     resizes.
 
     [set_minimap_size]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Set the center position of the minimap in virtual screen coordinates.
 
     [set_move_on_left_click]
-    --------------------------------------------------------------------------------
-    Set the cursor to target mode. The next left click will issue a move command to
-    the location under the cursor.
+    ----------------------------------------------------------------------------
+    Set the cursor to target mode. The next left click will issue a move command
+    to the location under the cursor.
 
     [set_simstate]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Set the current simulation state.
 
     [settings_create]
-    --------------------------------------------------------------------------------
-    Create a new setting, the value of which will be saved in the settings file and
-    will be accessible in another session. Settings may hold the following
+    ----------------------------------------------------------------------------
+    Create a new setting, the value of which will be saved in the settings file
+    and will be accessible in another session. Settings may hold the following
     types: int, float, string, bool, and tuple of 2 floats (vec2). Setting names
     beginning with 'pf' are reserved for the engine.
 
     [settings_delete]
-    --------------------------------------------------------------------------------
-    Delete a setting with the specified name. Setting names beginning with 'pf' are
-    reserved for the engine and may not be deleted.
+    ----------------------------------------------------------------------------
+    Delete a setting with the specified name. Setting names beginning with 'pf'
+    are reserved for the engine and may not be deleted.
 
     [settings_get]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Returns the value of the setting with the specified name. Will throw an
     exception if the setting is not found.
 
     [settings_set]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Updates the value of the setting with the specified name. Will throw an
     exception if the setting is not found or if the new value for the setting is
     invalid.
 
+    [unpickle_object]
+    ----------------------------------------------------------------------------
+    Returns a new reference to an object built from its' serialized
+    representation. The argument string must an earlier return value of
+    'pf.pickle_object'.
+
     [unregister_event_handler]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Removes a script event handler added by 'register_event_handler'.
 
     [update_faction]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Updates the name and color of the faction with the specified faction_id.
 
     [update_tile]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Update the map tile at the specified coordinates to the new value.
 
 ********************************************************************************
@@ -242,9 +253,9 @@ BUILT-IN CLASSES
 ********************************************************************************
 
     [AnimEntity]
-    --------------------------------------------------------------------------------
-    Permafrost Engine animated entity. This type requires the 'idle_clip' keyword
-    argument to be passed to __init__. This is a subclass of pf.Entity.
+    ----------------------------------------------------------------------------
+    Permafrost Engine animated entity. This type requires the 'idle_clip'
+    keyword argument to be passed to __init__. This is a subclass of pf.Entity.
 
         ************************************************************************
         MEMBERS
@@ -256,7 +267,8 @@ BUILT-IN CLASSES
         Custom name given to this enity.
 
         [pfobj_path]
-        The relative path of the PFOBJ file used to instantiate the entity. Readonly.
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
 
         [pos]
         The XYZ position in worldspace coordinates.
@@ -271,7 +283,8 @@ BUILT-IN CLASSES
         Flag indicating whether this entity can be selected with the mouse.
 
         [selection_radius]
-        Radius (in OpenGL coordinates) of the unit selection circle for this entity.
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
 
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
@@ -283,21 +296,21 @@ BUILT-IN CLASSES
         Calls the next __del__ in the MRO if there is one, otherwise do nothing.
 
         [activate]
-        Add the entity to the game world, making it visible and allowing other entities
-        to interact with it in the simulation. The activated entity will be
-        removed from the game world when no more references to it remain in
-        scope. (ex: Using 'del' when you have a single reference)
+        Add the entity to the game world, making it visible and allowing other
+        entities to interact with it in the simulation. The activated entity
+        will be removed from the game world when no more references to it remain
+        in scope. (ex: Using 'del' when you have a single reference)
 
         [deactivate]
-        Remove the entity from the game simulation and hiding it. The entity's state is
-        preserved until it is activated again.
+        Remove the entity from the game simulation and hiding it. The entity's
+        state is preserved until it is activated again.
 
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
         [hold_position]
-        Issues a 'hold position' order to the entity, stopping it and preventing it from
-        moving to attack.
+        Issues a 'hold position' order to the entity, stopping it and preventing
+        it from moving to attack.
 
         [notify]
         Send a specific event to an entity in order to invoke the entity's event
@@ -305,27 +318,27 @@ BUILT-IN CLASSES
         passed to the handler.
 
         [play_anim]
-        Play the animation clip with the specified name. Set kwarg 'mode=%d' to set the
-        animation mode. The default is ANIM_MODE_LOOP.
+        Play the animation clip with the specified name. Set kwarg 'mode=%d' to
+        set the animation mode. The default is ANIM_MODE_LOOP.
 
         [register]
-        Registers the specified callable to be invoked when an event of the specified
-        type is sent to this entity.
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
 
         [select]
-        Adds the entity to the current unit selection, if it is not present there
-        already.
+        Adds the entity to the current unit selection, if it is not present
+        there already.
 
         [stop]
-        Issues a 'stop' command to the entity, stopping its' movement and attack.
-        Cancels 'hold position' order.
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
 
         [unregister]
-        Unregisters a callable previously registered to be invoked on the specified
-        event.
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
 
     [CombatableEntity]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Permafrost Engine entity which is able to take part in combat. This type
     requires the 'max_hp', 'base_dmg', and 'base_armour' keyword arguments to be
     passed to __init__. This is a subclass of pf.Entity.
@@ -334,8 +347,8 @@ BUILT-IN CLASSES
         MEMBERS
         ************************************************************************
         [base_armour]
-        The base armour (as a fraction from 0.0 to 1.0) specifying which percentage of
-        incoming damage is blocked.
+        The base armour (as a fraction from 0.0 to 1.0) specifying which
+        percentage of incoming damage is blocked.
 
         [base_dmg]
         The base damage for which this entity's attacks hit.
@@ -350,7 +363,8 @@ BUILT-IN CLASSES
         Custom name given to this enity.
 
         [pfobj_path]
-        The relative path of the PFOBJ file used to instantiate the entity. Readonly.
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
 
         [pos]
         The XYZ position in worldspace coordinates.
@@ -365,7 +379,8 @@ BUILT-IN CLASSES
         Flag indicating whether this entity can be selected with the mouse.
 
         [selection_radius]
-        Radius (in OpenGL coordinates) of the unit selection circle for this entity.
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
 
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
@@ -377,21 +392,21 @@ BUILT-IN CLASSES
         Calls the next __del__ in the MRO if there is one, otherwise do nothing.
 
         [activate]
-        Add the entity to the game world, making it visible and allowing other entities
-        to interact with it in the simulation. The activated entity will be
-        removed from the game world when no more references to it remain in
-        scope. (ex: Using 'del' when you have a single reference)
+        Add the entity to the game world, making it visible and allowing other
+        entities to interact with it in the simulation. The activated entity
+        will be removed from the game world when no more references to it remain
+        in scope. (ex: Using 'del' when you have a single reference)
 
         [deactivate]
-        Remove the entity from the game simulation and hiding it. The entity's state is
-        preserved until it is activated again.
+        Remove the entity from the game simulation and hiding it. The entity's
+        state is preserved until it is activated again.
 
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
         [hold_position]
-        Issues a 'hold position' order to the entity, stopping it and preventing it from
-        moving to attack.
+        Issues a 'hold position' order to the entity, stopping it and preventing
+        it from moving to attack.
 
         [notify]
         Send a specific event to an entity in order to invoke the entity's event
@@ -399,27 +414,27 @@ BUILT-IN CLASSES
         passed to the handler.
 
         [play_anim]
-        Play the animation clip with the specified name. Set kwarg 'mode=%d' to set the
-        animation mode. The default is ANIM_MODE_LOOP.
+        Play the animation clip with the specified name. Set kwarg 'mode=%d' to
+        set the animation mode. The default is ANIM_MODE_LOOP.
 
         [register]
-        Registers the specified callable to be invoked when an event of the specified
-        type is sent to this entity.
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
 
         [select]
-        Adds the entity to the current unit selection, if it is not present there
-        already.
+        Adds the entity to the current unit selection, if it is not present
+        there already.
 
         [stop]
-        Issues a 'stop' command to the entity, stopping its' movement and attack.
-        Cancels 'hold position' order.
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
 
         [unregister]
-        Unregisters a callable previously registered to be invoked on the specified
-        event.
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
 
     [Entity]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Permafrost Engine generic game entity.
 
         ************************************************************************
@@ -432,7 +447,8 @@ BUILT-IN CLASSES
         Custom name given to this enity.
 
         [pfobj_path]
-        The relative path of the PFOBJ file used to instantiate the entity. Readonly.
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
 
         [pos]
         The XYZ position in worldspace coordinates.
@@ -447,7 +463,8 @@ BUILT-IN CLASSES
         Flag indicating whether this entity can be selected with the mouse.
 
         [selection_radius]
-        Radius (in OpenGL coordinates) of the unit selection circle for this entity.
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
 
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
@@ -459,21 +476,21 @@ BUILT-IN CLASSES
         Calls the next __del__ in the MRO if there is one, otherwise do nothing.
 
         [activate]
-        Add the entity to the game world, making it visible and allowing other entities
-        to interact with it in the simulation. The activated entity will be
-        removed from the game world when no more references to it remain in
-        scope. (ex: Using 'del' when you have a single reference)
+        Add the entity to the game world, making it visible and allowing other
+        entities to interact with it in the simulation. The activated entity
+        will be removed from the game world when no more references to it remain
+        in scope. (ex: Using 'del' when you have a single reference)
 
         [deactivate]
-        Remove the entity from the game simulation and hiding it. The entity's state is
-        preserved until it is activated again.
+        Remove the entity from the game simulation and hiding it. The entity's
+        state is preserved until it is activated again.
 
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
         [hold_position]
-        Issues a 'hold position' order to the entity, stopping it and preventing it from
-        moving to attack.
+        Issues a 'hold position' order to the entity, stopping it and preventing
+        it from moving to attack.
 
         [notify]
         Send a specific event to an entity in order to invoke the entity's event
@@ -481,23 +498,23 @@ BUILT-IN CLASSES
         passed to the handler.
 
         [register]
-        Registers the specified callable to be invoked when an event of the specified
-        type is sent to this entity.
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
 
         [select]
-        Adds the entity to the current unit selection, if it is not present there
-        already.
+        Adds the entity to the current unit selection, if it is not present
+        there already.
 
         [stop]
-        Issues a 'stop' command to the entity, stopping its' movement and attack.
-        Cancels 'hold position' order.
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
 
         [unregister]
-        Unregisters a callable previously registered to be invoked on the specified
-        event.
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
 
     [Tile]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Map tile representation for Permafrost Engine maps.
 
         ************************************************************************
@@ -507,12 +524,12 @@ BUILT-IN CLASSES
         The height level of the bottom plane of the tile.
 
         [blend_mode]
-        The mode which determines how this tile's texture is blended with adjacent
-        tiles' textures.
+        The mode which determines how this tile's texture is blended with
+        adjacent tiles' textures.
 
         [blend_normals]
-        A boolean which determines if this tile's normals are averaged together with
-        adjacent normals to create a 'smooth' terrain look.
+        A boolean which determines if this tile's normals are averaged together
+        with adjacent normals to create a 'smooth' terrain look.
 
         [bot_left_height]
         The height of the bot left corner.
@@ -539,33 +556,33 @@ BUILT-IN CLASSES
         The height of the top right corner.
 
         [type]
-        Integer value specifying whether this tile is a ramp, which direction it faces,
-        etc.
+        Integer value specifying whether this tile is a ramp, which direction it
+        faces, etc.
 
     [UIButtonStyle]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Style configuration for Permafrost Engine UI buttons.
 
         ************************************************************************
         MEMBERS
         ************************************************************************
         [active]
-        The look of the button in the active (pressed) state - either an (R, G, B, A)
-        tuple or a string representing a path to an image.
+        The look of the button in the active (pressed) state - either an (R, G,
+        B, A) tuple or a string representing a path to an image.
 
         [border]
         A floating-point value of the button border width, in pixels.
 
         [hover]
-        The look of the button when the mouse is hovered over it - either an (R, G, B,
-        A) tuple or a string representing a path to an image.
+        The look of the button when the mouse is hovered over it - either an (R,
+        G, B, A) tuple or a string representing a path to an image.
 
         [image_padding]
         An (X, Y) tuple of floats to control the padding around images.
 
         [normal]
-        The look of the button in the normal state - either an (R, G, B, A) tuple or a
-        string representing a path to an image.
+        The look of the button in the normal state - either an (R, G, B, A)
+        tuple or a string representing a path to an image.
 
         [padding]
         An (X, Y) tuple of floats to control the padding around buttons.
@@ -574,27 +591,29 @@ BUILT-IN CLASSES
         A floating-point value to control how rounded the button corners are.
 
         [text_active]
-        The (R, G, B, A) color of button text when the button is in the active state.
+        The (R, G, B, A) color of button text when the button is in the active
+        state.
 
         [text_alignment]
         A set of flags to control the text alignment of the button label.
 
         [text_background]
-        The (R, G, B, A) background color of the text when an image is used for the
-        button.
+        The (R, G, B, A) background color of the text when an image is used for
+        the button.
 
         [text_hover]
-        The (R, G, B, A) color of button text when the cursor is hovered over the
-        button.
+        The (R, G, B, A) color of button text when the cursor is hovered over
+        the button.
 
         [text_normal]
-        The (R, G, B, A) color of button text when the button is in the default state.
+        The (R, G, B, A) color of button text when the button is in the default
+        state.
 
         [touch_padding]
         An (X, Y) tuple of floats to control the clickable region of the button.
 
     [Window]
-    --------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------
     Permafrost Engine UI window.
 
         ************************************************************************
@@ -610,14 +629,15 @@ BUILT-IN CLASSES
         A float to control the border width around a combo section.
 
         [combo_padding]
-        An (X, Y) tuple of floats to control the padding around a combo section in a
-        window.
+        An (X, Y) tuple of floats to control the padding around a combo section
+        in a window.
 
         [group_border]
         A float to control the border width around a group.
 
         [group_padding]
-        An (X, Y) tuple of floats to control the padding around a group in a window.
+        An (X, Y) tuple of floats to control the padding around a group in a
+        window.
 
         [header_height]
         A float specifying the height of the window header in pixels.
@@ -626,18 +646,19 @@ BUILT-IN CLASSES
         A readonly bool indicating if this window is 'hidden'.
 
         [interactive]
-        A read-write bool to enable or disable user interactivity for this window.
+        A read-write bool to enable or disable user interactivity for this
+        window.
 
         [min_row_height_padding]
-        A float to control the minimum number of pixels of padding at the header and
-        footer of a row..
+        A float to control the minimum number of pixels of padding at the header
+        and footer of a row..
 
         [min_size]
         An (X, Y) tuple of floats to control the minimum size of the window.
 
         [padding]
-        An (X, Y) tuple of floats to control the padding (between border and content) of
-        a window.
+        An (X, Y) tuple of floats to control the padding (between border and
+        content) of a window.
 
         [position]
         A tuple of two integers specifying the X and Y position of the window.
@@ -646,12 +667,12 @@ BUILT-IN CLASSES
         An (X, Y) tuple of floats to control the size of the scrollbar.
 
         [size]
-        A tuple of two integers specifying the width and height dimentions of the
-        window.
+        A tuple of two integers specifying the width and height dimentions of
+        the window.
 
         [spacing]
-        An (X, Y) tuple of floats to control the spacing (between components) within a
-        window.
+        An (X, Y) tuple of floats to control the spacing (between components)
+        within a window.
 
         ************************************************************************
         METHODS
@@ -663,16 +684,19 @@ BUILT-IN CLASSES
         Checkbox which can be toggled. Returns True if checked.
 
         [color_picker]
-        Graphical color picker widget. Returns the selected color as an RGBA tuple.
+        Graphical color picker widget. Returns the selected color as an RGBA
+        tuple.
 
         [combo_box]
         Present a combo box with a list of selectable options.
 
         [edit_string]
-        Text field for getting string input from the user. Returns the current text.
+        Text field for getting string input from the user. Returns the current
+        text.
 
         [group]
-        The window UI statements within the argument callable will be put in a group.
+        The window UI statements within the argument callable will be put in a
+        group.
 
         [hide]
         Make the window invisible.
@@ -693,21 +717,23 @@ BUILT-IN CLASSES
         End a row previously started with 'layout_row_begin'.
 
         [layout_row_push]
-        Add a widget to the currently active row. Note that this must be preceded by a
-        call to 'layout_row_begin'.
+        Add a widget to the currently active row. Note that this must be
+        preceded by a call to 'layout_row_begin'.
 
         [layout_row_static]
         Add a row with a static layout.
 
         [on_hide]
-        Callback that gets invoked when the user hides the window with the close button.
+        Callback that gets invoked when the user hides the window with the close
+        button.
 
         [option_label]
-        Radio button with the specified text. Returns if the radio button is selected.
+        Radio button with the specified text. Returns if the radio button is
+        selected.
 
         [selectable_label]
-        Adds a label that can be toggled to be selected with a mouse click. Returns the
-        new state of the selectable label.
+        Adds a label that can be toggled to be selected with a mouse click.
+        Returns the new state of the selectable label.
 
         [show]
         Make the window visible.
@@ -716,9 +742,9 @@ BUILT-IN CLASSES
         Add a chart with a single slot.
 
         [update]
-        Handles layout and state changes of the window. Default implementation is empty.
-        This method should be overridden by subclasses to customize the window
-        look and behavior.
+        Handles layout and state changes of the window. Default implementation
+        is empty. This method should be overridden by subclasses to customize
+        the window look and behavior.
 
 ********************************************************************************
 BUILT-IN CONSTANTS
@@ -1117,3 +1143,4 @@ BUILT-IN CONSTANTS
     TILETYPE_RAMP_NS 2
     TILETYPE_RAMP_SN 1
     TILETYPE_RAMP_WE 4
+    trace_pickling False
