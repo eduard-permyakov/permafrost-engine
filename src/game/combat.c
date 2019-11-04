@@ -106,7 +106,6 @@ static struct combatstate *combatstate_get(const struct entity *ent)
     if(k == kh_end(s_entity_state_table))
         return NULL;
 
-    assert(ent->flags & ENTITY_FLAG_COMBATABLE);
     return &kh_value(s_entity_state_table, k);
 }
 

@@ -901,6 +901,9 @@ static void find_neighbours(const struct entity *ent,
         if(curr->uid == ent->uid)
             continue;
 
+        if(curr->selection_radius == 0.0f)
+            continue;
+
         vec2_t diff;
         vec2_t ent_xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
         vec2_t curr_xz_pos = (vec2_t){curr->pos.x, curr->pos.z};

@@ -36,13 +36,14 @@ import pf
 import sys
 import math
 
-import rts.units.knight
-import rts.units.berzerker
-
 import common.views.perf_stats_window as psw
 
+import rts.units.knight
+import rts.units.berzerker
+import rts.units.anim_combatable as am
 
-ARMY_SIZE = 128
+
+ARMY_SIZE = 256
 
 MAP_HEIGHT = 4 * pf.TILES_PER_CHUNK_HEIGHT * pf.Z_COORDS_PER_TILE
 MAP_WIDTH = 4 * pf.TILES_PER_CHUNK_WIDTH * pf.X_COORDS_PER_TILE
@@ -77,7 +78,7 @@ def setup_armies():
     global red_army_units
     global blue_army_units
 
-    NROWS = 6
+    NROWS = 4
     NCOLS = math.ceil(ARMY_SIZE / NROWS)
 
     assert math.ceil(NROWS/2) * SPACING < MAP_HEIGHT//2
@@ -96,6 +97,7 @@ def setup_armies():
             knight.pos = [float(x), float(y), float(z)]
             knight.rotation = DIR_RIGHT
             knight.faction_id = 0
+            knight.selection_radius = 3.25
             knight.activate()
 
             red_army_units += [knight]
@@ -108,9 +110,30 @@ def setup_armies():
             berz.pos = [float(x), float(y), float(z)]
             berz.rotation = DIR_LEFT
             berz.faction_id = 1
+            berz.selection_radius = 3.00
             berz.activate()
 
             blue_army_units += [berz]
+
+def fixup_anim_combatable():
+
+    def __on_death(self, event):
+        self.play_anim(self.death_anim(), mode=pf.ANIM_MODE_ONCE_HIDE_ON_FINISH)
+        self.register(pf.EVENT_ANIM_CYCLE_FINISHED, 
+            am.AnimCombatable._AnimCombatable__on_death_anim_finish, self)
+
+    def __on_death_anim_finish(self, event):
+        self.unregister(pf.EVENT_ANIM_CYCLE_FINISHED, 
+            am.AnimCombatable._AnimCombatable__on_death_anim_finish)
+        try: 
+            red_army_units.remove(self)
+        except: pass
+        try:
+            blue_army_units.remove(self)
+        except: pass
+
+    am.AnimCombatable._AnimCombatable__on_death = __on_death
+    am.AnimCombatable._AnimCombatable__on_death_anim_finish = __on_death_anim_finish
 
 def toggle_war(user, event):
 
@@ -127,9 +150,10 @@ def toggle_war(user, event):
 
 setup_scene()
 setup_armies()
+fixup_anim_combatable()
 
 perf_stats_win = psw.PerfStatsWindow()
 perf_stats_win.show()
 
-pf.register_ui_event_handler(pf.SDL_KEYDOWN, toggle_war, None)
+pf.register_event_handler(pf.SDL_KEYDOWN, toggle_war, None)
 
