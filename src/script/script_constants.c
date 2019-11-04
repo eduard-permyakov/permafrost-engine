@@ -451,6 +451,10 @@ static void s_expose_map_constants(PyObject *module)
 
     PY_EXPOSE_ENUM(module, BLEND_MODE_NOBLEND);
     PY_EXPOSE_ENUM(module, BLEND_MODE_BLUR);
+
+    PY_EXPOSE_ENUM(module, X_COORDS_PER_TILE);
+    PY_EXPOSE_ENUM(module, Y_COORDS_PER_TILE);
+    PY_EXPOSE_ENUM(module, Z_COORDS_PER_TILE);
 }
 
 static void s_expose_game_constants(PyObject *module)
