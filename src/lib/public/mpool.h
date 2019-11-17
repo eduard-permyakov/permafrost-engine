@@ -76,7 +76,8 @@ typedef uint16_t mp_ref_t;
     scope void     mp_##name##_free   (mp(name) *mp, mp_ref_t ref);                             \
     /* The entryory pointer may invalidated when a new allocation is filled by the mempool. */  \
     /* For this reason, cache the reference but not the pointer. */                             \
-    scope type    *mp_##name##_entry  (mp(name) *mp, mp_ref_t ref);
+    scope type    *mp_##name##_entry  (mp(name) *mp, mp_ref_t ref);                             \
+    scope void     mp_##name##_clear  (mp(name) *mp);
 
 /***********************************************************************************************/
 
@@ -108,8 +109,8 @@ typedef uint16_t mp_ref_t;
             mp->ifree_head = 1;                                                                 \
         }else {                                                                                 \
             /* Append at the front */                                                           \
-            mp->pool[new_cap - 1].inext_free = mp->ifree_head;                                  \
-            mp->ifree_head = old_cap;                                                           \
+            new_entry[new_cap].inext_free = mp->ifree_head;                                     \
+            mp->ifree_head = old_cap + 1;                                                       \
         }                                                                                       \
                                                                                                 \
         mp->pool = new_entry;                                                                   \
@@ -143,7 +144,7 @@ typedef uint16_t mp_ref_t;
         if(!ref)                                                                                \
             return;                                                                             \
         assert(mp->num_allocd > 0);                                                             \
-        assert(ref <= mp->capacity);                                                             \
+        assert(ref <= mp->capacity);                                                            \
                                                                                                 \
         mp->pool[ref].inext_free = mp->ifree_head;                                              \
         mp->ifree_head = ref;                                                                   \
@@ -153,6 +154,19 @@ typedef uint16_t mp_ref_t;
     scope type *mp_##name##_entry(mp(name) *mp, mp_ref_t ref)                                   \
     {                                                                                           \
         return &mp->pool[ref].entry;                                                            \
+    }                                                                                           \
+                                                                                                \
+    scope void mp_##name##_clear(mp(name) *mp)                                                  \
+    {                                                                                           \
+        if(mp->capacity == 0)                                                                   \
+            return;                                                                             \
+        mp->num_allocd = 0;                                                                     \
+        mp->ifree_head = 1;                                                                     \
+                                                                                                \
+        for(int i = 1; i < mp->capacity; ++i) {                                                 \
+            mp->pool[i].inext_free = i + 1;                                                     \
+        }                                                                                       \
+        mp->pool[mp->capacity].inext_free = 0;                                                  \
     }
 
 #endif
