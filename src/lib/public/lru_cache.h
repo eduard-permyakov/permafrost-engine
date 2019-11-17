@@ -229,20 +229,16 @@
             }else if(lru->used == lru->capacity) {                                              \
                                                                                                 \
                 lru_node(name) *vict = mp_##name##_entry(&lru->node_pool, lru->ilru_tail);      \
-                kh_del(name, lru->key_node_table, vict->key);                                   \
                 if(lru->on_evict)                                                               \
                     lru->on_evict(&vict->entry);                                                \
                                                                                                 \
+                /* Remember to delete the victim's key */                                       \
+                k = kh_get(name, lru->key_node_table, vict->key);                               \
+                kh_del(name, lru->key_node_table, k);                                           \
+                                                                                                \
                 new_ref = lru->ilru_tail;                                                       \
-                new_node = mp_##name##_entry(&lru->node_pool, new_ref);                         \
-                lru_node(name) *new_tail = mp_##name##_entry(&lru->node_pool, new_node->prev);  \
-                                                                                                \
-                new_tail->next = 0;                                                             \
-                lru->ilru_tail = new_node->prev;                                                \
-                                                                                                \
-                new_node->prev = 0;                                                             \
-                new_node->next = lru->ilru_head;                                                \
-                lru->ilru_head = new_ref;                                                       \
+                new_node = vict;                                                                \
+                _lru_##name##_reference(lru, new_ref);                                          \
                                                                                                 \
             }else {                                                                             \
                                                                                                 \

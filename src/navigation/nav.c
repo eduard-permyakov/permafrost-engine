@@ -1101,7 +1101,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
 
             /* The exact flow field we need has already been made */
             if(new_id == exist_id)
-                continue;
+                goto ff_exists;
 
             /* This is the edge case when a path to a particular target takes us through
              * the same chunk more than once. This can happen if a chunk is divided into
@@ -1117,7 +1117,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
             N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
             N_FC_PutFlowField(new_id, &ff);
 
-            continue;
+            goto ff_exists;
         }
 
         N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
@@ -1128,19 +1128,27 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
             N_FC_PutFlowField(new_id, &ff);
         }
 
+    ff_exists:
+        assert(N_FC_ContainsFlowField(new_id));
+        /* Reference field in the cache */
+        (void)N_FC_FlowFieldAt(new_id);
+
         if(!N_FC_ContainsLOSField(ret, chunk_coord)) {
 
-            if((abs(prev_los_coord.r - chunk_coord.r) + abs(prev_los_coord.c - chunk_coord.c)) > 1)
-                continue;
+            assert((abs(prev_los_coord.r - chunk_coord.r) + abs(prev_los_coord.c - chunk_coord.c)) == 1);
+            assert(N_FC_ContainsLOSField(ret, prev_los_coord));
 
             const struct LOS_field *prev_los = N_FC_LOSFieldAt(ret, prev_los_coord);
             assert(prev_los);
+            assert(prev_los->chunk.r == prev_los_coord.r && prev_los->chunk.c == prev_los_coord.c);
 
             struct LOS_field lf;
             N_LOSFieldCreate(ret, chunk_coord, dst_desc, priv, map_pos, &lf, prev_los);
             N_FC_PutLOSField(ret, chunk_coord, &lf);
-            prev_los_coord = chunk_coord;
+
         }
+
+        prev_los_coord = chunk_coord;
     }
     vec_portal_destroy(&path);
 
