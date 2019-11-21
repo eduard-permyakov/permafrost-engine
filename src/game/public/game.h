@@ -170,5 +170,15 @@ enum combat_stance{
 bool G_Combat_SetStance(const struct entity *ent, enum combat_stance stance);
 int  G_Combat_GetCurrentHP(const struct entity *ent);
 
+/*###########################################################################*/
+/* GAME POSITION                                                             */
+/*###########################################################################*/
+
+bool   G_Pos_Set(uint32_t uid, vec3_t pos);
+vec3_t G_Pos_Get(uint32_t uid);
+
+int    G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout);
+int    G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t maxout);
+
 #endif
 

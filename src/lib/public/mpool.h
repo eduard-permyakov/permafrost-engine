@@ -39,6 +39,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <assert.h>
+#include <string.h>
+#include <stdlib.h>
 
 /* Hold on to objects by their handles. Unlike pointers, they don't need to be */
 /* invalidated when a realloc takes place. */

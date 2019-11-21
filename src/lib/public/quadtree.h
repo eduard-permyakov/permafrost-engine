@@ -117,7 +117,8 @@
                                            float minx, float maxx,                              \
                                            float miny, float maxy,                              \
                                            type *out, int maxout);                              \
-    scope void qt_##name##_print(qt(name) *qt);
+    scope void qt_##name##_print(qt(name) *qt);                                                 \
+    scope bool qt_##name##_reserve(qt(name) *qt, size_t size);
 
 /***********************************************************************************************/
 
@@ -684,6 +685,11 @@
             return;                                                                             \
         }                                                                                       \
         _qt_##name##_node_print(qt, qt->root, 0);                                               \
+    }                                                                                           \
+                                                                                                \
+    scope bool qt_##name##_reserve(qt(name) *qt, size_t new_cap)                                \
+    {                                                                                           \
+        return mp_##name##_reserve(&qt->node_pool, new_cap);                                    \
     }
 
 #endif

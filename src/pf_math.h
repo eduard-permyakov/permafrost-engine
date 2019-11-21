@@ -54,6 +54,9 @@ typedef union vec2{
     struct{
         GLfloat x, y; 
     };
+    struct{
+        GLfloat _x, z; 
+    };
 }vec2_t;
 
 typedef union vec3{

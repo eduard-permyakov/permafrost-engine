@@ -41,6 +41,7 @@
 #include "game_private.h"
 #include "combat.h" 
 #include "clearpath.h"
+#include "position.h"
 #include "../render/public/render.h"
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
@@ -119,6 +120,7 @@ static void g_reset(void)
         G_Move_Shutdown();
         G_Combat_Shutdown();
         G_ClearPath_Shutdown();
+        G_Pos_Shutdown();
         s_gs.map = NULL;
     }
 
@@ -155,6 +157,7 @@ static void g_init_map(void)
     G_Move_Init(s_gs.map);
     G_Combat_Init();
     G_ClearPath_Init(s_gs.map);
+    G_Pos_Init(s_gs.map);
     N_FC_ClearAll();
     N_FC_ClearStats();
 }
