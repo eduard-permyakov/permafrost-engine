@@ -98,9 +98,9 @@ VEC_TYPE(flock, struct flock)
 VEC_IMPL(static inline, flock, struct flock)
 
 /* Parameters controlling steering/flocking behaviours */
-#define SEPARATION_FORCE_SCALE          (2.0f)
-#define MOVE_ARRIVE_FORCE_SCALE         (0.7f)
-#define MOVE_COHESION_FORCE_SCALE       (0.15f)
+#define SEPARATION_FORCE_SCALE          (1.0f)
+#define MOVE_ARRIVE_FORCE_SCALE         (0.5f)
+#define MOVE_COHESION_FORCE_SCALE       (0.05f)
 
 #define ARRIVE_THRESHOLD_DIST           (5.0f)
 #define SEPARATION_BUFFER_DIST          (0.0f)
