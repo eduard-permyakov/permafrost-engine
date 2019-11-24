@@ -53,7 +53,6 @@ struct entity{
     char         name[32];
     char         basedir[64];
     char         filename[32];
-    vec3_t       pos;
     vec3_t       scale;
     quat_t       rotation;
     uint32_t     flags;

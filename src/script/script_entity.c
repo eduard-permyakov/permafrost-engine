@@ -455,7 +455,8 @@ static int PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closur
 
 static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure)
 {
-    return Py_BuildValue("[f,f,f]", self->ent->pos.x, self->ent->pos.y, self->ent->pos.z);
+    vec3_t pos = G_Pos_Get(self->ent->uid);
+    return Py_BuildValue("[f,f,f]", pos.x, pos.y, pos.z);
 }
 
 static int PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure)
@@ -471,6 +472,7 @@ static int PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure
         return -1;
     }
 
+    vec3_t newpos;
     for(int i = 0; i < len; i++) {
 
         PyObject *item = PyList_GetItem(value, i);
@@ -479,9 +481,10 @@ static int PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure
             return -1;
         }
 
-        self->ent->pos.raw[i] = PyFloat_AsDouble(item);
+        newpos.raw[i] = PyFloat_AsDouble(item);
     }
 
+    G_Pos_Set(self->ent->uid, newpos);
     return 0;
 }
 

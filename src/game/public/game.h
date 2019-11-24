@@ -176,6 +176,7 @@ int  G_Combat_GetCurrentHP(const struct entity *ent);
 
 bool   G_Pos_Set(uint32_t uid, vec3_t pos);
 vec3_t G_Pos_Get(uint32_t uid);
+vec2_t G_Pos_GetXZ(uint32_t uid);
 
 int    G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout);
 int    G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t maxout);

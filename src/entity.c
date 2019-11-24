@@ -34,6 +34,7 @@
  */
 
 #include "entity.h" 
+#include "game/public/game.h"
 #include "anim/public/anim.h"
 
 #include <assert.h>
@@ -45,8 +46,9 @@
 void Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out)
 {
     mat4x4_t trans, scale, rot, tmp;
+    vec3_t pos = G_Pos_Get(ent->uid);
 
-    PFM_Mat4x4_MakeTrans(ent->pos.x, ent->pos.y, ent->pos.z, &trans);
+    PFM_Mat4x4_MakeTrans(pos.x, pos.y, pos.z, &trans);
     PFM_Mat4x4_MakeScale(ent->scale.x, ent->scale.y, ent->scale.z, &scale);
     PFM_Mat4x4_RotFromQuat(&ent->rotation, &rot);
 

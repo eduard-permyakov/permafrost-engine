@@ -141,8 +141,8 @@ static bool enemies(const struct entity *a, const struct entity *b)
 static float ents_distance(const struct entity *a, const struct entity *b)
 {
     vec2_t dist;
-    vec2_t xz_pos_a = (vec2_t){a->pos.x, a->pos.z};
-    vec2_t xz_pos_b = (vec2_t){b->pos.x, b->pos.z};
+    vec2_t xz_pos_a = G_Pos_GetXZ(a->uid);
+    vec2_t xz_pos_b = G_Pos_GetXZ(b->uid);
     PFM_Vec2_Sub(&xz_pos_a, &xz_pos_b, &dist);
     return PFM_Vec2_Len(&dist) - a->selection_radius - b->selection_radius;
 }
@@ -189,8 +189,8 @@ static quat_t quat_from_vec(vec2_t dir)
 
 static void entity_turn_to_target(struct entity *ent, const struct entity *target)
 {
-    vec2_t ent_pos_xz = (vec2_t){ent->pos.x, ent->pos.z};
-    vec2_t tar_pos_xz = (vec2_t){target->pos.x, target->pos.z};
+    vec2_t ent_pos_xz = G_Pos_GetXZ(ent->uid);
+    vec2_t tar_pos_xz = G_Pos_GetXZ(target->uid);
 
     vec2_t ent_to_target;
     PFM_Vec2_Sub(&tar_pos_xz, &ent_pos_xz, &ent_to_target);
@@ -211,11 +211,11 @@ static void on_attack_anim_finish(void *user, void *event)
 
     cs->state = STATE_CAN_ATTACK;
 
-    if(ents_distance(self, cs->target) <= ENEMY_MELEE_ATTACK_RANGE) {
+    struct combatstate *target_cs = combatstate_get(cs->target);
+    if(!target_cs)
+        return; /* Our target already got 'killed' */
 
-        struct combatstate *target_cs = combatstate_get(cs->target);
-        if(!target_cs)
-            return; /* Our target already got 'killed' */
+    if(ents_distance(self, cs->target) <= ENEMY_MELEE_ATTACK_RANGE) {
 
         float dmg = self->ca.base_dmg * (1.0f - cs->target->ca.base_armour_pc);
         target_cs->current_hp = MAX(0.0f, target_cs->current_hp - dmg);
@@ -274,7 +274,7 @@ static void on_30hz_tick(void *user, void *event)
 
                     cs->target = enemy;
                     cs->state = STATE_MOVING_TO_TARGET;
-                    cs->prev_target_pos = (vec2_t){enemy->pos.x, enemy->pos.z};
+                    cs->prev_target_pos = G_Pos_GetXZ(enemy->uid);
 
                     vec2_t move_dest_xz;
                     if(!cs->move_cmd_interrupted && G_Move_GetDest(curr, &move_dest_xz)) {
@@ -282,7 +282,7 @@ static void on_30hz_tick(void *user, void *event)
                         cs->move_cmd_xz = move_dest_xz;
                     }
                 
-                    vec2_t enemy_pos_xz = (vec2_t){enemy->pos.x, enemy->pos.z};
+                    vec2_t enemy_pos_xz = G_Pos_GetXZ(enemy->uid);
                     G_Move_SetDest(curr, enemy_pos_xz);
                 }
             }
@@ -307,7 +307,7 @@ static void on_30hz_tick(void *user, void *event)
             /* And the case where a different target becomes even closer */
             }else if(enemy != cs->target) {
             
-                vec2_t enemy_pos_xz = (vec2_t){enemy->pos.x, enemy->pos.z};
+                vec2_t enemy_pos_xz = G_Pos_GetXZ(enemy->uid);
                 G_Move_SetDest(curr, enemy_pos_xz);
                 cs->target = enemy;
             }
@@ -321,10 +321,10 @@ static void on_30hz_tick(void *user, void *event)
                 E_Entity_Notify(EVENT_ATTACK_START, curr->uid, NULL, ES_ENGINE);
 
             /* If not, update the seek position for a moving target */
-            }else if(cs->prev_target_pos.raw[0] != cs->target->pos.x 
-                  || cs->prev_target_pos.raw[1] != cs->target->pos.z) {
+            }else if(cs->prev_target_pos.x != G_Pos_GetXZ(cs->target->uid).x 
+                  || cs->prev_target_pos.z != G_Pos_GetXZ(cs->target->uid).z) {
                   
-                vec2_t enemy_pos_xz = (vec2_t){cs->target->pos.x, cs->target->pos.z};
+                vec2_t enemy_pos_xz = G_Pos_GetXZ(cs->target->uid);
                 G_Move_SetDest(curr, enemy_pos_xz);
                 cs->prev_target_pos = enemy_pos_xz;
             }

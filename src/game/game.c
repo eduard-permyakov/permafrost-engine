@@ -555,7 +555,7 @@ void G_Render(void)
     for(int i = 0; i < vec_size(selected); i++) {
 
         struct entity *curr = vec_AT(selected, i);
-        R_GL_DrawSelectionCircle((vec2_t){curr->pos.x, curr->pos.z}, curr->selection_radius, 0.4f, 
+        R_GL_DrawSelectionCircle(G_Pos_GetXZ(curr->uid), curr->selection_radius, 0.4f, 
             g_seltype_color_map[sel_type], s_gs.map);
     }
 
@@ -609,6 +609,7 @@ bool G_AddEntity(struct entity *ent)
     kh_value(s_gs.dynamic, k) = ent;
 
     G_Move_AddEntity(ent);
+    assert((G_Pos_Get(ent->uid), true));
     return true;
 }
 
@@ -630,6 +631,7 @@ bool G_RemoveEntity(struct entity *ent)
 
     G_Combat_RemoveEntity(ent);
     G_Move_RemoveEntity(ent);
+    G_Pos_Delete(ent->uid);
     return true;
 }
 

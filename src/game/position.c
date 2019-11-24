@@ -67,11 +67,12 @@ static qt_ent_t      s_postree;
 bool G_Pos_Set(uint32_t uid, vec3_t pos)
 {
     khiter_t k = kh_get(pos, s_postable, uid);
-    bool overwrite = k != kh_end(s_postable);
+    bool overwrite = (k != kh_end(s_postable));
 
     if(overwrite) {
+        assert(kh_exist(s_postable, k));
         vec3_t old_pos = kh_val(s_postable, k);
-        int ret = qt_ent_delete(&s_postree, old_pos.x, old_pos.z);
+        bool ret = qt_ent_delete(&s_postree, old_pos.x, old_pos.z, uid);
         assert(ret);
     }
 
@@ -82,13 +83,14 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
         int ret;
         kh_put(pos, s_postable, uid, &ret); 
         if(ret == -1) {
-            qt_ent_delete(&s_postree, pos.x, pos.z);
+            qt_ent_delete(&s_postree, pos.x, pos.z, uid);
             return false;
         }
         k = kh_get(pos, s_postable, uid);
     }
 
     kh_val(s_postable, k) = pos;
+    assert(kh_size(s_postable) == s_postree.nrecs);
     return true; 
 }
 
@@ -99,6 +101,14 @@ vec3_t G_Pos_Get(uint32_t uid)
     return kh_val(s_postable, k);
 }
 
+vec2_t G_Pos_GetXZ(uint32_t uid)
+{
+    khiter_t k = kh_get(pos, s_postable, uid);
+    assert(k != kh_end(s_postable));
+    vec3_t pos = kh_val(s_postable, k);
+    return (vec2_t){pos.x, pos.z};
+}
+
 void G_Pos_Delete(uint32_t uid)
 {
     khiter_t k = kh_get(pos, s_postable, uid);
@@ -107,8 +117,9 @@ void G_Pos_Delete(uint32_t uid)
     vec3_t pos = kh_val(s_postable, k);
     kh_del(pos, s_postable, k);
 
-    int ret = qt_ent_delete(&s_postree, pos.x, pos.z);
+    int ret = qt_ent_delete(&s_postree, pos.x, pos.z, uid);
     assert(ret);
+    assert(kh_size(s_postable) == s_postree.nrecs);
 }
 
 bool G_Pos_Init(const struct map *map)

@@ -248,7 +248,7 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
     /* The following won't be optimal when the entities in the selection are on different 
      * 'islands'. Handling that case is not a top priority. 
      */
-    vec2_t first_ent_pos_xz = (vec2_t){vec_AT(sel, 0)->pos.x, vec_AT(sel, 0)->pos.z};
+    vec2_t first_ent_pos_xz = G_Pos_GetXZ(vec_AT(sel, 0)->uid);
     target_xz = M_NavClosestReachableDest(s_map, first_ent_pos_xz, target_xz);
 
     /* First remove the entities in the selection from any active flocks */
@@ -301,10 +301,10 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
             continue;
 
         struct tile_desc curr_desc;
-        M_DescForPoint2D(s_map, (vec2_t){curr_ent->pos.x, curr_ent->pos.z}, &curr_desc);
+        M_DescForPoint2D(s_map, G_Pos_GetXZ(curr_ent->uid), &curr_desc);
 
         if(same_chunk_as_any_in_set(curr_desc, pathed_ents_descs, num_pathed_ents)
-        || M_NavRequestPath(s_map, (vec2_t){curr_ent->pos.x, curr_ent->pos.z}, target_xz, &new_flock.dest_id)) {
+        || M_NavRequestPath(s_map, G_Pos_GetXZ(curr_ent->uid), target_xz, &new_flock.dest_id)) {
 
             pathed_ents_descs[num_pathed_ents++] = curr_desc;
             flock_add(&new_flock, curr_ent);
@@ -355,7 +355,7 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
 size_t adjacent_flock_members(const struct entity *ent, const struct flock *flock, 
                               struct entity *out[])
 {
-    vec2_t ent_xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
+    vec2_t ent_xz_pos = G_Pos_GetXZ(ent->uid);
     size_t ret = 0;
 
     uint32_t key;
@@ -365,7 +365,7 @@ size_t adjacent_flock_members(const struct entity *ent, const struct flock *floc
         if(curr == ent)
             continue;
 
-        vec2_t curr_xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
+        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
         vec2_t diff;
         PFM_Vec2_Sub(&ent_xz_pos, &curr_xz_pos, &diff);
 
@@ -386,7 +386,7 @@ static void move_marker_add(vec3_t pos, bool attack)
                                 : AL_EntityFromPFObj(path, "arrow-green.pfobj", "__move_marker__");
     assert(ent);
 
-    ent->pos = pos;
+    G_Pos_Set(ent->uid, pos);
     ent->scale = (vec3_t){2.0f, 2.0f, 2.0f};
     E_Entity_Register(EVENT_ANIM_FINISHED, ent->uid, on_marker_anim_finish, ent, G_RUNNING);
 
@@ -490,7 +490,7 @@ static quat_t dir_quat_from_velocity(vec2_t velocity)
 static vec2_t seek_force(const struct entity *ent, vec2_t target_xz)
 {
     vec2_t ret, desired_velocity;
-    vec2_t pos_xz = (vec2_t){ent->pos.x, ent->pos.z};
+    vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
 
     PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
     PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
@@ -513,7 +513,7 @@ static vec2_t arrive_force(const struct entity *ent, const struct flock *flock)
 {
     assert(0 == (ent->flags & ENTITY_FLAG_STATIC));
     vec2_t ret, desired_velocity;
-    vec2_t pos_xz = (vec2_t){ent->pos.x, ent->pos.z};
+    vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
     float distance;
 
     struct movestate *ms = movestate_get(ent);
@@ -556,8 +556,8 @@ static vec2_t alignment_force(const struct entity *ent, const struct flock *floc
             continue;
 
         vec2_t diff;
-        vec2_t ent_xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
-        vec2_t curr_xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
+        vec2_t ent_xz_pos = G_Pos_GetXZ(ent->uid);
+        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
 
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
         if(PFM_Vec2_Len(&diff) < ALIGN_NEIGHBOUR_RADIUS) {
@@ -591,6 +591,7 @@ static vec2_t cohesion_force(const struct entity *ent, const struct flock *flock
 {
     vec2_t COM = (vec2_t){0.0f};
     size_t neighbour_count = 0;
+    vec2_t ent_xz_pos = G_Pos_GetXZ(ent->uid);
 
     uint32_t key;
     struct entity *curr;
@@ -600,29 +601,23 @@ static vec2_t cohesion_force(const struct entity *ent, const struct flock *flock
             continue;
 
         vec2_t diff;
-        vec2_t ent_xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
-        vec2_t curr_xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
-
+        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
         float t = (PFM_Vec2_Len(&diff) - COHESION_NEIGHBOUR_RADIUS*0.75) / COHESION_NEIGHBOUR_RADIUS;
         float scale = exp(-6.0f * t);
 
-        vec2_t xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
-        PFM_Vec2_Scale(&xz_pos, scale, &xz_pos);
-
-        PFM_Vec2_Add(&COM, &xz_pos, &COM);
+        PFM_Vec2_Scale(&curr_xz_pos, scale, &curr_xz_pos);
+        PFM_Vec2_Add(&COM, &curr_xz_pos, &COM);
         neighbour_count++;
     });
 
     if(0 == neighbour_count)
         return (vec2_t){0.0f};
 
-    vec2_t xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
-    PFM_Vec2_Scale(&COM, 1.0f / neighbour_count, &COM);
-
     vec2_t ret;
-    PFM_Vec2_Sub(&COM, &xz_pos, &ret);
+    PFM_Vec2_Scale(&COM, 1.0f / neighbour_count, &COM);
+    PFM_Vec2_Sub(&COM, &ent_xz_pos, &ret);
     vec2_truncate(&ret, MAX_FORCE);
     return ret;
 }
@@ -643,8 +638,8 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
             continue;
 
         vec2_t diff;
-        vec2_t ent_xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
-        vec2_t curr_xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
+        vec2_t ent_xz_pos = G_Pos_GetXZ(ent->uid);
+        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
 
         float radius = ent->selection_radius + curr->selection_radius + buffer_dist;
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
@@ -712,10 +707,10 @@ static vec2_t total_steering_force(const struct entity *ent, const struct flock 
     float old_mag = PFM_Vec2_Len(&ret);
     vec2_t nt_dims = N_TileDims();
 
-    vec2_t left = (vec2_t){ent->pos.x + nt_dims.raw[0], ent->pos.z};
-    vec2_t right = (vec2_t){ent->pos.x - nt_dims.raw[0], ent->pos.z};
-    vec2_t top = (vec2_t){ent->pos.x, ent->pos.z + nt_dims.raw[1]};
-    vec2_t bot = (vec2_t){ent->pos.x, ent->pos.z - nt_dims.raw[1]};
+    vec2_t left =  (vec2_t){G_Pos_Get(ent->uid).x + nt_dims.x, G_Pos_Get(ent->uid).z};
+    vec2_t right = (vec2_t){G_Pos_Get(ent->uid).x - nt_dims.x, G_Pos_Get(ent->uid).z};
+    vec2_t top =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z + nt_dims.z};
+    vec2_t bot =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z - nt_dims.z};
 
     if((ret.raw[0] > 0 && !M_NavPositionPathable(s_map, left))
     || (ret.raw[0] < 0 && !M_NavPositionPathable(s_map, right)))
@@ -745,7 +740,7 @@ static vec2_t total_steering_force(const struct entity *ent, const struct flock 
 
 static vec2_t new_pos_for_vel(const struct entity *ent, vec2_t velocity)
 {
-    vec2_t xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
+    vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
     vec2_t new_pos;
 
     PFM_Vec2_Add(&xz_pos, &velocity, &new_pos);
@@ -754,7 +749,7 @@ static vec2_t new_pos_for_vel(const struct entity *ent, vec2_t velocity)
 
 static vec2_t calculate_vpref(const struct entity *ent, const struct flock *flock)
 {
-    vec2_t xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
+    vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
@@ -812,10 +807,11 @@ static void entity_update(struct entity *ent, const struct flock *flock, vec2_t 
     if(ms->state == STATE_ARRIVED)
         return;
 
-    vec2_t new_pos = new_pos_for_vel(ent, new_vel);
-    if(M_NavPositionPathable(s_map, new_pos)) {
+    vec2_t new_pos_xz = new_pos_for_vel(ent, new_vel);
+    if(M_NavPositionPathable(s_map, new_pos_xz)) {
     
-        ent->pos = (vec3_t){new_pos.raw[0], M_HeightAtPoint(s_map, new_pos), new_pos.raw[1]};
+        vec3_t new_pos = (vec3_t){new_pos_xz.x, M_HeightAtPoint(s_map, new_pos_xz), new_pos_xz.z};
+        G_Pos_Set(ent->uid, new_pos);
         ms->velocity = new_vel;
 
         /* Use a weighted average of past velocities ot set the entity's orientation. This means that 
@@ -830,12 +826,12 @@ static void entity_update(struct entity *ent, const struct flock *flock, vec2_t 
         ms->velocity = (vec2_t){0.0f, 0.0f}; 
     }
 
-    assert(M_NavPositionPathable(s_map, (vec2_t){ent->pos.x, ent->pos.z}));
+    assert(M_NavPositionPathable(s_map, G_Pos_GetXZ(ent->uid)));
     switch(ms->state) {
     case STATE_MOVING: {
 
         vec2_t diff_to_target;
-        vec2_t xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
+        vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
         PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &xz_pos, &diff_to_target);
         if(PFM_Vec2_Len(&diff_to_target) < ARRIVE_THRESHOLD_DIST){
 
@@ -905,8 +901,8 @@ static void find_neighbours(const struct entity *ent,
             continue;
 
         vec2_t diff;
-        vec2_t ent_xz_pos = (vec2_t){ent->pos.x, ent->pos.z};
-        vec2_t curr_xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
+        vec2_t ent_xz_pos = G_Pos_GetXZ(ent->uid);
+        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
         struct movestate *ms = movestate_get(curr); /* May be NULL */
         assert(ms);
 
@@ -971,7 +967,7 @@ static void on_30hz_tick(void *user, void *event)
             vec2_t vpref = calculate_vpref(curr, flock);
 
             struct cp_ent curr_cp = (struct cp_ent) {
-                .xz_pos = (vec2_t){curr->pos.x, curr->pos.z},
+                .xz_pos = G_Pos_GetXZ(curr->uid),
                 .xz_vel = ms->velocity,
                 .radius = curr->selection_radius,
             };

@@ -38,6 +38,7 @@
 
 #include "render/public/render.h"
 #include "anim/public/anim.h"
+#include "game/public/game.h"
 #include "map/public/map.h"
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
@@ -206,7 +207,6 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 
     ret->flags = 0;
     ret->scale =    (vec3_t){1.0f, 1.0f, 1.0f};
-    ret->pos =      (vec3_t){1.0f, 1.0f, 1.0f};
     ret->rotation = (quat_t){0.0f, 0.0f, 0.0f, 1.0f};
     ret->selection_radius = 0.0f;
     ret->max_speed = 0.0f;
@@ -287,6 +287,8 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     ret->anim_private = res.anim_private;
     ret->identity_aabb = res.aabb;
     ret->uid = Entity_NewUID();
+    G_Pos_Set(ret->uid, (vec3_t){0.0f, 0.0f, 0.0f});
+
     return ret;
 
 fail_parse:
