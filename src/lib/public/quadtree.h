@@ -51,6 +51,9 @@
     typedef struct qt_##name##_node_s {                                                         \
         size_t   depth;                                                                         \
         mp_ref_t parent;                                                                        \
+        /* Head of singly-linked list of leaf nodes, each one holding an additional */          \
+        /* record for this key. May be 0 (NULL). */                                             \
+        mp_ref_t sibling_next;                                                                  \
         mp_ref_t nw, ne, sw, se;                                                                \
         bool     has_record;                                                                    \
         /* For nodes holding records, this is the position */                                   \
@@ -65,7 +68,6 @@
         mp(name) node_pool;                                                                     \
         mp_ref_t root;                                                                          \
         size_t   nrecs;                                                                         \
-        size_t   height;                                                                        \
         float xmin, xmax;                                                                       \
         float ymin, ymax;                                                                       \
     } qt_##name##_t;
@@ -107,8 +109,9 @@
     scope void qt_##name##_destroy(qt(name) *qt);                                               \
     scope void qt_##name##_clear(qt(name) *qt);                                                 \
     scope bool qt_##name##_insert(qt(name) *qt, float x, float y, type record);                 \
-    scope bool qt_##name##_delete(qt(name) *qt, float x, float y);                              \
-    scope bool qt_##name##_find(qt(name) *qt, float x, float y, type *out);                     \
+    scope bool qt_##name##_delete(qt(name) *qt, float x, float y, type record);                 \
+    scope bool qt_##name##_delete_all(qt(name) *qt, float x, float y);                          \
+    scope bool qt_##name##_find(qt(name) *qt, float x, float y, type *out, int maxout);         \
     scope bool qt_##name##_contains(qt(name) *qt, float x, float y);                            \
     scope int  qt_##name##_inrange_circle(qt(name) *qt,                                         \
                                           float x, float y, float range,                        \
@@ -140,6 +143,19 @@
         node->nw = node->ne = node->sw = node->se = 0;                                          \
         node->has_record = false;                                                               \
         node->parent = 0;                                                                       \
+        node->sibling_next = 0;                                                                 \
+    }                                                                                           \
+                                                                                                \
+    static int _qt_##name##_node_nsibs(qt(name) *qt, qt_node(name) *node)                       \
+    {                                                                                           \
+        int ret = 0;                                                                            \
+        mp_ref_t curr = node->sibling_next;                                                     \
+        while(curr) {                                                                           \
+            qt_node(name) *curr_node = mp_##name##_entry(&qt->node_pool, curr);                 \
+            curr = curr_node->sibling_next;                                                     \
+            ++ret;                                                                              \
+        }                                                                                       \
+        return ret;                                                                             \
     }                                                                                           \
                                                                                                 \
     static void _qt_##name##_node_print(qt(name) *qt, mp_ref_t ref, int indent)                 \
@@ -150,9 +166,9 @@
         if(indent)                                                                              \
             printf("|-> ");                                                                     \
                                                                                                 \
-        printf("[%10.4f, %10.4f]", node->x, node->y);                                           \
+        printf("[%12.6f, %12.6f]", node->x, node->y);                                           \
         if(node->has_record)                                                                    \
-            printf(" (has record)");                                                            \
+            printf(" (has record) (%d siblings)", _qt_##name##_node_nsibs(qt, node));           \
         printf("\n");                                                                           \
                                                                                                 \
         if(_qt_##name##_node_isleaf(node))                                                      \
@@ -346,6 +362,62 @@
         return (orig_maxout - *inout_maxout);                                                   \
     }                                                                                           \
                                                                                                 \
+    static bool _qt_##name##_node_sib_append(qt(name) *qt, mp_ref_t ref, type record)           \
+    {                                                                                           \
+        qt_node(name) *node = mp_##name##_entry(&qt->node_pool, ref);                           \
+                                                                                                \
+        mp_ref_t sib = mp_##name##_alloc(&qt->node_pool);                                       \
+        _CHK_TRUE_RET(sib, false);                                                              \
+                                                                                                \
+        qt_node(name) *sib_node = mp_##name##_entry(&qt->node_pool, sib);                       \
+        _qt_##name##_node_init(sib_node, 0);                                                    \
+        sib_node->x = node->x;                                                                  \
+        sib_node->y = node->y;                                                                  \
+                                                                                                \
+        mp_ref_t curr = node->sibling_next;                                                     \
+        mp_ref_t prev = ref;                                                                    \
+                                                                                                \
+        while(curr) {                                                                           \
+            node = mp_##name##_entry(&qt->node_pool, curr);                                     \
+            prev = curr;                                                                        \
+            curr = node->sibling_next;                                                          \
+        }                                                                                       \
+                                                                                                \
+        node = mp_##name##_entry(&qt->node_pool, prev);                                         \
+        assert(!node->sibling_next);                                                            \
+                                                                                                \
+        sib_node->record = record;                                                              \
+        sib_node->has_record = true;                                                            \
+        node->sibling_next = sib;                                                               \
+        ++qt->nrecs;                                                                            \
+        return true;                                                                            \
+    }                                                                                           \
+                                                                                                \
+    static bool _qt_##name##_delete_sib(qt(name) *qt, mp_ref_t head,                            \
+                                        float x, float y, type record)                          \
+    {                                                                                           \
+        qt_node(name) *head_node = mp_##name##_entry(&qt->node_pool, head);                     \
+        qt_node(name) *curr_node, *prev_node;                                                   \
+        if(!head_node->sibling_next)                                                            \
+            return false;                                                                       \
+                                                                                                \
+        mp_ref_t curr = head_node->sibling_next;                                                \
+        mp_ref_t prev = head;                                                                   \
+                                                                                                \
+        while(curr) {                                                                           \
+            curr_node = mp_##name##_entry(&qt->node_pool, curr);                                \
+            prev_node = mp_##name##_entry(&qt->node_pool, prev);                                \
+                                                                                                \
+            if(0 == memcmp(&record, &curr_node->record, sizeof(record))) {                      \
+               prev_node->sibling_next = curr_node->sibling_next;                              \
+                mp_##name##_free(&qt->node_pool, curr);                                         \
+                --qt->nrecs;                                                                    \
+                return true;                                                                    \
+            }                                                                                   \
+        }                                                                                       \
+        return false;                                                                           \
+    }                                                                                           \
+                                                                                                \
     static mp_ref_t _qt_##name##_quadrant(qt_node(name) *node, float x, float y)                \
     {                                                                                           \
         if(x <= node->x && y >= node->y)                                                        \
@@ -432,39 +504,39 @@
             _qt_##name##_set_divide_coords(qt, parent, ref);                                    \
         }                                                                                       \
                                                                                                 \
-        mp_ref_t nw = 0, ne = 0, sw = 0, se = 0;                                                \
-        _CHK_TRUE_JMP((nw = mp_##name##_alloc(&qt->node_pool)), fail);                          \
-        _CHK_TRUE_JMP((ne = mp_##name##_alloc(&qt->node_pool)), fail);                          \
-        _CHK_TRUE_JMP((sw = mp_##name##_alloc(&qt->node_pool)), fail);                          \
-        _CHK_TRUE_JMP((se = mp_##name##_alloc(&qt->node_pool)), fail);                          \
-        qt->height = _MAX(qt->height, node->depth + 2);                                         \
+        _CHK_TRUE_JMP((node->nw = mp_##name##_alloc(&qt->node_pool)), fail);                    \
+        _CHK_TRUE_JMP((node->ne = mp_##name##_alloc(&qt->node_pool)), fail);                    \
+        _CHK_TRUE_JMP((node->sw = mp_##name##_alloc(&qt->node_pool)), fail);                    \
+        _CHK_TRUE_JMP((node->se = mp_##name##_alloc(&qt->node_pool)), fail);                    \
+        assert(1 && node->nw && node->ne && node->sw && node->se); \
+        assert(ref != node->nw && ref != node->ne && ref != node->sw && ref != node->se); \
                                                                                                 \
         /* NW node */                                                                           \
-        node->nw = nw;                                                                          \
-        curr = mp_##name##_entry(&qt->node_pool, nw);                                           \
+        curr = mp_##name##_entry(&qt->node_pool, node->nw);                                     \
         _qt_##name##_node_init(curr, node->depth + 1);                                          \
-        _qt_##name##_set_divide_coords(qt, node, nw);                                           \
+        assert(2 && node->nw && node->ne && node->sw && node->se); \
+        _qt_##name##_set_divide_coords(qt, node, node->nw);                                     \
         curr->parent = ref;                                                                     \
                                                                                                 \
         /* NE node */                                                                           \
-        node->ne = ne;                                                                          \
-        curr = mp_##name##_entry(&qt->node_pool, ne);                                           \
+        curr = mp_##name##_entry(&qt->node_pool, node->ne);                                     \
         _qt_##name##_node_init(curr, node->depth + 1);                                          \
-        _qt_##name##_set_divide_coords(qt, node, ne);                                           \
+        assert(3 && node->nw && node->ne && node->sw && node->se); \
+        _qt_##name##_set_divide_coords(qt, node, node->ne);                                     \
         curr->parent = ref;                                                                     \
                                                                                                 \
         /* SW node */                                                                           \
-        node->sw = sw;                                                                          \
-        curr = mp_##name##_entry(&qt->node_pool, sw);                                           \
+        curr = mp_##name##_entry(&qt->node_pool, node->sw);                                     \
         _qt_##name##_node_init(curr, node->depth + 1);                                          \
-        _qt_##name##_set_divide_coords(qt, node, sw);                                           \
+        assert(4 && node->nw && node->ne && node->sw && node->se); \
+        _qt_##name##_set_divide_coords(qt, node, node->sw);                                     \
         curr->parent = ref;                                                                     \
                                                                                                 \
         /* SE node */                                                                           \
-        node->se = se;                                                                          \
-        curr = mp_##name##_entry(&qt->node_pool, se);                                           \
+        curr = mp_##name##_entry(&qt->node_pool, node->se);                                     \
         _qt_##name##_node_init(curr, node->depth + 1);                                          \
-        _qt_##name##_set_divide_coords(qt, node, se);                                           \
+        assert(5 && node->nw && node->ne && node->sw && node->se); \
+        _qt_##name##_set_divide_coords(qt, node, node->se);                                     \
         curr->parent = ref;                                                                     \
                                                                                                 \
         /* Set the record for in one of the quadrants */                                        \
@@ -478,11 +550,19 @@
         return true;                                                                            \
                                                                                                 \
     fail:                                                                                       \
-        nw ? mp_##name##_free(&qt->node_pool, nw), 0 : 0;                                       \
-        ne ? mp_##name##_free(&qt->node_pool, ne), 0 : 0;                                       \
-        sw ? mp_##name##_free(&qt->node_pool, sw), 0 : 0;                                       \
-        se ? mp_##name##_free(&qt->node_pool, se), 0 : 0;                                       \
+        node->nw ? mp_##name##_free(&qt->node_pool, node->nw), 0 : 0;                           \
+        node->ne ? mp_##name##_free(&qt->node_pool, node->ne), 0 : 0;                           \
+        node->sw ? mp_##name##_free(&qt->node_pool, node->sw), 0 : 0;                           \
+        node->se ? mp_##name##_free(&qt->node_pool, node->se), 0 : 0;                           \
         return false;                                                                           \
+    }                                                                                           \
+                                                                                                \
+    static bool _qt_##name##_rec_node(qt(name) *qt, mp_ref_t ref)                               \
+    {                                                                                           \
+        qt_node(name) *node = mp_##name##_entry(&qt->node_pool, ref);                           \
+        if(!_qt_##name##_node_isleaf(node))                                                     \
+            return true;                                                                        \
+        return (node->has_record);                                                              \
     }                                                                                           \
                                                                                                 \
     static bool _qt_##name##_merge(qt(name) *qt, mp_ref_t ref)                                  \
@@ -491,20 +571,24 @@
         qt_node(name) *node = mp_##name##_entry(&qt->node_pool, ref);                           \
         assert(!_qt_##name##_node_isleaf(node));                                                \
                                                                                                 \
-        int nrecs = !!mp_##name##_entry(&qt->node_pool, node->nw)->has_record                   \
-                  + !!mp_##name##_entry(&qt->node_pool, node->ne)->has_record                   \
-                  + !!mp_##name##_entry(&qt->node_pool, node->sw)->has_record                   \
-                  + !!mp_##name##_entry(&qt->node_pool, node->se)->has_record;                  \
+        int nrecs = !!_qt_##name##_rec_node(qt, node->nw)                                       \
+                  + !!_qt_##name##_rec_node(qt, node->ne)                                       \
+                  + !!_qt_##name##_rec_node(qt, node->sw)                                       \
+                  + !!_qt_##name##_rec_node(qt, node->se);                                      \
                                                                                                 \
         assert(nrecs > 0);                                                                      \
         if(nrecs > 1)                                                                           \
             return false;                                                                       \
                                                                                                 \
-        mp_ref_t rec = mp_##name##_entry(&qt->node_pool, node->nw)->has_record ? node->nw       \
-                     : mp_##name##_entry(&qt->node_pool, node->ne)->has_record ? node->ne       \
-                     : mp_##name##_entry(&qt->node_pool, node->sw)->has_record ? node->sw       \
-                     : mp_##name##_entry(&qt->node_pool, node->se)->has_record ? node->se       \
+        mp_ref_t rec = _qt_##name##_rec_node(qt, node->nw) ? node->nw                           \
+                     : _qt_##name##_rec_node(qt, node->ne) ? node->ne                           \
+                     : _qt_##name##_rec_node(qt, node->sw) ? node->sw                           \
+                     : _qt_##name##_rec_node(qt, node->se) ? node->se                           \
                      : (assert(0), 0);                                                          \
+                                                                                                \
+        qt_node(name) *rec_node = mp_##name##_entry(&qt->node_pool, rec);                       \
+        if(!_qt_##name##_node_isleaf(rec_node))                                                 \
+            return false;                                                                       \
                                                                                                 \
         mp_##name##_free(&qt->node_pool, node->nw);                                             \
         mp_##name##_free(&qt->node_pool, node->ne);                                             \
@@ -514,7 +598,17 @@
         node->nw = node->ne = node->sw = node->se = 0;                                          \
         node->has_record = true;                                                                \
         node->record = mp_##name##_entry(&qt->node_pool, rec)->record;                          \
+        node->x = mp_##name##_entry(&qt->node_pool, rec)->x;                                    \
+        node->y = mp_##name##_entry(&qt->node_pool, rec)->y;                                    \
         return true;                                                                            \
+    }                                                                                           \
+                                                                                                \
+    static void _qt_##name##_update_ref(qt_node(name) *node, mp_ref_t oldref, mp_ref_t newref)  \
+    {                                                                                           \
+        if(node->nw == oldref) node->nw = newref;                                               \
+        if(node->ne == oldref) node->ne = newref;                                               \
+        if(node->sw == oldref) node->sw = newref;                                               \
+        if(node->se == oldref) node->se = newref;                                               \
     }                                                                                           \
                                                                                                 \
     scope bool qt_##name##_init(qt(name) *qt,                                                   \
@@ -524,7 +618,6 @@
         mp_##name##_init(&qt->node_pool);                                                       \
         qt->root = 0;                                                                           \
         qt->nrecs = 0;                                                                          \
-        qt->height = 0;                                                                         \
         qt->xmin = xmin;                                                                        \
         qt->xmax = xmax;                                                                        \
         qt->ymin = ymin;                                                                        \
@@ -551,7 +644,6 @@
         if(qt->root == 0) {                                                                     \
                                                                                                 \
             assert(qt->nrecs == 0);                                                             \
-            assert(qt->height == 0);                                                            \
                                                                                                 \
             _CHK_TRUE_RET((qt->root = mp_##name##_alloc(&qt->node_pool)), false);               \
             qt_node(name) *node = mp_##name##_entry(&qt->node_pool, qt->root);                  \
@@ -564,7 +656,6 @@
             assert(_qt_##name##_node_isleaf(node));                                             \
                                                                                                 \
             qt->nrecs++;                                                                        \
-            qt->height++;                                                                       \
             return true;                                                                        \
         }                                                                                       \
                                                                                                 \
@@ -573,18 +664,20 @@
         qt_node(name) *curr_node = mp_##name##_entry(&qt->node_pool, curr_ref);                 \
         assert(_qt_##name##_node_isleaf(curr_node));                                            \
                                                                                                 \
-        /* If the leaf has a record at the same position, overwrite it. */                      \
-        /* If it does not, then it is the region containing the new node. Set its' record. */   \
-        if((curr_node->has_record && QT_EQ(x, curr_node->x) && QT_EQ(y, curr_node->y))          \
-        || !curr_node->has_record) {                                                            \
+        /* If the leaf node has no record, then it is the region containing the new node.*/     \
+        if(!curr_node->has_record) {                                                            \
                                                                                                 \
             curr_node->x = x;                                                                   \
             curr_node->y = y;                                                                   \
             curr_node->has_record = true;                                                       \
             curr_node->record = record;                                                         \
+            qt->nrecs++;                                                                        \
             return true;                                                                        \
         }                                                                                       \
         assert(curr_node->has_record);                                                          \
+                                                                                                \
+        if(QT_EQ(x, curr_node->x) && QT_EQ(y, curr_node->y))                                    \
+            return _qt_##name##_node_sib_append(qt, curr_ref, record);                          \
                                                                                                 \
         /* 'curr_node' is the closest leaf node. Keep partitioning it until the */              \
         /* existing point and the new point lie in different quadrants */                       \
@@ -608,7 +701,7 @@
         return true;                                                                            \
     }                                                                                           \
                                                                                                 \
-    scope bool qt_##name##_delete(qt(name) *qt, float x, float y)                               \
+    scope bool qt_##name##_delete(qt(name) *qt, float x, float y, type record)                  \
     {                                                                                           \
         mp_ref_t curr_ref = _qt_##name##_find_leaf(qt, x, y);                                   \
         if(!curr_ref)                                                                           \
@@ -620,14 +713,54 @@
         if(!QT_EQ(curr_node->x, x) || !QT_EQ(curr_node->y, y))                                  \
             return false;                                                                       \
                                                                                                 \
-        curr_node->has_record = false;                                                          \
+        /* The record isn't in the head */                                                      \
+        if(0 != memcmp(&record, &curr_node->record, sizeof(record)))                            \
+            return _qt_##name##_delete_sib(qt, curr_ref, x, y, record);                         \
+                                                                                                \
         --qt->nrecs;                                                                            \
                                                                                                 \
-        if(!curr_node->parent)                                                                  \
+        /* If deleted node has siblings, make the next sibling the head */                      \
+        if(curr_node->sibling_next) {                                                           \
+                                                                                                \
+            mp_ref_t new_head = curr_node->sibling_next;                                        \
+            qt_node(name) *new_head_node = mp_##name##_entry(&qt->node_pool, new_head);         \
+            assert(new_head_node->has_record);                                                  \
+            assert(_qt_##name##_node_isleaf(new_head_node));                                    \
+                                                                                                \
+            new_head_node->nw = curr_node->nw;                                                  \
+            new_head_node->ne = curr_node->ne;                                                  \
+            new_head_node->sw = curr_node->sw;                                                  \
+            new_head_node->se = curr_node->se;                                                  \
+            new_head_node->parent = curr_node->parent;                                          \
+                                                                                                \
+            mp_##name##_free(&qt->node_pool, curr_ref);                                         \
+                                                                                                \
+            if(!curr_node->parent) {                                                            \
+                assert(qt->root == curr_ref);                                                   \
+                qt->root = new_head;                                                            \
+                return true;                                                                    \
+            }                                                                                   \
+                                                                                                \
+            qt_node(name) *parent = mp_##name##_entry(&qt->node_pool, curr_node->parent);       \
+            _qt_##name##_update_ref(parent, curr_ref, new_head);                                \
             return true;                                                                        \
+        }                                                                                       \
+                                                                                                \
+        if(!curr_node->parent) {                                                                \
+            mp_##name##_free(&qt->node_pool, curr_ref);                                         \
+            assert(qt->root == curr_ref);                                                       \
+            qt->root = 0;                                                                       \
+            return true;                                                                        \
+        }                                                                                       \
+                                                                                                \
+        qt_node(name) *parent = mp_##name##_entry(&qt->node_pool, curr_node->parent);           \
+        _qt_##name##_set_divide_coords(qt, parent, curr_ref);                                   \
+        curr_node->has_record = false;                                                          \
                                                                                                 \
         do {                                                                                    \
             curr_ref = curr_node->parent;                                                       \
+            if(!curr_ref)                                                                       \
+                break;                                                                          \
             curr_node = mp_##name##_entry(&qt->node_pool, curr_ref);                            \
                                                                                                 \
         }while(_qt_##name##_merge(qt, curr_ref));                                               \
@@ -635,7 +768,7 @@
         return true;                                                                            \
     }                                                                                           \
                                                                                                 \
-    scope bool qt_##name##_find(qt(name) *qt, float x, float y, type *out)                      \
+    scope bool qt_##name##_find(qt(name) *qt, float x, float y, type *out, int maxout)          \
     {                                                                                           \
         mp_ref_t curr_ref = _qt_##name##_find_leaf(qt, x, y);                                   \
         if(!curr_ref)                                                                           \
@@ -654,7 +787,7 @@
     scope bool qt_##name##_contains(qt(name) *qt, float x, float y)                             \
     {                                                                                           \
         type dummy;                                                                             \
-        return qt_##name##_find(qt, x, y, &dummy);                                              \
+        return qt_##name##_find(qt, x, y, &dummy, 1);                                           \
     }                                                                                           \
                                                                                                 \
     scope int qt_##name##_inrange_circle(qt(name) *qt,                                          \
@@ -680,6 +813,8 @@
                                                                                                 \
     scope void qt_##name##_print(qt(name) *qt)                                                  \
     {                                                                                           \
+        printf("number of records: %zu\n", qt->nrecs);                                          \
+        printf("mempool nodes: %zu\n", qt->node_pool.num_allocd);                               \
         if(qt->root == 0) {                                                                     \
             printf("(empty)\n");                                                                \
             return;                                                                             \
