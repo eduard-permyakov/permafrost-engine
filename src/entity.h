@@ -47,6 +47,9 @@
 #define ENTITY_FLAG_STATIC        (1 << 3)
 #define ENTITY_FLAG_COMBATABLE    (1 << 4)
 #define ENTITY_FLAG_INVISIBLE     (1 << 5)
+/* zombie entities are those that have died in the game simulation, 
+ * but are still retained by some scripting variable */
+#define ENTITY_FLAG_ZOMBIE        (1 << 6)
 
 struct entity{
     uint32_t     uid;

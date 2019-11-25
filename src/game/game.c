@@ -843,3 +843,27 @@ enum simstate G_GetSimState(void)
     return s_gs.ss;
 }
 
+void G_Zombiefy(struct entity *ent)
+{
+    if(ent->flags & ENTITY_FLAG_SELECTABLE)
+        G_Sel_Remove(ent);
+
+    if(!(ent->flags & ENTITY_FLAG_STATIC)) {
+        khiter_t k = kh_get(entity, s_gs.dynamic, ent->uid);
+        assert(k != kh_end(s_gs.dynamic));
+        kh_del(entity, s_gs.dynamic, k);
+    }
+
+    G_Move_RemoveEntity(ent);
+    G_Combat_RemoveEntity(ent);
+
+    ent->flags &= ~ENTITY_FLAG_SELECTABLE;
+    ent->flags &= ~ENTITY_FLAG_COLLISION;
+    ent->flags &= ~ENTITY_FLAG_COMBATABLE;
+    ent->flags &= ~ENTITY_FLAG_ANIMATED;
+
+    ent->flags |= ENTITY_FLAG_INVISIBLE;
+    ent->flags |= ENTITY_FLAG_STATIC;
+    ent->flags |= ENTITY_FLAG_ZOMBIE;
+}
+

@@ -230,16 +230,8 @@ static void on_attack_anim_finish(void *user, void *event)
 
         if(target_cs->current_hp == 0.0f && cs->target->max_hp > 0) {
 
-            G_Combat_RemoveEntity(cs->target);
-            G_Move_Stop(cs->target);
+            G_Zombiefy(cs->target);
             E_Entity_Notify(EVENT_ENTITY_DEATH, cs->target->uid, NULL, ES_ENGINE);
-            cs->target->flags &= ~ENTITY_FLAG_COMBATABLE;
-
-            if(cs->target->flags & ENTITY_FLAG_SELECTABLE) {
-            
-                G_Sel_Remove(cs->target);
-                cs->target->flags &= ~ENTITY_FLAG_SELECTABLE;
-            }
         }
     }
 }
