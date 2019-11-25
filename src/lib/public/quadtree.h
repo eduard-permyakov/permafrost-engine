@@ -409,7 +409,7 @@
             prev_node = mp_##name##_entry(&qt->node_pool, prev);                                \
                                                                                                 \
             if(0 == memcmp(&record, &curr_node->record, sizeof(record))) {                      \
-               prev_node->sibling_next = curr_node->sibling_next;                              \
+                prev_node->sibling_next = curr_node->sibling_next;                              \
                 mp_##name##_free(&qt->node_pool, curr);                                         \
                 --qt->nrecs;                                                                    \
                 return true;                                                                    \
@@ -491,6 +491,9 @@
         float saved_x = node->x;                                                                \
         float saved_y = node->y;                                                                \
         type saved_record = node->record;                                                       \
+        mp_ref_t saved_sibnext = node->sibling_next;                                            \
+                                                                                                \
+        node->sibling_next = 0;                                                                 \
         node->has_record = false;                                                               \
                                                                                                 \
         if(!node->parent) {                                                                     \
@@ -546,6 +549,12 @@
         rec_node->y = saved_y;                                                                  \
         rec_node->record = saved_record;                                                        \
         rec_node->has_record = true;                                                            \
+        rec_node->sibling_next = saved_sibnext;                                                 \
+        if(saved_sibnext) { \
+            qt_node(name) *node = mp_##name##_entry(&qt->node_pool, rec_node->sibling_next); \
+            assert(node->has_record);                                                  \
+            assert(_qt_##name##_node_isleaf(node));                                    \
+        } \
                                                                                                 \
         return true;                                                                            \
                                                                                                 \
@@ -597,9 +606,10 @@
                                                                                                 \
         node->nw = node->ne = node->sw = node->se = 0;                                          \
         node->has_record = true;                                                                \
-        node->record = mp_##name##_entry(&qt->node_pool, rec)->record;                          \
+        node->record = rec_node->record;                                                        \
         node->x = mp_##name##_entry(&qt->node_pool, rec)->x;                                    \
         node->y = mp_##name##_entry(&qt->node_pool, rec)->y;                                    \
+        node->sibling_next = rec_node->sibling_next;                                            \
         return true;                                                                            \
     }                                                                                           \
                                                                                                 \
@@ -766,6 +776,33 @@
         }while(_qt_##name##_merge(qt, curr_ref));                                               \
                                                                                                 \
         return true;                                                                            \
+    }                                                                                           \
+                                                                                                \
+    scope bool qt_##name##_delete_all(qt(name) *qt, float x, float y)                           \
+    {                                                                                           \
+        mp_ref_t curr_ref = _qt_##name##_find_leaf(qt, x, y);                                   \
+        if(!curr_ref)                                                                           \
+            return false;                                                                       \
+                                                                                                \
+        qt_node(name) *curr_node = mp_##name##_entry(&qt->node_pool, curr_ref);                 \
+        if(!curr_node->has_record)                                                              \
+            return false;                                                                       \
+        if(!QT_EQ(curr_node->x, x) || !QT_EQ(curr_node->y, y))                                  \
+            return false;                                                                       \
+                                                                                                \
+        if(!curr_node->sibling_next)                                                            \
+            return qt_##name##_delete(qt, x, y, curr_node->record);                             \
+                                                                                                \
+        mp_ref_t curr_sib = curr_node->sibling_next;                                            \
+        while(curr_sib) {                                                                       \
+            qt_node(name) *curr_sib_node = mp_##name##_entry(&qt->node_pool, curr_sib);         \
+            bool ret = _qt_##name##_delete_sib(qt, curr_ref, x, y, curr_sib_node->record);      \
+            assert(ret);                                                                        \
+            curr_sib = curr_sib_node->sibling_next;                                             \
+        }                                                                                       \
+                                                                                                \
+        assert(!curr_node->sibling_next);                                                       \
+        return qt_##name##_delete(qt, x, y, curr_node->record);                                 \
     }                                                                                           \
                                                                                                 \
     scope bool qt_##name##_find(qt(name) *qt, float x, float y, type *out, int maxout)          \

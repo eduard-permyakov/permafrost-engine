@@ -102,7 +102,7 @@ bool   G_MapHeightAtPoint(vec2_t xz, float *out_height);
 
 void   G_BakeNavDataForScene(void);
 
-bool   G_AddEntity(struct entity *ent);
+bool   G_AddEntity(struct entity *ent, vec3_t pos);
 bool   G_RemoveEntity(struct entity *ent);
 void   G_StopEntity(const struct entity *ent);
 

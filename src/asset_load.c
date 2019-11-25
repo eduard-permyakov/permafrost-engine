@@ -287,7 +287,6 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     ret->anim_private = res.anim_private;
     ret->identity_aabb = res.aabb;
     ret->uid = Entity_NewUID();
-    G_Pos_Set(ret->uid, (vec3_t){0.0f, 0.0f, 0.0f});
 
     return ret;
 

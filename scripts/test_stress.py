@@ -89,7 +89,7 @@ def setup_armies():
     for r in range(int(-NROWS//2), int(NROWS//2 + NROWS%2)):
         for c in range(int(-NCOLS//2), int(NCOLS//2 + NCOLS%2)):
 
-            x = -(r * SPACING) + 40
+            x = -(r * SPACING) + 35
             z = c * SPACING
             y = pf.map_height_at_point(x, z)
 
@@ -102,7 +102,7 @@ def setup_armies():
 
             red_army_units += [knight]
 
-            x = (r * SPACING) - 40
+            x = (r * SPACING) - 35
             z = c * SPACING
             y = pf.map_height_at_point(x, z)
 

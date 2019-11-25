@@ -588,7 +588,7 @@ void G_RenderMapAndEntities(void)
     g_draw_pass();
 }
 
-bool G_AddEntity(struct entity *ent)
+bool G_AddEntity(struct entity *ent, vec3_t pos)
 {
     int ret;
     khiter_t k;
@@ -601,6 +601,7 @@ bool G_AddEntity(struct entity *ent)
     if(ent->flags & ENTITY_FLAG_COMBATABLE)
         G_Combat_AddEntity(ent, COMBAT_STANCE_AGGRESSIVE);
 
+    G_Pos_Set(ent->uid, pos);
     if(ent->flags & ENTITY_FLAG_STATIC)
         return true;
 
@@ -609,7 +610,6 @@ bool G_AddEntity(struct entity *ent)
     kh_value(s_gs.dynamic, k) = ent;
 
     G_Move_AddEntity(ent);
-    assert((G_Pos_Get(ent->uid), true));
     return true;
 }
 

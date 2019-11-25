@@ -47,6 +47,8 @@
 typedef struct {
     PyObject_HEAD
     struct entity *ent;
+    vec3_t         pos;
+    bool           active;
 }PyEntityObject;
 
 typedef struct {
@@ -409,6 +411,9 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         self->ent = ent; 
     }
 
+    self->pos = (vec3_t){0.0f, 0.0f, 0.0f};
+    self->active = false;
+
     int ret;
     khiter_t k = kh_put(PyObject, s_uid_pyobj_table, ent->uid, &ret);
     assert(ret != -1 && ret != 0);
@@ -455,7 +460,7 @@ static int PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closur
 
 static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure)
 {
-    vec3_t pos = G_Pos_Get(self->ent->uid);
+    vec3_t pos = (!self->active) ? self->pos : G_Pos_Get(self->ent->uid);
     return Py_BuildValue("[f,f,f]", pos.x, pos.y, pos.z);
 }
 
@@ -484,7 +489,10 @@ static int PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure
         newpos.raw[i] = PyFloat_AsDouble(item);
     }
 
-    G_Pos_Set(self->ent->uid, newpos);
+    if(self->active)
+        G_Pos_Set(self->ent->uid, newpos);
+    else
+        self->pos = newpos;
     return 0;
 }
 
@@ -636,14 +644,23 @@ static int PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *
 
 static PyObject *PyEntity_activate(PyEntityObject *self)
 {
+    if(self->active)
+        Py_RETURN_NONE;
+
     assert(self->ent);
-    G_AddEntity(self->ent);
+    self->active = true;
+    G_AddEntity(self->ent, self->pos);
     Py_RETURN_NONE;
 }
 
 static PyObject *PyEntity_deactivate(PyEntityObject *self)
 {
+    if(!self->active)
+        Py_RETURN_NONE;
+
     assert(self->ent);
+    self->active = false;
+    self->pos = G_Pos_Get(self->ent->uid);
     G_RemoveEntity(self->ent);
     Py_RETURN_NONE;
 }

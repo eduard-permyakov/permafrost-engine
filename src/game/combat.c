@@ -49,6 +49,7 @@
 #define ENEMY_MELEE_ATTACK_RANGE       (5.0f)
 #define EPSILON                        (1.0f/1024)
 #define MAX(a, b)                      ((a) > (b) ? (a) : (b))
+#define ARR_SIZE(a)                    (sizeof(a)/sizeof(a[0]))
 
 /*
  *                    Start
@@ -147,17 +148,19 @@ static float ents_distance(const struct entity *a, const struct entity *b)
     return PFM_Vec2_Len(&dist) - a->selection_radius - b->selection_radius;
 }
 
-static struct entity *closest_enemy_in_range(const struct entity *ent, const khash_t(entity) *all)
+static struct entity *closest_enemy_in_range(const struct entity *ent)
 {
-    uint32_t key;
-    struct entity *curr;
-
     float min_dist = FLT_MAX;
     struct entity *ret = NULL;
 
-    kh_foreach(all, key, curr, {
+    struct entity *near_ents[128];
+    int num_near = G_Pos_EntsInCircle(G_Pos_GetXZ(ent->uid), 
+        ENEMY_TARGET_ACQUISITION_RANGE, near_ents, ARR_SIZE(near_ents));
 
-        if(key == ent->uid)
+    for(int i = 0; i < num_near; i++) {
+
+        struct entity *curr = near_ents[i];
+        if(curr == ent)
             continue;
         if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
             continue;
@@ -165,12 +168,11 @@ static struct entity *closest_enemy_in_range(const struct entity *ent, const kha
             continue;
    
         float dist = ents_distance(ent, curr);
-        if(dist <= ENEMY_TARGET_ACQUISITION_RANGE && dist < min_dist) {
+        if(dist < min_dist) {
             min_dist = dist; 
             ret = curr;
         }
-    });
-
+    }
     return ret;
 }
 
@@ -257,7 +259,7 @@ static void on_30hz_tick(void *user, void *event)
 
             /* Find and assign targets for entities. Make the entity move towards its' target. */
             struct entity *enemy;
-            if((enemy = closest_enemy_in_range(curr, G_GetDynamicEntsSet() )) != NULL) {
+            if((enemy = closest_enemy_in_range(curr)) != NULL) {
 
                 if(ents_distance(curr, enemy) <= ENEMY_MELEE_ATTACK_RANGE) {
 
@@ -293,7 +295,7 @@ static void on_30hz_tick(void *user, void *event)
             assert(cs->target);
 
             /* Handle the case where our target dies before we reach it */
-            struct entity *enemy = closest_enemy_in_range(curr, G_GetDynamicEntsSet());
+            struct entity *enemy = closest_enemy_in_range(curr);
             if(!enemy) {
 
                 cs->state = STATE_NOT_IN_COMBAT; 

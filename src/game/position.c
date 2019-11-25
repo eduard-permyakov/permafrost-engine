@@ -60,17 +60,24 @@ static khash_t(pos) *s_postable;
 /* The quadtree is always synchronized with the postable, at function call boundaries */
 static qt_ent_t      s_postree;
 
+void qt_print(void)
+{
+    qt_ent_print(&s_postree);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
 bool G_Pos_Set(uint32_t uid, vec3_t pos)
 {
+    const khash_t(entity) *ents = G_GetAllEntsSet();
+    assert(kh_get(entity, ents, uid) != kh_end(ents));
+
     khiter_t k = kh_get(pos, s_postable, uid);
     bool overwrite = (k != kh_end(s_postable));
 
     if(overwrite) {
-        assert(kh_exist(s_postable, k));
         vec3_t old_pos = kh_val(s_postable, k);
         bool ret = qt_ent_delete(&s_postree, old_pos.x, old_pos.z, uid);
         assert(ret);
@@ -117,7 +124,7 @@ void G_Pos_Delete(uint32_t uid)
     vec3_t pos = kh_val(s_postable, k);
     kh_del(pos, s_postable, k);
 
-    int ret = qt_ent_delete(&s_postree, pos.x, pos.z, uid);
+    bool ret = qt_ent_delete(&s_postree, pos.x, pos.z, uid);
     assert(ret);
     assert(kh_size(s_postable) == s_postree.nrecs);
 }
@@ -174,11 +181,14 @@ int G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t
 {
     uint32_t ent_ids[maxout];
     const khash_t(entity) *ents = G_GetAllEntsSet();
+    for(int i = 0; i < maxout; i++)
+        ent_ids[i] = (uint32_t)-1;
 
     int ret = qt_ent_inrange_circle(&s_postree, 
         xz_point.x, xz_point.z, range, ent_ids, maxout);
 
     for(int i = 0; i < ret; i++) {
+        assert(ent_ids[i] != (uint32_t)-1);
         khiter_t k = kh_get(entity, ents, ent_ids[i]);
         assert(k != kh_end(s_postable));
         out[i] = kh_val(ents, k);

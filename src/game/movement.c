@@ -65,6 +65,7 @@
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MIN(a, b)    ((a) < (b) ? (a) : (b))
+#define ARR_SIZE(a)  (sizeof(a)/sizeof(a[0]))
 
 #define VEL_HIST_LEN (16)
 
@@ -98,12 +99,12 @@ VEC_TYPE(flock, struct flock)
 VEC_IMPL(static inline, flock, struct flock)
 
 /* Parameters controlling steering/flocking behaviours */
-#define SEPARATION_FORCE_SCALE          (1.0f)
+#define SEPARATION_FORCE_SCALE          (0.5f)
 #define MOVE_ARRIVE_FORCE_SCALE         (0.5f)
-#define MOVE_COHESION_FORCE_SCALE       (0.05f)
+#define MOVE_COHESION_FORCE_SCALE       (0.15f)
 
 #define ARRIVE_THRESHOLD_DIST           (5.0f)
-#define SEPARATION_BUFFER_DIST          (0.0f)
+#define SEPARATION_BUFFER_DIST          (5.0f)
 #define COHESION_NEIGHBOUR_RADIUS       (50.0f)
 #define ARRIVE_SLOWING_RADIUS           (10.0f)
 #define ADJACENCY_SEP_DIST              (5.0f)
@@ -225,6 +226,7 @@ static void on_marker_anim_finish(void *user, void *event)
     vec_pentity_del(&s_move_markers, idx);
 
     E_Entity_Unregister(EVENT_ANIM_FINISHED, ent->uid, on_marker_anim_finish);
+    G_RemoveEntity(ent);
     AL_EntityFree(ent);
 }
 
@@ -385,8 +387,9 @@ static void move_marker_add(vec3_t pos, bool attack)
     struct entity *ent = attack ? AL_EntityFromPFObj(path, "arrow-red.pfobj", "__move_marker__") 
                                 : AL_EntityFromPFObj(path, "arrow-green.pfobj", "__move_marker__");
     assert(ent);
+    ent->flags |= ENTITY_FLAG_STATIC;
+    G_AddEntity(ent, pos);
 
-    G_Pos_Set(ent->uid, pos);
     ent->scale = (vec3_t){2.0f, 2.0f, 2.0f};
     E_Entity_Register(EVENT_ANIM_FINISHED, ent->uid, on_marker_anim_finish, ent, G_RUNNING);
 
@@ -452,23 +455,6 @@ static void on_render_3d(void *user, void *event)
 
         const struct camera *cam = G_GetActiveCamera();
         M_NavRenderVisiblePathFlowField(s_map, cam, s_last_cmd_dest);
-    }
-
-    for(int i = 0; i < vec_size(&s_move_markers); i++) {
-
-        struct entity *curr = vec_AT(&s_move_markers, i);
-        if(curr->flags & ENTITY_FLAG_ANIMATED) {
-
-            A_Update(curr);
-            A_SetRenderState(curr);
-        }
-
-        if(curr->flags & ENTITY_FLAG_INVISIBLE)
-            continue;
-
-        mat4x4_t model;
-        Entity_ModelMatrix(curr, &model);
-        R_GL_Draw(curr->render_private, &model);
     }
 }
 
@@ -627,14 +613,16 @@ static vec2_t cohesion_force(const struct entity *ent, const struct flock *flock
 static vec2_t separation_force(const struct entity *ent, float buffer_dist)
 {
     vec2_t ret = (vec2_t){0.0f};
-    size_t neighbour_count = 0;
-    const khash_t(entity) *dynamic = G_GetDynamicEntsSet();
+    struct entity *near_ents[128];
+    int num_near = G_Pos_EntsInCircle(G_Pos_GetXZ(ent->uid), 
+        ent->selection_radius + buffer_dist, near_ents, ARR_SIZE(near_ents));
 
-    uint32_t key;
-    struct entity *curr;
-    kh_foreach(dynamic, key, curr, {
+    for(int i = 0; i < num_near; i++) {
 
+        struct entity *curr = near_ents[i];
         if(curr == ent)
+            continue;
+        if(curr->flags & ENTITY_FLAG_STATIC)
             continue;
 
         vec2_t diff;
@@ -653,13 +641,12 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
         PFM_Vec2_Scale(&diff, scale, &diff);
 
         PFM_Vec2_Add(&ret, &diff, &ret);
-        neighbour_count++;
-    });
+    }
 
-    if(0 == neighbour_count)
+    if(0 == num_near)
         return (vec2_t){0.0f};
 
-    PFM_Vec2_Scale(&ret, -1.0f / neighbour_count, &ret);
+    PFM_Vec2_Scale(&ret, -1.0f / num_near, &ret);
     vec2_truncate(&ret, MAX_FORCE);
     return ret;
 }
@@ -888,42 +875,38 @@ static void find_neighbours(const struct entity *ent,
      * to those entites that are not currently in a 'moving' state,
      * meaning they will not perform collision avoidance maneuvers of
      * their own. */
-    const khash_t(entity) *dynamic = G_GetDynamicEntsSet();
 
-    uint32_t key;
-    struct entity *curr;
-    kh_foreach(dynamic, key, curr, {
+    struct entity *near_ents[512];
+    int num_near = G_Pos_EntsInCircle(G_Pos_GetXZ(ent->uid), 
+        CLEARPATH_NEIGHBOUR_RADIUS, near_ents, ARR_SIZE(near_ents));
+
+    for(int i = 0; i < num_near; i++) {
+        struct entity *curr = near_ents[i];
 
         if(curr->uid == ent->uid)
+            continue;
+
+        if(curr->flags & ENTITY_FLAG_STATIC)
             continue;
 
         if(curr->selection_radius == 0.0f)
             continue;
 
-        vec2_t diff;
-        vec2_t ent_xz_pos = G_Pos_GetXZ(ent->uid);
-        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
-        struct movestate *ms = movestate_get(curr); /* May be NULL */
+        struct movestate *ms = movestate_get(curr);
         assert(ms);
 
-        PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
-        if(PFM_Vec2_Len(&diff) < CLEARPATH_NEIGHBOUR_RADIUS) {
-        
-            struct cp_ent newdesc = (struct cp_ent) {
-                .xz_pos = curr_xz_pos,
-                .xz_vel = ms->velocity,
-                .radius = curr->selection_radius
-            };
+        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
+        struct cp_ent newdesc = (struct cp_ent) {
+            .xz_pos = curr_xz_pos,
+            .xz_vel = ms->velocity,
+            .radius = curr->selection_radius
+        };
 
-            if(ms->state == STATE_ARRIVED) {
-            
-                vec_cp_ent_push(out_stat, newdesc);
-            }else{
-            
-                vec_cp_ent_push(out_dyn, newdesc);
-            }
-        }
-    });
+        if(ms->state == STATE_ARRIVED)
+            vec_cp_ent_push(out_stat, newdesc);
+        else
+            vec_cp_ent_push(out_dyn, newdesc);
+    }
 }
 
 static void on_30hz_tick(void *user, void *event)
@@ -934,7 +917,6 @@ static void on_30hz_tick(void *user, void *event)
 
     uint32_t key;
     struct entity *curr;
-    const khash_t(entity) *dynamic = G_GetDynamicEntsSet();
 
     /* Iterate vector backwards so we can delete entries while iterating. */
     for(int i = vec_size(&s_flocks)-1; i >= 0; i--) {
@@ -1036,6 +1018,7 @@ void G_Move_Shutdown(void)
 
     for(int i = 0; i < vec_size(&s_move_markers); i++) {
         E_Entity_Unregister(EVENT_ANIM_FINISHED, vec_AT(&s_move_markers, i)->uid, on_marker_anim_finish);
+        G_RemoveEntity(vec_AT(&s_move_markers, i));
         AL_EntityFree(vec_AT(&s_move_markers, i));
     }
 
