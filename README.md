@@ -38,6 +38,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * Implementation of 'boids' steering/flocking behaviours
 * Hierarchial flow field pathfinding
 * Dynamic collision avoidance of multiple entities using Hybrid Reciprocal Velocity Obstacles and the ClearPath algorithm
+* Efficient spatial indexing using a quadtree
 * RTS minimap
 * RTS-style unit selection
 * RTS unit combat system
