@@ -99,12 +99,12 @@ VEC_TYPE(flock, struct flock)
 VEC_IMPL(static inline, flock, struct flock)
 
 /* Parameters controlling steering/flocking behaviours */
-#define SEPARATION_FORCE_SCALE          (0.5f)
+#define SEPARATION_FORCE_SCALE          (0.6f)
 #define MOVE_ARRIVE_FORCE_SCALE         (0.5f)
 #define MOVE_COHESION_FORCE_SCALE       (0.15f)
 
 #define ARRIVE_THRESHOLD_DIST           (5.0f)
-#define SEPARATION_BUFFER_DIST          (5.0f)
+#define SEPARATION_BUFFER_DIST          (0.0f)
 #define COHESION_NEIGHBOUR_RADIUS       (50.0f)
 #define ARRIVE_SLOWING_RADIUS           (10.0f)
 #define ADJACENCY_SEP_DIST              (5.0f)
@@ -617,7 +617,7 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
     vec2_t ret = (vec2_t){0.0f};
     struct entity *near_ents[128];
     int num_near = G_Pos_EntsInCircle(G_Pos_GetXZ(ent->uid), 
-        ent->selection_radius + buffer_dist, near_ents, ARR_SIZE(near_ents));
+        ent->selection_radius * 5.0f, near_ents, ARR_SIZE(near_ents));
 
     for(int i = 0; i < num_near; i++) {
 
@@ -639,7 +639,7 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
          * behaviour that may arise when there are discontinuities in the forces. 
          */
         float t = (PFM_Vec2_Len(&diff) - radius*0.95) / radius;
-        float scale = exp(-5.0f * t);
+        float scale = exp(-15.0f * t);
         PFM_Vec2_Scale(&diff, scale, &diff);
 
         PFM_Vec2_Add(&ret, &diff, &ret);
@@ -648,7 +648,7 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
     if(0 == num_near)
         return (vec2_t){0.0f};
 
-    PFM_Vec2_Scale(&ret, -1.0f / num_near, &ret);
+    PFM_Vec2_Scale(&ret, -1.0f, &ret);
     vec2_truncate(&ret, MAX_FORCE);
     return ret;
 }
