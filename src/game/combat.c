@@ -69,7 +69,13 @@
  *                    [STATE_ATTACK_ANIM_PLAYING]-+
  */
 
+struct combatstats{
+    int   base_dmg;         /* The base damage per hit */
+    float base_armour_pc;   /* Percentage of damage blocked. Valid range: [0.0 - 1.0] */
+};
+
 struct combatstate{
+    struct combatstats stats;
     int                current_hp;
     enum combat_stance stance;
     enum{
@@ -219,10 +225,10 @@ static void on_attack_anim_finish(void *user, void *event)
 
     if(ents_distance(self, cs->target) <= ENEMY_MELEE_ATTACK_RANGE) {
 
-        float dmg = self->ca.base_dmg * (1.0f - cs->target->ca.base_armour_pc);
+        float dmg = G_Combat_GetBaseDamage(self) * (1.0f - G_Combat_GetBaseArmour(cs->target));
         target_cs->current_hp = MAX(0.0f, target_cs->current_hp - dmg);
 
-        if(target_cs->current_hp == 0.0f) {
+        if(target_cs->current_hp == 0.0f && cs->target->max_hp > 0) {
 
             G_Combat_RemoveEntity(cs->target);
             G_Move_Stop(cs->target);
@@ -392,7 +398,8 @@ void G_Combat_AddEntity(const struct entity *ent, enum combat_stance initial)
     assert(ent->flags & ENTITY_FLAG_COMBATABLE);
 
     struct combatstate new_cs = (struct combatstate) {
-        .current_hp = ent->ca.max_hp,
+        .stats = {0},
+        .current_hp = ent->max_hp,
         .stance = initial,
         .state = STATE_NOT_IN_COMBAT,
         .target = NULL,
@@ -420,9 +427,9 @@ void G_Combat_RemoveEntity(const struct entity *ent)
 
 bool G_Combat_SetStance(const struct entity *ent, enum combat_stance stance)
 {
+    assert(ent->flags & ENTITY_FLAG_COMBATABLE);
     struct combatstate *cs = combatstate_get(ent);
-    if(!cs)
-        return false;
+    assert(cs);
 
     if(stance == cs->stance)
         return true;
@@ -482,5 +489,33 @@ int G_Combat_GetCurrentHP(const struct entity *ent)
     struct combatstate *cs = combatstate_get(ent);
     assert(cs);
     return cs->current_hp;
+}
+
+void G_Combat_SetBaseArmour(const struct entity *ent, float armour_pc)
+{
+    struct combatstate *cs = combatstate_get(ent);
+    assert(cs);
+    cs->stats.base_armour_pc = armour_pc;
+}
+
+float G_Combat_GetBaseArmour(const struct entity *ent)
+{
+    struct combatstate *cs = combatstate_get(ent);
+    assert(cs);
+    return cs->stats.base_armour_pc;
+}
+
+void G_Combat_SetBaseDamage(const struct entity *ent, int dmg)
+{
+    struct combatstate *cs = combatstate_get(ent);
+    assert(cs);
+    cs->stats.base_dmg = dmg;
+}
+
+int G_Combat_GetBaseDamage(const struct entity *ent)
+{
+    struct combatstate *cs = combatstate_get(ent);
+    assert(cs);
+    return cs->stats.base_dmg;
 }
 

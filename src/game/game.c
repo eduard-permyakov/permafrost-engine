@@ -239,7 +239,7 @@ static void g_render_healthbars(void)
         if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
             continue;
 
-        int max_health = curr->ca.max_hp;
+        int max_health = curr->max_hp;
         int curr_health = G_Combat_GetCurrentHP(curr);
 
         ent_top_pos_ws[num_combat_visible] = Entity_TopCenterPointWS(curr);
@@ -629,16 +629,18 @@ bool G_RemoveEntity(struct entity *ent)
         kh_del(entity, s_gs.dynamic, k);
     }
 
-    G_Combat_RemoveEntity(ent);
     G_Move_RemoveEntity(ent);
+    G_Combat_RemoveEntity(ent);
     G_Pos_Delete(ent->uid);
     return true;
 }
 
 void G_StopEntity(const struct entity *ent)
 {
-    G_Combat_StopAttack(ent);
-    G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
+    if(ent->flags & ENTITY_FLAG_COMBATABLE) {
+        G_Combat_StopAttack(ent);
+        G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
+    }
     G_Move_Stop(ent);
 }
 

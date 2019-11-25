@@ -56,9 +56,9 @@ import views.menu_window as mw
 # Global settings                                          #
 ############################################################
 
-pf.set_ambient_light_color([1.0, 1.0, 1.0])
-pf.set_emit_light_color([1.0, 1.0, 1.0])
-pf.set_emit_light_pos([1664.0, 1024.0, 384.0])
+pf.set_ambient_light_color((1.0, 1.0, 1.0))
+pf.set_emit_light_color((1.0, 1.0, 1.0))
+pf.set_emit_light_pos((1664.0, 1024.0, 384.0))
 
 pf.new_game_string(globals.active_map.pfmap_str())
 minimap_pos = pf.get_minimap_position()

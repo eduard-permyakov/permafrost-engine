@@ -144,8 +144,8 @@ class ObjectsVC(vc.ViewController):
             globals.active_objects_list.remove(obj)
 
     def __on_mousewheel(self, event):
-        CCW_ROT_5DEG = [0.0,  0.0436194, 0.0, 0.9990482]
-        CW_ROT_5DEG  = [0.0, -0.0436194, 0.0, 0.9990482]
+        CCW_ROT_5DEG = (0.0,  0.0436194, 0.0, 0.9990482)
+        CW_ROT_5DEG  = (0.0, -0.0436194, 0.0, 0.9990482)
         if self.view.mode == self.view.OBJECTS_MODE_SELECT:
             sel_obj_list = pf.get_unit_selection()
             if len(sel_obj_list) != 1:

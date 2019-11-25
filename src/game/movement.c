@@ -436,8 +436,10 @@ static void on_mousedown(void *user, void *event)
             if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
                 continue;
 
-            G_Combat_ClearSavedMoveCmd(curr);
-            G_Combat_SetStance(curr, attack ? COMBAT_STANCE_AGGRESSIVE : COMBAT_STANCE_NO_ENGAGEMENT);
+            if(curr->flags & ENTITY_FLAG_COMBATABLE) {
+                G_Combat_ClearSavedMoveCmd(curr);
+                G_Combat_SetStance(curr, attack ? COMBAT_STANCE_AGGRESSIVE : COMBAT_STANCE_NO_ENGAGEMENT);
+            }
         }
 
         move_marker_add(mouse_coord, attack);

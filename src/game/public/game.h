@@ -167,8 +167,15 @@ enum combat_stance{
     COMBAT_STANCE_NO_ENGAGEMENT,
 };
 
-bool G_Combat_SetStance(const struct entity *ent, enum combat_stance stance);
-int  G_Combat_GetCurrentHP(const struct entity *ent);
+/* Can only be called with entities that have 'ENTITY_FLAG_COMBATABLE' set */
+bool  G_Combat_SetStance(const struct entity *ent, enum combat_stance stance);
+int   G_Combat_GetCurrentHP(const struct entity *ent);
+
+void  G_Combat_SetBaseArmour(const struct entity *ent, float armour_pc);
+float G_Combat_GetBaseArmour(const struct entity *ent);
+void  G_Combat_SetBaseDamage(const struct entity *ent, int dmg);
+int   G_Combat_GetBaseDamage(const struct entity *ent);
+
 
 /*###########################################################################*/
 /* GAME POSITION                                                             */

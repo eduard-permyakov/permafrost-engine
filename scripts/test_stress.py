@@ -50,8 +50,8 @@ MAP_WIDTH = 4 * pf.TILES_PER_CHUNK_WIDTH * pf.X_COORDS_PER_TILE
 
 SPACING = 12
 
-DIR_RIGHT = [0.0, 1.0/math.sqrt(2.0), 0.0, 1.0/math.sqrt(2.0)]
-DIR_LEFT = [0.0, -1.0/math.sqrt(2.0), 0.0, 1.0/math.sqrt(2.0)]
+DIR_RIGHT = (0.0, 1.0/math.sqrt(2.0), 0.0, 1.0/math.sqrt(2.0))
+DIR_LEFT = (0.0, -1.0/math.sqrt(2.0), 0.0, 1.0/math.sqrt(2.0))
 
 red_army_units = []
 blue_army_units = []
@@ -59,9 +59,9 @@ war_on = False
 
 def setup_scene():
 
-    pf.set_ambient_light_color([1.0, 1.0, 1.0])
-    pf.set_emit_light_color([1.0, 1.0, 1.0])
-    pf.set_emit_light_pos([1664.0, 1024.0, 384.0])
+    pf.set_ambient_light_color((1.0, 1.0, 1.0))
+    pf.set_emit_light_color((1.0, 1.0, 1.0))
+    pf.set_emit_light_pos((1664.0, 1024.0, 384.0))
 
     pf.new_game("assets/maps", "plain.pfmap")
 
@@ -94,7 +94,7 @@ def setup_armies():
             y = pf.map_height_at_point(x, z)
 
             knight = rts.units.knight.Knight("assets/models/knight", "knight.pfobj", "Knight")
-            knight.pos = [float(x), float(y), float(z)]
+            knight.pos = (float(x), float(y), float(z))
             knight.rotation = DIR_RIGHT
             knight.faction_id = 0
             knight.selection_radius = 3.25
@@ -102,12 +102,12 @@ def setup_armies():
 
             red_army_units += [knight]
 
-            x = (r * SPACING) - 35
+            x = (r * SPACING) - 35.0
             z = c * SPACING
             y = pf.map_height_at_point(x, z)
 
             berz = rts.units.berzerker.Berzerker("assets/models/berzerker", "berzerker.pfobj", "Berzerker")
-            berz.pos = [float(x), float(y), float(z)]
+            berz.pos = (float(x), float(y), float(z))
             berz.rotation = DIR_LEFT
             berz.faction_id = 1
             berz.selection_radius = 3.00

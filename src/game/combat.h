@@ -50,7 +50,5 @@ void G_Combat_RemoveEntity(const struct entity *ent);
 void G_Combat_StopAttack(const struct entity *ent);
 void G_Combat_ClearSavedMoveCmd(const struct entity *ent);
 
-int  G_Combat_GetCurrentHP(const struct entity *ent);
-
 #endif
 

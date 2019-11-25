@@ -47,7 +47,7 @@
 typedef struct {
     PyObject_HEAD
     struct entity *ent;
-    vec3_t         pos;
+    PyObject      *dict;
     bool           active;
 }PyEntityObject;
 
@@ -376,17 +376,24 @@ static PyObject *PyEntity_del(PyEntityObject *self)
 
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
+    PyObject *dict = PyDict_New();
+    if(!dict)
+        return NULL;
+
     PyEntityObject *self;
     const char *dirpath, *filename, *name;
 
     /* First, extract the first 3 args to handle the cases where subclasses get 
      * intialized with more arguments */
     PyObject *first_args = PyTuple_GetSlice(args, 0, 3);
-    if(!first_args)
+    if(!first_args) {
+        Py_DECREF(dict);
         return NULL;
+    }
 
     if(!PyArg_ParseTuple(first_args, "sss", &dirpath, &filename, &name)) {
         PyErr_SetString(PyExc_TypeError, "First 3 arguments must be strings.");
+        Py_DECREF(dict);
         return NULL;
     }
     Py_DECREF(first_args);
@@ -399,6 +406,7 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     struct entity *ent = AL_EntityFromPFObj(entity_path, filename, name);
     if(!ent) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to initialize pf.Entity from the given arguments.");
+        Py_DECREF(dict);
         return NULL;
     }
 
@@ -406,12 +414,14 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     if(!self) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to allocate new pf.Entity.");
         AL_EntityFree(ent); 
+        Py_DECREF(dict);
         return NULL;
     }else{
         self->ent = ent; 
     }
 
-    self->pos = (vec3_t){0.0f, 0.0f, 0.0f};
+    self->dict = dict;
+    PyDict_SetItemString(self->dict, "pos", Py_BuildValue("(fff)", 0.0f, 0.0f, 0.0f));
     self->active = false;
 
     int ret;
@@ -424,6 +434,7 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
 static void PyEntity_dealloc(PyEntityObject *self)
 {
+    Py_DECREF(self->dict);
     assert(self->ent);
 
     khiter_t k = kh_get(PyObject, s_uid_pyobj_table, self->ent->uid);
@@ -460,103 +471,70 @@ static int PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closur
 
 static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure)
 {
-    vec3_t pos = (!self->active) ? self->pos : G_Pos_Get(self->ent->uid);
-    return Py_BuildValue("[f,f,f]", pos.x, pos.y, pos.z);
+    if(!self->active)
+        return PyDict_GetItemString(self->dict, "pos");
+
+    vec3_t pos = G_Pos_Get(self->ent->uid);
+    return Py_BuildValue("(f,f,f)", pos.x, pos.y, pos.z);
 }
 
 static int PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure)
 {
-    if(!PyList_Check(value)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a list.");
+    if(!PyTuple_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple.");
         return -1;
     }
     
-    Py_ssize_t len = PyList_Size(value);
-    if(len != 3) {
-        PyErr_SetString(PyExc_TypeError, "Argument must have a size of 3."); 
+    vec3_t newpos;
+    if(!PyArg_ParseTuple(value, "fff", 
+        &newpos.raw[0], &newpos.raw[1], &newpos.raw[2])) {
+        printf("we fail here\n");
         return -1;
     }
 
-    vec3_t newpos;
-    for(int i = 0; i < len; i++) {
-
-        PyObject *item = PyList_GetItem(value, i);
-        if(!PyFloat_Check(item)) {
-            PyErr_SetString(PyExc_TypeError, "List items must be floats.");
-            return -1;
-        }
-
-        newpos.raw[i] = PyFloat_AsDouble(item);
-    }
-
+    PyDict_SetItemString(self->dict, "pos", value);
     if(self->active)
         G_Pos_Set(self->ent->uid, newpos);
-    else
-        self->pos = newpos;
+
     return 0;
 }
 
 static PyObject *PyEntity_get_scale(PyEntityObject *self, void *closure)
 {
-    return Py_BuildValue("[f,f,f]", self->ent->scale.x, self->ent->scale.y, self->ent->scale.z);
+    return Py_BuildValue("(f,f,f)", self->ent->scale.x, self->ent->scale.y, self->ent->scale.z);
 }
 
 static int PyEntity_set_scale(PyEntityObject *self, PyObject *value, void *closure)
 {
-    if(!PyList_Check(value)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a list.");
+    if(!PyTuple_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple.");
         return -1;
     }
     
-    Py_ssize_t len = PyList_Size(value);
-    if(len != 3) {
-        PyErr_SetString(PyExc_TypeError, "Argument must have a size of 3."); 
+    if(!PyArg_ParseTuple(value, "fff", 
+        &self->ent->scale.raw[0], &self->ent->scale.raw[1], &self->ent->scale.raw[2]))
         return -1;
-    }
-
-    for(int i = 0; i < len; i++) {
-
-        PyObject *item = PyList_GetItem(value, i);
-        if(!PyFloat_Check(item)) {
-            PyErr_SetString(PyExc_TypeError, "List items must be floats.");
-            return -1;
-        }
-
-        self->ent->scale.raw[i] = PyFloat_AsDouble(item);
-    }
 
     return 0;
 }
 
 static PyObject *PyEntity_get_rotation(PyEntityObject *self, void *closure)
 {
-    return Py_BuildValue("[f,f,f,f]", self->ent->rotation.x, self->ent->rotation.y, 
+    return Py_BuildValue("(f,f,f,f)", self->ent->rotation.x, self->ent->rotation.y, 
         self->ent->rotation.z, self->ent->rotation.w);
 }
 
 static int PyEntity_set_rotation(PyEntityObject *self, PyObject *value, void *closure)
 {
-    if(!PyList_Check(value)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a list.");
+    if(!PyTuple_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple.");
         return -1;
     }
     
-    Py_ssize_t len = PyList_Size(value);
-    if(len != 4) {
-        PyErr_SetString(PyExc_TypeError, "Argument must have a size of 4."); 
+    if(!PyArg_ParseTuple(value, "ffff", 
+        &self->ent->rotation.raw[0], &self->ent->rotation.raw[1],
+        &self->ent->rotation.raw[2], &self->ent->rotation.raw[3]))
         return -1;
-    }
-
-    for(int i = 0; i < len; i++) {
-
-        PyObject *item = PyList_GetItem(value, i);
-        if(!PyFloat_Check(item)) {
-            PyErr_SetString(PyExc_TypeError, "List items must be floats.");
-            return -1;
-        }
-
-        self->ent->rotation.raw[i] = PyFloat_AsDouble(item);
-    }
 
     return 0;
 }
@@ -649,7 +627,24 @@ static PyObject *PyEntity_activate(PyEntityObject *self)
 
     assert(self->ent);
     self->active = true;
-    G_AddEntity(self->ent, self->pos);
+
+    vec3_t pos;
+    PyObject *entry = PyDict_GetItemString(self->dict, "pos");
+    int ret = PyArg_ParseTuple(entry, "fff", &pos.x, &pos.y, &pos.z);
+    assert(ret);
+    G_AddEntity(self->ent, pos);
+
+    if(self->ent->flags & ENTITY_FLAG_COMBATABLE) {
+
+        PyObject *obj = PyDict_GetItemString(self->dict, "base_dmg");
+        assert(obj && PyInt_Check(obj));
+        G_Combat_SetBaseDamage(self->ent, PyInt_AS_LONG(obj));
+
+        obj = PyDict_GetItemString(self->dict, "base_armour");
+        assert(obj && PyFloat_Check(obj));
+        G_Combat_SetBaseArmour(self->ent, PyFloat_AS_DOUBLE(obj));
+    }
+
     Py_RETURN_NONE;
 }
 
@@ -659,9 +654,21 @@ static PyObject *PyEntity_deactivate(PyEntityObject *self)
         Py_RETURN_NONE;
 
     assert(self->ent);
+
+    vec3_t pos = G_Pos_Get(self->ent->uid);
+    PyDict_SetItemString(self->dict, "pos", Py_BuildValue("(fff)", pos.x, pos.y, pos.z));
+
+    if(self->ent->flags & ENTITY_FLAG_COMBATABLE) {
+    
+        PyObject *damage = PyInt_FromLong(G_Combat_GetBaseDamage(self->ent));
+        PyObject *armour = PyFloat_FromDouble(G_Combat_GetBaseArmour(self->ent));
+        PyDict_SetItemString(self->dict, "base_dmg", damage);
+        PyDict_SetItemString(self->dict, "base_armour", armour);
+    }
+
     self->active = false;
-    self->pos = G_Pos_Get(self->ent->uid);
     G_RemoveEntity(self->ent);
+
     Py_RETURN_NONE;
 }
 
@@ -747,8 +754,13 @@ static PyObject *PyEntity_stop(PyEntityObject *self)
 static PyObject *PyEntity_hold_position(PyEntityObject *self)
 {
     assert(self->ent);
-    G_StopEntity(self->ent);
-    G_Combat_SetStance(self->ent, COMBAT_STANCE_HOLD_POSITION);
+
+    if(!(self->ent->flags & ENTITY_FLAG_STATIC))
+        G_StopEntity(self->ent);
+
+    if(self->ent->flags & ENTITY_FLAG_COMBATABLE)
+        G_Combat_SetStance(self->ent, COMBAT_STANCE_HOLD_POSITION);
+
     Py_RETURN_NONE;
 }
 
@@ -845,7 +857,7 @@ static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self)
 
 static PyObject *PyCombatableEntity_get_max_hp(PyCombatableEntityObject *self, void *closure)
 {
-    return PyInt_FromLong(self->super.ent->ca.max_hp);
+    return Py_BuildValue("i", self->super.ent->max_hp);
 }
 
 static int PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObject *value, void *closure)
@@ -861,13 +873,16 @@ static int PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObjec
         return -1;
     }
 
-    self->super.ent->ca.max_hp = max_hp;
+    self->super.ent->max_hp = max_hp;
     return 0;
 }
 
 static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self, void *closure)
 {
-    return PyInt_FromLong(self->super.ent->ca.base_dmg);
+    if(!self->super.active)
+        return PyDict_GetItemString(self->super.dict, "base_dmg");
+
+    return PyInt_FromLong(G_Combat_GetBaseDamage(self->super.ent));
 }
 
 static int PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObject *value, void *closure)
@@ -883,13 +898,18 @@ static int PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObj
         return -1;
     }
 
-    self->super.ent->ca.base_dmg = base_dmg;
+    PyDict_SetItemString(self->super.dict, "base_dmg", value);
+    if(self->super.active)
+        G_Combat_SetBaseDamage(self->super.ent, base_dmg);
     return 0;
 }
 
 static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *self, void *closure)
 {
-    return PyInt_FromLong(self->super.ent->ca.base_armour_pc);
+    if(!self->super.active)
+        return PyDict_GetItemString(self->super.dict, "base_armour");
+
+    return PyFloat_FromDouble(G_Combat_GetBaseArmour(self->super.ent));
 }
 
 static int PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure)
@@ -905,7 +925,9 @@ static int PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, Py
         return -1;
     }
 
-    self->super.ent->ca.base_armour_pc = base_armour;
+    PyDict_SetItemString(self->super.dict, "base_armour", value);
+    if(self->super.active)
+        G_Combat_SetBaseArmour(self->super.ent, base_armour);
     return 0;
 }
 
@@ -915,8 +937,8 @@ static PyObject *s_obj_from_attr(const struct attr *attr)
     case TYPE_STRING:   return Py_BuildValue("s", attr->val.as_string);
     case TYPE_FLOAT:    return Py_BuildValue("f", attr->val.as_float);
     case TYPE_INT:      return Py_BuildValue("i", attr->val.as_int);
-    case TYPE_VEC3:     return Py_BuildValue("[f,f,f]", attr->val.as_vec3.x, attr->val.as_vec3.y, attr->val.as_vec3.z);
-    case TYPE_QUAT:     return Py_BuildValue("[f,f,f,f]", 
+    case TYPE_VEC3:     return Py_BuildValue("(f,f,f)", attr->val.as_vec3.x, attr->val.as_vec3.y, attr->val.as_vec3.z);
+    case TYPE_QUAT:     return Py_BuildValue("(f,f,f,f)", 
                                attr->val.as_quat.x, attr->val.as_quat.y, attr->val.as_quat.z, attr->val.as_quat.w);
     case TYPE_BOOL:     return Py_BuildValue("i", attr->val.as_bool);
     default: assert(0);

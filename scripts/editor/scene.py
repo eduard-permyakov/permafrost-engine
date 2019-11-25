@@ -46,11 +46,11 @@ OBJECTS_LIST = [
         "path"           : "sinbad/Sinbad.pfobj",
         "anim"           : True,
         "idle"           : "IdleBase",
-        "scale"          : [1.2,  1.2,  1.2], 
+        "scale"          : (1.2,  1.2,  1.2), 
         "selectable"     : True,
         "sel_radius"     : 3.25,
         "class"          : "Sinbad",
-        "construct_args" : ["assets/models/sinbad", "Sinbad.pfobj", "Sinbad"],
+        "construct_args" : ("assets/models/sinbad", "Sinbad.pfobj", "Sinbad"),
         "static"         : False,
         "collision"      : True
     },
@@ -58,11 +58,11 @@ OBJECTS_LIST = [
         "path"           : "knight/knight.pfobj",
         "anim"           : True,
         "idle"           : "Idle",
-        "scale"          : [0.8,  0.8,  0.8], 
+        "scale"          : (0.8,  0.8,  0.8), 
         "selectable"     : True,
         "sel_radius"     : 3.25,
         "class"          : "Knight",
-        "construct_args" : ["assets/models/knight", "knight.pfobj", "Knight"],
+        "construct_args" : ("assets/models/knight", "knight.pfobj", "Knight"),
         "static"         : False,
         "collision"      : True
     },
@@ -70,11 +70,11 @@ OBJECTS_LIST = [
         "path"           : "mage/mage.pfobj",
         "anim"           : True,
         "idle"           : "Idle",
-        "scale"          : [0.6,  0.6,  0.6], 
+        "scale"          : (0.6,  0.6,  0.6), 
         "selectable"     : True,
         "sel_radius"     : 4.25,
         "class"          : "Mage",
-        "construct_args" : ["assets/models/mage", "mage.pfobj", "Mage"],
+        "construct_args" : ("assets/models/mage", "mage.pfobj", "Mage"),
         "static"         : False,
         "collision"      : True
     },
@@ -82,11 +82,11 @@ OBJECTS_LIST = [
         "path"           : "berzerker/berzerker.pfobj",
         "anim"           : True,
         "idle"           : "Idle",
-        "scale"          : [0.7,  0.7,  0.7], 
+        "scale"          : (0.7,  0.7,  0.7), 
         "selectable"     : True,
         "sel_radius"     : 3.00,
         "class"          : "Berzerker",
-        "construct_args" : ["assets/models/berzerker", "berzerker.pfobj", "Berzerker"],
+        "construct_args" : ("assets/models/berzerker", "berzerker.pfobj", "Berzerker"),
         "static"         : False,
         "collision"      : True
     },
@@ -94,11 +94,11 @@ OBJECTS_LIST = [
         "path"           : "goblin/goblin.pfobj",
         "anim"           : True,
         "idle"           : "Idle",
-        "scale"          : [0.9,  0.9,  0.9],
+        "scale"          : (0.9,  0.9,  0.9),
         "selectable"     : True,
         "sel_radius"     : 3.00,
         "class"          : "Goblin",
-        "construct_args" : ["assets/models/goblin", "goblin.pfobj", "Goblin"],
+        "construct_args" : ("assets/models/goblin", "goblin.pfobj", "Goblin"),
         "static"         : False,
         "collision"      : True
     },
@@ -106,11 +106,11 @@ OBJECTS_LIST = [
         "path"           : "deer/doe.pfobj",
         "anim"           : True,
         "idle"           : "Idle",
-        "scale"          : [2.0,  2.0,  2.0],
+        "scale"          : (2.0,  2.0,  2.0),
         "selectable"     : True,
         "sel_radius"     : 3.25,
         "class"          : "Doe",
-        "construct_args" : ["assets/models/deer", "doe.pfobj", "Doe"],
+        "construct_args" : ("assets/models/deer", "doe.pfobj", "Doe"),
         "static"         : False,
         "collision"      : True
     },
@@ -118,11 +118,11 @@ OBJECTS_LIST = [
         "path"           : "deer/deer.pfobj",
         "anim"           : True,
         "idle"           : "Idle",
-        "scale"          : [2.0,  2.0,  2.0],
+        "scale"          : (2.0,  2.0,  2.0),
         "selectable"     : True,
         "sel_radius"     : 3.25,
         "class"          : "Deer",
-        "construct_args" : ["assets/models/deer", "deer.pfobj", "Deer"],
+        "construct_args" : ("assets/models/deer", "deer.pfobj", "Deer"),
         "static"         : False,
         "collision"      : True
     },
@@ -130,11 +130,11 @@ OBJECTS_LIST = [
         "path"           : "chicken/chicken.pfobj",
         "anim"           : True,
         "idle"           : "Idle",
-        "scale"          : [0.4,  0.4,  0.4],
+        "scale"          : (0.4,  0.4,  0.4),
         "selectable"     : True,
         "sel_radius"     : 1.50,
         "class"          : "Chicken",
-        "construct_args" : ["assets/models/chicken", "chicken.pfobj", "Chicken"],
+        "construct_args" : ("assets/models/chicken", "chicken.pfobj", "Chicken"),
         "static"         : False,
         "collision"      : True
     },
@@ -146,7 +146,7 @@ OBJECTS_LIST = [
     { 
         "path"           : "oak_tree/oak_tree.pfobj",
         "anim"           : False,
-        "scale"          : [1.6,  1.6,  1.6],
+        "scale"          : (1.6,  1.6,  1.6),
         "selectable"     : False,
         "sel_radius"     : 5.25,
         "static"         : True,
@@ -155,7 +155,7 @@ OBJECTS_LIST = [
     { 
         "path"           : "oak_tree/oak_leafless.pfobj",
         "anim"           : False,
-        "scale"          : [1.6,  1.6,  1.6],
+        "scale"          : (1.6,  1.6,  1.6),
         "selectable"     : False,
         "sel_radius"     : 5.25,
         "static"         : True,
@@ -164,7 +164,7 @@ OBJECTS_LIST = [
     {
         "path"           : "tree_basic/tree_basic.pfobj",
         "anim"           : False,
-        "scale"          : [10.0,  10.0,  10.0],
+        "scale"          : (10.0,  10.0,  10.0),
         "selectable"     : False,
         "sel_radius"     : 3.00,
         "static"         : True,
@@ -173,7 +173,7 @@ OBJECTS_LIST = [
     {
         "path"           : "pine_tree/pine_tree.pfobj",
         "anim"           : False,
-        "scale"          : [15.0,  15.0,  15.0],
+        "scale"          : (15.0,  15.0,  15.0),
         "selectable"     : False,
         "sel_radius"     : 2.50,
         "static"         : True,
@@ -182,7 +182,7 @@ OBJECTS_LIST = [
     {
         "path"           : "tree_leafy/tree_leafy.pfobj",
         "anim"           : False,
-        "scale"          : [10.0,  10.0,  10.0],
+        "scale"          : (10.0,  10.0,  10.0),
         "selectable"     : False,
         "sel_radius"     : 3.00,
         "static"         : True,
@@ -191,7 +191,7 @@ OBJECTS_LIST = [
     {
         "path"           : "tree_dry/tree_dry.pfobj",
         "anim"           : False,
-        "scale"          : [10.0,  10.0,  10.0],
+        "scale"          : (10.0,  10.0,  10.0),
         "selectable"     : False,
         "sel_radius"     : 2.50,
         "static"         : True,
@@ -200,7 +200,7 @@ OBJECTS_LIST = [
     {
         "path"           : "large_pine_tree/large_pine_tree.pfobj",
         "anim"           : False,
-        "scale"          : [22.0,  22.0,  22.0],
+        "scale"          : (22.0,  22.0,  22.0),
         "selectable"     : False,
         "sel_radius"     : 6.50,
         "static"         : True,
@@ -209,7 +209,7 @@ OBJECTS_LIST = [
     {
         "path"           : "large_tree/large_tree.pfobj",
         "anim"           : False,
-        "scale"          : [15.0,  15.0,  15.0],
+        "scale"          : (15.0,  15.0,  15.0),
         "selectable"     : False,
         "sel_radius"     : 5.25,
         "static"         : True,
@@ -218,7 +218,7 @@ OBJECTS_LIST = [
     {
         "path"           : "palm_tree/palm.pfobj",
         "anim"           : False,
-        "scale"          : [5.5,  5.5,  5.5],
+        "scale"          : (5.5,  5.5,  5.5),
         "selectable"     : False,
         "sel_radius"     : 3.25,
         "static"         : True,
@@ -232,7 +232,7 @@ OBJECTS_LIST = [
     {
         "path"           : "ceramic_jar/ceramic_jar.pfobj",
         "anim"           : False,
-        "scale"          : [35.0,  35.0,  35.0],
+        "scale"          : (35.0,  35.0,  35.0),
         "selectable"     : False,
         "sel_radius"     : 2.50,
         "static"         : True,
@@ -241,7 +241,7 @@ OBJECTS_LIST = [
     {
         "path"           : "rock/rock.pfobj",
         "anim"           : False,
-        "scale"          : [2.0,  2.0,  2.0],
+        "scale"          : (2.0,  2.0,  2.0),
         "selectable"     : False,
         "sel_radius"     : 3.25,
         "static"         : True,
@@ -250,7 +250,7 @@ OBJECTS_LIST = [
     {
         "path"           : "varied_rocks/rock_1.pfobj",
         "anim"           : False,
-        "scale"          : [4.0,  4.0,  4.0],
+        "scale"          : (4.0,  4.0,  4.0),
         "selectable"     : False,
         "sel_radius"     : 3.25,
         "static"         : True,
@@ -259,7 +259,7 @@ OBJECTS_LIST = [
     {
         "path"           : "varied_rocks/rock_2.pfobj",
         "anim"           : False,
-        "scale"          : [4.0,  4.0,  4.0],
+        "scale"          : (4.0,  4.0,  4.0),
         "selectable"     : False,
         "sel_radius"     : 3.00,
         "static"         : True,
@@ -268,7 +268,7 @@ OBJECTS_LIST = [
     {
         "path"           : "varied_rocks/rock_3.pfobj",
         "anim"           : False,
-        "scale"          : [4.0,  4.0,  4.0],
+        "scale"          : (4.0,  4.0,  4.0),
         "selectable"     : False,
         "sel_radius"     : 3.25,
         "static"         : True,
@@ -277,7 +277,7 @@ OBJECTS_LIST = [
     {
         "path"           : "varied_rocks/rock_4.pfobj",
         "anim"           : False,
-        "scale"          : [4.0,  4.0,  4.0],
+        "scale"          : (4.0,  4.0,  4.0),
         "selectable"     : False,
         "sel_radius"     : 3.75,
         "static"         : True,
@@ -286,7 +286,7 @@ OBJECTS_LIST = [
     {
         "path"           : "varied_rocks/rock_5.pfobj",
         "anim"           : False,
-        "scale"          : [4.0,  4.0,  4.0],
+        "scale"          : (4.0,  4.0,  4.0),
         "selectable"     : False,
         "sel_radius"     : 3.25,
         "static"         : True,
@@ -295,7 +295,7 @@ OBJECTS_LIST = [
     {
         "path"           : "shrub/shrub.pfobj",
         "anim"           : False,
-        "scale"          : [6.5,  6.5,  6.5],
+        "scale"          : (6.5,  6.5,  6.5),
         "selectable"     : False,
         "sel_radius"     : 3.50,
         "static"         : True,
@@ -304,7 +304,7 @@ OBJECTS_LIST = [
     {
         "path"           : "bushes/bush_1.pfobj",
         "anim"           : False,
-        "scale"          : [9.5,  9.5,  9.5],
+        "scale"          : (9.5,  9.5,  9.5),
         "selectable"     : False,
         "sel_radius"     : 3.50,
         "static"         : True,
@@ -313,7 +313,7 @@ OBJECTS_LIST = [
     {
         "path"           : "bushes/bush_2.pfobj",
         "anim"           : False,
-        "scale"          : [2.5,  2.5,  2.5],
+        "scale"          : (2.5,  2.5,  2.5),
         "selectable"     : False,
         "sel_radius"     : 3.75,
         "static"         : True,
@@ -322,7 +322,7 @@ OBJECTS_LIST = [
     {
         "path"           : "grass/grass_1.pfobj",
         "anim"           : False,
-        "scale"          : [1.5,  1.5,  1.5],
+        "scale"          : (1.5,  1.5,  1.5),
         "selectable"     : False,
         "sel_radius"     : 2.00,
         "static"         : True,
@@ -331,7 +331,7 @@ OBJECTS_LIST = [
     {
         "path"           : "grass/grass_2.pfobj",
         "anim"           : False,
-        "scale"          : [1.5,  1.5,  1.5],
+        "scale"          : (1.5,  1.5,  1.5),
         "selectable"     : False,
         "sel_radius"     : 2.00,
         "static"         : True,
@@ -340,7 +340,7 @@ OBJECTS_LIST = [
     {
         "path"           : "grass/grass_3.pfobj",
         "anim"           : False,
-        "scale"          : [1.5,  1.5,  1.5],
+        "scale"          : (1.5,  1.5,  1.5),
         "selectable"     : False,
         "sel_radius"     : 2.00,
         "static"         : True,
@@ -349,7 +349,7 @@ OBJECTS_LIST = [
     {
         "path"           : "fern/fern.pfobj",
         "anim"           : False,
-        "scale"          : [1.5,  1.5,  1.5],
+        "scale"          : (1.5,  1.5,  1.5),
         "selectable"     : False,
         "sel_radius"     : 2.50,
         "static"         : True,
@@ -358,7 +358,7 @@ OBJECTS_LIST = [
     {
         "path"           : "well/well.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 3.25,
         "static"         : True,
@@ -367,7 +367,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/wood_fence_1.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 3.00,
         "static"         : True,
@@ -376,7 +376,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/wood_fence_2.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 3.00,
         "static"         : True,
@@ -385,7 +385,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/wood_trough.pfobj",
         "anim"           : False,
-        "scale"          : [1.5,  1.5,  1.5],
+        "scale"          : (1.5,  1.5,  1.5),
         "selectable"     : False,
         "sel_radius"     : 3.00,
         "static"         : True,
@@ -394,7 +394,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/wood_road_sign.pfobj",
         "anim"           : False,
-        "scale"          : [0.7,  0.7,  0.7],
+        "scale"          : (0.7,  0.7,  0.7),
         "selectable"     : False,
         "sel_radius"     : 1.50,
         "static"         : True,
@@ -403,7 +403,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/wood_lamp_post.pfobj",
         "anim"           : False,
-        "scale"          : [0.7,  0.7,  0.7],
+        "scale"          : (0.7,  0.7,  0.7),
         "selectable"     : False,
         "sel_radius"     : 1.50,
         "static"         : True,
@@ -412,7 +412,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/tombstone_1.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 2.50,
         "static"         : True,
@@ -421,7 +421,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/tombstone_2.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 2.50,
         "static"         : True,
@@ -430,7 +430,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/tombstone_3.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 2.50,
         "static"         : True,
@@ -439,7 +439,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/cross_1.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 2.00,
         "static"         : True,
@@ -448,7 +448,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/cross_2.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 2.25,
         "static"         : True,
@@ -457,7 +457,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/cross_3.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 3.50,
         "static"         : True,
@@ -466,7 +466,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/cross_4.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 3.50,
         "static"         : True,
@@ -475,7 +475,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/obelisk_1.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 2.00,
         "static"         : True,
@@ -484,7 +484,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/obelisk_2.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 3.50,
         "static"         : True,
@@ -493,7 +493,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/obelisk_3.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 4.00,
         "static"         : True,
@@ -502,7 +502,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/broken_pillar_1.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 4.50,
         "static"         : True,
@@ -511,7 +511,7 @@ OBJECTS_LIST = [
     {
         "path"           : "props/broken_pillar_2.pfobj",
         "anim"           : False,
-        "scale"          : [3.0,  3.0,  3.0],
+        "scale"          : (3.0,  3.0,  3.0),
         "selectable"     : False,
         "sel_radius"     : 4.50,
         "static"         : True,
@@ -520,7 +520,7 @@ OBJECTS_LIST = [
     {
         "path"           : "barrel/barrel.pfobj",
         "anim"           : False,
-        "scale"          : [8.0,  8.0,  8.0],
+        "scale"          : (8.0,  8.0,  8.0),
         "selectable"     : False,
         "sel_radius"     : 3.25,
         "static"         : True,
@@ -529,7 +529,7 @@ OBJECTS_LIST = [
     {
         "path"           : "hay/hay.pfobj",
         "anim"           : False,
-        "scale"          : [6.0,  6.0,  6.0],
+        "scale"          : (6.0,  6.0,  6.0),
         "selectable"     : False,
         "sel_radius"     : 4.00,
         "static"         : True,
@@ -538,7 +538,7 @@ OBJECTS_LIST = [
     {
         "path"           : "hay/hay_2.pfobj",
         "anim"           : False,
-        "scale"          : [4.0,  4.0,  4.0],
+        "scale"          : (4.0,  4.0,  4.0),
         "selectable"     : False,
         "sel_radius"     : 4.00,
         "static"         : True,
@@ -547,7 +547,7 @@ OBJECTS_LIST = [
     {
         "path"           : "hay/haystack.pfobj",
         "anim"           : False,
-        "scale"          : [4.0,  4.0,  4.0],
+        "scale"          : (4.0,  4.0,  4.0),
         "selectable"     : False,
         "sel_radius"     : 6.75,
         "static"         : True,
@@ -556,7 +556,7 @@ OBJECTS_LIST = [
     {
         "path"           : "crate/crate_1.pfobj",
         "anim"           : False,
-        "scale"          : [4.0,  4.0,  4.0],
+        "scale"          : (4.0,  4.0,  4.0),
         "selectable"     : False,
         "sel_radius"     : 3.25,
         "static"         : True,
@@ -565,7 +565,7 @@ OBJECTS_LIST = [
     {
         "path"           : "crate/crate_2.pfobj",
         "anim"           : False,
-        "scale"          : [4.0,  4.0,  4.0],
+        "scale"          : (4.0,  4.0,  4.0),
         "selectable"     : False,
         "sel_radius"     : 3.25,
         "static"         : True,
@@ -575,7 +575,7 @@ OBJECTS_LIST = [
         "path"           : "war_banner/war_banner.pfobj",
         "anim"           : True,
         "idle"           : "ArmatureAction",
-        "scale"          : [2.5,  2.5,  2.5],
+        "scale"          : (2.5,  2.5,  2.5),
         "selectable"     : False,
         "sel_radius"     : 1.75,
         "static"         : True,
@@ -584,7 +584,7 @@ OBJECTS_LIST = [
     {
         "path"           : "cart/cart.pfobj",
         "anim"           : False,
-        "scale"          : [2.5,  2.5,  2.5],
+        "scale"          : (2.5,  2.5,  2.5),
         "selectable"     : False,
         "sel_radius"     : 3.75,
         "static"         : True,
@@ -598,7 +598,7 @@ OBJECTS_LIST = [
     {
         "path"           : "mage_tower/mage_tower.pfobj",
         "anim"           : False,
-        "scale"          : [6.0,  6.0,  6.0],
+        "scale"          : (6.0,  6.0,  6.0),
         "selectable"     : False,
         "sel_radius"     : 7.00,
         "static"         : True,
@@ -607,7 +607,7 @@ OBJECTS_LIST = [
     {
         "path"           : "tower/tower.pfobj",
         "anim"           : False,
-        "scale"          : [5.0,  5.0,  5.0],
+        "scale"          : (5.0,  5.0,  5.0),
         "selectable"     : False,
         "sel_radius"     : 8.00,
         "static"         : True,

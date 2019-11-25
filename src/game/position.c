@@ -60,11 +60,6 @@ static khash_t(pos) *s_postable;
 /* The quadtree is always synchronized with the postable, at function call boundaries */
 static qt_ent_t      s_postree;
 
-void qt_print(void)
-{
-    qt_ent_print(&s_postree);
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/

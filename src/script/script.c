@@ -358,60 +358,6 @@ static PyMethodDef pf_module_methods[] = {
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool s_vec3_from_pylist_arg(PyObject *list, vec3_t *out)
-{
-    if(!PyList_Check(list)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a list.");
-        return false;
-    }
-    
-    Py_ssize_t len = PyList_Size(list);
-    if(len != 3) {
-        PyErr_SetString(PyExc_TypeError, "Argument must have a size of 3."); 
-        return false;
-    }
-
-    for(int i = 0; i < len; i++) {
-
-        PyObject *item = PyList_GetItem(list, i);
-        if(!PyFloat_Check(item)) {
-            PyErr_SetString(PyExc_TypeError, "List items must be floats.");
-            return false;
-        }
-
-        out->raw[i] = PyFloat_AsDouble(item);
-    }
-
-    return true;
-}
-
-static bool s_quat_from_pylist_arg(PyObject *list, quat_t *out)
-{
-    if(!PyList_Check(list)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a list.");
-        return false;
-    }
-    
-    Py_ssize_t len = PyList_Size(list);
-    if(len != 4) {
-        PyErr_SetString(PyExc_TypeError, "Argument must have a size of 4."); 
-        return false;
-    }
-
-    for(int i = 0; i < len; i++) {
-
-        PyObject *item = PyList_GetItem(list, i);
-        if(!PyFloat_Check(item)) {
-            PyErr_SetString(PyExc_TypeError, "List items must be floats.");
-            return false;
-        }
-
-        out->raw[i] = PyFloat_AsDouble(item);
-    }
-
-    return true;
-}
-
 static PyObject *PyPf_new_game(PyObject *self, PyObject *args)
 {
     const char *dir, *pfmap;
@@ -444,13 +390,13 @@ static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args)
 {
-    PyObject *list;
+    PyObject *tuple;
     vec3_t color;
 
-    if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list))
+    if(!PyArg_ParseTuple(args, "O!", &PyTuple_Type, &tuple))
         return NULL; /* exception already set */
 
-    if(!s_vec3_from_pylist_arg(list, &color))
+    if(!PyArg_ParseTuple(tuple, "fff", &color.x, &color.y, &color.z))
         return NULL; /* exception already set */
 
     R_GL_SetAmbientLightColor(color);
@@ -459,13 +405,13 @@ static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args)
 {
-    PyObject *list;
+    PyObject *tuple;
     vec3_t color;
 
-    if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list))
+    if(!PyArg_ParseTuple(args, "O!", &PyTuple_Type, &tuple))
         return NULL; /* exception already set */
 
-    if(!s_vec3_from_pylist_arg(list, &color))
+    if(!PyArg_ParseTuple(tuple, "fff", &color.x, &color.y, &color.z))
         return NULL; /* exception already set */
 
     R_GL_SetLightEmitColor(color);
@@ -492,13 +438,13 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)
 {
-    PyObject *list;
+    PyObject *tuple;
     vec3_t pos;
 
-    if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list))
+    if(!PyArg_ParseTuple(args, "O!", &PyTuple_Type, &tuple))
         return NULL; /* exception already set */
 
-    if(!s_vec3_from_pylist_arg(list, &pos))
+    if(!PyArg_ParseTuple(tuple, "fff", &pos.x, &pos.y, &pos.z))
         return NULL; /* exception already set */
 
     R_GL_SetLightPos(pos);
@@ -989,7 +935,7 @@ static PyObject *PyPf_map_pos_under_cursor(PyObject *self)
 {
     vec3_t pos;
     if(M_Raycast_IntersecCoordinate(&pos))
-        return Py_BuildValue("[fff]", pos.x, pos.y, pos.z);
+        return Py_BuildValue("(fff)", pos.x, pos.y, pos.z);
     else
         Py_RETURN_NONE;
 }
@@ -1183,20 +1129,26 @@ static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args)
     PyObject *q1_list, *q2_list;
     quat_t q1, q2, ret;
 
-    if(!PyArg_ParseTuple(args, "OO", &q1_list, &q2_list)) {
-        PyErr_SetString(PyExc_TypeError, "Arguments must be two objects.");
+    if(!PyArg_ParseTuple(args, "O!O!", &PyTuple_Type, &q1_list, &PyTuple_Type, &q2_list)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two tuples.");
         return NULL;
     }
 
-    if(!s_quat_from_pylist_arg(q1_list, &q1))
-        return NULL; /* exception already set */
-    if(!s_quat_from_pylist_arg(q2_list, &q2))
-        return NULL; /* exception already set */
+    if(PyTuple_GET_SIZE(q1_list) != 4
+    || PyTuple_GET_SIZE(q2_list) != 4) {
+        PyErr_SetString(PyExc_TypeError, "The argument tuples must be of size 4.");
+        return NULL;
+    }
+
+    if(!PyArg_ParseTuple(q1_list, "ffff", &q1.raw[0], &q1.raw[1], &q1.raw[2], &q1.raw[3]))
+        return NULL;
+    if(!PyArg_ParseTuple(q2_list, "ffff", &q2.raw[0], &q2.raw[1], &q2.raw[2], &q2.raw[3]))
+        return NULL;
 
     PFM_Quat_MultQuat(&q1, &q2, &ret);
     PFM_Quat_Normal(&ret, &ret);
 
-    return Py_BuildValue("[ffff]", ret.x, ret.y, ret.z, ret.w);
+    return Py_BuildValue("(ffff)", ret.x, ret.y, ret.z, ret.w);
 }
 
 static PyObject *PyPf_pickle_object(PyObject *self, PyObject *args)

@@ -65,14 +65,7 @@ struct entity{
     float        selection_radius; /* The radius of the selection circle in OpenGL coordinates */
     float        max_speed;        /* The base movement speed in units of OpenGL coords / second */
     int          faction_id;       /* The faction to which this entity belongs to. */
-    /* The following struct ('combat attributes') holds attributes 
-     * which are only valid for entities for which 'ENTITY_FLAG_COMBATABLE' 
-     * is set. */
-    struct{
-    int          max_hp;           /* The maximum hitpoints that the entity starts out with */
-    int          base_dmg;         /* The base damage per hit */
-    float        base_armour_pc;   /* Percentage of damage blocked. Valid range: [0.0 - 1.0] */
-    }ca;
+    int          max_hp;           /* 0 for 'invulnerable' entities */
 };
 
 void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
