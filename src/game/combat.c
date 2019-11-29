@@ -85,7 +85,6 @@ struct combatstate{
         STATE_ATTACK_ANIM_PLAYING,
     }state;
     struct entity     *target;
-    vec2_t             prev_target_pos;
     /* If the target gained a target while moving, save and restore
      * its' intial move command once it finishes combat. */
     bool               move_cmd_interrupted;
@@ -206,6 +205,14 @@ static void entity_turn_to_target(struct entity *ent, const struct entity *targe
     ent->rotation = quat_from_vec(ent_to_target);
 }
 
+static void on_death_anim_finish(void *user, void *event)
+{
+    struct entity *self = user;
+    assert(self);
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, self->uid, on_death_anim_finish);
+    G_Zombiefy(self);
+}
+
 static void on_attack_anim_finish(void *user, void *event)
 {
     const struct entity *self = user;
@@ -230,8 +237,18 @@ static void on_attack_anim_finish(void *user, void *event)
 
         if(target_cs->current_hp == 0.0f && cs->target->max_hp > 0) {
 
-            G_Zombiefy(cs->target);
+            G_Move_Stop(cs->target);
+            G_Combat_RemoveEntity(cs->target);
+            cs->target->flags &= ~ENTITY_FLAG_COMBATABLE;
+
+            if(cs->target->flags & ENTITY_FLAG_SELECTABLE) {
+                G_Sel_Remove(cs->target);
+                cs->target->flags &= ~ENTITY_FLAG_SELECTABLE;
+            }
+
             E_Entity_Notify(EVENT_ENTITY_DEATH, cs->target->uid, NULL, ES_ENGINE);
+            E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, cs->target->uid, on_death_anim_finish,
+                cs->target, G_RUNNING);
         }
     }
 }
@@ -255,7 +272,7 @@ static void on_30hz_tick(void *user, void *event)
             if(cs->stance == COMBAT_STANCE_NO_ENGAGEMENT)
                 break;
 
-            /* Find and assign targets for entities. Make the entity move towards its' target. */
+            /* Make the entity seek enemy units. */
             struct entity *enemy;
             if((enemy = closest_enemy_in_range(curr)) != NULL) {
 
@@ -266,7 +283,7 @@ static void on_30hz_tick(void *user, void *event)
 
                     cs->target = enemy;
                     cs->state = STATE_CAN_ATTACK;
-                    G_Move_Stop(curr);
+
                     entity_turn_to_target(curr, enemy);
                     E_Entity_Notify(EVENT_ATTACK_START, curr->uid, NULL, ES_ENGINE);
                 
@@ -274,16 +291,13 @@ static void on_30hz_tick(void *user, void *event)
 
                     cs->target = enemy;
                     cs->state = STATE_MOVING_TO_TARGET;
-                    cs->prev_target_pos = G_Pos_GetXZ(enemy->uid);
 
                     vec2_t move_dest_xz;
                     if(!cs->move_cmd_interrupted && G_Move_GetDest(curr, &move_dest_xz)) {
                         cs->move_cmd_interrupted = true; 
                         cs->move_cmd_xz = move_dest_xz;
                     }
-                
-                    vec2_t enemy_pos_xz = G_Pos_GetXZ(enemy->uid);
-                    G_Move_SetDest(curr, enemy_pos_xz);
+                    G_Move_SetSeekEnemies(curr);
                 }
             }
             break;
@@ -302,13 +316,13 @@ static void on_30hz_tick(void *user, void *event)
                 if(cs->move_cmd_interrupted) {
                     G_Move_SetDest(curr, cs->move_cmd_xz);
                     cs->move_cmd_interrupted = false;
+                }else {
+                    G_Move_Stop(curr);
                 }
                 break;
+
             /* And the case where a different target becomes even closer */
             }else if(enemy != cs->target) {
-            
-                vec2_t enemy_pos_xz = G_Pos_GetXZ(enemy->uid);
-                G_Move_SetDest(curr, enemy_pos_xz);
                 cs->target = enemy;
             }
 
@@ -319,16 +333,7 @@ static void on_30hz_tick(void *user, void *event)
                 G_Move_Stop(curr);
                 entity_turn_to_target(curr, enemy);
                 E_Entity_Notify(EVENT_ATTACK_START, curr->uid, NULL, ES_ENGINE);
-
-            /* If not, update the seek position for a moving target */
-            }else if(cs->prev_target_pos.x != G_Pos_GetXZ(cs->target->uid).x 
-                  || cs->prev_target_pos.z != G_Pos_GetXZ(cs->target->uid).z) {
-                  
-                vec2_t enemy_pos_xz = G_Pos_GetXZ(cs->target->uid);
-                G_Move_SetDest(curr, enemy_pos_xz);
-                cs->prev_target_pos = enemy_pos_xz;
             }
-        
             break;
         }
         case STATE_CAN_ATTACK:
@@ -340,6 +345,14 @@ static void on_30hz_tick(void *user, void *event)
             struct combatstate *target_cs;
             if((target_cs = combatstate_get(cs->target)) == NULL
             || ents_distance(curr, cs->target) > ENEMY_MELEE_ATTACK_RANGE) {
+
+                /* First check if there's another suitable target */
+                struct entity *enemy = closest_enemy_in_range(curr);
+                if(enemy && ents_distance(curr, enemy) <= ENEMY_MELEE_ATTACK_RANGE) {
+                    cs->target = enemy;
+                    entity_turn_to_target(curr, cs->target);
+                    break;
+                }
 
                 cs->state = STATE_NOT_IN_COMBAT; 
                 E_Entity_Notify(EVENT_ATTACK_END, curr->uid, NULL, ES_ENGINE);
@@ -407,9 +420,10 @@ void G_Combat_RemoveEntity(const struct entity *ent)
 
     struct combatstate *cs = combatstate_get(ent);
     assert(cs);
-    if(cs->state == STATE_ATTACK_ANIM_PLAYING) {
-        E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish);
-    }
+
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish);
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_death_anim_finish);
+
     if(cs->state == STATE_ATTACK_ANIM_PLAYING
     || cs->state == STATE_CAN_ATTACK) {
         E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
@@ -456,9 +470,8 @@ void G_Combat_StopAttack(const struct entity *ent)
     if(!cs)
         return;
 
-    if(cs->state == STATE_ATTACK_ANIM_PLAYING) {
-        E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish);
-    }
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish);
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_death_anim_finish);
 
     if(cs->state == STATE_ATTACK_ANIM_PLAYING
     || cs->state == STATE_CAN_ATTACK) {

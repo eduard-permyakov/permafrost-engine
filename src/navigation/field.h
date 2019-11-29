@@ -64,10 +64,16 @@ struct field_target{
     enum{
         TARGET_PORTAL,
         TARGET_TILE,
+        TARGET_ENEMIES,
     }type;
     union{
         const struct portal *port;
         struct coord         tile;
+        struct{
+            int          faction_id;
+            vec3_t       map_pos;
+            struct coord chunk;
+        }enemies;
     };
 };
 

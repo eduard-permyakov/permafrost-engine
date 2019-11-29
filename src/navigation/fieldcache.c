@@ -36,6 +36,7 @@
 #include "fieldcache.h"
 #include "../lib/public/lru_cache.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/vec.h"
 #include "../event.h"
 #include "../config.h"
 
@@ -57,6 +58,10 @@ LRU_CACHE_IMPL(static, mapping, ff_id_t)
 LRU_CACHE_TYPE(grid_path, struct grid_path_desc)
 LRU_CACHE_PROTOTYPES(static, grid_path, struct grid_path_desc)
 LRU_CACHE_IMPL(static, grid_path, struct grid_path_desc)
+
+VEC_TYPE(ffid, ff_id_t)
+VEC_PROTOTYPES(static, ffid, ff_id_t)
+VEC_IMPL(static, ffid, ff_id_t)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -81,6 +86,8 @@ static struct priv_fc_stats{
     unsigned grid_path_query;
     unsigned grid_path_hit;
 }s_perfstats = {0};
+
+static vec_ffid_t s_enemy_seek_ffids;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -125,6 +132,7 @@ bool N_FC_Init(void)
     if(!lru_grid_path_init(&s_grid_path_cache, CONFIG_GRID_PATH_CACHE_SZ, on_grid_path_evict))
         goto fail_grid_path;
 
+    vec_ffid_init(&s_enemy_seek_ffids);
     return true;
 
 fail_grid_path:
@@ -143,6 +151,7 @@ void N_FC_Shutdown(void)
     lru_flow_destroy(&s_flow_cache);
     lru_mapping_destroy(&s_mapping_cache);
     lru_grid_path_destroy(&s_grid_path_cache);
+    vec_ffid_destroy(&s_enemy_seek_ffids);
 }
 
 void N_FC_ClearAll(void)
@@ -219,6 +228,9 @@ const struct flow_field *N_FC_FlowFieldAt(ff_id_t ffid)
 
 void N_FC_PutFlowField(ff_id_t ffid, const struct flow_field *ff)
 {
+    if((ffid >> 56) == TARGET_ENEMIES)
+        vec_ffid_push(&s_enemy_seek_ffids, ffid);
+
     lru_flow_put(&s_flow_cache, ffid, ff);
 }
 
@@ -236,6 +248,18 @@ void N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, ff_id_t 
 {
     uint64_t key = key_for_dest_and_chunk(dest_id, chunk_coord);
     lru_mapping_put(&s_mapping_cache, key, &ffid);
+}
+
+void N_FC_ClearAllEnemySeekFields(void)
+{
+    for(int i = 0; i < vec_size(&s_enemy_seek_ffids); i++) {
+
+        ff_id_t curr = vec_AT(&s_enemy_seek_ffids, i);
+        assert(lru_flow_contains(&s_flow_cache, curr));
+        int ret = lru_flow_remove(&s_flow_cache, curr);
+        assert(ret);
+    }
+    vec_ffid_reset(&s_enemy_seek_ffids);
 }
 
 bool N_FC_GetGridPath(struct coord local_start, struct coord local_dest,

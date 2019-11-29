@@ -41,7 +41,6 @@
 #include "../camera.h"
 #include "../collision.h"
 
-#include <unistd.h>
 #include <string.h>
 #include <assert.h>
 
@@ -61,8 +60,8 @@ static void m_aabb_for_chunk(const struct map *map, struct chunkpos p, struct aa
     size_t chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
     size_t chunk_max_height = MAX_HEIGHT_LEVEL * Y_COORDS_PER_TILE;
 
-    ssize_t x_offset = -(p.c * chunk_x_dim);
-    ssize_t z_offset =  (p.r * chunk_z_dim);
+    int x_offset = -(p.c * chunk_x_dim);
+    int z_offset =  (p.r * chunk_z_dim);
 
     out->x_max = map->pos.x + x_offset;
     out->x_min = out->x_max - chunk_x_dim;
@@ -330,9 +329,35 @@ void M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera 
     }
 }
 
-vec2_t M_NavDesiredVelocity(const struct map *map, dest_id_t id, vec2_t curr_pos, vec2_t xz_dest)
+void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera *cam, int faction_id)
 {
-    return N_DesiredVelocity(id, curr_pos, xz_dest, map->nav_private, map->pos);
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+        for(int c = 0; c < map->width; c++) {
+
+            struct aabb chunk_aabb;
+            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+                continue;
+
+            mat4x4_t chunk_model;
+            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+            N_RenderEnemySeekField(map->nav_private, map, &chunk_model, r, c, faction_id);
+        }
+    }
+}
+
+vec2_t M_NavDesiredPointSeekVelocity(const struct map *map, dest_id_t id, vec2_t curr_pos, vec2_t xz_dest)
+{
+    return N_DesiredPointSeekVelocity(id, curr_pos, xz_dest, map->nav_private, map->pos);
+}
+
+vec2_t M_NavDesiredEnemySeekVelocity(const struct map *map, vec2_t curr_pos, int faction_id)
+{
+    return N_DesiredEnemySeekVelocity(curr_pos, map->nav_private, map->pos, faction_id);
 }
 
 bool M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos)

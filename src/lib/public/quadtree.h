@@ -252,7 +252,11 @@
     {                                                                                           \
         if(xmin1 >= xmin2 && xmin1 <= xmax2)                                                    \
             return true;                                                                        \
+        if(xmax1 >= xmin2 && xmax1 <= xmax2)                                                    \
+            return true;                                                                        \
         if(ymin1 >= ymin2 && ymin1 <= ymax2)                                                    \
+            return true;                                                                        \
+        if(ymax1 >= ymin2 && ymax1 <= ymax2)                                                    \
             return true;                                                                        \
         return false;                                                                           \
     }                                                                                           \

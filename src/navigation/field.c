@@ -35,16 +35,27 @@
 
 #include "field.h"
 #include "nav_private.h"
+#include "../entity.h"
+#include "../map/public/tile.h"
+#include "../game/public/game.h"
 #include "../lib/public/pqueue.h"
 
 #include <string.h>
 #include <assert.h>
 #include <math.h>
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
+#define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
+#define MAX_ENTS_PER_CHUNK  (4096)
 
 PQUEUE_TYPE(coord, struct coord)
 PQUEUE_IMPL(static, coord, struct coord)
+
+struct box_xz{
+    float x_min, x_max;
+    float z_min, z_max;
+};
 
 /*****************************************************************************/
 /* GLOBAL VARIABLES                                                          */
@@ -301,6 +312,133 @@ static void pad_wavefront(struct LOS_field *out_los)
     }}
 }
 
+static void build_integration_field(pq_coord_t *frontier, const struct nav_chunk *chunk, 
+                                    float inout[FIELD_RES_R][FIELD_RES_C])
+{
+    while(pq_size(frontier) > 0) {
+
+        struct coord curr;
+        pq_coord_pop(frontier, &curr);
+
+        struct coord neighbours[8];
+        uint8_t neighbour_costs[8];
+        int num_neighbours = neighbours_grid(chunk->cost_base, curr, true, neighbours, neighbour_costs);
+
+        for(int i = 0; i < num_neighbours; i++) {
+
+            float total_cost = inout[curr.r][curr.c] + neighbour_costs[i];
+            if(total_cost < inout[neighbours[i].r][neighbours[i].c]) {
+
+                inout[neighbours[i].r][neighbours[i].c] = total_cost;
+                if(!pq_coord_contains(frontier, neighbours[i]))
+                    pq_coord_push(frontier, total_cost, neighbours[i]);
+            }
+        }
+    }
+}
+
+static void build_flow_field(float intf[FIELD_RES_R][FIELD_RES_C], struct flow_field *inout_flow)
+{
+
+    /* Build the flow field from the integration field. Don't touch any impassable tiles
+     * as they may have already been set in the case that a single chunk is divided into
+     * multiple passable 'islands', but a computed path takes us through more than one of
+     * these 'islands'. */
+    for(int r = 0; r < FIELD_RES_R; r++) {
+        for(int c = 0; c < FIELD_RES_C; c++) {
+
+            if(intf[r][c] == INFINITY)
+                continue;
+
+            if(intf[r][c] == 0.0f) {
+
+                inout_flow->field[r][c].dir_idx = FD_NONE;
+                continue;
+            }
+
+            inout_flow->field[r][c].dir_idx = flow_dir(intf, (struct coord){r, c});
+        }
+    }
+}
+
+static void fixup_portal_edges(float intf[FIELD_RES_R][FIELD_RES_C], struct flow_field *inout_flow,
+                               const struct portal *port)
+{
+    bool up    = port->connected->chunk.r < port->chunk.r;
+    bool down  = port->connected->chunk.r > port->chunk.r;
+    bool left  = port->connected->chunk.c < port->chunk.c;
+    bool right = port->connected->chunk.c > port->chunk.c;
+    assert(up ^ down ^ left ^ right);
+
+    for(int r = 0; r < FIELD_RES_R; r++) {
+        for(int c = 0; c < FIELD_RES_C; c++) {
+
+            if(intf[r][c] == 0.0f) {
+
+                if(up)
+                    inout_flow->field[r][c].dir_idx = FD_N;
+                else if(down)
+                    inout_flow->field[r][c].dir_idx = FD_S;
+                else if(left)
+                    inout_flow->field[r][c].dir_idx = FD_W;
+                else if(right)
+                    inout_flow->field[r][c].dir_idx = FD_E;
+                else
+                    assert(0);
+            }
+        }
+    }
+}
+
+static void chunk_bounds(vec3_t map_pos, struct coord chunk_coord, struct box_xz *out)
+{
+    size_t chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    size_t chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    int x_offset = -(chunk_coord.c * chunk_x_dim);
+    int z_offset =  (chunk_coord.r * chunk_z_dim);
+
+    out->x_max = map_pos.x + x_offset;
+    out->x_min = out->x_max - chunk_x_dim;
+
+    out->z_min = map_pos.z + z_offset;
+    out->z_max = out->z_min + chunk_z_dim;
+}
+
+static struct coord tile_for_pos(const struct box_xz *bounds, vec2_t xz_pos)
+{
+    assert(xz_pos.x >= bounds->x_min && xz_pos.x <= bounds->x_max);
+    assert(xz_pos.z >= bounds->z_min && xz_pos.z <= bounds->z_max);
+
+    assert(FIELD_RES_R % TILES_PER_CHUNK_HEIGHT == 0);
+    assert(FIELD_RES_C % TILES_PER_CHUNK_WIDTH == 0);
+
+    size_t nav_tile_width = X_COORDS_PER_TILE / (FIELD_RES_C / TILES_PER_CHUNK_WIDTH);
+    size_t nav_tile_height = Z_COORDS_PER_TILE / (FIELD_RES_R / TILES_PER_CHUNK_HEIGHT);
+
+    struct coord ret = (struct coord){
+        (xz_pos.z - bounds->z_min) / nav_tile_height,
+        FIELD_RES_C - (xz_pos.x - bounds->x_min) / nav_tile_width,
+    };
+    ret.r = MIN(ret.r, FIELD_RES_R-1);
+    ret.c = MIN(ret.c, FIELD_RES_C-1);
+
+    return ret;
+}
+
+static bool enemy_ent(int faction_id, const struct entity *ent)
+{
+    if(ent->faction_id == faction_id)
+        return false;
+    if(!(ent->flags & ENTITY_FLAG_COMBATABLE))
+        return false;
+
+    enum diplomacy_state ds;
+    bool result = G_GetDiplomacyState(faction_id, ent->faction_id, &ds);
+    assert(result);
+    return (ds == DIPLOMACY_STATE_WAR);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -309,21 +447,30 @@ ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target)
 {
     if(target.type == TARGET_PORTAL) {
 
-        return (((uint64_t)target.type)                 << 48)
+        return (((uint64_t)target.type)                 << 56)
              | (((uint64_t)target.port->endpoints[0].r) << 40)
              | (((uint64_t)target.port->endpoints[0].c) << 32)
              | (((uint64_t)target.port->endpoints[1].r) << 24)
              | (((uint64_t)target.port->endpoints[1].c) << 16)
              | (((uint64_t)chunk.r)                     <<  8)
              | (((uint64_t)chunk.c)                     <<  0);
-    }else{
 
-        return (((uint64_t)target.type)                 << 48)
+    }else if(target.type == TARGET_TILE){
+
+        return (((uint64_t)target.type)                 << 56)
              | (((uint64_t)target.tile.r)               << 24)
              | (((uint64_t)target.tile.c)               << 16)
              | (((uint64_t)chunk.r)                     <<  8)
              | (((uint64_t)chunk.c)                     <<  0);
-    }
+
+    }else if(target.type == TARGET_ENEMIES){
+
+        return (((uint64_t)target.type)                 << 56)
+             | (((uint64_t)target.enemies.faction_id)   << 24)
+             | (((uint64_t)chunk.r)                     <<  8)
+             | (((uint64_t)chunk.c)                     <<  0);
+    }else
+        assert(0);
 }
 
 void N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct flow_field *out)
@@ -361,76 +508,57 @@ void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target
         break;
     }
     case TARGET_TILE: {
+
         pq_coord_push(&frontier, 0.0f, target.tile);
         integration_field[target.tile.r][target.tile.c] = 0.0f;
+        break;
+    }
+    case TARGET_ENEMIES: {
+
+        struct box_xz bounds;
+        chunk_bounds(target.enemies.map_pos, target.enemies.chunk, &bounds);
+
+        struct entity *ents[MAX_ENTS_PER_CHUNK];
+        size_t num_ents = G_Pos_EntsInRect(
+            (vec2_t){bounds.x_min, bounds.z_min},
+            (vec2_t){bounds.x_max, bounds.z_max},
+            ents, ARR_SIZE(ents)
+        );
+        assert(num_ents);
+
+        bool has_enemy[FIELD_RES_R][FIELD_RES_C] = {0};
+        for(int i = 0; i < num_ents; i++) {
+        
+            struct entity *curr = ents[i];
+            if(!enemy_ent(target.enemies.faction_id, curr))
+                continue;
+
+            struct coord tile = tile_for_pos(&bounds, G_Pos_GetXZ(curr->uid));
+            has_enemy[tile.r][tile.c] = true;
+        }
+
+        for(int r = 0; r < FIELD_RES_R; r++) {
+            for(int c = 0; c < FIELD_RES_C; c++) {
+            
+                if(!has_enemy[r][c])
+                    continue;
+                pq_coord_push(&frontier, 0.0f, (struct coord){r,c}); 
+                integration_field[r][c] = 0.0f;
+            }
+        }
         break;
     }
     default: assert(0);
     }
 
-    /* Build the integration field */
-    while(pq_size(&frontier) > 0) {
+    assert(pq_size(&frontier) > 0);
+    build_integration_field(&frontier, chunk, integration_field);
+    build_flow_field(integration_field, inout_flow);
 
-        struct coord curr;
-        pq_coord_pop(&frontier, &curr);
+    if(target.type == TARGET_PORTAL)
+        fixup_portal_edges(integration_field, inout_flow, target.port); 
 
-        struct coord neighbours[8];
-        uint8_t neighbour_costs[8];
-        int num_neighbours = neighbours_grid(chunk->cost_base, curr, true, neighbours, neighbour_costs);
-
-        for(int i = 0; i < num_neighbours; i++) {
-
-            float total_cost = integration_field[curr.r][curr.c] + neighbour_costs[i];
-            if(total_cost < integration_field[neighbours[i].r][neighbours[i].c]) {
-
-                integration_field[neighbours[i].r][neighbours[i].c] = total_cost;
-                if(!pq_coord_contains(&frontier, neighbours[i]))
-                    pq_coord_push(&frontier, total_cost, neighbours[i]);
-            }
-        }
-    }
     pq_coord_destroy(&frontier);
-
-    /* Build the flow field from the integration field. Don't touch any impassable tiles
-     * as they may have already been set in the case that a single chunk is divided into
-     * multiple passable 'islands', but a computed path takes us through more than one of
-     * these 'islands'. */
-    for(int r = 0; r < FIELD_RES_R; r++) {
-        for(int c = 0; c < FIELD_RES_C; c++) {
-
-            if(integration_field[r][c] == INFINITY)
-                continue;
-
-            if(integration_field[r][c] == 0.0f) {
-
-                if(target.type != TARGET_PORTAL) {
-
-                    inout_flow->field[r][c].dir_idx = FD_NONE;
-                    continue;
-                }
-
-                bool up    = target.port->connected->chunk.r < target.port->chunk.r;
-                bool down  = target.port->connected->chunk.r > target.port->chunk.r;
-                bool left  = target.port->connected->chunk.c < target.port->chunk.c;
-                bool right = target.port->connected->chunk.c > target.port->chunk.c;
-                assert(up ^ down ^ left ^ right);
-
-                if(up)
-                    inout_flow->field[r][c].dir_idx = FD_N;
-                else if(down)
-                    inout_flow->field[r][c].dir_idx = FD_S;
-                else if(left)
-                    inout_flow->field[r][c].dir_idx = FD_W;
-                else if(right)
-                    inout_flow->field[r][c].dir_idx = FD_E;
-                else
-                    assert(0);
-                continue;
-            }
-
-            inout_flow->field[r][c].dir_idx = flow_dir(integration_field, (struct coord){r, c});
-        }
-    }
 }
 
 void N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc target,
@@ -580,5 +708,4 @@ void N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc t
      * code. */
     pad_wavefront(out_los);
 }
-
 

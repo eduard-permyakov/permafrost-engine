@@ -39,6 +39,7 @@
 #include "field.h"
 #include "fieldcache.h"
 #include "../map/public/tile.h"
+#include "../game/public/game.h"
 #include "../render/public/render.h"
 #include "../pf_math.h"
 #include "../collision.h"
@@ -613,6 +614,21 @@ static struct tile_desc n_closest_island_tile(const struct nav_private *priv,
     assert(0); 
 }
 
+static bool enemy_ent(const struct entity *ent, void *arg)
+{
+    int faction_id = (uintptr_t)arg;
+    enum diplomacy_state ds;
+
+    if(!(ent->flags & ENTITY_FLAG_COMBATABLE))
+        return false;
+    if(ent->faction_id == faction_id)
+        return false;
+
+    bool result = G_GetDiplomacyState(ent->faction_id, faction_id, &ds);
+    assert(result);
+    return (ds == DIPLOMACY_STATE_WAR);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -775,7 +791,6 @@ void N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *chunk_
 
     vec2_t corners_buff[4 * FIELD_RES_R * FIELD_RES_C];
     vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
-    const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
 
     if(!N_FC_ContainsLOSField(id, (struct coord){chunk_r, chunk_c}))
         return;
@@ -807,6 +822,70 @@ void N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *chunk_
 
     assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
+    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
+}
+
+void N_RenderEnemySeekField(void *nav_private, const struct map *map, 
+                            mat4x4_t *chunk_model, int chunk_r, int chunk_c, 
+                            int faction_id)
+{
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    const struct nav_private *priv = nav_private;
+    assert(chunk_r < priv->height);
+    assert(chunk_c < priv->width);
+
+    vec2_t positions_buff[FIELD_RES_R * FIELD_RES_C];
+    vec2_t dirs_buff[FIELD_RES_R * FIELD_RES_C];
+
+    vec2_t corners_buff[4 * FIELD_RES_R * FIELD_RES_C];
+    vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
+
+    vec2_t *corners_base = corners_buff;
+    vec3_t *colors_base = colors_buff; 
+
+    struct field_target target = (struct field_target){
+        .type = TARGET_ENEMIES,
+        .enemies.faction_id = faction_id,
+        /* rest of the fields are unused */
+    };
+    ff_id_t ffid = N_FlowField_ID((struct coord){chunk_r, chunk_c}, target);
+    if(!N_FC_ContainsFlowField(ffid))
+        return;
+
+    const struct flow_field *ff = N_FC_FlowFieldAt(ffid);
+    assert(ff);
+
+    for(int r = 0; r < FIELD_RES_R; r++) {
+        for(int c = 0; c < FIELD_RES_C; c++) {
+
+            /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
+            float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
+            float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
+            float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
+            float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+
+            positions_buff[r * FIELD_RES_C + c] = (vec2_t){
+                square_x - square_x_len / 2.0f,
+                square_z + square_z_len / 2.0f
+            };
+            dirs_buff[r * FIELD_RES_C + c] = g_flow_dir_lookup[ff->field[r][c].dir_idx];
+
+            *corners_base++ = (vec2_t){square_x, square_z};
+            *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
+            *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
+            *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
+
+            *colors_base++ = ff->field[r][c].dir_idx == FD_NONE ? (vec3_t){1.0f, 0.0f, 0.0f}
+                                                                : (vec3_t){0.0f, 1.0f, 0.0f};
+        }
+    }
+
+    assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
+    assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
+
+    R_GL_DrawFlowField(positions_buff, dirs_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
     R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
 }
 
@@ -1156,8 +1235,8 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
     return true;
 }
 
-vec2_t N_DesiredVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest, 
-                         void *nav_private, vec3_t map_pos)
+vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest, 
+                                  void *nav_private, vec3_t map_pos)
 {
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
@@ -1204,6 +1283,94 @@ vec2_t N_DesiredVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
     assert(ff);
 
     dir_idx = ff->field[tile.tile_r][tile.tile_c].dir_idx;
+    return g_flow_dir_lookup[dir_idx];
+}
+
+vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map_pos, int faction_id)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc curr_tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &curr_tile);
+    assert(result);
+
+    struct coord chunk = (struct coord){curr_tile.chunk_r, curr_tile.chunk_c};
+    struct nav_chunk *navchunk = &priv->chunks[IDX(curr_tile.chunk_r, priv->width, curr_tile.chunk_c)];
+
+    struct field_target target = (struct field_target){
+        .type = TARGET_ENEMIES,
+        .enemies.faction_id = faction_id,
+        .enemies.map_pos = map_pos,
+        .enemies.chunk = chunk
+    };
+
+    ff_id_t ffid = N_FlowField_ID(chunk, target);
+    struct flow_field ff;
+
+    if(!N_FC_ContainsFlowField(ffid)) {
+
+        struct entity *nearest_enemy = G_Pos_NearestWithPred(curr_pos, enemy_ent, 
+                                                             (void*)(uintptr_t)target.enemies.faction_id);
+        if(!nearest_enemy)
+            return (vec2_t){0.0f, 0.0f};
+
+        struct tile_desc target_tile;
+        bool result = M_Tile_DescForPoint2D(res, map_pos, G_Pos_GetXZ(nearest_enemy->uid), &target_tile);
+        assert(result);
+
+        if(target_tile.chunk_r == curr_tile.chunk_r
+        && target_tile.chunk_c == curr_tile.chunk_c) {
+        
+            N_FlowFieldInit(chunk, priv, &ff);
+            N_FlowFieldUpdate(navchunk, target, &ff);
+            N_FC_PutFlowField(ffid, &ff);
+        }else{
+
+            /* The closest enemy is in another chunk. In this case, compute the
+             * field that will take us to the next chunk in the path and store
+             * that with the computed ID as the key. The rest of the fields will
+             * be computed on-the-fly, if necessary.
+             */
+
+            const struct portal *dst_port;
+            dst_port = AStar_ReachablePortal((struct coord){target_tile.tile_r, target_tile.tile_c}, 
+                (struct coord){target_tile.chunk_r, target_tile.chunk_c},
+                &priv->chunks[IDX(target_tile.chunk_r, priv->width, target_tile.chunk_c)]);
+
+            if(!dst_port)
+                return (vec2_t){0.0f, 0.0f}; 
+
+            float cost;
+            vec_portal_t path;
+            vec_portal_init(&path);
+
+            bool path_exists = AStar_PortalGraphPath(curr_tile, dst_port, priv, &path, &cost);
+            if(!path_exists) {
+                vec_portal_destroy(&path);
+                return (vec2_t){0.0f, 0.0f}; 
+            }
+
+            struct field_target portal_target = (struct field_target){
+                .type = TARGET_PORTAL,
+                .port = vec_AT(&path, 0)
+            };
+
+            N_FlowFieldInit(chunk, priv, &ff);
+            N_FlowFieldUpdate(navchunk, portal_target, &ff);
+            N_FC_PutFlowField(ffid, &ff);
+
+            vec_portal_destroy(&path);
+        }
+    }
+
+    const struct flow_field *pff = N_FC_FlowFieldAt(ffid);
+    assert(pff);
+
+    int dir_idx = pff->field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
     return g_flow_dir_lookup[dir_idx];
 }
 

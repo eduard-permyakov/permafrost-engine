@@ -87,6 +87,15 @@ void   M_RenderVisibleMap   (const struct map *map, const struct camera *cam,
 void   M_RenderVisiblePathableLayer(const struct map *map, const struct camera *cam);
 
 /* ------------------------------------------------------------------------
+ * Render a layer over the visible map surface showing fields which guide
+ * units of a particular factions towards their enemies. These fields are
+ * used for combat target selection.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera *cam, 
+                                        int faction_id);
+
+/* ------------------------------------------------------------------------
  * Centers the map at the worldspace origin.
  * ------------------------------------------------------------------------
  */
@@ -210,8 +219,15 @@ void   M_NavRenderVisiblePathFlowField(const struct map *map, const struct camer
  * to the specified destination.
  * ------------------------------------------------------------------------
  */
-vec2_t M_NavDesiredVelocity(const struct map *map, dest_id_t id, 
-                            vec2_t curr_pos, vec2_t xz_dest);
+vec2_t M_NavDesiredPointSeekVelocity(const struct map *map, dest_id_t id, 
+                                     vec2_t curr_pos, vec2_t xz_dest);
+
+/* ------------------------------------------------------------------------
+ * Returns the desired velocity vector for moving with the flow field 
+ * for approaching enemies of a particular faction.
+ * ------------------------------------------------------------------------
+ */
+vec2_t M_NavDesiredEnemySeekVelocity(const struct map *map, vec2_t curr_pos, int faction_id);
 
 /* ------------------------------------------------------------------------
  * Returns true if the specified coordinate is in direct line of sight of 

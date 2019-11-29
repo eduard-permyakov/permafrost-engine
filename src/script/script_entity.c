@@ -488,7 +488,6 @@ static int PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure
     vec3_t newpos;
     if(!PyArg_ParseTuple(value, "fff", 
         &newpos.raw[0], &newpos.raw[1], &newpos.raw[2])) {
-        printf("we fail here\n");
         return -1;
     }
 

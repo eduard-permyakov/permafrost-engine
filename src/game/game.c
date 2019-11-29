@@ -256,6 +256,15 @@ static bool bool_val_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_BOOL);
 }
 
+static bool faction_id_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_INT)
+        return false;
+    if(new_val->as_int < 0)
+        return false;
+    return true;
+}
+
 static void shadows_en_commit(const struct sval *new_val)
 {
     bool on = new_val->as_bool;
@@ -355,6 +364,28 @@ bool G_Init(void)
         },
         .prio = 0,
         .validate = bool_val_validate,
+        .commit = NULL,
+    });
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_enemy_seek_fields",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false 
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.enemy_seek_fields_faction_id",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = 0
+        },
+        .prio = 0,
+        .validate = faction_id_validate,
         .commit = NULL,
     });
 
@@ -518,6 +549,12 @@ void G_Update(void)
     struct entity *curr;
     kh_foreach(s_gs.active, key, curr, {
 
+        if(s_gs.ss == G_RUNNING && (curr->flags & ENTITY_FLAG_ANIMATED))
+            A_Update(curr);
+
+        if(!(curr->flags & ENTITY_FLAG_COLLISION))
+            continue;
+
         struct obb obb;
         Entity_CurrentOBB(curr, &obb);
 
@@ -525,9 +562,6 @@ void G_Update(void)
             vec_pentity_push(&s_gs.visible, curr);
             vec_obb_push(&s_gs.visible_obbs, obb);
         }
-
-        if(s_gs.ss == G_RUNNING && (curr->flags & ENTITY_FLAG_ANIMATED))
-            A_Update(curr);
     });
 
     /* Next, update the set of currently selected entities. */

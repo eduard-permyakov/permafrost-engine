@@ -42,6 +42,7 @@
 #include "../map/public/tile.h"
 
 #include <assert.h>
+#include <float.h>
 
 
 QUADTREE_TYPE(ent, uint32_t)
@@ -51,6 +52,9 @@ QUADTREE_IMPL(static, ent, uint32_t)
 KHASH_MAP_INIT_INT(pos, vec3_t)
 
 #define POSBUF_INIT_SIZE (16384)
+#define MAX_SEARCH_ENTS  (8192)
+#define MAX(a, b)        ((a) < (b) ? (a) : (b))
+#define ARR_SIZE(a)      (sizeof(a)/sizeof(a[0]))
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -59,6 +63,15 @@ KHASH_MAP_INIT_INT(pos, vec3_t)
 static khash_t(pos) *s_postable;
 /* The quadtree is always synchronized with the postable, at function call boundaries */
 static qt_ent_t      s_postree;
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static bool any_ent(const struct entity *ent, void *arg)
+{
+    return true;
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -189,5 +202,50 @@ int G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t
         out[i] = kh_val(ents, k);
     }
     return ret;
+}
+
+struct entity *G_Pos_NearestWithPred(vec2_t xz_point, 
+                                     bool (*predicate)(const struct entity *ent, void *arg), 
+                                     void *arg)
+{
+    uint32_t ent_ids[MAX_SEARCH_ENTS];
+    const khash_t(entity) *ents = G_GetAllEntsSet();
+
+    const float qt_len = MAX(s_postree.xmax - s_postree.xmin, s_postree.ymax - s_postree.ymin);
+    float len = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / 8.0f;
+
+    while(len < qt_len) {
+        float min_dist = FLT_MAX;
+        struct entity *ret = NULL;
+
+        int num_cands = qt_ent_inrange_circle(&s_postree, xz_point.x, xz_point.z,
+            len, ent_ids, ARR_SIZE(ent_ids));
+
+        for(int i = 0; i < num_cands; i++) {
+        
+            khiter_t k = kh_get(entity, ents, ent_ids[i]);
+            assert(k != kh_end(s_postable));
+            struct entity *curr = kh_val(ents, k);
+
+            vec2_t delta, can_pos_xz = G_Pos_GetXZ(curr->uid);
+            PFM_Vec2_Sub(&xz_point, &can_pos_xz, &delta);
+
+            if(PFM_Vec2_Len(&delta) < min_dist && predicate(curr, arg)) {
+                min_dist = PFM_Vec2_Len(&delta);
+                ret = curr;
+            }
+        }
+
+        if(ret)
+            return ret;
+
+        len *= 2.0f; 
+    }
+    return NULL;
+}
+
+struct entity *G_Pos_Nearest(vec2_t xz_point)
+{
+    return G_Pos_NearestWithPred(xz_point, any_ent, NULL);
 }
 

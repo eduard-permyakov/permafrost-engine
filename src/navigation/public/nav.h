@@ -62,6 +62,8 @@ struct fc_stats{
     float    grid_path_hit_rate;
 };
 
+#define DEST_ID_INVALID (~((uint32_t)0))
+
 /*###########################################################################*/
 /* NAV GENERAL                                                               */
 /*###########################################################################*/
@@ -125,6 +127,15 @@ void      N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *c
                            int chunk_r, int chunk_c, dest_id_t id);
 
 /* ------------------------------------------------------------------------
+ * Debug rendering of the fields that guide enemies in combat to their 
+ * targets. 
+ * ------------------------------------------------------------------------
+ */
+void      N_RenderEnemySeekField(void *nav_private, const struct map *map, 
+                                 mat4x4_t *chunk_model, int chunk_r, int chunk_c, 
+                                 int faction_id);
+
+/* ------------------------------------------------------------------------
  * Make an impassable region in the cost field, completely covering the 
  * specified OBB.
  * ------------------------------------------------------------------------
@@ -161,8 +172,16 @@ bool      N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
  * towards a particular destination.
  * ------------------------------------------------------------------------
  */
-vec2_t    N_DesiredVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest, 
-                            void *nav_private, vec3_t map_pos);
+vec2_t    N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest, 
+                                     void *nav_private, vec3_t map_pos);
+
+/* ------------------------------------------------------------------------
+ * Returns the desired velocity for an entity at 'curr_pos' for it to flow
+ * towards the closest enemy units within the same chunk.
+ * ------------------------------------------------------------------------
+ */
+vec2_t    N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, 
+                                     vec3_t map_pos, int faction_id);
 
 /* ------------------------------------------------------------------------
  * Returns true if the particular destination is in direct line of sight 
@@ -214,6 +233,12 @@ void      N_FC_GetStats(struct fc_stats *out_stats);
  * ------------------------------------------------------------------------
  */
 void      N_FC_ClearAll(void);
+
+/* ------------------------------------------------------------------------
+ * Evict all enemy seeking flow from the flow field cache.
+ * ------------------------------------------------------------------------
+ */
+void      N_FC_ClearAllEnemySeekFields(void);
 
 #endif
 
