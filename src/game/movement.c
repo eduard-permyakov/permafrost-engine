@@ -215,6 +215,13 @@ static void entity_finish_moving(const struct entity *ent)
     E_Entity_Notify(EVENT_MOTION_END, ent->uid, NULL, ES_ENGINE);
     if(ent->flags & ENTITY_FLAG_COMBATABLE)
         G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
+    M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), s_map);
+}
+
+static void entity_start_moving(const struct entity *ent)
+{
+    E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
+    M_NavBlockersDecref(G_Pos_GetXZ(ent->uid), s_map);
 }
 
 static void on_marker_anim_finish(void *user, void *event)
@@ -314,9 +321,8 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
             flock_add(&new_flock, curr_ent);
 
             /* When entities are moved from one flock to another, they keep their existing velocity.*/
-            if(ms->state == STATE_ARRIVED) {
-                E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
-            }
+            if(ms->state == STATE_ARRIVED)
+                entity_start_moving(curr_ent);
             ms->state = STATE_MOVING;
 
         }else {
@@ -471,6 +477,15 @@ static void on_render_3d(void *user, void *event)
     
         const struct camera *cam = G_GetActiveCamera();
         M_NavRenderVisibleEnemySeekField(s_map, cam, setting.as_int);
+    }
+
+    status = Settings_Get("pf.debug.show_navigation_blockers", &setting);
+    assert(status == SS_OKAY);
+
+    if(setting.as_bool) {
+
+        const struct camera *cam = G_GetActiveCamera();
+        M_NavRenderNavigationBlockers(s_map, cam);
     }
 }
 
@@ -1135,6 +1150,8 @@ void G_Move_AddEntity(const struct entity *ent)
     khiter_t k = kh_put(state, s_entity_state_table, ent->uid, &ret);
     assert(ret != -1 && ret != 0);
     kh_value(s_entity_state_table, k) = new_ms;
+
+    M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), s_map);
 }
 
 void G_Move_RemoveEntity(const struct entity *ent)
@@ -1227,7 +1244,7 @@ void G_Move_SetSeekEnemies(const struct entity *ent)
     assert(NULL == flock_for_ent(ent));
 
     if(ms->state == STATE_ARRIVED)
-        E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
+        entity_start_moving(ent);
 
     ms->state = STATE_SEEK_ENEMIES;
 }

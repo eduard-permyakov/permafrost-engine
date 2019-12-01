@@ -68,6 +68,12 @@ struct nav_chunk{
     size_t        num_portals; 
     struct portal portals[MAX_PORTALS_PER_CHUNK];
     uint8_t       cost_base[FIELD_RES_R][FIELD_RES_C]; 
+    /* Every tile in the 'blockers' holds a reference count for
+     * how many stationary entities are currently 'retaining' that 
+     * tile by being positioned on it. 'Masked' tiles are treated 
+     * as impassable when computing flow fields. 
+     */
+    uint8_t       blockers[FIELD_RES_R][FIELD_RES_C];
     /* An 'island' is a collection of tiles that are all reachable 
      * from one another. Each island has a unique ID. 
      */

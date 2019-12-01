@@ -96,6 +96,13 @@ void   M_NavRenderVisibleEnemySeekField(const struct map *map, const struct came
                                         int faction_id);
 
 /* ------------------------------------------------------------------------
+ * Render a layer over the visible map surface showing which regions are 
+ * currently blocked by stationary entities.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavRenderNavigationBlockers(const struct map *map, const struct camera *cam);
+
+/* ------------------------------------------------------------------------
  * Centers the map at the worldspace origin.
  * ------------------------------------------------------------------------
  */
@@ -250,6 +257,15 @@ bool   M_NavPositionPathable(const struct map *map, vec2_t xz_pos);
  * ------------------------------------------------------------------------
  */
 vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz_dst);
+
+/* ------------------------------------------------------------------------
+ * Change the blocker reference count for the navigation tile under the
+ * specified position. Flow fields will steer around tiles with a blocker 
+ * count of greater than 0. This may cause flow field eviction from caches.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavBlockersIncref(vec2_t xz_pos, const struct map *map);
+void   M_NavBlockersDecref(vec2_t xz_pos, const struct map *map);
 
 /* ------------------------------------------------------------------------
  * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 

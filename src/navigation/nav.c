@@ -678,6 +678,7 @@ void *N_BuildForMapData(size_t w, size_t h,
                     n_set_cost_for_tile(curr_chunk, chunk_w, chunk_h, tile_r, tile_c, curr_tile);
                 }
             }
+            memset(curr_chunk->blockers, 0, sizeof(curr_chunk->blockers));
         }
     }
 
@@ -886,6 +887,49 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map,
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
 
     R_GL_DrawFlowField(positions_buff, dirs_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
+    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
+}
+
+void N_RenderNavigationBlockers(void *nav_private, const struct map *map, 
+                                mat4x4_t *chunk_model, int chunk_r, int chunk_c)
+{
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    const struct nav_private *priv = nav_private;
+    assert(chunk_r < priv->height);
+    assert(chunk_c < priv->width);
+
+    vec2_t corners_buff[4 * FIELD_RES_R * FIELD_RES_C];
+    vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
+
+    const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
+    n_render_portals(chunk, chunk_model, map);
+
+    vec2_t *corners_base = corners_buff;
+    vec3_t *colors_base = colors_buff; 
+
+    for(int r = 0; r < FIELD_RES_R; r++) {
+        for(int c = 0; c < FIELD_RES_C; c++) {
+
+            /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
+            float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
+            float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
+            float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
+            float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+
+            *corners_base++ = (vec2_t){square_x, square_z};
+            *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
+            *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
+            *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
+
+            *colors_base++ = chunk->blockers[r][c] ? (vec3_t){1.0f, 0.0f, 0.0f}
+                                                   : (vec3_t){0.0f, 1.0f, 0.0f};
+        }
+    }
+
+    assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
+    assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
     R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
 }
 
@@ -1452,5 +1496,38 @@ vec2_t N_TileDims(void)
         x_ratio * X_COORDS_PER_TILE,
         z_ratio * Z_COORDS_PER_TILE
     };
+}
+
+void N_BlockersIncref(vec2_t xz_pos, vec3_t map_pos, void *nav_private)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile);
+    assert(result);
+
+    struct nav_chunk *chunk = &priv->chunks[IDX(tile.chunk_r, priv->width, tile.chunk_c)];
+    chunk->blockers[tile.tile_r][tile.tile_c]++;
+}
+
+void N_BlockersDecref(vec2_t xz_pos, vec3_t map_pos, void *nav_private)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile);
+    assert(result);
+
+    struct nav_chunk *chunk = &priv->chunks[IDX(tile.chunk_r, priv->width, tile.chunk_c)];
+    assert(chunk->blockers[tile.tile_r][tile.tile_c]);
+    chunk->blockers[tile.tile_r][tile.tile_c]--;
 }
 

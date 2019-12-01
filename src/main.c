@@ -75,6 +75,7 @@ VEC_IMPL(static inline, event, SDL_Event)
 const char                *g_basepath;
 
 unsigned                   g_last_frame_ms = 0;
+unsigned long              g_frame_idx = 0;
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -539,6 +540,8 @@ int main(int argc, char **argv)
         uint32_t curr_time = SDL_GetTicks();
         g_last_frame_ms = curr_time - last_ts;
         last_ts = curr_time;
+
+        ++g_frame_idx;
     }
 
     ss_e status;

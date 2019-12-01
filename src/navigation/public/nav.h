@@ -136,6 +136,14 @@ void      N_RenderEnemySeekField(void *nav_private, const struct map *map,
                                  int faction_id);
 
 /* ------------------------------------------------------------------------
+ * Debug rendering to show which navigation tiles are currently occupied
+ * by 'stationary' entities. Occupied tiles will be red, others will be green.
+ * ------------------------------------------------------------------------
+ */
+void      N_RenderNavigationBlockers(void *nav_private, const struct map *map, 
+                                     mat4x4_t *chunk_model, int chunk_r, int chunk_c);
+
+/* ------------------------------------------------------------------------
  * Make an impassable region in the cost field, completely covering the 
  * specified OBB.
  * ------------------------------------------------------------------------
@@ -211,6 +219,14 @@ vec2_t    N_TileDims(void);
  */
 vec2_t    N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
                                  vec2_t xz_dst);
+
+/* ------------------------------------------------------------------------
+ * Changes the blocker reference count for the navigation tile under the
+ * cursor position. This may cause flow field eviction from caches.
+ * ------------------------------------------------------------------------
+ */
+void      N_BlockersIncref(vec2_t xz_pos, vec3_t map_pos, void *nav_private);
+void      N_BlockersDecref(vec2_t xz_pos, vec3_t map_pos, void *nav_private);
 
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */

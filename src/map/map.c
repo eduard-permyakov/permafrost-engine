@@ -350,6 +350,27 @@ void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera
     }
 }
 
+void M_NavRenderNavigationBlockers(const struct map *map, const struct camera *cam)
+{
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+        for(int c = 0; c < map->width; c++) {
+
+            struct aabb chunk_aabb;
+            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+                continue;
+
+            mat4x4_t chunk_model;
+            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+            N_RenderNavigationBlockers(map->nav_private, map, &chunk_model, r, c);
+        }
+    }
+}
+
 vec2_t M_NavDesiredPointSeekVelocity(const struct map *map, dest_id_t id, vec2_t curr_pos, vec2_t xz_dest)
 {
     return N_DesiredPointSeekVelocity(id, curr_pos, xz_dest, map->nav_private, map->pos);
@@ -384,6 +405,16 @@ vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz
 {
     assert(M_NavPositionPathable(map, xz_src));
     return N_ClosestReachableDest(map->nav_private, map->pos, xz_src, xz_dst);
+}
+
+void M_NavBlockersIncref(vec2_t xz_pos, const struct map *map)
+{
+    N_BlockersIncref(xz_pos, map->pos, map->nav_private);
+}
+
+void M_NavBlockersDecref(vec2_t xz_pos, const struct map *map)
+{
+    N_BlockersDecref(xz_pos, map->pos, map->nav_private);
 }
 
 bool M_TileForDesc(const struct map *map, struct tile_desc desc, struct tile **out)

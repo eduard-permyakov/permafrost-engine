@@ -38,8 +38,9 @@
 
 #include <SDL.h>
 
-extern const char *g_basepath;
-extern unsigned    g_last_frame_ms;
+extern const char    *g_basepath;      /* readonly */
+extern unsigned       g_last_frame_ms; /* readonly */
+extern unsigned long  g_frame_idx;     /* readonly */
 
 enum pf_window_flags {
 
