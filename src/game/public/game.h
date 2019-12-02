@@ -99,6 +99,7 @@ void   G_SetMinimapSize(int size);
 void   G_SetMinimapResizeMask(int mask);
 bool   G_MouseOverMinimap(void);
 bool   G_MapHeightAtPoint(vec2_t xz, float *out_height);
+bool   G_PointInsideMap(vec2_t xz);
 
 void   G_BakeNavDataForScene(void);
 
@@ -150,6 +151,7 @@ const vec_pentity_t  *G_Sel_Get(enum selection_type *out_type);
 
 void G_Move_SetMoveOnLeftClick(void);
 void G_Move_SetAttackOnLeftClick(void);
+void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz);
 
 
 /*###########################################################################*/

@@ -68,7 +68,7 @@ def setup_scene():
     pf.add_faction("RED", (255, 0, 0, 255))
     pf.add_faction("BLUE", (0, 0, 255, 255))
 
-    pf.set_diplomacy_state(0, 1, pf.DIPLOMACY_STATE_PEACE)
+    pf.set_diplomacy_state(0, 1, pf.DIPLOMACY_STATE_WAR)
 
     pf.set_faction_controllable(0, False)
     pf.set_faction_controllable(1, False)
@@ -99,6 +99,7 @@ def setup_armies():
             knight.faction_id = 0
             knight.selection_radius = 3.25
             knight.activate()
+            knight.hold_position()
 
             red_army_units += [knight]
 
@@ -112,6 +113,7 @@ def setup_armies():
             berz.faction_id = 1
             berz.selection_radius = 3.00
             berz.activate()
+            berz.hold_position()
 
             blue_army_units += [berz]
 
@@ -135,18 +137,30 @@ def fixup_anim_combatable():
     am.AnimCombatable._AnimCombatable__on_death = __on_death
     am.AnimCombatable._AnimCombatable__on_death_anim_finish = __on_death_anim_finish
 
-def toggle_war(user, event):
+def start_war(user, event):
 
     if event[0] != pf.SDL_SCANCODE_W:
         return
 
-    global war_on
+    global war_on, red_army_units, blue_army_units
     if war_on:
-        pf.set_diplomacy_state(0, 1, pf.DIPLOMACY_STATE_PEACE)
-        war_on = False
-    else:
-        pf.set_diplomacy_state(0, 1, pf.DIPLOMACY_STATE_WAR)
-        war_on = True
+        return
+    war_on = True
+    chunk_height = pf.TILES_PER_CHUNK_HEIGHT * pf.Z_COORDS_PER_TILE
+
+    for unit in red_army_units:
+        atk_pos = (
+            unit.pos[0] - 100,
+            (unit.pos[1] // chunk_height + 0.5) * chunk_height
+        )
+        unit.attack(atk_pos)
+
+    for unit in blue_army_units:
+        atk_pos = (
+            unit.pos[0] + 100,
+            (unit.pos[1] // chunk_height + 0.5) * chunk_height
+        )
+        unit.attack(atk_pos)
 
 setup_scene()
 setup_armies()
@@ -155,5 +169,5 @@ fixup_anim_combatable()
 perf_stats_win = psw.PerfStatsWindow()
 perf_stats_win.show()
 
-pf.register_event_handler(pf.SDL_KEYDOWN, toggle_war, None)
+pf.register_event_handler(pf.SDL_KEYDOWN, start_war, None)
 

@@ -87,7 +87,7 @@ static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_select(PyEntityObject *self);
 static PyObject *PyEntity_deselect(PyEntityObject *self);
 static PyObject *PyEntity_stop(PyEntityObject *self);
-static PyObject *PyEntity_hold_position(PyEntityObject *self);
+static PyObject *PyEntity_move(PyEntityObject *self, PyObject *args);
 
 static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_del(PyAnimEntityObject *self);
@@ -101,6 +101,8 @@ static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self,
 static int       PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *self, void *closure);
 static int       PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self);
+static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -151,9 +153,9 @@ static PyMethodDef PyEntity_methods[] = {
     (PyCFunction)PyEntity_stop, METH_NOARGS,
     "Issues a 'stop' command to the entity, stopping its' movement and attack. Cancels 'hold position' order."},
 
-    {"hold_position", 
-    (PyCFunction)PyEntity_hold_position, METH_NOARGS,
-    "Issues a 'hold position' order to the entity, stopping it and preventing it from moving to attack."},
+    {"move", 
+    (PyCFunction)PyEntity_move, METH_VARARGS,
+    "Issues a 'move' order to the entity at the XZ position specified by the argument."},
 
     {NULL}  /* Sentinel */
 };
@@ -270,6 +272,14 @@ static PyTypeObject PyAnimEntity_type = {
 /* pf.CombatableEntity */
 
 static PyMethodDef PyCombatableEntity_methods[] = {
+    {"hold_position", 
+    (PyCFunction)PyCombatableEntity_hold_position, METH_NOARGS,
+    "Issues a 'hold position' order to the entity, stopping it and preventing it from moving to attack."},
+
+    {"attack", 
+    (PyCFunction)PyCombatableEntity_attack, METH_VARARGS,
+    "Issues an 'attack move' order to the entity at the XZ position specified by the argument."},
+
     {"__del__", 
     (PyCFunction)PyCombatableEntity_del, METH_NOARGS,
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
@@ -302,7 +312,7 @@ static PyTypeObject PyCombatableEntity_type = {
     .tp_doc       = "Permafrost Engine entity which is able to take part in combat. This type "
                     "requires the 'max_hp', 'base_dmg', and 'base_armour' keyword arguments to be "
                     "passed to __init__. This is a subclass of pf.Entity.",
-    .tp_methods   = PyAnimEntity_methods,
+    .tp_methods   = PyCombatableEntity_methods,
     .tp_base      = &PyEntity_type,
     .tp_getset    = PyCombatableEntity_getset,
     .tp_init      = (initproc)PyCombatableEntity_init,
@@ -750,15 +760,55 @@ static PyObject *PyEntity_stop(PyEntityObject *self)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyEntity_hold_position(PyEntityObject *self)
+static PyObject *PyEntity_move(PyEntityObject *self, PyObject *args)
 {
-    assert(self->ent);
+    vec2_t xz_pos;
 
-    if(!(self->ent->flags & ENTITY_FLAG_STATIC))
-        G_StopEntity(self->ent);
+    if(!PyArg_ParseTuple(args, "(ff)", &xz_pos.x, &xz_pos.z)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 2 floats.");
+        return NULL;
+    }
 
-    if(self->ent->flags & ENTITY_FLAG_COMBATABLE)
-        G_Combat_SetStance(self->ent, COMBAT_STANCE_HOLD_POSITION);
+    if(!G_PointInsideMap(xz_pos)) {
+        PyErr_SetString(PyExc_RuntimeError, "The movement point must be within the map bounds.");
+        return NULL;
+    }
+
+    G_Move_SetDest(self->ent, xz_pos);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self)
+{
+    assert(self->super.ent);
+
+    if(!(self->super.ent->flags & ENTITY_FLAG_STATIC))
+        G_StopEntity(self->super.ent);
+
+    assert(self->super.ent->flags & ENTITY_FLAG_COMBATABLE);
+    G_Combat_SetStance(self->super.ent, COMBAT_STANCE_HOLD_POSITION);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObject *args)
+{
+    vec2_t xz_pos;
+
+    if(!PyArg_ParseTuple(args, "(ff)", &xz_pos.x, &xz_pos.z)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 2 floats.");
+        return NULL;
+    }
+
+    if(!G_PointInsideMap(xz_pos)) {
+        PyErr_SetString(PyExc_RuntimeError, "The movement point must be within the map bounds.");
+        return NULL;
+    }
+
+    assert(self->super.ent->flags & ENTITY_FLAG_COMBATABLE);
+    G_Combat_SetStance(self->super.ent, COMBAT_STANCE_AGGRESSIVE);
+
+    if(!(self->super.ent->flags & ENTITY_FLAG_STATIC))
+        G_Move_SetDest(self->super.ent, xz_pos);
 
     Py_RETURN_NONE;
 }

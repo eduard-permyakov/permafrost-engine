@@ -479,13 +479,21 @@ bool G_MouseOverMinimap(void)
 
 bool G_MapHeightAtPoint(vec2_t xz, float *out_height)
 {
-    assert(s_gs.map);
+    if(!s_gs.map)
+        return false;
 
     if(!M_PointInsideMap(s_gs.map, xz))
         return false;
 
     *out_height = M_HeightAtPoint(s_gs.map, xz);
     return true;
+}
+
+bool G_PointInsideMap(vec2_t xz)
+{
+    if(!s_gs.map)
+        return false;
+    return M_PointInsideMap(s_gs.map, xz);
 }
 
 void G_BakeNavDataForScene(void)

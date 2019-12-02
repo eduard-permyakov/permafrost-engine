@@ -115,5 +115,6 @@ class AnimCombatable(pf.AnimEntity, pf.CombatableEntity, cont.Controllable):
     @classmethod
     def __hold_position_action(cls):
         for ent in pf.get_unit_selection():
-            ent.hold_position()
+            if isinstance(ent, pf.CombatableEntity):
+                ent.hold_position()
 
