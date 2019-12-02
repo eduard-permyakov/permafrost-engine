@@ -225,8 +225,8 @@ vec2_t    N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_sr
  * cursor position. This may cause flow field eviction from caches.
  * ------------------------------------------------------------------------
  */
-void      N_BlockersIncref(vec2_t xz_pos, vec3_t map_pos, void *nav_private);
-void      N_BlockersDecref(vec2_t xz_pos, vec3_t map_pos, void *nav_private);
+void      N_BlockersIncref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private);
+void      N_BlockersDecref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private);
 
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */

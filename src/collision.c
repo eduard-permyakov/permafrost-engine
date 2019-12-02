@@ -682,6 +682,13 @@ bool C_PointInsideTriangle2D(vec2_t point, vec2_t a, vec2_t b, vec2_t c)
     return (u >= 0.0f) && (v >= 0.0f) && (u + v < 1.0f);
 }
 
+bool C_PointInsideCircle2D(vec2_t point, vec2_t origin, float radius)
+{
+    vec2_t delta;
+    PFM_Vec2_Sub(&point, &origin, &delta);
+    return (PFM_Vec2_Len(&delta) <= radius);
+}
+
 bool C_LineLineIntersection(struct line_seg_2d l1, struct line_seg_2d l2, vec2_t *out_xz)
 {
     float s1_x, s1_z, s2_x, s2_z;

@@ -261,11 +261,11 @@ vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz
 /* ------------------------------------------------------------------------
  * Change the blocker reference count for the navigation tile under the
  * specified position. Flow fields will steer around tiles with a blocker 
- * count of greater than 0. This may cause flow field eviction from caches.
+ * count of greater than 0.
  * ------------------------------------------------------------------------
  */
-void   M_NavBlockersIncref(vec2_t xz_pos, const struct map *map);
-void   M_NavBlockersDecref(vec2_t xz_pos, const struct map *map);
+void   M_NavBlockersIncref(vec2_t xz_pos, float range, const struct map *map);
+void   M_NavBlockersDecref(vec2_t xz_pos, float range, const struct map *map);
 
 /* ------------------------------------------------------------------------
  * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 

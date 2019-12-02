@@ -629,6 +629,55 @@ static bool enemy_ent(const struct entity *ent, void *arg)
     return (ds == DIPLOMACY_STATE_WAR);
 }
 
+static void n_update_blockers(struct nav_private *priv, vec2_t xz_pos, float range, 
+                              vec3_t map_pos, int ref_delta)
+{
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile);
+    assert(result);
+
+    int tile_len = X_COORDS_PER_TILE / (FIELD_RES_C / TILES_PER_CHUNK_WIDTH);
+    int ntiles = ceil(range / tile_len);
+
+    for(int dr = -ntiles; dr <= ntiles; dr++) {
+    for(int dc = -ntiles; dc <= ntiles; dc++) {
+
+        struct tile_desc curr = tile;
+        if(!M_Tile_RelativeDesc(res, &curr, dc, dr))
+            continue;
+
+        struct box bounds = M_Tile_Bounds(res, map_pos, curr);
+        vec2_t coords[] = {
+            (vec2_t){bounds.x,                bounds.z                },
+            (vec2_t){bounds.x - bounds.width, bounds.z                },
+            (vec2_t){bounds.x,                bounds.z + bounds.height},
+            (vec2_t){bounds.x - bounds.width, bounds.z + bounds.height},
+            (vec2_t){bounds.x - bounds.width/2.0f, bounds.z + bounds.height/2.0f}
+        };
+
+        bool inside = false;
+        for(int i = 0; i < ARR_SIZE(coords); i++) {
+
+            if(C_PointInsideCircle2D(coords[i], xz_pos, range)) {
+                inside = true;
+                break;
+            }
+        }
+
+        struct nav_chunk *chunk = &priv->chunks[IDX(curr.chunk_r, priv->width, curr.chunk_c)];
+        if(inside) {
+            assert(ref_delta < 0 ? chunk->blockers[curr.tile_r][curr.tile_c] >= -ref_delta : true);
+            assert(ref_delta > 0 ? chunk->blockers[curr.tile_r][curr.tile_c] < 256 - ref_delta : true);
+            chunk->blockers[curr.tile_r][curr.tile_c] += ref_delta;
+        }
+    }}
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -904,8 +953,6 @@ void N_RenderNavigationBlockers(void *nav_private, const struct map *map,
     vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
 
     const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
-    n_render_portals(chunk, chunk_model, map);
-
     vec2_t *corners_base = corners_buff;
     vec3_t *colors_base = colors_buff; 
 
@@ -1498,36 +1545,13 @@ vec2_t N_TileDims(void)
     };
 }
 
-void N_BlockersIncref(vec2_t xz_pos, vec3_t map_pos, void *nav_private)
+void N_BlockersIncref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private)
 {
-    struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
-
-    struct tile_desc tile;
-    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile);
-    assert(result);
-
-    struct nav_chunk *chunk = &priv->chunks[IDX(tile.chunk_r, priv->width, tile.chunk_c)];
-    chunk->blockers[tile.tile_r][tile.tile_c]++;
+    n_update_blockers(nav_private, xz_pos, range, map_pos, +1);
 }
 
-void N_BlockersDecref(vec2_t xz_pos, vec3_t map_pos, void *nav_private)
+void N_BlockersDecref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private)
 {
-    struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
-
-    struct tile_desc tile;
-    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile);
-    assert(result);
-
-    struct nav_chunk *chunk = &priv->chunks[IDX(tile.chunk_r, priv->width, tile.chunk_c)];
-    assert(chunk->blockers[tile.tile_r][tile.tile_c]);
-    chunk->blockers[tile.tile_r][tile.tile_c]--;
+    n_update_blockers(nav_private, xz_pos, range, map_pos, -1);
 }
 

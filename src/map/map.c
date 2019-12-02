@@ -407,14 +407,14 @@ vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz
     return N_ClosestReachableDest(map->nav_private, map->pos, xz_src, xz_dst);
 }
 
-void M_NavBlockersIncref(vec2_t xz_pos, const struct map *map)
+void M_NavBlockersIncref(vec2_t xz_pos, float range, const struct map *map)
 {
-    N_BlockersIncref(xz_pos, map->pos, map->nav_private);
+    N_BlockersIncref(xz_pos, range, map->pos, map->nav_private);
 }
 
-void M_NavBlockersDecref(vec2_t xz_pos, const struct map *map)
+void M_NavBlockersDecref(vec2_t xz_pos, float range, const struct map *map)
 {
-    N_BlockersDecref(xz_pos, map->pos, map->nav_private);
+    N_BlockersDecref(xz_pos, range, map->pos, map->nav_private);
 }
 
 bool M_TileForDesc(const struct map *map, struct tile_desc desc, struct tile **out)

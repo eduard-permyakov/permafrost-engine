@@ -97,6 +97,7 @@ bool C_FrustumOBBIntersectionExact(const struct frustum *frustum, const struct o
  */
 bool C_PointInsideRect2D(vec2_t point, vec2_t a, vec2_t b, vec2_t c, vec2_t d);
 bool C_PointInsideTriangle2D(vec2_t point, vec2_t a, vec2_t b, vec2_t c);
+bool C_PointInsideCircle2D(vec2_t point, vec2_t origin, float radius);
 
 
 struct box{
