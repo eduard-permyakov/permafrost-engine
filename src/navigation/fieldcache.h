@@ -51,6 +51,9 @@
 bool N_FC_Init(void);
 void N_FC_Shutdown(void);
 
+/* Invalidate all LOS and Flow fields for a particular chunk 
+ */
+void N_FC_InvalidateAllAtChunk(struct coord chunk);
 
 /*###########################################################################*/
 /* LOS FIELD CACHING                                                         */

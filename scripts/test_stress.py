@@ -162,6 +162,16 @@ def start_war(user, event):
         )
         unit.attack(atk_pos)
 
+def toggle_pause(user, event):
+
+    if event[0] == pf.SDL_SCANCODE_P:
+        ss = pf.get_simstate()
+        if ss == pf.G_RUNNING:
+            pf.set_simstate(pf.G_PAUSED_UI_RUNNING)
+        else:
+            pf.set_simstate(pf.G_RUNNING)
+
+
 setup_scene()
 setup_armies()
 fixup_anim_combatable()
@@ -170,4 +180,5 @@ perf_stats_win = psw.PerfStatsWindow()
 perf_stats_win.show()
 
 pf.register_event_handler(pf.SDL_KEYDOWN, start_war, None)
+pf.register_ui_event_handler(pf.SDL_KEYDOWN, toggle_pause, None)
 

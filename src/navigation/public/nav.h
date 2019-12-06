@@ -51,12 +51,14 @@ struct fc_stats{
     unsigned los_used;
     unsigned los_max;
     float    los_hit_rate;
+    unsigned los_invalidated;
     unsigned flow_used;
     unsigned flow_max;
     float    flow_hit_rate;
-    unsigned mapping_used;
-    unsigned mapping_max;
-    float    mapping_hit_rate;
+    unsigned flow_invalidated;
+    unsigned ffid_used;
+    unsigned ffid_max;
+    float    ffid_hit_rate;
     unsigned grid_path_used;
     unsigned grid_path_max;
     float    grid_path_hit_rate;

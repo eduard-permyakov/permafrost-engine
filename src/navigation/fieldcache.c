@@ -51,51 +51,63 @@ LRU_CACHE_TYPE(flow, struct flow_field)
 LRU_CACHE_PROTOTYPES(static, flow, struct flow_field)
 LRU_CACHE_IMPL(static, flow, struct flow_field)
 
-LRU_CACHE_TYPE(mapping, ff_id_t)
-LRU_CACHE_PROTOTYPES(static, mapping, ff_id_t)
-LRU_CACHE_IMPL(static, mapping, ff_id_t)
+LRU_CACHE_TYPE(ffid, ff_id_t)
+LRU_CACHE_PROTOTYPES(static, ffid, ff_id_t)
+LRU_CACHE_IMPL(static, ffid, ff_id_t)
 
 LRU_CACHE_TYPE(grid_path, struct grid_path_desc)
 LRU_CACHE_PROTOTYPES(static, grid_path, struct grid_path_desc)
 LRU_CACHE_IMPL(static, grid_path, struct grid_path_desc)
 
-VEC_TYPE(ffid, ff_id_t)
-VEC_PROTOTYPES(static, ffid, ff_id_t)
-VEC_IMPL(static, ffid, ff_id_t)
+VEC_TYPE(id, uint64_t)
+VEC_PROTOTYPES(static, id, uint64_t)
+VEC_IMPL(static, id, uint64_t)
+
+KHASH_MAP_INIT_INT64(idvec, vec_id_t)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static lru(los)  s_los_cache;
-static lru(flow) s_flow_cache;
-/* The mapping cache maps a (dest_id, chunk coordinate) tuple to a flow field ID,
+static lru(los)          s_los_cache;       /* key: (dest_id, chunk coord) */
+static lru(flow)         s_flow_cache;      /* key: (ffid) */
+/* The ffid cache maps a (dest_id, chunk coordinate) tuple to a flow field ID,
  * which could be used to retreive the relevant field from the flow cache. 
  * The reason for this is that the same flow field chunk can be shared between
- * many different mappings. */
-static lru(mapping) s_mapping_cache;
-static lru(grid_path) s_grid_path_cache;
+ * many different paths. */
+static lru(ffid)         s_ffid_cache;      /* key: (dest_id, chunk_coord) */
+static lru(grid_path)    s_grid_path_cache; /* key: (chunk coord, tile start coord, tile dest coord) */
+
+/* The following structures are maintained for efficient invalidation of entries:*/
+static vec_id_t          s_enemy_seek_ffids;
+static khash_t(idvec)   *s_chunk_ffield_map; /* key: (chunk coord) */
+static khash_t(idvec)   *s_chunk_lfield_map; /* key: (chunk coord) */
 
 static struct priv_fc_stats{
     unsigned los_query;
     unsigned los_hit;
+    unsigned los_invalidated;
     unsigned flow_query;
     unsigned flow_hit;
-    unsigned mapping_query;
-    unsigned mapping_hit;
+    unsigned flow_invalidated;
+    unsigned ffid_query;
+    unsigned ffid_hit;
     unsigned grid_path_query;
     unsigned grid_path_hit;
 }s_perfstats = {0};
-
-static vec_ffid_t s_enemy_seek_ffids;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+uint32_t key_for_chunk(struct coord chunk)
+{
+    return (((uint64_t)chunk.r & 0xffff) << 16) | ((uint64_t)chunk.c & 0xffff);
+}
+
 uint64_t key_for_dest_and_chunk(dest_id_t id, struct coord chunk)
 {
-    return ((((uint64_t)id) << 32) | (((uint64_t)chunk.r) << 16) | (((uint64_t)chunk.c) & 0xffff));
+    return ((((uint64_t)id) << 32) | key_for_chunk(chunk));
 }
 
 uint64_t grid_path_key(struct coord local_start, struct coord local_dest,
@@ -114,6 +126,35 @@ static void on_grid_path_evict(struct grid_path_desc *victim)
     vec_coord_destroy(&victim->path);
 }
 
+static void destroy_all_entries(khash_t(idvec) *hash)
+{
+    uint32_t key;
+    vec_id_t curr;
+    kh_foreach(hash, key, curr, {
+        vec_id_destroy(&curr); 
+    });
+}
+
+static void field_map_add(khash_t(idvec) *hash, uint64_t key, uint64_t id)
+{
+    khiter_t k = kh_get(idvec, hash, key);
+    if(k != kh_end(hash)) {
+
+        vec_id_t *curr = &kh_val(hash, k);
+        vec_id_push(curr, id);
+    }else{
+        vec_id_t newvec;
+        vec_id_init(&newvec);
+        vec_id_push(&newvec, id);
+
+        int ret;
+        kh_put(idvec, hash, key, &ret);
+        assert(ret != -1 && ret != 0);
+        k = kh_get(idvec, hash, key);
+        kh_val(hash, k) = newvec;
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -126,18 +167,28 @@ bool N_FC_Init(void)
     if(!lru_flow_init(&s_flow_cache, CONFIG_FLOW_CAHCE_SZ, NULL))
         goto fail_flow;
 
-    if(!lru_mapping_init(&s_mapping_cache, CONFIG_MAPPING_CACHE_SZ, NULL))
-        goto fail_mapping;
+    if(!lru_ffid_init(&s_ffid_cache, CONFIG_MAPPING_CACHE_SZ, NULL))
+        goto fail_ffid;
 
     if(!lru_grid_path_init(&s_grid_path_cache, CONFIG_GRID_PATH_CACHE_SZ, on_grid_path_evict))
         goto fail_grid_path;
 
-    vec_ffid_init(&s_enemy_seek_ffids);
+    if(NULL == (s_chunk_ffield_map = kh_init(idvec)))
+        goto fail_chunk_ffield;
+
+    if(NULL == (s_chunk_lfield_map = kh_init(idvec)))
+        goto fail_chunk_lfield;
+
+    vec_id_init(&s_enemy_seek_ffids);
     return true;
 
+fail_chunk_lfield:
+    kh_destroy(idvec, s_chunk_ffield_map);
+fail_chunk_ffield:
+    lru_grid_path_destroy(&s_grid_path_cache);
 fail_grid_path:
-    lru_mapping_destroy(&s_mapping_cache);
-fail_mapping:
+    lru_ffid_destroy(&s_ffid_cache);
+fail_ffid:
     lru_flow_destroy(&s_flow_cache);
 fail_flow:
     lru_los_destroy(&s_los_cache);
@@ -149,17 +200,32 @@ void N_FC_Shutdown(void)
 {
     lru_los_destroy(&s_los_cache);
     lru_flow_destroy(&s_flow_cache);
-    lru_mapping_destroy(&s_mapping_cache);
+    lru_ffid_destroy(&s_ffid_cache);
     lru_grid_path_destroy(&s_grid_path_cache);
-    vec_ffid_destroy(&s_enemy_seek_ffids);
+
+    destroy_all_entries(s_chunk_ffield_map);
+    kh_destroy(idvec, s_chunk_ffield_map);
+
+    destroy_all_entries(s_chunk_lfield_map);
+    kh_destroy(idvec, s_chunk_lfield_map);
+
+    vec_id_destroy(&s_enemy_seek_ffids);
 }
 
 void N_FC_ClearAll(void)
 {
     lru_los_clear(&s_los_cache);
     lru_flow_clear(&s_flow_cache);
-    lru_mapping_clear(&s_mapping_cache);
+    lru_ffid_clear(&s_ffid_cache);
     lru_grid_path_clear(&s_grid_path_cache);
+
+    destroy_all_entries(s_chunk_ffield_map);
+    kh_clear(idvec, s_chunk_ffield_map);
+
+    destroy_all_entries(s_chunk_lfield_map);
+    kh_clear(idvec, s_chunk_lfield_map);
+
+    vec_id_reset(&s_enemy_seek_ffids);
 }
 
 void N_FC_ClearStats(void)
@@ -173,16 +239,18 @@ void N_FC_GetStats(struct fc_stats *out_stats)
     out_stats->los_max = s_los_cache.capacity;
     out_stats->los_hit_rate = !s_perfstats.los_query ? 0
         : ((float)s_perfstats.los_hit) / s_perfstats.los_query;
+    out_stats->los_invalidated = s_perfstats.los_invalidated;
 
     out_stats->flow_used = s_flow_cache.used;
     out_stats->flow_max = s_flow_cache.capacity;
     out_stats->flow_hit_rate = !s_perfstats.flow_query ? 0
         : ((float)s_perfstats.flow_hit) / s_perfstats.flow_query;
+    out_stats->flow_invalidated = s_perfstats.flow_invalidated;
 
-    out_stats->mapping_used = s_mapping_cache.used;
-    out_stats->mapping_max = s_mapping_cache.capacity;
-    out_stats->mapping_hit_rate = !s_perfstats.mapping_hit ? 0
-        : ((float)s_perfstats.mapping_hit) / s_perfstats.mapping_query;
+    out_stats->ffid_used = s_ffid_cache.used;
+    out_stats->ffid_max = s_ffid_cache.capacity;
+    out_stats->ffid_hit_rate = !s_perfstats.ffid_hit ? 0
+        : ((float)s_perfstats.ffid_hit) / s_perfstats.ffid_query;
 
     out_stats->grid_path_used = s_grid_path_cache.used;
     out_stats->grid_path_max = s_grid_path_cache.capacity;
@@ -210,6 +278,7 @@ void N_FC_PutLOSField(dest_id_t id, struct coord chunk_coord, const struct LOS_f
 {
     uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
     lru_los_put(&s_los_cache, key, lf);
+    field_map_add(s_chunk_lfield_map, key_for_chunk(chunk_coord), key);
 }
 
 bool N_FC_ContainsFlowField(ff_id_t ffid)
@@ -229,25 +298,28 @@ const struct flow_field *N_FC_FlowFieldAt(ff_id_t ffid)
 void N_FC_PutFlowField(ff_id_t ffid, const struct flow_field *ff)
 {
     if((ffid >> 56) == TARGET_ENEMIES)
-        vec_ffid_push(&s_enemy_seek_ffids, ffid);
+        vec_id_push(&s_enemy_seek_ffids, ffid);
 
     lru_flow_put(&s_flow_cache, ffid, ff);
+
+    struct coord chunk = (struct coord){(ffid >> 8) & 0xff, ffid & 0xff};
+    field_map_add(s_chunk_ffield_map, key_for_chunk(chunk), ffid);
 }
 
 bool N_FC_GetDestFFMapping(dest_id_t id, struct coord chunk_coord, ff_id_t *out_ff)
 {
     uint64_t key = key_for_dest_and_chunk(id, chunk_coord);
-    bool ret = lru_mapping_get(&s_mapping_cache, key, out_ff);
+    bool ret = lru_ffid_get(&s_ffid_cache, key, out_ff);
 
-    s_perfstats.mapping_query++;
-    s_perfstats.mapping_hit += !!ret;
+    s_perfstats.ffid_query++;
+    s_perfstats.ffid_hit += !!ret;
     return ret;
 }
 
 void N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, ff_id_t ffid)
 {
     uint64_t key = key_for_dest_and_chunk(dest_id, chunk_coord);
-    lru_mapping_put(&s_mapping_cache, key, &ffid);
+    lru_ffid_put(&s_ffid_cache, key, &ffid);
 }
 
 void N_FC_ClearAllEnemySeekFields(void)
@@ -255,11 +327,10 @@ void N_FC_ClearAllEnemySeekFields(void)
     for(int i = 0; i < vec_size(&s_enemy_seek_ffids); i++) {
 
         ff_id_t curr = vec_AT(&s_enemy_seek_ffids, i);
-        assert(lru_flow_contains(&s_flow_cache, curr));
-        int ret = lru_flow_remove(&s_flow_cache, curr);
-        assert(ret);
+        /* The field may have already been invalidated */
+        lru_flow_remove(&s_flow_cache, curr);
     }
-    vec_ffid_reset(&s_enemy_seek_ffids);
+    vec_id_reset(&s_enemy_seek_ffids);
 }
 
 bool N_FC_GetGridPath(struct coord local_start, struct coord local_dest,
@@ -278,5 +349,41 @@ void N_FC_PutGridPath(struct coord local_start, struct coord local_dest,
 {
     uint64_t key = grid_path_key(local_start, local_dest, chunk);
     lru_grid_path_put(&s_grid_path_cache, key, in);
+}
+
+void N_FC_InvalidateAllAtChunk(struct coord chunk)
+{
+    /* Note that chunk:field maps simply maintain a list of cache keys for 
+     * which entries were set. The entries for these keys may have already 
+     * been evicted. As well, keys for which data has been overwritten may
+     * appear multiple times. So, not all the fields in the lists will
+     * necessarily be in the caches. */
+
+    uint64_t key = key_for_chunk(chunk);
+    extern unsigned long long g_frame_idx;
+
+    khiter_t k = kh_get(idvec, s_chunk_lfield_map, key);
+    if(k != kh_end(s_chunk_lfield_map)) {
+
+        vec_id_t *keys = &kh_val(s_chunk_lfield_map, k);
+        for(int i = 0; i < vec_size(keys); i++) {
+            bool found = lru_los_remove(&s_los_cache, vec_AT(keys, i));
+            s_perfstats.los_invalidated += !!found;
+        }
+        vec_id_destroy(keys);
+        kh_del(idvec, s_chunk_lfield_map, k);
+    }
+
+    k = kh_get(idvec, s_chunk_ffield_map, key);
+    if(k != kh_end(s_chunk_ffield_map)) {
+
+        vec_id_t *keys = &kh_val(s_chunk_ffield_map, k);
+        for(int i = 0; i < vec_size(keys); i++) {
+            bool found = lru_flow_remove(&s_flow_cache, vec_AT(keys, i));
+            s_perfstats.flow_invalidated += !!found;
+        }
+        vec_id_destroy(keys);
+        kh_del(idvec, s_chunk_ffield_map, k);
+    }
 }
 

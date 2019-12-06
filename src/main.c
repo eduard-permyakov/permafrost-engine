@@ -422,7 +422,6 @@ fail_sdl:
 
 static void engine_shutdown(void)
 {
-    N_Shutdown();
     S_Shutdown();
 
     /* 'Game' must shut down after 'Scripting'. There are still 
@@ -431,6 +430,7 @@ static void engine_shutdown(void)
      * 'G_' API to remove them from the world.
      */
     G_Shutdown(); 
+    N_Shutdown();
     Cursor_FreeAll();
     AL_Shutdown();
     UI_Shutdown();

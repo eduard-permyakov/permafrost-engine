@@ -44,6 +44,8 @@
 #include "../pf_math.h"
 #include "../collision.h"
 #include "../entity.h"
+#include "../event.h"
+#include "../main.h"
 #include "../lib/public/queue.h"
 
 #include <stdlib.h>
@@ -109,6 +111,14 @@ enum edge_type{
     EDGE_RIGHT = (1 << 2),
     EDGE_TOP   = (1 << 3),
 };
+
+KHASH_SET_INIT_INT(coord)
+
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+static khash_t(coord) *s_dirty_chunks;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -673,9 +683,33 @@ static void n_update_blockers(struct nav_private *priv, vec2_t xz_pos, float ran
         if(inside) {
             assert(ref_delta < 0 ? chunk->blockers[curr.tile_r][curr.tile_c] >= -ref_delta : true);
             assert(ref_delta > 0 ? chunk->blockers[curr.tile_r][curr.tile_c] < 256 - ref_delta : true);
+            int prev_val = chunk->blockers[curr.tile_r][curr.tile_c];
             chunk->blockers[curr.tile_r][curr.tile_c] += ref_delta;
+
+            int val = chunk->blockers[curr.tile_r][curr.tile_c] += ref_delta;
+            if(!!val != !!prev_val) { /* The tile changed states between occupied/non-occupied */
+                int ret;
+                uint64_t key = ((curr.chunk_r & 0xffff) << 16) | (curr.chunk_c & 0xffff);
+                kh_put(coord, s_dirty_chunks, key, &ret);
+                assert(ret != -1);
+            }
         }
     }}
+}
+
+static void on_update_start(void *user, void *event)
+{
+    for(int i = kh_begin(s_dirty_chunks); i != kh_end(s_dirty_chunks); i++) {
+
+        if(!kh_exist(s_dirty_chunks, i))
+            continue;
+
+        uint32_t key = kh_key(s_dirty_chunks, i);
+        struct coord curr = (struct coord){ key >> 16, key & 0xffff };
+        N_FC_InvalidateAllAtChunk(curr);
+    }
+
+    kh_clear(coord, s_dirty_chunks);
 }
 
 /*****************************************************************************/
@@ -687,11 +721,17 @@ bool N_Init(void)
     if(!N_FC_Init())
         return false;
 
+    if((s_dirty_chunks = kh_init(coord)) == NULL)
+        return false;
+
+    E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_RUNNING);
     return true;
 }
 
 void N_Shutdown(void)
 {
+    E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
+    kh_destroy(coord, s_dirty_chunks);
     N_FC_Shutdown();
 }
 
@@ -808,6 +848,8 @@ void N_RenderPathFlowField(void *nav_private, const struct map *map,
     if(!N_FC_GetDestFFMapping(id, (struct coord){chunk_r, chunk_c}, &field_id))
         return;
     const struct flow_field *ff = N_FC_FlowFieldAt(field_id);
+    if(!ff)
+        return;
 
     for(int r = 0; r < FIELD_RES_R; r++) {
         for(int c = 0; c < FIELD_RES_C; c++) {
@@ -846,7 +888,8 @@ void N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *chunk_
         return;
 
     const struct LOS_field *lf = N_FC_LOSFieldAt(id, (struct coord){chunk_r, chunk_c});
-    assert(lf);
+    if(!lf)
+        return;
 
     vec2_t *corners_base = corners_buff;
     vec3_t *colors_base = colors_buff; 
@@ -905,7 +948,8 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map,
         return;
 
     const struct flow_field *ff = N_FC_FlowFieldAt(ffid);
-    assert(ff);
+    if(!ff)
+        return;
 
     for(int r = 0; r < FIELD_RES_R; r++) {
         for(int c = 0; c < FIELD_RES_C; c++) {
@@ -1168,8 +1212,11 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
     if(src_iid != dst_iid)
         return false; 
 
+    /* Even if a mapping exists, the actual flow field may have been evicted from
+     * the cache, due to space constrints or invalidation. */
     ff_id_t id;
-    if(!N_FC_GetDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)) {
+    if(!N_FC_GetDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)
+    || !N_FC_ContainsFlowField(id)) {
 
         struct field_target target = (struct field_target){
             .type = TARGET_TILE,
@@ -1184,10 +1231,14 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         
             N_FlowFieldInit((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, priv, &ff);
             N_FlowFieldUpdate(chunk, target, &ff);
+            extern unsigned long g_frame_idx;
             N_FC_PutFlowField(id, &ff);
         }
 
         N_FC_PutDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, id);
+
+        ff_id_t test;
+        N_FC_GetDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &test);
     }
 
     /* Create the LOS field for the destination chunk, if necessary */
@@ -1267,7 +1318,8 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         ff_id_t exist_id;
         struct flow_field ff;
 
-        if(N_FC_GetDestFFMapping(ret, chunk_coord, &exist_id)) {
+        if(N_FC_GetDestFFMapping(ret, chunk_coord, &exist_id)
+        && N_FC_ContainsFlowField(exist_id)) {
 
             /* The exact flow field we need has already been made */
             if(new_id == exist_id)
@@ -1285,6 +1337,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
              * one of the IDs, it may be possible that the same flowfield will be redundantly 
              * updated at a later time. However, this is largely inconsequential. */
             N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
+            extern unsigned long g_frame_idx;
             N_FC_PutFlowField(new_id, &ff);
 
             goto ff_exists;
@@ -1295,6 +1348,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         
             N_FlowFieldInit(chunk_coord, priv, &ff);
             N_FlowFieldUpdate(chunk, target, &ff);
+            extern unsigned long g_frame_idx;
             N_FC_PutFlowField(new_id, &ff);
         }
 
@@ -1315,7 +1369,6 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
             struct LOS_field lf;
             N_LOSFieldCreate(ret, chunk_coord, dst_desc, priv, map_pos, &lf, prev_los);
             N_FC_PutLOSField(ret, chunk_coord, &lf);
-
         }
 
         prev_los_coord = chunk_coord;
@@ -1351,9 +1404,6 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
     }
 
     const struct flow_field *ff = N_FC_FlowFieldAt(ffid);
-    assert(ff);
-
-    unsigned dir_idx = ff->field[tile.tile_r][tile.tile_c].dir_idx;
     /* If we get a 'FD_NONE' direction, this can only mean that a field has not been generated 
      * for this tile yet and we are getting the default value to which the flow field is
      * initialized. The only case where a 'FD_NONE' direction is valid is at the 
@@ -1361,19 +1411,21 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
      * Since a flow field for this chunk already exists, this means that our path took us 
      * through another 'island' in this chunk, which is separated from the current one with an impassable 
      * barrier.*/
-    if(dir_idx == FD_NONE) {
+    if(!ff || ff->field[tile.tile_r][tile.tile_c].dir_idx == FD_NONE) {
 
         dest_id_t ret;
         bool result = N_RequestPath(nav_private, curr_pos, xz_dest, map_pos, &ret);
         if(!result)
             return (vec2_t){0.0f};
         assert(ret == id);
+        N_FC_GetDestFFMapping(id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid);
     }
 
+    extern unsigned long g_frame_idx;
     ff = N_FC_FlowFieldAt(ffid);
     assert(ff);
 
-    dir_idx = ff->field[tile.tile_r][tile.tile_c].dir_idx;
+    unsigned dir_idx = ff->field[tile.tile_r][tile.tile_c].dir_idx;
     return g_flow_dir_lookup[dir_idx];
 }
 
@@ -1418,6 +1470,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map
         
             N_FlowFieldInit(chunk, priv, &ff);
             N_FlowFieldUpdate(navchunk, target, &ff);
+            extern unsigned long g_frame_idx;
             N_FC_PutFlowField(ffid, &ff);
         }else{
 
@@ -1452,6 +1505,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map
 
             N_FlowFieldInit(chunk, priv, &ff);
             N_FlowFieldUpdate(navchunk, portal_target, &ff);
+            extern unsigned long g_frame_idx;
             N_FC_PutFlowField(ffid, &ff);
 
             vec_portal_destroy(&path);

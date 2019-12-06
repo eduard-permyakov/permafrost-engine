@@ -596,12 +596,14 @@ static PyObject *PyPf_get_nav_perfstats(PyObject *self)
     rval |= PyDict_SetItemString(ret, "los_used",           Py_BuildValue("i", stats.los_used));
     rval |= PyDict_SetItemString(ret, "los_max",            Py_BuildValue("i", stats.los_max));
     rval |= PyDict_SetItemString(ret, "los_hit_rate",       Py_BuildValue("f", stats.los_hit_rate));
+    rval |= PyDict_SetItemString(ret, "los_invalidated",    Py_BuildValue("i", stats.los_invalidated));
     rval |= PyDict_SetItemString(ret, "flow_used",          Py_BuildValue("i", stats.flow_used));
     rval |= PyDict_SetItemString(ret, "flow_max",           Py_BuildValue("i", stats.flow_max));
     rval |= PyDict_SetItemString(ret, "flow_hit_rate",      Py_BuildValue("f", stats.flow_hit_rate));
-    rval |= PyDict_SetItemString(ret, "mapping_used",       Py_BuildValue("i", stats.mapping_used));
-    rval |= PyDict_SetItemString(ret, "mapping_max",        Py_BuildValue("i", stats.mapping_max));
-    rval |= PyDict_SetItemString(ret, "mapping_hit_rate",   Py_BuildValue("f", stats.mapping_hit_rate));
+    rval |= PyDict_SetItemString(ret, "flow_invalidated",   Py_BuildValue("i", stats.flow_invalidated));
+    rval |= PyDict_SetItemString(ret, "ffid_used",          Py_BuildValue("i", stats.ffid_used));
+    rval |= PyDict_SetItemString(ret, "ffid_max",           Py_BuildValue("i", stats.ffid_max));
+    rval |= PyDict_SetItemString(ret, "ffid_hit_rate",      Py_BuildValue("f", stats.ffid_hit_rate));
     rval |= PyDict_SetItemString(ret, "grid_path_used",     Py_BuildValue("i", stats.grid_path_used));
     rval |= PyDict_SetItemString(ret, "grid_path_max",      Py_BuildValue("i", stats.grid_path_max));
     rval |= PyDict_SetItemString(ret, "grid_path_hit_rate", Py_BuildValue("f", stats.grid_path_hit_rate));

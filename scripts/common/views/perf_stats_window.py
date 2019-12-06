@@ -94,18 +94,20 @@ class PerfStatsWindow(pf.Window):
         nav_stats = pf.get_nav_perfstats()
 
         self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("[LOS Field Cache]   Used: {used:04d}/{cap:04d}  Hit Rate: {hr:02.03f}" \
-            .format(used=nav_stats["los_used"], cap=nav_stats["los_max"], hr=nav_stats["los_hit_rate"]), \
+        self.label_colored_wrap("[LOS Field Cache]   Used: {used:04d}/{cap:04d}  Hit Rate: {hr:02.03f} Invalidated: {inv:04d}" \
+            .format(used=nav_stats["los_used"], cap=nav_stats["los_max"], 
+            hr=nav_stats["los_hit_rate"], inv=nav_stats["los_invalidated"]), \
             (0, 255, 0))
 
         self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("[Flow Field Cache]   Used: {used:04d}/{cap:04d}   Hit Rate: {hr:02.03f}" \
-            .format(used=nav_stats["flow_used"], cap=nav_stats["flow_max"], hr=nav_stats["flow_hit_rate"]), \
+        self.label_colored_wrap("[Flow Field Cache]   Used: {used:04d}/{cap:04d}   Hit Rate: {hr:02.03f} Invalidated: {inv:04d}" \
+            .format(used=nav_stats["flow_used"], cap=nav_stats["flow_max"], 
+            hr=nav_stats["flow_hit_rate"], inv=nav_stats["flow_invalidated"]), \
             (0, 255, 0))
 
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("[Dest:Field Mapping Cache] Used: {used:04d}/{cap:04d}   Hit Rate: {hr:02.03f}" \
-            .format(used=nav_stats["mapping_used"], cap=nav_stats["mapping_max"], hr=nav_stats["mapping_hit_rate"]), \
+            .format(used=nav_stats["ffid_used"], cap=nav_stats["ffid_max"], hr=nav_stats["ffid_hit_rate"]), \
             (0, 255, 0))
 
         self.layout_row_dynamic(20, 1)

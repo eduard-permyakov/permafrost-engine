@@ -77,8 +77,9 @@ vec2_t g_flow_dir_lookup[9] = {
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
-                           bool only_passable, struct coord *out_neighbours, uint8_t *out_costs)
+static int neighbours_grid(const struct nav_chunk *chunk,
+                           struct coord coord, bool only_passable, 
+                           struct coord *out_neighbours, uint8_t *out_costs)
 {
     int ret = 0;
 
@@ -94,13 +95,18 @@ static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], s
                 continue;
             if(r == 0 && c == 0)
                 continue;
-            if(only_passable && cost_field[abs_r][abs_c] == COST_IMPASSABLE)
+            if(only_passable 
+            && (chunk->cost_base[abs_r][abs_c] == COST_IMPASSABLE || chunk->blockers[abs_r][abs_c] > 0))
                 continue;
             if((r == c) || (r == -c)) /* diag */
                 continue;
 
             out_neighbours[ret] = (struct coord){abs_r, abs_c};
-            out_costs[ret] = cost_field[abs_r][abs_c];
+            out_costs[ret] = chunk->cost_base[abs_r][abs_c];
+
+            if(chunk->blockers[abs_r][abs_c])
+                out_costs[ret] = COST_IMPASSABLE;
+
             ret++;
         }
     }
@@ -108,7 +114,7 @@ static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], s
     return ret;
 }
 
-static int neighbours_grid_LOS(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
+static int neighbours_grid_LOS(const struct nav_chunk *chunk,
                                const struct LOS_field *los, struct coord coord, 
                                struct coord *out_neighbours, uint8_t *out_costs)
 {
@@ -128,12 +134,15 @@ static int neighbours_grid_LOS(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C
                 continue;
             if((r == c) || (r == -c)) /* diag */
                 continue;
-
             if(los->field[abs_r][abs_c].wavefront_blocked)
                 continue;
 
             out_neighbours[ret] = (struct coord){abs_r, abs_c};
-            out_costs[ret] = cost_field[abs_r][abs_c];
+            out_costs[ret] = chunk->cost_base[abs_r][abs_c];
+
+            if(chunk->blockers[abs_r][abs_c])
+                out_costs[ret] = COST_IMPASSABLE;
+
             ret++;
         }
     }
@@ -216,20 +225,25 @@ static enum flow_dir flow_dir(const float integration_field[FIELD_RES_R][FIELD_R
         assert(0);
 }
 
-static bool is_LOS_corner(struct coord cell, const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C])
+static bool is_LOS_corner(struct coord cell, const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C],
+                          const uint8_t blockers_field[FIELD_RES_R][FIELD_RES_C])
 {
     if(cell.r > 0 && cell.r < FIELD_RES_R-1) {
 
-        bool left_blocked  = cost_field[cell.r - 1][cell.c] > 1;
-        bool right_blocked = cost_field[cell.r + 1][cell.c] > 1;
+        bool left_blocked  = cost_field    [cell.r - 1][cell.c] == COST_IMPASSABLE
+                          || blockers_field[cell.r - 1][cell.c] > 0;
+        bool right_blocked = cost_field    [cell.r + 1][cell.c] == COST_IMPASSABLE
+                          || blockers_field[cell.r + 1][cell.c] > 0;
         if(left_blocked ^ right_blocked)
             return true;
     }
 
     if(cell.c > 0 && cell.c < FIELD_RES_C-1) {
 
-        bool top_blocked = cost_field[cell.r][cell.c - 1] > 1;
-        bool bot_blocked = cost_field[cell.r][cell.c + 1] > 1;
+        bool top_blocked = cost_field    [cell.r][cell.c - 1] == COST_IMPASSABLE
+                        || blockers_field[cell.r][cell.c - 1] > 0;
+        bool bot_blocked = cost_field    [cell.r][cell.c + 1] == COST_IMPASSABLE
+                        || blockers_field[cell.r][cell.c + 1] > 0;
         if(top_blocked ^ bot_blocked)
             return true;
     }
@@ -322,7 +336,7 @@ static void build_integration_field(pq_coord_t *frontier, const struct nav_chunk
 
         struct coord neighbours[8];
         uint8_t neighbour_costs[8];
-        int num_neighbours = neighbours_grid(chunk->cost_base, curr, true, neighbours, neighbour_costs);
+        int num_neighbours = neighbours_grid(chunk, curr, true, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
@@ -668,14 +682,14 @@ void N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc t
 
         struct coord neighbours[8];
         uint8_t neighbour_costs[8];
-        int num_neighbours = neighbours_grid_LOS(chunk->cost_base, out_los, curr, neighbours, neighbour_costs);
+        int num_neighbours = neighbours_grid_LOS(chunk, out_los, curr, neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
 
             int nr = neighbours[i].r, nc = neighbours[i].c;
             if(neighbour_costs[i] > 1) {
                 
-                if(!is_LOS_corner(neighbours[i], chunk->cost_base))
+                if(!is_LOS_corner(neighbours[i], chunk->cost_base, chunk->blockers))
                     continue;
 
                 struct tile_desc src_desc = (struct tile_desc) {
