@@ -98,6 +98,7 @@ def setup_armies():
             knight.rotation = DIR_RIGHT
             knight.faction_id = 0
             knight.selection_radius = 3.25
+            knight.selectable = True
             knight.activate()
             knight.hold_position()
 
@@ -112,6 +113,7 @@ def setup_armies():
             berz.rotation = DIR_LEFT
             berz.faction_id = 1
             berz.selection_radius = 3.00
+            berz.selectable = True
             berz.activate()
             berz.hold_position()
 

@@ -569,61 +569,6 @@ static void n_visit_island(struct nav_private *priv, uint16_t id, struct tile_de
     queue_td_destroy(&frontier);
 }
 
-static struct tile_desc n_closest_island_tile(const struct nav_private *priv, 
-                                              struct tile_desc target, uint16_t island_id)
-{
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
-
-    /* Breadth-first search to find the closest tile with the desired island_id */
-    queue_td_t frontier;
-    queue_td_init(&frontier, 1024);
-    queue_td_push(&frontier, &target);
-
-    bool visited[res.chunk_h][res.chunk_w][res.tile_h][res.tile_w];
-    memset(visited, 0, sizeof(visited));
-    visited[target.chunk_r][target.chunk_c][target.tile_r][target.tile_c] = true;
-
-    while(queue_size(frontier) > 0) {
-    
-        struct tile_desc curr;
-        queue_td_pop(&frontier, &curr);
-
-        struct coord deltas[] = {
-            { 0, -1},
-            { 0, +1},
-            {-1,  0},
-            {+1,  0},
-        };
-
-        for(int i = 0; i < ARR_SIZE(deltas); i++) {
-        
-            struct tile_desc neighb = curr;
-            if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
-                continue;
-
-            assert(memcmp(&curr, &neighb, sizeof(struct tile_desc)) != 0);
-            const struct nav_chunk *chunk = &priv->chunks[IDX(neighb.chunk_r, priv->width, neighb.chunk_c)];
-
-            if(chunk->islands[neighb.tile_r][neighb.tile_c] == island_id) {
-            
-                queue_td_destroy(&frontier);
-                return neighb;
-            }
-
-            if(!visited[neighb.chunk_r][neighb.chunk_c][neighb.tile_r][neighb.tile_c]) {
-            
-                visited[neighb.chunk_r][neighb.chunk_c][neighb.tile_r][neighb.tile_c] = true;
-                queue_td_push(&frontier, &neighb);
-            }
-        }
-    }
-
-    assert(0); 
-}
-
 static bool enemy_ent(const struct entity *ent, void *arg)
 {
     int faction_id = (uintptr_t)arg;
@@ -710,6 +655,19 @@ static void on_update_start(void *user, void *event)
     }
 
     kh_clear(coord, s_dirty_chunks);
+}
+
+static int manhattan_dist(struct tile_desc a, struct tile_desc b)
+{
+    int dr = abs(
+        (a.chunk_r * TILES_PER_CHUNK_HEIGHT + a.tile_r) 
+      - (b.chunk_r * TILES_PER_CHUNK_HEIGHT + b.tile_r)
+    );
+    int dc = abs(
+        (a.chunk_c * TILES_PER_CHUNK_HEIGHT + a.tile_c) 
+      - (b.chunk_c * TILES_PER_CHUNK_HEIGHT + b.tile_c)
+    );
+    return dr + dc;
 }
 
 /*****************************************************************************/
@@ -1223,15 +1181,14 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
             .tile = (struct coord){dst_desc.tile_r, dst_desc.tile_c}
         };
 
-        const struct nav_chunk *chunk = &priv->chunks[IDX(dst_desc.chunk_r, priv->width, dst_desc.chunk_c)];
         struct flow_field ff;
         id = N_FlowField_ID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target);
 
         if(!N_FC_ContainsFlowField(id)) {
         
-            N_FlowFieldInit((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, priv, &ff);
-            N_FlowFieldUpdate(chunk, target, &ff);
-            extern unsigned long g_frame_idx;
+            struct coord chunk = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
+            N_FlowFieldInit(chunk, priv, &ff);
+            N_FlowFieldUpdate(chunk, priv, target, &ff);
             N_FC_PutFlowField(id, &ff);
         }
 
@@ -1313,7 +1270,6 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
             .port = next_hop
         };
 
-        const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_coord.r, priv->width, chunk_coord.c)];
         ff_id_t new_id = N_FlowField_ID(chunk_coord, target);
         ff_id_t exist_id;
         struct flow_field ff;
@@ -1331,13 +1287,12 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
             const struct flow_field *exist_ff  = N_FC_FlowFieldAt(exist_id);
             memcpy(&ff, exist_ff, sizeof(struct flow_field));
 
-            N_FlowFieldUpdate(chunk, target, &ff);
+            N_FlowFieldUpdate(chunk_coord, priv, target, &ff);
             /* We set the updated flow field for the new (least recently used) key. Since in 
              * this case more than one flowfield ID maps to the same field but we only keep 
              * one of the IDs, it may be possible that the same flowfield will be redundantly 
              * updated at a later time. However, this is largely inconsequential. */
             N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
-            extern unsigned long g_frame_idx;
             N_FC_PutFlowField(new_id, &ff);
 
             goto ff_exists;
@@ -1347,8 +1302,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         if(!N_FC_ContainsFlowField(new_id)) {
         
             N_FlowFieldInit(chunk_coord, priv, &ff);
-            N_FlowFieldUpdate(chunk, target, &ff);
-            extern unsigned long g_frame_idx;
+            N_FlowFieldUpdate(chunk_coord, priv, target, &ff);
             N_FC_PutFlowField(new_id, &ff);
         }
 
@@ -1421,7 +1375,6 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
         N_FC_GetDestFFMapping(id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid);
     }
 
-    extern unsigned long g_frame_idx;
     ff = N_FC_FlowFieldAt(ffid);
     assert(ff);
 
@@ -1442,7 +1395,6 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map
     assert(result);
 
     struct coord chunk = (struct coord){curr_tile.chunk_r, curr_tile.chunk_c};
-    struct nav_chunk *navchunk = &priv->chunks[IDX(curr_tile.chunk_r, priv->width, curr_tile.chunk_c)];
 
     struct field_target target = (struct field_target){
         .type = TARGET_ENEMIES,
@@ -1469,8 +1421,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map
         && target_tile.chunk_c == curr_tile.chunk_c) {
         
             N_FlowFieldInit(chunk, priv, &ff);
-            N_FlowFieldUpdate(navchunk, target, &ff);
-            extern unsigned long g_frame_idx;
+            N_FlowFieldUpdate(chunk, priv, target, &ff);
             N_FC_PutFlowField(ffid, &ff);
         }else{
 
@@ -1504,8 +1455,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map
             };
 
             N_FlowFieldInit(chunk, priv, &ff);
-            N_FlowFieldUpdate(navchunk, portal_target, &ff);
-            extern unsigned long g_frame_idx;
+            N_FlowFieldUpdate(chunk, priv, portal_target, &ff);
             N_FC_PutFlowField(ffid, &ff);
 
             vec_portal_destroy(&path);
@@ -1555,6 +1505,22 @@ bool N_PositionPathable(vec2_t xz_pos, void *nav_private, vec3_t map_pos)
     return chunk->cost_base[tile.tile_r][tile.tile_c] != COST_IMPASSABLE;
 }
 
+bool N_PositionBlocked(vec2_t xz_pos, void *nav_private, vec3_t map_pos)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile);
+    assert(result);
+
+    const struct nav_chunk *chunk = &priv->chunks[IDX(tile.chunk_r, priv->width, tile.chunk_c)];
+    return chunk->blockers[tile.tile_r][tile.tile_c] > 0;
+}
+
 vec2_t N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_src, vec2_t xz_dst)
 {
     struct nav_private *priv = nav_private;
@@ -1581,10 +1547,14 @@ vec2_t N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
 
     /* Get the worldspace coordinates of the tile's center */
     vec2_t tile_dims = N_TileDims(); 
-    struct tile_desc closest_td = n_closest_island_tile(priv, dst_desc, src_iid);
+    struct tile_desc closest_td;
+    int ntd = N_ClosestIslandTiles(priv, false, dst_desc, src_iid, &closest_td, 1);
+    if(!ntd)
+        return xz_src;
+     
     vec2_t ret = {
-        map_pos.x - (closest_td.chunk_c * FIELD_RES_C + closest_td.tile_c + 0.5f) * tile_dims.raw[0],
-        map_pos.z + (closest_td.chunk_r * FIELD_RES_R + closest_td.tile_r + 0.5f) * tile_dims.raw[1],
+        map_pos.x - (closest_td.chunk_c * FIELD_RES_C + closest_td.tile_c + 0.5f) * tile_dims.x,
+        map_pos.z + (closest_td.chunk_r * FIELD_RES_R + closest_td.tile_r + 0.5f) * tile_dims.z,
     };
     return ret;
 }
@@ -1607,5 +1577,113 @@ void N_BlockersIncref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_priv
 void N_BlockersDecref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private)
 {
     n_update_blockers(nav_private, xz_pos, range, map_pos, -1);
+}
+
+int N_ClosestIslandTiles(const struct nav_private *priv, bool noblock,
+                         struct tile_desc target, uint16_t island_id,
+                         struct tile_desc *out, int maxout)
+{
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    queue_td_t frontier;
+    queue_td_init(&frontier, 1024);
+    queue_td_push(&frontier, &target);
+
+    bool visited[res.chunk_h][res.chunk_w][res.tile_h][res.tile_w];
+    memset(visited, 0, sizeof(visited));
+    visited[target.chunk_r][target.chunk_c][target.tile_r][target.tile_c] = true;
+
+    int ret = 0;
+    int first_mh_dist = -1;
+
+    while(queue_size(frontier) > 0) {
+    
+        struct tile_desc curr;
+        queue_td_pop(&frontier, &curr);
+
+        struct coord deltas[] = {
+            { 0, -1},
+            { 0, +1},
+            {-1,  0},
+            {+1,  0},
+        };
+
+        for(int i = 0; i < ARR_SIZE(deltas); i++) {
+        
+            struct tile_desc neighb = curr;
+            if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
+                continue;
+
+            assert(memcmp(&curr, &neighb, sizeof(struct tile_desc)) != 0);
+            const struct nav_chunk *chunk = &priv->chunks[IDX(neighb.chunk_r, priv->width, neighb.chunk_c)];
+
+            bool skip = noblock ? (chunk->blockers[neighb.tile_r][neighb.tile_c] > 0) : false;
+            int mh_dist = manhattan_dist(target, neighb);
+
+            if(first_mh_dist > 0 && mh_dist > first_mh_dist)
+                goto done;
+
+            if(!skip && chunk->islands[neighb.tile_r][neighb.tile_c] == island_id) {
+            
+                assert(ret < maxout);
+                out[ret++] = neighb;
+
+                if(first_mh_dist == -1)
+                    first_mh_dist = mh_dist;
+                if(ret == maxout)
+                    goto done;
+            }
+
+            if(!visited[neighb.chunk_r][neighb.chunk_c][neighb.tile_r][neighb.tile_c]) {
+            
+                visited[neighb.chunk_r][neighb.chunk_c][neighb.tile_r][neighb.tile_c] = true;
+                queue_td_push(&frontier, &neighb);
+            }
+        }
+    }
+
+done:
+    queue_td_destroy(&frontier);
+    return ret; 
+}
+
+bool N_IsMaximallyClose(void *nav_private, vec3_t map_pos, 
+                        vec2_t xz_pos, vec2_t xz_dest, float tolerance)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc dest_td;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_dest, &dest_td);
+    assert(result);
+
+    struct tile_desc tds[FIELD_RES_R*2 + FIELD_RES_C*2];
+    struct nav_chunk *chunk = &priv->chunks[IDX(dest_td.chunk_r, priv->width, dest_td.chunk_c)];
+
+    uint16_t iid = chunk->islands[dest_td.tile_r][dest_td.tile_c];
+    int ntds = N_ClosestIslandTiles(priv, true, dest_td, iid, tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntds; i++) {
+
+        struct tile_desc *td = &tds[i];
+        vec2_t tile_dims = N_TileDims();
+        vec2_t tile_center = (vec2_t){
+            map_pos.x - (td->chunk_c * FIELD_RES_C + td->tile_c) * tile_dims.x,
+            map_pos.z + (td->chunk_r * FIELD_RES_R + td->tile_r) * tile_dims.z,
+        };
+        vec2_t delta;
+        PFM_Vec2_Sub(&tile_center, &xz_pos, &delta);
+
+        if(PFM_Vec2_Len(&delta) <= tolerance)
+            return true;
+    }
+
+    return false;
 }
 

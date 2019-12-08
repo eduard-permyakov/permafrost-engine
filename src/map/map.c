@@ -463,3 +463,8 @@ vec3_t M_GetCenterPos(const struct map *map)
     };
 }
 
+bool M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos, vec2_t xz_dest, float tolerance)
+{
+    return N_IsMaximallyClose(map->nav_private, map->pos, xz_pos, xz_dest, tolerance);
+}
+

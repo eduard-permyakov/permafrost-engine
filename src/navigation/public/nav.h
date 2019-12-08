@@ -230,6 +230,15 @@ vec2_t    N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_sr
 void      N_BlockersIncref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private);
 void      N_BlockersDecref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private);
 
+/* ------------------------------------------------------------------------
+ * Returns true if the entity position (xz_pos) is within a 'tolerance' 
+ * range of the closest non-blocked tile that is reachable from the
+ * destination position (xz_dest).
+ * ------------------------------------------------------------------------
+ */
+bool      N_IsMaximallyClose(void *nav_private, vec3_t map_pos, 
+                             vec2_t xz_pos, vec2_t xz_dest, float tolerance);
+
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */
 /*###########################################################################*/

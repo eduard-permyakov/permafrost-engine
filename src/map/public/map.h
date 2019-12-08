@@ -268,6 +268,13 @@ void   M_NavBlockersIncref(vec2_t xz_pos, float range, const struct map *map);
 void   M_NavBlockersDecref(vec2_t xz_pos, float range, const struct map *map);
 
 /* ------------------------------------------------------------------------
+ * Wrapper around 'N_IsMaximallyClose'.
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos, 
+                             vec2_t xz_dest, float tolerance);
+
+/* ------------------------------------------------------------------------
  * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 
  * Returns 'true' on success, 'false' on failure.
  * ------------------------------------------------------------------------

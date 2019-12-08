@@ -48,6 +48,7 @@
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 #define MAX_ENTS_PER_CHUNK  (4096)
+#define IDX(r, width, c)    ((r) * (width) + (c))
 
 PQUEUE_TYPE(coord, struct coord)
 PQUEUE_IMPL(static, coord, struct coord)
@@ -498,9 +499,10 @@ void N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct f
     out->chunk = chunk_coord;
 }
 
-void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target, 
-                       struct flow_field *inout_flow)
+void N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_private *priv,
+                       struct field_target target, struct flow_field *inout_flow)
 {
+    const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_coord.r, priv->width, chunk_coord.c)];
     pq_coord_t frontier;
     pq_coord_init(&frontier);
 
@@ -523,8 +525,35 @@ void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target
     }
     case TARGET_TILE: {
 
-        pq_coord_push(&frontier, 0.0f, target.tile);
-        integration_field[target.tile.r][target.tile.c] = 0.0f;
+        if(chunk->blockers[target.tile.r][target.tile.c] == 0) {
+
+            pq_coord_push(&frontier, 0.0f, target.tile);
+            integration_field[target.tile.r][target.tile.c] = 0.0f;
+            break;
+        }
+
+        /* If the target tile itself is blocked, guide the entities as close
+         * as possible to the target. Set all all reachable tiles that are 
+         * the minimum distance away as the frontier 
+         */
+        struct tile_desc tds[FIELD_RES_R*2 + FIELD_RES_C*2];
+        uint16_t iid = chunk->islands[target.tile.r][target.tile.c];
+
+        struct tile_desc target_td = (struct tile_desc) {
+            chunk_coord.r, chunk_coord.c,
+            target.tile.r, target.tile.c,
+        };
+        int ntds = N_ClosestIslandTiles(priv, true, target_td, iid, tds, ARR_SIZE(tds));
+
+        for(int i = 0; i < ntds; i++) {
+
+            if(tds[i].chunk_r != chunk_coord.r || tds[i].chunk_c != chunk_coord.c)
+                continue;
+
+            struct coord tile = (struct coord){tds[i].tile_r, tds[i].tile_c};
+            pq_coord_push(&frontier, 0.0f, tile);
+            integration_field[tile.r][tile.c] = 0.0f;
+        }
         break;
     }
     case TARGET_ENEMIES: {
@@ -565,7 +594,6 @@ void N_FlowFieldUpdate(const struct nav_chunk *chunk, struct field_target target
     default: assert(0);
     }
 
-    assert(pq_size(&frontier) > 0);
     build_integration_field(&frontier, chunk, integration_field);
     build_flow_field(integration_field, inout_flow);
 

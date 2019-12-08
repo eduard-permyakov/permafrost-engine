@@ -909,7 +909,10 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         assert(flock);
 
         PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &xz_pos, &diff_to_target);
-        if(PFM_Vec2_Len(&diff_to_target) < ARRIVE_THRESHOLD_DIST){
+        vec2_t desv = M_NavDesiredPointSeekVelocity(s_map, flock->dest_id, xz_pos, flock->target_xz);
+
+        if(PFM_Vec2_Len(&diff_to_target) < ARRIVE_THRESHOLD_DIST
+        || M_NavIsMaximallyClose(s_map, xz_pos, flock->target_xz, ARRIVE_THRESHOLD_DIST)) {
 
             *ms = (struct movestate) {
                 .state = STATE_ARRIVED,
