@@ -569,6 +569,54 @@ static void n_visit_island(struct nav_private *priv, uint16_t id, struct tile_de
     queue_td_destroy(&frontier);
 }
 
+static void n_visit_island_local(struct nav_chunk *chunk, uint16_t id, struct coord start)
+{
+    struct map_resolution res = {
+        1, 1, FIELD_RES_C, FIELD_RES_R
+    };
+    struct tile_desc start_td = {
+        0, 0, start.r, start.c
+    };
+
+    queue_td_t frontier;
+    queue_td_init(&frontier, 1024);
+    queue_td_push(&frontier, &start_td);
+
+    while(queue_size(frontier) > 0) {
+    
+        struct tile_desc curr;
+        queue_td_pop(&frontier, &curr);
+
+        struct coord deltas[] = {
+            { 0, -1},
+            { 0, +1},
+            {-1,  0},
+            {+1,  0},
+        };
+
+        for(int i = 0; i < ARR_SIZE(deltas); i++) {
+        
+            struct tile_desc neighb = curr;
+            if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
+                continue;
+
+            if(chunk->cost_base[neighb.tile_r][neighb.tile_c] == COST_IMPASSABLE)
+                continue;
+
+            if(chunk->blockers[neighb.tile_r][neighb.tile_c] > 0)
+                continue;
+
+            if(chunk->local_islands[neighb.tile_r][neighb.tile_c] != ISLAND_NONE)
+                continue;
+
+            chunk->local_islands[neighb.tile_r][neighb.tile_c] = id;
+            queue_td_push(&frontier, &neighb);
+        }
+    }
+
+    queue_td_destroy(&frontier);
+}
+
 static bool enemy_ent(const struct entity *ent, void *arg)
 {
     int faction_id = (uintptr_t)arg;
@@ -642,21 +690,6 @@ static void n_update_blockers(struct nav_private *priv, vec2_t xz_pos, float ran
     }}
 }
 
-static void on_update_start(void *user, void *event)
-{
-    for(int i = kh_begin(s_dirty_chunks); i != kh_end(s_dirty_chunks); i++) {
-
-        if(!kh_exist(s_dirty_chunks, i))
-            continue;
-
-        uint32_t key = kh_key(s_dirty_chunks, i);
-        struct coord curr = (struct coord){ key >> 16, key & 0xffff };
-        N_FC_InvalidateAllAtChunk(curr);
-    }
-
-    kh_clear(coord, s_dirty_chunks);
-}
-
 static int manhattan_dist(struct tile_desc a, struct tile_desc b)
 {
     int dr = abs(
@@ -668,6 +701,25 @@ static int manhattan_dist(struct tile_desc a, struct tile_desc b)
       - (b.chunk_c * TILES_PER_CHUNK_HEIGHT + b.tile_c)
     );
     return dr + dc;
+}
+
+static void n_update_local_islands(struct nav_chunk *chunk)
+{
+    int local_iid = 1;
+    memset(chunk->local_islands, 0xff, sizeof(chunk->local_islands));
+
+    for(int r = 0; r < FIELD_RES_R; r++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
+
+        if(chunk->local_islands[r][c] != ISLAND_NONE)
+            continue;
+        if(chunk->cost_base[r][c] == COST_IMPASSABLE)
+            continue;
+        if(chunk->blockers[r][c] > 0)
+            continue;
+        n_visit_island_local(chunk, local_iid, (struct coord){r, c});
+        ++local_iid;
+    }}
 }
 
 /*****************************************************************************/
@@ -682,13 +734,31 @@ bool N_Init(void)
     if((s_dirty_chunks = kh_init(coord)) == NULL)
         return false;
 
-    E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_RUNNING);
     return true;
+}
+
+void N_Update(void *nav_private)
+{
+    struct nav_private *priv = nav_private;
+
+    for(int i = kh_begin(s_dirty_chunks); i != kh_end(s_dirty_chunks); i++) {
+
+        if(!kh_exist(s_dirty_chunks, i))
+            continue;
+
+        uint32_t key = kh_key(s_dirty_chunks, i);
+        struct coord curr = (struct coord){ key >> 16, key & 0xffff };
+        N_FC_InvalidateAllAtChunk(curr);
+
+        struct nav_chunk *chunk = &priv->chunks[IDX(curr.r, priv->width, curr.c)];
+        n_update_local_islands(chunk);
+    }
+
+    kh_clear(coord, s_dirty_chunks);
 }
 
 void N_Shutdown(void)
 {
-    E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
     kh_destroy(coord, s_dirty_chunks);
     N_FC_Shutdown();
 }

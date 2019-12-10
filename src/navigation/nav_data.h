@@ -75,9 +75,21 @@ struct nav_chunk{
      */
     uint8_t       blockers[FIELD_RES_R][FIELD_RES_C];
     /* An 'island' is a collection of tiles that are all reachable 
-     * from one another. Each island has a unique ID. 
+     * from one another. Each island has a unique ID. These are
+     * synchronized with the 'cost_base' field, and are not
+     * affected by blockers. These islands IDs are 'global' 
+     * (shared by all chunks)
      */
     uint16_t      islands[FIELD_RES_R][FIELD_RES_C];
+    /* This field uses chunk-local island IDs and accounts for
+     * the blockers, but does not account for any part of the
+     * map outside the local chunk. This field is synchronized
+     * with the 'blockers' field. Two tiles having the same 
+     * 'islands' values may have different 'local_islands' 
+     * values if the only path between them is blocked by 
+     * stationary entities, for example.
+     */
+    uint16_t      local_islands[FIELD_RES_R][FIELD_RES_C];
 };
 
 #endif

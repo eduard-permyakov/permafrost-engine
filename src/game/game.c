@@ -357,6 +357,18 @@ bool G_Init(void)
     assert(status == SS_OKAY);
 
     status = Settings_Create((struct setting){
+        .name = "pf.debug.show_first_sel_movestate",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
         .name = "pf.debug.show_first_sel_combined_hrvo",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
@@ -556,6 +568,10 @@ void G_Shutdown(void)
 
 void G_Update(void)
 {
+    if(s_gs.map) {
+        M_Update(s_gs.map);
+    }
+
     /* Build the set of currently visible entities. Note that there may be some false positives due to 
        using the fast frustum cull. */
     vec_pentity_reset(&s_gs.visible);

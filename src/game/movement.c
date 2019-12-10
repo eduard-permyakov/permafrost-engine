@@ -46,6 +46,7 @@
 #include "../collision.h"
 #include "../cursor.h"
 #include "../settings.h"
+#include "../ui.h"
 #include "../script/public/script.h"
 #include "../render/public/render.h"
 #include "../map/public/map.h"
@@ -66,6 +67,7 @@
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MIN(a, b)    ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)  (sizeof(a)/sizeof(a[0]))
+#define STR(a)       #a
 
 #define VEL_HIST_LEN (16)
 
@@ -130,6 +132,13 @@ static khash_t(state)         *s_entity_state_table;
 /* Store the most recently issued move command location for debug rendering */
 static bool                    s_last_cmd_dest_valid = false;
 static dest_id_t               s_last_cmd_dest;
+
+static const char *s_state_str[] = {
+    [STATE_MOVING]       = STR(STATE_MOVING),
+    [STATE_SETTLING]     = STR(STATE_SETTLING),
+    [STATE_ARRIVED]      = STR(STATE_ARRIVED),
+    [STATE_SEEK_ENEMIES] = STR(STATE_SEEK_ENEMIES),
+};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -465,6 +474,44 @@ static void on_render_3d(void *user, void *event)
 
         const struct camera *cam = G_GetActiveCamera();
         M_NavRenderVisiblePathFlowField(s_map, cam, s_last_cmd_dest);
+    }
+
+    status = Settings_Get("pf.debug.show_first_sel_movestate", &setting);
+    assert(status == SS_OKAY);
+
+    enum selection_type seltype;
+    const vec_pentity_t *sel = G_Sel_Get(&seltype);
+
+    if(setting.as_bool && vec_size(sel) > 0) {
+    
+        const struct entity *ent = vec_AT(sel, 0);
+        struct movestate *ms = movestate_get(ent);
+        if(ms) {
+
+            char strbuff[256];
+            snprintf(strbuff, ARR_SIZE(strbuff), "Arrival State: %s Velocity: (%f, %f)", 
+                s_state_str[ms->state], ms->velocity.x, ms->velocity.z);
+            strbuff[ARR_SIZE(strbuff)-1] = '\0';
+            struct rgba text_color = (struct rgba){255, 0, 0, 255};
+            UI_DrawText(strbuff, (struct rect){5,5,450,50}, text_color);
+
+            const struct camera *cam = G_GetActiveCamera();
+            struct flock *flock = flock_for_ent(ent);
+
+            switch(ms->state) {
+            case STATE_MOVING:
+            case STATE_SETTLING:
+                assert(flock);
+                M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
+                break;
+            case STATE_ARRIVED:
+                break;
+            case STATE_SEEK_ENEMIES:
+                M_NavRenderVisibleEnemySeekField(s_map, cam, ent->faction_id);
+                break;
+            default: assert(0);
+            }
+        }
     }
 
     status = Settings_Get("pf.debug.show_enemy_seek_fields", &setting);

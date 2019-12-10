@@ -63,6 +63,12 @@ struct map_resolution;
 /*###########################################################################*/
 
 /* ------------------------------------------------------------------------
+ * Once per frame updates of the private map data.
+ * ------------------------------------------------------------------------
+ */
+void   M_Update(const struct map *map);
+
+/* ------------------------------------------------------------------------
  * This renders all the chunks at once, which is wasteful when there are 
  * many off-screen chunks. Depending on the 'pass' type, this will perform 
  * a different rendering action.

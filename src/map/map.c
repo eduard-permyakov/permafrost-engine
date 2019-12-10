@@ -81,6 +81,11 @@ static void m_aabb_for_chunk(const struct map *map, struct chunkpos p, struct aa
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
+void M_Update(const struct map *map)
+{
+    N_Update(map->nav_private);
+}
+
 void M_ModelMatrixForChunk(const struct map *map, struct chunkpos p, mat4x4_t *out)
 {
     ssize_t x_offset = -(p.c * TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE);
