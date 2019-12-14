@@ -45,12 +45,4 @@ struct nav_private{
     struct nav_chunk chunks[];
 };
 
-/* Breadth-first search to find the closest tiles with the desired island_id.
- * This will return all tiles that are the same Manhattan distance from the target.
- * If 'noblock' is specified, we skip currently blocked tiles. 
- */
-int N_ClosestIslandTiles(const struct nav_private *priv, bool noblock,
-                         struct tile_desc target, uint16_t island_id,
-                         struct tile_desc *out, int maxout);
-
 #endif

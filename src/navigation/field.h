@@ -53,13 +53,6 @@ struct LOS_field{
     }field[FIELD_RES_R][FIELD_RES_C];
 };
 
-struct flow_field{
-    struct coord chunk;
-    struct{
-        unsigned dir_idx : 4;
-    }field[FIELD_RES_R][FIELD_RES_C];
-};
-
 struct field_target{
     enum{
         TARGET_PORTAL,
@@ -69,12 +62,20 @@ struct field_target{
     union{
         const struct portal *port;
         struct coord         tile;
-        struct{
+        struct enemies_desc{
             int          faction_id;
             vec3_t       map_pos;
             struct coord chunk;
         }enemies;
     };
+};
+
+struct flow_field{
+    struct coord chunk;
+    struct field_target target;
+    struct{
+        unsigned dir_idx : 4;
+    }field[FIELD_RES_R][FIELD_RES_C];
 };
 
 enum flow_dir{
@@ -95,6 +96,17 @@ ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target);
 void    N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct flow_field *out);
 void    N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_private *priv,
                           struct field_target target, struct flow_field *inout_flow);
+
+/* ------------------------------------------------------------------------
+ * Update all tiles for tiles with a specific local island ID from the
+ * 'local_islands' field for the chunk. The new directions will guide to
+ * the closest possible tiles to the original field target. In the case
+ * that the original field target tiles all are all on the same local
+ * island (local_iid), the field will remain unchanged.
+ * ------------------------------------------------------------------------
+ */
+void    N_FlowFieldUpdateIslandToNearest(uint16_t local_iid, const struct nav_private *priv,
+                                         struct flow_field *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Create a line of sight field, indicating which tiles in this chunk are 
