@@ -152,6 +152,14 @@ void      N_RenderNavigationBlockers(void *nav_private, const struct map *map,
                                      mat4x4_t *chunk_model, int chunk_r, int chunk_c);
 
 /* ------------------------------------------------------------------------
+ * Debug rendering to show the portals between chunks. 'Active' portals
+ * are green and 'blocked' portals are red.
+ * ------------------------------------------------------------------------
+ */
+void      N_RenderNavigationPortals(void *nav_private, const struct map *map, 
+                                    mat4x4_t *chunk_model, int chunk_r, int chunk_c);
+
+/* ------------------------------------------------------------------------
  * Make an impassable region in the cost field, completely covering the 
  * specified OBB.
  * ------------------------------------------------------------------------

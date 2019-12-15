@@ -109,6 +109,13 @@ void   M_NavRenderVisibleEnemySeekField(const struct map *map, const struct came
 void   M_NavRenderNavigationBlockers(const struct map *map, const struct camera *cam);
 
 /* ------------------------------------------------------------------------
+ * Render a layer over the visible map surface showing portals between chunks
+ * and their status.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavRenderNavigationPortals(const struct map *map, const struct camera *cam);
+
+/* ------------------------------------------------------------------------
  * Centers the map at the worldspace origin.
  * ------------------------------------------------------------------------
  */

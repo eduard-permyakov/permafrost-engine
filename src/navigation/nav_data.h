@@ -49,19 +49,30 @@ struct coord{
     int r, c;
 };
 
+enum edge_state{
+    EDGE_STATE_ACTIVE,
+    EDGE_STATE_BLOCKED,
+};
+
 struct edge{
-    struct portal *neighbour;
+    enum edge_state es;
+    struct portal  *neighbour;
     /* Cost of moving from the center of one portal to the center
      * of the next. */
-    float          cost;
+    float           cost;
 };
 
 struct portal{
-    struct coord   chunk;
-    struct coord   endpoints[2]; 
-    size_t         num_neighbours;
-    struct edge    edges[MAX_PORTALS_PER_CHUNK-1];
-    struct portal *connected;
+    /* This identifies which component of the global portal graph the 
+     * portal is a part of. Portals with the same component_id are
+     * reachable from one another, The component_id calculation takes
+     * 'blocked' portals into account. */
+    int               component_id;
+    struct coord      chunk;
+    struct coord      endpoints[2]; 
+    size_t            num_neighbours;
+    struct edge       edges[MAX_PORTALS_PER_CHUNK-1];
+    struct portal    *connected;
 };
 
 struct nav_chunk{

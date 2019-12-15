@@ -333,7 +333,7 @@ bool G_Init(void)
     assert(status == SS_OKAY);
 
     status = Settings_Create((struct setting){
-        .name = "pf.debug.show_navigation_grid",
+        .name = "pf.debug.show_navigation_cost_base",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
             .as_bool = false
@@ -403,6 +403,17 @@ bool G_Init(void)
 
     status = Settings_Create((struct setting){
         .name = "pf.debug.show_navigation_blockers",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false 
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_navigation_portals",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
             .as_bool = false 
@@ -611,14 +622,6 @@ void G_Render(void)
         R_GL_DrawWater(s_gs.map);
     }
 
-    struct sval setting;
-    ss_e status = Settings_Get("pf.debug.show_navigation_grid", &setting);
-    assert(status == SS_OKAY);
-
-    if(setting.as_bool && s_gs.map) {
-        M_RenderVisiblePathableLayer(s_gs.map, ACTIVE_CAM);
-    }
-
     enum selection_type sel_type;
     const vec_pentity_t *selected = G_Sel_Get(&sel_type);
     for(int i = 0; i < vec_size(selected); i++) {
@@ -633,7 +636,7 @@ void G_Render(void)
     E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
 
     struct sval hb_setting;
-    status = Settings_Get("pf.game.healthbar_mode", &hb_setting);
+    ss_e status = Settings_Get("pf.game.healthbar_mode", &hb_setting);
     assert(status == SS_OKAY);
 
     if(hb_setting.as_bool) {

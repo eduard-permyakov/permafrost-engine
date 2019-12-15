@@ -102,6 +102,20 @@ struct col_desc{
 #define MAX_COL(a, b)          MORE_RIGHT((a), (b)) ? (a) : (b)
 #define MAX_COL_4(a, b, c, d)  MAX_COL(MAX_COL((a), (b)), MAX_COL((c), (d)))
 
+#define FOREACH_PORTAL(_priv, _local, ...)                                                      \
+    do{                                                                                         \
+        for(int chunk_r = 0; chunk_r < (_priv)->height; chunk_r++) {                            \
+        for(int chunk_c = 0; chunk_c < (_priv)->width;  chunk_c++) {                            \
+                                                                                                \
+            struct nav_chunk *curr_chunk = &(_priv)->chunks[IDX(chunk_r, (_priv)->width, chunk_c)]; \
+            for((_local) = curr_chunk->portals;                                                 \
+                (_local) < curr_chunk->portals + curr_chunk->num_portals; (_local)++) {         \
+                                                                                                \
+                __VA_ARGS__                                                                     \
+            }                                                                                   \
+        }}                                                                                      \
+    }while(0)
+
 QUEUE_TYPE(td, struct tile_desc)
 QUEUE_IMPL(static, td, struct tile_desc)
 
@@ -336,6 +350,7 @@ static void n_link_chunks(struct nav_chunk *a, enum edge_type a_type, struct coo
 
             in_portal = true;
             a->portals[a->num_portals] = (struct portal) {
+                .component_id   = 0,
                 .chunk          = a_coord,
                 .endpoints[0]   = (a_type & (EDGE_TOP | EDGE_BOT))    ? (struct coord){a_fixed_idx, i}
                                 : (a_type & (EDGE_LEFT | EDGE_RIGHT)) ? (struct coord){i, a_fixed_idx}
@@ -344,6 +359,7 @@ static void n_link_chunks(struct nav_chunk *a, enum edge_type a_type, struct coo
                 .connected      = &b->portals[b->num_portals]
             };
             b->portals[b->num_portals] = (struct portal) {
+                .component_id   = 0,
                 .chunk          = b_coord,
                 .endpoints[0]   = (b_type & (EDGE_TOP | EDGE_BOT))    ? (struct coord){b_fixed_idx, i}
                                 : (b_type & (EDGE_LEFT | EDGE_RIGHT)) ? (struct coord){i, b_fixed_idx}
@@ -425,7 +441,7 @@ static void n_link_chunk_portals(struct nav_chunk *chunk, struct coord chunk_coo
             float cost;
             bool has_path = AStar_GridPath(a, b, chunk_coord, chunk->cost_base, &path, &cost);
             if(has_path) {
-                port->edges[port->num_neighbours] = (struct edge){link_candidate, cost};
+                port->edges[port->num_neighbours] = (struct edge){EDGE_STATE_ACTIVE, link_candidate, cost};
                 port->num_neighbours++;    
             }
         }
@@ -434,8 +450,88 @@ static void n_link_chunk_portals(struct nav_chunk *chunk, struct coord chunk_coo
     vec_coord_destroy(&path);
 }
 
+static void n_visit_portal(struct portal *port, int comp_id)
+{
+    if(port->component_id != 0)
+        return;
+
+    port->component_id = comp_id;
+    n_visit_portal(port->connected, comp_id); 
+
+    for(int i = 0; i < port->num_neighbours; i++) {
+
+        struct portal *curr = port->edges[i].neighbour;
+        if(port->edges[i].es == EDGE_STATE_BLOCKED)
+            continue;
+        n_visit_portal(curr, comp_id);
+    }
+}
+
+static void n_update_components(struct nav_private *priv)
+{
+    struct portal *port;
+    FOREACH_PORTAL(priv, port,{
+        port->component_id = 0;
+    });
+
+    int comp_id = 1;
+    FOREACH_PORTAL(priv, port, {
+        n_visit_portal(port, comp_id++);
+    });
+}
+
+/* Two portals are considered reachable from one another if they
+ * have at least one local island ID in common between their 
+ * non-blocked tiles. */
+static bool n_local_ports_connected(struct portal *a, struct portal *b, 
+                                    const struct nav_chunk *chunk)
+{
+    for(int r1 = a->endpoints[0].r; r1 <= a->endpoints[1].r; r1++) {
+    for(int c1 = a->endpoints[0].c; c1 <= a->endpoints[1].c; c1++) {
+
+        if(chunk->blockers[r1][c1] > 0)
+            continue;
+
+        for(int r2 = b->endpoints[0].r; r2 <= b->endpoints[1].r; r2++) {
+        for(int c2 = b->endpoints[0].c; c2 <= b->endpoints[1].c; c2++) {
+
+            if(chunk->blockers[r2][c2] > 0)
+                continue;
+
+            if(chunk->local_islands[r1][c1] == chunk->local_islands[r2][c2])
+                return true;
+        }}
+    }}
+    return false;
+}
+
+static int n_update_edge_states(struct nav_chunk *chunk)
+{
+    int ret = 0;
+    for(int i = 0; i < chunk->num_portals; i++) {
+
+        struct portal *port = &chunk->portals[i];
+
+        for(int j = 0; j < port->num_neighbours; j++) {
+
+            struct portal *neighb = port->edges[j].neighbour;
+            bool conn = n_local_ports_connected(port, neighb, chunk);
+
+            enum edge_state new_es = conn ? EDGE_STATE_ACTIVE : EDGE_STATE_BLOCKED;
+            enum edge_state old_es = port->edges[j].es;
+
+            if(new_es != old_es) {
+                port->edges[j].es = new_es;
+                ret++;
+            }
+        }
+    }
+
+    return ret;
+}
+
 static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
-                               const struct map *map, vec_coord_t *path)
+                               const struct map *map, vec_coord_t *path, vec3_t color)
 {
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
@@ -461,7 +557,7 @@ static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
         *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
         *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
 
-        *colors_base++ = (vec3_t){0.0f, 0.0f, 1.0f};
+        *colors_base++ = color;
     }
 
     assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
@@ -470,7 +566,7 @@ static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
 }
 
 static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_model,
-                             const struct map *map)
+                             const struct map *map, vec3_t color)
 {
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
@@ -505,7 +601,7 @@ static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_mode
                 *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
                 *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
 
-                *colors_base++ = (vec3_t){1.0f, 1.0f, 0.0f};
+                *colors_base++ = color;
                 num_tiles++;
             }
         }
@@ -813,6 +909,7 @@ bool N_Init(void)
 void N_Update(void *nav_private)
 {
     struct nav_private *priv = nav_private;
+    bool components_dirty = false;
 
     for(int i = kh_begin(s_dirty_chunks); i != kh_end(s_dirty_chunks); i++) {
 
@@ -825,7 +922,13 @@ void N_Update(void *nav_private)
 
         struct nav_chunk *chunk = &priv->chunks[IDX(curr.r, priv->width, curr.c)];
         n_update_local_islands(chunk);
+        int nflipped = n_update_edge_states(chunk);
+        if(nflipped)
+            components_dirty = true;
     }
+
+    if(components_dirty)
+        n_update_components(priv);
 
     kh_clear(coord, s_dirty_chunks);
 }
@@ -902,7 +1005,7 @@ void N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
     vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
 
     const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
-    n_render_portals(chunk, chunk_model, map);
+    n_render_portals(chunk, chunk_model, map, (vec3_t){1.0f, 1.0f, 0.0f});
 
     vec2_t *corners_base = corners_buff;
     vec3_t *colors_base = colors_buff; 
@@ -1123,6 +1226,46 @@ void N_RenderNavigationBlockers(void *nav_private, const struct map *map,
     assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
     R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
+}
+
+void N_RenderNavigationPortals(void *nav_private, const struct map *map, 
+                               mat4x4_t *chunk_model, int chunk_r, int chunk_c)
+{
+    struct nav_private *priv = nav_private;
+    struct nav_chunk *chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
+    n_render_portals(chunk, chunk_model, map, (vec3_t){0.0f, 0.0f, 1.0f});
+
+    vec_coord_t path;
+    vec_coord_init(&path);
+
+    for(int i = 0; i < chunk->num_portals; i++) {
+
+        struct portal *port = &chunk->portals[i];
+
+        for(int j = 0; j < port->num_neighbours; j++) {
+
+            struct portal *neighb = port->edges[j].neighbour;
+            struct coord a = (struct coord){
+                (port->endpoints[0].r + port->endpoints[1].r) / 2,
+                (port->endpoints[0].c + port->endpoints[1].c) / 2,
+            };
+            struct coord b = (struct coord){
+                (neighb->endpoints[0].r + neighb->endpoints[1].r) / 2,
+                (neighb->endpoints[0].c + neighb->endpoints[1].c) / 2,
+            };
+
+            float cost;
+            bool has_path = AStar_GridPath(a, b, (struct coord){chunk_r, chunk_c}, chunk->cost_base, &path, &cost);
+            assert(has_path);
+
+            vec3_t link_color = port->edges[j].es == EDGE_STATE_ACTIVE  ? (vec3_t){0.0f, 1.0f, 0.0f} 
+                              : port->edges[j].es == EDGE_STATE_BLOCKED ? (vec3_t){1.0f, 0.0f, 0.0f}
+                              : (assert(0), (vec3_t){0});
+            n_render_grid_path(chunk, chunk_model, map, &path, link_color);
+        }
+    }
+
+    vec_coord_destroy(&path);
 }
 
 void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *obb)

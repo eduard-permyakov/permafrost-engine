@@ -107,12 +107,12 @@ VEC_IMPL(static inline, flock, struct flock)
 #define MOVE_ARRIVE_FORCE_SCALE         (0.5f)
 #define MOVE_COHESION_FORCE_SCALE       (0.15f)
 
-#define ARRIVE_THRESHOLD_DIST           (5.0f)
 #define SEPARATION_BUFFER_DIST          (0.0f)
 #define COHESION_NEIGHBOUR_RADIUS       (50.0f)
 #define ARRIVE_SLOWING_RADIUS           (10.0f)
 #define ADJACENCY_SEP_DIST              (5.0f)
 #define ALIGN_NEIGHBOUR_RADIUS          (10.0f)
+#define SEPARATION_NEIGHB_RADIUS        (30.0f)
 
 #define SETTLE_STOP_TOLERANCE           (0.1f)
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
@@ -466,15 +466,14 @@ static void on_mousedown(void *user, void *event)
 
 static void on_render_3d(void *user, void *event)
 {
+    const struct camera *cam = G_GetActiveCamera();
+
     struct sval setting;
     ss_e status = Settings_Get("pf.debug.show_last_cmd_flow_field", &setting);
     assert(status == SS_OKAY);
 
-    if(setting.as_bool && s_last_cmd_dest_valid) {
-
-        const struct camera *cam = G_GetActiveCamera();
+    if(setting.as_bool && s_last_cmd_dest_valid)
         M_NavRenderVisiblePathFlowField(s_map, cam, s_last_cmd_dest);
-    }
 
     status = Settings_Get("pf.debug.show_first_sel_movestate", &setting);
     assert(status == SS_OKAY);
@@ -522,18 +521,26 @@ static void on_render_3d(void *user, void *event)
         status = Settings_Get("pf.debug.enemy_seek_fields_faction_id", &setting);
         assert(status == SS_OKAY);
     
-        const struct camera *cam = G_GetActiveCamera();
         M_NavRenderVisibleEnemySeekField(s_map, cam, setting.as_int);
     }
 
     status = Settings_Get("pf.debug.show_navigation_blockers", &setting);
     assert(status == SS_OKAY);
 
-    if(setting.as_bool) {
-
-        const struct camera *cam = G_GetActiveCamera();
+    if(setting.as_bool)
         M_NavRenderNavigationBlockers(s_map, cam);
-    }
+
+    status = Settings_Get("pf.debug.show_navigation_portals", &setting);
+    assert(status == SS_OKAY);
+
+    if(setting.as_bool)
+        M_NavRenderNavigationPortals(s_map, cam);
+
+    status = Settings_Get("pf.debug.show_navigation_cost_base", &setting);
+    assert(status == SS_OKAY);
+
+    if(setting.as_bool)
+        M_RenderVisiblePathableLayer(s_map, cam);
 }
 
 static quat_t dir_quat_from_velocity(vec2_t velocity)
@@ -700,7 +707,7 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
     vec2_t ret = (vec2_t){0.0f};
     struct entity *near_ents[128];
     int num_near = G_Pos_EntsInCircle(G_Pos_GetXZ(ent->uid), 
-        ent->selection_radius * 5.0f, near_ents, ARR_SIZE(near_ents));
+        SEPARATION_NEIGHB_RADIUS, near_ents, ARR_SIZE(near_ents));
 
     for(int i = 0; i < num_near; i++) {
 
@@ -717,12 +724,12 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
         float radius = ent->selection_radius + curr->selection_radius + buffer_dist;
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
-        /* Exponential decay with y=1 when diff = radius*0.95 
+        /* Exponential decay with y=1 when diff = radius*0.85 
          * Use smooth decay curves in order to curb the 'toggling' or oscillating 
          * behaviour that may arise when there are discontinuities in the forces. 
          */
-        float t = (PFM_Vec2_Len(&diff) - radius*0.95) / radius;
-        float scale = exp(-15.0f * t);
+        float t = (PFM_Vec2_Len(&diff) - radius*0.85) / radius;
+        float scale = exp(-20.0f * t);
         PFM_Vec2_Scale(&diff, scale, &diff);
 
         PFM_Vec2_Add(&ret, &diff, &ret);
@@ -958,8 +965,9 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &xz_pos, &diff_to_target);
         vec2_t desv = M_NavDesiredPointSeekVelocity(s_map, flock->dest_id, xz_pos, flock->target_xz);
 
-        if(PFM_Vec2_Len(&diff_to_target) < ARRIVE_THRESHOLD_DIST
-        || M_NavIsMaximallyClose(s_map, xz_pos, flock->target_xz, ARRIVE_THRESHOLD_DIST)) {
+        float arrive_thresh = ent->selection_radius * 1.5f;
+        if(PFM_Vec2_Len(&diff_to_target) < arrive_thresh
+        || M_NavIsMaximallyClose(s_map, xz_pos, flock->target_xz, arrive_thresh)) {
 
             *ms = (struct movestate) {
                 .state = STATE_ARRIVED,
@@ -1163,6 +1171,7 @@ bool G_Move_Init(const struct map *map)
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL, G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
+
 
     s_map = map;
     return true;

@@ -148,20 +148,13 @@ def start_war(user, event):
     if war_on:
         return
     war_on = True
-    chunk_height = pf.TILES_PER_CHUNK_HEIGHT * pf.Z_COORDS_PER_TILE
 
     for unit in red_army_units:
-        atk_pos = (
-            unit.pos[0] - 100,
-            (unit.pos[1] // chunk_height + 0.5) * chunk_height
-        )
+        atk_pos = (-100, 0)
         unit.attack(atk_pos)
 
     for unit in blue_army_units:
-        atk_pos = (
-            unit.pos[0] + 100,
-            (unit.pos[1] // chunk_height + 0.5) * chunk_height
-        )
+        atk_pos = (+100, 0)
         unit.attack(atk_pos)
 
 def toggle_pause(user, event):

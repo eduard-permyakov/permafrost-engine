@@ -376,6 +376,27 @@ void M_NavRenderNavigationBlockers(const struct map *map, const struct camera *c
     }
 }
 
+void M_NavRenderNavigationPortals(const struct map *map, const struct camera *cam)
+{
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+        for(int c = 0; c < map->width; c++) {
+
+            struct aabb chunk_aabb;
+            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+                continue;
+
+            mat4x4_t chunk_model;
+            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+            N_RenderNavigationPortals(map->nav_private, map, &chunk_model, r, c);
+        }
+    }
+}
+
 vec2_t M_NavDesiredPointSeekVelocity(const struct map *map, dest_id_t id, vec2_t curr_pos, vec2_t xz_dest)
 {
     return N_DesiredPointSeekVelocity(id, curr_pos, xz_dest, map->nav_private, map->pos);
