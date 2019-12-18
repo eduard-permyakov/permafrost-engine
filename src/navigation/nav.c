@@ -923,8 +923,11 @@ void N_Update(void *nav_private)
         struct nav_chunk *chunk = &priv->chunks[IDX(curr.r, priv->width, curr.c)];
         n_update_local_islands(chunk);
         int nflipped = n_update_edge_states(chunk);
-        if(nflipped)
+
+        if(nflipped) {
             components_dirty = true;
+            N_FC_InvalidateAllThroughChunk(curr);
+        }
     }
 
     if(components_dirty)

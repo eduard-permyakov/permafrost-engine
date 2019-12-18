@@ -110,6 +110,19 @@ uint64_t key_for_dest_and_chunk(dest_id_t id, struct coord chunk)
     return ((((uint64_t)id) << 32) | key_for_chunk(chunk));
 }
 
+dest_id_t key_dest(uint64_t key)
+{
+    return (key >> 32);
+}
+
+struct coord key_chunk(uint64_t key)
+{
+    return (struct coord){
+        (key >> 16) & 0xffff,
+        (key >>  0) & 0xffff,
+    };
+}
+
 uint64_t grid_path_key(struct coord local_start, struct coord local_dest,
                        struct coord chunk)
 {
@@ -153,6 +166,15 @@ static void field_map_add(khash_t(idvec) *hash, uint64_t key, uint64_t id)
         k = kh_get(idvec, hash, key);
         kh_val(hash, k) = newvec;
     }
+}
+
+static bool dest_array_contains(dest_id_t *array, size_t size, dest_id_t item)
+{
+    for(int i = 0; i < size; i++) {
+        if(array[i] == item)
+            return true;
+    }
+    return false;
 }
 
 /*****************************************************************************/
@@ -385,5 +407,53 @@ void N_FC_InvalidateAllAtChunk(struct coord chunk)
         vec_id_destroy(keys);
         kh_del(idvec, s_chunk_ffield_map, k);
     }
+}
+
+void N_FC_InvalidateAllThroughChunk(struct coord chunk)
+{
+    dest_id_t paths[CONFIG_FLOW_CAHCE_SZ];
+    size_t npaths = 0;
+
+    uint64_t key;
+    ff_id_t ffid_val;
+
+    /* Make sure not to actually query the caches, in order to not mess up the age history */
+    /* First find all the paths going through the chunk. */
+    LRU_FOREACH_SAFE_REMOVE(ffid, &s_ffid_cache, key, ffid_val, {
+
+        dest_id_t curr_dest = key_dest(key);
+        struct coord curr_chunk = key_chunk(key);
+
+        if(0 == memcmp(&curr_chunk, &chunk, sizeof(chunk))
+        && !dest_array_contains(paths, npaths, curr_dest)) {
+
+            paths[npaths++] = curr_dest;
+        }
+    });
+
+    /* Now that we know all the paths, find and remove all the flow 
+     * fields belonging to them */
+    struct flow_field ff_val;
+    LRU_FOREACH_SAFE_REMOVE(flow, &s_flow_cache, key, ff_val, {
+    
+        dest_id_t curr_dest = key_dest(key);
+        if(dest_array_contains(paths, npaths, curr_dest)) {
+        
+            bool found = lru_flow_remove(&s_flow_cache, key);
+            s_perfstats.flow_invalidated += !!found;
+        }
+    });
+
+    /* And remove all the LOS fields as well */
+    struct LOS_field los_val;
+    LRU_FOREACH_SAFE_REMOVE(los, &s_los_cache, key, los_val, {
+
+        dest_id_t curr_dest = key_dest(key);
+        if(dest_array_contains(paths, npaths, curr_dest)) {
+        
+            bool found = lru_los_remove(&s_los_cache, key);
+            s_perfstats.los_invalidated += !!found;
+        }
+    });
 }
 

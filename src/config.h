@@ -58,9 +58,9 @@
 
 #define CONFIG_SETTINGS_FILENAME    "pf.conf"
 
-#define CONFIG_LOS_CACHE_SZ         (2048)
-#define CONFIG_FLOW_CAHCE_SZ        (2048)
-#define CONFIG_MAPPING_CACHE_SZ     (8192)
+#define CONFIG_LOS_CACHE_SZ         (512)
+#define CONFIG_FLOW_CAHCE_SZ        (512)
+#define CONFIG_MAPPING_CACHE_SZ     (512)
 #define CONFIG_GRID_PATH_CACHE_SZ   (8192)
 
 #define CONFIG_FRAME_STEP_HOTKEY    (SDL_SCANCODE_SPACE)

@@ -75,6 +75,21 @@
 #define lru_node(name)                                                                          \
     lru_##name##_node_t
 
+#define LRU_FOREACH_SAFE_REMOVE(name, _lru, _key, _val, ...)                                    \
+    do{                                                                                         \
+        mp_ref_t curr, next_curr;                                                               \
+        lru_node(name) *curr_node;                                                              \
+        for(curr = (_lru)->ilru_head; curr; curr = next_curr) {                                 \
+            curr_node = mp_##name##_entry(&((_lru)->node_pool), curr);                          \
+            next_curr = curr_node->next;                                                        \
+                                                                                                \
+            _key = curr_node->key;                                                              \
+            _val = curr_node->entry;                                                            \
+                                                                                                \
+            __VA_ARGS__                                                                         \
+        }                                                                                       \
+    }while(0)
+
 /***********************************************************************************************/
 
 #define LRU_CACHE_PROTOTYPES(scope, name, type)                                                 \
@@ -288,6 +303,11 @@
         if(mpn->next)                                                                           \
             mp_##name##_entry(&lru->node_pool, mpn->next)->prev = mpn->prev;                    \
         mp_##name##_free(&lru->node_pool, ref);                                                 \
+                                                                                                \
+        if(lru->ilru_head == ref)                                                               \
+            lru->ilru_head = mpn->next;                                                         \
+        if(lru->ilru_tail == ref)                                                               \
+            lru->ilru_tail = mpn->prev;                                                         \
                                                                                                 \
         --lru->used;                                                                            \
         kh_del(name, lru->key_node_table, k);                                                   \

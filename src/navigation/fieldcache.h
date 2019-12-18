@@ -55,6 +55,11 @@ void N_FC_Shutdown(void);
  */
 void N_FC_InvalidateAllAtChunk(struct coord chunk);
 
+/* Invalidate all LOS and Flow fields for paths (identified by the dest_id) which 
+ * have at least one field at the specified chunk
+ */
+void N_FC_InvalidateAllThroughChunk(struct coord chunk);
+
 /*###########################################################################*/
 /* LOS FIELD CACHING                                                         */
 /*###########################################################################*/

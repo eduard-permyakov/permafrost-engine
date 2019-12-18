@@ -702,6 +702,14 @@ ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target)
         assert(0);
 }
 
+struct coord N_FlowFieldChunk(ff_id_t id)
+{
+    return (struct coord){
+        (id >> 8) & 0xff,
+        (id >> 0) & 0xff,
+    };
+}
+
 void N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct flow_field *out)
 {
     for(int r = 0; r < FIELD_RES_R; r++) {

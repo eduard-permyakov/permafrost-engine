@@ -93,6 +93,7 @@ enum flow_dir{
 extern vec2_t g_flow_dir_lookup[];
 
 ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target);
+struct coord N_FlowFieldChunk(ff_id_t id);
 void    N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct flow_field *out);
 void    N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_private *priv,
                           struct field_target target, struct flow_field *inout_flow);
