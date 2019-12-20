@@ -597,15 +597,15 @@ static size_t portal_initial_frontier(const struct portal *port, const struct na
     if(ret > 0)
         return ret;
 
-    /* If the _entire_ portal is made impassable by blockers, the higher-level logic
+    /* If the entire portal is made impassable by blockers, the higher-level logic
      * should detect this and not issue a request to guide entities to a blocked portal.
      * If this request was made, we can assume some portal-to-portal channel exists
      * which includes this portal. */
-    return (assert(0), 0);
+    return 0;
 }
 
 static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struct nav_chunk *chunk, 
-                                       struct coord *out, size_t maxout)
+                                       const struct nav_private *priv, struct coord *out, size_t maxout)
 {
     struct box_xz bounds;
     chunk_bounds(enemies->map_pos, enemies->chunk, &bounds);
@@ -618,15 +618,57 @@ static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struc
     );
     assert(num_ents);
 
+    const int tile_len = X_COORDS_PER_TILE / (FIELD_RES_C / TILES_PER_CHUNK_WIDTH);
+    struct map_resolution res = {
+        priv->width, priv->height, 
+        FIELD_RES_C, FIELD_RES_R
+    };
+
     bool has_enemy[FIELD_RES_R][FIELD_RES_C] = {0};
     for(int i = 0; i < num_ents; i++) {
     
-        struct entity *curr = ents[i];
-        if(!enemy_ent(enemies->faction_id, curr))
+        struct entity *curr_enemy = ents[i];
+        if(!enemy_ent(enemies->faction_id, curr_enemy))
             continue;
 
-        struct coord tile = tile_for_pos(&bounds, G_Pos_GetXZ(curr->uid));
-        has_enemy[tile.r][tile.c] = true;
+        struct coord tile = tile_for_pos(&bounds, G_Pos_GetXZ(curr_enemy->uid));
+        int ntiles = ceil(curr_enemy->selection_radius / tile_len);
+
+        /* Use the same logic that is used for calculating the 'blocked'
+         * tiles under a unit. */
+        for(int dr = -ntiles; dr <= ntiles; dr++) {
+        for(int dc = -ntiles; dc <= ntiles; dc++) {
+
+            struct tile_desc curr_td = (struct tile_desc) { 
+                enemies->chunk.r, enemies->chunk.c, 
+                tile.r, tile.c 
+            };
+            if(!M_Tile_RelativeDesc(res, &curr_td, dc, dr))
+                continue;
+
+            struct box bounds = M_Tile_Bounds(res, enemies->map_pos, curr_td);
+            vec2_t coords[] = {
+                (vec2_t){bounds.x,                bounds.z                },
+                (vec2_t){bounds.x - bounds.width, bounds.z                },
+                (vec2_t){bounds.x,                bounds.z + bounds.height},
+                (vec2_t){bounds.x - bounds.width, bounds.z + bounds.height},
+                (vec2_t){bounds.x - bounds.width/2.0f, bounds.z + bounds.height/2.0f}
+            };
+
+            bool inside = false;
+            for(int i = 0; i < ARR_SIZE(coords); i++) {
+
+                if(C_PointInsideCircle2D(coords[i], G_Pos_GetXZ(curr_enemy->uid), curr_enemy->selection_radius)) {
+                    inside = true;
+                    break;
+                }
+            }
+
+            if(!inside)
+                continue;
+
+            has_enemy[curr_td.tile_r][curr_td.tile_c] = true;
+        }}
     }
 
     int ret = 0;
@@ -644,7 +686,7 @@ static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struc
 }
 
 static size_t initial_frontier(struct field_target target, const struct nav_chunk *chunk, 
-                               struct coord *init_frontier, size_t maxout)
+                               const struct nav_private *priv, struct coord *init_frontier, size_t maxout)
 {
     size_t ninit = 0;
     switch(target.type) {
@@ -660,7 +702,7 @@ static size_t initial_frontier(struct field_target target, const struct nav_chun
 
     case TARGET_ENEMIES:
 
-        ninit = enemies_initial_frontier(&target.enemies, chunk, init_frontier, maxout);
+        ninit = enemies_initial_frontier(&target.enemies, chunk, priv, init_frontier, maxout);
         break;
 
     default: assert(0);
@@ -734,7 +776,7 @@ void N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_private *priv,
             integration_field[r][c] = INFINITY;
 
     struct coord init_frontier[FIELD_RES_R * FIELD_RES_C];
-    size_t ninit = initial_frontier(target, chunk, init_frontier, ARR_SIZE(init_frontier));
+    size_t ninit = initial_frontier(target, chunk, priv, init_frontier, ARR_SIZE(init_frontier));
 
     for(int i = 0; i < ninit; i++) {
 
@@ -911,7 +953,7 @@ void N_FlowFieldUpdateIslandToNearest(uint16_t local_iid, const struct nav_priva
     pq_coord_init(&frontier);
 
     struct coord init_frontier[FIELD_RES_R * FIELD_RES_C];
-    size_t ninit = initial_frontier(inout_flow->target, chunk, init_frontier, ARR_SIZE(init_frontier));
+    size_t ninit = initial_frontier(inout_flow->target, chunk, priv, init_frontier, ARR_SIZE(init_frontier));
 
     int min_mh_dist = INT_MAX;
     struct coord new_init_frontier[FIELD_RES_R * FIELD_RES_C];
