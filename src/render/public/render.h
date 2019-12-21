@@ -226,6 +226,19 @@ void   R_GL_DumpFBDepth_PPM(const char *filename, int width, int height,
 void   R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t color, 
                                 const struct map *map);
 
+
+/* ---------------------------------------------------------------------------
+ * Render a line over the map surface.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawLine(vec2_t endpoints[static 2], float width, vec3_t color, const struct map *map);
+
+/* ---------------------------------------------------------------------------
+ * Render a quadrilateral over the map surface.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawQuad(vec2_t corners[static 4], float width, vec3_t color, const struct map *map);
+
 /* ---------------------------------------------------------------------------
  * Render an array of translucent quads over the map surface. The quad corners are 
  * specified in chunk coordinates, with 4 corners per quad in the 'xz_corners'

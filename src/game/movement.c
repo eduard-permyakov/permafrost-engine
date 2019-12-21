@@ -541,6 +541,12 @@ static void on_render_3d(void *user, void *event)
 
     if(setting.as_bool)
         M_RenderVisiblePathableLayer(s_map, cam);
+
+    status = Settings_Get("pf.debug.show_chunk_boundaries", &setting);
+    assert(status == SS_OKAY);
+
+    if(setting.as_bool)
+        M_RenderChunkBoundaries(s_map, cam);
 }
 
 static quat_t dir_quat_from_velocity(vec2_t velocity)

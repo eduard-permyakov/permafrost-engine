@@ -423,6 +423,17 @@ bool G_Init(void)
         .commit = NULL,
     });
 
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_chunk_boundaries",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false 
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+
     s_gs.ss = G_RUNNING;
     return true;
 

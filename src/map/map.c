@@ -178,6 +178,35 @@ void M_RenderVisiblePathableLayer(const struct map *map, const struct camera *ca
     }
 }
 
+void M_RenderChunkBoundaries(const struct map *map, const struct camera *cam)
+{
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+        for(int c = 0; c < map->width; c++) {
+
+            struct aabb chunk_aabb;
+            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+                continue;
+
+            mat4x4_t chunk_model;
+            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+
+            vec2_t corners[4] = {
+                (vec2_t){chunk_aabb.x_max, chunk_aabb.z_min},
+                (vec2_t){chunk_aabb.x_min, chunk_aabb.z_min},
+                (vec2_t){chunk_aabb.x_min, chunk_aabb.z_max},
+                (vec2_t){chunk_aabb.x_max, chunk_aabb.z_max},
+            };
+            vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
+            R_GL_DrawQuad(corners, 1.0f, red, map);
+        }
+    }
+}
+
 void M_CenterAtOrigin(struct map *map)
 {
     size_t width  = map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
@@ -229,8 +258,8 @@ bool M_PointInsideMap(const struct map *map, vec2_t xz)
     float width  = map->width  * TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE;
     float height = map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 
-    return (xz.raw[0] <= map->pos.x && xz.raw[0] >= map->pos.x - width)
-        && (xz.raw[1] >= map->pos.z && xz.raw[1] <= map->pos.z + height);
+    return (xz.x <= map->pos.x && xz.x >= map->pos.x - width)
+        && (xz.z >= map->pos.z && xz.z <= map->pos.z + height);
 }
 
 vec2_t M_ClampedMapCoordinate(const struct map *map, vec2_t xz)
@@ -238,10 +267,10 @@ vec2_t M_ClampedMapCoordinate(const struct map *map, vec2_t xz)
     const float EPSILON = (1.0f/1024);
     float x, z;
 
-    x = MIN(map->pos.x - EPSILON, xz.raw[0]);
+    x = MIN(map->pos.x - EPSILON, xz.x);
     x = MAX(map->pos.x - map->width * (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) + EPSILON, x);
 
-    z = MAX(map->pos.z + EPSILON, xz.raw[1]);
+    z = MAX(map->pos.z + EPSILON, xz.z);
     z = MIN(map->pos.z + (map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE) - EPSILON, z);
 
     return (vec2_t){x, z};

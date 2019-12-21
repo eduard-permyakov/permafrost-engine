@@ -93,6 +93,13 @@ void   M_RenderVisibleMap   (const struct map *map, const struct camera *cam,
 void   M_RenderVisiblePathableLayer(const struct map *map, const struct camera *cam);
 
 /* ------------------------------------------------------------------------
+ * Render lines over the map surface showing the boudnaries between different 
+ * chunks.
+ * ------------------------------------------------------------------------
+ */
+void   M_RenderChunkBoundaries(const struct map *map, const struct camera *cam);
+
+/* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing fields which guide
  * units of a particular factions towards their enemies. These fields are
  * used for combat target selection.

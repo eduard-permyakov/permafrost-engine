@@ -61,6 +61,7 @@
 
 #define EPSILON                     (1.0f/1024)
 #define ARR_SIZE(a)                 (sizeof(a)/sizeof(a[0]))
+#define MAX(a, b)                   ((a) > (b) ? (a) : (b))
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -962,8 +963,8 @@ void R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t color
         float height_near = M_HeightAtPoint(map, M_ClampedMapCoordinate(map, (vec2_t){x_near, z_near}));
         float height_far  = M_HeightAtPoint(map, M_ClampedMapCoordinate(map, (vec2_t){x_far,  z_far }));
 
-        vbuff[i]     = (vec3_t){x_near, height_near + 0.0f, z_near};
-        vbuff[i + 1] = (vec3_t){x_far,  height_far + 0.1,   z_far };
+        vbuff[i]     = (vec3_t){x_near, height_near + 0.1f, z_near};
+        vbuff[i + 1] = (vec3_t){x_far,  height_far + 0.1f,   z_far };
     }
     vbuff[NUM_SAMPLES * 2]     = vbuff[0];
     vbuff[NUM_SAMPLES * 2 + 1] = vbuff[1];
@@ -1005,6 +1006,100 @@ void R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t color
 cleanup:
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
+}
+
+void R_GL_DrawLine(vec2_t endpoints[static 2], float width, vec3_t color, const struct map *map)
+{
+    vec2_t delta;
+    PFM_Vec2_Sub(&endpoints[1], &endpoints[0], &delta);
+    const float len = PFM_Vec2_Len(&delta);
+
+    vec2_t perp = (vec2_t){ delta.z, -delta.x };
+    PFM_Vec2_Normal(&perp, &perp);
+    assert(width > 0.0f);
+    PFM_Vec2_Scale(&perp, width/2.0f, &perp);
+
+    const int NUM_SAMPLES = ceil(len / 4.0f);
+    vec3_t vbuff[NUM_SAMPLES * 2 + 2];
+    float t = 0.0f;
+
+    for(int i = 0; i <= NUM_SAMPLES * 2; i += 2) {
+
+        PFM_Vec2_Sub(&endpoints[1], &endpoints[0], &delta);
+        PFM_Vec2_Normal(&delta, &delta);
+        PFM_Vec2_Scale(&delta, t, &delta);
+
+        vec2_t point;
+        PFM_Vec2_Add(&endpoints[0], &delta, &point);
+
+        vec2_t point_left, point_right;
+        PFM_Vec2_Add(&point, &perp, &point_left);
+        PFM_Vec2_Sub(&point, &perp, &point_right);
+
+        float height_left = M_HeightAtPoint(map, M_ClampedMapCoordinate(map, point_left));
+        float height_right = M_HeightAtPoint(map, M_ClampedMapCoordinate(map, point_right));
+        float height = MAX(height_left, height_right);
+
+        vbuff[i + 0] = (vec3_t){point_left.x, height + 0.2f, point_left.z};
+        vbuff[i + 1] = (vec3_t){point_right.x, height + 0.2f, point_right.z};
+
+        t += (1.0f / NUM_SAMPLES) * len;
+    }
+
+    mat4x4_t identity;
+    PFM_Mat4x4_Identity(&identity);
+
+    /* OpenGL setup */
+    GLint VAO, VBO;
+    GLint shader_prog;
+    GLuint loc;
+
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(0);  
+
+    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    glUseProgram(shader_prog);
+
+    /* Set uniforms */
+    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, identity.raw);
+
+    vec4_t color4 = (vec4_t){color.x, color.y, color.z, 1.0f};
+    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
+    glUniform4fv(loc, 1, color4.raw);
+
+    float old_width;
+    glGetFloatv(GL_LINE_WIDTH, &old_width);
+    glLineWidth(width);
+
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, ARR_SIZE(vbuff));
+
+    glLineWidth(old_width);
+
+cleanup:
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
+}
+
+void R_GL_DrawQuad(vec2_t corners[static 4], float width, vec3_t color, const struct map *map)
+{
+    vec2_t lines[][2] = {
+        corners[0], corners[1],
+        corners[1], corners[2],
+        corners[2], corners[3],
+        corners[3], corners[0],
+    };
+
+    for(int i = 0; i < ARR_SIZE(lines); i++)
+        R_GL_DrawLine(lines[i], width, color, map);
 }
 
 void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, size_t count, mat4x4_t *model, const struct map *map)
