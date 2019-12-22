@@ -86,6 +86,7 @@ enum arrival_state{
 struct movestate{
     vec2_t             vnew;
     vec2_t             velocity;
+    vec2_t             last_stop_pos;
     enum arrival_state state;
     vec2_t             vel_hist[VEL_HIST_LEN];
     int                vel_hist_idx;
@@ -224,13 +225,17 @@ static void entity_finish_moving(const struct entity *ent)
     E_Entity_Notify(EVENT_MOTION_END, ent->uid, NULL, ES_ENGINE);
     if(ent->flags & ENTITY_FLAG_COMBATABLE)
         G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
+
+    struct movestate *ms = movestate_get(ent);
+    ms->last_stop_pos = G_Pos_GetXZ(ent->uid);
     M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), ent->selection_radius, s_map);
 }
 
 static void entity_start_moving(const struct entity *ent)
 {
     E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
-    M_NavBlockersDecref(G_Pos_GetXZ(ent->uid), ent->selection_radius, s_map);
+    struct movestate *ms = movestate_get(ent);
+    M_NavBlockersDecref(ms->last_stop_pos, ent->selection_radius, s_map);
 }
 
 static void on_marker_anim_finish(void *user, void *event)
@@ -1206,6 +1211,7 @@ void G_Move_AddEntity(const struct entity *ent)
 {
     struct movestate new_ms = (struct movestate) {
         .velocity = {0.0f}, 
+        .last_stop_pos = G_Pos_GetXZ(ent->uid),
         .state = STATE_ARRIVED,
         .vel_hist_idx = 0,
     };
@@ -1221,14 +1227,15 @@ void G_Move_AddEntity(const struct entity *ent)
 
 void G_Move_RemoveEntity(const struct entity *ent)
 {
+    khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
+    if(k == kh_end(s_entity_state_table))
+        return;
+
     G_Move_Stop(ent);
 
-    khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
-    if(k != kh_end(s_entity_state_table)) {
-
-        kh_del(state, s_entity_state_table, k);
-        M_NavBlockersDecref(G_Pos_GetXZ(ent->uid), ent->selection_radius, s_map);
-    }
+    struct movestate ms = kh_val(s_entity_state_table, k);
+    M_NavBlockersDecref(ms.last_stop_pos, ent->selection_radius, s_map);
+    kh_del(state, s_entity_state_table, k);
 }
 
 void G_Move_Stop(const struct entity *ent)
