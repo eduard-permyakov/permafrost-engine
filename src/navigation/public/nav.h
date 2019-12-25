@@ -83,6 +83,14 @@ bool      N_Init(void);
 void      N_Update(void *nav_private);
 
 /* ------------------------------------------------------------------------
+ * Update the information about which tiles are reachable from which other
+ * tiles to reflect recent changes in the blockers field, for all 'dirty'
+ * chunks. This is already done in 'N_Update'.
+ * ------------------------------------------------------------------------
+ */
+void      N_UpdateLocalReachabilityData(void *nav_private);
+
+/* ------------------------------------------------------------------------
  * Clean up resources acquired by 'N_Init'
  * ------------------------------------------------------------------------
  */

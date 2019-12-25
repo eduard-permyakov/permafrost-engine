@@ -319,6 +319,13 @@ void   M_SetShadowsEnabled(struct map *map, bool on);
  */
 vec3_t M_GetCenterPos(const struct map *map);
 
+/* ------------------------------------------------------------------------
+ * Wrapper around 'N_UpdateLocalReachabilityData'
+ * ------------------------------------------------------------------------
+ */
+void   M_NavUpdateLocalReachabilityData(const struct map *map);
+
+
 /*###########################################################################*/
 /* MINIMAP                                                                   */
 /*###########################################################################*/

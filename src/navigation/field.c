@@ -122,31 +122,30 @@ static int neighbours_grid_LOS(const struct nav_chunk *chunk,
     int ret = 0;
 
     for(int r = -1; r <= 1; r++) {
-        for(int c = -1; c <= 1; c++) {
+    for(int c = -1; c <= 1; c++) {
 
-            int abs_r = coord.r + r;
-            int abs_c = coord.c + c;
+        int abs_r = coord.r + r;
+        int abs_c = coord.c + c;
 
-            if(abs_r < 0 || abs_r >= FIELD_RES_R)
-                continue;
-            if(abs_c < 0 || abs_c >= FIELD_RES_C)
-                continue;
-            if(r == 0 && c == 0)
-                continue;
-            if((r == c) || (r == -c)) /* diag */
-                continue;
-            if(los->field[abs_r][abs_c].wavefront_blocked)
-                continue;
+        if(abs_r < 0 || abs_r >= FIELD_RES_R)
+            continue;
+        if(abs_c < 0 || abs_c >= FIELD_RES_C)
+            continue;
+        if(r == 0 && c == 0)
+            continue;
+        if((r == c) || (r == -c)) /* diag */
+            continue;
+        if(los->field[abs_r][abs_c].wavefront_blocked)
+            continue;
 
-            out_neighbours[ret] = (struct coord){abs_r, abs_c};
-            out_costs[ret] = chunk->cost_base[abs_r][abs_c];
+        out_neighbours[ret] = (struct coord){abs_r, abs_c};
+        out_costs[ret] = chunk->cost_base[abs_r][abs_c];
 
-            if(chunk->blockers[abs_r][abs_c])
-                out_costs[ret] = COST_IMPASSABLE;
+        if(chunk->blockers[abs_r][abs_c])
+            out_costs[ret] = COST_IMPASSABLE;
 
-            ret++;
-        }
-    }
+        ret++;
+    }}
     assert(ret < 9);
     return ret;
 }
@@ -360,20 +359,19 @@ static void build_flow_field(float intf[FIELD_RES_R][FIELD_RES_C], struct flow_f
      * multiple passable 'islands', but a computed path takes us through more than one of
      * these 'islands'. */
     for(int r = 0; r < FIELD_RES_R; r++) {
-        for(int c = 0; c < FIELD_RES_C; c++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
 
-            if(intf[r][c] == INFINITY)
-                continue;
+        if(intf[r][c] == INFINITY)
+            continue;
 
-            if(intf[r][c] == 0.0f) {
+        if(intf[r][c] == 0.0f) {
 
-                inout_flow->field[r][c].dir_idx = FD_NONE;
-                continue;
-            }
-
-            inout_flow->field[r][c].dir_idx = flow_dir(intf, (struct coord){r, c});
+            inout_flow->field[r][c].dir_idx = FD_NONE;
+            continue;
         }
-    }
+
+        inout_flow->field[r][c].dir_idx = flow_dir(intf, (struct coord){r, c});
+    }}
 }
 
 static void fixup_portal_edges(float intf[FIELD_RES_R][FIELD_RES_C], struct flow_field *inout_flow,
@@ -386,23 +384,22 @@ static void fixup_portal_edges(float intf[FIELD_RES_R][FIELD_RES_C], struct flow
     assert(up ^ down ^ left ^ right);
 
     for(int r = 0; r < FIELD_RES_R; r++) {
-        for(int c = 0; c < FIELD_RES_C; c++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
 
-            if(intf[r][c] == 0.0f) {
+        if(intf[r][c] == 0.0f) {
 
-                if(up)
-                    inout_flow->field[r][c].dir_idx = FD_N;
-                else if(down)
-                    inout_flow->field[r][c].dir_idx = FD_S;
-                else if(left)
-                    inout_flow->field[r][c].dir_idx = FD_W;
-                else if(right)
-                    inout_flow->field[r][c].dir_idx = FD_E;
-                else
-                    assert(0);
-            }
+            if(up)
+                inout_flow->field[r][c].dir_idx = FD_N;
+            else if(down)
+                inout_flow->field[r][c].dir_idx = FD_S;
+            else if(left)
+                inout_flow->field[r][c].dir_idx = FD_W;
+            else if(right)
+                inout_flow->field[r][c].dir_idx = FD_E;
+            else
+                assert(0);
         }
-    }
+    }}
 }
 
 static void chunk_bounds(vec3_t map_pos, struct coord chunk_coord, struct box_xz *out)
@@ -618,12 +615,6 @@ static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struc
     );
     assert(num_ents);
 
-    const int tile_len = X_COORDS_PER_TILE / (FIELD_RES_C / TILES_PER_CHUNK_WIDTH);
-    struct map_resolution res = {
-        priv->width, priv->height, 
-        FIELD_RES_C, FIELD_RES_R
-    };
-
     bool has_enemy[FIELD_RES_R][FIELD_RES_C] = {0};
     for(int i = 0; i < num_ents; i++) {
     
@@ -631,44 +622,15 @@ static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struc
         if(!enemy_ent(enemies->faction_id, curr_enemy))
             continue;
 
-        struct coord tile = tile_for_pos(&bounds, G_Pos_GetXZ(curr_enemy->uid));
-        int ntiles = ceil(curr_enemy->selection_radius / tile_len);
+        struct tile_desc tds[256];
+        int ntds = N_TilesUnderCircle(priv, G_Pos_GetXZ(curr_enemy->uid), 
+            curr_enemy->selection_radius, enemies->map_pos, tds, ARR_SIZE(tds));
 
-        /* Use the same logic that is used for calculating the 'blocked'
-         * tiles under a unit. */
-        for(int dr = -ntiles; dr <= ntiles; dr++) {
-        for(int dc = -ntiles; dc <= ntiles; dc++) {
+        for(int j = 0; j < ntds; j++) {
 
-            struct tile_desc curr_td = (struct tile_desc) { 
-                enemies->chunk.r, enemies->chunk.c, 
-                tile.r, tile.c 
-            };
-            if(!M_Tile_RelativeDesc(res, &curr_td, dc, dr))
-                continue;
-
-            struct box bounds = M_Tile_Bounds(res, enemies->map_pos, curr_td);
-            vec2_t coords[] = {
-                (vec2_t){bounds.x,                bounds.z                },
-                (vec2_t){bounds.x - bounds.width, bounds.z                },
-                (vec2_t){bounds.x,                bounds.z + bounds.height},
-                (vec2_t){bounds.x - bounds.width, bounds.z + bounds.height},
-                (vec2_t){bounds.x - bounds.width/2.0f, bounds.z + bounds.height/2.0f}
-            };
-
-            bool inside = false;
-            for(int i = 0; i < ARR_SIZE(coords); i++) {
-
-                if(C_PointInsideCircle2D(coords[i], G_Pos_GetXZ(curr_enemy->uid), curr_enemy->selection_radius)) {
-                    inside = true;
-                    break;
-                }
-            }
-
-            if(!inside)
-                continue;
-
+            struct tile_desc curr_td = tds[j];
             has_enemy[curr_td.tile_r][curr_td.tile_c] = true;
-        }}
+        }
     }
 
     int ret = 0;

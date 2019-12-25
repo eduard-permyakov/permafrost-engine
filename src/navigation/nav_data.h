@@ -76,22 +76,30 @@ struct portal{
 };
 
 struct nav_chunk{
-    size_t        num_portals; 
-    struct portal portals[MAX_PORTALS_PER_CHUNK];
-    uint8_t       cost_base[FIELD_RES_R][FIELD_RES_C]; 
+    size_t          num_portals; 
+    struct portal   portals[MAX_PORTALS_PER_CHUNK];
+    /* The per-tile cost of traversal. Tiles with 'COST_IMPASSABLE'
+     * cost may never be reached.
+     */
+    uint8_t         cost_base[FIELD_RES_R][FIELD_RES_C]; 
+    /* Holds the cost to travel from every tile to every portal,
+     * when the portal is reachable from the tile. This field is 
+     * synchronized with the 'cost_base' field.
+     */
+    float           portal_travel_costs[MAX_PORTALS_PER_CHUNK][FIELD_RES_R][FIELD_RES_C];
     /* Every tile in the 'blockers' holds a reference count for
      * how many stationary entities are currently 'retaining' that 
-     * tile by being positioned on it. 'Masked' tiles are treated 
+     * tile by being positioned on it. 'Blocked' tiles are treated 
      * as impassable when computing flow fields. 
      */
-    uint8_t       blockers[FIELD_RES_R][FIELD_RES_C];
+    uint8_t         blockers[FIELD_RES_R][FIELD_RES_C];
     /* An 'island' is a collection of tiles that are all reachable 
      * from one another. Each island has a unique ID. These are
      * synchronized with the 'cost_base' field, and are not
      * affected by blockers. These islands IDs are 'global' 
      * (shared by all chunks)
      */
-    uint16_t      islands[FIELD_RES_R][FIELD_RES_C];
+    uint16_t        islands[FIELD_RES_R][FIELD_RES_C];
     /* This field uses chunk-local island IDs and accounts for
      * the blockers, but does not account for any part of the
      * map outside the local chunk. This field is synchronized
@@ -100,7 +108,7 @@ struct nav_chunk{
      * values if the only path between them is blocked by 
      * stationary entities, for example.
      */
-    uint16_t      local_islands[FIELD_RES_R][FIELD_RES_C];
+    uint16_t        local_islands[FIELD_RES_R][FIELD_RES_C];
 };
 
 #endif

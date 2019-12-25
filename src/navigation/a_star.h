@@ -71,20 +71,5 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
                            const struct nav_private *priv, 
                            vec_portal_t *out_path, float *out_cost);
 
-/* ------------------------------------------------------------------------
- * Returns true if there exists a path between 2 tiles in the same chunk.
- * ------------------------------------------------------------------------
- */
-bool AStar_TilesLinked(struct coord start, struct coord finish, struct coord chunk,
-                       const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C]);
-
-/* ------------------------------------------------------------------------
- * Returns the closest reachable portal in the chunk, NULL if no portal 
- * is reachable. 
- * ------------------------------------------------------------------------
- */
-const struct portal *AStar_ReachablePortal(struct coord start, struct coord chunk,
-                                           const struct nav_chunk *nchunk);
-
 #endif
 

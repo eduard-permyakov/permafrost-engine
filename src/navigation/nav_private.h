@@ -40,9 +40,20 @@
 #include "nav_data.h"
 #include <stddef.h>
 
+struct portal;
+
 struct nav_private{
     size_t           width, height;
     struct nav_chunk chunks[];
 };
+
+bool N_PortalReachableFromTile(const struct portal *port, struct coord tile, 
+                               const struct nav_chunk *chunk);
+
+int  N_GridNeighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
+                      struct coord out_neighbours[static 8], float out_costs[static 8]);
+
+int  N_TilesUnderCircle(const struct nav_private *priv, vec2_t xz_center, float radius, 
+                        vec3_t map_pos, struct tile_desc *out, int maxout);
 
 #endif

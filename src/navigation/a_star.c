@@ -308,14 +308,11 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
             (port->endpoints[0].r + port->endpoints[1].r) / 2,
             (port->endpoints[0].c + port->endpoints[1].c) / 2,
         };
-
-        struct coord chunk_coord = (struct coord){start_tile.chunk_r, start_tile.chunk_c};
         struct coord tile_coord = (struct coord){start_tile.tile_r, start_tile.tile_c};
 
-        float cost;
-        bool found = AStar_GridPath(tile_coord, port_center, chunk_coord, chunk->cost_base, &path, &cost);
-        if(found){
+        if(N_PortalReachableFromTile(port, tile_coord, chunk)) {
 
+            float cost = chunk->portal_travel_costs[i][tile_coord.r][tile_coord.c];
             kh_put_val(key_float, running_cost, portal_to_key(port), cost);
             pq_portal_push(&frontier, cost, port);
         }
@@ -394,46 +391,5 @@ fail_running_cost:
     kh_destroy(key_portal, came_from);
 fail_came_from:
     return false;
-}
-
-const struct portal *AStar_ReachablePortal(struct coord start, struct coord chunk,
-                                           const struct nav_chunk *nchunk)
-{
-    vec_coord_t path;
-    vec_coord_init(&path);
-
-    float min_cost = FLT_MAX;
-    const struct portal *ret = NULL;
-
-    for(int i = 0; i < nchunk->num_portals; i++) {
-
-        const struct portal *port = &nchunk->portals[i];
-        struct coord port_center = (struct coord){
-            (port->endpoints[0].r + port->endpoints[1].r) / 2,
-            (port->endpoints[0].c + port->endpoints[1].c) / 2,
-        };
-        float cost;
-        bool found = AStar_GridPath(start, port_center, chunk, nchunk->cost_base, &path, &cost);
-        if(found && cost < min_cost) {
-            ret = port;	
-            min_cost = cost;	
-        }
-    }
-
-    vec_coord_destroy(&path);
-    return ret;
-}
-
-bool AStar_TilesLinked(struct coord start, struct coord finish, struct coord chunk,
-                       const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C])
-{
-    vec_coord_t path;
-    vec_coord_init(&path);
-
-    float cost;
-    bool ret = AStar_GridPath(start, finish, chunk, cost_field, &path, &cost);
-
-    vec_coord_destroy(&path);
-    return ret;    
 }
 

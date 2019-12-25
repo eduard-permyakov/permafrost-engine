@@ -86,6 +86,7 @@ enum arrival_state{
 struct movestate{
     vec2_t             vnew;
     vec2_t             velocity;
+    bool               blocking;
     vec2_t             last_stop_pos;
     enum arrival_state state;
     vec2_t             vel_hist[VEL_HIST_LEN];
@@ -201,6 +202,26 @@ static struct flock *flock_for_dest(dest_id_t id)
     return NULL;
 }
 
+static void entity_block(const struct entity *ent)
+{
+    M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), ent->selection_radius, s_map);
+
+    struct movestate *ms = movestate_get(ent);
+    assert(!ms->blocking);
+
+    ms->blocking = true;
+    ms->last_stop_pos = G_Pos_GetXZ(ent->uid);
+}
+
+static void entity_unblock(const struct entity *ent)
+{
+    struct movestate *ms = movestate_get(ent);
+    assert(ms->blocking);
+
+    M_NavBlockersDecref(ms->last_stop_pos, ent->selection_radius, s_map);
+    ms->blocking = false;
+}
+
 static bool stationary(const struct entity *ent)
 {
     return (ent->flags & ENTITY_FLAG_STATIC) || (ent->max_speed == 0.0f);
@@ -227,15 +248,12 @@ static void entity_finish_moving(const struct entity *ent)
         G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
 
     struct movestate *ms = movestate_get(ent);
-    ms->last_stop_pos = G_Pos_GetXZ(ent->uid);
-    M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), ent->selection_radius, s_map);
-}
+    assert(ms->state != STATE_ARRIVED);
 
-static void entity_start_moving(const struct entity *ent)
-{
-    E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
-    struct movestate *ms = movestate_get(ent);
-    M_NavBlockersDecref(ms->last_stop_pos, ent->selection_radius, s_map);
+    ms->state = STATE_ARRIVED;
+    ms->velocity = (vec2_t){0.0f, 0.0f};
+
+    entity_block(ent);
 }
 
 static void on_marker_anim_finish(void *user, void *event)
@@ -282,6 +300,7 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
         const struct entity *curr_ent = vec_AT(sel, i);
         if(stationary(curr_ent))
             continue;
+
         /* Remove any flocks which may have become empty. Iterate vector in backwards order 
          * so that we can delete while iterating, since the last element in the vector takes
          * the place of the deleted one. 
@@ -307,27 +326,45 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
     if(!new_flock.ents)
         return false;
 
-    /* Don't request a new path (flow field) for an entity that is on the same
-     * chunk as another entity for which a path has already been requested. This 
-     * allows saving pathfinding cycles. In the case that an entity is on a different
-     * 'island' of the chunk than the one for which the flow field has been computed,
-     * the FF for this 'island' will be computed on demand. 
+    /* Remove the navigation blockers underneath the potential entities in the 
+     * flock. Do this before requesting a path from the navigation subsystem, 
+     * else the entities may be blocked in by tiles occupied by themselves.
      */
+    for(int i = 0; i < vec_size(sel); i++) {
+
+        const struct entity *curr_ent = vec_AT(sel, i);
+        if(stationary(curr_ent))
+            continue;
+
+        struct movestate *ms = movestate_get(curr_ent);
+        assert(ms);
+
+        if(ms->state == STATE_ARRIVED)
+            entity_unblock(curr_ent); 
+    }
+    M_NavUpdateLocalReachabilityData(s_map);
+
     struct tile_desc pathed_ents_descs[vec_size(sel)];
     size_t num_pathed_ents = 0;
 
     for(int i = 0; i < vec_size(sel); i++) {
 
         const struct entity *curr_ent = vec_AT(sel, i);
-        struct movestate *ms = movestate_get(curr_ent);
-        assert(ms);
-
         if(stationary(curr_ent))
             continue;
+
+        struct movestate *ms = movestate_get(curr_ent);
+        assert(ms);
 
         struct tile_desc curr_desc;
         M_DescForPoint2D(s_map, G_Pos_GetXZ(curr_ent->uid), &curr_desc);
 
+        /* Don't request a new path (flow field) for an entity that is on the same
+         * chunk as another entity for which a path has already been requested. This 
+         * allows saving pathfinding cycles. In the case that an entity is on a different
+         * 'island' of the chunk than the one for which the flow field has been computed,
+         * the FF for this 'island' will be computed on demand. 
+         */
         if(same_chunk_as_any_in_set(curr_desc, pathed_ents_descs, num_pathed_ents)
         || M_NavRequestPath(s_map, G_Pos_GetXZ(curr_ent->uid), target_xz, &new_flock.dest_id)) {
 
@@ -336,18 +373,15 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
 
             /* When entities are moved from one flock to another, they keep their existing velocity.*/
             if(ms->state == STATE_ARRIVED)
-                entity_start_moving(curr_ent);
+                E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
             ms->state = STATE_MOVING;
 
         }else {
 
-            if(ms->state != STATE_ARRIVED) {
+            if(ms->state != STATE_ARRIVED)
                 entity_finish_moving(curr_ent);
-            }
-            *ms = (struct movestate) {
-                .state = STATE_ARRIVED,
-                .velocity = (vec2_t){0.0f},
-            };
+            else
+                entity_block(curr_ent); /* compensate for initial unblocking */
         }
     }
 
@@ -980,10 +1014,6 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         if(PFM_Vec2_Len(&diff_to_target) < arrive_thresh
         || M_NavIsMaximallyClose(s_map, xz_pos, flock->target_xz, arrive_thresh)) {
 
-            *ms = (struct movestate) {
-                .state = STATE_ARRIVED,
-                .velocity = (vec2_t){0.0f},
-            };
             entity_finish_moving(ent);
             break;
         }
@@ -1008,10 +1038,6 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
 
         if(PFM_Vec2_Len(&new_vel) < SETTLE_STOP_TOLERANCE * ent->max_speed) {
 
-            *ms = (struct movestate) {
-                .state = STATE_ARRIVED,
-                .velocity = (vec2_t){0.0f},
-            };
             entity_finish_moving(ent);
         }
         break;
@@ -1211,6 +1237,7 @@ void G_Move_AddEntity(const struct entity *ent)
 {
     struct movestate new_ms = (struct movestate) {
         .velocity = {0.0f}, 
+        .blocking = false,
         .last_stop_pos = G_Pos_GetXZ(ent->uid),
         .state = STATE_ARRIVED,
         .vel_hist_idx = 0,
@@ -1222,7 +1249,7 @@ void G_Move_AddEntity(const struct entity *ent)
     assert(ret != -1 && ret != 0);
     kh_value(s_entity_state_table, k) = new_ms;
 
-    M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), ent->selection_radius, s_map);
+    entity_block(ent);
 }
 
 void G_Move_RemoveEntity(const struct entity *ent)
@@ -1232,9 +1259,8 @@ void G_Move_RemoveEntity(const struct entity *ent)
         return;
 
     G_Move_Stop(ent);
+    entity_unblock(ent);
 
-    struct movestate ms = kh_val(s_entity_state_table, k);
-    M_NavBlockersDecref(ms.last_stop_pos, ent->selection_radius, s_map);
     kh_del(state, s_entity_state_table, k);
 }
 
@@ -1259,10 +1285,6 @@ void G_Move_Stop(const struct entity *ent)
     struct movestate *ms = movestate_get(ent);
     if(ms && ms->state != STATE_ARRIVED) {
 
-        *ms = (struct movestate) {
-            .state = STATE_ARRIVED,
-            .velocity = (vec2_t){0.0f}
-        };
         entity_finish_moving(ent);
     }
 }
@@ -1318,8 +1340,10 @@ void G_Move_SetSeekEnemies(const struct entity *ent)
     }
     assert(NULL == flock_for_ent(ent));
 
-    if(ms->state == STATE_ARRIVED)
-        entity_start_moving(ent);
+    if(ms->state == STATE_ARRIVED) {
+        entity_unblock(ent);
+        E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
+    }
 
     ms->state = STATE_SEEK_ENEMIES;
 }
