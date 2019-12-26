@@ -171,16 +171,29 @@ void G_Pos_Shutdown(void)
 
 int G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout)
 {
+    return G_Pos_EntsInRectWithPred(xz_min, xz_max, out, maxout, any_ent, NULL);
+}
+
+int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout,
+                             bool (*predicate)(const struct entity *ent, void *arg), void *arg)
+{
     uint32_t ent_ids[maxout];
     const khash_t(entity) *ents = G_GetAllEntsSet();
 
-    int ret = qt_ent_inrange_rect(&s_postree, 
+    int ntotal = qt_ent_inrange_rect(&s_postree, 
         xz_min.x, xz_max.x, xz_min.z, xz_max.z, ent_ids, maxout);
+    int ret = 0;
 
-    for(int i = 0; i < ret; i++) {
+    for(int i = 0; i < ntotal; i++) {
+
         khiter_t k = kh_get(entity, ents, ent_ids[i]);
         assert(k != kh_end(s_postable));
-        out[i] = kh_val(ents, k);
+        struct entity *curr = kh_val(ents, k);
+
+        if(!predicate(curr, arg))
+            continue;
+
+        out[ret++] = curr;
     }
     return ret;
 }

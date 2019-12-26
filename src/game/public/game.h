@@ -188,12 +188,13 @@ vec3_t G_Pos_Get(uint32_t uid);
 vec2_t G_Pos_GetXZ(uint32_t uid);
 
 int    G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout);
+int    G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout,
+                                bool (*predicate)(const struct entity *ent, void *arg), void *arg);
 int    G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t maxout);
 
 struct entity *G_Pos_Nearest(vec2_t xz_point);
 struct entity *G_Pos_NearestWithPred(vec2_t xz_point, 
-                                     bool (*predicate)(const struct entity *ent, void *arg),
-                                     void *arg);
+                                     bool (*predicate)(const struct entity *ent, void *arg), void *arg);
 
 #endif
 

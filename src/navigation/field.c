@@ -591,14 +591,7 @@ static size_t portal_initial_frontier(const struct portal *port, const struct na
             return ret;
     }}
 
-    if(ret > 0)
-        return ret;
-
-    /* If the entire portal is made impassable by blockers, the higher-level logic
-     * should detect this and not issue a request to guide entities to a blocked portal.
-     * If this request was made, we can assume some portal-to-portal channel exists
-     * which includes this portal. */
-    return 0;
+    return ret;
 }
 
 static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struct nav_chunk *chunk, 
@@ -629,6 +622,9 @@ static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struc
         for(int j = 0; j < ntds; j++) {
 
             struct tile_desc curr_td = tds[j];
+            if(curr_td.chunk_r != enemies->chunk.r
+            || curr_td.chunk_c != enemies->chunk.c)
+                continue;
             has_enemy[curr_td.tile_r][curr_td.tile_c] = true;
         }
     }
@@ -644,6 +640,25 @@ static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struc
         if(ret == maxout)
             return ret;
     }}
+    return ret;
+}
+
+static size_t portalmask_initial_frontier(uint64_t mask, const struct nav_chunk *chunk,
+                                          struct coord *out, size_t maxout)
+{
+    size_t ret = 0;
+    for(int i = 0; i < chunk->num_portals; i++) {
+
+        if(!(mask & (((uint64_t)1) << i)))
+            continue;
+
+        const struct portal *curr = &chunk->portals[i];
+        size_t added = portal_initial_frontier(curr, chunk, out, maxout);
+
+        ret += added;
+        out += added;
+        maxout -= added;
+    }
     return ret;
 }
 
@@ -665,6 +680,11 @@ static size_t initial_frontier(struct field_target target, const struct nav_chun
     case TARGET_ENEMIES:
 
         ninit = enemies_initial_frontier(&target.enemies, chunk, priv, init_frontier, maxout);
+        break;
+
+    case TARGET_PORTALMASK:
+
+        ninit = portalmask_initial_frontier(target.portalmask, chunk, init_frontier, maxout);
         break;
 
     default: assert(0);
@@ -754,6 +774,16 @@ void N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_private *priv,
     if(target.type == TARGET_PORTAL)
         fixup_portal_edges(integration_field, inout_flow, target.port); 
 
+    if(target.type == TARGET_PORTALMASK) {
+
+        for(int i = 0; i < chunk->num_portals; i++) {
+
+            if(!(target.portalmask & (((uint64_t)1) << i)))
+                continue;
+            fixup_portal_edges(integration_field, inout_flow, &chunk->portals[i]);
+        }
+    }
+
     pq_coord_destroy(&frontier);
 }
 
@@ -801,7 +831,7 @@ void N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc t
                 if(out_los->field[0][c].visible) {
 
                     pq_coord_push(&frontier, 0.0f, (struct coord){0, c});
-                    integration_field[0][c] = 0.0f;
+                    integration_field[0][c] = 0.0f; 
                 }
             }
         }else if(prev_los->chunk.r > chunk_coord.r) {

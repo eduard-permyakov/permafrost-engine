@@ -737,16 +737,6 @@ static bool enemy_ent(const struct entity *ent, void *arg)
     return (ds == DIPLOMACY_STATE_WAR);
 }
 
-static bool coord_arr_contains(struct coord *arr, size_t size, struct coord elem)
-{
-    for(int i = 0; i < size; i++) {
-
-        if(0 == memcmp(arr + i, &elem, sizeof(elem)))
-            return true;
-    }
-    return false;
-}
-
 static void n_update_local_islands(struct nav_chunk *chunk)
 {
     int local_iid = 0;
@@ -949,6 +939,91 @@ static const struct portal *n_closest_reachable_portal(const struct nav_chunk *c
             min_cost = cost;
         }
     }
+    return ret;
+}
+
+static void chunk_bounds(vec3_t map_pos, struct coord chunk, 
+                         vec2_t *out_xz_min, vec2_t *out_xz_max)
+{
+    out_xz_min->x = map_pos.x - (chunk.c + 1) * X_COORDS_PER_TILE * TILES_PER_CHUNK_WIDTH;
+    out_xz_max->x = map_pos.x - (chunk.c + 0) * X_COORDS_PER_TILE * TILES_PER_CHUNK_WIDTH;
+
+    out_xz_min->z = map_pos.z + (chunk.r + 0) * Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT;
+    out_xz_max->z = map_pos.z + (chunk.r + 1) * Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT;
+}
+
+/* Every set bit in the returned value represents the index of a portal 
+ * in the chunk that we can path to to find enemies on the other side. 
+ */
+static uint64_t n_enemy_seek_portalmask(const struct nav_private *priv, vec3_t map_pos, 
+                                        struct coord chunk, int faction_id)
+{
+    bool top = false, bot = false, left = false, right = false;
+
+    struct entity *ents[1];
+    vec2_t xz_min, xz_max;
+    struct coord curr;
+
+    if(chunk.r > 0) {
+
+        curr = (struct coord){chunk.r - 1, chunk.c};
+        chunk_bounds(map_pos, curr, &xz_min, &xz_max);
+
+        top = (G_Pos_EntsInRectWithPred(xz_min, xz_max, ents, ARR_SIZE(ents), 
+            enemy_ent, (void*)(uintptr_t)faction_id) > 0);
+    }
+
+    if(chunk.r < FIELD_RES_R-1) {
+
+        curr = (struct coord){chunk.r + 1, chunk.c};
+        chunk_bounds(map_pos, curr, &xz_min, &xz_max);
+
+        bot = (G_Pos_EntsInRectWithPred(xz_min, xz_max, ents, ARR_SIZE(ents), 
+            enemy_ent, (void*)(uintptr_t)faction_id) > 0);
+    }
+
+    if(chunk.c > 0) {
+
+        curr = (struct coord){chunk.r, chunk.c - 1};
+        chunk_bounds(map_pos, curr, &xz_min, &xz_max);
+
+        left = (G_Pos_EntsInRectWithPred(xz_min, xz_max, ents, ARR_SIZE(ents), 
+            enemy_ent, (void*)(uintptr_t)faction_id) > 0);
+    }
+
+    if(chunk.c < FIELD_RES_C-1) {
+
+        curr = (struct coord){chunk.r, chunk.c + 1};
+        chunk_bounds(map_pos, curr, &xz_min, &xz_max);
+
+        right = (G_Pos_EntsInRectWithPred(xz_min, xz_max, ents, ARR_SIZE(ents), 
+            enemy_ent, (void*)(uintptr_t)faction_id) > 0);
+    }
+
+    uint64_t ret = 0;
+    const struct nav_chunk *nchunk = &priv->chunks[IDX(chunk.r, priv->width, chunk.c)];
+
+    for(int i = 0; i < nchunk->num_portals; i++) {
+
+        const struct portal *curr = &nchunk->portals[i];
+
+        if(top && curr->endpoints[0].r == 0 
+               && curr->endpoints[1].r == 0)
+            ret |= (((uint64_t)1) << i);
+
+        if(bot && curr->endpoints[0].r == FIELD_RES_R-1 
+               && curr->endpoints[1].r == FIELD_RES_R-1)
+            ret |= (((uint64_t)1) << i);
+
+        if(left && curr->endpoints[0].c == 0 
+                && curr->endpoints[1].c == 0)
+            ret |= (((uint64_t)1) << i);
+
+        if(right && curr->endpoints[0].c == FIELD_RES_C-1 
+                 && curr->endpoints[1].c == FIELD_RES_C-1)
+            ret |= (((uint64_t)1) << i);
+    }
+
     return ret;
 }
 
@@ -1450,10 +1525,10 @@ void N_UpdateIslandsField(void *nav_private)
     struct nav_private *priv = nav_private;
     uint16_t island_id = 0;
 
-    /* Initialize every node as 'unvisited' */
     for(int chunk_r = 0; chunk_r < priv->height; chunk_r++) {
     for(int chunk_c = 0; chunk_c < priv->width;  chunk_c++) {
 
+        /* Initialize every node as 'unvisited' */
         struct nav_chunk *curr_chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
         memset(curr_chunk->islands, 0xff, sizeof(curr_chunk->islands));
     }}
@@ -1462,6 +1537,7 @@ void N_UpdateIslandsField(void *nav_private)
     for(int chunk_c = 0; chunk_c < priv->width;  chunk_c++) {
 
         struct nav_chunk *curr_chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
+
         for(int tile_r = 0; tile_r < FIELD_RES_R; tile_r++) {
         for(int tile_c = 0; tile_c < FIELD_RES_C; tile_c++) {
 
@@ -1768,7 +1844,11 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map
 
     if(!N_FC_ContainsFlowField(ffid)) {
 
-        struct entity *nearest_enemy = G_Pos_NearestWithPred(curr_pos, enemy_ent, 
+        vec2_t chunk_center = (vec2_t){
+            map_pos.x - (chunk.c + 0.5f) * X_COORDS_PER_TILE * TILES_PER_CHUNK_WIDTH,
+            map_pos.z + (chunk.r + 0.5f) * Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT,
+        };
+        struct entity *nearest_enemy = G_Pos_NearestWithPred(chunk_center, enemy_ent, 
                                                              (void*)(uintptr_t)target.enemies.faction_id);
         if(!nearest_enemy)
             return (vec2_t){0.0f, 0.0f};
@@ -1776,22 +1856,49 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map
         struct tile_desc target_tile;
         bool result = M_Tile_DescForPoint2D(res, map_pos, G_Pos_GetXZ(nearest_enemy->uid), &target_tile);
         assert(result);
+        bool done = false;
 
+        /* If there are enemies on this chunk, guide towards them. 
+         */
         if(target_tile.chunk_r == curr_tile.chunk_r
         && target_tile.chunk_c == curr_tile.chunk_c) {
         
             N_FlowFieldInit(chunk, priv, &ff);
             N_FlowFieldUpdate(chunk, priv, target, &ff);
             N_FC_PutFlowField(ffid, &ff);
-        }else{
+            done = true;
+        }
+
+        /* Else, if there are enemies on the cardinally adjacent chunks, guide
+         * towards all portals that will lead to them. 
+         */
+        uint64_t pm = n_enemy_seek_portalmask(priv, map_pos, chunk, faction_id);
+        if(!done && pm) {
+
+            struct field_target pm_target = (struct field_target){
+                .type = TARGET_PORTALMASK,
+                .portalmask = pm,
+            };
+
+            N_FlowFieldInit(chunk, priv, &ff);
+            N_FlowFieldUpdate(chunk, priv, pm_target, &ff);
+            N_FC_PutFlowField(ffid, &ff);
+            done = true;
+        }
+
+        /* Lastly, resort towards pathing towards the closest entity 
+         */
+        if(!done) {
+
+            assert(target_tile.chunk_r != curr_tile.chunk_r || target_tile.chunk_c != curr_tile.chunk_c);
 
             /* The closest enemy is in another chunk. In this case, compute the
              * field that will take us to the next chunk in the path and store
              * that with the computed ID as the key. The rest of the fields will
              * be computed on-the-fly, if necessary.
              */
-            struct nav_chunk *curr_chunk = &priv->chunks[IDX(chunk.r, priv->width, chunk.c)];
-            const struct portal *dst_port = n_closest_reachable_portal(curr_chunk, 
+            struct nav_chunk *target_chunk = &priv->chunks[IDX(target_tile.chunk_r, priv->width, target_tile.chunk_c)];
+            const struct portal *dst_port = n_closest_reachable_portal(target_chunk, 
                 (struct coord){target_tile.tile_r, target_tile.tile_c});
 
             if(!dst_port)
@@ -1818,6 +1925,8 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map
 
             vec_portal_destroy(&path);
         }
+
+        assert(N_FC_ContainsFlowField(ffid));
     }
 
     const struct flow_field *pff = N_FC_FlowFieldAt(ffid);

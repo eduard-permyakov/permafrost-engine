@@ -58,6 +58,9 @@ struct field_target{
         TARGET_PORTAL,
         TARGET_TILE,
         TARGET_ENEMIES,
+        /* Guide to the closest eligible portal. Each set bit represents
+         * that the portal at that index is 'eligible'. */
+        TARGET_PORTALMASK,
     }type;
     union{
         const struct portal *port;
@@ -67,6 +70,7 @@ struct field_target{
             vec3_t       map_pos;
             struct coord chunk;
         }enemies;
+        uint64_t portalmask;
     };
 };
 
