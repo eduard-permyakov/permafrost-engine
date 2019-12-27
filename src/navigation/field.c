@@ -85,32 +85,31 @@ static int neighbours_grid(const struct nav_chunk *chunk,
     int ret = 0;
 
     for(int r = -1; r <= 1; r++) {
-        for(int c = -1; c <= 1; c++) {
+    for(int c = -1; c <= 1; c++) {
 
-            int abs_r = coord.r + r;
-            int abs_c = coord.c + c;
+        int abs_r = coord.r + r;
+        int abs_c = coord.c + c;
 
-            if(abs_r < 0 || abs_r >= FIELD_RES_R)
-                continue;
-            if(abs_c < 0 || abs_c >= FIELD_RES_C)
-                continue;
-            if(r == 0 && c == 0)
-                continue;
-            if(only_passable 
-            && (chunk->cost_base[abs_r][abs_c] == COST_IMPASSABLE || chunk->blockers[abs_r][abs_c] > 0))
-                continue;
-            if((r == c) || (r == -c)) /* diag */
-                continue;
+        if(abs_r < 0 || abs_r >= FIELD_RES_R)
+            continue;
+        if(abs_c < 0 || abs_c >= FIELD_RES_C)
+            continue;
+        if(r == 0 && c == 0)
+            continue;
+        if(only_passable 
+        && (chunk->cost_base[abs_r][abs_c] == COST_IMPASSABLE || chunk->blockers[abs_r][abs_c] > 0))
+            continue;
+        if((r == c) || (r == -c)) /* diag */
+            continue;
 
-            out_neighbours[ret] = (struct coord){abs_r, abs_c};
-            out_costs[ret] = chunk->cost_base[abs_r][abs_c];
+        out_neighbours[ret] = (struct coord){abs_r, abs_c};
+        out_costs[ret] = chunk->cost_base[abs_r][abs_c];
 
-            if(chunk->blockers[abs_r][abs_c])
-                out_costs[ret] = COST_IMPASSABLE;
+        if(chunk->blockers[abs_r][abs_c])
+            out_costs[ret] = COST_IMPASSABLE;
 
-            ret++;
-        }
-    }
+        ret++;
+    }}
     assert(ret < 9);
     return ret;
 }
@@ -692,6 +691,23 @@ static size_t initial_frontier(struct field_target target, const struct nav_chun
     return ninit;
 }
 
+static void fixup_field(struct field_target target, float integration_field[FIELD_RES_R][FIELD_RES_C],
+                        struct flow_field *inout_flow, const struct nav_chunk *chunk)
+{
+    if(target.type == TARGET_PORTAL)
+        fixup_portal_edges(integration_field, inout_flow, target.port); 
+
+    if(target.type == TARGET_PORTALMASK) {
+
+        for(int i = 0; i < chunk->num_portals; i++) {
+
+            if(!(target.portalmask & (((uint64_t)1) << i)))
+                continue;
+            fixup_portal_edges(integration_field, inout_flow, &chunk->portals[i]);
+        }
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -770,19 +786,7 @@ void N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_private *priv,
     inout_flow->target = target;
     build_integration_field(&frontier, chunk, integration_field);
     build_flow_field(integration_field, inout_flow);
-
-    if(target.type == TARGET_PORTAL)
-        fixup_portal_edges(integration_field, inout_flow, target.port); 
-
-    if(target.type == TARGET_PORTALMASK) {
-
-        for(int i = 0; i < chunk->num_portals; i++) {
-
-            if(!(target.portalmask & (((uint64_t)1) << i)))
-                continue;
-            fixup_portal_edges(integration_field, inout_flow, &chunk->portals[i]);
-        }
-    }
+    fixup_field(target, integration_field, inout_flow, chunk);
 
     pq_coord_destroy(&frontier);
 }
@@ -997,6 +1001,7 @@ void N_FlowFieldUpdateIslandToNearest(uint16_t local_iid, const struct nav_priva
 
     build_integration_field(&frontier, chunk, integration_field);
     build_flow_field(integration_field, inout_flow);
+    fixup_field(inout_flow->target, integration_field, inout_flow, chunk);
 
     pq_coord_destroy(&frontier);
 }

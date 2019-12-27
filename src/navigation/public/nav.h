@@ -83,14 +83,6 @@ bool      N_Init(void);
 void      N_Update(void *nav_private);
 
 /* ------------------------------------------------------------------------
- * Update the information about which tiles are reachable from which other
- * tiles to reflect recent changes in the blockers field, for all 'dirty'
- * chunks. This is already done in 'N_Update'.
- * ------------------------------------------------------------------------
- */
-void      N_UpdateLocalReachabilityData(void *nav_private);
-
-/* ------------------------------------------------------------------------
  * Clean up resources acquired by 'N_Init'
  * ------------------------------------------------------------------------
  */
@@ -188,6 +180,13 @@ void      N_UpdatePortals(void *nav_private);
  * ------------------------------------------------------------------------
  */
 void      N_UpdateIslandsField(void *nav_private);
+
+/* ------------------------------------------------------------------------
+ * Returns a unique ID that is used to associated all flow fields guiding 
+ * to this (at tile granularity) position.
+ * ------------------------------------------------------------------------
+ */
+dest_id_t N_DestIDForPos(void *nav_private, vec3_t map_pos, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
  * Generate the required flowfield and LOS sectors for moving towards the 

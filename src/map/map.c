@@ -523,8 +523,8 @@ bool M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos, vec2_t xz_dest,
     return N_IsMaximallyClose(map->nav_private, map->pos, xz_pos, xz_dest, tolerance);
 }
 
-void M_NavUpdateLocalReachabilityData(const struct map *map)
+uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos)
 {
-    N_UpdateLocalReachabilityData(map->nav_private);
+    return N_DestIDForPos(map->nav_private, map->pos, xz_pos);
 }
 

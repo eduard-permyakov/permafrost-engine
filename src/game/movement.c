@@ -283,6 +283,25 @@ static bool same_chunk_as_any_in_set(struct tile_desc desc, const struct tile_de
     return false;
 }
 
+static void remove_from_flocks(const struct entity *ent)
+{
+    /* Remove any flocks which may have become empty. Iterate vector in backwards order 
+     * so that we can delete while iterating, since the last element in the vector takes
+     * the place of the deleted one. 
+     */
+    for(int i = vec_size(&s_flocks)-1; i >= 0; i--) {
+
+        struct flock *curr_flock = &vec_AT(&s_flocks, i);
+        flock_try_remove(curr_flock, ent);
+
+        if(kh_size(curr_flock->ents) == 0) {
+            kh_destroy(entity, curr_flock->ents);
+            vec_flock_del(&s_flocks, i);
+        }
+    }
+    assert(NULL == flock_for_ent(ent));
+}
+
 static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz, bool attack)
 {
     if(vec_size(sel) == 0)
@@ -301,21 +320,7 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
         if(stationary(curr_ent))
             continue;
 
-        /* Remove any flocks which may have become empty. Iterate vector in backwards order 
-         * so that we can delete while iterating, since the last element in the vector takes
-         * the place of the deleted one. 
-         */
-        for(int j = vec_size(&s_flocks)-1; j >= 0; j--) {
-
-            khiter_t k;
-            struct flock *curr_flock = &vec_AT(&s_flocks, j);
-            flock_try_remove(curr_flock, curr_ent);
-
-            if(kh_size(curr_flock->ents) == 0) {
-                kh_destroy(entity, curr_flock->ents);
-                vec_flock_del(&s_flocks, j);
-            }
-        }
+        remove_from_flocks(curr_ent);
     }
 
     struct flock new_flock = (struct flock) {
@@ -342,7 +347,6 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
         if(ms->state == STATE_ARRIVED)
             entity_unblock(curr_ent); 
     }
-    M_NavUpdateLocalReachabilityData(s_map);
 
     struct tile_desc pathed_ents_descs[vec_size(sel)];
     size_t num_pathed_ents = 0;
@@ -1269,18 +1273,7 @@ void G_Move_Stop(const struct entity *ent)
     uint32_t key;
     struct entity *curr;
 
-    /* Remove this entity from any existing flocks */
-    for(int i = vec_size(&s_flocks)-1; i >= 0; i--) {
-
-        struct flock *curr_flock = &vec_AT(&s_flocks, i);
-        flock_try_remove(curr_flock, ent);
-
-        if(kh_size(curr_flock->ents) == 0) {
-            kh_destroy(entity, curr_flock->ents);
-            vec_flock_del(&s_flocks, i);
-        }
-    }
-    assert(NULL == flock_for_ent(ent));
+    remove_from_flocks(ent);
 
     struct movestate *ms = movestate_get(ent);
     if(ms && ms->state != STATE_ARRIVED) {
@@ -1300,6 +1293,37 @@ bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz)
 
 void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz)
 {
+    dest_xz = M_NavClosestReachableDest(s_map, G_Pos_GetXZ(ent->uid), dest_xz);
+
+    /* If a flock already exists for the entity's destination, 
+     * simply add the entity to the flock. If necessary, the
+     * right flow fields will be computed on-demand during the
+     * next movement update. 
+     */
+    dest_id_t dest_id = M_NavDestIDForPos(s_map, dest_xz);
+    struct flock *fl = flock_for_dest(dest_id);
+
+    if(fl && fl == flock_for_ent(ent))
+        return;
+
+    if(fl) {
+
+        assert(fl != flock_for_ent(ent));
+        remove_from_flocks(ent);
+        flock_add(fl, ent);
+
+        struct movestate *ms = movestate_get(ent);
+        assert(ms);
+        if(ms->state == STATE_ARRIVED) {
+            entity_unblock(ent);
+            E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
+        }
+        ms->state = STATE_MOVING;
+        return;
+    }
+
+    /* Else, create a new flock and request a path for it.
+     */
     vec_pentity_t to_add;
     vec_pentity_init(&to_add);
     vec_pentity_push(&to_add, (struct entity*)ent);

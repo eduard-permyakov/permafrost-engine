@@ -288,11 +288,12 @@ void   M_NavBlockersIncref(vec2_t xz_pos, float range, const struct map *map);
 void   M_NavBlockersDecref(vec2_t xz_pos, float range, const struct map *map);
 
 /* ------------------------------------------------------------------------
- * Wrapper around 'N_IsMaximallyClose'.
+ * Wrapper around navigation APIs.
  * ------------------------------------------------------------------------
  */
-bool   M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos, 
+bool     M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos, 
                              vec2_t xz_dest, float tolerance);
+uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
  * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 
@@ -318,12 +319,6 @@ void   M_SetShadowsEnabled(struct map *map, bool on);
  * ------------------------------------------------------------------------
  */
 vec3_t M_GetCenterPos(const struct map *map);
-
-/* ------------------------------------------------------------------------
- * Wrapper around 'N_UpdateLocalReachabilityData'
- * ------------------------------------------------------------------------
- */
-void   M_NavUpdateLocalReachabilityData(const struct map *map);
 
 
 /*###########################################################################*/

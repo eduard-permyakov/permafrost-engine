@@ -304,17 +304,16 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
     for(int i = 0; i < chunk->num_portals; i++) {
 
         const struct portal *port = &chunk->portals[i];
-        struct coord port_center = (struct coord){
-            (port->endpoints[0].r + port->endpoints[1].r) / 2,
-            (port->endpoints[0].c + port->endpoints[1].c) / 2,
-        };
         struct coord tile_coord = (struct coord){start_tile.tile_r, start_tile.tile_c};
 
         if(N_PortalReachableFromTile(port, tile_coord, chunk)) {
 
             float cost = chunk->portal_travel_costs[i][tile_coord.r][tile_coord.c];
-            kh_put_val(key_float, running_cost, portal_to_key(port), cost);
-            pq_portal_push(&frontier, cost, port);
+            if(cost != FLT_MAX) {
+            
+                kh_put_val(key_float, running_cost, portal_to_key(port), cost);
+                pq_portal_push(&frontier, cost, port);
+            }
         }
     }
     vec_coord_destroy(&path);
