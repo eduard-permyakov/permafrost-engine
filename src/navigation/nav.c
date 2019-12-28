@@ -1847,9 +1847,7 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
     ff = N_FC_FlowFieldAt(ffid);
     assert(ff);
 
-    /* There are 3 cases when a flow field tile can have the value of 'FD_NONE':
-     *
-     *   1. The original path took us through another global 'island' in
+    /*   1. The original path took us through another global 'island' in
      *      this chunk which is separated from the current tile's island 
      *      by an impassable barrier. In this case, the path query above
      *      would have updated the flow field with a valid direction for
@@ -1858,20 +1856,34 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
     if(ff->field[tile.tile_r][tile.tile_c].dir_idx != FD_NONE)
         goto ff_found;
 
-    /*   2. If the direction is still 'FD_NONE' after querying the path with
+    const struct nav_chunk *chunk = &priv->chunks[IDX(tile.chunk_r, priv->width, tile.chunk_c)];
+    uint16_t local_iid = chunk->local_islands[tile.tile_r][tile.tile_c];
+
+    /*   2. The entity has somehow ended up on an impassable tile. One example
+     *      where this can happen is if an adjacent entity 'stops' and occupies 
+     *      the tile directly under its' neighbour. The neighbour entity can 
+     *      then unexpectedly find itself positioned on a 'blocked' tile. 
+     */
+    if(local_iid == ISLAND_NONE) {
+
+        struct flow_field exist_ff = *ff;
+        N_FlowFieldUpdateToNearestPathable(chunk, (struct coord){tile.tile_r, tile.tile_c}, &exist_ff);
+        N_FC_PutFlowField(ffid, &exist_ff);
+        ff = N_FC_FlowFieldAt(ffid);
+        goto ff_found;
+    }
+
+    /*   3. If the direction is still 'FD_NONE' after querying the path with
      *      the current position as the source, this could mean that the
      *      current position is 'orphaned' from its' goal by blockers (i.e.
      *      the frontier was prevented from advancing from the destination
      *      due to blockers).
      */
-    const struct nav_chunk *chunk = &priv->chunks[IDX(tile.chunk_r, priv->width, tile.chunk_c)];
-    uint16_t local_iid = chunk->local_islands[tile.tile_r][tile.tile_c];
-
     struct flow_field exist_ff = *ff;
     N_FlowFieldUpdateIslandToNearest(local_iid, priv, &exist_ff);
     N_FC_PutFlowField(ffid, &exist_ff);
 
-    /*   3. If the direction is still FD_NONE, that means that the
+    /*   4. If the direction is still FD_NONE, that means that the
      *      entity is at its' destination of maximally close to it.
      *      We have nothing left to do but pass the 'None' direction
      *      to the caller.
@@ -1999,6 +2011,18 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map
     assert(pff);
 
     int dir_idx = pff->field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
+    if(dir_idx == FD_NONE) {
+
+        const struct nav_chunk *nchunk = &priv->chunks[IDX(curr_tile.chunk_r, priv->width, curr_tile.chunk_c)];
+        uint16_t local_iid = nchunk->local_islands[curr_tile.tile_r][curr_tile.tile_c];
+
+        struct flow_field exist_ff = *pff;
+        N_FlowFieldUpdateIslandToNearest(local_iid, priv, &exist_ff);
+        N_FC_PutFlowField(ffid, &exist_ff);
+
+        dir_idx = exist_ff.field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
+    }
+
     return g_flow_dir_lookup[dir_idx];
 }
 

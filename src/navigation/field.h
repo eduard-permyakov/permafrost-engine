@@ -97,13 +97,12 @@ enum flow_dir{
 extern vec2_t g_flow_dir_lookup[];
 
 ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target);
-struct coord N_FlowFieldChunk(ff_id_t id);
 void    N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct flow_field *out);
 void    N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_private *priv,
                           struct field_target target, struct flow_field *inout_flow);
 
 /* ------------------------------------------------------------------------
- * Update all tiles for tiles with a specific local island ID from the
+ * Update all tiles with a specific local island ID from the
  * 'local_islands' field for the chunk. The new directions will guide to
  * the closest possible tiles to the original field target. In the case
  * that the original field target tiles all are all on the same local
@@ -112,6 +111,17 @@ void    N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_private *pr
  */
 void    N_FlowFieldUpdateIslandToNearest(uint16_t local_iid, const struct nav_private *priv,
                                          struct flow_field *inout_flow);
+
+/* ------------------------------------------------------------------------
+ * Update all tiles for for the 'impassable island' that start is a part of
+ * (i.e. the start tile and all impassable tiles that are connected to it via
+ * other impassable tiles) to guide to the closest passable tiles on the same 
+ * chunk. This can be used to guide entities back to a passable tile if they 
+ * somehow end up on an impassable one.
+ * ------------------------------------------------------------------------
+ */
+void    N_FlowFieldUpdateToNearestPathable(const struct nav_chunk *chunk, struct coord start, 
+                                           struct flow_field *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Create a line of sight field, indicating which tiles in this chunk are 

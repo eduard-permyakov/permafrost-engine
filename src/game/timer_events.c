@@ -90,6 +90,12 @@ static void timer_60hz_handler(void *unused1, void *unused2)
     if(s_num_60hz_ticks % 2 == 0)
         E_Global_Notify(EVENT_30HZ_TICK, NULL, ES_ENGINE);
 
+    if(s_num_60hz_ticks % 3 == 0)
+        E_Global_Notify(EVENT_20HZ_TICK, NULL, ES_ENGINE);
+
+    if(s_num_60hz_ticks % 4 == 0)
+        E_Global_Notify(EVENT_15HZ_TICK, NULL, ES_ENGINE);
+
     if(s_num_60hz_ticks % 6 == 0)
         E_Global_Notify(EVENT_10HZ_TICK, NULL, ES_ENGINE);
 

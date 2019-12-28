@@ -39,7 +39,7 @@
 #include "../pf_math.h"
 #include <stdbool.h>
 
-#define MOVE_TICK_RES (30)
+#define MOVE_TICK_RES (20)
 
 struct map;
 struct entity;

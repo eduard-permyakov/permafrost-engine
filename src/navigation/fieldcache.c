@@ -79,7 +79,6 @@ static lru(ffid)         s_ffid_cache;      /* key: (dest_id, chunk_coord) */
 static lru(grid_path)    s_grid_path_cache; /* key: (chunk coord, tile start coord, tile dest coord) */
 
 /* The following structures are maintained for efficient invalidation of entries:*/
-static vec_id_t          s_enemy_seek_ffids;
 static khash_t(idvec)   *s_chunk_ffield_map; /* key: (chunk coord) */
 static khash_t(idvec)   *s_chunk_lfield_map; /* key: (chunk coord) */
 
@@ -201,7 +200,6 @@ bool N_FC_Init(void)
     if(NULL == (s_chunk_lfield_map = kh_init(idvec)))
         goto fail_chunk_lfield;
 
-    vec_id_init(&s_enemy_seek_ffids);
     return true;
 
 fail_chunk_lfield:
@@ -230,8 +228,6 @@ void N_FC_Shutdown(void)
 
     destroy_all_entries(s_chunk_lfield_map);
     kh_destroy(idvec, s_chunk_lfield_map);
-
-    vec_id_destroy(&s_enemy_seek_ffids);
 }
 
 void N_FC_ClearAll(void)
@@ -246,8 +242,6 @@ void N_FC_ClearAll(void)
 
     destroy_all_entries(s_chunk_lfield_map);
     kh_clear(idvec, s_chunk_lfield_map);
-
-    vec_id_reset(&s_enemy_seek_ffids);
 }
 
 void N_FC_ClearStats(void)
@@ -319,9 +313,6 @@ const struct flow_field *N_FC_FlowFieldAt(ff_id_t ffid)
 
 void N_FC_PutFlowField(ff_id_t ffid, const struct flow_field *ff)
 {
-    if((ffid >> 56) == TARGET_ENEMIES)
-        vec_id_push(&s_enemy_seek_ffids, ffid);
-
     lru_flow_put(&s_flow_cache, ffid, ff);
 
     struct coord chunk = (struct coord){(ffid >> 8) & 0xff, ffid & 0xff};
@@ -342,17 +333,6 @@ void N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, ff_id_t 
 {
     uint64_t key = key_for_dest_and_chunk(dest_id, chunk_coord);
     lru_ffid_put(&s_ffid_cache, key, &ffid);
-}
-
-void N_FC_ClearAllEnemySeekFields(void)
-{
-    for(int i = 0; i < vec_size(&s_enemy_seek_ffids); i++) {
-
-        ff_id_t curr = vec_AT(&s_enemy_seek_ffids, i);
-        /* The field may have already been invalidated */
-        lru_flow_remove(&s_flow_cache, curr);
-    }
-    vec_id_reset(&s_enemy_seek_ffids);
 }
 
 bool N_FC_GetGridPath(struct coord local_start, struct coord local_dest,

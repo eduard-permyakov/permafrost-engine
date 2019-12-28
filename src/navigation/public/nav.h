@@ -282,11 +282,5 @@ void      N_FC_GetStats(struct fc_stats *out_stats);
  */
 void      N_FC_ClearAll(void);
 
-/* ------------------------------------------------------------------------
- * Evict all enemy seeking flow from the flow field cache.
- * ------------------------------------------------------------------------
- */
-void      N_FC_ClearAllEnemySeekFields(void);
-
 #endif
 

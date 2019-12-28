@@ -62,14 +62,14 @@
  * meaning they are accelerate the same amount when applied equal forces. */
 #define ENTITY_MASS  (1.0f)
 #define EPSILON      (1.0f/1024)
-#define MAX_FORCE    (0.5f)
+#define MAX_FORCE    (0.75f)
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
 #define MIN(a, b)    ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)  (sizeof(a)/sizeof(a[0]))
 #define STR(a)       #a
 
-#define VEL_HIST_LEN (16)
+#define VEL_HIST_LEN (12)
 
 enum arrival_state{
     /* Entity is moving towards the flock's destination point */
@@ -81,14 +81,27 @@ enum arrival_state{
     STATE_ARRIVED,
     /* Entity is approaching the nearest enemy entity */
     STATE_SEEK_ENEMIES,
+    /* The navigation system was unable to guide the entity closer
+     * to the goal. It stops and waits. */
+    STATE_WAITING,
 };
 
 struct movestate{
+    enum arrival_state state;
+    /* The desired velocity returned by the navigation system */
+    vec2_t             vdes;
+    /* The newly computed velocity (the desired velocity constrained by flocking forces) */
     vec2_t             vnew;
+    /* The current velocity */
     vec2_t             velocity;
+    /* Flag to track whether the entiy is currently acting as a 
+     * navigation blocker, and the last position where it became a blocker. */
     bool               blocking;
     vec2_t             last_stop_pos;
-    enum arrival_state state;
+    /* Information for waking up from the 'WAITING' state */
+    enum arrival_state wait_prev;
+    int                wait_ticks_left;
+    /* History of the previous ticks' velocities. Used for velocity smoothing. */
     vec2_t             vel_hist[VEL_HIST_LEN];
     int                vel_hist_idx;
 };
@@ -119,6 +132,8 @@ VEC_IMPL(static inline, flock, struct flock)
 #define SETTLE_STOP_TOLERANCE           (0.1f)
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
 
+#define WAIT_TICKS                      (60)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -140,6 +155,7 @@ static const char *s_state_str[] = {
     [STATE_SETTLING]     = STR(STATE_SETTLING),
     [STATE_ARRIVED]      = STR(STATE_ARRIVED),
     [STATE_SEEK_ENEMIES] = STR(STATE_SEEK_ENEMIES),
+    [STATE_WAITING]      = STR(STATE_WAITING),
 };
 
 /*****************************************************************************/
@@ -241,19 +257,31 @@ static void vec2_truncate(vec2_t *inout, float max_len)
     }
 }
 
-static void entity_finish_moving(const struct entity *ent)
+static bool ent_still(const struct movestate *ms)
+{
+    return (ms->state == STATE_ARRIVED || ms->state == STATE_WAITING);
+}
+
+static void entity_finish_moving(const struct entity *ent, enum arrival_state newstate)
 {
     E_Entity_Notify(EVENT_MOTION_END, ent->uid, NULL, ES_ENGINE);
     if(ent->flags & ENTITY_FLAG_COMBATABLE)
         G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
 
     struct movestate *ms = movestate_get(ent);
-    assert(ms->state != STATE_ARRIVED);
+    assert(!ent_still(ms));
 
-    ms->state = STATE_ARRIVED;
+    if(newstate == STATE_WAITING) {
+        ms->wait_prev = ms->state;
+        ms->wait_ticks_left = WAIT_TICKS;
+    }
+
+    ms->state = newstate;
     ms->velocity = (vec2_t){0.0f, 0.0f};
+    ms->vnew = (vec2_t){0.0f, 0.0f};
 
     entity_block(ent);
+    assert(ent_still(ms));
 }
 
 static void on_marker_anim_finish(void *user, void *event)
@@ -344,7 +372,7 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
         struct movestate *ms = movestate_get(curr_ent);
         assert(ms);
 
-        if(ms->state == STATE_ARRIVED)
+        if(ent_still(ms))
             entity_unblock(curr_ent); 
     }
 
@@ -375,17 +403,18 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
             pathed_ents_descs[num_pathed_ents++] = curr_desc;
             flock_add(&new_flock, curr_ent);
 
-            /* When entities are moved from one flock to another, they keep their existing velocity.*/
-            if(ms->state == STATE_ARRIVED)
+            /* When entities are moved from one flock to another, they keep their existing velocity.
+             */
+            if(ent_still(ms)) /* We already unblocked */
                 E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
             ms->state = STATE_MOVING;
 
         }else {
 
-            if(ms->state != STATE_ARRIVED)
-                entity_finish_moving(curr_ent);
-            else
+            if(ent_still(ms))
                 entity_block(curr_ent); /* compensate for initial unblocking */
+            else
+                entity_finish_moving(curr_ent, STATE_ARRIVED);
         }
     }
 
@@ -547,6 +576,7 @@ static void on_render_3d(void *user, void *event)
                 M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
                 break;
             case STATE_ARRIVED:
+            case STATE_WAITING:
                 break;
             case STATE_SEEK_ENEMIES:
                 M_NavRenderVisibleEnemySeekField(s_map, cam, ent->faction_id);
@@ -605,6 +635,21 @@ static quat_t dir_quat_from_velocity(vec2_t velocity)
     };
 }
 
+static vec2_t ent_desired_velocity(const struct entity *ent)
+{
+    struct movestate *ms = movestate_get(ent);
+    vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
+    struct flock *fl = flock_for_ent(ent);
+
+    switch(ms->state) {
+    case STATE_SEEK_ENEMIES: 
+        return M_NavDesiredEnemySeekVelocity(s_map, pos_xz, ent->faction_id);
+    default:
+        assert(fl);
+        return M_NavDesiredPointSeekVelocity(s_map, fl->dest_id, pos_xz, fl->target_xz);
+    }
+}
+
 /* Seek behaviour makes the entity target and approach a particular destination point.
  */
 static vec2_t seek_force(const struct entity *ent, vec2_t target_xz)
@@ -639,8 +684,7 @@ static vec2_t arrive_force(const struct entity *ent, dest_id_t dest_id, vec2_t t
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
-    if(ms->state == STATE_MOVING 
-    && M_NavHasDestLOS(s_map, dest_id, pos_xz)) {
+    if(M_NavHasDestLOS(s_map, dest_id, pos_xz)) {
 
         PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
         distance = PFM_Vec2_Len(&desired_velocity);
@@ -653,14 +697,7 @@ static vec2_t arrive_force(const struct entity *ent, dest_id_t dest_id, vec2_t t
 
     }else{
 
-        switch(ms->state) {
-        case STATE_SEEK_ENEMIES: 
-            desired_velocity = M_NavDesiredEnemySeekVelocity(s_map, pos_xz, ent->faction_id);
-            break;
-        default:
-            desired_velocity = M_NavDesiredPointSeekVelocity(s_map, dest_id, pos_xz, target_xz);
-        }
-        PFM_Vec2_Scale(&desired_velocity, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
+        PFM_Vec2_Scale(&ms->vdes, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
     }
 
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
@@ -806,6 +843,8 @@ static vec2_t point_seek_total_force(const struct entity *ent, const struct floc
     PFM_Vec2_Scale(&separation, SEPARATION_FORCE_SCALE,    &separation);
 
     vec2_t ret = (vec2_t){0.0f};
+    assert(!ent_still(ms));
+
     switch(ms->state) {
     case STATE_MOVING: {
 
@@ -868,6 +907,9 @@ static vec2_t point_seek_total_force(const struct entity *ent, const struct floc
 
 static vec2_t enemy_seek_total_force(const struct entity *ent)
 {
+    struct movestate *ms = movestate_get(ent);
+    assert(ms);
+
     vec2_t arrive = arrive_force(ent, DEST_ID_INVALID, (vec2_t){0.0f, 0.0f});
     vec2_t separation = separation_force(ent, SEPARATION_BUFFER_DIST);
 
@@ -980,11 +1022,10 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
-    if(ms->state == STATE_ARRIVED)
-        return;
-
     vec2_t new_pos_xz = new_pos_for_vel(ent, new_vel);
-    if(M_NavPositionPathable(s_map, new_pos_xz)) {
+
+    if(PFM_Vec2_Len(&new_vel) > 0
+    && M_NavPositionPathable(s_map, new_pos_xz)) {
     
         vec3_t new_pos = (vec3_t){new_pos_xz.x, M_HeightAtPoint(s_map, new_pos_xz), new_pos_xz.z};
         G_Pos_Set(ent->uid, new_pos);
@@ -1012,13 +1053,12 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         assert(flock);
 
         PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &xz_pos, &diff_to_target);
-        vec2_t desv = M_NavDesiredPointSeekVelocity(s_map, flock->dest_id, xz_pos, flock->target_xz);
-
         float arrive_thresh = ent->selection_radius * 1.5f;
+
         if(PFM_Vec2_Len(&diff_to_target) < arrive_thresh
         || M_NavIsMaximallyClose(s_map, xz_pos, flock->target_xz, arrive_thresh)) {
 
-            entity_finish_moving(ent);
+            entity_finish_moving(ent, STATE_ARRIVED);
             break;
         }
 
@@ -1036,17 +1076,52 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
                 break;
             }
         }
+
+        /* If we've not hit a condition to stop or give up but our desired velocity 
+         * is zero, that means the navigation system is currently not able to guide
+         * the entity any closer to its' goal. Stop and wait, re-requesting the  path 
+         * after some time. 
+         */
+        if(PFM_Vec2_Len(&ms->vdes) < EPSILON) {
+
+            assert(flock_for_ent(ent));
+            entity_finish_moving(ent, STATE_WAITING);
+        }
         break;
     }
     case STATE_SETTLING: {
 
         if(PFM_Vec2_Len(&new_vel) < SETTLE_STOP_TOLERANCE * ent->max_speed) {
 
-            entity_finish_moving(ent);
+            entity_finish_moving(ent, STATE_ARRIVED);
         }
         break;
     }
-    case STATE_SEEK_ENEMIES:
+    case STATE_SEEK_ENEMIES: {
+
+        if(PFM_Vec2_Len(&ms->vdes) < EPSILON) {
+
+            entity_finish_moving(ent, STATE_WAITING);
+        }
+        break;
+    }
+    case STATE_WAITING: {
+
+        assert(ms->wait_ticks_left > 0);
+        ms->wait_ticks_left--;
+        if(ms->wait_ticks_left == 0) {
+
+            assert(ms->wait_prev == STATE_MOVING 
+                || ms->wait_prev == STATE_SEEK_ENEMIES
+                || ms->wait_prev == STATE_SETTLING);
+
+            entity_unblock(ent);
+            E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
+            ms->state = ms->wait_prev;
+        }
+        break;
+    }
+    case STATE_ARRIVED:
         break;
     default: 
         assert(0);
@@ -1090,7 +1165,7 @@ static void find_neighbours(const struct entity *ent,
             .radius = curr->selection_radius
         };
 
-        if(ms->state == STATE_ARRIVED)
+        if(ent_still(ms))
             vec_cp_ent_push(out_stat, newdesc);
         else
             vec_cp_ent_push(out_dyn, newdesc);
@@ -1136,7 +1211,6 @@ static void on_30hz_tick(void *user, void *event)
     uint32_t key;
     struct entity *curr;
 
-    N_FC_ClearAllEnemySeekFields();
     disband_empty_flocks();
 
     kh_foreach(G_GetDynamicEntsSet(), key, curr, {
@@ -1144,11 +1218,12 @@ static void on_30hz_tick(void *user, void *event)
         struct movestate *ms = movestate_get(curr);
         assert(ms);
 
-        if(ms->state == STATE_ARRIVED)
+        if(ent_still(ms))
             continue;
 
         struct flock *flock = flock_for_ent(curr);
         vec2_t vpref = (vec2_t){-1,-1};
+        ms->vdes = ent_desired_velocity(curr);
 
         switch(ms->state) {
         case STATE_SEEK_ENEMIES: 
@@ -1159,7 +1234,7 @@ static void on_30hz_tick(void *user, void *event)
             assert(flock);
             vpref = point_seek_vpref(curr, flock);
         }
-        assert(vpref.x != -1 && vpref.z != -1);
+        assert(vpref.x != -1 || vpref.z != -1);
 
         struct cp_ent curr_cp = (struct cp_ent) {
             .xz_pos = G_Pos_GetXZ(curr->uid),
@@ -1186,9 +1261,6 @@ static void on_30hz_tick(void *user, void *event)
         struct movestate *ms = movestate_get(curr);
         assert(ms);
 
-        if(ms->state == STATE_ARRIVED)
-            continue;
-
         entity_update(curr, ms->vnew);
     });
 
@@ -1211,8 +1283,7 @@ bool G_Move_Init(const struct map *map)
 
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL, G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
-    E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
-
+    E_Global_Register(EVENT_20HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
 
     s_map = map;
     return true;
@@ -1222,7 +1293,7 @@ void G_Move_Shutdown(void)
 {
     s_map = NULL;
 
-    E_Global_Unregister(EVENT_30HZ_TICK, on_30hz_tick);
+    E_Global_Unregister(EVENT_20HZ_TICK, on_30hz_tick);
     E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
 
@@ -1273,13 +1344,15 @@ void G_Move_Stop(const struct entity *ent)
     uint32_t key;
     struct entity *curr;
 
-    remove_from_flocks(ent);
-
     struct movestate *ms = movestate_get(ent);
-    if(ms && ms->state != STATE_ARRIVED) {
+    if(!ms)
+        return;
 
-        entity_finish_moving(ent);
-    }
+    if(!ent_still(ms))
+        entity_finish_moving(ent, STATE_ARRIVED);
+
+    remove_from_flocks(ent);
+    ms->state = STATE_ARRIVED;
 }
 
 bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz)
@@ -1314,11 +1387,12 @@ void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz)
 
         struct movestate *ms = movestate_get(ent);
         assert(ms);
-        if(ms->state == STATE_ARRIVED) {
+        if(ent_still(ms)) {
             entity_unblock(ent);
             E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
         }
         ms->state = STATE_MOVING;
+        assert(flock_for_ent(ent));
         return;
     }
 
@@ -1364,7 +1438,7 @@ void G_Move_SetSeekEnemies(const struct entity *ent)
     }
     assert(NULL == flock_for_ent(ent));
 
-    if(ms->state == STATE_ARRIVED) {
+    if(ent_still(ms)) {
         entity_unblock(ent);
         E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
     }
