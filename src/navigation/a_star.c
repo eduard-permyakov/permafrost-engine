@@ -125,8 +125,12 @@ static int neighbours_portal_graph(const struct portal *portal,
 
     for(int i = 0; i < portal->num_neighbours; i++) {
 
-        out_neighbours[ret] = portal->edges[i].neighbour;
-        out_costs[ret] = portal->edges[i].cost;
+        const struct edge *edge = &portal->edges[i];
+        if(edge->es == EDGE_STATE_BLOCKED)
+            continue;
+
+        out_neighbours[ret] = edge->neighbour;
+        out_costs[ret] = edge->cost;
         ret++;
     }
 
