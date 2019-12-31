@@ -69,7 +69,7 @@
 #define ARR_SIZE(a)  (sizeof(a)/sizeof(a[0]))
 #define STR(a)       #a
 
-#define VEL_HIST_LEN (12)
+#define VEL_HIST_LEN (14)
 
 enum arrival_state{
     /* Entity is moving towards the flock's destination point */
@@ -353,10 +353,6 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
     if(!new_flock.ents)
         return false;
 
-    /* Remove the navigation blockers underneath the potential entities in the 
-     * flock. Do this before requesting a path from the navigation subsystem, 
-     * else the entities may be blocked in by tiles occupied by themselves.
-     */
     for(int i = 0; i < vec_size(sel); i++) {
 
         const struct entity *curr_ent = vec_AT(sel, i);
@@ -366,51 +362,18 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
         struct movestate *ms = movestate_get(curr_ent);
         assert(ms);
 
-        if(ent_still(ms))
+        if(ent_still(ms)) {
             entity_unblock(curr_ent); 
-    }
-
-    struct tile_desc pathed_ents_descs[vec_size(sel)];
-    size_t num_pathed_ents = 0;
-
-    for(int i = 0; i < vec_size(sel); i++) {
-
-        const struct entity *curr_ent = vec_AT(sel, i);
-        if(stationary(curr_ent))
-            continue;
-
-        struct movestate *ms = movestate_get(curr_ent);
-        assert(ms);
-
-        struct tile_desc curr_desc;
-        M_DescForPoint2D(s_map, G_Pos_GetXZ(curr_ent->uid), &curr_desc);
-
-        /* Don't request a new path (flow field) for an entity that is on the same
-         * chunk as another entity for which a path has already been requested. This 
-         * allows saving pathfinding cycles. In the case that an entity is on a different
-         * 'island' of the chunk than the one for which the flow field has been computed,
-         * the FF for this 'island' will be computed on demand. 
-         */
-        if(same_chunk_as_any_in_set(curr_desc, pathed_ents_descs, num_pathed_ents)
-        || M_NavRequestPath(s_map, G_Pos_GetXZ(curr_ent->uid), target_xz, &new_flock.dest_id)) {
-
-            pathed_ents_descs[num_pathed_ents++] = curr_desc;
-            flock_add(&new_flock, curr_ent);
-
-            /* When entities are moved from one flock to another, they keep their existing velocity.
-             */
-            if(ent_still(ms)) /* We already unblocked */
-                E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
-            ms->state = STATE_MOVING;
-
-        }else {
-
-            if(ent_still(ms))
-                entity_block(curr_ent); /* compensate for initial unblocking */
-            else
-                entity_finish_moving(curr_ent, STATE_ARRIVED);
+            E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
         }
+
+        flock_add(&new_flock, curr_ent);
+        ms->state = STATE_MOVING;
     }
+
+    /* The flow fields will be computed on-demand during the next movement update tick */
+    new_flock.target_xz = target_xz;
+    new_flock.dest_id = M_NavDestIDForPos(s_map, target_xz);
 
     if(kh_size(new_flock.ents) > 0) {
 
@@ -910,7 +873,7 @@ static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flo
         }
 
         nullify_impass_components(ent, &steer_force);
-        if(PFM_Vec2_Len(&steer_force) > MAX_FORCE * 0.05)
+        if(PFM_Vec2_Len(&steer_force) > MAX_FORCE * 0.01)
             break;
     }
 
@@ -1157,7 +1120,7 @@ static void disband_empty_flocks(void)
     }
 }
 
-static void on_30hz_tick(void *user, void *event)
+static void on_20hz_tick(void *user, void *event)
 {
     vec_cp_ent_t dyn, stat;
     vec_cp_ent_init(&dyn);
@@ -1238,7 +1201,7 @@ bool G_Move_Init(const struct map *map)
 
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL, G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
-    E_Global_Register(EVENT_20HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
+    E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
 
     s_map = map;
     return true;
@@ -1248,7 +1211,7 @@ void G_Move_Shutdown(void)
 {
     s_map = NULL;
 
-    E_Global_Unregister(EVENT_20HZ_TICK, on_30hz_tick);
+    E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
     E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
 
