@@ -37,6 +37,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * Map navigation graph/grid generation
 * Implementation of 'boids' steering/flocking behaviours
 * Hierarchial flow field pathfinding
+* Handling of dynamic obstacles in pathfinding
 * Dynamic collision avoidance of multiple entities using Hybrid Reciprocal Velocity Obstacles and the ClearPath algorithm
 * Efficient spatial indexing using a quadtree
 * RTS minimap

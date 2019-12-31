@@ -308,9 +308,9 @@ BUILT-IN CLASSES
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
-        [hold_position]
-        Issues a 'hold position' order to the entity, stopping it and preventing
-        it from moving to attack.
+        [move]
+        Issues a 'move' order to the entity at the XZ position specified by the
+        argument.
 
         [notify]
         Send a specific event to an entity in order to invoke the entity's event
@@ -397,6 +397,10 @@ BUILT-IN CLASSES
         will be removed from the game world when no more references to it remain
         in scope. (ex: Using 'del' when you have a single reference)
 
+        [attack]
+        Issues an 'attack move' order to the entity at the XZ position specified
+        by the argument.
+
         [deactivate]
         Remove the entity from the game simulation and hiding it. The entity's
         state is preserved until it is activated again.
@@ -408,14 +412,14 @@ BUILT-IN CLASSES
         Issues a 'hold position' order to the entity, stopping it and preventing
         it from moving to attack.
 
+        [move]
+        Issues a 'move' order to the entity at the XZ position specified by the
+        argument.
+
         [notify]
         Send a specific event to an entity in order to invoke the entity's event
         handlers. Weakref arguments are automatically unpacked before being
         passed to the handler.
-
-        [play_anim]
-        Play the animation clip with the specified name. Set kwarg 'mode=%d' to
-        set the animation mode. The default is ANIM_MODE_LOOP.
 
         [register]
         Registers the specified callable to be invoked when an event of the
@@ -488,9 +492,9 @@ BUILT-IN CLASSES
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
-        [hold_position]
-        Issues a 'hold position' order to the entity, stopping it and preventing
-        it from moving to attack.
+        [move]
+        Issues a 'move' order to the entity at the XZ position specified by the
+        argument.
 
         [notify]
         Send a specific event to an entity in order to invoke the entity's event
@@ -768,18 +772,18 @@ BUILT-IN CONSTANTS
     CAM_MODE_RTS 1
     DIPLOMACY_STATE_PEACE 0
     DIPLOMACY_STATE_WAR 1
-    EVENT_10HZ_TICK 65546
-    EVENT_1HZ_TICK 65547
+    EVENT_10HZ_TICK 65548
+    EVENT_1HZ_TICK 65549
     EVENT_30HZ_TICK 65545
     EVENT_60HZ_TICK 65544
-    EVENT_ANIM_CYCLE_FINISHED 65549
-    EVENT_ANIM_FINISHED 65548
-    EVENT_ATTACK_END 65554
-    EVENT_ATTACK_START 65552
+    EVENT_ANIM_CYCLE_FINISHED 65551
+    EVENT_ANIM_FINISHED 65550
+    EVENT_ATTACK_END 65556
+    EVENT_ATTACK_START 65554
     EVENT_ENGINE_LAST 131071
-    EVENT_ENTITY_DEATH 65553
-    EVENT_MOTION_END 65551
-    EVENT_MOTION_START 65550
+    EVENT_ENTITY_DEATH 65555
+    EVENT_MOTION_END 65553
+    EVENT_MOTION_START 65552
     EVENT_NEW_GAME 65542
     EVENT_RENDER_3D 65539
     EVENT_RENDER_UI 65540

@@ -3,6 +3,19 @@
 ********************************************************************************
 
 ================================================================================
+[Version 0.41.0] - 31.12.2019
+================================================================================
+    * Navigation/movement pipeline improvements:
+        --> Introduce 'enemy seek fields' to guide entities towards nearby 
+            enemy entities
+        --> Introduce 'blockers' field which keeps track of dynamic pathing 
+            blockers. Stationary entities will now 'block' tiles underneath them
+        --> Keep track of which portals are currently 'blocked' (unreachable)
+            from neighbour portals and use this information in pathfinding
+        --> Miscellaneous optimizations to enable better scaling of pathfinding
+            for large groups
+
+================================================================================
 [Version 0.40.0] - 25.11.2019
 ================================================================================
     * Implement quadtree data structure
