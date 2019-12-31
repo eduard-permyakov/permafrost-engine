@@ -74,9 +74,6 @@
 enum arrival_state{
     /* Entity is moving towards the flock's destination point */
     STATE_MOVING,
-    /* Entity is in proximity of the flock's destination point, 
-     * it is looking for a good point to stop. */
-    STATE_SETTLING,
     /* Entity is considered to have arrived and no longer moving. */
     STATE_ARRIVED,
     /* Entity is approaching the nearest enemy entity */
@@ -129,9 +126,7 @@ VEC_IMPL(static inline, flock, struct flock)
 #define ALIGN_NEIGHBOUR_RADIUS          (10.0f)
 #define SEPARATION_NEIGHB_RADIUS        (30.0f)
 
-#define SETTLE_STOP_TOLERANCE           (0.1f)
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
-
 #define WAIT_TICKS                      (60)
 
 /*****************************************************************************/
@@ -152,7 +147,6 @@ static dest_id_t               s_last_cmd_dest;
 
 static const char *s_state_str[] = {
     [STATE_MOVING]       = STR(STATE_MOVING),
-    [STATE_SETTLING]     = STR(STATE_SETTLING),
     [STATE_ARRIVED]      = STR(STATE_ARRIVED),
     [STATE_SEEK_ENEMIES] = STR(STATE_SEEK_ENEMIES),
     [STATE_WAITING]      = STR(STATE_WAITING),
@@ -571,7 +565,6 @@ static void on_render_3d(void *user, void *event)
 
             switch(ms->state) {
             case STATE_MOVING:
-            case STATE_SETTLING:
                 assert(flock);
                 M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
                 break;
@@ -854,12 +847,6 @@ static vec2_t point_seek_total_force(const struct entity *ent, const struct floc
 
         break;
     }
-    case STATE_SETTLING: {
-
-        PFM_Vec2_Add(&ret, &separation, &ret);
-
-        break;
-    }
     case STATE_ARRIVED:
         break;
     default: assert(0);
@@ -1065,17 +1052,22 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         struct entity *adjacent[kh_size(flock->ents)];
         size_t num_adj = adjacent_flock_members(ent, flock, adjacent);
 
+        bool done = false;
         for(int j = 0; j < num_adj; j++) {
 
             struct movestate *adj_ms = movestate_get(adjacent[j]);
             assert(adj_ms);
 
-            if(adj_ms->state == STATE_ARRIVED || adj_ms->state == STATE_SETTLING) {
+            if(adj_ms->state == STATE_ARRIVED) {
 
-                ms->state = STATE_SETTLING;
+                entity_finish_moving(ent, STATE_ARRIVED);
+                done = true;
                 break;
             }
         }
+
+        if(done)
+            break;
 
         /* If we've not hit a condition to stop or give up but our desired velocity 
          * is zero, that means the navigation system is currently not able to guide
@@ -1086,14 +1078,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
 
             assert(flock_for_ent(ent));
             entity_finish_moving(ent, STATE_WAITING);
-        }
-        break;
-    }
-    case STATE_SETTLING: {
-
-        if(PFM_Vec2_Len(&new_vel) < SETTLE_STOP_TOLERANCE * ent->max_speed) {
-
-            entity_finish_moving(ent, STATE_ARRIVED);
+            break;
         }
         break;
     }
@@ -1112,8 +1097,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         if(ms->wait_ticks_left == 0) {
 
             assert(ms->wait_prev == STATE_MOVING 
-                || ms->wait_prev == STATE_SEEK_ENEMIES
-                || ms->wait_prev == STATE_SETTLING);
+                || ms->wait_prev == STATE_SEEK_ENEMIES);
 
             entity_unblock(ent);
             E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
