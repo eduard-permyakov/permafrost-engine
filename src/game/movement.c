@@ -838,57 +838,11 @@ static vec2_t point_seek_total_force(const struct entity *ent, const struct floc
     vec2_t ret = (vec2_t){0.0f};
     assert(!ent_still(ms));
 
-    switch(ms->state) {
-    case STATE_MOVING: {
-
-        PFM_Vec2_Add(&ret, &arrive, &ret);
-        PFM_Vec2_Add(&ret, &separation, &ret);
-        PFM_Vec2_Add(&ret, &cohesion, &ret);
-
-        break;
-    }
-    case STATE_ARRIVED:
-        break;
-    default: assert(0);
-    }
+    PFM_Vec2_Add(&ret, &arrive, &ret);
+    PFM_Vec2_Add(&ret, &separation, &ret);
+    PFM_Vec2_Add(&ret, &cohesion, &ret);
 
     vec2_truncate(&ret, MAX_FORCE);
-
-    /* Some forces guide us to impassable terrain. Nullify the components of the force 
-     * vector that do this so that the entity is never guided towards impassable terrain. 
-     */
-
-    float old_mag = PFM_Vec2_Len(&ret);
-    vec2_t nt_dims = N_TileDims();
-
-    vec2_t left =  (vec2_t){G_Pos_Get(ent->uid).x + nt_dims.x, G_Pos_Get(ent->uid).z};
-    vec2_t right = (vec2_t){G_Pos_Get(ent->uid).x - nt_dims.x, G_Pos_Get(ent->uid).z};
-    vec2_t top =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z + nt_dims.z};
-    vec2_t bot =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z - nt_dims.z};
-
-    if((ret.raw[0] > 0 && !M_NavPositionPathable(s_map, left))
-    || (ret.raw[0] < 0 && !M_NavPositionPathable(s_map, right)))
-        ret.raw[0] = 0.0f;
-
-    if((ret.raw[1] > 0 && !M_NavPositionPathable(s_map, top))
-    || (ret.raw[1] < 0 && !M_NavPositionPathable(s_map, bot)))
-        ret.raw[1] = 0.0f;
-
-    float new_mag = PFM_Vec2_Len(&ret);
-    if(new_mag < EPSILON) {
-
-        /* When both components of the force are truncated due to steering the entity
-         * off the pathable terrain, return a very slight flow field following force.
-         * This force is guaranteed not to guide the entity off pathable terrain. If
-         * we simply return a zero force, the entity can get stuck. The following 
-         * guarantees we make eventual progress in those cases.
-         */
-        vec2_truncate(&arrive, MAX_FORCE * 0.02f);
-        return arrive;
-    }
-
-    PFM_Vec2_Scale(&ret, old_mag / new_mag, &ret);
-    assert(fabs(PFM_Vec2_Len(&ret) - old_mag) < EPSILON);
     return ret;
 }
 
@@ -906,23 +860,8 @@ static vec2_t enemy_seek_total_force(const struct entity *ent)
     vec2_t ret = (vec2_t){0.0f, 0.0f};
     PFM_Vec2_Add(&ret, &arrive, &ret);
     PFM_Vec2_Add(&ret, &separation, &ret);
+
     vec2_truncate(&ret, MAX_FORCE);
-
-    vec2_t nt_dims = N_TileDims();
-
-    vec2_t left =  (vec2_t){G_Pos_Get(ent->uid).x + nt_dims.x, G_Pos_Get(ent->uid).z};
-    vec2_t right = (vec2_t){G_Pos_Get(ent->uid).x - nt_dims.x, G_Pos_Get(ent->uid).z};
-    vec2_t top =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z + nt_dims.z};
-    vec2_t bot =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z - nt_dims.z};
-
-    if((ret.raw[0] > 0 && !M_NavPositionPathable(s_map, left))
-    || (ret.raw[0] < 0 && !M_NavPositionPathable(s_map, right)))
-        ret.raw[0] = 0.0f;
-
-    if((ret.raw[1] > 0 && !M_NavPositionPathable(s_map, top))
-    || (ret.raw[1] < 0 && !M_NavPositionPathable(s_map, bot)))
-        ret.raw[1] = 0.0f;
-
     return ret;
 }
 
@@ -935,13 +874,45 @@ static vec2_t new_pos_for_vel(const struct entity *ent, vec2_t velocity)
     return new_pos;
 }
 
+/* Nullify the components of the force which would guide
+ * the entity towards an impassable tile. */
+static void nullify_impass_components(const struct entity *ent, vec2_t *inout_force)
+{
+    vec2_t nt_dims = N_TileDims();
+
+    vec2_t left =  (vec2_t){G_Pos_Get(ent->uid).x + nt_dims.x, G_Pos_Get(ent->uid).z};
+    vec2_t right = (vec2_t){G_Pos_Get(ent->uid).x - nt_dims.x, G_Pos_Get(ent->uid).z};
+    vec2_t top =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z + nt_dims.z};
+    vec2_t bot =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z - nt_dims.z};
+
+    if((inout_force->x > 0 && !M_NavPositionPathable(s_map, left))
+    || (inout_force->x < 0 && !M_NavPositionPathable(s_map, right)))
+        inout_force->x = 0.0f;
+
+    if((inout_force->z > 0 && !M_NavPositionPathable(s_map, top))
+    || (inout_force->z < 0 && !M_NavPositionPathable(s_map, bot)))
+        inout_force->z = 0.0f;
+}
+
 static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flock)
 {
     vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
-    vec2_t steer_force = point_seek_total_force(ent, flock);
+    vec2_t steer_force;
+    for(int prio = 0; prio < 3; prio++) {
+
+        switch(prio) {
+        case 0: steer_force = point_seek_total_force(ent, flock); break;
+        case 1: steer_force = separation_force(ent, SEPARATION_BUFFER_DIST); break;
+        case 2: steer_force = arrive_force(ent, flock->dest_id, flock->target_xz); break;
+        }
+
+        nullify_impass_components(ent, &steer_force);
+        if(PFM_Vec2_Len(&steer_force) > MAX_FORCE * 0.05)
+            break;
+    }
 
     vec2_t accel, new_vel, new_pos; 
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
