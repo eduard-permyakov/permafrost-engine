@@ -15,6 +15,8 @@
 
 #include "../../main.h"
 #include "../../pf_math.h"
+#include "../../render/public/render.h"
+#include "../../lib/public/stb_image.h"
 
 #include <SDL.h>
 #include <SDL_opengl.h>
@@ -334,6 +336,19 @@ static struct nk_vec2i nk_sdl_get_screen_size(void)
     return (struct nk_vec2i){dm.w, dm.h};
 }
 
+static int nk_tex_load(const char *name, int *out_id)
+{
+    stbi_set_flip_vertically_on_load(false);
+    int ret = R_Texture_Load(g_basepath, name, out_id);
+    stbi_set_flip_vertically_on_load(true);
+    return ret;
+}
+
+static int nk_tex_get(const char *name, int *out_id)
+{
+    return R_Texture_GetForName(name, out_id);
+}
+
 NK_API struct nk_context*
 nk_sdl_init(SDL_Window *win)
 {
@@ -344,6 +359,9 @@ nk_sdl_init(SDL_Window *win)
     sdl.ctx.clip.userdata = nk_handle_ptr(0);
     sdl.ctx.screen.get_drawable_size = nk_sdl_get_drawable_size;
     sdl.ctx.screen.get_screen_size = nk_sdl_get_screen_size;
+    sdl.ctx.tex.load = nk_tex_load;
+    sdl.ctx.tex.get = nk_tex_get;
+    sdl.ctx.tex.get_size = (void*)R_Texture_GetSize;
     nk_sdl_device_create();
     return &sdl.ctx;
 }

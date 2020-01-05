@@ -107,6 +107,12 @@ void R_Texture_Free(const char *name);
  */
 bool R_Texture_GetForName(const char *name, GLuint *out);
 
+/* ---------------------------------------------------------------------------
+ * Get the dimensions of a previously loaded OpenGL texture
+ * ---------------------------------------------------------------------------
+ */
+void R_Texture_GetSize(GLuint texid, int *out_w, int *out_h);
+
 /*###########################################################################*/
 /* RENDER OPENGL                                                             */
 /*###########################################################################*/

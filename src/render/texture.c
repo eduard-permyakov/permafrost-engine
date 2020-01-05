@@ -321,3 +321,11 @@ void R_Texture_GL_ActivateArray(const struct texture_arr *arr, GLuint shader_pro
     GL_ASSERT_OK();
 }
 
+void R_Texture_GetSize(GLuint texid, int *out_w, int *out_h)
+{
+    glBindTexture(GL_TEXTURE_2D, texid);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, out_w);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, out_h);
+    GL_ASSERT_OK();
+}
+

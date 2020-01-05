@@ -89,3 +89,15 @@ char *pf_strapp(char *str, const char *append)
     return ret;
 }
 
+size_t pf_strlcpy(char *dest, const char *src, size_t size)
+{
+    if(!size)
+        return 0;
+
+    size_t srclen = strlen(src);
+    size_t ret = (srclen > size-1) ? size-1 : srclen;
+    strncpy(dest, src, ret);
+    dest[ret] = '\0';
+    return ret;
+}
+

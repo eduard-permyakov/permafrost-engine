@@ -493,6 +493,12 @@ struct nk_screen_ops{
     nk_get_screen_size get_screen_size;
 };
 
+struct nk_tex_ops{
+    int (*load)(const char *name, int *out_id);
+    int (*get)(const char *name, int *out_id);
+    void (*get_size)(int texid, int *out_w, int *out_h);
+};
+
 struct nk_allocator {
     nk_handle userdata;
     nk_plugin_alloc alloc;
@@ -4520,6 +4526,7 @@ enum nk_command_clipping {
 
 struct nk_command_buffer {
     struct nk_buffer *base;
+    struct nk_tex_ops *tops;
     struct nk_rect clip;
     int use_clipping;
     nk_handle userdata;
@@ -4767,12 +4774,22 @@ NK_API void nk_draw_list_push_userdata(struct nk_draw_list*, nk_handle userdata)
  * ===============================================================*/
 enum nk_style_item_type {
     NK_STYLE_ITEM_COLOR,
-    NK_STYLE_ITEM_IMAGE
+    NK_STYLE_ITEM_IMAGE,
+    /* Like 'NK_STYLE_ITEM_IMAGE', but with the image represented as a 
+     * unique string, rather than an OpenGL texture ID. The string is 
+     * converted to an OpenGL ID during command conversion time. The 
+     * purpose is to defer loading of the texture until command
+     * conversion time, and to hide the details of the texture ID from
+     * the API client. If the texture cannot be loaded, a black box will
+     * be displayed instead.
+     */
+    NK_STYLE_ITEM_TEXPATH,
 };
 
 union nk_style_item_data {
     struct nk_image image;
     struct nk_color color;
+    char            texpath[256];
 };
 
 struct nk_style_item {
@@ -5537,6 +5554,7 @@ struct nk_context {
     struct nk_buffer memory;
     struct nk_clipboard clip;
     struct nk_screen_ops screen;
+    struct nk_tex_ops tex;
     nk_flags last_widget_state;
     enum nk_button_behavior button_behavior;
     struct nk_configuration_stacks stacks;
@@ -5807,7 +5825,7 @@ NK_LIB void* nk_buffer_alloc(struct nk_buffer *b, enum nk_buffer_allocation_type
 NK_LIB void* nk_buffer_realloc(struct nk_buffer *b, nk_size capacity, nk_size *size);
 
 /* draw */
-NK_LIB void nk_command_buffer_init(struct nk_command_buffer *cb, struct nk_buffer *b, enum nk_command_clipping clip);
+NK_LIB void nk_command_buffer_init(struct nk_command_buffer *cb, struct nk_buffer *b, struct nk_tex_ops *tops, enum nk_command_clipping clip);
 NK_LIB void nk_command_buffer_reset(struct nk_command_buffer *b);
 NK_LIB void* nk_command_buffer_push(struct nk_command_buffer* b, enum nk_command_type t, nk_size size);
 NK_LIB void nk_draw_symbol(struct nk_command_buffer *out, enum nk_symbol_type type, struct nk_rect content, struct nk_color background, struct nk_color foreground, float border_width, const struct nk_user_font *font);
@@ -8701,12 +8719,14 @@ nk_str_free(struct nk_str *str)
  * ===============================================================*/
 NK_LIB void
 nk_command_buffer_init(struct nk_command_buffer *cb,
-    struct nk_buffer *b, enum nk_command_clipping clip)
+    struct nk_buffer *b, struct nk_tex_ops *tops, 
+    enum nk_command_clipping clip)
 {
     NK_ASSERT(cb);
     NK_ASSERT(b);
-    if (!cb || !b) return;
+    if (!cb || !b || !tops) return;
     cb->base = b;
+    cb->tops = tops;
     cb->use_clipping = (int)clip;
     cb->begin = b->allocated;
     cb->end = b->allocated;
@@ -14245,6 +14265,51 @@ nk_style_item_color(struct nk_color col)
     return i;
 }
 NK_API struct nk_style_item
+nk_style_item_texpath(const char *texpath)
+{
+    struct nk_style_item i;
+    i.type = NK_STYLE_ITEM_TEXPATH;
+    NK_MEMCPY(i.data.texpath, texpath, sizeof(i.data.texpath));
+    i.data.texpath[sizeof(i.data.texpath)-1] = '\0';
+    return i;
+}
+
+NK_API int
+nk_image_from_texpath(struct nk_tex_ops *tops, const char *texpath, struct nk_image *out)
+{
+    NK_ASSERT(tops->get);
+    NK_ASSERT(tops->load);
+    NK_ASSERT(tops->get_size);
+
+    if(!tops->get(texpath, &out->handle.id)
+    && !tops->load(texpath, &out->handle.id))
+        return 0;
+
+    int w, h;
+    tops->get_size(out->handle.id, &w, &h);
+    NK_ASSERT(w && h);
+    out->w = w;
+    out->h = h;
+
+    out->region[0] = 0;
+    out->region[1] = 0;
+    out->region[2] = out->w-1;
+    out->region[3] = out->h-1;
+    return 1;
+}
+
+NK_API void
+nk_draw_texpath(struct nk_command_buffer *buff, struct nk_rect r, 
+                const char *texpath, struct nk_color col)
+{
+    struct nk_image img;
+    if(!nk_image_from_texpath(buff->tops, texpath, &img)) {
+        nk_fill_rect(buff, r, 0, nk_black);
+    }else
+        nk_draw_image(buff, r, &img, col);
+}
+
+NK_API struct nk_style_item
 nk_style_item_hide(void)
 {
     struct nk_style_item i;
@@ -15197,7 +15262,7 @@ nk_build(struct nk_context *ctx)
     if (ctx->style.cursor_active && !ctx->input.mouse.grabbed && ctx->style.cursor_visible) {
         struct nk_rect mouse_bounds;
         const struct nk_cursor *cursor = ctx->style.cursor_active;
-        nk_command_buffer_init(&ctx->overlay, &ctx->memory, NK_CLIPPING_OFF);
+        nk_command_buffer_init(&ctx->overlay, &ctx->memory, &ctx->tex, NK_CLIPPING_OFF);
         nk_start_buffer(ctx, &ctx->overlay);
 
         mouse_bounds.x = ctx->input.mouse.pos.x - cursor->offset.x;
@@ -15722,6 +15787,9 @@ nk_panel_begin(struct nk_context *ctx, const char *title, enum nk_panel_type pan
         if (background->type == NK_STYLE_ITEM_IMAGE) {
             text.background = nk_rgba(0,0,0,0);
             nk_draw_image(&win->buffer, header, &background->data.image, nk_white);
+        }else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+            text.background = nk_rgba(0,0,0,0);
+            nk_draw_texpath(&win->buffer, header, background->data.texpath, nk_white);
         } else {
             text.background = background->data.color;
             nk_fill_rect(out, header, 0, background->data.color);
@@ -15797,6 +15865,8 @@ nk_panel_begin(struct nk_context *ctx, const char *title, enum nk_panel_type pan
         body.h = (win->bounds.h - layout->header_height);
         if (style->window.fixed_background.type == NK_STYLE_ITEM_IMAGE)
             nk_draw_image(out, body, &style->window.fixed_background.data.image, nk_white);
+        else if(style->window.fixed_background.type == NK_STYLE_ITEM_TEXPATH)
+            nk_draw_texpath(out, body, style->window.fixed_background.data.texpath, nk_white);
         else nk_fill_rect(out, body, 0, style->window.fixed_background.data.color);
     }
 
@@ -16012,6 +16082,8 @@ nk_panel_end(struct nk_context *ctx)
         {const struct nk_style_item *item = &style->window.scaler;
         if (item->type == NK_STYLE_ITEM_IMAGE)
             nk_draw_image(out, scaler, &item->data.image, nk_white);
+        else if (item->type == NK_STYLE_ITEM_TEXPATH)
+            nk_draw_texpath(out, scaler, item->data.texpath, nk_white);
         else {
             if (layout->flags & NK_WINDOW_SCALE_LEFT) {
                 nk_fill_triangle(out, scaler.x, scaler.y, scaler.x,
@@ -16354,7 +16426,7 @@ nk_begin_titled(struct nk_context *ctx, const char *name, const char *title,
         if (flags & NK_WINDOW_BACKGROUND)
             nk_insert_window(ctx, win, NK_INSERT_FRONT);
         else nk_insert_window(ctx, win, NK_INSERT_BACK);
-        nk_command_buffer_init(&win->buffer, &ctx->memory, NK_CLIPPING_ON);
+        nk_command_buffer_init(&win->buffer, &ctx->memory, &ctx->tex, NK_CLIPPING_ON);
 
         win->flags = flags;
         win->bounds = bounds;
@@ -16967,7 +17039,7 @@ nk_nonblock_begin(struct nk_context *ctx,
         popup->parent = win;
         win->popup.win = popup;
         win->popup.type = panel_type;
-        nk_command_buffer_init(&popup->buffer, &ctx->memory, NK_CLIPPING_ON);
+        nk_command_buffer_init(&popup->buffer, &ctx->memory, &ctx->tex, NK_CLIPPING_ON);
     } else {
         /* close the popup if user pressed outside or in the header */
         int pressed, in_body, in_header;
@@ -18402,6 +18474,9 @@ nk_tree_state_base(struct nk_context *ctx, enum nk_tree_type type,
         if (background->type == NK_STYLE_ITEM_IMAGE) {
             nk_draw_image(out, header, &background->data.image, nk_white);
             text.background = nk_rgba(0,0,0,0);
+        } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+            nk_draw_texpath(out, header, background->data.texpath, nk_white);
+            text.background = nk_rgba(0,0,0,0);
         } else {
             text.background = background->data.color;
             nk_fill_rect(out, header, 0, style->tab.border_color);
@@ -18587,6 +18662,9 @@ nk_tree_element_image_push_hashed_base(struct nk_context *ctx, enum nk_tree_type
         const struct nk_style_item *background = &style->tab.background;
         if (background->type == NK_STYLE_ITEM_IMAGE) {
             nk_draw_image(out, header, &background->data.image, nk_white);
+            text.background = nk_rgba(0,0,0,0);
+        } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+            nk_draw_texpath(out, header, background->data.texpath, nk_white);
             text.background = nk_rgba(0,0,0,0);
         } else {
             text.background = background->data.color;
@@ -19726,6 +19804,8 @@ nk_draw_button(struct nk_command_buffer *out,
 
     if (background->type == NK_STYLE_ITEM_IMAGE) {
         nk_draw_image(out, *bounds, &background->data.image, nk_white);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(out, *bounds, background->data.texpath, nk_white);
     } else {
         nk_fill_rect(out, *bounds, style->rounding, background->data.color);
         nk_stroke_rect(out, *bounds, style->rounding, style->border, style->border_color);
@@ -20348,6 +20428,8 @@ nk_draw_checkbox(struct nk_command_buffer *out,
     if (active) {
         if (cursor->type == NK_STYLE_ITEM_IMAGE)
             nk_draw_image(out, *cursors, &cursor->data.image, nk_white);
+        else if (cursor->type == NK_STYLE_ITEM_TEXPATH)
+            nk_draw_texpath(out, *cursors, cursor->data.texpath, nk_white);
         else nk_fill_rect(out, *cursors, 0, cursor->data.color);
     }
 
@@ -20390,6 +20472,8 @@ nk_draw_option(struct nk_command_buffer *out,
     if (active) {
         if (cursor->type == NK_STYLE_ITEM_IMAGE)
             nk_draw_image(out, *cursors, &cursor->data.image, nk_white);
+        else if (cursor->type == NK_STYLE_ITEM_TEXPATH)
+            nk_draw_texpath(out, *cursors, cursor->data.texpath, nk_white);
         else nk_fill_circle(out, *cursors, cursor->data.color);
     }
 
@@ -20658,6 +20742,9 @@ nk_draw_selectable(struct nk_command_buffer *out,
     /* draw selectable background and text */
     if (background->type == NK_STYLE_ITEM_IMAGE) {
         nk_draw_image(out, *bounds, &background->data.image, nk_white);
+        text.background = nk_rgba(0,0,0,0);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(out, *bounds, background->data.texpath, nk_white);
         text.background = nk_rgba(0,0,0,0);
     } else {
         nk_fill_rect(out, *bounds, style->rounding, background->data.color);
@@ -21030,6 +21117,8 @@ nk_draw_slider(struct nk_command_buffer *out, nk_flags state,
     /* draw background */
     if (background->type == NK_STYLE_ITEM_IMAGE) {
         nk_draw_image(out, *bounds, &background->data.image, nk_white);
+    }else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(out, *bounds, background->data.texpath, nk_white);
     } else {
         nk_fill_rect(out, *bounds, style->rounding, background->data.color);
         nk_stroke_rect(out, *bounds, style->rounding, style->border, style->border_color);
@@ -21042,6 +21131,8 @@ nk_draw_slider(struct nk_command_buffer *out, nk_flags state,
     /* draw cursor */
     if (cursor->type == NK_STYLE_ITEM_IMAGE)
         nk_draw_image(out, *visual_cursor, &cursor->data.image, nk_white);
+    else if (cursor->type == NK_STYLE_ITEM_TEXPATH)
+        nk_draw_texpath(out, *visual_cursor, cursor->data.texpath, nk_white);
     else nk_fill_circle(out, *visual_cursor, cursor->data.color);
 }
 NK_LIB float
@@ -23192,7 +23283,8 @@ nk_do_edit(nk_flags *state, struct nk_command_buffer *out,
             cursor_color = style->cursor_normal;
             cursor_text_color = style->cursor_text_normal;
         }
-        if (background->type == NK_STYLE_ITEM_IMAGE)
+        if (background->type == NK_STYLE_ITEM_IMAGE
+        ||  background->type == NK_STYLE_ITEM_TEXPATH)
             background_color = nk_rgba(0,0,0,0);
         else background_color = background->data.color;
 
@@ -23299,7 +23391,8 @@ nk_do_edit(nk_flags *state, struct nk_command_buffer *out,
             background = &style->normal;
             text_color = style->text_normal;
         }
-        if (background->type == NK_STYLE_ITEM_IMAGE)
+        if (background->type == NK_STYLE_ITEM_IMAGE
+        ||  background->type == NK_STYLE_ITEM_TEXPATH)
             background_color = nk_rgba(0,0,0,0);
         else background_color = background->data.color;
         nk_edit_draw_text(out, style, area.x - edit->scrollbar.x,
@@ -23556,6 +23649,9 @@ nk_draw_property(struct nk_command_buffer *out, const struct nk_style_property *
     /* draw background */
     if (background->type == NK_STYLE_ITEM_IMAGE) {
         nk_draw_image(out, *bounds, &background->data.image, nk_white);
+        text.background = nk_rgba(0,0,0,0);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(out, *bounds, background->data.texpath, nk_white);
         text.background = nk_rgba(0,0,0,0);
     } else {
         text.background = background->data.color;
@@ -24023,6 +24119,8 @@ nk_chart_begin_colored(struct nk_context *ctx, enum nk_chart_type type,
     background = &style->background;
     if (background->type == NK_STYLE_ITEM_IMAGE) {
         nk_draw_image(&win->buffer, bounds, &background->data.image, nk_white);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(&win->buffer, bounds, background->data.texpath, nk_white);
     } else {
         nk_fill_rect(&win->buffer, bounds, style->rounding, style->border_color);
         nk_fill_rect(&win->buffer, nk_shrink_rect(bounds, style->border),
@@ -24571,6 +24669,9 @@ nk_combo_begin_text(struct nk_context *ctx, const char *selected, int len,
     if (background->type == NK_STYLE_ITEM_IMAGE) {
         text.background = nk_rgba(0,0,0,0);
         nk_draw_image(&win->buffer, header, &background->data.image, nk_white);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        text.background = nk_rgba(0,0,0,0);
+        nk_draw_texpath(&win->buffer, header, background->data.texpath, nk_white);
     } else {
         text.background = background->data.color;
         nk_fill_rect(&win->buffer, header, style->combo.rounding, background->data.color);
@@ -24657,6 +24758,8 @@ nk_combo_begin_color(struct nk_context *ctx, struct nk_color color, struct nk_ve
 
     if (background->type == NK_STYLE_ITEM_IMAGE) {
         nk_draw_image(&win->buffer, header, &background->data.image,nk_white);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(&win->buffer, header, background->data.texpath ,nk_white);
     } else {
         nk_fill_rect(&win->buffer, header, style->combo.rounding, background->data.color);
         nk_stroke_rect(&win->buffer, header, style->combo.rounding, style->combo.border, style->combo.border_color);
@@ -24742,6 +24845,9 @@ nk_combo_begin_symbol(struct nk_context *ctx, enum nk_symbol_type symbol, struct
     if (background->type == NK_STYLE_ITEM_IMAGE) {
         sym_background = nk_rgba(0,0,0,0);
         nk_draw_image(&win->buffer, header, &background->data.image, nk_white);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        sym_background = nk_rgba(0,0,0,0);
+        nk_draw_texpath(&win->buffer, header, background->data.texpath, nk_white);
     } else {
         sym_background = background->data.color;
         nk_fill_rect(&win->buffer, header, style->combo.rounding, background->data.color);
@@ -24831,6 +24937,9 @@ nk_combo_begin_symbol_text(struct nk_context *ctx, const char *selected, int len
     if (background->type == NK_STYLE_ITEM_IMAGE) {
         text.background = nk_rgba(0,0,0,0);
         nk_draw_image(&win->buffer, header, &background->data.image, nk_white);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        text.background = nk_rgba(0,0,0,0);
+        nk_draw_texpath(&win->buffer, header, background->data.texpath, nk_white);
     } else {
         text.background = background->data.color;
         nk_fill_rect(&win->buffer, header, style->combo.rounding, background->data.color);
@@ -24917,6 +25026,8 @@ nk_combo_begin_image(struct nk_context *ctx, struct nk_image img, struct nk_vec2
 
     if (background->type == NK_STYLE_ITEM_IMAGE) {
         nk_draw_image(&win->buffer, header, &background->data.image, nk_white);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(&win->buffer, header, background->data.texpath, nk_white);
     } else {
         nk_fill_rect(&win->buffer, header, style->combo.rounding, background->data.color);
         nk_stroke_rect(&win->buffer, header, style->combo.rounding, style->combo.border, style->combo.border_color);
@@ -25000,6 +25111,9 @@ nk_combo_begin_image_text(struct nk_context *ctx, const char *selected, int len,
     if (background->type == NK_STYLE_ITEM_IMAGE) {
         text.background = nk_rgba(0,0,0,0);
         nk_draw_image(&win->buffer, header, &background->data.image, nk_white);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        text.background = nk_rgba(0,0,0,0);
+        nk_draw_texpath(&win->buffer, header, background->data.texpath, nk_white);
     } else {
         text.background = background->data.color;
         nk_fill_rect(&win->buffer, header, style->combo.rounding, background->data.color);

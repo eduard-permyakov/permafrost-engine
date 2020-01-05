@@ -36,9 +36,12 @@
 #ifndef PF_STRING_H
 #define PF_STRING_H
 
-char *pf_strtok_r(char *str, const char *delim, char **saveptr);
-char *pf_strdup(const char *str);
-char *pf_strapp(char *str, const char *append);
+#include <stddef.h>
+
+char  *pf_strtok_r(char *str, const char *delim, char **saveptr);
+char  *pf_strdup(const char *str);
+char  *pf_strapp(char *str, const char *append);
+size_t pf_strlcpy(char *dest, const char *src, size_t size);
 
 #endif
 

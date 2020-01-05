@@ -1052,14 +1052,11 @@ bool S_UI_Init(struct nk_context *ctx)
 
     if(!E_Global_Register(EVENT_UPDATE_UI, active_windows_update, NULL, G_RUNNING | G_PAUSED_UI_RUNNING))
         return false;
-    if(!S_UI_Style_Init())
-        return false;
     return true;
 }
 
 void S_UI_Shutdown(void)
 {
-    S_UI_Style_Shutdown();
     E_Global_Unregister(EVENT_UPDATE_UI, active_windows_update);
     vec_win_destroy(&s_active_windows);
 }
