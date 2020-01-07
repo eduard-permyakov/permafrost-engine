@@ -51,7 +51,7 @@ class TerrainTabVC(vc.ViewController):
 
     def __update_objects_for_height_change(self):
         for obj in globals.active_objects_list:
-            obj.pos = [obj.pos[0], pf.map_height_at_point(obj.pos[0], obj.pos[2]), obj.pos[2]]
+            obj.pos = (obj.pos[0], pf.map_height_at_point(obj.pos[0], obj.pos[2]), obj.pos[2])
 
     def __paint_selection(self):
 
