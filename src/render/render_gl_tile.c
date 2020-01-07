@@ -1343,24 +1343,18 @@ void R_GL_TileGetVertices(const struct map *map, struct tile_desc td, struct ver
     }
 }
 
-int R_GL_TileGetTriMesh(const struct tile_desc *in, const void *chunk_rprivate, 
-                        mat4x4_t *model, int tiles_per_chunk_x, vec3_t out[])
+int R_GL_TileGetTriMesh(const struct map *map, struct tile_desc td, mat4x4_t *model, vec3_t out[])
 {
-    const struct render_private *priv = chunk_rprivate;
-
-    size_t offset = (in->tile_r * tiles_per_chunk_x + in->tile_c) * VERTS_PER_TILE * sizeof(struct vertex);
-    size_t length = VERTS_PER_TILE * sizeof(struct vertex);
-    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
-    const struct vertex *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_READ_BIT);
-    assert(vert_base);
+    struct vertex verts[VERTS_PER_TILE];
+    R_GL_TileGetVertices(map, td, verts);
     int i = 0;
 
-    for(; i < VERTS_PER_TILE; i++) {
-    
-        vec4_t pos_homo = (vec4_t){vert_base[i].pos.x, vert_base[i].pos.y, vert_base[i].pos.z, 1.0f};
+    for(; i < ARR_SIZE(verts); i++) {
+
+        vec4_t pos_homo = (vec4_t){verts[i].pos.x, verts[i].pos.y, verts[i].pos.z, 1.0f};
         vec4_t ws_pos_homo;
         PFM_Mat4x4_Mult4x1(model, &pos_homo, &ws_pos_homo);
-        
+
         out[i] = (vec3_t){
             ws_pos_homo.x / ws_pos_homo.w, 
             ws_pos_homo.y / ws_pos_homo.w, 
@@ -1368,7 +1362,6 @@ int R_GL_TileGetTriMesh(const struct tile_desc *in, const void *chunk_rprivate,
         };
     }
 
-    glUnmapBuffer(GL_ARRAY_BUFFER);
     assert(i % 3 == 0);
     return i;
 }

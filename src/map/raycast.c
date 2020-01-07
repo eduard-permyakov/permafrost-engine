@@ -180,8 +180,7 @@ static void rc_find_intersection(void)
                 &s_ctx.map->chunks[cts[i].chunk_r * s_ctx.map->width + cts[i].chunk_c];
             M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){cts[i].chunk_r, cts[i].chunk_c}, &model);
 
-            int num_verts = R_GL_TileGetTriMesh(&cts[i], chunk->render_private, &model, 
-                TILES_PER_CHUNK_WIDTH, tile_mesh);
+            int num_verts = R_GL_TileGetTriMesh(s_ctx.map, cts[i], &model, tile_mesh);
 
             if(C_RayIntersectsTriMesh(ray_origin, ray_dir, tile_mesh, num_verts, &t)) {
 

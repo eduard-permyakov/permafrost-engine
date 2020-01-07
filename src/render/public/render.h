@@ -316,8 +316,7 @@ void   R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rpriv
  * it will be a multiple of 3.
  * ---------------------------------------------------------------------------
  */
-int    R_GL_TileGetTriMesh(const struct tile_desc *in, const void *chunk_rprivate, 
-                           mat4x4_t *model, int tiles_per_chunk_x, vec3_t out[]);
+int    R_GL_TileGetTriMesh(const struct map *map, struct tile_desc td, mat4x4_t *model, vec3_t out[]);
 
 /* ---------------------------------------------------------------------------
  * Update a specific tile with new attributes and buffer the new vertex data.
