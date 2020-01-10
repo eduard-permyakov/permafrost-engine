@@ -34,15 +34,17 @@
  */
 
 #include "public/render.h"
+#include "public/render_ctrl.h"
 #include "shader.h"
 #include "texture.h"
 #include "render_gl.h"
 #include "../settings.h"
 #include "../main.h"
 
-#include <SDL.h>
 #include <assert.h>
 #include <math.h>
+
+#include <SDL.h>
 
 #define EPSILON (1.0f/1024)
 
@@ -160,6 +162,38 @@ static void vsync_commit(const struct sval *new_val)
     }
 }
 
+static int render(void *data)
+{
+    struct render_sync_state *rstate = data; 
+
+    while(true) {
+    
+        SDL_LockMutex(rstate->sq_lock);
+        while(!rstate->start && !rstate->quit)
+            SDL_CondWait(rstate->sq_cond, rstate->sq_lock);
+
+        if(rstate->quit) {
+            rstate->quit = false;
+            SDL_UnlockMutex(rstate->sq_lock);
+            break;
+        }
+
+        assert(rstate->start == true);
+        rstate->start = false;
+        SDL_UnlockMutex(rstate->sq_lock);
+
+        extern unsigned long g_frame_idx;
+        printf("render a frame [%lu]!\n", g_frame_idx);
+
+        SDL_LockMutex(rstate->done_lock);
+        rstate->done = true;
+        SDL_CondSignal(rstate->done_cond);
+        SDL_UnlockMutex(rstate->done_lock);
+    }
+
+    return 0;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -250,5 +284,10 @@ bool R_Init(const char *base_path)
 
     R_GL_InitShadows();
     return true; 
+}
+
+SDL_Thread *R_Run(struct render_sync_state *rstate)
+{
+    return SDL_CreateThread(render, "render", rstate);
 }
 

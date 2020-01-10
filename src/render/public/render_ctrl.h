@@ -36,21 +36,75 @@
 #ifndef RENDER_CTRL_H
 #define RENDER_CTRL_H
 
-struct rcmd_arg{
-    enum rcm_arg_type{
-        RCMD_ARG_PTR,
-        RCMD_ARG_INT,
-        RCMD_ARG_FLOAT,
-        RCMD_ARG_VEC2,
-        RCMD_ARG_VEC3,
-        RCMD_ARG_VEC4,
-        RCMD_ARG_MAT3,
-        RCMD_ARG_MAT4,
-        RCMD_ARG_CC,
-        RCMD_ARG_TD,
+#include "../../lib/public/queue.h"
+#include "../../lib/public/stalloc.h"
+
+#include <stddef.h>
+
+#include <SDL_mutex.h>
+#include <SDL_thread.h>
+
+
+struct nk_buffer;
+
+//TODO: put all immediate-mode calls to be made from the sim thread in this header
+// and leave
+
+struct render_sync_state{
+    /* The start flag is set by the main thread when the render
+     * thread is allowed to start processing commands.
+     * The quit flag is set by the main thread when the render 
+     * thread should exit. */
+    bool       start;
+    bool       quit;
+    SDL_mutex *sq_lock;
+    SDL_cond  *sq_cond;
+    /* The done flag is set by the render thread when it is done 
+     * procesing commands for the current frame. */
+    bool       done;
+    SDL_mutex *done_lock;
+    SDL_cond  *done_cond;
+};
+
+struct rcmd_arg_desc{
+    enum{
+        RARG_PTR,
+        RARG_UINT,
+        RARG_INT,
+        RARG_FLOAT,
+        RARG_VEC2,
+        RARG_VEC3,
+        RARG_VEC4,
+        RARG_MAT3,
+        RARG_MAT4,
+        RARG_TILE_DESC,
+        RARG_CHUNK_COORD,
     }type;
     void *data;
 };
+
+#define MAX_ARGS 8
+
+struct rcmd{
+    void (*func)();
+    size_t nargs;
+    struct rcmd_arg_desc args[MAX_ARGS];
+};
+
+QUEUE_TYPE(rcmd, struct rcmd)
+QUEUE_IMPL(static inline, rcmd, struct rcmd)
+
+struct render_workspace{
+    /* Stack allocator for storing all the data/arguments associated
+     * with the commands */
+    struct memstack  *args;
+    queue_rcmd_t      commands;
+    struct nk_buffer *nukear_cmds;
+};
+
+
+bool        R_Init(const char *base_path);
+SDL_Thread *R_Run(struct render_sync_state *rstate);
 
 #endif
 

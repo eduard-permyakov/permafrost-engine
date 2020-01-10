@@ -40,6 +40,7 @@
 #include <SDL.h>
 
 struct nk_context;
+struct nk_buffer;
 
 struct rect{
     int x, y, w, h;
@@ -83,6 +84,10 @@ void               UI_DrawText(const char *text, struct rect rect, struct rgba r
 vec2_t             UI_ArAdjustedVRes(vec2_t vres);
 struct rect        UI_BoundsForAspectRatio(struct rect from_bounds, vec2_t from_res, 
                                            vec2_t to_res, int resize_mask);
+
+struct nk_buffer  *UI_CreateCmdBuffer(void);
+void               UI_DestroyCmdBuffer(struct nk_buffer *cmds);
+void               UI_SetCmdBuffer(struct nk_context *ctx, struct nk_buffer *cmds);
 
 #endif
 

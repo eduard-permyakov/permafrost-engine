@@ -47,8 +47,9 @@
 #include <string.h>
 #include <assert.h>
 
-#define MAX_VERTEX_MEMORY  (512 * 1024)
-#define MAX_ELEMENT_MEMORY (128 * 1024)
+#define MAX_VERTEX_MEMORY   (512 * 1024)
+#define MAX_ELEMENT_MEMORY  (128 * 1024)
+#define DEFAULT_CMD_BUFF_SZ   (4 * 1024)
 
 struct text_desc{
     char        text[256];
@@ -210,6 +211,16 @@ static int bot_y_point(struct rect from_bounds, vec2_t from_res, vec2_t to_res, 
 
 }
 
+static void *nk_malloc(nk_handle unused, void *old, nk_size size)
+{
+    return malloc(size);
+}
+
+static void nk_mfree(nk_handle unused, void *ptr)
+{
+    free(ptr);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -312,5 +323,30 @@ struct rect UI_BoundsForAspectRatio(struct rect from_bounds, vec2_t from_res,
         right_x - left_x, 
         bot_y - top_y
     };
+}
+
+struct nk_buffer *UI_CreateCmdBuffer(void)
+{
+    struct nk_buffer *ret = malloc(sizeof(struct nk_buffer));
+    if(!ret)
+        return ret;
+
+    struct nk_allocator alloc;
+    alloc.userdata.ptr = 0;
+    alloc.alloc = nk_malloc;
+    alloc.free = nk_mfree;
+
+    nk_buffer_init(ret, &alloc, DEFAULT_CMD_BUFF_SZ);
+    return ret;
+}
+
+void UI_DestroyCmdBuffer(struct nk_buffer *cmds)
+{
+    free(cmds);
+}
+
+void UI_SetCmdBuffer(struct nk_context *ctx, struct nk_buffer *cmds)
+{
+    ctx->memory = *cmds;
 }
 

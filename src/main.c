@@ -38,6 +38,7 @@
 #include "config.h"
 #include "cursor.h"
 #include "render/public/render.h"
+#include "render/public/render_ctrl.h"
 #include "lib/public/stb_image.h"
 #include "lib/public/vec.h"
 #include "script/public/script.h"
@@ -92,6 +93,9 @@ static bool                s_quit = false;
 static vec_event_t         s_prev_tick_events;
 
 static struct nk_context  *s_nk_ctx;
+
+static SDL_Thread         *s_renderthread;
+static struct render_sync_state s_rstate;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -157,6 +161,77 @@ static void gl_set_globals(void)
 {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
+}
+
+static bool rstate_init(struct render_sync_state *rstate)
+{
+    rstate->start = false;
+
+    rstate->sq_lock = SDL_CreateMutex();
+    if(!rstate->sq_lock)
+        goto fail_sq_lock;
+        
+    rstate->sq_cond = SDL_CreateCond();
+    if(!rstate->sq_cond)
+        goto fail_sq_cond;
+
+    rstate->done = false;
+
+    rstate->done_lock = SDL_CreateMutex();
+    if(!rstate->done_lock)
+        goto fail_done_lock;
+
+    rstate->done_cond = SDL_CreateCond();
+    if(!rstate->done_cond)
+        goto fail_done_cond;
+
+    return true;
+
+fail_done_cond:
+    SDL_DestroyMutex(rstate->done_lock);
+fail_done_lock:
+    SDL_DestroyCond(rstate->sq_cond);
+fail_sq_cond:
+    SDL_DestroyMutex(rstate->sq_lock);
+fail_sq_lock:
+    return false;
+}
+
+static void rstate_destroy(struct render_sync_state *rstate)
+{
+    SDL_DestroyCond(rstate->done_cond);
+    SDL_DestroyMutex(rstate->done_lock);
+    SDL_DestroyCond(rstate->sq_cond);
+    SDL_DestroyMutex(rstate->sq_lock);
+}
+
+static int render_quit(void)
+{
+    SDL_LockMutex(s_rstate.sq_lock);
+    s_rstate.quit = true;
+    SDL_CondSignal(s_rstate.sq_cond);
+    SDL_UnlockMutex(s_rstate.sq_lock);
+
+    int ret;
+    SDL_WaitThread(s_renderthread, &ret);
+    return ret;
+}
+
+static void render_start(void)
+{
+    SDL_LockMutex(s_rstate.sq_lock);
+    s_rstate.start = true;
+    SDL_CondSignal(s_rstate.sq_cond);
+    SDL_UnlockMutex(s_rstate.sq_lock);
+}
+
+static void render_wait_done(void)
+{
+    SDL_LockMutex(s_rstate.done_lock);
+    while(!s_rstate.done)
+        SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
+    s_rstate.done = false;
+    SDL_UnlockMutex(s_rstate.done_lock);
 }
 
 static void render(void)
@@ -288,6 +363,12 @@ static bool engine_init(char **argv)
         goto fail_sdl;
     }
 
+    if(!rstate_init(&s_rstate))
+        goto fail_rstate;
+    s_renderthread = R_Run(&s_rstate);
+    if(!s_renderthread)
+        goto fail_rthread;
+
     SDL_DisplayMode dm;
     SDL_GetDesktopDisplayMode(0, &dm);
 
@@ -413,6 +494,10 @@ fail_al:
     Settings_Shutdown();
 fail_settings:
 fail_glew:
+    render_quit();
+fail_rthread:
+    rstate_destroy(&s_rstate);
+fail_rstate:
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window);
     SDL_Quit();
@@ -437,6 +522,7 @@ static void engine_shutdown(void)
     E_Shutdown();
 
     vec_event_destroy(&s_prev_tick_events);
+    rstate_destroy(&s_rstate);
 
     SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window); 
@@ -527,10 +613,14 @@ int main(int argc, char **argv)
             G_SetSimState(G_RUNNING);
         }
 
+        render_start();
+
         process_sdl_events();
         E_ServiceQueue();
         G_Update();
         render();
+
+        render_wait_done();
 
         if(prev_step_frame) {
             G_SetSimState(curr_ss);
@@ -543,6 +633,8 @@ int main(int argc, char **argv)
 
         ++g_frame_idx;
     }
+
+    render_quit();
 
     ss_e status;
     if((status = Settings_SaveToFile()) != SS_OKAY) {
