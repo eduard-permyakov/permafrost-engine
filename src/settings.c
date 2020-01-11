@@ -37,6 +37,7 @@
 #include "settings.h"
 #include "config.h"
 #include "asset_load.h"
+#include "main.h"
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
 
@@ -135,6 +136,8 @@ fail:
 
 ss_e Settings_Init(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     s_settings_table = kh_init(setting);
     if(!s_settings_table)
         return SS_BADALLOC;
@@ -149,6 +152,8 @@ ss_e Settings_Init(void)
 
 void Settings_Shutdown(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     const char *key;
     struct setting curr;
 
@@ -160,6 +165,8 @@ void Settings_Shutdown(void)
 
 ss_e Settings_Create(struct setting sett)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     khiter_t k = kh_get(setting, s_settings_table, sett.name);
     struct sval saved;
 
@@ -190,6 +197,8 @@ ss_e Settings_Create(struct setting sett)
 
 ss_e Settings_Delete(const char *name)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     khiter_t k = kh_get(setting, s_settings_table, name);
     if(k == kh_end(s_settings_table))
         return SS_NO_SETTING;
@@ -201,6 +210,8 @@ ss_e Settings_Delete(const char *name)
 
 ss_e Settings_Get(const char *name, struct sval *out)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     khiter_t k = kh_get(setting, s_settings_table, name);
     if(k == kh_end(s_settings_table))
         return SS_NO_SETTING;
@@ -211,6 +222,8 @@ ss_e Settings_Get(const char *name, struct sval *out)
 
 ss_e Settings_Set(const char *name, const struct sval *new_val)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     khiter_t k = kh_get(setting, s_settings_table, name);
     if(k == kh_end(s_settings_table))
         return SS_NO_SETTING;
@@ -229,6 +242,8 @@ ss_e Settings_Set(const char *name, const struct sval *new_val)
 
 ss_e Settings_SetNoValidate(const char *name, const struct sval *new_val)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     khiter_t k = kh_get(setting, s_settings_table, name);
     if(k == kh_end(s_settings_table))
         return SS_NO_SETTING;
@@ -244,6 +259,8 @@ ss_e Settings_SetNoValidate(const char *name, const struct sval *new_val)
 
 ss_e Settings_SaveToFile(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     ss_e ret = SS_OKAY;
 
     SDL_RWops *stream = SDL_RWFromFile(s_settings_filepath, "w");
@@ -298,6 +315,8 @@ fail_stream:
 
 ss_e Settings_LoadFromFile(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     ss_e ret = SS_OKAY;
 
     SDL_RWops *stream = SDL_RWFromFile(s_settings_filepath, "r");
@@ -352,6 +371,8 @@ fail_stream:
 
 const char *Settings_GetFile(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     return s_settings_filepath;
 }
 

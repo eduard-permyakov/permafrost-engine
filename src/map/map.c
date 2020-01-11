@@ -33,13 +33,16 @@
  *
  */
 
-#include "public/map.h"
-#include "../render/public/render.h"
-#include "../navigation/public/nav.h"
 #include "map_private.h"
 #include "pfchunk.h"
+#include "public/map.h"
+#include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
+#include "../navigation/public/nav.h"
+#include "../game/public/game.h"
 #include "../camera.h"
 #include "../collision.h"
+#include "../settings.h"
 
 #include <string.h>
 #include <assert.h>
@@ -95,66 +98,108 @@ void M_ModelMatrixForChunk(const struct map *map, struct chunkpos p, mat4x4_t *o
     PFM_Mat4x4_MakeTrans(chunk_pos.x, chunk_pos.y, chunk_pos.z, out);
 }
 
-void M_RenderEntireMap(const struct map *map, enum render_pass pass)
+void M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pass)
 {
-    R_GL_MapBegin();
-    for(int r = 0; r < map->height; r++) {
-        for(int c = 0; c < map->width; c++) {
-        
-            mat4x4_t chunk_model;
-            const struct pfchunk *chunk = &map->chunks[r * map->width + c];
-            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+    R_PushCmd((struct rcmd){ 
+        .func = R_GL_MapBegin,
+        .nargs = 1,
+        .args = { 
+            R_PushArg(&shadows, sizeof(int)),
+        },
+    });
 
-            switch(pass) {
-            case RENDER_PASS_DEPTH: 
-                R_GL_RenderDepthMap(chunk->render_private, &chunk_model);
-                break;
-            case RENDER_PASS_REGULAR:
-                R_GL_Draw(chunk->render_private, &chunk_model);
-                break;
-            default: assert(0);
-            }
+    for(int r = 0; r < map->height; r++) {
+    for(int c = 0; c < map->width;  c++) {
+    
+        mat4x4_t chunk_model;
+        const struct pfchunk *chunk = &map->chunks[r * map->width + c];
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+
+        switch(pass) {
+        case RENDER_PASS_DEPTH: 
+            R_PushCmd((struct rcmd){
+                .func = R_GL_RenderDepthMap,
+                .nargs = 2,
+                .args = {
+                    chunk->render_private,
+                    R_PushArg(&chunk_model, sizeof(chunk_model)),
+                },
+            });
+            break;
+        case RENDER_PASS_REGULAR:
+            R_PushCmd((struct rcmd){
+                .func = R_GL_Draw,
+                .nargs = 2,
+                .args = {
+                    chunk->render_private,
+                    R_PushArg(&chunk_model, sizeof(chunk_model)),
+                },
+            });
+            break;
+        default: assert(0);
         }
-    }
-    R_GL_MapEnd();
+    }}
+
+    R_PushCmd((struct rcmd){ R_GL_MapEnd, 0 });
 }
 
-void M_RenderVisibleMap(const struct map *map, const struct camera *cam, enum render_pass pass)
+void M_RenderVisibleMap(const struct map *map, const struct camera *cam, 
+                        bool shadows, enum render_pass pass)
 {
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
 
-    R_GL_MapBegin();
+    R_PushCmd((struct rcmd){ 
+        .func = R_GL_MapBegin, 
+        .nargs = 1, 
+        .args = {
+            R_PushArg(&shadows, sizeof(int)),
+        },
+    });
+
     for(int r = 0; r < map->height; r++) {
-        for(int c = 0; c < map->width; c++) {
+    for(int c = 0; c < map->width;  c++) {
 
-            struct aabb chunk_aabb;
-            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
 
-            /* Due to the nature of the the map (perfect grid), the fast and greedy frustrum 
-             * intersection test will yield too many false positives. As each chunk mesh has 
-             * a high vertex count, this is undesirable. It is absolutely worth it to do the 
-             * precise frustrum intersection test. With it, the map rendering performance
-             * scales great for large maps. */
-            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
-                continue;
+        /* Due to the nature of the the map (perfect grid), the fast and greedy frustrum 
+         * intersection test will yield too many false positives. As each chunk mesh has 
+         * a high vertex count, this is undesirable. It is absolutely worth it to do the 
+         * precise frustrum intersection test. With it, the map rendering performance
+         * scales great for large maps. */
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
 
-            mat4x4_t chunk_model;
-            const struct pfchunk *chunk = &map->chunks[r * map->width + c];
-            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        mat4x4_t chunk_model;
+        const struct pfchunk *chunk = &map->chunks[r * map->width + c];
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
 
-            switch(pass) {
-            case RENDER_PASS_DEPTH: 
-                R_GL_RenderDepthMap(chunk->render_private, &chunk_model);
-                break;
-            case RENDER_PASS_REGULAR:
-                R_GL_Draw(chunk->render_private, &chunk_model);
-                break;
-            default: assert(0);
-            }
+        switch(pass) {
+        case RENDER_PASS_DEPTH: 
+            R_PushCmd((struct rcmd){
+                .func = R_GL_RenderDepthMap,
+                .nargs = 2,
+                .args = {
+                    chunk->render_private,
+                    R_PushArg(&chunk_model, sizeof(chunk_model)),
+                },
+            });
+            break;
+        case RENDER_PASS_REGULAR:
+            R_PushCmd((struct rcmd){
+                .func = R_GL_Draw,
+                .nargs = 2,
+                .args = {
+                    chunk->render_private,
+                    R_PushArg(&chunk_model, sizeof(chunk_model)),
+                },
+            });
+            break;
+        default: assert(0);
         }
-    }
-    R_GL_MapEnd();
+    }}
+    R_PushCmd((struct rcmd){ R_GL_MapEnd, 0 });
 }
 
 void M_RenderVisiblePathableLayer(const struct map *map, const struct camera *cam)
@@ -163,19 +208,18 @@ void M_RenderVisiblePathableLayer(const struct map *map, const struct camera *ca
     Camera_MakeFrustum(cam, &frustum);
 
     for(int r = 0; r < map->height; r++) {
-        for(int c = 0; c < map->width; c++) {
+    for(int c = 0; c < map->width;  c++) {
 
-            struct aabb chunk_aabb;
-            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
 
-            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
-                continue;
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
 
-            mat4x4_t chunk_model;
-            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-            N_RenderPathableChunk(map->nav_private, &chunk_model, map, r, c); 
-        }
-    }
+        mat4x4_t chunk_model;
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        N_RenderPathableChunk(map->nav_private, &chunk_model, map, r, c); 
+    }}
 }
 
 void M_RenderChunkBoundaries(const struct map *map, const struct camera *cam)
@@ -184,27 +228,37 @@ void M_RenderChunkBoundaries(const struct map *map, const struct camera *cam)
     Camera_MakeFrustum(cam, &frustum);
 
     for(int r = 0; r < map->height; r++) {
-        for(int c = 0; c < map->width; c++) {
+    for(int c = 0; c < map->width;  c++) {
 
-            struct aabb chunk_aabb;
-            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
 
-            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
-                continue;
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
 
-            mat4x4_t chunk_model;
-            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        mat4x4_t chunk_model;
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
 
-            vec2_t corners[4] = {
-                (vec2_t){chunk_aabb.x_max, chunk_aabb.z_min},
-                (vec2_t){chunk_aabb.x_min, chunk_aabb.z_min},
-                (vec2_t){chunk_aabb.x_min, chunk_aabb.z_max},
-                (vec2_t){chunk_aabb.x_max, chunk_aabb.z_max},
-            };
-            vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
-            R_GL_DrawQuad(corners, 1.0f, red, map);
-        }
-    }
+        vec2_t corners[4] = {
+            (vec2_t){chunk_aabb.x_max, chunk_aabb.z_min},
+            (vec2_t){chunk_aabb.x_min, chunk_aabb.z_min},
+            (vec2_t){chunk_aabb.x_min, chunk_aabb.z_max},
+            (vec2_t){chunk_aabb.x_max, chunk_aabb.z_max},
+        };
+        vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
+        float width = 1.0f;
+
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawQuad,
+            .nargs = 4,
+            .args = {
+                R_PushArg(corners, sizeof(corners)),
+                R_PushArg(&width, sizeof(width)),
+                R_PushArg(&red, sizeof(red)),
+                (void*)G_GetPrevTickMap(),
+            },
+        });
+    }}
 }
 
 void M_CenterAtOrigin(struct map *map)
@@ -347,20 +401,19 @@ void M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera 
     Camera_MakeFrustum(cam, &frustum);
 
     for(int r = 0; r < map->height; r++) {
-        for(int c = 0; c < map->width; c++) {
+    for(int c = 0; c < map->width;  c++) {
 
-            struct aabb chunk_aabb;
-            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
 
-            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
-                continue;
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
 
-            mat4x4_t chunk_model;
-            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-            N_RenderPathFlowField(map->nav_private, map, &chunk_model, r, c, id); 
-            N_RenderLOSField(map->nav_private, map, &chunk_model, r, c, id);
-        }
-    }
+        mat4x4_t chunk_model;
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        N_RenderPathFlowField(map->nav_private, map, &chunk_model, r, c, id); 
+        N_RenderLOSField(map->nav_private, map, &chunk_model, r, c, id);
+    }}
 }
 
 void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera *cam, int faction_id)
@@ -369,19 +422,18 @@ void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera
     Camera_MakeFrustum(cam, &frustum);
 
     for(int r = 0; r < map->height; r++) {
-        for(int c = 0; c < map->width; c++) {
+    for(int c = 0; c < map->width;  c++) {
 
-            struct aabb chunk_aabb;
-            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
 
-            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
-                continue;
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
 
-            mat4x4_t chunk_model;
-            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-            N_RenderEnemySeekField(map->nav_private, map, &chunk_model, r, c, faction_id);
-        }
-    }
+        mat4x4_t chunk_model;
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        N_RenderEnemySeekField(map->nav_private, map, &chunk_model, r, c, faction_id);
+    }}
 }
 
 void M_NavRenderNavigationBlockers(const struct map *map, const struct camera *cam)
@@ -390,19 +442,18 @@ void M_NavRenderNavigationBlockers(const struct map *map, const struct camera *c
     Camera_MakeFrustum(cam, &frustum);
 
     for(int r = 0; r < map->height; r++) {
-        for(int c = 0; c < map->width; c++) {
+    for(int c = 0; c < map->width;  c++) {
 
-            struct aabb chunk_aabb;
-            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
 
-            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
-                continue;
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
 
-            mat4x4_t chunk_model;
-            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-            N_RenderNavigationBlockers(map->nav_private, map, &chunk_model, r, c);
-        }
-    }
+        mat4x4_t chunk_model;
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        N_RenderNavigationBlockers(map->nav_private, map, &chunk_model, r, c);
+    }}
 }
 
 void M_NavRenderNavigationPortals(const struct map *map, const struct camera *cam)
@@ -411,19 +462,18 @@ void M_NavRenderNavigationPortals(const struct map *map, const struct camera *ca
     Camera_MakeFrustum(cam, &frustum);
 
     for(int r = 0; r < map->height; r++) {
-        for(int c = 0; c < map->width; c++) {
+    for(int c = 0; c < map->width;  c++) {
 
-            struct aabb chunk_aabb;
-            m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
 
-            if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
-                continue;
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
 
-            mat4x4_t chunk_model;
-            M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-            N_RenderNavigationPortals(map->nav_private, map, &chunk_model, r, c);
-        }
-    }
+        mat4x4_t chunk_model;
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        N_RenderNavigationPortals(map->nav_private, map, &chunk_model, r, c);
+    }}
 }
 
 vec2_t M_NavDesiredPointSeekVelocity(const struct map *map, dest_id_t id, vec2_t curr_pos, vec2_t xz_dest)
@@ -499,12 +549,18 @@ void M_GetResolution(const struct map *map, struct map_resolution *out)
 void M_SetShadowsEnabled(struct map *map, bool on)
 {
     for(int r = 0; r < map->height; r++) {
-        for(int c = 0; c < map->width; c++) {
+    for(int c = 0; c < map->width;  c++) {
 
-            const struct pfchunk *chunk = &map->chunks[r * map->width + c];
-            R_GL_SetShadowsEnabled(chunk->render_private, on);
-        }
-    }
+        const struct pfchunk *chunk = &map->chunks[r * map->width + c];
+        R_PushCmd((struct rcmd){
+            .func = R_GL_SetShadowsEnabled,
+            .nargs = 2,
+            .args = {
+                chunk->render_private,
+                R_PushArg(&on, sizeof(on)),
+            },
+        });
+    }}
 }
 
 vec3_t M_GetCenterPos(const struct map *map)

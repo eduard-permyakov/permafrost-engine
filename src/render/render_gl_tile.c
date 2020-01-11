@@ -47,6 +47,7 @@
 #include "../collision.h"
 #include "../camera.h"
 #include "../config.h"
+#include "../main.h"
 
 #include <GL/glew.h>
 
@@ -538,8 +539,10 @@ static float tile_min_visible_height(const struct map *map, struct tile_desc til
 /*****************************************************************************/
 
 void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivate, mat4x4_t *model, 
-                           int tiles_per_chunk_x, int tiles_per_chunk_z)
+                           const int *tiles_per_chunk_x, const int *tiles_per_chunk_z)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     struct vertex vbuff[VERTS_PER_TILE];
     vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
     GLint VAO, VBO;
@@ -547,7 +550,7 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
     GLuint loc;
 
     const struct render_private *priv = chunk_rprivate;
-    size_t offset = (in->tile_r * tiles_per_chunk_x + in->tile_c) * VERTS_PER_TILE * sizeof(struct vertex);
+    size_t offset = (in->tile_r * (*tiles_per_chunk_x) + in->tile_c) * VERTS_PER_TILE * sizeof(struct vertex);
     size_t length = VERTS_PER_TILE * sizeof(struct vertex);
 
     glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
@@ -617,8 +620,10 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struct tile_desc tile)
+void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, const struct tile_desc *tile)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const struct render_private *priv = chunk_rprivate;
     GLuint VBO = priv->mesh.VBO;
 
@@ -635,59 +640,59 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
                 *top_left_tile  = NULL,
                 *bot_left_tile  = NULL;
 
-    int ret = M_TileForDesc(map, tile, &curr_tile);
+    int ret = M_TileForDesc(map, *tile, &curr_tile);
     assert(ret);
 
-    struct tile_desc ref = tile;
+    struct tile_desc ref = *tile;
     ret = M_Tile_RelativeDesc(res, &ref, 0, -1);
     if(ret) {
         ret = M_TileForDesc(map, ref, &top_tile); 
         assert(ret);
     }
 
-    ref = tile;
+    ref = *tile;
     ret = M_Tile_RelativeDesc(res, &ref, 0, 1);
     if(ret) {
         ret = M_TileForDesc(map, ref, &bot_tile); 
         assert(ret);
     }
 
-    ref = tile;
+    ref = *tile;
     ret = M_Tile_RelativeDesc(res, &ref, -1, 0);
     if(ret) {
         ret = M_TileForDesc(map, ref, &left_tile); 
         assert(ret);
     }
 
-    ref = tile;
+    ref = *tile;
     ret = M_Tile_RelativeDesc(res, &ref, 1, 0);
     if(ret) {
         ret = M_TileForDesc(map, ref, &right_tile); 
         assert(ret);
     }
 
-    ref = tile;
+    ref = *tile;
     ret = M_Tile_RelativeDesc(res, &ref, 1, -1);
     if(ret) {
         ret = M_TileForDesc(map, ref, &top_right_tile); 
         assert(ret);
     }
 
-    ref = tile;
+    ref = *tile;
     ret = M_Tile_RelativeDesc(res, &ref, 1, 1);
     if(ret) {
         ret = M_TileForDesc(map, ref, &bot_right_tile); 
         assert(ret);
     }
 
-    ref = tile;
+    ref = *tile;
     ret = M_Tile_RelativeDesc(res, &ref, -1, -1);
     if(ret) {
         ret = M_TileForDesc(map, ref, &top_left_tile);
         assert(ret);
     }
 
-    ref = tile;
+    ref = *tile;
     ret = M_Tile_RelativeDesc(res, &ref, -1, 1);
     if(ret) {
         ret = M_TileForDesc(map, ref, &bot_left_tile); 
@@ -776,7 +781,7 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
      * The next element holds the materials at the midpoints of the edges of this tile and 
      * the last one holds the materials for the middle_mask of the tile.
      */
-    size_t offset = VERTS_PER_TILE * (tile.tile_r * TILES_PER_CHUNK_WIDTH + tile.tile_c) * sizeof(struct vertex);
+    size_t offset = VERTS_PER_TILE * (tile->tile_r * TILES_PER_CHUNK_WIDTH + tile->tile_c) * sizeof(struct vertex);
     size_t length = VERTS_PER_TILE * sizeof(struct vertex);
 
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
@@ -840,12 +845,14 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struc
     GL_ASSERT_OK();
 }
 
-void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, struct tile_desc tile)
+void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, const struct tile_desc *tile)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const struct render_private *priv = chunk_rprivate;
     GLuint VBO = priv->mesh.VBO;
 
-    size_t offset = VERTS_PER_TILE * (tile.tile_r * TILES_PER_CHUNK_WIDTH + tile.tile_c) * sizeof(struct vertex);
+    size_t offset = VERTS_PER_TILE * (tile->tile_r * TILES_PER_CHUNK_WIDTH + tile->tile_c) * sizeof(struct vertex);
     size_t length = VERTS_PER_TILE * sizeof(struct vertex);
 
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
@@ -858,7 +865,7 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, stru
     M_GetResolution(map, &res);
 
     struct tile *curr_tile = NULL;
-    M_TileForDesc(map, tile, &curr_tile);
+    M_TileForDesc(map, *tile, &curr_tile);
     assert(curr_tile);
 
     vec3_t normals[2];
@@ -870,65 +877,65 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, stru
 
     /* NW (top-left) corner */
     memset(tiles, 0, sizeof(tiles));
-    td = tile; if(M_Tile_RelativeDesc(res, &td, -1, -1)) M_TileForDesc(map, td, &tiles[0]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[1]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[2]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[3]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td, -1, -1)) M_TileForDesc(map, td, &tiles[0]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[1]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[2]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[3]);
     tile_smooth_normals_corner(tiles, &tfvb->nw0);
     tile_smooth_normals_corner(tiles, &tfvb->nw1);
 
     /* NE (top-right) corner */
     memset(tiles, 0, sizeof(tiles));
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[0]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  1, -1)) M_TileForDesc(map, td, &tiles[1]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[2]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[3]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[0]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  1, -1)) M_TileForDesc(map, td, &tiles[1]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[2]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[3]);
     tile_smooth_normals_corner(tiles, &tfvb->ne0);
     tile_smooth_normals_corner(tiles, &tfvb->ne1);
 
     /* SE (bot-right) corner */
     memset(tiles, 0, sizeof(tiles));
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[0]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[1]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  1)) M_TileForDesc(map, td, &tiles[2]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[3]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[0]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[1]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  1,  1)) M_TileForDesc(map, td, &tiles[2]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[3]);
     tile_smooth_normals_corner(tiles, &tfvb->se0);
     tile_smooth_normals_corner(tiles, &tfvb->se1);
 
     /* SW (bot-left) corner */
     memset(tiles, 0, sizeof(tiles));
-    td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[0]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[1]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[2]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  1)) M_TileForDesc(map, td, &tiles[3]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[0]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[1]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[2]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td, -1,  1)) M_TileForDesc(map, td, &tiles[3]);
     tile_smooth_normals_corner(tiles, &tfvb->sw0);
     tile_smooth_normals_corner(tiles, &tfvb->sw1);
 
     /* Top edge */
     memset(tiles, 0, sizeof(tiles));
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[2]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[3]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0, -1)) M_TileForDesc(map, td, &tiles[2]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[3]);
     tile_smooth_normals_edge(tiles, &tfvb->n0);
     tile_smooth_normals_edge(tiles, &tfvb->n1);
 
     /* Bot edge */
     memset(tiles, 0, sizeof(tiles));
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[2]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[3]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[2]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0,  1)) M_TileForDesc(map, td, &tiles[3]);
     tile_smooth_normals_edge(tiles, &tfvb->s0);
     tile_smooth_normals_edge(tiles, &tfvb->s1);
 
     /* Left edge */
     memset(tiles, 0, sizeof(tiles));
-    td = tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[0]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[1]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td, -1,  0)) M_TileForDesc(map, td, &tiles[0]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[1]);
     tile_smooth_normals_edge(tiles, &tfvb->w0);
     tile_smooth_normals_edge(tiles, &tfvb->w1);
 
     /* Right edge */
     memset(tiles, 0, sizeof(tiles));
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[0]);
-    td = tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[1]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  0,  0)) M_TileForDesc(map, td, &tiles[0]);
+    td = *tile; if(M_Tile_RelativeDesc(res, &td,  1,  0)) M_TileForDesc(map, td, &tiles[1]);
     tile_smooth_normals_edge(tiles, &tfvb->e0);
     tile_smooth_normals_edge(tiles, &tfvb->e1);
 
@@ -951,7 +958,34 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, stru
     GL_ASSERT_OK();
 }
 
-void R_GL_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex *out)
+void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, const struct tile_desc *desc)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    struct render_private *priv = chunk_rprivate;
+
+    struct tile *tile;
+    int ret = M_TileForDesc(map, *desc, &tile);
+    assert(ret);
+
+    size_t offset = (desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c) * VERTS_PER_TILE * sizeof(struct vertex);
+    size_t length = VERTS_PER_TILE * sizeof(struct vertex);
+    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
+    struct vertex *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
+    assert(vert_base);
+    
+    R_TileGetVertices(map, *desc, vert_base);
+    glUnmapBuffer(GL_ARRAY_BUFFER);
+
+    R_GL_TilePatchVertsBlend(chunk_rprivate, map, desc);
+    if(tile->blend_normals) {
+        R_GL_TilePatchVertsSmooth(chunk_rprivate, map, desc);
+    }
+
+    GL_ASSERT_OK();
+}
+
+void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex *out)
 {
     struct tile *tile;
     int ret = M_TileForDesc(map, td, &tile);
@@ -1343,10 +1377,10 @@ void R_GL_TileGetVertices(const struct map *map, struct tile_desc td, struct ver
     }
 }
 
-int R_GL_TileGetTriMesh(const struct map *map, struct tile_desc td, mat4x4_t *model, vec3_t out[])
+int R_TileGetTriMesh(const struct map *map, struct tile_desc *td, mat4x4_t *model, vec3_t out[])
 {
     struct vertex verts[VERTS_PER_TILE];
-    R_GL_TileGetVertices(map, td, verts);
+    R_TileGetVertices(map, *td, verts);
     int i = 0;
 
     for(; i < ARR_SIZE(verts); i++) {
@@ -1364,30 +1398,5 @@ int R_GL_TileGetTriMesh(const struct map *map, struct tile_desc td, mat4x4_t *mo
 
     assert(i % 3 == 0);
     return i;
-}
-
-void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, struct tile_desc desc)
-{
-    struct render_private *priv = chunk_rprivate;
-
-    struct tile *tile;
-    int ret = M_TileForDesc(map, desc, &tile);
-    assert(ret);
-
-    size_t offset = (desc.tile_r * TILES_PER_CHUNK_WIDTH + desc.tile_c) * VERTS_PER_TILE * sizeof(struct vertex);
-    size_t length = VERTS_PER_TILE * sizeof(struct vertex);
-    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
-    struct vertex *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
-    assert(vert_base);
-    
-    R_GL_TileGetVertices(map, desc, vert_base);
-    glUnmapBuffer(GL_ARRAY_BUFFER);
-
-    R_GL_TilePatchVertsBlend(chunk_rprivate, map, desc);
-    if(tile->blend_normals) {
-        R_GL_TilePatchVertsSmooth(chunk_rprivate, map, desc);
-    }
-
-    GL_ASSERT_OK();
 }
 

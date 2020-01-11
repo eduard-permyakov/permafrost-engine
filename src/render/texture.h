@@ -62,4 +62,6 @@ bool R_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures,
 void R_Texture_GL_Activate(const struct texture *text, GLuint shader_prog);
 void R_Texture_GL_ActivateArray(const struct texture_arr *arr, GLuint shader_prog);
 
+void R_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out);
+
 #endif

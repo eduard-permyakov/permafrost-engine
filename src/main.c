@@ -49,9 +49,6 @@
 #include "pf_math.h"
 #include "settings.h"
 
-#include <GL/glew.h>
-#include <SDL_opengl.h>
-
 #include <stdbool.h>
 #include <assert.h>
 #include <string.h>
@@ -78,12 +75,14 @@ const char                *g_basepath;
 unsigned                   g_last_frame_ms = 0;
 unsigned long              g_frame_idx = 0;
 
+SDL_threadID               g_main_thread_id;   /* write-once */
+SDL_threadID               g_render_thread_id; /* write-once */
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
 static SDL_Window         *s_window;
-static SDL_GLContext       s_context;
 
 /* Flag to perform a single step of the simulation while the game is paused. 
  * Cleared at after performing the step. 
@@ -94,7 +93,7 @@ static vec_event_t         s_prev_tick_events;
 
 static struct nk_context  *s_nk_ctx;
 
-static SDL_Thread         *s_renderthread;
+static SDL_Thread         *s_render_thread;
 static struct render_sync_state s_rstate;
 
 /*****************************************************************************/
@@ -157,12 +156,6 @@ static void on_user_quit(void *user, void *event)
     s_quit = true;
 }
 
-static void gl_set_globals(void)
-{
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
-}
-
 static bool rstate_init(struct render_sync_state *rstate)
 {
     rstate->start = false;
@@ -185,6 +178,7 @@ static bool rstate_init(struct render_sync_state *rstate)
     if(!rstate->done_cond)
         goto fail_done_cond;
 
+    rstate->swap_buffers = false;
     return true;
 
 fail_done_cond:
@@ -205,7 +199,7 @@ static void rstate_destroy(struct render_sync_state *rstate)
     SDL_DestroyMutex(rstate->sq_lock);
 }
 
-static int render_quit(void)
+static int render_thread_quit(void)
 {
     SDL_LockMutex(s_rstate.sq_lock);
     s_rstate.quit = true;
@@ -213,11 +207,11 @@ static int render_quit(void)
     SDL_UnlockMutex(s_rstate.sq_lock);
 
     int ret;
-    SDL_WaitThread(s_renderthread, &ret);
+    SDL_WaitThread(s_render_thread, &ret);
     return ret;
 }
 
-static void render_start(void)
+static void render_thread_start_work(void)
 {
     SDL_LockMutex(s_rstate.sq_lock);
     s_rstate.start = true;
@@ -225,29 +219,13 @@ static void render_start(void)
     SDL_UnlockMutex(s_rstate.sq_lock);
 }
 
-static void render_wait_done(void)
+static void wait_render_work_done(void)
 {
     SDL_LockMutex(s_rstate.done_lock);
     while(!s_rstate.done)
         SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
     s_rstate.done = false;
     SDL_UnlockMutex(s_rstate.done_lock);
-}
-
-static void render(void)
-{
-    SDL_GL_MakeCurrent(s_window, s_context); 
-
-    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
-    /* Restore OpenGL global state after it's been clobbered by nuklear */
-    gl_set_globals(); 
-
-    G_Render();
-    UI_Render();
-
-    SDL_GL_SwapWindow(s_window);
 }
 
 static void fs_on_key_press(void *user, void *event)
@@ -275,7 +253,7 @@ static void frame_step_commit(const struct sval *new_val)
 
 /* Fills the framebuffer with the loading screen using SDL's software renderer. 
  * Used to set a loading screen immediately, even before the rendering subsystem 
- * is initialized, The loading screen will be overwriten by the first 'render' call. */
+ * is initialized, */
 static void early_loading_screen(void)
 {
     assert(s_window);
@@ -294,13 +272,17 @@ static void early_loading_screen(void)
     SDL_RenderGetViewport(sw_renderer, &draw_area);
 
     int width, height, orig_format;
-    unsigned char *image = stbi_load(CONFIG_LOADING_SCREEN, &width, &height, &orig_format, STBI_rgb);
+    unsigned char *image = stbi_load(CONFIG_LOADING_SCREEN, &width, &height, 
+        &orig_format, STBI_rgb);
+
     if(!image) {
         fprintf(stderr, "Loading Screen: Failed to load image: %s\n", CONFIG_LOADING_SCREEN);
         goto fail_load_image;
     }
 
-    SDL_Surface *img_surface = SDL_CreateRGBSurfaceWithFormatFrom(image, width, height, 24, 3*width, SDL_PIXELFORMAT_RGB24);
+    SDL_Surface *img_surface = SDL_CreateRGBSurfaceWithFormatFrom(image, width, height, 
+        24, 3*width, SDL_PIXELFORMAT_RGB24);
+
     if(!img_surface) {
         fprintf(stderr, "Loading Screen: Failed to create SDL surface: %s\n", SDL_GetError());    
         goto fail_surface;
@@ -341,6 +323,8 @@ static void engine_create_settings(void)
 
 static bool engine_init(char **argv)
 {
+    g_main_thread_id = SDL_ThreadID();
+
     vec_event_init(&s_prev_tick_events);
     if(!vec_event_resize(&s_prev_tick_events, 256))
         return false;
@@ -363,12 +347,6 @@ static bool engine_init(char **argv)
         goto fail_sdl;
     }
 
-    if(!rstate_init(&s_rstate))
-        goto fail_rstate;
-    s_renderthread = R_Run(&s_rstate);
-    if(!s_renderthread)
-        goto fail_rthread;
-
     SDL_DisplayMode dm;
     SDL_GetDesktopDisplayMode(0, &dm);
 
@@ -388,18 +366,6 @@ static bool engine_init(char **argv)
         extra_flags = setting.as_bool ? SDL_WINDOW_ALWAYS_ON_TOP : 0;
     }
 
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
-
-    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-
     s_window = SDL_CreateWindow(
         "Permafrost Engine",
         SDL_WINDOWPOS_UNDEFINED, 
@@ -409,25 +375,33 @@ static bool engine_init(char **argv)
         SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | wf | extra_flags);
 
     early_loading_screen();
-    s_context = SDL_GL_CreateContext(s_window);
-
-    glewExperimental = GL_TRUE;
-    if(glewInit() != GLEW_OK) {
-        fprintf(stderr, "Failed to initialize GLEW\n");
-        goto fail_glew;
-    }
-
-    if(!GLEW_VERSION_3_3) {
-        fprintf(stderr, "Required OpenGL version not supported in GLEW\n");
-        goto fail_glew;
-    }
-
-    glViewport(0, 0, res[0], res[1]);
-    glProvokingVertex(GL_FIRST_VERTEX_CONVENTION); 
-    glFrontFace(GL_CW);
-    glCullFace(GL_BACK);
-
     stbi_set_flip_vertically_on_load(true);
+
+    if(!rstate_init(&s_rstate)) {
+        fprintf(stderr, "Failed to initialize the render sync state.\n");
+        goto fail_rstate;
+    }
+
+    struct render_init_arg rarg = (struct render_init_arg) {
+        .in_window = s_window,
+        .in_width = res[0],
+        .in_height = res[1],
+    };
+
+    s_rstate.arg = &rarg;
+    s_render_thread = R_Run(&s_rstate);
+
+    if(!s_render_thread) {
+        fprintf(stderr, "Failed to start the render thread.\n");
+        goto fail_rthread;
+    }
+    g_render_thread_id = SDL_GetThreadID(s_render_thread);
+
+    render_thread_start_work();
+    wait_render_work_done();
+
+    if(!rarg.out_success)
+        goto fail_render_init;
 
     if(!AL_Init()) {
         fprintf(stderr, "Failed to initialize asset-loading module.\n");
@@ -440,15 +414,21 @@ static bool engine_init(char **argv)
     }
     Cursor_SetActive(CURSOR_POINTER);
 
-    if(!R_Init(argv[1])) {
-        fprintf(stderr, "Failed to iniaialize rendering subsystem\n");
-        goto fail_render;
-    }
-
     if(!E_Init()) {
         fprintf(stderr, "Failed to initialize event subsystem\n");
         goto fail_event;
     }
+
+    if(!G_Init()) {
+        fprintf(stderr, "Failed to initialize game subsystem\n");
+        goto fail_game;
+    }
+
+    if(!R_Init(argv[1])) {
+        fprintf(stderr, "Failed to intiaialize rendering subsystem\n");
+        goto fail_render;
+    }
+
     Cursor_SetRTSMode(true);
     E_Global_Register(SDL_QUIT, on_user_quit, NULL, 
         G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
@@ -463,27 +443,22 @@ static bool engine_init(char **argv)
         goto fail_script;
     }
 
-    /* depends on Event subsystem */
-    if(!G_Init()) {
-        fprintf(stderr, "Failed to initialize game subsystem\n");
-        goto fail_game;
-    }
-
     if(!N_Init()) {
         fprintf(stderr, "Failed to intialize navigation subsystem\n");
         goto fail_nav;
     }
 
     engine_create_settings();
+    s_rstate.swap_buffers = true;
     return true;
 
 fail_nav:
-    G_Shutdown();
-fail_game:
     S_Shutdown();
 fail_script:
     UI_Shutdown();
 fail_nuklear:
+    G_Shutdown();
+fail_game:
     E_Shutdown();
 fail_event:
 fail_render:
@@ -491,23 +466,30 @@ fail_render:
 fail_cursor:
     AL_Shutdown();
 fail_al:
-    Settings_Shutdown();
-fail_settings:
-fail_glew:
-    render_quit();
+fail_render_init:
+    render_thread_quit();
 fail_rthread:
     rstate_destroy(&s_rstate);
 fail_rstate:
-    SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window);
     SDL_Quit();
 fail_sdl:
+    Settings_Shutdown();
+fail_settings:
     return false; 
 }
 
 static void engine_shutdown(void)
 {
     S_Shutdown();
+    UI_Shutdown();
+
+    /* Execute the last batch of commands that may have been queued by the 
+     * shutdown routines. 
+     */
+    render_thread_start_work();
+    wait_render_work_done();
+    render_thread_quit();
 
     /* 'Game' must shut down after 'Scripting'. There are still 
      * references to game entities in the Python interpreter that should get
@@ -516,15 +498,14 @@ static void engine_shutdown(void)
      */
     G_Shutdown(); 
     N_Shutdown();
+
     Cursor_FreeAll();
     AL_Shutdown();
-    UI_Shutdown();
     E_Shutdown();
 
     vec_event_destroy(&s_prev_tick_events);
     rstate_destroy(&s_rstate);
 
-    SDL_GL_DeleteContext(s_context);
     SDL_DestroyWindow(s_window); 
     SDL_Quit();
 
@@ -560,6 +541,17 @@ void Engine_SetDispMode(enum pf_window_flags wf)
 void Engine_WinDrawableSize(int *out_w, int *out_h)
 {
     SDL_GL_GetDrawableSize(s_window, out_w, out_h);
+}
+
+void Engine_FlushRenderWorkQueue(void)
+{
+    assert(g_frame_idx == 0);
+    G_SwapBuffers();
+
+    render_thread_start_work();
+    wait_render_work_done();
+
+    G_SwapBuffers();
 }
 
 #if defined(_WIN32)
@@ -602,6 +594,12 @@ int main(int argc, char **argv)
 
     S_RunFile(argv[2]);
 
+    /* Run the first frame of the simulation, and prepare the buffers for rendering. */
+    G_Update();
+    G_Render();
+    UI_Render(s_nk_ctx);
+    G_SwapBuffers();
+
     uint32_t last_ts = SDL_GetTicks();
     while(!s_quit) {
 
@@ -613,14 +611,17 @@ int main(int argc, char **argv)
             G_SetSimState(G_RUNNING);
         }
 
-        render_start();
+        render_thread_start_work();
 
         process_sdl_events();
         E_ServiceQueue();
         G_Update();
-        render();
+        G_Render();
+        UI_Render(s_nk_ctx);
 
-        render_wait_done();
+        wait_render_work_done();
+
+        G_SwapBuffers();
 
         if(prev_step_frame) {
             G_SetSimState(curr_ss);
@@ -633,8 +634,6 @@ int main(int argc, char **argv)
 
         ++g_frame_idx;
     }
-
-    render_quit();
 
     ss_e status;
     if((status = Settings_SaveToFile()) != SS_OKAY) {

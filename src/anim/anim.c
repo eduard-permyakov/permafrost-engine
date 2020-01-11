@@ -40,6 +40,7 @@
 #include "../entity.h"
 #include "../event.h"
 #include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 
 #include <SDL.h>
 
@@ -195,24 +196,18 @@ void A_Update(struct entity *ent)
     }
 }
 
-void A_SetRenderState(const struct entity *ent)
+void A_GetRenderState(const struct entity *ent, size_t *out_njoints, 
+                      mat4x4_t *out_curr_pose, const mat4x4_t **out_inv_bind_pose)
 {
+    assert(ent->flags & ENTITY_FLAG_ANIMATED);
     struct anim_data *priv = (struct anim_data*)ent->anim_private;
 
-    size_t float_per_mat = sizeof(mat4x4_t) / sizeof(float);
-    size_t num_joints = priv->skel.num_joints;
-    mat4x4_t curr_pose_mats[num_joints];
-
-    for(int j = 0; j < num_joints; j++) {
-        a_make_pose_mat(ent, j, &priv->skel, &curr_pose_mats[j]);
+    for(int j = 0; j < priv->skel.num_joints; j++) {
+        a_make_pose_mat(ent, j, &priv->skel, out_curr_pose + j);
     }
 
-    mat4x4_t model, normal;
-    Entity_ModelMatrix(ent, &model);
-    PFM_Mat4x4_Inverse(&model, &model);
-    PFM_Mat4x4_Transpose(&model, &normal);
-
-    R_GL_SetAnimUniforms(priv->skel.inv_bind_poses, curr_pose_mats, &normal, num_joints);
+    *out_njoints = priv->skel.num_joints;
+    *out_inv_bind_pose = priv->skel.inv_bind_poses;
 }
 
 const struct skeleton *A_GetBindSkeleton(const struct entity *ent)

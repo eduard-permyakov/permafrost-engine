@@ -42,6 +42,7 @@
 #include "render_private.h"
 #include "render_gl.h"
 #include "public/render.h"
+#include "../game/public/game.h"
 #include "../camera.h"
 #include "../settings.h"
 #include "../pf_math.h"
@@ -61,6 +62,10 @@
 #define ARR_SIZE(a)          (sizeof(a)/sizeof(a[0])) 
 #define MINIMAP_RES          (1024)
 #define MINIMAP_BORDER_CLR   ((vec4_t){65.0f/255.0f, 65.0f/255.0f, 65.0f/255.0f, 1.0f})
+
+struct coord{
+    int r, c;
+};
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -191,7 +196,8 @@ void draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, const s
 
 static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_model_mat)
 {
-    R_GL_MapBegin();
+    const bool fval = false;
+    R_GL_MapBegin(&fval);
 
     /* Clip everything below the 'Shallow Water' level. The 'Shallow Water' is 
      * rendered as just normal terrain. */
@@ -212,7 +218,7 @@ static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_mo
 /* for the minimap, we just blit a pre-rendered water texture. It is too expensive 
  * to actually render the water and still have real-time updates of the minimap. 
  */
-static void draw_minimap_water(const struct map *map, struct chunk_coord cc)
+static void draw_minimap_water(const struct map *map, struct coord cc)
 {
     assert(s_ctx.water_texture.id > 0);
 
@@ -268,7 +274,7 @@ static void create_minimap_texture(const struct map *map, void **chunk_rprivates
         struct render_private *priv = chunk_rprivates[r * res.chunk_w + c];
         mat4x4_t *mat = &chunk_model_mats[r * res.chunk_w + c];
 
-        draw_minimap_water(map, (struct chunk_coord){r,c});
+        draw_minimap_water(map, (struct coord){r,c});
         draw_minimap_terrain(priv, mat);
     }}
 
@@ -294,24 +300,24 @@ static void create_water_texture(const struct map *map)
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, s_ctx.water_texture.id, 0);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
-    ss_e status;
-    struct sval saved_reflect, saved_refract;
+    vec3_t map_center = M_GetCenterPos(map);
 
-    status = Settings_Get("pf.video.water_reflection", &saved_reflect);
-    assert(status == SS_OKAY);
-    status = Settings_Get("pf.video.water_refraction", &saved_refract);
-    assert(status == SS_OKAY);
+    DECL_CAMERA_STACK(map_cam);
+    memset(map_cam, 0, g_sizeof_camera);
+    Camera_SetPos((struct camera*)map_cam, map_center);
+    Camera_SetPitchAndYaw((struct camera*)map_cam, -90.0f, 90.0f);
 
-    struct sval newval = (struct sval){
-        .type = ST_TYPE_BOOL,
-        .as_bool = false
+    bool fval = false;
+    struct render_input in = (struct render_input){
+        .cam = (struct camera*)map_cam,
+        .map = map,
+        .shadows = false,
+        .cam_vis_stat = {0},
+        .cam_vis_anim = {0},
+        .light_vis_stat = {0},
+        .light_vis_anim = {0},
     };
-
-    Settings_Set("pf.video.water_reflection", &newval);
-    Settings_Set("pf.video.water_refraction", &newval);
-    R_GL_DrawWater(map);
-    Settings_Set("pf.video.water_refraction", &saved_refract);
-    Settings_Set("pf.video.water_reflection", &saved_reflect);
+    R_GL_DrawWater(&in, &fval, &fval);
 
     glDeleteFramebuffers(1, &fb);
     GL_ASSERT_OK();
@@ -333,7 +339,7 @@ static void setup_ortho_view_uniforms(const struct map *map)
     /* Create a new camera, with orthographic projection, centered 
      * over the map and facing straight down. */
     DECL_CAMERA_STACK(map_cam);
-    memset(&map_cam, 0, g_sizeof_camera);
+    memset(map_cam, 0, g_sizeof_camera);
 
     vec3_t offset = (vec3_t){0.0f, 200.0f, 0.0f};
     PFM_Vec3_Add(&map_center, &offset, &map_center);
@@ -389,9 +395,10 @@ static void setup_verts(void)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool R_GL_MinimapBake(const struct map *map, void **chunk_rprivates, 
+void R_GL_MinimapBake(const struct map *map, void **chunk_rprivates, 
                       mat4x4_t *chunk_model_mats)
 {
+    ASSERT_IN_RENDER_THREAD();
     setup_ortho_view_uniforms(map);
 
     /* Render the map top-down view to the texture. */
@@ -412,12 +419,12 @@ bool R_GL_MinimapBake(const struct map *map, void **chunk_rprivates,
     setup_verts();
 
     GL_ASSERT_OK();
-    return true;
 }
 
-bool R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, 
-                             mat4x4_t *chunk_model, struct chunk_coord cc)
+void R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, 
+                             mat4x4_t *chunk_model, const int *chunk_r, const int *chunk_c)
 {
+    ASSERT_IN_RENDER_THREAD();
     setup_ortho_view_uniforms(map);
 
     /* Render the chunk to the existing minimap texture */
@@ -432,7 +439,7 @@ bool R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
     glViewport(0,0, MINIMAP_RES, MINIMAP_RES);
-    draw_minimap_water(map, cc);
+    draw_minimap_water(map, (struct coord){*chunk_r, *chunk_c});
     draw_minimap_terrain(chunk_rprivate, chunk_model);
 
     int width, height;
@@ -444,12 +451,14 @@ bool R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
     glDeleteFramebuffers(1, &fb);
 
     GL_ASSERT_OK();
-    return true;
 }
 
-void R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t center_pos, int side_len_px)
+void R_GL_MinimapRender(const struct map *map, const struct camera *cam, 
+                        vec2_t *center_pos, const int *side_len_px)
 {
-    float horiz_width = side_len_px / cos(M_PI/4.0f);
+    ASSERT_IN_RENDER_THREAD();
+
+    float horiz_width = (*side_len_px) / cos(M_PI/4.0f);
 
     int width, height;
     Engine_WinDrawableSize(&width, &height);
@@ -459,21 +468,21 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t 
     M_GetMinimapAdjVres(map, &mm_vres);
     PFM_Mat4x4_MakeScale(width / mm_vres.x, height / mm_vres.y, 1.0f, &res_scale);
 
-    center_pos.x *= (width / mm_vres.x);
-    center_pos.y *= (height / mm_vres.y);
+    center_pos->x *= (width / mm_vres.x);
+    center_pos->y *= (height / mm_vres.y);
 
     mat4x4_t tmp;
     mat4x4_t tilt, trans, scale, model;
     PFM_Mat4x4_MakeRotZ(DEG_TO_RAD(-45.0f), &tilt);
-    PFM_Mat4x4_MakeScale(side_len_px/2.0f, side_len_px/2.0f, 1.0f, &tmp);
+    PFM_Mat4x4_MakeScale((*side_len_px)/2.0f, (*side_len_px)/2.0f, 1.0f, &tmp);
     PFM_Mat4x4_Mult4x4(&tmp, &res_scale, &scale);
-    PFM_Mat4x4_MakeTrans(center_pos.x, center_pos.y, 0.0f, &trans);
+    PFM_Mat4x4_MakeTrans(center_pos->x, center_pos->y, 0.0f, &trans);
     PFM_Mat4x4_Mult4x4(&scale, &tilt, &tmp);
     PFM_Mat4x4_Mult4x4(&trans, &tmp, &model);
 
     /* We scale up the quad slightly and center it in the same position, then draw it behind 
      * the minimap to create the minimap border */
-    float scale_fac = (side_len_px + 2*MINIMAP_BORDER_WIDTH)/2.0f;
+    float scale_fac = ((*side_len_px) + 2*MINIMAP_BORDER_WIDTH)/2.0f;
     mat4x4_t border_scale, border_model;
     PFM_Mat4x4_MakeScale(scale_fac, scale_fac, scale_fac, &tmp);
     PFM_Mat4x4_Mult4x4(&tmp, &res_scale, &border_scale);
@@ -523,6 +532,8 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t 
 
 void R_GL_MinimapFree(void)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     assert(s_ctx.minimap_texture.id > 0);
     assert(s_ctx.minimap_mesh.VBO > 0);
     assert(s_ctx.minimap_mesh.VAO > 0);

@@ -62,8 +62,48 @@ struct shadow_gl_state{
 static GLuint         s_depth_map_FBO;
 static GLuint         s_depth_map_tex;
 static bool           s_depth_pass_active = false;
-static struct frustum s_light_frustum;
 static struct shadow_gl_state s_saved;
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static void make_light_frustum(vec3_t light_pos, vec3_t cam_pos, vec3_t cam_dir, 
+                               struct frustum *out, mat4x4_t *out_view_mat)
+{
+    float t = cam_pos.y / cam_dir.y;
+    vec3_t cam_ray_ground_isec = (vec3_t){cam_pos.x - t * cam_dir.x, 0.0f, cam_pos.z - t * cam_dir.z};
+
+    vec3_t light_dir = light_pos;
+    PFM_Vec3_Normal(&light_dir, &light_dir);
+    PFM_Vec3_Scale(&light_dir, -1.0f, &light_dir);
+
+    vec3_t right = (vec3_t){-1.0f, 0.0f, 0.0f}, up;
+    PFM_Vec3_Cross(&light_dir, &right, &up);
+
+    t = fabs((cam_pos.y + 150.0)/ light_dir.y);
+    vec3_t light_origin, delta;
+    PFM_Vec3_Scale(&light_dir, -t, &delta);
+    PFM_Vec3_Add(&cam_ray_ground_isec, &delta, &light_origin);
+
+    vec3_t target;
+    PFM_Vec3_Add(&light_origin, &light_dir, &target);
+
+    /* Since, for shadow mapping, we treat our light source as a directional light, 
+     * we only care about direction of the light rays, not the absolute position of 
+     * the light source. Thus, we render the shadow map from a fixed height, looking 
+     * at the position where the camera ray intersects the ground plane. 
+     */
+    mat4x4_t light_view;
+    PFM_Mat4x4_MakeLookAt(&light_origin, &target, &up, &light_view);
+
+    if(out) {
+        C_MakeFrustum(light_origin, up, light_dir, 1.0f, M_PI/4.0f, 0.1f, CONFIG_SHADOW_DRAWDIST, out);
+    }
+    if(out_view_mat) {
+        *out_view_mat = light_view;
+    }
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -71,6 +111,8 @@ static struct shadow_gl_state s_saved;
 
 void R_GL_InitShadows(void)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     glGenFramebuffers(1, &s_depth_map_FBO);
     glBindFramebuffer(GL_FRAMEBUFFER, s_depth_map_FBO);
 
@@ -95,8 +137,10 @@ void R_GL_InitShadows(void)
     GL_ASSERT_OK();
 }
 
-void R_GL_DepthPassBegin(void)
+void R_GL_DepthPassBegin(const vec3_t *light_pos, const vec3_t *cam_pos, const vec3_t *cam_dir)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     assert(!s_depth_pass_active);
     s_depth_pass_active = true;
 
@@ -107,35 +151,8 @@ void R_GL_DepthPassBegin(void)
     PFM_Mat4x4_MakeOrthographic(-CONFIG_SHADOW_FOV, CONFIG_SHADOW_FOV, 
         CONFIG_SHADOW_FOV, -CONFIG_SHADOW_FOV, 0.1f, CONFIG_SHADOW_DRAWDIST, &light_proj);
 
-    vec3_t cam_pos = G_ActiveCamPos();
-    vec3_t cam_dir = G_ActiveCamDir();
-
-    float t = cam_pos.y / cam_dir.y;
-    vec3_t cam_ray_ground_isec = (vec3_t){cam_pos.x - t * cam_dir.x, 0.0f, cam_pos.z - t * cam_dir.z};
-
-    vec3_t light_dir = R_GL_GetLightPos();
-    PFM_Vec3_Normal(&light_dir, &light_dir);
-    PFM_Vec3_Scale(&light_dir, -1.0f, &light_dir);
-
-    vec3_t right = (vec3_t){-1.0f, 0.0f, 0.0f}, up;
-    PFM_Vec3_Cross(&light_dir, &right, &up);
-
-    t = fabs((cam_pos.y + 150.0)/ light_dir.y);
-    vec3_t light_origin, delta;
-    PFM_Vec3_Scale(&light_dir, -t, &delta);
-    PFM_Vec3_Add(&cam_ray_ground_isec, &delta, &light_origin);
-
-    vec3_t target;
-    PFM_Vec3_Add(&light_origin, &light_dir, &target);
-
-    /* Since, for shadow mapping, we treat our light source as a directional light, 
-     * we only care about direction of the light rays, not the absolute position of 
-     * the light source. Thus, we render the shadow map from a fixed height, looking 
-     * at the position where the camera ray intersects the ground plane. */
     mat4x4_t light_view;
-    PFM_Mat4x4_MakeLookAt(&light_origin, &target, &up, &light_view);
-
-    C_MakeFrustum(light_origin, up, light_dir, 1.0f, M_PI/4.0f, 0.1f, CONFIG_SHADOW_DRAWDIST, &s_light_frustum);
+    make_light_frustum(*light_pos, *cam_pos, *cam_dir, NULL, &light_view);
 
     mat4x4_t light_space_trans;
     PFM_Mat4x4_Mult4x4(&light_proj, &light_view, &light_space_trans);
@@ -151,6 +168,8 @@ void R_GL_DepthPassBegin(void)
 
 void R_GL_DepthPassEnd(void)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     assert(s_depth_pass_active);
     s_depth_pass_active = false;
 
@@ -165,8 +184,8 @@ void R_GL_DepthPassEnd(void)
 
 void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
 {
+    ASSERT_IN_RENDER_THREAD();
     assert(s_depth_pass_active);
-    GL_ASSERT_OK();
 
     const struct render_private *priv = render_private;
     GLuint loc;
@@ -182,12 +201,7 @@ void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
     GL_ASSERT_OK();
 }
 
-void R_GL_GetLightFrustum(struct frustum *out)
-{
-    *out = s_light_frustum;
-}
-
-void R_GL_SetShadowsEnabled(void *render_private, bool on)
+void R_GL_SetShadowsEnabled(void *render_private, const bool *on)
 {
     struct render_private *priv = render_private;
     const char *map[][2] = {
@@ -202,11 +216,16 @@ void R_GL_SetShadowsEnabled(void *render_private, bool on)
         GLuint shadowed = R_Shader_GetProgForName(map[i][1]);
         assert(standard >= 0 && shadowed >= 0);
 
-        GLuint from = on ? standard : shadowed;
-        GLuint to = on ? shadowed : standard;
+        GLuint from = *on ? standard : shadowed;
+        GLuint to = *on ? shadowed : standard;
 
         if(priv->shader_prog == from)
             priv->shader_prog = to;
     }
+}
+
+void R_LightFrustum(vec3_t light_pos, vec3_t cam_pos, vec3_t cam_dir, struct frustum *out)
+{
+    make_light_frustum(light_pos, cam_pos, cam_dir, out, NULL);
 }
 

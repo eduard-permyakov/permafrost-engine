@@ -34,6 +34,8 @@
  */
 
 #include "shader.h"
+#include "gl_assert.h"
+#include "../main.h"
 
 #include <SDL.h>
 
@@ -186,6 +188,8 @@ static struct shader_resource s_shaders[] = {
 
 const char *shader_text_load(const char *path)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     SDL_RWops *stream = SDL_RWFromFile(path, "r");
     if(!stream){
         return NULL;
@@ -221,6 +225,8 @@ const char *shader_text_load(const char *path)
 
 static bool shader_init(const char *text, GLuint *out, GLint type)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     char info[512];
     GLint success;
 
@@ -241,6 +247,8 @@ static bool shader_init(const char *text, GLuint *out, GLint type)
 
 static bool shader_load_and_init(const char *path, GLint *out, GLint type)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const char *text = shader_text_load(path);
     if(!text) {
         fprintf(stderr, "Could not load shader at: %s\n", path);
@@ -262,6 +270,8 @@ fail:
 
 static bool shader_make_prog(const GLuint vertex_shader, const GLuint geo_shader, const GLuint frag_shader, GLint *out)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     char info[512];
     GLint success;
 
@@ -292,6 +302,8 @@ static bool shader_make_prog(const GLuint vertex_shader, const GLuint geo_shader
 
 bool R_Shader_InitAll(const char *base_path)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     for(int i = 0; i < ARR_SIZE(s_shaders); i++){
 
         struct shader_resource *res = &s_shaders[i];
@@ -338,9 +350,10 @@ bool R_Shader_InitAll(const char *base_path)
     return true;
 }
 
-
 GLint R_Shader_GetProgForName(const char *name)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     for(int i = 0; i < ARR_SIZE(s_shaders); i++) {
 
         const struct shader_resource *curr = &s_shaders[i];

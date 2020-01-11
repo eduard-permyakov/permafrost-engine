@@ -43,6 +43,7 @@
 #include "clearpath.h"
 #include "position.h"
 #include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
 #include "../entity.h"
@@ -53,6 +54,8 @@
 #include "../config.h"
 #include "../collision.h"
 #include "../settings.h"
+#include "../main.h"
+#include "../ui.h"
 
 #include <assert.h> 
 
@@ -62,8 +65,8 @@
 #define CAM_SPEED           0.20f
 
 #define ACTIVE_CAM          (s_gs.cameras[s_gs.active_cam_idx])
+#define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 
-VEC_IMPL(extern, pentity, struct entity *)
 VEC_IMPL(extern, obb, struct obb)
 __KHASH_IMPL(entity, extern, khint32_t, struct entity*, 1, kh_int_hash_func, kh_int_hash_equal)
 
@@ -105,15 +108,17 @@ static void g_reset(void)
     uint32_t key;
     struct entity *curr;
     kh_foreach(s_gs.active, key, curr, {
-        AL_EntityFree(curr);
+        G_SafeFree(curr);
     });
 
     kh_clear(entity, s_gs.active);
     kh_clear(entity, s_gs.dynamic);
     vec_pentity_reset(&s_gs.visible);
+    vec_pentity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
 
     if(s_gs.map) {
+
         M_Raycast_Uninstall();
         M_FreeMinimap(s_gs.map);
         AL_MapFree(s_gs.map);
@@ -121,12 +126,15 @@ static void g_reset(void)
         G_Combat_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
+
         s_gs.map = NULL;
+        free((void*)s_gs.prev_tick_map);
+        s_gs.prev_tick_map = NULL;
     }
 
-    for(int i = 0; i < NUM_CAMERAS; i++)
+    for(int i = 0; i < NUM_CAMERAS; i++) {
         g_reset_camera(s_gs.cameras[i]);
-
+    }
     G_ActivateCamera(0, CAM_MODE_RTS);
 
     s_gs.num_factions = 0;
@@ -162,65 +170,118 @@ static void g_init_map(void)
     N_FC_ClearStats();
 }
 
-static void g_shadow_pass(void)
+static void g_shadow_pass(const struct camera *cam, const struct map *map, 
+                          vec_rstat_t stat_ents, vec_ranim_t anim_ents)
 {
-    R_GL_DepthPassBegin();
+    vec3_t pos = Camera_GetPos(cam);
+    vec3_t dir = Camera_GetDir(cam);
 
-    if(s_gs.map) {
-        M_RenderVisibleMap(s_gs.map, ACTIVE_CAM, RENDER_PASS_DEPTH);
-    }
-
-    struct frustum frust;
-    R_GL_GetLightFrustum(&frust);
-
-    uint32_t key;
-    struct entity *curr;
-    kh_foreach(s_gs.active, key, curr, {
-
-        if(!(curr->flags & ENTITY_FLAG_COLLISION))
-            continue;
-
-        if(curr->flags & ENTITY_FLAG_INVISIBLE)
-            continue;
-    
-        struct obb obb;
-        Entity_CurrentOBB(curr, &obb);
-
-        if(!(C_FrustumOBBIntersectionFast(&frust, &obb) != VOLUME_INTERSEC_OUTSIDE))
-            continue;
-
-        if(curr->flags & ENTITY_FLAG_ANIMATED)
-            A_SetRenderState(curr);
-
-        mat4x4_t model;
-        Entity_ModelMatrix(curr, &model);
-
-        R_GL_RenderDepthMap(curr->render_private, &model);
+    R_PushCmd((struct rcmd){ 
+        .func = R_GL_DepthPassBegin, 
+        .nargs = 3,
+        .args = { 
+            R_PushArg(&s_gs.light_pos, sizeof(s_gs.light_pos)),
+            R_PushArg(&pos, sizeof(pos)),
+            R_PushArg(&dir, sizeof(dir)),
+        },
     });
 
-    R_GL_DepthPassEnd();
-}
-
-static void g_draw_pass(void)
-{
-    if(s_gs.map) {
-        M_RenderVisibleMap(s_gs.map, ACTIVE_CAM, RENDER_PASS_REGULAR);
+    if(map) {
+        M_RenderVisibleMap(map, cam, true, RENDER_PASS_DEPTH);
     }
 
-    for(int i = 0; i < vec_size(&s_gs.visible); i++) {
+    for(int i = 0; i < vec_size(&stat_ents); i++) {
     
-        struct entity *curr = vec_AT(&s_gs.visible, i);
+        struct ent_stat_rstate *curr = &vec_AT(&stat_ents, i);
+        R_PushCmd((struct rcmd){
+            .func = R_GL_RenderDepthMap,
+            .nargs = 2,
+            .args = {
+                curr->render_private,
+                R_PushArg(&curr->model, sizeof(curr->model)),
+            },
+        });
+    }
 
-        if(curr->flags & ENTITY_FLAG_INVISIBLE)
-            continue;
+    for(int i = 0; i < vec_size(&anim_ents); i++) {
+    
+        struct ent_anim_rstate *curr = &vec_AT(&anim_ents, i);
 
-        if(curr->flags & ENTITY_FLAG_ANIMATED)
-            A_SetRenderState(curr);
+        mat4x4_t model, normal;
+        PFM_Mat4x4_Inverse(&curr->model, &model);
+        PFM_Mat4x4_Transpose(&model, &normal);
 
-        mat4x4_t model;
-        Entity_ModelMatrix(curr, &model);
+        R_PushCmd((struct rcmd){
+            .func = R_GL_SetAnimUniforms,
+            .nargs = 4,
+            .args = {
+                (void*)curr->inv_bind_pose, 
+                R_PushArg(curr->curr_pose, sizeof(curr->curr_pose)),
+                R_PushArg(&normal, sizeof(normal)),
+                R_PushArg(&curr->njoints, sizeof(curr->njoints)),
+            },
+        });
 
-        R_GL_Draw(curr->render_private, &model);
+        R_PushCmd((struct rcmd){
+            .func = R_GL_RenderDepthMap,
+            .nargs = 2,
+            .args = {
+                curr->render_private,
+                R_PushArg(&curr->model, sizeof(curr->model)),
+            },
+        });
+    }
+
+    R_PushCmd((struct rcmd){ R_GL_DepthPassEnd, 0 });
+}
+
+static void g_draw_pass(const struct camera *cam, const struct map *map, 
+                        bool shadows, vec_rstat_t stat_ents, vec_ranim_t anim_ents)
+{
+    if(map) {
+        M_RenderVisibleMap(map, cam, shadows, RENDER_PASS_REGULAR);
+    }
+
+    for(int i = 0; i < vec_size(&stat_ents); i++) {
+    
+        struct ent_stat_rstate *curr = &vec_AT(&stat_ents, i);
+        R_PushCmd((struct rcmd){
+            .func = R_GL_Draw,
+            .nargs = 2,
+            .args = {
+                curr->render_private,
+                R_PushArg(&curr->model, sizeof(curr->model)),
+            },
+        });
+    }
+
+    for(int i = 0; i < vec_size(&anim_ents); i++) {
+    
+        struct ent_anim_rstate *curr = &vec_AT(&anim_ents, i);
+
+        mat4x4_t model, normal;
+        PFM_Mat4x4_Inverse(&curr->model, &model);
+        PFM_Mat4x4_Transpose(&model, &normal);
+
+        R_PushCmd((struct rcmd){
+            .func = R_GL_SetAnimUniforms,
+            .nargs = 4,
+            .args = {
+                (void*)curr->inv_bind_pose, 
+                R_PushArg(curr->curr_pose, sizeof(curr->curr_pose)),
+                R_PushArg(&normal, sizeof(normal)),
+                R_PushArg(&curr->njoints, sizeof(curr->njoints)),
+            },
+        });
+
+        R_PushCmd((struct rcmd){
+            .func = R_GL_Draw,
+            .nargs = 2,
+            .args = {
+                curr->render_private,
+                R_PushArg(&curr->model, sizeof(curr->model)),
+            },
+        });
     }
 }
 
@@ -248,7 +309,82 @@ static void g_render_healthbars(void)
         num_combat_visible++;
     }
 
-    R_GL_DrawHealthbars(num_combat_visible, ent_health_pc, ent_top_pos_ws, ACTIVE_CAM);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawHealthbars,
+        .nargs = 4,
+        .args = {
+            R_PushArg(&num_combat_visible, sizeof(num_combat_visible)),
+            R_PushArg(ent_health_pc, sizeof(ent_health_pc)),
+            R_PushArg(ent_top_pos_ws, sizeof(ent_top_pos_ws)),
+            R_PushArg(ACTIVE_CAM, g_sizeof_camera),
+        },
+    });
+}
+
+static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_ranim_t *out_anim)
+{
+    for(int i = 0; i < vec_size(&ents); i++) {
+
+        const struct entity *curr = vec_AT(&ents, i);
+
+        mat4x4_t model;
+        Entity_ModelMatrix(curr, &model);
+
+        if(curr->flags & ENTITY_FLAG_ANIMATED) {
+        
+            struct ent_anim_rstate rstate = (struct ent_anim_rstate){curr->render_private, model};
+            A_GetRenderState(curr, &rstate.njoints, rstate.curr_pose, &rstate.inv_bind_pose);
+            vec_ranim_push(out_anim, rstate);
+        }else{
+        
+            struct ent_stat_rstate rstate = (struct ent_stat_rstate){curr->render_private, model};
+            vec_rstat_push(out_stat, rstate);
+        }
+    }
+}
+
+static void g_create_render_input(struct render_input *out)
+{
+    struct sval shadows_setting;
+    ss_e status = Settings_Get("pf.video.shadows_enabled", &shadows_setting);
+    assert(status == SS_OKAY);
+
+    out->cam = ACTIVE_CAM;
+    out->map = s_gs.map;
+    out->shadows = shadows_setting.as_bool;
+
+    vec_rstat_init(&out->cam_vis_stat);
+    vec_ranim_init(&out->cam_vis_anim);
+
+    vec_rstat_init(&out->light_vis_stat);
+    vec_ranim_init(&out->light_vis_anim);
+
+    g_make_draw_list(s_gs.visible, &out->cam_vis_stat, &out->cam_vis_anim);
+    g_make_draw_list(s_gs.light_visible, &out->light_vis_stat, &out->light_vis_anim);
+}
+
+static void g_destroy_render_input(struct render_input *rinput)
+{
+    vec_rstat_destroy(&rinput->cam_vis_stat);
+    vec_ranim_destroy(&rinput->cam_vis_anim);
+
+    vec_rstat_destroy(&rinput->light_vis_stat);
+    vec_ranim_destroy(&rinput->light_vis_anim);
+}
+
+static void *g_push_render_input(struct render_input in)
+{
+    struct render_input *ret = R_PushArg(&in, sizeof(in));
+
+    ret->cam = R_PushArg(in.cam, g_sizeof_camera);
+
+    ret->cam_vis_stat.array = R_PushArg(in.cam_vis_stat.array, in.cam_vis_stat.size * sizeof(struct ent_stat_rstate));
+    ret->cam_vis_anim.array = R_PushArg(in.cam_vis_anim.array, in.cam_vis_anim.size * sizeof(struct ent_anim_rstate));
+
+    ret->light_vis_stat.array = R_PushArg(in.light_vis_stat.array, in.light_vis_stat.size * sizeof(struct ent_stat_rstate));
+    ret->light_vis_anim.array = R_PushArg(in.light_vis_anim.array, in.light_vis_anim.size * sizeof(struct ent_anim_rstate));
+
+    return ret;
 }
 
 static bool bool_val_validate(const struct sval *new_val)
@@ -278,7 +414,15 @@ static void shadows_en_commit(const struct sval *new_val)
     uint32_t key;
     struct entity *curr;
     kh_foreach(s_gs.active, key, curr, {
-        R_GL_SetShadowsEnabled(curr->render_private, on);
+
+        R_PushCmd((struct rcmd){
+            .func = R_GL_SetShadowsEnabled,
+            .nargs = 2,
+            .args = {
+                curr->render_private,
+                R_PushArg(&on, sizeof(on)),
+            },
+        });
     });
 }
 
@@ -288,8 +432,12 @@ static void shadows_en_commit(const struct sval *new_val)
 
 bool G_Init(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     vec_pentity_init(&s_gs.visible);
+    vec_pentity_init(&s_gs.light_visible);
     vec_obb_init(&s_gs.visible_obbs);
+    vec_pentity_init(&s_gs.deleted);
 
     s_gs.active = kh_init(entity);
     if(!s_gs.active)
@@ -302,11 +450,19 @@ bool G_Init(void)
     if(!g_init_cameras())
         goto fail_cams; 
 
+    if(!R_InitWS(&s_gs.ws[0]))
+        goto fail_ws;
+
+    if(!R_InitWS(&s_gs.ws[1])) {
+        R_DestroyWS(&s_gs.ws[0]);
+        goto fail_ws;
+    }
+
     g_reset();
     G_Sel_Init();
     G_Sel_Enable();
     G_Timer_Init();
-    R_GL_WaterInit();
+    R_PushCmd((struct rcmd){ R_GL_WaterInit, 0 });
 
     ss_e status = Settings_Create((struct setting){
         .name = "pf.game.healthbar_mode",
@@ -434,9 +590,16 @@ bool G_Init(void)
         .commit = NULL,
     });
 
+    s_gs.prev_tick_map = NULL;
+    s_gs.curr_ws_idx = 0;
+    s_gs.light_pos = (vec3_t){120.0f, 150.0f, 120.0f};
     s_gs.ss = G_RUNNING;
+
     return true;
 
+fail_ws:
+    for(int i = 0; i < NUM_CAMERAS; i++)
+        Camera_Free(s_gs.cameras[i]);
 fail_cams:
     kh_destroy(entity, s_gs.dynamic);
 fail_dynamic:
@@ -447,11 +610,21 @@ fail_active:
 
 bool G_NewGameWithMapString(const char *mapstr)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     g_reset();
 
-    s_gs.map = AL_MapFromPFMapString(mapstr);
-    if(!s_gs.map)
+    size_t copysize = AL_MapShallowCopySizeStr(mapstr);
+    s_gs.prev_tick_map = malloc(copysize);
+    if(!s_gs.prev_tick_map)
         return false;
+
+    s_gs.map = AL_MapFromPFMapString(mapstr);
+    if(!s_gs.map) {
+        free((void*)s_gs.prev_tick_map);
+        return false;
+    }
+
     g_init_map();
     E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
 
@@ -460,11 +633,21 @@ bool G_NewGameWithMapString(const char *mapstr)
 
 bool G_NewGameWithMap(const char *dir, const char *pfmap)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     g_reset();
 
-    s_gs.map = AL_MapFromPFMap(dir, pfmap);
-    if(!s_gs.map)
+    size_t copysize = AL_MapShallowCopySize(dir, pfmap);
+    s_gs.prev_tick_map = malloc(copysize);
+    if(!s_gs.prev_tick_map)
         return false;
+
+    s_gs.map = AL_MapFromPFMap(dir, pfmap);
+    if(!s_gs.map) {
+        free((void*)s_gs.prev_tick_map);
+        return false;
+    }
+
     g_init_map();
     E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
 
@@ -473,6 +656,8 @@ bool G_NewGameWithMap(const char *dir, const char *pfmap)
 
 void G_GetMinimapPos(float *out_x, float *out_y)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     assert(s_gs.map);
     vec2_t center_pos;
     M_GetMinimapPos(s_gs.map, &center_pos);
@@ -482,30 +667,40 @@ void G_GetMinimapPos(float *out_x, float *out_y)
 
 void G_SetMinimapPos(float x, float y)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     assert(s_gs.map);
     M_SetMinimapPos(s_gs.map, (vec2_t){x, y});
 }
 
 int G_GetMinimapSize(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     assert(s_gs.map);
     return M_GetMinimapSize(s_gs.map);
 }
 
 void G_SetMinimapSize(int size)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     assert(s_gs.map);
     M_SetMinimapSize(s_gs.map, size);
 }
 
 void G_SetMinimapResizeMask(int mask)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     assert(s_gs.map);
     M_SetMinimapResizeMask(s_gs.map, mask);
 }
 
 bool G_MouseOverMinimap(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(!s_gs.map)
         return false;
     return M_MouseOverMinimap(s_gs.map);
@@ -513,6 +708,8 @@ bool G_MouseOverMinimap(void)
 
 bool G_MapHeightAtPoint(vec2_t xz, float *out_height)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(!s_gs.map)
         return false;
 
@@ -525,6 +722,8 @@ bool G_MapHeightAtPoint(vec2_t xz, float *out_height)
 
 bool G_PointInsideMap(vec2_t xz)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(!s_gs.map)
         return false;
     return M_PointInsideMap(s_gs.map, xz);
@@ -532,6 +731,8 @@ bool G_PointInsideMap(vec2_t xz)
 
 void G_BakeNavDataForScene(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     uint32_t key;
     struct entity *curr;
     kh_foreach(s_gs.active, key, curr, {
@@ -551,21 +752,25 @@ void G_BakeNavDataForScene(void)
 
 bool G_UpdateMinimapChunk(int chunk_r, int chunk_c)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     assert(s_gs.map);
     return M_UpdateMinimapChunk(s_gs.map, chunk_r, chunk_c);
 }
 
 void G_MoveActiveCamera(vec2_t xz_ground_pos)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     vec3_t old_pos = Camera_GetPos(ACTIVE_CAM);
     float offset_mag = cos(DEG_TO_RAD(Camera_GetPitch(ACTIVE_CAM))) * Camera_GetHeight(ACTIVE_CAM);
 
     /* We position the camera such that the camera ray intersects the ground plane (Y=0)
      * at the specified xz position. */
     vec3_t new_pos = (vec3_t) {
-        xz_ground_pos.raw[0] - cos(DEG_TO_RAD(Camera_GetYaw(ACTIVE_CAM))) * offset_mag,
+        xz_ground_pos.x - cos(DEG_TO_RAD(Camera_GetYaw(ACTIVE_CAM))) * offset_mag,
         old_pos.y,
-        xz_ground_pos.raw[1] + sin(DEG_TO_RAD(Camera_GetYaw(ACTIVE_CAM))) * offset_mag 
+        xz_ground_pos.z + sin(DEG_TO_RAD(Camera_GetYaw(ACTIVE_CAM))) * offset_mag 
     };
 
     Camera_SetPos(ACTIVE_CAM, new_pos);
@@ -573,9 +778,14 @@ void G_MoveActiveCamera(vec2_t xz_ground_pos)
 
 void G_Shutdown(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     g_reset();
 
-    R_GL_WaterShutdown();
+    R_DestroyWS(&s_gs.ws[0]);
+    R_DestroyWS(&s_gs.ws[1]);
+
+    R_PushCmd((struct rcmd){ R_GL_WaterShutdown, 0 });
     G_Timer_Shutdown();
     G_Sel_Shutdown();
 
@@ -584,40 +794,61 @@ void G_Shutdown(void)
 
     kh_destroy(entity, s_gs.active);
     kh_destroy(entity, s_gs.dynamic);
+    vec_pentity_destroy(&s_gs.light_visible);
     vec_pentity_destroy(&s_gs.visible);
     vec_obb_destroy(&s_gs.visible_obbs);
+    vec_pentity_destroy(&s_gs.deleted);
 }
 
 void G_Update(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(s_gs.map) {
         M_Update(s_gs.map);
     }
 
-    /* Build the set of currently visible entities. Note that there may be some false positives due to 
-       using the fast frustum cull. */
     vec_pentity_reset(&s_gs.visible);
+    vec_pentity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
 
-    struct frustum frust;
-    Camera_MakeFrustum(ACTIVE_CAM, &frust);
+    vec3_t pos = Camera_GetPos(ACTIVE_CAM);
+    vec3_t dir = Camera_GetDir(ACTIVE_CAM);
+
+    struct frustum cam_frust;
+    Camera_MakeFrustum(ACTIVE_CAM, &cam_frust);
+
+    struct frustum light_frust;
+    R_LightFrustum(s_gs.light_pos, pos, dir, &light_frust);
 
     uint32_t key;
     struct entity *curr;
     kh_foreach(s_gs.active, key, curr, {
 
-        if(s_gs.ss == G_RUNNING && (curr->flags & ENTITY_FLAG_ANIMATED))
+        if(s_gs.ss == G_RUNNING && curr->flags & ENTITY_FLAG_ANIMATED)
             A_Update(curr);
 
         if(!(curr->flags & ENTITY_FLAG_COLLISION))
             continue;
 
+        if(curr->flags & ENTITY_FLAG_INVISIBLE)
+            continue;
+
         struct obb obb;
         Entity_CurrentOBB(curr, &obb);
 
-        if(C_FrustumOBBIntersectionFast(&frust, &obb) != VOLUME_INTERSEC_OUTSIDE) {
+        /* Build the set of currently visible entities. Note that there may be some 
+         * false positives due to using the fast frustum cull. 
+         */
+        if(C_FrustumOBBIntersectionFast(&cam_frust, &obb) != VOLUME_INTERSEC_OUTSIDE) {
+
             vec_pentity_push(&s_gs.visible, curr);
             vec_obb_push(&s_gs.visible_obbs, obb);
+        }
+
+        if(C_FrustumOBBIntersectionFast(&light_frust, &obb) != VOLUME_INTERSEC_OUTSIDE) {
+
+            vec_pentity_push(&s_gs.light_visible, curr);
         }
     });
 
@@ -627,27 +858,63 @@ void G_Update(void)
 
 void G_Render(void)
 {
-    G_RenderMapAndEntities();
+    ASSERT_IN_MAIN_THREAD();
+    ss_e status;
+
+    R_PushCmd((struct rcmd){ R_GL_BeginFrame, 0 });
+
+    struct render_input in;
+    g_create_render_input(&in);
+    G_RenderMapAndEntities(in);
+
+    struct sval refract_setting;
+    status = Settings_Get("pf.video.water_refraction", &refract_setting);
+    assert(status == SS_OKAY);
+
+    struct sval reflect_setting;
+    status = Settings_Get("pf.video.water_reflection", &reflect_setting);
+    assert(status == SS_OKAY);
 
     if(s_gs.map) {
-        R_GL_DrawWater(s_gs.map);
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawWater,
+            .nargs = 3,
+            .args = { 
+                g_push_render_input(in),
+                R_PushArg(&refract_setting.as_bool, sizeof(int)),
+                R_PushArg(&reflect_setting.as_bool, sizeof(int)),
+            },
+        });
     }
+    g_destroy_render_input(&in);
 
     enum selection_type sel_type;
     const vec_pentity_t *selected = G_Sel_Get(&sel_type);
     for(int i = 0; i < vec_size(selected); i++) {
 
         struct entity *curr = vec_AT(selected, i);
-        R_GL_DrawSelectionCircle(G_Pos_GetXZ(curr->uid), curr->selection_radius, 0.4f, 
-            g_seltype_color_map[sel_type], s_gs.map);
+        vec2_t curr_pos = G_Pos_GetXZ(curr->uid);
+        const float width = 0.4f;
+
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawSelectionCircle,
+            .nargs = 5,
+            .args = {
+                R_PushArg(&curr_pos, sizeof(curr_pos)),
+                R_PushArg(&curr->selection_radius, sizeof(curr->selection_radius)),
+                R_PushArg(&width, sizeof(width)),
+                R_PushArg(&g_seltype_color_map[sel_type], sizeof(g_seltype_color_map[0])),
+                (void*)s_gs.prev_tick_map,
+            },
+        });
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_3D, NULL, ES_ENGINE);
-    R_GL_SetScreenspaceDrawMode();
+    R_PushCmd((struct rcmd) { R_GL_SetScreenspaceDrawMode, 0 });
     E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
 
     struct sval hb_setting;
-    ss_e status = Settings_Get("pf.game.healthbar_mode", &hb_setting);
+    status = Settings_Get("pf.game.healthbar_mode", &hb_setting);
     assert(status == SS_OKAY);
 
     if(hb_setting.as_bool) {
@@ -659,20 +926,18 @@ void G_Render(void)
     }
 }
 
-void G_RenderMapAndEntities(void)
+void G_RenderMapAndEntities(struct render_input in)
 {
-    struct sval setting;
-    ss_e status = Settings_Get("pf.video.shadows_enabled", &setting);
-    assert(status == SS_OKAY);
-
-    if(setting.as_bool) {
-        g_shadow_pass();
+    if(in.shadows) {
+        g_shadow_pass(in.cam, in.map, in.cam_vis_stat, in.cam_vis_anim);
     }
-    g_draw_pass();
+    g_draw_pass(in.cam, in.map, in.shadows, in.light_vis_stat, in.light_vis_anim);
 }
 
 bool G_AddEntity(struct entity *ent, vec3_t pos)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     int ret;
     khiter_t k;
 
@@ -698,6 +963,8 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
 
 bool G_RemoveEntity(struct entity *ent)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     khiter_t k = kh_get(entity, s_gs.active, ent->uid);
     if(k == kh_end(s_gs.active))
         return false;
@@ -720,6 +987,8 @@ bool G_RemoveEntity(struct entity *ent)
 
 void G_StopEntity(const struct entity *ent)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(ent->flags & ENTITY_FLAG_COMBATABLE) {
         G_Combat_StopAttack(ent);
         G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
@@ -727,8 +996,16 @@ void G_StopEntity(const struct entity *ent)
     G_Move_Stop(ent);
 }
 
+void G_SafeFree(struct entity *ent)
+{
+    ASSERT_IN_MAIN_THREAD();
+    vec_pentity_push(&s_gs.deleted, ent);
+}
+
 bool G_AddFaction(const char *name, vec3_t color)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(s_gs.num_factions == MAX_FACTIONS)
         return false;
     if(strlen(name) >= sizeof(s_gs.factions[0].name))
@@ -752,6 +1029,8 @@ bool G_AddFaction(const char *name, vec3_t color)
 
 bool G_RemoveFaction(int faction_id)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(s_gs.num_factions < 2) 
         return false;
     if(faction_id < 0 || faction_id >= s_gs.num_factions)
@@ -792,6 +1071,8 @@ bool G_RemoveFaction(int faction_id)
 
 bool G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool control)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(faction_id >= s_gs.num_factions)
         return false;
     if(strlen(name) >= sizeof(s_gs.factions[0].name))
@@ -805,6 +1086,8 @@ bool G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool contro
 
 int G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     for(int i = 0; i < s_gs.num_factions; i++) {
     
         if(out_names) {
@@ -823,6 +1106,8 @@ int G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *
 
 bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(fac_id_a < 0 || fac_id_a >= s_gs.num_factions)
         return false;
     if(fac_id_b < 0 || fac_id_b >= s_gs.num_factions)
@@ -837,6 +1122,8 @@ bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds)
 
 bool G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(fac_id_a < 0 || fac_id_a >= s_gs.num_factions)
         return false;
     if(fac_id_b < 0 || fac_id_b >= s_gs.num_factions)
@@ -850,6 +1137,8 @@ bool G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out)
 
 bool G_ActivateCamera(int idx, enum cam_mode mode)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if( !(idx >= 0 && idx < NUM_CAMERAS) )
         return false;
 
@@ -866,16 +1155,22 @@ bool G_ActivateCamera(int idx, enum cam_mode mode)
 
 vec3_t G_ActiveCamPos(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     return Camera_GetPos(ACTIVE_CAM);
 }
 
 const struct camera *G_GetActiveCamera(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     return ACTIVE_CAM;
 }
 
 vec3_t G_ActiveCamDir(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     mat4x4_t lookat;
     Camera_MakeViewMat(ACTIVE_CAM, &lookat);
     vec3_t ret = (vec3_t){-lookat.cols[0][2], -lookat.cols[1][2], -lookat.cols[2][2]};
@@ -885,21 +1180,29 @@ vec3_t G_ActiveCamDir(void)
 
 bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     return M_AL_UpdateTile(s_gs.map, desc, tile);
 }
 
 const khash_t(entity) *G_GetDynamicEntsSet(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     return s_gs.dynamic;
 }
 
 const khash_t(entity) *G_GetAllEntsSet(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     return s_gs.active;
 }
 
 void G_SetSimState(enum simstate ss)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(ss == s_gs.ss)
         return;
 
@@ -921,13 +1224,29 @@ void G_SetSimState(enum simstate ss)
     s_gs.ss = ss;
 }
 
+void G_SetLightPos(vec3_t pos)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    s_gs.light_pos = pos;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetLightPos,
+        .nargs = 1,
+        .args = { R_PushArg(&pos, sizeof(pos)) },
+    });
+}
+
 enum simstate G_GetSimState(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     return s_gs.ss;
 }
 
 void G_Zombiefy(struct entity *ent)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(ent->flags & ENTITY_FLAG_SELECTABLE)
         G_Sel_Remove(ent);
 
@@ -948,5 +1267,48 @@ void G_Zombiefy(struct entity *ent)
     ent->flags |= ENTITY_FLAG_INVISIBLE;
     ent->flags |= ENTITY_FLAG_STATIC;
     ent->flags |= ENTITY_FLAG_ZOMBIE;
+}
+
+struct render_workspace *G_GetSimWS(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    return &s_gs.ws[s_gs.curr_ws_idx];
+}
+
+struct render_workspace *G_GetRenderWS(void)
+{
+    ASSERT_IN_RENDER_THREAD();;
+
+    return &s_gs.ws[(s_gs.curr_ws_idx + 1) % 2];
+}
+
+void G_SwapBuffers(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    int sim_idx = s_gs.curr_ws_idx;
+    int render_idx = (sim_idx + 1) % 2;
+
+    if(s_gs.map)
+        M_AL_ShallowCopy((struct map*)s_gs.prev_tick_map, s_gs.map);
+
+    for(int i = 0; i < vec_size(&s_gs.deleted); i++) {
+
+        struct entity *curr = vec_AT(&s_gs.deleted, i);
+        AL_EntityFree(curr);
+    }
+    vec_pentity_reset(&s_gs.deleted);
+
+    assert(queue_size(s_gs.ws[render_idx].commands) == 0);
+    R_ClearWS(&s_gs.ws[render_idx]);
+    s_gs.curr_ws_idx = render_idx;
+}
+
+const struct map *G_GetPrevTickMap(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    return s_gs.prev_tick_map;
 }
 

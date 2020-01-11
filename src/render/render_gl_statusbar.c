@@ -52,20 +52,22 @@
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_DrawHealthbars(size_t num_ents, GLfloat *ent_health_pc, vec3_t *ent_top_pos_ws,
-                         const struct camera *cam)
+void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc, 
+                         vec3_t *ent_top_pos_ws, const struct camera *cam)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     int width, height;
     Engine_WinDrawableSize(&width, &height);
 
     /* Convert the worldspace positions to SDL screenspace positions */
-    vec2_t ent_top_pos_ss[num_ents]; /* Screen-space XY positions of the entity tops. */
+    vec2_t ent_top_pos_ss[*num_ents]; /* Screen-space XY positions of the entity tops. */
 
     mat4x4_t view, proj;
     Camera_MakeViewMat(cam, &view); 
     Camera_MakeProjMat(cam, &proj);
 
-    for(int i = 0; i < num_ents; i++) {
+    for(int i = 0; i < *num_ents; i++) {
     
         vec4_t ent_top_homo = (vec4_t){ent_top_pos_ws[i].x, ent_top_pos_ws[i].y, ent_top_pos_ws[i].z, 1.0f};
 
@@ -135,7 +137,7 @@ void R_GL_DrawHealthbars(size_t num_ents, GLfloat *ent_health_pc, vec3_t *ent_to
     glUniform2iv(loc, 1, (int[2]){w, h});
 
     /* Populate shader uniform arrays with screenspace offsets and health percentages. */
-    for(int i = 0; i < num_ents; i++) {
+    for(int i = 0; i < *num_ents; i++) {
     
         char locname[128];
         GLuint loc;
@@ -153,7 +155,7 @@ void R_GL_DrawHealthbars(size_t num_ents, GLfloat *ent_health_pc, vec3_t *ent_to
     }
 
     /* Draw instances */
-    glDrawArraysInstanced(GL_TRIANGLES, 0, ARR_SIZE(vbuff), num_ents);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, ARR_SIZE(vbuff), *num_ents);
     GL_ASSERT_OK();
 
 cleanup:

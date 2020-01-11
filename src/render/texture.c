@@ -62,6 +62,8 @@ static khash_t(tex) *s_name_tex_table;
 
 static bool r_texture_gl_init(const char *path, GLuint *out)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLuint ret;
     int width, height, nr_channels;
     unsigned char *data;
@@ -103,12 +105,16 @@ fail_load:
 
 bool R_Texture_Init(void)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     s_name_tex_table = kh_init(tex);
     return (s_name_tex_table != NULL);
 }
 
 bool R_Texture_GetForName(const char *name, GLuint *out)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     khiter_t k;
     if((k = kh_get(tex, s_name_tex_table, name)) == kh_end(s_name_tex_table))
         return false;
@@ -119,6 +125,8 @@ bool R_Texture_GetForName(const char *name, GLuint *out)
 
 bool R_Texture_Load(const char *basedir, const char *name, GLuint *out)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLuint ret;
     khiter_t k;
     char texture_path[512], texture_path_maps[512];
@@ -159,6 +167,8 @@ fail:
 
 bool R_Texture_AddExisting(const char *name, GLuint id)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     khiter_t k;
     if((k = kh_get(tex, s_name_tex_table, name)) != kh_end(s_name_tex_table))
         return false;
@@ -172,6 +182,8 @@ bool R_Texture_AddExisting(const char *name, GLuint id)
 
 void R_Texture_Free(const char *name)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     khiter_t k;
     if((k = kh_get(tex, s_name_tex_table, name)) != kh_end(s_name_tex_table)) {
 
@@ -186,6 +198,8 @@ void R_Texture_Free(const char *name)
 
 void R_Texture_GL_Activate(const struct texture *text, GLuint shader_prog)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLuint sampler_loc;
 
     switch(text->tunit) {
@@ -219,6 +233,8 @@ void R_Texture_GL_Activate(const struct texture *text, GLuint shader_prog)
 void R_Texture_MakeArray(const struct material *mats, size_t num_mats, 
                          struct texture_arr *out)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     glActiveTexture(GL_TEXTURE0);
     out->tunit = GL_TEXTURE0;
     glGenTextures(1, &out->id);
@@ -263,6 +279,8 @@ void R_Texture_MakeArray(const struct material *mats, size_t num_mats,
 bool R_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures, 
                             struct texture_arr *out)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     glActiveTexture(GL_TEXTURE0);
     out->tunit = GL_TEXTURE0;
     glGenTextures(1, &out->id);
@@ -313,6 +331,8 @@ fail_load:
 
 void R_Texture_GL_ActivateArray(const struct texture_arr *arr, GLuint shader_prog)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLuint sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEX_ARRAY0);
     glActiveTexture(arr->tunit);
     glBindTexture(GL_TEXTURE_2D_ARRAY, arr->id);
@@ -323,9 +343,21 @@ void R_Texture_GL_ActivateArray(const struct texture_arr *arr, GLuint shader_pro
 
 void R_Texture_GetSize(GLuint texid, int *out_w, int *out_h)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     glBindTexture(GL_TEXTURE_2D, texid);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, out_w);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, out_h);
     GL_ASSERT_OK();
+}
+
+void R_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    if(R_Texture_GetForName(name, out))
+        return;
+
+    R_Texture_Load(basedir, name, out);
 }
 

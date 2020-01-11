@@ -36,6 +36,8 @@
 #ifndef ANIM_H
 #define ANIM_H
 
+#include "../../pf_math.h"
+
 #include <stddef.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -85,10 +87,11 @@ void                   A_SetActiveClip(const struct entity *ent, const char *nam
 void                   A_Update(struct entity *ent);
 
 /* ---------------------------------------------------------------------------
- * Will update OpenGL uniforms for the entity's current animation context.
+ * Retreive a copy of the state needed to render an animated entity.
  * ---------------------------------------------------------------------------
  */
-void                   A_SetRenderState(const struct entity *ent);
+void                   A_GetRenderState(const struct entity *ent, size_t *out_njoints, 
+                                        mat4x4_t *out_curr_pose, const mat4x4_t **out_inv_bind_pose);
 
 /* ---------------------------------------------------------------------------
  * Simple utility to get a reference to the skeleton structure in its' default

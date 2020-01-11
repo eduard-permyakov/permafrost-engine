@@ -36,7 +36,7 @@
 #include "render_gl.h"
 #include "texture.h"
 #include "shader.h"
-#include "../settings.h"
+#include "../main.h"
 
 #include <assert.h>
 
@@ -51,22 +51,22 @@ static bool               s_map_ctx_active = false;
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool R_GL_MapInit(const char map_texfiles[][256], size_t num_textures)
+void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures)
 {
-    return R_Texture_MakeArrayMap(map_texfiles, num_textures, &s_map_textures);
+    ASSERT_IN_RENDER_THREAD();
+
+    bool ret = R_Texture_MakeArrayMap(map_texfiles, *num_textures, &s_map_textures);
+    assert(ret);
 }
 
-void R_GL_MapBegin(void)
+void R_GL_MapBegin(const bool *shadows)
 {
+    ASSERT_IN_RENDER_THREAD();
     assert(!s_map_ctx_active);
 
-    struct sval sh_setting;
-    ss_e status = Settings_Get("pf.video.shadows_enabled", &sh_setting);
-    assert(status == SS_OKAY);
-
     GLuint shader_prog;
-    if(sh_setting.as_bool) {
-        shader_prog = R_Shader_GetProgForName("terrain-shadowed");
+    if(*shadows) {
+      shader_prog = R_Shader_GetProgForName("terrain-shadowed");
     }else {
         shader_prog = R_Shader_GetProgForName("terrain");
     }
@@ -78,6 +78,8 @@ void R_GL_MapBegin(void)
 
 void R_GL_MapEnd(void)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     assert(s_map_ctx_active);
     s_map_ctx_active = false;
 }

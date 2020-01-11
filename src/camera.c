@@ -35,8 +35,10 @@
 
 #include "camera.h"
 #include "render/public/render.h"
+#include "render/public/render_ctrl.h"
 #include "config.h"
 #include "collision.h"
+#include "main.h"
 
 #include <SDL.h>
 
@@ -131,6 +133,11 @@ void Camera_SetDir(struct camera *cam, vec3_t dir)
 
     cam->pitch = -RAD_TO_DEG(asin(-dir.y));
     cam->yaw = -RAD_TO_DEG(atan2(dir.x, dir.z));
+}
+
+vec3_t Camera_GetDir(const struct camera *cam)
+{
+    return cam->front;
 }
 
 void Camera_SetPitchAndYaw(struct camera *cam, float pitch, float yaw)
@@ -314,14 +321,25 @@ void Camera_TickFinishPerspective(struct camera *cam)
     PFM_Vec3_Add(&cam->pos, &cam->front, &target);
     PFM_Mat4x4_MakeLookAt(&cam->pos, &target, &cam->up, &view);
 
-    R_GL_SetViewMatAndPos(&view, &cam->pos);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetViewMatAndPos,
+        .nargs = 2,
+        .args = {
+            R_PushArg(&view, sizeof(view)),
+            R_PushArg(&cam->pos, sizeof(cam->pos)),
+        },
+    });
     
     /* Set the projection matrix for the vertex shader */
-    GLint viewport[4]; 
-    glGetIntegerv(GL_VIEWPORT, viewport);
-    PFM_Mat4x4_MakePerspective(DEG_TO_RAD(45.0f), ((GLfloat)viewport[2])/viewport[3], CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, &proj);
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    PFM_Mat4x4_MakePerspective(DEG_TO_RAD(45.0f), ((GLfloat)w)/h, CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, &proj);
 
-    R_GL_SetProj(&proj);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetProj,
+        .nargs = 1,
+        .args = { R_PushArg(&proj, sizeof(proj)) },
+    });
 
     /* Update our last timestamp */
     cam->prev_frame_ts = SDL_GetTicks();
@@ -336,11 +354,22 @@ void Camera_TickFinishOrthographic(struct camera *cam, vec2_t bot_left, vec2_t t
     PFM_Vec3_Add(&cam->pos, &cam->front, &target);
     PFM_Mat4x4_MakeLookAt(&cam->pos, &target, &cam->up, &view);
 
-    R_GL_SetViewMatAndPos(&view, &cam->pos);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetViewMatAndPos,
+        .nargs = 2,
+        .args = {
+            R_PushArg(&view, sizeof(view)),
+            R_PushArg(&cam->pos, sizeof(cam->pos)),
+        },
+    });
     
     /* Set the projection matrix for the vertex shader */
     PFM_Mat4x4_MakeOrthographic(bot_left.raw[0], top_right.raw[0], bot_left.raw[1], top_right.raw[1], CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, &proj);
-    R_GL_SetProj(&proj);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetProj,
+        .nargs = 1,
+        .args = { R_PushArg(&proj, sizeof(proj)) },
+    });
 
     /* Update our last timestamp */
     cam->prev_frame_ts = SDL_GetTicks();
@@ -375,16 +404,16 @@ void Camera_MakeViewMat(const struct camera *cam, mat4x4_t *out)
 
 void Camera_MakeProjMat(const struct camera *cam, mat4x4_t *out)
 {
-    GLint viewport[4]; 
-    glGetIntegerv(GL_VIEWPORT, viewport);
-    PFM_Mat4x4_MakePerspective(CAM_FOV_RAD, ((GLfloat)viewport[2])/viewport[3], 0.1f, CONFIG_DRAWDIST, out);
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    PFM_Mat4x4_MakePerspective(CAM_FOV_RAD, ((GLfloat)w)/h, 0.1f, CONFIG_DRAWDIST, out);
 }
 
 void Camera_MakeFrustum(const struct camera *cam, struct frustum *out)
 {
-    GLint viewport[4]; 
-    glGetIntegerv(GL_VIEWPORT, viewport);
-    const float aspect_ratio = ((float)viewport[2])/viewport[3];
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    const float aspect_ratio = ((float)w)/h;
 
     C_MakeFrustum(cam->pos, cam->up, cam->front, aspect_ratio, CAM_FOV_RAD, 
         CAM_Z_NEAR_DIST, CONFIG_DRAWDIST, out);

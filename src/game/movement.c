@@ -290,7 +290,7 @@ static void on_marker_anim_finish(void *user, void *event)
 
     E_Entity_Unregister(EVENT_ANIM_FINISHED, ent->uid, on_marker_anim_finish);
     G_RemoveEntity(ent);
-    AL_EntityFree(ent);
+    G_SafeFree(ent);
 }
 
 static bool same_chunk_as_any_in_set(struct tile_desc desc, const struct tile_desc *set,
@@ -1218,7 +1218,7 @@ void G_Move_Shutdown(void)
     for(int i = 0; i < vec_size(&s_move_markers); i++) {
         E_Entity_Unregister(EVENT_ANIM_FINISHED, vec_AT(&s_move_markers, i)->uid, on_marker_anim_finish);
         G_RemoveEntity(vec_AT(&s_move_markers, i));
-        AL_EntityFree(vec_AT(&s_move_markers, i));
+        G_SafeFree(vec_AT(&s_move_markers, i));
     }
 
     vec_flock_destroy(&s_flocks);

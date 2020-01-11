@@ -36,11 +36,13 @@
 #include "public/map.h"
 #include "map_private.h"
 #include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 #include "../collision.h"
 #include "../game/public/game.h"
 #include "../event.h"
 #include "../main.h"
 #include "../ui.h"
+#include "../camera.h"
 
 #include <SDL.h>
 
@@ -275,30 +277,48 @@ bool M_InitMinimap(struct map *map, vec2_t center_pos)
     mat4x4_t chunk_model_mats[map->width * map->height];
 
     for(int r = 0; r < map->height; r++) {
-        for(int c = 0; c < map->width; c++) {
-            
-            const struct pfchunk *curr = &map->chunks[r * map->width + c];
-            chunk_rprivates[r * map->width + c] = curr->render_private;
-            M_ModelMatrixForChunk(map, (struct chunkpos){r, c}, chunk_model_mats + (r * map->width + c));
-        }
-    }
+    for(int c = 0; c < map->width;  c++) {
+        
+        const struct pfchunk *curr = &map->chunks[r * map->width + c];
+        chunk_rprivates[r * map->width + c] = curr->render_private;
+        M_ModelMatrixForChunk(map, (struct chunkpos){r, c}, chunk_model_mats + (r * map->width + c));
+    }}
     
-    bool ret = R_GL_MinimapBake(map, chunk_rprivates, chunk_model_mats);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MinimapBake,
+        .nargs = 3,
+        .args = {
+            (void*)G_GetPrevTickMap(),
+            R_PushArg(chunk_rprivates, sizeof(chunk_rprivates)),
+            R_PushArg(chunk_model_mats, sizeof(chunk_model_mats)),
+        },
+    });
 
-    if(ret) {
-        E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mouseclick, map, G_RUNNING);
-        E_Global_Register(SDL_MOUSEMOTION,     on_mousemove,  map, G_RUNNING);
-    }
-    return ret;
+    E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mouseclick, map, G_RUNNING);
+    E_Global_Register(SDL_MOUSEMOTION,     on_mousemove,  map, G_RUNNING);
+    return true;
 }
 
 bool M_UpdateMinimapChunk(const struct map *map, int chunk_r, int chunk_c)
 {
+    if(chunk_r >= map->height || chunk_c >= map->width)
+        return false;
+
     mat4x4_t model;
     M_ModelMatrixForChunk(map, (struct chunkpos){chunk_r, chunk_c}, &model);
 
-    return R_GL_MinimapUpdateChunk(map, map->chunks[chunk_r * map->width + chunk_c].render_private, &model,
-        (struct chunk_coord){chunk_r, chunk_c});
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MinimapUpdateChunk,
+        .nargs = 5,
+        .args = {
+            (void*)G_GetPrevTickMap(),
+            map->chunks[chunk_r * map->width + chunk_c].render_private,
+            R_PushArg(&model, sizeof(model)),
+            R_PushArg(&chunk_r, sizeof(chunk_r)),
+            R_PushArg(&chunk_c, sizeof(chunk_c)),
+        }
+    });
+    return true;
 }
 
 void M_FreeMinimap(struct map *map)
@@ -306,7 +326,7 @@ void M_FreeMinimap(struct map *map)
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mouseclick);
     E_Global_Unregister(SDL_MOUSEMOTION,     on_mousemove);
 
-    R_GL_MinimapFree();
+    R_PushCmd((struct rcmd){ R_GL_MinimapFree, 0 });
     s_mouse_down_in_minimap = false;
 }
 
@@ -359,9 +379,18 @@ void M_RenderMinimap(const struct map *map, const struct camera *cam)
 
     vec2_t ab;
     PFM_Vec2_Sub(&curr_bounds.b, &curr_bounds.a, &ab);
-    float len = PFM_Vec2_Len(&ab);
+    int len = PFM_Vec2_Len(&ab);
 
-    R_GL_MinimapRender(map, cam, center, len);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MinimapRender,
+        .nargs = 4,
+        .args = {
+            (void*)G_GetPrevTickMap(),
+            R_PushArg(cam, g_sizeof_camera),
+            R_PushArg(&center, sizeof(center)),
+            R_PushArg(&len, sizeof(len)),
+        },
+    });
 }
 
 bool M_MouseOverMinimap(const struct map *map)

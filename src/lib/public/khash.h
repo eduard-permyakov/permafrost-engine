@@ -188,6 +188,9 @@ typedef khint_t khiter_t;
 #ifndef kfree
 #define kfree(P) free(P)
 #endif
+#ifndef kmemcpy
+#define kmemcpy(D, S, N) memcpy(D, S, N)
+#endif
 
 static const double __ac_HASH_UPPER = 0.77;
 
@@ -352,7 +355,28 @@ static const double __ac_HASH_UPPER = 0.77;
 			__ac_set_isdel_true(h->flags, x);							\
 			--h->size;													\
 		}																\
-	}
+	}                                                                   \
+    SCOPE kh_##name##_t *kh_copy_##name(kh_##name##_t *h)               \
+    {                                                                   \
+        kh_##name##_t *ret = kmalloc(sizeof(*h));                       \
+        if(!ret)                                                        \
+            return NULL;                                                \
+        *ret = *h;                                                      \
+        ret->flags = (khint32_t*)kmalloc(__ac_fsize(h->n_buckets) * sizeof(khint32_t)); \
+        ret->keys = (khkey_t*)kmalloc(h->n_buckets * sizeof(khkey_t));  \
+        ret->vals = (khval_t*)kmalloc(h->n_buckets * sizeof(khval_t));  \
+        if(!ret->flags || !ret->keys || !ret->vals) {                   \
+            kfree(ret->flags);                                          \
+            kfree(ret->keys);                                           \
+            kfree(ret->vals);                                           \
+            kfree(ret);                                                 \
+            return NULL;                                                \
+        }                                                               \
+        kmemcpy(ret->flags, h->flags, __ac_fsize(h->n_buckets) * sizeof(khint32_t)); \
+        kmemcpy(ret->keys, h->keys, h->n_buckets * sizeof(khkey_t));    \
+        kmemcpy(ret->vals, h->vals, h->n_buckets * sizeof(khval_t));    \
+        return ret;                                                     \
+    }
 
 #define KHASH_DECLARE(name, khkey_t, khval_t)		 					\
 	__KHASH_TYPE(name, khkey_t, khval_t) 								\
@@ -575,6 +599,14 @@ static kh_inline khint_t __ac_Wang_hash(khint_t key)
 		(vvar) = kh_val(h,__i);								\
 		__VA_ARGS__;										\
 	} }
+
+/*! @function
+  @abstract     Return a deep copy of the hashtable
+  @param  name  Name of the hash table [symbol]
+  @param  h     Pointer to the hash table [khash_t(name)*]
+  @return       The copy of h, or NULL
+ */
+#define kh_copy(name, h) kh_copy_##name(h)
 
 /* More conenient interfaces */
 

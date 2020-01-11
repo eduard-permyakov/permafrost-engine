@@ -52,6 +52,7 @@ struct tile_desc;
 struct map;
 struct camera;
 struct frustum;
+struct render_input;
 
 enum render_pass{
     RENDER_PASS_DEPTH,
@@ -63,10 +64,6 @@ enum render_info{
     RENDER_INFO_RENDERER,
     RENDER_INFO_VERSION,
     RENDER_INFO_SL_VERSION,
-};
-
-struct chunk_coord{
-    int r, c;
 };
 
 #define VERTS_PER_SIDE_FACE (6)
@@ -101,7 +98,7 @@ bool R_Texture_GetForName(const char *name, GLuint *out);
  * Get the dimensions of a previously loaded OpenGL texture
  * ---------------------------------------------------------------------------
  */
-void R_Texture_GetSize(GLuint texid, int *out_w, int *out_h);
+void R_Texture_GetSize(const GLuint *texid, int *out_w, int *out_h);
 
 /*###########################################################################*/
 /* RENDER OPENGL                                                             */
@@ -113,6 +110,13 @@ void R_Texture_GetSize(GLuint texid, int *out_w, int *out_h);
  * ---------------------------------------------------------------------------
  */
 void   R_GL_Draw(const void *render_private, mat4x4_t *model);
+
+/* ---------------------------------------------------------------------------
+ * Clear the draw buffer and set up the global OpenGL state at the beginning 
+ * of the frame.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_BeginFrame(void);
 
 /* ---------------------------------------------------------------------------
  * Sets the view matrix for all relevant shader programs. 
@@ -131,21 +135,21 @@ void   R_GL_SetProj(const mat4x4_t *proj);
  * ---------------------------------------------------------------------------
  */
 void   R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, 
-                            mat4x4_t *normal_mat, size_t count);
+                            mat4x4_t *normal_mat, const size_t *count);
 
 /* ---------------------------------------------------------------------------
  * Set the global ambient color that will impact all models based on their 
  * materials. The color is an RGB floating-point multiplier. 
  * ---------------------------------------------------------------------------
  */
-void   R_GL_SetAmbientLightColor(vec3_t color);
+void   R_GL_SetAmbientLightColor(const vec3_t *color);
 
 /* ---------------------------------------------------------------------------
  * Set the color of the global light source.
  * The color is an RGB floating-point multiplier. 
  * ---------------------------------------------------------------------------
  */
-void   R_GL_SetLightEmitColor(vec3_t color);
+void   R_GL_SetLightEmitColor(const vec3_t *color);
 
 /* ---------------------------------------------------------------------------
  * Set the light position that will impact all models. 
@@ -153,7 +157,7 @@ void   R_GL_SetLightEmitColor(vec3_t color);
  * This position must be in world space.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_SetLightPos(vec3_t pos);
+void   R_GL_SetLightPos(const vec3_t *pos);
 
 /* ---------------------------------------------------------------------------
  * Render an entitiy's skeleton which is used for animation. 
@@ -177,13 +181,14 @@ void   R_GL_DrawOrigin(const void *render_private, mat4x4_t *model);
  * Debugging utility to draw normals as yellow rays going out from the model.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim);
+void   R_GL_DrawNormals(const void *render_private, mat4x4_t *model, const bool *anim);
 
 /* ---------------------------------------------------------------------------
  * Debugging utility to draw an infinite ray defined by an origin and a direction.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model, vec3_t color, float t);
+void   R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model, 
+                    const vec3_t *color, const float *t);
 
 /* ---------------------------------------------------------------------------
  * Render the oriented bounding box for collidable entities.
@@ -196,13 +201,14 @@ void   R_GL_DrawOBB(const struct entity *ent);
  * corner of the box. Both are given in screen coordinates.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color, float width);
+void   R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size, 
+                      const vec3_t *color, const float *width);
 
 /* ---------------------------------------------------------------------------
  * Writes the framebuffer color region (0, 0, width, height) to a PPM file.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DumpFBColor_PPM(const char *filename, int width, int height);
+void   R_GL_DumpFBColor_PPM(const char *filename, const int *width, const int *height);
 
 
 /* ---------------------------------------------------------------------------
@@ -212,28 +218,29 @@ void   R_GL_DumpFBColor_PPM(const char *filename, int width, int height);
  * perspective projection. If 'linearize' is false, they are ignored.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DumpFBDepth_PPM(const char *filename, int width, int height, 
-                            bool linearize, GLfloat near, GLfloat far);
+void   R_GL_DumpFBDepth_PPM(const char *filename, const int *width, const int *height, 
+                            const bool *linearize, const GLfloat *near, const GLfloat *far);
 
 /* ---------------------------------------------------------------------------
  * Render a selection circle over the map surface.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t color, 
-                                const struct map *map);
-
+void   R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float *width, 
+                                const vec3_t *color, const struct map *map);
 
 /* ---------------------------------------------------------------------------
  * Render a line over the map surface.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawLine(vec2_t endpoints[static 2], float width, vec3_t color, const struct map *map);
+void   R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t *color, 
+                     const struct map *map);
 
 /* ---------------------------------------------------------------------------
  * Render a quadrilateral over the map surface.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawQuad(vec2_t corners[static 4], float width, vec3_t color, const struct map *map);
+void   R_GL_DrawQuad(vec2_t corners[static 4], const float *width, const vec3_t *color, 
+                     const struct map *map);
 
 /* ---------------------------------------------------------------------------
  * Render an array of translucent quads over the map surface. The quad corners are 
@@ -241,7 +248,7 @@ void   R_GL_DrawQuad(vec2_t corners[static 4], float width, vec3_t color, const 
  * buffer. 
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, size_t count, mat4x4_t *model, 
+void   R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *count, mat4x4_t *model, 
                                 const struct map *map);
 
 /* ---------------------------------------------------------------------------
@@ -249,7 +256,7 @@ void   R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, size_t count
  * specified in chunk coordinates.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, size_t count,
+void   R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_t *count,
                           mat4x4_t *model, const struct map *map);
 
 /* ---------------------------------------------------------------------------
@@ -265,7 +272,7 @@ void   R_GL_SetScreenspaceDrawMode(void);
  * Returns a pointer (not to be freed or written to) to a information string.
  * ---------------------------------------------------------------------------
  */
-const char *R_GL_GetInfo(enum render_info attr);
+const char *R_GL_GetInfo(const enum render_info *attr);
 
 
 /* ---------------------------------------------------------------------------
@@ -275,8 +282,8 @@ const char *R_GL_GetInfo(enum render_info attr);
  * positions (the top center of the entity's OBB).
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawHealthbars(size_t num_ents, GLfloat *ent_health_pc, vec3_t *ent_top_pos_ws,
-                           const struct camera *cam);
+void   R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc, 
+                           vec3_t *ent_top_pos_ws, const struct camera *cam);
 
 /* ---------------------------------------------------------------------------
  * Render an entity's combined hybrid reciprocal velocity obstacle. (the union
@@ -286,7 +293,7 @@ void   R_GL_DrawHealthbars(size_t num_ents, GLfloat *ent_health_pc, vec3_t *ent_
  * ---------------------------------------------------------------------------
  */
 void   R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays, 
-                             size_t num_vos, const struct map *map);
+                             const size_t *num_vos, const struct map *map);
 
 /*###########################################################################*/
 /* RENDER TILES                                                              */
@@ -297,23 +304,15 @@ void   R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_ra
  * ---------------------------------------------------------------------------
  */
 void   R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivate, mat4x4_t *model, 
-                             int tiles_per_chunk_x, int tiles_per_chunk_z);
+                             const int *tiles_per_chunk_x, const int *tiles_per_chunk_z);
 
-/* ---------------------------------------------------------------------------
- * Will output a trinagle mesh for a particular tile. The output will be an 
- * array of vertices in worldspace coordinates, with 3 consecutive vertices
- * defining a triangle. The return value is the number of vertices written,
- * it will be a multiple of 3.
- * ---------------------------------------------------------------------------
- */
-int    R_GL_TileGetTriMesh(const struct map *map, struct tile_desc td, mat4x4_t *model, vec3_t out[]);
 
 /* ---------------------------------------------------------------------------
  * Update a specific tile with new attributes and buffer the new vertex data.
  * Will also update surrounding tiles with new adjacency data.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, struct tile_desc desc);
+void   R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, const struct tile_desc *desc);
 
 /*###########################################################################*/
 /* RENDER MINIMAP                                                            */
@@ -324,7 +323,7 @@ void   R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, struct tile_
  * for rendering later.
  * ---------------------------------------------------------------------------
  */
-bool  R_GL_MinimapBake(const struct map *map, void **chunk_rprivates, 
+void  R_GL_MinimapBake(const struct map *map, void **chunk_rprivates, 
                        mat4x4_t *chunk_model_mats);
 
 /* ---------------------------------------------------------------------------
@@ -332,8 +331,8 @@ bool  R_GL_MinimapBake(const struct map *map, void **chunk_rprivates,
  * data.
  * ---------------------------------------------------------------------------
  */
-bool  R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, 
-                              mat4x4_t *chunk_model, struct chunk_coord cc);
+void  R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, 
+                              mat4x4_t *chunk_model, const int *chunk_r, const int *chunk_c);
 
 /* ---------------------------------------------------------------------------
  * Render the minimap centered at the specified (virtual) screenscape coordinate.
@@ -342,8 +341,8 @@ bool  R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
  * the specified camera. If camera is NULL, no box is drawn.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MinimapRender(const struct map *map, const struct camera *cam, vec2_t center_pos, 
-                         int side_len_px);
+void  R_GL_MinimapRender(const struct map *map, const struct camera *cam, 
+                         vec2_t *center_pos, const int *side_len_px);
 
 /* ---------------------------------------------------------------------------
  * Free the memory allocated by 'R_GL_MinimapBake'.
@@ -358,14 +357,14 @@ void  R_GL_MinimapFree(void);
  * 'turned on' by setting a vertex attribute.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, struct tile_desc tile);
+void  R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, const struct tile_desc *tile);
 
 /* ---------------------------------------------------------------------------
  * Updated a tile's verticies to be the average of all normals at that location,
  * thereby giving the appearance of smooth edges when lighting shading is applied.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, struct tile_desc tile);
+void  R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, const struct tile_desc *tile);
 
 /*###########################################################################*/
 /* RENDER TERRAIN                                                            */
@@ -375,14 +374,14 @@ void  R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, str
  * Initialize map texture array with the specified list of textures.
  * ---------------------------------------------------------------------------
  */
-bool  R_GL_MapInit(const char map_texfiles[][256], size_t num_textures);
+void  R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures);
 
 /* ---------------------------------------------------------------------------
  * Call prior to rendering any map chunks. Activates the map rendering context.
  * Must be followed with a matching call to 'R_GL_MapEnd'.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapBegin(void);
+void  R_GL_MapBegin(const bool *shadows);
 
 /* ---------------------------------------------------------------------------
  * Call after finishing rendering all map chunks.
@@ -400,7 +399,7 @@ void  R_GL_MapEnd(void);
  * a matching call to 'R_GL_DepthPassEnd'.
  * ---------------------------------------------------------------------------
  */
-void R_GL_DepthPassBegin(void);
+void R_GL_DepthPassBegin(const vec3_t *light_pos, const vec3_t *cam_pos, const vec3_t *cam_dir);
 
 /* ---------------------------------------------------------------------------
  * Set up the rendering context for normal rendering. This _must_ be called
@@ -427,7 +426,7 @@ void R_GL_GetLightFrustum(struct frustum *out);
  * Disable or enable shadows for a particular renderable object.
  * ---------------------------------------------------------------------------
  */
-void R_GL_SetShadowsEnabled(void *render_private, bool on);
+void R_GL_SetShadowsEnabled(void *render_private, const bool *on);
 
 /*###########################################################################*/
 /* RENDER WATER                                                              */
@@ -437,7 +436,7 @@ void R_GL_SetShadowsEnabled(void *render_private, bool on);
  * Initialize the water rendering context.
  * ---------------------------------------------------------------------------
  */
-bool R_GL_WaterInit(void);
+void R_GL_WaterInit(void);
 
 /* ---------------------------------------------------------------------------
  * Free all resources claimed by 'R_GL_WaterInit'
@@ -449,41 +448,6 @@ void R_GL_WaterShutdown(void);
  * Renders the water layer for the given map.
  * ---------------------------------------------------------------------------
  */
-void R_GL_DrawWater(const struct map *map);
-
-/*###########################################################################*/
-/* RENDER ASSET LOADING                                                      */
-/*###########################################################################*/
-
-/* ---------------------------------------------------------------------------
- * Consumes lines of the stream and uses them to populate a new private context
- * for the model. The context is returned in a malloc'd buffer.
- * ---------------------------------------------------------------------------
- */
-void  *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header, SDL_RWops *stream);
-
-/* ---------------------------------------------------------------------------
- * Dumps private render data in PF Object format.
- * ---------------------------------------------------------------------------
- */
-void   R_AL_DumpPrivate(FILE *stream, void *priv_data);
-
-/* ---------------------------------------------------------------------------
- * Gives size (in bytes) of buffer size required for the render private 
- * buffer for a renderable PFChunk.
- * ---------------------------------------------------------------------------
- */
-size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t num_mats);
-
-/* ---------------------------------------------------------------------------
- * Initialize private render buff for a PFChunk of the map. 
- *
- * This function will build the vertices and their vertices from the data
- * already parsed into the 'tiles'.
- * ---------------------------------------------------------------------------
- */
-bool   R_AL_InitPrivFromTiles(const struct map *map, struct chunk_coord cc,
-                              const struct tile *tiles, size_t width, size_t height,
-                              void *priv_buff, const char *basedir);
+void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const bool *reflection);
 
 #endif

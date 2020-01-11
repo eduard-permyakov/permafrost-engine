@@ -66,6 +66,7 @@ void           Camera_SetSens      (struct camera *cam, float sensitivity);
 float          Camera_GetYaw       (const struct camera *cam);
 float          Camera_GetPitch     (const struct camera *cam);
 float          Camera_GetHeight    (const struct camera *cam);
+vec3_t         Camera_GetDir       (const struct camera *cam);
 vec3_t         Camera_GetPos       (const struct camera *cam);
 
 void           Camera_MakeViewMat  (const struct camera *cam, mat4x4_t *out);

@@ -37,7 +37,10 @@
 #include "pfchunk.h"
 #include "../asset_load.h"
 #include "../render/public/render.h"
+#include "../render/public/render_al.h"
+#include "../render/public/render_ctrl.h"
 #include "../navigation/public/nav.h"
+#include "../game/public/game.h"
 #include "../lib/public/pf_string.h"
 #include "map_private.h"
 #include "../ui.h"
@@ -137,7 +140,7 @@ fail:
 static void m_al_patch_adjacency_info(struct map *map)
 {
     for(int r = 0; r < map->height; r++) {
-    for(int c = 0; c < map->width; c++) {
+    for(int c = 0; c < map->width;  c++) {
 
         void *chunk_rprivate = map->chunks[r * map->width + c].render_private;
         for(int tile_r = 0; tile_r < TILES_PER_CHUNK_HEIGHT; tile_r++) {
@@ -146,12 +149,40 @@ static void m_al_patch_adjacency_info(struct map *map)
             struct tile_desc desc = (struct tile_desc){r, c, tile_r, tile_c};
             const struct tile *tile = &map->chunks[r * map->width + c].tiles[tile_r * TILES_PER_CHUNK_WIDTH + tile_c];
 
-            R_GL_TilePatchVertsBlend(chunk_rprivate, map, desc);
-            if(tile->blend_normals) {
-                R_GL_TilePatchVertsSmooth(chunk_rprivate, map, desc);
-            }
+            R_PushCmd((struct rcmd){
+                .func = R_GL_TilePatchVertsBlend,
+                .nargs = 3,
+                .args = {
+                    chunk_rprivate,
+                    (void*)G_GetPrevTickMap(),
+                    R_PushArg(&desc, sizeof(desc)),
+                },
+            });
+
+            if(!tile->blend_normals)
+                continue;
+
+            R_PushCmd((struct rcmd){
+                .func = R_GL_TilePatchVertsSmooth,
+                .nargs = 3,
+                .args = {
+                    chunk_rprivate,
+                    (void*)G_GetPrevTickMap(),
+                    R_PushArg(&desc, sizeof(desc)),
+                },
+            });
         }}
     }}
+}
+
+static void set_minimap_defaults(struct map *map)
+{
+    map->minimap_vres = (vec2_t){1920, 1080};
+    map->minimap_sz = MINIMAP_DFLT_SZ;
+    map->minimap_center_pos = (vec2_t){
+        MINIMAP_DFLT_SZ * cos(M_PI/4.0) + 10, 
+        1080 - (MINIMAP_DFLT_SZ * cos(M_PI/4.0) + 10)};
+    map->minimap_resize_mask = ANCHOR_X_LEFT | ANCHOR_Y_BOT;
 }
 
 /*****************************************************************************/
@@ -167,13 +198,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     map->width = header->num_cols;
     map->height = header->num_rows;
     map->pos = (vec3_t) {0.0f, 0.0f, 0.0f};
-
-    map->minimap_vres = (vec2_t){1920, 1080};
-    map->minimap_sz = MINIMAP_DFLT_SZ;
-    map->minimap_center_pos = (vec2_t){
-        MINIMAP_DFLT_SZ * cos(M_PI/4.0) + 10, 
-        1080 - (MINIMAP_DFLT_SZ * cos(M_PI/4.0) + 10)};
-    map->minimap_resize_mask = ANCHOR_X_LEFT | ANCHOR_Y_BOT;
+    set_minimap_defaults(map);
 
     /* Read materials */
     char texnames[header->num_materials][256];
@@ -182,9 +207,14 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
             return false;
     }
 
-    if(!R_GL_MapInit(texnames, header->num_materials)) {
-        return false; 
-    }
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MapInit,
+        .nargs = 2,
+        .args = {
+            R_PushArg(texnames, sizeof(texnames)),
+            R_PushArg(&header->num_materials, sizeof(header->num_materials)),
+        },
+    });
 
     /* Read chunks */
     size_t num_chunks = header->num_rows * header->num_cols;
@@ -204,9 +234,8 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
                                TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, 0);
         unused_base += renderbuff_sz;
 
-        struct chunk_coord cc = (struct chunk_coord){i / header->num_cols, i % header->num_cols};
-        if(!R_AL_InitPrivFromTiles(map, cc, map->chunks[i].tiles, 
-                                   TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
+        if(!R_AL_InitPrivFromTiles(map, i / header->num_cols, i % header->num_cols,
+                                   map->chunks[i].tiles, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT,
                                    map->chunks[i].render_private, basedir)) {
             return false;
         }
@@ -216,11 +245,12 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
 
     /* Build navigation grid */
     const struct tile *chunk_tiles[map->width * map->height];
+
     for(int r = 0; r < map->height; r++) {
-        for(int c = 0; c < map->width; c++) {
-            chunk_tiles[r * map->width + c] = map->chunks[r * map->width + c].tiles;
-        }
-    }
+    for(int c = 0; c < map->width; c++) {
+        chunk_tiles[r * map->width + c] = map->chunks[r * map->width + c].tiles;
+    }}
+
     map->nav_private = N_BuildForMapData(map->width, map->height, 
         TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, chunk_tiles);
     if(!map->nav_private)
@@ -250,17 +280,24 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
     M_GetResolution(map, &res);
 
     for(int dr = -1; dr <= 1; dr++) {
-        for(int dc = -1; dc <= 1; dc++) {
+    for(int dc = -1; dc <= 1; dc++) {
+    
+        struct tile_desc curr = *desc;
+        int ret = M_Tile_RelativeDesc(res, &curr, dc, dr);
+        if(ret) {
         
-            struct tile_desc curr = *desc;
-            int ret = M_Tile_RelativeDesc(res, &curr, dc, dr);
-            if(ret) {
-            
-                struct pfchunk *chunk = &map->chunks[curr.chunk_r * map->width + curr.chunk_c];
-                R_GL_TileUpdate(chunk->render_private, map, curr);
-            }
+            struct pfchunk *chunk = &map->chunks[curr.chunk_r * map->width + curr.chunk_c];
+            R_PushCmd((struct rcmd){
+                .func = R_GL_TileUpdate,
+                .nargs = 3,
+                .args = {
+                    chunk->render_private,
+                    (void*)G_GetPrevTickMap(),
+                    R_PushArg(&curr, sizeof(curr)),
+                },
+            });
         }
-    }
+    }}
 
     return true;
 }
@@ -270,5 +307,16 @@ void M_AL_FreePrivate(struct map *map)
     //TODO: Clean up OpenGL buffers
     assert(map->nav_private);
     N_FreePrivate(map->nav_private);
+}
+
+size_t M_AL_ShallowCopySize(size_t nrows, size_t ncols)
+{
+	size_t nchunks = nrows * ncols;
+    return sizeof(struct map) + nchunks * sizeof(struct pfchunk);
+}
+
+void M_AL_ShallowCopy(struct map *dst, const struct map *src)
+{
+    memcpy(dst, src, M_AL_ShallowCopySize(src->width, src->height));
 }
 

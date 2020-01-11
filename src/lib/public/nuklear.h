@@ -422,6 +422,8 @@ NK_STATIC_ASSERT(sizeof(nk_rune) >= 4);
 NK_STATIC_ASSERT(sizeof(nk_size) >= sizeof(void*));
 NK_STATIC_ASSERT(sizeof(nk_ptr) >= sizeof(void*));
 
+#include <string.h>
+
 /* ============================================================================
  *
  *                                  API
@@ -491,12 +493,6 @@ typedef struct nk_vec2i(*nk_get_screen_size)(void);
 struct nk_screen_ops{
     nk_get_drawable_size get_drawable_size;
     nk_get_screen_size get_screen_size;
-};
-
-struct nk_tex_ops{
-    int (*load)(const char *name, int *out_id);
-    int (*get)(const char *name, int *out_id);
-    void (*get_size)(int texid, int *out_w, int *out_h);
 };
 
 struct nk_allocator {
@@ -4345,6 +4341,7 @@ enum nk_command_type {
     NK_COMMAND_TEXT,
     NK_COMMAND_IMAGE,
     NK_COMMAND_SET_VRES,
+    NK_COMMAND_IMAGE_TEXPATH,
     NK_COMMAND_CUSTOM
 };
 
@@ -4487,6 +4484,14 @@ struct nk_command_image {
     struct nk_color col;
 };
 
+struct nk_command_image_texpath {
+    struct nk_command header;
+    short x, y;
+    unsigned short w, h;
+    char texpath[256];
+    struct nk_color col;
+};
+
 struct nk_command_set_vres {
     struct nk_command header;
     unsigned short x, y;
@@ -4494,7 +4499,10 @@ struct nk_command_set_vres {
 
 struct nk_command_userdata {
     enum nk_command_type type; 
-    union { struct nk_vec2i vec2i; };
+    union { 
+        struct nk_vec2i vec2i; 
+        char texpath[256];
+    };
 };
 
 typedef void (*nk_command_custom_callback)(void *canvas, short x,short y,
@@ -4526,7 +4534,6 @@ enum nk_command_clipping {
 
 struct nk_command_buffer {
     struct nk_buffer *base;
-    struct nk_tex_ops *tops;
     struct nk_rect clip;
     int use_clipping;
     nk_handle userdata;
@@ -5554,7 +5561,6 @@ struct nk_context {
     struct nk_buffer memory;
     struct nk_clipboard clip;
     struct nk_screen_ops screen;
-    struct nk_tex_ops tex;
     nk_flags last_widget_state;
     enum nk_button_behavior button_behavior;
     struct nk_configuration_stacks stacks;
@@ -5825,7 +5831,7 @@ NK_LIB void* nk_buffer_alloc(struct nk_buffer *b, enum nk_buffer_allocation_type
 NK_LIB void* nk_buffer_realloc(struct nk_buffer *b, nk_size capacity, nk_size *size);
 
 /* draw */
-NK_LIB void nk_command_buffer_init(struct nk_command_buffer *cb, struct nk_buffer *b, struct nk_tex_ops *tops, enum nk_command_clipping clip);
+NK_LIB void nk_command_buffer_init(struct nk_command_buffer *cb, struct nk_buffer *b, enum nk_command_clipping clip);
 NK_LIB void nk_command_buffer_reset(struct nk_command_buffer *b);
 NK_LIB void* nk_command_buffer_push(struct nk_command_buffer* b, enum nk_command_type t, nk_size size);
 NK_LIB void nk_draw_symbol(struct nk_command_buffer *out, enum nk_symbol_type type, struct nk_rect content, struct nk_color background, struct nk_color foreground, float border_width, const struct nk_user_font *font);
@@ -8719,14 +8725,12 @@ nk_str_free(struct nk_str *str)
  * ===============================================================*/
 NK_LIB void
 nk_command_buffer_init(struct nk_command_buffer *cb,
-    struct nk_buffer *b, struct nk_tex_ops *tops, 
-    enum nk_command_clipping clip)
+    struct nk_buffer *b, enum nk_command_clipping clip)
 {
     NK_ASSERT(cb);
     NK_ASSERT(b);
-    if (!cb || !b || !tops) return;
+    if (!cb || !b) return;
     cb->base = b;
-    cb->tops = tops;
     cb->use_clipping = (int)clip;
     cb->begin = b->allocated;
     cb->end = b->allocated;
@@ -10378,13 +10382,51 @@ nk_draw_list_add_set_vres(struct nk_draw_list *list, struct nk_vec2i vres)
     NK_ASSERT(dcmd);
     
     dcmd->userdata.ptr = malloc(sizeof(struct nk_command_userdata));
-    dcmd->elem_count = 1; /* Needed so that our userdata pointer doesn't get overwritten later */
     if(!dcmd->userdata.ptr)
         return;
+    dcmd->elem_count = 1; /* Needed so that our userdata pointer doesn't get overwritten later */
     *(struct nk_command_userdata*)(dcmd->userdata.ptr) = (struct nk_command_userdata) {
         .type = NK_COMMAND_SET_VRES,
         .vec2i = vres
     };
+}
+
+NK_API void
+nk_draw_list_add_image_texpath(struct nk_draw_list *list, const char *texpath,
+    struct nk_rect rect, struct nk_color color)
+{
+    NK_ASSERT(list);
+    if (!list) return;
+
+    struct nk_draw_command *dcmd = NULL;
+    if (!list->cmd_count) {
+        dcmd = nk_draw_list_push_command(list, nk_null_rect, (nk_handle){0});
+    } else {
+        dcmd = nk_draw_list_command_last(list);
+        if (dcmd->elem_count == 0) {
+            dcmd->texture = (nk_handle){0};
+        #ifdef NK_INCLUDE_COMMAND_USERDATA
+            dcmd->userdata = list->userdata;
+        #endif
+    } else if (dcmd->texture.id != 0
+        #ifdef NK_INCLUDE_COMMAND_USERDATA
+            || dcmd->userdata.id != list->userdata.id
+        #endif
+        ) dcmd = nk_draw_list_push_command(list, dcmd->clip_rect, (nk_handle){0});
+    }
+    NK_ASSERT(dcmd);
+    
+    dcmd->userdata.ptr = malloc(sizeof(struct nk_command_userdata));
+    if(!dcmd->userdata.ptr)
+        return;
+    *(struct nk_command_userdata*)(dcmd->userdata.ptr) = (struct nk_command_userdata) {
+        .type = NK_COMMAND_IMAGE_TEXPATH,
+    };
+    strcpy(((struct nk_command_userdata*)(dcmd->userdata.ptr))->texpath, texpath);
+
+    nk_draw_list_push_rect_uv(list, nk_vec2(rect.x, rect.y),
+                nk_vec2(rect.x + rect.w, rect.y + rect.h),
+                nk_vec2(0.0f, 0.0f), nk_vec2(1.0f, 1.0f),color);
 }
 
 NK_API nk_flags
@@ -10524,6 +10566,10 @@ nk_convert(struct nk_context *ctx, struct nk_buffer *cmds,
         case NK_COMMAND_SET_VRES: {
             const struct nk_command_set_vres *c = (const struct nk_command_set_vres*)cmd;
             nk_draw_list_add_set_vres(&ctx->draw_list, (struct nk_vec2i){c->x, c->y});
+        } break;
+        case NK_COMMAND_IMAGE_TEXPATH: {
+            const struct nk_command_image_texpath *i = (const struct nk_command_image_texpath*)cmd;
+            nk_draw_list_add_image_texpath(&ctx->draw_list, i->texpath, nk_rect(i->x, i->y, i->w, i->h), i->col);
         } break;
         default: break;
         }
@@ -14274,39 +14320,30 @@ nk_style_item_texpath(const char *texpath)
     return i;
 }
 
-NK_API int
-nk_image_from_texpath(struct nk_tex_ops *tops, const char *texpath, struct nk_image *out)
-{
-    NK_ASSERT(tops->get);
-    NK_ASSERT(tops->load);
-    NK_ASSERT(tops->get_size);
-
-    if(!tops->get(texpath, &out->handle.id)
-    && !tops->load(texpath, &out->handle.id))
-        return 0;
-
-    int w, h;
-    tops->get_size(out->handle.id, &w, &h);
-    NK_ASSERT(w && h);
-    out->w = w;
-    out->h = h;
-
-    out->region[0] = 0;
-    out->region[1] = 0;
-    out->region[2] = out->w-1;
-    out->region[3] = out->h-1;
-    return 1;
-}
-
 NK_API void
-nk_draw_texpath(struct nk_command_buffer *buff, struct nk_rect r, 
+nk_draw_texpath(struct nk_command_buffer *b, struct nk_rect r, 
                 const char *texpath, struct nk_color col)
 {
-    struct nk_image img;
-    if(!nk_image_from_texpath(buff->tops, texpath, &img)) {
-        nk_fill_rect(buff, r, 0, nk_black);
-    }else
-        nk_draw_image(buff, r, &img, col);
+    struct nk_command_image_texpath *cmd;
+    NK_ASSERT(b);
+    if (!b) return;
+    if (b->use_clipping) {
+        const struct nk_rect *c = &b->clip;
+        if (c->w == 0 || c->h == 0 || !NK_INTERSECT(r.x, r.y, r.w, r.h, c->x, c->y, c->w, c->h))
+            return;
+    }
+
+    cmd = (struct nk_command_image_texpath*)
+        nk_command_buffer_push(b, NK_COMMAND_IMAGE_TEXPATH, sizeof(*cmd));
+    if (!cmd) return;
+    cmd->x = (short)r.x;
+    cmd->y = (short)r.y;
+    cmd->w = (unsigned short)NK_MAX(0, r.w);
+    cmd->h = (unsigned short)NK_MAX(0, r.h);
+    cmd->col = col;
+
+    strncpy(cmd->texpath, texpath, sizeof(cmd->texpath));
+    cmd->texpath[sizeof(cmd->texpath)-1] = '\0';
 }
 
 NK_API struct nk_style_item
@@ -15262,7 +15299,7 @@ nk_build(struct nk_context *ctx)
     if (ctx->style.cursor_active && !ctx->input.mouse.grabbed && ctx->style.cursor_visible) {
         struct nk_rect mouse_bounds;
         const struct nk_cursor *cursor = ctx->style.cursor_active;
-        nk_command_buffer_init(&ctx->overlay, &ctx->memory, &ctx->tex, NK_CLIPPING_OFF);
+        nk_command_buffer_init(&ctx->overlay, &ctx->memory, NK_CLIPPING_OFF);
         nk_start_buffer(ctx, &ctx->overlay);
 
         mouse_bounds.x = ctx->input.mouse.pos.x - cursor->offset.x;
@@ -16426,7 +16463,7 @@ nk_begin_titled(struct nk_context *ctx, const char *name, const char *title,
         if (flags & NK_WINDOW_BACKGROUND)
             nk_insert_window(ctx, win, NK_INSERT_FRONT);
         else nk_insert_window(ctx, win, NK_INSERT_BACK);
-        nk_command_buffer_init(&win->buffer, &ctx->memory, &ctx->tex, NK_CLIPPING_ON);
+        nk_command_buffer_init(&win->buffer, &ctx->memory, NK_CLIPPING_ON);
 
         win->flags = flags;
         win->bounds = bounds;
@@ -17039,7 +17076,7 @@ nk_nonblock_begin(struct nk_context *ctx,
         popup->parent = win;
         win->popup.win = popup;
         win->popup.type = panel_type;
-        nk_command_buffer_init(&popup->buffer, &ctx->memory, &ctx->tex, NK_CLIPPING_ON);
+        nk_command_buffer_init(&popup->buffer, &ctx->memory, NK_CLIPPING_ON);
     } else {
         /* close the popup if user pressed outside or in the header */
         int pressed, in_body, in_header;

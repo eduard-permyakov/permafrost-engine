@@ -63,11 +63,6 @@
 #define ARR_SIZE(a)                 (sizeof(a)/sizeof(a[0]))
 #define MAX(a, b)                   ((a) > (b) ? (a) : (b))
 
-/*****************************************************************************/
-/* STATIC FUNCTIONS                                                          */
-/*****************************************************************************/
-
-static vec3_t s_light_pos = (vec3_t){0.0f, 0.0f, 0.0f};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -75,6 +70,8 @@ static vec3_t s_light_pos = (vec3_t){0.0f, 0.0f, 0.0f};
 
 static void r_gl_set_materials(GLuint shader_prog, size_t num_mats, const struct material *mats)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     for(size_t i = 0; i < num_mats; i++) {
     
         const struct material *mat = &mats[i];
@@ -112,6 +109,7 @@ static void r_gl_set_materials(GLuint shader_prog, size_t num_mats, const struct
 static void r_gl_set_uniform_mat4x4_array(mat4x4_t *data, size_t count, 
                                           const char *uname, const char *shader_name)
 {
+    ASSERT_IN_RENDER_THREAD();
     GLuint loc, shader_prog;
 
     shader_prog = R_Shader_GetProgForName(shader_name);
@@ -124,6 +122,7 @@ static void r_gl_set_uniform_mat4x4_array(mat4x4_t *data, size_t count,
 static void r_gl_set_uniform_vec4_array(vec4_t *data, size_t count, 
                                         const char *uname, const char *shader_name)
 {
+    ASSERT_IN_RENDER_THREAD();
     GLuint loc, shader_prog;
 
     shader_prog = R_Shader_GetProgForName(shader_name);
@@ -135,6 +134,7 @@ static void r_gl_set_uniform_vec4_array(vec4_t *data, size_t count,
 
 static void r_gl_set_mat4(const mat4x4_t *trans, const char *shader_name, const char *uname)
 {
+    ASSERT_IN_RENDER_THREAD();
     GLuint loc, shader_prog;
 
     shader_prog = R_Shader_GetProgForName(shader_name);
@@ -146,6 +146,7 @@ static void r_gl_set_mat4(const mat4x4_t *trans, const char *shader_name, const 
 
 static void r_gl_set_vec3(const vec3_t *vec, const char *shader_name, const char *uname)
 {
+    ASSERT_IN_RENDER_THREAD();
     GLuint loc, shader_prog;
 
     shader_prog = R_Shader_GetProgForName(shader_name);
@@ -157,6 +158,7 @@ static void r_gl_set_vec3(const vec3_t *vec, const char *shader_name, const char
 
 static void r_gl_set_vec4(const vec4_t *vec, const char *shader_name, const char *uname)
 {
+    ASSERT_IN_RENDER_THREAD();
     GLuint loc, shader_prog;
 
     shader_prog = R_Shader_GetProgForName(shader_name);
@@ -172,6 +174,7 @@ static void r_gl_set_vec4(const vec4_t *vec, const char *shader_name, const char
 
 void R_GL_Init(struct render_private *priv, const char *shader, const struct vertex *vbuff)
 {
+    ASSERT_IN_RENDER_THREAD();
     struct mesh *mesh = &priv->mesh;
 
     glGenVertexArrays(1, &mesh->VAO);
@@ -248,6 +251,8 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
 
 void R_GL_Draw(const void *render_private, mat4x4_t *model)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const struct render_private *priv = render_private;
     GLuint loc;
 
@@ -267,8 +272,21 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model)
     GL_ASSERT_OK();
 }
 
+void R_GL_BeginFrame(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+}
+
 void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const char *shaders[] = {
         "mesh.static.colored",
         "mesh.static.colored-per-vert",
@@ -297,6 +315,8 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
 
 void R_GL_SetProj(const mat4x4_t *proj)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const char *shaders[] = {
         "mesh.static.colored",
         "mesh.static.colored-per-vert",
@@ -322,6 +342,8 @@ void R_GL_SetProj(const mat4x4_t *proj)
 
 void R_GL_SetLightSpaceTrans(const mat4x4_t *trans)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const char *shaders[] = {
         "mesh.static.depth",
         "mesh.animated.depth",
@@ -338,6 +360,8 @@ void R_GL_SetLightSpaceTrans(const mat4x4_t *trans)
 
 void R_GL_SetShadowMap(const GLuint shadow_map_tex_id)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const char *shaders[] = {
         "mesh.static.textured-phong-shadowed",
         "mesh.animated.textured-phong-shadowed",
@@ -360,8 +384,10 @@ void R_GL_SetShadowMap(const GLuint shadow_map_tex_id)
     GL_ASSERT_OK();
 }
 
-void R_GL_SetClipPlane(vec4_t plane_eq)
+void R_GL_SetClipPlane(const vec4_t plane_eq)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const char *shaders[] = {
         "terrain",
         "terrain-shadowed",
@@ -378,8 +404,10 @@ void R_GL_SetClipPlane(vec4_t plane_eq)
 }
 
 void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, 
-                          mat4x4_t *normal_mat, size_t count)
+                          mat4x4_t *normal_mat, const size_t *count)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const char *shaders[] = {
         "mesh.animated.depth",
         "mesh.animated.textured-phong",
@@ -389,16 +417,18 @@ void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses,
 
     for(int i = 0; i < ARR_SIZE(shaders); i++) {
 
-        r_gl_set_uniform_mat4x4_array(inv_bind_poses, count, GL_U_INV_BIND_MATS, shaders[i]);
-        r_gl_set_uniform_mat4x4_array(curr_poses, count, GL_U_CURR_POSE_MATS, shaders[i]);
+        r_gl_set_uniform_mat4x4_array(inv_bind_poses, *count, GL_U_INV_BIND_MATS, shaders[i]);
+        r_gl_set_uniform_mat4x4_array(curr_poses, *count, GL_U_CURR_POSE_MATS, shaders[i]);
         r_gl_set_mat4(normal_mat, shaders[i], GL_U_NORMAL_MAT);
     }
 
     GL_ASSERT_OK();
 }
 
-void R_GL_SetAmbientLightColor(vec3_t color)
+void R_GL_SetAmbientLightColor(const vec3_t *color)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const char *shaders[] = {
         "mesh.static.textured-phong",
         "mesh.static.textured-phong-shadowed",
@@ -416,14 +446,16 @@ void R_GL_SetAmbientLightColor(vec3_t color)
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_AMBIENT_COLOR);
-        glUniform3fv(loc, 1, color.raw);
+        glUniform3fv(loc, 1, color->raw);
     }
 
     GL_ASSERT_OK();
 }
 
-void R_GL_SetLightEmitColor(vec3_t color)
+void R_GL_SetLightEmitColor(const vec3_t *color)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const char *shaders[] = {
         "mesh.static.textured-phong",
         "mesh.static.textured-phong-shadowed",
@@ -442,14 +474,16 @@ void R_GL_SetLightEmitColor(vec3_t color)
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_COLOR);
-        glUniform3fv(loc, 1, color.raw);
+        glUniform3fv(loc, 1, color->raw);
     }
 
     GL_ASSERT_OK();
 }
 
-void R_GL_SetLightPos(vec3_t pos)
+void R_GL_SetLightPos(const vec3_t *pos)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const char *shaders[] = {
         "mesh.static.textured-phong",
         "mesh.static.textured-phong-shadowed",
@@ -468,20 +502,16 @@ void R_GL_SetLightPos(vec3_t pos)
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_POS);
-        glUniform3fv(loc, 1, pos.raw);
+        glUniform3fv(loc, 1, pos->raw);
     }
 
-    s_light_pos = pos;
     GL_ASSERT_OK();
-}
-
-vec3_t R_GL_GetLightPos(void)
-{
-    return s_light_pos;
 }
 
 void R_GL_SetScreenspaceDrawMode(void)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     int width, height;
     Engine_WinDrawableSize(&width, &height);
 
@@ -500,6 +530,8 @@ void R_GL_SetScreenspaceDrawMode(void)
 
 void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, const struct camera *cam)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     vec3_t *vbuff;
     GLint VAO, VBO;
     GLint shader_prog;
@@ -592,6 +624,8 @@ cleanup:
 
 void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     vec3_t vbuff[2];
     GLint VAO, VBO;
     GLint shader_prog;
@@ -654,17 +688,21 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model, vec3_t color, float t)
+void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model, 
+                  const vec3_t *color, const float *t)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     vec3_t vbuff[2];
     GLint VAO, VBO;
     GLint shader_prog;
     GLuint loc;
 
-    vbuff[0] = origin; 
-    PFM_Vec3_Normal(&dir, &dir);
-    PFM_Vec3_Scale(&dir, t, &dir);
-    PFM_Vec3_Add(&origin, &dir, &vbuff[1]);
+    vbuff[0] = *origin; 
+    vec3_t dircopy = *dir;
+    PFM_Vec3_Normal(&dircopy, &dircopy);
+    PFM_Vec3_Scale(&dircopy, *t, &dircopy);
+    PFM_Vec3_Add((vec3_t*)origin, &dircopy, &vbuff[1]);
 
     /* OpenGL setup */
     glGenVertexArrays(1, &VAO);
@@ -683,7 +721,7 @@ void R_GL_DrawRay(vec3_t origin, vec3_t dir, mat4x4_t *model, vec3_t color, floa
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
 
-    vec4_t color4 = (vec4_t){color.x, color.y, color.z, 1.0f};
+    vec4_t color4 = (vec4_t){color->x, color->y, color->z, 1.0f};
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
     glUniform4fv(loc, 1, color4.raw);
 
@@ -703,6 +741,8 @@ cleanup:
 
 void R_GL_DrawOBB(const struct entity *ent)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     if(!(ent->flags & ENTITY_FLAG_COLLISION))
         return;
 
@@ -776,17 +816,20 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-void R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color, float width)
+void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size, 
+                    const vec3_t *color, const float *width)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLint VAO, VBO;
     GLint shader_prog;
     GLuint loc;
 
     vec3_t vbuff[4] = {
-        (vec3_t){screen_pos.x,                 screen_pos.y,                 0.0f},
-        (vec3_t){screen_pos.x + signed_size.x, screen_pos.y,                 0.0f},
-        (vec3_t){screen_pos.x + signed_size.x, screen_pos.y + signed_size.y, 0.0f},
-        (vec3_t){screen_pos.x,                 screen_pos.y + signed_size.y, 0.0f},
+        (vec3_t){screen_pos->x,                  screen_pos->y,                  0.0f},
+        (vec3_t){screen_pos->x + signed_size->x, screen_pos->y,                  0.0f},
+        (vec3_t){screen_pos->x + signed_size->x, screen_pos->y + signed_size->y, 0.0f},
+        (vec3_t){screen_pos->x,                  screen_pos->y + signed_size->y, 0.0f},
     };
 
     int win_width, win_height;
@@ -819,13 +862,13 @@ void R_GL_DrawBox2D(vec2_t screen_pos, vec2_t signed_size, vec3_t color, float w
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, identity.raw);
 
-    vec4_t color4 = (vec4_t){color.x, color.y, color.z, 1.0f};
+    vec4_t color4 = (vec4_t){color->x, color->y, color->z, 1.0f};
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
     glUniform4fv(loc, 1, color4.raw);
 
     float old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
-    glLineWidth(width);
+    glLineWidth(*width);
 
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
@@ -838,13 +881,14 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim)
+void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, const bool *anim)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const struct render_private *priv = render_private;
 
-
-    GLuint normals_shader = anim ? R_Shader_GetProgForName("mesh.animated.normals.colored")
-                                 : R_Shader_GetProgForName("mesh.static.normals.colored");
+    GLuint normals_shader = *anim ? R_Shader_GetProgForName("mesh.animated.normals.colored")
+                                  : R_Shader_GetProgForName("mesh.static.normals.colored");
     assert(normals_shader);
     glUseProgram(normals_shader);
 
@@ -861,16 +905,18 @@ void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, bool anim)
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 }
 
-void R_GL_DumpFBColor_PPM(const char *filename, int width, int height)
+void R_GL_DumpFBColor_PPM(const char *filename, const int *width, const int *height)
 {
-    long img_size = width * height * 3;
+    ASSERT_IN_RENDER_THREAD();
+
+    long img_size = (*width) * (*height) * 3;
     unsigned char *data = malloc(img_size);
     if(!data) {
         return;
     }
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, data);
+    glReadPixels(0, 0, *width, *height, GL_RGB, GL_UNSIGNED_BYTE, data);
 
     FILE *file = fopen(filename, "wb");
     if(!file) {
@@ -878,14 +924,14 @@ void R_GL_DumpFBColor_PPM(const char *filename, int width, int height)
         return;
     }
 
-    fprintf(file, "P6\n%d %d\n%d\n", width, height, 255);
-    for(int i = 0; i < height; i++) {
-        for(int j = 0; j < width; j++) {
+    fprintf(file, "P6\n%d %d\n%d\n", *width, *height, 255);
+    for(int i = 0; i < *height; i++) {
+        for(int j = 0; j < *width; j++) {
 
             static unsigned char color[3];
-            color[0] = data[3*i*width + 3*j    ];
-            color[1] = data[3*i*width + 3*j + 1];
-            color[2] = data[3*i*width + 3*j + 2];
+            color[0] = data[3*i * (*width) + 3*j    ];
+            color[1] = data[3*i * (*width) + 3*j + 1];
+            color[2] = data[3*i * (*width) + 3*j + 2];
             fwrite(color, 1, 3, file);
         }
     }
@@ -895,16 +941,18 @@ void R_GL_DumpFBColor_PPM(const char *filename, int width, int height)
     free(data);
 }
 
-void R_GL_DumpFBDepth_PPM(const char *filename, int width, int height, 
-                          bool linearize, GLfloat near, GLfloat far)
+void R_GL_DumpFBDepth_PPM(const char *filename, const int *width, const int *height, 
+                          const bool *linearize, const GLfloat *near, const GLfloat *far)
 {
-    long img_size = width * height * sizeof(GLfloat);
+    ASSERT_IN_RENDER_THREAD();
+
+    long img_size = (*width) * (*height) * sizeof(GLfloat);
     GLfloat *data = malloc(img_size);
     if(!data) {
         return;
     }
 
-    glReadPixels(0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT, data);
+    glReadPixels(0, 0, *width, *height, GL_DEPTH_COMPONENT, GL_FLOAT, data);
 
     FILE *file = fopen(filename, "wb");
     if(!file) {
@@ -912,16 +960,16 @@ void R_GL_DumpFBDepth_PPM(const char *filename, int width, int height,
         return;
     }
 
-    fprintf(file, "P6\n%d %d\n%d\n", width, height, 255);
-    for(int i = 0; i < height; i++) {
-        for(int j = 0; j < width; j++) {
+    fprintf(file, "P6\n%d %d\n%d\n", *width, *height, 255);
+    for(int i = 0; i < *height; i++) {
+        for(int j = 0; j < *width; j++) {
 
-            GLfloat norm_depth = data[i * width + j];
+            GLfloat norm_depth = data[i * (*width) + j];
             assert(norm_depth >= 0.0f && norm_depth <= 1.0f);
 
             GLfloat z;
-            if(linearize) {
-                z = (2 * near) / (far + near - norm_depth * (far - near));
+            if(*linearize) {
+                z = (2 * (*near)) / ((*far) + (*near) - norm_depth * ((*far) - (*near)));
             }else{
                 z = norm_depth; 
             }
@@ -940,9 +988,11 @@ void R_GL_DumpFBDepth_PPM(const char *filename, int width, int height,
     free(data);
 }
 
-void R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t color, 
-                              const struct map *map)
+void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float *width, 
+                              const vec3_t *color, const struct map *map)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLint VAO, VBO;
     GLint shader_prog;
     GLuint loc;
@@ -954,11 +1004,11 @@ void R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t color
 
         float theta = (2.0f * M_PI) * ((float)i/NUM_SAMPLES);
 
-        float x_near = xz.raw[0] + radius * cos(theta);
-        float z_near = xz.raw[1] - radius * sin(theta);
+        float x_near = xz->x + (*radius) * cos(theta);
+        float z_near = xz->z - (*radius) * sin(theta);
 
-        float x_far = xz.raw[0] + (radius + width) * cos(theta);
-        float z_far = xz.raw[1] - (radius + width) * sin(theta);
+        float x_far = xz->x + (*radius + *width) * cos(theta);
+        float z_far = xz->z - (*radius + *width) * sin(theta);
     
         float height_near = M_HeightAtPoint(map, M_ClampedMapCoordinate(map, (vec2_t){x_near, z_near}));
         float height_far  = M_HeightAtPoint(map, M_ClampedMapCoordinate(map, (vec2_t){x_far,  z_far }));
@@ -989,13 +1039,13 @@ void R_GL_DrawSelectionCircle(vec2_t xz, float radius, float width, vec3_t color
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, identity.raw);
 
-    vec4_t color4 = (vec4_t){color.x, color.y, color.z, 1.0f};
+    vec4_t color4 = (vec4_t){color->x, color->y, color->z, 1.0f};
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
     glUniform4fv(loc, 1, color4.raw);
 
     float old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
-    glLineWidth(width);
+    glLineWidth(*width);
 
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
@@ -1008,16 +1058,18 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-void R_GL_DrawLine(vec2_t endpoints[static 2], float width, vec3_t color, const struct map *map)
+void R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t *color, const struct map *map)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     vec2_t delta;
     PFM_Vec2_Sub(&endpoints[1], &endpoints[0], &delta);
     const float len = PFM_Vec2_Len(&delta);
 
     vec2_t perp = (vec2_t){ delta.z, -delta.x };
     PFM_Vec2_Normal(&perp, &perp);
-    assert(width > 0.0f);
-    PFM_Vec2_Scale(&perp, width/2.0f, &perp);
+    assert(*width > 0.0f);
+    PFM_Vec2_Scale(&perp, *width/2.0f, &perp);
 
     const int NUM_SAMPLES = ceil(len / 4.0f);
     vec3_t vbuff[NUM_SAMPLES * 2 + 2];
@@ -1070,13 +1122,13 @@ void R_GL_DrawLine(vec2_t endpoints[static 2], float width, vec3_t color, const 
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, identity.raw);
 
-    vec4_t color4 = (vec4_t){color.x, color.y, color.z, 1.0f};
+    vec4_t color4 = (vec4_t){color->x, color->y, color->z, 1.0f};
     loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
     glUniform4fv(loc, 1, color4.raw);
 
     float old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
-    glLineWidth(width);
+    glLineWidth(*width);
 
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
@@ -1089,8 +1141,10 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-void R_GL_DrawQuad(vec2_t corners[static 4], float width, vec3_t color, const struct map *map)
+void R_GL_DrawQuad(vec2_t corners[static 4], const float *width, const vec3_t *color, const struct map *map)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     vec2_t lines[][2] = {
         corners[0], corners[1],
         corners[1], corners[2],
@@ -1102,10 +1156,13 @@ void R_GL_DrawQuad(vec2_t corners[static 4], float width, vec3_t color, const st
         R_GL_DrawLine(lines[i], width, color, map);
 }
 
-void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, size_t count, mat4x4_t *model, const struct map *map)
+void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *count, 
+                              mat4x4_t *model, const struct map *map)
 {
-    struct colored_vert surf_vbuff[count * 4 * 3];
-    struct colored_vert line_vbuff[count * 4 * 2];
+    ASSERT_IN_RENDER_THREAD();
+
+    struct colored_vert surf_vbuff[*count * 4 * 3];
+    struct colored_vert line_vbuff[*count * 4 * 2];
     GLint VAO, VBO;
     GLint shader_prog;
     GLuint loc;
@@ -1114,7 +1171,7 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, size_t count, 
     struct colored_vert *surf_vbuff_base = surf_vbuff;
     struct colored_vert *line_vbuff_base = line_vbuff;
 
-    for(int i = 0; i < count; i++, xz_corners += 4, colors++) {
+    for(int i = 0; i < *count; i++, xz_corners += 4, colors++) {
 
         vec2_t center = (vec2_t){
             (xz_corners[0].raw[0] + xz_corners[1].raw[0] + xz_corners[2].raw[0] + xz_corners[3].raw[0]) / 4.0f,
@@ -1229,17 +1286,19 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, size_t count,
+void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_t *count,
                         mat4x4_t *model, const struct map *map)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLint VAO, VBO;
     GLint shader_prog;
     GLuint loc;
-    vec3_t line_vbuff[count * 2];
-    vec3_t point_vbuff[count];
+    vec3_t line_vbuff[*count * 2];
+    vec3_t point_vbuff[*count];
 
     /* Setup line_vbuff */
-    for(size_t i = 0, line_vbuff_idx = 0; i < count; i++, line_vbuff_idx += 2) {
+    for(size_t i = 0, line_vbuff_idx = 0; i < *count; i++, line_vbuff_idx += 2) {
 
         vec2_t tip = xz_positions[i];
         vec2_t to_add = xz_directions[i];
@@ -1311,9 +1370,11 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-const char *R_GL_GetInfo(enum render_info attr)
+const char *R_GL_GetInfo(const enum render_info *attr)
 {
-    switch(attr) {
+    ASSERT_IN_RENDER_THREAD();
+
+    switch(*attr) {
     case RENDER_INFO_VENDOR:        return glGetString(GL_VENDOR);
     case RENDER_INFO_RENDERER:      return glGetString(GL_RENDERER);
     case RENDER_INFO_VERSION:       return glGetString(GL_VERSION);
@@ -1323,8 +1384,10 @@ const char *R_GL_GetInfo(enum render_info attr)
 }
 
 void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays, 
-                           size_t num_vos, const struct map *map)
+                           const size_t *num_vos, const struct map *map)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     const float RAY_LEN = 150.0f;
     const int NUM_SAMPLES = 150;
 
@@ -1335,10 +1398,10 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
     mat4x4_t model;
     PFM_Mat4x4_Identity(&model); /* points are already in world space */
 
-    vec3_t ray_vbuff[num_vos * (NUM_SAMPLES - 1) * 4];
+    vec3_t ray_vbuff[*num_vos * (NUM_SAMPLES - 1) * 4];
     int vbuff_idx = 0;
 
-    for(int i = 0; i < num_vos; i++) {
+    for(int i = 0; i < *num_vos; i++) {
         for(int s = 0; s < NUM_SAMPLES-1; s++) {
         
             /* Left ray segment */
@@ -1408,5 +1471,17 @@ cleanup:
     glLineWidth(old_width);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
+}
+
+void R_GL_SetViewport(int *x, int *y, int *w, int *h)
+{
+    glViewport(*x, *y, *w, *h);
+}
+
+void R_GL_GlobalConfig(void)
+{
+    glProvokingVertex(GL_FIRST_VERTEX_CONVENTION); 
+    glFrontFace(GL_CW);
+    glCullFace(GL_BACK);
 }
 

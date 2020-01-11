@@ -69,7 +69,8 @@
     scope  bool  queue_##name##_init    (queue(name) *queue, size_t init_cap);                  \
     scope  void  queue_##name##_destroy (queue(name) *queue);                                   \
     scope  bool  queue_##name##_push    (queue(name) *queue, type *entry);                      \
-    scope  bool  queue_##name##_pop     (queue(name) *queue, type *out);
+    scope  bool  queue_##name##_pop     (queue(name) *queue, type *out);                        \
+    scope  void  queue_##name##_clear   (queue(name) *queue);
 
 /***********************************************************************************************/
 
@@ -157,6 +158,13 @@
                                                                                                 \
         --queue->size;                                                                          \
         return true;                                                                            \
+    }                                                                                           \
+                                                                                                \
+    scope void queue_##name##_clear(queue(name) *queue)                                         \
+    {                                                                                           \
+        queue->itail = -1;                                                                      \
+        queue->ihead = 0;                                                                       \
+        queue->size = 0;                                                                        \
     }
 
 #endif

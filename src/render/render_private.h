@@ -38,6 +38,10 @@
 
 #include "mesh.h"
 #include "texture.h"
+#include "../map/public/tile.h"
+
+struct vertex;
+struct map;
 
 struct render_private{
     struct mesh         mesh;
@@ -46,5 +50,8 @@ struct render_private{
     GLuint              shader_prog;
     GLuint              shader_prog_dp; /* for the depth pass */
 };
+
+/* Tile */
+void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex *out);
 
 #endif

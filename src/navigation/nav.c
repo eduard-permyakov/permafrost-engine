@@ -1,5 +1,4 @@
-/*
- *  This file is part of Permafrost Engine. 
+/* *  This file is part of Permafrost Engine. 
  *  Copyright (C) 2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
@@ -41,6 +40,7 @@
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
 #include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 #include "../pf_math.h"
 #include "../collision.h"
 #include "../entity.h"
@@ -567,7 +567,19 @@ static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
 
     assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
-    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, vec_size(path), chunk_model, map);
+
+    size_t count = vec_size(path);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawMapOverlayQuads,
+        .nargs = 5,
+        .args = {
+            R_PushArg(corners_buff, sizeof(corners_buff)),
+            R_PushArg(colors_buff, sizeof(colors_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
 }
 
 static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_model,
@@ -612,7 +624,17 @@ static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_mode
         }
     }
 
-    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, num_tiles, chunk_model, map);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawMapOverlayQuads,
+        .nargs = 5,
+        .args = {
+            R_PushArg(corners_buff, sizeof(corners_buff)),
+            R_PushArg(colors_buff, sizeof(colors_buff)),
+            R_PushArg(&num_tiles, sizeof(num_tiles)),
+            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
 }
 
 static dest_id_t n_dest_id(struct tile_desc dst_desc)
@@ -1201,7 +1223,19 @@ void N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
 
     assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
-    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
+
+    size_t count = FIELD_RES_R * FIELD_RES_C;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawMapOverlayQuads,
+        .nargs = 5,
+        .args = {
+            R_PushArg(corners_buff, sizeof(corners_buff)),
+            R_PushArg(colors_buff, sizeof(colors_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
 }
 
 void N_RenderPathFlowField(void *nav_private, const struct map *map, 
@@ -1241,7 +1275,18 @@ void N_RenderPathFlowField(void *nav_private, const struct map *map,
         dirs_buff[r * FIELD_RES_C + c] = g_flow_dir_lookup[ff->field[r][c].dir_idx];
     }}
 
-    R_GL_DrawFlowField(positions_buff, dirs_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
+    size_t count = FIELD_RES_R * FIELD_RES_C;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawFlowField,
+        .nargs = 5,
+        .args = {
+            R_PushArg(positions_buff, sizeof(positions_buff)),
+            R_PushArg(dirs_buff, sizeof(dirs_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
 }
 
 void N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *chunk_model, 
@@ -1287,7 +1332,19 @@ void N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *chunk_
 
     assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
-    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
+
+    size_t count = FIELD_RES_R * FIELD_RES_C;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawMapOverlayQuads,
+        .nargs = 5,
+        .args = {
+            R_PushArg(corners_buff, sizeof(corners_buff)),
+            R_PushArg(colors_buff, sizeof(colors_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
 }
 
 void N_RenderEnemySeekField(void *nav_private, const struct map *map, 
@@ -1350,8 +1407,29 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map,
     assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
 
-    R_GL_DrawFlowField(positions_buff, dirs_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
-    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
+    size_t count = FIELD_RES_R * FIELD_RES_C;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawFlowField,
+        .nargs = 5,
+        .args = {
+            R_PushArg(positions_buff, sizeof(positions_buff)),
+            R_PushArg(dirs_buff, sizeof(dirs_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawMapOverlayQuads,
+        .nargs = 5,
+        .args = {
+            R_PushArg(corners_buff, sizeof(corners_buff)),
+            R_PushArg(colors_buff, sizeof(colors_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
 }
 
 void N_RenderNavigationBlockers(void *nav_private, const struct map *map, 
@@ -1391,7 +1469,19 @@ void N_RenderNavigationBlockers(void *nav_private, const struct map *map,
 
     assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
     assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
-    R_GL_DrawMapOverlayQuads(corners_buff, colors_buff, FIELD_RES_R * FIELD_RES_C, chunk_model, map);
+
+    size_t count = FIELD_RES_R * FIELD_RES_C;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawMapOverlayQuads,
+        .nargs = 5,
+        .args = {
+            R_PushArg(corners_buff, sizeof(corners_buff)),
+            R_PushArg(colors_buff, sizeof(colors_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
 }
 
 void N_RenderNavigationPortals(void *nav_private, const struct map *map, 

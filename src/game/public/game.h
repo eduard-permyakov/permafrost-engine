@@ -36,6 +36,7 @@
 #ifndef GAME_H
 #define GAME_H
 
+#include "../../entity.h"
 #include "../../map/public/map.h"
 #include "../../lib/public/vec.h"
 #include "../../lib/public/khash.h"
@@ -52,6 +53,15 @@ struct map;
 struct tile_desc;
 struct tile;
 struct faction;
+struct render_workspace;
+struct nk_context;
+
+
+VEC_TYPE(pentity, struct entity *)
+VEC_IMPL(static inline, pentity, struct entity *)
+
+KHASH_DECLARE(entity, khint32_t, struct entity*)
+
 
 enum cam_mode{
     CAM_MODE_FPS,
@@ -69,10 +79,18 @@ enum simstate{
     G_PAUSED_UI_RUNNING = (1 << 2),
 };
 
-VEC_TYPE(pentity, struct entity *)
-VEC_PROTOTYPES(extern, pentity, struct entity *)
-
-KHASH_DECLARE(entity, khint32_t, struct entity*)
+struct render_input{
+    const struct camera *cam;
+    const struct map    *map;
+    bool                 shadows;
+    /* The visible entities to render */
+    vec_rstat_t         cam_vis_stat;
+    vec_ranim_t         cam_vis_anim;
+    /* The entities 'visible' from the light source PoV. They are 
+     * used for rendering the shadow map. */
+    vec_rstat_t         light_vis_stat;
+    vec_ranim_t         light_vis_anim;
+};
 
 
 /*###########################################################################*/
@@ -86,11 +104,12 @@ void   G_Shutdown(void);
 
 void   G_Update(void);
 void   G_Render(void);
+void   G_SwapBuffers(void);
 
-/* Render only the map surface and entities, omitting things like the HUD
- * and health bars. This is used, for example, in creating the refraction
- * buffer for water rendering. */
-void   G_RenderMapAndEntities(void);
+/* This does not have any side effects besides  making draw calls, 
+ * so it is safe to invoke from the render thread. 
+ */
+void   G_RenderMapAndEntities(struct render_input in);
 
 void   G_GetMinimapPos(float *out_x, float *out_y);
 void   G_SetMinimapPos(float x, float y);
@@ -106,6 +125,10 @@ void   G_BakeNavDataForScene(void);
 bool   G_AddEntity(struct entity *ent, vec3_t pos);
 bool   G_RemoveEntity(struct entity *ent);
 void   G_StopEntity(const struct entity *ent);
+
+/* Wrapper around AL_EntityFree to defer the call until the render thread 
+ * (which owns some part of entity resources) finishes its' work. */
+void   G_SafeFree(struct entity *ent);
 
 bool   G_AddFaction(const char *name, vec3_t color);
 bool   G_RemoveFaction(int faction_id);
@@ -124,7 +147,11 @@ bool   G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
 
 void          G_SetSimState(enum simstate ss);
 enum simstate G_GetSimState(void);
+void          G_SetLightPos(vec3_t pos);
 
+struct render_workspace *G_GetSimWS(void);
+struct render_workspace *G_GetRenderWS(void);
+const struct map        *G_GetPrevTickMap(void);
 
 /*###########################################################################*/
 /* GAME SELECTION                                                            */

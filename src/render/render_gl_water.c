@@ -40,6 +40,7 @@
 #include "gl_assert.h"
 #include "gl_uniforms.h"
 #include "public/render.h"
+#include "../game/public/game.h"
 #include "../settings.h"
 #include "../camera.h"
 #include "../config.h"
@@ -69,6 +70,7 @@ struct water_gl_state{
     mat4x4_t u_view;
 };
 
+
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0])) 
 
 #define WATER_LVL       (-1.0f * Y_COORDS_PER_TILE + 2.0f)
@@ -93,6 +95,8 @@ static struct render_water_ctx s_ctx;
 
 static void save_gl_state(struct water_gl_state *out, GLuint shader_prog)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     glGetIntegerv(GL_VIEWPORT, out->viewport);
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &out->fb);
     glGetFloatv(GL_COLOR_CLEAR_VALUE, out->clear_clr);
@@ -106,6 +110,8 @@ static void save_gl_state(struct water_gl_state *out, GLuint shader_prog)
 
 static void restore_gl_state(const struct water_gl_state *in)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     glBindFramebuffer(GL_FRAMEBUFFER, in->fb);
     glViewport(in->viewport[0], in->viewport[1], in->viewport[2], in->viewport[3]);
     glClearColor(in->clear_clr[0], in->clear_clr[1], in->clear_clr[2], in->clear_clr[3]);
@@ -114,6 +120,8 @@ static void restore_gl_state(const struct water_gl_state *in)
 
 static int wbuff_width(void)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     int viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
     return viewport[2] / 2.5f;
@@ -121,6 +129,8 @@ static int wbuff_width(void)
 
 static int wbuff_height(int width)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     int viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
     float ar = (float)viewport[2] / viewport[3];
@@ -129,6 +139,8 @@ static int wbuff_height(int width)
 
 static GLuint make_new_tex(int width, int height)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLuint ret;
     glGenTextures(1, &ret);
     glBindTexture(GL_TEXTURE_2D, ret);
@@ -142,6 +154,8 @@ static GLuint make_new_tex(int width, int height)
 
 static GLuint make_new_depth_tex(int width, int height)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLuint ret;
     glGenTextures(1, &ret);
     glBindTexture(GL_TEXTURE_2D, ret);
@@ -156,16 +170,14 @@ static GLuint make_new_depth_tex(int width, int height)
     return ret;
 }
 
-static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex)
+static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex, bool on, struct render_input in)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLint texw, texh;
     glBindTexture(GL_TEXTURE_2D, clr_tex);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texw);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texh);
-
-    struct sval setting;
-    ss_e status = Settings_Get("pf.video.water_refraction", &setting);
-    assert(status == SS_OKAY);
 
     /* Create framebuffer object */
     GLuint fb;
@@ -188,8 +200,8 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex)
     glViewport(0, 0, texw, texh);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    if(setting.as_bool) {
-        G_RenderMapAndEntities();
+    if(on) {
+        G_RenderMapAndEntities(in);
     }
 
     /* Clean up framebuffer */
@@ -199,8 +211,10 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex)
     GL_ASSERT_OK();
 }
 
-static void render_reflection_tex(GLuint tex)
+static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLint texw, texh;
     glBindTexture(GL_TEXTURE_2D, tex);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texw);
@@ -222,16 +236,12 @@ static void render_reflection_tex(GLuint tex)
     glDrawBuffers(ARR_SIZE(draw_buffs), draw_buffs);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
-    /* Claer buffers */
+    /* Clear buffers */
     glViewport(0, 0, texw, texh);
     glClearColor(SKY_CLR[0], SKY_CLR[1], SKY_CLR[2], SKY_CLR[3]);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    struct sval setting;
-    ss_e status = Settings_Get("pf.video.water_reflection", &setting);
-    assert(status == SS_OKAY);
-
-    if(!setting.as_bool) {
+    if(!on) {
 
         glDeleteRenderbuffers(1, &depth_rb);
         glDeleteFramebuffers(1, &fb);
@@ -242,8 +252,8 @@ static void render_reflection_tex(GLuint tex)
     /* Flip camera over the water's surface */
     DECL_CAMERA_STACK(cam);
     memset(cam, 0, sizeof(cam));
-    vec3_t cam_pos = G_ActiveCamPos();
-    vec3_t cam_dir = G_ActiveCamDir();
+    vec3_t cam_pos = Camera_GetPos(in.cam);
+    vec3_t cam_dir = Camera_GetDir(in.cam);
     cam_pos.y -= (cam_pos.y - WATER_LVL) * 2.0f;
     cam_dir.y *= -1.0f;
     Camera_SetPos((struct camera*)cam, cam_pos);
@@ -260,7 +270,7 @@ static void render_reflection_tex(GLuint tex)
     R_GL_SetClipPlane(plane_eq);
 
     /* Render to the texture */
-    G_RenderMapAndEntities();
+    G_RenderMapAndEntities(in);
 
     /* Clean up framebuffer */
     glDeleteRenderbuffers(1, &depth_rb);
@@ -274,6 +284,8 @@ static void render_reflection_tex(GLuint tex)
 static void setup_texture_uniforms(GLuint shader_prog, GLuint refract_tex, 
                                    GLuint refract_depth, GLuint reflect_tex)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLuint sampler_loc;
 
     sampler_loc = glGetUniformLocation(shader_prog, GL_U_REFRACT_TEX);
@@ -294,6 +306,8 @@ static void setup_texture_uniforms(GLuint shader_prog, GLuint refract_tex,
 
 static void setup_map_uniforms(GLuint shader_prog)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLuint sampler_loc;
 
     sampler_loc = glGetUniformLocation(shader_prog, GL_U_DUDV_MAP);
@@ -309,6 +323,8 @@ static void setup_map_uniforms(GLuint shader_prog)
 
 static void setup_cam_uniforms(GLuint shader_prog)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLuint sampler_loc;
 
     sampler_loc = glGetUniformLocation(shader_prog, GL_U_CAM_NEAR);
@@ -320,6 +336,8 @@ static void setup_cam_uniforms(GLuint shader_prog)
 
 static void setup_tiling_uniforms(GLuint shader_prog, const struct map *map)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     struct map_resolution res;
     M_GetResolution(map, &res);
     vec2_t val = (vec2_t){ res.chunk_w * 1.5f, res.chunk_h * 1.5f };
@@ -330,6 +348,8 @@ static void setup_tiling_uniforms(GLuint shader_prog, const struct map *map)
 
 static void setup_model_mat(GLuint shader_prog, const struct map *map)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     vec3_t pos = M_GetCenterPos(map);
     mat4x4_t trans;
     PFM_Mat4x4_MakeTrans(pos.x, pos.y, pos.z, &trans);
@@ -351,6 +371,8 @@ static void setup_model_mat(GLuint shader_prog, const struct map *map)
 
 static void setup_move_factor(GLuint shader_prog)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     double intpart;
     uint32_t curr = SDL_GetTicks();
     uint32_t delta = curr - s_ctx.prev_frame_tick;
@@ -363,17 +385,14 @@ static void setup_move_factor(GLuint shader_prog)
     glUniform1f(sampler_loc, s_ctx.move_factor);
 }
 
-static bool bool_val_validate(const struct sval *new_val)
-{
-    return (new_val->type == ST_TYPE_BOOL);
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool R_GL_WaterInit(void)
+void R_GL_WaterInit(void)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     bool ret = true;
 
     ret = R_Texture_Load(g_basepath, DUDV_PATH, &s_ctx.dudv.id);
@@ -409,41 +428,18 @@ bool R_GL_WaterInit(void)
     glEnableVertexAttribArray(0);
 
     GL_ASSERT_OK();
-
-    ss_e status = Settings_Create((struct setting){
-        .name = "pf.video.water_reflection",
-        .val = (struct sval) {
-            .type = ST_TYPE_BOOL,
-            .as_bool = true 
-        },
-        .prio = 0,
-        .validate = bool_val_validate,
-        .commit = NULL,
-    });
-    assert(status == SS_OKAY);
-
-    status = Settings_Create((struct setting){
-        .name = "pf.video.water_refraction",
-        .val = (struct sval) {
-            .type = ST_TYPE_BOOL,
-            .as_bool = true 
-        },
-        .prio = 0,
-        .validate = bool_val_validate,
-        .commit = NULL,
-    });
-    assert(status == SS_OKAY);
-
-    return ret;
+    return;
 
 fail_normal:
     R_Texture_Free(DUDV_PATH);
 fail_dudv:
-    return ret;
+    assert(0);
 }
 
 void R_GL_WaterShutdown(void)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     assert(s_ctx.dudv.id > 0);
     assert(s_ctx.normal.id > 0);
     assert(s_ctx.surface.VBO > 0);
@@ -457,8 +453,10 @@ void R_GL_WaterShutdown(void)
     memset(&s_ctx, 0, sizeof(s_ctx));
 }
 
-void R_GL_DrawWater(const struct map *map)
+void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const bool *reflection)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLuint shader_prog = R_Shader_GetProgForName("water");
     glUseProgram(shader_prog);
 
@@ -474,20 +472,20 @@ void R_GL_DrawWater(const struct map *map)
     GLuint refract_depth = make_new_depth_tex(w, h);
     assert(refract_depth > 0);
 
-    render_refraction_tex(refract_tex, refract_depth);
+    render_refraction_tex(refract_tex, refract_depth, *refraction, *in);
 
     GLuint reflect_tex = make_new_tex(w, h);
     assert(reflect_tex > 0);
-    render_reflection_tex(reflect_tex);
+    render_reflection_tex(reflect_tex, *reflection, *in);
 
     restore_gl_state(&state);
 
     setup_map_uniforms(shader_prog);
     setup_cam_uniforms(shader_prog);
     setup_texture_uniforms(shader_prog, refract_tex, refract_depth, reflect_tex);
-    setup_model_mat(shader_prog, map);
+    setup_model_mat(shader_prog, in->map);
     setup_move_factor(shader_prog);
-    setup_tiling_uniforms(shader_prog, map);
+    setup_tiling_uniforms(shader_prog, in->map);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

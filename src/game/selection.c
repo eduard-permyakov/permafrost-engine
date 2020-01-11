@@ -38,6 +38,7 @@
 #include "../pf_math.h"
 #include "../event.h"
 #include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 #include "../config.h"
 #include "../camera.h"
 #include "../main.h"
@@ -140,7 +141,19 @@ static void on_render_ui(void *user, void *event)
     SDL_GetMouseState(&mouse_x, &mouse_y);
 
     vec2_t signed_size = (vec2_t){mouse_x - s_ctx.mouse_down_coord.x, mouse_y - s_ctx.mouse_down_coord.y};
-    R_GL_DrawBox2D(s_ctx.mouse_down_coord, signed_size, (vec3_t){0.0f, 1.0f, 0.0f}, 2.0f);
+    const float width = 2.0f;
+    const vec3_t color = (vec3_t){0.0f, 1.0f, 0.0f};
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawBox2D,
+        .nargs = 4,
+        .args = {
+            R_PushArg(&s_ctx.mouse_down_coord, sizeof(s_ctx.mouse_down_coord)),
+            R_PushArg(&signed_size, sizeof(signed_size)),
+            R_PushArg(&color, sizeof(color)),
+            R_PushArg(&width, sizeof(width)),
+        }
+    });
 }
 
 static vec3_t sel_unproject_mouse_coords(struct camera *cam, vec2_t mouse_coords, float ndc_z)

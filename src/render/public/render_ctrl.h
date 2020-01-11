@@ -45,12 +45,22 @@
 #include <SDL_thread.h>
 
 
-struct nk_buffer;
+struct frustum;
+struct tile_desc;
+struct map;
 
-//TODO: put all immediate-mode calls to be made from the sim thread in this header
-// and leave
+
+struct render_init_arg{
+    SDL_Window *in_window;
+    int         in_width; 
+    int         in_height;
+    bool        out_success;
+};
 
 struct render_sync_state{
+    /* The render thread owns the data pointed to by 'arg' until
+     * signalling the first 'done'. */
+    struct render_init_arg *arg;
     /* The start flag is set by the main thread when the render
      * thread is allowed to start processing commands.
      * The quit flag is set by the main thread when the render 
@@ -64,23 +74,9 @@ struct render_sync_state{
     bool       done;
     SDL_mutex *done_lock;
     SDL_cond  *done_cond;
-};
-
-struct rcmd_arg_desc{
-    enum{
-        RARG_PTR,
-        RARG_UINT,
-        RARG_INT,
-        RARG_FLOAT,
-        RARG_VEC2,
-        RARG_VEC3,
-        RARG_VEC4,
-        RARG_MAT3,
-        RARG_MAT4,
-        RARG_TILE_DESC,
-        RARG_CHUNK_COORD,
-    }type;
-    void *data;
+    /* Flag to specify if the framebuffer should be presented on
+     * the screen after all commands are executed */
+    bool       swap_buffers;
 };
 
 #define MAX_ARGS 8
@@ -88,7 +84,7 @@ struct rcmd_arg_desc{
 struct rcmd{
     void (*func)();
     size_t nargs;
-    struct rcmd_arg_desc args[MAX_ARGS];
+    void *args[MAX_ARGS];
 };
 
 QUEUE_TYPE(rcmd, struct rcmd)
@@ -97,14 +93,27 @@ QUEUE_IMPL(static inline, rcmd, struct rcmd)
 struct render_workspace{
     /* Stack allocator for storing all the data/arguments associated
      * with the commands */
-    struct memstack  *args;
+    struct memstack   args;
     queue_rcmd_t      commands;
-    struct nk_buffer *nukear_cmds;
 };
 
 
 bool        R_Init(const char *base_path);
 SDL_Thread *R_Run(struct render_sync_state *rstate);
+
+void       *R_PushArg(const void *src, size_t size);
+void        R_PushCmd(struct rcmd cmd);
+
+bool        R_InitWS(struct render_workspace *ws);
+void        R_DestroyWS(struct render_workspace *ws);
+void        R_ClearWS(struct render_workspace *ws);
+
+/* Shadows */
+void        R_LightFrustum(vec3_t light_pos, vec3_t cam_pos, vec3_t cam_dir, struct frustum *out);
+
+/* Tile */
+int         R_TileGetTriMesh(const struct map *map, struct tile_desc *td, mat4x4_t *model, vec3_t out[]);
+
 
 #endif
 

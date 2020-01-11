@@ -13,13 +13,11 @@
 #ifndef NK_SDL_GL3_H_
 #define NK_SDL_GL3_H_
 
-#include "../../main.h"
-#include "../../pf_math.h"
-#include "../../render/public/render.h"
-#include "../../lib/public/stb_image.h"
-
-#include <SDL.h>
-#include <SDL_opengl.h>
+struct nk_sdl_vertex {
+    float   position[2];
+    float   uv[2];
+    nk_byte col[4];
+};
 
 static struct nk_vec2i nk_sdl_get_drawable_size(void);
 static struct nk_vec2i nk_sdl_get_screen_size(void);
@@ -28,10 +26,11 @@ NK_API struct nk_context*   nk_sdl_init(SDL_Window *win);
 NK_API void                 nk_sdl_font_stash_begin(struct nk_font_atlas **atlas);
 NK_API void                 nk_sdl_font_stash_end(void);
 NK_API int                  nk_sdl_handle_event(SDL_Event *evt);
-NK_API void                 nk_sdl_render(enum nk_anti_aliasing , int max_vertex_buffer, int max_element_buffer);
+NK_API void                 nk_sdl_render(const struct nk_draw_list *dl);
 NK_API void                 nk_sdl_shutdown(void);
 NK_API void                 nk_sdl_device_destroy(void);
 NK_API void                 nk_sdl_device_create(void);
+NK_API struct nk_draw_null_texture nk_sdl_get_null(void);
 
 #endif
 
@@ -44,7 +43,21 @@ NK_API void                 nk_sdl_device_create(void);
  */
 #ifdef NK_SDL_GL3_IMPLEMENTATION
 
+#include "../../main.h"
+#include "../../pf_math.h"
+#include "../../render/public/render.h"
+#include "../../render/public/render_ctrl.h"
+#include "../../lib/public/stb_image.h"
+
+#include <SDL.h>
+#include <SDL_opengl.h>
+
+#include <assert.h>
 #include <string.h>
+
+#define ASSERT_IN_RENDER_THREAD() \
+    assert(SDL_ThreadID() == g_render_thread_id)
+
 
 struct nk_sdl_device {
     struct nk_buffer cmds;
@@ -59,12 +72,6 @@ struct nk_sdl_device {
     GLint uniform_tex;
     GLint uniform_proj;
     GLuint font_tex;
-};
-
-struct nk_sdl_vertex {
-    float position[2];
-    float uv[2];
-    nk_byte col[4];
 };
 
 static struct nk_sdl {
@@ -82,6 +89,8 @@ static struct nk_sdl {
 NK_API void
 nk_sdl_device_create(void)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     GLint status;
     static const GLchar *vertex_shader =
         NK_SHADER_VERSION
@@ -108,7 +117,6 @@ nk_sdl_device_create(void)
         "}\n";
 
     struct nk_sdl_device *dev = &sdl.ogl;
-    nk_buffer_init_default(&dev->cmds);
     dev->prog = glCreateProgram();
     dev->vert_shdr = glCreateShader(GL_VERTEX_SHADER);
     dev->frag_shdr = glCreateShader(GL_FRAGMENT_SHADER);
@@ -163,20 +171,24 @@ nk_sdl_device_create(void)
 }
 
 NK_INTERN void
-nk_sdl_device_upload_atlas(const void *image, int width, int height)
+nk_sdl_device_upload_atlas(const void *image, int *width, int *height)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     struct nk_sdl_device *dev = &sdl.ogl;
     glGenTextures(1, &dev->font_tex);
     glBindTexture(GL_TEXTURE_2D, dev->font_tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)width, (GLsizei)height, 0,
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)*width, (GLsizei)*height, 0,
                 GL_RGBA, GL_UNSIGNED_BYTE, image);
 }
 
 NK_API void
 nk_sdl_device_destroy(void)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     struct nk_sdl_device *dev = &sdl.ogl;
     glDetachShader(dev->prog, dev->vert_shdr);
     glDetachShader(dev->prog, dev->frag_shdr);
@@ -186,12 +198,32 @@ nk_sdl_device_destroy(void)
     glDeleteTextures(1, &dev->font_tex);
     glDeleteBuffers(1, &dev->vbo);
     glDeleteBuffers(1, &dev->ebo);
-    nk_buffer_free(&dev->cmds);
+
+    memset(&sdl.ogl, 0, sizeof(sdl.ogl));
+}
+
+static int nk_tex_load(const char *name, int *out_id)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    stbi_set_flip_vertically_on_load(false);
+    int ret = R_Texture_Load(g_basepath, name, out_id);
+    stbi_set_flip_vertically_on_load(true);
+    return ret;
+}
+
+static int nk_tex_get(const char *name, int *out_id)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    return R_Texture_GetForName(name, out_id);
 }
 
 NK_API void
-nk_sdl_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element_buffer)
+nk_sdl_render(const struct nk_draw_list *dl)
 {
+    ASSERT_IN_RENDER_THREAD();
+
     struct nk_sdl_device *dev = &sdl.ogl;
     int width, height;
     int display_width, display_height;
@@ -216,80 +248,52 @@ nk_sdl_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element_b
     glUseProgram(dev->prog);
     glUniform1i(dev->uniform_tex, 0);
     glUniformMatrix4fv(dev->uniform_proj, 1, GL_FALSE, ortho.raw);
-    {
-        /* convert from command queue into draw list and draw to screen */
-        const struct nk_draw_command *cmd;
-        void *vertices, *elements;
-        const nk_draw_index *offset = NULL;
-        struct nk_buffer vbuf, ebuf;
 
-        /* allocate vertex and element buffer */
-        glBindVertexArray(dev->vao);
-        glBindBuffer(GL_ARRAY_BUFFER, dev->vbo);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dev->ebo);
+    /* allocate vertex and element buffer */
+    glBindVertexArray(dev->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, dev->vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dev->ebo);
 
-        glBufferData(GL_ARRAY_BUFFER, max_vertex_buffer, NULL, GL_STREAM_DRAW);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, max_element_buffer, NULL, GL_STREAM_DRAW);
+    /* load vertices/elements into vertex/element buffer */
+    glBufferData(GL_ARRAY_BUFFER, dl->vertices->memory.size, dl->vertices->memory.ptr, GL_STREAM_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, dl->elements->memory.size, dl->elements->memory.ptr, GL_STREAM_DRAW);
 
-        /* load vertices/elements directly into vertex/element buffer */
-        vertices = glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
-        elements = glMapBuffer(GL_ELEMENT_ARRAY_BUFFER, GL_WRITE_ONLY);
-        {
-            /* fill convert configuration */
-            struct nk_convert_config config;
-            static const struct nk_draw_vertex_layout_element vertex_layout[] = {
-                {NK_VERTEX_POSITION, NK_FORMAT_FLOAT, NK_OFFSETOF(struct nk_sdl_vertex, position)},
-                {NK_VERTEX_TEXCOORD, NK_FORMAT_FLOAT, NK_OFFSETOF(struct nk_sdl_vertex, uv)},
-                {NK_VERTEX_COLOR, NK_FORMAT_R8G8B8A8, NK_OFFSETOF(struct nk_sdl_vertex, col)},
-                {NK_VERTEX_LAYOUT_END}
-            };
-            NK_MEMSET(&config, 0, sizeof(config));
-            config.vertex_layout = vertex_layout;
-            config.vertex_size = sizeof(struct nk_sdl_vertex);
-            config.vertex_alignment = NK_ALIGNOF(struct nk_sdl_vertex);
-            config.null = dev->null;
-            config.circle_segment_count = 22;
-            config.curve_segment_count = 22;
-            config.arc_segment_count = 22;
-            config.global_alpha = 1.0f;
-            config.shape_AA = AA;
-            config.line_AA = AA;
+    /* iterate over and execute each draw command */
+    struct nk_vec2i curr_vres = nk_sdl_get_screen_size();
+    const struct nk_draw_command *cmd;
+    const nk_draw_index *offset = NULL;
 
-            /* setup buffers to load vertices and elements */
-            nk_buffer_init_fixed(&vbuf, vertices, (nk_size)max_vertex_buffer);
-            nk_buffer_init_fixed(&ebuf, elements, (nk_size)max_element_buffer);
-            nk_convert(&sdl.ctx, &dev->cmds, &vbuf, &ebuf, &config);
+    for(cmd = nk__draw_list_begin(dl, dl->buffer); cmd; cmd = nk__draw_list_next(cmd, dl->buffer, dl)) {
+
+        if(cmd->userdata.ptr 
+        && ((struct nk_command_userdata*)cmd->userdata.ptr)->type == NK_COMMAND_SET_VRES) {
+
+            struct nk_command_userdata *ud = (struct nk_command_userdata*)cmd->userdata.ptr;
+            curr_vres = ud->vec2i;
+
+            PFM_Mat4x4_MakeOrthographic(0.0f, ud->vec2i.x, ud->vec2i.y, 0.0f, -1.0f, 1.0f, &ortho);
+            glUniformMatrix4fv(dev->uniform_proj, 1, GL_FALSE, ortho.raw);
+
+            free(cmd->userdata.ptr);
+            continue;
         }
-        glUnmapBuffer(GL_ARRAY_BUFFER);
-        glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
 
-        /* iterate over and execute each draw command */
-        struct nk_vec2i curr_vres = nk_sdl_get_screen_size();
-        nk_draw_foreach(cmd, &sdl.ctx, &dev->cmds) {
-
-            if(cmd->userdata.ptr 
-            && ((struct nk_command_userdata*)cmd->userdata.ptr)->type == NK_COMMAND_SET_VRES) {
-
-                struct nk_command_userdata *ud = (struct nk_command_userdata*)cmd->userdata.ptr;
-                curr_vres = ud->vec2i;
-
-                PFM_Mat4x4_MakeOrthographic(0.0f, ud->vec2i.x, ud->vec2i.y, 0.0f, -1.0f, 1.0f, &ortho);
-                glUniformMatrix4fv(dev->uniform_proj, 1, GL_FALSE, ortho.raw);
-
-                free(cmd->userdata.ptr);
-                continue;
-            }
-
-            if (!cmd->elem_count) continue;
-            glBindTexture(GL_TEXTURE_2D, (GLuint)cmd->texture.id);
-            glScissor((GLint)(cmd->clip_rect.x / (float)curr_vres.x * width),
-                height - (GLint)((cmd->clip_rect.y + cmd->clip_rect.h) / (float)curr_vres.y * height),
-                (GLint)(cmd->clip_rect.w / (float)curr_vres.x * width),
-                (GLint)(cmd->clip_rect.h / (float)curr_vres.y * height));
-            glDrawElements(GL_TRIANGLES, (GLsizei)cmd->elem_count, GL_UNSIGNED_SHORT, offset);
-            offset += cmd->elem_count;
+        if(cmd->userdata.ptr 
+        && ((struct nk_command_userdata*)cmd->userdata.ptr)->type == NK_COMMAND_IMAGE_TEXPATH) {
+        
+            struct nk_command_userdata *ud = (struct nk_command_userdata*)cmd->userdata.ptr;
+            nk_tex_get(ud->texpath, (int*)&cmd->texture.id) || nk_tex_load(ud->texpath, (int*)&cmd->texture.id);
+            free(cmd->userdata.ptr);
         }
-        nk_clear(&sdl.ctx);
+
+        if (!cmd->elem_count) continue;
+        glBindTexture(GL_TEXTURE_2D, (GLuint)cmd->texture.id);
+        glScissor((GLint)(cmd->clip_rect.x / (float)curr_vres.x * width),
+            height - (GLint)((cmd->clip_rect.y + cmd->clip_rect.h) / (float)curr_vres.y * height),
+            (GLint)(cmd->clip_rect.w / (float)curr_vres.x * width),
+            (GLint)(cmd->clip_rect.h / (float)curr_vres.y * height));
+        glDrawElements(GL_TRIANGLES, (GLsizei)cmd->elem_count, GL_UNSIGNED_SHORT, offset);
+        offset += cmd->elem_count;
     }
 
     glUseProgram(0);
@@ -336,22 +340,11 @@ static struct nk_vec2i nk_sdl_get_screen_size(void)
     return (struct nk_vec2i){dm.w, dm.h};
 }
 
-static int nk_tex_load(const char *name, int *out_id)
-{
-    stbi_set_flip_vertically_on_load(false);
-    int ret = R_Texture_Load(g_basepath, name, out_id);
-    stbi_set_flip_vertically_on_load(true);
-    return ret;
-}
-
-static int nk_tex_get(const char *name, int *out_id)
-{
-    return R_Texture_GetForName(name, out_id);
-}
-
 NK_API struct nk_context*
 nk_sdl_init(SDL_Window *win)
 {
+    struct nk_sdl_device *dev = &sdl.ogl;
+
     sdl.win = win;
     nk_init_default(&sdl.ctx, 0);
     sdl.ctx.clip.copy = nk_sdl_clipboard_copy;
@@ -359,10 +352,10 @@ nk_sdl_init(SDL_Window *win)
     sdl.ctx.clip.userdata = nk_handle_ptr(0);
     sdl.ctx.screen.get_drawable_size = nk_sdl_get_drawable_size;
     sdl.ctx.screen.get_screen_size = nk_sdl_get_screen_size;
-    sdl.ctx.tex.load = nk_tex_load;
-    sdl.ctx.tex.get = nk_tex_get;
-    sdl.ctx.tex.get_size = (void*)R_Texture_GetSize;
-    nk_sdl_device_create();
+    nk_buffer_init_default(&dev->cmds);
+
+    R_PushCmd((struct rcmd) { nk_sdl_device_create, 0 });
+
     return &sdl.ctx;
 }
 
@@ -379,11 +372,22 @@ nk_sdl_font_stash_end(void)
 {
     const void *image; int w, h;
     image = nk_font_atlas_bake(&sdl.atlas, &w, &h, NK_FONT_ATLAS_RGBA32);
-    nk_sdl_device_upload_atlas(image, w, h);
+
+    R_PushCmd((struct rcmd){
+        .func = nk_sdl_device_upload_atlas,
+        .nargs = 3,
+        .args = {
+            R_PushArg(image, w * h * sizeof(uint32_t)),
+            R_PushArg(&w, sizeof(w)),
+            R_PushArg(&h, sizeof(h)),
+        },
+    });
+
+	Engine_FlushRenderWorkQueue();
+
     nk_font_atlas_end(&sdl.atlas, nk_handle_id((int)sdl.ogl.font_tex), &sdl.ogl.null);
     if (sdl.atlas.default_font)
         nk_style_set_font(&sdl.ctx, &sdl.atlas.default_font->handle);
-
 }
 
 NK_API int
@@ -480,10 +484,20 @@ nk_sdl_handle_event(SDL_Event *evt)
 NK_API
 void nk_sdl_shutdown(void)
 {
+    struct nk_sdl_device *dev = &sdl.ogl;
+
     nk_font_atlas_clear(&sdl.atlas);
     nk_free(&sdl.ctx);
-    nk_sdl_device_destroy();
-    memset(&sdl, 0, sizeof(sdl));
+    nk_buffer_free(&dev->cmds);
+
+    R_PushCmd((struct rcmd){ nk_sdl_device_destroy, 0 });
+
+    memset(&sdl.ctx, 0, sizeof(sdl.ctx));
+}
+
+NK_API struct nk_draw_null_texture nk_sdl_get_null(void)
+{
+	return sdl.ogl.null;
 }
 
 #endif

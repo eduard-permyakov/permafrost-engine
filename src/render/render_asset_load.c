@@ -34,12 +34,14 @@
  */
 
 #include "public/render.h"
+#include "public/render_ctrl.h"
 #include "render_private.h"
 #include "vertex.h"
 #include "material.h"
 #include "render_gl.h"
 #include "gl_assert.h"
 
+#include "../main.h"
 #include "../asset_load.h"
 #include "../map/public/tile.h"
 #include "../settings.h"
@@ -144,9 +146,15 @@ static bool al_read_material(SDL_RWops *stream, const char *basedir, struct mate
         goto fail;
     out->texname[sizeof(out->texname)-1] = '\0';
 
-    if(!R_Texture_GetForName(out->texname, &out->texture.id)
-    && !R_Texture_Load(basedir, out->texname, &out->texture.id))
-        goto fail;
+    R_PushCmd((struct rcmd){
+        .func = R_Texture_GetOrLoad,
+        .nargs = 3,
+        .args = {
+            R_PushArg(basedir, strlen(basedir) + 1),
+            R_PushArg(out->texname, strlen(out->texname) + 1),
+            &out->texture.id,
+        },
+    });
 
     *out_null = false;
     return true;
@@ -204,6 +212,7 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
 
         bool null;
         priv->materials[i].texture.tunit = GL_TEXTURE0 + i;
+        priv->materials[i].texture.id = -1;
         if(!al_read_material(stream, base_path, &priv->materials[i], &null)) 
             goto fail_parse;
         assert(!null);
@@ -214,9 +223,29 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     assert(status == SS_OKAY);
 
     if(sh_setting.as_bool) {
-        R_GL_Init(priv, (header->num_as > 0) ? "mesh.animated.textured-phong-shadowed" : "mesh.static.textured-phong-shadowed", vbuff);
+        const char *shader = (header->num_as > 0) ? "mesh.animated.textured-phong-shadowed" 
+                                                  : "mesh.static.textured-phong-shadowed";
+        R_PushCmd((struct rcmd){
+            .func = R_GL_Init,
+            .nargs = 3,
+            .args = {
+                priv,
+                (void*)shader,
+                R_PushArg(vbuff, vbuff_sz),
+            },
+        });
     }else{
-        R_GL_Init(priv, (header->num_as > 0) ? "mesh.animated.textured-phong" : "mesh.static.textured-phong", vbuff);
+        const char *shader = (header->num_as > 0) ? "mesh.animated.textured-phong" 
+                                                  : "mesh.static.textured-phong";
+        R_PushCmd((struct rcmd){
+            .func = R_GL_Init,
+            .nargs = 3,
+            .args = {
+                priv,
+                (void*)shader,
+                R_PushArg(vbuff, vbuff_sz),
+            },
+        });
     }
 
     free(vbuff);
@@ -289,10 +318,12 @@ size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t
     return ret;
 }
 
-bool R_AL_InitPrivFromTiles(const struct map *map, struct chunk_coord cc,
+bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
                             const struct tile *tiles, size_t width, size_t height,
                             void *priv_buff, const char *basedir)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     size_t num_verts = VERTS_PER_TILE * (width * height);
 
     struct render_private *priv = priv_buff;
@@ -308,25 +339,29 @@ bool R_AL_InitPrivFromTiles(const struct map *map, struct chunk_coord cc,
     priv->num_materials = 0;
 
     for(int r = 0; r < height; r++) {
-        for(int c = 0; c < width; c++) {
+    for(int c = 0; c < width;  c++) {
 
-            const struct tile *curr = &tiles[r * width + c];
-            struct vertex *vert_base = &vbuff[ (r * width + c) * VERTS_PER_TILE ];
+        const struct tile *curr = &tiles[r * width + c];
+        struct vertex *vert_base = &vbuff[ (r * width + c) * VERTS_PER_TILE ];
 
-            struct tile_desc td = (struct tile_desc){cc.r, cc.c, r, c};
-            R_GL_TileGetVertices(map, td, vert_base);
-        }
-    }
+        struct tile_desc td = (struct tile_desc){chunk_r, chunk_c, r, c};
+        R_TileGetVertices(map, td, vert_base);
+    }}
 
     struct sval sh_setting;
     ss_e status = Settings_Get("pf.video.shadows_enabled", &sh_setting);
     assert(status == SS_OKAY);
 
-    if(sh_setting.as_bool) {
-        R_GL_Init(priv, "terrain-shadowed", vbuff);
-    }else {
-        R_GL_Init(priv, "terrain", vbuff);
-    }
+    const char *shader = sh_setting.as_bool ? "terrain-shadowed" : "terrain";
+    R_PushCmd((struct rcmd){
+        .func = R_GL_Init,
+        .nargs = 3,
+        .args = {
+            priv,
+            (void*)shader,
+            R_PushArg(vbuff, vbuff_sz),
+        },
+    });
 
     free(vbuff);
     GL_ASSERT_OK();

@@ -44,6 +44,7 @@
 #include "../main.h"
 
 #include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 #include "../game/public/game.h"
 
 #include <SDL.h>
@@ -180,7 +181,7 @@ static void rc_find_intersection(void)
                 &s_ctx.map->chunks[cts[i].chunk_r * s_ctx.map->width + cts[i].chunk_c];
             M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){cts[i].chunk_r, cts[i].chunk_c}, &model);
 
-            int num_verts = R_GL_TileGetTriMesh(s_ctx.map, cts[i], &model, tile_mesh);
+            int num_verts = R_TileGetTriMesh(s_ctx.map, &cts[i], &model, tile_mesh);
 
             if(C_RayIntersectsTriMesh(ray_origin, ray_dir, tile_mesh, num_verts, &t)) {
 
@@ -228,24 +229,37 @@ static void on_render(void *user, void *event)
     int num_tiles = s_ctx.highlight_size * 2 - 1;
 
     for(int r = -(num_tiles / 2); r < (num_tiles / 2) + 1; r++) {
-        for(int c = -(num_tiles / 2); c < (num_tiles / 2) + 1; c++) {
+    for(int c = -(num_tiles / 2); c < (num_tiles / 2) + 1; c++) {
 
-            struct map_resolution res = {
-                s_ctx.map->width, s_ctx.map->height,
-                TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT
-            };
+        struct map_resolution res = {
+            s_ctx.map->width, s_ctx.map->height,
+            TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT
+        };
 
-            struct tile_desc curr = s_ctx.intersec_tile;
-            if(M_Tile_RelativeDesc(res, &curr, r, c)) {
-            
-                const struct pfchunk *chunk = &s_ctx.map->chunks[curr.chunk_r * s_ctx.map->width + curr.chunk_c];
-                mat4x4_t model;
+        struct tile_desc curr = s_ctx.intersec_tile;
+        if(M_Tile_RelativeDesc(res, &curr, r, c)) {
+        
+            const struct pfchunk *chunk = &s_ctx.map->chunks[curr.chunk_r * s_ctx.map->width + curr.chunk_c];
 
-                M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){curr.chunk_r, curr.chunk_c}, &model);
-                R_GL_TileDrawSelected(&curr, chunk->render_private, &model, TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT); 
-            }
+            mat4x4_t model;
+            M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){curr.chunk_r, curr.chunk_c}, &model);
+
+            const int tpcw = TILES_PER_CHUNK_WIDTH;
+            const int tpch = TILES_PER_CHUNK_HEIGHT;
+
+            R_PushCmd((struct rcmd){
+                .func = R_GL_TileDrawSelected,
+                .nargs = 5,
+                .args = {
+                    R_PushArg(&curr, sizeof(curr)),
+                    chunk->render_private,
+                    R_PushArg(&model, sizeof(model)),
+                    R_PushArg(&tpcw, sizeof(tpcw)),
+                    R_PushArg(&tpch, sizeof(tpch)),
+                },
+            });
         }
-    }
+    }}
 }
 
 static void on_update_start(void *user, void *event)

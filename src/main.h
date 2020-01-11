@@ -41,6 +41,16 @@
 extern const char    *g_basepath;      /* readonly */
 extern unsigned       g_last_frame_ms; /* readonly */
 extern unsigned long  g_frame_idx;     /* readonly */
+extern SDL_threadID   g_main_thread_id;   /* readonly */
+extern SDL_threadID   g_render_thread_id; /* readonly */
+
+
+#define ASSERT_IN_RENDER_THREAD() \
+    assert(SDL_ThreadID() == g_render_thread_id)
+
+#define ASSERT_IN_MAIN_THREAD() \
+    assert(SDL_ThreadID() == g_main_thread_id)
+
 
 enum pf_window_flags {
 
@@ -55,6 +65,12 @@ enum pf_window_flags {
 int  Engine_SetRes(int w, int h);
 void Engine_SetDispMode(enum pf_window_flags wf);
 void Engine_WinDrawableSize(int *out_w, int *out_h);
+
+/* Execute all the currently queued render commands on the render thread. 
+ * Block until it completes. This is used during initialization only to 
+ * execute rendering code serially.
+ */
+void Engine_FlushRenderWorkQueue(void);
 
 #endif
 

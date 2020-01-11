@@ -452,7 +452,7 @@ static void PyEntity_dealloc(PyEntityObject *self)
     kh_del(PyObject, s_uid_pyobj_table, k);
 
     G_RemoveEntity(self->ent);
-    AL_EntityFree(self->ent);
+    G_SafeFree(self->ent);
 
     Py_TYPE(self)->tp_free((PyObject*)self);
 }

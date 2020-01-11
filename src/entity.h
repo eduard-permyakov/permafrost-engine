@@ -38,8 +38,11 @@
 
 #include "pf_math.h"
 #include "collision.h"
+#include "lib/public/vec.h"
 
 #include <stdbool.h>
+
+#define MAX_JOINTS                (96)
 
 #define ENTITY_FLAG_ANIMATED      (1 << 0)
 #define ENTITY_FLAG_COLLISION     (1 << 1)
@@ -70,6 +73,28 @@ struct entity{
     int          faction_id;       /* The faction to which this entity belongs to. */
     int          max_hp;           /* 0 for 'invulnerable' entities */
 };
+
+/* State needed for rendering a static entity */
+struct ent_stat_rstate{
+    void     *render_private;
+    mat4x4_t  model;
+};
+
+/* State needed for rendering an animated entity */
+struct ent_anim_rstate{
+    void           *render_private;
+    mat4x4_t        model;
+    size_t          njoints;
+    const mat4x4_t *inv_bind_pose; /* static, use shallow copy */
+    mat4x4_t        curr_pose[MAX_JOINTS];
+};
+
+VEC_TYPE(rstat, struct ent_stat_rstate)
+VEC_IMPL(static inline, rstat, struct ent_stat_rstate)
+
+VEC_TYPE(ranim, struct ent_anim_rstate)
+VEC_IMPL(static inline, ranim, struct ent_anim_rstate)
+
 
 void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
 uint32_t Entity_NewUID(void);

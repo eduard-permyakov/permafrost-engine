@@ -50,6 +50,7 @@
 #include "../settings.h"
 #include "../ui.h"
 #include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 #include "../map/public/map.h"
 
 #include <assert.h>
@@ -445,8 +446,32 @@ static void on_render_3d(void *user, void *event)
     }
 
     assert(idx == n_vos);
-    R_GL_DrawCombinedHRVO(apexes, left_rays, right_rays, n_vos, map);
-    R_GL_DrawSelectionCircle(cpent->xz_pos, CLEARPATH_NEIGHBOUR_RADIUS, 0.5f, yellow, map);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawCombinedHRVO,
+        .nargs = 5,
+        .args = {
+            R_PushArg(apexes, sizeof(apexes)),
+            R_PushArg(left_rays, sizeof(left_rays)),
+            R_PushArg(right_rays, sizeof(right_rays)),
+            R_PushArg(&n_vos, sizeof(n_vos)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
+
+    float radius = CLEARPATH_NEIGHBOUR_RADIUS;
+    float width = 0.5f;
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawSelectionCircle,
+        .nargs = 5,
+        .args = {
+            R_PushArg(&cpent->xz_pos, sizeof(cpent->xz_pos)),
+            R_PushArg(&radius, sizeof(radius)),
+            R_PushArg(&width, sizeof(width)),
+            R_PushArg(&yellow, sizeof(yellow)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
 
     mat4x4_t ident;
     PFM_Mat4x4_Identity(&ident);
@@ -460,16 +485,53 @@ static void on_render_3d(void *user, void *event)
     vec2_t des_v = s_debug_saved.ent_des_v;
     vec3_t des_vel_dir = (vec3_t){des_v.raw[0], 0.0f, des_v.raw[1]};
     PFM_Vec3_Normal(&des_vel_dir, &des_vel_dir);
-    R_GL_DrawRay(origin_pos, des_vel_dir, &ident, blue, PFM_Vec2_Len(&des_v) * MOVE_TICK_RES);
+
+    float t = PFM_Vec2_Len(&des_v) * MOVE_TICK_RES;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawRay,
+        .nargs = 5,
+        .args = {
+            R_PushArg(&origin_pos, sizeof(origin_pos)),
+            R_PushArg(&des_vel_dir, sizeof(des_vel_dir)),
+            R_PushArg(&ident, sizeof(ident)),
+            R_PushArg(&blue, sizeof(blue)),
+            R_PushArg(&t, sizeof(t)),
+        },
+    });
 
     vec2_t v_new = s_debug_saved.v_new;
     vec3_t vel_dir = (vec3_t){v_new.raw[0], 0.0f, v_new.raw[1]};
     PFM_Vec3_Normal(&vel_dir, &vel_dir);
-    R_GL_DrawRay(origin_pos, vel_dir, &ident, green, PFM_Vec2_Len(&v_new) * MOVE_TICK_RES);
+
+    t = PFM_Vec2_Len(&v_new) * MOVE_TICK_RES;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawRay,
+        .nargs = 5,
+        .args = {
+            R_PushArg(&origin_pos, sizeof(origin_pos)),
+            R_PushArg(&vel_dir, sizeof(vel_dir)),
+            R_PushArg(&ident, sizeof(ident)),
+            R_PushArg(&green, sizeof(green)),
+            R_PushArg(&t, sizeof(t)),
+        },
+    });
+
+    radius = 1.0f;
+    width = 1.0f;
 
     for(int i = 0; i < vec_size(&s_debug_saved.xpoints); i++) {
         vec2_t xp = vec_AT(&s_debug_saved.xpoints, i);
-        R_GL_DrawSelectionCircle(vec_AT(&s_debug_saved.xpoints, i), 1.0f, 1.0f, green, map);
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawSelectionCircle,
+            .nargs = 5,
+            .args = {
+                R_PushArg(&vec_AT(&s_debug_saved.xpoints, i), sizeof(vec_AT(&s_debug_saved.xpoints, 0))),
+                R_PushArg(&radius, sizeof(radius)),
+                R_PushArg(&width, sizeof(width)),
+                R_PushArg(&green, sizeof(green)),
+                (void*)G_GetPrevTickMap(),
+            },
+        });
     }
 
     char strbuff[256];

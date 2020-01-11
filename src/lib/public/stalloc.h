@@ -41,7 +41,7 @@
 
 
 #define STATIC_BUFF_SZ (512*1024)
-#define MEMBLOCK_SZ    (4*1024*1024)
+#define MEMBLOCK_SZ    (8*1024*1024)
 
 /* The memstack allows variable-sized allocations from larger pre-allocated 
  * blocks. The point is to reduce ovehead of 'malloc' and 'free' when wanting

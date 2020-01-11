@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2018 Eduard Permyakov 
+ *  Copyright (C) 2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,60 +33,46 @@
  *
  */
 
-#ifndef ASSET_LOAD_H
-#define ASSET_LOAD_H
+#ifndef RENDER_AL_H
+#define RENDER_AL_H
 
-#include <stddef.h>
-#include <stdbool.h>
+#include <stdio.h>
+#include <SDL_rwops.h>
 
-#include <SDL.h> /* for SDL_RWops */
-
-#define MAX_ANIM_SETS 16
-#define MAX_LINE_LEN  256
-
-#define READ_LINE(rwops, buff, fail_label)              \
-    do{                                                 \
-        if(!AL_ReadLine(rwops, buff))                   \
-            goto fail_label;                            \
-        buff[MAX_LINE_LEN - 1] = '\0';                  \
-    }while(0)
-
-
-struct entity;
+struct pfobj_hdr;
 struct map;
-struct aabb;
+struct tile;
 
-struct pfobj_hdr{
-    float    version; 
-    unsigned num_verts;
-    unsigned num_joints;
-    unsigned num_materials;
-    unsigned num_as;
-    unsigned frame_counts[MAX_ANIM_SETS];
-    bool     has_collision;
-};
+/* ---------------------------------------------------------------------------
+ * Consumes lines of the stream and uses them to populate a new private context
+ * for the model. The context is returned in a malloc'd buffer.
+ * ---------------------------------------------------------------------------
+ */
+void  *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header, SDL_RWops *stream);
 
-struct pfmap_hdr{
-    float    version;
-    unsigned num_materials;
-    unsigned num_rows;
-    unsigned num_cols;
-};
+/* ---------------------------------------------------------------------------
+ * Dumps private render data in PF Object format.
+ * ---------------------------------------------------------------------------
+ */
+void   R_AL_DumpPrivate(FILE *stream, void *priv_data);
 
+/* ---------------------------------------------------------------------------
+ * Gives size (in bytes) of buffer size required for the render private 
+ * buffer for a renderable PFChunk.
+ * ---------------------------------------------------------------------------
+ */
+size_t R_AL_PrivBuffSizeForChunk(size_t tiles_width, size_t tiles_height, size_t num_mats);
 
-bool           AL_Init(void);
-void           AL_Shutdown(void);
-
-struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name);
-void           AL_EntityFree(struct entity *entity);
-
-struct map    *AL_MapFromPFMap(const char *base_path, const char *pfmap_name);
-struct map    *AL_MapFromPFMapString(const char *str);
-void           AL_MapFree(struct map *map);
-size_t         AL_MapShallowCopySize(const char *base_path, const char *pfmap_name);
-size_t         AL_MapShallowCopySizeStr(const char *str);
-
-bool           AL_ReadLine(SDL_RWops *stream, char *outbuff);
-bool           AL_ParseAABB(SDL_RWops *stream, struct aabb *out);
+/* ---------------------------------------------------------------------------
+ * Initialize private render buff for a PFChunk of the map. 
+ *
+ * This function will build the vertices and their vertices from the data
+ * already parsed into the 'tiles'.
+ * ---------------------------------------------------------------------------
+ */
+bool   R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
+                              const struct tile *tiles, size_t width, size_t height,
+                              void *priv_buff, const char *basedir);
 
 #endif
+

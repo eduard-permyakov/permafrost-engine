@@ -44,6 +44,7 @@
 #include "../entity.h"
 #include "../game/public/game.h"
 #include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 #include "../navigation/public/nav.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
@@ -399,7 +400,11 @@ static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args)
     if(!PyArg_ParseTuple(tuple, "fff", &color.x, &color.y, &color.z))
         return NULL; /* exception already set */
 
-    R_GL_SetAmbientLightColor(color);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetAmbientLightColor,
+        .nargs = 1,
+        .args = { R_PushArg(&color, sizeof(color)) },
+    });
     Py_RETURN_NONE;
 }
 
@@ -414,7 +419,11 @@ static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args)
     if(!PyArg_ParseTuple(tuple, "fff", &color.x, &color.y, &color.z))
         return NULL; /* exception already set */
 
-    R_GL_SetLightEmitColor(color);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetLightEmitColor,
+        .nargs = 1,
+        .args = { R_PushArg(&color, sizeof(color)) },
+    });
     Py_RETURN_NONE;
 }
 
@@ -447,7 +456,7 @@ static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)
     if(!PyArg_ParseTuple(tuple, "fff", &pos.x, &pos.y, &pos.z))
         return NULL; /* exception already set */
 
-    R_GL_SetLightPos(pos);
+    G_SetLightPos(pos);
     Py_RETURN_NONE;
 }
 
@@ -573,10 +582,12 @@ static PyObject *PyPf_get_render_info(PyObject *self)
     }
 
     int rval = 0;
-    rval |= PyDict_SetItemString(ret, "version",  Py_BuildValue("s", R_GL_GetInfo(RENDER_INFO_VERSION)));
-    rval |= PyDict_SetItemString(ret, "vendor",   Py_BuildValue("s", R_GL_GetInfo(RENDER_INFO_VENDOR)));
-    rval |= PyDict_SetItemString(ret, "renderer", Py_BuildValue("s", R_GL_GetInfo(RENDER_INFO_RENDERER)));
-    rval |= PyDict_SetItemString(ret, "shading_language_version", Py_BuildValue("s", R_GL_GetInfo(RENDER_INFO_SL_VERSION)));
+    //TODO FIXME:
+    // we should be able to get the rendering information on the main thread...
+    rval |= PyDict_SetItemString(ret, "version",  Py_BuildValue("s", "FIXME"));
+    rval |= PyDict_SetItemString(ret, "vendor",   Py_BuildValue("s", "FiXME"));
+    rval |= PyDict_SetItemString(ret, "renderer", Py_BuildValue("s", "FIXME"));
+    rval |= PyDict_SetItemString(ret, "shading_language_version", Py_BuildValue("s", "FIXME"));
     assert(0 == rval);
 
     return ret;

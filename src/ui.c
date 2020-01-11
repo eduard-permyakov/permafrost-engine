@@ -40,6 +40,7 @@
 
 #include "lib/public/pf_nuklear.h"
 #include "lib/public/nuklear_sdl_gl3.h"
+#include "render/public/render_ctrl.h"
 #include "lib/public/vec.h"
 #include "game/public/game.h"
 
@@ -208,7 +209,6 @@ static int bot_y_point(struct rect from_bounds, vec2_t from_res, vec2_t to_res, 
     default:
         return (assert(0),0);
     }
-
 }
 
 static void *nk_malloc(nk_handle unused, void *old, nk_size size)
@@ -219,6 +219,24 @@ static void *nk_malloc(nk_handle unused, void *old, nk_size size)
 static void nk_mfree(nk_handle unused, void *ptr)
 {
     free(ptr);
+}
+
+static void *push_draw_list(const struct nk_draw_list *dl)
+{
+    struct nk_draw_list *st_dl = R_PushArg(dl, sizeof(struct nk_draw_list));
+
+    void *st_cmdbuff = R_PushArg(dl->buffer->memory.ptr, dl->buffer->memory.size);
+    void *st_vbuff = R_PushArg(dl->vertices->memory.ptr, dl->vertices->memory.size);
+    void *st_ebuff = R_PushArg(dl->elements->memory.ptr, dl->elements->memory.size);
+
+    st_dl->buffer = R_PushArg(dl->buffer, sizeof(struct nk_buffer));
+    st_dl->buffer->memory.ptr = st_cmdbuff;
+    st_dl->vertices = R_PushArg(dl->vertices, sizeof(struct nk_buffer));
+    st_dl->vertices->memory.ptr = st_vbuff;
+    st_dl->elements = R_PushArg(dl->elements, sizeof(struct nk_buffer));
+    st_dl->elements->memory.ptr = st_ebuff;
+
+    return st_dl;
 }
 
 /*****************************************************************************/
@@ -267,9 +285,55 @@ void UI_InputEnd(struct nk_context *ctx)
     nk_input_end(ctx);
 }
 
-void UI_Render(void)
+void UI_Render(struct nk_context *ctx)
 {
-    nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
+    struct nk_buffer cmds, vbuf, ebuf;
+
+    const enum nk_anti_aliasing aa = NK_ANTI_ALIASING_ON;
+    const int mvm = MAX_VERTEX_MEMORY;
+    const int mem = MAX_ELEMENT_MEMORY;
+
+    void *vbuff = stalloc(&G_GetSimWS()->args, MAX_VERTEX_MEMORY);
+    void *ebuff = stalloc(&G_GetSimWS()->args, MAX_ELEMENT_MEMORY);
+    assert(vbuff && ebuff);
+
+    /* fill convert configuration */
+    struct nk_convert_config config;
+    static const struct nk_draw_vertex_layout_element vertex_layout[] = {
+        {NK_VERTEX_POSITION, NK_FORMAT_FLOAT, NK_OFFSETOF(struct nk_sdl_vertex, position)},
+        {NK_VERTEX_TEXCOORD, NK_FORMAT_FLOAT, NK_OFFSETOF(struct nk_sdl_vertex, uv)},
+        {NK_VERTEX_COLOR, NK_FORMAT_R8G8B8A8, NK_OFFSETOF(struct nk_sdl_vertex, col)},
+        {NK_VERTEX_LAYOUT_END}
+    };
+    memset(&config, 0, sizeof(config));
+    config.vertex_layout = vertex_layout;
+    config.vertex_size = sizeof(struct nk_sdl_vertex);
+    config.vertex_alignment = NK_ALIGNOF(struct nk_sdl_vertex);
+    config.null = nk_sdl_get_null();
+    config.circle_segment_count = 22;
+    config.curve_segment_count = 22;
+    config.arc_segment_count = 22;
+    config.global_alpha = 1.0f;
+    config.shape_AA = aa;
+    config.line_AA = aa;
+
+    /* setup buffers to load vertices and elements */
+    nk_buffer_init_fixed(&vbuf, vbuff, MAX_VERTEX_MEMORY);
+    nk_buffer_init_fixed(&ebuf, ebuff, MAX_ELEMENT_MEMORY);
+    nk_buffer_init_default(&cmds);
+
+    nk_convert(ctx, &cmds, &vbuf, &ebuf, &config);
+
+    R_PushCmd((struct rcmd){
+        .func = nk_sdl_render,
+        .nargs = 1,
+        .args = {
+            push_draw_list(&ctx->draw_list),
+        },
+    });
+
+    nk_buffer_free(&cmds);
+    nk_clear(ctx);
 }
 
 void UI_HandleEvent(SDL_Event *event)
@@ -323,30 +387,5 @@ struct rect UI_BoundsForAspectRatio(struct rect from_bounds, vec2_t from_res,
         right_x - left_x, 
         bot_y - top_y
     };
-}
-
-struct nk_buffer *UI_CreateCmdBuffer(void)
-{
-    struct nk_buffer *ret = malloc(sizeof(struct nk_buffer));
-    if(!ret)
-        return ret;
-
-    struct nk_allocator alloc;
-    alloc.userdata.ptr = 0;
-    alloc.alloc = nk_malloc;
-    alloc.free = nk_mfree;
-
-    nk_buffer_init(ret, &alloc, DEFAULT_CMD_BUFF_SZ);
-    return ret;
-}
-
-void UI_DestroyCmdBuffer(struct nk_buffer *cmds)
-{
-    free(cmds);
-}
-
-void UI_SetCmdBuffer(struct nk_context *ctx, struct nk_buffer *cmds)
-{
-    ctx->memory = *cmds;
 }
 

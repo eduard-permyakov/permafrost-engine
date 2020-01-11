@@ -57,6 +57,8 @@ struct map;
 /* General */
 
 void   R_GL_Init(struct render_private *priv, const char *shader, const struct vertex *vbuff);
+void   R_GL_GlobalConfig(void);
+void   R_GL_SetViewport(int *x, int *y, int *w, int *h);
 
 /* Shadows */
 
@@ -64,10 +66,6 @@ void   R_GL_InitShadows(void);
 vec3_t R_GL_GetLightPos(void);
 void   R_GL_SetLightSpaceTrans(const mat4x4_t *trans);
 void   R_GL_SetShadowMap(const GLuint shadow_map_tex_id);
-
-/* Tiles */
-
-void   R_GL_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex *out);
 
 /* Water */
 

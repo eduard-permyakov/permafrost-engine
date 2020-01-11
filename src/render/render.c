@@ -1,5 +1,4 @@
-/*
- *  This file is part of Permafrost Engine. 
+/* *  This file is part of Permafrost Engine. 
  *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
@@ -38,15 +37,26 @@
 #include "shader.h"
 #include "texture.h"
 #include "render_gl.h"
+#include "gl_assert.h"
 #include "../settings.h"
 #include "../main.h"
+#include "../ui.h"
+#include "../game/public/game.h"
 
 #include <assert.h>
 #include <math.h>
 
 #include <SDL.h>
+#include <GL/glew.h>
+#include <SDL_opengl.h>
 
 #define EPSILON (1.0f/1024)
+
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+static SDL_GLContext       s_context;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -124,7 +134,18 @@ static void res_commit(const struct sval *new_val)
 
     int width, height;
     Engine_WinDrawableSize(&width, &height);
-    glViewport(0, 0, width, height);
+
+    int viewport[4] = {0, 0, width, height};
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetViewport,
+        .nargs = 4,
+        .args = {
+            R_PushArg(&viewport[0], sizeof(viewport[0])),
+            R_PushArg(&viewport[1], sizeof(viewport[1])),
+            R_PushArg(&viewport[2], sizeof(viewport[2])),
+            R_PushArg(&viewport[3], sizeof(viewport[3])),
+        },
+    });
 }
 
 static bool dm_validate(const struct sval *new_val)
@@ -143,54 +164,231 @@ static void dm_commit(const struct sval *new_val)
     Engine_SetDispMode(new_val->as_int);
 }
 
-static bool win_on_top_validate(const struct sval *new_val)
+static bool bool_val_validate(const struct sval *new_val)
 {
     return (new_val->type == ST_TYPE_BOOL);
 }
 
-static bool vsync_validate(const struct sval *new_val)
+static void render_set_swap(const bool *on)
 {
-    return (new_val->type == ST_TYPE_BOOL);
+    SDL_GL_SetSwapInterval(*on);
 }
 
 static void vsync_commit(const struct sval *new_val)
 {
-    if(new_val->as_bool) {
-        SDL_GL_SetSwapInterval(1);
-    }else {
-        SDL_GL_SetSwapInterval(0);
+    R_PushCmd((struct rcmd){
+        .func = render_set_swap,
+        .nargs = 1,
+        .args = { R_PushArg(&new_val->as_bool, sizeof(int)) }
+    });
+}
+
+static bool render_wait_cmd(struct render_sync_state *rstate)
+{
+    SDL_LockMutex(rstate->sq_lock);
+    while(!rstate->start && !rstate->quit)
+        SDL_CondWait(rstate->sq_cond, rstate->sq_lock);
+
+    if(rstate->quit) {
+
+        rstate->quit = false;
+        SDL_UnlockMutex(rstate->sq_lock);
+        return true;
+    }
+    
+    assert(rstate->start == true);
+    rstate->start = false;
+    SDL_UnlockMutex(rstate->sq_lock);
+    return false;
+}
+
+static void render_signal_done(struct render_sync_state *rstate)
+{
+    SDL_LockMutex(rstate->done_lock);
+    rstate->done = true;
+    SDL_CondSignal(rstate->done_cond);
+    SDL_UnlockMutex(rstate->done_lock);
+}
+
+static void render_init_ctx(struct render_init_arg *arg)
+{
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
+
+    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+    s_context = SDL_GL_CreateContext(arg->in_window);
+    SDL_GL_MakeCurrent(arg->in_window, s_context);
+
+    glewExperimental = GL_TRUE;
+    if(glewInit() != GLEW_OK) {
+        fprintf(stderr, "Failed to initialize GLEW\n");
+        arg->out_success = false;
+        return;
+    }
+
+    if(!GLEW_VERSION_3_3) {
+        fprintf(stderr, "Required OpenGL version not supported in GLEW\n");
+        arg->out_success = false;
+        return;
+    }
+
+    int vp[4] = {0 ,0, arg->in_width, arg->in_height};
+    R_GL_SetViewport(&vp[0], &vp[1], &vp[2], &vp[3]);
+    R_GL_GlobalConfig();
+
+    if(!R_Shader_InitAll(g_basepath)) {
+        arg->out_success = false;
+        return;
+    }
+
+    if(!R_Texture_Init()) {
+        arg->out_success = false;
+        return;
+    }
+
+    R_GL_InitShadows();
+    arg->out_success = true;
+}
+
+static void render_destroy_ctx(void)
+{
+    SDL_GL_DeleteContext(s_context);
+}
+
+static void render_dispatch_cmd(struct rcmd cmd)
+{
+    switch(cmd.nargs) {
+    case 0:
+        ((void(*)(void)) cmd.func)();
+        break;
+    case 1:
+        ((void(*)(void*)) cmd.func)(
+            cmd.args[0]
+        );
+        break;
+    case 2:
+        ((void(*)(void*, void*)) cmd.func)(
+            cmd.args[0],
+            cmd.args[1]
+        );
+        break;
+    case 3:
+        ((void(*)(void*, void*, 
+                  void*)) cmd.func)(
+            cmd.args[0],
+            cmd.args[1],
+            cmd.args[2]
+        );
+        break;
+    case 4:
+        ((void(*)(void*, void*,
+                  void*, void*)) cmd.func)(
+            cmd.args[0],
+            cmd.args[1],
+            cmd.args[2],
+            cmd.args[3]
+        );
+        break;
+    case 5:
+        ((void(*)(void*, void*, 
+                  void*, void*, 
+                  void*)) cmd.func)(
+            cmd.args[0],
+            cmd.args[1],
+            cmd.args[2],
+            cmd.args[3],
+            cmd.args[4]
+        );
+        break;
+    case 6:
+        ((void(*)(void*, void*,
+                  void*, void*,
+                  void*, void*)) cmd.func)(
+            cmd.args[0],
+            cmd.args[1],
+            cmd.args[2],
+            cmd.args[3],
+            cmd.args[4],
+            cmd.args[5]
+        );
+        break;
+    case 7:
+        ((void(*)(void*, void*, 
+                  void*, void*, 
+                  void*, void*, 
+                  void*)) cmd.func)(
+            cmd.args[0],
+            cmd.args[1],
+            cmd.args[2],
+            cmd.args[3],
+            cmd.args[4],
+            cmd.args[5],
+            cmd.args[6]
+        );
+        break;
+    case 8:
+        ((void(*)(void*, void*,
+                  void*, void*,
+                  void*, void*,
+                  void*, void*)) cmd.func)(
+            cmd.args[0],
+            cmd.args[1],
+            cmd.args[2],
+            cmd.args[3],
+            cmd.args[4],
+            cmd.args[5],
+            cmd.args[6],
+            cmd.args[7]
+        );
+        break;
+    default: assert(0);
+    }
+}
+
+static void render_process_cmds(queue_rcmd_t *cmds)
+{
+    while(queue_size(*cmds) > 0) {
+
+        struct rcmd curr;
+        queue_rcmd_pop(cmds, &curr);
+        render_dispatch_cmd(curr);
+        GL_ASSERT_OK();
     }
 }
 
 static int render(void *data)
 {
     struct render_sync_state *rstate = data; 
+    SDL_Window *window = rstate->arg->in_window; /* cache window ptr */
+
+    bool quit = render_wait_cmd(rstate);
+    assert(!quit);
+    render_init_ctx(rstate->arg);
+    rstate->arg = NULL; /* arg is stale after signalling main thread */
+    render_signal_done(rstate);
 
     while(true) {
     
-        SDL_LockMutex(rstate->sq_lock);
-        while(!rstate->start && !rstate->quit)
-            SDL_CondWait(rstate->sq_cond, rstate->sq_lock);
-
-        if(rstate->quit) {
-            rstate->quit = false;
-            SDL_UnlockMutex(rstate->sq_lock);
+        quit = render_wait_cmd(rstate);
+        if(quit)
             break;
-        }
 
-        assert(rstate->start == true);
-        rstate->start = false;
-        SDL_UnlockMutex(rstate->sq_lock);
+        render_process_cmds(&G_GetRenderWS()->commands);
+        if(rstate->swap_buffers)
+            SDL_GL_SwapWindow(window);
 
-        extern unsigned long g_frame_idx;
-        printf("render a frame [%lu]!\n", g_frame_idx);
-
-        SDL_LockMutex(rstate->done_lock);
-        rstate->done = true;
-        SDL_CondSignal(rstate->done_cond);
-        SDL_UnlockMutex(rstate->done_lock);
+        render_signal_done(rstate);
     }
 
+    render_destroy_ctx();
     return 0;
 }
 
@@ -259,7 +457,7 @@ bool R_Init(const char *base_path)
             .as_bool = false 
         },
         .prio = 0,
-        .validate = win_on_top_validate,
+        .validate = bool_val_validate,
         .commit = NULL,
     });
     assert(status == SS_OKAY);
@@ -271,23 +469,94 @@ bool R_Init(const char *base_path)
             .as_bool = false 
         },
         .prio = 0,
-        .validate = vsync_validate,
+        .validate = bool_val_validate,
         .commit = vsync_commit,
     });
     assert(status == SS_OKAY);
 
-    if(!R_Shader_InitAll(base_path))
-        return false;
+    status = Settings_Create((struct setting){
+        .name = "pf.video.water_reflection",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true 
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
 
-    if(!R_Texture_Init())
-        return false;
+    status = Settings_Create((struct setting){
+        .name = "pf.video.water_refraction",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true 
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
 
-    R_GL_InitShadows();
     return true; 
 }
 
 SDL_Thread *R_Run(struct render_sync_state *rstate)
 {
     return SDL_CreateThread(render, "render", rstate);
+}
+
+void *R_PushArg(const void *src, size_t size)
+{
+    struct render_workspace *ws = (SDL_ThreadID() == g_render_thread_id) ? G_GetRenderWS() 
+                                                                         : G_GetSimWS();
+    void *ret = stalloc(&ws->args, size);
+    if(!ret)
+        return ret;
+
+    memcpy(ret, src, size);
+    return ret;
+}
+
+void R_PushCmd(struct rcmd cmd)
+{
+    /* If invoking from the render thread, execute immediately
+     * as if it were a function call */
+    if(SDL_ThreadID() == g_render_thread_id) {
+
+        render_dispatch_cmd(cmd);
+        return;
+    }
+
+    struct render_workspace *ws = G_GetSimWS();
+    queue_rcmd_push(&ws->commands, &cmd);
+}
+
+bool R_InitWS(struct render_workspace *ws)
+{
+    if(!stalloc_init(&ws->args)) 
+        goto fail_args;
+
+    if(!queue_rcmd_init(&ws->commands, 2048))
+        goto fail_queue;
+
+    return true;
+
+fail_queue:
+    stalloc_destroy(&ws->args);
+fail_args:
+    return false;
+}
+
+void R_DestroyWS(struct render_workspace *ws)
+{
+    queue_rcmd_destroy(&ws->commands);
+    stalloc_destroy(&ws->args);
+}
+
+void R_ClearWS(struct render_workspace *ws)
+{
+    queue_rcmd_clear(&ws->commands);
+    stalloc_clear(&ws->args);
 }
 

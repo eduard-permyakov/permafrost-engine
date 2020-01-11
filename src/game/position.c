@@ -35,6 +35,7 @@
 
 #include "game_private.h"
 #include "public/game.h"
+#include "../main.h"
 #include "../pf_math.h"
 #include "../lib/public/quadtree.h"
 #include "../lib/public/khash.h"
@@ -79,6 +80,8 @@ static bool any_ent(const struct entity *ent, void *arg)
 
 bool G_Pos_Set(uint32_t uid, vec3_t pos)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     const khash_t(entity) *ents = G_GetAllEntsSet();
     assert(kh_get(entity, ents, uid) != kh_end(ents));
 
@@ -111,6 +114,8 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
 
 vec3_t G_Pos_Get(uint32_t uid)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     khiter_t k = kh_get(pos, s_postable, uid);
     assert(k != kh_end(s_postable));
     return kh_val(s_postable, k);
@@ -118,6 +123,8 @@ vec3_t G_Pos_Get(uint32_t uid)
 
 vec2_t G_Pos_GetXZ(uint32_t uid)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     khiter_t k = kh_get(pos, s_postable, uid);
     assert(k != kh_end(s_postable));
     vec3_t pos = kh_val(s_postable, k);
@@ -126,6 +133,8 @@ vec2_t G_Pos_GetXZ(uint32_t uid)
 
 void G_Pos_Delete(uint32_t uid)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     khiter_t k = kh_get(pos, s_postable, uid);
     assert(k != kh_end(s_postable));
 
@@ -139,6 +148,8 @@ void G_Pos_Delete(uint32_t uid)
 
 bool G_Pos_Init(const struct map *map)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     if(NULL == (s_postable = kh_init(pos)))
         return false;
     if(kh_resize(pos, s_postable, POSBUF_INIT_SIZE) < 0)
@@ -165,18 +176,24 @@ bool G_Pos_Init(const struct map *map)
 
 void G_Pos_Shutdown(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     kh_destroy(pos, s_postable);
     qt_ent_destroy(&s_postree);
 }
 
 int G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     return G_Pos_EntsInRectWithPred(xz_min, xz_max, out, maxout, any_ent, NULL);
 }
 
 int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout,
                              bool (*predicate)(const struct entity *ent, void *arg), void *arg)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     uint32_t ent_ids[maxout];
     const khash_t(entity) *ents = G_GetAllEntsSet();
 
@@ -200,6 +217,8 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, 
 
 int G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t maxout)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     uint32_t ent_ids[maxout];
     const khash_t(entity) *ents = G_GetAllEntsSet();
     for(int i = 0; i < maxout; i++)
@@ -221,6 +240,8 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
                                      bool (*predicate)(const struct entity *ent, void *arg), 
                                      void *arg)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     uint32_t ent_ids[MAX_SEARCH_ENTS];
     const khash_t(entity) *ents = G_GetAllEntsSet();
 
@@ -259,6 +280,8 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
 
 struct entity *G_Pos_Nearest(vec2_t xz_point)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     return G_Pos_NearestWithPred(xz_point, any_ent, NULL);
 }
 

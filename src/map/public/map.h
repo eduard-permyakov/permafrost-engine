@@ -74,7 +74,7 @@ void   M_Update(const struct map *map);
  * a different rendering action.
  * ------------------------------------------------------------------------
  */
-void   M_RenderEntireMap    (const struct map *map, enum render_pass pass);
+void   M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pass);
 
 /* ------------------------------------------------------------------------
  * Renders the chunks of the map that are currently visible by the specified
@@ -82,8 +82,8 @@ void   M_RenderEntireMap    (const struct map *map, enum render_pass pass);
  * type, this will perform a different action.
  * ------------------------------------------------------------------------
  */
-void   M_RenderVisibleMap   (const struct map *map, const struct camera *cam,
-                             enum render_pass pass);
+void   M_RenderVisibleMap(const struct map *map, const struct camera *cam, 
+                          bool shadows, enum render_pass pass);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing which regions are 
@@ -431,6 +431,21 @@ bool   M_AL_UpdateChunkMats(const struct map *map, int chunk_r, int chunk_c,
 
 bool   M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, 
                        const struct tile *tile);
+
+/* ------------------------------------------------------------------------
+ * The size (in bytes) needed to store a shallow copy of the map.
+ * ------------------------------------------------------------------------
+ */
+size_t M_AL_ShallowCopySize(size_t nrows, size_t ncols);
+
+/* ------------------------------------------------------------------------
+ * Copy map data to 'dst' buffer, which must have at least 'M_AL_ShallowCopySize'
+ * bytes free. Handles to contexts/resources of other subsystems (ex. navigation 
+ * and rendering data) are copied weakly.
+ * ------------------------------------------------------------------------
+ */
+void   M_AL_ShallowCopy(struct map *dst, const struct map *src);
+
 
 
 #endif

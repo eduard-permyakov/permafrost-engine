@@ -36,7 +36,7 @@
 #include "asset_load.h"
 #include "entity.h"
 
-#include "render/public/render.h"
+#include "render/public/render_al.h"
 #include "anim/public/anim.h"
 #include "game/public/game.h"
 #include "map/public/map.h"
@@ -191,6 +191,17 @@ fail_parse:
     return NULL;
 }
 
+static void al_set_ent_defaults(struct entity *ent)
+{
+    ent->flags = 0;
+    ent->max_hp = 0;
+    ent->scale = (vec3_t){1.0f, 1.0f, 1.0f};
+    ent->rotation = (quat_t){0.0f, 0.0f, 0.0f, 1.0f};
+    ent->selection_radius = 0.0f;
+    ent->max_speed = 0.0f;
+    ent->faction_id = 0; 
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -205,13 +216,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     if(!ret)
         goto fail_alloc;
 
-    ret->flags = 0;
-    ret->max_hp = 0;
-    ret->scale = (vec3_t){1.0f, 1.0f, 1.0f};
-    ret->rotation = (quat_t){0.0f, 0.0f, 0.0f, 1.0f};
-    ret->selection_radius = 0.0f;
-    ret->max_speed = 0.0f;
-    ret->faction_id = 0; 
+    al_set_ent_defaults(ret);
     ret->anim_ctx = (void*)(ret + 1);
 
     if(strlen(name) >= sizeof(ret->name))
@@ -238,7 +243,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 
         struct pfobj_hdr header;
 
-        char pfobj_path[128];
+        char pfobj_path[256];
         assert( strlen(base_path) + strlen(pfobj_name) + 1 < sizeof(pfobj_path) );
         strcpy(pfobj_path, base_path);
         strcat(pfobj_path, "/");
@@ -309,13 +314,16 @@ struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name)
     struct map *ret;
     SDL_RWops *stream;
 
-    char pfmap_path[128];
+    char pfmap_path[256];
     assert( strlen(base_path) + strlen(pfmap_name) + 1 < sizeof(pfmap_path) );
     strcpy(pfmap_path, base_path);
     strcat(pfmap_path, "/");
     strcat(pfmap_path, pfmap_name);
 
     stream = SDL_RWFromFile(pfmap_path, "r");
+	if(!stream)
+		goto fail_open;
+
     ret = al_map_from_stream(base_path, stream);
     if(!ret)
         goto fail_parse;
@@ -346,6 +354,51 @@ fail_parse:
     SDL_RWclose(stream);
 fail_open:
     return NULL;
+}
+
+size_t AL_MapShallowCopySize(const char *base_path, const char *pfmap_name)
+{
+    SDL_RWops *stream;
+	struct pfmap_hdr header;
+	size_t ret = 0;
+
+    char pfmap_path[256];
+    assert( strlen(base_path) + strlen(pfmap_name) + 1 < sizeof(pfmap_path) );
+    strcpy(pfmap_path, base_path);
+    strcat(pfmap_path, "/");
+    strcat(pfmap_path, pfmap_name);
+
+    stream = SDL_RWFromFile(pfmap_path, "r");
+	if(!stream)
+		goto fail_open;
+
+    if(!al_parse_pfmap_header(stream, &header))
+        goto fail_parse;
+
+	ret = M_AL_ShallowCopySize(header.num_rows, header.num_cols);
+
+fail_parse:
+	SDL_RWseek(stream, 0, RW_SEEK_SET);
+    SDL_RWclose(stream);
+fail_open:
+	return ret;
+}
+
+size_t AL_MapShallowCopySizeStr(const char *str)
+{
+    SDL_RWops *stream;
+	struct pfmap_hdr header;
+	size_t ret = 0;
+
+    stream = SDL_RWFromConstMem(str, strlen(str));
+    if(!al_parse_pfmap_header(stream, &header))
+        goto fail_parse;
+
+	ret = M_AL_ShallowCopySize(header.num_rows, header.num_cols);
+
+fail_parse:
+    SDL_RWclose(stream);
+	return ret;
 }
 
 void AL_MapFree(struct map *map)
