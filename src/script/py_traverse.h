@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018 Eduard Permyakov 
+ *  Copyright (C) 2019 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,12 +33,27 @@
  *
  */
 
-#ifndef SCRIPT_CONSTANTS_H
-#define SCRIPT_CONSTANTS_H
+#ifndef PY_TRAVERSE_H
+#define PY_TRAVERSE_H
 
-#include <Python.h> /* must be first */
+#include <Python.h> /* Must be included first */
+#include <stdbool.h>
+#include "../lib/public/khash.h"
 
-void S_Constants_Expose(PyObject *module);
+__KHASH_TYPE      (str, khint64_t, const char*)
+__KHASH_PROTOTYPES(str, khint64_t, const char*)
+
+__KHASH_TYPE      (pobj, kh_cstr_t, PyObject*)
+__KHASH_PROTOTYPES(pobj, kh_cstr_t, PyObject*)
+
+bool S_Traverse_DF(PyObject *root, visitproc visit, void *user);
+bool S_Traverse_PrintDF(PyObject *root);
+
+bool S_Traverse_BF(PyObject *root, visitproc visit, void *user);
+bool S_Traverse_PrintBF(PyObject *root);
+
+bool S_Traverse_IndexQualnames(khash_t(str) *inout);
+bool S_Traverse_ReferencesObj(PyObject *root, PyObject *obj, bool *out);
 
 #endif
 

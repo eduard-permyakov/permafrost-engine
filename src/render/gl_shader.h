@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018 Eduard Permyakov 
+ *  Copyright (C) 2017-2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,18 +33,14 @@
  *
  */
 
-#ifndef SCRIPT_UI_H
-#define SCRIPT_UI_H
+#ifndef GL_SHADER_H
+#define GL_SHADER_H
 
-#include <Python.h> /* must be first */
+#include <GL/glew.h>
+
 #include <stdbool.h>
 
-struct nk_context;
-
-bool S_UI_Init(struct nk_context *ctx);
-void S_UI_Shutdown(void);
-void S_UI_Update(void);
-void S_UI_PyRegister(PyObject *module);
+bool  R_GL_Shader_InitAll(const char *base_path);
+GLint R_GL_Shader_GetProgForName(const char *name);
 
 #endif
-

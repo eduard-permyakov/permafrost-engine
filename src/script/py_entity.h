@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019 Eduard Permyakov 
+ *  Copyright (C) 2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,22 +33,18 @@
  *
  */
 
-#ifndef SCRIPT_PICKLE_H
-#define SCRIPT_PICKLE_H
+#ifndef PY_ENTITY_H
+#define PY_ENTITY_H
 
-#include <Python.h> /* Must be included first */
-
-#include "../lib/public/khash.h"
-#include <SDL.h> /* for SDL_RWops */
-
+#include <Python.h> /* Must be first */
 #include <stdbool.h>
 
-bool S_Pickle_Init(PyObject *module);
-void S_Pickle_Shutdown(void);
-
-bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream);
-/* Returns a new reference */
-PyObject *S_UnpickleObjgraph(SDL_RWops *stream);
+bool      S_Entity_Init(void);
+void      S_Entity_Shutdown(void);
+void      S_Entity_PyRegister(PyObject *module);
+PyObject *S_Entity_ObjForUID(uint32_t uid);
+/* Returned list has a stolen reference to each object */
+PyObject *S_Entity_GetAllList(void);
 
 #endif
 

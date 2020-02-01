@@ -36,8 +36,7 @@
 #ifndef RENDER_PRIVATE_H
 #define RENDER_PRIVATE_H
 
-#include "mesh.h"
-#include "texture.h"
+#include "gl_mesh.h"
 #include "../map/public/tile.h"
 
 struct vertex;

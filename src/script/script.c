@@ -35,11 +35,11 @@
 
 #include <Python.h> /* Must be included first */
 
-#include "script_entity.h"
-#include "script_ui.h"
-#include "script_tile.h"
-#include "script_constants.h"
-#include "script_pickle.h"
+#include "py_entity.h"
+#include "py_ui.h"
+#include "py_tile.h"
+#include "py_constants.h"
+#include "py_pickle.h"
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"

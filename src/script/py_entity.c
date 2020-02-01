@@ -34,7 +34,7 @@
  */
 
 #include <Python.h> /* must be first */
-#include "script_entity.h" 
+#include "py_entity.h" 
 #include "../entity.h"
 #include "../event.h"
 #include "../asset_load.h"

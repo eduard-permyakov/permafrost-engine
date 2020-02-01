@@ -32,11 +32,11 @@
  *
  */
 
-#include "render_gl.h"
-#include "mesh.h"
-#include "texture.h"
-#include "vertex.h"
-#include "shader.h"
+#include "gl_render.h"
+#include "gl_mesh.h"
+#include "gl_texture.h"
+#include "gl_vertex.h"
+#include "gl_shader.h"
 #include "gl_assert.h"
 #include "gl_uniforms.h"
 #include "public/render.h"

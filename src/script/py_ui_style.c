@@ -33,7 +33,7 @@
  *
  */
 
-#include "script_ui_style.h"
+#include "py_ui_style.h"
 #include "../lib/public/nuklear.h"
 #include "../lib/public/pf_string.h"
 #include "../render/public/render.h"

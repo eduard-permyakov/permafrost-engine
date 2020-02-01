@@ -33,35 +33,32 @@
  *
  */
 
-#ifndef TEXTURE_H
-#define TEXTURE_H
+#ifndef GL_VERTEX_H
+#define GL_VERTEX_H
 
+#include "../pf_math.h"
 #include <GL/glew.h>
-#include <stdbool.h>
 
-struct material;
-
-struct texture{
-    GLuint id;
-    GLuint tunit;
+struct vertex{
+    vec3_t  pos;
+    vec2_t  uv;
+    vec3_t  normal;
+    GLint   material_idx;
+    GLint   joint_indices[6];
+    GLfloat weights[6];
+    /* The following attributes are used for terrain vertices. */
+    GLint   blend_mode;
+    GLint   adjacent_mat_indices[4];
 };
 
-struct texture_arr{
-    GLuint id;
-    GLuint tunit;
+struct colored_vert{
+    vec3_t pos;
+    vec4_t color;
 };
 
-bool R_GL_Texture_Init(void);
-bool R_GL_Texture_AddExisting(const char *name, GLuint id);
-
-void R_GL_Texture_MakeArray(const struct material *mats, size_t num_mats, 
-                            struct texture_arr *out);
-bool R_GL_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures, 
-                               struct texture_arr *out);
-
-void R_GL_Texture_Activate(const struct texture *text, GLuint shader_prog);
-void R_GL_Texture_ActivateArray(const struct texture_arr *arr, GLuint shader_prog);
-
-void R_GL_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out);
+struct textured_vert{
+    vec3_t pos;
+    vec2_t uv;
+};
 
 #endif

@@ -34,9 +34,9 @@
 
 #include "public/render.h"
 #include "public/render_ctrl.h"
-#include "shader.h"
-#include "texture.h"
-#include "render_gl.h"
+#include "gl_shader.h"
+#include "gl_texture.h"
+#include "gl_render.h"
 #include "gl_assert.h"
 #include "../settings.h"
 #include "../main.h"

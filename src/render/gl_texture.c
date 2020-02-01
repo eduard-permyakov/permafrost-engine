@@ -33,10 +33,10 @@
  *
  */
 
-#include "texture.h"
+#include "gl_texture.h"
 #include "gl_uniforms.h"
 #include "gl_assert.h"
-#include "material.h"
+#include "gl_material.h"
 #include "../lib/public/stb_image.h"
 #include "../lib/public/stb_image_resize.h"
 #include "../lib/public/khash.h"

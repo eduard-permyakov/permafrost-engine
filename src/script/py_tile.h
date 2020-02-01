@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2018 Eduard Permyakov 
+ *  Copyright (C) 2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,18 +33,14 @@
  *
  */
 
-#ifndef MATERIAL_H
-#define MATERIAL_H
+#ifndef PY_TILE_H
+#define PY_TILE_H
 
-#include "../pf_math.h"
-#include "texture.h"
+#include <Python.h> /* must be first */
 
-struct material{
-    GLfloat        ambient_intensity;    
-    vec3_t         diffuse_clr;
-    vec3_t         specular_clr;
-    struct texture texture;
-    char           texname[32];
-};
+struct tile;
+
+void               S_Tile_PyRegister(PyObject *module);
+const struct tile *S_Tile_GetTile(PyObject *tile_obj);
 
 #endif

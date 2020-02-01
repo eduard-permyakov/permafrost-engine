@@ -34,11 +34,11 @@
  */
 
 #include "public/render.h"
-#include "render_gl.h"
 #include "render_private.h"
+#include "gl_render.h"
 #include "gl_uniforms.h"
 #include "gl_assert.h"
-#include "shader.h"
+#include "gl_shader.h"
 #include "../main.h"
 #include "../pf_math.h"
 #include "../config.h"

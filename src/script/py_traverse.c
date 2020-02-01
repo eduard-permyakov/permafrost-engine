@@ -33,7 +33,7 @@
  *
  */
 
-#include "traverse.h"
+#include "py_traverse.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/queue.h"
 

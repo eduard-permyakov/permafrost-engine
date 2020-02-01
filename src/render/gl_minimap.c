@@ -33,14 +33,14 @@
  *
  */
 
-#include "mesh.h"
-#include "vertex.h"
-#include "texture.h"
-#include "shader.h"
+#include "gl_mesh.h"
+#include "gl_vertex.h"
+#include "gl_texture.h"
+#include "gl_shader.h"
 #include "gl_uniforms.h"
 #include "gl_assert.h"
+#include "gl_render.h"
 #include "render_private.h"
-#include "render_gl.h"
 #include "public/render.h"
 #include "../game/public/game.h"
 #include "../camera.h"

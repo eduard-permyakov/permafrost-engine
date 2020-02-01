@@ -36,9 +36,9 @@
 #include "public/render.h"
 #include "public/render_ctrl.h"
 #include "render_private.h"
-#include "vertex.h"
-#include "material.h"
-#include "render_gl.h"
+#include "gl_vertex.h"
+#include "gl_material.h"
+#include "gl_render.h"
 #include "gl_assert.h"
 
 #include "../main.h"

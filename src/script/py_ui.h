@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019 Eduard Permyakov 
+ *  Copyright (C) 2018 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,54 +33,18 @@
  *
  */
 
-#include "render_gl.h"
-#include "texture.h"
-#include "shader.h"
-#include "../main.h"
+#ifndef PY_UI_H
+#define PY_UI_H
 
-#include <assert.h>
+#include <Python.h> /* must be first */
+#include <stdbool.h>
 
-/*****************************************************************************/
-/* STATIC VARIABLES                                                          */
-/*****************************************************************************/
+struct nk_context;
 
-static struct texture_arr s_map_textures;
-static bool               s_map_ctx_active = false;
+bool S_UI_Init(struct nk_context *ctx);
+void S_UI_Shutdown(void);
+void S_UI_Update(void);
+void S_UI_PyRegister(PyObject *module);
 
-/*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
-/*****************************************************************************/
-
-void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures)
-{
-    ASSERT_IN_RENDER_THREAD();
-
-    bool ret = R_GL_Texture_MakeArrayMap(map_texfiles, *num_textures, &s_map_textures);
-    assert(ret);
-}
-
-void R_GL_MapBegin(const bool *shadows)
-{
-    ASSERT_IN_RENDER_THREAD();
-    assert(!s_map_ctx_active);
-
-    GLuint shader_prog;
-    if(*shadows) {
-      shader_prog = R_GL_Shader_GetProgForName("terrain-shadowed");
-    }else {
-        shader_prog = R_GL_Shader_GetProgForName("terrain");
-    }
-    assert(shader_prog != -1);
-    glUseProgram(shader_prog);
-    R_GL_Texture_ActivateArray(&s_map_textures, shader_prog);
-    s_map_ctx_active = true;
-}
-
-void R_GL_MapEnd(void)
-{
-    ASSERT_IN_RENDER_THREAD();
-
-    assert(s_map_ctx_active);
-    s_map_ctx_active = false;
-}
+#endif
 

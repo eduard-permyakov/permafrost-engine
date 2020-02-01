@@ -36,7 +36,7 @@
 #include <Python.h> /* Must be included first */
 
 #include "public/script.h"
-#include "script_ui_style.h"
+#include "py_ui_style.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/vec.h"
 #include "../game/public/game.h"

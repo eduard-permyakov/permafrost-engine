@@ -33,17 +33,42 @@
  *
  */
 
-#ifndef MESH_H
-#define MESH_H
+#ifndef GL_RENDER_H
+#define GL_RENDER_H
 
+#include "public/render.h"
+#include "../map/public/tile.h"
 #include "../pf_math.h"
 
-struct vertex;
+#include <GL/glew.h>
 
-struct mesh{
-    unsigned       num_verts;
-    GLuint         VBO;
-    GLuint         VAO;
-};
+#include <stddef.h>
+#include <stdbool.h>
+
+
+#define SHADOW_MAP_TUNIT (GL_TEXTURE16)
+
+struct render_private;
+struct vertex;
+struct tile;
+struct tile_desc;
+struct map;
+
+/* General */
+
+void   R_GL_Init(struct render_private *priv, const char *shader, const struct vertex *vbuff);
+void   R_GL_GlobalConfig(void);
+void   R_GL_SetViewport(int *x, int *y, int *w, int *h);
+
+/* Shadows */
+
+void   R_GL_InitShadows(void);
+vec3_t R_GL_GetLightPos(void);
+void   R_GL_SetLightSpaceTrans(const mat4x4_t *trans);
+void   R_GL_SetShadowMap(const GLuint shadow_map_tex_id);
+
+/* Water */
+
+void   R_GL_SetClipPlane(vec4_t plane_eq);
 
 #endif

@@ -35,8 +35,8 @@
 
 /* Some of the code is derived from the cPickle module implementation */
 
-#include "script_pickle.h"
-#include "traverse.h"
+#include "py_pickle.h"
+#include "py_traverse.h"
 #include "private_types.h"
 #include "../lib/public/vec.h"
 #include "../asset_load.h"

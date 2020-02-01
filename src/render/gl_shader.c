@@ -33,7 +33,7 @@
  *
  */
 
-#include "shader.h"
+#include "gl_shader.h"
 #include "gl_assert.h"
 #include "../main.h"
 

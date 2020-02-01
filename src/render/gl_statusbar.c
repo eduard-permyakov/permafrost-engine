@@ -33,8 +33,8 @@
  *
  */
 
-#include "vertex.h"
-#include "shader.h"
+#include "gl_vertex.h"
+#include "gl_shader.h"
 #include "gl_uniforms.h"
 #include "gl_assert.h"
 #include "../camera.h"

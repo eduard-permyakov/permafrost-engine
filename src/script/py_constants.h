@@ -33,17 +33,12 @@
  *
  */
 
-#ifndef SCRIPT_UI_STYLE_H
-#define SCRIPT_UI_STYLE_H
+#ifndef PY_CONSTANTS_H
+#define PY_CONSTANTS_H
 
 #include <Python.h> /* must be first */
-#include <stdbool.h>
 
-struct nk_context;
-
-bool S_UI_Style_Init(void);
-void S_UI_Style_Shutdown(void);
-void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx);
+void S_Constants_Expose(PyObject *module);
 
 #endif
 
