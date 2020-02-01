@@ -582,12 +582,10 @@ static PyObject *PyPf_get_render_info(PyObject *self)
     }
 
     int rval = 0;
-    //TODO FIXME:
-    // we should be able to get the rendering information on the main thread...
-    rval |= PyDict_SetItemString(ret, "version",  Py_BuildValue("s", "FIXME"));
-    rval |= PyDict_SetItemString(ret, "vendor",   Py_BuildValue("s", "FiXME"));
-    rval |= PyDict_SetItemString(ret, "renderer", Py_BuildValue("s", "FIXME"));
-    rval |= PyDict_SetItemString(ret, "shading_language_version", Py_BuildValue("s", "FIXME"));
+    rval |= PyDict_SetItemString(ret, "version",  Py_BuildValue("s", R_GetInfo(RENDER_INFO_VERSION)));
+    rval |= PyDict_SetItemString(ret, "vendor",   Py_BuildValue("s", R_GetInfo(RENDER_INFO_VENDOR)));
+    rval |= PyDict_SetItemString(ret, "renderer", Py_BuildValue("s", R_GetInfo(RENDER_INFO_RENDERER)));
+    rval |= PyDict_SetItemString(ret, "shading_language_version", Py_BuildValue("s", R_GetInfo(RENDER_INFO_SL_VERSION)));
     assert(0 == rval);
 
     return ret;

@@ -50,13 +50,21 @@
 #include <GL/glew.h>
 #include <SDL_opengl.h>
 
-#define EPSILON (1.0f/1024)
+
+#define EPSILON     (1.0f/1024)
+#define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static SDL_GLContext       s_context;
+static SDL_GLContext s_context;
+
+/* write-once strings. Set by render thread at initialization */
+char                 s_info_vendor[128];
+char                 s_info_renderer[128];
+char                 s_info_version[128];
+char                 s_info_sl_version[128];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -255,6 +263,12 @@ static void render_init_ctx(struct render_init_arg *arg)
     }
 
     R_GL_InitShadows();
+
+    strncpy(s_info_vendor,     glGetString(GL_VENDOR),   ARR_SIZE(s_info_vendor)-1);
+    strncpy(s_info_renderer,   glGetString(GL_RENDERER), ARR_SIZE(s_info_renderer)-1);
+    strncpy(s_info_version,    glGetString(GL_VERSION),  ARR_SIZE(s_info_version)-1);
+    strncpy(s_info_sl_version, glGetString(GL_SHADING_LANGUAGE_VERSION), ARR_SIZE(s_info_sl_version)-1);
+
     arg->out_success = true;
 }
 
@@ -558,5 +572,16 @@ void R_ClearWS(struct render_workspace *ws)
 {
     queue_rcmd_clear(&ws->commands);
     stalloc_clear(&ws->args);
+}
+
+const char *R_GetInfo(enum render_info attr)
+{
+    switch(attr) {
+    case RENDER_INFO_VENDOR:        return s_info_vendor;
+    case RENDER_INFO_RENDERER:      return s_info_renderer;
+    case RENDER_INFO_VERSION:       return s_info_version;
+    case RENDER_INFO_SL_VERSION:    return s_info_sl_version;
+    default: assert(0);             return NULL;
+    }
 }
 

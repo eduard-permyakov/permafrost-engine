@@ -1370,19 +1370,6 @@ cleanup:
     glDeleteBuffers(1, &VBO);
 }
 
-const char *R_GL_GetInfo(const enum render_info *attr)
-{
-    ASSERT_IN_RENDER_THREAD();
-
-    switch(*attr) {
-    case RENDER_INFO_VENDOR:        return glGetString(GL_VENDOR);
-    case RENDER_INFO_RENDERER:      return glGetString(GL_RENDERER);
-    case RENDER_INFO_VERSION:       return glGetString(GL_VERSION);
-    case RENDER_INFO_SL_VERSION:    return glGetString(GL_SHADING_LANGUAGE_VERSION);
-    default: assert(0);             return NULL;
-    }
-}
-
 void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays, 
                            const size_t *num_vos, const struct map *map)
 {

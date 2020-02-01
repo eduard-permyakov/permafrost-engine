@@ -49,6 +49,12 @@ struct frustum;
 struct tile_desc;
 struct map;
 
+enum render_info{
+    RENDER_INFO_VENDOR,
+    RENDER_INFO_RENDERER,
+    RENDER_INFO_VERSION,
+    RENDER_INFO_SL_VERSION,
+};
 
 struct render_init_arg{
     SDL_Window *in_window;
@@ -107,6 +113,8 @@ void        R_PushCmd(struct rcmd cmd);
 bool        R_InitWS(struct render_workspace *ws);
 void        R_DestroyWS(struct render_workspace *ws);
 void        R_ClearWS(struct render_workspace *ws);
+
+const char *R_GetInfo(enum render_info attr);
 
 /* Shadows */
 void        R_LightFrustum(vec3_t light_pos, vec3_t cam_pos, vec3_t cam_dir, struct frustum *out);

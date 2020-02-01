@@ -59,13 +59,6 @@ enum render_pass{
     RENDER_PASS_REGULAR
 };
 
-enum render_info{
-    RENDER_INFO_VENDOR,
-    RENDER_INFO_RENDERER,
-    RENDER_INFO_VERSION,
-    RENDER_INFO_SL_VERSION,
-};
-
 #define VERTS_PER_SIDE_FACE (6)
 #define VERTS_PER_TOP_FACE  (24)
 #define VERTS_PER_TILE      (4 * VERTS_PER_SIDE_FACE + VERTS_PER_TOP_FACE)
@@ -267,13 +260,6 @@ void   R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const siz
  * ---------------------------------------------------------------------------
  */
 void   R_GL_SetScreenspaceDrawMode(void);
-
-/* ---------------------------------------------------------------------------
- * Returns a pointer (not to be freed or written to) to a information string.
- * ---------------------------------------------------------------------------
- */
-const char *R_GL_GetInfo(const enum render_info *attr);
-
 
 /* ---------------------------------------------------------------------------
  * Draws the healthbars for the following 'num_ents'. 'ent_health_pc' must be
