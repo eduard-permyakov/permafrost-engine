@@ -147,7 +147,7 @@ static bool al_read_material(SDL_RWops *stream, const char *basedir, struct mate
     out->texname[sizeof(out->texname)-1] = '\0';
 
     R_PushCmd((struct rcmd){
-        .func = R_Texture_GetOrLoad,
+        .func = R_GL_Texture_GetOrLoad,
         .nargs = 3,
         .args = {
             R_PushArg(basedir, strlen(basedir) + 1),

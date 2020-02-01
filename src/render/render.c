@@ -244,12 +244,12 @@ static void render_init_ctx(struct render_init_arg *arg)
     R_GL_SetViewport(&vp[0], &vp[1], &vp[2], &vp[3]);
     R_GL_GlobalConfig();
 
-    if(!R_Shader_InitAll(g_basepath)) {
+    if(!R_GL_Shader_InitAll(g_basepath)) {
         arg->out_success = false;
         return;
     }
 
-    if(!R_Texture_Init()) {
+    if(!R_GL_Texture_Init()) {
         arg->out_success = false;
         return;
     }

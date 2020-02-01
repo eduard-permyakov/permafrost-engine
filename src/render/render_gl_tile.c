@@ -599,7 +599,7 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
         (void*)offsetof(struct vertex, normal));
     glEnableVertexAttribArray(2);
 
-    shader_prog = R_Shader_GetProgForName("mesh.static.tile-outline");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.tile-outline");
     glUseProgram(shader_prog);
 
     /* Set uniforms */

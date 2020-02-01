@@ -66,7 +66,7 @@ struct shader_resource{
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-/* Shader 'prog_id' will be initialized by R_Shader_InitAll */
+/* Shader 'prog_id' will be initialized by R_GL_Shader_InitAll */
 static struct shader_resource s_shaders[] = {
     {
         .prog_id     = (intptr_t)NULL,
@@ -300,7 +300,7 @@ static bool shader_make_prog(const GLuint vertex_shader, const GLuint geo_shader
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool R_Shader_InitAll(const char *base_path)
+bool R_GL_Shader_InitAll(const char *base_path)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -350,7 +350,7 @@ bool R_Shader_InitAll(const char *base_path)
     return true;
 }
 
-GLint R_Shader_GetProgForName(const char *name)
+GLint R_GL_Shader_GetProgForName(const char *name)
 {
     ASSERT_IN_RENDER_THREAD();
 

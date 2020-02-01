@@ -128,7 +128,7 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
         (void*)offsetof(struct textured_vert, uv));
     glEnableVertexAttribArray(1);
 
-    shader_prog = R_Shader_GetProgForName("statusbar");
+    shader_prog = R_GL_Shader_GetProgForName("statusbar");
     glUseProgram(shader_prog);
 
     int w, h;

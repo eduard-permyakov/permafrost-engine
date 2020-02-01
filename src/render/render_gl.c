@@ -112,7 +112,7 @@ static void r_gl_set_uniform_mat4x4_array(mat4x4_t *data, size_t count,
     ASSERT_IN_RENDER_THREAD();
     GLuint loc, shader_prog;
 
-    shader_prog = R_Shader_GetProgForName(shader_name);
+    shader_prog = R_GL_Shader_GetProgForName(shader_name);
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, uname);
@@ -125,7 +125,7 @@ static void r_gl_set_uniform_vec4_array(vec4_t *data, size_t count,
     ASSERT_IN_RENDER_THREAD();
     GLuint loc, shader_prog;
 
-    shader_prog = R_Shader_GetProgForName(shader_name);
+    shader_prog = R_GL_Shader_GetProgForName(shader_name);
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, uname);
@@ -137,7 +137,7 @@ static void r_gl_set_mat4(const mat4x4_t *trans, const char *shader_name, const 
     ASSERT_IN_RENDER_THREAD();
     GLuint loc, shader_prog;
 
-    shader_prog = R_Shader_GetProgForName(shader_name);
+    shader_prog = R_GL_Shader_GetProgForName(shader_name);
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, uname);
@@ -149,7 +149,7 @@ static void r_gl_set_vec3(const vec3_t *vec, const char *shader_name, const char
     ASSERT_IN_RENDER_THREAD();
     GLuint loc, shader_prog;
 
-    shader_prog = R_Shader_GetProgForName(shader_name);
+    shader_prog = R_GL_Shader_GetProgForName(shader_name);
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, uname);
@@ -161,7 +161,7 @@ static void r_gl_set_vec4(const vec4_t *vec, const char *shader_name, const char
     ASSERT_IN_RENDER_THREAD();
     GLuint loc, shader_prog;
 
-    shader_prog = R_Shader_GetProgForName(shader_name);
+    shader_prog = R_GL_Shader_GetProgForName(shader_name);
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, uname);
@@ -237,12 +237,12 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
         glEnableVertexAttribArray(5);
     }
 
-    priv->shader_prog = R_Shader_GetProgForName(shader);
+    priv->shader_prog = R_GL_Shader_GetProgForName(shader);
 
     if(strstr(shader, "animated")) {
-        priv->shader_prog_dp = R_Shader_GetProgForName("mesh.animated.depth");
+        priv->shader_prog_dp = R_GL_Shader_GetProgForName("mesh.animated.depth");
     }else {
-        priv->shader_prog_dp = R_Shader_GetProgForName("mesh.static.depth");
+        priv->shader_prog_dp = R_GL_Shader_GetProgForName("mesh.static.depth");
     }
 
     assert(priv->shader_prog != -1 && priv->shader_prog_dp != -1);
@@ -263,7 +263,7 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model)
 
     r_gl_set_materials(priv->shader_prog, priv->num_materials, priv->materials);
     for(int i = 0; i < priv->num_materials; i++) {
-        R_Texture_GL_Activate(&priv->materials[i].texture, priv->shader_prog);
+        R_GL_Texture_Activate(&priv->materials[i].texture, priv->shader_prog);
     }
     
     glBindVertexArray(priv->mesh.VAO);
@@ -372,7 +372,7 @@ void R_GL_SetShadowMap(const GLuint shadow_map_tex_id)
 
         GLuint shader_prog, sampler_loc;
 
-        shader_prog = R_Shader_GetProgForName(shaders[i]);
+        shader_prog = R_GL_Shader_GetProgForName(shaders[i]);
         glUseProgram(shader_prog);
 
         sampler_loc = glGetUniformLocation(shader_prog, GL_U_SHADOW_MAP);
@@ -442,7 +442,7 @@ void R_GL_SetAmbientLightColor(const vec3_t *color)
     
         GLuint loc, shader_prog;
 
-        shader_prog = R_Shader_GetProgForName(shaders[i]);
+        shader_prog = R_GL_Shader_GetProgForName(shaders[i]);
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_AMBIENT_COLOR);
@@ -470,7 +470,7 @@ void R_GL_SetLightEmitColor(const vec3_t *color)
     
         GLuint loc, shader_prog;
 
-        shader_prog = R_Shader_GetProgForName(shaders[i]);
+        shader_prog = R_GL_Shader_GetProgForName(shaders[i]);
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_COLOR);
@@ -498,7 +498,7 @@ void R_GL_SetLightPos(const vec3_t *pos)
 
         GLuint loc, shader_prog;
     
-        shader_prog = R_Shader_GetProgForName(shaders[i]);
+        shader_prog = R_GL_Shader_GetProgForName(shaders[i]);
         glUseProgram(shader_prog);
 
         loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_POS);
@@ -601,7 +601,7 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */
@@ -645,7 +645,7 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */
@@ -714,7 +714,7 @@ void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */
@@ -797,7 +797,7 @@ void R_GL_DrawOBB(const struct entity *ent)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */
@@ -855,7 +855,7 @@ void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size,
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */
@@ -887,8 +887,8 @@ void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, const bool *a
 
     const struct render_private *priv = render_private;
 
-    GLuint normals_shader = *anim ? R_Shader_GetProgForName("mesh.animated.normals.colored")
-                                  : R_Shader_GetProgForName("mesh.static.normals.colored");
+    GLuint normals_shader = *anim ? R_GL_Shader_GetProgForName("mesh.animated.normals.colored")
+                                  : R_GL_Shader_GetProgForName("mesh.static.normals.colored");
     assert(normals_shader);
     glUseProgram(normals_shader);
 
@@ -1032,7 +1032,7 @@ void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */
@@ -1115,7 +1115,7 @@ void R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */
@@ -1251,7 +1251,7 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
         (void*)offsetof(struct colored_vert, color));
     glEnableVertexAttribArray(1);  
 
-    shader_prog = R_Shader_GetProgForName("mesh.static.colored-per-vert");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored-per-vert");
     glUseProgram(shader_prog);
 
     glDisable(GL_CULL_FACE);
@@ -1341,7 +1341,7 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */
@@ -1448,7 +1448,7 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);
 
-    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     /* Set uniforms */

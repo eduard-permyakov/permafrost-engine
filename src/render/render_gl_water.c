@@ -395,12 +395,12 @@ void R_GL_WaterInit(void)
 
     bool ret = true;
 
-    ret = R_Texture_Load(g_basepath, DUDV_PATH, &s_ctx.dudv.id);
+    ret = R_GL_Texture_Load(g_basepath, DUDV_PATH, &s_ctx.dudv.id);
     if(!ret)
         goto fail_dudv;
     s_ctx.dudv.tunit = GL_TEXTURE0;
     
-    ret = R_Texture_Load(g_basepath, NORM_PATH, &s_ctx.normal.id);
+    ret = R_GL_Texture_Load(g_basepath, NORM_PATH, &s_ctx.normal.id);
     if(!ret)
         goto fail_normal;
     s_ctx.normal.tunit = GL_TEXTURE1;
@@ -431,7 +431,7 @@ void R_GL_WaterInit(void)
     return;
 
 fail_normal:
-    R_Texture_Free(DUDV_PATH);
+    R_GL_Texture_Free(DUDV_PATH);
 fail_dudv:
     assert(0);
 }
@@ -445,8 +445,8 @@ void R_GL_WaterShutdown(void)
     assert(s_ctx.surface.VBO > 0);
     assert(s_ctx.surface.VAO > 0);
 
-    R_Texture_Free(DUDV_PATH);
-    R_Texture_Free(NORM_PATH);
+    R_GL_Texture_Free(DUDV_PATH);
+    R_GL_Texture_Free(NORM_PATH);
 
     glDeleteBuffers(1, &s_ctx.surface.VAO);
     glDeleteBuffers(1, &s_ctx.surface.VBO);
@@ -457,7 +457,7 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
 {
     ASSERT_IN_RENDER_THREAD();
 
-    GLuint shader_prog = R_Shader_GetProgForName("water");
+    GLuint shader_prog = R_GL_Shader_GetProgForName("water");
     glUseProgram(shader_prog);
 
     struct water_gl_state state;

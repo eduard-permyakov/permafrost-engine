@@ -80,25 +80,25 @@ enum render_info{
  * Load the specified image file, create an OpenGL texture, and return the handle.
  * ---------------------------------------------------------------------------
  */
-bool R_Texture_Load(const char *basedir, const char *name, GLuint *out);
+bool R_GL_Texture_Load(const char *basedir, const char *name, GLuint *out);
 
 /* ---------------------------------------------------------------------------
  * Free a previously loaded texture.
  * ---------------------------------------------------------------------------
  */
-void R_Texture_Free(const char *name);
+void R_GL_Texture_Free(const char *name);
 
 /* ---------------------------------------------------------------------------
  * Get the OpenGL handle of a previously loaded texture.
  * ---------------------------------------------------------------------------
  */
-bool R_Texture_GetForName(const char *name, GLuint *out);
+bool R_GL_Texture_GetForName(const char *name, GLuint *out);
 
 /* ---------------------------------------------------------------------------
  * Get the dimensions of a previously loaded OpenGL texture
  * ---------------------------------------------------------------------------
  */
-void R_Texture_GetSize(const GLuint *texid, int *out_w, int *out_h);
+void R_GL_Texture_GetSize(const GLuint *texid, int *out_w, int *out_h);
 
 /*###########################################################################*/
 /* RENDER OPENGL                                                             */

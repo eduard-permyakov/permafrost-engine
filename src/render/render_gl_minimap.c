@@ -165,7 +165,7 @@ void draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, const s
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (void*)0);
     glEnableVertexAttribArray(0);
 
-    GLuint shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    GLuint shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     GLuint loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
@@ -207,7 +207,7 @@ static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_mo
 
     /* Always use 'terrain' shader for rendering to not draw any shadows */
     GLuint old_shader_prog = priv->shader_prog;
-    priv->shader_prog = R_Shader_GetProgForName("terrain");
+    priv->shader_prog = R_GL_Shader_GetProgForName("terrain");
     R_GL_Draw(priv, chunk_model_mat); 
     priv->shader_prog = old_shader_prog;
 
@@ -282,7 +282,7 @@ static void create_minimap_texture(const struct map *map, void **chunk_rprivates
     GL_ASSERT_OK();
 
     s_ctx.minimap_texture.tunit = GL_TEXTURE0;
-    R_Texture_AddExisting("__minimap__", s_ctx.minimap_texture.id);
+    R_GL_Texture_AddExisting("__minimap__", s_ctx.minimap_texture.id);
 }
 
 static void create_water_texture(const struct map *map)
@@ -323,7 +323,7 @@ static void create_water_texture(const struct map *map)
     GL_ASSERT_OK();
 
     s_ctx.water_texture.tunit = GL_TEXTURE1;
-    R_Texture_AddExisting("__minimap_water__", s_ctx.water_texture.id);
+    R_GL_Texture_AddExisting("__minimap_water__", s_ctx.water_texture.id);
 }
 
 static void setup_ortho_view_uniforms(const struct map *map)
@@ -493,7 +493,7 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam,
     glBindVertexArray(s_ctx.minimap_mesh.VAO);
 
     /* First render a slightly larger colored quad as the border */
-    shader_prog = R_Shader_GetProgForName("mesh.static.colored");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
     glUseProgram(shader_prog);
 
     GLuint loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
@@ -511,13 +511,13 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam,
     glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 
     /* Now draw the minimap texture */
-    shader_prog = R_Shader_GetProgForName("mesh.static.textured");
+    shader_prog = R_GL_Shader_GetProgForName("mesh.static.textured");
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
 
-    R_Texture_GL_Activate(&s_ctx.minimap_texture, shader_prog);
+    R_GL_Texture_Activate(&s_ctx.minimap_texture, shader_prog);
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
     /* Draw a box around the visible area*/
@@ -538,8 +538,8 @@ void R_GL_MinimapFree(void)
     assert(s_ctx.minimap_mesh.VBO > 0);
     assert(s_ctx.minimap_mesh.VAO > 0);
 
-    R_Texture_Free("__minimap__");
-    R_Texture_Free("__minimap_water__");
+    R_GL_Texture_Free("__minimap__");
+    R_GL_Texture_Free("__minimap_water__");
     glDeleteBuffers(1, &s_ctx.minimap_mesh.VAO);
     glDeleteBuffers(1, &s_ctx.minimap_mesh.VBO);
     memset(&s_ctx, 0, sizeof(s_ctx));

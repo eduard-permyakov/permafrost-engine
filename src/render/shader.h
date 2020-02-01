@@ -40,7 +40,7 @@
 
 #include <stdbool.h>
 
-bool  R_Shader_InitAll(const char *base_path);
-GLint R_Shader_GetProgForName(const char *name);
+bool  R_GL_Shader_InitAll(const char *base_path);
+GLint R_GL_Shader_GetProgForName(const char *name);
 
 #endif

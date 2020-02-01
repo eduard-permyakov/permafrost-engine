@@ -103,7 +103,7 @@ fail_load:
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool R_Texture_Init(void)
+bool R_GL_Texture_Init(void)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -111,7 +111,7 @@ bool R_Texture_Init(void)
     return (s_name_tex_table != NULL);
 }
 
-bool R_Texture_GetForName(const char *name, GLuint *out)
+bool R_GL_Texture_GetForName(const char *name, GLuint *out)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -123,7 +123,7 @@ bool R_Texture_GetForName(const char *name, GLuint *out)
     return true;
 }
 
-bool R_Texture_Load(const char *basedir, const char *name, GLuint *out)
+bool R_GL_Texture_Load(const char *basedir, const char *name, GLuint *out)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -165,7 +165,7 @@ fail:
     return false;
 }
 
-bool R_Texture_AddExisting(const char *name, GLuint id)
+bool R_GL_Texture_AddExisting(const char *name, GLuint id)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -180,7 +180,7 @@ bool R_Texture_AddExisting(const char *name, GLuint id)
     return true;
 }
 
-void R_Texture_Free(const char *name)
+void R_GL_Texture_Free(const char *name)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -196,7 +196,7 @@ void R_Texture_Free(const char *name)
     GL_ASSERT_OK();
 }
 
-void R_Texture_GL_Activate(const struct texture *text, GLuint shader_prog)
+void R_GL_Texture_Activate(const struct texture *text, GLuint shader_prog)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -230,8 +230,8 @@ void R_Texture_GL_Activate(const struct texture *text, GLuint shader_prog)
     GL_ASSERT_OK();
 }
 
-void R_Texture_MakeArray(const struct material *mats, size_t num_mats, 
-                         struct texture_arr *out)
+void R_GL_Texture_MakeArray(const struct material *mats, size_t num_mats, 
+                            struct texture_arr *out)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -276,8 +276,8 @@ void R_Texture_MakeArray(const struct material *mats, size_t num_mats,
     GL_ASSERT_OK();
 }
 
-bool R_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures, 
-                            struct texture_arr *out)
+bool R_GL_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures, 
+                               struct texture_arr *out)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -329,7 +329,7 @@ fail_load:
     return false;
 }
 
-void R_Texture_GL_ActivateArray(const struct texture_arr *arr, GLuint shader_prog)
+void R_GL_Texture_ActivateArray(const struct texture_arr *arr, GLuint shader_prog)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -341,7 +341,7 @@ void R_Texture_GL_ActivateArray(const struct texture_arr *arr, GLuint shader_pro
     GL_ASSERT_OK();
 }
 
-void R_Texture_GetSize(GLuint texid, int *out_w, int *out_h)
+void R_GL_Texture_GetSize(GLuint texid, int *out_w, int *out_h)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -351,13 +351,13 @@ void R_Texture_GetSize(GLuint texid, int *out_w, int *out_h)
     GL_ASSERT_OK();
 }
 
-void R_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out)
+void R_GL_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    if(R_Texture_GetForName(name, out))
+    if(R_GL_Texture_GetForName(name, out))
         return;
 
-    R_Texture_Load(basedir, name, out);
+    R_GL_Texture_Load(basedir, name, out);
 }
 

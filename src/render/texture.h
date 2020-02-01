@@ -51,17 +51,17 @@ struct texture_arr{
     GLuint tunit;
 };
 
-bool R_Texture_Init(void);
-bool R_Texture_AddExisting(const char *name, GLuint id);
+bool R_GL_Texture_Init(void);
+bool R_GL_Texture_AddExisting(const char *name, GLuint id);
 
-void R_Texture_MakeArray(const struct material *mats, size_t num_mats, 
-                         struct texture_arr *out);
-bool R_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures, 
+void R_GL_Texture_MakeArray(const struct material *mats, size_t num_mats, 
                             struct texture_arr *out);
+bool R_GL_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures, 
+                               struct texture_arr *out);
 
-void R_Texture_GL_Activate(const struct texture *text, GLuint shader_prog);
-void R_Texture_GL_ActivateArray(const struct texture_arr *arr, GLuint shader_prog);
+void R_GL_Texture_Activate(const struct texture *text, GLuint shader_prog);
+void R_GL_Texture_ActivateArray(const struct texture_arr *arr, GLuint shader_prog);
 
-void R_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out);
+void R_GL_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out);
 
 #endif

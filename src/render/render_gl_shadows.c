@@ -212,8 +212,8 @@ void R_GL_SetShadowsEnabled(void *render_private, const bool *on)
 
     for(int i = 0; i < sizeof(map)/sizeof(map[0]); i++) {
 
-        GLuint standard = R_Shader_GetProgForName(map[i][0]);
-        GLuint shadowed = R_Shader_GetProgForName(map[i][1]);
+        GLuint standard = R_GL_Shader_GetProgForName(map[i][0]);
+        GLuint shadowed = R_GL_Shader_GetProgForName(map[i][1]);
         assert(standard >= 0 && shadowed >= 0);
 
         GLuint from = *on ? standard : shadowed;

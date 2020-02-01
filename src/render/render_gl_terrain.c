@@ -55,7 +55,7 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    bool ret = R_Texture_MakeArrayMap(map_texfiles, *num_textures, &s_map_textures);
+    bool ret = R_GL_Texture_MakeArrayMap(map_texfiles, *num_textures, &s_map_textures);
     assert(ret);
 }
 
@@ -66,13 +66,13 @@ void R_GL_MapBegin(const bool *shadows)
 
     GLuint shader_prog;
     if(*shadows) {
-      shader_prog = R_Shader_GetProgForName("terrain-shadowed");
+      shader_prog = R_GL_Shader_GetProgForName("terrain-shadowed");
     }else {
-        shader_prog = R_Shader_GetProgForName("terrain");
+        shader_prog = R_GL_Shader_GetProgForName("terrain");
     }
     assert(shader_prog != -1);
     glUseProgram(shader_prog);
-    R_Texture_GL_ActivateArray(&s_map_textures, shader_prog);
+    R_GL_Texture_ActivateArray(&s_map_textures, shader_prog);
     s_map_ctx_active = true;
 }
 

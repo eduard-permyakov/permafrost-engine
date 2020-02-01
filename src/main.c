@@ -69,8 +69,7 @@ VEC_IMPL(static inline, event, SDL_Event)
 /* GLOBAL VARIABLES                                                          */
 /*****************************************************************************/
 
-/* Write-once global - path of the base directory */
-const char                *g_basepath;
+const char                *g_basepath; /* write-once - path of the base directory */
 
 unsigned                   g_last_frame_ms = 0;
 unsigned long              g_frame_idx = 0;

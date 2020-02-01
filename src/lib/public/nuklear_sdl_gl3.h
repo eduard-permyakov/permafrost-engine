@@ -207,7 +207,7 @@ static int nk_tex_load(const char *name, int *out_id)
     ASSERT_IN_RENDER_THREAD();
 
     stbi_set_flip_vertically_on_load(false);
-    int ret = R_Texture_Load(g_basepath, name, out_id);
+    int ret = R_GL_Texture_Load(g_basepath, name, out_id);
     stbi_set_flip_vertically_on_load(true);
     return ret;
 }
@@ -216,7 +216,7 @@ static int nk_tex_get(const char *name, int *out_id)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    return R_Texture_GetForName(name, out_id);
+    return R_GL_Texture_GetForName(name, out_id);
 }
 
 NK_API void
