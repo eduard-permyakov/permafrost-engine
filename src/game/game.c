@@ -361,6 +361,9 @@ static void g_create_render_input(struct render_input *out)
 
     g_make_draw_list(s_gs.visible, &out->cam_vis_stat, &out->cam_vis_anim);
     g_make_draw_list(s_gs.light_visible, &out->light_vis_stat, &out->light_vis_anim);
+
+    assert(vec_size(&out->cam_vis_stat) + vec_size(&out->cam_vis_anim) == vec_size(&s_gs.visible));
+    assert(vec_size(&out->light_vis_stat) + vec_size(&out->light_vis_anim) == vec_size(&s_gs.light_visible));
 }
 
 static void g_destroy_render_input(struct render_input *rinput)
@@ -378,11 +381,19 @@ static void *g_push_render_input(struct render_input in)
 
     ret->cam = R_PushArg(in.cam, g_sizeof_camera);
 
-    ret->cam_vis_stat.array = R_PushArg(in.cam_vis_stat.array, in.cam_vis_stat.size * sizeof(struct ent_stat_rstate));
-    ret->cam_vis_anim.array = R_PushArg(in.cam_vis_anim.array, in.cam_vis_anim.size * sizeof(struct ent_anim_rstate));
+    if(in.cam_vis_stat.size) {
+        ret->cam_vis_stat.array = R_PushArg(in.cam_vis_stat.array, in.cam_vis_stat.size * sizeof(struct ent_stat_rstate));
+    }
+    if(in.cam_vis_anim.size) {
+        ret->cam_vis_anim.array = R_PushArg(in.cam_vis_anim.array, in.cam_vis_anim.size * sizeof(struct ent_anim_rstate));
+    }
 
-    ret->light_vis_stat.array = R_PushArg(in.light_vis_stat.array, in.light_vis_stat.size * sizeof(struct ent_stat_rstate));
-    ret->light_vis_anim.array = R_PushArg(in.light_vis_anim.array, in.light_vis_anim.size * sizeof(struct ent_anim_rstate));
+    if(in.light_vis_stat.size) {
+        ret->light_vis_stat.array = R_PushArg(in.light_vis_stat.array, in.light_vis_stat.size * sizeof(struct ent_stat_rstate));
+    }
+    if(in.light_vis_anim.size) {
+        ret->light_vis_anim.array = R_PushArg(in.light_vis_anim.array, in.light_vis_anim.size * sizeof(struct ent_anim_rstate));
+    }
 
     return ret;
 }
@@ -929,9 +940,9 @@ void G_Render(void)
 void G_RenderMapAndEntities(struct render_input in)
 {
     if(in.shadows) {
-        g_shadow_pass(in.cam, in.map, in.cam_vis_stat, in.cam_vis_anim);
+        g_shadow_pass(in.cam, in.map, in.light_vis_stat, in.light_vis_anim);
     }
-    g_draw_pass(in.cam, in.map, in.shadows, in.light_vis_stat, in.light_vis_anim);
+    g_draw_pass(in.cam, in.map, in.shadows, in.cam_vis_stat, in.cam_vis_anim);
 }
 
 bool G_AddEntity(struct entity *ent, vec3_t pos)

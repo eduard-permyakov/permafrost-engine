@@ -50,6 +50,8 @@
 #include <assert.h>
 
 
+#define LIGHT_EXTRA_HEIGHT (250.0f)
+
 struct shadow_gl_state{
     GLint viewport[4];
     GLint fb;
@@ -81,7 +83,7 @@ static void make_light_frustum(vec3_t light_pos, vec3_t cam_pos, vec3_t cam_dir,
     vec3_t right = (vec3_t){-1.0f, 0.0f, 0.0f}, up;
     PFM_Vec3_Cross(&light_dir, &right, &up);
 
-    t = fabs((cam_pos.y + 150.0)/ light_dir.y);
+    t = fabs((cam_pos.y + LIGHT_EXTRA_HEIGHT)/ light_dir.y);
     vec3_t light_origin, delta;
     PFM_Vec3_Scale(&light_dir, -t, &delta);
     PFM_Vec3_Add(&cam_ray_ground_isec, &delta, &light_origin);

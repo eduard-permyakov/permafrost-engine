@@ -48,11 +48,11 @@
 /* Determines the draw distance from the light source when creating the
  * shadow map. Note that a higher drawdistance leads to more peterpanning.
  */
-#define CONFIG_SHADOW_DRAWDIST      (832)
+#define CONFIG_SHADOW_DRAWDIST      (1536)
 /* This is the half-width of the light source's frustum, in OpenGL coordinates.
- * When looking around with an FPS camera, objects at the edges of the camera may 
- * not be properly shadowed. However, increasing the FOV results in lower-quality 
- * shadows for the same shadow map resolution. 
+ * Increasing the FOV results in lower-quality shadows for the same shadow map 
+ * resolution. However, the light frustum needs to be sufficiently large to 
+ * contain all shadow casters visible by the RTS camera.
  */
 #define CONFIG_SHADOW_FOV           (160)
 
