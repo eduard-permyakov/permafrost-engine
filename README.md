@@ -46,6 +46,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * Support for different resolutions and aspect ratios
 * Configurable graphics settings
 * Serialization and deserialization of the Python interpreter state
+* Multithreaded: simulation and rendering in a 2-stage pipeline
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##
