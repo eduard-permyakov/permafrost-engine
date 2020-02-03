@@ -37,6 +37,7 @@
 #define GL_VERTEX_H
 
 #include "../pf_math.h"
+#include <stdint.h>
 #include <GL/glew.h>
 
 struct vertex{
@@ -46,7 +47,7 @@ struct vertex{
     GLint   material_idx;
     GLint   joint_indices[6];
     GLfloat weights[6];
-    /* The following attributes are used for terrain vertices. */
+    /* The following attributes are only used for terrain vertices. */
     GLint   blend_mode;
     GLint   adjacent_mat_indices[4];
 };

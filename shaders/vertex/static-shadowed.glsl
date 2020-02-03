@@ -78,7 +78,9 @@ void main()
     to_fragment.normal = normalize(mat3(model) * in_normal);
     to_fragment.light_space_pos = light_space_transform * vec4(to_fragment.world_pos, 1.0);
 
+#if USE_GEOMETRY
     to_geometry.normal = normalize(mat3(projection * view * model) * in_normal);
+#endif
 
     gl_Position = projection * view * model * vec4(in_pos, 1.0);
     gl_ClipDistance[0] = dot(model * vec4(in_pos, 1.0), clip_plane0);

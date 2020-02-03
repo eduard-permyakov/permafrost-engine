@@ -90,8 +90,6 @@ static bool                s_step_frame = false;
 static bool                s_quit = false; 
 static vec_event_t         s_prev_tick_events;
 
-static struct nk_context  *s_nk_ctx;
-
 static SDL_Thread         *s_render_thread;
 static struct render_sync_state s_rstate;
 
@@ -101,7 +99,7 @@ static struct render_sync_state s_rstate;
 
 static void process_sdl_events(void)
 {
-    UI_InputBegin(s_nk_ctx);
+    UI_InputBegin();
 
     vec_event_reset(&s_prev_tick_events);
     SDL_Event event;    
@@ -144,7 +142,7 @@ static void process_sdl_events(void)
         }
     }
 
-    UI_InputEnd(s_nk_ctx);
+    UI_InputEnd();
 }
 
 static void on_user_quit(void *user, void *event)
@@ -432,12 +430,12 @@ static bool engine_init(char **argv)
     E_Global_Register(SDL_QUIT, on_user_quit, NULL, 
         G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
 
-    if( !(s_nk_ctx = UI_Init(argv[1], s_window)) ) {
+    if(!UI_Init(argv[1], s_window)) {
         fprintf(stderr, "Failed to initialize nuklear\n");
         goto fail_nuklear;
     }
 
-    if(!S_Init(argv[0], argv[1], s_nk_ctx)) {
+    if(!S_Init(argv[0], argv[1], UI_GetContext())) {
         fprintf(stderr, "Failed to initialize scripting subsystem\n");
         goto fail_script;
     }
@@ -596,7 +594,7 @@ int main(int argc, char **argv)
     /* Run the first frame of the simulation, and prepare the buffers for rendering. */
     G_Update();
     G_Render();
-    UI_Render(s_nk_ctx);
+    UI_Render();
     G_SwapBuffers();
 
     uint32_t last_ts = SDL_GetTicks();
@@ -616,7 +614,7 @@ int main(int argc, char **argv)
         E_ServiceQueue();
         G_Update();
         G_Render();
-        UI_Render(s_nk_ctx);
+        UI_Render();
 
         wait_render_work_done();
 

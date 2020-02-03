@@ -179,7 +179,14 @@ static struct shader_resource s_shaders[] = {
         .vertex_path = "shaders/vertex/water.glsl",
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment/water.glsl"
-    }
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "ui",
+        .vertex_path = "shaders/vertex/ui.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment/ui.glsl"
+    },
 };
 
 /*****************************************************************************/

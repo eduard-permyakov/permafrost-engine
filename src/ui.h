@@ -37,6 +37,7 @@
 #define UI_H
 
 #include "pf_math.h"
+#include <stdbool.h>
 #include <SDL.h>
 
 struct nk_context;
@@ -69,12 +70,12 @@ enum resize_opts{
     ANCHOR_Y_MASK       = ANCHOR_Y_TOP | ANCHOR_Y_CENTER | ANCHOR_Y_BOT
 };
 
-struct nk_context *UI_Init(const char *basedir, SDL_Window *win);
+bool               UI_Init(const char *basedir, SDL_Window *win);
 void               UI_Shutdown(void);
-void               UI_InputBegin(struct nk_context *ctx);
-void               UI_InputEnd(struct nk_context *ctx);
-void               UI_Render(struct nk_context *ctx);
-void               UI_HandleEvent(SDL_Event *event);
+void               UI_InputBegin(void);
+void               UI_InputEnd(void);
+void               UI_Render(void);
+void               UI_HandleEvent(SDL_Event *evt);
 void               UI_DrawText(const char *text, struct rect rect, struct rgba rgba);
 
 /* Returns a trimmed version of the virtual resolution when the aspect ratio of the window is 
@@ -84,6 +85,7 @@ void               UI_DrawText(const char *text, struct rect rect, struct rgba r
 vec2_t             UI_ArAdjustedVRes(vec2_t vres);
 struct rect        UI_BoundsForAspectRatio(struct rect from_bounds, vec2_t from_res, 
                                            vec2_t to_res, int resize_mask);
+struct nk_context *UI_GetContext(void);
 
 #endif
 

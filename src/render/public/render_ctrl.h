@@ -122,6 +122,9 @@ void        R_LightFrustum(vec3_t light_pos, vec3_t cam_pos, vec3_t cam_dir, str
 /* Tile */
 int         R_TileGetTriMesh(const struct map *map, struct tile_desc *td, mat4x4_t *model, vec3_t out[]);
 
+/* UI */
+int         R_UI_GetFontTexID(void);
+
 
 #endif
 

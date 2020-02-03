@@ -39,7 +39,7 @@
 #include "main.h"
 
 #include "lib/public/pf_nuklear.h"
-#include "lib/public/nuklear_sdl_gl3.h"
+#include "render/public/render.h"
 #include "render/public/render_ctrl.h"
 #include "lib/public/vec.h"
 #include "game/public/game.h"
@@ -65,8 +65,10 @@ VEC_IMPL(static inline, td, struct text_desc)
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static struct nk_context *s_nk_ctx;
-static vec_td_t           s_curr_frame_labels;
+static struct nk_context            s_ctx;
+static struct nk_font_atlas         s_atlas;
+static struct nk_draw_null_texture  s_null;
+static vec_td_t                     s_curr_frame_labels;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -74,35 +76,35 @@ static vec_td_t           s_curr_frame_labels;
 
 static void ui_draw_text(const struct text_desc desc)
 {
-    struct nk_command_buffer *canvas = nk_window_get_canvas(s_nk_ctx);
+    struct nk_command_buffer *canvas = nk_window_get_canvas(&s_ctx);
     assert(canvas);
 
     struct nk_rect  rect = nk_rect(desc.rect.x, desc.rect.y, desc.rect.w, desc.rect.h);
     struct nk_color rgba = nk_rgba(desc.rgba.r, desc.rgba.g, desc.rgba.b, desc.rgba.a);
 
-    nk_draw_text(canvas, rect, desc.text, strlen(desc.text), s_nk_ctx->style.font,
+    nk_draw_text(canvas, rect, desc.text, strlen(desc.text), s_ctx.style.font,
         (struct nk_color){0,0,0,255}, rgba);
 }
 
 static void on_update_ui(void *user, void *event)
 {
-    struct nk_style *s = &s_nk_ctx->style;
-    nk_style_push_color(s_nk_ctx, &s->window.background, nk_rgba(0,0,0,0));
-    nk_style_push_style_item(s_nk_ctx, &s->window.fixed_background, nk_style_item_color(nk_rgba(0,0,0,0)));
+    struct nk_style *s = &s_ctx.style;
+    nk_style_push_color(&s_ctx, &s->window.background, nk_rgba(0,0,0,0));
+    nk_style_push_style_item(&s_ctx, &s->window.fixed_background, nk_style_item_color(nk_rgba(0,0,0,0)));
 
     int width, height;
     Engine_WinDrawableSize(&width, &height);
 
-    if(nk_begin(s_nk_ctx, "__labels__", nk_rect(0, 0, width, height), 
+    if(nk_begin(&s_ctx, "__labels__", nk_rect(0, 0, width, height), 
        NK_WINDOW_NO_INPUT | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR)) {
     
        for(int i = 0; i < vec_size(&s_curr_frame_labels); i++)
             ui_draw_text(vec_AT(&s_curr_frame_labels, i)); 
     }
-    nk_end(s_nk_ctx);
+    nk_end(&s_ctx);
 
-    nk_style_pop_color(s_nk_ctx);
-    nk_style_pop_style_item(s_nk_ctx);
+    nk_style_pop_color(&s_ctx);
+    nk_style_pop_style_item(&s_ctx);
 
     vec_td_reset(&s_curr_frame_labels);
 }
@@ -211,16 +213,6 @@ static int bot_y_point(struct rect from_bounds, vec2_t from_res, vec2_t to_res, 
     }
 }
 
-static void *nk_malloc(nk_handle unused, void *old, nk_size size)
-{
-    return malloc(size);
-}
-
-static void nk_mfree(nk_handle unused, void *ptr)
-{
-    free(ptr);
-}
-
 static void *push_draw_list(const struct nk_draw_list *dl)
 {
     struct nk_draw_list *st_dl = R_PushArg(dl, sizeof(struct nk_draw_list));
@@ -239,53 +231,120 @@ static void *push_draw_list(const struct nk_draw_list *dl)
     return st_dl;
 }
 
+static void ui_init_font_stash(struct nk_context *ctx)
+{
+    char font_path[256];
+    const void *image; 
+    int w, h;
+
+    strcpy(font_path, g_basepath);
+    strcat(font_path, "assets/fonts/OptimusPrinceps.ttf");
+
+    nk_font_atlas_init_default(&s_atlas);
+    nk_font_atlas_begin(&s_atlas);
+
+    struct nk_font *optimus_princeps = nk_font_atlas_add_from_file(&s_atlas, font_path, 16, 0);
+    s_atlas.default_font = optimus_princeps;
+
+    image = nk_font_atlas_bake(&s_atlas, &w, &h, NK_FONT_ATLAS_RGBA32);
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_UI_UploadFontAtlas,
+        .nargs = 3,
+        .args = {
+            R_PushArg(image, w * h * sizeof(uint32_t)),
+            R_PushArg(&w, sizeof(w)),
+            R_PushArg(&h, sizeof(h)),
+        },
+    });
+
+    Engine_FlushRenderWorkQueue();
+
+    nk_font_atlas_end(&s_atlas, nk_handle_id(R_UI_GetFontTexID()), &s_null);
+    nk_style_set_font(ctx, &s_atlas.default_font->handle);
+}
+
+static void ui_clipboard_paste(nk_handle usr, struct nk_text_edit *edit)
+{
+    const char *text = SDL_GetClipboardText();
+    if(text) 
+        nk_textedit_paste(edit, text, nk_strlen(text));
+}
+
+static void ui_clipboard_copy(nk_handle usr, const char *text, int len)
+{
+    char *str = 0;
+    if(!len) 
+        return;
+    str = (char*)malloc((size_t)len+1);
+    if(!str) 
+        return;
+    memcpy(str, text, (size_t)len);
+    str[len] = '\0';
+    SDL_SetClipboardText(str);
+    free(str);
+}
+
+static struct nk_vec2i ui_get_drawable_size(void)
+{
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+    return (struct nk_vec2i){w, h};
+}
+
+static struct nk_vec2i ui_get_screen_size(void)
+{
+    SDL_DisplayMode dm;
+    SDL_GetDesktopDisplayMode(0, &dm);
+    return (struct nk_vec2i){dm.w, dm.h};
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-struct nk_context *UI_Init(const char *basedir, SDL_Window *win)
+bool UI_Init(const char *basedir, SDL_Window *win)
 {
-    struct nk_context *ctx = nk_sdl_init(win);
-    if(!ctx)
-        return NULL;
+    nk_init_default(&s_ctx, 0);
+    s_ctx.clip.copy = ui_clipboard_copy;
+    s_ctx.clip.paste = ui_clipboard_paste;
+    s_ctx.clip.userdata = nk_handle_ptr(0);
+    s_ctx.screen.get_drawable_size = ui_get_drawable_size;
+    s_ctx.screen.get_screen_size = ui_get_screen_size;
 
-    struct nk_font_atlas *atlas;
-    char font_path[256];
+    R_PushCmd((struct rcmd) { R_GL_UI_Init, 0 });
 
-    strcpy(font_path, basedir);
-    strcat(font_path, "assets/fonts/OptimusPrinceps.ttf");
-
-    nk_sdl_font_stash_begin(&atlas);
-    struct nk_font *optimus_princeps = nk_font_atlas_add_from_file(atlas, font_path, 16, 0);
-
-    atlas->default_font = optimus_princeps;
-    nk_sdl_font_stash_end();
+    ui_init_font_stash(&s_ctx);
 
     vec_td_init(&s_curr_frame_labels);
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING);
 
-    s_nk_ctx = ctx;
-    return ctx;
+    return true;
 }
 
 void UI_Shutdown(void)
 {
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
     vec_td_destroy(&s_curr_frame_labels);
-    nk_sdl_shutdown();
+
+    nk_font_atlas_clear(&s_atlas);
+    nk_free(&s_ctx);
+    memset(&s_ctx, 0, sizeof(s_ctx));
+
+    R_PushCmd((struct rcmd){ R_GL_UI_Shutdown, 0});
 }
 
-void UI_InputBegin(struct nk_context *ctx)
+void UI_InputBegin(void)
 {
-    nk_input_begin(ctx);
+    nk_input_begin(&s_ctx);
 }
 
-void UI_InputEnd(struct nk_context *ctx)
+void UI_InputEnd(void)
 {
-    nk_input_end(ctx);
+    nk_input_end(&s_ctx);
 }
 
-void UI_Render(struct nk_context *ctx)
+void UI_Render(void)
 {
     struct nk_buffer cmds, vbuf, ebuf;
 
@@ -300,16 +359,16 @@ void UI_Render(struct nk_context *ctx)
     /* fill convert configuration */
     struct nk_convert_config config;
     static const struct nk_draw_vertex_layout_element vertex_layout[] = {
-        {NK_VERTEX_POSITION, NK_FORMAT_FLOAT, NK_OFFSETOF(struct nk_sdl_vertex, position)},
-        {NK_VERTEX_TEXCOORD, NK_FORMAT_FLOAT, NK_OFFSETOF(struct nk_sdl_vertex, uv)},
-        {NK_VERTEX_COLOR, NK_FORMAT_R8G8B8A8, NK_OFFSETOF(struct nk_sdl_vertex, col)},
+        {NK_VERTEX_POSITION, NK_FORMAT_FLOAT, NK_OFFSETOF(struct ui_vert, screen_pos)},
+        {NK_VERTEX_TEXCOORD, NK_FORMAT_FLOAT, NK_OFFSETOF(struct ui_vert, uv)},
+        {NK_VERTEX_COLOR, NK_FORMAT_R8G8B8A8, NK_OFFSETOF(struct ui_vert, color)},
         {NK_VERTEX_LAYOUT_END}
     };
     memset(&config, 0, sizeof(config));
     config.vertex_layout = vertex_layout;
-    config.vertex_size = sizeof(struct nk_sdl_vertex);
-    config.vertex_alignment = NK_ALIGNOF(struct nk_sdl_vertex);
-    config.null = nk_sdl_get_null();
+    config.vertex_size = sizeof(struct ui_vert);
+    config.vertex_alignment = NK_ALIGNOF(struct ui_vert);
+    config.null = s_null;
     config.circle_segment_count = 22;
     config.curve_segment_count = 22;
     config.arc_segment_count = 22;
@@ -322,23 +381,115 @@ void UI_Render(struct nk_context *ctx)
     nk_buffer_init_fixed(&ebuf, ebuff, MAX_ELEMENT_MEMORY);
     nk_buffer_init_default(&cmds);
 
-    nk_convert(ctx, &cmds, &vbuf, &ebuf, &config);
+    nk_convert(&s_ctx, &cmds, &vbuf, &ebuf, &config);
 
     R_PushCmd((struct rcmd){
-        .func = nk_sdl_render,
+        .func = R_GL_UI_Render,
         .nargs = 1,
         .args = {
-            push_draw_list(&ctx->draw_list),
+            push_draw_list(&s_ctx.draw_list),
         },
     });
 
     nk_buffer_free(&cmds);
-    nk_clear(ctx);
+    nk_clear(&s_ctx);
 }
 
-void UI_HandleEvent(SDL_Event *event)
+void UI_HandleEvent(SDL_Event *evt)
 {
-    nk_sdl_handle_event(event);
+    if(evt->type == SDL_KEYUP || evt->type == SDL_KEYDOWN) {
+
+        /* key events */
+        int down = evt->type == SDL_KEYDOWN;
+        const Uint8* state = SDL_GetKeyboardState(0);
+        SDL_Keycode sym = evt->key.keysym.sym;
+
+        if(sym == SDLK_RSHIFT || sym == SDLK_LSHIFT)
+            nk_input_key(&s_ctx, NK_KEY_SHIFT, down);
+        else if(sym == SDLK_DELETE)
+            nk_input_key(&s_ctx, NK_KEY_DEL, down);
+        else if(sym == SDLK_RETURN)
+            nk_input_key(&s_ctx, NK_KEY_ENTER, down);
+        else if(sym == SDLK_TAB)
+            nk_input_key(&s_ctx, NK_KEY_TAB, down);
+        else if(sym == SDLK_BACKSPACE)
+            nk_input_key(&s_ctx, NK_KEY_BACKSPACE, down);
+        else if(sym == SDLK_HOME) {
+            nk_input_key(&s_ctx, NK_KEY_TEXT_START, down);
+            nk_input_key(&s_ctx, NK_KEY_SCROLL_START, down);
+        } else if(sym == SDLK_END) {
+            nk_input_key(&s_ctx, NK_KEY_TEXT_END, down);
+            nk_input_key(&s_ctx, NK_KEY_SCROLL_END, down);
+        } else if(sym == SDLK_PAGEDOWN) {
+            nk_input_key(&s_ctx, NK_KEY_SCROLL_DOWN, down);
+        } else if(sym == SDLK_PAGEUP) {
+            nk_input_key(&s_ctx, NK_KEY_SCROLL_UP, down);
+        } else if(sym == SDLK_z)
+            nk_input_key(&s_ctx, NK_KEY_TEXT_UNDO, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_r)
+            nk_input_key(&s_ctx, NK_KEY_TEXT_REDO, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_c)
+            nk_input_key(&s_ctx, NK_KEY_COPY, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_v)
+            nk_input_key(&s_ctx, NK_KEY_PASTE, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_x)
+            nk_input_key(&s_ctx, NK_KEY_CUT, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_b)
+            nk_input_key(&s_ctx, NK_KEY_TEXT_LINE_START, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_e)
+            nk_input_key(&s_ctx, NK_KEY_TEXT_LINE_END, down && state[SDL_SCANCODE_LCTRL]);
+        else if(sym == SDLK_UP)
+            nk_input_key(&s_ctx, NK_KEY_UP, down);
+        else if(sym == SDLK_DOWN)
+            nk_input_key(&s_ctx, NK_KEY_DOWN, down);
+        else if(sym == SDLK_LEFT) {
+            if(state[SDL_SCANCODE_LCTRL])
+                nk_input_key(&s_ctx, NK_KEY_TEXT_WORD_LEFT, down);
+            else 
+                nk_input_key(&s_ctx, NK_KEY_LEFT, down);
+        } else if (sym == SDLK_RIGHT) {
+            if(state[SDL_SCANCODE_LCTRL])
+                nk_input_key(&s_ctx, NK_KEY_TEXT_WORD_RIGHT, down);
+            else 
+                nk_input_key(&s_ctx, NK_KEY_RIGHT, down);
+        }
+
+    }else if(evt->type == SDL_MOUSEBUTTONDOWN || evt->type == SDL_MOUSEBUTTONUP) {
+
+        /* mouse button */
+        int down = evt->type == SDL_MOUSEBUTTONDOWN;
+        const int x = evt->button.x, y = evt->button.y;
+
+        if(evt->button.button == SDL_BUTTON_LEFT) {
+            if (evt->button.clicks > 1)
+                nk_input_button(&s_ctx, NK_BUTTON_DOUBLE, x, y, down);
+            nk_input_button(&s_ctx, NK_BUTTON_LEFT, x, y, down);
+        }else if(evt->button.button == SDL_BUTTON_MIDDLE)
+            nk_input_button(&s_ctx, NK_BUTTON_MIDDLE, x, y, down);
+        else if(evt->button.button == SDL_BUTTON_RIGHT)
+            nk_input_button(&s_ctx, NK_BUTTON_RIGHT, x, y, down);
+
+    } else if(evt->type == SDL_MOUSEMOTION) {
+
+        /* mouse motion */
+        if(s_ctx.input.mouse.grabbed) {
+            int x = (int)s_ctx.input.mouse.prev.x, y = (int)s_ctx.input.mouse.prev.y;
+            nk_input_motion(&s_ctx, x + evt->motion.xrel, y + evt->motion.yrel);
+        }else 
+            nk_input_motion(&s_ctx, evt->motion.x, evt->motion.y);
+
+    }else if(evt->type == SDL_TEXTINPUT) {
+
+        /* text input */
+        nk_glyph glyph;
+        memcpy(glyph, evt->text.text, NK_UTF_SIZE);
+        nk_input_glyph(&s_ctx, glyph);
+
+    }else if(evt->type == SDL_MOUSEWHEEL) {
+
+        /* mouse wheel */
+        nk_input_scroll(&s_ctx,nk_vec2((float)evt->wheel.x,(float)evt->wheel.y));
+    }
 }
 
 void UI_DrawText(const char *text, struct rect rect, struct rgba rgba)
@@ -387,5 +538,10 @@ struct rect UI_BoundsForAspectRatio(struct rect from_bounds, vec2_t from_res,
         right_x - left_x, 
         bot_y - top_y
     };
+}
+
+struct nk_context *UI_GetContext(void)
+{
+    return &s_ctx;
 }
 
