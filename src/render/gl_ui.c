@@ -38,6 +38,7 @@
 #include "gl_assert.h"
 #include "gl_uniforms.h"
 #include "gl_shader.h"
+#include "gl_render.h"
 #include "../main.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/stb_image.h"
@@ -191,6 +192,10 @@ void R_GL_UI_Render(const struct nk_draw_list *dl)
     glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_SCISSOR_TEST);
+
+    int w, h, x = 0, y = 0;
+    Engine_WinDrawableSize(&w, &h);
+    R_GL_SetViewport(&x, &y, &w, &h);
 
     /* setup program */
     GLuint shader_prog = R_GL_Shader_GetProgForName("ui");
