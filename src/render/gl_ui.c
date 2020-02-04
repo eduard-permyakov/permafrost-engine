@@ -111,7 +111,9 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
         if(!cmd->elem_count) 
             continue;
 
-        glBindTexture(GL_TEXTURE_2D, (GLuint)cmd->texture.id);
+        struct texture tex = (struct texture){cmd->texture.id, GL_TEXTURE0};
+        R_GL_Texture_Activate(&tex, shader_prog);
+
         glScissor((GLint)(cmd->clip_rect.x / (float)curr_vres.x * w),
             h - (GLint)((cmd->clip_rect.y + cmd->clip_rect.h) / (float)curr_vres.y * h),
             (GLint)(cmd->clip_rect.w / (float)curr_vres.x * w),
