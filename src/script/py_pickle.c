@@ -48,8 +48,6 @@ typedef void *mod_ty; //symtable.h wants this
 #include <frameobject.h>
 #include <structmember.h>
 #include <symtable.h>
-#include <../Objects/stringlib/stringdefs.h>
-#include <../Objects/stringlib/string_format.h>
 
 #include <assert.h>
 
@@ -250,11 +248,6 @@ struct pickle_entry{
     pickle_func_t  picklefunc;
 };
 
-extern PyTypeObject PyListIter_Type;
-extern PyTypeObject PyListRevIter_Type;
-extern PyTypeObject PyTupleIter_Type;
-extern PyTypeObject PySTEntry_Type;
-
 
 static bool pickle_obj(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *stream);
 static void memoize(struct pickle_ctx *ctx, PyObject *obj);
@@ -445,91 +438,91 @@ static struct pickle_entry s_type_dispatch_table[] = {
      * the library. Python code may gain references to these 'opaque' objects 
      * but they may not be instantiated directly from scripts. 
      */
-    {.type = &PyType_Type,                  .picklefunc = type_pickle                   }, /* type() */
-    {.type = &PyBool_Type,                  .picklefunc = bool_pickle                   }, /* bool() */
-    {.type = &PyString_Type,                .picklefunc = string_pickle                 }, /* str() */
-    {.type = &PyByteArray_Type,             .picklefunc = bytearray_pickle              }, /* bytearray() */
-    {.type = &PyList_Type,                  .picklefunc = list_pickle                   }, /* list() */
-    {.type = &PySuper_Type,                 .picklefunc = super_pickle                  }, /* super() */
-    {.type = &PyBaseObject_Type,            .picklefunc = base_obj_pickle               }, /* object() */
-    {.type = &PyRange_Type,                 .picklefunc = range_pickle                  }, /* xrange() */
-    {.type = &PyDict_Type,                  .picklefunc = dict_pickle                   }, /* dict() */
-    {.type = &PySet_Type,                   .picklefunc = set_pickle                    }, /* set() */
+    {.type = NULL, /*&PyType_Type*/         .picklefunc = type_pickle                   }, /* type() */
+    {.type = NULL, /*&PyBool_Type*/         .picklefunc = bool_pickle                   }, /* bool() */
+    {.type = NULL, /*&PyString_Type,*/      .picklefunc = string_pickle                 }, /* str() */
+    {.type = NULL, /*&PyByteArray_Type,*/   .picklefunc = bytearray_pickle              }, /* bytearray() */
+    {.type = NULL, /*&PyList_Type*/         .picklefunc = list_pickle                   }, /* list() */
+    {.type = NULL, /*&PySuper_Type*/        .picklefunc = super_pickle                  }, /* super() */
+    {.type = NULL, /*&PyBaseObject_Type*/   .picklefunc = base_obj_pickle               }, /* object() */
+    {.type = NULL, /*&PyRange_Type*/        .picklefunc = range_pickle                  }, /* xrange() */
+    {.type = NULL, /*&PyDict_Type*/         .picklefunc = dict_pickle                   }, /* dict() */
+    {.type = NULL, /*&PySet_Type*/          .picklefunc = set_pickle                    }, /* set() */
 #ifdef Py_USING_UNICODE
-    {.type = &PyUnicode_Type,               .picklefunc = unicode_pickle                }, /* unicode() */
+    {.type = NULL, /*&PyUnicode_Type*/      .picklefunc = unicode_pickle                }, /* unicode() */
 #endif
-    {.type = &PySlice_Type,                 .picklefunc = slice_pickle                  }, /* slice() */
-    {.type = &PyStaticMethod_Type,          .picklefunc = static_method_pickle          }, /* staticmethod() */
+    {.type = NULL, /*&PySlice_Type*/        .picklefunc = slice_pickle                  }, /* slice() */
+    {.type = NULL, /*&PyStaticMethod_Type*/ .picklefunc = static_method_pickle          }, /* staticmethod() */
 #ifndef WITHOUT_COMPLEX
-    {.type = &PyComplex_Type,               .picklefunc = complex_pickle                }, /* complex() */
+    {.type = NULL, /*&PyComplex_Type*/      .picklefunc = complex_pickle                }, /* complex() */
 #endif
-    {.type = &PyFloat_Type,                 .picklefunc = float_pickle                  }, /* float() */
-    {.type = &PyBuffer_Type,                .picklefunc = buffer_pickle                 }, /* buffer() */
-    {.type = &PyLong_Type,                  .picklefunc = long_pickle                   }, /* long() */
-    {.type = &PyInt_Type,                   .picklefunc = int_pickle                    }, /* int() */
-    {.type = &PyFrozenSet_Type,             .picklefunc = frozen_set_pickle             }, /* frozenset() */
-    {.type = &PyProperty_Type,              .picklefunc = property_pickle               }, /* property() */
-    {.type = &PyMemoryView_Type,            .picklefunc = memory_view_pickle            }, /* memoryview() */
-    {.type = &PyTuple_Type,                 .picklefunc = tuple_pickle                  }, /* tuple() */
-    {.type = &PyEnum_Type,                  .picklefunc = enum_pickle                   }, /* enumerate() */
-    {.type = &PyReversed_Type,              .picklefunc = reversed_pickle               }, /* reversed(()) */
-    {.type = &PyMethod_Type,                .picklefunc = method_pickle                 }, /* indirectly: instance methods */ 
-    {.type = &PyFunction_Type,              .picklefunc = function_pickle               }, /* indirectly: function */
-    {.type = &PyClass_Type,                 .picklefunc = class_pickle                  }, /* indirectly: Old-style class */
-    {.type = &PyGen_Type,                   .picklefunc = gen_pickle                    }, /* indirectly: return value from generator function */
-    {.type = &PyInstance_Type,              .picklefunc = instance_pickle               }, /* instance() */
-    {.type = &PyFile_Type,                  .picklefunc = file_pickle                   }, /* open() */
-    {.type = &PyClassMethod_Type,           .picklefunc = class_method_pickle           }, /* classmethod() */
+    {.type = NULL, /*&PyFloat_Type*/        .picklefunc = float_pickle                  }, /* float() */
+    {.type = NULL, /*&PyBuffer_Type*/       .picklefunc = buffer_pickle                 }, /* buffer() */
+    {.type = NULL, /*&PyLong_Type*/         .picklefunc = long_pickle                   }, /* long() */
+    {.type = NULL, /*&PyInt_Type*/          .picklefunc = int_pickle                    }, /* int() */
+    {.type = NULL, /*&PyFrozenSet_Type*/    .picklefunc = frozen_set_pickle             }, /* frozenset() */
+    {.type = NULL, /*&PyProperty_Type*/     .picklefunc = property_pickle               }, /* property() */
+    {.type = NULL, /*&PyMemoryView_Type*/   .picklefunc = memory_view_pickle            }, /* memoryview() */
+    {.type = NULL, /*&PyTuple_Type*/        .picklefunc = tuple_pickle                  }, /* tuple() */
+    {.type = NULL, /*&PyEnum_Type*/         .picklefunc = enum_pickle                   }, /* enumerate() */
+    {.type = NULL, /*&PyReversed_Type*/     .picklefunc = reversed_pickle               }, /* reversed(()) */
+    {.type = NULL, /*&PyMethod_Type*/       .picklefunc = method_pickle                 }, /* indirectly: instance methods */ 
+    {.type = NULL, /*&PyFunction_Type*/     .picklefunc = function_pickle               }, /* indirectly: function */
+    {.type = NULL, /*&PyClass_Type*/        .picklefunc = class_pickle                  }, /* indirectly: Old-style class */
+    {.type = NULL, /*&PyGen_Type*/          .picklefunc = gen_pickle                    }, /* indirectly: return value from generator function */
+    {.type = NULL, /*&PyInstance_Type*/     .picklefunc = instance_pickle               }, /* instance() */
+    {.type = NULL, /*&PyFile_Type*/         .picklefunc = file_pickle                   }, /* open() */
+    {.type = NULL, /*&PyClassMethod_Type*/  .picklefunc = class_method_pickle           }, /* classmethod() */
 
-    {.type = &PyCell_Type,                  .picklefunc = cell_pickle                   }, /* indirectly: used for closures */
-    {.type = &PyModule_Type,                .picklefunc = module_pickle,                }, /* indirectly: via import */
+    {.type = NULL, /*&PyCell_Type*/         .picklefunc = cell_pickle                   }, /* indirectly: used for closures */
+    {.type = NULL, /*&PyModule_Type*/       .picklefunc = module_pickle,                }, /* indirectly: via import */
 
     /* These are from accessing the attributes of built-in types; created via PyDescr_ API*/
-    {.type = &PyGetSetDescr_Type,           .picklefunc = get_set_descr_pickle          }, /* Wrapper around PyGetSetDef */
-    {.type = &PyWrapperDescr_Type,          .picklefunc = wrapper_descr_pickle          }, /* Wrapper around slot (slotdef) */
-    {.type = &PyMemberDescr_Type,           .picklefunc = member_descr_pickle           }, /* Wrapper around PyMemberDef */
+    {.type = NULL, /*&PyGetSetDescr_Type*/  .picklefunc = get_set_descr_pickle          }, /* Wrapper around PyGetSetDef */
+    {.type = NULL, /*&PyWrapperDescr_Type*/ .picklefunc = wrapper_descr_pickle          }, /* Wrapper around slot (slotdef) */
+    {.type = NULL, /*&PyMemberDescr_Type*/  .picklefunc = member_descr_pickle           }, /* Wrapper around PyMemberDef */
     /* PyClassMethodDescr_Type and PyMethodDescr_Type can only be instantiated during 
      * initialization time for builtin types using PyMemberDefs to implement methods
      * in C. Sublcasses of these types will re-use the same descriptor objects. Thus 
      * all descriptor objects can be indexed as builtins, and no new instances will be
      * created. */
-    {.type = NULL /* &PyClassMethodDescr_Type */, .picklefunc = class_method_descr_pickle},/* Wrapper around PyMethodDef */
-    {.type = NULL /* &PyMethodDescr_Type */,      .picklefunc = method_descr_pickle     }, /* Wrapper around PyMethodDef with METH_CLASS set */
-    {.type = NULL /* &wrappertype */,             .picklefunc = method_wrapper_pickle   }, /* A PyMethodDescrObject bound to an instance */
+    {.type = NULL, /* &PyClassMethodDescr_Type */ .picklefunc = class_method_descr_pickle},/* Wrapper around PyMethodDef */
+    {.type = NULL, /* &PyMethodDescr_Type */      .picklefunc = method_descr_pickle     }, /* Wrapper around PyMethodDef with METH_CLASS set */
+    {.type = NULL, /* &wrappertype */             .picklefunc = method_wrapper_pickle   }, /* A PyMethodDescrObject bound to an instance */
 
     /* This is a reference to C code. As such, we pickle by reference. */
-    {.type = &PyCFunction_Type,             .picklefunc = cfunction_pickle              },
-    {.type = &PyCode_Type,                  .picklefunc = code_pickle                   },
+    {.type = NULL, /*&PyCFunction_Type*/    .picklefunc = cfunction_pickle              },
+    {.type = NULL, /*&PyCode_Type*/         .picklefunc = code_pickle                   },
     /* These can be retained from sys.exc_info() */
-    {.type = &PyTraceBack_Type,             .picklefunc = traceback_pickle              },
-    {.type = &PyFrame_Type,                 .picklefunc = frame_pickle                  },
-    {.type = &PyNullImporter_Type,          .picklefunc = null_importer_pickle          },
+    {.type = NULL, /*&PyTraceBack_Type*/    .picklefunc = traceback_pickle              },
+    {.type = NULL, /*&PyFrame_Type*/        .picklefunc = frame_pickle                  },
+    {.type = NULL, /*&PyNullImporter_Type*/ .picklefunc = null_importer_pickle          },
 
     /* Built-in singletons. These may not be instantiated directly  */
     /* The PyNotImplemented_Type and PyNone_Type are not exported. */
     {.type = NULL,                          .picklefunc = not_implemented_pickle        },
     {.type = NULL,                          .picklefunc = none_pickle                   },
-    {.type = &PyEllipsis_Type,              .picklefunc = ellipsis_pickle               },
+    {.type = NULL, /*&PyEllipsis_Type*/     .picklefunc = ellipsis_pickle               },
 
     /* The following are a result of calling the PyWeakref API with an existing object.
      */
-    {.type = &_PyWeakref_RefType,           .picklefunc = weakref_ref_pickle            },
-    {.type = &_PyWeakref_CallableProxyType, .picklefunc = weakref_callable_proxy_pickle },
-    {.type = &_PyWeakref_ProxyType,         .picklefunc = weakref_proxy_pickle          },
+    {.type = NULL, /*&_PyWeakref_RefType*/           .picklefunc = weakref_ref_pickle            },
+    {.type = NULL, /*&_PyWeakref_CallableProxyType*/ .picklefunc = weakref_callable_proxy_pickle },
+    {.type = NULL, /*&_PyWeakref_ProxyType*/         .picklefunc = weakref_proxy_pickle          },
 
-    {.type = &PySTEntry_Type,               .picklefunc = st_entry_pickle               },
-    {.type = NULL /* &ZipImporter_Type */,  .picklefunc = zip_importer_pickle           },
+    {.type = NULL, /*&PySTEntry_Type*/      .picklefunc = st_entry_pickle               },
+    {.type = NULL, /* &ZipImporter_Type */  .picklefunc = zip_importer_pickle           },
 
     /* The following builtin types are are from the _sre module, which is compiled
      * as part of the interpreter. Not supported for now. */
-    {.type = NULL /* &Match_Type */,        .picklefunc = NULL                          },
-    {.type = NULL /* &Pattern_Type */,      .picklefunc = NULL                          },
-    {.type = NULL /* &Scanner_Type */,      .picklefunc = NULL                          },
+    {.type = NULL, /* &Match_Type */        .picklefunc = NULL                          },
+    {.type = NULL, /* &Pattern_Type */      .picklefunc = NULL                          },
+    {.type = NULL, /* &Scanner_Type */      .picklefunc = NULL                          },
 
     /* This is derived from an existing dictionary object using the PyDictProxy API. 
      * The only way to get a dictproxy object via scripting is to access the __dict__
      * attribute of a type object. */
-    {.type = &PyDictProxy_Type,             .picklefunc = dict_proxy_pickle             },
+    {.type = NULL, /*&PyDictProxy_Type*/    .picklefunc = dict_proxy_pickle             },
 
     /* Built-in struct sequences (i.e. 'named tuples') */
     {.type = NULL, /* Long_InfoType */      .picklefunc = long_info_pickle              },
@@ -540,35 +533,35 @@ static struct pickle_entry s_type_dispatch_table[] = {
     {.type = NULL, /* VersionInfoType */    .picklefunc = sys_version_pickle            },
 
     /* Derived with dict built-in methods */
-    {.type = &PyDictItems_Type,             .picklefunc = dict_items_pickle             },
-    {.type = &PyDictKeys_Type,              .picklefunc = dict_keys_pickle              },
-    {.type = &PyDictValues_Type,            .picklefunc = dict_values_pickle            },
+    {.type = NULL, /*&PyDictItems_Type*/    .picklefunc = dict_items_pickle             },
+    {.type = NULL, /*&PyDictKeys_Type*/     .picklefunc = dict_keys_pickle              },
+    {.type = NULL, /*&PyDictValues_Type*/   .picklefunc = dict_values_pickle            },
 
     /* Iterator types. Derived by calling 'iter' on an object. */
-    {.type = &PyCallIter_Type,              .picklefunc = call_iter_pickle              },
-    {.type = &PySeqIter_Type,               .picklefunc = seq_iter_pickle               },
-    {.type = &PyByteArrayIter_Type,         .picklefunc = byte_array_iter_pickle        },
-    {.type = &PyDictIterItem_Type,          .picklefunc = dict_iter_item_pickle         },
-    {.type = &PyDictIterKey_Type,           .picklefunc = dict_iter_key_pickle          },
-    {.type = &PyDictIterValue_Type,         .picklefunc = dict_iter_value_pickle        },
-    {.type = &PyListIter_Type,              .picklefunc = list_iter_pickle              },
-    {.type = &PyTupleIter_Type,             .picklefunc = tuple_iter_pickle             },
-    {.type = &PyListRevIter_Type,           .picklefunc = list_rev_iter_pickle          },
-    {.type = NULL /* &PySetIter_Type */,       .picklefunc = set_iter_pickle            },
-    {.type = NULL /* &PyFieldNameIter_Type */, .picklefunc = field_name_iter_pickle     },
-    {.type = NULL /* &PyFormatterIter_Type */, .picklefunc = formatter_iter_pickle      },
+    {.type = NULL, /*&PyCallIter_Type*/        .picklefunc = call_iter_pickle           },
+    {.type = NULL, /*&PySeqIter_Type*/         .picklefunc = seq_iter_pickle            },
+    {.type = NULL, /*&PyByteArrayIter_Type*/   .picklefunc = byte_array_iter_pickle     },
+    {.type = NULL, /*&PyDictIterItem_Type*/    .picklefunc = dict_iter_item_pickle      },
+    {.type = NULL, /*&PyDictIterKey_Type*/     .picklefunc = dict_iter_key_pickle       },
+    {.type = NULL, /*&PyDictIterValue_Type*/   .picklefunc = dict_iter_value_pickle     },
+    {.type = NULL,                             .picklefunc = list_iter_pickle           },
+    {.type = NULL,                             .picklefunc = tuple_iter_pickle          },
+    {.type = NULL,                             .picklefunc = list_rev_iter_pickle       },
+    {.type = NULL, /* &PySetIter_Type */       .picklefunc = set_iter_pickle            },
+    {.type = NULL, /* &PyFieldNameIter_Type */ .picklefunc = field_name_iter_pickle     },
+    {.type = NULL, /* &PyFormatterIter_Type */ .picklefunc = formatter_iter_pickle      },
 
     /* A PyCObject cannot be instantiated directly, but may be exported by C
      * extension modules. As it is a wrapper around a raw memory address exported 
      * by some module, we cannot reliablly save and restore it 
      */
-    {.type = &PyCObject_Type,               .picklefunc = NULL                          },
+    {.type = NULL, /*&PyCObject_Type*/      .picklefunc = NULL                          },
     /* Newer version of CObject */
-    {.type = &PyCapsule_Type,               .picklefunc = NULL                          },
+    {.type = NULL, /*&PyCapsule_Type*/      .picklefunc = NULL                          },
 
     /* The following built-in types can never be instantiated. 
      */
-    {.type = &PyBaseString_Type,            .picklefunc = NULL                          },
+    {.type = NULL, /*&PyBaseString_Type*/   .picklefunc = NULL                          },
 
     /* The built-in exception types. All of them can be instantiated directly.  */
     { EXC_START_MAGIC },
@@ -899,7 +892,132 @@ static void load_private_type_refs(void)
     assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "formatteriterator"));
     Py_DECREF(string);
 
+    /* PyListIter_Type */
+    idx = dispatch_idx_for_picklefunc(list_iter_pickle);
+    tmp = PyList_New(0);
+    assert(tmp);
+    iter = PyObject_CallMethod(tmp, "__iter__", "()");
+    assert(iter);
+    s_type_dispatch_table[idx].type = iter->ob_type;
+    assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "listiterator"));
+    Py_DECREF(tmp);
+
+    /* PyListRevIter_Type */
+    idx = dispatch_idx_for_picklefunc(list_rev_iter_pickle);
+    tmp = PyList_New(0);
+    assert(tmp);
+
+    PyObject *reversed = PyObject_CallFunction((PyObject*)&PyReversed_Type, "(O)", tmp);
+    Py_DECREF(tmp);
+    assert(reversed);
+
+    iter = PyObject_CallMethod(reversed, "__iter__", "()");
+    assert(iter);
+    s_type_dispatch_table[idx].type = iter->ob_type;
+    assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "listreverseiterator"));
+    Py_DECREF(reversed);
+
+    /* PyTupleIter_Type */
+    idx = dispatch_idx_for_picklefunc(tuple_iter_pickle);
+    tmp = PyTuple_New(0);
+    assert(tmp);
+    iter = PyObject_CallMethod(tmp, "__iter__", "()");
+    assert(iter);
+    s_type_dispatch_table[idx].type = iter->ob_type;
+    assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "tupleiterator"));
+    Py_DECREF(tmp);
+
     assert(!PyErr_Occurred());
+}
+
+static void load_builtin_types(void)
+{
+    int base_idx = 0;
+
+    s_type_dispatch_table[base_idx++].type = &PyType_Type;
+    s_type_dispatch_table[base_idx++].type = &PyBool_Type;
+    s_type_dispatch_table[base_idx++].type = &PyString_Type;
+    s_type_dispatch_table[base_idx++].type = &PyByteArray_Type;
+    s_type_dispatch_table[base_idx++].type = &PyList_Type;
+    s_type_dispatch_table[base_idx++].type = &PySuper_Type;
+    s_type_dispatch_table[base_idx++].type = &PyBaseObject_Type;
+    s_type_dispatch_table[base_idx++].type = &PyRange_Type;
+    s_type_dispatch_table[base_idx++].type = &PyDict_Type;
+    s_type_dispatch_table[base_idx++].type = &PySet_Type;
+#ifdef Py_USING_UNICODE
+    s_type_dispatch_table[base_idx++].type = &PyUnicode_Type;
+#endif
+    s_type_dispatch_table[base_idx++].type = &PySlice_Type;
+    s_type_dispatch_table[base_idx++].type = &PyStaticMethod_Type;
+#ifndef WITHOUT_COMPLEX
+    s_type_dispatch_table[base_idx++].type = &PyComplex_Type;
+#endif
+    s_type_dispatch_table[base_idx++].type = &PyFloat_Type;
+    s_type_dispatch_table[base_idx++].type = &PyBuffer_Type;
+    s_type_dispatch_table[base_idx++].type = &PyLong_Type;
+    s_type_dispatch_table[base_idx++].type = &PyInt_Type;
+    s_type_dispatch_table[base_idx++].type = &PyFrozenSet_Type;
+    s_type_dispatch_table[base_idx++].type = &PyProperty_Type;
+    s_type_dispatch_table[base_idx++].type = &PyMemoryView_Type;
+    s_type_dispatch_table[base_idx++].type = &PyTuple_Type;
+    s_type_dispatch_table[base_idx++].type = &PyEnum_Type;
+    s_type_dispatch_table[base_idx++].type = &PyReversed_Type;
+    s_type_dispatch_table[base_idx++].type = &PyMethod_Type;
+    s_type_dispatch_table[base_idx++].type = &PyFunction_Type;
+    s_type_dispatch_table[base_idx++].type = &PyClass_Type;
+    s_type_dispatch_table[base_idx++].type = &PyGen_Type;
+    s_type_dispatch_table[base_idx++].type = &PyInstance_Type;
+    s_type_dispatch_table[base_idx++].type = &PyFile_Type;
+    s_type_dispatch_table[base_idx++].type = &PyClassMethod_Type;
+    s_type_dispatch_table[base_idx++].type = &PyCell_Type;
+    s_type_dispatch_table[base_idx++].type = &PyModule_Type;
+    s_type_dispatch_table[base_idx++].type = &PyGetSetDescr_Type;
+    s_type_dispatch_table[base_idx++].type = &PyWrapperDescr_Type;
+    s_type_dispatch_table[base_idx++].type = &PyMemberDescr_Type;
+    base_idx++;
+    base_idx++;
+    base_idx++;
+    s_type_dispatch_table[base_idx++].type = &PyCFunction_Type;
+    s_type_dispatch_table[base_idx++].type = &PyCode_Type;
+    s_type_dispatch_table[base_idx++].type = &PyTraceBack_Type;
+    s_type_dispatch_table[base_idx++].type = &PyFrame_Type;
+    s_type_dispatch_table[base_idx++].type = &PyNullImporter_Type;
+    base_idx++;
+    base_idx++;
+    s_type_dispatch_table[base_idx++].type = &PyEllipsis_Type;
+    s_type_dispatch_table[base_idx++].type = &_PyWeakref_RefType;
+    s_type_dispatch_table[base_idx++].type = &_PyWeakref_CallableProxyType;
+    s_type_dispatch_table[base_idx++].type = &_PyWeakref_ProxyType;
+    s_type_dispatch_table[base_idx++].type = &PySTEntry_Type;
+    base_idx++;
+    base_idx++;
+    base_idx++;
+    base_idx++;
+    s_type_dispatch_table[base_idx++].type = &PyDictProxy_Type;
+    base_idx++;
+    base_idx++;
+    base_idx++;
+    base_idx++;
+    s_type_dispatch_table[base_idx++].type = &PyDictItems_Type;
+    s_type_dispatch_table[base_idx++].type = &PyDictKeys_Type;
+    s_type_dispatch_table[base_idx++].type = &PyDictValues_Type;
+    s_type_dispatch_table[base_idx++].type = &PyCallIter_Type;
+    s_type_dispatch_table[base_idx++].type = &PySeqIter_Type;
+    s_type_dispatch_table[base_idx++].type = &PyByteArrayIter_Type;
+    s_type_dispatch_table[base_idx++].type = &PyDictIterItem_Type;
+    s_type_dispatch_table[base_idx++].type = &PyDictIterKey_Type;
+    s_type_dispatch_table[base_idx++].type = &PyDictIterValue_Type;
+    base_idx++;
+    base_idx++;
+    base_idx++;
+    base_idx++;
+    base_idx++;
+    base_idx++;
+    s_type_dispatch_table[base_idx++].type = &PyCObject_Type;
+    s_type_dispatch_table[base_idx++].type = &PyCapsule_Type;
+    s_type_dispatch_table[base_idx++].type = &PyBaseString_Type;
+
+    assert(s_type_dispatch_table[base_idx].type == EXC_START_MAGIC);
 }
 
 static void load_exception_types(void)
@@ -4474,7 +4592,7 @@ static int op_ext_newinst(struct unpickle_ctx *ctx, SDL_RWops *rw)
     Py_INCREF(Py_TYPE(new_obj));
 
     if(PyType_IS_GC(tp_type))
-        _PyObject_GC_TRACK(new_obj);
+        PyObject_GC_Track(new_obj);
 
     vec_pobj_push(&ctx->stack, new_obj);
     ret = 0;
@@ -4900,7 +5018,7 @@ static int op_ext_seqiter_with_type(struct unpickle_ctx *ctx, SDL_RWops *rw, PyT
         retval->it_seq = seq; 
     }
     retval->it_index = PyLong_AsLong(index);
-    _PyObject_GC_TRACK(retval);
+    PyObject_GC_Track(retval);
 
     vec_pobj_push(&ctx->stack, (PyObject*)retval);
     ret = 0;
@@ -4916,7 +5034,10 @@ fail_underflow:
 static int op_ext_listiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_LISTITER, ctx);
-    return op_ext_seqiter_with_type(ctx, rw, &PyListIter_Type);
+
+    int idx = dispatch_idx_for_picklefunc(tuple_iter_pickle);
+    PyTypeObject *type = s_type_dispatch_table[idx].type;
+    return op_ext_seqiter_with_type(ctx, rw, type);
 }
 
 #ifndef WITHOUT_COMPLEX
@@ -5054,7 +5175,7 @@ static int op_ext_gen(struct unpickle_ctx *ctx, SDL_RWops *rw)
         gen->gi_code = top; /* steals 'top' ref */
         gen->gi_running = 0;
         gen->gi_weakreflist = NULL;
-        _PyObject_GC_TRACK(gen);
+        PyObject_GC_Track(gen);
         retval = (PyObject*)gen;
     }
 
@@ -5504,7 +5625,7 @@ static int op_ext_emptyinst(struct unpickle_ctx *ctx, SDL_RWops *rw)
     /* Re-add the GC tracking once the 'dummy' type is properly initialized
      * in 'PF_NEWINST'. Until then, it's not safe to traverse the instance's 
      * fields. */
-    _PyObject_GC_UNTRACK(retval);
+    PyObject_GC_UnTrack(retval);
 
     vec_pobj_push(&ctx->stack, retval);
     ret = 0;
@@ -5685,7 +5806,7 @@ static int op_ext_zipimporter(struct unpickle_ctx *ctx, SDL_RWops *rw)
     retval->archive = archive;
     retval->prefix = prefix;
     retval->files = files;
-    _PyObject_GC_TRACK(retval);
+    PyObject_GC_Track(retval);
 
     Py_INCREF(archive);
     Py_INCREF(prefix);
@@ -5826,7 +5947,7 @@ static int op_ext_calliter(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }else{
         retval->it_sentinel = NULL;
     }
-    _PyObject_GC_TRACK(retval);
+    PyObject_GC_Track(retval);
 
     vec_pobj_push(&ctx->stack, (PyObject*)retval);
     ret = 0;
@@ -5854,13 +5975,19 @@ static int op_ext_bytearriter(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_ext_tupleiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_TUPLEITER, ctx);
-    return op_ext_seqiter_with_type(ctx, rw, &PyTupleIter_Type);
+
+    int idx = dispatch_idx_for_picklefunc(tuple_iter_pickle);
+    PyTypeObject *type = s_type_dispatch_table[idx].type;
+    return op_ext_seqiter_with_type(ctx, rw, type);
 }
 
 static int op_ext_revlistiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_LISTREVITER, ctx);
-    return op_ext_seqiter_with_type(ctx, rw, &PyListRevIter_Type);
+
+    int idx = dispatch_idx_for_picklefunc(list_rev_iter_pickle);
+    PyTypeObject *type = s_type_dispatch_table[idx].type;
+    return op_ext_seqiter_with_type(ctx, rw, type);
 }
 
 static int op_ext_dictiter_with_type(struct unpickle_ctx *ctx, SDL_RWops *rw,
@@ -5912,7 +6039,7 @@ static int op_ext_dictiter_with_type(struct unpickle_ctx *ctx, SDL_RWops *rw,
         retval->di_result = NULL; 
     }
     retval->len = PyLong_AsSsize_t(len);
-    _PyObject_GC_TRACK(retval);
+    PyObject_GC_Track(retval);
 
     vec_pobj_push(&ctx->stack, (PyObject*)retval);
     ret = 0;
@@ -5986,7 +6113,7 @@ static int op_ext_setiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
     retval->si_used = PyLong_AsSsize_t(si_used);
     retval->si_pos = PyLong_AsSsize_t(si_pos);
     retval->len = PyLong_AsSsize_t(len);
-    _PyObject_GC_TRACK(retval);
+    PyObject_GC_Track(retval);
 
     vec_pobj_push(&ctx->stack, (PyObject*)retval);
     ret = 0;
@@ -6379,6 +6506,7 @@ bool S_Pickle_Init(PyObject *module)
     pre_build_index();
 
     load_private_type_refs();
+    load_builtin_types();
     load_exception_types();
     load_engine_builtin_types();
     reference_all_types();

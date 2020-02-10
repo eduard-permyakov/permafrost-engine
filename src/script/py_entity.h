@@ -38,6 +38,7 @@
 
 #include <Python.h> /* Must be first */
 #include <stdbool.h>
+#include <stdint.h>
 
 bool      S_Entity_Init(void);
 void      S_Entity_Shutdown(void);

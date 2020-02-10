@@ -249,7 +249,6 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     }
 
     free(vbuff);
-    GL_ASSERT_OK();
     return priv;
 
 fail_parse:
@@ -364,7 +363,6 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
     });
 
     free(vbuff);
-    GL_ASSERT_OK();
     return true;
 
 fail_parse:

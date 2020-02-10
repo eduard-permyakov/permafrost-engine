@@ -34,7 +34,7 @@
  */
 
 #include "py_constants.h"
-#include "../lib/public/nuklear.h"
+#include "../lib/public/pf_nuklear.h"
 #include "../event.h"
 #include "../config.h"
 #include "../map/public/map.h"

@@ -37,6 +37,7 @@
 #define PRIVATE_TYPES_H
 
 #include <Python.h>
+#include <../Objects/stringlib/stringdefs.h>
 
 /* from Objects/descrobject.c */
 typedef struct {
@@ -156,6 +157,43 @@ typedef struct {
     Py_ssize_t si_pos;
     Py_ssize_t len;
 } setiterobject;
+
+/* from Objects/stringlib/string_format.h */
+
+typedef struct {
+    STRINGLIB_CHAR *ptr;
+    STRINGLIB_CHAR *end;
+} SubString;
+
+typedef struct {
+    /* the entire string we're parsing.  we assume that someone else
+       is managing its lifetime, and that it will exist for the
+       lifetime of the iterator.  can be empty */
+    SubString str;
+
+    /* pointer to where we are inside field_name */
+    STRINGLIB_CHAR *ptr;
+} FieldNameIterator;
+
+typedef struct {
+    PyObject_HEAD
+
+    STRINGLIB_OBJECT *str;
+
+    FieldNameIterator it_field;
+} fieldnameiterobject;
+
+typedef struct {
+    SubString str;
+} MarkupIterator;
+
+typedef struct {
+    PyObject_HEAD
+
+    STRINGLIB_OBJECT *str;
+
+    MarkupIterator it_markup;
+} formatteriterobject;
 
 #endif
 
