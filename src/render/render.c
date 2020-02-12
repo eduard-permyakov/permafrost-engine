@@ -219,6 +219,54 @@ static void render_signal_done(struct render_sync_state *rstate)
     SDL_UnlockMutex(rstate->done_lock);
 }
 
+static const char *source_str(GLenum source)
+{
+    switch(source) {
+    case GL_DEBUG_SOURCE_API:             return "API";
+    case GL_DEBUG_SOURCE_WINDOW_SYSTEM:   return "Window System";
+    case GL_DEBUG_SOURCE_SHADER_COMPILER: return "Shader Compiler";
+    case GL_DEBUG_SOURCE_THIRD_PARTY:     return "Third Party";
+    case GL_DEBUG_SOURCE_APPLICATION:     return "Application";
+    case GL_DEBUG_SOURCE_OTHER:           return "Other";
+    default: assert(0);
+    }
+}
+
+static const char *type_str(GLenum type)
+{
+    switch(type) {
+    case GL_DEBUG_TYPE_ERROR:               return "Error";
+    case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: return "Depricated Behavior";
+    case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:  return "Undefined Behavior";
+    case GL_DEBUG_TYPE_PORTABILITY:         return "Portability";
+    case GL_DEBUG_TYPE_PERFORMANCE:         return "Performance";
+    case GL_DEBUG_TYPE_MARKER:              return "Marker";
+    case GL_DEBUG_TYPE_PUSH_GROUP:          return "Push Group";
+    case GL_DEBUG_TYPE_POP_GROUP:           return "Pop Group";
+    case GL_DEBUG_TYPE_OTHER:               return "Other";
+    default: assert(0);
+    }
+}
+
+static const char *severity_str(GLenum severity)
+{
+    switch(severity) {
+    case GL_DEBUG_SEVERITY_HIGH:         return "High";
+    case GL_DEBUG_SEVERITY_MEDIUM:       return "Medium";
+    case GL_DEBUG_SEVERITY_LOW:          return "Low";
+    case GL_DEBUG_SEVERITY_NOTIFICATION: return "Notification";
+    default: assert(0);
+    }
+}
+
+void debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
+                    GLsizei length, const GLchar *message, const void *user)
+{
+    fprintf(stderr, " *** [%s][%s][%s] %s\n", source_str(source), type_str(type), 
+        severity_str(severity), message);
+    fflush(stderr);
+}
+
 static void render_init_ctx(struct render_init_arg *arg)
 {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -232,6 +280,11 @@ static void render_init_ctx(struct render_init_arg *arg)
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+    int ctx_flags = 0;
+    SDL_GL_GetAttribute(SDL_GL_CONTEXT_FLAGS, &ctx_flags);
+    ctx_flags |= SDL_GL_CONTEXT_DEBUG_FLAG;
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, ctx_flags);
 
     s_context = SDL_GL_CreateContext(arg->in_window);
     SDL_GL_MakeCurrent(arg->in_window, s_context);
@@ -247,6 +300,12 @@ static void render_init_ctx(struct render_init_arg *arg)
         fprintf(stderr, "Required OpenGL version not supported in GLEW\n");
         arg->out_success = false;
         return;
+    }
+
+    if(GLEW_KHR_debug) {
+        glEnable(GL_DEBUG_OUTPUT);
+        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+        glDebugMessageCallback(debug_callback, NULL);
     }
 
     int vp[4] = {0 ,0, arg->in_width, arg->in_height};
