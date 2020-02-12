@@ -192,6 +192,35 @@ static void vsync_commit(const struct sval *new_val)
     });
 }
 
+static bool int_val_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_INT);
+}
+
+static void render_set_logmask(int *mask)
+{
+    if(!GLEW_KHR_debug)
+        return;
+
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, 
+        GL_DEBUG_SEVERITY_HIGH, 0, NULL, (*mask & 0x1) ? GL_TRUE : GL_FALSE);
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, 
+        GL_DEBUG_SEVERITY_MEDIUM, 0, NULL, (*mask & 0x2) ? GL_TRUE : GL_FALSE);
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, 
+        GL_DEBUG_SEVERITY_LOW, 0, NULL, (*mask & 0x4) ? GL_TRUE : GL_FALSE);
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, 
+        GL_DEBUG_SEVERITY_NOTIFICATION, 0, NULL, (*mask & 0x8) ? GL_TRUE : GL_FALSE);
+}
+
+static void debug_logmask_commit(const struct sval *new_val)
+{
+    R_PushCmd((struct rcmd){
+        .func = render_set_logmask,
+        .nargs = 1,
+        .args = { R_PushArg(&new_val->as_int, sizeof(int)) },
+    });
+}
+
 static bool render_wait_cmd(struct render_sync_state *rstate)
 {
     SDL_LockMutex(rstate->sq_lock);
@@ -569,6 +598,18 @@ bool R_Init(const char *base_path)
         .prio = 0,
         .validate = bool_val_validate,
         .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.render_log_mask",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_bool = 0x1,
+        },
+        .prio = 0,
+        .validate = int_val_validate,
+        .commit = debug_logmask_commit,
     });
     assert(status == SS_OKAY);
 
