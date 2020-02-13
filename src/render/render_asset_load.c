@@ -222,31 +222,24 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     ss_e status = Settings_Get("pf.video.shadows_enabled", &sh_setting);
     assert(status == SS_OKAY);
 
+    const char *shader;
     if(sh_setting.as_bool) {
-        const char *shader = (header->num_as > 0) ? "mesh.animated.textured-phong-shadowed" 
-                                                  : "mesh.static.textured-phong-shadowed";
-        R_PushCmd((struct rcmd){
-            .func = R_GL_Init,
-            .nargs = 3,
-            .args = {
-                priv,
-                (void*)shader,
-                R_PushArg(vbuff, vbuff_sz),
-            },
-        });
+        shader = (header->num_as > 0) ? "mesh.animated.textured-phong-shadowed" 
+                                      : "mesh.static.textured-phong-shadowed";
     }else{
-        const char *shader = (header->num_as > 0) ? "mesh.animated.textured-phong" 
-                                                  : "mesh.static.textured-phong";
-        R_PushCmd((struct rcmd){
-            .func = R_GL_Init,
-            .nargs = 3,
-            .args = {
-                priv,
-                (void*)shader,
-                R_PushArg(vbuff, vbuff_sz),
-            },
-        });
+        shader = (header->num_as > 0) ? "mesh.animated.textured-phong" 
+                                      : "mesh.static.textured-phong";
     }
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_Init,
+        .nargs = 3,
+        .args = {
+            priv,
+            (void*)shader,
+            R_PushArg(vbuff, vbuff_sz),
+        },
+    });
 
     free(vbuff);
     return priv;

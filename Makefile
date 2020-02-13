@@ -94,8 +94,6 @@ DEPS = ./lib/$(GLEW_LIB) \
 
 # targets
 
-deps: $(DEPS)
-
 .PHONY: download_windows_python
 
 download_windows_python:
@@ -140,6 +138,8 @@ endif
 	mv ./lib/pyinstall/lib/python$(PYTHON_VER_MAJOR) ./lib/.
 	rm -rf ./lib/pyinstall
 
+deps: $(DEPS)
+
 ./obj/%.o: ./src/%.c
 	@mkdir -p $(dir $@)
 	@printf "%-8s %s\n" "[CC]" $@
@@ -148,7 +148,7 @@ endif
 $(BIN): $(PF_OBJS)
 	@mkdir -p ./bin
 	@printf "%-8s %s\n" "[LD]" $@
-	@$(CC) $? -o $(BIN) $(LDFLAGS)
+	@$(CC) $^ -o $(BIN) $(LDFLAGS)
 
 -include $(PF_DEPS)
 
