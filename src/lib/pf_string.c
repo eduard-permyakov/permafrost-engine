@@ -96,7 +96,7 @@ size_t pf_strlcpy(char *dest, const char *src, size_t size)
 
     size_t srclen = strlen(src);
     size_t ret = (srclen > size-1) ? size-1 : srclen;
-    strncpy(dest, src, ret);
+    memcpy(dest, src, ret);
     dest[ret] = '\0';
     return ret;
 }

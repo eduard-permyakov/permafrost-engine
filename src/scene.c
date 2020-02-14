@@ -51,17 +51,6 @@ __KHASH_IMPL(attr, extern, kh_cstr_t, struct attr, 1, kh_str_hash_func, kh_str_h
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-/* A copy of the key string is stored in the 'struct attr' itself. Make the key (string pointer)
- * be a pointer to that buffer in order to avoid allocating/storing the key strings separately. 
- * All keys must be patched in case rehashing took place. */
-static void kh_update_str_keys(khash_t(attr) *table)
-{
-    for(khiter_t k = kh_begin(table); k != kh_end(table); k++) {
-        if(!kh_exist(table, k)) continue;
-        kh_key(table, k) = kh_value(table, k).key;
-    }
-}
-
 static bool scene_parse_att(SDL_RWops *stream, struct attr *out, bool anon)
 {
     char line[MAX_LINE_LEN];
@@ -162,10 +151,9 @@ static bool scene_load_entity(SDL_RWops *stream)
             goto fail_parse;
 
         int ret;
-        khiter_t k = kh_put(attr, attr_table, attr.key, &ret);
+        khiter_t k = kh_put(attr, attr_table, pf_strdup(attr.key), &ret);
         assert(ret != -1 && ret != 0);
         kh_value(attr_table, k) = attr;
-        kh_update_str_keys(attr_table);
 
         if(!strcmp(attr.key, "constructor_arguments")) {
 
@@ -184,6 +172,12 @@ static bool scene_load_entity(SDL_RWops *stream)
 
     if(!S_Entity_ObjFromAtts(path, name, attr_table, &constructor_args))
         goto fail_init;
+
+    const char *key;
+    struct attr val;
+    kh_foreach(attr_table, key, val, { 
+        free((void*)key);
+    });
     
     kh_destroy(attr, attr_table);
     vec_attr_destroy(&constructor_args);
