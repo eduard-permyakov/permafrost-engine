@@ -181,6 +181,7 @@
         mp_ref_t curr;                                                                          \
         kh_foreach(lru->key_node_table, key, curr, {                                            \
                                                                                                 \
+            (void)key;                                                                          \
             if(!lru->on_evict)                                                                  \
                 continue;                                                                       \
             lru_node(name) *vict = &lru->node_pool.pool[curr].entry;                            \

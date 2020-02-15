@@ -177,10 +177,7 @@ static void rc_find_intersection(void)
             vec3_t tile_mesh[VERTS_PER_TILE];
             mat4x4_t model;
 
-            const struct pfchunk *chunk = 
-                &s_ctx.map->chunks[cts[i].chunk_r * s_ctx.map->width + cts[i].chunk_c];
             M_ModelMatrixForChunk(s_ctx.map, (struct chunkpos){cts[i].chunk_r, cts[i].chunk_c}, &model);
-
             int num_verts = R_TileGetTriMesh(s_ctx.map, &cts[i], &model, tile_mesh);
 
             if(C_RayIntersectsTriMesh(ray_origin, ray_dir, tile_mesh, num_verts, &t)) {

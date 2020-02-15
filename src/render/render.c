@@ -257,7 +257,7 @@ static const char *source_str(GLenum source)
     case GL_DEBUG_SOURCE_THIRD_PARTY:     return "Third Party";
     case GL_DEBUG_SOURCE_APPLICATION:     return "Application";
     case GL_DEBUG_SOURCE_OTHER:           return "Other";
-    default: assert(0);
+    default: assert(0); return NULL;
     }
 }
 
@@ -273,7 +273,7 @@ static const char *type_str(GLenum type)
     case GL_DEBUG_TYPE_PUSH_GROUP:          return "Push Group";
     case GL_DEBUG_TYPE_POP_GROUP:           return "Pop Group";
     case GL_DEBUG_TYPE_OTHER:               return "Other";
-    default: assert(0);
+    default: assert(0); return NULL;
     }
 }
 
@@ -284,7 +284,7 @@ static const char *severity_str(GLenum severity)
     case GL_DEBUG_SEVERITY_MEDIUM:       return "Medium";
     case GL_DEBUG_SEVERITY_LOW:          return "Low";
     case GL_DEBUG_SEVERITY_NOTIFICATION: return "Notification";
-    default: assert(0);
+    default: assert(0); return NULL;
     }
 }
 
@@ -353,10 +353,10 @@ static void render_init_ctx(struct render_init_arg *arg)
 
     R_GL_InitShadows();
 
-    strncpy(s_info_vendor,     glGetString(GL_VENDOR),   ARR_SIZE(s_info_vendor)-1);
-    strncpy(s_info_renderer,   glGetString(GL_RENDERER), ARR_SIZE(s_info_renderer)-1);
-    strncpy(s_info_version,    glGetString(GL_VERSION),  ARR_SIZE(s_info_version)-1);
-    strncpy(s_info_sl_version, glGetString(GL_SHADING_LANGUAGE_VERSION), ARR_SIZE(s_info_sl_version)-1);
+    strncpy(s_info_vendor,     (const char*)glGetString(GL_VENDOR),   ARR_SIZE(s_info_vendor)-1);
+    strncpy(s_info_renderer,   (const char*)glGetString(GL_RENDERER), ARR_SIZE(s_info_renderer)-1);
+    strncpy(s_info_version,    (const char*)glGetString(GL_VERSION),  ARR_SIZE(s_info_version)-1);
+    strncpy(s_info_sl_version, (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION), ARR_SIZE(s_info_sl_version)-1);
 
     arg->out_success = true;
 }
@@ -502,6 +502,8 @@ static int render(void *data)
 bool R_Init(const char *base_path)
 {
     ss_e status;
+    (void)status;
+
     SDL_DisplayMode dm;
     SDL_GetDesktopDisplayMode(0, &dm);
 

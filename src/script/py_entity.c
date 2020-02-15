@@ -719,7 +719,7 @@ static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args)
         return NULL;
     }
 
-    bool ret = E_Entity_ScriptUnregister(event, self->ent->uid, callable);
+    E_Entity_ScriptUnregister(event, self->ent->uid, callable);
     Py_RETURN_NONE;
 }
 
@@ -990,7 +990,7 @@ static PyObject *s_obj_from_attr(const struct attr *attr)
     case TYPE_QUAT:     return Py_BuildValue("(f,f,f,f)", 
                                attr->val.as_quat.x, attr->val.as_quat.y, attr->val.as_quat.z, attr->val.as_quat.w);
     case TYPE_BOOL:     return Py_BuildValue("i", attr->val.as_bool);
-    default: assert(0);
+    default: assert(0); return NULL;
     }
 }
 
@@ -1217,6 +1217,7 @@ PyObject *S_Entity_GetAllList(void)
     PyObject *curr;
     int i = 0;
     kh_foreach(s_uid_pyobj_table, key, curr, {
+        (void)key;
         PyList_SetItem(ret, i++, curr); /* steals reference */
     });
     

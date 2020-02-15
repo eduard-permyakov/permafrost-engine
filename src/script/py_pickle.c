@@ -86,8 +86,9 @@ typedef void *mod_ty; //symtable.h wants this
             Py_DECREF(flag);                                                    \
             break;                                                              \
         }                                                                       \
-        printf("[U] %-14s: [stack size: %4zu] [mark stack size: %4zu] (%s:%d)\n", \
-            #op, vec_size(&ctx->stack), vec_size(&ctx->mark_stack),             \
+        printf("[U] %-14s: [stack size: %4u] [mark stack size: %4u] (%s:%d)\n", \
+            #op, (unsigned)vec_size(&ctx->stack),                               \
+            (unsigned)vec_size(&ctx->mark_stack),                               \
             __FILE__, __LINE__);                                                \
         Py_DECREF(flag);                                                        \
     }while(0)
@@ -101,8 +102,8 @@ typedef void *mod_ty; //symtable.h wants this
             break;                                                              \
         }                                                                       \
         PyObject *repr = PyObject_Repr(obj);                                    \
-        printf("[P] %-24s: (%-36s:%4d) [0x%08lx] %s\n", obj->ob_type->tp_name,  \
-            __FILE__, __LINE__, (uintptr_t)obj, PyString_AS_STRING(repr));      \
+        printf("[P] %-24s: (%-36s:%4d) [0x%p] %s\n", obj->ob_type->tp_name,     \
+            __FILE__, __LINE__, (void*)obj, PyString_AS_STRING(repr));          \
         Py_DECREF(flag);                                                        \
         Py_DECREF(repr);                                                        \
     }while(0)
@@ -1975,7 +1976,6 @@ static int long_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
     char str[32];
     long l = PyLong_AsLong(obj);
-    Py_ssize_t len = 0;
 
     str[0] = LONG;
     PyOS_snprintf(str + 1, sizeof(str) - 1, "%ld\n", l);
@@ -1993,7 +1993,6 @@ static int int_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
     char str[32];
     long l = PyInt_AS_LONG((PyIntObject *)obj);
-    Py_ssize_t len = 0;
 
     str[0] = INT;
     PyOS_snprintf(str + 1, sizeof(str) - 1, "%ld\n", l);
@@ -2091,7 +2090,7 @@ fail:
 static int tuple_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    Py_ssize_t len, i;
+    Py_ssize_t len;
 
     assert(PyTuple_Check(obj));
     len = PyTuple_Size((PyObject*)obj);
@@ -3375,7 +3374,7 @@ static int op_int(struct unpickle_ctx *ctx, SDL_RWops *rw)
     char *endptr;
     long l = strtol(buff, &endptr, 0);
     if (errno || (*endptr != '\n') || (endptr[1] != '\0')) {
-        SET_RUNTIME_EXC("Bad int in pickle stream [offset: %ld]", rw->seek(rw, RW_SEEK_CUR, 0));
+        SET_RUNTIME_EXC("Bad int in pickle stream [offset: %ld]", (long)rw->seek(rw, RW_SEEK_CUR, 0));
         goto fail;
     }
 
@@ -3398,7 +3397,7 @@ static int op_long(struct unpickle_ctx *ctx, SDL_RWops *rw)
     char *endptr;
     long l = strtol(buff, &endptr, 0);
     if (errno || (*endptr != '\n') || (endptr[1] != '\0')) {
-        SET_RUNTIME_EXC("Bad long in pickle stream [offset: %ld]", rw->seek(rw, RW_SEEK_CUR, 0));
+        SET_RUNTIME_EXC("Bad long in pickle stream [offset: %ld]", (long)rw->seek(rw, RW_SEEK_CUR, 0));
         goto fail;
     }
 
@@ -3485,7 +3484,7 @@ static int op_put(struct unpickle_ctx *ctx, SDL_RWops *rw)
     char *end;
     int idx = strtol(buff, &end, 10);
     if(!idx && end != buff + strlen(buff)-1) /* - newline */ {
-        SET_RUNTIME_EXC("Bad index in pickle stream: [offset: %ld]", rw->seek(rw, RW_SEEK_CUR, 0));
+        SET_RUNTIME_EXC("Bad index in pickle stream: [offset: %ld]", (long)rw->seek(rw, RW_SEEK_CUR, 0));
         return -1;
     }
 
@@ -3512,7 +3511,7 @@ static int op_get(struct unpickle_ctx *ctx, SDL_RWops *rw)
     char *end;
     int idx = strtol(buff, &end, 10);
     if(!idx && end != buff + strlen(buff) - 1) /* - newline */ {
-        SET_RUNTIME_EXC("Bad index in pickle stream: [offset: %ld]", rw->seek(rw, RW_SEEK_CUR, 0));
+        SET_RUNTIME_EXC("Bad index in pickle stream: [offset: %ld]", (long)rw->seek(rw, RW_SEEK_CUR, 0));
         return -1;
     }
 
@@ -4597,7 +4596,6 @@ static int op_ext_newinst(struct unpickle_ctx *ctx, SDL_RWops *rw)
     vec_pobj_push(&ctx->stack, new_obj);
     ret = 0;
 
-fail_inst:
 fail_typecheck:
     Py_DECREF(type);
     Py_DECREF(args);
@@ -4978,7 +4976,6 @@ static int op_ext_enumerate(struct unpickle_ctx *ctx, SDL_RWops *rw)
     vec_pobj_push(&ctx->stack, (PyObject*)en);
     ret = 0;
 
-fail_enum:
 fail_typecheck:
     Py_DECREF(longindex);
     Py_DECREF(result);
@@ -5411,8 +5408,8 @@ static int op_ext_frame(struct unpickle_ctx *ctx, SDL_RWops *rw)
     PyObject *sent = vec_pobj_pop(&ctx->stack);
     if(PyInt_Check(sent) && PyInt_AS_LONG(sent) != nitems) {
 
-        SET_RUNTIME_EXC("PF_FRAME: Sentinel reports incorrect number of items on valuestack [exp: %zu, act: %ld]",
-            nitems, PyInt_AS_LONG(sent));
+        SET_RUNTIME_EXC("PF_FRAME: Sentinel reports incorrect number of items on valuestack [exp: %u, act: %ld]",
+            (unsigned)nitems, PyInt_AS_LONG(sent));
         goto fail_sent;
     }
 
@@ -5953,7 +5950,6 @@ static int op_ext_calliter(struct unpickle_ctx *ctx, SDL_RWops *rw)
     ret = 0;
 
 fail_iter:
-fail_typecheck:
     Py_DECREF(sent);
     Py_DECREF(call);
 fail_underflow:
@@ -6529,6 +6525,7 @@ void S_Pickle_Shutdown(void)
     uint64_t key;
     const char *curr;
     kh_foreach(s_id_qualname_map, key, curr, {
+        (void)key;
         free((char*)curr);
     });
 
@@ -6567,7 +6564,7 @@ PyObject *S_UnpickleObjgraph(SDL_RWops *stream)
 
     while(!ctx.stop) {
     
-        char op;
+        unsigned char op;
         bool xtend = false;
 
         CHK_TRUE(stream->read(stream, &op, 1, 1), err);
@@ -6588,7 +6585,7 @@ PyObject *S_UnpickleObjgraph(SDL_RWops *stream)
     }
 
     if(vec_size(&ctx.stack) != 1) {
-        SET_RUNTIME_EXC("Unexpected stack size [%zu] after 'STOP'", vec_size(&ctx.stack));
+        SET_RUNTIME_EXC("Unexpected stack size [%u] after 'STOP'", (unsigned)vec_size(&ctx.stack));
         goto err;
     }
 

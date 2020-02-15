@@ -111,8 +111,8 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
     };
 
     /* OpenGL setup */
-    GLint VAO, VBO;
-    GLint shader_prog;
+    GLuint VAO, VBO;
+    GLuint shader_prog;
 
     glGenVertexArrays(1, &VAO);
     glBindVertexArray(VAO);
@@ -142,6 +142,7 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
         char locname[128];
         GLuint loc;
         int rval;
+        (void)rval;
 
         rval = snprintf(locname, sizeof(locname), "%s[%d]", GL_U_ENT_TOP_OFFSETS_SS, i);
         assert(rval < sizeof(locname));
@@ -158,7 +159,7 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
     glDrawArraysInstanced(GL_TRIANGLES, 0, ARR_SIZE(vbuff), *num_ents);
     GL_ASSERT_OK();
 
-cleanup:
+    /* cleanup */
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 }

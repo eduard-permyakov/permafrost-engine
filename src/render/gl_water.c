@@ -498,7 +498,6 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
 
-cleanup:
     glDeleteTextures(1, &refract_tex);
     glDeleteTextures(1, &refract_depth);
     glDeleteTextures(1, &reflect_tex);

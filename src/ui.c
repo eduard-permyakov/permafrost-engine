@@ -347,10 +347,7 @@ void UI_InputEnd(void)
 void UI_Render(void)
 {
     struct nk_buffer cmds, vbuf, ebuf;
-
     const enum nk_anti_aliasing aa = NK_ANTI_ALIASING_ON;
-    const int mvm = MAX_VERTEX_MEMORY;
-    const int mem = MAX_ELEMENT_MEMORY;
 
     void *vbuff = stalloc(&G_GetSimWS()->args, MAX_VERTEX_MEMORY);
     void *ebuff = stalloc(&G_GetSimWS()->args, MAX_ELEMENT_MEMORY);

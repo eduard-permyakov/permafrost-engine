@@ -383,6 +383,8 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
 
             uint32_t key;
             struct entity *curr;
+            (void)key;
+
             kh_foreach(new_flock.ents, key, curr, { flock_add(merge_flock, curr); });
             kh_destroy(entity, new_flock.ents);
         
@@ -408,13 +410,16 @@ size_t adjacent_flock_members(const struct entity *ent, const struct flock *floc
 
     uint32_t key;
     struct entity *curr;
+    (void)key;
+
     kh_foreach(flock->ents, key, curr, {
 
         if(curr == ent)
             continue;
 
-        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
         vec2_t diff;
+
+        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
         PFM_Vec2_Sub(&ent_xz_pos, &curr_xz_pos, &diff);
 
         if(PFM_Vec2_Len(&diff) <= ent->selection_radius + curr->selection_radius + ADJACENCY_SEP_DIST)
@@ -498,7 +503,10 @@ static void on_render_3d(void *user, void *event)
     const struct camera *cam = G_GetActiveCamera();
 
     struct sval setting;
-    ss_e status = Settings_Get("pf.debug.show_last_cmd_flow_field", &setting);
+    ss_e status;
+    (void)status;
+
+    status = Settings_Get("pf.debug.show_last_cmd_flow_field", &setting);
     assert(status == SS_OKAY);
 
     if(setting.as_bool && s_last_cmd_dest_valid)
@@ -670,6 +678,8 @@ static vec2_t alignment_force(const struct entity *ent, const struct flock *floc
 
     uint32_t key;
     struct entity *curr;
+    (void)key;
+
     kh_foreach(flock->ents, key, curr, {
 
         if(curr == ent)
@@ -715,6 +725,8 @@ static vec2_t cohesion_force(const struct entity *ent, const struct flock *flock
 
     uint32_t key;
     struct entity *curr;
+    (void)key;
+
     kh_foreach(flock->ents, key, curr, {
 
         if(curr == ent)
@@ -859,7 +871,6 @@ static void nullify_impass_components(const struct entity *ent, vec2_t *inout_fo
 
 static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flock)
 {
-    vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
@@ -877,7 +888,7 @@ static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flo
             break;
     }
 
-    vec2_t accel, new_vel, new_pos; 
+    vec2_t accel, new_vel; 
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
@@ -888,13 +899,12 @@ static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flo
 
 static vec2_t enemy_seek_vpref(const struct entity *ent)
 {
-    vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
     vec2_t steer_force = enemy_seek_total_force(ent);
 
-    vec2_t accel, new_vel, new_pos; 
+    vec2_t accel, new_vel; 
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
@@ -907,7 +917,7 @@ static void update_vel_hist(struct movestate *ms, vec2_t vnew)
 {
     assert(ms->vel_hist >= 0 && ms->vel_hist_idx < VEL_HIST_LEN);
     ms->vel_hist[ms->vel_hist_idx] = vnew;
-    ms->vel_hist_idx = (++ms->vel_hist_idx % VEL_HIST_LEN);
+    ms->vel_hist_idx = ((ms->vel_hist_idx+1) % VEL_HIST_LEN);
 }
 
 /* Simple Moving Average */
@@ -1094,11 +1104,10 @@ static void disband_empty_flocks(void)
 {
     uint32_t key;
     struct entity *curr;
+    (void)key;
 
     /* Iterate vector backwards so we can delete entries while iterating. */
     for(int i = vec_size(&s_flocks)-1; i >= 0; i--) {
-
-        struct flock *flock = &vec_AT(&s_flocks, i);
 
         /* First, decide if we can disband this flock */
         bool disband = true;
@@ -1106,6 +1115,7 @@ static void disband_empty_flocks(void)
 
             struct movestate *ms = movestate_get(curr);
             assert(ms);
+
             if(ms->state != STATE_ARRIVED) {
                 disband = false;
                 break;
@@ -1259,9 +1269,6 @@ void G_Move_RemoveEntity(const struct entity *ent)
 
 void G_Move_Stop(const struct entity *ent)
 {
-    uint32_t key;
-    struct entity *curr;
-
     struct movestate *ms = movestate_get(ent);
     if(!ms)
         return;

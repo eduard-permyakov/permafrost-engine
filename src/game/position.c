@@ -82,9 +82,6 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    const khash_t(entity) *ents = G_GetAllEntsSet();
-    assert(kh_get(entity, ents, uid) != kh_end(ents));
-
     khiter_t k = kh_get(pos, s_postable, uid);
     bool overwrite = (k != kh_end(s_postable));
 

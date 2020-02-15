@@ -114,30 +114,18 @@ static void process_sdl_events(void)
 
         switch(event.type) {
 
-        case SDL_WINDOWEVENT:
-
-            switch(event.window.event) {
-            case SDL_WINDOWEVENT_RESIZED:
-                glViewport(0, 0, event.window.data1, event.window.data2);
-                break;
-            }
-            break;
-
         case SDL_KEYDOWN:
-            switch(event.key.keysym.scancode) {
-
-            case SDL_SCANCODE_ESCAPE: 
+            if(event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
                 s_quit = true; 
-                break;
             }
             break;
 
         case SDL_USEREVENT:
-            switch(event.user.code) {
-            case 0: 
+            if(event.user.code == 0) {
                 E_Global_Notify(EVENT_60HZ_TICK, NULL, ES_ENGINE); 
-                break;
             }
+            break;
+        default: 
             break;
         }
     }
@@ -147,9 +135,6 @@ static void process_sdl_events(void)
 
 static void on_user_quit(void *user, void *event)
 {
-    (void)user;
-    (void)event;
-
     s_quit = true;
 }
 
@@ -558,13 +543,15 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 int main(int argc, char **argv)
 #endif
 {
+    int ret = EXIT_SUCCESS;
+
 #if defined(_WIN32)
     LPWSTR *argv_wide;
     char args[16][256];
     char *argv[16];
     int argc;
     argv_wide = CommandLineToArgvW(GetCommandLineW(), &argc);
-    if(!argv)
+    if(!argv_wide)
         goto fail_args;
 
     for(int i = 0; i < argc; i++) {
@@ -573,8 +560,6 @@ int main(int argc, char **argv)
     }
     LocalFree(argv_wide);
 #endif
-
-    int ret = EXIT_SUCCESS;
 
     if(argc != 3) {
         printf("Usage: %s [base directory path (containing 'assets', 'shaders' and 'scripts' folders)] [script path]\n", argv[0]);

@@ -387,7 +387,7 @@ static void tile_mat_indices(struct tile_adj_info *inout, bool *out_top_tri_left
     bool   top_tri_left_aligned;
     tile_top_normals(inout->tile, top_tri_normals, out_top_tri_left_aligned);
 
-    GLint tri_mats[2] = {
+    GLuint tri_mats[2] = {
         fabs(top_tri_normals[0].y) < 1.0 && (inout->tile->ramp_height > 1) ? inout->tile->sides_mat_idx : inout->tile->top_mat_idx,
         fabs(top_tri_normals[1].y) < 1.0 && (inout->tile->ramp_height > 1) ? inout->tile->sides_mat_idx : inout->tile->top_mat_idx,
     };
@@ -545,8 +545,8 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
 
     struct vertex vbuff[VERTS_PER_TILE];
     vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
-    GLint VAO, VBO;
-    GLint shader_prog;
+    GLuint VAO, VBO;
+    GLuint shader_prog;
     GLuint loc;
 
     const struct render_private *priv = chunk_rprivate;
@@ -615,7 +615,7 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
     glBindVertexArray(VAO);
     glDrawArrays(GL_TRIANGLES, 0, VERTS_PER_TILE);
 
-cleanup:
+    /* cleanup */
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 }
@@ -826,7 +826,7 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, const
         east_provoking[i]->blend_mode = optimal_blendmode(east_provoking[i]);
     }
 
-    GLint adj_center_mask = INDICES_MASK_32(
+    GLuint adj_center_mask = INDICES_MASK_32(
         INDICES_MASK_8(curr.top_center_idx,     top.bot_center_idx),
         INDICES_MASK_8(curr.right_center_idx,   right.left_center_idx),
         INDICES_MASK_8(curr.bot_center_idx,     bot.top_center_idx),
@@ -1069,8 +1069,6 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
 
 #define V_COORD(width, height) (((float)height)/width)
 
-    GLint side_adjacent_indices = ((tile->sides_mat_idx & 0xf) << 0) | ((tile->sides_mat_idx & 0xf) << 4)
-                                | ((tile->sides_mat_idx & 0xf) << 8) | ((tile->sides_mat_idx & 0xf) << 12);
     struct face back = {
         .nw = (struct vertex) {
             .pos    = top.ne.pos,

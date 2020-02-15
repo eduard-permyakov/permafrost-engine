@@ -321,8 +321,8 @@ struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name)
     strcat(pfmap_path, pfmap_name);
 
     stream = SDL_RWFromFile(pfmap_path, "r");
-	if(!stream)
-		goto fail_open;
+    if(!stream)
+        goto fail_open;
 
     ret = al_map_from_stream(base_path, stream);
     if(!ret)
@@ -352,15 +352,14 @@ struct map *AL_MapFromPFMapString(const char *str)
 
 fail_parse:
     SDL_RWclose(stream);
-fail_open:
     return NULL;
 }
 
 size_t AL_MapShallowCopySize(const char *base_path, const char *pfmap_name)
 {
     SDL_RWops *stream;
-	struct pfmap_hdr header;
-	size_t ret = 0;
+    struct pfmap_hdr header;
+    size_t ret = 0;
 
     char pfmap_path[256];
     assert( strlen(base_path) + strlen(pfmap_name) + 1 < sizeof(pfmap_path) );
@@ -369,36 +368,36 @@ size_t AL_MapShallowCopySize(const char *base_path, const char *pfmap_name)
     strcat(pfmap_path, pfmap_name);
 
     stream = SDL_RWFromFile(pfmap_path, "r");
-	if(!stream)
-		goto fail_open;
+    if(!stream)
+        goto fail_open;
 
     if(!al_parse_pfmap_header(stream, &header))
         goto fail_parse;
 
-	ret = M_AL_ShallowCopySize(header.num_rows, header.num_cols);
+    ret = M_AL_ShallowCopySize(header.num_rows, header.num_cols);
 
 fail_parse:
-	SDL_RWseek(stream, 0, RW_SEEK_SET);
+    SDL_RWseek(stream, 0, RW_SEEK_SET);
     SDL_RWclose(stream);
 fail_open:
-	return ret;
+    return ret;
 }
 
 size_t AL_MapShallowCopySizeStr(const char *str)
 {
     SDL_RWops *stream;
-	struct pfmap_hdr header;
-	size_t ret = 0;
+    struct pfmap_hdr header;
+    size_t ret = 0;
 
     stream = SDL_RWFromConstMem(str, strlen(str));
     if(!al_parse_pfmap_header(stream, &header))
         goto fail_parse;
 
-	ret = M_AL_ShallowCopySize(header.num_rows, header.num_cols);
+    ret = M_AL_ShallowCopySize(header.num_rows, header.num_cols);
 
 fail_parse:
     SDL_RWclose(stream);
-	return ret;
+    return ret;
 }
 
 void AL_MapFree(struct map *map)
@@ -409,7 +408,6 @@ void AL_MapFree(struct map *map)
 
 bool AL_ReadLine(SDL_RWops *stream, char *outbuff)
 {
-    bool done = false;
     int idx = 0;
     do { 
         if(!SDL_RWread(stream, outbuff + idx, 1, 1))

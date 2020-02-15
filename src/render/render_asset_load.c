@@ -333,9 +333,7 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
     for(int r = 0; r < height; r++) {
     for(int c = 0; c < width;  c++) {
 
-        const struct tile *curr = &tiles[r * width + c];
         struct vertex *vert_base = &vbuff[ (r * width + c) * VERTS_PER_TILE ];
-
         struct tile_desc td = (struct tile_desc){chunk_r, chunk_c, r, c};
         R_TileGetVertices(map, td, vert_base);
     }}
@@ -358,8 +356,6 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
     free(vbuff);
     return true;
 
-fail_parse:
-    free(vbuff);
 fail_alloc:
     return false;
 }

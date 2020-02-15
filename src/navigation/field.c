@@ -228,8 +228,10 @@ static enum flow_dir flow_dir(const float integration_field[FIELD_RES_R][FIELD_R
     else if(r < (FIELD_RES_R-1) && c < (FIELD_RES_R-1) 
     && integration_field[r+1][c+1] == min_cost)
         return FD_SE;
-    else
+    else {
         assert(0);
+        return 0;
+    }
 }
 
 static bool is_LOS_corner(struct coord cell, const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C],
@@ -828,8 +830,10 @@ ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target)
              | (((uint64_t)target.enemies.faction_id)   << 24)
              | (((uint64_t)chunk.r)                     <<  8)
              | (((uint64_t)chunk.c)                     <<  0);
-    }else
+    }else {
         assert(0);
+        return 0;
+    }
 }
 
 void N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct flow_field *out)

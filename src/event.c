@@ -220,13 +220,11 @@ void E_Shutdown(void)
     khiter_t k;
     for (k = kh_begin(s_event_handler_table); k != kh_end(s_event_handler_table); ++k) {
 
-        uint64_t key = kh_key(s_event_handler_table, k);
-    
-        if (kh_exist(s_event_handler_table, k)) {
-        
-            vec_hd_t vec = kh_value(s_event_handler_table, k);
-            vec_hd_destroy(&vec);
-        }
+        if(!kh_exist(s_event_handler_table, k))
+            continue; 
+
+        vec_hd_t vec = kh_value(s_event_handler_table, k);
+        vec_hd_destroy(&vec);
     }
 
     kh_destroy(handler_desc, s_event_handler_table);

@@ -220,12 +220,6 @@ static size_t compute_all_hrvos(struct cp_ent ent, vec_cp_ent_t dyn_neighbs,
 /* Points exactly 'on' the boundary will be considered as 'not inside' of the PCR for our purposes. */
 static bool inside_pcr(const struct line_2d *vo_lr_pairs, size_t n_rays, vec2_t test)
 {
-    const float test_point_x = test.raw[0];
-    const float test_point_z = test.raw[1];
-
-    const float test_norm_x = test_point_x / PFM_Vec2_Len(&test);
-    const float test_norm_z = test_point_z / PFM_Vec2_Len(&test);
-
     assert(n_rays % 2 == 0);
     for(int i = 0; i < n_rays; i+=2) {
 
@@ -303,7 +297,7 @@ static size_t compute_vo_xpoints(struct line_2d *rays, size_t n_rays,
             if(i == j) 
                 continue;
 
-            vec2_t isec_point, candidate_vel;
+            vec2_t isec_point;
             if(!C_RayRayIntersection2D(rays[i], rays[j], &isec_point))
                 continue;
 
@@ -370,7 +364,7 @@ static void remove_furthest(vec2_t xz_pos, vec_cp_ent_t *dyn_inout, vec_cp_ent_t
 {
     float max_dist = -INFINITY;
     vec_cp_ent_t *del_vec = NULL;
-    int del_idx;
+    int del_idx = -1;
 
     for(int i = 0; i < 2; i++) {
     
@@ -391,6 +385,7 @@ static void remove_furthest(vec2_t xz_pos, vec_cp_ent_t *dyn_inout, vec_cp_ent_t
     }
 
     if(max_dist > -INFINITY) {
+        assert(del_idx != -1);
         vec_cp_ent_del(del_vec, del_idx);
     }
 }
@@ -520,7 +515,7 @@ static void on_render_3d(void *user, void *event)
     width = 1.0f;
 
     for(int i = 0; i < vec_size(&s_debug_saved.xpoints); i++) {
-        vec2_t xp = vec_AT(&s_debug_saved.xpoints, i);
+
         R_PushCmd((struct rcmd){
             .func = R_GL_DrawSelectionCircle,
             .nargs = 5,

@@ -132,7 +132,7 @@ static bool scene_load_entity(SDL_RWops *stream)
     char line[MAX_LINE_LEN];
     char name[128];
     char path[256];
-    size_t num_atts;
+    unsigned num_atts;
 
     khash_t(attr) *attr_table = kh_init(attr);
     if(!attr_table)
@@ -142,7 +142,7 @@ static bool scene_load_entity(SDL_RWops *stream)
     vec_attr_init(&constructor_args);
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "entity %s %s %lu", name, path, &num_atts))
+    if(!sscanf(line, "entity %s %s %u", name, path, &num_atts))
         goto fail_parse;
 
     for(int i = 0; i < num_atts; i++) {
@@ -176,6 +176,7 @@ static bool scene_load_entity(SDL_RWops *stream)
     const char *key;
     struct attr val;
     kh_foreach(attr_table, key, val, { 
+        (void)val;
         free((void*)key);
     });
     
@@ -223,14 +224,14 @@ bool Scene_Load(const char *path)
 {
     SDL_RWops *stream;
     char line[MAX_LINE_LEN];
-    size_t num_factions, num_ents;
+    unsigned num_factions, num_ents;
 
     stream = SDL_RWFromFile(path, "r");
     if(!stream)
         goto fail_stream;
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "num_factions%lu", &num_factions))
+    if(!sscanf(line, "num_factions %u", &num_factions))
         goto fail_parse;
 
     for(int i = 0; i < num_factions; i++) {
@@ -239,7 +240,7 @@ bool Scene_Load(const char *path)
     }
     
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "num_entities %lu", &num_ents))
+    if(!sscanf(line, "num_entities %u", &num_ents))
         goto fail_parse;
 
     for(int i = 0; i < num_ents; i++) {

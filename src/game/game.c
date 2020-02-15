@@ -107,6 +107,8 @@ static void g_reset(void)
 
     uint32_t key;
     struct entity *curr;
+    (void)key;
+
     kh_foreach(s_gs.active, key, curr, {
         G_SafeFree(curr);
     });
@@ -424,6 +426,8 @@ static void shadows_en_commit(const struct sval *new_val)
 
     uint32_t key;
     struct entity *curr;
+    (void)key;
+
     kh_foreach(s_gs.active, key, curr, {
 
         R_PushCmd((struct rcmd){
@@ -475,7 +479,10 @@ bool G_Init(void)
     G_Timer_Init();
     R_PushCmd((struct rcmd){ R_GL_WaterInit, 0 });
 
-    ss_e status = Settings_Create((struct setting){
+    ss_e status;
+    (void)status;
+
+    status = Settings_Create((struct setting){
         .name = "pf.game.healthbar_mode",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
@@ -746,6 +753,8 @@ void G_BakeNavDataForScene(void)
 
     uint32_t key;
     struct entity *curr;
+    (void)key;
+
     kh_foreach(s_gs.active, key, curr, {
 
         if(((ENTITY_FLAG_COLLISION | ENTITY_FLAG_STATIC) & curr->flags) 
@@ -834,6 +843,8 @@ void G_Update(void)
 
     uint32_t key;
     struct entity *curr;
+    (void)key;
+
     kh_foreach(s_gs.active, key, curr, {
 
         if(s_gs.ss == G_RUNNING && curr->flags & ENTITY_FLAG_ANIMATED)
@@ -871,6 +882,7 @@ void G_Render(void)
 {
     ASSERT_IN_MAIN_THREAD();
     ss_e status;
+    (void)status;
 
     R_PushCmd((struct rcmd){ R_GL_BeginFrame, 0 });
 
@@ -1222,6 +1234,8 @@ void G_SetSimState(enum simstate ss)
     
         uint32_t key;
         struct entity *curr;
+        (void)key;
+
         kh_foreach(s_gs.active, key, curr, {
            
             if(!(curr->flags & ENTITY_FLAG_ANIMATED))

@@ -327,6 +327,7 @@ static void sel_filter_and_set_type(void)
 bool G_Sel_Init(void)
 {
     vec_pentity_init(&s_selected);
+    return true;
 }
 
 void G_Sel_Shutdown(void)

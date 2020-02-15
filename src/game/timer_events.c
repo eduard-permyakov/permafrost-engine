@@ -65,6 +65,7 @@ static uint32_t timer_callback(uint32_t interval, void *param)
 
     double intpart, fracpart;
     fracpart = modf(s_error, &intpart);
+    (void)fracpart;
 
     s_error -= intpart;
     interval = ((int)TIMER_INTERVAL) + intpart;

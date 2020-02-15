@@ -48,7 +48,7 @@
 
 #define MIN(a, b)          ((a) < (b) ? (a) : (b))
 #define MAX(a, b)          ((a) > (b) ? (a) : (b))
-#define CLAMP(a, min, max) ((a), MIN(MAX((a), (min)), (max)))
+#define CLAMP(a, min, max) (MIN(MAX((a), (min)), (max)))
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -216,7 +216,7 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
         };
 
         /* Triangles are defined in screen coordinates */
-        vec3_t *first_tri, *second_tri;
+        vec3_t *first_tri = NULL, *second_tri = NULL;
 
         switch(tile->type){
         case TILETYPE_CORNER_CONVEX_NE:
@@ -275,6 +275,7 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
 
         float t;
         bool result = C_RayIntersectsPlane(ray_origin, ray_dir, tri_plane, &t);
+        (void)result;
         assert(result);
 
         vec3_t intersec_point;
@@ -368,7 +369,7 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
         start_x = line.ax; 
         start_z = line.az; 
 
-    }else if(num_intersect = C_LineBoxIntersection(line, map_box, intersect_xz)) {
+    }else if((num_intersect = C_LineBoxIntersection(line, map_box, intersect_xz))) {
 
         /* Nudge the intersection point by EPSILON in the direction of the ray to make sure 
          * the intersection point is within the map bounds. */
@@ -398,6 +399,7 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
     }
 
     bool result = M_Tile_DescForPoint2D(res, map_pos, (vec2_t){start_x, start_z}, &curr_tile_desc);
+    (void)result;
     assert(result);
 
     assert(curr_tile_desc.chunk_r >= 0 && curr_tile_desc.chunk_r < res.chunk_h);
@@ -424,6 +426,7 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
 
     if(line_ends_inside) {
         int result = M_Tile_DescForPoint2D(res, map_pos, (vec2_t){line.bx, line.bz}, &final_tile_desc);
+        (void)result;
         assert(result);
     }
 

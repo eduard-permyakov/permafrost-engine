@@ -72,7 +72,7 @@ static void r_gl_set_materials(GLuint shader_prog, size_t num_mats, const struct
 {
     ASSERT_IN_RENDER_THREAD();
 
-    for(size_t i = 0; i < num_mats; i++) {
+    for(unsigned i = 0; i < num_mats; i++) {
     
         const struct material *mat = &mats[i];
         const size_t nmembers = 3; 
@@ -87,12 +87,12 @@ static void r_gl_set_materials(GLuint shader_prog, size_t num_mats, const struct
             {"specular_clr",      3, offsetof(struct material, specular_clr)      }
         };
 
-        for(size_t j = 0; j < nmembers; j++) {
+        for(unsigned j = 0; j < nmembers; j++) {
         
             char locbuff[64];
             GLuint loc;
 
-            snprintf(locbuff, sizeof(locbuff), "%s[%zu].%s", GL_U_MATERIALS, i, descs[j].name);
+            snprintf(locbuff, sizeof(locbuff), "%s[%u].%s", GL_U_MATERIALS, i, descs[j].name);
             locbuff[sizeof(locbuff)-1] = '\0';
 
             loc = glGetUniformLocation(shader_prog, locbuff);
@@ -213,7 +213,7 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
             (void*)offsetof(struct vertex, joint_indices));
         glEnableVertexAttribArray(4);  
         glVertexAttribPointer(5, 3, GL_INT, GL_FALSE, sizeof(struct vertex),
-            (void*)offsetof(struct vertex, joint_indices) + 3*sizeof(GLint));
+            (void*)offsetof(struct vertex, joint_indices) + 3*sizeof(GLuint));
         glEnableVertexAttribArray(6);  
 
         /* Attribute 6/7 - joint weights */
@@ -533,8 +533,8 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
     ASSERT_IN_RENDER_THREAD();
 
     vec3_t *vbuff;
-    GLint VAO, VBO;
-    GLint shader_prog;
+    GLuint VAO, VBO;
+    GLuint shader_prog;
     GLuint loc;
     vec4_t green = (vec4_t){0.0f, 1.0f, 0.0f, 1.0f};
 
@@ -554,7 +554,6 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
     for(int i = 0, vbuff_idx = 0; i < skel->num_joints; i++, vbuff_idx +=2) {
 
         struct joint *curr = &skel->joints[i];
-        struct SQT *sqt = &skel->bind_sqts[i];
 
         vec4_t homo = (vec4_t){0.0f, 0.0f, 0.0f, 1.0f}; 
         vec4_t result;
@@ -616,7 +615,7 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
     glDrawArrays(GL_POINTS, 0, skel->num_joints * 2);
     glDrawArrays(GL_LINES, 0, skel->num_joints * 2);
 
-cleanup:
+    /* cleanup */
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     free(vbuff);
@@ -627,8 +626,8 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
     ASSERT_IN_RENDER_THREAD();
 
     vec3_t vbuff[2];
-    GLint VAO, VBO;
-    GLint shader_prog;
+    GLuint VAO, VBO;
+    GLuint shader_prog;
     GLuint loc;
 
     vec4_t red   = (vec4_t){1.0f, 0.0f, 0.0f, 1.0f};
@@ -683,7 +682,7 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
     }
     glLineWidth(old_width);
 
-cleanup:
+    /* cleanup */
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 }
@@ -694,8 +693,8 @@ void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
     ASSERT_IN_RENDER_THREAD();
 
     vec3_t vbuff[2];
-    GLint VAO, VBO;
-    GLint shader_prog;
+    GLuint VAO, VBO;
+    GLuint shader_prog;
     GLuint loc;
 
     vbuff[0] = *origin; 
@@ -733,7 +732,7 @@ void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
     glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
     glDrawArrays(GL_LINES, 0, 2);
 
-cleanup:
+    /* cleanup */
     glLineWidth(old_width);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
@@ -746,8 +745,8 @@ void R_GL_DrawOBB(const struct entity *ent)
     if(!(ent->flags & ENTITY_FLAG_COLLISION))
         return;
 
-    GLint VAO, VBO;
-    GLint shader_prog;
+    GLuint VAO, VBO;
+    GLuint shader_prog;
     GLuint loc;
     vec4_t blue = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
 
@@ -811,7 +810,7 @@ void R_GL_DrawOBB(const struct entity *ent)
     glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
     glDrawArrays(GL_LINES, 0, ARR_SIZE(vbuff));
 
-cleanup:
+    /* cleanup */
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 }
@@ -821,8 +820,8 @@ void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size,
 {
     ASSERT_IN_RENDER_THREAD();
 
-    GLint VAO, VBO;
-    GLint shader_prog;
+    GLuint VAO, VBO;
+    GLuint shader_prog;
     GLuint loc;
 
     vec3_t vbuff[4] = {
@@ -876,7 +875,7 @@ void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size,
 
     glLineWidth(old_width);
 
-cleanup:
+    /* cleanup */
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 }
@@ -993,8 +992,8 @@ void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float
 {
     ASSERT_IN_RENDER_THREAD();
 
-    GLint VAO, VBO;
-    GLint shader_prog;
+    GLuint VAO, VBO;
+    GLuint shader_prog;
     GLuint loc;
 
     const int NUM_SAMPLES = 48;
@@ -1053,7 +1052,7 @@ void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float
 
     glLineWidth(old_width);
 
-cleanup:
+    /* cleanup */
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 }
@@ -1102,8 +1101,8 @@ void R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t 
     PFM_Mat4x4_Identity(&identity);
 
     /* OpenGL setup */
-    GLint VAO, VBO;
-    GLint shader_prog;
+    GLuint VAO, VBO;
+    GLuint shader_prog;
     GLuint loc;
 
     glGenVertexArrays(1, &VAO);
@@ -1136,7 +1135,7 @@ void R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t 
 
     glLineWidth(old_width);
 
-cleanup:
+    /* cleanup */
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 }
@@ -1163,11 +1162,10 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
 
     struct colored_vert surf_vbuff[*count * 4 * 3];
     struct colored_vert line_vbuff[*count * 4 * 2];
-    GLint VAO, VBO;
-    GLint shader_prog;
+    GLuint VAO, VBO;
+    GLuint shader_prog;
     GLuint loc;
 
-    vec2_t *corners_base = xz_corners;
     struct colored_vert *surf_vbuff_base = surf_vbuff;
     struct colored_vert *line_vbuff_base = line_vbuff;
 
@@ -1279,7 +1277,7 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
     glDrawArrays(GL_LINES, 0, ARR_SIZE(line_vbuff));
     glLineWidth(old_width);
 
-cleanup:
+    /* cleanup */
     glEnable(GL_CULL_FACE);
     glDisable(GL_BLEND);
     glDeleteVertexArrays(1, &VAO);
@@ -1291,8 +1289,8 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
 {
     ASSERT_IN_RENDER_THREAD();
 
-    GLint VAO, VBO;
-    GLint shader_prog;
+    GLuint VAO, VBO;
+    GLuint shader_prog;
     GLuint loc;
     vec3_t line_vbuff[*count * 2];
     vec3_t point_vbuff[*count];
@@ -1364,7 +1362,7 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
     glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(point_vbuff) * sizeof(vec3_t), point_vbuff, GL_STATIC_DRAW);
     glDrawArrays(GL_POINTS, 0, ARR_SIZE(line_vbuff));
 
-cleanup:
+    /* cleanup */
     glLineWidth(old_width);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
@@ -1378,8 +1376,8 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
     const float RAY_LEN = 150.0f;
     const int NUM_SAMPLES = 150;
 
-    GLint VAO, VBO;
-    GLint shader_prog;
+    GLuint VAO, VBO;
+    GLuint shader_prog;
     GLuint loc;
 
     mat4x4_t model;
@@ -1454,7 +1452,7 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
     glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(ray_vbuff) * sizeof(vec3_t), ray_vbuff, GL_STATIC_DRAW);
     glDrawArrays(GL_LINES, 0, ARR_SIZE(ray_vbuff));
 
-cleanup:
+    /* cleanup */
     glLineWidth(old_width);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);

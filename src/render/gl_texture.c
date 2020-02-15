@@ -200,8 +200,7 @@ void R_GL_Texture_Activate(const struct texture *text, GLuint shader_prog)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    GLuint sampler_loc;
-
+    GLuint sampler_loc = 0;
     switch(text->tunit) {
     case GL_TEXTURE0:  sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE0);  break;
     case GL_TEXTURE1:  sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE1);  break;
@@ -257,10 +256,10 @@ void R_GL_Texture_MakeArray(const struct material *mats, size_t num_mats,
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
 
-        GLbyte orig_data[w * h * 3]; 
+        GLubyte orig_data[w * h * 3]; 
         glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, orig_data);
 
-        GLbyte resized_data[CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3];
+        GLubyte resized_data[CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3];
         int res = stbir_resize_uint8(orig_data, w, h, 0, resized_data, CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, 0, 3);
         assert(1 == res);
 
@@ -306,7 +305,7 @@ bool R_GL_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures,
         if(!orig_data)
             goto fail_load;
 
-        GLbyte resized_data[CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3];
+        GLubyte resized_data[CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3];
         int res = stbir_resize_uint8(orig_data, width, height, 0, resized_data, CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, 0, 3);
 
         assert(1 == res);

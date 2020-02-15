@@ -158,6 +158,7 @@ void Settings_Shutdown(void)
     struct setting curr;
 
     kh_foreach(s_settings_table, key, curr, {
+        (void)curr;
         free((char*)key);
     });
     kh_destroy(setting, s_settings_table);

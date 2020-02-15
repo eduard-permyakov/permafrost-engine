@@ -167,7 +167,7 @@ static void n_set_cost_for_tile(struct nav_chunk *chunk,
     assert(FIELD_RES_R / chunk_h == 2);
     assert(FIELD_RES_C / chunk_w == 2);
 
-    const int (*tile_path_map)[2];
+    const int (*tile_path_map)[2] = {0};
 
     switch(tile->type) {
     case TILETYPE_FLAT:
@@ -226,7 +226,7 @@ static void n_set_cost_edge(struct nav_chunk *chunk,
     assert(FIELD_RES_R / chunk_h == 2);
     assert(FIELD_RES_C / chunk_w == 2);
 
-    const int (*tile_path_map)[2];
+    const int (*tile_path_map)[2] = {0};
 
     switch(edge){
     case EDGE_BOT:
@@ -249,6 +249,7 @@ static void n_set_cost_edge(struct nav_chunk *chunk,
             {1,0}, 
             {1,0}
         };  break;
+    default: assert(0);
     }
 
     size_t r_base = tile_r * 2;
@@ -321,7 +322,7 @@ static void n_make_cliff_edges(struct nav_private *priv, const struct tile **til
 static void n_link_chunks(struct nav_chunk *a, enum edge_type a_type, struct coord a_coord,
                           struct nav_chunk *b, enum edge_type b_type, struct coord b_coord)
 {
-    assert((a_type | b_type == EDGE_BOT | EDGE_TOP) || (a_type | b_type == EDGE_LEFT | EDGE_RIGHT));
+    assert(((a_type | b_type) == (EDGE_BOT | EDGE_TOP)) || ((a_type | b_type) == (EDGE_LEFT | EDGE_RIGHT)));
     size_t stride = (a_type & (EDGE_BOT | EDGE_TOP)) ? 1 : FIELD_RES_C;
     size_t line_len = (a_type & (EDGE_BOT | EDGE_TOP)) ? FIELD_RES_C : FIELD_RES_R;
 
@@ -798,11 +799,6 @@ static void n_update_dirty_local_islands(void *nav_private)
 static void n_update_blockers(struct nav_private *priv, vec2_t xz_pos, float range, 
                               vec3_t map_pos, int ref_delta)
 {
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
-
     struct tile_desc tds[256];
     int ntds = N_TilesUnderCircle(priv, xz_pos, range, map_pos, tds, ARR_SIZE(tds));
 
@@ -1710,6 +1706,8 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
 
     /* Convert source and destination positions to tile coordinates */
     bool result;
+    (void)result;
+
     struct tile_desc src_desc, dst_desc;
     result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
     assert(result);
@@ -2178,6 +2176,8 @@ vec2_t N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
 
     /* Convert source and destination positions to tile coordinates */
     bool result;
+    (void)result;
+
     struct tile_desc src_desc, dst_desc;
     result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
     assert(result);

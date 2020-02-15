@@ -193,7 +193,6 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
                             SDL_RWops *stream, void *outmap)
 {
     struct map *map = outmap;
-    char line[MAX_LINE_LEN];
 
     map->width = header->num_cols;
     map->height = header->num_rows;

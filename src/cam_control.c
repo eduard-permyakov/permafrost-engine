@@ -91,6 +91,7 @@ static void fps_cam_on_keydown(void *unused, void *event_arg)
     case SDL_SCANCODE_A: ctx->move_left = true; break;
     case SDL_SCANCODE_S: ctx->move_back = true; break;
     case SDL_SCANCODE_D: ctx->move_right = true; break;
+	default: assert(0);
     }
 }
 
@@ -104,6 +105,7 @@ static void fps_cam_on_keyup(void *unused, void *event_arg)
     case SDL_SCANCODE_A: ctx->move_left = false; break;
     case SDL_SCANCODE_S: ctx->move_back = false; break;
     case SDL_SCANCODE_D: ctx->move_right = false; break;
+	default: assert(0);
     }
 }
 
@@ -131,18 +133,15 @@ static void fps_cam_on_update_end(void *unused1, void *unused2)
 static void rts_cam_on_mousemove(void *unused, void *event_arg)
 {
     struct cam_rts_ctx *ctx = &s_cam_ctx.active_ctx.rts;
-    SDL_Event *e = (SDL_Event*)event_arg;
-
-    int mouse_x, mouse_y; 
-    SDL_GetMouseState(&mouse_x, &mouse_y);
+    SDL_MouseMotionEvent *e = (SDL_MouseMotionEvent*)event_arg;
 
     int width, height;
     Engine_WinDrawableSize(&width, &height);
     
-    ctx->move_up    = (mouse_y == 0);
-    ctx->move_down  = (mouse_y == height - 1);
-    ctx->move_left  = (mouse_x == 0);
-    ctx->move_right = (mouse_x == width - 1);
+    ctx->move_up    = (e->y == 0);
+    ctx->move_down  = (e->y == height - 1);
+    ctx->move_left  = (e->x == 0);
+    ctx->move_right = (e->x == width - 1);
 }
 
 static void rts_cam_on_mousedown(void *unused, void *event_arg)

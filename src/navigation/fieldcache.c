@@ -142,6 +142,8 @@ static void destroy_all_entries(khash_t(idvec) *hash)
 {
     uint32_t key;
     vec_id_t curr;
+    (void)key;
+
     kh_foreach(hash, key, curr, {
         vec_id_destroy(&curr); 
     });
@@ -362,7 +364,6 @@ void N_FC_InvalidateAllAtChunk(struct coord chunk)
      * necessarily be in the caches. */
 
     uint64_t key = key_for_chunk(chunk);
-    extern unsigned long long g_frame_idx;
 
     khiter_t k = kh_get(idvec, s_chunk_lfield_map, key);
     if(k != kh_end(s_chunk_lfield_map)) {
@@ -401,6 +402,7 @@ void N_FC_InvalidateAllThroughChunk(struct coord chunk)
     /* First find all the paths going through the chunk. */
     LRU_FOREACH_SAFE_REMOVE(ffid, &s_ffid_cache, key, ffid_val, {
 
+        (void)ffid_val;
         dest_id_t curr_dest = key_dest(key);
         struct coord curr_chunk = key_chunk(key);
 
@@ -416,7 +418,9 @@ void N_FC_InvalidateAllThroughChunk(struct coord chunk)
     struct flow_field ff_val;
     LRU_FOREACH_SAFE_REMOVE(flow, &s_flow_cache, key, ff_val, {
     
+        (void)ff_val;
         dest_id_t curr_dest = key_dest(key);
+
         if(dest_array_contains(paths, npaths, curr_dest)) {
         
             bool found = lru_flow_remove(&s_flow_cache, key);
@@ -428,7 +432,9 @@ void N_FC_InvalidateAllThroughChunk(struct coord chunk)
     struct LOS_field los_val;
     LRU_FOREACH_SAFE_REMOVE(los, &s_los_cache, key, los_val, {
 
+        (void)los_val;
         dest_id_t curr_dest = key_dest(key);
+
         if(dest_array_contains(paths, npaths, curr_dest)) {
         
             bool found = lru_los_remove(&s_los_cache, key);

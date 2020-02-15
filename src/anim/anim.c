@@ -108,7 +108,6 @@ static void a_make_bind_mat(int joint_idx, const struct skeleton *skel, mat4x4_t
 
 static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struct skeleton *skel, mat4x4_t *out)
 {
-    struct anim_data *priv = ent->anim_private;
     struct anim_ctx *ctx = ent->anim_ctx;
     struct anim_sample *sample = &ctx->active->samples[ctx->curr_frame];
 
@@ -137,7 +136,6 @@ static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struc
 
 void A_InitCtx(const struct entity *ent, const char *idle_clip, unsigned key_fps)
 {
-    struct anim_data *priv = ent->anim_private;
     struct anim_ctx *ctx = ent->anim_ctx;
 
     const struct anim_clip *idle = a_clip_for_name(ent, idle_clip);
@@ -150,7 +148,6 @@ void A_InitCtx(const struct entity *ent, const char *idle_clip, unsigned key_fps
 void A_SetActiveClip(const struct entity *ent, const char *name, 
                      enum anim_mode mode, unsigned key_fps)
 {
-    struct anim_data *priv = ent->anim_private;
     struct anim_ctx *ctx = ent->anim_ctx;
 
     const struct anim_clip *clip = a_clip_for_name(ent, name);
@@ -165,7 +162,6 @@ void A_SetActiveClip(const struct entity *ent, const char *name,
 
 void A_Update(struct entity *ent)
 {
-    struct anim_data *priv = ent->anim_private;
     struct anim_ctx *ctx = ent->anim_ctx;
 
     float frame_period_secs = 1.0f/ctx->key_fps;
@@ -190,6 +186,8 @@ void A_Update(struct entity *ent)
 
                 E_Entity_Notify(EVENT_ANIM_FINISHED, ent->uid, NULL, ES_ENGINE);
                 A_SetActiveClip(ent, ctx->idle->name, ANIM_MODE_LOOP, ctx->key_fps);
+                break;
+            default:
                 break;
             }
         }
@@ -249,9 +247,6 @@ const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent)
 
     ret->inv_bind_poses = (void*)((char*)ret->bind_sqts + num_joints * sizeof(struct SQT));
 
-    struct anim_ctx *ctx = ent->anim_ctx;
-    struct anim_sample *sample =  &ctx->active->samples[ctx->curr_frame];
-
     for(int i = 0; i < ret->num_joints; i++) {
     
         /* Update the inverse bind matrices for the current frame */
@@ -269,8 +264,6 @@ void A_PrepareInvBindMatrices(const struct skeleton *skel)
 
     for(int i = 0; i < skel->num_joints; i++) {
 
-        const struct joint *joint = &skel->joints[i];
-
         mat4x4_t bind_mat;
         a_make_bind_mat(i, skel, &bind_mat);
         PFM_Mat4x4_Inverse(&bind_mat, &skel->inv_bind_poses[i]);
@@ -280,7 +273,6 @@ void A_PrepareInvBindMatrices(const struct skeleton *skel)
 const struct aabb *A_GetCurrPoseAABB(const struct entity *ent)
 {
     assert(ent->flags & ENTITY_FLAG_COLLISION);
-    struct anim_data *priv = ent->anim_private;
     struct anim_ctx *ctx = ent->anim_ctx;
 
     return &ctx->active->samples[ctx->curr_frame].sample_aabb;
@@ -288,9 +280,7 @@ const struct aabb *A_GetCurrPoseAABB(const struct entity *ent)
 
 void A_AddTimeDelta(const struct entity *ent, uint32_t dt)
 {
-    struct anim_data *priv = ent->anim_private;
     struct anim_ctx *ctx = ent->anim_ctx;
-
     ctx->curr_frame_start_ticks += dt;
 }
 

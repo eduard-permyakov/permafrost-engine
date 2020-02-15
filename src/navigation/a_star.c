@@ -70,7 +70,7 @@ KHASH_MAP_INIT_INT64(key_float, float)
 
 static uint64_t coord_to_key(struct coord c)
 {
-    return (((uint64_t)c.r) << 32 | ((uint64_t)c.c) & ~((uint32_t)0));
+    return (((uint64_t)c.r) << 32) | (((uint64_t)c.c) & ~((uint32_t)0));
 }
 
 static uint64_t portal_to_key(const struct portal *p)

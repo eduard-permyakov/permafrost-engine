@@ -759,7 +759,7 @@ bool C_RayRayIntersection2D(struct line_2d l1, struct line_2d l2, vec2_t *out_xz
     if((intersec_point.raw[1] - l2.point.raw[1]) / l2.dir.raw[1] < 0.0f)
         return false;
 
-	*out_xz = intersec_point;
+    *out_xz = intersec_point;
     return true;
 }
 

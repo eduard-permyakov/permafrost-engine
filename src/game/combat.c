@@ -138,8 +138,10 @@ static bool enemies(const struct entity *a, const struct entity *b)
 {
     if(a->faction_id == b->faction_id)
         return false;
+
     enum diplomacy_state ds;
     bool result = G_GetDiplomacyState(a->faction_id, b->faction_id, &ds);
+
     assert(result);
     return (ds == DIPLOMACY_STATE_WAR);
 }
@@ -257,6 +259,7 @@ static void on_30hz_tick(void *user, void *event)
 {
     uint32_t key;
     struct entity *curr;
+    (void)key;
 
     kh_foreach(G_GetDynamicEntsSet(), key, curr, {
 

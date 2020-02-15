@@ -252,7 +252,7 @@ static bool shader_init(const char *text, GLuint *out, GLint type)
     return true;
 }
 
-static bool shader_load_and_init(const char *path, GLint *out, GLint type)
+static bool shader_load_and_init(const char *path, GLuint *out, GLint type)
 {
     ASSERT_IN_RENDER_THREAD();
 

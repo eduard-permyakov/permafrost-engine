@@ -1,14 +1,19 @@
 
 PLAT ?= LINUX
+TYPE ?= DEBUG
 
-# sources 
+# ------------------------------------------------------------------------------
+# Sources 
+# ------------------------------------------------------------------------------
 
 PF_DIRS = $(sort $(dir $(wildcard ./src/*/)))
-PF_SRCS = $(foreach dir,$(PF_DIRS),$(wildcard $(dir)*.c)) 
+PF_SRCS = $(foreach dir,$(PF_DIRS),$(wildcard $(dir)*.c))
 PF_OBJS = $(PF_SRCS:./src/%.c=./obj/%.o)
 PF_DEPS = $(PF_OBJS:%.o=%.d)
 
-# library dependencies
+# ------------------------------------------------------------------------------
+# Library Dependencies
+# ------------------------------------------------------------------------------
 
 GLEW_SRC = ./deps/GLEW
 GLEW_VER = 2.2.0
@@ -20,7 +25,9 @@ SDL2_VER_MINOR = 0.10.0
 PYTHON_SRC = ./deps/Python
 PYTHON_VER_MAJOR = 2.7
 
+# ------------------------------------------------------------------------------
 # Linux
+# ------------------------------------------------------------------------------
 
 LINUX_GLEW_LIB = libGLEW.so.2.2
 LINUX_SDL2_LIB = libSDL2-2.0.so.0
@@ -39,7 +46,9 @@ LINUX_LDFLAGS = \
 	-Xlinker -export-dynamic \
 	-Xlinker -rpath='$$ORIGIN/../lib'
 
+# ------------------------------------------------------------------------------
 # Windows
+# ------------------------------------------------------------------------------
 
 WINDOWS_GLEW_LIB = glew32.dll
 WINDOWS_SDL2_LIB = SDL2.dll
@@ -56,9 +65,12 @@ WINDOWS_LDFLAGS = \
 	-lglew32 \
 	-lpython27 \
 	-lopengl32
+
 WINDOWS_DEFS = -DMS_WIN64
 
-# platform-agnostic
+# ------------------------------------------------------------------------------
+# Platform-Agnostic
+# ------------------------------------------------------------------------------
 
 CC = $($(PLAT)_CC)
 BIN = $($(PLAT)_BIN)
@@ -72,27 +84,43 @@ PYTHON_LIB = $($(PLAT)_PYTHON_LIB)
 SDL2_CONFIG = $($(PLAT)_SDL2_CONFIG)
 GLEW_OPTS = $($(PLAT)_GLEW_OPTS)
 
-CFLAGS = -std=c99 \
+WARNING_FLAGS = \
+	-Wall \
+	-Wno-missing-braces \
+	-Wno-unused-function \
+	-Wno-unused-variable \
+	-Werror
+
+EXTRA_DEBUG_FLAGS = -g
+EXTRA_RELEASE_FLAGS = -DNDEBUG
+EXTRA_FLAGS = $(EXTRA_$(TYPE)_FLAGS)
+
+CFLAGS = \
 	-I$(GLEW_SRC)/include \
 	-I$(SDL2_SRC)/include \
 	-I$(PYTHON_SRC)/Include \
-	-fno-strict-aliasing \
-	-march=native \
+	-std=c99 \
 	-O2 \
-	-pipe \
+	-march=native \
+	-fno-strict-aliasing \
 	-fwrapv \
-	-g
+	$(WARNING_FLAGS) \
+	$(EXTRA_FLAGS)
 
-LDFLAGS = -L./lib/ \
+LDFLAGS = \
+	-L./lib/ \
 	-lm \
 	-lpthread \
 	$(PLAT_LDFLAGS)
 
-DEPS = ./lib/$(GLEW_LIB) \
+DEPS = \
+	./lib/$(GLEW_LIB) \
 	./lib/$(SDL2_LIB) \
 	./lib/$(PYTHON_LIB)
 
-# targets
+# ------------------------------------------------------------------------------
+# Targets
+# ------------------------------------------------------------------------------
 
 .PHONY: download_windows_python
 

@@ -62,7 +62,7 @@ void            S_RunEventHandler(script_opaque_t callable, script_opaque_t user
 /* Decrement reference count for Python objects. 
  * No-op in the case of a NULL-pointer passed in */
 void            S_Release(script_opaque_t obj);
-script_opaque_t S_WrapEngineEventArg(enum eventtype e, void *arg);
+script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg);
 /* Returns 'arg' if this is not a weakref object. Otherwise, return a borrowed
  * reference extracted from the weakref. */
 script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg);

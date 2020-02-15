@@ -118,7 +118,6 @@ void draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, const s
     PFM_Vec3_Scale(&tr_dir, t, &tr_dir);
     PFM_Vec3_Add(&cam_pos, &tr_dir, &tr);
 
-    bool result;
     if(!C_RayIntersectsPlane(cam_pos, tl_dir, ground_plane, &t))
         t = (1e10);
     PFM_Vec3_Scale(&tl_dir, t, &tl_dir);
@@ -457,8 +456,6 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam,
                         vec2_t *center_pos, const int *side_len_px)
 {
     ASSERT_IN_RENDER_THREAD();
-
-    float horiz_width = (*side_len_px) / cos(M_PI/4.0f);
 
     int width, height;
     Engine_WinDrawableSize(&width, &height);
