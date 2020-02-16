@@ -65,6 +65,8 @@
 #define EPSILON                  (1.0f / 1024)
 #define MAX_TILES_PER_LINE       (128)
 
+#define CLAMP(a, min, max)       (MIN(MAX((a), (min)), (max)))
+
 struct row_desc{
     int chunk_r;
     int tile_r;
@@ -556,11 +558,10 @@ static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
         i < vec_size(path); 
         i++, r = vec_AT(path, i).r, c = vec_AT(path, i).c) {
 
-        /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
-        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
-        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
-        float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
-        float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim;
+        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / FIELD_RES_C) * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP( (((float)r) / FIELD_RES_R) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
 
         *corners_base++ = (vec2_t){square_x, square_z};
         *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
@@ -581,7 +582,7 @@ static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&count, sizeof(count)),
-            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -612,11 +613,10 @@ static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_mode
             int c_end = MAX(port->endpoints[0].c, port->endpoints[1].c);
             for(int c = c_start; c <= c_end; c++) {
 
-                /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
-                float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
-                float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
-                float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
-                float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+                float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim;
+                float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim;
+                float square_x = CLAMP(-(((float)c) / FIELD_RES_C) * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+                float square_z = CLAMP( (((float)r) / FIELD_RES_R) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
 
                 *corners_base++ = (vec2_t){square_x, square_z};
                 *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
@@ -636,7 +636,7 @@ static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_mode
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&num_tiles, sizeof(num_tiles)),
-            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -1206,11 +1206,10 @@ void N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
     for(int r = 0; r < FIELD_RES_R; r++) {
     for(int c = 0; c < FIELD_RES_C; c++) {
 
-        /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
-        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
-        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
-        float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
-        float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim;
+        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / FIELD_RES_C) * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP( (((float)r) / FIELD_RES_R) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
 
         *corners_base++ = (vec2_t){square_x, square_z};
         *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
@@ -1232,7 +1231,7 @@ void N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&count, sizeof(count)),
-            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -1262,11 +1261,10 @@ void N_RenderPathFlowField(void *nav_private, const struct map *map,
     for(int r = 0; r < FIELD_RES_R; r++) {
     for(int c = 0; c < FIELD_RES_C; c++) {
 
-        /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
-        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
-        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
-        float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
-        float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim;
+        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / FIELD_RES_C) * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP( (((float)r) / FIELD_RES_R) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
 
         positions_buff[r * FIELD_RES_C + c] = (vec2_t){
             square_x - square_x_len / 2.0f,
@@ -1283,7 +1281,7 @@ void N_RenderPathFlowField(void *nav_private, const struct map *map,
             R_PushArg(positions_buff, sizeof(positions_buff)),
             R_PushArg(dirs_buff, sizeof(dirs_buff)),
             R_PushArg(&count, sizeof(count)),
-            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -1315,11 +1313,10 @@ void N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *chunk_
     for(int r = 0; r < FIELD_RES_R; r++) {
     for(int c = 0; c < FIELD_RES_C; c++) {
 
-        /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
-        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
-        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
-        float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
-        float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim;
+        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / FIELD_RES_C) * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP( (((float)r) / FIELD_RES_R) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
 
         *corners_base++ = (vec2_t){square_x, square_z};
         *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
@@ -1341,7 +1338,7 @@ void N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *chunk_
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&count, sizeof(count)),
-            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -1383,11 +1380,10 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map,
     for(int r = 0; r < FIELD_RES_R; r++) {
     for(int c = 0; c < FIELD_RES_C; c++) {
 
-        /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
-        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
-        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
-        float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
-        float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim;
+        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / FIELD_RES_C) * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP( (((float)r) / FIELD_RES_R) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
 
         positions_buff[r * FIELD_RES_C + c] = (vec2_t){
             square_x - square_x_len / 2.0f,
@@ -1415,7 +1411,7 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map,
             R_PushArg(positions_buff, sizeof(positions_buff)),
             R_PushArg(dirs_buff, sizeof(dirs_buff)),
             R_PushArg(&count, sizeof(count)),
-            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -1426,7 +1422,7 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map,
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&count, sizeof(count)),
-            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
             (void*)G_GetPrevTickMap(),
         },
     });
@@ -1452,11 +1448,10 @@ void N_RenderNavigationBlockers(void *nav_private, const struct map *map,
     for(int r = 0; r < FIELD_RES_R; r++) {
     for(int c = 0; c < FIELD_RES_C; c++) {
 
-        /* Subtract EPSILON to make sure every coordinate is strictly within the map bounds */
-        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim - EPSILON;
-        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim - EPSILON;
-        float square_x = -(((float)c) / FIELD_RES_C) * chunk_x_dim;
-        float square_z =  (((float)r) / FIELD_RES_R) * chunk_z_dim;
+        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim;
+        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / FIELD_RES_C) * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP( (((float)r) / FIELD_RES_R) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
 
         *corners_base++ = (vec2_t){square_x, square_z};
         *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
@@ -1478,7 +1473,7 @@ void N_RenderNavigationBlockers(void *nav_private, const struct map *map,
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
             R_PushArg(&count, sizeof(count)),
-            R_PushArg(&chunk_model, sizeof(chunk_model)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
             (void*)G_GetPrevTickMap(),
         },
     });

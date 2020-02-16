@@ -377,21 +377,21 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
         /* One intersection means that the end of the ray is inside the map */
         if(num_intersect == 1) {
 
-            start_x = intersect_xz[0].raw[0] + EPSILON * line_dir.raw[0];
-            start_z = intersect_xz[0].raw[1] + EPSILON * line_dir.raw[1];
+            start_x = intersect_xz[0].x + EPSILON * line_dir.x;
+            start_z = intersect_xz[0].z + EPSILON * line_dir.z;
         
         }
         /* If the first of the 2 intersection points is closer to the ray origin */
-        else if( line_len(intersect_xz[0].raw[0], intersect_xz[0].raw[1], line.ax, line.az)
-               < line_len(intersect_xz[1].raw[0], intersect_xz[1].raw[1], line.ax, line.az) ) {
+        else if( line_len(intersect_xz[0].x, intersect_xz[0].z, line.ax, line.az)
+               < line_len(intersect_xz[1].x, intersect_xz[1].z, line.ax, line.az) ) {
          
-            start_x = intersect_xz[0].raw[0] + EPSILON * line_dir.raw[0];
-            start_z = intersect_xz[0].raw[1] + EPSILON * line_dir.raw[1];
+            start_x = intersect_xz[0].x + EPSILON * line_dir.x;
+            start_z = intersect_xz[0].z + EPSILON * line_dir.z;
 
          }else{
          
-            start_x = intersect_xz[1].raw[0] + EPSILON * line_dir.raw[0];
-            start_z = intersect_xz[1].raw[1] + EPSILON * line_dir.raw[1];
+            start_x = intersect_xz[1].x + EPSILON * line_dir.x;
+            start_z = intersect_xz[1].z + EPSILON * line_dir.z;
          }
 
     }else {
@@ -407,19 +407,19 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
 
     float t_max_x, t_max_z;
 
-    const int step_c = line_dir.raw[0] <= 0.0f ? 1 : -1;
-    const int step_r = line_dir.raw[1] >= 0.0f ? 1 : -1;
+    const int step_c = line_dir.x <= 0.0f ? 1 : -1;
+    const int step_r = line_dir.z >= 0.0f ? 1 : -1;
 
-    const float t_delta_x = fabs(TILE_X_DIM / line_dir.raw[0]);
-    const float t_delta_z = fabs(TILE_Z_DIM / line_dir.raw[1]);
+    const float t_delta_x = fabs(TILE_X_DIM / line_dir.x);
+    const float t_delta_z = fabs(TILE_Z_DIM / line_dir.z);
 
     struct box bounds = M_Tile_Bounds(res, map_pos, curr_tile_desc);
 
-    t_max_x = (step_c > 0) ? fabs(start_x - (bounds.x - bounds.width)) / fabs(line_dir.raw[0]) 
-                           : fabs(start_x - bounds.x) / fabs(line_dir.raw[0]);
+    t_max_x = (step_c > 0) ? fabs(start_x - (bounds.x - bounds.width)) / fabs(line_dir.x) 
+                           : fabs(start_x - bounds.x) / fabs(line_dir.x);
 
-    t_max_z = (step_r > 0) ? fabs(start_z - (bounds.z + bounds.height)) / fabs(line_dir.raw[1])
-                           : fabs(start_z - bounds.z) / fabs(line_dir.raw[1]);
+    t_max_z = (step_r > 0) ? fabs(start_z - (bounds.z + bounds.height)) / fabs(line_dir.z)
+                           : fabs(start_z - bounds.z) / fabs(line_dir.z);
 
     bool line_ends_inside = C_BoxPointIntersection(line.bx, line.bz, map_box);
     struct tile_desc final_tile_desc;
@@ -467,15 +467,15 @@ bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos,
     struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
 
     /* Recall X increases to the left in our engine */
-    if(point.raw[0] > map_box.x || point.raw[0] < map_box.x - map_box.width)
+    if(point.x > map_box.x || point.x < map_box.x - map_box.width)
         return false;
 
-    if(point.raw[1] < map_box.z || point.raw[1] > map_box.z + map_box.height)
+    if(point.z < map_box.z || point.z > map_box.z + map_box.height)
         return false;
 
     int chunk_r, chunk_c;
-    chunk_r = fabs(map_box.z - point.raw[1]) / CHUNK_WIDTH;
-    chunk_c = fabs(map_box.x - point.raw[0]) / CHUNK_HEIGHT;
+    chunk_r = fabs(map_box.z - point.z) / CHUNK_HEIGHT;
+    chunk_c = fabs(map_box.x - point.x) / CHUNK_WIDTH;
 
     /* Need to account for rounding imprecision when we're at the
      * razor's edge of the map. */
@@ -487,8 +487,8 @@ bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos,
     chunk_base_z = map_box.z + (chunk_r * CHUNK_HEIGHT);
 
     int tile_r, tile_c;
-    tile_r = fabs(chunk_base_z - point.raw[1]) / TILE_X_DIM;
-    tile_c = fabs(chunk_base_x - point.raw[0]) / TILE_Z_DIM;
+    tile_r = fabs(chunk_base_z - point.z) / TILE_Z_DIM;
+    tile_c = fabs(chunk_base_x - point.x) / TILE_X_DIM;
 
     assert(tile_c >= 0 && tile_c < res.tile_w);
     assert(tile_r >= 0 && tile_r < res.tile_h);

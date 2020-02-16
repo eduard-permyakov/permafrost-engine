@@ -51,6 +51,7 @@
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
+#define CLAMP(a, min, max)  (MIN(MAX((a), (min)), (max)))
 
 
 /*****************************************************************************/
@@ -338,20 +339,16 @@ float M_HeightAtPoint(const struct map *map, vec2_t xz)
     float z = xz.raw[1];
 
     int chunk_r, chunk_c;
-    chunk_r =  (z - map->pos.z) / (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE);
-    chunk_c = -(x - map->pos.x) / (TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE);
-    assert(chunk_r >= 0 && chunk_r < map->height);
-    assert(chunk_c >= 0 && chunk_c < map->width);
+    chunk_r = CLAMP( (z - map->pos.z) / (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE), 0, map->height-1);
+    chunk_c = CLAMP(-(x - map->pos.x) / (TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE), 0, map->width-1);
 
     float chunk_off_r = fmod(z - map->pos.z, TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE);
     float chunk_off_c = fmod(-(x - map->pos.x), TILES_PER_CHUNK_WIDTH  * X_COORDS_PER_TILE);
     assert(chunk_off_r >= 0 && chunk_off_c >= 0);
 
     int tile_r, tile_c;    
-    tile_r = chunk_off_r / Z_COORDS_PER_TILE;
-    tile_c = chunk_off_c / X_COORDS_PER_TILE;
-    assert(tile_r >= 0 && tile_r < TILES_PER_CHUNK_HEIGHT);
-    assert(tile_c >= 0 && tile_c < TILES_PER_CHUNK_WIDTH);
+    tile_r = CLAMP(chunk_off_r / Z_COORDS_PER_TILE, 0, TILES_PER_CHUNK_HEIGHT-1);
+    tile_c = CLAMP(chunk_off_c / X_COORDS_PER_TILE, 0, TILES_PER_CHUNK_WIDTH-1);
     
     float tile_frac_width, tile_frac_height;
     tile_frac_width =  fmod(chunk_off_c, X_COORDS_PER_TILE) / X_COORDS_PER_TILE;

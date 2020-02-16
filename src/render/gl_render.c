@@ -1303,8 +1303,8 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
         PFM_Vec2_Scale(&to_add, 2.5f, &to_add);
         PFM_Vec2_Add(&tip, &to_add, &tip);
 
-        vec4_t base_homo = (vec4_t){xz_positions[i].raw[0], 0.0f, xz_positions[i].raw[1], 1.0f};
-        vec4_t tip_homo = (vec4_t){tip.raw[0], 0.0f, tip.raw[1], 1.0f};
+        vec4_t base_homo = (vec4_t){xz_positions[i].x, 0.0f, xz_positions[i].z, 1.0f};
+        vec4_t tip_homo = (vec4_t){tip.x, 0.0f, tip.z, 1.0f};
 
         vec4_t base_ws_homo, tip_ws_homo;
 
@@ -1317,14 +1317,14 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
         tip_ws_homo.z /= base_ws_homo.w;
 
         line_vbuff[line_vbuff_idx] = (vec3_t){
-            xz_positions[i].raw[0],
+            xz_positions[i].x,
             M_HeightAtPoint(map, (vec2_t){base_ws_homo.x, base_ws_homo.z}) + 0.3, 
-            xz_positions[i].raw[1]
+            xz_positions[i].z
         };
         line_vbuff[line_vbuff_idx + 1] = (vec3_t){
-            tip.raw[0],
+            tip.x,
             M_HeightAtPoint(map, (vec2_t){tip_ws_homo.x, tip_ws_homo.z}) + 0.3, 
-            tip.raw[1]
+            tip.z
         };
         point_vbuff[i] = line_vbuff[line_vbuff_idx];
     }
