@@ -78,7 +78,7 @@
                                                                                                 \
     static bool _queue_##name##_resize(queue(name) *queue, size_t new_cap)                      \
     {                                                                                           \
-        type *new_mem = realloc(queue->mem, sizeof(type) * new_cap);                            \
+        type *new_mem = realloc((void*)queue->mem, sizeof(type) * new_cap);                     \
         if(!new_mem)                                                                            \
             return false;                                                                       \
                                                                                                 \
@@ -124,7 +124,7 @@
                                                                                                 \
     scope void queue_##name##_destroy(queue(name) *queue)                                       \
     {                                                                                           \
-        free(queue->mem);                                                                       \
+        free((void*)queue->mem);                                                                \
         memset(queue, 0, sizeof(*queue));                                                       \
     }                                                                                           \
                                                                                                 \

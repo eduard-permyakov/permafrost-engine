@@ -103,10 +103,10 @@ static void save_gl_state(struct water_gl_state *out, GLuint shader_prog)
     glGetFloatv(GL_COLOR_CLEAR_VALUE, out->clear_clr);
 
     GLuint sampler_loc = glGetUniformLocation(shader_prog, GL_U_VIEW_POS);
-    glGetnUniformfv(shader_prog, sampler_loc, sizeof(out->u_cam_pos), out->u_cam_pos.raw);
+    glGetUniformfv(shader_prog, sampler_loc, out->u_cam_pos.raw);
 
     sampler_loc = glGetUniformLocation(shader_prog, GL_U_VIEW);
-    glGetnUniformfv(shader_prog, sampler_loc, sizeof(out->u_view), out->u_view.raw);
+    glGetUniformfv(shader_prog, sampler_loc, out->u_view.raw);
 }
 
 static void restore_gl_state(const struct water_gl_state *in)

@@ -226,7 +226,10 @@ static void n_set_cost_edge(struct nav_chunk *chunk,
     assert(FIELD_RES_R / chunk_h == 2);
     assert(FIELD_RES_C / chunk_w == 2);
 
-    const int (*tile_path_map)[2] = {0};
+    const int (*tile_path_map)[2] = (int[2][2]){
+        {0,0},
+        {0,0}
+    };
 
     switch(edge){
     case EDGE_BOT:
@@ -249,7 +252,8 @@ static void n_set_cost_edge(struct nav_chunk *chunk,
             {1,0}, 
             {1,0}
         };  break;
-    default: assert(0);
+    default: 
+	    assert(0);
     }
 
     size_t r_base = tile_r * 2;

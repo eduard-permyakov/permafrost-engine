@@ -45,15 +45,15 @@ class ObjectsVC(vc.ViewController):
 
     def __init__(self, view):
         self.view = view
-        self.view.objects_list = [os.path.split(o["path"])[-1] for o in scene.OBJECTS_LIST]
+        self.view.objects_list = [(o["path"]).split("/")[-1] for o in scene.OBJECTS_LIST]
         assert(len(scene.OBJECTS_LIST) > 0)
         self.current_object = None
         self.view.mode = self.view.OBJECTS_MODE_PLACE
         self.right_mousebutton_state = pf.SDL_RELEASED
 
     def __object_at_index(self, index):
-        split_path = os.path.split(MODELS_PREFIX_DIR + scene.OBJECTS_LIST[index]["path"])
-        pfobj_dir = os.path.join(split_path[:-1])[0]
+        split_path = (MODELS_PREFIX_DIR + scene.OBJECTS_LIST[index]["path"]).split("/")
+        pfobj_dir = os.path.join(*split_path[:-1])
         pfobj_filename = split_path[-1]
         if scene.OBJECTS_LIST[index]["anim"]:
             ret = pf.AnimEntity(pfobj_dir, pfobj_filename, pfobj_filename.split(".")[0], idle_clip=scene.OBJECTS_LIST[index]["idle"])
