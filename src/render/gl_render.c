@@ -214,7 +214,7 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
         glEnableVertexAttribArray(4);  
         glVertexAttribPointer(5, 3, GL_INT, GL_FALSE, sizeof(struct vertex),
             (void*)offsetof(struct vertex, joint_indices) + 3*sizeof(GLuint));
-        glEnableVertexAttribArray(6);  
+        glEnableVertexAttribArray(5);
 
         /* Attribute 6/7 - joint weights */
         glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
