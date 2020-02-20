@@ -1193,13 +1193,17 @@ static PyObject *PyPf_pickle_object(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_unpickle_object(PyObject *self, PyObject *args)
 {
+    PyObject *obj_str = PyTuple_GET_ITEM(args, 0);
+
     const char *str;
-    if(!PyArg_ParseTuple(args, "s", &str)) {
+    Py_ssize_t len;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
         return NULL;
     }
 
-    SDL_RWops *cmops = SDL_RWFromConstMem(str, strlen(str));
+    SDL_RWops *cmops = SDL_RWFromConstMem(str, len);
     PyObject *ret = S_UnpickleObjgraph(cmops);
     if(!ret) {
         assert(PyErr_Occurred());

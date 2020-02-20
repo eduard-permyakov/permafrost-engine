@@ -170,6 +170,26 @@ static void n_set_cost_for_tile(struct nav_chunk *chunk,
     assert(FIELD_RES_C / chunk_w == 2);
 
     const int (*tile_path_map)[2] = {0};
+    const int clear[2][2] = {
+        {0,0}, 
+        {0,0},
+    };
+    const int bl[2][2] = {
+        {0,0}, 
+        {1,0},
+    };
+    const int br[2][2] = {
+        {0,0}, 
+        {0,1},
+    };
+    const int tl[2][2] = {
+        {1,0}, 
+        {0,0},
+    };
+    const int tr[2][2] = {
+        {0,1}, 
+        {0,0},
+    };
 
     switch(tile->type) {
     case TILETYPE_FLAT:
@@ -177,34 +197,24 @@ static void n_set_cost_for_tile(struct nav_chunk *chunk,
     case TILETYPE_RAMP_NS:
     case TILETYPE_RAMP_EW:
     case TILETYPE_RAMP_WE:
-        tile_path_map = (int[2][2]){
-            {0,0}, 
-            {0,0}
-        };  break;
+        tile_path_map = clear;
+        break;
     case TILETYPE_CORNER_CONCAVE_SW:
     case TILETYPE_CORNER_CONVEX_NE:
-        tile_path_map = (int[2][2]){
-            {0,0}, 
-            {1,0}
-        };  break;
+        tile_path_map = bl;
+        break;
     case TILETYPE_CORNER_CONCAVE_SE:
     case TILETYPE_CORNER_CONVEX_NW:
-        tile_path_map = (int[2][2]){
-            {0,0}, 
-            {0,1}
-        };  break;
+        tile_path_map = br;
+        break;
     case TILETYPE_CORNER_CONCAVE_NW:
     case TILETYPE_CORNER_CONVEX_SE:
-        tile_path_map = (int[2][2]){
-            {1,0}, 
-            {0,0}
-        };  break;
+        tile_path_map = tl;
+        break;
     case TILETYPE_CORNER_CONCAVE_NE:
     case TILETYPE_CORNER_CONVEX_SW:
-        tile_path_map = (int[2][2]){
-            {0,1}, 
-            {0,0}
-        };  break;
+        tile_path_map = tr;
+        break;
     default: assert(0);
     }
 
@@ -229,31 +239,39 @@ static void n_set_cost_edge(struct nav_chunk *chunk,
     assert(FIELD_RES_C / chunk_w == 2);
 
     const int (*tile_path_map)[2] = (int[2][2]){
+        {0,0}, 
         {0,0},
-        {0,0}
+    };
+    const int bot[2][2] = {
+        {0,0}, 
+        {1,1},
+    };
+    const int top[2][2] = {
+        {1,1}, 
+        {0,0},
+    };
+    const int left[2][2] = {
+        {1,0}, 
+        {1,0},
+    };
+    const int right[2][2] = {
+        {0,1}, 
+        {0,1},
     };
 
     switch(edge){
     case EDGE_BOT:
-        tile_path_map = (int[2][2]){
-            {1,1}, 
-            {0,0}
-        };  break;
+        tile_path_map = bot;
+        break;
     case EDGE_TOP:
-        tile_path_map = (int[2][2]){
-            {0,0}, 
-            {1,1}
-        };  break;
+        tile_path_map = top;
+        break;
     case EDGE_LEFT:
-        tile_path_map = (int[2][2]){
-            {0,1}, 
-            {0,1}
-        };  break;
+        tile_path_map = left;
+        break;
     case EDGE_RIGHT:
-        tile_path_map = (int[2][2]){
-            {1,0}, 
-            {1,0}
-        };  break;
+        tile_path_map = right;
+        break;
     default: 
 	    assert(0);
     }

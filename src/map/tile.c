@@ -216,7 +216,7 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
         };
 
         /* Triangles are defined in screen coordinates */
-        vec3_t *first_tri = NULL, *second_tri = NULL;
+        vec3_t first_tri[3] = {0}, second_tri[3] = {0};
 
         switch(tile->type){
         case TILETYPE_CORNER_CONVEX_NE:
@@ -224,8 +224,13 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
         case TILETYPE_CORNER_CONVEX_SW:
         case TILETYPE_CORNER_CONCAVE_SW: 
             {
-                first_tri  = (vec3_t[3]){corners[1], corners[3], corners[0]};
-                second_tri = (vec3_t[3]){corners[2], corners[0], corners[3]};
+                first_tri[0] = corners[1];
+                first_tri[1] = corners[3];
+                first_tri[2] = corners[0];
+
+                second_tri[0] = corners[2];
+                second_tri[1] = corners[0];
+                second_tri[2] = corners[3];
                 break;
             }
         case TILETYPE_CORNER_CONVEX_NW:
@@ -233,8 +238,13 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
         case TILETYPE_CORNER_CONVEX_SE:
         case TILETYPE_CORNER_CONCAVE_SE:
             {
-                first_tri  = (vec3_t[3]){corners[0], corners[1], corners[2]};
-                second_tri = (vec3_t[3]){corners[3], corners[2], corners[1]};
+                first_tri[0] = corners[0];
+                first_tri[1] = corners[1];
+                first_tri[2] = corners[2];
+
+                second_tri[0] = corners[3];
+                second_tri[1] = corners[2];
+                second_tri[2] = corners[1];
                 break;
             }
         default: assert(0);

@@ -91,7 +91,7 @@ static void fps_cam_on_keydown(void *unused, void *event_arg)
     case SDL_SCANCODE_A: ctx->move_left = true; break;
     case SDL_SCANCODE_S: ctx->move_back = true; break;
     case SDL_SCANCODE_D: ctx->move_right = true; break;
-	default: assert(0);
+	default: break;
     }
 }
 
@@ -105,7 +105,7 @@ static void fps_cam_on_keyup(void *unused, void *event_arg)
     case SDL_SCANCODE_A: ctx->move_left = false; break;
     case SDL_SCANCODE_S: ctx->move_back = false; break;
     case SDL_SCANCODE_D: ctx->move_right = false; break;
-	default: assert(0);
+	default: break;
     }
 }
 

@@ -109,7 +109,7 @@ static void process_sdl_events(void)
         UI_HandleEvent(&event);
 
         vec_event_push(&s_prev_tick_events, event);
-        assert(vec_size(&s_prev_tick_events) <= 2048);
+        assert(vec_size(&s_prev_tick_events) <= 8192);
 
         E_Global_Notify(event.type, &vec_AT(&s_prev_tick_events, 
             vec_size(&s_prev_tick_events)-1), ES_ENGINE);
@@ -310,7 +310,7 @@ static bool engine_init(char **argv)
     g_main_thread_id = SDL_ThreadID();
 
     vec_event_init(&s_prev_tick_events);
-    if(!vec_event_resize(&s_prev_tick_events, 2048))
+    if(!vec_event_resize(&s_prev_tick_events, 8192))
         return false;
 
     /* Initialize 'Settings' before any subsystem to allow all of them 

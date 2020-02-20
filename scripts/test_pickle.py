@@ -469,7 +469,7 @@ def test_pickle_sysfloatinfo():
 
 def test_pickle_nullimporter():
 
-    n1 = imp.NullImporter("...")
+    n1 = imp.NullImporter("__test__")
     s = pf.pickle_object(n1)
     n2 = pf.unpickle_object(s)
     assert type(n1) == type(n2)
@@ -994,7 +994,7 @@ def test_pickle_stentry():
 
 def test_pickle_zipimporter():
 
-    libdir = [d for d in sys.path if d.endswith('lib/python2.7')][0]
+    libdir = [d for d in sys.path if d.endswith('lib/python2.7') or d.endswith('lib\lib')][0]
     z1 = zipimport.zipimporter(libdir + '/test/zipdir.zip')
     s = pf.pickle_object(z1)
     z2 = pf.unpickle_object(s)

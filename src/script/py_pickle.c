@@ -90,6 +90,7 @@ typedef void *mod_ty; //symtable.h wants this
             #op, (unsigned)vec_size(&ctx->stack),                               \
             (unsigned)vec_size(&ctx->mark_stack),                               \
             __FILE__, __LINE__);                                                \
+        fflush(stdout);                                                         \
         Py_DECREF(flag);                                                        \
     }while(0)
 
@@ -104,6 +105,7 @@ typedef void *mod_ty; //symtable.h wants this
         PyObject *repr = PyObject_Repr(obj);                                    \
         printf("[P] %-24s: (%-36s:%4d) [0x%p] %s\n", obj->ob_type->tp_name,     \
             __FILE__, __LINE__, (void*)obj, PyString_AS_STRING(repr));          \
+        fflush(stdout);                                                         \
         Py_DECREF(flag);                                                        \
         Py_DECREF(repr);                                                        \
     }while(0)
@@ -451,6 +453,7 @@ static struct pickle_entry s_type_dispatch_table[] = {
     {.type = NULL, /*&PySet_Type*/          .picklefunc = set_pickle                    }, /* set() */
 #ifdef Py_USING_UNICODE
     {.type = NULL, /*&PyUnicode_Type*/      .picklefunc = unicode_pickle                }, /* unicode() */
+    {.type = NULL, /*&EncodingMapType*/     .picklefunc = placeholder_inst_pickle       }, /* TBD */
 #endif
     {.type = NULL, /*&PySlice_Type*/        .picklefunc = slice_pickle                  }, /* slice() */
     {.type = NULL, /*&PyStaticMethod_Type*/ .picklefunc = static_method_pickle          }, /* staticmethod() */
@@ -516,9 +519,9 @@ static struct pickle_entry s_type_dispatch_table[] = {
 
     /* The following builtin types are are from the _sre module, which is compiled
      * as part of the interpreter. Not supported for now. */
-    {.type = NULL, /* &Match_Type */        .picklefunc = NULL                          },
-    {.type = NULL, /* &Pattern_Type */      .picklefunc = NULL                          },
-    {.type = NULL, /* &Scanner_Type */      .picklefunc = NULL                          },
+    {.type = NULL, /* &Match_Type */        .picklefunc = placeholder_inst_pickle       },
+    {.type = NULL, /* &Pattern_Type */      .picklefunc = placeholder_inst_pickle       },
+    {.type = NULL, /* &Scanner_Type */      .picklefunc = placeholder_inst_pickle       },
 
     /* This is derived from an existing dictionary object using the PyDictProxy API. 
      * The only way to get a dictproxy object via scripting is to access the __dict__
@@ -741,6 +744,8 @@ static const char *s_extra_indexed_mods[] = {
     "zipimport",
 };
 
+static size_t(*s_saved_writefunc)(SDL_RWops*,const void*,size_t,size_t);
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -928,6 +933,47 @@ static void load_private_type_refs(void)
     assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "tupleiterator"));
     Py_DECREF(tmp);
 
+    PyObject *re_mod = PyDict_GetItemString(PySys_GetObject("modules"), "re");
+    if(re_mod) {
+        /* _sre: Match_Type */
+        idx = dispatch_idx_for_picklefunc(zip_importer_pickle) + 1;
+        tmp = PyObject_CallMethod(re_mod, "match", "(ss)", "", "");
+        s_type_dispatch_table[idx].type = tmp->ob_type;
+        assert(strstr(s_type_dispatch_table[idx].type->tp_name, "SRE_Match"));
+        Py_DECREF(tmp);
+
+        /* _sre: Pattern_Type */
+        ++idx;
+        tmp = PyObject_CallMethod(re_mod, "compile", "(s)", "");
+        s_type_dispatch_table[idx].type = tmp->ob_type;
+        assert(strstr(s_type_dispatch_table[idx].type->tp_name, "SRE_Pattern"));
+
+        /* _sre: Scanner_Type */
+        ++idx;
+        PyObject *scanner = PyObject_CallMethod(tmp, "scanner", "(s)", "");
+        s_type_dispatch_table[idx].type = scanner->ob_type;
+        assert(strstr(s_type_dispatch_table[idx].type->tp_name, "SRE_Scanner"));
+        Py_DECREF(scanner);
+        Py_DECREF(tmp);
+    }
+
+#ifdef Py_USING_UNICODE
+    PyObject *codecs_mod = PyDict_GetItemString(PySys_GetObject("modules"), "codecs");
+    PyObject *enc_mod = PyImport_ImportModule("encodings.iso8859_3");
+    if(codecs_mod && enc_mod) {
+
+        /* EncodingMapType */
+        idx = dispatch_idx_for_picklefunc(unicode_pickle) + 1;
+        PyObject *dec_table = PyObject_GetAttrString(enc_mod, "decoding_table");
+        tmp = PyObject_CallMethod(codecs_mod, "charmap_build", "(O)", dec_table); 
+        Py_DECREF(dec_table);
+
+        s_type_dispatch_table[idx].type = tmp->ob_type;
+        assert(strstr(s_type_dispatch_table[idx].type->tp_name, "EncodingMap"));
+    }
+    Py_XDECREF(enc_mod);
+#endif
+
     assert(!PyErr_Occurred());
 }
 
@@ -947,6 +993,7 @@ static void load_builtin_types(void)
     s_type_dispatch_table[base_idx++].type = &PySet_Type;
 #ifdef Py_USING_UNICODE
     s_type_dispatch_table[base_idx++].type = &PyUnicode_Type;
+    base_idx++;
 #endif
     s_type_dispatch_table[base_idx++].type = &PySlice_Type;
     s_type_dispatch_table[base_idx++].type = &PyStaticMethod_Type;
@@ -1178,7 +1225,7 @@ fail:
 
 static PyObject *qualname_new_ref(const char *qualname)
 {
-    char copy[strlen(qualname)];
+    char copy[strlen(qualname) + 1];
     strcpy(copy, qualname);
 
     const char *modname = copy;
@@ -1726,108 +1773,20 @@ fail:
 }
 
 #ifdef Py_USING_UNICODE
-
-/* from cPickle:
-   A copy of PyUnicode_EncodeRawUnicodeEscape() that also translates
-   backslash and newline characters to \uXXXX escapes. */
-static PyObject *
-modified_EncodeRawUnicodeEscape(const Py_UNICODE *s, Py_ssize_t size)
-{
-    PyObject *repr;
-    char *p;
-    char *q;
-
-    static const char *hexdigit = "0123456789abcdef";
-#ifdef Py_UNICODE_WIDE
-    const Py_ssize_t expandsize = 10;
-#else
-    const Py_ssize_t expandsize = 6;
-#endif
-
-    if (size > PY_SSIZE_T_MAX / expandsize)
-        return PyErr_NoMemory();
-
-    repr = PyString_FromStringAndSize(NULL, expandsize * size);
-    if (repr == NULL)
-        return NULL;
-    if (size == 0)
-        return repr;
-
-    p = q = PyString_AS_STRING(repr);
-    while (size-- > 0) {
-        Py_UNICODE ch = *s++;
-#ifdef Py_UNICODE_WIDE
-        /* Map 32-bit characters to '\Uxxxxxxxx' */
-        if (ch >= 0x10000) {
-            *p++ = '\\';
-            *p++ = 'U';
-            *p++ = hexdigit[(ch >> 28) & 0xf];
-            *p++ = hexdigit[(ch >> 24) & 0xf];
-            *p++ = hexdigit[(ch >> 20) & 0xf];
-            *p++ = hexdigit[(ch >> 16) & 0xf];
-            *p++ = hexdigit[(ch >> 12) & 0xf];
-            *p++ = hexdigit[(ch >> 8) & 0xf];
-            *p++ = hexdigit[(ch >> 4) & 0xf];
-            *p++ = hexdigit[ch & 15];
-        }
-        else
-#else
-        /* Map UTF-16 surrogate pairs to '\U00xxxxxx' */
-        if (ch >= 0xD800 && ch < 0xDC00) {
-            Py_UNICODE ch2;
-            Py_UCS4 ucs;
-
-            ch2 = *s++;
-            size--;
-            if (ch2 >= 0xDC00 && ch2 <= 0xDFFF) {
-                ucs = (((ch & 0x03FF) << 10) | (ch2 & 0x03FF)) + 0x00010000;
-                *p++ = '\\';
-                *p++ = 'U';
-                *p++ = hexdigit[(ucs >> 28) & 0xf];
-                *p++ = hexdigit[(ucs >> 24) & 0xf];
-                *p++ = hexdigit[(ucs >> 20) & 0xf];
-                *p++ = hexdigit[(ucs >> 16) & 0xf];
-                *p++ = hexdigit[(ucs >> 12) & 0xf];
-                *p++ = hexdigit[(ucs >> 8) & 0xf];
-                *p++ = hexdigit[(ucs >> 4) & 0xf];
-                *p++ = hexdigit[ucs & 0xf];
-                continue;
-            }
-            /* Fall through: isolated surrogates are copied as-is */
-            s--;
-            size++;
-        }
-#endif
-        /* Map 16-bit characters to '\uxxxx' */
-        if (ch >= 256 || ch == '\\' || ch == '\n') {
-            *p++ = '\\';
-            *p++ = 'u';
-            *p++ = hexdigit[(ch >> 12) & 0xf];
-            *p++ = hexdigit[(ch >> 8) & 0xf];
-            *p++ = hexdigit[(ch >> 4) & 0xf];
-            *p++ = hexdigit[ch & 15];
-        }
-        /* Copy everything else as-is */
-        else
-            *p++ = (char) ch;
-    }
-    *p = '\0';
-    _PyString_Resize(&repr, p - q);
-    return repr;
-}
-
 static int unicode_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
+    assert(PyUnicode_Check(obj));
 
     const char unicode = UNICODE;
     CHK_TRUE(rw->write(rw, &unicode, 1, 1), fail);
 
-    PyObject *repr = modified_EncodeRawUnicodeEscape(PyUnicode_AS_UNICODE(obj),
-        PyUnicode_GET_SIZE(obj));
-    CHK_TRUE(repr, fail);
-    CHK_TRUE(rw->write(rw, PyString_AS_STRING(repr), PyString_GET_SIZE(repr), 1), fail);
-    CHK_TRUE(rw->write(rw, "\n", 1, 1), fail);
+    PyObject *str = PyUnicode_EncodeUTF7(PyUnicode_AS_UNICODE(obj), PyUnicode_GET_SIZE(obj), true, true, "strict"); 
+    assert(strlen(PyString_AS_STRING(str)) == PyString_GET_SIZE(str));
+    CHK_TRUE(rw->write(rw, PyString_AS_STRING(str), PyString_GET_SIZE(str), 1), fail);
+    vec_pobj_push(&ctx->to_free, str);
+
+    CHK_TRUE(rw->write(rw, "\0\n", 2, 1), fail);
     return 0;
 
 fail:
@@ -1975,10 +1934,14 @@ static int long_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     TRACE_PICKLE(obj);
 
     char str[32];
-    long l = PyLong_AsLong(obj);
+    long long l = PyLong_AsLongLong(obj);
 
     str[0] = LONG;
-    PyOS_snprintf(str + 1, sizeof(str) - 1, "%ld\n", l);
+#if defined(_WIN32)
+    PyOS_snprintf(str + 1, sizeof(str) - 1, "%I64d\n", l);
+#else
+    PyOS_snprintf(str + 1, sizeof(str) - 1, "%lld\n", l);
+#endif
     CHK_TRUE(rw->write(rw, str, 1, strlen(str)), fail);
     return 0;
 
@@ -2346,9 +2309,9 @@ static int file_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     PyFileObject *file = (PyFileObject*)obj;
     assert(PyString_Check(file->f_name));
 
-    if(file->f_fp == stdin
-    || file->f_fp == stdout
-    || file->f_fp == stderr) {
+    if(file->f_fp == stdin  || !strcmp(PyString_AS_STRING(file->f_name), "<stdin>")
+    || file->f_fp == stdout || !strcmp(PyString_AS_STRING(file->f_name), "<stdout>")
+    || file->f_fp == stderr || !strcmp(PyString_AS_STRING(file->f_name), "<stderr>")) {
         return builtin_pickle(ctx, obj, rw);    
     }
 
@@ -3023,10 +2986,11 @@ static int seq_iter_pickle_with_op(struct pickle_ctx *ctx, PyObject *obj, SDL_RW
     vec_pobj_push(&ctx->to_free, index);
     CHK_TRUE(pickle_obj(ctx, index, rw), fail);
 
-    if(seq->it_seq)
+    if(seq->it_seq) {
         CHK_TRUE(pickle_obj(ctx, seq->it_seq, rw), fail);
-    else
+    }else {
         CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+    }
 
     const char ops[]= {PF_EXTEND, ext_op};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
@@ -3395,13 +3359,13 @@ static int op_long(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     errno = 0;
     char *endptr;
-    long l = strtol(buff, &endptr, 0);
+    long long l = strtoll(buff, &endptr, 0);
     if (errno || (*endptr != '\n') || (endptr[1] != '\0')) {
         SET_RUNTIME_EXC("Bad long in pickle stream [offset: %ld]", (long)rw->seek(rw, RW_SEEK_CUR, 0));
         goto fail;
     }
 
-    vec_pobj_push(&ctx->stack, PyLong_FromLong(l));
+    vec_pobj_push(&ctx->stack, PyLong_FromLongLong(l));
     return 0;
 
 fail:
@@ -3731,10 +3695,12 @@ static int op_unicode(struct unpickle_ctx *ctx, SDL_RWops *rw)
     do { 
         CHK_TRUE(SDL_RWread(rw, &c, 1, 1), fail);
         CHK_TRUE(vec_char_push(&str, c), fail);
-    }while(c != '\n');
-    vec_AT(&str, vec_size(&str)-1) = '\0';
+    }while(c != '\0');
 
-    PyObject *unicode = PyUnicode_DecodeRawUnicodeEscape(str.array, vec_size(&str)-1, NULL);
+    CHK_TRUE(SDL_RWread(rw, &c, 1, 1), fail); /* consume newline */
+
+    assert(strlen(str.array) == vec_size(&str) - 1);
+    PyObject *unicode = PyUnicode_DecodeUTF7(str.array, vec_size(&str)-1, "strict");
     CHK_TRUE(unicode, fail);
 
     vec_pobj_push(&ctx->stack, unicode);
@@ -5012,7 +4978,7 @@ static int op_ext_seqiter_with_type(struct unpickle_ctx *ctx, SDL_RWops *rw, PyT
         retval->it_seq = seq;
         Py_INCREF(seq);
     }else{
-        retval->it_seq = seq; 
+        retval->it_seq = NULL; 
     }
     retval->it_index = PyLong_AsLong(index);
     PyObject_GC_Track(retval);
@@ -5032,7 +4998,7 @@ static int op_ext_listiter(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_LISTITER, ctx);
 
-    int idx = dispatch_idx_for_picklefunc(tuple_iter_pickle);
+    int idx = dispatch_idx_for_picklefunc(list_iter_pickle);
     PyTypeObject *type = s_type_dispatch_table[idx].type;
     return op_ext_seqiter_with_type(ctx, rw, type);
 }
@@ -5701,8 +5667,8 @@ static int op_ext_stentry(struct unpickle_ctx *ctx, SDL_RWops *rw)
     PyObject *ste_symbols = vec_pobj_pop(&ctx->stack);
     PyObject *ste_id = vec_pobj_pop(&ctx->stack);
 
-    if(!PyInt_Check(ste_id)) {
-        SET_RUNTIME_EXC("PF_STENTRY: Expecting int object on TOS15");
+    if(!PyInt_Check(ste_id) && !PyLong_Check(ste_id)) {
+        SET_RUNTIME_EXC("PF_STENTRY: Expecting int or long object on TOS15");
         goto fail_typecheck;
     }
 
@@ -6255,7 +6221,7 @@ static int op_ext_nullimporter(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_NULLIMPORTER, ctx);
 
-    PyObject *args = PyTuple_Pack(1, PyString_FromString("...")); /* Pass any invalid path; it's not saved */
+    PyObject *args = PyTuple_Pack(1, PyString_FromString("__test__")); /* Pass any invalid path; it's not saved */
     PyObject *ret = PyObject_Call((PyObject*)&PyNullImporter_Type, args, NULL);
     Py_DECREF(args);
     assert(ret);
@@ -6578,7 +6544,7 @@ PyObject *S_UnpickleObjgraph(SDL_RWops *stream)
         unpickle_func_t upf = xtend ? s_ext_op_dispatch_table[op]
                                     : s_op_dispatch_table[op];
         if(!upf) {
-            SET_RUNTIME_EXC("Bad %sopcode %c", (xtend ? "extended " : ""), op);
+            SET_RUNTIME_EXC("Bad %sopcode %c[%d]", (xtend ? "extended " : ""), op, (int)op);
             goto err;
         }
         CHK_TRUE(upf(&ctx, stream) == 0, err);
