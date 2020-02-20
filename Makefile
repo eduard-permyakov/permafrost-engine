@@ -187,15 +187,15 @@ clean:
 	rm -rf $(PF_OBJS) $(PF_DEPS) $(BIN) 
 
 run:
-	@./bin/pf ./ ./scripts/rts/main.py
+	@$(BIN) ./ ./scripts/rts/main.py
 
 run_editor:
-	@./bin/pf ./ ./scripts/editor/main.py
+	@$(BIN) ./ ./scripts/editor/main.py
 
 launchers:
 ifeq ($(PLAT),WINDOWS)
-	make -C launcher BIN_PATH=$(BIN) SCRIPT_PATH="./scripts/rts/main.py" BIN="../demo.exe" launcher
-	make -C launcher BIN_PATH=$(BIN) SCRIPT_PATH="./scripts/editor/main.py" BIN="../editor.exe" launcher
+	make -C launcher BIN_PATH='.\\\\lib\\\\pf.exe' SCRIPT_PATH="./scripts/rts/main.py" BIN="../demo.exe" launcher
+	make -C launcher BIN_PATH='.\\\\lib\\\\pf.exe' SCRIPT_PATH="./scripts/editor/main.py" BIN="../editor.exe" launcher
 else
 	make -C launcher BIN_PATH=$(BIN) SCRIPT_PATH="./scripts/rts/main.py" BIN="../demo" launcher
 	make -C launcher BIN_PATH=$(BIN) SCRIPT_PATH="./scripts/editor/main.py" BIN="../editor" launcher

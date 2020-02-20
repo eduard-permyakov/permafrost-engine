@@ -17,14 +17,13 @@ obj/res.o: pf.rc
 
 launcher: obj/res.o
 	mkdir -p obj
-	$(CROSS_COMPILE)gcc main.c obj/res.o -DBIN_PATH=$(BIN_PATH) -DSCRIPT_PATH=$(SCRIPT_PATH) -o $(BIN)
+	$(CROSS_COMPILE)gcc main.c obj/res.o -DBIN_PATH=$(BIN_PATH) -DSCRIPT_PATH=$(SCRIPT_PATH) -Wl,-subsystem,windows -o $(BIN)
 
-else #PLAT == WINDOWS
+else #PLAT != WINDOWS
 
 launcher:
 	mkdir -p obj
 	$(CROSS_COMPILE)gcc main.c -DBIN_PATH=$(BIN_PATH) -DSCRIPT_PATH=$(SCRIPT_PATH) -o $(BIN)
 
-endif #PLAT != WINDOWS
-
+endif
 

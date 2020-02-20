@@ -35,10 +35,6 @@
 
 #include <stdlib.h>
 
-#if defined(_WIN32)
-#include <windows.h>
-#endif
-
 #ifndef BIN_PATH
 #error "BIN_PATH must be defined"
 #endif
@@ -51,12 +47,32 @@
 #define STR(s) STR2(s)
 
 #if defined(_WIN32)
+#include <windows.h>
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, 
                      LPSTR lpCmdLine, int nCmdShow)
+{
+    STARTUPINFO si;
+    PROCESS_INFORMATION pi;
+    DWORD ret;
+
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
+
+    LPTSTR cmdline = STR(BIN_PATH) " .\\ " STR(SCRIPT_PATH);
+    if(!CreateProcess(NULL, cmdline, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+        return GetLastError();
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    GetExitCodeProcess(pi.hProcess, &ret);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return ret;
+}
 #else
 int main(int argc, char **argv)
-#endif
 {
-    system(STR(BIN_PATH) " ./ " STR(SCRIPT_PATH));
+    return system(STR(BIN_PATH) " ./ " STR(SCRIPT_PATH));
 }
+#endif
 
