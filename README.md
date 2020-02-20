@@ -51,9 +51,9 @@ It is made in the image of old classics, but incorporating some modern ideas.
 
 ## Dependencies ##
 
-* SDL2 2.0.7
+* SDL2 2.0.10
 * GLEW 2.1.0
-* python 2.7.13
+* python 2.7.17
 * stb_image.h, stb_image_resize.h
 * khash.h
 * nuklear.h
@@ -63,23 +63,36 @@ along with the game binary if desired.
 
 ## Building Permafrost Engine ##
 
-#### On Linux ####
+#### For Linux ####
 
 1. `git clone --recursive https://github.com/eduard-permyakov/permafrost-engine.git`
 2. `cd permafrost-engine`
-3. `make deps` to build the shared library dependencies to `./lib`
+3. `make deps` (to build the shared library dependencies to `./lib`)
 4. `make pf`
-5. `make run` to run the demo or `make run_editor` to run the map editor
 
-#### On Windows ####
+Now you can invoke `make run` to launch the demo or `make run_editor` to launch the map editor.
+Optionally, invoke `make launchers` to create the `./demo` and `./editor` binaries which don't 
+require any arguments.
 
-1. Python must be compiled using MSVC build tools and the solution file found in the
-   the source's `PCbuild` directory. Afterwards, copy `python27.dll`(and extension shared
-   libraries if you wish) and the `Lib` folder to `./lib`. Alternatively, you may try 
-   to link against an existing Python installation elsewhere on your system.
-2. The rest of the source code can be built with MinGW and MSYS using largely the same steps
-   as on Linux.
-3. `run.bat` or `run_editor.bat` will launch the binary with appropriate arguments.
+#### For Windows ####
+
+Python must be either compiled using MSVC build tools and the solution file found in the
+the source's `PCbuild` directory, or obtained in binary form (https://www.python.org/download/releases/2.7/). 
+Prior to building, copy `python27.dll`, as well as the `Lib` and `DLLs` folders from the Python 
+installation directory to `./lib`. Copy the file `include/pyconfig.h` from the installation directory
+to `./deps/Python/Include/`.
+
+The rest of the source code can be built using the mingw-w64 cross-compilation toolchain 
+(http://mingw-w64.org/doku.php) using largely the same steps as for Linux. Passing `PLAT=WINDOWS` 
+to the make environment is the only required change.
+
+The compliation can either be done on a Linux host, or natively on Windows using MSYS2 (https://www.msys2.org/).
+
+1. `git clone --recursive https://github.com/eduard-permyakov/permafrost-engine.git`
+2. `cd permafrost-engine`
+3. `make deps PLAT=WINDOWS`
+4. `make pf PLAT=WINDOWS`
+5. `make launchers PLAT=WINDOWS`
 
 ## License ##
 
