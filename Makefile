@@ -16,12 +16,7 @@ PF_DEPS = $(PF_OBJS:%.o=%.d)
 # ------------------------------------------------------------------------------
 
 GLEW_SRC = ./deps/GLEW
-GLEW_VER = 2.2.0
-
 SDL2_SRC = ./deps/SDL2
-SDL2_VER_MAJOR = 2.0
-SDL2_VER_MINOR = 0.10.0
-
 PYTHON_SRC = ./deps/Python
 PYTHON_VER_MAJOR = 2.7
 
@@ -180,7 +175,7 @@ $(BIN): $(PF_OBJS)
 
 -include $(PF_DEPS)
 
-.PHONY: pf clean run run_editor clean_deps
+.PHONY: pf clean run run_editor clean_deps launchers
 
 pf: $(BIN)
 
@@ -196,4 +191,13 @@ run:
 
 run_editor:
 	@./bin/pf ./ ./scripts/editor/main.py
+
+launchers:
+ifeq ($(PLAT),WINDOWS)
+	make -C launcher BIN_PATH=$(BIN) SCRIPT_PATH="./scripts/rts/main.py" BIN="../demo.exe" launcher
+	make -C launcher BIN_PATH=$(BIN) SCRIPT_PATH="./scripts/editor/main.py" BIN="../editor.exe" launcher
+else
+	make -C launcher BIN_PATH=$(BIN) SCRIPT_PATH="./scripts/rts/main.py" BIN="../demo" launcher
+	make -C launcher BIN_PATH=$(BIN) SCRIPT_PATH="./scripts/editor/main.py" BIN="../editor" launcher
+endif
 
