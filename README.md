@@ -77,7 +77,7 @@ require any arguments.
 #### For Windows ####
 
 Python must be either compiled using MSVC build tools and the solution file found in the
-the source's `PCbuild` directory, or obtained in binary form (https://www.python.org/download/releases/2.7/). 
+the source's `PCbuild` directory, or obtained in binary form (https://www.python.org/downloads/release/python-2717/). 
 Prior to building, copy `python27.dll`, as well as the `Lib` and `DLLs` folders from the Python 
 installation directory to `./lib`. Copy the file `include/pyconfig.h` from the installation directory
 to `./deps/Python/Include/`.
