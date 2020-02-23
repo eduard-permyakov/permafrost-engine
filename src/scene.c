@@ -38,6 +38,7 @@
 #include "script/public/script.h"
 #include "game/public/game.h"
 #include "lib/public/pf_string.h"
+#include "lib/public/attr.h"
 
 #include <stdio.h>
 #include <SDL.h>
@@ -50,82 +51,6 @@ __KHASH_IMPL(attr, extern, kh_cstr_t, struct attr, 1, kh_str_hash_func, kh_str_h
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
-
-static bool scene_parse_att(SDL_RWops *stream, struct attr *out, bool anon)
-{
-    char line[MAX_LINE_LEN];
-    READ_LINE(stream, line, fail);
-    char *saveptr;
-    char *token;
-
-    if(!anon) {
-        token = pf_strtok_r(line, " \t", &saveptr);
-
-        strncpy(out->key, token, sizeof(out->key)); 
-        out->key[sizeof(out->key)-1] = '\0';
-
-        token = pf_strtok_r(NULL, " \t", &saveptr);
-    }else{
-        token = pf_strtok_r(line, " \t", &saveptr);
-    }
-
-    if(!strcmp(token, "string")) {
-
-        out->type = TYPE_STRING;
-        token = pf_strtok_r(NULL, " \t", &saveptr);
-        if(!sscanf(token, "%63s", out->val.as_string))
-            goto fail;
-
-    }else if(!strcmp(token, "quat")) {
-
-        out->type = TYPE_QUAT;
-        token = token + strlen(token) + 1;
-        if(!sscanf(token, "%f %f %f %f", 
-            &out->val.as_quat.x, &out->val.as_quat.y, &out->val.as_quat.z, &out->val.as_quat.w))
-            goto fail;
-
-    }else if(!strcmp(token, "vec3")) {
-
-        out->type = TYPE_VEC3;
-        token = token + strlen(token) + 1;
-        if(!sscanf(token, "%f %f %f", 
-            &out->val.as_vec3.x, &out->val.as_vec3.y, &out->val.as_vec3.z))
-            goto fail;
-
-    }else if(!strcmp(token, "bool")) {
-
-        out->type = TYPE_BOOL;
-        token = pf_strtok_r(NULL, " \t", &saveptr);
-        int tmp;
-        if(!sscanf(token, "%d", &tmp))
-            goto fail;
-        if(tmp != 0 && tmp != 1)
-            goto fail;
-        out->val.as_bool = tmp;
-
-    }else if(!strcmp(token, "float")) {
-
-        out->type = TYPE_FLOAT;
-        token = pf_strtok_r(NULL, " \t", &saveptr);
-        if(!sscanf(token, "%f", &out->val.as_float))
-            goto fail;
-
-    }else if(!strcmp(token, "int")) {
-
-        out->type = TYPE_INT;
-        token = pf_strtok_r(NULL, " \t", &saveptr);
-        if(!sscanf(token, "%d", &out->val.as_int))
-            goto fail;
-
-    }else {
-        goto fail;
-    }
-
-    return true;
-
-fail:
-    return false;
-}
 
 static bool scene_load_entity(SDL_RWops *stream)
 {
@@ -147,7 +72,7 @@ static bool scene_load_entity(SDL_RWops *stream)
 
     for(int i = 0; i < num_atts; i++) {
         struct attr attr;
-        if(!scene_parse_att(stream, &attr, false))
+        if(!Attr_Parse(stream, &attr, true))
             goto fail_parse;
 
         int ret;
@@ -161,7 +86,7 @@ static bool scene_load_entity(SDL_RWops *stream)
             struct attr const_arg;
             
             for(int j = 0; j < num_args; j++) {
-                if(!scene_parse_att(stream, &const_arg, true)) {
+                if(!Attr_Parse(stream, &const_arg, false)) {
                     vec_attr_destroy(&constructor_args);
                     goto fail_parse;
                 }
@@ -203,7 +128,7 @@ static bool scene_load_faction(SDL_RWops *stream)
     if(!sscanf(line, "faction \"%31[^\"]", name))
         goto fail_parse;
 
-    if(!scene_parse_att(stream, &color, false))
+    if(!Attr_Parse(stream, &color, true))
         goto fail_parse;
 
     if(color.type != TYPE_VEC3)

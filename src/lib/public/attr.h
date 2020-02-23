@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018-2020 Eduard Permyakov 
+ *  Copyright (C) 2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,23 +33,37 @@
  *
  */
 
-#ifndef SCENE_H
-#define SCENE_H
-
-#include "pf_math.h"
-#include "lib/public/attr.h"
-#include "lib/public/vec.h"
-#include "lib/public/khash.h"
+#ifndef ATTR_H
+#define ATTR_H
 
 #include <stdbool.h>
+#include <SDL.h> /* for SDL_RWops */
 
+#include "../../pf_math.h"
 
-KHASH_DECLARE(attr, kh_cstr_t, struct attr)
+struct attr{
+    char key[64];
+    enum{
+        TYPE_STRING,
+        TYPE_FLOAT,
+        TYPE_INT,
+        TYPE_VEC3,
+        TYPE_QUAT,
+        TYPE_BOOL,
+    }type;
+    union{
+        char   as_string[64];
+        float  as_float;
+        int    as_int;
+        vec3_t as_vec3;
+        quat_t as_quat;
+        bool   as_bool;
+    }val;
+};
 
-VEC_TYPE(attr, struct attr)
-VEC_PROTOTYPES(extern, attr, struct attr)
-
-bool Scene_Load(const char *path);
+/* 'named' attributes start with a single token for the name */
+bool Attr_Parse(SDL_RWops *stream, struct attr *out, bool named);
+bool Attr_Write(SDL_RWops *stream, const struct attr *in, const char name[static 0]);
 
 #endif
 
