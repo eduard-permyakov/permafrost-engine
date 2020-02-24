@@ -320,6 +320,7 @@ static PyTypeObject PyCombatableEntity_type = {
 
 KHASH_MAP_INIT_INT(PyObject, PyObject*)
 static khash_t(PyObject) *s_uid_pyobj_table;
+static PyObject          *s_loaded;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -1117,12 +1118,21 @@ void S_Entity_PyRegister(PyObject *module)
 
 bool S_Entity_Init(void)
 {
+    s_loaded = PyList_New(0);
+    if(!s_loaded)
+        return false;
+
     s_uid_pyobj_table = kh_init(PyObject);
-    return (s_uid_pyobj_table != NULL);
+    if(!s_uid_pyobj_table) {
+        Py_DECREF(s_loaded);
+        return false;
+    }
+    return true;
 }
 
 void S_Entity_Shutdown(void)
 {
+    Py_DECREF(s_loaded);
     kh_destroy(PyObject, s_uid_pyobj_table);
 }
 
@@ -1204,22 +1214,18 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
         }
     }
 
+    PyList_Append(s_loaded, ret);
     return ret;
 }
 
-PyObject *S_Entity_GetAllList(void)
+PyObject *S_Entity_GetLoaded(void)
 {
-    PyObject *ret = PyList_New(kh_size(s_uid_pyobj_table));
+    PyObject *ret = s_loaded;
     if(!ret)
         return NULL;
 
-    uint32_t key;
-    PyObject *curr;
-    int i = 0;
-    kh_foreach(s_uid_pyobj_table, key, curr, {
-        (void)key;
-        PyList_SetItem(ret, i++, curr); /* steals reference */
-    });
+    s_loaded = PyList_New(0);
+    assert(s_loaded);
     
     return ret;
 }

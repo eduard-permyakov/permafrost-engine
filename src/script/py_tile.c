@@ -34,6 +34,7 @@
  */
 
 #include "py_tile.h"
+#include "../game/public/game.h"
 #include "../map/public/tile.h"
 #include "../map/public/map.h"
 
@@ -174,5 +175,19 @@ const struct tile *S_Tile_GetTile(PyObject *tile_obj)
         return NULL;
 
     return &((PyTileObject*)tile_obj)->tile;
+}
+
+PyObject *S_Tile_New(struct tile_desc *td)
+{
+    struct tile tile;
+    if(!G_GetTile(td, &tile))
+        return NULL;
+
+    PyTileObject *ret = (PyTileObject*)PyObject_CallFunction((PyObject*)&PyTile_type, "()");
+    if(!ret)
+        return NULL;
+
+    ret->tile = tile;
+    return (PyObject*)ret;
 }
 

@@ -61,12 +61,12 @@
 #include <stdio.h>
 
 
-static PyObject *PyPf_new_game(PyObject *self, PyObject *args);
-static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args);
+static PyObject *PyPf_new_game(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
-static PyObject *PyPf_load_scene(PyObject *self, PyObject *args);
+static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwargs);
 
 static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_register_ui_event_handler(PyObject *self, PyObject *args);
@@ -95,6 +95,7 @@ static PyObject *PyPf_update_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_faction_controllable(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_diplomacy_state(PyObject *self, PyObject *args);
 
+static PyObject *PyPf_get_tile(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_minimap_position(PyObject *self, PyObject *args);
@@ -128,13 +129,13 @@ static PyObject *PyPf_unpickle_object(PyObject *self, PyObject *args);
 static PyMethodDef pf_module_methods[] = {
 
     {"new_game", 
-    (PyCFunction)PyPf_new_game, METH_VARARGS,
+    (PyCFunction)PyPf_new_game, METH_VARARGS | METH_KEYWORDS,
     "Loads the specified map and creates an empty scene. Note that all "
     "references to existing _active_ entities _MUST_ be deleted before creating a "
     "new game."},
 
     {"new_game_string", 
-    (PyCFunction)PyPf_new_game_string, METH_VARARGS,
+    (PyCFunction)PyPf_new_game_string, METH_VARARGS | METH_KEYWORDS,
     "The same as 'new_game' but takes the map contents string as an argument instead of "
     "a path and filename."},
 
@@ -151,8 +152,9 @@ static PyMethodDef pf_module_methods[] = {
     "Sets the position (in XYZ worldspace coordinates)"},
 
     {"load_scene", 
-    (PyCFunction)PyPf_load_scene, METH_VARARGS,
-    "Import list of entities from a PFSCENE file (specified as a path string)."},
+    (PyCFunction)PyPf_load_scene, METH_VARARGS | METH_KEYWORDS,
+    "Import list of entities from a PFSCENE file (specified as a path string). "
+    "Returns a list of the loaded entities."},
 
     {"register_event_handler", 
     (PyCFunction)PyPf_register_event_handler, METH_VARARGS,
@@ -257,6 +259,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_diplomacy_state, METH_VARARGS,
     "Symmetrically sets the diplomacy state between two distinct factions (passed in as IDs)."},
 
+    {"get_tile", 
+    (PyCFunction)PyPf_get_tile, METH_VARARGS,
+    "Get the pf.Tile object describing the tile at the specified coordinates."},
+
     {"update_tile", 
     (PyCFunction)PyPf_update_tile, METH_VARARGS,
     "Update the map tile at the specified coordinates to the new value."},
@@ -359,30 +365,36 @@ static PyMethodDef pf_module_methods[] = {
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static PyObject *PyPf_new_game(PyObject *self, PyObject *args)
+static PyObject *PyPf_new_game(PyObject *self, PyObject *args, PyObject *kwargs)
 {
+    static char *kwlist[] = {"dir", "pfmap", "update_navgrid", NULL};
     const char *dir, *pfmap;
-    if(!PyArg_ParseTuple(args, "ss", &dir, &pfmap)) {
+    int update_navgrid = true;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "ss|i", kwlist, &dir, &pfmap, &update_navgrid)) {
         PyErr_SetString(PyExc_TypeError, "Arguments must be two strings.");
         return NULL;
     }
 
-    if(!G_NewGameWithMap(dir, pfmap)) {
+    if(!G_NewGameWithMap(dir, pfmap, update_navgrid)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to create new game with the specified map file.");
         return NULL; 
     }
     Py_RETURN_NONE;
 }
 
-static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args)
+static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args, PyObject *kwargs)
 {
+    static char *kwlist[] = {"mapstr", "update_navgrid", NULL};
     const char *mapstr;
-    if(!PyArg_ParseTuple(args, "s", &mapstr)) {
+    int update_navgrid = true;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s|i", kwlist, &mapstr, &update_navgrid)) {
         PyErr_SetString(PyExc_TypeError, "Argument must a string.");
         return NULL;
     }
 
-    if(!G_NewGameWithMapString(mapstr)) {
+    if(!G_NewGameWithMapString(mapstr, update_navgrid)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to create new game with the specified map file.");
         return NULL;
     }
@@ -427,11 +439,13 @@ static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyPf_load_scene(PyObject *self, PyObject *args)
+static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwargs)
 {
+    static char *kwlist[] = {"path", "update_navgrid", NULL};
     const char *path; 
+    int update_navgrid = true;
 
-    if(!PyArg_ParseTuple(args, "s", &path)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s|i", kwlist, &path, &update_navgrid)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
         return NULL;
     }
@@ -441,8 +455,11 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    G_BakeNavDataForScene();
-    return S_Entity_GetAllList();
+    if(update_navgrid) {
+        G_BakeNavDataForScene();
+    }
+
+    return S_Entity_GetLoaded();
 }
 
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)
@@ -815,6 +832,17 @@ static PyObject *PyPf_set_diplomacy_state(PyObject *self, PyObject *args)
         return NULL;
     }
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_tile(PyObject *self, PyObject *args)
+{
+    struct tile_desc desc;
+    if(!PyArg_ParseTuple(args, "(ii)(ii)O", &desc.chunk_r, &desc.chunk_c, &desc.tile_r, &desc.tile_c)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two tuples of two integers.");
+        return NULL;
+    }
+
+    return S_Tile_New(&desc);
 }
 
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args)
@@ -1240,59 +1268,6 @@ static bool s_sys_path_add_dir(const char *filename)
     return true;
 }
 
-/* Due to indeterminate order of object deletion in 'Py_Finalize', there may 
- * be issues with destructor calls of any remaining entities. This will flood
- * stderr with ugly warnings, which we cannot do anything about. We elect 
- * to perform an additional step of 'manual' garbage collection before handing 
- * off to 'Py_Finalize' to make sure all entity destructors are called and 
- * the interpreter can have a 'clean' shutdown. 
- */
-static void s_gc_all_ents(void)
-{
-    PyObject *sys_mod_dict = PyImport_GetModuleDict();
-    assert(sys_mod_dict);
-    PyObject *modules = PyMapping_Values(sys_mod_dict);
-    assert(modules);
-
-    for(int i = 0; i < PyList_Size(modules); i++) {
-
-        PyObject *curr_module = PyList_GetItem(modules, i);
-        PyObject *module_dict = PyModule_GetDict(curr_module);
-        if(!module_dict)
-            continue;
-
-        if(!strncmp(PyModule_GetName(curr_module), "__", 2)
-        &&  strncmp(PyModule_GetName(curr_module), "__main__", strlen("__main__")))
-            continue;
-
-        PyObject *module_vals = PyMapping_Values(module_dict);
-        PyObject *val_names = PyMapping_Keys(module_dict);
-        assert(module_vals && val_names);
-
-        for(int j = 0; j < PyList_Size(module_vals); j++) {
-        
-            PyObject *curr_val = PyList_GetItem(module_vals, j);
-            PyObject *curr_name = PyList_GetItem(val_names, j);
-
-            if(!strncmp(PyString_AsString(curr_name), "__", 2))
-                continue;
-
-            if(PyCallable_Check(curr_val) || PyModule_Check(curr_val))
-                continue;
-
-            PyMapping_DelItem(module_dict, curr_name);
-        }
-        Py_DECREF(module_vals);
-        Py_DECREF(val_names);
-    }
-    Py_DECREF(modules);
-
-    /* The list should own the last remaining references to living entities.
-     * Free the list and its' entities. */
-    PyObject *list = S_Entity_GetAllList();
-    Py_DECREF(list);
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1340,7 +1315,6 @@ bool S_Init(char *progname, const char *base_path, struct nk_context *ctx)
 
 void S_Shutdown(void)
 {
-    s_gc_all_ents();
     Py_Finalize();
     S_Pickle_Shutdown();
     S_Entity_Shutdown();

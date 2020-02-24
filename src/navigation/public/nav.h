@@ -95,9 +95,8 @@ void      N_Shutdown(void);
  * row-major order.
  * ------------------------------------------------------------------------
  */
-void     *N_BuildForMapData(size_t w, size_t h, 
-                            size_t chunk_w, size_t chunk_h,
-                            const struct tile **chunk_tiles);
+void     *N_BuildForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
+                            const struct tile **chunk_tiles, bool update);
 
 /* ------------------------------------------------------------------------
  * Clean up resources allocated by 'N_BuildForMapData'.

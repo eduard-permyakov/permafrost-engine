@@ -190,7 +190,7 @@ static void set_minimap_defaults(struct map *map)
 /*****************************************************************************/
  
 bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
-                            SDL_RWops *stream, void *outmap)
+                            SDL_RWops *stream, void *outmap, bool update_navgrid)
 {
     struct map *map = outmap;
 
@@ -251,7 +251,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     }}
 
     map->nav_private = N_BuildForMapData(map->width, map->height, 
-        TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, chunk_tiles);
+        TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, chunk_tiles, update_navgrid);
     if(!map->nav_private)
         return false;
 

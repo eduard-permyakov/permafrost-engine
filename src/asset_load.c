@@ -167,7 +167,8 @@ fail:
     return false;
 }
 
-static struct map *al_map_from_stream(const char *base_path, SDL_RWops *stream)
+static struct map *al_map_from_stream(const char *base_path, SDL_RWops *stream, 
+                                      bool update_navgrid)
 {
     struct map *ret;
     struct pfmap_hdr header;
@@ -179,7 +180,7 @@ static struct map *al_map_from_stream(const char *base_path, SDL_RWops *stream)
     if(!ret)
         goto fail_alloc;
 
-    if(!M_AL_InitMapFromStream(&header, base_path, stream, ret))
+    if(!M_AL_InitMapFromStream(&header, base_path, stream, ret, update_navgrid))
         goto fail_init;
 
     return ret;
@@ -309,7 +310,7 @@ void AL_EntityFree(struct entity *entity)
     free(entity);
 }
 
-struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name)
+struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name, bool update_navgrid)
 {
     struct map *ret;
     SDL_RWops *stream;
@@ -324,7 +325,7 @@ struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name)
     if(!stream)
         goto fail_open;
 
-    ret = al_map_from_stream(base_path, stream);
+    ret = al_map_from_stream(base_path, stream, update_navgrid);
     if(!ret)
         goto fail_parse;
 
@@ -337,13 +338,13 @@ fail_open:
     return NULL;
 }
 
-struct map *AL_MapFromPFMapString(const char *str)
+struct map *AL_MapFromPFMapString(const char *str, bool update_navgrid)
 {
     struct map *ret;
     SDL_RWops *stream;
 
     stream = SDL_RWFromConstMem(str, strlen(str));
-    ret = al_map_from_stream(NULL, stream);
+    ret = al_map_from_stream(NULL, stream, update_navgrid);
     if(!ret)
         goto fail_parse;
 

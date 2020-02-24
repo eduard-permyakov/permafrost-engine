@@ -400,7 +400,7 @@ bool   M_MouseOverMinimap(const struct map *map);
  * ------------------------------------------------------------------------
  */
 bool   M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
-                              SDL_RWops *stream, void *outmap);
+                              SDL_RWops *stream, void *outmap, bool update_navgrid);
 
 /* ------------------------------------------------------------------------
  * Returns the size, in bytes, needed to store the private map data

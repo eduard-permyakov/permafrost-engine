@@ -66,6 +66,7 @@ class MenuVC(vc.ViewController):
         self.__settings_vc.push_child("Game", gsvc.GameSettingsVC(gsw.GameSettingsWindow()))
         self.__settings_shown = False
 
+
     ### NEW ###
 
     # We boradcast a 'TEARDOWN_BEGIN' event before loading the new game to 
@@ -78,7 +79,7 @@ class MenuVC(vc.ViewController):
         del globals.active_objects_list[:]
 
         globals.active_map = event[0]
-        pf.new_game_string(globals.active_map.pfmap_str())
+        pf.new_game_string(globals.active_map.pfmap_str(), update_navgrid=False)
         minimap_pos = pf.get_minimap_position()
         pf.set_minimap_position(UI_LEFT_PANE_WIDTH + minimap_pos[0], minimap_pos[1])
         self.view.hide()
@@ -87,7 +88,7 @@ class MenuVC(vc.ViewController):
         if event[1] is not None and os.path.isfile(event[1]):
             assert len(globals.active_objects_list) == 0 
             try:
-                globals.active_objects_list = pf.load_scene(event[1])
+                globals.active_objects_list = pf.load_scene(event[1], update_navgrid=False)
                 globals.scene_filename = event[1]
                 for obj in globals.active_objects_list:
                     obj.selectable = True

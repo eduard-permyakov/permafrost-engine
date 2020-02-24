@@ -46,6 +46,7 @@
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
+#include "../map/public/tile.h"
 #include "../entity.h"
 #include "../camera.h"
 #include "../cam_control.h"
@@ -626,7 +627,7 @@ fail_active:
     return false;
 }
 
-bool G_NewGameWithMapString(const char *mapstr)
+bool G_NewGameWithMapString(const char *mapstr, bool update_navgrid)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -637,7 +638,7 @@ bool G_NewGameWithMapString(const char *mapstr)
     if(!s_gs.prev_tick_map)
         return false;
 
-    s_gs.map = AL_MapFromPFMapString(mapstr);
+    s_gs.map = AL_MapFromPFMapString(mapstr, update_navgrid);
     if(!s_gs.map) {
         free((void*)s_gs.prev_tick_map);
         return false;
@@ -649,7 +650,7 @@ bool G_NewGameWithMapString(const char *mapstr)
     return true;
 }
 
-bool G_NewGameWithMap(const char *dir, const char *pfmap)
+bool G_NewGameWithMap(const char *dir, const char *pfmap, bool update_navgrid)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -660,7 +661,7 @@ bool G_NewGameWithMap(const char *dir, const char *pfmap)
     if(!s_gs.prev_tick_map)
         return false;
 
-    s_gs.map = AL_MapFromPFMap(dir, pfmap);
+    s_gs.map = AL_MapFromPFMap(dir, pfmap, update_navgrid);
     if(!s_gs.map) {
         free((void*)s_gs.prev_tick_map);
         return false;
@@ -1205,7 +1206,20 @@ bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
 {
     ASSERT_IN_MAIN_THREAD();
 
+	if(!s_gs.map)
+		return false;
     return M_AL_UpdateTile(s_gs.map, desc, tile);
+}
+
+bool G_GetTile(const struct tile_desc *desc, struct tile *out)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+	if(!s_gs.map)
+		return false;
+	if(!M_TileForDesc(s_gs.map, *desc, &out))
+        return false;
+    return true;
 }
 
 const khash_t(entity) *G_GetDynamicEntsSet(void)

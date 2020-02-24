@@ -52,14 +52,14 @@ class AnimCombatable(pf.AnimEntity, pf.CombatableEntity, cont.Controllable):
     def __init__(self, path, pfobj, name, **kwargs):
         super(AnimCombatable, self).__init__(path, pfobj, name, **kwargs)
         self.attacking = False
-        self.register(pf.EVENT_ATTACK_START, AnimCombatable.__on_attack_begin, weakref.ref(self))
-        self.register(pf.EVENT_ATTACK_END, AnimCombatable.__on_attack_end, weakref.ref(self))
-        self.register(pf.EVENT_ENTITY_DEATH, AnimCombatable.__on_death, weakref.ref(self))
+        self.register(pf.EVENT_ATTACK_START, AnimCombatable.on_attack_begin, weakref.ref(self))
+        self.register(pf.EVENT_ATTACK_END, AnimCombatable.on_attack_end, weakref.ref(self))
+        self.register(pf.EVENT_ENTITY_DEATH, AnimCombatable.on_death, weakref.ref(self))
 
     def __del__(self):
-        self.unregister(pf.EVENT_ENTITY_DEATH, AnimCombatable.__on_death)
-        self.unregister(pf.EVENT_ATTACK_END, AnimCombatable.__on_attack_end)
-        self.unregister(pf.EVENT_ATTACK_START, AnimCombatable.__on_attack_begin)
+        self.unregister(pf.EVENT_ENTITY_DEATH, AnimCombatable.on_death)
+        self.unregister(pf.EVENT_ATTACK_END, AnimCombatable.on_attack_end)
+        self.unregister(pf.EVENT_ATTACK_START, AnimCombatable.on_attack_begin)
         super(AnimCombatable, self).__del__()
 
     @abstractproperty
@@ -72,23 +72,23 @@ class AnimCombatable(pf.AnimEntity, pf.CombatableEntity, cont.Controllable):
         """ Name of animation clip that should be played on death """
         pass
 
-    def __on_attack_begin(self, event):
+    def on_attack_begin(self, event):
         assert not self.attacking
         self.attacking = True
         self.play_anim(self.attack_anim())
 
-    def __on_attack_end(self, event):
+    def on_attack_end(self, event):
         assert self.attacking
         self.attacking = False
         self.play_anim(self.idle_anim())
 
-    def __on_death(self, event):
+    def on_death(self, event):
         self.play_anim(self.death_anim(), mode=pf.ANIM_MODE_ONCE_HIDE_ON_FINISH)
         # retain this entity until the death event 
-        self.register(pf.EVENT_ANIM_CYCLE_FINISHED, AnimCombatable.__on_death_anim_finish, self)
+        self.register(pf.EVENT_ANIM_CYCLE_FINISHED, AnimCombatable.on_death_anim_finish, self)
 
-    def __on_death_anim_finish(self, event):
-        self.unregister(pf.EVENT_ANIM_CYCLE_FINISHED, AnimCombatable.__on_death_anim_finish)
+    def on_death_anim_finish(self, event):
+        self.unregister(pf.EVENT_ANIM_CYCLE_FINISHED, AnimCombatable.on_death_anim_finish)
         globals.scene_objs.remove(self)
 
     def action(self, idx):

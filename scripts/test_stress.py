@@ -121,14 +121,12 @@ def setup_armies():
 
 def fixup_anim_combatable():
 
-    def __on_death(self, event):
+    def on_death(self, event):
         self.play_anim(self.death_anim(), mode=pf.ANIM_MODE_ONCE_HIDE_ON_FINISH)
-        self.register(pf.EVENT_ANIM_CYCLE_FINISHED, 
-            am.AnimCombatable._AnimCombatable__on_death_anim_finish, self)
+        self.register(pf.EVENT_ANIM_CYCLE_FINISHED, am.AnimCombatable.on_death_anim_finish, self)
 
-    def __on_death_anim_finish(self, event):
-        self.unregister(pf.EVENT_ANIM_CYCLE_FINISHED, 
-            am.AnimCombatable._AnimCombatable__on_death_anim_finish)
+    def on_death_anim_finish(self, event):
+        self.unregister(pf.EVENT_ANIM_CYCLE_FINISHED, am.AnimCombatable.on_death_anim_finish)
         try: 
             red_army_units.remove(self)
         except: pass
@@ -136,8 +134,8 @@ def fixup_anim_combatable():
             blue_army_units.remove(self)
         except: pass
 
-    am.AnimCombatable._AnimCombatable__on_death = __on_death
-    am.AnimCombatable._AnimCombatable__on_death_anim_finish = __on_death_anim_finish
+    am.AnimCombatable.on_death = on_death
+    am.AnimCombatable.on_death_anim_finish = on_death_anim_finish
 
 def start_war(user, event):
 

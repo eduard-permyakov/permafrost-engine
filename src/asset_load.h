@@ -80,8 +80,8 @@ void           AL_Shutdown(void);
 struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name);
 void           AL_EntityFree(struct entity *entity);
 
-struct map    *AL_MapFromPFMap(const char *base_path, const char *pfmap_name);
-struct map    *AL_MapFromPFMapString(const char *str);
+struct map    *AL_MapFromPFMap(const char *base_path, const char *pfmap_name, bool update_navgrid);
+struct map    *AL_MapFromPFMapString(const char *str, bool update_navgrid);
 void           AL_MapFree(struct map *map);
 size_t         AL_MapShallowCopySize(const char *base_path, const char *pfmap_name);
 size_t         AL_MapShallowCopySizeStr(const char *str);

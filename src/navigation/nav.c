@@ -230,6 +230,23 @@ static void n_set_cost_for_tile(struct nav_chunk *chunk,
     }}
 }
 
+static void n_clear_cost_for_tile(struct nav_chunk *chunk, 
+                                  size_t chunk_w, size_t chunk_h,
+                                  size_t tile_r,  size_t tile_c)
+{
+    assert(FIELD_RES_R / chunk_h == 2);
+    assert(FIELD_RES_C / chunk_w == 2);
+
+    size_t r_base = tile_r * 2;
+    size_t c_base = tile_c * 2;
+
+    for(int r = 0; r < 2; r++) {
+    for(int c = 0; c < 2; c++) {
+
+        chunk->cost_base[r_base + r][c_base + c] = 0;
+    }}
+}
+
 static void n_set_cost_edge(struct nav_chunk *chunk,
                             size_t chunk_w, size_t chunk_h,
                             size_t tile_r,  size_t tile_c,
@@ -1152,9 +1169,8 @@ void N_Shutdown(void)
     N_FC_Shutdown();
 }
 
-void *N_BuildForMapData(size_t w, size_t h, 
-                        size_t chunk_w, size_t chunk_h,
-                        const struct tile **chunk_tiles)
+void *N_BuildForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
+                        const struct tile **chunk_tiles, bool update)
 {
     struct nav_private *ret;
     size_t alloc_size = sizeof(struct nav_private) + (w * h * sizeof(struct nav_chunk));
@@ -1180,8 +1196,12 @@ void *N_BuildForMapData(size_t w, size_t h,
         for(int tile_r = 0; tile_r < chunk_h; tile_r++) {
         for(int tile_c = 0; tile_c < chunk_w; tile_c++) {
 
-            const struct tile *curr_tile = &curr_tiles[tile_r * chunk_w + tile_c];
-            n_set_cost_for_tile(curr_chunk, chunk_w, chunk_h, tile_r, tile_c, curr_tile);
+            if(update) {
+                const struct tile *curr_tile = &curr_tiles[tile_r * chunk_w + tile_c];
+                n_set_cost_for_tile(curr_chunk, chunk_w, chunk_h, tile_r, tile_c, curr_tile);
+            }else{
+                n_clear_cost_for_tile(curr_chunk, chunk_w, chunk_h, tile_r, tile_c);
+            }
         }}
         memset(curr_chunk->blockers, 0, sizeof(curr_chunk->blockers));
     }}

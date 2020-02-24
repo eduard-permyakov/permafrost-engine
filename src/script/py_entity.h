@@ -45,7 +45,7 @@ void      S_Entity_Shutdown(void);
 void      S_Entity_PyRegister(PyObject *module);
 PyObject *S_Entity_ObjForUID(uint32_t uid);
 /* Returned list has a stolen reference to each object */
-PyObject *S_Entity_GetAllList(void);
+PyObject *S_Entity_GetLoaded(void);
 
 #endif
 

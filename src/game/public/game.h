@@ -98,8 +98,8 @@ struct render_input{
 /*###########################################################################*/
 
 bool   G_Init(void);
-bool   G_NewGameWithMap(const char *dir, const char *pfmap);
-bool   G_NewGameWithMapString(const char *mapstr);
+bool   G_NewGameWithMap(const char *dir, const char *pfmap, bool update_navgrid);
+bool   G_NewGameWithMapString(const char *mapstr, bool update_navgrid);
 void   G_Shutdown(void);
 
 void   G_Update(void);
@@ -144,6 +144,7 @@ vec3_t G_ActiveCamDir(void);
 
 bool   G_UpdateMinimapChunk(int chunk_r, int chunk_c);
 bool   G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
+bool   G_GetTile(const struct tile_desc *desc, struct tile *out);
 
 void          G_SetSimState(enum simstate ss);
 enum simstate G_GetSimState(void);
