@@ -39,6 +39,9 @@
 #include "pfchunk.h"
 #include "../pf_math.h"
 
+#define MAX_NUM_MATS (256)
+
+
 struct map{
     /* ------------------------------------------------------------------------
      * Map dimensions in numbers of chunks.
@@ -77,6 +80,13 @@ struct map{
      * ------------------------------------------------------------------------
      */
     void *nav_private;
+    /* ------------------------------------------------------------------------
+     * Save the materials information read from the source PFMap file. This is 
+     * used when saving to a new PFMAp file.
+     * ------------------------------------------------------------------------
+     */
+    size_t num_mats;
+    char texnames[MAX_NUM_MATS][256];
     /* ------------------------------------------------------------------------
      * The map chunks stored in row-major order. In total, there must be 
      * (width * height) number of chunks.

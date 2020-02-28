@@ -97,6 +97,7 @@ typedef void (*handler_t)(void*, void*);
 bool E_Init(void);
 void E_ServiceQueue(void);
 void E_Shutdown(void);
+void E_DeleteScriptHandlers(void);
 
 /*###########################################################################*/
 /* EVENT GLOBAL                                                              */

@@ -203,7 +203,9 @@ typedef void *mod_ty; //symtable.h wants this
 #define PF_SETITER      '#' /* Push a setiterator from top 4 TOS items */
 #define PF_FIELDNAMEITER '$' /* Push a fieldnameiterator from top 4 TOS items */
 #define PF_FORMATITER   '%' /* Push a formatteriterator from top 3 TOS items */
-#define PF_EXCEPTION    '^' 
+#define PF_EXCEPTION    '^' /* Push an Exception subclass from TOS item */ 
+#define PF_METHOD_DESC  '&' /* Push a method_descriptor from the top 2 TOS items */
+#define PF_BI_METHOD    '*' /* Push a 'built-in method' (variant of PyCFunctionObject) type from top 3 TOS items */
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -427,6 +429,8 @@ static int op_ext_setiter   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_fieldnameiter(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_formatiter(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_exception (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_method_desc(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_bi_method (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -453,7 +457,6 @@ static struct pickle_entry s_type_dispatch_table[] = {
     {.type = NULL, /*&PySet_Type*/          .picklefunc = set_pickle                    }, /* set() */
 #ifdef Py_USING_UNICODE
     {.type = NULL, /*&PyUnicode_Type*/      .picklefunc = unicode_pickle                }, /* unicode() */
-    {.type = NULL, /*&EncodingMapType*/     .picklefunc = placeholder_inst_pickle       }, /* TBD */
 #endif
     {.type = NULL, /*&PySlice_Type*/        .picklefunc = slice_pickle                  }, /* slice() */
     {.type = NULL, /*&PyStaticMethod_Type*/ .picklefunc = static_method_pickle          }, /* staticmethod() */
@@ -734,17 +737,27 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_FIELDNAMEITER] = op_ext_fieldnameiter,
     [PF_FORMATITER] = op_ext_formatiter,
     [PF_EXCEPTION] = op_ext_exception,
+    [PF_METHOD_DESC] = op_ext_method_desc,
+    [PF_BI_METHOD] = op_ext_bi_method,
 };
 
 /* Standard modules not imported on initialization which also contain C builtins */
 static const char *s_extra_indexed_mods[] = {
-    "imp",
+    "_collections",
+    "_functools",
+    "_heapq",
     "_symtable",
+    "_warnings",
     "_weakref",
+    "exceptions",
+    "itertools",
+    "imp",
+    "math",
+    "cmath",
+    "operator",
+    "signal",
     "zipimport",
 };
-
-static size_t(*s_saved_writefunc)(SDL_RWops*,const void*,size_t,size_t);
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -957,23 +970,6 @@ static void load_private_type_refs(void)
         Py_DECREF(tmp);
     }
 
-#ifdef Py_USING_UNICODE
-    PyObject *codecs_mod = PyDict_GetItemString(PySys_GetObject("modules"), "codecs");
-    PyObject *enc_mod = PyImport_ImportModule("encodings.iso8859_3");
-    if(codecs_mod && enc_mod) {
-
-        /* EncodingMapType */
-        idx = dispatch_idx_for_picklefunc(unicode_pickle) + 1;
-        PyObject *dec_table = PyObject_GetAttrString(enc_mod, "decoding_table");
-        tmp = PyObject_CallMethod(codecs_mod, "charmap_build", "(O)", dec_table); 
-        Py_DECREF(dec_table);
-
-        s_type_dispatch_table[idx].type = tmp->ob_type;
-        assert(strstr(s_type_dispatch_table[idx].type->tp_name, "EncodingMap"));
-    }
-    Py_XDECREF(enc_mod);
-#endif
-
     assert(!PyErr_Occurred());
 }
 
@@ -993,7 +989,6 @@ static void load_builtin_types(void)
     s_type_dispatch_table[base_idx++].type = &PySet_Type;
 #ifdef Py_USING_UNICODE
     s_type_dispatch_table[base_idx++].type = &PyUnicode_Type;
-    base_idx++;
 #endif
     s_type_dispatch_table[base_idx++].type = &PySlice_Type;
     s_type_dispatch_table[base_idx++].type = &PyStaticMethod_Type;
@@ -1933,19 +1928,21 @@ static int long_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
 
-    char str[32];
-    long long l = PyLong_AsLongLong(obj);
+    assert(obj->ob_type == &PyLong_Type);
+    PyObject *repr = PyObject_Repr(obj);
+    assert(repr);
+    size_t repr_len = strlen(PyString_AS_STRING(repr)) - 1; /* strip L suffix */
+    assert(PyString_AS_STRING(repr)[repr_len] == 'L');
 
-    str[0] = LONG;
-#if defined(_WIN32)
-    PyOS_snprintf(str + 1, sizeof(str) - 1, "%I64d\n", l);
-#else
-    PyOS_snprintf(str + 1, sizeof(str) - 1, "%lld\n", l);
-#endif
-    CHK_TRUE(rw->write(rw, str, 1, strlen(str)), fail);
+    const char ops[] = {LONG};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+    CHK_TRUE(rw->write(rw, PyString_AS_STRING(repr), repr_len, 1), fail);
+    CHK_TRUE(rw->write(rw, "\n", 1, 1), fail);
+    Py_DECREF(repr);
     return 0;
 
 fail:
+    Py_DECREF(repr);
     DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
     return -1;
 }
@@ -2467,7 +2464,31 @@ static int sys_version_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *
 
 static int cfunction_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
-    return builtin_pickle(ctx, obj, rw);
+    assert(obj->ob_type == &PyCFunction_Type);
+    PyCFunctionObject *func = (PyCFunctionObject*)obj;
+
+    /* Instances of unbounded built-in functions are never re-created. It is sufficient 
+     * to pickle them by reference. */
+    if(!func->m_self || !strcmp(func->m_ml->ml_name, "__new__")) { //TODO: FIXME: clean this up
+        return builtin_pickle(ctx, obj, rw);
+    }
+
+    TRACE_PICKLE(obj);
+
+    CHK_TRUE(pickle_obj(ctx, func->m_self, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)func->m_self->ob_type, rw), fail);
+
+    PyObject *name = PyString_FromString(func->m_ml->ml_name);
+    vec_pobj_push(&ctx->to_free, name);
+    CHK_TRUE(pickle_obj(ctx, name, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_BI_METHOD};
+    CHK_TRUE(rw->write(rw, ops, 2, 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int code_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -2931,7 +2952,22 @@ fail:
 
 static int method_descr_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
-    return builtin_pickle(ctx, obj, rw);
+    int idx = dispatch_idx_for_picklefunc(method_descr_pickle);
+    assert(obj->ob_type == s_type_dispatch_table[idx].type);
+    PyMethodDescrObject *desc = (PyMethodDescrObject*)obj;
+
+    TRACE_PICKLE(obj);
+
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)desc->d_type, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, desc->d_name, rw), fail);
+
+    const char getattr[] = {PF_EXTEND, PF_METHOD_DESC};
+    CHK_TRUE(rw->write(rw, getattr, ARR_SIZE(getattr), 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
 }
 
 static int method_wrapper_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
@@ -6212,6 +6248,111 @@ static int op_ext_exception(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
 fail_exc:
 fail_typecheck:
+    Py_DECREF(type);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_method_desc(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_METHOD_DESC, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 2) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+
+    PyObject *name = vec_pobj_pop(&ctx->stack);
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    if(!PyString_Check(name)) {
+        SET_RUNTIME_EXC("PF_METHOD_DESC: Expecting string at TOS");
+        goto fail_typecheck;
+    }
+
+    if(!PyType_Check(type)) {
+        SET_RUNTIME_EXC("PF_METHOD_DESC: Expecting type at TOS1");
+        goto fail_typecheck;
+    }
+
+    PyTypeObject *tp_type = (PyTypeObject*)type;
+    PyMethodDef *found = NULL;
+    for(PyMethodDef *curr = tp_type->tp_methods; curr && curr->ml_name; curr++) {
+    
+        if(0 == strcmp(curr->ml_name, PyString_AS_STRING(name))) {
+            found = curr; 
+            break;
+        }
+    }
+
+    if(!found) {
+        SET_RUNTIME_EXC("Could not find method_descriptor (%s) of type (%s)",
+            PyString_AS_STRING(name), tp_type->tp_name);
+        goto fail_desc;
+    }
+
+    PyObject *desc = PyDescr_NewMethod(tp_type, found);
+    CHK_TRUE(desc, fail_desc);
+    vec_pobj_push(&ctx->stack, desc);
+    ret = 0;
+
+fail_desc:
+fail_typecheck:
+    Py_DECREF(name);
+    Py_DECREF(type);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_bi_method(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_BI_METHOD, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 3) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+
+    PyObject *name = vec_pobj_pop(&ctx->stack);
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+    PyObject *inst = vec_pobj_pop(&ctx->stack);
+
+    if(!PyString_Check(name)) {
+        SET_RUNTIME_EXC("PF_BI_METHOD: Expecting string at TOS");
+        goto fail_typecheck;
+    }
+
+    if(!PyType_Check(type)) {
+        SET_RUNTIME_EXC("PF_BI_METHOD: Expecting type at TOS1");
+        goto fail_typecheck;
+    }
+
+    PyTypeObject *tp_type = (PyTypeObject*)type;
+    PyMethodDef *found = NULL;
+    for(PyMethodDef *curr = tp_type->tp_methods; curr && curr->ml_name; curr++) {
+    
+        if(0 == strcmp(curr->ml_name, PyString_AS_STRING(name))) {
+            found = curr; 
+            break;
+        }
+    }
+
+    if(!found) {
+        SET_RUNTIME_EXC("Could not find method (%s) of type (%s)",
+            PyString_AS_STRING(name), tp_type->tp_name);
+        goto fail_method;
+    }
+
+    PyObject *meth = PyCFunction_New(found, inst);
+    CHK_TRUE(meth, fail_method);
+    vec_pobj_push(&ctx->stack, meth);
+    ret = 0;
+
+fail_method:
+fail_typecheck:
+    Py_DECREF(name);
     Py_DECREF(type);
 fail_underflow:
     return ret;

@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019-2020 Eduard Permyakov 
+ *  Copyright (C) 2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,16 +33,15 @@
  *
  */
 
-#ifndef PF_STRING_H
-#define PF_STRING_H
+#ifndef SESSION_H
+#define SESSION_H
 
-#include <stddef.h>
+#include <stdbool.h>
+#include <SDL.h> /* for SDL_RWops */
 
-char  *pf_strtok_r(char *str, const char *delim, char **saveptr);
-char  *pf_strdup(const char *str);
-char  *pf_strapp(char *str, const char *append);
-size_t pf_strlcpy(char *dest, const char *src, size_t size);
-int    pf_snprintf(char *str, size_t size, const char *format, ...);
+bool Session_Save(SDL_RWops *stream);
+void Session_RequestLoad(const char *path);
+void Session_ServiceRequests(void);
 
 #endif
 

@@ -446,6 +446,12 @@ size_t M_AL_ShallowCopySize(size_t nrows, size_t ncols);
  */
 void   M_AL_ShallowCopy(struct map *dst, const struct map *src);
 
+/* ------------------------------------------------------------------------
+ * Write the map contents to the stream in PFMap format.
+ * ------------------------------------------------------------------------
+ */
+bool   M_AL_WritePFMap(const struct map *map, SDL_RWops *stream);
+
 
 
 #endif

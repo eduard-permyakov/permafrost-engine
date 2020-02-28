@@ -1215,6 +1215,18 @@ def test_pickle_exceptions():
 
     print "Exception pickling OK!"
 
+def test_pickle_builtin_method():
+
+    fs = frozenset([1, 2, 3, 4, 5])
+    m1 = fs.__contains__
+    s = pf.pickle_object(m1) 
+    m2 = pf.unpickle_object(s)
+    assert 'built-in method __contains__' in repr(m2)
+    assert m1(1) == m2(1)
+    assert m1(9) == m2(9)
+
+    print "Built-in method pickling OK!"
+
 try:
     test_pickle_int()
     test_pickle_long()
@@ -1269,6 +1281,7 @@ try:
     test_pickle_dictviews()
     test_pickle_iterators()
     test_pickle_exceptions()
+    test_pickle_builtin_method()
 except Exception as e:
     traceback.print_exc()
 finally:

@@ -164,8 +164,6 @@ void   R_GL_SetLightPos(const vec3_t *pos);
  * The camera argument is for deriving the screenspace position of text labels
  * for the joint names. If 'cam' is NULL, the labels won't be rendered.
  *
- * NOTE: This is a low-performance routine that calls malloc/free at every call.
- * It should be used for debugging only.
  * ---------------------------------------------------------------------------
  */
 void   R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, 

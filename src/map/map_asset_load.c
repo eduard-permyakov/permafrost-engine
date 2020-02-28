@@ -52,6 +52,8 @@
 /* ASCII to integer - argument must be an ascii digit */
 #define A2I(_a) ((_a) - '0')
 #define MINIMAP_DFLT_SZ (256)
+#define PFMAP_VER       (1.0f)
+#define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -75,6 +77,23 @@ static bool m_al_parse_tile(const char *str, struct tile *out)
     out->blend_normals = (bool)          A2I(str[14]);
 
     return true;
+}
+
+static bool m_al_write_tile(const struct tile *tile, SDL_RWops *stream)
+{
+    char buff[MAX_LINE_LEN];
+    pf_snprintf(buff, sizeof(buff), "%01X%c%02d%02d%03d%03d%01d%01d%01d000000000", 
+        tile->type,
+        tile->base_height >= 0 ? '+' : '-',
+        tile->base_height,
+        tile->ramp_height,
+        tile->top_mat_idx, 
+        tile->sides_mat_idx,
+        tile->pathable,
+        tile->blend_mode,
+        tile->blend_normals);
+
+    return SDL_RWwrite(stream, buff, strlen(buff), 1);
 }
 
 static bool m_al_read_row(SDL_RWops *stream, struct tile *out, size_t *out_nread)
@@ -202,9 +221,13 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     /* Read materials */
     char texnames[header->num_materials][256];
     for(int i = 0; i < header->num_materials; i++) {
+        if(i >= MAX_NUM_MATS)
+            return false;
         if(!m_al_read_material(stream, texnames[i]))
             return false;
+        strcpy(map->texnames[i], texnames[i]);
     }
+    map->num_mats = header->num_materials;
 
     R_PushCmd((struct rcmd){
         .func = R_GL_MapInit,
@@ -317,5 +340,51 @@ size_t M_AL_ShallowCopySize(size_t nrows, size_t ncols)
 void M_AL_ShallowCopy(struct map *dst, const struct map *src)
 {
     memcpy(dst, src, M_AL_ShallowCopySize(src->width, src->height));
+}
+
+bool M_AL_WritePFMap(const struct map *map, SDL_RWops *stream)
+{
+    char line[MAX_LINE_LEN];
+
+    pf_snprintf(line, sizeof(line), "version %.01f\n", PFMAP_VER);
+    CHK_TRUE(SDL_RWwrite(stream, line, strlen(line), 1), fail);
+
+    pf_snprintf(line, sizeof(line), "num_materials %d\n", map->num_mats);
+    CHK_TRUE(SDL_RWwrite(stream, line, strlen(line), 1), fail);
+
+    pf_snprintf(line, sizeof(line), "num_rows %d\n", map->height);
+    CHK_TRUE(SDL_RWwrite(stream, line, strlen(line), 1), fail);
+
+    pf_snprintf(line, sizeof(line), "num_cols %d\n", map->width);
+    CHK_TRUE(SDL_RWwrite(stream, line, strlen(line), 1), fail);
+
+    for(int i = 0; i < map->num_mats; i++) {
+    
+        pf_snprintf(line, sizeof(line), "material __anonymous__ %s\n", map->texnames[i]);
+        CHK_TRUE(SDL_RWwrite(stream, line, strlen(line), 1), fail);
+    }
+
+    for(int chunk_r = 0; chunk_r < map->height; chunk_r++) {
+    for(int chunk_c = 0; chunk_c < map->width;  chunk_c++) {
+
+        const struct pfchunk *curr_chunk = &map->chunks[chunk_r * map->width + chunk_c];
+        for(int tile_r = 0; tile_r < TILES_PER_CHUNK_HEIGHT; tile_r++) {
+        for(int tile_c = 0; tile_c < TILES_PER_CHUNK_WIDTH;  tile_c++) {
+
+            const struct tile *curr_tile = &curr_chunk->tiles[tile_r * TILES_PER_CHUNK_WIDTH + tile_c];
+            CHK_TRUE(m_al_write_tile(curr_tile, stream), fail);
+
+            if((tile_c+1) % 4 == 0) {
+                CHK_TRUE(SDL_RWwrite(stream, "\n", 1, 1), fail);
+            }else {
+                CHK_TRUE(SDL_RWwrite(stream, " ", 1, 1), fail);
+            }
+        }}
+    }}
+
+    return true;
+
+fail:
+    return false;
 }
 

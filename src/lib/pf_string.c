@@ -38,6 +38,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -98,6 +100,19 @@ size_t pf_strlcpy(char *dest, const char *src, size_t size)
     size_t ret = (srclen > size-1) ? size-1 : srclen;
     memcpy(dest, src, ret);
     dest[ret] = '\0';
+    return ret;
+}
+
+int pf_snprintf(char *str, size_t size, const char *format, ...)
+{
+    int ret;
+    va_list args;
+
+    va_start(args, format);
+    ret = vsnprintf(str, size, format, args);
+    va_end(args);
+
+    str[size-1] = '\0';
     return ret;
 }
 

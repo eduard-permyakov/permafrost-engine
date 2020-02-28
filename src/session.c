@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019-2020 Eduard Permyakov 
+ *  Copyright (C) 2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,16 +33,59 @@
  *
  */
 
-#ifndef PF_STRING_H
-#define PF_STRING_H
+#include "session.h"
+#include "event.h"
+#include "lib/public/attr.h"
+#include "game/public/game.h"
+#include "script/public/script.h"
 
-#include <stddef.h>
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
 
-char  *pf_strtok_r(char *str, const char *delim, char **saveptr);
-char  *pf_strdup(const char *str);
-char  *pf_strapp(char *str, const char *append);
-size_t pf_strlcpy(char *dest, const char *src, size_t size);
-int    pf_snprintf(char *str, size_t size, const char *format, ...);
+static bool do_it = false;
 
-#endif
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
+bool Session_Save(SDL_RWops *stream)
+{
+    /* step 1: save map in PFMAP format */
+    if(!G_WriteMap(stream)) {
+        printf("error 1\n");
+        return false;
+    }
+
+    /* step 2: save sys.modules['__main__'] */
+    if(!S_WriteMainModule(stream)) {
+        printf("error 2\n");
+        return false;
+    }
+
+    /* step 3: save the event handlers and args (by qualname or by pickling) */
+    return true;
+}
+
+void Session_RequestLoad(const char *path)
+{
+    do_it = true;
+}
+
+void Session_ServiceRequests(void)
+{
+    if(!do_it)
+        return;
+
+    /* step 1: load new map with specified PFMAP */
+
+    /* step 2: clear current interpreter state */
+    E_DeleteScriptHandlers();
+    S_ClearState();
+
+    /* step 3: unpickle the __main__ module */
+    /* step 4: load scripting event handlers and args */
+
+    do_it = false;
+}
 

@@ -48,6 +48,7 @@
 #include "ui.h"
 #include "pf_math.h"
 #include "settings.h"
+#include "session.h"
 
 #include <stdbool.h>
 #include <assert.h>
@@ -606,6 +607,7 @@ int main(int argc, char **argv)
         wait_render_work_done();
 
         G_SwapBuffers();
+        Session_ServiceRequests();
 
         if(prev_step_frame) {
             G_SetSimState(curr_ss);

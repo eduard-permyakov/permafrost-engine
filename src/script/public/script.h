@@ -40,6 +40,7 @@
 
 #include <stdio.h>
 #include <stdbool.h>
+#include <SDL.h> /* for SDL_RWops */
 
 /* 'Handle' type to let the rest of the engine hold on to scripting objects 
  * without needing to include Python.h */
@@ -67,6 +68,9 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg);
  * reference extracted from the weakref. */
 script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg);
 bool            S_ObjectsEqual(script_opaque_t a, script_opaque_t b);
+
+void            S_ClearState(void);
+bool            S_WriteMainModule(SDL_RWops *stream);
 
 /*###########################################################################*/
 /* SCRIPT UI                                                                 */

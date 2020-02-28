@@ -48,13 +48,14 @@
 #include "../navigation/public/nav.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
+#include "../lib/public/SDL_vec_rwops.h"
 #include "../event.h"
 #include "../config.h"
 #include "../scene.h"
 #include "../settings.h"
 #include "../main.h"
 #include "../ui.h"
-#include "../lib/public/SDL_vec_rwops.h"
+#include "../session.h"
 
 #include <SDL.h>
 
@@ -121,6 +122,9 @@ static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_pickle_object(PyObject *self, PyObject *args);
 static PyObject *PyPf_unpickle_object(PyObject *self, PyObject *args);
+
+static PyObject *PyPf_save_session(PyObject *self, PyObject *args);
+static PyObject *PyPf_load_session(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -357,6 +361,15 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_unpickle_object, METH_VARARGS,
     "Returns a new reference to an object built from its' serialized representation. The argument string must "
     "an earlier return value of 'pf.pickle_object'."},
+
+    {"save_session",
+    (PyCFunction)PyPf_save_session, METH_VARARGS,
+    "Save the current state of the engine to the specified file. The session can then be loaded "
+    "from the file with the 'load_session' call."},
+
+    {"load_session",
+    (PyCFunction)PyPf_load_session, METH_VARARGS,
+    "Load a session previously saved with the 'save_session' call."},
 
     {NULL}  /* Sentinel */
 };
@@ -1243,6 +1256,48 @@ static PyObject *PyPf_unpickle_object(PyObject *self, PyObject *args)
     return ret;
 }
 
+static PyObject *PyPf_save_session(PyObject *self, PyObject *args)
+{
+    const char *str;
+    if(!PyArg_ParseTuple(args, "s", &str)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string (path of the file to save the session to).");
+        return NULL;
+    }
+
+    FILE *file = fopen(str, "w");
+    if(!file) {
+        char buff[256];
+        snprintf(buff, sizeof(buff), "Unable to open file (%s) for writing.\n", str);
+        buff[sizeof(buff)-1] = '\0';
+
+        PyErr_SetString(PyExc_RuntimeError, buff);
+        return NULL;
+    }
+
+    SDL_RWops *stream = SDL_RWFromFP(file, true); /* file will be closed when stream is */
+    assert(stream);
+
+    if(!Session_Save(stream)) {
+        //PyErr_SetString(PyExc_RuntimeError, "Error saving the session.");
+        SDL_RWclose(stream);
+        return NULL;
+    }
+
+    SDL_RWclose(stream);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_load_session(PyObject *self, PyObject *args)
+{
+    //TODO: call into Session_Load
+    //however, the actual loading will take place asynchronously
+
+    Session_RequestLoad("test.pfsave");
+    fflush(stdout);
+    Py_RETURN_NONE;
+    //return NULL;
+}
+
 static bool s_sys_path_add_dir(const char *filename)
 {
     if(strlen(filename) >= 512)
@@ -1431,5 +1486,24 @@ script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg)
 bool S_ObjectsEqual(script_opaque_t a, script_opaque_t b)
 {
     return (1 == PyObject_RichCompareBool(a, b, Py_EQ));
+}
+
+void S_ClearState(void)
+{
+    PyThreadState *ts = PyThreadState_GET();
+    PyInterpreterState_Clear(ts->interp);
+}
+
+bool S_WriteMainModule(SDL_RWops *stream)
+{
+    PyObject *modules_dict = PySys_GetObject("modules"); /* borrowed */
+    assert(modules_dict);
+
+    PyObject *mod = PyDict_GetItemString(modules_dict, "__main__"); /* borrowed */
+    if(!mod) {
+        return false;
+    }
+
+    return S_PickleObjgraph(mod, stream);
 }
 

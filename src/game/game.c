@@ -1317,7 +1317,7 @@ struct render_workspace *G_GetSimWS(void)
 
 struct render_workspace *G_GetRenderWS(void)
 {
-    ASSERT_IN_RENDER_THREAD();;
+    ASSERT_IN_RENDER_THREAD();
 
     return &s_gs.ws[(s_gs.curr_ws_idx + 1) % 2];
 }
@@ -1349,5 +1349,23 @@ const struct map *G_GetPrevTickMap(void)
     ASSERT_IN_MAIN_THREAD();
 
     return s_gs.prev_tick_map;
+}
+
+bool G_WriteMap(SDL_RWops *stream)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct attr hasmap = (struct attr){
+        .type = TYPE_BOOL, 
+        .val.as_bool = s_gs.map != NULL
+    };
+
+    if(!Attr_Write(stream, &hasmap, "has_map"))
+        return false;
+
+    if(!hasmap.val.as_bool)
+        return true;
+
+    return M_AL_WritePFMap(s_gs.map, stream);
 }
 
