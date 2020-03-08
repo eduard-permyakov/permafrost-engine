@@ -44,9 +44,8 @@ class FileChooser(pf.Window):
         super(FileChooser, self).__init__(title, 
             (vresx / 2 - FileChooser.WINDOW_WIDTH/ 2, vresy / 2 - FileChooser.WINDOW_HEIGHT / 2, 
             FileChooser.WINDOW_WIDTH, FileChooser.WINDOW_HEIGHT), pf.NK_WINDOW_BORDER | pf.NK_WINDOW_NO_SCROLLBAR | pf.NK_WINDOW_TITLE, (vresx, vresy))
-        import os 
-        self.mapstring = os.path.realpath(pf.get_basedir()) + "/assets/maps/"
-        self.scenestring = os.path.realpath(pf.get_basedir()) + "/assets/maps/"
+        self.mapstring = pf.get_basedir() + "assets/maps/"
+        self.scenestring = pf.get_basedir() + "assets/maps/"
         self.scene_flag = False
         self.title = title
 

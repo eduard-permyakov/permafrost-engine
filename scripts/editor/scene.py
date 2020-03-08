@@ -617,7 +617,6 @@ OBJECTS_LIST = [
 
 
 def __meta_dict_for_path(path):
-    import os
     for dict in OBJECTS_LIST:
         dict_path = dict["path"]
         if dict_path == path:

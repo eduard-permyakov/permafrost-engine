@@ -34,6 +34,7 @@
 
 import pf
 import globals
+import traceback
 
 import views.demo_window as dw
 import views.action_pad_window as apw

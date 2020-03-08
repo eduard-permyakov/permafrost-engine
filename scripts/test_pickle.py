@@ -38,8 +38,6 @@ import sys
 import imp
 import exceptions
 import weakref
-import _symtable
-import zipimport
 
 def test_pickle_int():
 
@@ -417,7 +415,7 @@ def test_pickle_bool():
 
 def test_pickle_bytearray():
 
-    b1 = bytearray('\x00\x01\x02\0\x03', 'UTF-8')
+    b1 = bytearray('\x00\x01\x02\x03')
     s = pf.pickle_object(b1)
     b2 = pf.unpickle_object(s)
     assert b1 == b2
@@ -977,35 +975,6 @@ def test_pickle_weak_proxy():
 
     print "Weak Proxy pickling OK!"
 
-def test_pickle_stentry():
-
-    st1 = _symtable.symtable('def f(x): return x', 'test', 'exec')
-    assert repr(st1)[1:].startswith('symtable entry')
-    s = pf.pickle_object(st1)
-    st2 = pf.unpickle_object(s)
-
-    assert type(st1) == type(st2)
-    assert st1.lineno == st2.lineno
-    assert st1.id == st2.id
-    assert st1.varnames == st2.varnames
-    assert st1.name == st2.name
-
-    print "Symbol Table Entry pickling OK!"
-
-def test_pickle_zipimporter():
-
-    libdir = [d for d in sys.path if d.endswith('lib/python2.7') or d.endswith('lib\lib')][0]
-    z1 = zipimport.zipimporter(libdir + '/test/zipdir.zip')
-    s = pf.pickle_object(z1)
-    z2 = pf.unpickle_object(s)
-
-    assert type(z1) == type(z2)
-    assert z1.archive == z2.archive
-    assert z1.prefix == z2.prefix
-    assert z1._files == z2._files
-
-    print "zipimport.zipimporter pickling OK!"
-
 def test_pickle_dictviews():
 
     d = {
@@ -1276,8 +1245,6 @@ try:
     test_pickle_traceback()
     test_pickle_weakref()
     test_pickle_weak_proxy()
-    test_pickle_stentry()
-    test_pickle_zipimporter()
     test_pickle_dictviews()
     test_pickle_iterators()
     test_pickle_exceptions()

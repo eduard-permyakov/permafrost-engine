@@ -35,8 +35,15 @@
 import pf
 from common.constants import *
 import view_controller as vc
-import fractions
 import sys
+
+
+def _gcd(a, b):
+    while b != 0:
+        t = b
+        b = a % b
+        a = t
+    return a
 
 class VideoSettingsVC(vc.ViewController):
 
@@ -57,54 +64,47 @@ class VideoSettingsVC(vc.ViewController):
         try:
             ar_saved = pf.settings_get("pf.video.aspect_ratio")
             ar_saved = tuple( (int(num)) for num in ar_saved )
-            gcd = fractions.gcd(*ar_saved)
+            gcd = _gcd(*ar_saved)
             ar_saved = tuple( (num//gcd) for num in ar_saved )
             for i, cand in enumerate(self.view.ar_opts):
-                gcd = fractions.gcd(*cand)
+                gcd = _gcd(*cand)
                 cand = tuple( (num//gcd) for num in cand )
                 if cand == ar_saved:
                     self.view.ar_idx = i
                     self.__og_ar_idx = i
                     break
-        except: err = lambda: sys.exc_info() if not err else err
-        try:
+
             res_saved = pf.settings_get("pf.video.resolution")
             for i, cand in enumerate(self.view.res_opts):
                 if cand == res_saved:
                     self.view.res_idx = i
                     self.__og_res_idx = i
                     break
-        except: err = lambda: sys.exc_info() if not err else err
-        try:
+
             dm_saved = pf.settings_get("pf.video.display_mode")
             for i, cand in enumerate(self.view.mode_opts):
                 if cand == dm_saved:
                     self.view.mode_idx = i
                     self.__og_mode_idx = i
                     break
-        except: err = lambda: sys.exc_info() if not err else err
-        try:
+
             wat_saved = pf.settings_get("pf.video.window_always_on_top")
             self.view.win_on_top_idx = int(wat_saved == 0)
             self.__og_win_on_top_idx = int(wat_saved == 0)
-        except: err = lambda: sys.exc_info() if not err else err
-        try:
+
             vsync_saved = pf.settings_get("pf.video.vsync")
             self.view.vsync_idx = int(vsync_saved == 0)
             self.__og_vsync_idx = int(vsync_saved == 0)
-        except: err = lambda: sys.exc_info() if not err else err
-        try:
+
             shadows_saved = pf.settings_get("pf.video.shadows_enabled")
             self.view.shadows_idx = int(shadows_saved == 0)
             self.__og_shadows_idx = int(shadows_saved == 0)
-        except: err = lambda: sys.exc_info() if not err else err
-        try:
+
             water_reflect_saved = pf.settings_get("pf.video.water_reflection")
             self.view.water_reflect_idx = int(water_reflect_saved == 0)
             self.__og_water_reflect_idx = int(water_reflect_saved == 0)
-        except: err = lambda: sys.exc_info() if not err else err
-
-        if err:
+        except:
+            err = sys.exc_info()
             raise err[0], err[1], err[2]
 
     def __update_dirty_flag(self):

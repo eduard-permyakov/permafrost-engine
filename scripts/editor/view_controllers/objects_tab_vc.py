@@ -34,7 +34,6 @@
 
 import pf
 from constants import *
-import os
 import mouse_events
 import globals
 import common.view_controllers.view_controller as vc
@@ -53,7 +52,7 @@ class ObjectsVC(vc.ViewController):
 
     def __object_at_index(self, index):
         split_path = (MODELS_PREFIX_DIR + scene.OBJECTS_LIST[index]["path"]).split("/")
-        pfobj_dir = os.path.join(*split_path[:-1])
+        pfobj_dir = '/'.join(split_path[:-1])
         pfobj_filename = split_path[-1]
         if scene.OBJECTS_LIST[index]["anim"]:
             ret = pf.AnimEntity(pfobj_dir, pfobj_filename, pfobj_filename.split(".")[0], idle_clip=scene.OBJECTS_LIST[index]["idle"])

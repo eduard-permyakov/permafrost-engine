@@ -84,8 +84,7 @@ class MenuVC(vc.ViewController):
         pf.set_minimap_position(UI_LEFT_PANE_WIDTH + minimap_pos[0], minimap_pos[1])
         self.view.hide()
 
-        import os
-        if event[1] is not None and os.path.isfile(event[1]):
+        if event[1] is not None:
             assert len(globals.active_objects_list) == 0 
             try:
                 globals.active_objects_list = pf.load_scene(event[1], update_navgrid=False)
@@ -123,14 +122,12 @@ class MenuVC(vc.ViewController):
         self.fc = None
         self.activate()
 
-        import os.path 
-        if os.path.isfile(event[0]):
-            try:
-                new_map = map.Map.from_filepath(event[0])
-            except:
-                print("Failed to load map! [{0}]".format(event[0]))
-            else:
-                pf.global_event(EVENT_OLD_GAME_TEARDOWN_BEGIN, (new_map, event[1]))
+        try:
+            new_map = map.Map.from_filepath(event[0])
+        except:
+            print("Failed to load map! [{0}]".format(event[0]))
+        else:
+            pf.global_event(EVENT_OLD_GAME_TEARDOWN_BEGIN, (new_map, event[1]))
 
     def __on_load_cancel(self, event):
         pf.unregister_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.__on_load_confirm)
