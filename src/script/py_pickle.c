@@ -188,7 +188,6 @@ typedef void *mod_ty; //symtable.h wants this
 #define PF_EMPTYINST    'X' /* Push a dummy newclass instance, with the right amount of memory allocated for the final instance, and having its' builtin fields  */
 #define PF_PROXY        'Y' /* Push a weakproxy instance from top 2 TOS items */
 #define PF_STENTRY      'Z' /* Push a symtable entry instance from top 16 TOS items */
-#define PF_ZIPIMPORTER  '0' /* Push a zipimport.zipimporter instance from top 3 TOS items */
 #define PF_DICTKEYS     '1' /* Push a dict_keys instance from TOS dict */
 #define PF_DICTVALS     '2' /* Push a dict_values instance from TOS dict */
 #define PF_DICTITEMS    '3' /* Push a dict_items instance from TOS dict */
@@ -317,7 +316,6 @@ static int ellipsis_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int weakref_ref_pickle (struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int weakref_callable_proxy_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int weakref_proxy_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
-static int zip_importer_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int st_entry_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int class_method_descr_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int class_method_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
@@ -518,13 +516,6 @@ static struct pickle_entry s_type_dispatch_table[] = {
     {.type = NULL, /*&_PyWeakref_ProxyType*/         .picklefunc = weakref_proxy_pickle          },
 
     {.type = NULL, /*&PySTEntry_Type*/      .picklefunc = st_entry_pickle               },
-    {.type = NULL, /* &ZipImporter_Type */  .picklefunc = zip_importer_pickle           },
-
-    /* The following builtin types are are from the _sre module, which is compiled
-     * as part of the interpreter. Not supported for now. */
-    {.type = NULL, /* &Match_Type */        .picklefunc = placeholder_inst_pickle       },
-    {.type = NULL, /* &Pattern_Type */      .picklefunc = placeholder_inst_pickle       },
-    {.type = NULL, /* &Scanner_Type */      .picklefunc = placeholder_inst_pickle       },
 
     /* This is derived from an existing dictionary object using the PyDictProxy API. 
      * The only way to get a dictproxy object via scripting is to access the __dict__
@@ -721,7 +712,6 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_EMPTYINST] = op_ext_emptyinst,
     [PF_PROXY] = op_ext_weakproxy,
     [PF_STENTRY] = op_ext_stentry,
-    [PF_ZIPIMPORTER] = op_ext_zipimporter,
     [PF_DICTKEYS] = op_ext_dictkeys,
     [PF_DICTVALS] = op_ext_dictvalues,
     [PF_DICTITEMS] = op_ext_dictitems,
@@ -741,22 +731,19 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_BI_METHOD] = op_ext_bi_method,
 };
 
-/* Standard modules not imported on initialization which also contain C builtins */
+/* Statically-linked builtin modules not imported on initialization which also contain C builtins */
+/* (i.e. sys.builtin_module_names) */
 static const char *s_extra_indexed_mods[] = {
+    "array",
     "_collections",
-    "_functools",
     "_heapq",
-    "_symtable",
+    "exceptions",
+    "gc",
+    "imp",
+    "itertools",
+    "math",
     "_warnings",
     "_weakref",
-    "exceptions",
-    "itertools",
-    "imp",
-    "math",
-    "cmath",
-    "operator",
-    "signal",
-    "zipimport",
 };
 
 /*****************************************************************************/
@@ -870,15 +857,6 @@ static void load_private_type_refs(void)
     assert(!strcmp(tmp->ob_type->tp_name, "sys.version_info"));
     s_type_dispatch_table[idx].type = tmp->ob_type;
 
-    /* ZipImporter_Type */
-    idx = dispatch_idx_for_picklefunc(zip_importer_pickle);
-    tmp = PySys_GetObject("modules"); /* borrowed */
-    PyObject *zi_mod = PyDict_GetItemString(tmp, "zipimport"); /* borrowed */
-    assert(zi_mod);
-    s_type_dispatch_table[idx].type = (PyTypeObject*)PyObject_GetAttrString(zi_mod, "zipimporter");
-    assert(s_type_dispatch_table[idx].type);
-    Py_DECREF(s_type_dispatch_table[idx].type); /* safe to do since we know type is statically allocated */
-
     /* PySetIter_Type */
     idx = dispatch_idx_for_picklefunc(set_iter_pickle);
     PyObject *set = PyObject_CallFunction((PyObject*)&PySet_Type, "()");
@@ -946,30 +924,6 @@ static void load_private_type_refs(void)
     assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "tupleiterator"));
     Py_DECREF(tmp);
 
-    PyObject *re_mod = PyDict_GetItemString(PySys_GetObject("modules"), "re");
-    if(re_mod) {
-        /* _sre: Match_Type */
-        idx = dispatch_idx_for_picklefunc(zip_importer_pickle) + 1;
-        tmp = PyObject_CallMethod(re_mod, "match", "(ss)", "", "");
-        s_type_dispatch_table[idx].type = tmp->ob_type;
-        assert(strstr(s_type_dispatch_table[idx].type->tp_name, "SRE_Match"));
-        Py_DECREF(tmp);
-
-        /* _sre: Pattern_Type */
-        ++idx;
-        tmp = PyObject_CallMethod(re_mod, "compile", "(s)", "");
-        s_type_dispatch_table[idx].type = tmp->ob_type;
-        assert(strstr(s_type_dispatch_table[idx].type->tp_name, "SRE_Pattern"));
-
-        /* _sre: Scanner_Type */
-        ++idx;
-        PyObject *scanner = PyObject_CallMethod(tmp, "scanner", "(s)", "");
-        s_type_dispatch_table[idx].type = scanner->ob_type;
-        assert(strstr(s_type_dispatch_table[idx].type->tp_name, "SRE_Scanner"));
-        Py_DECREF(scanner);
-        Py_DECREF(tmp);
-    }
-
     assert(!PyErr_Occurred());
 }
 
@@ -1032,10 +986,6 @@ static void load_builtin_types(void)
     s_type_dispatch_table[base_idx++].type = &_PyWeakref_CallableProxyType;
     s_type_dispatch_table[base_idx++].type = &_PyWeakref_ProxyType;
     s_type_dispatch_table[base_idx++].type = &PySTEntry_Type;
-    base_idx++;
-    base_idx++;
-    base_idx++;
-    base_idx++;
     s_type_dispatch_table[base_idx++].type = &PyDictProxy_Type;
     base_idx++;
     base_idx++;
@@ -1377,6 +1327,7 @@ static int builtin_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     CHK_TRUE(rw->write(rw, &builtin, 1, 1), fail);
     CHK_TRUE(rw->write(rw, qname, strlen(qname), 1), fail);
     CHK_TRUE(rw->write(rw, "\n", 1, 1), fail);
+
     return 0;
 
 fail:
@@ -1491,9 +1442,8 @@ static int type_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
         PyObject *meta = PyObject_GetAttrString(obj, "__metaclass__");
         assert(PyType_Check(meta));
-        bool ret = pickle_obj(ctx, meta, rw);
-        Py_DECREF(meta);
-        CHK_TRUE(ret, fail);
+        vec_pobj_push(&ctx->to_free, meta);
+        CHK_TRUE(pickle_obj(ctx, meta, rw), fail);
     }else{
         CHK_TRUE(pickle_obj(ctx, (PyObject*)&PyType_Type, rw), fail);
     }
@@ -1572,13 +1522,20 @@ static int bytearray_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw
 
     char *buff = PyByteArray_AS_STRING(obj);
     size_t len = PyByteArray_GET_SIZE(obj);
-    PyObject *str = PyString_Encode(buff, len, "UTF-8", "strict");
-    if(!str)
-        goto fail;
-    vec_pobj_push(&ctx->to_free, str);
-    if(!pickle_obj(ctx, str, rw))
-        goto fail;
 
+    Py_UNICODE *uni = malloc(Py_UNICODE_SIZE * len);
+    for(int i = 0; i < len; i++)
+        uni[i] = buff[i];
+    PyObject *uniobj = PyUnicode_FromUnicode(uni, len);
+
+    PyObject *str = PyUnicode_EncodeUTF7(PyUnicode_AS_UNICODE(uniobj), PyUnicode_GET_SIZE(uniobj), true, true, "strict"); 
+    assert(strlen(PyString_AS_STRING(str)) == PyString_GET_SIZE(str));
+    vec_pobj_push(&ctx->to_free, str);
+
+    Py_DECREF(uniobj);
+    free(uni);
+    CHK_TRUE(pickle_obj(ctx, str, rw), fail);
+    
     const char ops[] = {PF_EXTEND, PF_BYTEARRAY};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
@@ -1778,7 +1735,9 @@ static int unicode_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
     PyObject *str = PyUnicode_EncodeUTF7(PyUnicode_AS_UNICODE(obj), PyUnicode_GET_SIZE(obj), true, true, "strict"); 
     assert(strlen(PyString_AS_STRING(str)) == PyString_GET_SIZE(str));
-    CHK_TRUE(rw->write(rw, PyString_AS_STRING(str), PyString_GET_SIZE(str), 1), fail);
+
+    int nwritten = rw->write(rw, PyString_AS_STRING(str), 1, PyString_GET_SIZE(str));
+    CHK_TRUE(nwritten == PyString_GET_SIZE(str), fail);
     vec_pobj_push(&ctx->to_free, str);
 
     CHK_TRUE(rw->write(rw, "\0\n", 2, 1), fail);
@@ -2469,7 +2428,7 @@ static int cfunction_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw
 
     /* Instances of unbounded built-in functions are never re-created. It is sufficient 
      * to pickle them by reference. */
-    if(!func->m_self || !strcmp(func->m_ml->ml_name, "__new__")) { //TODO: FIXME: clean this up
+    if(!func->m_self || !strcmp(func->m_ml->ml_name, "__new__")) {
         return builtin_pickle(ctx, obj, rw);
     }
 
@@ -2792,24 +2751,6 @@ static int weakref_proxy_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops
     }
 
     const char ops[] = {PF_EXTEND, PF_PROXY};
-    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
-    return 0;
-
-fail:
-    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
-    return -1;
-}
-
-static int zip_importer_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
-{
-    TRACE_PICKLE(obj);
-    struct _zipimporter *zip = (struct _zipimporter*)obj;
-
-    CHK_TRUE(pickle_obj(ctx, zip->archive, rw), fail);
-    CHK_TRUE(pickle_obj(ctx, zip->prefix, rw), fail);
-    CHK_TRUE(pickle_obj(ctx, zip->files, rw), fail);
-
-    const char ops[] = {PF_EXTEND, PF_ZIPIMPORTER};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
 
@@ -3266,6 +3207,7 @@ static PyObject *dummy_builtin_inst(PyObject *type)
 {
     assert(type_is_builtin(type));
     if((PyTypeObject*)type == &PyType_Type) {
+        Py_INCREF(&PyType_Type);
         return (PyObject*)&PyType_Type;
     }
 
@@ -3499,8 +3441,6 @@ fail:
     return -1;
 }
 
-bool gotten[32768];
-
 static int op_get(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(GET, ctx);
@@ -3520,7 +3460,6 @@ static int op_get(struct unpickle_ctx *ctx, SDL_RWops *rw)
         return -1;
     }
 
-    gotten[idx] = true;
     vec_pobj_push(&ctx->stack, vec_AT(&ctx->memo, idx));
     Py_INCREF(TOP(&ctx->stack));
 
@@ -4070,8 +4009,10 @@ static int op_ext_cell(struct unpickle_ctx *ctx, SDL_RWops *rw)
         return -1;
     }
 
-    PyObject *cell = PyCell_New(vec_pobj_pop(&ctx->stack));
+    PyObject *val = vec_pobj_pop(&ctx->stack);
+    PyObject *cell = PyCell_New(val);
     assert(cell);
+    Py_DECREF(val);
     vec_pobj_push(&ctx->stack, cell);
     return 0;
 }
@@ -4107,17 +4048,21 @@ static int op_ext_bytearray(struct unpickle_ctx *ctx, SDL_RWops *rw)
         return -1;
     }
 
-    PyObject *bytes = PyString_AsDecodedString(encoded, "UTF-8", "strict");
-    if(!bytes) {
-        Py_DECREF(encoded);
-        return -1;
-    }
-    Py_DECREF(encoded);
+    PyObject *raw = PyUnicode_DecodeUTF7(PyString_AS_STRING(encoded), PyString_GET_SIZE(encoded), "strict");
+    size_t len = PyUnicode_GET_SIZE(raw);
+    char *buff = malloc(PyUnicode_GET_SIZE(raw));
 
-    PyObject *ret = PyByteArray_FromStringAndSize(PyString_AS_STRING(bytes), PyString_GET_SIZE(bytes));
-    assert(ret);
-    Py_DECREF(bytes);
+    for(int i = 0; i < len; i++) {
+        assert(PyUnicode_AS_UNICODE(raw)[i] < (Py_UNICODE)256);
+        buff[i] = (char)PyUnicode_AS_UNICODE(raw)[i];
+    }
+
+    PyObject *ret = PyByteArray_FromStringAndSize(buff, len);
     vec_pobj_push(&ctx->stack, ret);
+
+    Py_DECREF(encoded);
+    Py_DECREF(raw);
+    free(buff);
     return 0;
 }
 
@@ -4501,7 +4446,7 @@ static int op_ext_module(struct unpickle_ctx *ctx, SDL_RWops *rw)
     TRACE_OP(PF_MODULE, ctx);
 
     int ret = -1;
-    if(vec_size(&ctx->stack) < 2) {
+    if(vec_size(&ctx->stack) < 1) {
         SET_RUNTIME_EXC("Stack underflow");
         goto fail_underflow;
     }
@@ -4585,15 +4530,16 @@ static int op_ext_newinst(struct unpickle_ctx *ctx, SDL_RWops *rw)
     PyTypeObject *tp_type = (PyTypeObject*)type;
 
     PyObject *new_obj = dummy;
-    Py_INCREF(dummy);
+    Py_INCREF(new_obj);
 
     /* This is assigning to __class__, but with no error checking */
     Py_DECREF(Py_TYPE(new_obj));
     Py_TYPE(new_obj) = tp_type;
     Py_INCREF(Py_TYPE(new_obj));
 
-    if(PyType_IS_GC(tp_type))
-        PyObject_GC_Track(new_obj);
+    assert(tp_type->tp_flags & Py_TPFLAGS_HEAPTYPE);
+    assert(PyType_IS_GC(tp_type));
+    PyObject_GC_Track(new_obj);
 
     vec_pobj_push(&ctx->stack, new_obj);
     ret = 0;
@@ -5330,7 +5276,7 @@ static int op_ext_frame(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }
 
     /* Forcefully set attrs */
-   CHK_TRUE(0 == convert_frame(frame, code, globals, locals == Py_None ? NULL : locals), fail_frame);
+    CHK_TRUE(0 == convert_frame(frame, code, globals, locals == Py_None ? NULL : locals), fail_frame);
 
     Py_XDECREF(frame->f_back);
     frame->f_back = back == Py_None ? NULL : (PyFrameObject*)back;
@@ -5477,7 +5423,7 @@ static int op_ext_traceback(struct unpickle_ctx *ctx, SDL_RWops *rw)
     PyTracebackObject *tb = PyObject_GC_New(PyTracebackObject, &PyTraceBack_Type);
     CHK_TRUE(tb, fail_tb);
     if(next != Py_None) {
-        Py_INCREF(tb->tb_next);
+        Py_INCREF(next);
         tb->tb_next = (struct _traceback*)next; 
     }else{
         tb->tb_next = NULL;
@@ -5620,6 +5566,7 @@ static int op_ext_emptyinst(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     CHK_TRUE(retval, fail_inst);
     assert(retval->ob_type->tp_flags & Py_TPFLAGS_HEAPTYPE);
+    assert(PyType_IS_GC(retval->ob_type));
 
     /* Re-add the GC tracking once the 'dummy' type is properly initialized
      * in 'PF_NEWINST'. Until then, it's not safe to traverse the instance's 
@@ -5779,45 +5726,6 @@ fail_typecheck:
     Py_DECREF(ste_nested);
     Py_DECREF(ste_unoptimized);
     Py_DECREF(ste_type);
-fail_underflow:
-    return ret;
-}
-
-static int op_ext_zipimporter(struct unpickle_ctx *ctx, SDL_RWops *rw)
-{
-    TRACE_OP(PF_ZIPIMPORTER, ctx);
-    int ret = -1;
-
-    if(vec_size(&ctx->stack) < 3) {
-        SET_RUNTIME_EXC("Stack underflow");
-        goto fail_underflow;
-    }
-    PyObject *files = vec_pobj_pop(&ctx->stack);
-    PyObject *prefix = vec_pobj_pop(&ctx->stack);
-    PyObject *archive = vec_pobj_pop(&ctx->stack);
-
-    int idx = dispatch_idx_for_picklefunc(zip_importer_pickle);
-    PyTypeObject *zip_type = s_type_dispatch_table[idx].type;
-
-    struct _zipimporter *retval = PyObject_GC_New(struct _zipimporter, zip_type);
-    CHK_TRUE(retval, fail_zip);
-
-    retval->archive = archive;
-    retval->prefix = prefix;
-    retval->files = files;
-    PyObject_GC_Track(retval);
-
-    Py_INCREF(archive);
-    Py_INCREF(prefix);
-    Py_INCREF(files);
-
-    vec_pobj_push(&ctx->stack, (PyObject*)retval);
-    ret = 0;
-
-fail_zip:
-    Py_DECREF(files);
-    Py_DECREF(prefix);
-    Py_DECREF(archive);
 fail_underflow:
     return ret;
 }
@@ -6511,8 +6419,7 @@ static bool pickle_attrs(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
         value = PyDict_GetItem(ndw_attrs, key);
         assert(value);
 
-        int res = pickle_obj(ctx, key, rw);
-        CHK_TRUE(res, fail);
+        CHK_TRUE(pickle_obj(ctx, key, rw), fail);
         CHK_TRUE(pickle_obj(ctx, value, rw), fail);
     }
 

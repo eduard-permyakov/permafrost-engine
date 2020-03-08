@@ -83,6 +83,7 @@ static PyObject *PyPf_get_render_info(PyObject *self);
 static PyObject *PyPf_get_nav_perfstats(PyObject *self);
 static PyObject *PyPf_get_mouse_pos(PyObject *self);
 static PyObject *PyPf_mouse_over_ui(PyObject *self);
+static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_enable_unit_selection(PyObject *self);
 static PyObject *PyPf_disable_unit_selection(PyObject *self);
@@ -220,6 +221,10 @@ static PyMethodDef pf_module_methods[] = {
     {"mouse_over_ui", 
     (PyCFunction)PyPf_mouse_over_ui, METH_NOARGS,
     "Returns True if the mouse cursor is within the bounds of any UI windows."},
+
+    {"get_file_size", 
+    (PyCFunction)PyPf_get_file_size, METH_VARARGS,
+    "Get the size (in bytes) of a Python file object."},
 
     {"enable_unit_selection", 
     (PyCFunction)PyPf_enable_unit_selection, METH_NOARGS,
@@ -667,6 +672,23 @@ static PyObject *PyPf_mouse_over_ui(PyObject *self)
         Py_RETURN_TRUE;
     else
         Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args)
+{
+    PyObject *file;
+
+    if(!PyArg_ParseTuple(args, "O", &file)
+	|| !PyFile_Check(file)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a file object.");
+        return NULL;
+    }
+
+	SDL_RWops *rw = SDL_RWFromFP(((PyFileObject*)file)->f_fp, false);
+	PyObject *ret = PyLong_FromLongLong(SDL_RWsize(rw));
+	SDL_FreeRW(rw);
+
+	return ret;
 }
 
 static PyObject *PyPf_enable_unit_selection(PyObject *self)
@@ -1342,7 +1364,9 @@ PyMODINIT_FUNC initpf(void)
 
 bool S_Init(char *progname, const char *base_path, struct nk_context *ctx)
 {
+    Py_NoSiteFlag = 1;
     Py_SetProgramName(progname);
+    Py_SetPythonHome("./scripts");
     Py_Initialize();
 
     if(!S_UI_Init(ctx))
@@ -1353,6 +1377,11 @@ bool S_Init(char *progname, const char *base_path, struct nk_context *ctx)
     char script_dir[512];
     strcpy(script_dir, g_basepath);
     strcat(script_dir, "/scripts");
+    if(0 != PyList_Append(PySys_GetObject("path"), Py_BuildValue("s", script_dir)))
+        return false;
+
+    strcpy(script_dir, g_basepath);
+    strcat(script_dir, "/scripts/stdlib");
     if(0 != PyList_Append(PySys_GetObject("path"), Py_BuildValue("s", script_dir)))
         return false;
 

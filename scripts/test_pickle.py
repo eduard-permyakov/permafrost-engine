@@ -707,7 +707,7 @@ def test_pickle_buffer():
 
 def test_pickle_memoryview():
 
-    bytes = bytearray('\x00\x01\x02\x03\x04\x05\x06\x07', 'UTF-8')
+    bytes = bytearray('\x00\x01\x02\x03\x04\x05\x06\x07')
 
     m1 = memoryview(bytes)
     s = pf.pickle_object(m1)
