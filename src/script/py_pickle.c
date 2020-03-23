@@ -205,6 +205,9 @@ typedef void *mod_ty; //symtable.h wants this
 #define PF_EXCEPTION    '^' /* Push an Exception subclass from TOS item */ 
 #define PF_METHOD_DESC  '&' /* Push a method_descriptor from the top 2 TOS items */
 #define PF_BI_METHOD    '*' /* Push a 'built-in method' (variant of PyCFunctionObject) type from top 3 TOS items */
+#define PF_OP_ITEMGET   '(' /* Push an operator.itemgetter instance from top 2 TOS items */
+#define PF_OP_ATTRGET   ')' /* Push an operator.attrgetter instance from top 2 TOS items */
+#define PF_OP_METHODCALL '-' /* Push an operator.methodcaller instance from top 3 TOS items */
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -337,6 +340,9 @@ static int list_rev_iter_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int set_iter_pickle    (struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int tuple_iter_pickle  (struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int newclass_instance_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int oper_itemgetter_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int oper_attrgetter_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
+static int oper_methodcaller_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int placeholder_inst_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int exception_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
 
@@ -429,6 +435,9 @@ static int op_ext_formatiter(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_exception (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_method_desc(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_bi_method (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_oper_itemgetter(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_oper_attrgetter(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_oper_methodcaller(struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -548,6 +557,11 @@ static struct pickle_entry s_type_dispatch_table[] = {
     {.type = NULL, /* &PySetIter_Type */       .picklefunc = set_iter_pickle            },
     {.type = NULL, /* &PyFieldNameIter_Type */ .picklefunc = field_name_iter_pickle     },
     {.type = NULL, /* &PyFormatterIter_Type */ .picklefunc = formatter_iter_pickle      },
+
+    /* operator module builtins */
+    {.type = NULL, /* itemgetter_type */    .picklefunc = oper_itemgetter_pickle        },
+    {.type = NULL, /* attrgetter_type */    .picklefunc = oper_attrgetter_pickle        },
+    {.type = NULL, /* methodcaller_type */  .picklefunc = oper_methodcaller_pickle      },
 
     /* A PyCObject cannot be instantiated directly, but may be exported by C
      * extension modules. As it is a wrapper around a raw memory address exported 
@@ -729,6 +743,9 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_EXCEPTION] = op_ext_exception,
     [PF_METHOD_DESC] = op_ext_method_desc,
     [PF_BI_METHOD] = op_ext_bi_method,
+    [PF_OP_ITEMGET] = op_ext_oper_itemgetter,
+    [PF_OP_ATTRGET] = op_ext_oper_attrgetter,
+    [PF_OP_METHODCALL] = op_ext_oper_methodcaller,
 };
 
 /* Statically-linked builtin modules not imported on initialization which also contain C builtins */
@@ -742,6 +759,7 @@ static const char *s_extra_indexed_mods[] = {
     "imp",
     "itertools",
     "math",
+    "operator",
     "_warnings",
     "_weakref",
 };
@@ -924,6 +942,23 @@ static void load_private_type_refs(void)
     assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "tupleiterator"));
     Py_DECREF(tmp);
 
+    PyObject *op_mod = PyImport_AddModule("operator"); /* borrowed */
+
+    /* operator.itemgetter */
+    idx = dispatch_idx_for_picklefunc(oper_itemgetter_pickle);
+    s_type_dispatch_table[idx].type = (PyTypeObject*)PyObject_GetAttrString(op_mod, "itemgetter");
+    assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "operator.itemgetter"));
+
+    /* operator.attrgetter */
+    idx = dispatch_idx_for_picklefunc(oper_attrgetter_pickle);
+    s_type_dispatch_table[idx].type = (PyTypeObject*)PyObject_GetAttrString(op_mod, "attrgetter");
+    assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "operator.attrgetter"));
+
+    /* operator.methodcaller */
+    idx = dispatch_idx_for_picklefunc(oper_methodcaller_pickle);
+    s_type_dispatch_table[idx].type = (PyTypeObject*)PyObject_GetAttrString(op_mod, "methodcaller");
+    assert(!strcmp(s_type_dispatch_table[idx].type->tp_name, "operator.methodcaller"));
+
     assert(!PyErr_Occurred());
 }
 
@@ -1000,6 +1035,9 @@ static void load_builtin_types(void)
     s_type_dispatch_table[base_idx++].type = &PyDictIterItem_Type;
     s_type_dispatch_table[base_idx++].type = &PyDictIterKey_Type;
     s_type_dispatch_table[base_idx++].type = &PyDictIterValue_Type;
+    base_idx++;
+    base_idx++;
+    base_idx++;
     base_idx++;
     base_idx++;
     base_idx++;
@@ -3266,6 +3304,71 @@ static int newclass_instance_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_R
     CHK_TRUE(pickle_obj(ctx, args, rw), fail);
 
     CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
+
+static int oper_itemgetter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    TRACE_PICKLE(obj);
+    itemgetterobject *ig = (itemgetterobject*)obj;
+
+    PyObject *nitems = PyInt_FromSsize_t(ig->nitems);
+    vec_pobj_push(&ctx->to_free, nitems);
+    CHK_TRUE(pickle_obj(ctx, nitems, rw), fail);
+
+    assert(ig->item);
+    CHK_TRUE(pickle_obj(ctx, ig->item, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_OP_ITEMGET};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
+
+static int oper_attrgetter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    TRACE_PICKLE(obj);
+    attrgetterobject *ag = (attrgetterobject*)obj;
+
+    PyObject *nattrs = PyInt_FromSsize_t(ag->nattrs);
+    vec_pobj_push(&ctx->to_free, nattrs);
+    CHK_TRUE(pickle_obj(ctx, nattrs, rw), fail);
+
+    assert(ag->attr);
+    CHK_TRUE(pickle_obj(ctx, ag->attr, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_OP_ATTRGET};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
+
+static int oper_methodcaller_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    TRACE_PICKLE(obj);
+    methodcallerobject *mc = (methodcallerobject*)obj;
+
+    CHK_TRUE(pickle_obj(ctx, mc->name, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, mc->args, rw), fail);
+
+    if(mc->kwds) {
+        CHK_TRUE(pickle_obj(ctx, mc->kwds, rw), fail);
+    }else{
+        CHK_TRUE(0 == none_pickle(ctx, Py_None, rw), fail);
+    }
+
+    const char ops[] = {PF_EXTEND, PF_OP_METHODCALL};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
 
@@ -6262,6 +6365,136 @@ fail_method:
 fail_typecheck:
     Py_DECREF(name);
     Py_DECREF(type);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_oper_itemgetter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_OP_ITEMGET, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 2) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+
+    int idx = dispatch_idx_for_picklefunc(oper_itemgetter_pickle);
+    PyTypeObject *itemgettertype = s_type_dispatch_table[idx].type;
+
+    PyObject *item = vec_pobj_pop(&ctx->stack);
+    PyObject *nitems = vec_pobj_pop(&ctx->stack);
+
+    if(!PyInt_Check(nitems)) {
+        SET_RUNTIME_EXC("PF_OP_ITEMGET: Expecting int at TOS1");
+        goto fail_typecheck;
+    }
+
+    itemgetterobject *rval = PyObject_GC_New(itemgetterobject, itemgettertype);
+    Py_INCREF(item);
+    rval->item = item;
+    rval->nitems = PyInt_AsSsize_t(nitems);
+    PyObject_GC_Track(rval);
+
+    vec_pobj_push(&ctx->stack, (PyObject*)rval);
+    ret = 0;
+
+fail_typecheck:
+    Py_DECREF(item);
+    Py_DECREF(nitems);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_oper_attrgetter(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_OP_ATTRGET, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 2) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+
+    int idx = dispatch_idx_for_picklefunc(oper_attrgetter_pickle);
+    PyTypeObject *attrgettertype = s_type_dispatch_table[idx].type;
+
+    PyObject *attr = vec_pobj_pop(&ctx->stack);
+    PyObject *nattrs = vec_pobj_pop(&ctx->stack);
+
+    if(!PyInt_Check(nattrs)) {
+        SET_RUNTIME_EXC("PF_OP_ATTRGET: Expecting int at TOS1");
+        goto fail_typecheck;
+    }
+
+    attrgetterobject *rval = PyObject_GC_New(attrgetterobject, attrgettertype);
+    Py_INCREF(attr);
+    rval->attr = attr;
+    rval->nattrs = PyInt_AsSsize_t(nattrs);
+    PyObject_GC_Track(rval);
+
+    vec_pobj_push(&ctx->stack, (PyObject*)rval);
+    ret = 0;
+
+fail_typecheck:
+    Py_DECREF(attr);
+    Py_DECREF(nattrs);
+fail_underflow:
+    return ret;
+}
+
+static int op_ext_oper_methodcaller(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_OP_METHODCALL, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 3) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+
+    int idx = dispatch_idx_for_picklefunc(oper_methodcaller_pickle);
+    PyTypeObject *methodcallertype = s_type_dispatch_table[idx].type;
+
+    PyObject *kwds = vec_pobj_pop(&ctx->stack);
+    PyObject *args = vec_pobj_pop(&ctx->stack);
+    PyObject *name = vec_pobj_pop(&ctx->stack);
+
+    if(kwds != Py_None && !PyDict_Check(kwds)) {
+        SET_RUNTIME_EXC("PF_OP_METHODCALL: Expecting dictionary of None at TOS");
+        goto fail_typecheck;
+    }
+
+    if(PyTuple_Check(args)) {
+        SET_RUNTIME_EXC("PF_OP_METHODCALL: Expecting tuple at TOS1");
+        goto fail_typecheck;
+    }
+
+    if(!PyString_Check(name)) {
+        SET_RUNTIME_EXC("PF_OP_METHODCALL: Expecting string at TOS2");
+        goto fail_typecheck;
+    }
+
+    methodcallerobject *rval = PyObject_GC_New(methodcallerobject, methodcallertype);
+    Py_INCREF(name);
+    rval->name = name;
+    Py_INCREF(args);
+    rval->name = args;
+    if(kwds != Py_None) {
+        Py_INCREF(kwds);
+        rval->kwds = kwds;
+    }else{
+        rval->kwds = NULL;
+    }
+    PyObject_GC_Track(rval);
+
+    vec_pobj_push(&ctx->stack, (PyObject*)rval);
+    ret = 0;
+
+fail_typecheck:
+    Py_DECREF(name);
+    Py_DECREF(args);
+    Py_DECREF(kwds);
 fail_underflow:
     return ret;
 }

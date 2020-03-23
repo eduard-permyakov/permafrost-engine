@@ -195,5 +195,26 @@ typedef struct {
     MarkupIterator it_markup;
 } formatteriterobject;
 
+/* from Modules/operator.c */
+
+typedef struct {
+    PyObject_HEAD
+    Py_ssize_t nitems;
+    PyObject *item;
+} itemgetterobject;
+
+typedef struct {
+    PyObject_HEAD
+    Py_ssize_t nattrs;
+    PyObject *attr;
+} attrgetterobject;
+
+typedef struct {
+    PyObject_HEAD
+    PyObject *name;
+    PyObject *args;
+    PyObject *kwds;
+} methodcallerobject;
+
 #endif
 
