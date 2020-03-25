@@ -1196,8 +1196,8 @@ static int reference_all_types(void)
         }
     }
 
-    PyObject *builtins = PyImport_AddModule("__builtin__");
-    PyObject_SetAttrString(builtins, "__all_types__", mapping);
+    PyObject *mod = PyImport_AddModule("__builtin__");
+    PyObject_SetAttrString(mod, "__all_types__", mapping);
     Py_DECREF(mapping);
     return 0;
 
@@ -2051,7 +2051,6 @@ static int tuple_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
     assert(PyTuple_Check(obj));
     len = PyTuple_Size((PyObject*)obj);
-    Py_INCREF(obj);
 
     if(len == 0) {
 
@@ -2203,14 +2202,12 @@ static int function_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     if(func->func_closure) {
         CHK_TRUE(pickle_obj(ctx, func->func_closure, rw), fail);
     }else{
-        Py_INCREF(Py_None);
         CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
     }
 
     if(func->func_defaults) {
         CHK_TRUE(pickle_obj(ctx, func->func_defaults, rw), fail);
     }else{
-        Py_INCREF(Py_None);
         CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
     }
 
@@ -3565,7 +3562,6 @@ static int op_get(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     vec_pobj_push(&ctx->stack, vec_AT(&ctx->memo, idx));
     Py_INCREF(TOP(&ctx->stack));
-
     return 0;
 
 fail:
@@ -3693,8 +3689,8 @@ static int op_appends(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }
 
     for(int i = 0; i < extra_len; i++) {
+        /* steal the reference from the stack */
         PyObject *elem = vec_pobj_pop(&ctx->stack);
-        Py_INCREF(elem);
         PyList_SetItem(append, extra_len - i - 1, elem);
     }
 
@@ -6465,7 +6461,7 @@ static int op_ext_oper_methodcaller(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail_typecheck;
     }
 
-    if(PyTuple_Check(args)) {
+    if(!PyTuple_Check(args)) {
         SET_RUNTIME_EXC("PF_OP_METHODCALL: Expecting tuple at TOS1");
         goto fail_typecheck;
     }
@@ -6479,7 +6475,7 @@ static int op_ext_oper_methodcaller(struct unpickle_ctx *ctx, SDL_RWops *rw)
     Py_INCREF(name);
     rval->name = name;
     Py_INCREF(args);
-    rval->name = args;
+    rval->args = args;
     if(kwds != Py_None) {
         Py_INCREF(kwds);
         rval->kwds = kwds;
@@ -6566,7 +6562,7 @@ static bool unpickle_ctx_init(struct unpickle_ctx *ctx)
 static void unpickle_ctx_destroy(struct unpickle_ctx *ctx)
 {
     for(int i = 0; i < vec_size(&ctx->memo); i++) {
-        Py_DECREF(vec_AT(&ctx->memo, i));    
+        Py_DECREF(vec_AT(&ctx->memo, i));
     }
     
     vec_int_destroy(&ctx->mark_stack);
@@ -6783,6 +6779,7 @@ void S_Pickle_Shutdown(void)
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream)
 {
     struct pickle_ctx ctx;
+
     int ret = pickle_ctx_init(&ctx);
     if(!ret) 
         goto err;

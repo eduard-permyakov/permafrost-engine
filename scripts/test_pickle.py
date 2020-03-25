@@ -38,6 +38,8 @@ import sys
 import imp
 import exceptions
 import weakref
+import operator
+
 
 def test_pickle_int():
 
@@ -299,7 +301,6 @@ def test_pickle_class():
     s = pf.pickle_object(c1)
     c2 = pf.unpickle_object(s)
     assert c1.clsattr == c2.clsattr
-
 
     print "Class pickling OK!"
 
@@ -1196,6 +1197,25 @@ def test_pickle_builtin_method():
 
     print "Built-in method pickling OK!"
 
+def test_pickle_operator_builtins():
+
+    f1 = operator.itemgetter(1)
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1([0,1,2]) == f2([0,1,2])
+
+    f1 = operator.methodcaller('lower')
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1('TEST') == f2('TEST')
+
+    f1 = operator.attrgetter('__class__')
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1(1) == f2(1)
+
+    print "operator module builtins pickling OK!"
+
 try:
     test_pickle_int()
     test_pickle_long()
@@ -1249,6 +1269,7 @@ try:
     test_pickle_iterators()
     test_pickle_exceptions()
     test_pickle_builtin_method()
+    test_pickle_operator_builtins()
 except Exception as e:
     traceback.print_exc()
 finally:

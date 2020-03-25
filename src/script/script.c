@@ -1376,12 +1376,12 @@ bool S_Init(char *progname, const char *base_path, struct nk_context *ctx)
 
     char script_dir[512];
     strcpy(script_dir, g_basepath);
-    strcat(script_dir, "/scripts");
+    strcat(script_dir, "scripts");
     if(0 != PyList_Append(PySys_GetObject("path"), Py_BuildValue("s", script_dir)))
         return false;
 
     strcpy(script_dir, g_basepath);
-    strcat(script_dir, "/scripts/stdlib");
+    strcat(script_dir, "scripts/stdlib");
     if(0 != PyList_Append(PySys_GetObject("path"), Py_BuildValue("s", script_dir)))
         return false;
 
