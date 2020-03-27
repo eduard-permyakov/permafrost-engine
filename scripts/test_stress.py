@@ -99,7 +99,6 @@ def setup_armies():
             knight.faction_id = 0
             knight.selection_radius = 3.25
             knight.selectable = True
-            knight.activate()
             knight.hold_position()
 
             red_army_units += [knight]
@@ -114,7 +113,6 @@ def setup_armies():
             berz.faction_id = 1
             berz.selection_radius = 3.00
             berz.selectable = True
-            berz.activate()
             berz.hold_position()
 
             blue_army_units += [berz]

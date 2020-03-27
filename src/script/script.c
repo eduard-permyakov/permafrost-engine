@@ -379,6 +379,8 @@ static PyMethodDef pf_module_methods[] = {
     {NULL}  /* Sentinel */
 };
 
+const char *s_progname = NULL;
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1362,10 +1364,11 @@ PyMODINIT_FUNC initpf(void)
     S_Constants_Expose(module); 
 }
 
-bool S_Init(char *progname, const char *base_path, struct nk_context *ctx)
+bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
 {
     Py_NoSiteFlag = 1;
-    Py_SetProgramName(progname);
+    Py_SetProgramName((char*)progname);
+    s_progname = progname;
     Py_SetPythonHome("./scripts");
     Py_Initialize();
 
@@ -1519,8 +1522,8 @@ bool S_ObjectsEqual(script_opaque_t a, script_opaque_t b)
 
 void S_ClearState(void)
 {
-    PyThreadState *ts = PyThreadState_GET();
-    PyInterpreterState_Clear(ts->interp);
+    S_Shutdown();
+    S_Init(s_progname, g_basepath, UI_GetContext());
 }
 
 bool S_WriteMainModule(SDL_RWops *stream)

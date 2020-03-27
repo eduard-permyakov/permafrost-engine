@@ -71,10 +71,10 @@ class ObjectsVC(vc.ViewController):
 
     def __on_selected_object_changed(self, event):
         self.object_index = event
+        pos = self.current_object.pos
         if self.view.mode == self.view.OBJECTS_MODE_PLACE:
             self.current_object = self.__object_at_index(event)
-            if mouse_events.mouse_over_map:
-                self.current_object.activate()
+            self.current_object.pos = pos
 
     def __on_mousemove(self, event):
         if self.current_object and pf.map_pos_under_cursor():
@@ -83,14 +83,6 @@ class ObjectsVC(vc.ViewController):
             sel = pf.get_unit_selection()
             if len(sel) == 1:
                 sel[0].pos = pf.map_pos_under_cursor()
-
-    def __on_mouse_enter_map(self, event):
-        if self.current_object: 
-            self.current_object.activate()
-
-    def __on_mouse_exit_map(self, event):
-        if self.current_object: 
-            self.current_object.deactivate()
 
     def __on_click(self, event):
         if not mouse_events.mouse_over_map:
@@ -102,9 +94,7 @@ class ObjectsVC(vc.ViewController):
                 self.current_object.faction_id = self.view.selected_faction_idx
                 globals.active_objects_list.append(self.current_object)
                 self.current_object = self.__object_at_index(self.view.selected_object_idx)
-                if mouse_events.mouse_over_map:
-                    self.current_object.pos = pf.map_pos_under_cursor()
-                    self.current_object.activate()
+                self.current_object.pos = pf.map_pos_under_cursor()
         elif event[0] == pf.SDL_BUTTON_RIGHT:
             self.right_mousebutton_state = event[1]
             sel = pf.get_unit_selection()
@@ -120,9 +110,8 @@ class ObjectsVC(vc.ViewController):
         if self.view.mode == self.view.OBJECTS_MODE_PLACE:
             pf.clear_unit_selection()
             self.current_object = self.__object_at_index(self.view.selected_object_idx)
-            if mouse_events.mouse_over_map and pf.map_pos_under_cursor():
+            if pf.map_pos_under_cursor():
                 self.current_object.pos = pf.map_pos_under_cursor()
-                self.current_object.activate()
         elif self.view.mode == self.view.OBJECTS_MODE_SELECT:
             self.current_object = None
 
@@ -130,7 +119,6 @@ class ObjectsVC(vc.ViewController):
         if self.view.mode == self.view.OBJECTS_MODE_PLACE and pf.map_pos_under_cursor():
             self.current_object = self.__object_at_index(self.view.selected_object_idx)
             self.current_object.pos = pf.map_pos_under_cursor()
-            self.current_object.activate()
 
     def __on_selected_unit_picked(self, event):
         assert isinstance(event, pf.Entity)
@@ -168,8 +156,6 @@ class ObjectsVC(vc.ViewController):
         pf.register_event_handler(pf.SDL_MOUSEWHEEL, ObjectsVC.__on_mousewheel, self)
         pf.register_event_handler(pf.EVENT_NEW_GAME, ObjectsVC.__on_new_game, self)
         pf.register_event_handler(EVENT_OBJECT_SELECTION_CHANGED, ObjectsVC.__on_selected_object_changed, self)
-        pf.register_event_handler(EVENT_MOUSE_ENTERED_MAP, ObjectsVC.__on_mouse_enter_map, self)
-        pf.register_event_handler(EVENT_MOUSE_EXITED_MAP, ObjectsVC.__on_mouse_exit_map, self)
         pf.register_event_handler(EVENT_OBJECTS_TAB_MODE_CHANGED, ObjectsVC.__on_mode_changed, self)
         pf.register_event_handler(EVENT_OBJECT_SELECTED_UNIT_PICKED, ObjectsVC.__on_selected_unit_picked, self)
         pf.register_event_handler(EVENT_OBJECT_DELETE_SELECTION, ObjectsVC.__on_delete_selection, self)
@@ -191,8 +177,6 @@ class ObjectsVC(vc.ViewController):
         pf.unregister_event_handler(pf.SDL_MOUSEWHEEL, ObjectsVC.__on_mousewheel)
         pf.unregister_event_handler(pf.EVENT_NEW_GAME, ObjectsVC.__on_new_game)
         pf.unregister_event_handler(EVENT_OBJECT_SELECTION_CHANGED, ObjectsVC.__on_selected_object_changed)
-        pf.unregister_event_handler(EVENT_MOUSE_ENTERED_MAP, ObjectsVC.__on_mouse_enter_map)
-        pf.unregister_event_handler(EVENT_MOUSE_EXITED_MAP, ObjectsVC.__on_mouse_exit_map)
         pf.unregister_event_handler(EVENT_OBJECTS_TAB_MODE_CHANGED, ObjectsVC.__on_mode_changed)
         pf.unregister_event_handler(EVENT_OBJECT_SELECTED_UNIT_PICKED, ObjectsVC.__on_selected_unit_picked)
         pf.unregister_event_handler(EVENT_OBJECT_DELETE_SELECTION, ObjectsVC.__on_delete_selection)

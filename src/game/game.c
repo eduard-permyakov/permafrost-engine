@@ -973,7 +973,7 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
     if(ent->flags & ENTITY_FLAG_COMBATABLE)
         G_Combat_AddEntity(ent, COMBAT_STANCE_AGGRESSIVE);
 
-    G_Pos_Set(ent->uid, pos);
+    G_Pos_Set(ent, pos);
     if(ent->flags & ENTITY_FLAG_STATIC)
         return true;
 
@@ -1018,6 +1018,35 @@ void G_StopEntity(const struct entity *ent)
         G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
     }
     G_Move_Stop(ent);
+}
+
+void G_SetStatic(struct entity *ent, bool on)
+{
+    khiter_t k;
+    int ret;
+
+    if(on) {
+        if(ent->flags & ENTITY_FLAG_STATIC)
+            return;
+
+        k = kh_get(entity, s_gs.dynamic, ent->uid);
+        assert(k != kh_end(s_gs.dynamic));
+        kh_del(entity, s_gs.dynamic, k);
+
+        G_Move_RemoveEntity(ent);
+        ent->flags |= ENTITY_FLAG_STATIC;
+    }else{
+
+        if(ent->flags & ~ENTITY_FLAG_STATIC)
+            return;
+
+        k = kh_put(entity, s_gs.dynamic, ent->uid, &ret);
+        assert(ret != -1 && ret != 0);
+        kh_value(s_gs.dynamic, k) = ent;
+
+        G_Move_AddEntity(ent);
+        ent->flags &= ~ENTITY_FLAG_STATIC;
+    }
 }
 
 void G_SafeFree(struct entity *ent)

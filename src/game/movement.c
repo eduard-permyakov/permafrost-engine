@@ -95,6 +95,7 @@ struct movestate{
      * navigation blocker, and the last position where it became a blocker. */
     bool               blocking;
     vec2_t             last_stop_pos;
+    float              last_stop_radius;
     /* Information for waking up from the 'WAITING' state */
     enum arrival_state wait_prev;
     int                wait_ticks_left;
@@ -221,6 +222,7 @@ static void entity_block(const struct entity *ent)
 
     ms->blocking = true;
     ms->last_stop_pos = G_Pos_GetXZ(ent->uid);
+    ms->last_stop_radius = ent->selection_radius;
 }
 
 static void entity_unblock(const struct entity *ent)
@@ -228,7 +230,7 @@ static void entity_unblock(const struct entity *ent)
     struct movestate *ms = movestate_get(ent);
     assert(ms->blocking);
 
-    M_NavBlockersDecref(ms->last_stop_pos, ent->selection_radius, s_map);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, s_map);
     ms->blocking = false;
 }
 
@@ -959,7 +961,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
     && M_NavPositionPathable(s_map, new_pos_xz)) {
     
         vec3_t new_pos = (vec3_t){new_pos_xz.x, M_HeightAtPoint(s_map, new_pos_xz), new_pos_xz.z};
-        G_Pos_Set(ent->uid, new_pos);
+        G_Pos_Set(ent, new_pos);
         ms->velocity = new_vel;
 
         /* Use a weighted average of past velocities ot set the entity's orientation. This means that 
@@ -1241,7 +1243,6 @@ void G_Move_AddEntity(const struct entity *ent)
     struct movestate new_ms = (struct movestate) {
         .velocity = {0.0f}, 
         .blocking = false,
-        .last_stop_pos = G_Pos_GetXZ(ent->uid),
         .state = STATE_ARRIVED,
         .vel_hist_idx = 0,
     };
@@ -1369,5 +1370,20 @@ void G_Move_SetSeekEnemies(const struct entity *ent)
     }
 
     ms->state = STATE_SEEK_ENEMIES;
+}
+
+void G_Move_UpdatePos(const struct entity *ent, vec2_t pos)
+{
+    struct movestate *ms = movestate_get(ent);
+    if(!ms)
+        return;
+
+    if(!ms->blocking)
+        return;
+
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, s_map);
+    M_NavBlockersIncref(pos, ent->selection_radius, s_map);
+    ms->last_stop_pos = pos;
+    ms->last_stop_radius = ent->selection_radius;
 }
 

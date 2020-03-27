@@ -1,5 +1,4 @@
-/*
- *  This file is part of Permafrost Engine. 
+/* *  This file is part of Permafrost Engine. 
  *  Copyright (C) 2019-2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
@@ -34,6 +33,7 @@
  */
 
 #include "game_private.h"
+#include "movement.h"
 #include "public/game.h"
 #include "../main.h"
 #include "../pf_math.h"
@@ -78,34 +78,36 @@ static bool any_ent(const struct entity *ent, void *arg)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool G_Pos_Set(uint32_t uid, vec3_t pos)
+bool G_Pos_Set(const struct entity *ent, vec3_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    khiter_t k = kh_get(pos, s_postable, uid);
+    khiter_t k = kh_get(pos, s_postable, ent->uid);
     bool overwrite = (k != kh_end(s_postable));
 
     if(overwrite) {
         vec3_t old_pos = kh_val(s_postable, k);
-        bool ret = qt_ent_delete(&s_postree, old_pos.x, old_pos.z, uid);
+        bool ret = qt_ent_delete(&s_postree, old_pos.x, old_pos.z, ent->uid);
         assert(ret);
     }
 
-    if(!qt_ent_insert(&s_postree, pos.x, pos.z, uid))
+    if(!qt_ent_insert(&s_postree, pos.x, pos.z, ent->uid))
         return false;
 
     if(!overwrite) {
         int ret;
-        kh_put(pos, s_postable, uid, &ret); 
+        kh_put(pos, s_postable, ent->uid, &ret); 
         if(ret == -1) {
-            qt_ent_delete(&s_postree, pos.x, pos.z, uid);
+            qt_ent_delete(&s_postree, pos.x, pos.z, ent->uid);
             return false;
         }
-        k = kh_get(pos, s_postable, uid);
+        k = kh_get(pos, s_postable, ent->uid);
     }
 
     kh_val(s_postable, k) = pos;
     assert(kh_size(s_postable) == s_postree.nrecs);
+
+    G_Move_UpdatePos(ent, (vec2_t){pos.x, pos.z});
     return true; 
 }
 

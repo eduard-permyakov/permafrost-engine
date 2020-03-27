@@ -53,7 +53,7 @@ struct nk_context;
 /* SCRIPT GENERAL                                                            */
 /*###########################################################################*/
 
-bool            S_Init(char *progname, const char *base_path, struct nk_context *ctx);
+bool            S_Init(const char *progname, const char *base_path, struct nk_context *ctx);
 void            S_Shutdown(void);
 bool            S_RunFile(const char *path);
 

@@ -54,6 +54,7 @@ void G_Move_Stop(const struct entity *ent);
 bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz);
 
 void G_Move_SetSeekEnemies(const struct entity *ent);
+void G_Move_UpdatePos(const struct entity *ent, vec2_t pos);
 
 #endif
 

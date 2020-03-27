@@ -47,8 +47,6 @@
 typedef struct {
     PyObject_HEAD
     struct entity *ent;
-    PyObject      *dict;
-    bool           active;
 }PyEntityObject;
 
 typedef struct {
@@ -79,8 +77,6 @@ static PyObject *PyEntity_get_speed(PyEntityObject *self, void *closure);
 static int       PyEntity_set_speed(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_faction_id(PyEntityObject *self, void *closure);
 static int       PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *closure);
-static PyObject *PyEntity_activate(PyEntityObject *self);
-static PyObject *PyEntity_deactivate(PyEntityObject *self);
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args);
@@ -111,18 +107,6 @@ static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObj
 /* pf.Entity */
 
 static PyMethodDef PyEntity_methods[] = {
-    {"activate", 
-    (PyCFunction)PyEntity_activate, METH_NOARGS,
-    "Add the entity to the game world, making it visible and allowing other entities "
-    "to interact with it in the simulation. The activated entity will be removed from "
-    "the game world when no more references to it remain in scope. (ex: Using 'del' "
-    "when you have a single reference)"},
-
-    {"deactivate", 
-    (PyCFunction)PyEntity_deactivate, METH_NOARGS,
-    "Remove the entity from the game simulation and hiding it. The entity's state is "
-    "preserved until it is activated again."},
-
     {"__del__", 
     (PyCFunction)PyEntity_del, METH_NOARGS,
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
@@ -387,10 +371,6 @@ static PyObject *PyEntity_del(PyEntityObject *self)
 
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
-    PyObject *dict = PyDict_New();
-    if(!dict)
-        return NULL;
-
     PyEntityObject *self;
     const char *dirpath, *filename, *name;
 
@@ -398,13 +378,11 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
      * intialized with more arguments */
     PyObject *first_args = PyTuple_GetSlice(args, 0, 3);
     if(!first_args) {
-        Py_DECREF(dict);
         return NULL;
     }
 
     if(!PyArg_ParseTuple(first_args, "sss", &dirpath, &filename, &name)) {
         PyErr_SetString(PyExc_TypeError, "First 3 arguments must be strings.");
-        Py_DECREF(dict);
         return NULL;
     }
     Py_DECREF(first_args);
@@ -417,7 +395,6 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     struct entity *ent = AL_EntityFromPFObj(entity_path, filename, name);
     if(!ent) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to initialize pf.Entity from the given arguments.");
-        Py_DECREF(dict);
         return NULL;
     }
 
@@ -425,15 +402,15 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     if(!self) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to allocate new pf.Entity.");
         AL_EntityFree(ent); 
-        Py_DECREF(dict);
         return NULL;
     }else{
         self->ent = ent; 
     }
 
-    self->dict = dict;
-    PyDict_SetItemString(self->dict, "pos", Py_BuildValue("(fff)", 0.0f, 0.0f, 0.0f));
-    self->active = false;
+    if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyCombatableEntity_type))
+        self->ent->flags |= ENTITY_FLAG_COMBATABLE;
+
+    G_AddEntity(self->ent, (vec3_t){0.0f, 0.0f, 0.0f});
 
     int ret;
     khiter_t k = kh_put(PyObject, s_uid_pyobj_table, ent->uid, &ret);
@@ -445,7 +422,6 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
 static void PyEntity_dealloc(PyEntityObject *self)
 {
-    Py_DECREF(self->dict);
     assert(self->ent);
 
     khiter_t k = kh_get(PyObject, s_uid_pyobj_table, self->ent->uid);
@@ -482,9 +458,6 @@ static int PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closur
 
 static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure)
 {
-    if(!self->active)
-        return PyDict_GetItemString(self->dict, "pos");
-
     vec3_t pos = G_Pos_Get(self->ent->uid);
     return Py_BuildValue("(f,f,f)", pos.x, pos.y, pos.z);
 }
@@ -502,10 +475,7 @@ static int PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure
         return -1;
     }
 
-    PyDict_SetItemString(self->dict, "pos", value);
-    if(self->active)
-        G_Pos_Set(self->ent->uid, newpos);
-
+    G_Pos_Set(self->ent, newpos);
     return 0;
 }
 
@@ -628,58 +598,6 @@ static int PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *
 
     self->ent->faction_id = PyInt_AS_LONG(value);
     return 0;
-}
-
-static PyObject *PyEntity_activate(PyEntityObject *self)
-{
-    if(self->active)
-        Py_RETURN_NONE;
-
-    assert(self->ent);
-    self->active = true;
-
-    vec3_t pos;
-    PyObject *entry = PyDict_GetItemString(self->dict, "pos");
-    int ret = PyArg_ParseTuple(entry, "fff", &pos.x, &pos.y, &pos.z);
-    assert(ret);
-    G_AddEntity(self->ent, pos);
-
-    if(self->ent->flags & ENTITY_FLAG_COMBATABLE) {
-
-        PyObject *obj = PyDict_GetItemString(self->dict, "base_dmg");
-        assert(obj && PyInt_Check(obj));
-        G_Combat_SetBaseDamage(self->ent, PyInt_AS_LONG(obj));
-
-        obj = PyDict_GetItemString(self->dict, "base_armour");
-        assert(obj && PyFloat_Check(obj));
-        G_Combat_SetBaseArmour(self->ent, PyFloat_AS_DOUBLE(obj));
-    }
-
-    Py_RETURN_NONE;
-}
-
-static PyObject *PyEntity_deactivate(PyEntityObject *self)
-{
-    if(!self->active)
-        Py_RETURN_NONE;
-
-    assert(self->ent);
-
-    vec3_t pos = G_Pos_Get(self->ent->uid);
-    PyDict_SetItemString(self->dict, "pos", Py_BuildValue("(fff)", pos.x, pos.y, pos.z));
-
-    if(self->ent->flags & ENTITY_FLAG_COMBATABLE) {
-    
-        PyObject *damage = PyInt_FromLong(G_Combat_GetBaseDamage(self->ent));
-        PyObject *armour = PyFloat_FromDouble(G_Combat_GetBaseArmour(self->ent));
-        PyDict_SetItemString(self->dict, "base_dmg", damage);
-        PyDict_SetItemString(self->dict, "base_armour", armour);
-    }
-
-    self->active = false;
-    G_RemoveEntity(self->ent);
-
-    Py_RETURN_NONE;
 }
 
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args)
@@ -883,12 +801,13 @@ static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *arg
         return -1;
     }
 
+    assert(self->super.ent->flags & ENTITY_FLAG_COMBATABLE);
     if((PyCombatableEntity_set_max_hp(self, max_hp, NULL) != 0)
     || (PyCombatableEntity_set_base_dmg(self, base_dmg, NULL) != 0)
     || (PyCombatableEntity_set_base_armour(self, base_armour, NULL) != 0))
         return -1; /* Exception already set */ 
 
-    self->super.ent->flags |= ENTITY_FLAG_COMBATABLE;
+    G_Combat_SetHP(self->super.ent, PyInt_AS_LONG(max_hp));
 
     /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
      * MRO to complete in cases when this class is one of multiple base classes of another type. 
@@ -929,9 +848,6 @@ static int PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObjec
 
 static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self, void *closure)
 {
-    if(!self->super.active)
-        return PyDict_GetItemString(self->super.dict, "base_dmg");
-
     return PyInt_FromLong(G_Combat_GetBaseDamage(self->super.ent));
 }
 
@@ -948,17 +864,12 @@ static int PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObj
         return -1;
     }
 
-    PyDict_SetItemString(self->super.dict, "base_dmg", value);
-    if(self->super.active)
-        G_Combat_SetBaseDamage(self->super.ent, base_dmg);
+    G_Combat_SetBaseDamage(self->super.ent, base_dmg);
     return 0;
 }
 
 static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *self, void *closure)
 {
-    if(!self->super.active)
-        return PyDict_GetItemString(self->super.dict, "base_armour");
-
     return PyFloat_FromDouble(G_Combat_GetBaseArmour(self->super.ent));
 }
 
@@ -975,9 +886,7 @@ static int PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, Py
         return -1;
     }
 
-    PyDict_SetItemString(self->super.dict, "base_armour", value);
-    if(self->super.active)
-        G_Combat_SetBaseArmour(self->super.ent, base_armour);
+    G_Combat_SetBaseArmour(self->super.ent, base_armour);
     return 0;
 }
 
@@ -1168,10 +1077,7 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
     }
 
     if((k = kh_get(attr, attr_table, "static")) != kh_end(attr_table)) {
-        if(kh_value(attr_table, k).val.as_bool)
-            ((PyEntityObject*)ret)->ent->flags |= ENTITY_FLAG_STATIC;
-        else
-            ((PyEntityObject*)ret)->ent->flags &= ~ENTITY_FLAG_STATIC;
+        G_SetStatic(((PyEntityObject*)ret)->ent, kh_value(attr_table, k).val.as_bool);
     }
 
     if((k = kh_get(attr, attr_table, "collision")) != kh_end(attr_table)) {
@@ -1204,15 +1110,6 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
     if(PyObject_HasAttrString(ret, "faction_id") 
     && (k = kh_get(attr, attr_table, "faction_id")) != kh_end(attr_table))
         PyObject_SetAttrString(ret, "faction_id", s_obj_from_attr(&kh_value(attr_table, k)));
-
-    if(PyObject_HasAttrString(ret, "activate")) {
-        PyObject *result = PyObject_CallMethod(ret, "activate", "");
-        Py_XDECREF(result);
-        if(!result) {
-            PyErr_Print();
-            exit(EXIT_FAILURE);
-        }
-    }
 
     PyList_Append(s_loaded, ret);
     return ret;

@@ -49,6 +49,7 @@
 #define ENEMY_MELEE_ATTACK_RANGE       (5.0f)
 #define EPSILON                        (1.0f/1024)
 #define MAX(a, b)                      ((a) > (b) ? (a) : (b))
+#define MIN(a, b)                      ((a) > (b) ? (a) : (b))
 #define ARR_SIZE(a)                    (sizeof(a)/sizeof(a[0]))
 
 /*
@@ -361,8 +362,7 @@ static void on_30hz_tick(void *user, void *event)
                 E_Entity_Notify(EVENT_ATTACK_END, curr->uid, NULL, ES_ENGINE);
 
                 if(cs->move_cmd_interrupted) {
-                    G_Move_SetDest(curr, cs->move_cmd_xz);
-                    cs->move_cmd_interrupted = false;
+                    G_Move_SetDest(curr, cs->move_cmd_xz); cs->move_cmd_interrupted = false;
                 }
 
             }else{
@@ -525,5 +525,12 @@ int G_Combat_GetBaseDamage(const struct entity *ent)
     struct combatstate *cs = combatstate_get(ent);
     assert(cs);
     return cs->stats.base_dmg;
+}
+
+void G_Combat_SetHP(const struct entity *ent, int hp)
+{
+    struct combatstate *cs = combatstate_get(ent);
+    assert(cs);
+    cs->current_hp = MIN(hp, ent->max_hp);
 }
 

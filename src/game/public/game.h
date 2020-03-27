@@ -126,6 +126,7 @@ bool   G_WriteMap(SDL_RWops *stream);
 bool   G_AddEntity(struct entity *ent, vec3_t pos);
 bool   G_RemoveEntity(struct entity *ent);
 void   G_StopEntity(const struct entity *ent);
+void   G_SetStatic(struct entity *ent, bool on);
 
 /* Wrapper around AL_EntityFree to defer the call until the render thread 
  * (which owns some part of entity resources) finishes its' work. */
@@ -200,6 +201,7 @@ enum combat_stance{
 
 /* Can only be called with entities that have 'ENTITY_FLAG_COMBATABLE' set */
 bool  G_Combat_SetStance(const struct entity *ent, enum combat_stance stance);
+void  G_Combat_SetHP(const struct entity *ent, int hp);
 int   G_Combat_GetCurrentHP(const struct entity *ent);
 
 void  G_Combat_SetBaseArmour(const struct entity *ent, float armour_pc);
@@ -212,7 +214,7 @@ int   G_Combat_GetBaseDamage(const struct entity *ent);
 /* GAME POSITION                                                             */
 /*###########################################################################*/
 
-bool   G_Pos_Set(uint32_t uid, vec3_t pos);
+bool   G_Pos_Set(const struct entity *ent, vec3_t pos);
 vec3_t G_Pos_Get(uint32_t uid);
 vec2_t G_Pos_GetXZ(uint32_t uid);
 
