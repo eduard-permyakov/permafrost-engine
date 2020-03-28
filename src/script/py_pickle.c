@@ -208,6 +208,7 @@ typedef void *mod_ty; //symtable.h wants this
 #define PF_OP_ITEMGET   '(' /* Push an operator.itemgetter instance from top 2 TOS items */
 #define PF_OP_ATTRGET   ')' /* Push an operator.attrgetter instance from top 2 TOS items */
 #define PF_OP_METHODCALL '-' /* Push an operator.methodcaller instance from top 3 TOS items */
+#define PF_CUSTOM       '+' /* Push an instance returned by an __unpickle__ static method of a type */
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -345,6 +346,7 @@ static int oper_attrgetter_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int oper_methodcaller_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int placeholder_inst_pickle(struct pickle_ctx *, PyObject *, SDL_RWops *);
 static int exception_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
+static int custom_pickle      (struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
 
 /* Unpickling functions */
 static int op_int           (struct unpickle_ctx *, SDL_RWops *);
@@ -438,6 +440,7 @@ static int op_ext_bi_method (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_oper_itemgetter(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_oper_attrgetter(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_oper_methodcaller(struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_custom    (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -641,7 +644,7 @@ static PyObject *s_placeholder_type = NULL;
 
 /* The permafrost engine built-in types: defer handling of these for now */
 static struct pickle_entry s_pf_dispatch_table[] = {
-    {.type = NULL, /* PyEntity_type */      .picklefunc = placeholder_inst_pickle      },
+    {.type = NULL, /* PyEntity_type */      .picklefunc = custom_pickle                },
     {.type = NULL, /* PyAnimEntity_type */  .picklefunc = placeholder_inst_pickle      },
     {.type = NULL, /* PyCombatableEntity_type */ .picklefunc = placeholder_inst_pickle },
     {.type = NULL, /* PyTile_type */        .picklefunc = placeholder_inst_pickle      },
@@ -746,6 +749,7 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_OP_ITEMGET] = op_ext_oper_itemgetter,
     [PF_OP_ATTRGET] = op_ext_oper_attrgetter,
     [PF_OP_METHODCALL] = op_ext_oper_methodcaller,
+    [PF_CUSTOM] = op_ext_custom,
 };
 
 /* Statically-linked builtin modules not imported on initialization which also contain C builtins */
@@ -1381,6 +1385,45 @@ static int exception_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw
     CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
 
     const char ops[] = {PF_EXTEND, PF_EXCEPTION};
+    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
+    return 0;
+
+fail:
+    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
+    return -1;
+}
+
+static int custom_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
+{
+    TRACE_PICKLE(obj);
+
+    PyObject *pmeth = PyObject_GetAttrString(obj, "__pickle__");
+    if(!pmeth || !PyCallable_Check(pmeth)) {
+        SET_RUNTIME_EXC("Object does not have a '__pickle__' method");
+        Py_XDECREF(pmeth);
+        goto fail;
+    }
+    Py_DECREF(pmeth);
+
+    PyObject *umeth = PyObject_GetAttrString((PyObject*)obj->ob_type, "__unpickle__");
+    if(!umeth || !PyCallable_Check(umeth)) {
+        SET_RUNTIME_EXC("Object does not have a class '__unpickle__' method");
+        goto fail;
+    }
+    Py_DECREF(umeth);
+
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
+
+    PyObject *ret = PyObject_CallMethod(obj, "__pickle__", "()");
+    if(!ret || !PyString_Check(ret)) {
+        SET_RUNTIME_EXC("Error pickling %s instance (%p)", obj->ob_type->tp_name, obj);
+        Py_XDECREF(ret);
+        goto fail;
+    }
+    vec_pobj_push(&ctx->to_free, ret);
+    CHK_TRUE(pickle_obj(ctx, ret, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_CUSTOM};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
 
@@ -5660,6 +5703,7 @@ static int op_ext_emptyinst(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }
 
     PyObject *baseinst = dummy_builtin_inst(basetype);
+    assert(baseinst);
     PyObject *retval = heaptype_wrapped(baseinst, PyInt_AsSsize_t(size));
     Py_DECREF(baseinst);
 
@@ -6491,6 +6535,47 @@ fail_typecheck:
     Py_DECREF(name);
     Py_DECREF(args);
     Py_DECREF(kwds);
+fail_underflow:
+    return ret;
+}
+
+
+static int op_ext_custom(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_CUSTOM, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 2) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+
+    PyObject *str = vec_pobj_pop(&ctx->stack);
+    PyObject *klass = vec_pobj_pop(&ctx->stack);
+
+    if(!PyString_Check(str)) {
+        SET_RUNTIME_EXC("PF_CUSTOM: Expecting string at TOS");
+        goto fail_typecheck;
+    }
+
+    if(!PyType_Check(klass)) {
+        SET_RUNTIME_EXC("PF_CUSTOM: Expecting type at TOS1");
+        goto fail_typecheck;
+    }
+
+    PyObject *rval = PyObject_CallMethod(klass, "__unpickle__", "(O)", str);
+    if(!rval) {
+        assert(PyErr_Occurred());
+        goto fail_inst;
+    }
+
+    vec_pobj_push(&ctx->stack, rval);
+    ret = 0;
+
+fail_inst:
+fail_typecheck:
+    Py_DECREF(str);
+    Py_DECREF(klass);
 fail_underflow:
     return ret;
 }

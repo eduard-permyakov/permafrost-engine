@@ -38,7 +38,8 @@
 
 #include <SDL.h>
 
-SDL_RWops *PFSDL_VectorRWOps(void);
+SDL_RWops  *PFSDL_VectorRWOps(void);
+const char *PFSDL_VectorRWOpsRaw(SDL_RWops *ctx);
 
 #endif
 

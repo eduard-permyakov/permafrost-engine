@@ -141,3 +141,8 @@ SDL_RWops *PFSDL_VectorRWOps(void)
     return ret;
 }
 
+const char *PFSDL_VectorRWOpsRaw(SDL_RWops *ctx)
+{
+    return (const char*)VEC(ctx)->array;
+}
+

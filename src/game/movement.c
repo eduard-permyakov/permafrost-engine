@@ -437,8 +437,9 @@ static void move_marker_add(vec3_t pos, bool attack)
     strcpy(path, g_basepath);
     strcat(path, "assets/models/arrow");
 
-    struct entity *ent = attack ? AL_EntityFromPFObj(path, "arrow-red.pfobj", "__move_marker__") 
-                                : AL_EntityFromPFObj(path, "arrow-green.pfobj", "__move_marker__");
+    const uint32_t uid = Entity_NewUID();
+    struct entity *ent = attack ? AL_EntityFromPFObj(path, "arrow-red.pfobj", "__move_marker__", uid) 
+                                : AL_EntityFromPFObj(path, "arrow-green.pfobj", "__move_marker__", uid);
     assert(ent);
     ent->flags |= ENTITY_FLAG_STATIC;
     G_AddEntity(ent, pos);

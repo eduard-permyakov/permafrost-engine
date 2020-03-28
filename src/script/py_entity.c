@@ -35,14 +35,19 @@
 
 #include <Python.h> /* must be first */
 #include "py_entity.h" 
+#include "py_pickle.h"
 #include "../entity.h"
 #include "../event.h"
 #include "../asset_load.h"
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/SDL_vec_rwops.h"
 
 #include <assert.h>
+
+
+#define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
 
 typedef struct {
     PyObject_HEAD
@@ -84,6 +89,8 @@ static PyObject *PyEntity_select(PyEntityObject *self);
 static PyObject *PyEntity_deselect(PyEntityObject *self);
 static PyObject *PyEntity_stop(PyEntityObject *self);
 static PyObject *PyEntity_move(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_pickle(PyEntityObject *self);
+static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args);
 
 static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_del(PyAnimEntityObject *self);
@@ -140,6 +147,14 @@ static PyMethodDef PyEntity_methods[] = {
     {"move", 
     (PyCFunction)PyEntity_move, METH_VARARGS,
     "Issues a 'move' order to the entity at the XZ position specified by the argument."},
+
+    {"__pickle__", 
+    (PyCFunction)PyEntity_pickle, METH_NOARGS,
+    "Serialize a Permafrost Engine entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyEntity_unpickle, METH_VARARGS | METH_CLASS,
+    "Create a new pf.Entity instance from a string earlier returned from a __pickle__ method."},
 
     {NULL}  /* Sentinel */
 };
@@ -392,7 +407,19 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     strcpy(entity_path, g_basepath);
     strcat(entity_path, dirpath);
 
-    struct entity *ent = AL_EntityFromPFObj(entity_path, filename, name);
+    PyObject *uidobj = NULL;
+    uint32_t uid;
+
+    if(kwds) {
+        uidobj = PyDict_GetItemString(kwds, "__uid__");
+    }
+    if(uidobj && PyInt_Check(uidobj)) {
+        uid = PyInt_AS_LONG(uidobj);
+    }else {
+        uid = Entity_NewUID();
+    }
+
+    struct entity *ent = AL_EntityFromPFObj(entity_path, filename, name, uid);
     if(!ent) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to initialize pf.Entity from the given arguments.");
         return NULL;
@@ -695,6 +722,208 @@ static PyObject *PyEntity_move(PyEntityObject *self, PyObject *args)
 
     G_Move_SetDest(self->ent, xz_pos);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_pickle(PyEntityObject *self)
+{
+    bool status;
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+
+    PyObject *basedir = PyString_FromString(self->ent->basedir);
+    CHK_TRUE(basedir, fail_pickle);
+    status = S_PickleObjgraph(basedir, stream);
+    Py_DECREF(basedir);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *filename = PyString_FromString(self->ent->filename);
+    CHK_TRUE(filename, fail_pickle);
+    status = S_PickleObjgraph(filename, stream);
+    Py_DECREF(filename);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *name = PyString_FromString(self->ent->name);
+    CHK_TRUE(name, fail_pickle);
+    status = S_PickleObjgraph(name, stream);
+    Py_DECREF(name);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *uid = PyInt_FromLong(self->ent->uid);
+    CHK_TRUE(uid, fail_pickle);
+    status = S_PickleObjgraph(uid, stream);
+    Py_DECREF(uid);
+    CHK_TRUE(status, fail_pickle);
+
+    vec3_t rawpos = G_Pos_Get(self->ent->uid);
+    PyObject *pos = Py_BuildValue("(fff)", rawpos.x, rawpos.y, rawpos.z);
+    CHK_TRUE(pos, fail_pickle);
+    status = S_PickleObjgraph(pos, stream);
+    Py_DECREF(pos);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *scale = Py_BuildValue("(fff)", 
+        self->ent->scale.x, self->ent->scale.y, self->ent->scale.z);
+    CHK_TRUE(scale, fail_pickle);
+    status = S_PickleObjgraph(scale, stream);
+    Py_DECREF(scale);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *rotation = Py_BuildValue("(ffff)", 
+        self->ent->rotation.x, self->ent->rotation.y, self->ent->rotation.z, self->ent->rotation.w);
+    CHK_TRUE(rotation, fail_pickle);
+    status = S_PickleObjgraph(rotation, stream);
+    Py_DECREF(rotation);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *flags = Py_BuildValue("i", self->ent->flags);
+    CHK_TRUE(flags, fail_pickle);
+    status = S_PickleObjgraph(flags, stream);
+    Py_DECREF(flags);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *sel_radius = Py_BuildValue("f", self->ent->selection_radius);
+    CHK_TRUE(sel_radius, fail_pickle);
+    status = S_PickleObjgraph(sel_radius, stream);
+    Py_DECREF(sel_radius);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *max_speed = Py_BuildValue("i", self->ent->max_speed);
+    CHK_TRUE(max_speed, fail_pickle);
+    status = S_PickleObjgraph(max_speed, stream);
+    Py_DECREF(max_speed);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *faction_id = Py_BuildValue("i", self->ent->faction_id);
+    CHK_TRUE(faction_id, fail_pickle);
+    status = S_PickleObjgraph(faction_id, stream);
+    Py_DECREF(faction_id);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *max_hp = Py_BuildValue("i", self->ent->max_hp);
+    CHK_TRUE(max_hp, fail_pickle);
+    status = S_PickleObjgraph(max_hp, stream);
+    Py_DECREF(max_hp);
+    CHK_TRUE(status, fail_pickle);
+
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    return ret;
+}
+
+static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyObject *basedir = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *filename = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *name = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *uid = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    if(!basedir || !filename || !name || !uid) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not unpickle internal state of pf.Entity instance");
+        goto fail_unpickle;
+    }
+
+    PyObject *ent_args = Py_BuildValue("(OOO)", basedir, filename, name);
+    PyObject *ent_kwargs = Py_BuildValue("{s:O}", "__uid__", uid);
+
+    PyObject *entobj = PyObject_Call((PyObject*)&PyEntity_type, ent_args, ent_kwargs);
+    assert(entobj || PyErr_Occurred());
+    CHK_TRUE(entobj, fail_unpickle);
+
+    Py_DECREF(ent_args);
+    Py_DECREF(ent_kwargs);
+
+    PyObject *pos = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *scale = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *rotation = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *flags = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *sel_radius = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *max_speed = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *faction_id = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *max_hp = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    if(!pos        || !scale     || !rotation   || !flags 
+    || !sel_radius || !max_speed || !faction_id || !max_hp) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not unpickle attributes of pf.Entity instance");
+        goto fail_unpickle_atts;
+    }
+
+    struct entity *ent = ((PyEntityObject*)entobj)->ent;
+    vec3_t rawpos;
+    CHK_TRUE(PyArg_ParseTuple(pos, "fff", &rawpos.x, &rawpos.y, &rawpos.z), fail_unpickle_atts);
+    G_Pos_Set(ent, rawpos);
+
+    CHK_TRUE(PyArg_ParseTuple(scale, "fff", &ent->scale.x, &ent->scale.y, &ent->scale.z), fail_unpickle_atts);
+    CHK_TRUE(PyArg_ParseTuple(rotation, "ffff", &ent->rotation.x, &ent->rotation.y, &ent->rotation.z, &ent->rotation.w), fail_unpickle_atts);
+
+    uint32_t rawflags;
+    CHK_TRUE((-1 != (rawflags = PyInt_AsLong(flags))), fail_unpickle_atts);
+    G_SetStatic(ent, rawflags & ENTITY_FLAG_STATIC);
+    ent->flags = rawflags;
+
+    CHK_TRUE((-1.0 != (ent->selection_radius = PyFloat_AsDouble(sel_radius))), fail_unpickle_atts);
+    CHK_TRUE((-1.0 != (ent->max_speed = PyFloat_AsDouble(max_speed))), fail_unpickle_atts);
+    CHK_TRUE((-1 != (ent->faction_id = PyInt_Check(faction_id))), fail_unpickle_atts);
+    CHK_TRUE((-1 != (ent->max_hp = PyInt_Check(max_hp))), fail_unpickle_atts);
+
+    ret = entobj;
+
+fail_unpickle_atts:
+    Py_XDECREF(pos);
+    Py_XDECREF(scale);
+    Py_XDECREF(rotation);
+    Py_XDECREF(flags);
+    Py_XDECREF(sel_radius);
+    Py_XDECREF(max_speed);
+    Py_XDECREF(faction_id);
+    Py_XDECREF(max_hp);
+fail_unpickle:
+    Py_XDECREF(basedir);
+    Py_XDECREF(filename);
+    Py_XDECREF(name);
+    Py_XDECREF(uid);
+    SDL_RWclose(stream);
+fail_args:
+    return ret;
 }
 
 static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self)
@@ -1112,6 +1341,7 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
         PyObject_SetAttrString(ret, "faction_id", s_obj_from_attr(&kh_value(attr_table, k)));
 
     PyList_Append(s_loaded, ret);
+    Py_DECREF(ret);
     return ret;
 }
 

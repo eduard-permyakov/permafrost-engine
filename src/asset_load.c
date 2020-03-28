@@ -207,7 +207,8 @@ static void al_set_ent_defaults(struct entity *ent)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name)
+struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, 
+                                  const char *name, uint32_t uid)
 {
     struct shared_resource res;
     SDL_RWops *stream;
@@ -293,7 +294,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     ret->render_private = res.render_private;
     ret->anim_private = res.anim_private;
     ret->identity_aabb = res.aabb;
-    ret->uid = Entity_NewUID();
+    ret->uid = uid;
 
     return ret;
 

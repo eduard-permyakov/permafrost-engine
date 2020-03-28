@@ -77,7 +77,8 @@ struct pfmap_hdr{
 bool           AL_Init(void);
 void           AL_Shutdown(void);
 
-struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, const char *name);
+struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, 
+                                  const char *name, uint32_t uid);
 void           AL_EntityFree(struct entity *entity);
 
 struct map    *AL_MapFromPFMap(const char *base_path, const char *pfmap_name, bool update_navgrid);
