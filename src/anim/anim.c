@@ -136,13 +136,18 @@ static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struc
 
 void A_InitCtx(const struct entity *ent, const char *idle_clip, unsigned key_fps)
 {
+    A_SetIdleClip(ent, idle_clip, key_fps);
+}
+
+void A_SetIdleClip(const struct entity *ent, const char *name, unsigned key_fps)
+{
     struct anim_ctx *ctx = ent->anim_ctx;
 
-    const struct anim_clip *idle = a_clip_for_name(ent, idle_clip);
-    assert(idle);
+    const struct anim_clip *clip = a_clip_for_name(ent, name);
+    assert(clip);
 
-    ctx->idle = idle;
-    A_SetActiveClip(ent, idle_clip, ANIM_MODE_LOOP, key_fps);
+    ctx->idle = clip;
+    A_SetActiveClip(ent, name, ANIM_MODE_LOOP, key_fps);
 }
 
 void A_SetActiveClip(const struct entity *ent, const char *name, 
@@ -282,5 +287,26 @@ void A_AddTimeDelta(const struct entity *ent, uint32_t dt)
 {
     struct anim_ctx *ctx = ent->anim_ctx;
     ctx->curr_frame_start_ticks += dt;
+}
+
+const char *A_GetIdleClip(const struct entity *ent)
+{
+    struct anim_ctx *ctx = ent->anim_ctx;
+    return ctx->active->name;
+}
+
+const char *A_GetClip(const struct entity *ent, int idx)
+{
+    struct anim_data *priv = ent->anim_private;
+    if(idx >= priv->num_anims)
+        return NULL;
+    return priv->anims[0].name;
+}
+
+bool A_HasClip(const struct entity *ent, const char *name)
+{
+    struct anim_ctx *ctx = ent->anim_ctx;
+    const struct anim_clip *clip = a_clip_for_name(ent, name);
+    return (clip != NULL);
 }
 

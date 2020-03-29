@@ -645,8 +645,8 @@ static PyObject *s_placeholder_type = NULL;
 /* The permafrost engine built-in types: defer handling of these for now */
 static struct pickle_entry s_pf_dispatch_table[] = {
     {.type = NULL, /* PyEntity_type */      .picklefunc = custom_pickle                },
-    {.type = NULL, /* PyAnimEntity_type */  .picklefunc = placeholder_inst_pickle      },
-    {.type = NULL, /* PyCombatableEntity_type */ .picklefunc = placeholder_inst_pickle },
+    {.type = NULL, /* PyAnimEntity_type */  .picklefunc = custom_pickle                },
+    {.type = NULL, /* PyCombatableEntity_type */ .picklefunc = custom_pickle           },
     {.type = NULL, /* PyTile_type */        .picklefunc = placeholder_inst_pickle      },
     {.type = NULL, /* PyWindow_type */      .picklefunc = placeholder_inst_pickle      },
     {.type = NULL, /* PyUIButtonStyle_type */ .picklefunc = placeholder_inst_pickle    },
@@ -6539,7 +6539,6 @@ fail_underflow:
     return ret;
 }
 
-
 static int op_ext_custom(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_CUSTOM, ctx);
@@ -6563,11 +6562,15 @@ static int op_ext_custom(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail_typecheck;
     }
 
-    PyObject *rval = PyObject_CallMethod(klass, "__unpickle__", "(O)", str);
-    if(!rval) {
+    PyObject *tuple = PyObject_CallMethod(klass, "__unpickle__", "(O)", str);
+    if(!tuple || !PyTuple_Check(tuple)) {
         assert(PyErr_Occurred());
         goto fail_inst;
     }
+    PyObject *rval = PyTuple_GetItem(tuple, 0);
+    Py_INCREF(rval);
+    Py_DECREF(tuple);
+    CHK_TRUE(rval, fail_inst);
 
     vec_pobj_push(&ctx->stack, rval);
     ret = 0;

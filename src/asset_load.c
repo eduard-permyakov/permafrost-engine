@@ -267,7 +267,6 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
         if(!res.anim_private)
             goto fail_parse;
 
-        /* Entities with no animation sets are considered static. */
         if(header.num_as > 0) {
             res.ent_flags |= ENTITY_FLAG_ANIMATED;
         }
@@ -295,6 +294,10 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     ret->anim_private = res.anim_private;
     ret->identity_aabb = res.aabb;
     ret->uid = uid;
+
+    if(ret->flags & ENTITY_FLAG_ANIMATED) {
+        A_InitCtx(ret, A_GetClip(ret, 0), 24);
+    }
 
     return ret;
 

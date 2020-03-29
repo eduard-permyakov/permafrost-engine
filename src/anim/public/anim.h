@@ -71,6 +71,13 @@ void                   A_InitCtx(const struct entity *ent, const char *idle_clip
                                  unsigned key_fps);
 
 /* ---------------------------------------------------------------------------
+ * Set the animation clip that will play when no other animation clips are active.
+ * ---------------------------------------------------------------------------
+ */
+void                   A_SetIdleClip(const struct entity *ent, const char *name, 
+                                     unsigned key_fps);
+
+/* ---------------------------------------------------------------------------
  * If anim_mode is 'ANIM_MODE_ONCE', the entity will fire an 'EVENT_ANIM_FINISHED'
  * event and go back to playing the 'idle' animtion once the clip has played once. 
  * Otherwise, it will keep looping the clip.
@@ -125,6 +132,24 @@ const struct aabb     *A_GetCurrPoseAABB(const struct entity *ent);
  */
 void                   A_AddTimeDelta(const struct entity *ent, uint32_t dt);
 
+/* ---------------------------------------------------------------------------
+ * Get the name of the idle clip for the entity. The returned string must
+ * not be freed.
+ * ---------------------------------------------------------------------------
+ */
+const char            *A_GetIdleClip(const struct entity *ent);
+
+/* ---------------------------------------------------------------------------
+ * Get the name of the clip at a specific index.
+ * ---------------------------------------------------------------------------
+ */
+const char            *A_GetClip(const struct entity *ent, int idx);
+
+/* ---------------------------------------------------------------------------
+ * Returns true if the entity has the animation clip with the specified name.
+ * ---------------------------------------------------------------------------
+ */
+bool                   A_HasClip(const struct entity *ent, const char *name);
 
 /*###########################################################################*/
 /* ANIM ASSET LOADING                                                        */

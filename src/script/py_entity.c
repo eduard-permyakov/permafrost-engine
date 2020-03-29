@@ -43,6 +43,7 @@
 #include "../game/public/game.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
+#include "../lib/public/pf_string.h"
 
 #include <assert.h>
 
@@ -95,6 +96,8 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args);
 static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_del(PyAnimEntityObject *self);
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
+static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self);
+static PyObject *PyAnimEntity_unpickle(PyObject *cls, PyObject *args);
 
 static int       PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self);
@@ -106,6 +109,8 @@ static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *se
 static int       PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self);
 static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObject *args);
+static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self);
+static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -154,7 +159,8 @@ static PyMethodDef PyEntity_methods[] = {
 
     {"__unpickle__", 
     (PyCFunction)PyEntity_unpickle, METH_VARARGS | METH_CLASS,
-    "Create a new pf.Entity instance from a string earlier returned from a __pickle__ method."},
+    "Create a new pf.Entity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
     {NULL}  /* Sentinel */
 };
@@ -252,6 +258,15 @@ static PyMethodDef PyAnimEntity_methods[] = {
     (PyCFunction)PyAnimEntity_del, METH_NOARGS,
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
+    {"__pickle__", 
+    (PyCFunction)PyAnimEntity_pickle, METH_NOARGS,
+    "Serialize a Permafrost Engine animated entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyAnimEntity_unpickle, METH_VARARGS | METH_CLASS,
+    "Create a new pf.Entity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
     {NULL}  /* Sentinel */
 };
 
@@ -282,6 +297,15 @@ static PyMethodDef PyCombatableEntity_methods[] = {
     {"__del__", 
     (PyCFunction)PyCombatableEntity_del, METH_NOARGS,
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {"__pickle__", 
+    (PyCFunction)PyCombatableEntity_pickle, METH_NOARGS,
+    "Serialize a Permafrost Engine combatable entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyCombatableEntity_unpickle, METH_VARARGS | METH_CLASS,
+    "Create a new pf.Entity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
     {NULL}  /* Sentinel */
 };
@@ -789,7 +813,7 @@ static PyObject *PyEntity_pickle(PyEntityObject *self)
     Py_DECREF(sel_radius);
     CHK_TRUE(status, fail_pickle);
 
-    PyObject *max_speed = Py_BuildValue("i", self->ent->max_speed);
+    PyObject *max_speed = Py_BuildValue("f", self->ent->max_speed);
     CHK_TRUE(max_speed, fail_pickle);
     status = S_PickleObjgraph(max_speed, stream);
     Py_DECREF(max_speed);
@@ -850,7 +874,8 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args)
     PyObject *ent_args = Py_BuildValue("(OOO)", basedir, filename, name);
     PyObject *ent_kwargs = Py_BuildValue("{s:O}", "__uid__", uid);
 
-    PyObject *entobj = PyObject_Call((PyObject*)&PyEntity_type, ent_args, ent_kwargs);
+    assert(((PyTypeObject*)cls)->tp_new);
+    PyObject *entobj = ((PyTypeObject*)cls)->tp_new((struct _typeobject*)cls, ent_args, ent_kwargs);
     assert(entobj || PyErr_Occurred());
     CHK_TRUE(entobj, fail_unpickle);
 
@@ -905,7 +930,9 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args)
     CHK_TRUE((-1 != (ent->faction_id = PyInt_Check(faction_id))), fail_unpickle_atts);
     CHK_TRUE((-1 != (ent->max_hp = PyInt_Check(max_hp))), fail_unpickle_atts);
 
-    ret = entobj;
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", entobj, (int)nread);
+    Py_DECREF(entobj);
 
 fail_unpickle_atts:
     Py_XDECREF(pos);
@@ -961,6 +988,126 @@ static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObj
     Py_RETURN_NONE;
 }
 
+static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self)
+{
+    PyObject *args = PyTuple_New(0);
+    PyObject *kwargs = PyDict_New();
+    CHK_TRUE(args && kwargs, fail_args);
+
+    PyObject *ret = s_call_super_method("__pickle__", (PyObject*)&PyCombatableEntity_type, 
+        (PyObject*)self, args, kwargs);
+
+    Py_DECREF(args);
+    Py_DECREF(kwargs);
+
+    assert(PyString_Check(ret));
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_stream);
+    CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(ret), PyString_GET_SIZE(ret), 1), fail_stream);
+
+    PyObject *max_hp = PyInt_FromLong(self->super.ent->max_hp);
+    PyObject *base_dmg = PyInt_FromLong(G_Combat_GetBaseDamage(self->super.ent));
+    PyObject *base_armour = PyFloat_FromDouble(G_Combat_GetBaseArmour(self->super.ent));
+    CHK_TRUE(max_hp && base_dmg && base_armour, fail_pickle);
+
+    bool status;
+    status = S_PickleObjgraph(max_hp, stream);
+    CHK_TRUE(status, fail_pickle);
+    status = S_PickleObjgraph(base_dmg, stream);
+    CHK_TRUE(status, fail_pickle);
+    status = S_PickleObjgraph(base_armour, stream);
+    CHK_TRUE(status, fail_pickle);
+
+    Py_DECREF(max_hp);
+    Py_DECREF(base_dmg);
+    Py_DECREF(base_armour);
+
+    Py_DECREF(ret);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+    SDL_RWclose(stream);
+    return ret;
+
+fail_pickle:
+    Py_XDECREF(max_hp);
+    Py_XDECREF(base_dmg);
+    Py_XDECREF(base_armour);
+    SDL_RWclose(stream);
+fail_stream:
+    Py_XDECREF(ret);
+fail_args:
+    return NULL;
+}
+
+static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args)
+{
+    char tmp;
+    PyObject *ret = NULL;
+
+    PyObject *kwargs = PyDict_New();
+    if(!kwargs)
+        return NULL;
+
+    PyObject *tuple = s_call_super_method("__unpickle__", (PyObject*)&PyCombatableEntity_type, cls, args, kwargs);
+    Py_DECREF(kwargs);
+    if(!tuple)
+        return NULL;
+
+    PyObject *ent;
+    int nread; 
+    if(!PyArg_ParseTuple(tuple, "Oi", &ent, &nread)) {
+        Py_DECREF(tuple);
+        return NULL;
+    }
+    Py_INCREF(ent);
+    Py_DECREF(tuple);
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_stream);
+
+    PyObject *str = PyTuple_GET_ITEM(args, 0); /* borrowed */
+    CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(str), PyString_GET_SIZE(str), 1), fail_unpickle);
+    SDL_RWseek(stream, nread, RW_SEEK_SET);
+
+    PyObject *max_hp = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+    CHK_TRUE(max_hp, fail_unpickle);
+    if(!PyInt_Check(max_hp)) {
+        Py_DECREF(max_hp);
+        goto fail_unpickle;
+    }
+    ((PyCombatableEntityObject*)ent)->super.ent->max_hp = PyInt_AS_LONG(max_hp);
+    Py_DECREF(max_hp);
+
+    PyObject *base_dmg = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+    CHK_TRUE(base_dmg, fail_unpickle);
+    if(!PyInt_Check(base_dmg)) {
+        Py_DECREF(base_dmg);
+        goto fail_unpickle;
+    }
+    G_Combat_SetBaseDamage(((PyCombatableEntityObject*)ent)->super.ent, PyInt_AS_LONG(base_dmg));
+    Py_DECREF(base_dmg);
+
+    PyObject *base_armour = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+    CHK_TRUE(base_armour, fail_unpickle);
+    if(!PyFloat_Check(base_armour)) {
+        Py_DECREF(base_armour);
+        goto fail_unpickle;
+    }
+    G_Combat_SetBaseArmour(((PyCombatableEntityObject*)ent)->super.ent, PyFloat_AS_DOUBLE(base_armour));
+    Py_DECREF(base_armour);
+
+    nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("Oi", ent, nread);
+
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_stream:
+    Py_DECREF(ent);
+    return ret;
+}
+
 static int PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *idle_clip;
@@ -975,7 +1122,15 @@ static int PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject 
         return -1; 
     }
 
-    A_InitCtx(self->super.ent, PyString_AS_STRING(idle_clip), 24);
+    if(!A_HasClip(self->super.ent, PyString_AS_STRING(idle_clip))) {
+        char errbuff[256];
+        pf_snprintf(errbuff, sizeof(errbuff), "%s instance has no animation clip named '%s'.", 
+            self->super.ent->filename, PyString_AS_STRING(idle_clip));
+        PyErr_SetString(PyExc_RuntimeError, errbuff);
+        return -1;
+    }
+
+    A_SetIdleClip(self->super.ent, PyString_AS_STRING(idle_clip), 24);
 
     /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
      * MRO to complete in cases when this class is one of multiple base classes of another type. 
@@ -1013,8 +1168,101 @@ static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args
         }
     }
 
+    if(!A_HasClip(self->super.ent, clipname)) {
+        char errbuff[256];
+        pf_snprintf(errbuff, sizeof(errbuff), "%s instance has no animation clip named '%s'.", 
+            self->super.ent->filename, clipname);
+        PyErr_SetString(PyExc_RuntimeError, errbuff);
+        return NULL;
+    }
+
     A_SetActiveClip(self->super.ent, clipname, mode, 24);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self)
+{
+    PyObject *args = PyTuple_New(0);
+    PyObject *kwargs = PyDict_New();
+    CHK_TRUE(args && kwargs, fail_args);
+
+    PyObject *ret = s_call_super_method("__pickle__", (PyObject*)&PyAnimEntity_type, 
+        (PyObject*)self, args, kwargs);
+
+    Py_DECREF(args);
+    Py_DECREF(kwargs);
+
+    assert(PyString_Check(ret));
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_stream);
+    CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(ret), PyString_GET_SIZE(ret), 1), fail_stream);
+
+    PyObject *idle_clip = PyString_FromString(A_GetIdleClip(self->super.ent));
+    CHK_TRUE(idle_clip, fail_pickle);
+    bool status = S_PickleObjgraph(idle_clip, stream);
+    Py_DECREF(idle_clip);
+    CHK_TRUE(status, fail_pickle);
+
+    Py_DECREF(ret);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+    SDL_RWclose(stream);
+    return ret;
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_stream:
+    Py_XDECREF(ret);
+fail_args:
+    return NULL;
+}
+
+static PyObject *PyAnimEntity_unpickle(PyObject *cls, PyObject *args)
+{
+    char tmp;
+    PyObject *ret = NULL;
+
+    PyObject *kwargs = PyDict_New();
+    if(!kwargs)
+        return NULL;
+
+    PyObject *tuple = s_call_super_method("__unpickle__", (PyObject*)&PyAnimEntity_type, cls, args, kwargs);
+    Py_DECREF(kwargs);
+    if(!tuple)
+        return NULL;
+
+    PyObject *ent;
+    int nread; 
+    if(!PyArg_ParseTuple(tuple, "Oi", &ent, &nread)) {
+        Py_DECREF(tuple);
+        return NULL;
+    }
+    Py_INCREF(ent);
+    Py_DECREF(tuple);
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_stream);
+
+    PyObject *str = PyTuple_GET_ITEM(args, 0); /* borrowed */
+    CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(str), PyString_GET_SIZE(str), 1), fail_unpickle);
+
+    SDL_RWseek(stream, nread, RW_SEEK_SET);
+    PyObject *idle_clip = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+    CHK_TRUE(idle_clip, fail_unpickle);
+    CHK_TRUE(PyString_Check(idle_clip), fail_parse);
+
+    nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    A_SetIdleClip(((PyAnimEntityObject*)ent)->super.ent, PyString_AS_STRING(idle_clip), 24);
+
+    ret = Py_BuildValue("Oi", ent, nread);
+
+fail_parse:
+    Py_DECREF(idle_clip);
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_stream:
+    Py_DECREF(ent);
+    return ret;
 }
 
 static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds)
