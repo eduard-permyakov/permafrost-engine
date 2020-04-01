@@ -39,6 +39,7 @@
 #include "py_traverse.h"
 #include "private_types.h"
 #include "../lib/public/vec.h"
+#include "../lib/public/pf_string.h"
 #include "../asset_load.h"
 
 
@@ -110,7 +111,12 @@ typedef void *mod_ty; //symtable.h wants this
         Py_DECREF(repr);                                                        \
     }while(0)
 
-/* The subset of the original protocol 0 ASCII opcodes that are used. */
+/* The subset of the original protocol 0 ASCII opcodes that are used. 
+ * Note that some of these have been modified to accept additional arguments
+ * via the stack. For example, the EMPTY_LIST opcode takes an additional
+ * type argument to support pickling/unpickling of instances of user-defined 
+ * subtypes of 'list'. 
+ */
 
 #define MARK            '(' /* push special markobject on stack                     */
 #define STOP            '.' /* every pickle ends with STOP                          */
@@ -150,15 +156,15 @@ typedef void *mod_ty; //symtable.h wants this
 #define PF_FUNCTION     'l' /* Push function object from TOS items */
 #define PF_EMPTY_CELL   'm' /* Push empty cell */
 #define PF_CELL         'n' /* Push cell with TOS contents */
-#define PF_BYTEARRAY    'o' /* Push byte array from encoded string on TOS */
-#define PF_SUPER        'p' /* Push super from 2 TOS items */
+#define PF_BYTEARRAY    'o' /* Push byte array from encoded string and type */
+#define PF_SUPER        'p' /* Push super from 3 TOS items */
 #define PF_EMPTYFUNC    'q' /* Push dummy function object */
 #define PF_BASEOBJ      'r' /* Push an 'object' instance */
 #define PF_SYSLONGINFO  's' /* Push a 'sys.long_info' instance */
 #define PF_NULLIMPORTER 't' /* Push an imp.NullImporter instance */
 #define PF_SYSFLOATINFO 'u' /* Push a 'sys.float_info' instance */
 #define PF_SET          'v' /* Push a set from TOS tuple */
-#define PF_FROZENSET    'w' /* Push a frozenset from TOS tuple */
+#define PF_FROZENSET    'w' /* Push a frozenset from TOS tuple and type */
 #define PF_CLASS        'x' /* Push an old class created from the top 3 stack items (name, bases, methods) */
 #define PF_INST         'y' /* Push 'instance' from 'classobj' and 'dict' on TOS */
 #define PF_GETSETDESC   'z' /* Push 'getset_descriptor' instance from top 3 stack items */
@@ -170,7 +176,7 @@ typedef void *mod_ty; //symtable.h wants this
 #define PF_METHWRAP     'F' /* Push a 'method-wrapper' instance from top 2 stack items */
 #define PF_RANGE        'G' /* Push range object from top 3 stack items */
 #define PF_SLICE        'H' /* Push a slice object from top 3 stack items */
-#define PF_STATMETHOD   'I' /* Push a staticmethod object from stack item */
+#define PF_STATMETHOD   'I' /* Push a staticmethod object from stack item and type */
 #define PF_BUFFER       'J' /* Push a buffer object from top 4 stack items */
 #define PF_MEMVIEW      'K' /* Push a memoryview object from stack item */
 #define PF_PROPERTY     'L' /* Push a property object from top 4 stack items */
@@ -185,7 +191,6 @@ typedef void *mod_ty; //symtable.h wants this
 #define PF_TRACEBACK    'U' /* Push a traceback object from top 4 TOS items */
 #define PF_EMPTYFRAME   'V' /* Push a dummy frame object with valuestack size from TOS */
 #define PF_WEAKREF      'W' /* Push a weakref.ref object from top 2 TOS items */
-#define PF_EMPTYINST    'X' /* Push a dummy newclass instance, with the right amount of memory allocated for the final instance, and having its' builtin fields  */
 #define PF_PROXY        'Y' /* Push a weakproxy instance from top 2 TOS items */
 #define PF_STENTRY      'Z' /* Push a symtable entry instance from top 16 TOS items */
 #define PF_DICTKEYS     '1' /* Push a dict_keys instance from TOS dict */
@@ -258,6 +263,7 @@ struct pickle_entry{
 
 
 static bool pickle_obj(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *stream);
+static bool pickle_attrs(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
 static void memoize(struct pickle_ctx *ctx, PyObject *obj);
 static bool memo_contains(const struct pickle_ctx *ctx, PyObject *obj);
 static int memo_idx(const struct pickle_ctx *ctx, PyObject *obj);
@@ -416,7 +422,6 @@ static int op_ext_nullval   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_traceback (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_emptyframe(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_weakref   (struct unpickle_ctx *, SDL_RWops *);
-static int op_ext_emptyinst (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_weakproxy (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_stentry   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_zipimporter(struct unpickle_ctx *, SDL_RWops *);
@@ -726,7 +731,6 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_TRACEBACK] = op_ext_traceback,
     [PF_EMPTYFRAME] = op_ext_emptyframe,
     [PF_WEAKREF] = op_ext_weakref,
-    [PF_EMPTYINST] = op_ext_emptyinst,
     [PF_PROXY] = op_ext_weakproxy,
     [PF_STENTRY] = op_ext_stentry,
     [PF_DICTKEYS] = op_ext_dictkeys,
@@ -768,9 +772,57 @@ static const char *s_extra_indexed_mods[] = {
     "_weakref",
 };
 
+/* Create a 'dummy' subclass of every user-subclassable builtin and maintain a 
+ * mapping of builtin : subclass. The subclass can be used for creating instances 
+ * of user-defined subclasses of builtins. This is the same as using the actual
+ * user-created type object for construction, except we avoid any side-effects that 
+ * may be present in __new__ or __init__. */
+struct{
+    PyTypeObject *builtin;
+    PyTypeObject *heap_subtype;
+}s_subclassable_builtin_map[] = {
+    { &PyBaseObject_Type,   NULL },
+    { &PyType_Type,         NULL },
+    { &PyString_Type,       NULL },
+    { &PyByteArray_Type,    NULL },
+    { &PyList_Type,         NULL },
+    { &PySuper_Type,        NULL },
+    { &PyDict_Type,         NULL },
+    { &PySet_Type,          NULL },
+    { &PyUnicode_Type,      NULL },
+    { &PyStaticMethod_Type, NULL },
+    { &PyComplex_Type,      NULL },
+    { &PyFloat_Type,        NULL },
+    { &PyLong_Type,         NULL },
+    { &PyInt_Type,          NULL },
+    { &PyFrozenSet_Type,    NULL },
+    { &PyProperty_Type,     NULL },
+    { &PyTuple_Type,        NULL },
+    { &PyEnum_Type,         NULL },
+    { &PyReversed_Type,     NULL },
+};
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+ 
+static pickle_func_t picklefunc_for_type(PyObject *obj)
+{
+    for(int i = 0; i < ARR_SIZE(s_type_dispatch_table); i++) {
+    
+        if(obj->ob_type == s_type_dispatch_table[i].type)
+            return s_type_dispatch_table[i].picklefunc;
+    }
+
+    /* It's not one of the Python builtins - it may be an engine builtin */
+    for(int i = 0; i < ARR_SIZE(s_pf_dispatch_table); i++) {
+    
+        if(obj->ob_type == s_pf_dispatch_table[i].type)
+            return s_pf_dispatch_table[i].picklefunc;
+    }
+
+    return NULL;
+}
 
 static bool strarr_contains(const char **arr, size_t len, const char *item)
 {
@@ -795,6 +847,51 @@ static bool type_is_builtin(PyObject *type)
             return true;
     }
     return false;
+}
+
+static bool type_is_subclassable_builtin(PyTypeObject *type)
+{
+    for(int i = 0; i < ARR_SIZE(s_subclassable_builtin_map); i++) {
+
+        if(s_subclassable_builtin_map[i].builtin == type)
+            return true;
+    }
+    return false;
+}
+
+/* Returns a borrowed reference to the type that should be used for 
+ * constructing an instance of a particular type. This is either the
+ * root builtin type, or a direct subclass of the builtin type that
+ * doesn't do anything weird in its' __new__ or __init__. */
+static PyObject *constructor_type(PyTypeObject *type)
+{
+    for(int i = 0; i < ARR_SIZE(s_subclassable_builtin_map); i++) {
+
+        PyTypeObject *builtin = s_subclassable_builtin_map[i].builtin;
+        PyTypeObject *sub = s_subclassable_builtin_map[i].heap_subtype;
+
+        /* Every user-defiened type is considered to be a subtype of 
+         * 'object', even when PyBaseObject_Type is not one of the bases.
+         * This is a Python special case. Leave this check for last. */
+        if(builtin == &PyBaseObject_Type)
+            continue;
+
+        if(type == builtin)
+            return (PyObject*)builtin;
+        if(PyType_IsSubtype(type, builtin))
+            return (PyObject*)sub;
+    }
+
+    if(type == &PyBaseObject_Type)
+        return (PyObject*)&PyBaseObject_Type;
+
+    if(PyType_IsSubtype(type, &PyBaseObject_Type)) {
+        PyObject *ret = (PyObject*)s_subclassable_builtin_map[0].heap_subtype;
+        assert(!strcmp(((PyTypeObject*)ret)->tp_name, "__object_subclass__"));
+        return ret;
+    }
+
+    return NULL;
 }
 
 static int dispatch_idx_for_picklefunc(pickle_func_t pf)
@@ -1210,6 +1307,23 @@ fail:
     return -1;
 }
 
+static void create_builtin_subclasses(void)
+{
+    for(int i = 0; i < ARR_SIZE(s_subclassable_builtin_map); i++) {
+
+        char name[256];
+        PyTypeObject *builtin = s_subclassable_builtin_map[i].builtin;
+        pf_snprintf(name, sizeof(name), "__%s_subclass__", builtin->tp_name);
+
+        PyObject *args = Py_BuildValue("s(O){}", name, (PyObject*)builtin);
+        assert(args);
+        PyObject *sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
+        assert(sc);
+        Py_DECREF(args);
+        s_subclassable_builtin_map[i].heap_subtype = (PyTypeObject*)sc;
+    }
+}
+
 static PyObject *qualname_new_ref(const char *qualname)
 {
     char copy[strlen(qualname) + 1];
@@ -1487,7 +1601,6 @@ static int type_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
         return builtin_pickle(ctx, obj, rw); 
 
     TRACE_PICKLE(obj);
-    assert(!memo_contains(ctx, obj));
     assert(PyType_Check(obj));
     PyTypeObject *type = (PyTypeObject*)obj;
 
@@ -1518,16 +1631,8 @@ static int type_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
     CHK_TRUE(pickle_obj(ctx, dict, rw), fail);
 
-    /* Push metaclass: The '__metaclass__' attribute if it exists, else 'type' */
-    if(PyObject_HasAttrString(obj, "__metaclass__")) {
-
-        PyObject *meta = PyObject_GetAttrString(obj, "__metaclass__");
-        assert(PyType_Check(meta));
-        vec_pobj_push(&ctx->to_free, meta);
-        CHK_TRUE(pickle_obj(ctx, meta, rw), fail);
-    }else{
-        CHK_TRUE(pickle_obj(ctx, (PyObject*)&PyType_Type, rw), fail);
-    }
+    /* Push metaclass */
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
 
     /* If the type is found in the memo now, that means 
      * it recursively references itself via one of its' attributes.
@@ -1578,6 +1683,8 @@ static int string_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     char *repr_str;
     PyObject *repr = NULL;
 
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
+
     if (NULL == (repr = PyObject_Repr((PyObject*)obj))) {
         assert(PyErr_Occurred());
         return -1;
@@ -1600,6 +1707,7 @@ fail:
 static int bytearray_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
 
     char *buff = PyByteArray_AS_STRING(obj);
     size_t len = PyByteArray_GET_SIZE(obj);
@@ -1635,6 +1743,7 @@ static int list_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     const char mark = MARK;
 
     assert(PyList_Check(obj));
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
     CHK_TRUE(rw->write(rw, &empty_list, 1, 1), fail);
 
     if(PyList_Size(obj) == 0)
@@ -1642,11 +1751,11 @@ static int list_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
     /* Memoize the empty list before pickling the elements. The elements may 
      * reference the list itself. */
+    assert(!memo_contains(ctx, obj));
     memoize(ctx, obj);
     CHK_TRUE(emit_put(ctx, obj, rw), fail);
 
-    if(rw->write(rw, &mark, 1, 1) < 0)
-        goto fail;
+    CHK_TRUE(rw->write(rw, &mark, 1, 1), fail);
 
     for(int i = 0; i < PyList_Size(obj); i++) {
     
@@ -1671,8 +1780,13 @@ static int super_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     TRACE_PICKLE(obj);
 
     superobject *su = (superobject*)obj;
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
     CHK_TRUE(pickle_obj(ctx, (PyObject*)su->type, rw), fail);
-    CHK_TRUE(pickle_obj(ctx, su->obj, rw), fail);
+    if(su->obj) {
+        CHK_TRUE(pickle_obj(ctx, su->obj, rw), fail);
+    }else{
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+    }
 
     const char ops[] = {PF_EXTEND, PF_SUPER};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
@@ -1686,6 +1800,9 @@ fail:
 static int base_obj_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
+
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
+
     const char ops[] = {PF_EXTEND, PF_BASEOBJ};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
@@ -1730,6 +1847,7 @@ static int dict_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     const char mark = MARK;
 
     assert(PyDict_Check(obj));
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
     CHK_TRUE(rw->write(rw, &empty_dict, 1, 1), fail);
 
     if(PyDict_Size(obj) == 0)
@@ -1737,6 +1855,7 @@ static int dict_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
     /* Memoize the empty dict before pickling the elements. The elements may 
      * reference the list itself. */
+    assert(!memo_contains(ctx, obj));
     memoize(ctx, obj);
     CHK_TRUE(emit_put(ctx, obj, rw), fail);
     CHK_TRUE(rw->write(rw, &mark, 1, 1), fail);
@@ -1795,6 +1914,7 @@ static int set_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
     assert(PySet_Check(obj));
     CHK_TRUE(0 == set_elems_pickle(ctx, obj, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
 
     const char ops[] = {PF_EXTEND, PF_SET};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
@@ -1810,6 +1930,7 @@ static int unicode_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
     assert(PyUnicode_Check(obj));
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
 
     const char unicode = UNICODE;
     CHK_TRUE(rw->write(rw, &unicode, 1, 1), fail);
@@ -1852,11 +1973,12 @@ fail:
 static int static_method_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    assert(obj->ob_type == &PyStaticMethod_Type);
+    assert(PyType_IsSubtype(obj->ob_type, &PyStaticMethod_Type));
     staticmethod *method = (staticmethod*)obj;
 
     assert(method->sm_callable);
     CHK_TRUE(pickle_obj(ctx, method->sm_callable, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
 
     const char ops[] = {PF_EXTEND, PF_STATMETHOD};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
@@ -2010,6 +2132,7 @@ static int frozen_set_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *r
 
     assert(PyFrozenSet_Check(obj));
     CHK_TRUE(0 == set_elems_pickle(ctx, obj, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
 
     const char ops[] = {PF_EXTEND, PF_FROZENSET};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
@@ -2236,6 +2359,7 @@ static int function_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
      * as the function may be self-referencing. This is why we need to 
      * first create a 'dummy' function object and set its' 'code' and 
      * 'dict' attributes after. */
+    assert(!memo_contains(ctx, obj));
     memoize(ctx, obj);
     CHK_TRUE(emit_put(ctx, obj, rw), fail);
 
@@ -2635,6 +2759,8 @@ static int frame_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
      * Pop it, but keep it in the memo. We will push it again last. */
     const char emptyframe[] = {PF_EXTEND, PF_EMPTYFRAME};
     CHK_TRUE(rw->write(rw, emptyframe, ARR_SIZE(emptyframe), 1), fail);
+
+    assert(!memo_contains(ctx, obj));
     memoize(ctx, obj);
     CHK_TRUE(emit_put(ctx, obj, rw), fail);
 
@@ -3265,50 +3391,9 @@ static int tuple_iter_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *r
     return seq_iter_pickle_with_op(ctx, obj, rw, PF_TUPLEITER);
 }
 
-static PyObject *newclass_inst_args(PyObject *obj, PyTypeObject *basetype)
-{
-    PyObject *args = NULL;
-    if(basetype == &PyBaseObject_Type) {
-        args = PyTuple_New(0);
-    }
-    else if(basetype == &PyType_Type) {
-        PyTypeObject *tp = (PyTypeObject*)obj;
-        args = Py_BuildValue("(sOO)", tp->tp_name, tp->tp_bases, tp->tp_dict);
-    }
-    else {
-        args = Py_BuildValue("(O)", obj);
-    }
-    return args;
-}
-
-static PyObject *dummy_builtin_inst(PyObject *type)
-{
-    assert(type_is_builtin(type));
-    if((PyTypeObject*)type == &PyType_Type) {
-        Py_INCREF(&PyType_Type);
-        return (PyObject*)&PyType_Type;
-    }
-
-    return PyObject_CallFunction(type, "()");
-}
-
 static int newclass_instance_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    const char ops[] = {PF_EXTEND, PF_NEWINST};
-
-    assert(!memo_contains(ctx, obj));
-
-    Py_ssize_t size = 0, isize;
-    isize = obj->ob_type->tp_itemsize;
-    if (isize > 0)
-        size = Py_SIZE(obj) * isize;
-    size += obj->ob_type->tp_basicsize;
-
-    PyObject *sizeobj = PyInt_FromSsize_t(size);
-    CHK_TRUE(sizeobj, fail);
-    vec_pobj_push(&ctx->to_free, sizeobj);
-    CHK_TRUE(pickle_obj(ctx, sizeobj, rw), fail);
 
     PyTypeObject *type = obj->ob_type, *basetype = NULL;
     assert(type->tp_flags & Py_TPFLAGS_HEAPTYPE);
@@ -3326,24 +3411,21 @@ static int newclass_instance_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_R
         break;
     }
     assert(basetype);
-    CHK_TRUE(pickle_obj(ctx, (PyObject*)basetype, rw), fail);
+    assert(type_is_subclassable_builtin(basetype));
 
-    /* Emit an 'empty' instance which has enough memory to house the final instance. This 
-     * way, we can hand out references to it even before the final object is constructed.
-     * This is to deal with self-referencing instances. */
-    const char emptyinst[] = {PF_EXTEND, PF_EMPTYINST};
-    CHK_TRUE(rw->write(rw, emptyinst, ARR_SIZE(emptyinst), 1), fail);
+    Py_TYPE(obj) = basetype;
+    pickle_func_t pf = picklefunc_for_type(obj);
+    assert(pf);
+    Py_TYPE(obj) = type;
 
-    assert(!memo_contains(ctx, obj));
-    memoize(ctx, obj);
-    CHK_TRUE(emit_put(ctx, obj, rw), fail);
-
-    PyObject *args = newclass_inst_args(obj, basetype);
-    CHK_TRUE(args, fail);
-    vec_pobj_push(&ctx->to_free, args);
-    CHK_TRUE(pickle_obj(ctx, args, rw), fail);
+    if(0 != pf(ctx, obj, rw)) {
+        assert(PyErr_Occurred());
+        goto fail; 
+    }
 
     CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
+
+    const char ops[] = {PF_EXTEND, PF_NEWINST};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
 
@@ -3421,31 +3503,13 @@ static int placeholder_inst_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RW
 {
     TRACE_PICKLE(obj);
 
-    PyObject *size = PyInt_FromSsize_t(((PyTypeObject*)s_placeholder_type)->tp_basicsize);
-    assert(size);
-    vec_pobj_push(&ctx->to_free, size);
-
-    CHK_TRUE(pickle_obj(ctx, size, rw), fail);
-    CHK_TRUE(pickle_obj(ctx, (PyObject*)&PyBaseObject_Type, rw), fail);
-
-    const char emptyinst[] = {PF_EXTEND, PF_EMPTYINST};
-    CHK_TRUE(rw->write(rw, emptyinst, ARR_SIZE(emptyinst), 1), fail);
-
-    PyObject *args = PyTuple_New(0);
-    CHK_TRUE(args, fail);
-    vec_pobj_push(&ctx->to_free, args);
-
-    CHK_TRUE(pickle_obj(ctx, args, rw), fail);
-    CHK_TRUE(pickle_obj(ctx, s_placeholder_type, rw), fail);
-
-    const char ops[] = {PF_EXTEND, PF_NEWINST};
-    CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
-
-    return 0;
-
-fail:
-    DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
-    return -1;
+    PyObject *ph = PyObject_CallFunction(s_placeholder_type, "()");
+    if(!ph) {
+        assert(PyErr_Occurred());
+        return -1;
+    }
+    vec_pobj_push(&ctx->to_free, ph);
+    return newclass_instance_pickle(ctx, ph, rw);
 }
 
 static int op_int(struct unpickle_ctx *ctx, SDL_RWops *rw)
@@ -3504,8 +3568,22 @@ static int op_stop(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_string(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(STRING, ctx);
+    int ret = -1;
 
-    PyObject *strobj = 0;
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyString_Type)) {
+        SET_RUNTIME_EXC("STRING: Expecting str type or subtype on TOS");
+        goto fail_typecheck;
+    }
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
+
     Py_ssize_t len;
 
     vec_char_t str;
@@ -3538,20 +3616,33 @@ static int op_string(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail; /* Strings returned by __repr__ should be wrapped in quotes */
     }
 
-    strobj = PyString_DecodeEscape(p, len, NULL, 0, NULL);
+    PyObject *tmp = PyString_DecodeEscape(p, len, NULL, 0, NULL);
+    if(!tmp) {
+        assert(PyErr_Occurred()); 
+        goto fail;
+    }
+    assert(PyString_Check(tmp));
+    PyObject *strobj = PyObject_CallFunctionObjArgs(ctype, tmp, NULL);
+    Py_DECREF(tmp);
+
     if(!strobj) {
         assert(PyErr_Occurred()); 
         goto fail;
     }
 
+    Py_DECREF(type);
     vec_char_destroy(&str);
+
     vec_pobj_push(&ctx->stack, strobj);
     return 0;
 
 fail:
     DEFAULT_ERR(PyExc_IOError, "Error reading from pickle stream");
     vec_char_destroy(&str);
-    return -1;
+fail_typecheck:
+    Py_DECREF(type);
+fail_underflow:
+    return ret;
 }
 
 static int op_put(struct unpickle_ctx *ctx, SDL_RWops *rw)
@@ -3695,13 +3786,39 @@ static int op_empty_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_empty_list(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(EMPTY_LIST, ctx);
-    PyObject *list = PyList_New(0);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow"); 
+        goto fail_underflow;
+    }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+    PyObject *args = PyTuple_New(0);
+
+    if(!PyType_Check(type) 
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyList_Type)) {
+        SET_RUNTIME_EXC("Expecting list type or subtype on TOS");
+        goto fail_typecheck;
+    }
+
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
+
+    PyObject *list = PyObject_Call(ctype, args, NULL);
+    Py_DECREF(args);
     if(!list) {
         assert(PyErr_Occurred());
-        return -1;
+        goto fail_list;
     }
     vec_pobj_push(&ctx->stack, list);
-    return 0;
+    ret = 0;
+
+fail_list:
+fail_typecheck:
+    Py_DECREF(type);
+    Py_DECREF(args);
+fail_underflow:
+    return ret;
 }
 
 static int op_appends(struct unpickle_ctx *ctx, SDL_RWops *rw)
@@ -3746,13 +3863,33 @@ static int op_appends(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_empty_dict(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(EMPTY_DICT, ctx);
-    PyObject *dict = PyDict_New();
-    if(!dict) {
-        assert(PyErr_Occurred());
-        return -1;
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
     }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyDict_Type)) {
+        SET_RUNTIME_EXC("EMPTY_DICT: Exepcting 'dict' type or subtype at TOS");
+        goto fail_typecheck;
+    }
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
+
+    PyObject *dict = PyObject_CallFunctionObjArgs(ctype, NULL);
+    CHK_TRUE(dict, fail_dict);
+
     vec_pobj_push(&ctx->stack, dict);
-    return 0;
+    ret = 0;
+
+fail_dict:
+fail_typecheck:
+    Py_DECREF(type);
+fail_underflow:
+    return ret;
 }
 
 static int op_setitems(struct unpickle_ctx *ctx, SDL_RWops *rw)
@@ -3805,6 +3942,21 @@ static int op_none(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_unicode(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(UNICODE, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyUnicode_Type)) {
+        SET_RUNTIME_EXC("STRING: Expecting unicode type or subtype on TOS");
+        goto fail_typecheck;
+    }
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
 
     vec_char_t str;
     vec_char_init(&str);
@@ -3817,17 +3969,26 @@ static int op_unicode(struct unpickle_ctx *ctx, SDL_RWops *rw)
     CHK_TRUE(SDL_RWread(rw, &c, 1, 1), fail); /* consume newline */
 
     assert(strlen(str.array) == vec_size(&str) - 1);
-    PyObject *unicode = PyUnicode_DecodeUTF7(str.array, vec_size(&str)-1, "strict");
+    PyObject *tmp = PyUnicode_DecodeUTF7(str.array, vec_size(&str)-1, "strict");
+    CHK_TRUE(tmp, fail);
+
+    PyObject *unicode = PyObject_CallFunctionObjArgs(ctype, tmp, NULL);
+    Py_DECREF(tmp);
     CHK_TRUE(unicode, fail);
 
-    vec_pobj_push(&ctx->stack, unicode);
+    Py_DECREF(type);
     vec_char_destroy(&str);
+
+    vec_pobj_push(&ctx->stack, unicode);
     return 0;
 
 fail:
     DEFAULT_ERR(PyExc_IOError, "Error reading from pickle stream");
     vec_char_destroy(&str);
-    return -1;
+fail_typecheck:
+    Py_DECREF(type);
+fail_underflow:
+    return ret;
 }
 #endif
 
@@ -3910,12 +4071,8 @@ static int op_ext_type(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }
 
     PyObject *args = Py_BuildValue("(OOO)", name, bases, dict);
-    PyObject *retval = NULL;
-
-    if((retval = PyType_Type.tp_new((PyTypeObject*)meta, args, NULL)) == NULL)
-        goto fail_build;
-    if(PyType_Type.tp_init(retval, args, NULL))
-        goto fail_build;
+    PyObject *retval = PyObject_Call(meta, args, NULL);
+    CHK_TRUE(retval, fail_build);
 
     vec_pobj_push(&ctx->stack, retval);
     ret = 0;
@@ -4178,17 +4335,29 @@ static int op_ext_false(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_ext_bytearray(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_BYTEARRAY, ctx);
+    int ret = -1;
 
-    if(vec_size(&ctx->stack) < 1) {
+    if(vec_size(&ctx->stack) < 2) {
         SET_RUNTIME_EXC("Stack underflow"); 
-        return -1;
+        goto fail_underflow;
     }
 
     PyObject *encoded = vec_pobj_pop(&ctx->stack);
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
     if(!PyString_Check(encoded)) {
-        SET_RUNTIME_EXC("PF_BYTEARRAY: Expecting string at TOS"); 
-        return -1;
+        SET_RUNTIME_EXC("PF_BYTEARRAY: Expecting string at TOS");
+        goto fail_typecheck;
     }
+
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyByteArray_Type)) {
+        SET_RUNTIME_EXC("PF_BYTEARRAY: Expecting bytearray type of subtype at TOS1");
+        goto fail_typecheck;
+    }
+
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
 
     PyObject *raw = PyUnicode_DecodeUTF7(PyString_AS_STRING(encoded), PyString_GET_SIZE(encoded), "strict");
     size_t len = PyUnicode_GET_SIZE(raw);
@@ -4199,40 +4368,59 @@ static int op_ext_bytearray(struct unpickle_ctx *ctx, SDL_RWops *rw)
         buff[i] = (char)PyUnicode_AS_UNICODE(raw)[i];
     }
 
-    PyObject *ret = PyByteArray_FromStringAndSize(buff, len);
-    vec_pobj_push(&ctx->stack, ret);
+    PyObject *tmp = PyByteArray_FromStringAndSize(buff, len);
+    PyObject *ba = PyObject_CallFunctionObjArgs(ctype, tmp, NULL);
+    Py_DECREF(tmp);
+    CHK_TRUE(ba, fail_ba);
 
-    Py_DECREF(encoded);
-    Py_DECREF(raw);
+    vec_pobj_push(&ctx->stack, ba);
+    ret = 0;
+
+fail_ba:
     free(buff);
-    return 0;
+    Py_DECREF(raw);
+fail_typecheck:
+    Py_DECREF(encoded);
+fail_underflow:
+    return ret;
 }
 
 static int op_ext_super(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_SUPER, ctx);
+    int ret = -1;
 
-    if(vec_size(&ctx->stack) < 2) {
+    if(vec_size(&ctx->stack) < 3) {
         SET_RUNTIME_EXC("Stack underflow"); 
-        return -1;
+        goto fail_underflow;
     }
 
     PyObject *obj = vec_pobj_pop(&ctx->stack);
     PyObject *type = vec_pobj_pop(&ctx->stack);
+    PyObject *metatype = vec_pobj_pop(&ctx->stack);
 
-    Py_INCREF(obj);
-    Py_INCREF(type);
-    PyObject *args = PyTuple_New(2);
-    PyTuple_SetItem(args, 0, type);
-    PyTuple_SetItem(args, 1, obj);
+    if(!PyType_Check(metatype)
+    && !PyType_IsSubtype((PyTypeObject*)metatype, &PySuper_Type)) {
+        SET_RUNTIME_EXC("PF_SUPER: Expecting 'super' type or subtype at TOS2");
+        goto fail_typecheck;
+    }
 
-    PyObject *ret = PyObject_Call((PyObject*)&PySuper_Type, args, NULL);
-    Py_DECREF(args);
-    if(!ret)
-        return -1;
+    PyObject *ctype = constructor_type((PyTypeObject*)metatype);
+    assert(ctype);
 
-    vec_pobj_push(&ctx->stack, ret);
-    return 0;
+    PyObject *super = PyObject_CallFunctionObjArgs(ctype, type, obj, NULL);
+    CHK_TRUE(ret, fail_super);
+
+    vec_pobj_push(&ctx->stack, super);
+    ret = 0;
+
+fail_super:
+fail_typecheck:
+    Py_DECREF(obj);
+    Py_DECREF(type);
+    Py_DECREF(metatype);
+fail_underflow:
+    return ret;
 }
 
 static int op_ext_popmark(struct unpickle_ctx *ctx, SDL_RWops *rw)
@@ -4268,14 +4456,35 @@ static int op_ext_emptyfunc(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_ext_baseobj(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_BASEOBJ, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow"); 
+        goto fail_underflow;
+    }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    if(!PyType_Check(type)
+    || (!PyType_IsSubtype((PyTypeObject*)type, &PyBaseObject_Type))) {
+        SET_RUNTIME_EXC("Expecting object type or subtype on TOS");
+        goto fail_typecheck;
+    }
+
+    PyObject *ctype = constructor_type((PyTypeObject*)type); /* borrowed */
+    assert(ctype);
 
     PyObject *args = PyTuple_New(0);
-    PyObject *ret = PyObject_Call((PyObject*)&PyBaseObject_Type, args, NULL);
+    PyObject *retval = PyObject_Call(ctype, args, NULL);
     Py_DECREF(args);
-    assert(ret);
+    assert(retval);
 
-    vec_pobj_push(&ctx->stack, ret);
+    vec_pobj_push(&ctx->stack, retval);
     return 0;
+
+fail_typecheck:
+    Py_DECREF(type);
+fail_underflow:
+    return ret;
 }
 
 static void del_extra_attrs(PyObject *obj, PyObject **attrs_base, size_t npairs)
@@ -4405,47 +4614,87 @@ static int op_ext_sysfloatinfo(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_ext_set(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_SET, ctx);
-    if(vec_size(&ctx->stack) == 0) {
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 2) {
         SET_RUNTIME_EXC("Stack underflow");
-        return -1;
+        goto fail_underflow;
     }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
     PyObject *items = vec_pobj_pop(&ctx->stack);
-    if(!PyTuple_Check(items)) {
-        SET_RUNTIME_EXC("PF_SET: Expecting a tuple of set items on TOS");
-        return -1;
-    }
-    PyObject *ret = PySet_New(items);
-    if(!ret) {
-        assert(PyErr_Occurred());
-        return -1;
+
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PySet_Type)) {
+        SET_RUNTIME_EXC("PF_SET: Expecting a 'set' type or subtype on TOS");
+        goto fail_typecheck;
     }
 
+    if(!PyTuple_Check(items)) {
+        SET_RUNTIME_EXC("PF_SET: Expecting a tuple of set items on TOS1");
+        goto fail_typecheck;
+    }
+
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
+
+    PyObject *set = PyObject_CallFunctionObjArgs(ctype, items, NULL);
+    if(!set) {
+        assert(PyErr_Occurred());
+        goto fail_set;
+    }
+
+    vec_pobj_push(&ctx->stack, set);
+    ret = 0;
+
+fail_set:
+fail_typecheck:
+    Py_DECREF(type);
     Py_DECREF(items);
-    vec_pobj_push(&ctx->stack, ret);
-    return 0;
+fail_underflow:
+    return ret;
 }
 
 static int op_ext_frozenset(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_SET, ctx);
-    if(vec_size(&ctx->stack) == 0) {
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 2) {
         SET_RUNTIME_EXC("Stack underflow");
-        return -1;
+        goto fail_underflow;
     }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
     PyObject *items = vec_pobj_pop(&ctx->stack);
-    if(!PyTuple_Check(items)) {
+
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyFrozenSet_Type)) {
         SET_RUNTIME_EXC("PF_FROZENSET: Expecting a tuple of set items on TOS");
-        return -1;
-    }
-    PyObject *ret = PyFrozenSet_New(items);
-    if(!ret) {
-        assert(PyErr_Occurred());
-        return -1;
+        goto fail_typecheck;
     }
 
+    if(!PyTuple_Check(items)) {
+        SET_RUNTIME_EXC("PF_FROZENSET: Expecting a tuple of set items on TOS");
+        goto fail_typecheck;
+    }
+
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
+
+    PyObject *set = PyObject_CallFunctionObjArgs(ctype, items, NULL);
+    if(!set) {
+        assert(PyErr_Occurred());
+        goto fail_set;
+    }
+
+    vec_pobj_push(&ctx->stack, set);
+    ret = 0;
+
+fail_set:
+fail_typecheck:
+    Py_DECREF(type);
     Py_DECREF(items);
-    vec_pobj_push(&ctx->stack, ret);
-    return 0;
+fail_underflow:
+    return ret;
 }
 
 static int op_ext_class(struct unpickle_ctx *ctx, SDL_RWops *rw)
@@ -4564,8 +4813,8 @@ static int op_ext_getsetdesc(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }
 
     if(!found) {
-        SET_RUNTIME_EXC("Could not find getset_descriptor (%s) of type (%s)",
-            PyString_AS_STRING(name), tp_type->tp_name);
+        SET_RUNTIME_EXC("Could not find getset_descriptor (%s) of type (%s) [%p]",
+            PyString_AS_STRING(name), tp_type->tp_name, tp_type);
         goto fail_desc;
     }
 
@@ -4613,83 +4862,48 @@ fail_underflow:
     return ret;
 }
 
-/*
- * Return a new instance of a dummy class that is a direct sublass of the 
- * object's builtin type. The returned pointer will have at least 
- * min_size bytes allocated.
- */
-static PyObject *heaptype_wrapped(PyObject *obj, Py_ssize_t min_size)
-{
-    assert(type_is_builtin((PyObject*)obj->ob_type));
-
-    PyObject *args = Py_BuildValue("(s(O){})", "__placeholder__", obj->ob_type);
-    assert(args);
-
-    PyObject *newtype = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
-    Py_DECREF(args);
-
-    assert(newtype);
-    assert(((PyTypeObject*)newtype)->tp_flags & Py_TPFLAGS_HEAPTYPE);
-
-    ((PyTypeObject*)newtype)->tp_basicsize = min_size;
-
-    /* Instance args */
-    args = newclass_inst_args(obj, obj->ob_type);
-    assert(args);
-
-    PyObject *inst = PyObject_Call(newtype, args, NULL);
-    assert(inst);
-
-    Py_DECREF(args);
-    Py_DECREF(newtype);
-    return inst;
-}
-
 static int op_ext_newinst(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_NEWINST, ctx);
 
     int ret = -1;
-    if(vec_size(&ctx->stack) < 3) {
+    if(vec_size(&ctx->stack) < 2) {
         SET_RUNTIME_EXC("Stack underflow");
         goto fail_underflow;
     }
 
     PyObject *type = vec_pobj_pop(&ctx->stack);
-    PyObject *args = vec_pobj_pop(&ctx->stack);
-    PyObject *dummy = vec_pobj_pop(&ctx->stack);
+    PyObject *inst = vec_pobj_pop(&ctx->stack);
 
     if(!PyType_Check(type)) {
         SET_RUNTIME_EXC("PF_NEWINST: Expecting type on TOS"); 
         goto fail_typecheck;
     }
 
-    if(!PyTuple_Check(args)) {
-        SET_RUNTIME_EXC("PF_NEWINST: Expecting tuple on TOS1");
-        goto fail_typecheck;
-    }
-
     PyTypeObject *tp_type = (PyTypeObject*)type;
 
-    PyObject *new_obj = dummy;
-    Py_INCREF(new_obj);
+    //TODO: FIXME: think some more about this whack special case
+    if(PyString_Check(inst)) {
+        Py_DECREF(Py_TYPE(inst));
+        Py_TYPE(inst) = tp_type;
+        Py_INCREF(Py_TYPE(inst));
+        goto done;
+    }
 
-    /* This is assigning to __class__, but with no error checking */
-    Py_DECREF(Py_TYPE(new_obj));
-    Py_TYPE(new_obj) = tp_type;
-    Py_INCREF(Py_TYPE(new_obj));
+    if(0 != PyObject_SetAttrString(inst, "__class__", type)) {
+        assert(PyErr_Occurred());
+        goto fail_set_type;
+    }
+done:
 
-    assert(tp_type->tp_flags & Py_TPFLAGS_HEAPTYPE);
-    assert(PyType_IS_GC(tp_type));
-    PyObject_GC_Track(new_obj);
-
-    vec_pobj_push(&ctx->stack, new_obj);
+    Py_INCREF(inst);
+    vec_pobj_push(&ctx->stack, inst);
     ret = 0;
 
+fail_set_type:
 fail_typecheck:
     Py_DECREF(type);
-    Py_DECREF(args);
-    Py_DECREF(dummy);
+    Py_DECREF(inst);
 fail_underflow:
     assert((ret && PyErr_Occurred()) || (!ret && !PyErr_Occurred()));
     return ret;
@@ -4897,26 +5111,37 @@ fail_underflow:
 static int op_ext_staticmethod(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_STATMETHOD, ctx);
-
     int ret = -1;
-    if(vec_size(&ctx->stack) < 1) {
+
+    if(vec_size(&ctx->stack) < 2) {
         SET_RUNTIME_EXC("Stack underflow");
         goto fail_underflow;
     }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
     PyObject *callable = vec_pobj_pop(&ctx->stack);
 
-    if(!PyCallable_Check(callable)) {
-        SET_RUNTIME_EXC("PF_STATMETHOD: Expecting callable object on TOS");
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyStaticMethod_Type)) {
+        SET_RUNTIME_EXC("PF_STATMETHOD: Expecting 'staticmethod' type or subtype on TOS");
         goto fail_typecheck;
     }
 
-    PyObject *retval = PyStaticMethod_New(callable);
+    if(!PyCallable_Check(callable)) {
+        SET_RUNTIME_EXC("PF_STATMETHOD: Expecting callable object on TOS1");
+        goto fail_typecheck;
+    }
+
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
+
+    PyObject *retval = PyObject_CallFunctionObjArgs(ctype, callable, NULL);
     CHK_TRUE(retval, fail_method);
     vec_pobj_push(&ctx->stack, retval);
     ret = 0;
 
 fail_method:
 fail_typecheck:
+    Py_DECREF(type);
     Py_DECREF(callable);
 fail_underflow:
     return ret;
@@ -5676,53 +5901,6 @@ fail_ref:
 fail_typecheck:
     Py_DECREF(callback);
     Py_DECREF(referent);
-fail_underflow:
-    return ret;
-}
-
-static int op_ext_emptyinst(struct unpickle_ctx *ctx, SDL_RWops *rw)
-{
-    TRACE_OP(PF_EMPTYINST, ctx);
-    int ret = -1;
-
-    if(vec_size(&ctx->stack) < 2) {
-        SET_RUNTIME_EXC("Stack underflow");
-        goto fail_underflow;
-    }
-    PyObject *basetype = vec_pobj_pop(&ctx->stack);
-    PyObject *size = vec_pobj_pop(&ctx->stack);
-
-    if(!PyType_Check(basetype)) {
-        SET_RUNTIME_EXC("PF_EMPTYINST: Expecting type object on TOS"); 
-        goto fail_typecheck;
-    }
-
-    if(!PyInt_Check(size)) {
-        SET_RUNTIME_EXC("PF_EMPTYINST: Expecting int object at TOS1");
-        goto fail_typecheck;
-    }
-
-    PyObject *baseinst = dummy_builtin_inst(basetype);
-    assert(baseinst);
-    PyObject *retval = heaptype_wrapped(baseinst, PyInt_AsSsize_t(size));
-    Py_DECREF(baseinst);
-
-    CHK_TRUE(retval, fail_inst);
-    assert(retval->ob_type->tp_flags & Py_TPFLAGS_HEAPTYPE);
-    assert(PyType_IS_GC(retval->ob_type));
-
-    /* Re-add the GC tracking once the 'dummy' type is properly initialized
-     * in 'PF_NEWINST'. Until then, it's not safe to traverse the instance's 
-     * fields. */
-    PyObject_GC_UnTrack(retval);
-
-    vec_pobj_push(&ctx->stack, retval);
-    ret = 0;
-
-fail_inst:
-fail_typecheck:
-    Py_DECREF(basetype);
-    Py_DECREF(size);
 fail_underflow:
     return ret;
 }
@@ -6596,24 +6774,6 @@ static int op_ext_nullimporter(struct unpickle_ctx *ctx, SDL_RWops *rw)
     return 0;
 }
 
-static pickle_func_t picklefunc_for_type(PyObject *obj)
-{
-    for(int i = 0; i < ARR_SIZE(s_type_dispatch_table); i++) {
-    
-        if(obj->ob_type == s_type_dispatch_table[i].type)
-            return s_type_dispatch_table[i].picklefunc;
-    }
-
-    /* It's not one of the Python builtins - it may be an engine builtin */
-    for(int i = 0; i < ARR_SIZE(s_pf_dispatch_table); i++) {
-    
-        if(obj->ob_type == s_pf_dispatch_table[i].type)
-            return s_pf_dispatch_table[i].picklefunc;
-    }
-
-    return NULL;
-}
-
 static bool pickle_ctx_init(struct pickle_ctx *ctx)
 {
     if(NULL == (ctx->memo = kh_init(memo))) {
@@ -6837,6 +6997,7 @@ bool S_Pickle_Init(PyObject *module)
     load_exception_types();
     load_engine_builtin_types();
     reference_all_types();
+    create_builtin_subclasses();
 
     if(!S_Traverse_IndexQualnames(s_id_qualname_map))
         goto fail_traverse;
@@ -6862,6 +7023,10 @@ void S_Pickle_Shutdown(void)
 
     kh_destroy(str, s_id_qualname_map);
     Py_DECREF(s_placeholder_type);
+
+    for(int i = 0; i < ARR_SIZE(s_subclassable_builtin_map); i++) {
+        Py_DECREF(s_subclassable_builtin_map[i].heap_subtype);
+    }
 }
 
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream)
