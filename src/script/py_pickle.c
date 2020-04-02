@@ -1408,6 +1408,41 @@ static int setattr_nondestructive(PyObject *obj, PyObject *name, PyObject *val)
     return ret;
 }
 
+/* Query if an attribute of an object is a descriptor with
+ * a user-defined __get__ method, begin careful not to actually
+ * invoke the method, which may have arbitrary side-effects. */
+static bool attr_is_user_descr(PyObject *obj, PyObject *name)
+{
+    assert(PyString_Check(name));
+
+    PyObject *descr;
+    if(PyType_Check(obj)) {
+        descr =_PyType_Lookup((PyTypeObject*)obj, name);
+    }else {
+        descr =_PyType_Lookup(obj->ob_type, name);
+    }
+
+    if(!descr)
+        return false;
+
+    if(PyType_HasFeature(descr->ob_type, Py_TPFLAGS_HAVE_CLASS)
+    && descr->ob_type->tp_descr_get) {
+
+        PyObject *getter = PyObject_GetAttrString(descr, "__get__");
+        assert(getter);
+
+        if(!PyMethod_Check(getter)) {
+            Py_DECREF(getter);
+            return false;
+        }
+
+        Py_DECREF(getter);
+        return true;
+    }
+    return false;
+}
+
+
 /* Non-derived attributes are those that don't return a new 
  * object on attribute lookup. 
  * This function returns a new reference.
@@ -1429,6 +1464,10 @@ static PyObject *nonderived_writable_attrs(PyObject *obj)
 
         PyObject *name = PyList_GET_ITEM(attrs, i); /* borrowed */
         assert(PyString_Check(name));
+
+        if(attr_is_user_descr(obj, name))
+            continue;
+
         if(!PyObject_HasAttr(obj, name))
             continue;
 
@@ -1558,8 +1597,27 @@ static PyObject *method_funcs(PyObject *obj)
 
         PyObject *name = PyList_GET_ITEM(attrs, i); /* borrowed */
         assert(PyString_Check(name));
-        if(!PyObject_HasAttr(obj, name))
+
+        if(attr_is_user_descr(obj, name)) {
+        
+            PyObject *desc = _PyType_Lookup((PyTypeObject*)obj, name); /* borrowed */
+            assert(desc);
+            assert(Py_TYPE(desc)->tp_descr_get);
+            PyDict_SetItem(ret, name, desc);
             continue;
+        }
+
+        /* If 'dir' gave us the name but PyObject_HasAttr returns
+         * false, this means this is a descriptor. It should be
+         * passed in to the types's dict at initialization */
+        if(!PyObject_HasAttr(obj, name)) {
+
+            PyObject *desc = _PyType_Lookup((PyTypeObject*)obj, name); /* borrowed */
+            assert(desc);
+            assert(Py_TYPE(desc)->tp_descr_get);
+            PyDict_SetItem(ret, name, desc);
+            continue;
+        }
 
         PyObject *attr = PyObject_GetAttr(obj, name);
         assert(attr);
