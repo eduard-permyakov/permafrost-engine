@@ -1,3 +1,6 @@
+# ------------------------------------------------------------------------------
+# Options 
+# ------------------------------------------------------------------------------
 
 PLAT ?= LINUX
 TYPE ?= DEBUG
@@ -145,21 +148,18 @@ download_windows_python:
 
 ./lib/$(PYTHON_LIB):
 ifeq ($(PLAT),WINDOWS)
-	$(error "Python must be built using MSVC build tools. Alternatively, try 'make download_windows_python'.")
+	$(error "Python must be built using MSVC build tools.")
 endif
 	mkdir -p ./lib/pyinstall/lib
 	mkdir -p $(PYTHON_SRC)/build
 	cd $(PYTHON_SRC)/build \
 	&& ../configure \
 		--enable-shared \
-		--enable-optimizations \
-		--prefix=$(shell pwd)/lib/pyinstall \
+		--without-threads \
+		--without-signal-module \
 	&& cp ./pyconfig.h ../Include/. \
-	&& make \
-	&& make install
-	mv ./lib/pyinstall/lib/$(PYTHON_LIB) $@
-	mv ./lib/pyinstall/lib/python$(PYTHON_VER_MAJOR) ./lib/.
-	rm -rf ./lib/pyinstall
+	&& make libpython2.7.so
+	cp $(PYTHON_SRC)/build/$(PYTHON_LIB) $@
 
 deps: $(DEPS)
 
