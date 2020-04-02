@@ -179,12 +179,12 @@ typedef void *mod_ty; //symtable.h wants this
 #define PF_STATMETHOD   'I' /* Push a staticmethod object from stack item and type */
 #define PF_BUFFER       'J' /* Push a buffer object from top 4 stack items */
 #define PF_MEMVIEW      'K' /* Push a memoryview object from stack item */
-#define PF_PROPERTY     'L' /* Push a property object from top 4 stack items */
-#define PF_ENUMERATE    'M' /* Push an enuerate object from top 4 stack items */
+#define PF_PROPERTY     'L' /* Push a property object from top 5 stack items */
+#define PF_ENUMERATE    'M' /* Push an enuerate object from top 5 stack items */
 #define PF_LISTITER     'N' /* Push listiterator object from top 2 stack items */
-#define PF_COMPLEX      'O' /* Push a 'complex' object from top 2 stack items */
+#define PF_COMPLEX      'O' /* Push a 'complex' object from top 3 stack items */
 #define PF_DICTPROXY    'P' /* Push a 'dictproxy' object from the TOS dict */
-#define PF_REVERSED     'Q' /* Push a 'reversed' object from the top 2 stack items */
+#define PF_REVERSED     'Q' /* Push a 'reversed' object from the top 3 stack items */
 #define PF_GEN          'R' /* Push a generator object from top TOS */
 #define PF_FRAME        'S' /* Push a frame object from variable number of TOS items */
 #define PF_NULLVAL      'T' /* Push a dummy object onto the stack, indicating a NULL value */
@@ -2061,6 +2061,7 @@ static int complex_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
     CHK_TRUE(pickle_obj(ctx, real, rw), fail);
     CHK_TRUE(pickle_obj(ctx, imag, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
 
     const char ops[] = {PF_EXTEND, PF_COMPLEX};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
@@ -2075,8 +2076,9 @@ fail:
 static int float_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-
     assert(PyFloat_Check(obj));
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
+
     double d = PyFloat_AS_DOUBLE(obj);
 
     const char ops[] = {FLOAT};
@@ -2147,10 +2149,13 @@ fail:
 static int long_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
+    PyObject *repr = NULL;
 
-    assert(obj->ob_type == &PyLong_Type);
-    PyObject *repr = PyObject_Repr(obj);
-    assert(repr);
+    assert(PyLong_Check(obj));
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
+
+    repr = PyObject_Repr(obj);
+    CHK_TRUE(repr, fail);
     size_t repr_len = strlen(PyString_AS_STRING(repr)) - 1; /* strip L suffix */
     assert(PyString_AS_STRING(repr)[repr_len] == 'L');
 
@@ -2162,7 +2167,7 @@ static int long_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     return 0;
 
 fail:
-    Py_DECREF(repr);
+    Py_XDECREF(repr);
     DEFAULT_ERR(PyExc_IOError, "Error writing to pickle stream");
     return -1;
 }
@@ -2170,6 +2175,9 @@ fail:
 static int int_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
+
+    assert(PyInt_Check(obj));
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
 
     char str[32];
     long l = PyInt_AS_LONG((PyIntObject *)obj);
@@ -2226,6 +2234,7 @@ static int property_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 
     assert(prop->prop_doc);
     CHK_TRUE(pickle_obj(ctx, prop->prop_doc, rw), fail);
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
 
     const char ops[] = {PF_EXTEND, PF_PROPERTY};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
@@ -2271,13 +2280,13 @@ fail:
 static int tuple_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    Py_ssize_t len;
 
     assert(PyTuple_Check(obj));
-    len = PyTuple_Size((PyObject*)obj);
+    Py_ssize_t len = PyTuple_Size((PyObject*)obj);
 
     if(len == 0) {
 
+        CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
         char str[] = {EMPTY_TUPLE};
         CHK_TRUE(rw->write(rw, str, 1, ARR_SIZE(str)), fail);
         return 0;
@@ -2313,6 +2322,7 @@ static int tuple_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
         return 0;
     }
 
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
     /* Not recursive. */
     CHK_TRUE(rw->write(rw, &tuple, 1, 1), fail);
     return 0;
@@ -2325,7 +2335,7 @@ fail:
 static int enum_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    assert(obj->ob_type == &PyEnum_Type);
+    assert(PyType_IsSubtype(obj->ob_type, &PyEnum_Type));
     enumobject *en = (enumobject*)obj;
 
     PyObject *index = PyLong_FromLong(en->en_index);
@@ -2346,6 +2356,8 @@ static int enum_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
         CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
     }
 
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
+
     const char ops[] = {PF_EXTEND, PF_ENUMERATE};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
@@ -2358,7 +2370,7 @@ fail:
 static int reversed_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-    assert(obj->ob_type == &PyReversed_Type);
+    assert(PyType_IsSubtype(obj->ob_type, &PyReversed_Type));
     reversedobject *rev = (reversedobject*)obj;
 
     PyObject *index = PyLong_FromSsize_t(rev->index);
@@ -2370,6 +2382,7 @@ static int reversed_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     }else{
         CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
     }
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
 
     const char ops[] = {PF_EXTEND, PF_REVERSED};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
@@ -3574,6 +3587,20 @@ static int op_int(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(INT, ctx);
 
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyInt_Type)) {
+        SET_RUNTIME_EXC("STRING: Expecting str type or subtype on TOS");
+        goto fail_typecheck;
+    }
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
+
     char buff[MAX_LINE_LEN];
     READ_LINE(rw, buff, fail);
 
@@ -3585,17 +3612,36 @@ static int op_int(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail;
     }
 
-    vec_pobj_push(&ctx->stack, PyInt_FromLong(l));
+    PyObject *val = PyObject_CallFunction(ctype, "l", l);
+    CHK_TRUE(val, fail);
+    vec_pobj_push(&ctx->stack, val);
     return 0;
 
 fail:
     DEFAULT_ERR(PyExc_IOError, "Error reading from pickle stream");
+fail_typecheck:
+    Py_DECREF(type);
+fail_underflow:
     return -1;
 }
 
 static int op_long(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(LONG, ctx);
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyLong_Type)) {
+        SET_RUNTIME_EXC("STRING: Expecting str type or subtype on TOS");
+        goto fail_typecheck;
+    }
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
 
     char buff[MAX_LINE_LEN];
     READ_LINE(rw, buff, fail);
@@ -3608,11 +3654,16 @@ static int op_long(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail;
     }
 
-    vec_pobj_push(&ctx->stack, PyLong_FromLongLong(l));
+    PyObject *val = PyObject_CallFunction(ctype, "L", l);
+    CHK_TRUE(val, fail);
+    vec_pobj_push(&ctx->stack, val);
     return 0;
 
 fail:
     DEFAULT_ERR(PyExc_IOError, "Error reading from pickle stream");
+fail_typecheck:
+    Py_DECREF(type);
+fail_underflow:
     return -1;
 }
 
@@ -3626,7 +3677,6 @@ static int op_stop(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_string(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(STRING, ctx);
-    int ret = -1;
 
     if(vec_size(&ctx->stack) < 1) {
         SET_RUNTIME_EXC("Stack underflow");
@@ -3700,7 +3750,7 @@ fail:
 fail_typecheck:
     Py_DECREF(type);
 fail_underflow:
-    return ret;
+    return -1;
 }
 
 static int op_put(struct unpickle_ctx *ctx, SDL_RWops *rw)
@@ -3805,10 +3855,26 @@ static int op_pop_mark(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(TUPLE, ctx);
+    int ret = -1;
+
     if(vec_size(&ctx->mark_stack) == 0) {
         SET_RUNTIME_EXC("Mark stack underflow");
-        return -1;
+        goto fail_underflow;
     }
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow"); 
+        goto fail_underflow;
+    }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyTuple_Type)) {
+        SET_RUNTIME_EXC("Expecting 'tuple' type or subtype on TOS"); 
+        goto fail_typecheck;
+    }
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
 
     int mark = vec_int_pop(&ctx->mark_stack);
     if(vec_size(&ctx->stack) < mark) {
@@ -3817,28 +3883,59 @@ static int op_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }
 
     size_t tup_len = vec_size(&ctx->stack) - mark;
-    PyObject *tuple = PyTuple_New(tup_len);
-    assert(tuple);
+    PyObject *tmp = PyTuple_New(tup_len);
+    CHK_TRUE(tmp, fail_tuple);
 
     for(int i = 0; i < tup_len; i++) {
         PyObject *elem = vec_pobj_pop(&ctx->stack);
-        PyTuple_SET_ITEM(tuple, tup_len - i - 1, elem);
+        PyTuple_SET_ITEM(tmp, tup_len - i - 1, elem);
     }
 
+    PyObject *tuple = PyObject_CallFunctionObjArgs(ctype, tmp, NULL);
+    Py_DECREF(tmp);
+    CHK_TRUE(tuple, fail_tuple);
+
     vec_pobj_push(&ctx->stack, tuple);
-    return 0;
+    ret = 0;
+
+fail_tuple:
+fail_typecheck:
+    Py_DECREF(type);
+fail_underflow:
+    return ret;
 }
 
 static int op_empty_tuple(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(EMPTY_TUPLE, ctx);
-    PyObject *tuple = PyTuple_New(0);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow"); 
+        goto fail_underflow;
+    }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyTuple_Type)) {
+        SET_RUNTIME_EXC("Expecting 'tuple' type or subtype on TOS"); 
+        goto fail_typecheck;
+    }
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
+
+    PyObject *tuple = PyObject_CallFunctionObjArgs(ctype, NULL);
     if(!tuple) {
         assert(PyErr_Occurred());
         return -1;
     }
     vec_pobj_push(&ctx->stack, tuple);
     return 0;
+
+fail_typecheck:
+    Py_DECREF(type);
+fail_underflow:
+    return ret;
 }
 
 static int op_empty_list(struct unpickle_ctx *ctx, SDL_RWops *rw)
@@ -4000,7 +4097,6 @@ static int op_none(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_unicode(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(UNICODE, ctx);
-    int ret = -1;
 
     if(vec_size(&ctx->stack) < 1) {
         SET_RUNTIME_EXC("Stack underflow");
@@ -4046,13 +4142,27 @@ fail:
 fail_typecheck:
     Py_DECREF(type);
 fail_underflow:
-    return ret;
+    return -1;
 }
 #endif
 
 static int op_float(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(FLOAT, ctx);
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
+
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyFloat_Type)) {
+        SET_RUNTIME_EXC("STRING: Expecting 'float' type or subtype on TOS");
+        goto fail_typecheck;
+    }
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
 
     char line[MAX_LINE_LEN];
     READ_LINE(rw, line, fail);
@@ -4061,13 +4171,18 @@ static int op_float(struct unpickle_ctx *ctx, SDL_RWops *rw)
     double d = PyOS_string_to_double(line, NULL, PyExc_OverflowError);
     CHK_TRUE(!PyErr_Occurred(), fail);
 
-    PyObject *retval = PyFloat_FromDouble(d);
+    PyObject *retval = PyObject_CallFunction(ctype, "d", d);
     CHK_TRUE(retval, fail);
     vec_pobj_push(&ctx->stack, retval);
+
+    Py_DECREF(type);
     return 0;
 
 fail:
     DEFAULT_ERR(PyExc_IOError, "Error reading from pickle stream");
+fail_typecheck:
+    Py_DECREF(type);
+fail_underflow:
     return -1;
 }
 
@@ -4940,25 +5055,15 @@ static int op_ext_newinst(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     PyTypeObject *tp_type = (PyTypeObject*)type;
 
-    //TODO: FIXME: think some more about this whack special case
-    if(PyString_Check(inst)) {
-        Py_DECREF(Py_TYPE(inst));
-        Py_TYPE(inst) = tp_type;
-        Py_INCREF(Py_TYPE(inst));
-        goto done;
-    }
-
-    if(0 != PyObject_SetAttrString(inst, "__class__", type)) {
-        assert(PyErr_Occurred());
-        goto fail_set_type;
-    }
-done:
+    /* This is assigning to __class__, but with no error checking */
+    Py_DECREF(Py_TYPE(inst));
+    Py_TYPE(inst) = tp_type;
+    Py_INCREF(Py_TYPE(inst));
 
     Py_INCREF(inst);
     vec_pobj_push(&ctx->stack, inst);
     ret = 0;
 
-fail_set_type:
 fail_typecheck:
     Py_DECREF(type);
     Py_DECREF(inst);
@@ -5272,21 +5377,32 @@ static int op_ext_property(struct unpickle_ctx *ctx, SDL_RWops *rw)
     TRACE_OP(PF_PROPERTY, ctx);
 
     int ret = -1;
-    if(vec_size(&ctx->stack) < 4) {
+    if(vec_size(&ctx->stack) < 5) {
         SET_RUNTIME_EXC("Stack underflow");
         goto fail_underflow;
     }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
     PyObject *doc = vec_pobj_pop(&ctx->stack);
     PyObject *del = vec_pobj_pop(&ctx->stack);
     PyObject *set = vec_pobj_pop(&ctx->stack);
     PyObject *get = vec_pobj_pop(&ctx->stack);
 
-    PyObject *prop = PyObject_CallFunction((PyObject*)&PyProperty_Type, "(OOOO)", get, set, del, doc);
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyProperty_Type)) {
+        SET_RUNTIME_EXC("PF_PROPERTY: Expecting 'property' type or subtype on TOS");
+        goto fail_typecheck;
+    }
+
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
+
+    PyObject *prop = PyObject_CallFunction(ctype, "(OOOO)", get, set, del, doc);
     CHK_TRUE(prop, fail_prop);
     vec_pobj_push(&ctx->stack, prop);
     ret = 0;
 
 fail_prop:
+fail_typecheck:
     Py_DECREF(doc);
     Py_DECREF(del);
     Py_DECREF(set);
@@ -5300,22 +5416,29 @@ static int op_ext_enumerate(struct unpickle_ctx *ctx, SDL_RWops *rw)
     TRACE_OP(PF_ENUMERATE, ctx);
 
     int ret = -1;
-    if(vec_size(&ctx->stack) < 4) {
+    if(vec_size(&ctx->stack) < 5) {
         SET_RUNTIME_EXC("Stack underflow");
         goto fail_underflow;
     }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
     PyObject *longindex = vec_pobj_pop(&ctx->stack);
     PyObject *result = vec_pobj_pop(&ctx->stack);
     PyObject *sit = vec_pobj_pop(&ctx->stack);
     PyObject *index = vec_pobj_pop(&ctx->stack);
 
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyEnum_Type)) {
+        SET_RUNTIME_EXC("PF_ENUMERATE: Expecting 'enumerate' type or subtype at TOS");
+        goto fail_typecheck;
+    }
+
     if(longindex != Py_None && !_PyAnyInt_Check(longindex)) {
-        SET_RUNTIME_EXC("PF_ENUMERATE: expecting integer (int,long) or None type on TOS");
+        SET_RUNTIME_EXC("PF_ENUMERATE: expecting integer (int,long) or None type on TOS1");
         goto fail_typecheck;
     }
 
     if(result != Py_None && !PyTuple_Check(result)) {
-        SET_RUNTIME_EXC("PF_ENUMERATE: expecting tuple or None on TOS1");
+        SET_RUNTIME_EXC("PF_ENUMERATE: expecting tuple or None on TOS2");
         goto fail_typecheck;
     }
 
@@ -5329,11 +5452,16 @@ static int op_ext_enumerate(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail_typecheck;
     }
 
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
+
     /* The following is ripped from enumobject.c:enum_new
      * (The 'enumerate' new method takes a sequence and a start index.
      * The sequence is not saved. So hijack the creation path and set
      * the iterator directly. */
-    enumobject *en = (enumobject *)PyEnum_Type.tp_alloc(&PyEnum_Type, 0);
+    enumobject *en = (enumobject *)((PyTypeObject*)ctype)->tp_alloc((PyTypeObject*)ctype, 0);
+    CHK_TRUE(en, fail_en);
+
     en->en_index = PyLong_AsSsize_t(index);
     en->en_sit = sit;
     Py_INCREF(en->en_sit);
@@ -5349,6 +5477,7 @@ static int op_ext_enumerate(struct unpickle_ctx *ctx, SDL_RWops *rw)
     vec_pobj_push(&ctx->stack, (PyObject*)en);
     ret = 0;
 
+fail_en:
 fail_typecheck:
     Py_DECREF(longindex);
     Py_DECREF(result);
@@ -5416,20 +5545,30 @@ static int op_ext_complex(struct unpickle_ctx *ctx, SDL_RWops *rw)
     TRACE_OP(PF_COMPLEX, ctx);
 
     int ret = -1;
-    if(vec_size(&ctx->stack) < 2) {
+    if(vec_size(&ctx->stack) < 3) {
         SET_RUNTIME_EXC("Stack underflow");
         goto fail_underflow;
     }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
     PyObject *imag = vec_pobj_pop(&ctx->stack);
     PyObject *real = vec_pobj_pop(&ctx->stack);
 
-    if(!PyFloat_Check(imag)
-    || !PyFloat_Check(real)) {
-        SET_RUNTIME_EXC("PF_COMPLEX: Expecting float objects as top 2 TOS items");
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyComplex_Type)) {
+        SET_RUNTIME_EXC("PF_COMPLEX: Expecting 'complex' type or subtype at TOS");
         goto fail_typecheck;
     }
 
-    PyObject *retval = PyComplex_FromDoubles(PyFloat_AS_DOUBLE(real), PyFloat_AS_DOUBLE(imag));
+    if(!PyFloat_Check(imag)
+    || !PyFloat_Check(real)) {
+        SET_RUNTIME_EXC("PF_COMPLEX: Expecting float objects at TOS1 and TOS2");
+        goto fail_typecheck;
+    }
+
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
+
+    PyObject *retval = PyObject_CallFunctionObjArgs(ctype, real, imag, NULL);
     CHK_TRUE(retval, fail_complex);
     vec_pobj_push(&ctx->stack, retval);
     ret = 0;
@@ -5476,24 +5615,34 @@ static int op_ext_reversed(struct unpickle_ctx *ctx, SDL_RWops *rw)
     TRACE_OP(PF_REVERSED, ctx); 
 
     int ret = -1;
-    if(vec_size(&ctx->stack) < 2) {
+    if(vec_size(&ctx->stack) < 3) {
         SET_RUNTIME_EXC("Stack underflow");
         goto fail_underflow;
     }
+    PyObject *type = vec_pobj_pop(&ctx->stack);
     PyObject *seq = vec_pobj_pop(&ctx->stack);
     PyObject *index = vec_pobj_pop(&ctx->stack);
 
+    if(!PyType_Check(type)
+    || !PyType_IsSubtype((PyTypeObject*)type, &PyReversed_Type)) {
+        SET_RUNTIME_EXC("PF_REVERSED: Expecting 'reversed' type or subtype at TOS");
+        goto fail_typecheck;
+    }
+
     if(seq != Py_None && !PySequence_Check(seq)) {
-        SET_RUNTIME_EXC("PF_REVERSED: TOS item must be None or a sequence");
+        SET_RUNTIME_EXC("PF_REVERSED: TOS1 item must be None or a sequence");
         goto fail_typecheck;
     }
 
     if(!PyLong_Check(index)) {
-        SET_RUNTIME_EXC("PF_REVERSED: Expecting long object on TOS1"); 
+        SET_RUNTIME_EXC("PF_REVERSED: Expecting long object on TOS2"); 
         goto fail_typecheck;
     }
 
-    reversedobject *rev = (reversedobject*)PyReversed_Type.tp_alloc(&PyReversed_Type, 0);
+    PyObject *ctype = constructor_type((PyTypeObject*)type);
+    assert(ctype);
+
+    reversedobject *rev = (reversedobject*)((PyTypeObject*)ctype)->tp_alloc((PyTypeObject*)ctype, 0);
     CHK_TRUE(rev, fail_rev);
     rev->index = PyLong_AsSsize_t(index);
     if(seq != Py_None) {
