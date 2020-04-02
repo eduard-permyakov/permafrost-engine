@@ -1216,8 +1216,231 @@ def test_pickle_operator_builtins():
 
     print "operator module builtins pickling OK!"
 
+def test_pickle_builtin_subclasses():
+
+    class UserList(list):
+        def __init__(self, *args):
+            super(UserList, self).__init__(*args)
+            self.customattr = 456
+
+    l1 = UserList([1,2,'abc'])
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    assert l1 == l2
+    assert l1.customattr == l2.customattr
+
+    # self-referencing
+    l1 = UserList()
+    l1.append(l1)
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    assert l1.__repr__() == l2.__repr__()
+    assert l1 == l1[0]
+    assert l2 == l2[0]
+
+    class UserType(type):
+        pass
+
+    t1 = UserType('testtype', (UserList,), dict(testattr=1))
+    s = pf.pickle_object(t1)
+    t2 = pf.unpickle_object(s)
+
+    assert t1([1,2,'abc']) == t2([1,2,'abc'])
+    assert repr(t1) == repr(t2)
+    assert t1().testattr == t2().testattr
+
+    class UserString(str):
+        pass
+
+    s1 = UserString('Hello World')
+    s = pf.pickle_object(s1)
+    s2 = pf.unpickle_object(s)
+    assert s1 == s2
+
+    class UserByteArray(bytearray):
+        pass
+
+    b1 = UserByteArray('abc')
+    s = pf.pickle_object(b1)
+    b2 = pf.unpickle_object(s)
+    assert b1 == b2
+    assert repr(type(b1)) == repr(type(b2))
+
+    class UserSuper(super):
+        pass
+
+    s1 = UserSuper(UserSuper)
+    s = pf.pickle_object(s1)
+    s2 = pf.unpickle_object(s)
+    assert repr(s1.__class__) == repr(s2.__class__)
+    assert s2.__self__ == s2.__self__
+
+    class UserDict(dict):
+        def __init__(self, *args, **kwargs):
+            super(UserDict, self).__init__(*args, **kwargs)
+            self.customattr = 123
+
+    d1 = UserDict(a=1, b=2, c=3)
+    s = pf.pickle_object(d1)
+    d2 = pf.unpickle_object(s)
+    assert d1['a'] == d2['a']
+    assert d1['b'] == d2['b']
+    assert d1['c'] == d2['c']
+
+    class UserSet(set):
+        pass
+
+    s1 = UserSet((1,2,'Hello World'))
+    s = pf.pickle_object(s1)
+    s2 = pf.unpickle_object(s)
+    assert s1 == s2
+
+    class UserFrozenSet(frozenset):
+        pass
+
+    s1 = UserFrozenSet((1,2,'Hello World'))
+    s = pf.pickle_object(s1)
+    s2 = pf.unpickle_object(s)
+    assert s1 == s2
+
+    class UserUnicode(unicode):
+        pass
+
+    u1 = UserUnicode('Permafrost Engine is the greatest. Yup.')
+    s = pf.pickle_object(u1)
+    u2 = pf.unpickle_object(s)
+    assert u1 == u2
+
+    class UserStaticMethod(staticmethod):
+        num_accesses = 0
+        def __get__(self, *args):
+            UserStaticMethod.num_accesses += 1
+            return super(UserStaticMethod, self).__get__(*args)
+
+    class TestClass(object):
+        cls = UserStaticMethod
+        @UserStaticMethod
+        def foo(arg):
+            return arg * 2
+
+    i1 = TestClass()
+    assert i1.foo(1) == 2
+
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+
+    assert i2.cls.num_accesses == 1
+    assert i2.foo(2) == 4
+    assert i2.foo(3) == 6
+    assert i2.foo('hi') == 'hihi'
+    assert i2.cls.num_accesses == 4
+
+    class UserComplex(complex):
+        pass
+
+    c1 = UserComplex(1,2)
+    s = pf.pickle_object(c1)
+    c2 = pf.unpickle_object(s)
+    assert c1 == c2
+
+    class UserFloat(float):
+        pass
+
+    f1 = UserFloat(1.2345)
+    s = pf.pickle_object(f1)
+    f2 = pf.unpickle_object(s)
+    assert f1 == f2
+
+    class UserLong(long):
+        pass
+
+    l1 = UserLong(1 << 32)
+    s = pf.pickle_object(l1)
+    l2 = pf.unpickle_object(s)
+    assert l1 == l2
+
+    class UserInt(int):
+        pass
+
+    i1 = UserInt(-234343)
+    s = pf.pickle_object(i1)
+    i2 = pf.unpickle_object(s)
+    assert i1 == i2
+
+    class UserTuple(tuple):
+        def __new__(cls, iter):
+            t = tuple(iter)
+            return super(UserTuple, cls).__new__(cls, t + ('EXTRAITEM',))
+
+    t1 = UserTuple([1,2,3])
+    s = pf.pickle_object(t1)
+    t2 = pf.unpickle_object(s)
+    assert t1 == t2
+    assert t2[3] == 'EXTRAITEM'
+    t3 = t2.__class__([4,5])
+    assert t3 == (4,5,'EXTRAITEM')
+
+    # self-referencing
+    l = []
+    t1 = UserTuple([1,l])
+    l.append(t1)
+    s = pf.pickle_object(t1)
+    t2 = pf.unpickle_object(s)
+    assert t1.__repr__() == t2.__repr__()
+    assert t2[1][0] == t2
+
+    class UserEnumerate(enumerate):
+        pass
+
+    e1 = UserEnumerate([1,2,7])
+    e1.next()
+    s = pf.pickle_object(e1)
+    e2 = pf.unpickle_object(s)
+    assert e2.next() == (1,2)
+    assert e2.next() == (2,7)
+
+    class UserReversed(reversed):
+        pass
+
+    r1 = UserReversed([1,2,3])
+    assert r1.next() == 3
+    s = pf.pickle_object(r1)
+    r2 = pf.unpickle_object(s)
+    assert r2.next() == 2
+    assert r2.next() == 1
+
+    # gratz. we just passed the most sophisticatd pickling test cases
+    # known to mankind
+    print "Builtin subclass pickling OK!"
+
+def test_pickle_descr_side_effects():
+
+    class UserDescr(object):
+        def __get__(self, obj, objtype):
+            raise RuntimeError('getting illegal attr')
+        def __set__(self, obj, name):
+            raise RuntimeError('setting illegal attr')
+
+    class TestClass(object):
+        desc = UserDescr()
+
+    inst1 = TestClass()
+    s = pf.pickle_object(inst1)
+    inst2 = pf.unpickle_object(s)
+
+    try:
+        inst2.desc
+    except RuntimeError as e:
+        # accessing the descriptor gives the 
+        # expected exception
+        assert str(e) == 'getting illegal attr'
+    else:
+        raise RuntimeError
+
+    print "Descriptor pickling OK!"
+
 try:
-    test_pickle_int()
+    test_pickle_int() 
     test_pickle_long()
     test_pickle_string()
     test_pickle_unicode()
@@ -1270,6 +1493,8 @@ try:
     test_pickle_exceptions()
     test_pickle_builtin_method()
     test_pickle_operator_builtins()
+    test_pickle_builtin_subclasses()
+    test_pickle_descr_side_effects()
 except Exception as e:
     traceback.print_exc()
 finally:
