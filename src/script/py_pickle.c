@@ -777,29 +777,32 @@ static const char *s_extra_indexed_mods[] = {
  * of user-defined subclasses of builtins. This is the same as using the actual
  * user-created type object for construction, except we avoid any side-effects that 
  * may be present in __new__ or __init__. */
-struct{
+struct sc_map_entry{
     PyTypeObject *builtin;
     PyTypeObject *heap_subtype;
 }s_subclassable_builtin_map[] = {
-    { &PyBaseObject_Type,   NULL },
-    { &PyType_Type,         NULL },
-    { &PyString_Type,       NULL },
-    { &PyByteArray_Type,    NULL },
-    { &PyList_Type,         NULL },
-    { &PySuper_Type,        NULL },
-    { &PyDict_Type,         NULL },
-    { &PySet_Type,          NULL },
-    { &PyUnicode_Type,      NULL },
-    { &PyStaticMethod_Type, NULL },
-    { &PyComplex_Type,      NULL },
-    { &PyFloat_Type,        NULL },
-    { &PyLong_Type,         NULL },
-    { &PyInt_Type,          NULL },
-    { &PyFrozenSet_Type,    NULL },
-    { &PyProperty_Type,     NULL },
-    { &PyTuple_Type,        NULL },
-    { &PyEnum_Type,         NULL },
-    { &PyReversed_Type,     NULL },
+    { &PyBaseObject_Type,                   NULL },
+    { &PyType_Type,                         NULL },
+    { &PyString_Type,                       NULL },
+    { &PyByteArray_Type,                    NULL },
+    { &PyList_Type,                         NULL },
+    { &PySuper_Type,                        NULL },
+    { &PyDict_Type,                         NULL },
+    { &PySet_Type,                          NULL },
+    { &PyUnicode_Type,                      NULL },
+    { &PyStaticMethod_Type,                 NULL },
+    { &PyComplex_Type,                      NULL },
+    { &PyFloat_Type,                        NULL },
+    { &PyLong_Type,                         NULL },
+    { &PyInt_Type,                          NULL },
+    { &PyFrozenSet_Type,                    NULL },
+    { &PyProperty_Type,                     NULL },
+    { &PyTuple_Type,                        NULL },
+    { &PyEnum_Type,                         NULL },
+    { &PyReversed_Type,                     NULL },
+    { NULL, /*&PyEntity_type*/              NULL },
+    { NULL, /*&PyAnimEntity_type*/          NULL },
+    { NULL, /*&PyCombatableEntity_type*/    NULL },
 };
 
 /*****************************************************************************/
@@ -1309,19 +1312,50 @@ fail:
 
 static void create_builtin_subclasses(void)
 {
-    for(int i = 0; i < ARR_SIZE(s_subclassable_builtin_map); i++) {
+    PyObject *args, *sc;
+    PyTypeObject *bi;
+    PyObject *pfmod = PyDict_GetItemString(PySys_GetObject("modules"), "pf"); /* borrowed */
+    int idx = 0;
+
+    for(idx = 0; idx < ARR_SIZE(s_subclassable_builtin_map); idx++) {
+
+        bi = s_subclassable_builtin_map[idx].builtin;
+        if(!bi)
+            break;
 
         char name[256];
-        PyTypeObject *builtin = s_subclassable_builtin_map[i].builtin;
-        pf_snprintf(name, sizeof(name), "__%s_subclass__", builtin->tp_name);
+        pf_snprintf(name, sizeof(name), "__%s_subclass__", bi->tp_name);
 
-        PyObject *args = Py_BuildValue("s(O){}", name, (PyObject*)builtin);
+        args = Py_BuildValue("s(O){}", name, (PyObject*)bi);
         assert(args);
-        PyObject *sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
+        sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
         assert(sc);
         Py_DECREF(args);
-        s_subclassable_builtin_map[i].heap_subtype = (PyTypeObject*)sc;
+        s_subclassable_builtin_map[idx].heap_subtype = (PyTypeObject*)sc;
     }
+
+    bi = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Entity");
+    args = Py_BuildValue("s(O){}", "__entity_subclass__", (PyObject*)bi, NULL);
+    sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
+    assert(sc);
+    s_subclassable_builtin_map[idx] = (struct sc_map_entry){ bi, (PyTypeObject*)sc };
+    Py_DECREF(args);
+
+    bi = (PyTypeObject*)PyObject_GetAttrString(pfmod, "AnimEntity");
+    args = Py_BuildValue("s(O){}", "__anim_entity_subclass__", (PyObject*)bi, NULL);
+    sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
+    assert(sc);
+    s_subclassable_builtin_map[++idx] = (struct sc_map_entry){ bi, (PyTypeObject*)sc };
+    Py_DECREF(args);
+
+    bi = (PyTypeObject*)PyObject_GetAttrString(pfmod, "CombatableEntity");
+    args = Py_BuildValue("s(O){}", "__combatable_entity_subclass__", (PyObject*)bi, NULL);
+    sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
+    assert(sc);
+    s_subclassable_builtin_map[++idx] = (struct sc_map_entry){ bi, (PyTypeObject*)sc };
+    Py_DECREF(args);
+
+    assert(!PyErr_Occurred());
 }
 
 static PyObject *qualname_new_ref(const char *qualname)
@@ -1565,7 +1599,22 @@ static int custom_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     }
     Py_DECREF(umeth);
 
+    /* id(obj) isn't in the memo now. If it shows up there after saving the 
+     * type, then the type must recursively reference the object. In that case,
+     * just fetch it's value from the memo without pushing anything else onto 
+     * the stack.
+     */
+    assert(!memo_contains(ctx, obj));
     CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
+
+    if(memo_contains(ctx, obj)) {
+        /* Pop the type we just pushed */
+        const char pop[] = {POP};
+        CHK_TRUE(rw->write(rw, pop, ARR_SIZE(pop), 1), fail);
+        /* fetch from memo */
+        CHK_TRUE(emit_get(ctx, obj, rw), fail);
+        return 0;
+    }
 
     PyObject *ret = PyObject_CallMethod(obj, "__pickle__", "()");
     if(!ret || !PyString_Check(ret)) {
@@ -2212,6 +2261,7 @@ fail:
 static int property_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
+    assert(PyType_IsSubtype(obj->ob_type, &PyProperty_Type));
     propertyobject *prop = (propertyobject*)obj;
 
     if(prop->prop_get) {
@@ -2232,8 +2282,11 @@ static int property_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
         CHK_TRUE(0 == none_pickle(ctx, Py_None, rw), fail);
     }
 
-    assert(prop->prop_doc);
-    CHK_TRUE(pickle_obj(ctx, prop->prop_doc, rw), fail);
+    if(prop->prop_doc) {
+        CHK_TRUE(pickle_obj(ctx, prop->prop_doc, rw), fail);
+    }else{
+        CHK_TRUE(0 == none_pickle(ctx, Py_None, rw), fail);
+    }
     CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
 
     const char ops[] = {PF_EXTEND, PF_PROPERTY};
@@ -6946,6 +6999,8 @@ static int op_ext_custom(struct unpickle_ctx *ctx, SDL_RWops *rw)
         SET_RUNTIME_EXC("PF_CUSTOM: Expecting type at TOS1");
         goto fail_typecheck;
     }
+    PyObject *ctype = constructor_type((PyTypeObject*)klass);
+    assert(ctype);
 
     PyObject *tuple = PyObject_CallMethod(klass, "__unpickle__", "(O)", str);
     if(!tuple || !PyTuple_Check(tuple)) {
