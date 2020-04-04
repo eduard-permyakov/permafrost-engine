@@ -246,6 +246,78 @@ void E_ServiceQueue(void)
     e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID} );
 }
 
+void E_DeleteScriptHandlers(void)
+{
+    uint64_t keys_to_del[kh_size(s_event_handler_table)];
+    size_t ntodel = 0;
+
+    uint64_t key;
+    vec_hd_t curr;
+
+    kh_foreach(s_event_handler_table, key, curr, {
+
+        /* iterate backwards to delete while iterating */
+        for(int i = vec_size(&curr)-1; i >= 0; i--) {
+
+            struct handler_desc hd = vec_AT(&curr, i);
+            if(hd.type == HANDLER_TYPE_ENGINE)
+                continue;
+
+            S_Release(hd.handler.as_script_callable);
+            S_Release(hd.user_arg); 
+            vec_hd_del(&curr, i);
+        }
+
+        khiter_t k = kh_get(handler_desc, s_event_handler_table, key);
+        assert(k != kh_end(s_event_handler_table));
+        kh_value(s_event_handler_table, k) = curr;
+
+        if(vec_size(&curr) == 0) {
+            keys_to_del[ntodel++] = key;
+            vec_hd_destroy(&curr);
+        }
+    });
+    
+    for(int i = 0; i < ntodel; i++) {
+
+        khiter_t k = kh_get(handler_desc, s_event_handler_table, keys_to_del[i]);
+        assert(k != kh_end(s_event_handler_table));
+        kh_del(handler_desc, s_event_handler_table, k);
+    }
+}
+
+size_t E_GetScriptHandlers(size_t max_out, struct script_handler *out)
+{
+    size_t ret = 0;
+    uint64_t key;
+    vec_hd_t curr;
+
+    kh_foreach(s_event_handler_table, key, curr, {
+
+        for(int i = 0; i < vec_size(&curr); i++) {
+
+            (void)key;
+            struct handler_desc hd = vec_AT(&curr, i);
+            if(hd.type == HANDLER_TYPE_ENGINE)
+                continue;
+
+            if(ret == max_out)
+                break;
+
+            assert(hd.handler.as_script_callable && hd.user_arg);
+            out[ret] = (struct script_handler){
+                .event = key & 0xffffffff,
+                .id = key >> 32,
+                .simmask = hd.simmask,
+                .handler = hd.handler.as_script_callable,
+                .arg = (script_opaque_t)hd.user_arg
+            };
+            ret++;
+        }
+    });
+    return ret;
+}
+
 /*
  * Global Events
  */
@@ -355,49 +427,5 @@ void E_Entity_Notify(enum eventtype event, uint32_t ent_uid, void *event_arg,
 {
     struct event e = (struct event){event, event_arg, source, ent_uid};
     queue_event_push(&s_event_queue, &e);
-}
-
-void E_DeleteScriptHandlers(void)
-{
-    uint64_t keys_to_del[kh_size(s_event_handler_table)];
-    size_t ntodel = 0;
-
-    uint64_t key;
-    vec_hd_t curr;
-    
-    for(khiter_t k = kh_begin(s_event_handler_table); 
-        k != kh_end(s_event_handler_table); k++) {
-
-        if(!kh_exist(s_event_handler_table, k))
-            continue;
-
-        key = kh_key(s_event_handler_table, k);
-        curr = kh_value(s_event_handler_table, k);
-
-        /* iterate backwards to delete while iterating */
-        for(int i = vec_size(&curr)-1; i >= 0; i--) {
-
-            struct handler_desc hd = vec_AT(&curr, i);
-            if(hd.type == HANDLER_TYPE_ENGINE)
-                continue;
-
-            S_Release(hd.handler.as_script_callable);
-            S_Release(hd.user_arg); 
-            vec_hd_del(&curr, i);
-        }
-        kh_value(s_event_handler_table, k) = curr;
-
-        if(vec_size(&curr) == 0) {
-            keys_to_del[ntodel++] = key;
-            vec_hd_destroy(&curr);
-        }
-    }
-
-    for(int i = 0; i < ntodel; i++) {
-
-        khiter_t k = kh_get(handler_desc, s_event_handler_table, keys_to_del[i]);
-        assert(k != kh_end(s_event_handler_table));
-        kh_del(handler_desc, s_event_handler_table, k);
-    }
 }
 

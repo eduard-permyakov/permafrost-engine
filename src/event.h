@@ -90,14 +90,23 @@ enum event_source{
 
 typedef void (*handler_t)(void*, void*);
 
+struct script_handler{
+    enum eventtype  event;
+    uint32_t        id;
+    int             simmask;
+    script_opaque_t handler;
+    script_opaque_t arg;
+};
+
 /*###########################################################################*/
 /* EVENT GENERAL                                                             */
 /*###########################################################################*/
 
-bool E_Init(void);
-void E_ServiceQueue(void);
-void E_Shutdown(void);
-void E_DeleteScriptHandlers(void);
+bool   E_Init(void);
+void   E_ServiceQueue(void);
+void   E_Shutdown(void);
+void   E_DeleteScriptHandlers(void);
+size_t E_GetScriptHandlers(size_t max_out, struct script_handler *out);
 
 /*###########################################################################*/
 /* EVENT GLOBAL                                                              */

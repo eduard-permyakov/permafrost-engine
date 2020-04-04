@@ -59,9 +59,10 @@
 #include "../session.h"
 
 #include <SDL.h>
-
 #include <stdio.h>
 
+
+#define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
 static PyObject *PyPf_new_game(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args, PyObject *kwargs);
@@ -1548,28 +1549,45 @@ bool S_SaveState(SDL_RWops *stream)
 {
     PyObject *modules_dict = PySys_GetObject("modules"); /* borrowed */
     assert(modules_dict);
+    bool ret = false;
+
+    struct script_handler handlers[8192];
+    size_t nhandlers = E_GetScriptHandlers(ARR_SIZE(handlers), handlers);
+
+    PyObject *saved_handlers = PyTuple_New(nhandlers);
+    if(!saved_handlers)
+        goto fail_tuple;
+
+    for(int i = 0; i < nhandlers; i++) {
+        PyObject *val = Py_BuildValue("iIiOO", handlers[i].event, handlers[i].id, 
+            handlers[i].simmask, (PyObject*)handlers[i].handler, (PyObject*)handlers[i].arg);
+        if(!val)
+            goto fail;
+        PyTuple_SET_ITEM(saved_handlers, i, val);
+    }
 
     PyInterpreterState *interp = PyThreadState_Get()->interp;
     assert(interp);
 
-    PyObject *state = Py_BuildValue("OOOOOOO", 
+    PyObject *state = Py_BuildValue("OOOOOOOO", 
         interp->modules, 
         interp->sysdict, 
         interp->builtins,
         interp->modules_reloading,
         interp->codec_search_path,
         interp->codec_search_cache,
-        interp->codec_error_registry
+        interp->codec_error_registry,
+        saved_handlers
     );
     if(!state)
         return false;
 
-    bool ret = S_PickleObjgraph(state, stream);
+    ret = S_PickleObjgraph(state, stream);
     Py_DECREF(state);
-    if(!ret) {
-        PyErr_Print();
-        abort();
-    }
+
+fail:
+    Py_DECREF(saved_handlers);
+fail_tuple:
     return ret;
 }
 
@@ -1577,13 +1595,14 @@ bool S_LoadState(SDL_RWops *stream)
 {
     PyInterpreterState *interp = PyThreadState_Get()->interp;
     assert(interp);
+    bool ret = false;
 
     PyObject *state = S_UnpickleObjgraph(stream);
     if(!state)
         return false;
 
-    if(!PyTuple_Check(state) || (PyTuple_GET_SIZE(state) != 7))
-        return false;
+    if(!PyTuple_Check(state) || (PyTuple_GET_SIZE(state) != 8))
+        goto fail;
 
     PyInterpreterState_Clear(interp);
 
@@ -1603,6 +1622,44 @@ bool S_LoadState(SDL_RWops *stream)
     Py_INCREF(interp->codec_search_cache);
     Py_INCREF(interp->codec_error_registry);
 
+    PyObject *handlers = PyTuple_GET_ITEM(state, 7);
+    if(!PyTuple_Check(handlers))
+        goto fail;
+
+    for(int i = 0; i < PyTuple_GET_SIZE(handlers); i++) {
+
+        PyObject *entry = PyTuple_GET_ITEM(handlers, i);
+        if(!PyTuple_Check(entry) || PyTuple_GET_SIZE(entry) != 5)
+            goto fail;
+
+        PyObject *event = PyTuple_GET_ITEM(entry, 0);
+        PyObject *uid = PyTuple_GET_ITEM(entry, 1);
+        PyObject *simmask = PyTuple_GET_ITEM(entry, 2);
+        PyObject *handler = PyTuple_GET_ITEM(entry, 3);
+        PyObject *arg = PyTuple_GET_ITEM(entry, 4);
+
+        if(!PyInt_Check(event)
+        || !PyInt_Check(uid)
+        || !PyInt_Check(simmask)
+        || !PyCallable_Check(handler))
+            goto fail;
+
+        int ievent = PyInt_AS_LONG(event);
+        uint32_t iuid = PyInt_AS_LONG(uid);
+        int isimmask = PyInt_AS_LONG(simmask);
+
+        Py_INCREF(handler);
+        Py_INCREF(arg);
+
+        if(iuid == ~((uint32_t)0)) {
+            E_Global_ScriptRegister(ievent, handler, arg, isimmask);
+        }else{
+            E_Entity_ScriptRegister(ievent, iuid, handler, arg, isimmask);
+        }
+    }
+
+fail:
+    Py_DECREF(state);
     return true;
 }
 
