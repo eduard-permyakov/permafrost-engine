@@ -85,7 +85,7 @@ static bool m_al_write_tile(const struct tile *tile, SDL_RWops *stream)
     pf_snprintf(buff, sizeof(buff), "%01X%c%02d%02d%03d%03d%01d%01d%01d000000000", 
         tile->type,
         tile->base_height >= 0 ? '+' : '-',
-        tile->base_height,
+        abs(tile->base_height),
         tile->ramp_height,
         tile->top_mat_idx, 
         tile->sides_mat_idx,

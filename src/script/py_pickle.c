@@ -1310,6 +1310,38 @@ fail:
     return -1;
 }
 
+static int reference_codecs_builtins(void)
+{
+    assert(s_placeholder_type);
+    PyObject *mapping = PyObject_CallFunction(s_placeholder_type, "()");
+    CHK_TRUE(mapping, fail);
+
+    PyInterpreterState *interp = PyThreadState_Get()->interp; 
+    assert(interp);
+    PyObject *err_registry = interp->codec_error_registry;
+    assert(err_registry && PyDict_Check(err_registry));
+
+    PyObject *key, *value;
+    Py_ssize_t pos = 0;
+
+    while(PyDict_Next(err_registry, &pos, &key, &value)) {
+    
+        if(0 != PyObject_SetAttr(mapping, key, value)) {
+            Py_DECREF(mapping); 
+            goto fail;
+        }
+    }
+
+    PyObject *mod = PyImport_AddModule("__builtin__");
+    PyObject_SetAttrString(mod, "__codecs_builtins__", mapping);
+    Py_DECREF(mapping);
+    return 0;
+
+fail:
+    assert(PyErr_Occurred());
+    return -1;
+}
+
 static void create_builtin_subclasses(void)
 {
     PyObject *args, *sc;
@@ -7259,6 +7291,7 @@ bool S_Pickle_Init(PyObject *module)
     load_exception_types();
     load_engine_builtin_types();
     reference_all_types();
+    reference_codecs_builtins();
     create_builtin_subclasses();
 
     if(!S_Traverse_IndexQualnames(s_id_qualname_map))
@@ -7285,10 +7318,15 @@ void S_Pickle_Shutdown(void)
 
     kh_destroy(str, s_id_qualname_map);
     Py_DECREF(s_placeholder_type);
+    s_placeholder_type = NULL;
 
     for(int i = 0; i < ARR_SIZE(s_subclassable_builtin_map); i++) {
         Py_DECREF(s_subclassable_builtin_map[i].heap_subtype);
+        s_subclassable_builtin_map[i].heap_subtype = NULL;
     }
+    s_subclassable_builtin_map[19].builtin = NULL;
+    s_subclassable_builtin_map[20].builtin = NULL;
+    s_subclassable_builtin_map[21].builtin = NULL;
 }
 
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream)

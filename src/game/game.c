@@ -626,42 +626,18 @@ fail_dynamic:
 fail_active:
     return false;
 }
-
-bool G_NewGameWithMapString(const char *mapstr, bool update_navgrid)
+bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
 {
     ASSERT_IN_MAIN_THREAD();
 
     g_reset();
 
-    size_t copysize = AL_MapShallowCopySizeStr(mapstr);
+    size_t copysize = AL_MapShallowCopySize(stream);
     s_gs.prev_tick_map = malloc(copysize);
     if(!s_gs.prev_tick_map)
         return false;
 
-    s_gs.map = AL_MapFromPFMapString(mapstr, update_navgrid);
-    if(!s_gs.map) {
-        free((void*)s_gs.prev_tick_map);
-        return false;
-    }
-
-    g_init_map();
-    E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
-
-    return true;
-}
-
-bool G_NewGameWithMap(const char *dir, const char *pfmap, bool update_navgrid)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    g_reset();
-
-    size_t copysize = AL_MapShallowCopySize(dir, pfmap);
-    s_gs.prev_tick_map = malloc(copysize);
-    if(!s_gs.prev_tick_map)
-        return false;
-
-    s_gs.map = AL_MapFromPFMap(dir, pfmap, update_navgrid);
+    s_gs.map = AL_MapFromPFMapStream(stream, update_navgrid);
     if(!s_gs.map) {
         free((void*)s_gs.prev_tick_map);
         return false;
@@ -1383,17 +1359,6 @@ const struct map *G_GetPrevTickMap(void)
 bool G_WriteMap(SDL_RWops *stream)
 {
     ASSERT_IN_MAIN_THREAD();
-
-    struct attr hasmap = (struct attr){
-        .type = TYPE_BOOL, 
-        .val.as_bool = s_gs.map != NULL
-    };
-
-    if(!Attr_Write(stream, &hasmap, "has_map"))
-        return false;
-
-    if(!hasmap.val.as_bool)
-        return true;
 
     return M_AL_WritePFMap(s_gs.map, stream);
 }

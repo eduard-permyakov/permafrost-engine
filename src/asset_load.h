@@ -81,11 +81,9 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
                                   const char *name, uint32_t uid);
 void           AL_EntityFree(struct entity *entity);
 
-struct map    *AL_MapFromPFMap(const char *base_path, const char *pfmap_name, bool update_navgrid);
-struct map    *AL_MapFromPFMapString(const char *str, bool update_navgrid);
+struct map    *AL_MapFromPFMapStream(SDL_RWops *stream, bool update_navgrid);
 void           AL_MapFree(struct map *map);
-size_t         AL_MapShallowCopySize(const char *base_path, const char *pfmap_name);
-size_t         AL_MapShallowCopySizeStr(const char *str);
+size_t         AL_MapShallowCopySize(SDL_RWops *stream);
 
 bool           AL_ReadLine(SDL_RWops *stream, char *outbuff);
 bool           AL_ParseAABB(SDL_RWops *stream, struct aabb *out);

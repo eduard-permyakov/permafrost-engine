@@ -49,6 +49,7 @@
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../lib/public/SDL_vec_rwops.h"
+#include "../lib/public/pf_string.h"
 #include "../event.h"
 #include "../config.h"
 #include "../scene.h"
@@ -396,10 +397,23 @@ static PyObject *PyPf_new_game(PyObject *self, PyObject *args, PyObject *kwargs)
         return NULL;
     }
 
-    if(!G_NewGameWithMap(dir, pfmap, update_navgrid)) {
+    char pfmap_path[256];
+    pf_snprintf(pfmap_path, sizeof(pfmap_path), "%s/%s", dir, pfmap);
+
+    SDL_RWops *stream = SDL_RWFromFile(pfmap_path, "r");
+    if(!stream) {
+        char errbuff[256];
+        pf_snprintf(errbuff, sizeof(errbuff), "Unable to open PFMap file %s", pfmap_path);
+        PyErr_SetString(PyExc_RuntimeError, errbuff);
+    }
+
+    if(!G_NewGameWithMap(stream, update_navgrid)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to create new game with the specified map file.");
+        SDL_RWclose(stream);
         return NULL; 
     }
+
+    SDL_RWclose(stream);
     Py_RETURN_NONE;
 }
 
@@ -414,10 +428,16 @@ static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args, PyObject *
         return NULL;
     }
 
-    if(!G_NewGameWithMapString(mapstr, update_navgrid)) {
+    SDL_RWops *stream = SDL_RWFromConstMem(mapstr, strlen(mapstr));
+    assert(stream);
+
+    if(!G_NewGameWithMap(stream, update_navgrid)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to create new game with the specified map file.");
+        SDL_RWclose(stream);
         return NULL;
     }
+
+    SDL_RWclose(stream);
     Py_RETURN_NONE;
 }
 
@@ -1291,8 +1311,7 @@ static PyObject *PyPf_save_session(PyObject *self, PyObject *args)
     FILE *file = fopen(str, "w");
     if(!file) {
         char buff[256];
-        snprintf(buff, sizeof(buff), "Unable to open file (%s) for writing.\n", str);
-        buff[sizeof(buff)-1] = '\0';
+        pf_snprintf(buff, sizeof(buff), "Unable to open file (%s) for writing.\n", str);
 
         PyErr_SetString(PyExc_RuntimeError, buff);
         return NULL;
@@ -1302,7 +1321,7 @@ static PyObject *PyPf_save_session(PyObject *self, PyObject *args)
     assert(stream);
 
     if(!Session_Save(stream)) {
-        //PyErr_SetString(PyExc_RuntimeError, "Error saving the session.");
+        PyErr_SetString(PyExc_RuntimeError, "Error saving the session.");
         SDL_RWclose(stream);
         return NULL;
     }
@@ -1313,13 +1332,12 @@ static PyObject *PyPf_save_session(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_load_session(PyObject *self, PyObject *args)
 {
-    //TODO: call into Session_Load
-    //however, the actual loading will take place asynchronously
-
+    //TODO: actually parse the args
     Session_RequestLoad("test.pfsave");
-    fflush(stdout);
+    //TODO: add a new event: something like SESSION_LOAD_DONE
+    //register an event handler. In the handler, we can raise
+    //an exception if the saving wasn't kosher
     Py_RETURN_NONE;
-    //return NULL;
 }
 
 static bool s_sys_path_add_dir(const char *filename)
@@ -1526,16 +1544,65 @@ void S_ClearState(void)
     S_Init(s_progname, g_basepath, UI_GetContext());
 }
 
-bool S_WriteMainModule(SDL_RWops *stream)
+bool S_SaveState(SDL_RWops *stream)
 {
     PyObject *modules_dict = PySys_GetObject("modules"); /* borrowed */
     assert(modules_dict);
 
-    PyObject *mod = PyDict_GetItemString(modules_dict, "__main__"); /* borrowed */
-    if(!mod) {
-        return false;
-    }
+    PyInterpreterState *interp = PyThreadState_Get()->interp;
+    assert(interp);
 
-    return S_PickleObjgraph(mod, stream);
+    PyObject *state = Py_BuildValue("OOOOOOO", 
+        interp->modules, 
+        interp->sysdict, 
+        interp->builtins,
+        interp->modules_reloading,
+        interp->codec_search_path,
+        interp->codec_search_cache,
+        interp->codec_error_registry
+    );
+    if(!state)
+        return false;
+
+    bool ret = S_PickleObjgraph(state, stream);
+    Py_DECREF(state);
+    if(!ret) {
+        PyErr_Print();
+        abort();
+    }
+    return ret;
+}
+
+bool S_LoadState(SDL_RWops *stream)
+{
+    PyInterpreterState *interp = PyThreadState_Get()->interp;
+    assert(interp);
+
+    PyObject *state = S_UnpickleObjgraph(stream);
+    if(!state)
+        return false;
+
+    if(!PyTuple_Check(state) || (PyTuple_GET_SIZE(state) != 7))
+        return false;
+
+    PyInterpreterState_Clear(interp);
+
+    interp->modules = PyTuple_GET_ITEM(state, 0);
+    interp->sysdict = PyTuple_GET_ITEM(state, 1);
+    interp->builtins = PyTuple_GET_ITEM(state, 2);
+    interp->modules_reloading = PyTuple_GET_ITEM(state, 3);
+    interp->codec_search_path = PyTuple_GET_ITEM(state, 4);
+    interp->codec_search_cache = PyTuple_GET_ITEM(state, 5);
+    interp->codec_error_registry = PyTuple_GET_ITEM(state, 6);
+
+    Py_INCREF(interp->modules);
+    Py_INCREF(interp->sysdict);
+    Py_INCREF(interp->builtins);
+    Py_INCREF(interp->modules_reloading);
+    Py_INCREF(interp->codec_search_path);
+    Py_INCREF(interp->codec_search_cache);
+    Py_INCREF(interp->codec_error_registry);
+
+    return true;
 }
 

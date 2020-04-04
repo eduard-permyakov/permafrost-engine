@@ -70,7 +70,8 @@ script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg);
 bool            S_ObjectsEqual(script_opaque_t a, script_opaque_t b);
 
 void            S_ClearState(void);
-bool            S_WriteMainModule(SDL_RWops *stream);
+bool            S_SaveState(SDL_RWops *stream);
+bool            S_LoadState(SDL_RWops *stream);
 
 /*###########################################################################*/
 /* SCRIPT UI                                                                 */

@@ -35,6 +35,7 @@
 
 #include "asset_load.h"
 #include "entity.h"
+#include "main.h"
 
 #include "render/public/render_al.h"
 #include "anim/public/anim.h"
@@ -167,31 +168,6 @@ fail:
     return false;
 }
 
-static struct map *al_map_from_stream(const char *base_path, SDL_RWops *stream, 
-                                      bool update_navgrid)
-{
-    struct map *ret;
-    struct pfmap_hdr header;
-
-    if(!al_parse_pfmap_header(stream, &header))
-        goto fail_parse;
-
-    ret = malloc(M_AL_BuffSizeFromHeader(&header));
-    if(!ret)
-        goto fail_alloc;
-
-    if(!M_AL_InitMapFromStream(&header, base_path, stream, ret, update_navgrid))
-        goto fail_init;
-
-    return ret;
-
-fail_init:
-    free(ret);
-fail_alloc:
-fail_parse:
-    return NULL;
-}
-
 static void al_set_ent_defaults(struct entity *ent)
 {
     ent->flags = 0;
@@ -314,67 +290,35 @@ void AL_EntityFree(struct entity *entity)
     free(entity);
 }
 
-struct map *AL_MapFromPFMap(const char *base_path, const char *pfmap_name, bool update_navgrid)
+struct map *AL_MapFromPFMapStream(SDL_RWops *stream, bool update_navgrid)
 {
     struct map *ret;
-    SDL_RWops *stream;
+    struct pfmap_hdr header;
 
-    char pfmap_path[256];
-    assert( strlen(base_path) + strlen(pfmap_name) + 1 < sizeof(pfmap_path) );
-    strcpy(pfmap_path, base_path);
-    strcat(pfmap_path, "/");
-    strcat(pfmap_path, pfmap_name);
-
-    stream = SDL_RWFromFile(pfmap_path, "r");
-    if(!stream)
-        goto fail_open;
-
-    ret = al_map_from_stream(base_path, stream, update_navgrid);
-    if(!ret)
+    if(!al_parse_pfmap_header(stream, &header))
         goto fail_parse;
 
-    SDL_RWclose(stream);
+    ret = malloc(M_AL_BuffSizeFromHeader(&header));
+    if(!ret)
+        goto fail_alloc;
+
+    if(!M_AL_InitMapFromStream(&header, g_basepath, stream, ret, update_navgrid))
+        goto fail_init;
+
     return ret;
 
+fail_init:
+    free(ret);
+fail_alloc:
 fail_parse:
-    SDL_RWclose(stream);
-fail_open:
     return NULL;
 }
 
-struct map *AL_MapFromPFMapString(const char *str, bool update_navgrid)
+size_t AL_MapShallowCopySize(SDL_RWops *stream)
 {
-    struct map *ret;
-    SDL_RWops *stream;
-
-    stream = SDL_RWFromConstMem(str, strlen(str));
-    ret = al_map_from_stream(NULL, stream, update_navgrid);
-    if(!ret)
-        goto fail_parse;
-
-    SDL_RWclose(stream);
-    return ret;
-
-fail_parse:
-    SDL_RWclose(stream);
-    return NULL;
-}
-
-size_t AL_MapShallowCopySize(const char *base_path, const char *pfmap_name)
-{
-    SDL_RWops *stream;
     struct pfmap_hdr header;
     size_t ret = 0;
-
-    char pfmap_path[256];
-    assert( strlen(base_path) + strlen(pfmap_name) + 1 < sizeof(pfmap_path) );
-    strcpy(pfmap_path, base_path);
-    strcat(pfmap_path, "/");
-    strcat(pfmap_path, pfmap_name);
-
-    stream = SDL_RWFromFile(pfmap_path, "r");
-    if(!stream)
-        goto fail_open;
+    size_t pos = SDL_RWseek(stream, 0, RW_SEEK_CUR);
 
     if(!al_parse_pfmap_header(stream, &header))
         goto fail_parse;
@@ -382,9 +326,7 @@ size_t AL_MapShallowCopySize(const char *base_path, const char *pfmap_name)
     ret = M_AL_ShallowCopySize(header.num_rows, header.num_cols);
 
 fail_parse:
-    SDL_RWseek(stream, 0, RW_SEEK_SET);
-    SDL_RWclose(stream);
-fail_open:
+    SDL_RWseek(stream, pos, RW_SEEK_SET);
     return ret;
 }
 

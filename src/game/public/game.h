@@ -98,8 +98,7 @@ struct render_input{
 /*###########################################################################*/
 
 bool   G_Init(void);
-bool   G_NewGameWithMap(const char *dir, const char *pfmap, bool update_navgrid);
-bool   G_NewGameWithMapString(const char *mapstr, bool update_navgrid);
+bool   G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid);
 void   G_Shutdown(void);
 
 void   G_Update(void);

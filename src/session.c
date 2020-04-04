@@ -39,11 +39,15 @@
 #include "game/public/game.h"
 #include "script/public/script.h"
 
+
+#define PFSAVE_VERSION  (1.0f)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static bool do_it = false;
+static bool        s_load_requested = false;
+static const char *s_load_path = NULL;
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -51,41 +55,58 @@ static bool do_it = false;
 
 bool Session_Save(SDL_RWops *stream)
 {
-    /* step 1: save map in PFMAP format */
     if(!G_WriteMap(stream)) {
-        printf("error 1\n");
+        printf("error writing map\n");
         return false;
     }
 
-    /* step 2: save sys.modules['__main__'] */
-    if(!S_WriteMainModule(stream)) {
-        printf("error 2\n");
+    if(!S_SaveState(stream)) {
+        printf("error saving script state\n");
         return false;
     }
 
-    /* step 3: save the event handlers and args (by qualname or by pickling) */
+    /* TODO: save the event handlers and args (by qualname or by pickling) */
+    // perhaps this will be done by S_SaveState already
     return true;
 }
 
 void Session_RequestLoad(const char *path)
 {
-    do_it = true;
+    s_load_requested = true;
+    s_load_path = path;
 }
 
 void Session_ServiceRequests(void)
 {
-    if(!do_it)
+    if(!s_load_requested)
         return;
+    s_load_requested = false;
 
-    /* step 1: load new map with specified PFMAP */
-
-    /* step 2: clear current interpreter state */
     E_DeleteScriptHandlers();
     S_ClearState();
 
-    /* step 3: unpickle the __main__ module */
-    /* step 4: load scripting event handlers and args */
+    SDL_RWops *stream = SDL_RWFromFile(s_load_path, "r"); /* file will be closed when stream is */
+    if(!stream)
+        goto fail_file;
 
-    do_it = false;
+    if(!G_NewGameWithMap(stream, true)) {
+        printf("fail map\n");
+        goto fail_load;
+    }
+
+    if(!S_LoadState(stream)) {
+        printf("fail state\n");
+        goto fail_load;
+    }
+
+    /* TODO: step 4: load scripting event handlers and args */
+    SDL_RWclose(stream);
+    return;
+
+fail_load:
+    SDL_RWclose(stream);
+fail_file:
+    printf("we failed!!!\n");
+    abort();
 }
 

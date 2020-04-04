@@ -428,8 +428,7 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     extern const char *g_basepath;
     char entity_path[512];
-    strcpy(entity_path, g_basepath);
-    strcat(entity_path, dirpath);
+    pf_snprintf(entity_path, sizeof(entity_path), "%s/%s", g_basepath, dirpath);
 
     PyObject *uidobj = NULL;
     uint32_t uid;
