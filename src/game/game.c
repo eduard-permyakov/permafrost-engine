@@ -47,6 +47,7 @@
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
+#include "../lib/public/pf_string.h"
 #include "../entity.h"
 #include "../camera.h"
 #include "../cam_control.h"
@@ -67,6 +68,12 @@
 
 #define ACTIVE_CAM          (s_gs.cameras[s_gs.active_cam_idx])
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
+
+#define CHK_TRUE_RET(_pred)   \
+    do{                       \
+        if(!(_pred))          \
+            return false;     \
+    }while(0)
 
 VEC_IMPL(extern, obb, struct obb)
 __KHASH_IMPL(entity, extern, khint32_t, struct entity*, 1, kh_int_hash_func, kh_int_hash_equal)
@@ -1356,10 +1363,199 @@ const struct map *G_GetPrevTickMap(void)
     return s_gs.prev_tick_map;
 }
 
-bool G_WriteMap(SDL_RWops *stream)
+bool G_SaveGlobalState(SDL_RWops *stream)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    return M_AL_WritePFMap(s_gs.map, stream);
+    struct attr hasmap = (struct attr){
+        .type = TYPE_BOOL, 
+        .val.as_bool = (s_gs.map != NULL)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &hasmap, "has_map"));
+
+    if(hasmap.val.as_bool && !M_AL_WritePFMap(s_gs.map, stream))
+        return false;
+
+    struct attr ss = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = s_gs.ss
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &ss, "simstate"));
+
+    struct attr light_pos = (struct attr){
+        .type = TYPE_VEC3, 
+        .val.as_vec3 = s_gs.light_pos
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &light_pos, "light_pos"));
+
+    struct attr num_factions = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = s_gs.num_factions
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_factions, "num_factions"));
+
+    for(int i = 0; i < s_gs.num_factions; i++) {
+
+        struct faction fac = s_gs.factions[i];
+
+        struct attr fac_color = (struct attr){
+            .type = TYPE_VEC3, 
+            .val.as_vec3 = fac.color
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &fac_color, "fac_color"));
+
+        struct attr fac_name = (struct attr){ .type = TYPE_STRING };
+        pf_snprintf(fac_name.val.as_string, sizeof(fac_name.val.as_string), "%s", fac.name);
+        CHK_TRUE_RET(Attr_Write(stream, &fac_name, "fac_name"));
+
+        struct attr fac_controllable = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = fac.controllable
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &fac_controllable, "fac_controllable"));
+    }
+
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+    for(int j = 0; j < MAX_FACTIONS; j++) {
+
+        struct attr dstate = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = s_gs.diplomacy_table[i][j]
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &dstate, "diplomacy_state"));
+    }}
+
+    for(int i = 0; i < NUM_CAMERAS; i++) {
+
+        const struct camera *cam = s_gs.cameras[i];
+
+        struct attr cam_speed = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = Camera_GetSpeed(cam)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cam_speed, "cam_speed"));
+
+        struct attr cam_sens = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = Camera_GetSens(cam)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cam_sens, "cam_sensitivity"));
+
+        struct attr cam_pitch = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = Camera_GetPitch(cam)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cam_pitch, "cam_pitch"));
+
+        struct attr cam_yaw = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = Camera_GetYaw(cam)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cam_yaw, "cam_yaw"));
+
+        struct attr cam_pos = (struct attr){
+            .type = TYPE_VEC3,
+            .val.as_vec3 = Camera_GetPos(cam)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cam_pos, "cam_position"));
+    }
+
+    return true;
+}
+
+bool G_LoadGlobalState(SDL_RWops *stream)
+{
+    ASSERT_IN_MAIN_THREAD();
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+
+    if(attr.val.as_bool) {
+        CHK_TRUE_RET(G_NewGameWithMap(stream, true));
+    }else{
+        g_reset();
+        E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    G_SetSimState(attr.val.as_int);
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    G_SetLightPos(attr.val.as_vec3);
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    int num_factions = attr.val.as_int;
+
+    s_gs.num_factions = num_factions;
+    for(int i = 0; i < num_factions; i++) {
+
+        struct faction fac;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC3);
+        fac.color = attr.val.as_vec3;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        pf_snprintf(fac.name, sizeof(fac.name), "%s", attr.val.as_string);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        fac.controllable = attr.val.as_bool;
+
+        s_gs.factions[i] = fac;
+    }
+
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+    for(int j = 0; j < MAX_FACTIONS; j++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        s_gs.diplomacy_table[i][j] = attr.val.as_int;
+    }}
+
+    for(int i = 0; i < NUM_CAMERAS; i++) {
+
+        struct camera *cam = s_gs.cameras[i];
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        Camera_SetSpeed(cam, attr.val.as_float);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        Camera_SetSens(cam, attr.val.as_float);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        float pitch = attr.val.as_float; 
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        float yaw = attr.val.as_float; 
+        Camera_SetPitchAndYaw(cam, pitch, yaw);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC3);
+        Camera_SetPos(cam, attr.val.as_vec3);
+    }
+
+    return true;
+}
+
+bool G_SaveEntityState(SDL_RWops *stream)
+{
+    ASSERT_IN_MAIN_THREAD();
+    return true;
+}
+
+bool G_LoadEntityState(SDL_RWops *stream)
+{
+    ASSERT_IN_MAIN_THREAD();
+    return true;
 }
 

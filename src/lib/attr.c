@@ -68,9 +68,8 @@ bool Attr_Parse(SDL_RWops *stream, struct attr *out, bool named)
     if(!strcmp(token, "string")) {
 
         out->type = TYPE_STRING;
-        token = pf_strtok_r(NULL, " \t", &saveptr);
-        if(!sscanf(token, "%63s", out->val.as_string))
-            goto fail;
+        token = pf_strtok_r(NULL, "\n", &saveptr);
+        pf_snprintf(out->val.as_string, sizeof(out->val.as_string), "%s", token);
 
     }else if(!strcmp(token, "quat")) {
 
@@ -138,8 +137,7 @@ bool Attr_Write(SDL_RWops *stream, const struct attr *in, const char name[static
         break;
     case TYPE_FLOAT: {
         char buff[64];
-        snprintf(buff, sizeof(buff), "%.6f", in->val.as_float);
-        buff[sizeof(buff)-1] = '\0';
+        pf_snprintf(buff, sizeof(buff), "%.6f", in->val.as_float);
 
         CHK_TRUE(SDL_RWwrite(stream, "float ", strlen("float "), 1), fail); 
         CHK_TRUE(SDL_RWwrite(stream, buff, strlen(buff), 1), fail); 
@@ -148,8 +146,7 @@ bool Attr_Write(SDL_RWops *stream, const struct attr *in, const char name[static
     }
     case TYPE_INT: {
         char buff[64];
-        snprintf(buff, sizeof(buff), "%d", in->val.as_int);
-        buff[sizeof(buff)-1] = '\0';
+        pf_snprintf(buff, sizeof(buff), "%d", in->val.as_int);
 
         CHK_TRUE(SDL_RWwrite(stream, "int ", strlen("int "), 1), fail); 
         CHK_TRUE(SDL_RWwrite(stream, buff, strlen(buff), 1), fail); 
@@ -158,9 +155,8 @@ bool Attr_Write(SDL_RWops *stream, const struct attr *in, const char name[static
     }
     case TYPE_VEC3: {
         char buff[64];
-        snprintf(buff, sizeof(buff), "%.6f %.6f %.6f", 
+        pf_snprintf(buff, sizeof(buff), "%.6f %.6f %.6f", 
             in->val.as_vec3.x, in->val.as_vec3.y, in->val.as_vec3.z);
-        buff[sizeof(buff)-1] = '\0';
 
         CHK_TRUE(SDL_RWwrite(stream, "vec3 ", strlen("vec3 "), 1), fail); 
         CHK_TRUE(SDL_RWwrite(stream, buff, strlen(buff), 1), fail); 
@@ -169,9 +165,8 @@ bool Attr_Write(SDL_RWops *stream, const struct attr *in, const char name[static
     }
     case TYPE_QUAT: {
         char buff[64];
-        snprintf(buff, sizeof(buff), "%.6f %.6f %.6f %.6f", 
+        pf_snprintf(buff, sizeof(buff), "%.6f %.6f %.6f %.6f", 
             in->val.as_quat.x, in->val.as_quat.y, in->val.as_quat.z, in->val.as_quat.w);
-        buff[sizeof(buff)-1] = '\0';
 
         CHK_TRUE(SDL_RWwrite(stream, "quat ", strlen("quat "), 1), fail); 
         CHK_TRUE(SDL_RWwrite(stream, buff, strlen(buff), 1), fail); 
@@ -180,8 +175,7 @@ bool Attr_Write(SDL_RWops *stream, const struct attr *in, const char name[static
     }
     case TYPE_BOOL: {
         char buff[64];
-        snprintf(buff, sizeof(buff), "%d", (int)in->val.as_bool);
-        buff[sizeof(buff)-1] = '\0';
+        pf_snprintf(buff, sizeof(buff), "%d", (int)in->val.as_bool);
 
         CHK_TRUE(SDL_RWwrite(stream, "bool ", strlen("bool "), 1), fail); 
         CHK_TRUE(SDL_RWwrite(stream, buff, strlen(buff), 1), fail); 

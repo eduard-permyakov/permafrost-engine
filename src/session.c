@@ -55,7 +55,8 @@ static const char *s_load_path = NULL;
 
 bool Session_Save(SDL_RWops *stream)
 {
-    if(!G_WriteMap(stream)) {
+    //TODO: write some comment about the flow
+    if(!G_SaveGlobalState(stream)) {
         printf("error writing map\n");
         return false;
     }
@@ -65,8 +66,6 @@ bool Session_Save(SDL_RWops *stream)
         return false;
     }
 
-    /* TODO: save the event handlers and args (by qualname or by pickling) */
-    // perhaps this will be done by S_SaveState already
     return true;
 }
 
@@ -89,7 +88,7 @@ void Session_ServiceRequests(void)
     if(!stream)
         goto fail_file;
 
-    if(!G_NewGameWithMap(stream, true)) {
+    if(!G_LoadGlobalState(stream)) {
         printf("fail map\n");
         goto fail_load;
     }
@@ -99,7 +98,6 @@ void Session_ServiceRequests(void)
         goto fail_load;
     }
 
-    /* TODO: step 4: load scripting event handlers and args */
     SDL_RWclose(stream);
     return;
 

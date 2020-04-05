@@ -120,7 +120,6 @@ bool   G_MapHeightAtPoint(vec2_t xz, float *out_height);
 bool   G_PointInsideMap(vec2_t xz);
 
 void   G_BakeNavDataForScene(void);
-bool   G_WriteMap(SDL_RWops *stream);
 
 bool   G_AddEntity(struct entity *ent, vec3_t pos);
 bool   G_RemoveEntity(struct entity *ent);
@@ -154,6 +153,11 @@ void          G_SetLightPos(vec3_t pos);
 struct render_workspace *G_GetSimWS(void);
 struct render_workspace *G_GetRenderWS(void);
 const struct map        *G_GetPrevTickMap(void);
+
+bool   G_SaveGlobalState(SDL_RWops *stream);
+bool   G_LoadGlobalState(SDL_RWops *stream);
+bool   G_SaveEntityState(SDL_RWops *stream);
+bool   G_LoadEntityState(SDL_RWops *stream);
 
 /*###########################################################################*/
 /* GAME SELECTION                                                            */

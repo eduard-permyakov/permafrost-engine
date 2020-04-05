@@ -167,6 +167,16 @@ void Camera_SetSens(struct camera *cam, float sensitivity)
     cam->sensitivity = sensitivity;
 }
 
+float Camera_GetSpeed(const struct camera *cam)
+{
+    return cam->speed;
+}
+
+float Camera_GetSens(const struct camera *cam)
+{
+    return cam->sensitivity;
+}
+
 float Camera_GetYaw(const struct camera *cam)
 {
     return cam->yaw;

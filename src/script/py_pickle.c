@@ -4839,7 +4839,7 @@ static int op_ext_notimpl(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_NOTIMPL, ctx);
     Py_INCREF(Py_NotImplemented);
-    vec_pobj_push(&ctx->stack, Py_None);
+    vec_pobj_push(&ctx->stack, Py_NotImplemented);
     return 0;
 }
 
