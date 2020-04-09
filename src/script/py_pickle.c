@@ -168,7 +168,7 @@ typedef void *mod_ty; //symtable.h wants this
 #define PF_CLASS        'x' /* Push an old class created from the top 3 stack items (name, bases, methods) */
 #define PF_INST         'y' /* Push 'instance' from 'classobj' and 'dict' on TOS */
 #define PF_GETSETDESC   'z' /* Push 'getset_descriptor' instance from top 3 stack items */
-#define PF_MODULE       'A' /* PUsh module with name on TOS */
+#define PF_MODULE       'A' /* PUsh module with dict on TOS */
 #define PF_NEWINST      'B' /* Create new-style instance with type on TOS, args on TOS1 and the outer-most builtin base on TOS2 */
 #define PF_CLSMETHOD    'C' /* Push a classmethod instance from TOS */
 #define PF_INSTMETHOD   'D' /* Pusn an instancemethod instance from TOS */
@@ -191,6 +191,7 @@ typedef void *mod_ty; //symtable.h wants this
 #define PF_TRACEBACK    'U' /* Push a traceback object from top 4 TOS items */
 #define PF_EMPTYFRAME   'V' /* Push a dummy frame object with valuestack size from TOS */
 #define PF_WEAKREF      'W' /* Push a weakref.ref object from top 2 TOS items */
+#define PF_EMPTYMOD     'X' /* Push a dummy module reference */
 #define PF_PROXY        'Y' /* Push a weakproxy instance from top 2 TOS items */
 #define PF_STENTRY      'Z' /* Push a symtable entry instance from top 16 TOS items */
 #define PF_DICTKEYS     '1' /* Push a dict_keys instance from TOS dict */
@@ -422,6 +423,7 @@ static int op_ext_nullval   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_traceback (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_emptyframe(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_weakref   (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_emptymod  (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_weakproxy (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_stentry   (struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_zipimporter(struct unpickle_ctx *, SDL_RWops *);
@@ -731,6 +733,7 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_TRACEBACK] = op_ext_traceback,
     [PF_EMPTYFRAME] = op_ext_emptyframe,
     [PF_WEAKREF] = op_ext_weakref,
+    [PF_EMPTYMOD] = op_ext_emptymod,
     [PF_PROXY] = op_ext_weakproxy,
     [PF_STENTRY] = op_ext_stentry,
     [PF_DICTKEYS] = op_ext_dictkeys,
@@ -1448,9 +1451,9 @@ static int setattr_nondestructive(PyObject *obj, PyObject *name, PyObject *val)
     assert(PyString_Check(name));
     if(PyType_Check(obj) && PyFunction_Check(val)) {
     
-        PyObject *sm = PyStaticMethod_New(val);
-        PyObject_SetAttr(obj, name, sm);
-        Py_DECREF(sm);
+        PyObject *descr =_PyType_Lookup((PyTypeObject*)obj, name);
+        assert(descr);
+        PyObject_SetAttr(obj, name, descr);
     }else{
         PyObject_SetAttr(obj, name, val);
     }
@@ -2528,6 +2531,12 @@ static int function_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
         CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
     }
 
+    if(func->func_module) {
+        CHK_TRUE(pickle_obj(ctx, func->func_module, rw), fail);
+    }else{
+        CHK_TRUE(pickle_obj(ctx, Py_None, rw), fail);
+    }
+
     if(func->func_defaults) {
         CHK_TRUE(pickle_obj(ctx, func->func_defaults, rw), fail);
     }else{
@@ -2660,16 +2669,21 @@ fail:
 static int module_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     TRACE_PICKLE(obj);
-
     assert(PyModule_Check(obj));
-    const char *name = PyModule_GetName(obj);
-    assert(name);
 
-    PyObject *str = PyString_FromString(name);
-    vec_pobj_push(&ctx->to_free, str);
+    /* The module can be self-referencing. Push an empty instance and 
+     * memoize it */
+    const char emptymod[] = {PF_EXTEND, PF_EMPTYMOD};
+    CHK_TRUE(rw->write(rw, emptymod, ARR_SIZE(emptymod), 1), fail);
 
-    CHK_TRUE(pickle_obj(ctx, str, rw), fail);
+    assert(!memo_contains(ctx, obj));
+    memoize(ctx, obj);
+    CHK_TRUE(emit_put(ctx, obj, rw), fail);
 
+    PyModuleObject *mod = (PyModuleObject*)obj;
+    CHK_TRUE(pickle_obj(ctx, mod->md_dict, rw), fail);
+
+    /* Now set the module's dict */
     const char ops[] = {PF_EXTEND, PF_MODULE};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
     return 0;
@@ -4033,19 +4047,19 @@ static int op_empty_list(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail_underflow;
     }
     PyObject *type = vec_pobj_pop(&ctx->stack);
-    PyObject *args = PyTuple_New(0);
 
     if(!PyType_Check(type) 
     || !PyType_IsSubtype((PyTypeObject*)type, &PyList_Type)) {
         SET_RUNTIME_EXC("Expecting list type or subtype on TOS");
         goto fail_typecheck;
     }
+    PyObject *args = PyTuple_New(0);
+	CHK_TRUE(args, fail_list);
 
     PyObject *ctype = constructor_type((PyTypeObject*)type);
     assert(ctype);
 
     PyObject *list = PyObject_Call(ctype, args, NULL);
-    Py_DECREF(args);
     if(!list) {
         assert(PyErr_Occurred());
         goto fail_list;
@@ -4054,9 +4068,9 @@ static int op_empty_list(struct unpickle_ctx *ctx, SDL_RWops *rw)
     ret = 0;
 
 fail_list:
+    Py_XDECREF(args);
 fail_typecheck:
     Py_DECREF(type);
-    Py_DECREF(args);
 fail_underflow:
     return ret;
 }
@@ -4338,6 +4352,7 @@ static int op_ext_type(struct unpickle_ctx *ctx, SDL_RWops *rw)
 fail_build:
     Py_DECREF(args);
 fail_typecheck:
+    Py_DECREF(meta);
     Py_DECREF(name);
     Py_DECREF(bases);
     Py_DECREF(dict);
@@ -4454,22 +4469,29 @@ fail:
 static int op_ext_function(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_FUNCTION, ctx);
-    if(vec_size(&ctx->stack) < 5) {
+    if(vec_size(&ctx->stack) < 6) {
         SET_RUNTIME_EXC("Stack underflow"); 
         return -1;
     }
 
     PyObject *defaults = vec_pobj_pop(&ctx->stack);
+    PyObject *module = vec_pobj_pop(&ctx->stack);
     PyObject *closure = vec_pobj_pop(&ctx->stack);
     PyObject *globals = vec_pobj_pop(&ctx->stack);
     PyObject *code = vec_pobj_pop(&ctx->stack);
     PyFunctionObject *op = (PyFunctionObject*)vec_pobj_pop(&ctx->stack);
+
+    /* Make sure we don't traverse the function object's fields mid-surgery */
+    PyObject_GC_UnTrack(op);
 
     /* Clear the placeholder values */
     Py_DECREF(op->func_code); 
     Py_DECREF(op->func_globals);
     Py_DECREF(op->func_name);
     Py_DECREF(op->func_doc);
+    assert(!op->func_defaults);
+    assert(!op->func_module);
+    assert(!op->func_dict);
 
     /* Set the code and globals of the empty function object. This is 
      * the exact same flow as if the code and globals were passed to
@@ -4479,10 +4501,9 @@ static int op_ext_function(struct unpickle_ctx *ctx, SDL_RWops *rw)
      * The following is ripped from PyFunction_New in funcobject.c:
      */
 
-    PyObject *__name__ = NULL;
     PyObject *doc;
     PyObject *consts;
-    PyObject *module;
+
     op->func_weakreflist = NULL;
     op->func_code = code; /* Steal ref */
     op->func_globals = globals; /* Steal ref */
@@ -4503,18 +4524,7 @@ static int op_ext_function(struct unpickle_ctx *ctx, SDL_RWops *rw)
     op->func_dict = NULL;
     op->func_module = NULL;
 
-    /* __module__: If module name is in globals, use it.
-       Otherwise, use None.
-    */
-    if (!__name__) {
-        __name__ = PyString_InternFromString("__name__");
-        if (!__name__) {
-            assert(PyErr_Occurred());
-            goto fail;
-        }
-    }
-    module = PyDict_GetItem(globals, __name__);
-    if (module) {
+    if(module != Py_None) {
         Py_INCREF(module);
         op->func_module = module;
     }
@@ -4536,12 +4546,18 @@ static int op_ext_function(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail; 
     }
 
+    Py_DECREF(module);
     Py_DECREF(closure);
     Py_DECREF(defaults);
+
+    PyObject_GC_Track(op);
     vec_pobj_push(&ctx->stack, (PyObject*)op);
     return 0;
 
 fail:
+    Py_DECREF(module);
+    Py_DECREF(code);
+    Py_DECREF(globals);
     Py_DECREF(closure);
     Py_DECREF(defaults);
     Py_DECREF(op);
@@ -4697,18 +4713,24 @@ static int op_ext_popmark(struct unpickle_ctx *ctx, SDL_RWops *rw)
 static int op_ext_emptyfunc(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_EMPTYFUNC, ctx);
+    int ret = -1;
 
-    PyObject *code = (PyObject*)PyCode_NewEmpty("__placeholder__", "__placeholder__", 0);
-    PyObject *globals = PyDict_New();
+    PyObject *code = NULL, *globals = NULL;
+    code = (PyObject*)PyCode_NewEmpty("__placeholder__", "__placeholder__", 0);
+    CHK_TRUE(code, fail);
+    globals = PyDict_New();
+    CHK_TRUE(globals, fail);
 
-    PyObject *ret = PyFunction_New(code, globals);
-    assert(ret);
+    PyObject *func = PyFunction_New(code, globals);
+    CHK_TRUE(func, fail);
 
-    Py_DECREF(globals);
-    Py_DECREF(code);
+    vec_pobj_push(&ctx->stack, func);
+    ret = 0;
 
-    vec_pobj_push(&ctx->stack, (PyObject*)ret);
-    return 0;
+fail:
+    Py_XDECREF(globals);
+    Py_XDECREF(code);
+    return ret;
 }
 
 static int op_ext_baseobj(struct unpickle_ctx *ctx, SDL_RWops *rw)
@@ -4828,6 +4850,8 @@ static int op_ext_setattrs(struct unpickle_ctx *ctx, SDL_RWops *rw)
         if(ret)
             return -1;
     }
+
+
     PyObject *top = vec_pobj_pop(&ctx->stack);
     assert(obj == top);
 
@@ -5090,31 +5114,52 @@ fail_underflow:
     return ret;
 }
 
+static int op_ext_emptymod(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_EMPTYMOD, ctx);
+
+    PyModuleObject *mod = PyObject_GC_New(PyModuleObject, &PyModule_Type);
+    if(!mod)
+        return -1;
+    mod->md_dict = NULL;
+    vec_pobj_push(&ctx->stack, (PyObject*)mod);
+    return 0;
+}
+
 static int op_ext_module(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_MODULE, ctx);
-
     int ret = -1;
-    if(vec_size(&ctx->stack) < 1) {
+
+    if(vec_size(&ctx->stack) < 2) {
         SET_RUNTIME_EXC("Stack underflow");
         goto fail_underflow;
     }
 
-    PyObject *name = vec_pobj_pop(&ctx->stack);
-    if(!PyString_Check(name)) {
-        SET_RUNTIME_EXC("PF_MODULE: Expecting string (name) on TOS"); 
+    PyObject *dict = vec_pobj_pop(&ctx->stack);
+    PyObject *emptymod = vec_pobj_pop(&ctx->stack);
+
+    if(!PyDict_Check(dict)) {
+        SET_RUNTIME_EXC("PF_MODULE: Expecting dict on TOS");
         goto fail_typecheck;
     }
 
-    PyObject *mod = PyModule_New(PyString_AS_STRING(name));
-    CHK_TRUE(mod, fail_mod);
+    if(!PyModule_Check(emptymod)) {
+        SET_RUNTIME_EXC("PF_MODULE: Expecting module instance on TOS1");
+        goto fail_typecheck;
+    }
 
-    vec_pobj_push(&ctx->stack, mod);
+    ((PyModuleObject*)emptymod)->md_dict = dict;
+    Py_INCREF(((PyModuleObject*)emptymod)->md_dict);
+
+    Py_INCREF(emptymod);
+    PyObject_GC_Track(emptymod);
+    vec_pobj_push(&ctx->stack, emptymod);
     ret = 0;
 
-fail_mod:
 fail_typecheck:
-    Py_DECREF(name);
+    Py_DECREF(dict);
+    Py_DECREF(emptymod);
 fail_underflow:
     assert((ret && PyErr_Occurred()) || (!ret && !PyErr_Occurred()));
     return ret;
@@ -5806,12 +5851,11 @@ static int convert_frame(PyFrameObject *frame, PyCodeObject *code,
 
     PyThreadState *tstate = PyThreadState_GET();
     PyFrameObject *back = tstate->frame;
-    PyObject *bi_name = PyString_InternFromString("__builtins__");
-    PyObject *builtins = PyDict_GetItem(globals, bi_name);
+    PyObject *builtins;
 
     /* set builtins */
     if (back == NULL || back->f_globals != globals) {
-        builtins = PyDict_GetItem(globals, bi_name);
+        builtins = PyDict_GetItemString(globals, "__builtins__");
         if (builtins) {
             if (PyModule_Check(builtins)) {
                 builtins = PyModule_GetDict(builtins);
@@ -5838,8 +5882,8 @@ static int convert_frame(PyFrameObject *frame, PyCodeObject *code,
         assert(builtins != NULL && PyDict_Check(builtins));
         Py_INCREF(builtins);
     }
+    assert(builtins);
     frame->f_builtins = builtins;
-    Py_DECREF(bi_name);
 
     /* Set code */
     frame->f_code = code;
@@ -5935,6 +5979,7 @@ static int op_ext_frame(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }
 
     /* Forcefully set attrs */
+    PyObject_GC_UnTrack(frame);
     CHK_TRUE(0 == convert_frame(frame, code, globals, locals == Py_None ? NULL : locals), fail_frame);
 
     Py_XDECREF(frame->f_back);
@@ -6025,6 +6070,7 @@ static int op_ext_frame(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }
 
     Py_INCREF(frame);
+    PyObject_GC_Track(frame);
     vec_pobj_push(&ctx->stack, (PyObject*)frame);
     ret = 0;
 
@@ -6121,7 +6167,7 @@ static int op_ext_emptyframe(struct unpickle_ctx *ctx, SDL_RWops *rw)
     }
 
     PyObject *code = (PyObject*)PyCode_NewEmpty("__placeholder__", "__placeholder__", 0);
-    CHK_TRUE(code, fail_code);
+    CHK_TRUE(code, fail_typecheck);
     /* Patch the stacksize so that enough memory is allocated for the frame 
      * to house the code object that will eventually be there */
     ((PyCodeObject*)code)->co_stacksize = PyInt_AsSsize_t(valsize);
@@ -6145,7 +6191,6 @@ fail_locals:
     Py_DECREF(globals);
 fail_globals:
     Py_DECREF(code);
-fail_code:
 fail_typecheck:
     Py_DECREF(valsize);
 fail_underflow:

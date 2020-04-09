@@ -216,5 +216,12 @@ typedef struct {
     PyObject *kwds;
 } methodcallerobject;
 
+/* from Objects/moduleobject.c */
+
+typedef struct {
+    PyObject_HEAD
+    PyObject *md_dict;
+} PyModuleObject;
+
 #endif
 
