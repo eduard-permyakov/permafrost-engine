@@ -426,10 +426,6 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     }
     Py_DECREF(first_args);
 
-    extern const char *g_basepath;
-    char entity_path[512];
-    pf_snprintf(entity_path, sizeof(entity_path), "%s/%s", g_basepath, dirpath);
-
     PyObject *uidobj = NULL;
     uint32_t uid;
 
@@ -442,7 +438,7 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         uid = Entity_NewUID();
     }
 
-    struct entity *ent = AL_EntityFromPFObj(entity_path, filename, name, uid);
+    struct entity *ent = AL_EntityFromPFObj(dirpath, filename, name, uid);
     if(!ent) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to initialize pf.Entity from the given arguments.");
         return NULL;

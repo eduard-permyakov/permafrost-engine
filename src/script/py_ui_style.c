@@ -604,7 +604,6 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     assert(global_button_style);
     global_button_style->style = &ctx->style.button;
 
-    int ret = PyObject_SetAttrString(module, "button_style", (PyObject*)global_button_style);
-    assert(0 == ret);
+    PyModule_AddObject(module, "button_style", (PyObject*)global_button_style);
 }
 

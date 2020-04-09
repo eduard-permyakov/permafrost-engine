@@ -1543,6 +1543,7 @@ void S_ClearState(void)
 {
     S_Shutdown();
     S_Init(s_progname, g_basepath, UI_GetContext());
+    PyGC_Collect(); /* quick sanity check */
 }
 
 bool S_SaveState(SDL_RWops *stream)
@@ -1598,8 +1599,9 @@ bool S_LoadState(SDL_RWops *stream)
     bool ret = false;
 
     PyObject *state = S_UnpickleObjgraph(stream);
-    if(!state)
+    if(!state) {
         return false;
+    }
 
     if(!PyTuple_Check(state) || (PyTuple_GET_SIZE(state) != 8))
         goto fail;
@@ -1657,9 +1659,10 @@ bool S_LoadState(SDL_RWops *stream)
             E_Entity_ScriptRegister(ievent, iuid, handler, arg, isimmask);
         }
     }
+    ret = true;
 
 fail:
     Py_DECREF(state);
-    return true;
+    return ret;
 }
 

@@ -198,15 +198,15 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     ret->anim_ctx = (void*)(ret + 1);
 
     if(strlen(name) >= sizeof(ret->name))
-        return NULL;
+        goto fail_init;
     strcpy(ret->name, name);
 
     if(strlen(name) >= sizeof(ret->name))
-        return NULL;
+        goto fail_init;
     strcpy(ret->name, name);
 
     if(strlen(pfobj_name) >= sizeof(ret->filename))
-        return NULL;
+        goto fail_init;
     strcpy(ret->filename, pfobj_name);
 
     assert(strlen(base_path) < sizeof(ret->basedir));
@@ -221,15 +221,14 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 
         struct pfobj_hdr header;
 
-        char pfobj_path[256];
-        assert( strlen(base_path) + strlen(pfobj_name) + 1 < sizeof(pfobj_path) );
-        strcpy(pfobj_path, base_path);
-        strcat(pfobj_path, "/");
-        strcat(pfobj_path, pfobj_name);
+        char pfobj_path[512];
+        if(strlen(g_basepath) + strlen(base_path) + strlen(pfobj_name) + 2 >= sizeof(pfobj_path))
+            goto fail_init;
+        pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
 
         stream = SDL_RWFromFile(pfobj_path, "r");
         if(!stream)
-            goto fail_stream; 
+            goto fail_init; 
 
         if(!al_parse_pfobj_header(stream, &header))
             goto fail_parse;
@@ -279,7 +278,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 
 fail_parse:
     SDL_RWclose(stream);
-fail_stream:
+fail_init:
     free(ret);
 fail_alloc:
     return NULL;
