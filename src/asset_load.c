@@ -329,23 +329,6 @@ fail_parse:
     return ret;
 }
 
-size_t AL_MapShallowCopySizeStr(const char *str)
-{
-    SDL_RWops *stream;
-    struct pfmap_hdr header;
-    size_t ret = 0;
-
-    stream = SDL_RWFromConstMem(str, strlen(str));
-    if(!al_parse_pfmap_header(stream, &header))
-        goto fail_parse;
-
-    ret = M_AL_ShallowCopySize(header.num_rows, header.num_cols);
-
-fail_parse:
-    SDL_RWclose(stream);
-    return ret;
-}
-
 void AL_MapFree(struct map *map)
 {
     M_AL_FreePrivate(map);

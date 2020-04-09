@@ -118,6 +118,7 @@ static void g_reset(void)
     (void)key;
 
     kh_foreach(s_gs.active, key, curr, {
+        G_RemoveEntity(curr);
         G_SafeFree(curr);
     });
 
@@ -136,10 +137,7 @@ static void g_reset(void)
         G_Combat_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
-
         s_gs.map = NULL;
-        free((void*)s_gs.prev_tick_map);
-        s_gs.prev_tick_map = NULL;
     }
 
     for(int i = 0; i < NUM_CAMERAS; i++) {
@@ -633,11 +631,20 @@ fail_dynamic:
 fail_active:
     return false;
 }
+
 bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
 {
     ASSERT_IN_MAIN_THREAD();
 
     g_reset();
+
+    if(s_gs.prev_tick_map) {
+        /* The render thread still owns the previous tick map. Wait 
+         * for it to complete before we free the buffer. */
+        Engine_WaitRenderWorkDone();
+        free((void*)s_gs.prev_tick_map);
+        s_gs.prev_tick_map = NULL;
+    }
 
     size_t copysize = AL_MapShallowCopySize(stream);
     s_gs.prev_tick_map = malloc(copysize);
@@ -645,10 +652,8 @@ bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
         return false;
 
     s_gs.map = AL_MapFromPFMapStream(stream, update_navgrid);
-    if(!s_gs.map) {
-        free((void*)s_gs.prev_tick_map);
+    if(!s_gs.map)
         return false;
-    }
 
     g_init_map();
     E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
@@ -785,6 +790,8 @@ void G_Shutdown(void)
     ASSERT_IN_MAIN_THREAD();
 
     g_reset();
+    free((void*)s_gs.prev_tick_map);
+    s_gs.prev_tick_map = NULL;
 
     R_DestroyWS(&s_gs.ws[0]);
     R_DestroyWS(&s_gs.ws[1]);
@@ -1008,9 +1015,7 @@ void G_SetStatic(struct entity *ent, bool on)
     khiter_t k;
     int ret;
 
-    if(on) {
-        if(ent->flags & ENTITY_FLAG_STATIC)
-            return;
+    if(on && (ent->flags & ~ENTITY_FLAG_STATIC)) {
 
         k = kh_get(entity, s_gs.dynamic, ent->uid);
         assert(k != kh_end(s_gs.dynamic));
@@ -1018,10 +1023,8 @@ void G_SetStatic(struct entity *ent, bool on)
 
         G_Move_RemoveEntity(ent);
         ent->flags |= ENTITY_FLAG_STATIC;
-    }else{
 
-        if(ent->flags & ~ENTITY_FLAG_STATIC)
-            return;
+    }else if(!on && (ent->flags & ENTITY_FLAG_STATIC)){
 
         k = kh_put(entity, s_gs.dynamic, ent->uid, &ret);
         assert(ret != -1 && ret != 0);
@@ -1475,6 +1478,9 @@ bool G_LoadGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(G_NewGameWithMap(stream, true));
     }else{
         g_reset();
+        Engine_WaitRenderWorkDone();
+        free((void*)s_gs.prev_tick_map);
+        s_gs.prev_tick_map = NULL;
         E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
     }
 

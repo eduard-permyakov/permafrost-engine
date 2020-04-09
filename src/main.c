@@ -204,7 +204,7 @@ static void render_thread_start_work(void)
     SDL_UnlockMutex(s_rstate.sq_lock);
 }
 
-static void wait_render_work_done(void)
+void wait_render_work_done(void)
 {
     SDL_LockMutex(s_rstate.done_lock);
     while(!s_rstate.done)
@@ -539,6 +539,16 @@ void Engine_FlushRenderWorkQueue(void)
     G_SwapBuffers();
 }
 
+void Engine_WaitRenderWorkDone(void)
+{
+    /* Wait for the render thread to finish, but don't set the 'done' flag */
+    SDL_LockMutex(s_rstate.done_lock);
+    while(!s_rstate.done) {
+        SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
+    }
+    SDL_UnlockMutex(s_rstate.done_lock);
+}
+
 #if defined(_WIN32)
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, 
                      LPSTR lpCmdLine, int nCmdShow)
@@ -601,13 +611,13 @@ int main(int argc, char **argv)
         process_sdl_events();
         E_ServiceQueue();
         G_Update();
+        Session_ServiceRequests();
         G_Render();
         UI_Render();
 
         wait_render_work_done();
 
         G_SwapBuffers();
-        Session_ServiceRequests();
 
         if(prev_step_frame) {
             G_SetSimState(curr_ss);

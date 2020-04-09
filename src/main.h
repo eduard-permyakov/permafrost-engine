@@ -71,6 +71,8 @@ void Engine_WinDrawableSize(int *out_w, int *out_h);
  * execute rendering code serially.
  */
 void Engine_FlushRenderWorkQueue(void);
+/* Wait for the current batch of render command to finish */
+void Engine_WaitRenderWorkDone(void);
 
 #endif
 
