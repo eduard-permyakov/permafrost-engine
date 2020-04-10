@@ -1182,6 +1182,7 @@ bool G_ActivateCamera(int idx, enum cam_mode mode)
         return false;
 
     s_gs.active_cam_idx = idx;
+    s_gs.active_cam_mode = mode;
 
     switch(mode) {
     case CAM_MODE_RTS:  CamControl_RTS_Install(s_gs.cameras[idx]); break;
@@ -1321,6 +1322,14 @@ void G_Zombiefy(struct entity *ent)
     ent->flags |= ENTITY_FLAG_INVISIBLE;
     ent->flags |= ENTITY_FLAG_STATIC;
     ent->flags |= ENTITY_FLAG_ZOMBIE;
+}
+
+struct entity *G_EntityForUID(uint32_t uid)
+{
+    khiter_t k = kh_get(entity, s_gs.active, uid);
+    if(k == kh_end(s_gs.active))
+        return NULL;
+    return kh_value(s_gs.active, k);
 }
 
 struct render_workspace *G_GetSimWS(void)
@@ -1463,6 +1472,18 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Write(stream, &cam_pos, "cam_position"));
     }
 
+    struct attr active_cam_idx = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = s_gs.active_cam_idx
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &active_cam_idx, "active_cam_idx"));
+
+    struct attr active_cam_mode = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = s_gs.active_cam_mode
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &active_cam_mode, "active_cam_mode"));
+
     return true;
 }
 
@@ -1552,12 +1573,25 @@ bool G_LoadGlobalState(SDL_RWops *stream)
         Camera_SetPos(cam, attr.val.as_vec3);
     }
 
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    int active_cam_idx = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    int active_cam_mode = attr.val.as_int;
+
+    G_ActivateCamera(active_cam_idx, active_cam_mode);
+
     return true;
 }
 
 bool G_SaveEntityState(SDL_RWops *stream)
 {
     ASSERT_IN_MAIN_THREAD();
+
+    if(!G_Move_SaveState(stream))
+        return false;
 
     return true;
 }
@@ -1567,6 +1601,10 @@ bool G_LoadEntityState(SDL_RWops *stream)
     ASSERT_IN_MAIN_THREAD();
 
     G_BakeNavDataForScene();
+
+    if(!G_Move_LoadState(stream))
+        return false;
+
     return true;
 }
 

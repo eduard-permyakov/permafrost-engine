@@ -1581,10 +1581,11 @@ bool S_SaveState(SDL_RWops *stream)
         saved_handlers
     );
     if(!state)
-        return false;
+        goto fail;
 
     ret = S_PickleObjgraph(state, stream);
     Py_DECREF(state);
+    SDL_RWwrite(stream, "\n", 1, 1);
 
 fail:
     Py_DECREF(saved_handlers);
@@ -1660,6 +1661,9 @@ bool S_LoadState(SDL_RWops *stream)
         }
     }
     ret = true;
+
+    char tmp[2];
+    SDL_RWread(stream, tmp, sizeof(tmp), 1); /* consume NULL byte and newline */
 
 fail:
     Py_DECREF(state);

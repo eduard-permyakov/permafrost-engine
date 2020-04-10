@@ -43,6 +43,7 @@
 
 struct map;
 struct entity;
+struct SDL_RWops;
 
 bool G_Move_Init(const struct map *map);
 void G_Move_Shutdown(void);
@@ -55,6 +56,9 @@ bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz);
 
 void G_Move_SetSeekEnemies(const struct entity *ent);
 void G_Move_UpdatePos(const struct entity *ent, vec2_t pos);
+
+bool G_Move_SaveState(struct SDL_RWops *stream);
+bool G_Move_LoadState(struct SDL_RWops *stream);
 
 #endif
 

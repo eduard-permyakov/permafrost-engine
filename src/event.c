@@ -246,6 +246,11 @@ void E_ServiceQueue(void)
     e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID} );
 }
 
+void E_ClearPendingEvents(void)
+{
+    queue_event_clear(&s_event_queue);
+}
+
 void E_DeleteScriptHandlers(void)
 {
     uint64_t keys_to_del[kh_size(s_event_handler_table)];

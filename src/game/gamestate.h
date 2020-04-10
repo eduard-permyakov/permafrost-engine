@@ -69,6 +69,7 @@ struct gamestate{
      *-------------------------------------------------------------------------
      */
     int                     active_cam_idx;
+    enum cam_mode           active_cam_mode;
     struct camera          *cameras[NUM_CAMERAS];
     /*-------------------------------------------------------------------------
      * The set of all game entities currently taking part in the game simulation.

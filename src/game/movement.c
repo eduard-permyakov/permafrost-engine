@@ -52,6 +52,7 @@
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../lib/public/vec.h"
+#include "../lib/public/attr.h"
 #include "../anim/public/anim.h"
 
 #include <assert.h>
@@ -68,6 +69,18 @@
 #define MIN(a, b)    ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)  (sizeof(a)/sizeof(a[0]))
 #define STR(a)       #a
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
+
+#define CHK_TRUE_JMP(_pred, _label)     \
+    do{                                 \
+        if(!(_pred))                    \
+            goto _label;                \
+    }while(0)
 
 #define VEL_HIST_LEN (14)
 
@@ -977,7 +990,14 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         ms->velocity = (vec2_t){0.0f, 0.0f}; 
     }
 
-    assert(M_NavPositionPathable(s_map, G_Pos_GetXZ(ent->uid)));
+    /* If the entity's current position isn't pathable, simply keep it 'stuck' there in
+     * the same state it was in before. Under normal conditions, no entity can move from 
+     * pathable terrain to non-pathable terrain, but an this violation is possible by 
+     * forcefully setting the entity's position from a scripting call. 
+     */
+    if(!M_NavPositionPathable(s_map, G_Pos_GetXZ(ent->uid)))
+        return;
+
     switch(ms->state) {
     case STATE_MOVING: {
 
@@ -1275,8 +1295,9 @@ void G_Move_Stop(const struct entity *ent)
     if(!ms)
         return;
 
-    if(!ent_still(ms))
+    if(!ent_still(ms)) {
         entity_finish_moving(ent, STATE_ARRIVED);
+    }
 
     remove_from_flocks(ent);
     ms->state = STATE_ARRIVED;
@@ -1400,5 +1421,238 @@ void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius)
     M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, s_map);
     M_NavBlockersIncref(ms->last_stop_pos, sel_radius, s_map);
     ms->last_stop_radius = sel_radius;
+}
+
+bool G_Move_SaveState(struct SDL_RWops *stream)
+{
+    /* save flock info */
+    struct attr num_flocks = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = vec_size(&s_flocks)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_flocks, "num_flocks"));
+
+    for(int i = 0; i < vec_size(&s_flocks); i++) {
+
+        const struct flock *curr_flock = &vec_AT(&s_flocks, i);
+
+        struct attr num_flock_ents = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(curr_flock->ents)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_flock_ents, "num_flock_ents"));
+
+        uint32_t uid;
+        struct entity *curr_ent;
+        (void)curr_ent;
+
+        kh_foreach(curr_flock->ents, uid, curr_ent, {
+        
+            struct attr flock_ent = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = uid
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &flock_ent, "flock_ent"));
+        });
+
+        struct attr flock_target = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr_flock->target_xz
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &flock_target, "flock_target"));
+
+        struct attr flock_dest = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr_flock->dest_id
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &flock_dest, "flock_dest"));
+    }
+
+    /* save the movement state */
+    struct attr num_ents = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_entity_state_table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_ents, "num_ents"));
+
+    uint32_t key;
+    struct movestate curr;
+
+    kh_foreach(s_entity_state_table, key, curr, {
+
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = key
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
+
+        struct attr state = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.state
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &state, "state"));
+
+        struct attr vdes = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr.vdes
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &vdes, "vdes"));
+
+        struct attr velocity = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr.velocity
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &velocity, "velocity"));
+
+        struct attr blocking = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.blocking
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &blocking, "blocking"));
+
+        /* last_stop_pos and last_stop_radius are loaded in 
+         * along with the entity's position. No need to overwrite
+         * it and risk some inconsistency */
+
+        struct attr wait_prev = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.wait_prev
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &wait_prev, "wait_prev"));
+
+        struct attr wait_ticks_left = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.wait_ticks_left
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &wait_ticks_left, "wait_ticks_left"));
+
+        for(int i = 0; i < VEL_HIST_LEN; i++) {
+        
+            struct attr hist_entry = (struct attr){
+                .type = TYPE_VEC2,
+                .val.as_vec2 = curr.vel_hist[i]
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &hist_entry, "hist_entry"));
+        }
+
+        struct attr vel_hist_idx = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.vel_hist_idx
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &vel_hist_idx, "vel_hist_idx"));
+    });
+
+    return true;
+}
+
+bool G_Move_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const int num_flocks = attr.val.as_int;
+
+    assert(vec_size(&s_flocks) == 0);
+    for(int i = 0; i < num_flocks; i++) {
+
+        struct flock new_flock;
+        new_flock.ents = kh_init(entity);
+        CHK_TRUE_RET(new_flock.ents);
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_flock);
+        CHK_TRUE_JMP(attr.type == TYPE_INT, fail_flock);
+        const int num_flock_ents = attr.val.as_int;
+
+        for(int j = 0; j < num_flock_ents; j++) {
+
+            CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_flock);
+            CHK_TRUE_JMP(attr.type == TYPE_INT, fail_flock);
+
+            uint32_t flock_end_uid = attr.val.as_int;
+            const struct entity *ent = G_EntityForUID(flock_end_uid);
+
+            CHK_TRUE_JMP(ent, fail_flock);
+            flock_add(&new_flock, ent);
+        }
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_flock);
+        CHK_TRUE_JMP(attr.type == TYPE_VEC2, fail_flock);
+        new_flock.target_xz = attr.val.as_vec2;
+
+        CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_flock);
+        CHK_TRUE_JMP(attr.type == TYPE_INT, fail_flock);
+        new_flock.dest_id = attr.val.as_int;
+
+        vec_flock_push(&s_flocks, new_flock);
+        continue;
+
+    fail_flock:
+        kh_destroy(entity, new_flock.ents);
+        return false;
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const int num_ents = attr.val.as_int;
+
+    for(int i = 0; i < num_ents; i++) {
+
+        uint32_t uid;
+        struct movestate *ms;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uid = attr.val.as_int;
+
+        /* The entity should have already been loaded by the scripting state */
+        khiter_t k = kh_get(state, s_entity_state_table, uid);
+        CHK_TRUE_RET(k != kh_end(s_entity_state_table));
+        ms = &kh_value(s_entity_state_table, k);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ms->state = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        ms->vdes = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        ms->velocity = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+
+        const bool blocking = attr.val.as_bool;
+        assert(ms->blocking);
+        if(!blocking) {
+            const struct entity *ent = G_EntityForUID(uid);
+            assert(ent);
+            entity_unblock(ent);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ms->wait_prev = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ms->wait_ticks_left = attr.val.as_int;
+
+        for(int i = 0; i < VEL_HIST_LEN; i++) {
+        
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_VEC2);
+            ms->vel_hist[i] = attr.val.as_vec2;
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ms->vel_hist_idx = attr.val.as_int;
+    }
+
+    return true;
 }
 

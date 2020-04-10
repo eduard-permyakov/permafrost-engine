@@ -35,6 +35,7 @@
 
 #include "session.h"
 #include "event.h"
+#include "main.h"
 #include "lib/public/attr.h"
 #include "game/public/game.h"
 #include "script/public/script.h"
@@ -66,6 +67,11 @@ bool Session_Save(SDL_RWops *stream)
         return false;
     }
 
+    if(!G_SaveEntityState(stream)) {
+        printf("error saving game entity state\n");
+        return false;
+    }
+
     return true;
 }
 
@@ -83,6 +89,7 @@ void Session_ServiceRequests(void)
 
     E_DeleteScriptHandlers();
     S_ClearState();
+    Engine_ClearPendingEvents();
 
     SDL_RWops *stream = SDL_RWFromFile(s_load_path, "r"); /* file will be closed when stream is */
     if(!stream)

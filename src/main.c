@@ -541,12 +541,18 @@ void Engine_FlushRenderWorkQueue(void)
 
 void Engine_WaitRenderWorkDone(void)
 {
-    /* Wait for the render thread to finish, but don't set the 'done' flag */
+    /* Wait for the render thread to finish, but don't yet clear/ack the 'done' flag */
     SDL_LockMutex(s_rstate.done_lock);
     while(!s_rstate.done) {
         SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
     }
     SDL_UnlockMutex(s_rstate.done_lock);
+}
+
+void Engine_ClearPendingEvents(void)
+{
+    SDL_FlushEvents(0, ~((uint32_t)0));
+    E_ClearPendingEvents();
 }
 
 #if defined(_WIN32)

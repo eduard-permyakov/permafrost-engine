@@ -47,6 +47,7 @@ struct attr{
         TYPE_STRING,
         TYPE_FLOAT,
         TYPE_INT,
+        TYPE_VEC2,
         TYPE_VEC3,
         TYPE_QUAT,
         TYPE_BOOL,
@@ -55,6 +56,7 @@ struct attr{
         char   as_string[64];
         float  as_float;
         int    as_int;
+        vec2_t as_vec2;
         vec3_t as_vec3;
         quat_t as_quat;
         bool   as_bool;
