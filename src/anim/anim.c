@@ -39,6 +39,8 @@
 #include "anim_ctx.h"
 #include "../entity.h"
 #include "../event.h"
+#include "../lib/public/attr.h"
+#include "../lib/public/pf_string.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 
@@ -47,6 +49,11 @@
 #include <string.h>
 #include <assert.h>
 
+#define CHK_TRUE_RET(_pred)   \
+    do{                       \
+        if(!(_pred))          \
+            return false;     \
+    }while(0)
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -308,5 +315,80 @@ bool A_HasClip(const struct entity *ent, const char *name)
     struct anim_ctx *ctx = ent->anim_ctx;
     const struct anim_clip *clip = a_clip_for_name(ent, name);
     return (clip != NULL);
+}
+
+bool A_SaveState(struct SDL_RWops *stream, const struct entity *ent)
+{
+    struct anim_ctx *ctx = ent->anim_ctx;
+
+    struct attr active = (struct attr){ .type = TYPE_STRING };
+    pf_snprintf(active.val.as_string, sizeof(active.val.as_string), "%s", ctx->active->name);
+    CHK_TRUE_RET(Attr_Write(stream, &active, "active_clip"));
+
+    struct attr idle = (struct attr){ .type = TYPE_STRING };
+    pf_snprintf(idle.val.as_string, sizeof(idle.val.as_string), "%s", ctx->idle->name);
+    CHK_TRUE_RET(Attr_Write(stream, &idle, "idle_clip"));
+
+    struct attr mode = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = ctx->mode
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &mode, "mode"));
+
+    struct attr key_fps = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = ctx->key_fps
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &key_fps, "key_fps"));
+
+    struct attr curr_frame = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = ctx->curr_frame
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &curr_frame, "curr_frame"));
+
+    struct attr curr_frame_ticks_elapsed = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = SDL_GetTicks() - ctx->curr_frame_start_ticks
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &curr_frame_ticks_elapsed, "curr_frame_ticks_elapsed"));
+
+    return true;
+}
+
+bool A_LoadState(struct SDL_RWops *stream, const struct entity *ent)
+{
+    struct anim_ctx *ctx = ent->anim_ctx;
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_STRING);
+    const struct anim_clip *active_clip = a_clip_for_name(ent, attr.val.as_string);
+    CHK_TRUE_RET(active_clip);
+    ctx->active = active_clip;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_STRING);
+    const struct anim_clip *idle_clip = a_clip_for_name(ent, attr.val.as_string);
+    CHK_TRUE_RET(idle_clip);
+    ctx->idle = idle_clip;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    ctx->mode = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    ctx->key_fps = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    ctx->curr_frame = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    ctx->curr_frame_start_ticks = SDL_GetTicks() - attr.val.as_int;
+
+    return true;
 }
 

@@ -151,6 +151,18 @@ const char            *A_GetClip(const struct entity *ent, int idx);
  */
 bool                   A_HasClip(const struct entity *ent, const char *name);
 
+/* ---------------------------------------------------------------------------
+ * Serialize the animation context for the entity to the stream.
+ * ---------------------------------------------------------------------------
+ */
+bool                   A_SaveState(struct SDL_RWops *stream, const struct entity *ent);
+
+/* ---------------------------------------------------------------------------
+ * Deserialize the animation context that was previously written by A_SaveState.
+ * ---------------------------------------------------------------------------
+ */
+bool                   A_LoadState(struct SDL_RWops *stream, const struct entity *ent);
+
 /*###########################################################################*/
 /* ANIM ASSET LOADING                                                        */
 /*###########################################################################*/

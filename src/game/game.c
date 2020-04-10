@@ -447,6 +447,72 @@ static void shadows_en_commit(const struct sval *new_val)
     });
 }
 
+static bool g_save_anim_state(SDL_RWops *stream)
+{
+    size_t nanim = 0;
+
+    uint32_t key;
+    struct entity *curr;
+
+    kh_foreach(s_gs.active, key, curr, {
+
+        if(!(curr->flags & ENTITY_FLAG_ANIMATED))
+            continue;
+        if(!strcmp(curr->name, "__move_marker__"))
+            continue;
+        nanim++;
+    });
+
+    struct attr num_anim = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = nanim
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_anim, "num_anim"));
+
+    kh_foreach(s_gs.active, key, curr, {
+
+        if(!(curr->flags & ENTITY_FLAG_ANIMATED))
+            continue;
+        if(!strcmp(curr->name, "__move_marker__"))
+            continue;
+
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = key
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
+        CHK_TRUE_RET(A_SaveState(stream, curr));
+    });
+
+    return true;
+}
+
+static bool g_load_anim_state(SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t nanim = attr.val.as_int;
+
+    for(int i = 0; i < nanim; i++) {
+
+        uint32_t uid;
+        const struct entity *ent;
+    
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uid = attr.val.as_int;
+
+        ent = G_EntityForUID(uid);
+        CHK_TRUE_RET(ent);
+
+        CHK_TRUE_RET(A_LoadState(stream, ent));
+    }
+
+    return true;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1590,6 +1656,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
 {
     ASSERT_IN_MAIN_THREAD();
 
+    if(!g_save_anim_state(stream))
+        return false;
+
     if(!G_Move_SaveState(stream))
         return false;
 
@@ -1601,6 +1670,9 @@ bool G_LoadEntityState(SDL_RWops *stream)
     ASSERT_IN_MAIN_THREAD();
 
     G_BakeNavDataForScene();
+
+    if(!g_load_anim_state(stream))
+        return false;
 
     if(!G_Move_LoadState(stream))
         return false;
