@@ -113,6 +113,18 @@ static void g_reset(void)
 {
     G_Sel_Clear();
 
+    if(s_gs.map) {
+
+        M_Raycast_Uninstall();
+        M_FreeMinimap(s_gs.map);
+        AL_MapFree(s_gs.map);
+        G_Move_Shutdown();
+        G_Combat_Shutdown();
+        G_ClearPath_Shutdown();
+        G_Pos_Shutdown();
+        s_gs.map = NULL;
+    }
+
     uint32_t key;
     struct entity *curr;
     (void)key;
@@ -127,18 +139,6 @@ static void g_reset(void)
     vec_pentity_reset(&s_gs.visible);
     vec_pentity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
-
-    if(s_gs.map) {
-
-        M_Raycast_Uninstall();
-        M_FreeMinimap(s_gs.map);
-        AL_MapFree(s_gs.map);
-        G_Move_Shutdown();
-        G_Combat_Shutdown();
-        G_ClearPath_Shutdown();
-        G_Pos_Shutdown();
-        s_gs.map = NULL;
-    }
 
     for(int i = 0; i < NUM_CAMERAS; i++) {
         g_reset_camera(s_gs.cameras[i]);
@@ -1478,9 +1478,11 @@ bool G_LoadGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(G_NewGameWithMap(stream, true));
     }else{
         g_reset();
+
         Engine_WaitRenderWorkDone();
         free((void*)s_gs.prev_tick_map);
         s_gs.prev_tick_map = NULL;
+
         E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
     }
 
@@ -1556,12 +1558,15 @@ bool G_LoadGlobalState(SDL_RWops *stream)
 bool G_SaveEntityState(SDL_RWops *stream)
 {
     ASSERT_IN_MAIN_THREAD();
+
     return true;
 }
 
 bool G_LoadEntityState(SDL_RWops *stream)
 {
     ASSERT_IN_MAIN_THREAD();
+
+    G_BakeNavDataForScene();
     return true;
 }
 

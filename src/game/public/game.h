@@ -185,6 +185,7 @@ const vec_pentity_t  *G_Sel_Get(enum selection_type *out_type);
 void G_Move_SetMoveOnLeftClick(void);
 void G_Move_SetAttackOnLeftClick(void);
 void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz);
+void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius);
 
 
 /*###########################################################################*/

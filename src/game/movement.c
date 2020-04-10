@@ -1388,3 +1388,17 @@ void G_Move_UpdatePos(const struct entity *ent, vec2_t pos)
     ms->last_stop_radius = ent->selection_radius;
 }
 
+void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius)
+{
+    struct movestate *ms = movestate_get(ent);
+    if(!ms)
+        return;
+
+    if(!ms->blocking)
+        return;
+
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, s_map);
+    M_NavBlockersIncref(ms->last_stop_pos, sel_radius, s_map);
+    ms->last_stop_radius = sel_radius;
+}
+

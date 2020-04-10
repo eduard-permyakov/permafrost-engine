@@ -602,6 +602,7 @@ static int PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, 
     }
 
     self->ent->selection_radius = PyFloat_AsDouble(value);
+    G_Move_UpdateSelectionRadius(self->ent, self->ent->selection_radius);
     return 0;
 }
 
@@ -820,12 +821,6 @@ static PyObject *PyEntity_pickle(PyEntityObject *self)
     Py_DECREF(faction_id);
     CHK_TRUE(status, fail_pickle);
 
-    PyObject *max_hp = Py_BuildValue("i", self->ent->max_hp);
-    CHK_TRUE(max_hp, fail_pickle);
-    status = S_PickleObjgraph(max_hp, stream);
-    Py_DECREF(max_hp);
-    CHK_TRUE(status, fail_pickle);
-
     ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
 
 fail_pickle:
@@ -839,6 +834,7 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args)
     PyObject *ret = NULL;
     const char *str;
     Py_ssize_t len;
+    int status;
     char tmp;
 
     if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
@@ -898,11 +894,8 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args)
     PyObject *faction_id = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
-    PyObject *max_hp = S_UnpickleObjgraph(stream);
-    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
-
     if(!pos        || !scale     || !rotation   || !flags 
-    || !sel_radius || !max_speed || !faction_id || !max_hp) {
+    || !sel_radius || !max_speed || !faction_id) {
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle attributes of pf.Entity instance");
         goto fail_unpickle_atts;
     }
@@ -920,10 +913,14 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args)
     G_SetStatic(ent, rawflags & ENTITY_FLAG_STATIC);
     ent->flags = rawflags;
 
-    CHK_TRUE((-1.0 != (ent->selection_radius = PyFloat_AsDouble(sel_radius))), fail_unpickle_atts);
-    CHK_TRUE((-1.0 != (ent->max_speed = PyFloat_AsDouble(max_speed))), fail_unpickle_atts);
-    CHK_TRUE((-1 != (ent->faction_id = PyInt_Check(faction_id))), fail_unpickle_atts);
-    CHK_TRUE((-1 != (ent->max_hp = PyInt_Check(max_hp))), fail_unpickle_atts);
+    status = PyObject_SetAttrString(entobj, "selection_radius", sel_radius);
+    CHK_TRUE(0 == status, fail_unpickle_atts);
+
+    status = PyObject_SetAttrString(entobj, "speed", max_speed);
+    CHK_TRUE(0 == status, fail_unpickle_atts);
+
+    status = PyObject_SetAttrString(entobj, "faction_id", faction_id);
+    CHK_TRUE(0 == status, fail_unpickle_atts);
 
     Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
     ret = Py_BuildValue("(Oi)", entobj, (int)nread);
@@ -937,7 +934,6 @@ fail_unpickle_atts:
     Py_XDECREF(sel_radius);
     Py_XDECREF(max_speed);
     Py_XDECREF(faction_id);
-    Py_XDECREF(max_hp);
 fail_unpickle:
     Py_XDECREF(basedir);
     Py_XDECREF(filename);
@@ -1036,7 +1032,9 @@ fail_args:
 static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args)
 {
     char tmp;
+    PyObject *max_hp = NULL, *base_dmg = NULL, *base_armour = NULL;
     PyObject *ret = NULL;
+    int status;
 
     PyObject *kwargs = PyDict_New();
     if(!kwargs)
@@ -1063,40 +1061,31 @@ static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args)
     CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(str), PyString_GET_SIZE(str), 1), fail_unpickle);
     SDL_RWseek(stream, nread, RW_SEEK_SET);
 
-    PyObject *max_hp = S_UnpickleObjgraph(stream);
+    max_hp = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
-    CHK_TRUE(max_hp, fail_unpickle);
-    if(!PyInt_Check(max_hp)) {
-        Py_DECREF(max_hp);
-        goto fail_unpickle;
-    }
-    ((PyCombatableEntityObject*)ent)->super.ent->max_hp = PyInt_AS_LONG(max_hp);
-    Py_DECREF(max_hp);
 
-    PyObject *base_dmg = S_UnpickleObjgraph(stream);
-    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
-    CHK_TRUE(base_dmg, fail_unpickle);
-    if(!PyInt_Check(base_dmg)) {
-        Py_DECREF(base_dmg);
-        goto fail_unpickle;
-    }
-    G_Combat_SetBaseDamage(((PyCombatableEntityObject*)ent)->super.ent, PyInt_AS_LONG(base_dmg));
-    Py_DECREF(base_dmg);
+    status = PyObject_SetAttrString(ent, "max_hp", max_hp);
+    CHK_TRUE(0 == status, fail_unpickle);
 
-    PyObject *base_armour = S_UnpickleObjgraph(stream);
+    base_dmg = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
-    CHK_TRUE(base_armour, fail_unpickle);
-    if(!PyFloat_Check(base_armour)) {
-        Py_DECREF(base_armour);
-        goto fail_unpickle;
-    }
-    G_Combat_SetBaseArmour(((PyCombatableEntityObject*)ent)->super.ent, PyFloat_AS_DOUBLE(base_armour));
-    Py_DECREF(base_armour);
+
+    status = PyObject_SetAttrString(ent, "base_dmg", base_dmg);
+    CHK_TRUE(0 == status, fail_unpickle);
+
+    base_armour = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    status = PyObject_SetAttrString(ent, "base_armour", base_armour);
+    CHK_TRUE(0 == status, fail_unpickle);
 
     nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
     ret = Py_BuildValue("Oi", ent, nread);
 
 fail_unpickle:
+    Py_XDECREF(max_hp);
+    Py_XDECREF(base_dmg);
+    Py_XDECREF(base_armour);
     SDL_RWclose(stream);
 fail_stream:
     Py_DECREF(ent);
@@ -1559,6 +1548,10 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
             ((PyEntityObject*)ret)->ent->flags &= ~ENTITY_FLAG_COLLISION;
     }
 
+    if(PyObject_HasAttrString(ret, "selection_radius") 
+    && (k = kh_get(attr, attr_table, "selection_radius")) != kh_end(attr_table))
+        PyObject_SetAttrString(ret, "selection_radius", s_obj_from_attr(&kh_value(attr_table, k)));
+
     if(PyObject_HasAttrString(ret, "pos") 
     && (k = kh_get(attr, attr_table, "position")) != kh_end(attr_table))
         PyObject_SetAttrString(ret, "pos", s_obj_from_attr(&kh_value(attr_table, k)));
@@ -1574,10 +1567,6 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
     if(PyObject_HasAttrString(ret, "selectable") 
     && (k = kh_get(attr, attr_table, "selectable")) != kh_end(attr_table))
         PyObject_SetAttrString(ret, "selectable", s_obj_from_attr(&kh_value(attr_table, k)));
-
-    if(PyObject_HasAttrString(ret, "selection_radius") 
-    && (k = kh_get(attr, attr_table, "selection_radius")) != kh_end(attr_table))
-        PyObject_SetAttrString(ret, "selection_radius", s_obj_from_attr(&kh_value(attr_table, k)));
 
     if(PyObject_HasAttrString(ret, "faction_id") 
     && (k = kh_get(attr, attr_table, "faction_id")) != kh_end(attr_table))

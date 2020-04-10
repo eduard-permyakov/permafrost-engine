@@ -94,7 +94,12 @@ void Session_ServiceRequests(void)
     }
 
     if(!S_LoadState(stream)) {
-        printf("fail state\n");
+        printf("fail script\n");
+        goto fail_load;
+    }
+
+    if(!G_LoadEntityState(stream)) {
+        printf("fail ent state\n");
         goto fail_load;
     }
 
