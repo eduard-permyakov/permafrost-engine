@@ -38,8 +38,10 @@
 #include "movement.h"
 #include "../event.h"
 #include "../entity.h"
+#include "../main.h"
 #include "public/game.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/attr.h"
 
 #include <assert.h>
 #include <float.h>
@@ -49,8 +51,14 @@
 #define ENEMY_MELEE_ATTACK_RANGE       (5.0f)
 #define EPSILON                        (1.0f/1024)
 #define MAX(a, b)                      ((a) > (b) ? (a) : (b))
-#define MIN(a, b)                      ((a) > (b) ? (a) : (b))
+#define MIN(a, b)                      ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)                    (sizeof(a)/sizeof(a[0]))
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 /*
  *                    Start
@@ -68,6 +76,10 @@
  *                      |(target alive)           |
  *                      V                         |(anim cycle finishes)
  *                    [STATE_ATTACK_ANIM_PLAYING]-+
+ * 
+ * From any of the states, an entity can move to the [STATE_DEATH_ANIM_PLAYING] 
+ * state upon receiving a fatal hit. At the next EVENT_ANIM_CYCLE_FINISHED
+ * event, the entity is reaped.
  */
 
 struct combatstats{
@@ -84,8 +96,9 @@ struct combatstate{
         STATE_MOVING_TO_TARGET,
         STATE_CAN_ATTACK,
         STATE_ATTACK_ANIM_PLAYING,
+        STATE_DEATH_ANIM_PLAYING,
     }state;
-    struct entity     *target;
+    uint32_t           target_uid;
     /* If the target gained a target while moving, save and restore
      * its' intial move command once it finishes combat. */
     bool               move_cmd_interrupted;
@@ -98,7 +111,9 @@ KHASH_MAP_INIT_INT(state, struct combatstate)
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-khash_t(state) *s_entity_state_table;
+static khash_t(state) *s_entity_state_table;
+/* For saving/restoring state */
+static vec_pentity_t   s_dying_ents;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -107,9 +122,9 @@ khash_t(state) *s_entity_state_table;
 /* The returned pointer is guaranteed to be valid to write to for
  * so long as we don't add anything to the table. At that point, there
  * is a case that a 'realloc' might take place. */
-static struct combatstate *combatstate_get(const struct entity *ent)
+static struct combatstate *combatstate_get(uint32_t uid)
 {
-    khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
+    khiter_t k = kh_get(state, s_entity_state_table, uid);
     if(k == kh_end(s_entity_state_table))
         return NULL;
 
@@ -133,6 +148,20 @@ static void combatstate_remove(const struct entity *ent)
     khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
     if(k != kh_end(s_entity_state_table))
         kh_del(state, s_entity_state_table, k);
+}
+
+static bool pentities_equal(struct entity *const *a, struct entity *const *b)
+{
+    return ((*a) == (*b));
+}
+
+static void dying_remove(const struct entity *ent)
+{
+    int idx;
+    vec_pentity_indexof(&s_dying_ents, (struct entity*)ent, pentities_equal, &idx);
+    if(idx == -1)
+        return;
+    vec_pentity_del(&s_dying_ents, idx);
 }
 
 static bool enemies(const struct entity *a, const struct entity *b)
@@ -172,7 +201,14 @@ static struct entity *closest_enemy_in_range(const struct entity *ent)
             continue;
         if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
             continue;
+        if(curr->flags & ENTITY_FLAG_ZOMBIE)
+            continue;
         if(!enemies(ent, curr))
+            continue;
+
+        struct combatstate *cs = combatstate_get(curr->uid);
+        assert(cs);
+        if(cs->state == STATE_DEATH_ANIM_PLAYING)
             continue;
    
         float dist = ents_distance(ent, curr);
@@ -222,36 +258,41 @@ static void on_attack_anim_finish(void *user, void *event)
     assert(self);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, self->uid, on_attack_anim_finish);
 
-    struct combatstate *cs = combatstate_get(self);
+    struct combatstate *cs = combatstate_get(self->uid);
     assert(cs);
     assert(cs->state == STATE_ATTACK_ANIM_PLAYING);
-    assert(cs->target);
 
     cs->state = STATE_CAN_ATTACK;
 
-    struct combatstate *target_cs = combatstate_get(cs->target);
-    if(!target_cs)
+    struct entity *target = G_EntityForUID(cs->target_uid);
+    if(!target || (target->flags & ENTITY_FLAG_ZOMBIE))
         return; /* Our target already got 'killed' */
 
-    if(ents_distance(self, cs->target) <= ENEMY_MELEE_ATTACK_RANGE) {
+    struct combatstate *target_cs = combatstate_get(cs->target_uid);
+    assert(target_cs);
+    if(target_cs->state == STATE_DEATH_ANIM_PLAYING)
+        return; 
 
-        float dmg = G_Combat_GetBaseDamage(self) * (1.0f - G_Combat_GetBaseArmour(cs->target));
-        target_cs->current_hp = MAX(0.0f, target_cs->current_hp - dmg);
+    if(ents_distance(self, target) <= ENEMY_MELEE_ATTACK_RANGE) {
 
-        if(target_cs->current_hp == 0.0f && cs->target->max_hp > 0) {
+        float dmg = G_Combat_GetBaseDamage(self) * (1.0f - G_Combat_GetBaseArmour(target));
+        target_cs->current_hp = MAX(0, target_cs->current_hp - dmg);
 
-            G_Move_Stop(cs->target);
-            G_Combat_RemoveEntity(cs->target);
-            cs->target->flags &= ~ENTITY_FLAG_COMBATABLE;
+        if(target_cs->current_hp == 0 && target->max_hp > 0) {
 
-            if(cs->target->flags & ENTITY_FLAG_SELECTABLE) {
-                G_Sel_Remove(cs->target);
-                cs->target->flags &= ~ENTITY_FLAG_SELECTABLE;
+            G_Move_Stop(target);
+
+            if(target->flags & ENTITY_FLAG_SELECTABLE) {
+                G_Sel_Remove(target);
+                target->flags &= ~ENTITY_FLAG_SELECTABLE;
             }
 
-            E_Entity_Notify(EVENT_ENTITY_DEATH, cs->target->uid, NULL, ES_ENGINE);
-            E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, cs->target->uid, on_death_anim_finish,
-                cs->target, G_RUNNING);
+            E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_attack_anim_finish);
+            E_Entity_Notify(EVENT_ENTITY_DEATH, cs->target_uid, NULL, ES_ENGINE);
+            E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_death_anim_finish, target, G_RUNNING);
+
+            vec_pentity_push(&s_dying_ents, target);
+            target_cs->state = STATE_DEATH_ANIM_PLAYING;
         }
     }
 }
@@ -267,7 +308,7 @@ static void on_30hz_tick(void *user, void *event)
         if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
             continue;
 
-        struct combatstate *cs = combatstate_get(curr);
+        struct combatstate *cs = combatstate_get(curr->uid);
         assert(cs);
 
         switch(cs->state) {
@@ -285,7 +326,7 @@ static void on_30hz_tick(void *user, void *event)
                     assert(cs->stance == COMBAT_STANCE_AGGRESSIVE 
                         || cs->stance == COMBAT_STANCE_HOLD_POSITION);
 
-                    cs->target = enemy;
+                    cs->target_uid = enemy->uid;
                     cs->state = STATE_CAN_ATTACK;
 
                     entity_turn_to_target(curr, enemy);
@@ -293,7 +334,7 @@ static void on_30hz_tick(void *user, void *event)
                 
                 }else if(cs->stance == COMBAT_STANCE_AGGRESSIVE) {
 
-                    cs->target = enemy;
+                    cs->target_uid = enemy->uid;
                     cs->state = STATE_MOVING_TO_TARGET;
 
                     vec2_t move_dest_xz;
@@ -308,14 +349,11 @@ static void on_30hz_tick(void *user, void *event)
         }
         case STATE_MOVING_TO_TARGET:
         {
-            assert(cs->target);
-
             /* Handle the case where our target dies before we reach it */
             struct entity *enemy = closest_enemy_in_range(curr);
             if(!enemy) {
 
                 cs->state = STATE_NOT_IN_COMBAT; 
-                cs->target = NULL;
 
                 if(cs->move_cmd_interrupted) {
                     G_Move_SetDest(curr, cs->move_cmd_xz);
@@ -326,12 +364,12 @@ static void on_30hz_tick(void *user, void *event)
                 break;
 
             /* And the case where a different target becomes even closer */
-            }else if(enemy != cs->target) {
-                cs->target = enemy;
+            }else if(enemy->uid != cs->target_uid) {
+                cs->target_uid = enemy->uid;
             }
 
             /* Check if we're within attacking range of our target */
-            if(ents_distance(curr, cs->target) <= ENEMY_MELEE_ATTACK_RANGE) {
+            if(ents_distance(curr, enemy) <= ENEMY_MELEE_ATTACK_RANGE) {
 
                 cs->state = STATE_CAN_ATTACK;
                 G_Move_Stop(curr);
@@ -342,19 +380,20 @@ static void on_30hz_tick(void *user, void *event)
         }
         case STATE_CAN_ATTACK:
         {
-            /* Perform combat simulation between entities with targets within range */
-            assert(cs->target);
+            /* Our target could have 'died' or gotten out of combat range - check this first. */
+            const struct entity *target = G_EntityForUID(cs->target_uid);
 
-            /* Our target could have 'died' and had its' combatstate removed - check this first. */
-            struct combatstate *target_cs;
-            if((target_cs = combatstate_get(cs->target)) == NULL
-            || ents_distance(curr, cs->target) > ENEMY_MELEE_ATTACK_RANGE) {
+            if(!target  /* dead and gone */
+            || (target->flags & ENTITY_FLAG_ZOMBIE) /* zombie */
+            || combatstate_get(cs->target_uid)->state == STATE_DEATH_ANIM_PLAYING /* dying */
+            || ents_distance(curr, target) > ENEMY_MELEE_ATTACK_RANGE) {
 
                 /* First check if there's another suitable target */
                 struct entity *enemy = closest_enemy_in_range(curr);
                 if(enemy && ents_distance(curr, enemy) <= ENEMY_MELEE_ATTACK_RANGE) {
-                    cs->target = enemy;
-                    entity_turn_to_target(curr, cs->target);
+
+                    cs->target_uid = enemy->uid;
+                    entity_turn_to_target(curr, enemy);
                     break;
                 }
 
@@ -366,6 +405,7 @@ static void on_30hz_tick(void *user, void *event)
                 }
 
             }else{
+                /* Perform combat simulation between entities with targets within range */
                 cs->state = STATE_ATTACK_ANIM_PLAYING;
                 E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, curr->uid, on_attack_anim_finish, curr, G_RUNNING);
             }
@@ -373,6 +413,7 @@ static void on_30hz_tick(void *user, void *event)
             break;
         }
         case STATE_ATTACK_ANIM_PLAYING:
+        case STATE_DEATH_ANIM_PLAYING:
             /* No-op */
             break;
         default: assert(0);
@@ -390,6 +431,7 @@ bool G_Combat_Init(void)
     if(NULL == (s_entity_state_table = kh_init(state)))
         return false;
 
+    vec_pentity_init(&s_dying_ents);
     E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
     return true;
 }
@@ -397,12 +439,13 @@ bool G_Combat_Init(void)
 void G_Combat_Shutdown(void)
 {
     E_Global_Unregister(EVENT_30HZ_TICK, on_30hz_tick);
+    vec_pentity_destroy(&s_dying_ents);
     kh_destroy(state, s_entity_state_table);
 }
 
 void G_Combat_AddEntity(const struct entity *ent, enum combat_stance initial)
 {
-    assert(combatstate_get(ent) == NULL);
+    assert(combatstate_get(ent->uid) == NULL);
     assert(ent->flags & ENTITY_FLAG_COMBATABLE);
 
     struct combatstate new_cs = (struct combatstate) {
@@ -410,7 +453,6 @@ void G_Combat_AddEntity(const struct entity *ent, enum combat_stance initial)
         .current_hp = ent->max_hp,
         .stance = initial,
         .state = STATE_NOT_IN_COMBAT,
-        .target = NULL,
         .move_cmd_interrupted = false
     };
     combatstate_set(ent, &new_cs);
@@ -421,7 +463,7 @@ void G_Combat_RemoveEntity(const struct entity *ent)
     if(!(ent->flags & ENTITY_FLAG_COMBATABLE))
         return;
 
-    struct combatstate *cs = combatstate_get(ent);
+    struct combatstate *cs = combatstate_get(ent->uid);
     assert(cs);
 
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish);
@@ -431,13 +473,14 @@ void G_Combat_RemoveEntity(const struct entity *ent)
     || cs->state == STATE_CAN_ATTACK) {
         E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
     }
+    dying_remove(ent);
     combatstate_remove(ent);
 }
 
 bool G_Combat_SetStance(const struct entity *ent, enum combat_stance stance)
 {
     assert(ent->flags & ENTITY_FLAG_COMBATABLE);
-    struct combatstate *cs = combatstate_get(ent);
+    struct combatstate *cs = combatstate_get(ent->uid);
     assert(cs);
 
     if(stance == cs->stance)
@@ -451,7 +494,6 @@ bool G_Combat_SetStance(const struct entity *ent, enum combat_stance stance)
 
         G_Move_RemoveEntity(ent);
         cs->state = STATE_NOT_IN_COMBAT;
-        cs->target = NULL;
         cs->move_cmd_interrupted = false;
     }
 
@@ -461,7 +503,7 @@ bool G_Combat_SetStance(const struct entity *ent, enum combat_stance stance)
 
 void G_Combat_ClearSavedMoveCmd(const struct entity *ent)
 {
-    struct combatstate *cs = combatstate_get(ent);
+    struct combatstate *cs = combatstate_get(ent->uid);
     if(cs) {
         cs->move_cmd_interrupted = false;
     }
@@ -469,12 +511,11 @@ void G_Combat_ClearSavedMoveCmd(const struct entity *ent)
 
 void G_Combat_StopAttack(const struct entity *ent)
 {
-    struct combatstate *cs = combatstate_get(ent);
+    struct combatstate *cs = combatstate_get(ent->uid);
     if(!cs)
         return;
 
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish);
-    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_death_anim_finish);
 
     if(cs->state == STATE_ATTACK_ANIM_PLAYING
     || cs->state == STATE_CAN_ATTACK) {
@@ -482,7 +523,6 @@ void G_Combat_StopAttack(const struct entity *ent)
     }
 
     cs->state = STATE_NOT_IN_COMBAT;
-    cs->target = NULL;
 
     if(cs->move_cmd_interrupted) {
         G_Move_SetDest(ent, cs->move_cmd_xz);
@@ -494,43 +534,182 @@ int G_Combat_GetCurrentHP(const struct entity *ent)
 {
     assert(ent->flags & ENTITY_FLAG_COMBATABLE);
 
-    struct combatstate *cs = combatstate_get(ent);
+    struct combatstate *cs = combatstate_get(ent->uid);
     assert(cs);
     return cs->current_hp;
 }
 
 void G_Combat_SetBaseArmour(const struct entity *ent, float armour_pc)
 {
-    struct combatstate *cs = combatstate_get(ent);
+    struct combatstate *cs = combatstate_get(ent->uid);
     assert(cs);
     cs->stats.base_armour_pc = armour_pc;
 }
 
 float G_Combat_GetBaseArmour(const struct entity *ent)
 {
-    struct combatstate *cs = combatstate_get(ent);
+    struct combatstate *cs = combatstate_get(ent->uid);
     assert(cs);
     return cs->stats.base_armour_pc;
 }
 
 void G_Combat_SetBaseDamage(const struct entity *ent, int dmg)
 {
-    struct combatstate *cs = combatstate_get(ent);
+    struct combatstate *cs = combatstate_get(ent->uid);
     assert(cs);
     cs->stats.base_dmg = dmg;
 }
 
 int G_Combat_GetBaseDamage(const struct entity *ent)
 {
-    struct combatstate *cs = combatstate_get(ent);
+    struct combatstate *cs = combatstate_get(ent->uid);
     assert(cs);
     return cs->stats.base_dmg;
 }
 
 void G_Combat_SetHP(const struct entity *ent, int hp)
 {
-    struct combatstate *cs = combatstate_get(ent);
+    struct combatstate *cs = combatstate_get(ent->uid);
     assert(cs);
     cs->current_hp = MIN(hp, ent->max_hp);
+}
+
+bool G_Combat_SaveState(struct SDL_RWops *stream)
+{
+    struct attr num_ents = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_entity_state_table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_ents, "num_ents"));
+
+    uint32_t key;
+    struct combatstate curr;
+
+    kh_foreach(s_entity_state_table, key, curr, {
+
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = key
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
+    
+        /* The HP is already loaded and set along with the entity */
+
+        struct attr stance = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.stance
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &stance, "stance"));
+
+        struct attr state = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.state
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &state, "state"));
+
+        struct attr target_uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.target_uid 
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &target_uid, "target_uid"));
+
+        struct attr move_cmd_interrupted = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.move_cmd_interrupted
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &move_cmd_interrupted, "move_cmd_interrupted"));
+
+        struct attr move_cmd_xz = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr.move_cmd_xz
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &move_cmd_xz, "move_cmd_xz"));
+    });
+
+    struct attr num_dying = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = vec_size(&s_dying_ents)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_dying, "num_dying"));
+
+    for(int i = 0; i < vec_size(&s_dying_ents); i++) {
+    
+        const struct entity *curr_ent = vec_AT(&s_dying_ents, i);
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr_ent->uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "dying_ent_uid"));
+    }
+
+    return true;
+}
+
+bool G_Combat_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_ents = attr.val.as_int;
+
+    for(int i = 0; i < num_ents; i++) {
+    
+        uint32_t uid;
+        struct combatstate *cs;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uid = attr.val.as_int;
+
+        /* The entity should have already been loaded from the scripting state */
+        khiter_t k = kh_get(state, s_entity_state_table, uid);
+        CHK_TRUE_RET(k != kh_end(s_entity_state_table));
+        cs = &kh_value(s_entity_state_table, k);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        cs->stance = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        cs->state = attr.val.as_int;
+
+        if(cs->state == STATE_ATTACK_ANIM_PLAYING) {
+            struct entity *ent = G_EntityForUID(uid);
+            CHK_TRUE_RET(ent);
+            E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_attack_anim_finish, ent, G_RUNNING);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        cs->target_uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        cs->move_cmd_interrupted = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        cs->move_cmd_xz = attr.val.as_vec2;
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_dying = attr.val.as_int;
+
+    for(int i = 0; i < num_dying; i++) {
+    
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uint32_t uid = attr.val.as_int;
+
+        struct entity *ent = G_EntityForUID(uid);
+        CHK_TRUE_RET(ent);
+        vec_pentity_push(&s_dying_ents, ent);
+        E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_death_anim_finish, ent, G_RUNNING);
+    }
+
+    return true;
 }
 

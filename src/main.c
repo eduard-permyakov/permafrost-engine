@@ -551,7 +551,7 @@ void Engine_WaitRenderWorkDone(void)
 
 void Engine_ClearPendingEvents(void)
 {
-    SDL_FlushEvents(0, ~((uint32_t)0));
+    SDL_FlushEvents(0, SDL_LASTEVENT);
     E_ClearPendingEvents();
 }
 

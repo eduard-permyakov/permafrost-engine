@@ -999,7 +999,8 @@ static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self)
     PyObject *max_hp = PyInt_FromLong(self->super.ent->max_hp);
     PyObject *base_dmg = PyInt_FromLong(G_Combat_GetBaseDamage(self->super.ent));
     PyObject *base_armour = PyFloat_FromDouble(G_Combat_GetBaseArmour(self->super.ent));
-    CHK_TRUE(max_hp && base_dmg && base_armour, fail_pickle);
+    PyObject *curr_hp = PyInt_FromLong(G_Combat_GetCurrentHP(self->super.ent));
+    CHK_TRUE(max_hp && base_dmg && base_armour && curr_hp, fail_pickle);
 
     bool status;
     status = S_PickleObjgraph(max_hp, stream);
@@ -1007,6 +1008,8 @@ static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self)
     status = S_PickleObjgraph(base_dmg, stream);
     CHK_TRUE(status, fail_pickle);
     status = S_PickleObjgraph(base_armour, stream);
+    CHK_TRUE(status, fail_pickle);
+    status = S_PickleObjgraph(curr_hp, stream);
     CHK_TRUE(status, fail_pickle);
 
     Py_DECREF(max_hp);
@@ -1022,6 +1025,7 @@ fail_pickle:
     Py_XDECREF(max_hp);
     Py_XDECREF(base_dmg);
     Py_XDECREF(base_armour);
+    Py_XDECREF(curr_hp);
     SDL_RWclose(stream);
 fail_stream:
     Py_XDECREF(ret);
@@ -1032,7 +1036,7 @@ fail_args:
 static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args)
 {
     char tmp;
-    PyObject *max_hp = NULL, *base_dmg = NULL, *base_armour = NULL;
+    PyObject *max_hp = NULL, *base_dmg = NULL, *base_armour = NULL, *curr_hp = NULL;
     PyObject *ret = NULL;
     int status;
 
@@ -1079,6 +1083,12 @@ static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args)
     status = PyObject_SetAttrString(ent, "base_armour", base_armour);
     CHK_TRUE(0 == status, fail_unpickle);
 
+    curr_hp = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    CHK_TRUE(PyInt_Check(curr_hp), fail_unpickle);
+    G_Combat_SetHP(((PyEntityObject*)ent)->ent, PyInt_AS_LONG(curr_hp));
+
     nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
     ret = Py_BuildValue("Oi", ent, nread);
 
@@ -1086,6 +1096,7 @@ fail_unpickle:
     Py_XDECREF(max_hp);
     Py_XDECREF(base_dmg);
     Py_XDECREF(base_armour);
+    Py_XDECREF(curr_hp);
     SDL_RWclose(stream);
 fail_stream:
     Py_DECREF(ent);

@@ -113,18 +113,6 @@ static void g_reset(void)
 {
     G_Sel_Clear();
 
-    if(s_gs.map) {
-
-        M_Raycast_Uninstall();
-        M_FreeMinimap(s_gs.map);
-        AL_MapFree(s_gs.map);
-        G_Move_Shutdown();
-        G_Combat_Shutdown();
-        G_ClearPath_Shutdown();
-        G_Pos_Shutdown();
-        s_gs.map = NULL;
-    }
-
     uint32_t key;
     struct entity *curr;
     (void)key;
@@ -139,6 +127,18 @@ static void g_reset(void)
     vec_pentity_reset(&s_gs.visible);
     vec_pentity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
+
+    if(s_gs.map) {
+
+        M_Raycast_Uninstall();
+        M_FreeMinimap(s_gs.map);
+        AL_MapFree(s_gs.map);
+        G_Move_Shutdown();
+        G_Combat_Shutdown();
+        G_ClearPath_Shutdown();
+        G_Pos_Shutdown();
+        s_gs.map = NULL;
+    }
 
     for(int i = 0; i < NUM_CAMERAS; i++) {
         g_reset_camera(s_gs.cameras[i]);
@@ -1378,11 +1378,9 @@ void G_Zombiefy(struct entity *ent)
     }
 
     G_Move_RemoveEntity(ent);
-    G_Combat_RemoveEntity(ent);
 
     ent->flags &= ~ENTITY_FLAG_SELECTABLE;
     ent->flags &= ~ENTITY_FLAG_COLLISION;
-    ent->flags &= ~ENTITY_FLAG_COMBATABLE;
     ent->flags &= ~ENTITY_FLAG_ANIMATED;
 
     ent->flags |= ENTITY_FLAG_INVISIBLE;
@@ -1662,6 +1660,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Move_SaveState(stream))
         return false;
 
+    if(!G_Combat_SaveState(stream))
+        return false;
+
     return true;
 }
 
@@ -1675,6 +1676,9 @@ bool G_LoadEntityState(SDL_RWops *stream)
         return false;
 
     if(!G_Move_LoadState(stream))
+        return false;
+
+    if(!G_Combat_LoadState(stream))
         return false;
 
     return true;
