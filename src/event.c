@@ -34,6 +34,7 @@
  */
 
 #include "event.h"
+#include "main.h"
 #include "lib/public/khash.h"
 #include "lib/public/vec.h"
 #include "lib/public/queue.h"
@@ -53,9 +54,9 @@ struct handler_desc{
         handler_t       as_function;
         script_opaque_t as_script_callable;
     }handler;
-    void *user_arg;
-    /* Specifies during which simulation states the handler gets invoked */
-    int simmask;
+    void          *user_arg;
+    int            simmask;    /* Specifies during which simulation states the handler gets invoked */
+    unsigned long  tick_added; /* The sumulation tick during which the handler has been registered */
 };
 
 struct event{
@@ -125,6 +126,12 @@ static bool e_register_handler(uint64_t key, struct handler_desc *desc)
     }else{
     
         vec_hd_t vec = kh_value(s_event_handler_table, k);
+
+        int idx;
+        vec_hd_indexof(&vec, *desc, handlers_equal, &idx);
+        if(idx != -1)
+            return false; /* Don't allow registering duplicate handlers for the same event */
+
         vec_hd_push(&vec, *desc);
         kh_value(s_event_handler_table, k) = vec;
     }
@@ -162,33 +169,66 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
 
 static void e_handle_event(struct event event)
 {
-    khiter_t k;
     uint64_t key = e_key(event.receiver_id, event.type);
-    k = kh_get(handler_desc, s_event_handler_table, key);
     enum simstate ss = G_GetSimState();
     
-    if(k == kh_end(s_event_handler_table))
-        return; 
-    
-    vec_hd_t vec = kh_value(s_event_handler_table, k);
+    /* The execution of an event handler can cause one or more event handlers 
+     * to be unregistered. We want to provide a guarantee that once an event 
+     * handler is unregistered, it will never be executed. So, keep fetching 
+     * the handlers vector from the table after every execution, in case it's
+     * been changed by the prior handler call.
+     * 
+     * However, we also don't want to immediately execute handlers that have
+     * been added by another event handler. If we register a handler for the same 
+     * event inside of a handler - don't execute it immediately but instead wait 
+     * until the next time we receive that event. Use the 'tick_added' field to 
+     * identify newly added handlers.
+     */
 
-    for(int i = 0; i < vec_size(&vec); i++) {
-    
-        struct handler_desc *elem = &vec_AT(&vec, i);
+    vec_hd_t execd_handlers;
+    vec_hd_init(&execd_handlers);
+    bool ran; 
 
-        if((elem->simmask & ss) == 0)
-            continue;
-    
-        if(elem->type == HANDLER_TYPE_ENGINE) {
-            elem->handler.as_function(elem->user_arg, event.arg);
-        }else if(elem->type == HANDLER_TYPE_SCRIPT) {
+    do{
+        ran = false;
+        khiter_t k = kh_get(handler_desc, s_event_handler_table, key);
+        if(k == kh_end(s_event_handler_table))
+            break; 
 
-            script_opaque_t script_arg = (event.source == ES_SCRIPT) ? S_UnwrapIfWeakref(event.arg)
-                : S_WrapEngineEventArg(event.type, event.arg);
-            assert(script_arg);
-            S_RunEventHandler(elem->handler.as_script_callable, S_UnwrapIfWeakref(elem->user_arg), script_arg);
+        vec_hd_t vec = kh_value(s_event_handler_table, k);
+        for(int i = 0; i < vec_size(&vec); i++) {
+        
+            struct handler_desc *elem = &vec_AT(&vec, i);
+            int idx;
+            vec_hd_indexof(&execd_handlers, *elem, handlers_equal, &idx); 
+            if(idx != -1)
+                continue;
+            /* memoize any handlers that we've already ran */
+            vec_hd_push(&execd_handlers, *elem);
+
+            if((elem->simmask & ss) == 0)
+                continue;
+            if(elem->tick_added == g_frame_idx)
+                continue;
+
+            if(elem->type == HANDLER_TYPE_ENGINE) {
+                elem->handler.as_function(elem->user_arg, event.arg);
+            }else if(elem->type == HANDLER_TYPE_SCRIPT) {
+
+                script_opaque_t script_arg = (event.source == ES_SCRIPT) 
+                    ? S_UnwrapIfWeakref(event.arg)
+                    : S_WrapEngineEventArg(event.type, event.arg);
+                assert(script_arg);
+                S_RunEventHandler(elem->handler.as_script_callable, S_UnwrapIfWeakref(elem->user_arg), script_arg);
+            }
+
+            ran = true;
+            break;
         }
-    }
+    
+    }while(ran);
+
+    vec_hd_destroy(&execd_handlers);
 
     if(event.source == ES_SCRIPT)
         S_Release(event.arg);
@@ -311,7 +351,7 @@ size_t E_GetScriptHandlers(size_t max_out, struct script_handler *out)
 
             assert(hd.handler.as_script_callable && hd.user_arg);
             out[ret] = (struct script_handler){
-                .event = key & 0xffffffff,
+                .event = key & ~((uint32_t)0),
                 .id = key >> 32,
                 .simmask = hd.simmask,
                 .handler = hd.handler.as_script_callable,
@@ -340,6 +380,7 @@ bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg, 
     hd.handler.as_function = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
+    hd.tick_added = g_frame_idx;
 
     return e_register_handler(e_key(GLOBAL_ID, event), &hd);
 }
@@ -361,6 +402,7 @@ bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler,
     hd.handler.as_script_callable = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
+    hd.tick_added = g_frame_idx;
 
     return e_register_handler(e_key(GLOBAL_ID, event), &hd);
 }
@@ -392,6 +434,7 @@ bool E_Entity_Register(enum eventtype event, uint32_t ent_uid, handler_t handler
     hd.handler.as_function = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
+    hd.tick_added = g_frame_idx;
 
     return e_register_handler(e_key(ent_uid, event), &hd);
 }
@@ -413,6 +456,7 @@ bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid,
     hd.handler.as_script_callable = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
+    hd.tick_added = g_frame_idx;
 
     return e_register_handler(e_key(ent_uid, event), &hd);
 }
