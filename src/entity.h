@@ -98,6 +98,7 @@ VEC_IMPL(static inline, ranim, struct ent_anim_rstate)
 
 void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
 uint32_t Entity_NewUID(void);
+void     Entity_SetNextUID(uint32_t uid);
 void     Entity_CurrentOBB(const struct entity *ent, struct obb *out);
 vec3_t   Entity_TopCenterPointWS(const struct entity *ent);
 

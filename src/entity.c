@@ -40,6 +40,12 @@
 #include <assert.h>
 
 /*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+static uint32_t s_next_uid = 0;
+
+/*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
@@ -58,8 +64,12 @@ void Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out)
 
 uint32_t Entity_NewUID(void)
 {
-    static uint32_t uid = 0;
-    return uid++;
+    return s_next_uid++;
+}
+
+void Entity_SetNextUID(uint32_t uid)
+{
+    s_next_uid = uid;
 }
 
 void Entity_CurrentOBB(const struct entity *ent, struct obb *out)

@@ -541,6 +541,9 @@ void Engine_FlushRenderWorkQueue(void)
 
 void Engine_WaitRenderWorkDone(void)
 {
+    if(s_quit)
+        return;
+
     /* Wait for the render thread to finish, but don't yet clear/ack the 'done' flag */
     SDL_LockMutex(s_rstate.done_lock);
     while(!s_rstate.done) {

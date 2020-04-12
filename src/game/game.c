@@ -109,45 +109,6 @@ static void g_reset_camera(struct camera *cam)
     Camera_SetPos(cam, (vec3_t){ 0.0f, CAM_HEIGHT, 0.0f }); 
 }
 
-static void g_reset(void)
-{
-    G_Sel_Clear();
-
-    uint32_t key;
-    struct entity *curr;
-    (void)key;
-
-    kh_foreach(s_gs.active, key, curr, {
-        G_RemoveEntity(curr);
-        G_SafeFree(curr);
-    });
-
-    kh_clear(entity, s_gs.active);
-    kh_clear(entity, s_gs.dynamic);
-    vec_pentity_reset(&s_gs.visible);
-    vec_pentity_reset(&s_gs.light_visible);
-    vec_obb_reset(&s_gs.visible_obbs);
-
-    if(s_gs.map) {
-
-        M_Raycast_Uninstall();
-        M_FreeMinimap(s_gs.map);
-        AL_MapFree(s_gs.map);
-        G_Move_Shutdown();
-        G_Combat_Shutdown();
-        G_ClearPath_Shutdown();
-        G_Pos_Shutdown();
-        s_gs.map = NULL;
-    }
-
-    for(int i = 0; i < NUM_CAMERAS; i++) {
-        g_reset_camera(s_gs.cameras[i]);
-    }
-    G_ActivateCamera(0, CAM_MODE_RTS);
-
-    s_gs.num_factions = 0;
-}
-
 static bool g_init_cameras(void) 
 {
     for(int i = 0; i < NUM_CAMERAS; i++) {
@@ -545,7 +506,7 @@ bool G_Init(void)
         goto fail_ws;
     }
 
-    g_reset();
+    G_ClearState();
     G_Sel_Init();
     G_Sel_Enable();
     G_Timer_Init();
@@ -702,15 +663,7 @@ bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    g_reset();
-
-    if(s_gs.prev_tick_map) {
-        /* The render thread still owns the previous tick map. Wait 
-         * for it to complete before we free the buffer. */
-        Engine_WaitRenderWorkDone();
-        free((void*)s_gs.prev_tick_map);
-        s_gs.prev_tick_map = NULL;
-    }
+    G_ClearState();
 
     size_t copysize = AL_MapShallowCopySize(stream);
     s_gs.prev_tick_map = malloc(copysize);
@@ -725,6 +678,56 @@ bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
     E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
 
     return true;
+}
+
+void G_ClearState(void)
+{
+    G_Sel_Clear();
+
+    uint32_t key;
+    struct entity *curr;
+    (void)key;
+
+    kh_foreach(s_gs.active, key, curr, {
+        /* The move markers are removed in G_Move_Shutdown */
+        if(!strcmp(curr->name, "__move_marker__"))
+            continue;
+        G_RemoveEntity(curr);
+        G_SafeFree(curr);
+    });
+
+    kh_clear(entity, s_gs.active);
+    kh_clear(entity, s_gs.dynamic);
+    vec_pentity_reset(&s_gs.visible);
+    vec_pentity_reset(&s_gs.light_visible);
+    vec_obb_reset(&s_gs.visible_obbs);
+
+    if(s_gs.map) {
+
+        M_Raycast_Uninstall();
+        M_FreeMinimap(s_gs.map);
+        AL_MapFree(s_gs.map);
+        G_Move_Shutdown();
+        G_Combat_Shutdown();
+        G_ClearPath_Shutdown();
+        G_Pos_Shutdown();
+        s_gs.map = NULL;
+    }
+
+    if(s_gs.prev_tick_map) {
+        /* The render thread still owns the previous tick map. Wait 
+         * for it to complete before we free the buffer. */
+        Engine_WaitRenderWorkDone();
+        free((void*)s_gs.prev_tick_map);
+        s_gs.prev_tick_map = NULL;
+    }
+
+    for(int i = 0; i < NUM_CAMERAS; i++) {
+        g_reset_camera(s_gs.cameras[i]);
+    }
+    G_ActivateCamera(0, CAM_MODE_RTS);
+
+    s_gs.num_factions = 0;
 }
 
 void G_GetMinimapPos(float *out_x, float *out_y)
@@ -855,9 +858,7 @@ void G_Shutdown(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    g_reset();
-    free((void*)s_gs.prev_tick_map);
-    s_gs.prev_tick_map = NULL;
+    G_ClearState();
 
     R_DestroyWS(&s_gs.ws[0]);
     R_DestroyWS(&s_gs.ws[1]);
@@ -1562,12 +1563,7 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     if(attr.val.as_bool) {
         CHK_TRUE_RET(G_NewGameWithMap(stream, true));
     }else{
-        g_reset();
-
-        Engine_WaitRenderWorkDone();
-        free((void*)s_gs.prev_tick_map);
-        s_gs.prev_tick_map = NULL;
-
+        G_ClearState();
         E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
     }
 

@@ -1333,11 +1333,13 @@ static PyObject *PyPf_save_session(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_load_session(PyObject *self, PyObject *args)
 {
-    //TODO: actually parse the args
-    Session_RequestLoad("test.pfsave");
-    //TODO: add a new event: something like SESSION_LOAD_DONE
-    //register an event handler. In the handler, we can raise
-    //an exception if the saving wasn't kosher
+    const char *str;
+    if(!PyArg_ParseTuple(args, "s", &str)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string (path of the file to load the session from).");
+        return NULL;
+    }
+
+    Session_RequestLoad(str);
     Py_RETURN_NONE;
 }
 

@@ -100,6 +100,7 @@ struct render_input{
 bool   G_Init(void);
 bool   G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid);
 void   G_Shutdown(void);
+void   G_ClearState(void);
 
 void   G_Update(void);
 void   G_Render(void);
