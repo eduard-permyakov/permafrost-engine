@@ -635,7 +635,7 @@ def save_scene(filename):
         scenefile.write("num_entities {0}\n".format(len(globals.active_objects_list)))
         for obj in globals.active_objects_list:
             num_atts = 8
-            meta_dict = __meta_dict_for_path(obj.pfobj_path[len(MODELS_PREFIX_DIR) + 2:])
+            meta_dict = __meta_dict_for_path(obj.pfobj_path[len(MODELS_PREFIX_DIR):])
             assert(meta_dict is not None)
             if "idle" in meta_dict:
                 num_atts += 1
