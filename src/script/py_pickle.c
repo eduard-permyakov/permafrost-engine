@@ -655,8 +655,8 @@ static struct pickle_entry s_pf_dispatch_table[] = {
     {.type = NULL, /* PyAnimEntity_type */  .picklefunc = custom_pickle                },
     {.type = NULL, /* PyCombatableEntity_type */ .picklefunc = custom_pickle           },
     {.type = NULL, /* PyTile_type */        .picklefunc = placeholder_inst_pickle      },
-    {.type = NULL, /* PyWindow_type */      .picklefunc = placeholder_inst_pickle      },
-    {.type = NULL, /* PyUIButtonStyle_type */ .picklefunc = placeholder_inst_pickle    },
+    {.type = NULL, /* PyWindow_type */      .picklefunc = custom_pickle                },
+    {.type = NULL, /* PyUIButtonStyle_type */ .picklefunc = custom_pickle              },
 };
 
 static unpickle_func_t s_op_dispatch_table[256] = {
@@ -806,6 +806,7 @@ struct sc_map_entry{
     { NULL, /*&PyEntity_type*/              NULL },
     { NULL, /*&PyAnimEntity_type*/          NULL },
     { NULL, /*&PyCombatableEntity_type*/    NULL },
+    { NULL, /*&PyWindow_type*/              NULL },
 };
 
 /*****************************************************************************/
@@ -1385,6 +1386,13 @@ static void create_builtin_subclasses(void)
 
     bi = (PyTypeObject*)PyObject_GetAttrString(pfmod, "CombatableEntity");
     args = Py_BuildValue("s(O){}", "__combatable_entity_subclass__", (PyObject*)bi, NULL);
+    sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
+    assert(sc);
+    s_subclassable_builtin_map[++idx] = (struct sc_map_entry){ bi, (PyTypeObject*)sc };
+    Py_DECREF(args);
+
+    bi = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Window");
+    args = Py_BuildValue("s(O){}", "__window_subclass__", (PyObject*)bi, NULL);
     sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
     assert(sc);
     s_subclassable_builtin_map[++idx] = (struct sc_map_entry){ bi, (PyTypeObject*)sc };
@@ -7372,6 +7380,7 @@ void S_Pickle_Shutdown(void)
     s_subclassable_builtin_map[19].builtin = NULL;
     s_subclassable_builtin_map[20].builtin = NULL;
     s_subclassable_builtin_map[21].builtin = NULL;
+    s_subclassable_builtin_map[22].builtin = NULL;
 }
 
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream)

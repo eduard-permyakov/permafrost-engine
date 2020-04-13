@@ -868,10 +868,10 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args)
     assert(((PyTypeObject*)cls)->tp_new);
     PyObject *entobj = ((PyTypeObject*)cls)->tp_new((struct _typeobject*)cls, ent_args, ent_kwargs);
     assert(entobj || PyErr_Occurred());
-    CHK_TRUE(entobj, fail_unpickle);
 
     Py_DECREF(ent_args);
     Py_DECREF(ent_kwargs);
+    CHK_TRUE(entobj, fail_unpickle);
 
     PyObject *pos = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
@@ -894,8 +894,13 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args)
     PyObject *faction_id = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
-    if(!pos        || !scale     || !rotation   || !flags 
-    || !sel_radius || !max_speed || !faction_id) {
+    if(!pos
+    || !scale
+    || !rotation
+    || !flags 
+    || !sel_radius 
+    || !max_speed 
+    || !faction_id) {
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle attributes of pf.Entity instance");
         goto fail_unpickle_atts;
     }

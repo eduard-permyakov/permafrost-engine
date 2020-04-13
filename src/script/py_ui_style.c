@@ -34,8 +34,11 @@
  */
 
 #include "py_ui_style.h"
+#include "py_pickle.h"
+#include "../ui.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/SDL_vec_rwops.h"
 #include "../render/public/render.h"
 
 #include <string.h>
@@ -43,6 +46,13 @@
 
 
 #define ARR_SIZE(a) (sizeof(a) / sizeof(a[0]))
+
+#define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
+#define CHK_TRUE_RET(_pred)   \
+    do{                       \
+        if(!(_pred))          \
+            return false;     \
+    }while(0)
 
 typedef struct {
     PyObject_HEAD
@@ -78,9 +88,25 @@ static int       PyPf_UIButtonStyle_set_image_padding(PyUIButtonStyleObject *sel
 static PyObject *PyPf_UIButtonStyle_get_touch_padding(PyUIButtonStyleObject *self, void *);
 static int       PyPf_UIButtonStyle_set_touch_padding(PyUIButtonStyleObject *self, PyObject *value, void *);
 
+static PyObject *PyPf_UIButtonStyle_pickle(PyUIButtonStyleObject *self);
+static PyObject *PyPf_UIButtonStyle_unpickle(PyObject *cls, PyObject *args);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
+
+static PyMethodDef PyPf_UIButtonStyle_methods[] = {
+    {"__pickle__", 
+    (PyCFunction)PyPf_UIButtonStyle_pickle, METH_NOARGS,
+    "Serialize a Permafrost Engine window to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyPf_UIButtonStyle_unpickle, METH_VARARGS | METH_CLASS,
+    "Create a new pf.Window instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
 
 static PyGetSetDef PyPf_UIButtonStyle_getset[] = {
     {"normal",
@@ -201,7 +227,7 @@ static PyTypeObject PyUIButtonStyle_type = {
     0,                         /* tp_weaklistoffset */
     0,                         /* tp_iter */
     0,                         /* tp_iternext */
-    0,                         /* tp_methods */
+    PyPf_UIButtonStyle_methods, /* tp_methods */
     0,                         /* tp_members */
     PyPf_UIButtonStyle_getset, /* tp_getset */
     0,                         /* tp_base */
@@ -588,6 +614,320 @@ static int PyPf_UIButtonStyle_set_touch_padding(PyUIButtonStyleObject *self, PyO
     return 0;
 }
 
+static bool save_color(struct SDL_RWops *stream, struct nk_color clr)
+{
+    PyObject *clrobj = Py_BuildValue("iiii", clr.r, clr.g, clr.g, clr.a);
+    CHK_TRUE_RET(clrobj);
+    bool ret = S_PickleObjgraph(clrobj, stream);
+    Py_DECREF(clrobj);
+    return ret;
+}
+
+static bool load_color(struct SDL_RWops *stream, struct nk_color *out)
+{
+    PyObject *obj = S_UnpickleObjgraph(stream);
+    CHK_TRUE_RET(obj);
+    if(!PyArg_ParseTuple(obj, "iiii", &out->r, &out->g, &out->b, &out->a)) {
+        Py_DECREF(obj);
+        return false;
+    }
+    Py_DECREF(obj);
+
+    char tmp[1];
+    SDL_RWread(stream, tmp, 1, 1);
+    return true;
+}
+
+static bool save_float(struct SDL_RWops *stream, float flt)
+{
+    PyObject *fltobj = PyFloat_FromDouble(flt);
+    CHK_TRUE_RET(fltobj);
+    bool ret = S_PickleObjgraph(fltobj, stream);
+    Py_DECREF(fltobj);
+    return ret;
+}
+
+static bool load_float(struct SDL_RWops *stream, float *out)
+{
+    PyObject *obj = S_UnpickleObjgraph(stream);
+    CHK_TRUE_RET(obj);
+    if(!PyFloat_Check(obj)) {
+        Py_DECREF(obj);
+        return false;
+    }
+    *out = PyFloat_AsDouble(obj);
+    Py_DECREF(obj);
+
+    char tmp[1];
+    SDL_RWread(stream, tmp, 1, 1);
+    return true;
+}
+
+static bool save_int(struct SDL_RWops *stream, int integer)
+{
+    PyObject *integerobj = PyInt_FromLong(integer);
+    CHK_TRUE_RET(integerobj);
+    bool ret = S_PickleObjgraph(integerobj, stream);
+    Py_DECREF(integerobj);
+    return ret;
+}
+
+static bool load_int(struct SDL_RWops *stream, int *out)
+{
+    PyObject *obj = S_UnpickleObjgraph(stream);
+    CHK_TRUE_RET(obj);
+    if(!PyInt_Check(obj)) {
+        Py_DECREF(obj);
+        return false;
+    }
+    *out = PyInt_AS_LONG(obj);
+    Py_DECREF(obj);
+
+    char tmp[1];
+    SDL_RWread(stream, tmp, 1, 1);
+    return true;
+}
+
+static bool save_vec2(struct SDL_RWops *stream, struct nk_vec2 vec)
+{
+    PyObject *vecobj = Py_BuildValue("ff", vec.x, vec.y);
+    CHK_TRUE_RET(vecobj);
+    bool ret = S_PickleObjgraph(vecobj, stream);
+    Py_DECREF(vecobj);
+    return ret;
+}
+
+static bool load_vec2(struct SDL_RWops *stream, struct nk_vec2 *out)
+{
+    PyObject *obj = S_UnpickleObjgraph(stream);
+    CHK_TRUE_RET(obj);
+    if(!PyArg_ParseTuple(obj, "ff", &out->x, &out->y)) {
+        Py_DECREF(obj);
+        return false;
+    }
+    Py_DECREF(obj);
+
+    char tmp[1];
+    SDL_RWread(stream, tmp, 1, 1);
+    return true;
+}
+
+bool save_item(struct SDL_RWops *stream, const struct nk_style_item *item)
+{
+    assert(item->type == NK_STYLE_ITEM_COLOR 
+        || item->type == NK_STYLE_ITEM_TEXPATH);
+
+    PyObject *val = item->type == NK_STYLE_ITEM_COLOR
+        ? Py_BuildValue("iiii", item->data.color.r, item->data.color.g, item->data.color.b, item->data.color.a)
+        : PyString_FromString(item->data.texpath);
+
+    PyObject *pickle = Py_BuildValue("iO", item->type, val);
+    Py_DECREF(val);
+
+    bool ret = S_PickleObjgraph(pickle, stream);
+    Py_DECREF(pickle);
+    return ret;
+}
+
+bool load_item(struct SDL_RWops *stream, struct nk_style_item *out)
+{
+    PyObject *obj = S_UnpickleObjgraph(stream);
+    if(!obj) {
+        return false;
+    }
+
+    int type;
+    PyObject *val;
+
+    if(!PyTuple_Check(obj)
+    || !PyArg_ParseTuple(obj, "iO", &type, &val)) {
+        Py_DECREF(obj);
+        return false;
+    }
+
+    if(type != NK_STYLE_ITEM_COLOR
+    && type != NK_STYLE_ITEM_TEXPATH) {
+        Py_DECREF(val);
+        return false;
+    }
+
+    if(type == NK_STYLE_ITEM_COLOR
+    && !PyArg_ParseTuple(val, "iiii", 
+       &out->data.color.r, &out->data.color.g, &out->data.color.b, &out->data.color.a)) {
+        Py_DECREF(val);
+        return false;
+    }
+
+    const char *str;
+    if(type == NK_STYLE_ITEM_TEXPATH) {
+        if(!PyString_Check(val)) {
+            Py_DECREF(val);
+            return false;
+        }
+        pf_snprintf(out->data.texpath, sizeof(out->data.texpath), "%s", PyString_AS_STRING(val));
+    }
+
+    out->type = type;
+    Py_DECREF(val);
+
+    char tmp[1];
+    SDL_RWread(stream, tmp, 1, 1); /* consume NULL byte */
+    return true;
+}
+
+bool save_button(struct SDL_RWops *stream, const struct nk_style_button *button)
+{
+    CHK_TRUE_RET(save_item(stream, &button->normal));
+    CHK_TRUE_RET(save_item(stream, &button->hover));
+    CHK_TRUE_RET(save_item(stream, &button->active));
+
+    CHK_TRUE_RET(save_color(stream, button->border_color));
+    CHK_TRUE_RET(save_color(stream, button->text_normal));
+    CHK_TRUE_RET(save_color(stream, button->text_hover));
+    CHK_TRUE_RET(save_color(stream, button->text_active));
+
+    CHK_TRUE_RET(save_int(stream, button->text_alignment));
+    CHK_TRUE_RET(save_float(stream, button->border));
+    CHK_TRUE_RET(save_float(stream, button->rounding));
+    CHK_TRUE_RET(save_vec2(stream, button->padding));
+    CHK_TRUE_RET(save_vec2(stream, button->image_padding));
+    CHK_TRUE_RET(save_vec2(stream, button->touch_padding));
+
+    return true;
+}
+
+bool load_button(struct SDL_RWops *stream, struct nk_style_button *out)
+{
+    CHK_TRUE_RET(load_item(stream, &out->normal));
+    CHK_TRUE_RET(load_item(stream, &out->hover));
+    CHK_TRUE_RET(load_item(stream, &out->active));
+
+    CHK_TRUE_RET(load_color(stream, &out->border_color));
+    CHK_TRUE_RET(load_color(stream, &out->text_normal));
+    CHK_TRUE_RET(load_color(stream, &out->text_hover));
+    CHK_TRUE_RET(load_color(stream, &out->text_active));
+
+    CHK_TRUE_RET(load_int(stream, (int*)&out->text_alignment));
+    CHK_TRUE_RET(load_float(stream, &out->border));
+    CHK_TRUE_RET(load_float(stream, &out->rounding));
+    CHK_TRUE_RET(load_vec2(stream, &out->padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->image_padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->touch_padding));
+
+    return true;
+}
+
+static bool save_header(struct SDL_RWops *stream, const struct nk_style_window_header *header)
+{
+    CHK_TRUE_RET(save_item(stream, &header->normal));
+    CHK_TRUE_RET(save_item(stream, &header->hover));
+    CHK_TRUE_RET(save_item(stream, &header->active));
+
+    CHK_TRUE_RET(save_button(stream, &header->close_button));
+    CHK_TRUE_RET(save_button(stream, &header->minimize_button));
+
+    CHK_TRUE_RET(save_int(stream, header->close_symbol));
+    CHK_TRUE_RET(save_int(stream, header->minimize_symbol));
+    CHK_TRUE_RET(save_int(stream, header->maximize_symbol));
+
+    CHK_TRUE_RET(save_color(stream, header->label_normal));
+    CHK_TRUE_RET(save_color(stream, header->label_hover));
+    CHK_TRUE_RET(save_color(stream, header->label_active));
+
+    CHK_TRUE_RET(save_int(stream, header->align));
+
+    CHK_TRUE_RET(save_vec2(stream, header->padding));
+    CHK_TRUE_RET(save_vec2(stream, header->label_padding));
+    CHK_TRUE_RET(save_vec2(stream, header->spacing));
+
+    return true;
+}
+
+static bool load_header(struct SDL_RWops *stream, struct nk_style_window_header *out)
+{
+    CHK_TRUE_RET(load_item(stream, &out->normal));
+    CHK_TRUE_RET(load_item(stream, &out->hover));
+    CHK_TRUE_RET(load_item(stream, &out->active));
+
+    CHK_TRUE_RET(load_button(stream, &out->close_button));
+    CHK_TRUE_RET(load_button(stream, &out->minimize_button));
+
+    CHK_TRUE_RET(load_int(stream, (int*)&out->close_symbol));
+    CHK_TRUE_RET(load_int(stream, (int*)&out->minimize_symbol));
+    CHK_TRUE_RET(load_int(stream, (int*)&out->maximize_symbol));
+
+    CHK_TRUE_RET(load_color(stream, &out->label_normal));
+    CHK_TRUE_RET(load_color(stream, &out->label_hover));
+    CHK_TRUE_RET(load_color(stream, &out->label_active));
+
+    CHK_TRUE_RET(load_int(stream, (int*)&out->align));
+
+    CHK_TRUE_RET(load_vec2(stream, &out->padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->label_padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->spacing));
+
+    return true;
+}
+
+static PyObject *PyPf_UIButtonStyle_pickle(PyUIButtonStyleObject *self)
+{
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+    CHK_TRUE(save_button(stream, self->style), fail_pickle);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error pickling pf.UIButtonStyle object");
+    }
+    return ret;
+}
+
+static PyObject *PyPf_UIButtonStyle_unpickle(PyObject *cls, PyObject *args)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    int status;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyObject *style_args = PyTuple_New(0);
+
+    PyObject *styleobj = PyObject_New(PyObject, &PyUIButtonStyle_type);
+    assert(styleobj || PyErr_Occurred());
+    Py_DECREF(style_args);
+    CHK_TRUE(styleobj, fail_unpickle);
+
+    struct nk_context *ctx = UI_GetContext();
+    ((PyUIButtonStyleObject*)styleobj)->style = &ctx->style.button;
+
+    CHK_TRUE(load_button(stream, ((PyUIButtonStyleObject*)styleobj)->style), fail_unpickle);
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", styleobj, (int)nread);
+    Py_DECREF(styleobj);
+
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_args:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error unpickling pf.UIButtonStyle object");
+    }
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -605,5 +945,85 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     global_button_style->style = &ctx->style.button;
 
     PyModule_AddObject(module, "button_style", (PyObject*)global_button_style);
+}
+
+bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_window *window)
+{
+    CHK_TRUE_RET(save_header(stream, &window->header));
+    CHK_TRUE_RET(save_item(stream, &window->fixed_background));
+    CHK_TRUE_RET(save_color(stream, window->background));
+
+    CHK_TRUE_RET(save_color(stream, window->border_color));
+    CHK_TRUE_RET(save_color(stream, window->popup_border_color));
+    CHK_TRUE_RET(save_color(stream, window->combo_border_color));
+    CHK_TRUE_RET(save_color(stream, window->contextual_border_color));
+    CHK_TRUE_RET(save_color(stream, window->menu_border_color));
+    CHK_TRUE_RET(save_color(stream, window->group_border_color));
+    CHK_TRUE_RET(save_color(stream, window->tooltip_border_color));
+    CHK_TRUE_RET(save_item(stream, &window->scaler));
+
+    CHK_TRUE_RET(save_float(stream, window->border));
+    CHK_TRUE_RET(save_float(stream, window->combo_border));
+    CHK_TRUE_RET(save_float(stream, window->contextual_border));
+    CHK_TRUE_RET(save_float(stream, window->menu_border));
+    CHK_TRUE_RET(save_float(stream, window->group_border));
+    CHK_TRUE_RET(save_float(stream, window->tooltip_border));
+    CHK_TRUE_RET(save_float(stream, window->popup_border));
+    CHK_TRUE_RET(save_float(stream, window->min_row_height_padding));
+
+    CHK_TRUE_RET(save_float(stream, window->rounding));
+    CHK_TRUE_RET(save_vec2(stream, window->spacing));
+    CHK_TRUE_RET(save_vec2(stream, window->scrollbar_size));
+    CHK_TRUE_RET(save_vec2(stream, window->min_size));
+
+    CHK_TRUE_RET(save_vec2(stream, window->padding));
+    CHK_TRUE_RET(save_vec2(stream, window->group_padding));
+    CHK_TRUE_RET(save_vec2(stream, window->popup_padding));
+    CHK_TRUE_RET(save_vec2(stream, window->combo_padding));
+    CHK_TRUE_RET(save_vec2(stream, window->contextual_padding));
+    CHK_TRUE_RET(save_vec2(stream, window->menu_padding));
+    CHK_TRUE_RET(save_vec2(stream, window->tooltip_padding));
+
+    return true;
+}
+
+bool S_UI_Style_LoadWindow(struct SDL_RWops *stream, struct nk_style_window *out)
+{
+    CHK_TRUE_RET(load_header(stream, &out->header));
+    CHK_TRUE_RET(load_item(stream, &out->fixed_background));
+    CHK_TRUE_RET(load_color(stream, &out->background));
+
+    CHK_TRUE_RET(load_color(stream, &out->border_color));
+    CHK_TRUE_RET(load_color(stream, &out->popup_border_color));
+    CHK_TRUE_RET(load_color(stream, &out->combo_border_color));
+    CHK_TRUE_RET(load_color(stream, &out->contextual_border_color));
+    CHK_TRUE_RET(load_color(stream, &out->menu_border_color));
+    CHK_TRUE_RET(load_color(stream, &out->group_border_color));
+    CHK_TRUE_RET(load_color(stream, &out->tooltip_border_color));
+    CHK_TRUE_RET(load_item(stream, &out->scaler));
+
+    CHK_TRUE_RET(load_float(stream, &out->border));
+    CHK_TRUE_RET(load_float(stream, &out->combo_border));
+    CHK_TRUE_RET(load_float(stream, &out->contextual_border));
+    CHK_TRUE_RET(load_float(stream, &out->menu_border));
+    CHK_TRUE_RET(load_float(stream, &out->group_border));
+    CHK_TRUE_RET(load_float(stream, &out->tooltip_border));
+    CHK_TRUE_RET(load_float(stream, &out->popup_border));
+    CHK_TRUE_RET(load_float(stream, &out->min_row_height_padding));
+
+    CHK_TRUE_RET(load_float(stream, &out->rounding));
+    CHK_TRUE_RET(load_vec2(stream, &out->spacing));
+    CHK_TRUE_RET(load_vec2(stream, &out->scrollbar_size));
+    CHK_TRUE_RET(load_vec2(stream, &out->min_size));
+
+    CHK_TRUE_RET(load_vec2(stream, &out->padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->group_padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->popup_padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->combo_padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->contextual_padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->menu_padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->tooltip_padding));
+
+    return true;
 }
 

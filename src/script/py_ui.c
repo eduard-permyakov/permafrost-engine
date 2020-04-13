@@ -37,8 +37,11 @@
 
 #include "public/script.h"
 #include "py_ui_style.h"
+#include "py_pickle.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/vec.h"
+#include "../lib/public/SDL_vec_rwops.h"
+#include "../lib/public/pf_string.h"
 #include "../game/public/game.h"
 #include "../event.h"
 #include "../collision.h"
@@ -51,9 +54,16 @@
 #define TO_VEC2T(_nk_vec2i) ((vec2_t){_nk_vec2i.x, _nk_vec2i.y})
 #define TO_VEC2I(_pf_vec2t) ((struct nk_vec2i){_pf_vec2t.x, _pf_vec2t.y})
 
+#define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
+#define CHK_TRUE_RET(_pred)   \
+    do{                       \
+        if(!(_pred))          \
+            return false;     \
+    }while(0)
+
 typedef struct {
     PyObject_HEAD
-    const char             *name;
+    char                    name[128];
     struct rect             rect; /* In virtual window coordinates */
     int                     flags;
     struct nk_style_window  style;
@@ -90,6 +100,8 @@ static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
 static PyObject *PyWindow_on_hide(PyWindowObject *self);
+static PyObject *PyWindow_pickle(PyWindowObject *self);
+static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args);
 static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void      PyWindow_dealloc(PyWindowObject *self);
 
@@ -211,6 +223,15 @@ static PyMethodDef PyWindow_methods[] = {
     {"on_hide", 
     (PyCFunction)PyWindow_on_hide, METH_NOARGS,
     "Callback that gets invoked when the user hides the window with the close button."},
+
+    {"__pickle__", 
+    (PyCFunction)PyWindow_pickle, METH_NOARGS,
+    "Serialize a Permafrost Engine window to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyWindow_unpickle, METH_VARARGS | METH_CLASS,
+    "Create a new pf.Window instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
     {NULL}  /* Sentinel */
 };
@@ -385,7 +406,7 @@ static int PyWindow_init(PyWindowObject *self, PyObject *args, PyObject *kwargs)
         return -1;
     }
 
-    self->name = name;
+    pf_strlcpy(self->name, name, sizeof(self->name));
     self->rect = rect;
     self->flags = flags;
     self->style = s_nk_ctx->style.window;
@@ -729,6 +750,132 @@ static PyObject *PyWindow_update(PyWindowObject *self)
 static PyObject *PyWindow_on_hide(PyWindowObject *self)
 {
     Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_pickle(PyWindowObject *self)
+{
+    bool status;
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+
+    PyObject *name = PyString_FromString(self->name);
+    CHK_TRUE(name, fail_pickle);
+    status = S_PickleObjgraph(name, stream);
+    Py_DECREF(name);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *rect = Py_BuildValue("(iiii)", 
+        self->rect.x, self->rect.y, self->rect.w, self->rect.h);
+    CHK_TRUE(rect, fail_pickle);
+    status = S_PickleObjgraph(rect, stream);
+    Py_DECREF(rect);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *flags = PyInt_FromLong(self->flags);
+    CHK_TRUE(flags, fail_pickle);
+    status = S_PickleObjgraph(flags, stream);
+    Py_DECREF(flags);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *virt_res = Py_BuildValue("(ii)", self->virt_res.x, self->virt_res.y);
+    CHK_TRUE(virt_res, fail_pickle);
+    status = S_PickleObjgraph(virt_res, stream);
+    Py_DECREF(virt_res);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *resize_mask = PyInt_FromLong(self->resize_mask);
+    CHK_TRUE(resize_mask, fail_pickle);
+    status = S_PickleObjgraph(resize_mask, stream);
+    Py_DECREF(resize_mask);
+    CHK_TRUE(status, fail_pickle);
+
+    CHK_TRUE_RET(S_UI_Style_SaveWindow(stream, &self->style));
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    return ret;
+}
+
+static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    int status;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyObject *name = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *rect = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *flags = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *virt_res = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *resize_mask = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    if(!name
+    || !rect
+    || !flags
+    || !resize_mask
+    || !virt_res) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not unpickle internal state of pf.Window instance");
+        goto fail_unpickle;
+    }
+
+    PyObject *win_args = Py_BuildValue("(OOOOO)", name, rect, flags, virt_res, resize_mask);
+    PyWindowObject *winobj = (PyWindowObject*)((PyTypeObject*)cls)->tp_new((struct _typeobject*)cls, win_args, NULL);
+    assert(winobj || PyErr_Occurred());
+    CHK_TRUE(winobj, fail_window);
+
+    const char *namestr;
+    if(!PyArg_ParseTuple(win_args, "s(iiii)i(ii)|i", &namestr,
+        &winobj->rect.x, &winobj->rect.y, 
+        &winobj->rect.w, &winobj->rect.h, 
+        &winobj->flags, 
+        &winobj->virt_res.x, &winobj->virt_res.y, 
+        &winobj->resize_mask)) {
+        goto fail_unpickle;
+    }
+    pf_strlcpy(winobj->name, namestr, sizeof(winobj->name));
+
+    if(!S_UI_Style_LoadWindow(stream, &winobj->style)) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not unpickle style state of pf.Window instance");
+        goto fail_window;
+    }
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", winobj, (int)nread);
+    Py_DECREF(winobj);
+
+fail_window:
+    Py_DECREF(win_args);
+fail_unpickle:
+    Py_XDECREF(name);
+    Py_XDECREF(rect);
+    Py_XDECREF(flags);
+    Py_XDECREF(resize_mask);
+    Py_XDECREF(virt_res);
+    SDL_RWclose(stream);
+fail_args:
+    return ret;
 }
 
 static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds)

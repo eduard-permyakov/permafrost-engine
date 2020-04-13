@@ -178,6 +178,7 @@ fail_file:
     S_ClearState();
     Engine_ClearPendingEvents();
     G_ClearState();
+    G_ClearRenderWork();
     E_Global_Register(EVENT_UPDATE_START, session_print_message, NULL, G_RUNNING | G_PAUSED_UI_RUNNING);
 
     fprintf(stderr, "%s\n", s_errstr);

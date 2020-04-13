@@ -726,8 +726,14 @@ void G_ClearState(void)
         g_reset_camera(s_gs.cameras[i]);
     }
     G_ActivateCamera(0, CAM_MODE_RTS);
-
     s_gs.num_factions = 0;
+}
+
+void G_ClearRenderWork(void)
+{
+    Engine_WaitRenderWorkDone();
+    R_ClearWS(&s_gs.ws[0]);
+    R_ClearWS(&s_gs.ws[1]);
 }
 
 void G_GetMinimapPos(float *out_x, float *out_y)

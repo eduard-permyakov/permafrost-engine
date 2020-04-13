@@ -53,7 +53,7 @@ struct attr{
         TYPE_BOOL,
     }type;
     union{
-        char   as_string[64];
+        char   as_string[256];
         float  as_float;
         int    as_int;
         vec2_t as_vec2;
