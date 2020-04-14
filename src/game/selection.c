@@ -34,6 +34,7 @@
  */
 
 #include "selection.h"
+#include "game_private.h"
 #include "public/game.h"
 #include "../pf_math.h"
 #include "../event.h"
@@ -52,6 +53,12 @@
 
 #define MIN(a, b)     ((a) < (b) ? (a) : (b))
 #define MAX(a, b)     ((a) > (b) ? (a) : (b))
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -468,5 +475,59 @@ const vec_pentity_t *G_Sel_Get(enum selection_type *out_type)
 {
     *out_type = s_ctx.type;
     return &s_selected;
+}
+
+bool G_Sel_SaveState(struct SDL_RWops *stream)
+{
+    struct attr installed = (struct attr){
+        .type = TYPE_BOOL,
+        .val.as_bool = s_ctx.installed
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &installed, "installed"));
+
+    struct attr num_selected = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = vec_size(&s_selected)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_selected, "num_selected"));
+
+    for(int i = 0; i < vec_size(&s_selected); i++) {
+    
+        struct attr selected_ent = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = vec_AT(&s_selected, i)->uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &selected_ent, "selected_ent"));
+    }
+
+    return true;
+}
+
+bool G_Sel_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    if(attr.val.as_bool) {
+        G_Sel_Enable();
+    }else{
+        G_Sel_Disable();
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_selected = attr.val.as_int;
+
+    for(int i = 0; i < num_selected; i++) {
+    
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        struct entity *ent = G_EntityForUID(attr.val.as_int);
+        CHK_TRUE_RET(ent);
+        vec_pentity_push(&s_selected, ent);
+    }
+
+    return true;
 }
 

@@ -1459,6 +1459,24 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     if(hasmap.val.as_bool && !M_AL_WritePFMap(s_gs.map, stream))
         return false;
 
+    if(hasmap.val.as_bool) {
+    
+        vec2_t mm_pos;
+        G_GetMinimapPos(&mm_pos.x, &mm_pos.y);
+
+        struct attr minimap_pos = (struct attr){
+            .type = TYPE_VEC2, 
+            .val.as_vec2 = mm_pos
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &minimap_pos, "minimap_pos"));
+
+        struct attr minimap_size = (struct attr){
+            .type = TYPE_INT, 
+            .val.as_int = G_GetMinimapSize()
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &minimap_size, "minimap_size"));
+    }
+
     struct attr ss = (struct attr){
         .type = TYPE_INT, 
         .val.as_int = s_gs.ss
@@ -1568,6 +1586,14 @@ bool G_LoadGlobalState(SDL_RWops *stream)
 
     if(attr.val.as_bool) {
         CHK_TRUE_RET(G_NewGameWithMap(stream, true));
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        G_SetMinimapPos(attr.val.as_vec2.x, attr.val.as_vec2.y);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        G_SetMinimapSize(attr.val.as_int);
     }else{
         G_ClearState();
         E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
@@ -1665,6 +1691,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Combat_SaveState(stream))
         return false;
 
+    if(!G_Sel_SaveState(stream))
+        return false;
+
     return true;
 }
 
@@ -1681,6 +1710,9 @@ bool G_LoadEntityState(SDL_RWops *stream)
         return false;
 
     if(!G_Combat_LoadState(stream))
+        return false;
+
+    if(!G_Sel_LoadState(stream))
         return false;
 
     return true;
