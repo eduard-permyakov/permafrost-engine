@@ -120,18 +120,6 @@ DEPS = \
 # Targets
 # ------------------------------------------------------------------------------
 
-.PHONY: download_windows_python
-
-download_windows_python:
-	wget -O python27.msi https://www.python.org/ftp/python/2.7.17/python-2.7.17.amd64.msi
-	msiexec /i python27.msi /qb TARGETDIR=python27
-	cp python27/python27.dll ./lib/.
-	cp -r python27/Lib ./lib/.
-	cp -r python27/DLLs ./lib/.
-	cp python27/include/pyconfig.h ./deps/Python/Include/.
-	rm -f python27.msi
-	rm -rf python27
-
 ./lib/$(GLEW_LIB):
 	mkdir -p ./lib
 	make -C $(GLEW_SRC) extensions

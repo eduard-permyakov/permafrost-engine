@@ -98,7 +98,7 @@ static PyObject *PyPf_UIButtonStyle_unpickle(PyObject *cls, PyObject *args);
 static PyMethodDef PyPf_UIButtonStyle_methods[] = {
     {"__pickle__", 
     (PyCFunction)PyPf_UIButtonStyle_pickle, METH_NOARGS,
-    "Serialize a Permafrost Engine window to a string."},
+    "Serialize a Permafrost Engine UIButtonStyle object to a string."},
 
     {"__unpickle__", 
     (PyCFunction)PyPf_UIButtonStyle_unpickle, METH_VARARGS | METH_CLASS,

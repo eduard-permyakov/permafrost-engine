@@ -130,5 +130,8 @@ for const in [attr for attr in dir(pf) if (isinstance(getattr(pf, attr), types.I
                                        and not attr.startswith('__')]:
     print(tab + "{0} {1}".format(const, getattr(pf, const)))
 
-pf.global_event(pf.SDL_QUIT, None)
+def on_tick(user, event):
+    pf.global_event(pf.SDL_QUIT, None)
+
+pf.register_event_handler(pf.EVENT_UPDATE_START, on_tick, None)
 
