@@ -38,16 +38,13 @@ from constants import *
 class DemoWindow(pf.Window):
 
     WIDTH = 250
-    HEIGHT = 355
+    HEIGHT = 390
 
     def __init__(self):
         super(DemoWindow, self).__init__("Permafrost Engine Demo", (25, 25, DemoWindow.WIDTH, DemoWindow.HEIGHT), 
             pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE |  pf.NK_WINDOW_NO_SCROLLBAR, (1920, 1080))
         self.fac_names = []
         self.active_fac_idx = 0
-
-        ss = pf.get_simstate()
-        self.paused = (ss != pf.G_RUNNING)
 
     def update(self):
 
@@ -80,10 +77,13 @@ class DemoWindow(pf.Window):
             pf.global_event(EVENT_PERF_SHOW, None)
 
         def on_pause_resume():
-            if self.paused:
+            if pf.get_simstate() != pf.G_RUNNING:
                 pf.global_event(EVENT_SIMSTATE_CHANGE, pf.G_RUNNING)
             else:
                 pf.global_event(EVENT_SIMSTATE_CHANGE, pf.G_PAUSED_UI_RUNNING)
+
+        def on_session():
+            pf.global_event(EVENT_SESSION_SHOW, None)
 
         self.layout_row_dynamic(30, 1)
         self.button_label("Settings", on_settings)
@@ -93,7 +93,10 @@ class DemoWindow(pf.Window):
 
         text = lambda p: "Resume " if p else "Pause"
         self.layout_row_dynamic(30, 1)
-        self.button_label(text(self.paused), on_pause_resume)
+        self.button_label(text(pf.get_simstate() != pf.G_RUNNING), on_pause_resume)
+
+        self.layout_row_dynamic(30, 1)
+        self.button_label("Session", on_session)
 
         self.layout_row_dynamic(30, 1)
         self.button_label("Exit Demo", on_exit)

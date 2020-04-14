@@ -76,14 +76,14 @@ active_cam_idx = 0
 def toggle_camera(user, event):
     mode_for_idx = [pf.CAM_MODE_RTS, pf.CAM_MODE_FPS]
 
-    if event[0] == pf.SDL_SCANCODE_C:
+    if event[0] == pf.SDL_SCANCODE_C and not pf.ui_text_edit_has_focus():
         global active_cam_idx
         active_cam_idx = (active_cam_idx + 1) % 2
         pf.activate_camera(active_cam_idx, mode_for_idx[active_cam_idx])
 
 def toggle_pause(user, event):
 
-    if event[0] == pf.SDL_SCANCODE_P:
+    if event[0] == pf.SDL_SCANCODE_P and not pf.ui_text_edit_has_focus():
         ss = pf.get_simstate()
         if ss == pf.G_RUNNING:
             pf.set_simstate(pf.G_PAUSED_UI_RUNNING)

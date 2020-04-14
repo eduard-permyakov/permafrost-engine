@@ -52,6 +52,7 @@ import common.views.settings_tabbed_window as stw
 import common.views.video_settings_window as vsw
 import common.views.game_settings_window as gsw
 import common.views.perf_stats_window as psw
+import common.views.session_window as sw
 
 class MenuVC(vc.ViewController):
 
@@ -65,6 +66,7 @@ class MenuVC(vc.ViewController):
         self.__settings_vc.push_child("Video", vsvc.VideoSettingsVC(vsw.VideoSettingsWindow()))
         self.__settings_vc.push_child("Game", gsvc.GameSettingsVC(gsw.GameSettingsWindow()))
         self.__settings_shown = False
+        self.__session_window = sw.SessionWindow()
 
 
     ### NEW ###
@@ -220,6 +222,18 @@ class MenuVC(vc.ViewController):
         if self.__perf_window.hidden:
             self.__perf_window.show()
 
+    def __on_session_show(self, event):
+        if self.__session_window.hidden:
+            self.__session_window.show()
+
+    def __on_session_save(self, event):
+        self.__session_window.hide()
+        pf.save_session(event)
+
+    def __on_session_load(self, event):
+        self.__session_window.hide()
+        pf.load_session(event)
+
     def __on_exit(self, event):
         pf.global_event(pf.SDL_QUIT, None)
 
@@ -236,8 +250,11 @@ class MenuVC(vc.ViewController):
         pf.register_event_handler(EVENT_MENU_SETTINGS_SHOW, MenuVC.__on_settings_show, self)
         pf.register_event_handler(common.constants.EVENT_SETTINGS_HIDE, MenuVC.__on_settings_hide, self)
         pf.register_event_handler(EVENT_MENU_PERF_SHOW, MenuVC.__on_perf_show, self)
+        pf.register_event_handler(EVENT_MENU_SESSION_SHOW, MenuVC.__on_session_show, self)
         pf.register_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, MenuVC.__on_old_game_teardown_begin, self)
         pf.register_event_handler(EVENT_OLD_GAME_TEARDOWN_END, MenuVC.__on_old_game_teardown_end, self)
+        pf.register_ui_event_handler(common.constants.EVENT_SESSION_SAVE_REQUESTED, MenuVC.__on_session_save, self)
+        pf.register_ui_event_handler(common.constants.EVENT_SESSION_LOAD_REQUESTED, MenuVC.__on_session_load, self)
 
     def deactivate(self):
         pf.unregister_event_handler(EVENT_MENU_NEW, MenuVC.__on_new)
@@ -249,6 +266,9 @@ class MenuVC(vc.ViewController):
         pf.unregister_event_handler(EVENT_MENU_SETTINGS_SHOW, MenuVC.__on_settings_show)
         pf.unregister_event_handler(common.constants.EVENT_SETTINGS_HIDE, MenuVC.__on_settings_hide)
         pf.unregister_event_handler(EVENT_MENU_PERF_SHOW, MenuVC.__on_perf_show)
+        pf.unregister_event_handler(EVENT_MENU_SESSION_SHOW, MenuVC.__on_session_show)
         pf.unregister_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, MenuVC.__on_old_game_teardown_begin)
         pf.unregister_event_handler(EVENT_OLD_GAME_TEARDOWN_END, MenuVC.__on_old_game_teardown_end)
+        pf.unregister_event_handler(common.constants.EVENT_SESSION_SAVE_REQUESTED, MenuVC.__on_session_save)
+        pf.unregister_event_handler(common.constants.EVENT_SESSION_LOAD_REQUESTED, MenuVC.__on_session_load)
 

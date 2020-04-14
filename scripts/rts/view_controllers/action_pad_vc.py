@@ -76,7 +76,7 @@ class ActionPadVC(vc.ViewController):
 
     def __on_keydown(self, event):
         scancode = event[0]
-        if scancode in self.__hotkey_action_map:
+        if scancode in self.__hotkey_action_map and not pf.ui_text_edit_has_focus():
             self.__hotkey_action_map[scancode]()
 
     def activate(self):

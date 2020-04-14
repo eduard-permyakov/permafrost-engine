@@ -45,6 +45,8 @@ import common.views.video_settings_window as vsw
 import common.views.game_settings_window as gsw
 import common.views.perf_stats_window as psw
 
+import common.views.session_window as sw
+
 import common.constants
 
 class DemoVC(vc.ViewController):
@@ -52,11 +54,12 @@ class DemoVC(vc.ViewController):
     def __init__(self, view):
         self.__view = view
         self.__perf_view = psw.PerfStatsWindow()
-        self.__settings_vc = tbvc.TabBarVC(stw.SettingsTabbedWindow(), 
+        self.__settings_vc = tbvc.TabBarVC(stw.SettingsTabbedWindow(),
             tab_change_event=common.constants.EVENT_SETTINGS_TAB_SEL_CHANGED)
         self.__settings_vc.push_child("Video", vsvc.VideoSettingsVC(vsw.VideoSettingsWindow()))
         self.__settings_vc.push_child("Game", gsvc.GameSettingsVC(gsw.GameSettingsWindow()))
         self.__settings_shown = False
+        self.__session_view = sw.SessionWindow()
 
         self.__view.fac_names = [fac["name"] for fac in pf.get_factions_list()]
         assert len(self.__view.fac_names) > 0
@@ -86,8 +89,22 @@ class DemoVC(vc.ViewController):
             self.__perf_view.show()
 
     def __on_ss_change(self, event):
-        self.__view.paused = (event != pf.G_RUNNING)
         pf.set_simstate(event)
+
+    def __on_session_show(self, event):
+        if self.__session_view.hidden:
+            self.__session_view.show()
+
+    def __on_session_save(self, event):
+        self.__session_view.hide()
+        ss = pf.get_simstate()
+        pf.set_simstate(pf.G_PAUSED_UI_RUNNING)
+        pf.save_session(event)
+        pf.set_simstate(ss)
+
+    def __on_session_load(self, event):
+        self.__session_view.hide()
+        pf.load_session(event)
 
     def activate(self):
         pf.register_ui_event_handler(EVENT_CONTROLLED_FACTION_CHANGED, DemoVC.__on_controlled_faction_chagned, self)
@@ -95,10 +112,16 @@ class DemoVC(vc.ViewController):
         pf.register_ui_event_handler(EVENT_PERF_SHOW, DemoVC.__on_perf_show, self)
         pf.register_ui_event_handler(common.constants.EVENT_SETTINGS_HIDE, DemoVC.__on_settings_hide, self)
         pf.register_ui_event_handler(EVENT_SIMSTATE_CHANGE, DemoVC.__on_ss_change, self)
+        pf.register_ui_event_handler(EVENT_SESSION_SHOW, DemoVC.__on_session_show, self)
+        pf.register_ui_event_handler(common.constants.EVENT_SESSION_SAVE_REQUESTED, DemoVC.__on_session_save, self)
+        pf.register_ui_event_handler(common.constants.EVENT_SESSION_LOAD_REQUESTED, DemoVC.__on_session_load, self)
         self.__view.show()
 
     def deactivate(self):
         self.__view.hide()
+        pf.unregister_event_handler(common.constants.EVENT_SESSION_SAVE_REQUESTED, DemoVC.__on_session_save)
+        pf.unregister_event_handler(common.constants.EVENT_SESSION_LOAD_REQUESTED, DemoVC.__on_session_load)
+        pf.unregister_event_handler(EVENT_SESSION_SHOW, DemoVC.__on_session_show)
         pf.unregister_event_handler(EVENT_SIMSTATE_CHANGE, DemoVC.__on_ss_change)
         pf.unregister_event_handler(common.constants.EVENT_SETTINGS_HIDE, DemoVC.__on_settings_hide)
         pf.unregister_event_handler(EVENT_PERF_SHOW, DemoVC.__on_perf_show, self)

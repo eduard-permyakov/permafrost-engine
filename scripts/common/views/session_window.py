@@ -1,6 +1,6 @@
 #
 #  This file is part of Permafrost Engine. 
-#  Copyright (C) 2018-2020 Eduard Permyakov 
+#  Copyright (C) 2019-2020 Eduard Permyakov 
 #
 #  Permafrost Engine is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -32,20 +32,35 @@
 #  statement from your version.
 #
 
-############################################################
-# Shared constants                                         #
-############################################################
+import pf
+from common.constants import *
 
-ACTION_NUM_ROWS = 3
-ACTION_NUM_COLS = 4
+class SessionWindow(pf.Window):
+    WINDOW_WIDTH = 500 
+    WINDOW_HEIGHT = 140
 
-############################################################
-# Module-specific events                                   #
-############################################################
+    def __init__(self):
+        vresx, vresy = (1920, 1080)
+        super(SessionWindow, self).__init__("Session",
+            (vresx / 2 - SessionWindow.WINDOW_WIDTH/ 2, vresy / 2 - SessionWindow.WINDOW_HEIGHT / 2, 
+            SessionWindow.WINDOW_WIDTH, SessionWindow.WINDOW_HEIGHT), 
+            pf.NK_WINDOW_BORDER | pf.NK_WINDOW_NO_SCROLLBAR | pf.NK_WINDOW_TITLE | pf.NK_WINDOW_CLOSABLE, (vresx, vresy))
+        self.filestring = pf.get_basedir()
 
-EVENT_CONTROLLED_FACTION_CHANGED = 0x20000
-EVENT_SETTINGS_SHOW              = 0x20001
-EVENT_PERF_SHOW                  = 0x20002
-EVENT_SIMSTATE_CHANGE            = 0x20003
-EVENT_SESSION_SHOW               = 0x20004
+    def update(self):
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Session File:", (175, 175, 175))
+        self.layout_row_dynamic(30, 1)
+        self.filestring = self.edit_string(pf.NK_EDIT_SIMPLE, self.filestring)
+
+        def on_save():
+            pf.global_event(EVENT_SESSION_SAVE_REQUESTED, self.filestring)
+
+        def on_load():
+            pf.global_event(EVENT_SESSION_LOAD_REQUESTED, self.filestring)
+
+        self.layout_row_dynamic(30, 2)
+        self.button_label("Save", on_save)
+        self.button_label("Load", on_load)
 

@@ -56,7 +56,7 @@ class MenuButtonWindow(pf.Window):
 
 class Menu(pf.Window):
     WINDOW_WIDTH = 300
-    WINDOW_HEIGHT = 405
+    WINDOW_HEIGHT = 450
     menu_shown = False
 
     def __init__(self):
@@ -97,6 +97,9 @@ class Menu(pf.Window):
         def on_performance():
             pf.global_event(EVENT_MENU_PERF_SHOW, None)
 
+        def on_session():
+            pf.global_event(EVENT_MENU_SESSION_SHOW, None)
+
         def on_exit():
             pf.global_event(EVENT_MENU_EXIT, None)
 
@@ -127,6 +130,10 @@ class Menu(pf.Window):
         self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
         self.layout_row_dynamic(UI_TAB_BAR_HEIGHT-10, 1)
         self.button_label("Performance", on_performance)
+
+        self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
+        self.layout_row_dynamic(UI_TAB_BAR_HEIGHT-10, 1)
+        self.button_label("Session", on_session)
 
         self.layout_row_static(10, Menu.WINDOW_WIDTH, 1)
         self.layout_row_dynamic(UI_TAB_BAR_HEIGHT-10, 1)
