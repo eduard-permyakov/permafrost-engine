@@ -85,6 +85,7 @@ static PyObject *PyPf_get_render_info(PyObject *self);
 static PyObject *PyPf_get_nav_perfstats(PyObject *self);
 static PyObject *PyPf_get_mouse_pos(PyObject *self);
 static PyObject *PyPf_mouse_over_ui(PyObject *self);
+static PyObject *PyPf_ui_text_edit_has_focus(PyObject *self);
 static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_enable_unit_selection(PyObject *self);
@@ -223,6 +224,11 @@ static PyMethodDef pf_module_methods[] = {
     {"mouse_over_ui", 
     (PyCFunction)PyPf_mouse_over_ui, METH_NOARGS,
     "Returns True if the mouse cursor is within the bounds of any UI windows."},
+
+    {"ui_text_edit_has_focus", 
+    (PyCFunction)PyPf_ui_text_edit_has_focus, METH_NOARGS,
+    "Returns True if the mouse cursor is currently in an editable text field of a UI window, "
+    "such that the field records the keystrokes."},
 
     {"get_file_size", 
     (PyCFunction)PyPf_get_file_size, METH_VARARGS,
@@ -695,6 +701,14 @@ static PyObject *PyPf_mouse_over_ui(PyObject *self)
         Py_RETURN_TRUE;
     else
         Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_ui_text_edit_has_focus(PyObject *self)
+{
+    if(S_UI_TextEditHasFocus())
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
 }
 
 static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args)

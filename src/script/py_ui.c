@@ -852,7 +852,7 @@ static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args)
         &winobj->flags, 
         &winobj->virt_res.x, &winobj->virt_res.y, 
         &winobj->resize_mask)) {
-        goto fail_unpickle;
+        goto fail_window;
     }
     pf_strlcpy(winobj->name, namestr, sizeof(winobj->name));
 
@@ -863,10 +863,10 @@ static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args)
 
     Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
     ret = Py_BuildValue("(Oi)", winobj, (int)nread);
-    Py_DECREF(winobj);
 
 fail_window:
-    Py_DECREF(win_args);
+    Py_XDECREF(winobj);
+    Py_XDECREF(win_args);
 fail_unpickle:
     Py_XDECREF(name);
     Py_XDECREF(rect);
@@ -1255,6 +1255,26 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
             (vec2_t){adj_bounds.x + visible_size.x, adj_bounds.y},
             (vec2_t){adj_bounds.x + visible_size.x, adj_bounds.y + visible_size.y},
             (vec2_t){adj_bounds.x,                  adj_bounds.y + visible_size.y}))
+            return true;
+    }
+
+    return false;
+}
+
+bool S_UI_TextEditHasFocus(void)
+{
+    for(int i = 0; i < vec_size(&s_active_windows); i++) {
+
+        PyWindowObject *win = vec_AT(&s_active_windows, i);
+
+        if(win->flags & NK_WINDOW_HIDDEN
+        || win->flags & NK_WINDOW_CLOSED) {
+            continue; 
+        }
+
+        struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
+        assert(nkwin);
+        if(nkwin->edit.active == nk_true)
             return true;
     }
 

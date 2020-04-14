@@ -78,6 +78,7 @@ bool            S_LoadState(SDL_RWops *stream);
 /*###########################################################################*/
 
 bool S_UI_MouseOverWindow(int mouse_x, int mouse_y);
+bool S_UI_TextEditHasFocus(void);
 
 /*###########################################################################*/
 /* SCRIPT ENTITY                                                             */

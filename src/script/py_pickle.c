@@ -654,7 +654,7 @@ static struct pickle_entry s_pf_dispatch_table[] = {
     {.type = NULL, /* PyEntity_type */      .picklefunc = custom_pickle                },
     {.type = NULL, /* PyAnimEntity_type */  .picklefunc = custom_pickle                },
     {.type = NULL, /* PyCombatableEntity_type */ .picklefunc = custom_pickle           },
-    {.type = NULL, /* PyTile_type */        .picklefunc = placeholder_inst_pickle      },
+    {.type = NULL, /* PyTile_type */        .picklefunc = custom_pickle                },
     {.type = NULL, /* PyWindow_type */      .picklefunc = custom_pickle                },
     {.type = NULL, /* PyUIButtonStyle_type */ .picklefunc = custom_pickle              },
 };
@@ -807,6 +807,7 @@ struct sc_map_entry{
     { NULL, /*&PyAnimEntity_type*/          NULL },
     { NULL, /*&PyCombatableEntity_type*/    NULL },
     { NULL, /*&PyWindow_type*/              NULL },
+    { NULL, /*&PyTile_type*/                NULL },
 };
 
 /*****************************************************************************/
@@ -1393,6 +1394,13 @@ static void create_builtin_subclasses(void)
 
     bi = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Window");
     args = Py_BuildValue("s(O){}", "__window_subclass__", (PyObject*)bi, NULL);
+    sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
+    assert(sc);
+    s_subclassable_builtin_map[++idx] = (struct sc_map_entry){ bi, (PyTypeObject*)sc };
+    Py_DECREF(args);
+
+    bi = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Tile");
+    args = Py_BuildValue("s(O){}", "__tile_subclass__", (PyObject*)bi, NULL);
     sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
     assert(sc);
     s_subclassable_builtin_map[++idx] = (struct sc_map_entry){ bi, (PyTypeObject*)sc };
@@ -7381,6 +7389,7 @@ void S_Pickle_Shutdown(void)
     s_subclassable_builtin_map[20].builtin = NULL;
     s_subclassable_builtin_map[21].builtin = NULL;
     s_subclassable_builtin_map[22].builtin = NULL;
+    s_subclassable_builtin_map[23].builtin = NULL;
 }
 
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream)

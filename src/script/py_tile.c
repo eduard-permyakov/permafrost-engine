@@ -34,11 +34,16 @@
  */
 
 #include "py_tile.h"
+#include "py_pickle.h"
 #include "../game/public/game.h"
 #include "../map/public/tile.h"
 #include "../map/public/map.h"
+#include "../lib/public/SDL_vec_rwops.h"
 
 #include <structmember.h>
+
+
+#define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
 
 typedef struct {
     PyObject_HEAD
@@ -54,12 +59,15 @@ static PyObject *PyTile_get_top_right_height(PyTileObject *self, void *closure);
 static PyObject *PyTile_get_bot_left_height(PyTileObject *self, void *closure);
 static PyObject *PyTile_get_bot_right_height(PyTileObject *self, void *closure);
 
+static PyObject *PyTile_pickle(PyTileObject *self);
+static PyObject *PyTile_unpickle(PyObject *cls, PyObject *args);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
 #define BASE (offsetof(PyTileObject, tile))
-static PyMemberDef PyTileMembers[] = {
+static PyMemberDef PyTile_members[] = {
     {"pathable",        T_INT, BASE + offsetof(struct tile, pathable),         0,
     "Whether or not units can travel through this tile."},
     {"type",            T_INT, BASE + offsetof(struct tile, type),             0,
@@ -101,13 +109,27 @@ static PyGetSetDef PyTile_getset[] = {
     {NULL}  /* Sentinel */
 };
 
+static PyMethodDef PyTile_methods[] = {
+    {"__pickle__", 
+    (PyCFunction)PyTile_pickle, METH_NOARGS,
+    "Serialize a Permafrost Engine tile to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyTile_unpickle, METH_VARARGS | METH_CLASS,
+    "Create a new pf.Tile instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
 static PyTypeObject PyTile_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name        = "pf.Tile",
     .tp_basicsize   = sizeof(PyTileObject),
     .tp_flags       = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc         = "Map tile representation for Permafrost Engine maps.",
-    .tp_members     = PyTileMembers,
+    .tp_members     = PyTile_members,
+    .tp_methods     = PyTile_methods,
     .tp_getset      = PyTile_getset,
     .tp_init        = (initproc)PyTile_init,
     .tp_new         = PyTile_new,
@@ -155,6 +177,90 @@ static PyObject *PyTile_get_bot_left_height(PyTileObject *self, void *closure)
 static PyObject *PyTile_get_bot_right_height(PyTileObject *self, void *closure)
 {
     return Py_BuildValue("i", M_Tile_SEHeight(&self->tile));
+}
+
+static PyObject *PyTile_pickle(PyTileObject *self)
+{
+    bool status;
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+
+    PyObject *attrs = Py_BuildValue("iiiiiiii", 
+        self->tile.pathable,
+        self->tile.type,
+        self->tile.base_height,
+        self->tile.ramp_height,
+        self->tile.top_mat_idx,
+        self->tile.sides_mat_idx,
+        self->tile.blend_mode,
+        self->tile.blend_normals
+    );
+    status = S_PickleObjgraph(attrs, stream);
+    Py_DECREF(attrs);
+    CHK_TRUE(status, fail_pickle);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    return ret;
+}
+
+static PyObject *PyTile_unpickle(PyObject *cls, PyObject *args)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    int status;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyObject *attrs = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+    CHK_TRUE(attrs, fail_unpickle);
+
+    PyObject *tile_args = PyTuple_New(0);
+    PyTileObject *tileobj = (PyTileObject*)((PyTypeObject*)cls)->tp_new((struct _typeobject*)cls, 
+        tile_args, NULL);
+    CHK_TRUE(tileobj, fail_tile);
+
+    int pathable;
+    int blend_normals;
+
+    if(!PyArg_ParseTuple(attrs, "iiiiiiii",
+        &pathable,
+        &tileobj->tile.type,
+        &tileobj->tile.base_height,
+        &tileobj->tile.ramp_height,
+        &tileobj->tile.top_mat_idx,
+        &tileobj->tile.sides_mat_idx,
+        &tileobj->tile.blend_mode,
+        &blend_normals)) {
+        goto fail_tile;
+    }
+    tileobj->tile.pathable = !!pathable;
+    tileobj->tile.blend_normals = !!blend_normals;
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", tileobj, (int)nread);
+
+fail_tile:
+    Py_XDECREF(tileobj); 
+    Py_XDECREF(tile_args);
+fail_unpickle:
+    Py_XDECREF(attrs);
+    SDL_RWclose(stream);
+fail_args:
+    return ret;
 }
 
 /*****************************************************************************/
