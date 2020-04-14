@@ -45,7 +45,8 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * RTS unit combat system
 * Support for different resolutions and aspect ratios
 * Configurable graphics settings
-* Serialization and deserialization of the Python interpreter state
+* Serialization and deserialization of the entire Python interpreter state
+* Saving and restoring of any engine session, including all Python-defined state
 * Multithreaded: simulation and rendering in a 2-stage pipeline
 * Cross-platform (Linux and Windows)
 
@@ -76,11 +77,10 @@ require any arguments.
 
 #### For Windows ####
 
-Python must be either compiled using MSVC build tools and the solution file found in the
-the source's `PCbuild` directory, or obtained in binary form (https://www.python.org/downloads/release/python-2717/). 
-Prior to building, copy `python27.dll`, as well as the `Lib` and `DLLs` folders from the Python 
-installation directory to `./lib`. Copy the file `include/pyconfig.h` from the installation directory
-to `./deps/Python/Include/`.
+Python must be compiled using MSVC build tools and the solution file found in the the source's 
+`PCbuild` directory. It must be compiled without thread or signal support and having only the
+extension modules uncommented in `Setup.dist` built, and linked statically. Prior to building the 
+engine, copy `python27.dll` to `./lib`. Copy the file `pyconfig.h` to `./deps/Python/Include/`.
 
 The rest of the source code can be built using the mingw-w64 cross-compilation toolchain 
 (http://mingw-w64.org/doku.php) using largely the same steps as for Linux. Passing `PLAT=WINDOWS` 

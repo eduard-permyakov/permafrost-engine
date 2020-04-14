@@ -3,14 +3,21 @@
 ********************************************************************************
 
 ================================================================================
-[Version 0.43.0] - 20.02.2019
+[Version 0.44.0] - 14.04.2020
+================================================================================
+    * Various pickling fixes
+    * Trim down Python's stdlib to a minimal subset
+    * Implement logic to serialize and deserialize any engine session
+
+================================================================================
+[Version 0.43.0] - 20.02.2020
 ================================================================================
     * Introduce Windows cross-compilation build target
     * Windows compatibility fixes
     * Add launcher that doesn't require command-line arguments
 
 ================================================================================
-[Version 0.42.0] - 02.02.2019
+[Version 0.42.0] - 02.02.2020
 ================================================================================
     * Pipeline simulation and rendering to run on different threads 
         --> Performance improvement of high unit count scenarios
