@@ -5,16 +5,12 @@ It is made in the image of old classics, but incorporating some modern ideas.
 
 ## Engine Showcase ##
 
-###### Hellknight from DOOM 3 by id Sofware ######
-![Hellknight](docs/images/hellknight.gif)
-###### Sinbad by Zi Ye ######
-![Sinbad](docs/images/sinbad.gif)
-###### Tile-Based Map ######
-![Terrain](docs/images/terrain.png)
-###### Map Editor ######
-![Map Editor](docs/images/editor.png)
-###### Baked Navigation Grid ######
-![Navigation Grid](docs/images/navigation.png)
+![engine-01](docs/images/engine-01.png)
+![engine-02](docs/images/engine-02.png)
+![battle](docs/images/big-battle.png)
+![editor-01](docs/images/editor.png)
+![pathfinding](docs/images/pathfinding.gif)
+![editor](docs/images/editor.gif)
 
 ## Engine Summary ##
 
@@ -97,6 +93,10 @@ The compliation can either be done on a Linux host, or natively on Windows using
 ## License ##
 
 Permafrost Engine is licensed under the GPLv3, with a special linking exception.
+
+## Devlog ##
+
+Follow the development of Permafrost Engine and its' flagship game on YouTube: https://www.youtube.com/channel/UCNklkpsPnNpRhC9oVkpIpLA
 
 ## Comments/Questions ##
 
