@@ -5,12 +5,12 @@ It is made in the image of old classics, but incorporating some modern ideas.
 
 ## Engine Showcase ##
 
-![engine-01](docs/images/engine-01.png)
-![engine-02](docs/images/engine-02.png)
-![battle](docs/images/big-battle.png)
-![editor-01](docs/images/editor.png)
-![pathfinding](docs/images/pathfinding.gif)
-![editor](docs/images/editor.gif)
+<img src="docs/images/engine-01.png" width="768" height="423">
+<img src="docs/images/engine-02.png" width="768" height="432">
+<img src="docs/images/big-battle.png" width="768" height="432">
+<img src="docs/images/editor.png" width="768" height="432">
+<img src="docs/images/pathfinding.gif" width="768" height="432">
+<img src="docs/images/editor.gif" width="768" height="432">
 
 ## Engine Summary ##
 
