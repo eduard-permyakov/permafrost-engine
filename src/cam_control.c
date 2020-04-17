@@ -44,11 +44,36 @@
 #include <string.h>
 
 
+#define KEYUP_TICKS_TIMEOUT (1)
+
+/* Certain *ahem* OS/Windows System combos send KEYUP events
+ * even when holding down a key. So holding down a key looks 
+ * like UP,DOWN,UP,DOWN,UP,DOWN... Use the following simple 
+ * state machine to filter out the KEYUP events where we get
+ * a KEYDOWN for the same key in the next frame.
+ */
+enum keystate{
+    KEY_PRESSED,
+    KEY_RELEASED_NO_TIMEOUT,
+    KEY_RELEASED,
+};
+
 struct cam_fps_ctx{
-    bool move_front;
-    bool move_back;
-    bool move_left;
-    bool move_right;
+    enum keystate front_state;
+    uint32_t      front_pressed_tick;
+    uint32_t      front_released_tick;
+
+    enum keystate back_state;
+    uint32_t      back_pressed_tick;
+    uint32_t      back_released_tick;
+
+    enum keystate left_state;
+    uint32_t      left_pressed_tick;
+    uint32_t      left_released_tick;
+
+    enum keystate right_state;
+    uint32_t      right_pressed_tick;
+    uint32_t      right_released_tick;
 };
 
 struct cam_rts_ctx{
@@ -66,7 +91,7 @@ struct cam_rts_ctx{
 struct{
     struct camera *active;
     union{
-        struct cam_fps_ctx fps;; 
+        struct cam_fps_ctx fps; 
         struct cam_rts_ctx rts;
     }active_ctx;
     handler_t installed_on_keydown;
@@ -85,12 +110,25 @@ static void fps_cam_on_keydown(void *unused, void *event_arg)
 {
     struct cam_fps_ctx *ctx = &s_cam_ctx.active_ctx.fps;
     SDL_Event *e = (SDL_Event*)event_arg;
+    uint32_t curr_tick = g_frame_idx;
 
     switch(e->key.keysym.scancode) {
-    case SDL_SCANCODE_W: ctx->move_front = true; break;
-    case SDL_SCANCODE_A: ctx->move_left = true; break;
-    case SDL_SCANCODE_S: ctx->move_back = true; break;
-    case SDL_SCANCODE_D: ctx->move_right = true; break;
+    case SDL_SCANCODE_W: 
+        ctx->front_pressed_tick = curr_tick;
+        ctx->front_state = KEY_PRESSED;
+        break; 
+    case SDL_SCANCODE_A: 
+        ctx->left_pressed_tick = curr_tick;
+        ctx->left_state = KEY_PRESSED;
+        break;
+    case SDL_SCANCODE_S: 
+        ctx->back_pressed_tick = curr_tick;
+        ctx->back_state = KEY_PRESSED;
+        break;
+    case SDL_SCANCODE_D: 
+        ctx->right_pressed_tick = curr_tick;
+        ctx->right_state = KEY_PRESSED;
+        break;
 	default: break;
     }
 }
@@ -99,12 +137,25 @@ static void fps_cam_on_keyup(void *unused, void *event_arg)
 {
     struct cam_fps_ctx *ctx = &s_cam_ctx.active_ctx.fps;
     SDL_Event *e = (SDL_Event*)event_arg;
+    uint32_t curr_tick = g_frame_idx;
 
     switch(e->key.keysym.scancode) {
-    case SDL_SCANCODE_W: ctx->move_front = false; break;
-    case SDL_SCANCODE_A: ctx->move_left = false; break;
-    case SDL_SCANCODE_S: ctx->move_back = false; break;
-    case SDL_SCANCODE_D: ctx->move_right = false; break;
+    case SDL_SCANCODE_W: 
+        ctx->front_released_tick = curr_tick;
+        ctx->front_state = KEY_RELEASED_NO_TIMEOUT;
+        break; 
+    case SDL_SCANCODE_A: 
+        ctx->left_released_tick = curr_tick;
+        ctx->left_state = KEY_RELEASED_NO_TIMEOUT;
+        break;
+    case SDL_SCANCODE_S: 
+        ctx->back_released_tick = curr_tick;
+        ctx->back_state = KEY_RELEASED_NO_TIMEOUT;
+        break;
+    case SDL_SCANCODE_D: 
+        ctx->right_released_tick = curr_tick;
+        ctx->right_state = KEY_RELEASED_NO_TIMEOUT;
+        break;
 	default: break;
     }
 }
@@ -121,12 +172,45 @@ static void fps_cam_on_update_end(void *unused1, void *unused2)
 {
     struct cam_fps_ctx *ctx = &s_cam_ctx.active_ctx.fps;
     struct camera *cam = s_cam_ctx.active;
+    uint32_t curr_tick = g_frame_idx;
 
-    if(ctx->move_front) Camera_MoveFrontTick(cam);
-    if(ctx->move_left)  Camera_MoveLeftTick (cam);
-    if(ctx->move_back)  Camera_MoveBackTick (cam);
-    if(ctx->move_right) Camera_MoveRightTick(cam);
+    if((ctx->front_state == KEY_RELEASED_NO_TIMEOUT)
+    && (curr_tick - ctx->front_released_tick > KEYUP_TICKS_TIMEOUT))
+        ctx->front_state = KEY_RELEASED;
 
+    if(ctx->left_state == KEY_RELEASED_NO_TIMEOUT
+    && curr_tick - ctx->left_released_tick > KEYUP_TICKS_TIMEOUT)
+        ctx->left_state = KEY_RELEASED;
+
+    if(ctx->back_state == KEY_RELEASED_NO_TIMEOUT
+    && curr_tick - ctx->back_released_tick > KEYUP_TICKS_TIMEOUT)
+        ctx->back_state = KEY_RELEASED;
+
+    if(ctx->right_state == KEY_RELEASED_NO_TIMEOUT
+    && curr_tick - ctx->right_released_tick > KEYUP_TICKS_TIMEOUT)
+        ctx->right_state = KEY_RELEASED;
+
+    vec3_t front, back, up, left, right;
+    front = Camera_GetDir(cam);
+    PFM_Vec3_Scale(&front, -1.0f, &back);
+
+    /* Find a vector that is orthogonal to 'front' in the XZ plane */
+    vec3_t xz = (vec3_t){front.z, 0.0f, -front.x};
+    PFM_Vec3_Cross(&front, &xz, &up);
+    PFM_Vec3_Normal(&up, &up);
+
+    PFM_Vec3_Cross(&front, &up, &left);
+    PFM_Vec3_Normal(&left, &left);
+    PFM_Vec3_Scale(&left, -1.0f, &right);
+
+    vec3_t dir = (vec3_t){0.0f, 0.0f, 0.0f};
+
+    if(ctx->front_state != KEY_RELEASED) PFM_Vec3_Add(&dir, &front, &dir);
+    if(ctx->left_state != KEY_RELEASED)  PFM_Vec3_Add(&dir, &left, &dir);
+    if(ctx->back_state != KEY_RELEASED)  PFM_Vec3_Add(&dir, &back, &dir);
+    if(ctx->right_state != KEY_RELEASED) PFM_Vec3_Add(&dir, &right, &dir);
+    
+    Camera_MoveDirectionTick(cam, dir);
     Camera_TickFinishPerspective(cam);
 }
 
@@ -242,6 +326,11 @@ void CamControl_FPS_Install(struct camera *cam)
     s_cam_ctx.installed_on_mousemove  = fps_cam_on_mousemove;
     s_cam_ctx.installed_on_update_end = fps_cam_on_update_end;
     s_cam_ctx.active = cam;
+
+    s_cam_ctx.active_ctx.fps.front_state = KEY_RELEASED;
+    s_cam_ctx.active_ctx.fps.left_state = KEY_RELEASED;
+    s_cam_ctx.active_ctx.fps.back_state = KEY_RELEASED;
+    s_cam_ctx.active_ctx.fps.right_state = KEY_RELEASED;
 
     SDL_SetRelativeMouseMode(true);
 }

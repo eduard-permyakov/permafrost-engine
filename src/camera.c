@@ -68,6 +68,7 @@ struct camera {
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define EPSILON (1.0f/1024)
 
 /*****************************************************************************/
 /* GLOBAL VARIABLES                                                          */
@@ -200,7 +201,7 @@ vec3_t Camera_GetPos(const struct camera *cam)
 void Camera_MoveLeftTick(struct camera *cam)
 {
     uint32_t tdelta;
-    vec3_t   vdelta, right;
+    vec3_t   vdelta, left;
     
     if(!cam->prev_frame_ts)
         cam->prev_frame_ts = SDL_GetTicks();
@@ -208,10 +209,10 @@ void Camera_MoveLeftTick(struct camera *cam)
     uint32_t curr = SDL_GetTicks();
     tdelta = curr - cam->prev_frame_ts;
 
-    PFM_Vec3_Cross(&cam->front, &cam->up, &right);
-    PFM_Vec3_Normal(&right, &right);
+    PFM_Vec3_Cross(&cam->front, &cam->up, &left);
+    PFM_Vec3_Normal(&left, &left);
 
-    PFM_Vec3_Scale(&right, tdelta * cam->speed, &vdelta);
+    PFM_Vec3_Scale(&left, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Add(&cam->pos, &vdelta, &cam->pos);
 
     if(cam->bounded) camera_move_within_bounds(cam);
@@ -221,7 +222,7 @@ void Camera_MoveLeftTick(struct camera *cam)
 void Camera_MoveRightTick(struct camera *cam)
 {
     uint32_t tdelta;
-    vec3_t   vdelta, right;
+    vec3_t   vdelta, left;
     
     if(!cam->prev_frame_ts)
         cam->prev_frame_ts = SDL_GetTicks();
@@ -229,10 +230,10 @@ void Camera_MoveRightTick(struct camera *cam)
     uint32_t curr = SDL_GetTicks();
     tdelta = curr - cam->prev_frame_ts;
 
-    PFM_Vec3_Cross(&cam->front, &cam->up, &right);
-    PFM_Vec3_Normal(&right, &right);
+    PFM_Vec3_Cross(&cam->front, &cam->up, &left);
+    PFM_Vec3_Normal(&left, &left);
 
-    PFM_Vec3_Scale(&right, tdelta * cam->speed, &vdelta);
+    PFM_Vec3_Scale(&left, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Sub(&cam->pos, &vdelta, &cam->pos);
 
     if(cam->bounded) camera_move_within_bounds(cam);
@@ -284,7 +285,7 @@ void Camera_MoveDirectionTick(struct camera *cam, vec3_t dir)
         cam->prev_frame_ts = SDL_GetTicks();
 
     float mag = sqrt(pow(dir.x,2) + pow(dir.y,2) + pow(dir.z,2));
-    if(mag == 0.0f)
+    if(mag < EPSILON)
         return;
 
     PFM_Vec3_Normal(&dir, &dir);
