@@ -56,7 +56,6 @@ struct handler_desc{
     }handler;
     void          *user_arg;
     int            simmask;    /* Specifies during which simulation states the handler gets invoked */
-    unsigned long  tick_added; /* The sumulation tick during which the handler has been registered */
 };
 
 struct event{
@@ -85,7 +84,8 @@ QUEUE_IMPL(static, event, struct event)
 /*****************************************************************************/
 
 static khash_t(handler_desc) *s_event_handler_table;
-static queue(event)           s_event_queue;
+static queue(event)           s_event_queues[2];
+static int                    s_front_queue_idx = 0;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -177,12 +177,6 @@ static void e_handle_event(struct event event)
      * handler is unregistered, it will never be executed. So, keep fetching 
      * the handlers vector from the table after every execution, in case it's
      * been changed by the prior handler call.
-     * 
-     * However, we also don't want to immediately execute handlers that have
-     * been added by another event handler. If we register a handler for the same 
-     * event inside of a handler - don't execute it immediately but instead wait 
-     * until the next time we receive that event. Use the 'tick_added' field to 
-     * identify newly added handlers.
      */
 
     vec_hd_t execd_handlers;
@@ -207,8 +201,6 @@ static void e_handle_event(struct event event)
             vec_hd_push(&execd_handlers, *elem);
 
             if((elem->simmask & ss) == 0)
-                continue;
-            if(elem->tick_added == g_frame_idx)
                 continue;
 
             if(elem->type == HANDLER_TYPE_ENGINE) {
@@ -244,12 +236,16 @@ bool E_Init(void)
     if(!s_event_handler_table)
         goto fail_table;
 
-    if(!queue_event_init(&s_event_queue, 2048))
-        goto fail_queue;
+    if(!queue_event_init(&s_event_queues[0], 2048))
+        goto fail_front_queue;
+    if(!queue_event_init(&s_event_queues[1], 2048))
+        goto fail_back_queue;
 
     return true;
         
-fail_queue:
+fail_back_queue:
+    queue_event_destroy(&s_event_queues[0]);
+fail_front_queue:
     kh_destroy(handler_desc, s_event_handler_table);
 fail_table:
     return false;
@@ -268,15 +264,19 @@ void E_Shutdown(void)
     }
 
     kh_destroy(handler_desc, s_event_handler_table);
-    queue_event_destroy(&s_event_queue);
+    queue_event_destroy(&s_event_queues[1]);
+    queue_event_destroy(&s_event_queues[0]);
 }
 
 void E_ServiceQueue(void)
 {
+    queue_event_t *queue = &s_event_queues[s_front_queue_idx];
+    s_front_queue_idx = (s_front_queue_idx + 1) % 2;
+
     e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID} );
 
     struct event event;
-    while(queue_event_pop(&s_event_queue, &event)) {
+    while(queue_event_pop(queue, &event)) {
     
         e_handle_event(event);
         /* event arg already released */
@@ -288,7 +288,7 @@ void E_ServiceQueue(void)
 
 void E_ClearPendingEvents(void)
 {
-    queue_event_clear(&s_event_queue);
+    queue_event_clear(&s_event_queues[s_front_queue_idx]);
 }
 
 void E_DeleteScriptHandlers(void)
@@ -370,7 +370,7 @@ size_t E_GetScriptHandlers(size_t max_out, struct script_handler *out)
 void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source source)
 {
     struct event e = (struct event){event, event_arg, source, GLOBAL_ID};
-    queue_event_push(&s_event_queue, &e);
+    queue_event_push(&s_event_queues[s_front_queue_idx], &e);
 }
 
 bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg, int simmask)
@@ -380,7 +380,6 @@ bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg, 
     hd.handler.as_function = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
-    hd.tick_added = g_frame_idx;
 
     return e_register_handler(e_key(GLOBAL_ID, event), &hd);
 }
@@ -402,7 +401,6 @@ bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler,
     hd.handler.as_script_callable = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
-    hd.tick_added = g_frame_idx;
 
     return e_register_handler(e_key(GLOBAL_ID, event), &hd);
 }
@@ -434,7 +432,6 @@ bool E_Entity_Register(enum eventtype event, uint32_t ent_uid, handler_t handler
     hd.handler.as_function = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
-    hd.tick_added = g_frame_idx;
 
     return e_register_handler(e_key(ent_uid, event), &hd);
 }
@@ -456,7 +453,6 @@ bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid,
     hd.handler.as_script_callable = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
-    hd.tick_added = g_frame_idx;
 
     return e_register_handler(e_key(ent_uid, event), &hd);
 }
@@ -475,6 +471,6 @@ void E_Entity_Notify(enum eventtype event, uint32_t ent_uid, void *event_arg,
                      enum event_source source)
 {
     struct event e = (struct event){event, event_arg, source, ent_uid};
-    queue_event_push(&s_event_queue, &e);
+    queue_event_push(&s_event_queues[s_front_queue_idx], &e);
 }
 
