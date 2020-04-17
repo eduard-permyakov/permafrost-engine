@@ -445,14 +445,9 @@ size_t adjacent_flock_members(const struct entity *ent, const struct flock *floc
 
 static void move_marker_add(vec3_t pos, bool attack)
 {
-    extern const char *g_basepath;
-    char path[256];
-    strcpy(path, g_basepath);
-    strcat(path, "assets/models/arrow");
-
     const uint32_t uid = Entity_NewUID();
-    struct entity *ent = attack ? AL_EntityFromPFObj(path, "arrow-red.pfobj", "__move_marker__", uid) 
-                                : AL_EntityFromPFObj(path, "arrow-green.pfobj", "__move_marker__", uid);
+    struct entity *ent = attack ? AL_EntityFromPFObj("assets/models/arrow", "arrow-red.pfobj", "__move_marker__", uid) 
+                                : AL_EntityFromPFObj("assets/models/arrow", "arrow-green.pfobj", "__move_marker__", uid);
     assert(ent);
     ent->flags |= ENTITY_FLAG_STATIC;
     G_AddEntity(ent, pos);
