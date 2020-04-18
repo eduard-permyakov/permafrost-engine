@@ -1295,8 +1295,8 @@ bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
 {
     ASSERT_IN_MAIN_THREAD();
 
-	if(!s_gs.map)
-		return false;
+    if(!s_gs.map)
+        return false;
     return M_AL_UpdateTile(s_gs.map, desc, tile);
 }
 
@@ -1304,9 +1304,9 @@ bool G_GetTile(const struct tile_desc *desc, struct tile *out)
 {
     ASSERT_IN_MAIN_THREAD();
 
-	if(!s_gs.map)
-		return false;
-	if(!M_TileForDesc(s_gs.map, *desc, &out))
+    if(!s_gs.map)
+        return false;
+    if(!M_TileForDesc(s_gs.map, *desc, &out))
         return false;
     return true;
 }

@@ -1,4 +1,4 @@
-/*
+/* 
  *  This file is part of Permafrost Engine. 
  *  Copyright (C) 2020 Eduard Permyakov 
  *
@@ -38,6 +38,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdint.h>
+#include <stdio.h> //TMP
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -68,16 +70,24 @@ void stalloc_destroy(struct memstack *st)
 
 void *stalloc(struct memstack *st, size_t size)
 {
+    /* align to the size of the largest builtin type,
+     * and zero out the padding bytes */
+    const size_t aligned_size = (size + (sizeof(intmax_t) - 1)) & ~(sizeof(intmax_t) - 1);
+    const size_t align_pad = aligned_size - size;
+
     unsigned char *curr_end = st->tail->raw + MEMBLOCK_SZ;
     size_t curr_left = curr_end - (unsigned char*)st->top;
     assert(curr_left <= MEMBLOCK_SZ);
 
-    if(size > MEMBLOCK_SZ)
+    if(aligned_size > MEMBLOCK_SZ)
         return NULL;
 
-    if(curr_left >= size) {
+    if(curr_left >= aligned_size) {
         void *ret = st->top;
-        st->top = (unsigned char*)st->top + size; 
+        st->top = (unsigned char*)st->top + aligned_size; 
+
+        assert((((uintptr_t)ret) & (sizeof(intmax_t)-1)) == 0);
+        memset(((char*)ret) + aligned_size - align_pad, 0, align_pad);
         return ret;
     }
 
@@ -89,7 +99,10 @@ void *stalloc(struct memstack *st, size_t size)
     st->tail->next = NULL;
 
     void *ret = st->tail->raw;
-    st->top = st->tail->raw + size;
+    st->top = st->tail->raw + aligned_size;
+
+    assert((((uintptr_t)ret) & (sizeof(intmax_t)-1)) == 0);
+    memset(((char*)ret) + aligned_size - align_pad, 0, align_pad);
     return ret;
 }
 
@@ -124,13 +137,21 @@ void sstalloc_destroy(struct smemstack *st)
 
 void *sstalloc(struct smemstack *st, size_t size)
 {
+    /* align to the size of the largest builtin type,
+     * and zero out the padding bytes */
+    const size_t aligned_size = (size + (sizeof(intmax_t) - 1)) & ~(sizeof(intmax_t) - 1);
+    const size_t align_pad = aligned_size - size;
+
     if(!st->top)
         return stalloc(&st->extra, size);
 
     size_t local_left = STATIC_BUFF_SZ - ((unsigned char*)st->top - st->mem);
-    if(local_left >= size) {
+    if(local_left >= aligned_size) {
         void *ret = st->top;
-        st->top = (unsigned char*)st->top + size;
+        st->top = (unsigned char*)st->top + aligned_size;
+
+        assert((((uintptr_t)ret) & (sizeof(intmax_t)-1)) == 0);
+        memset(((char*)ret) + aligned_size - align_pad, 0, align_pad);
         return ret;
     }
 
