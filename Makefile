@@ -21,7 +21,6 @@ PF_DEPS = $(PF_OBJS:%.o=%.d)
 GLEW_SRC = ./deps/GLEW
 SDL2_SRC = ./deps/SDL2
 PYTHON_SRC = ./deps/Python
-PYTHON_VER_MAJOR = 2.7
 
 # ------------------------------------------------------------------------------
 # Linux
@@ -30,7 +29,10 @@ PYTHON_VER_MAJOR = 2.7
 LINUX_GLEW_LIB = libGLEW.so.2.2
 LINUX_SDL2_LIB = libSDL2-2.0.so.0
 LINUX_PYTHON_LIB = libpython2.7.so.1.0
+LINUX_PYTHON_TARGET = libpython2.7.so
+
 LINUX_SDL2_CONFIG = --host=x86_64-pc-linux-gnu
+LINUX_PYTHON_CONFIG = --host=x86_64-pc-linux-gnu
 
 LINUX_CC = gcc
 LINUX_BIN = ./bin/pf
@@ -50,9 +52,12 @@ LINUX_LDFLAGS = \
 
 WINDOWS_GLEW_LIB = glew32.dll
 WINDOWS_SDL2_LIB = SDL2.dll
-WINDOWS_PYTHON_LIB = python27.dll
+WINDOWS_PYTHON_LIB = libpython2.7.dll
 
 WINDOWS_SDL2_CONFIG = --host=x86_64-w64-mingw32
+WINDOWS_PYTHON_CONFIG = --host=x86_64-w64-mingw32
+WINDOWS_PYTHON_DEFS = -D__USE_MINGW_ANSI_STDIO=1
+WINDOWS_PYTHON_TARGET = libpython2.7.dll
 WINDOWS_GLEW_OPTS = "SYSTEM=linux-mingw64"
 
 WINDOWS_CC = x86_64-w64-mingw32-gcc
@@ -61,7 +66,7 @@ WINDOWS_LDFLAGS = \
 	-lmingw32 \
 	-lSDL2 \
 	-lglew32 \
-	-lpython27 \
+	-llibpython2.7 \
 	-lopengl32
 
 WINDOWS_DEFS = -DMS_WIN64
@@ -80,6 +85,9 @@ SDL2_LIB = $($(PLAT)_SDL2_LIB)
 PYTHON_LIB = $($(PLAT)_PYTHON_LIB)
 
 SDL2_CONFIG = $($(PLAT)_SDL2_CONFIG)
+PYTHON_CONFIG = $($(PLAT)_PYTHON_CONFIG)
+PYTHON_DEFS = $($(PLAT)_PYTHON_DEFS)
+PYTHON_TARGET = $($(PLAT)_PYTHON_TARGET)
 GLEW_OPTS = $($(PLAT)_GLEW_OPTS)
 
 WARNING_FLAGS = \
@@ -135,19 +143,17 @@ DEPS = \
 	cp $(SDL2_SRC)/build/build/.libs/$(SDL2_LIB) $@
 
 ./lib/$(PYTHON_LIB):
-ifeq ($(PLAT),WINDOWS)
-	$(error "Python must be built using MSVC build tools.")
-endif
-	mkdir -p ./lib/pyinstall/lib
 	mkdir -p $(PYTHON_SRC)/build
 	cd $(PYTHON_SRC)/build \
 	&& ../configure \
+		$(PYTHON_CONFIG) \
+		--build=x86_64-pc-linux-gnu \
 		--enable-shared \
 		--without-threads \
 		--without-signal-module \
 	&& cp ./pyconfig.h ../Include/. \
-	&& make libpython2.7.so
-	cp $(PYTHON_SRC)/build/$(PYTHON_LIB) $@
+	&& make $(PYTHON_TARGET) CFLAGS=$(PYTHON_DEFS)
+	cp $(PYTHON_SRC)/build/$(PYTHON_TARGET) $@
 
 deps: $(DEPS)
 
