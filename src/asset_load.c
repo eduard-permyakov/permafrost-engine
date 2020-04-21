@@ -343,6 +343,12 @@ bool AL_ReadLine(SDL_RWops *stream, char *outbuff)
             return false; 
 
         if(outbuff[idx] == '\n') {
+            /* nuke the carriage return before the newline - to give a consistent 
+             * output to client code regardless of platform */
+            if(idx && outbuff[idx-1] == '\r') {
+                outbuff[idx-1] = '\n';
+                outbuff[idx] = '\0';
+            }
             outbuff[++idx] = '\0';
             return true;
         }

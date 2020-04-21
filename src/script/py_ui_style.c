@@ -737,7 +737,7 @@ bool load_item(struct SDL_RWops *stream, struct nk_style_item *out)
     }
 
     int type;
-    PyObject *val;
+    PyObject *val; /* borrowed */
 
     if(!PyTuple_Check(obj)
     || !PyArg_ParseTuple(obj, "iO", &type, &val)) {
@@ -747,28 +747,28 @@ bool load_item(struct SDL_RWops *stream, struct nk_style_item *out)
 
     if(type != NK_STYLE_ITEM_COLOR
     && type != NK_STYLE_ITEM_TEXPATH) {
-        Py_DECREF(val);
+        Py_DECREF(obj);
         return false;
     }
 
     if(type == NK_STYLE_ITEM_COLOR
     && !PyArg_ParseTuple(val, "iiii", 
        &out->data.color.r, &out->data.color.g, &out->data.color.b, &out->data.color.a)) {
-        Py_DECREF(val);
+        Py_DECREF(obj);
         return false;
     }
 
     const char *str;
     if(type == NK_STYLE_ITEM_TEXPATH) {
         if(!PyString_Check(val)) {
-            Py_DECREF(val);
+            Py_DECREF(obj);
             return false;
         }
         pf_snprintf(out->data.texpath, sizeof(out->data.texpath), "%s", PyString_AS_STRING(val));
     }
 
     out->type = type;
-    Py_DECREF(val);
+    Py_DECREF(obj);
 
     char tmp[1];
     SDL_RWread(stream, tmp, 1, 1); /* consume NULL byte */
@@ -903,11 +903,8 @@ static PyObject *PyPf_UIButtonStyle_unpickle(PyObject *cls, PyObject *args)
     SDL_RWops *stream = SDL_RWFromConstMem(str, len);
     CHK_TRUE(stream, fail_args);
 
-    PyObject *style_args = PyTuple_New(0);
-
     PyObject *styleobj = PyObject_New(PyObject, &PyUIButtonStyle_type);
     assert(styleobj || PyErr_Occurred());
-    Py_DECREF(style_args);
     CHK_TRUE(styleobj, fail_unpickle);
 
     struct nk_context *ctx = UI_GetContext();

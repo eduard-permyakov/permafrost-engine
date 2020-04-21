@@ -784,25 +784,25 @@ struct sc_map_entry{
     PyTypeObject *builtin;
     PyTypeObject *heap_subtype;
 }s_subclassable_builtin_map[] = {
-    { &PyBaseObject_Type,                   NULL },
-    { &PyType_Type,                         NULL },
-    { &PyString_Type,                       NULL },
-    { &PyByteArray_Type,                    NULL },
-    { &PyList_Type,                         NULL },
-    { &PySuper_Type,                        NULL },
-    { &PyDict_Type,                         NULL },
-    { &PySet_Type,                          NULL },
-    { &PyUnicode_Type,                      NULL },
-    { &PyStaticMethod_Type,                 NULL },
-    { &PyComplex_Type,                      NULL },
-    { &PyFloat_Type,                        NULL },
-    { &PyLong_Type,                         NULL },
-    { &PyInt_Type,                          NULL },
-    { &PyFrozenSet_Type,                    NULL },
-    { &PyProperty_Type,                     NULL },
-    { &PyTuple_Type,                        NULL },
-    { &PyEnum_Type,                         NULL },
-    { &PyReversed_Type,                     NULL },
+    { NULL, /*&PyBaseObject_Type */         NULL },
+    { NULL, /*&PyType_Type */               NULL },
+    { NULL, /*&PyString_Type */             NULL },
+    { NULL, /*&PyByteArray_Type */          NULL },
+    { NULL, /*&PyList_Type */               NULL },
+    { NULL, /*&PySuper_Type */              NULL },
+    { NULL, /*&PyDict_Type */               NULL },
+    { NULL, /*&PySet_Type */                NULL },
+    { NULL, /*&PyUnicode_Type */            NULL },
+    { NULL, /*&PyStaticMethod_Type */       NULL },
+    { NULL, /*&PyComplex_Type */            NULL },
+    { NULL, /*&PyFloat_Type */              NULL },
+    { NULL, /*&PyLong_Type */               NULL },
+    { NULL, /*&PyInt_Type */                NULL },
+    { NULL, /*&PyFrozenSet_Type */          NULL },
+    { NULL, /*&PyProperty_Type */           NULL },
+    { NULL, /*&PyTuple_Type */              NULL },
+    { NULL, /*&PyEnum_Type */               NULL },
+    { NULL, /*&PyReversed_Type */           NULL },
     { NULL, /*&PyEntity_type*/              NULL },
     { NULL, /*&PyAnimEntity_type*/          NULL },
     { NULL, /*&PyCombatableEntity_type*/    NULL },
@@ -1160,6 +1160,41 @@ static void load_builtin_types(void)
     assert(s_type_dispatch_table[base_idx].type == EXC_START_MAGIC);
 }
 
+static void load_subclassable_builtin_refs(void)
+{
+    int base_idx = 0;
+    PyObject *pfmod = PyDict_GetItemString(PySys_GetObject("modules"), "pf");
+    assert(pfmod); /* borrowed ref */
+
+    s_subclassable_builtin_map[base_idx++].builtin = &PyBaseObject_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyType_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyString_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyByteArray_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyList_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PySuper_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyDict_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PySet_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyUnicode_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyStaticMethod_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyComplex_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyFloat_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyLong_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyInt_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyFrozenSet_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyProperty_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyTuple_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyEnum_Type;
+    s_subclassable_builtin_map[base_idx++].builtin = &PyReversed_Type;
+
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Entity");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "AnimEntity");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "CombatableEntity");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Window");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Tile");
+
+	assert(base_idx == ARR_SIZE(s_subclassable_builtin_map));
+}
+
 static void load_exception_types(void)
 {
     int base_idx = -1;
@@ -1292,9 +1327,9 @@ static int reference_all_types(void)
             continue;
 
         char name[128], *curr = name;
-        strcpy(name, ((PyTypeObject*)type)->tp_name);
+        pf_strlcpy(name, ((PyTypeObject*)type)->tp_name, sizeof(name));
         while(*curr) {
-            if(*curr == '.')
+            if(*curr == '.' || isspace(*curr))
                 *curr = '-';
             ++curr;
         }
@@ -1317,6 +1352,12 @@ fail:
 
 static int reference_codecs_builtins(void)
 {
+    /* force _PyCodecRegistry_Init to get called which will initialize
+     * the codec_* fields of the current PyInterpreterState */
+    PyCodec_Register(NULL);
+    assert(PyErr_ExceptionMatches(PyExc_TypeError));
+    PyErr_Clear(); 
+
     assert(s_placeholder_type);
     PyObject *mapping = PyObject_CallFunction(s_placeholder_type, "()");
     CHK_TRUE(mapping, fail);
@@ -1352,13 +1393,11 @@ static void create_builtin_subclasses(void)
     PyObject *args, *sc;
     PyTypeObject *bi;
     PyObject *pfmod = PyDict_GetItemString(PySys_GetObject("modules"), "pf"); /* borrowed */
-    int idx = 0;
 
-    for(idx = 0; idx < ARR_SIZE(s_subclassable_builtin_map); idx++) {
+    for(int idx = 0; idx < ARR_SIZE(s_subclassable_builtin_map); idx++) {
 
         bi = s_subclassable_builtin_map[idx].builtin;
-        if(!bi)
-            break;
+        assert(bi);
 
         char name[256];
         pf_snprintf(name, sizeof(name), "__%s_subclass__", bi->tp_name);
@@ -1370,41 +1409,6 @@ static void create_builtin_subclasses(void)
         Py_DECREF(args);
         s_subclassable_builtin_map[idx].heap_subtype = (PyTypeObject*)sc;
     }
-
-    bi = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Entity");
-    args = Py_BuildValue("s(O){}", "__entity_subclass__", (PyObject*)bi, NULL);
-    sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
-    assert(sc);
-    s_subclassable_builtin_map[idx] = (struct sc_map_entry){ bi, (PyTypeObject*)sc };
-    Py_DECREF(args);
-
-    bi = (PyTypeObject*)PyObject_GetAttrString(pfmod, "AnimEntity");
-    args = Py_BuildValue("s(O){}", "__anim_entity_subclass__", (PyObject*)bi, NULL);
-    sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
-    assert(sc);
-    s_subclassable_builtin_map[++idx] = (struct sc_map_entry){ bi, (PyTypeObject*)sc };
-    Py_DECREF(args);
-
-    bi = (PyTypeObject*)PyObject_GetAttrString(pfmod, "CombatableEntity");
-    args = Py_BuildValue("s(O){}", "__combatable_entity_subclass__", (PyObject*)bi, NULL);
-    sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
-    assert(sc);
-    s_subclassable_builtin_map[++idx] = (struct sc_map_entry){ bi, (PyTypeObject*)sc };
-    Py_DECREF(args);
-
-    bi = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Window");
-    args = Py_BuildValue("s(O){}", "__window_subclass__", (PyObject*)bi, NULL);
-    sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
-    assert(sc);
-    s_subclassable_builtin_map[++idx] = (struct sc_map_entry){ bi, (PyTypeObject*)sc };
-    Py_DECREF(args);
-
-    bi = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Tile");
-    args = Py_BuildValue("s(O){}", "__tile_subclass__", (PyObject*)bi, NULL);
-    sc = PyObject_Call((PyObject*)&PyType_Type, args, NULL);
-    assert(sc);
-    s_subclassable_builtin_map[++idx] = (struct sc_map_entry){ bi, (PyTypeObject*)sc };
-    Py_DECREF(args);
 
     assert(!PyErr_Occurred());
 }
@@ -3722,7 +3726,7 @@ static int op_int(struct unpickle_ctx *ctx, SDL_RWops *rw)
     errno = 0;
     char *endptr;
     long l = strtol(buff, &endptr, 0);
-    if (errno || (*endptr != '\n') || (endptr[1] != '\0')) {
+    if (errno || !isspace(*endptr)) {
         SET_RUNTIME_EXC("Bad int in pickle stream [offset: %ld]", (long)rw->seek(rw, RW_SEEK_CUR, 0));
         goto fail;
     }
@@ -3764,7 +3768,7 @@ static int op_long(struct unpickle_ctx *ctx, SDL_RWops *rw)
     errno = 0;
     char *endptr;
     long long l = strtoll(buff, &endptr, 0);
-    if (errno || (*endptr != '\n') || (endptr[1] != '\0')) {
+    if (errno || !isspace(*endptr)) {
         SET_RUNTIME_EXC("Bad long in pickle stream [offset: %ld]", (long)rw->seek(rw, RW_SEEK_CUR, 0));
         goto fail;
     }
@@ -3882,7 +3886,7 @@ static int op_put(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     char *end;
     int idx = strtol(buff, &end, 10);
-    if(!idx && end != buff + strlen(buff)-1) /* - newline */ {
+    if(!idx && !isspace(*end)) {
         SET_RUNTIME_EXC("Bad index in pickle stream: [offset: %ld]", (long)rw->seek(rw, RW_SEEK_CUR, 0));
         return -1;
     }
@@ -3907,7 +3911,7 @@ static int op_get(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     char *end;
     int idx = strtol(buff, &end, 10);
-    if(!idx && end != buff + strlen(buff) - 1) /* - newline */ {
+    if(!idx && !isspace(*end)) {
         SET_RUNTIME_EXC("Bad index in pickle stream: [offset: %ld]", (long)rw->seek(rw, RW_SEEK_CUR, 0));
         return -1;
     }
@@ -4281,7 +4285,11 @@ static int op_float(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     char line[MAX_LINE_LEN];
     READ_LINE(rw, line, fail);
-    line[strlen(line)-1] = '\0'; /* trim newline */
+
+    char *curr = line;
+    while(*curr && !isspace(*curr))
+        curr++;
+    *curr = '\0'; /* Strip newline */
 
     double d = PyOS_string_to_double(line, NULL, PyExc_OverflowError);
     CHK_TRUE(!PyErr_Occurred(), fail);
@@ -4307,7 +4315,11 @@ static int op_ext_builtin(struct unpickle_ctx *ctx, SDL_RWops *rw)
 
     char buff[MAX_LINE_LEN];
     READ_LINE(rw, buff, fail);
-    buff[strlen(buff)-1] = '\0'; /* Strip newline */
+
+    char *curr = buff;
+    while(*curr && !isspace(*curr))
+        curr++;
+    *curr = '\0'; /* Strip newline */
 
     PyObject *ret;
     if(NULL == (ret = qualname_new_ref(buff))) {
@@ -7203,7 +7215,7 @@ static void memoize(struct pickle_ctx *ctx, PyObject *obj)
 static bool emit_get(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     char str[32];
-    snprintf(str, ARR_SIZE(str), "%c%d\n", GET, memo_idx(ctx, obj));
+    pf_snprintf(str, ARR_SIZE(str), "%c%d\n", GET, memo_idx(ctx, obj));
     str[ARR_SIZE(str)-1] = '\0';
     return rw->write(rw, str, 1, strlen(str));
 }
@@ -7211,7 +7223,7 @@ static bool emit_get(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 static bool emit_put(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
 {
     char str[32];
-    snprintf(str, ARR_SIZE(str), "%c%d\n", PUT, memo_idx(ctx, obj));
+    pf_snprintf(str, ARR_SIZE(str), "%c%d\n", PUT, memo_idx(ctx, obj));
     str[ARR_SIZE(str)-1] = '\0';
     return rw->write(rw, str, 1, strlen(str));
 }
@@ -7353,6 +7365,7 @@ bool S_Pickle_Init(PyObject *module)
     load_engine_builtin_types();
     reference_all_types();
     reference_codecs_builtins();
+	load_subclassable_builtin_refs();
     create_builtin_subclasses();
 
     if(!S_Traverse_IndexQualnames(s_id_qualname_map))
@@ -7385,11 +7398,7 @@ void S_Pickle_Shutdown(void)
         Py_DECREF(s_subclassable_builtin_map[i].heap_subtype);
         s_subclassable_builtin_map[i].heap_subtype = NULL;
     }
-    s_subclassable_builtin_map[19].builtin = NULL;
-    s_subclassable_builtin_map[20].builtin = NULL;
-    s_subclassable_builtin_map[21].builtin = NULL;
-    s_subclassable_builtin_map[22].builtin = NULL;
-    s_subclassable_builtin_map[23].builtin = NULL;
+    memset(s_subclassable_builtin_map, 0, sizeof(s_subclassable_builtin_map)); 
 }
 
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream)

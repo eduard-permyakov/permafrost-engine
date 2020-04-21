@@ -1576,7 +1576,7 @@ bool S_SaveState(SDL_RWops *stream)
         goto fail_tuple;
 
     for(int i = 0; i < nhandlers; i++) {
-        PyObject *val = Py_BuildValue("iIiOO", handlers[i].event, handlers[i].id, 
+        PyObject *val = Py_BuildValue("lllOO", handlers[i].event, handlers[i].id, 
             handlers[i].simmask, (PyObject*)handlers[i].handler, (PyObject*)handlers[i].arg);
         if(!val)
             goto fail;
@@ -1616,9 +1616,8 @@ bool S_LoadState(SDL_RWops *stream)
     bool ret = false;
 
     PyObject *state = S_UnpickleObjgraph(stream);
-    if(!state) {
+    if(!state)
         return false;
-    }
 
     if(!PyTuple_Check(state) || (PyTuple_GET_SIZE(state) != 8))
         goto fail;
@@ -1678,8 +1677,11 @@ bool S_LoadState(SDL_RWops *stream)
     }
     ret = true;
 
-    char tmp[2];
-    SDL_RWread(stream, tmp, sizeof(tmp), 1); /* consume NULL byte and newline */
+    char tmp[1];
+    SDL_RWread(stream, tmp, sizeof(tmp), 1); /* consume NULL byte */
+    do{
+        SDL_RWread(stream, tmp, sizeof(tmp), 1); 
+    }while(tmp[0] != '\n'); /* and newline (preceded by optional carriage return) */
 
 fail:
     Py_DECREF(state);
