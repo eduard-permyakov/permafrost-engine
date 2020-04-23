@@ -58,6 +58,7 @@
 #include "../settings.h"
 #include "../main.h"
 #include "../ui.h"
+#include "../perf.h"
 
 #include <assert.h> 
 
@@ -887,6 +888,7 @@ void G_Shutdown(void)
 void G_Update(void)
 {
     ASSERT_IN_MAIN_THREAD();
+    PERF_ENTER();
 
     if(s_gs.map) {
         M_Update(s_gs.map);
@@ -940,6 +942,8 @@ void G_Update(void)
 
     /* Next, update the set of currently selected entities. */
     G_Sel_Update(ACTIVE_CAM, &s_gs.visible, &s_gs.visible_obbs);
+
+    PERF_RETURN_VOID();
 }
 
 void G_Render(void)

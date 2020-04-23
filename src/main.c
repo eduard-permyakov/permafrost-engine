@@ -49,6 +49,7 @@
 #include "pf_math.h"
 #include "settings.h"
 #include "session.h"
+#include "perf.h"
 
 #include <stdbool.h>
 #include <assert.h>
@@ -100,6 +101,7 @@ static struct render_sync_state s_rstate;
 
 static void process_sdl_events(void)
 {
+    PERF_ENTER();
     UI_InputBegin();
 
     vec_event_reset(&s_prev_tick_events);
@@ -134,6 +136,7 @@ static void process_sdl_events(void)
     }
 
     UI_InputEnd();
+    PERF_RETURN_VOID();
 }
 
 static void on_user_quit(void *user, void *event)
@@ -388,6 +391,13 @@ static bool engine_init(char **argv)
     if(!rarg.out_success)
         goto fail_render_init;
 
+    if(!Perf_Init()) {
+        fprintf(stderr, "Failed to initialize performance module.\n");
+        goto fail_perf;
+    }
+    Perf_RegisterThread(g_main_thread_id);
+    Perf_RegisterThread(g_render_thread_id);
+
     if(!AL_Init()) {
         fprintf(stderr, "Failed to initialize asset-loading module.\n");
         goto fail_al;
@@ -451,6 +461,8 @@ fail_render:
 fail_cursor:
     AL_Shutdown();
 fail_al:
+    Perf_Shutdown();
+fail_perf:
 fail_render_init:
     render_thread_quit();
 fail_rthread:
@@ -487,6 +499,7 @@ static void engine_shutdown(void)
     Cursor_FreeAll();
     AL_Shutdown();
     E_Shutdown();
+    Perf_Shutdown();
 
     vec_event_destroy(&s_prev_tick_events);
     rstate_destroy(&s_rstate);
@@ -603,6 +616,7 @@ int main(int argc, char **argv)
     G_Render();
     UI_Render();
     G_SwapBuffers();
+    Perf_FinishTick();
 
     uint32_t last_ts = SDL_GetTicks();
     while(!s_quit) {
@@ -627,6 +641,7 @@ int main(int argc, char **argv)
         wait_render_work_done();
 
         G_SwapBuffers();
+        Perf_FinishTick();
 
         if(prev_step_frame) {
             G_SetSimState(curr_ss);

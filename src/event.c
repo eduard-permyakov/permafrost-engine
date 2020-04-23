@@ -35,6 +35,7 @@
 
 #include "event.h"
 #include "main.h"
+#include "perf.h"
 #include "lib/public/khash.h"
 #include "lib/public/vec.h"
 #include "lib/public/queue.h"
@@ -270,6 +271,8 @@ void E_Shutdown(void)
 
 void E_ServiceQueue(void)
 {
+    PERF_ENTER();
+
     queue_event_t *queue = &s_event_queues[s_front_queue_idx];
     s_front_queue_idx = (s_front_queue_idx + 1) % 2;
 
@@ -284,6 +287,8 @@ void E_ServiceQueue(void)
 
     e_handle_event( (struct event){EVENT_UPDATE_UI,  NULL, ES_ENGINE, GLOBAL_ID} );
     e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID} );
+
+    PERF_RETURN_VOID();
 }
 
 void E_ClearPendingEvents(void)

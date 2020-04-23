@@ -47,6 +47,7 @@
 #include "../cursor.h"
 #include "../settings.h"
 #include "../ui.h"
+#include "../perf.h"
 #include "../script/public/script.h"
 #include "../render/public/render.h"
 #include "../map/public/map.h"
@@ -1150,6 +1151,8 @@ static void disband_empty_flocks(void)
 
 static void on_20hz_tick(void *user, void *event)
 {
+    PERF_ENTER();
+
     vec_cp_ent_t dyn, stat;
     vec_cp_ent_init(&dyn);
     vec_cp_ent_init(&stat);
@@ -1212,6 +1215,8 @@ static void on_20hz_tick(void *user, void *event)
 
     vec_cp_ent_destroy(&dyn);
     vec_cp_ent_destroy(&stat);
+
+    PERF_RETURN_VOID();
 }
 
 /*****************************************************************************/

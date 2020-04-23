@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019-2020 Eduard Permyakov 
+ *  Copyright (C) 2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,48 +33,40 @@
  *
  */
 
-#ifndef MAIN_H
-#define MAIN_H
+#ifndef PERF_H
+#define PERF_H
 
-#include <SDL.h>
-#include <assert.h>
-
-extern const char    *g_basepath;      /* readonly */
-extern unsigned       g_last_frame_ms; /* readonly */
-extern unsigned long  g_frame_idx;     /* readonly */
-extern SDL_threadID   g_main_thread_id;   /* readonly */
-extern SDL_threadID   g_render_thread_id; /* readonly */
+#include <stdbool.h>
+#include <SDL_thread.h>
 
 
-#define ASSERT_IN_RENDER_THREAD() \
-    assert(SDL_ThreadID() == g_render_thread_id)
+#define PERF_ENTER()            \
+    do{                         \
+        Perf_Push(__func__);    \
+    }while(0)
 
-#define ASSERT_IN_MAIN_THREAD() \
-    assert(SDL_ThreadID() == g_main_thread_id)
+#define PERF_RETURN(val)        \
+    do{                         \
+        Perf_Pop();             \
+        return (val);           \
+    }while(0)
+
+#define PERF_RETURN_VOID()      \
+    do{                         \
+        Perf_Pop();             \
+        return;                 \
+    }while(0)
 
 
-enum pf_window_flags {
+void Perf_Push(const char *name);
+void Perf_Pop(void);
 
-    PF_WF_FULLSCREEN     = SDL_WINDOW_FULLSCREEN 
-                         | SDL_WINDOW_INPUT_GRABBED,
-    PF_WF_BORDERLESS_WIN = SDL_WINDOW_BORDERLESS 
-                         | SDL_WINDOW_INPUT_GRABBED,
-    PF_WF_WINDOW         = SDL_WINDOW_INPUT_GRABBED,
-};
-
-
-int  Engine_SetRes(int w, int h);
-void Engine_SetDispMode(enum pf_window_flags wf);
-void Engine_WinDrawableSize(int *out_w, int *out_h);
-
-/* Execute all the currently queued render commands on the render thread. 
- * Block until it completes. This is used during initialization only to 
- * execute rendering code serially.
- */
-void Engine_FlushRenderWorkQueue(void);
-/* Wait for the current batch of render command to finish */
-void Engine_WaitRenderWorkDone(void);
-void Engine_ClearPendingEvents(void);
+/* The following can only be called from the main thread, making sure that 
+ * none of the other threads are touching the Perf_ API concurrently */
+bool Perf_Init(void);
+void Perf_Shutdown(void);
+bool Perf_RegisterThread(SDL_threadID tid);
+void Perf_FinishTick(void);
 
 #endif
 

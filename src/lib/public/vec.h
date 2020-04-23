@@ -91,6 +91,9 @@
                                                                                                 \
     scope bool vec_##name##_resize(vec(name) *vec, size_t new_cap)                              \
     {                                                                                           \
+        if(vec->capacity >= new_cap)                                                            \
+            return true;                                                                        \
+                                                                                                \
         type *new_array = realloc(vec->array, new_cap * sizeof(type));                          \
         if(!new_array)                                                                          \
             return false;                                                                       \
