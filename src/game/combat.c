@@ -39,6 +39,7 @@
 #include "../event.h"
 #include "../entity.h"
 #include "../main.h"
+#include "../perf.h"
 #include "public/game.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
@@ -299,6 +300,8 @@ static void on_attack_anim_finish(void *user, void *event)
 
 static void on_30hz_tick(void *user, void *event)
 {
+    PERF_ENTER();
+
     uint32_t key;
     struct entity *curr;
     (void)key;
@@ -420,6 +423,7 @@ static void on_30hz_tick(void *user, void *event)
         };
     
     });
+    PERF_RETURN_VOID();
 }
 
 /*****************************************************************************/

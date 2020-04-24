@@ -48,6 +48,7 @@
 #include "../camera.h"
 #include "../config.h"
 #include "../main.h"
+#include "../perf.h"
 
 #include <GL/glew.h>
 
@@ -541,6 +542,7 @@ static float tile_min_visible_height(const struct map *map, struct tile_desc til
 void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivate, mat4x4_t *model, 
                            const int *tiles_per_chunk_x, const int *tiles_per_chunk_z)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     struct vertex vbuff[VERTS_PER_TILE];
@@ -618,10 +620,13 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
     /* cleanup */
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
+
+    PERF_RETURN_VOID();
 }
 
 void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, const struct tile_desc *tile)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const struct render_private *priv = chunk_rprivate;
@@ -843,10 +848,12 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, const
 
     glUnmapBuffer(GL_ARRAY_BUFFER);
     GL_ASSERT_OK();
+    PERF_RETURN_VOID();
 }
 
 void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, const struct tile_desc *tile)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const struct render_private *priv = chunk_rprivate;
@@ -956,10 +963,12 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, cons
 
     glUnmapBuffer(GL_ARRAY_BUFFER);
     GL_ASSERT_OK();
+    PERF_RETURN_VOID();
 }
 
 void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, const struct tile_desc *desc)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     struct render_private *priv = chunk_rprivate;
@@ -983,10 +992,13 @@ void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, const struct t
     }
 
     GL_ASSERT_OK();
+    PERF_RETURN_VOID();
 }
 
 void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex *out)
 {
+    PERF_ENTER();
+
     struct tile *tile;
     int ret = M_TileForDesc(map, td, &tile);
     assert(ret);
@@ -1373,10 +1385,14 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
 
         curr_provoking->blend_mode = tile->blend_mode;
     }
+
+    PERF_RETURN_VOID();
 }
 
 int R_TileGetTriMesh(const struct map *map, struct tile_desc *td, mat4x4_t *model, vec3_t out[])
 {
+    PERF_ENTER();
+
     struct vertex verts[VERTS_PER_TILE];
     R_TileGetVertices(map, *td, verts);
     int i = 0;
@@ -1395,6 +1411,6 @@ int R_TileGetTriMesh(const struct map *map, struct tile_desc *td, mat4x4_t *mode
     }
 
     assert(i % 3 == 0);
-    return i;
+    PERF_RETURN(i);
 }
 

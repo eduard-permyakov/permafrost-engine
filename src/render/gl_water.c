@@ -46,6 +46,7 @@
 #include "../camera.h"
 #include "../config.h"
 #include "../main.h"
+#include "../perf.h"
 #include "../map/public/map.h"
 #include "../game/public/game.h"
 
@@ -96,6 +97,7 @@ static struct render_water_ctx s_ctx;
 
 static void save_gl_state(struct water_gl_state *out, GLuint shader_prog)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     glGetIntegerv(GL_VIEWPORT, out->viewport);
@@ -107,16 +109,21 @@ static void save_gl_state(struct water_gl_state *out, GLuint shader_prog)
 
     sampler_loc = glGetUniformLocation(shader_prog, GL_U_VIEW);
     glGetUniformfv(shader_prog, sampler_loc, out->u_view.raw);
+
+    PERF_RETURN_VOID();
 }
 
 static void restore_gl_state(const struct water_gl_state *in)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     glBindFramebuffer(GL_FRAMEBUFFER, in->fb);
     glViewport(in->viewport[0], in->viewport[1], in->viewport[2], in->viewport[3]);
     glClearColor(in->clear_clr[0], in->clear_clr[1], in->clear_clr[2], in->clear_clr[3]);
     R_GL_SetViewMatAndPos(&in->u_view, &in->u_cam_pos);
+
+    PERF_RETURN_VOID();
 }
 
 static int wbuff_width(void)
@@ -140,6 +147,7 @@ static int wbuff_height(int width)
 
 static GLuint make_new_tex(int width, int height)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLuint ret;
@@ -150,11 +158,12 @@ static GLuint make_new_tex(int width, int height)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
     GL_ASSERT_OK();
-    return ret;
+    PERF_RETURN(ret);
 }
 
 static GLuint make_new_depth_tex(int width, int height)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLuint ret;
@@ -168,11 +177,12 @@ static GLuint make_new_depth_tex(int width, int height)
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     GL_ASSERT_OK();
-    return ret;
+    PERF_RETURN(ret);
 }
 
 static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex, bool on, struct render_input in)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLint texw, texh;
@@ -210,10 +220,12 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex, bool on, str
     glDisable(GL_CLIP_DISTANCE0);
 
     GL_ASSERT_OK();
+    PERF_RETURN_VOID();
 }
 
 static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLint texw, texh;
@@ -247,7 +259,7 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
         glDeleteRenderbuffers(1, &depth_rb);
         glDeleteFramebuffers(1, &fb);
         GL_ASSERT_OK();
-        return; 
+        PERF_RETURN_VOID(); 
     }
 
     /* Flip camera over the water's surface */
@@ -280,11 +292,13 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     glEnable(GL_CULL_FACE);
 
     GL_ASSERT_OK();
+    PERF_RETURN_VOID();
 }
 
 static void setup_texture_uniforms(GLuint shader_prog, GLuint refract_tex, 
                                    GLuint refract_depth, GLuint reflect_tex)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLuint sampler_loc;
@@ -303,10 +317,13 @@ static void setup_texture_uniforms(GLuint shader_prog, GLuint refract_tex,
     glActiveTexture(REFLECT_TUNIT);
     glBindTexture(GL_TEXTURE_2D, reflect_tex);
     glUniform1i(sampler_loc, REFLECT_TUNIT - GL_TEXTURE0);
+
+    PERF_RETURN_VOID();
 }
 
 static void setup_map_uniforms(GLuint shader_prog)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLuint sampler_loc;
@@ -320,10 +337,13 @@ static void setup_map_uniforms(GLuint shader_prog)
     glActiveTexture(s_ctx.normal.tunit);
     glBindTexture(GL_TEXTURE_2D, s_ctx.normal.id);
     glUniform1i(sampler_loc, s_ctx.normal.tunit - GL_TEXTURE0);
+
+    PERF_RETURN_VOID();
 }
 
 static void setup_cam_uniforms(GLuint shader_prog)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLuint sampler_loc;
@@ -333,10 +353,13 @@ static void setup_cam_uniforms(GLuint shader_prog)
 
     sampler_loc = glGetUniformLocation(shader_prog, GL_U_CAM_FAR);
     glUniform1f(sampler_loc, CONFIG_DRAWDIST);
+
+    PERF_RETURN_VOID();
 }
 
 static void setup_tiling_uniforms(GLuint shader_prog, const struct map *map)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     struct map_resolution res;
@@ -345,10 +368,13 @@ static void setup_tiling_uniforms(GLuint shader_prog, const struct map *map)
 
     GLuint sampler_loc = glGetUniformLocation(shader_prog, GL_U_WATER_TILING);
     glUniform2fv(sampler_loc, 1, val.raw);
+
+    PERF_RETURN_VOID();
 }
 
 static void setup_model_mat(GLuint shader_prog, const struct map *map)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     vec3_t pos = M_GetCenterPos(map);
@@ -368,10 +394,13 @@ static void setup_model_mat(GLuint shader_prog, const struct map *map)
 
     GLuint loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
+
+    PERF_RETURN_VOID();
 }
 
 static void setup_move_factor(GLuint shader_prog)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     double intpart;
@@ -384,6 +413,8 @@ static void setup_move_factor(GLuint shader_prog)
 
     GLuint sampler_loc = glGetUniformLocation(shader_prog, GL_U_MOVE_FACTOR);
     glUniform1f(sampler_loc, s_ctx.move_factor);
+
+    PERF_RETURN_VOID();
 }
 
 /*****************************************************************************/
@@ -392,6 +423,7 @@ static void setup_move_factor(GLuint shader_prog)
 
 void R_GL_WaterInit(void)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     bool ret = true;
@@ -429,16 +461,17 @@ void R_GL_WaterInit(void)
     glEnableVertexAttribArray(0);
 
     GL_ASSERT_OK();
-    return;
+    PERF_RETURN_VOID();
 
 fail_normal:
     R_GL_Texture_Free(DUDV_PATH);
 fail_dudv:
-    assert(0);
+    PERF_RETURN_VOID();
 }
 
 void R_GL_WaterShutdown(void)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     assert(s_ctx.dudv.id > 0);
@@ -452,10 +485,13 @@ void R_GL_WaterShutdown(void)
     glDeleteBuffers(1, &s_ctx.surface.VAO);
     glDeleteBuffers(1, &s_ctx.surface.VBO);
     memset(&s_ctx, 0, sizeof(s_ctx));
+
+    PERF_RETURN_VOID();
 }
 
 void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const bool *reflection)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLuint shader_prog = R_GL_Shader_GetProgForName("water");
@@ -503,5 +539,6 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
     glDeleteTextures(1, &reflect_tex);
 
     GL_ASSERT_OK();
+    PERF_RETURN_VOID();
 }
 

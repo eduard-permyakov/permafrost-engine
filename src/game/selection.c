@@ -43,6 +43,7 @@
 #include "../config.h"
 #include "../camera.h"
 #include "../main.h"
+#include "../perf.h"
 
 #include <string.h>
 #include <stdbool.h>
@@ -371,8 +372,10 @@ void G_Sel_Disable(void)
  * (ex. if the player is left-clicking on an empty part of the map), the previous selection is kept. */
 void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_obb_t *visible_obbs)
 {
+    PERF_ENTER();
+
     if(s_ctx.state != STATE_MOUSE_SEL_RELEASED)
-        return;
+        PERF_RETURN_VOID();
     s_ctx.state = STATE_MOUSE_SEL_UP;
 
     bool sel_empty = true;
@@ -436,6 +439,7 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
         sel_filter_and_set_type();
         E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
     }
+    PERF_RETURN_VOID();
 }
 
 void G_Sel_Clear(void)

@@ -1,4 +1,5 @@
-/* *  This file is part of Permafrost Engine. 
+/* 
+ *  This file is part of Permafrost Engine. 
  *  Copyright (C) 2019-2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
@@ -37,6 +38,7 @@
 #include "public/game.h"
 #include "../main.h"
 #include "../pf_math.h"
+#include "../perf.h"
 #include "../lib/public/quadtree.h"
 #include "../lib/public/khash.h"
 #include "../map/public/map.h"
@@ -183,14 +185,17 @@ void G_Pos_Shutdown(void)
 
 int G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout)
 {
+    PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
-    return G_Pos_EntsInRectWithPred(xz_min, xz_max, out, maxout, any_ent, NULL);
+    int ret = G_Pos_EntsInRectWithPred(xz_min, xz_max, out, maxout, any_ent, NULL);
+    PERF_RETURN(ret);
 }
 
 int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout,
                              bool (*predicate)(const struct entity *ent, void *arg), void *arg)
 {
+    PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
     uint32_t ent_ids[maxout];
@@ -211,11 +216,12 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, 
 
         out[ret++] = curr;
     }
-    return ret;
+    PERF_RETURN(ret);
 }
 
 int G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t maxout)
 {
+    PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
     uint32_t ent_ids[maxout];
@@ -232,13 +238,14 @@ int G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t
         assert(k != kh_end(s_postable));
         out[i] = kh_val(ents, k);
     }
-    return ret;
+    PERF_RETURN(ret);
 }
 
 struct entity *G_Pos_NearestWithPred(vec2_t xz_point, 
                                      bool (*predicate)(const struct entity *ent, void *arg), 
                                      void *arg)
 {
+    PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
     uint32_t ent_ids[MAX_SEARCH_ENTS];
@@ -270,11 +277,11 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
         }
 
         if(ret)
-            return ret;
+            PERF_RETURN(ret);
 
         len *= 2.0f; 
     }
-    return NULL;
+    PERF_RETURN(NULL);
 }
 
 struct entity *G_Pos_Nearest(vec2_t xz_point)

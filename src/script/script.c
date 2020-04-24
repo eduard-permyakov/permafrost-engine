@@ -624,13 +624,15 @@ static PyObject *PyPf_prev_frame_ms(PyObject *self)
 
 static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
 {
+    PERF_ENTER();
+
     struct perf_info *infos[16];
     size_t nthreads = Perf_Report(ARR_SIZE(infos), (struct perf_info **)&infos);
     int status;
 
     PyObject *ret = PyDict_New();
     if(!ret)
-        return NULL;
+        PERF_RETURN(NULL);
 
     for(int i = 0; i < nthreads; i++) {
 
@@ -640,7 +642,9 @@ static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
         PyObject *thread_dict = PyDict_New();
         if(!thread_dict)
             goto fail;
-        PyDict_SetItemString(ret, curr_info->threadname, thread_dict);
+        if(0 != PyDict_SetItemString(ret, curr_info->threadname, thread_dict))
+            goto fail;
+        Py_DECREF(thread_dict);
 
         PyObject *children = PyList_New(0);
         if(!children)
@@ -648,6 +652,7 @@ static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
 
         if(0 != PyDict_SetItemString(thread_dict, "children", children))
             goto fail;
+        Py_DECREF(children);
 
         parents[0] = thread_dict;
         for(int j = 0; j < curr_info->nentries; j++) {
@@ -663,6 +668,7 @@ static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
             if(0 != PyList_Append(PyDict_GetItemString(parent, "children"), newdict))
                 goto fail;
             parents[j + 1] = newdict;
+            Py_DECREF(newdict);
 
             PyObject *name = PyString_FromString(curr_info->entries[j].funcname);
             if(!name)
@@ -697,11 +703,11 @@ static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
                 goto fail;
         }
     }
-    return ret;
+    PERF_RETURN(ret);
 
 fail:
     Py_DECREF(ret);
-    return NULL;
+    PERF_RETURN(NULL);
 }
 
 static PyObject *PyPf_get_resolution(PyObject *self)

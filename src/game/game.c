@@ -257,6 +257,7 @@ static void g_draw_pass(const struct camera *cam, const struct map *map,
 
 static void g_render_healthbars(void)
 {
+    PERF_ENTER();
     size_t max_ents = vec_size(&s_gs.visible);
     size_t num_combat_visible = 0;
 
@@ -289,6 +290,7 @@ static void g_render_healthbars(void)
             R_PushArg(ACTIVE_CAM, g_sizeof_camera),
         },
     });
+    PERF_RETURN_VOID();
 }
 
 static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_ranim_t *out_anim)
@@ -315,6 +317,8 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
 
 static void g_create_render_input(struct render_input *out)
 {
+    PERF_ENTER();
+
     struct sval shadows_setting;
     ss_e status = Settings_Get("pf.video.shadows_enabled", &shadows_setting);
     assert(status == SS_OKAY);
@@ -334,6 +338,8 @@ static void g_create_render_input(struct render_input *out)
 
     assert(vec_size(&out->cam_vis_stat) + vec_size(&out->cam_vis_anim) == vec_size(&s_gs.visible));
     assert(vec_size(&out->light_vis_stat) + vec_size(&out->light_vis_anim) == vec_size(&s_gs.light_visible));
+
+    PERF_RETURN_VOID();
 }
 
 static void g_destroy_render_input(struct render_input *rinput)
@@ -662,6 +668,7 @@ fail_active:
 
 bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
 {
+    PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
     G_ClearState();
@@ -669,20 +676,21 @@ bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
     size_t copysize = AL_MapShallowCopySize(stream);
     s_gs.prev_tick_map = malloc(copysize);
     if(!s_gs.prev_tick_map)
-        return false;
+        PERF_RETURN(false);
 
     s_gs.map = AL_MapFromPFMapStream(stream, update_navgrid);
     if(!s_gs.map)
-        return false;
+        PERF_RETURN(false);
 
     g_init_map();
     E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
 
-    return true;
+    PERF_RETURN(true);
 }
 
 void G_ClearState(void)
 {
+    PERF_ENTER();
     G_Sel_Clear();
 
     uint32_t key;
@@ -728,6 +736,7 @@ void G_ClearState(void)
     }
     G_ActivateCamera(0, CAM_MODE_RTS);
     s_gs.num_factions = 0;
+    PERF_RETURN_VOID();
 }
 
 void G_ClearRenderWork(void)
@@ -814,6 +823,7 @@ bool G_PointInsideMap(vec2_t xz)
 
 void G_BakeNavDataForScene(void)
 {
+    PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
     uint32_t key;
@@ -833,14 +843,17 @@ void G_BakeNavDataForScene(void)
 
     M_NavUpdatePortals(s_gs.map);
     M_NavUpdateIslandsField(s_gs.map);
+    PERF_RETURN_VOID();
 }
 
 bool G_UpdateMinimapChunk(int chunk_r, int chunk_c)
 {
+    PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
     assert(s_gs.map);
-    return M_UpdateMinimapChunk(s_gs.map, chunk_r, chunk_c);
+    bool ret = M_UpdateMinimapChunk(s_gs.map, chunk_r, chunk_c);
+    PERF_RETURN(ret);
 }
 
 void G_MoveActiveCamera(vec2_t xz_ground_pos)
@@ -887,8 +900,8 @@ void G_Shutdown(void)
 
 void G_Update(void)
 {
-    ASSERT_IN_MAIN_THREAD();
     PERF_ENTER();
+    ASSERT_IN_MAIN_THREAD();
 
     if(s_gs.map) {
         M_Update(s_gs.map);
@@ -948,6 +961,7 @@ void G_Update(void)
 
 void G_Render(void)
 {
+    PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
     ss_e status;
     (void)status;
@@ -1015,14 +1029,17 @@ void G_Render(void)
     if(s_gs.map) {
         M_RenderMinimap(s_gs.map, ACTIVE_CAM);
     }
+    PERF_RETURN_VOID();
 }
 
 void G_RenderMapAndEntities(struct render_input in)
 {
+    PERF_ENTER();
     if(in.shadows) {
         g_shadow_pass(in.cam, in.map, in.light_vis_stat, in.light_vis_anim);
     }
     g_draw_pass(in.cam, in.map, in.shadows, in.cam_vis_stat, in.cam_vis_anim);
+    PERF_RETURN_VOID();
 }
 
 bool G_AddEntity(struct entity *ent, vec3_t pos)

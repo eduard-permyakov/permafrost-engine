@@ -35,6 +35,7 @@
 
 #include "a_star.h"
 #include "nav_private.h"
+#include "../perf.h"
 #include "../lib/public/pqueue.h"
 #include "../lib/public/khash.h"
 #include "fieldcache.h"
@@ -178,17 +179,19 @@ bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
                     vec_coord_t *out_path, float *out_cost)
 {
+    PERF_ENTER();
+
     struct grid_path_desc gp = {0};
     vec_coord_init(&gp.path);
 
     if(N_FC_GetGridPath(start, finish, chunk, &gp)) {
 
         if(!gp.exists)
-            return false;
+            PERF_RETURN(false);
 
         *out_cost = gp.cost;
         vec_coord_copy(out_path, &gp.path);
-        return true;
+        PERF_RETURN(true);
     }
 
     pq_coord_t          frontier;
@@ -271,7 +274,7 @@ bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
     vec_coord_copy(&gp.path, out_path);
     gp.cost = *out_cost;
     N_FC_PutGridPath(start, finish, chunk, &gp);
-    return true;
+    PERF_RETURN(true);
 
 fail_find_path:
     gp.exists = false;
@@ -282,13 +285,15 @@ fail_find_path:
 fail_running_cost:
     kh_destroy(key_coord, came_from);
 fail_came_from:
-    return false;
+    PERF_RETURN(false);
 }
 
 bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *finish, 
                            const struct nav_private *priv, 
                            vec_portal_t *out_path, float *out_cost)
 {
+    PERF_ENTER();
+
     pq_portal_t          frontier;
     khash_t(key_portal) *came_from;
     khash_t(key_float)  *running_cost;
@@ -385,7 +390,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
     kh_destroy(key_float, running_cost);
     kh_destroy(key_portal, came_from);
 
-    return true;
+    PERF_RETURN(true);
 
 fail_find_path:
     pq_portal_destroy(&frontier);
@@ -393,6 +398,6 @@ fail_find_path:
 fail_running_cost:
     kh_destroy(key_portal, came_from);
 fail_came_from:
-    return false;
+    PERF_RETURN(false);
 }
 

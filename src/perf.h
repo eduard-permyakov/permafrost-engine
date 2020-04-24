@@ -40,16 +40,17 @@
 #include <stddef.h>
 #include <SDL_thread.h>
 
+#ifndef NDEBUG
 
 #define PERF_ENTER()            \
     do{                         \
         Perf_Push(__func__);    \
     }while(0)
 
-#define PERF_RETURN(val)        \
+#define PERF_RETURN(...)        \
     do{                         \
         Perf_Pop();             \
-        return (val);           \
+        return (__VA_ARGS__);   \
     }while(0)
 
 #define PERF_RETURN_VOID()      \
@@ -57,6 +58,14 @@
         Perf_Pop();             \
         return;                 \
     }while(0)
+
+#else
+
+#define PERF_ENTER()
+#define PERF_RETURN(...) do {return (__VA_ARGS__); } while(0)
+#define PERF_RETURN_VOID(...) do { return; } while(0)
+
+#endif
 
 
 void   Perf_Push(const char *name);

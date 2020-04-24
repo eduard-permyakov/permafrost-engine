@@ -47,6 +47,7 @@
 #include "../entity.h"
 #include "../event.h"
 #include "../main.h"
+#include "../perf.h"
 #include "../lib/public/queue.h"
 
 #include <stdlib.h>
@@ -291,7 +292,7 @@ static void n_set_cost_edge(struct nav_chunk *chunk,
         tile_path_map = right;
         break;
     default: 
-	    assert(0);
+        assert(0);
     }
 
     size_t r_base = tile_r * 2;
@@ -1136,6 +1137,8 @@ bool N_Init(void)
 
 void N_Update(void *nav_private)
 {
+    PERF_ENTER();
+
     struct nav_private *priv = nav_private;
     bool components_dirty = false;
 
@@ -1162,6 +1165,7 @@ void N_Update(void *nav_private)
         n_update_components(priv);
 
     kh_clear(coord, s_dirty_chunks);
+    PERF_RETURN_VOID();
 }
 
 void N_Shutdown(void)
@@ -1734,6 +1738,8 @@ dest_id_t N_DestIDForPos(void *nav_private, vec3_t map_pos, vec2_t xz_pos)
 bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest, 
                    vec3_t map_pos, dest_id_t *out_dest_id)
 {
+    PERF_ENTER();
+
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
         priv->width, priv->height,
@@ -1763,7 +1769,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
     uint16_t dst_iid = dst_chunk->islands[dst_desc.tile_r][dst_desc.tile_c];
 
     if(src_iid != dst_iid)
-        return false; 
+        PERF_RETURN(false); 
 
     /* Even if a mapping exists, the actual flow field may have been evicted from
      * the cache, due to space constraints or invalidation. */
@@ -1805,7 +1811,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
     && src_chunk->local_islands[src_desc.tile_r][src_desc.tile_c] == src_chunk->local_islands[dst_desc.tile_r][dst_desc.tile_c]) {
 
         *out_dest_id = ret;
-        return true;
+        PERF_RETURN(true);
     }
 
     /* If the source and destination are on the same chunk and, in the absence of blockers,
@@ -1818,14 +1824,14 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         (struct coord){dst_desc.tile_r, dst_desc.tile_c})) {
         
         *out_dest_id = ret;
-        return true;
+        PERF_RETURN(true);
     }
 
     const struct portal *dst_port = n_closest_reachable_portal(dst_chunk, 
         (struct coord){dst_desc.tile_r, dst_desc.tile_c});
 
     if(!dst_port)
-        return false; 
+        PERF_RETURN(false); 
 
     float cost;
     vec_portal_t path;
@@ -1834,7 +1840,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
     bool path_exists = AStar_PortalGraphPath(src_desc, dst_port, priv, &path, &cost);
     if(!path_exists) {
         vec_portal_destroy(&path);
-        return false; 
+        PERF_RETURN(false); 
     }
 
     struct coord prev_los_coord = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
@@ -1930,7 +1936,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
     vec_portal_destroy(&path);
 
     *out_dest_id = ret; 
-    return true;
+    PERF_RETURN(true);
 }
 
 vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest, 

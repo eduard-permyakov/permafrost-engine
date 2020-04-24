@@ -288,6 +288,8 @@ void Perf_FinishTick(void)
 
 size_t Perf_Report(size_t maxout, struct perf_info **out)
 {
+    PERF_ENTER();
+
     size_t ret = 0;
     for(khiter_t k = kh_begin(s_thread_state_table); k != kh_end(s_thread_state_table); k++) {
     
@@ -315,6 +317,7 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
         }
         out[ret++] = info;
     }
-    return ret;
+
+    PERF_RETURN(ret);
 }
 

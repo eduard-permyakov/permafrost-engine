@@ -42,6 +42,7 @@
 #include "gl_assert.h"
 
 #include "../main.h"
+#include "../perf.h"
 #include "../asset_load.h"
 #include "../map/public/tile.h"
 #include "../settings.h"
@@ -190,6 +191,7 @@ size_t al_priv_buffsize_from_header(const struct pfobj_hdr *header)
 
 void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header, SDL_RWops *stream)
 {
+    PERF_ENTER();
     struct render_private *priv = malloc(al_priv_buffsize_from_header(header));
     if(!priv)
         goto fail_alloc_priv;
@@ -242,14 +244,14 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     });
 
     free(vbuff);
-    return priv;
+    PERF_RETURN(priv);
 
 fail_parse:
     free(vbuff);
 fail_alloc_vbuff:
     free(priv);
 fail_alloc_priv:
-    return NULL;
+    PERF_RETURN(NULL);
 }
 
 void R_AL_DumpPrivate(FILE *stream, void *priv_data)
@@ -314,6 +316,7 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
                             const struct tile *tiles, size_t width, size_t height,
                             void *priv_buff, const char *basedir)
 {
+    PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
     size_t num_verts = VERTS_PER_TILE * (width * height);
@@ -354,9 +357,9 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
     });
 
     free(vbuff);
-    return true;
+    PERF_RETURN(true);
 
 fail_alloc:
-    return false;
+    PERF_RETURN(false);
 }
 

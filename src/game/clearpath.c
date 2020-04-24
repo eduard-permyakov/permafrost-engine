@@ -49,6 +49,7 @@
 #include "../collision.h"
 #include "../settings.h"
 #include "../ui.h"
+#include "../perf.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../map/public/map.h"
@@ -646,16 +647,18 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
                                vec_cp_ent_t dyn_neighbs,
                                vec_cp_ent_t stat_neighbs)
 {
+    PERF_ENTER();
+
     do{
         vec2_t ret;
         bool found = clearpath_new_velocity(cpent, ent_uid, ent_des_v, dyn_neighbs, stat_neighbs, &ret);
         if(found)
-            return ret;
+            PERF_RETURN(ret);
 
         remove_furthest(cpent.xz_pos, &dyn_neighbs, &stat_neighbs);
 
     }while(vec_size(&dyn_neighbs) > 0 && vec_size(&stat_neighbs) > 0);
 
-    return (vec2_t){0.0f, 0.0f};
+    PERF_RETURN((vec2_t){0.0f, 0.0f});
 }
 

@@ -209,11 +209,15 @@ static void render_thread_start_work(void)
 
 void wait_render_work_done(void)
 {
+    PERF_ENTER();
+
     SDL_LockMutex(s_rstate.done_lock);
     while(!s_rstate.done)
         SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
     s_rstate.done = false;
     SDL_UnlockMutex(s_rstate.done_lock);
+
+    PERF_RETURN_VOID();
 }
 
 static void fs_on_key_press(void *user, void *event)
@@ -317,6 +321,11 @@ static bool engine_init(char **argv)
     if(!vec_event_resize(&s_prev_tick_events, 8192))
         return false;
 
+    if(!Perf_Init()) {
+        fprintf(stderr, "Failed to initialize performance module.\n");
+        goto fail_perf;
+    }
+
     /* Initialize 'Settings' before any subsystem to allow all of them 
      * to register settings. */
     if(Settings_Init() != SS_OKAY) {
@@ -391,10 +400,6 @@ static bool engine_init(char **argv)
     if(!rarg.out_success)
         goto fail_render_init;
 
-    if(!Perf_Init()) {
-        fprintf(stderr, "Failed to initialize performance module.\n");
-        goto fail_perf;
-    }
     Perf_RegisterThread(g_main_thread_id, "main");
     Perf_RegisterThread(g_render_thread_id, "render");
 
@@ -461,8 +466,6 @@ fail_render:
 fail_cursor:
     AL_Shutdown();
 fail_al:
-    Perf_Shutdown();
-fail_perf:
 fail_render_init:
     render_thread_quit();
 fail_rthread:
@@ -473,6 +476,8 @@ fail_rstate:
 fail_sdl:
     Settings_Shutdown();
 fail_settings:
+    Perf_Shutdown();
+fail_perf:
     return false; 
 }
 
@@ -554,8 +559,10 @@ void Engine_FlushRenderWorkQueue(void)
 
 void Engine_WaitRenderWorkDone(void)
 {
-    if(s_quit)
-        return;
+    PERF_ENTER();
+    if(s_quit) {
+        PERF_RETURN_VOID();
+    }
 
     /* Wait for the render thread to finish, but don't yet clear/ack the 'done' flag */
     SDL_LockMutex(s_rstate.done_lock);
@@ -563,6 +570,8 @@ void Engine_WaitRenderWorkDone(void)
         SDL_CondWait(s_rstate.done_cond, s_rstate.done_lock);
     }
     SDL_UnlockMutex(s_rstate.done_lock);
+
+    PERF_RETURN_VOID();
 }
 
 void Engine_ClearPendingEvents(void)

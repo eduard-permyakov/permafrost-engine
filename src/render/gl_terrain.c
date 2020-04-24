@@ -37,6 +37,7 @@
 #include "gl_texture.h"
 #include "gl_shader.h"
 #include "../main.h"
+#include "../perf.h"
 
 #include <assert.h>
 
@@ -53,14 +54,17 @@ static bool               s_map_ctx_active = false;
 
 void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     bool ret = R_GL_Texture_MakeArrayMap(map_texfiles, *num_textures, &s_map_textures);
     assert(ret);
+    PERF_RETURN_VOID();
 }
 
 void R_GL_MapBegin(const bool *shadows)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     assert(!s_map_ctx_active);
 
@@ -74,13 +78,18 @@ void R_GL_MapBegin(const bool *shadows)
     glUseProgram(shader_prog);
     R_GL_Texture_ActivateArray(&s_map_textures, shader_prog);
     s_map_ctx_active = true;
+
+    PERF_RETURN_VOID();
 }
 
 void R_GL_MapEnd(void)
 {
+    PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     assert(s_map_ctx_active);
     s_map_ctx_active = false;
+
+    PERF_RETURN_VOID();
 }
 

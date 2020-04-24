@@ -56,8 +56,9 @@ class PerfStatsWindow(pf.Window):
     def frame_perf_tab(self):
 
         def layout_children(children):
+            children.sort(key=lambda item: item["ms_delta"], reverse=True)
             for c in children:
-                name = "{:} [{:.6f} ms]".format(c["name"], c["ms_delta"])
+                name = "{:}  [{} children]  [{:.6f} ms]".format(c["name"], len(c["children"]), c["ms_delta"])
                 self.tree_element(pf.NK_TREE_NODE, name, pf.NK_MINIMIZED, False, layout_children, (c["children"],))
 
         for name, perfdict in self.selected_perfstats.items():
@@ -117,15 +118,8 @@ class PerfStatsWindow(pf.Window):
             self.selected_perfstats = newstats
             self.tickindex = (self.tickindex + 1) % len(self.frame_times_ms)
 
-        def on_pause_resume():
-            self.paused = not self.paused
-
-        text = lambda p: "Resume " if p else "Pause"
-        self.layout_row_dynamic(30, 1)
-        self.button_label(text(self.paused), on_pause_resume)
-
         self.layout_row_dynamic(100, 1)
-        self.simple_chart(pf.NK_CHART_LINES, (0, 150), self.frame_times_ms, self.on_chart_click)
+        self.simple_chart(pf.NK_CHART_LINES, (0, 200), self.frame_times_ms, self.on_chart_click)
 
         self.layout_row_dynamic(20, 1)
         avg_frame_latency_ms = float(self.ticksum_ms)/len(self.frame_times_ms)
@@ -141,6 +135,13 @@ class PerfStatsWindow(pf.Window):
 
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Max Frame Latency: {0} ms".format(self.max_frame_latency), (255, 255, 0))
+
+        def on_pause_resume():
+            self.paused = not self.paused
+
+        text = lambda p: "Resume " if p else "Pause"
+        self.layout_row_dynamic(30, 1)
+        self.button_label(text(self.paused), on_pause_resume)
 
         self.tree(pf.NK_TREE_TAB, "Frame Performance", pf.NK_MINIMIZED, self.frame_perf_tab)
         self.tree(pf.NK_TREE_TAB, "Renderer Info", pf.NK_MINIMIZED, self.render_info_tab)
