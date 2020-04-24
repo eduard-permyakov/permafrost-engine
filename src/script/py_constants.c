@@ -356,6 +356,7 @@ static void s_expose_sdl_constants(PyObject *module)
 
 static void s_expose_nuklear_constants(PyObject *module)
 {
+    /* nk_panel_flags */
     PY_EXPOSE_ENUM(module, NK_WINDOW_BORDER);
     PY_EXPOSE_ENUM(module, NK_WINDOW_MOVABLE);
     PY_EXPOSE_ENUM(module, NK_WINDOW_SCALABLE);
@@ -368,6 +369,7 @@ static void s_expose_nuklear_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, NK_WINDOW_SCALE_LEFT);
     PY_EXPOSE_ENUM(module, NK_WINDOW_NO_INPUT);
 
+    /* nk_text_align */
     PY_EXPOSE_ENUM(module, NK_TEXT_ALIGN_LEFT);
     PY_EXPOSE_ENUM(module, NK_TEXT_ALIGN_CENTERED);
     PY_EXPOSE_ENUM(module, NK_TEXT_ALIGN_RIGHT);
@@ -375,17 +377,12 @@ static void s_expose_nuklear_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, NK_TEXT_ALIGN_MIDDLE);
     PY_EXPOSE_ENUM(module, NK_TEXT_ALIGN_BOTTOM);
 
+    /* nk_text_alignment */
     PY_EXPOSE_ENUM(module, NK_TEXT_LEFT);
     PY_EXPOSE_ENUM(module, NK_TEXT_CENTERED);
     PY_EXPOSE_ENUM(module, NK_TEXT_RIGHT);
 
-    PY_EXPOSE_ENUM(module, NK_CHART_LINES);
-    PY_EXPOSE_ENUM(module, NK_CHART_COLUMN);
-    PY_EXPOSE_ENUM(module, NK_CHART_MAX);
-
-    PY_EXPOSE_ENUM(module, NK_DYNAMIC);
-    PY_EXPOSE_ENUM(module, NK_STATIC);
-
+    /* nk_edit_flags */
     PY_EXPOSE_ENUM(module, NK_EDIT_DEFAULT);
     PY_EXPOSE_ENUM(module, NK_EDIT_READ_ONLY);
     PY_EXPOSE_ENUM(module, NK_EDIT_AUTO_SELECT);
@@ -400,10 +397,72 @@ static void s_expose_nuklear_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, NK_EDIT_MULTILINE);
     PY_EXPOSE_ENUM(module, NK_EDIT_GOTO_END_ON_ACTIVATE);
 
+    /* nk_edit_types */
     PY_EXPOSE_ENUM(module, NK_EDIT_SIMPLE);
     PY_EXPOSE_ENUM(module, NK_EDIT_FIELD);
     PY_EXPOSE_ENUM(module, NK_EDIT_BOX);
     PY_EXPOSE_ENUM(module, NK_EDIT_EDITOR);
+
+    /* nk_button_behavior */
+    PY_EXPOSE_ENUM(module, NK_BUTTON_DEFAULT);
+    PY_EXPOSE_ENUM(module, NK_BUTTON_REPEATER);
+
+    /* nk_modify */
+    PY_EXPOSE_ENUM(module, NK_FIXED);
+    PY_EXPOSE_ENUM(module, NK_MODIFIABLE);
+
+    /* nk_orientation */
+    PY_EXPOSE_ENUM(module, NK_VERTICAL);
+    PY_EXPOSE_ENUM(module, NK_HORIZONTAL);
+
+    /* nk_collapse_status */
+    PY_EXPOSE_ENUM(module, NK_MINIMIZED);
+    PY_EXPOSE_ENUM(module, NK_MAXIMIZED);
+
+    /* nk_show_states */
+    PY_EXPOSE_ENUM(module, NK_HIDDEN);
+    PY_EXPOSE_ENUM(module, NK_SHOWN);
+
+    /* nk_chart_type */
+    PY_EXPOSE_ENUM(module, NK_CHART_LINES);
+    PY_EXPOSE_ENUM(module, NK_CHART_COLUMN);
+    PY_EXPOSE_ENUM(module, NK_CHART_MAX);
+
+    /* nk_chart_event */
+    PY_EXPOSE_ENUM(module, NK_CHART_HOVERING);
+    PY_EXPOSE_ENUM(module, NK_CHART_CLICKED);
+
+    /* nk_color_format */
+    PY_EXPOSE_ENUM(module, NK_RGB);
+    PY_EXPOSE_ENUM(module, NK_RGBA);
+
+    /* nk_popup_type */
+    PY_EXPOSE_ENUM(module, NK_POPUP_STATIC);
+    PY_EXPOSE_ENUM(module, NK_POPUP_DYNAMIC);
+
+    /* nk_layout_format */
+    PY_EXPOSE_ENUM(module, NK_DYNAMIC);
+    PY_EXPOSE_ENUM(module, NK_STATIC);
+
+    /* nk_tree_type */
+    PY_EXPOSE_ENUM(module, NK_TREE_NODE);
+    PY_EXPOSE_ENUM(module, NK_TREE_TAB);
+
+    /* nk_symbol_type sym */
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_NONE);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_X);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_UNDERSCORE);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_CIRCLE_SOLID);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_CIRCLE_OUTLINE);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_RECT_SOLID);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_RECT_OUTLINE);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_TRIANGLE_UP);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_TRIANGLE_DOWN);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_TRIANGLE_LEFT);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_TRIANGLE_RIGHT);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_PLUS);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_MINUS);
+    PY_EXPOSE_ENUM(module, NK_SYMBOL_MAX);
 }
 
 static void s_expose_event_constants(PyObject *module)

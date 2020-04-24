@@ -93,6 +93,9 @@ static PyObject *PyWindow_selectable_label(PyWindowObject *self, PyObject *args)
 static PyObject *PyWindow_option_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_edit_string(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_tree(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_tree_element(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_selectable_symbol_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_checkbox(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args);
@@ -193,7 +196,21 @@ static PyMethodDef PyWindow_methods[] = {
 
     {"group", 
     (PyCFunction)PyWindow_group, METH_VARARGS,
-    "The window UI statements within the argument callable will be put in a group."},
+    "The window UI components pushed in the callable argument will be nested under a group."},
+
+    {"tree", 
+    (PyCFunction)PyWindow_tree, METH_VARARGS,
+    "The window UI components pushed in the callable argument will be nested under a "
+    "collapsable tree section."},
+
+    {"tree_element", 
+    (PyCFunction)PyWindow_tree_element, METH_VARARGS,
+    "The window UI components pushed in the callable argument will be nested under a "
+    "collapsable non-root tree section."},
+
+    {"selectable_symbol_label", 
+    (PyCFunction)PyWindow_selectable_symbol_label, METH_VARARGS,
+    "Text label preceded by one of the pf.NK_SYMBOL_ symbols."},
 
     {"combo_box", 
     (PyCFunction)PyWindow_combo_box, METH_VARARGS,
@@ -536,18 +553,20 @@ static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args)
 {
     int type;
     int min, max;
-    PyObject *list;
+    PyObject *list, *on_click_handler = NULL;
 
+    int clicked_index = -1;
     int hovered_index = -1;
     long hovered_val;
 
-    if(!PyArg_ParseTuple(args, "i(ii)O", &type, &min, &max, &list)) {
-        PyErr_SetString(PyExc_TypeError, "3 arguments expected: an integer, a tuple of two integers, and an object.");
+    if(!PyArg_ParseTuple(args, "i(ii)O|O", &type, &min, &max, &list, &on_click_handler)) {
+        PyErr_SetString(PyExc_TypeError, "3 arguments expected: an integer, a tuple of two integers, and a list object. "
+            "Optionally, a callable taking exactly one integer index argument (click handler) can additionally be supplied.");
         return NULL;
     }
 
     if(!PyList_Check(list)) {
-        PyErr_SetString(PyExc_TypeError, "Last argument must be a list.");
+        PyErr_SetString(PyExc_TypeError, "Third argument must be a list.");
         return NULL;
     }
 
@@ -569,11 +588,24 @@ static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args)
                 hovered_index = i;
                 hovered_val = val;
             }
+
+            if((res & NK_CHART_CLICKED) && on_click_handler) {
+                clicked_index = i;
+            }
         }
         nk_chart_end(s_nk_ctx);
 
         if(hovered_index != -1)
             nk_tooltipf(s_nk_ctx, "Value: %lu", hovered_val);
+
+        if(clicked_index != -1 && on_click_handler) {
+            PyObject *args = Py_BuildValue("(i)", clicked_index);
+            if(args) {
+                PyObject *ret = PyObject_CallObject(on_click_handler, args);
+                Py_DECREF(args);
+                Py_XDECREF(ret);
+            }
+        }
     }
 
     Py_RETURN_NONE;
@@ -657,6 +689,124 @@ static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args)
     }
     nk_group_end(s_nk_ctx);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_tree(PyWindowObject *self, PyObject *args)
+{
+    int type, state;
+    const char *name;
+    PyObject *callable, *cargs = NULL;
+
+    if(!PyArg_ParseTuple(args, "isiO|O", &type, &name, &state, &callable, &cargs)) {
+        PyErr_SetString(PyExc_TypeError, "Invalid arguments. Expecting: (type, name, state, callable, [args])");
+        return NULL;
+    }
+
+    if(type != NK_TREE_TAB && type != NK_TREE_NODE) {
+        PyErr_SetString(PyExc_TypeError, "First argument must be one of pf.NK_TREE_TAB or pf.NK_TREE_NODE.");
+        return NULL;
+    }
+
+    if(state != NK_MINIMIZED && state != NK_MAXIMIZED) {
+        PyErr_SetString(PyExc_TypeError, "Third argument must be one of pf.NK_MINIMIZED or pf.NK_MAXIMIZED.");
+        return NULL;
+    }
+
+    if(!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "Fourth argument must be callable.");
+        return NULL;
+    }
+
+    if(cargs && !PyTuple_Check(cargs)) {
+        PyErr_SetString(PyExc_TypeError, "(Optional) fifth argument must be a tuple.");
+        return NULL;
+    }
+
+    bool shown;
+    if((shown = nk_tree_push_hashed(s_nk_ctx, type, name, state, name, strlen(name), (uintptr_t)self))) {
+        PyObject *ret = PyObject_CallObject(callable, cargs);
+        Py_XDECREF(ret);
+        nk_tree_pop(s_nk_ctx);
+    }
+
+    if(shown)
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
+}
+
+static PyObject *PyWindow_tree_element(PyWindowObject *self, PyObject *args)
+{
+    int type, state;
+    const char *name;
+    PyObject *callable, *selected, *cargs = NULL;
+
+    if(!PyArg_ParseTuple(args, "isiOO|O", &type, &name, &state, &selected, &callable, &cargs)) {
+        PyErr_SetString(PyExc_TypeError, "Invalida arguments. Expecting: (type, name, state, selected, callable, [args])");
+        return NULL;
+    }
+
+    if(type != NK_TREE_TAB && type != NK_TREE_NODE) {
+        PyErr_SetString(PyExc_TypeError, "First argument must be one of pf.NK_TREE_TAB or pf.NK_TREE_NODE.");
+        return NULL;
+    }
+
+    if(state != NK_MINIMIZED && state != NK_MAXIMIZED) {
+        PyErr_SetString(PyExc_TypeError, "Third argument must be one of pf.NK_MINIMIZED or pf.NK_MAXIMIZED.");
+        return NULL;
+    }
+
+    if(!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "Fifth argument must be callable.");
+        return NULL;
+    }
+
+    if(cargs && !PyTuple_Check(cargs)) {
+        PyErr_SetString(PyExc_TypeError, "(Optional) sixth argument must be a tuple.");
+        return NULL;
+    }
+
+    int sel = PyObject_IsTrue(selected);
+    if(nk_tree_element_push_hashed(s_nk_ctx, type, name, state, &sel, name, strlen(name), (uintptr_t)self)) {
+        PyObject *ret = PyObject_CallObject(callable, cargs);
+        Py_XDECREF(ret);
+        nk_tree_pop(s_nk_ctx);
+    }
+
+    if(sel)
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
+}
+
+static PyObject *PyWindow_selectable_symbol_label(PyWindowObject *self, PyObject *args)
+{
+    int symbol, align;
+    const char *title;
+    PyObject *selected;
+
+    if(!PyArg_ParseTuple(args, "isiO", &symbol, &title, &align, &selected)) {
+        PyErr_SetString(PyExc_TypeError, "Invalida arguments. Expecting: (symbol, title, alignment, selected)");
+        return NULL;
+    }
+
+    if(symbol < 0 || symbol >= NK_SYMBOL_MAX) {
+        PyErr_SetString(PyExc_TypeError, "First argument must be one of the pf.NK_SYMBOL_ constants.");
+        return NULL;
+    }
+
+    if(align != NK_TEXT_LEFT && align != NK_TEXT_RIGHT && align != NK_TEXT_CENTERED) {
+        PyErr_SetString(PyExc_TypeError, "Third argument must be one of: pf.NK_TEXT_LEFT, pf.NK_TEXT_CENTERED, pf.NK_TEXT_RIGHT.");
+        return NULL;
+    }
+
+    int sel = PyObject_IsTrue(selected);
+    nk_selectable_symbol_label(s_nk_ctx, symbol, title, align, &sel);
+
+    if(sel)
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
 }
 
 static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args)
