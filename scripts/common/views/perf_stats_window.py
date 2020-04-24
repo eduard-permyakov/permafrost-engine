@@ -44,43 +44,27 @@ class PerfStatsWindow(pf.Window):
         super(PerfStatsWindow, self).__init__("Performance", 
             (vresx/2 - PerfStatsWindow.WIDTH/2, vresy/2 - PerfStatsWindow.HEIGHT/2, PerfStatsWindow.WIDTH, PerfStatsWindow.HEIGHT), 
             pf.NK_WINDOW_BORDER | pf.NK_WINDOW_MOVABLE | pf.NK_WINDOW_MINIMIZABLE | pf.NK_WINDOW_TITLE | 
-            pf.NK_WINDOW_CLOSABLE | pf.NK_WINDOW_NO_SCROLLBAR, (vresx, vresy))
+            pf.NK_WINDOW_CLOSABLE, (vresx, vresy))
         self.tickindex = 0
         self.ticksum_ms = 0
         self.max_frame_latency = 0
         self.frame_times_ms = [0]*100
+        self.frame_perfstats = [{}]*100
+        self.selected_perfstats = {}
+        self.paused = False
 
-    def update(self):
+    def frame_perf_tab(self):
 
-        newtick = pf.prev_frame_ms()
-        if newtick > self.max_frame_latency:
-            self.max_frame_latency = newtick
+        def layout_children(children):
+            for c in children:
+                name = "{:} [{:.6f} ms]".format(c["name"], c["ms_delta"])
+                self.tree_element(pf.NK_TREE_NODE, name, pf.NK_MINIMIZED, False, layout_children, (c["children"],))
 
-        self.ticksum_ms -= self.frame_times_ms[self.tickindex]
-        self.ticksum_ms += newtick
-        self.frame_times_ms[self.tickindex] = newtick
-        self.tickindex = (self.tickindex + 1) % len(self.frame_times_ms)
+        for name, perfdict in self.selected_perfstats.items():
+            self.tree_element(pf.NK_TREE_NODE, name, pf.NK_MINIMIZED, False, layout_children, (perfdict["children"],))
 
-        self.layout_row_dynamic(100, 1)
-        self.simple_chart(pf.NK_CHART_LINES, (0, 100), self.frame_times_ms)
-
-        self.layout_row_dynamic(20, 1)
-        avg_frame_latency_ms = float(self.ticksum_ms)/len(self.frame_times_ms)
-        if avg_frame_latency_ms == 0.0:
-            return
-        
-        fps = 1000/avg_frame_latency_ms
-        self.label_colored_wrap("FPS: {0}".format(int(fps)), (255, 255, 0));
-
-        self.layout_row_dynamic(20, 2)
-        self.label_colored_wrap("Avg. Frame Latency: {0:.1f} ms".format(avg_frame_latency_ms), (255, 255, 0));
-
-        self.layout_row_dynamic(20, 1)
-        self.label_colored_wrap("Max Frame Latency: {0} ms".format(self.max_frame_latency), (255, 255, 0))
-
-        self.layout_row_dynamic(10, 1)
+    def render_info_tab(self):
         render_info = pf.get_render_info()
-
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Renderer: %s" % render_info["renderer"], (255, 255, 255))
         self.layout_row_dynamic(20, 1)
@@ -90,7 +74,7 @@ class PerfStatsWindow(pf.Window):
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Vendor: %s" % render_info["vendor"], (255, 255, 255))
 
-        self.layout_row_dynamic(10, 1)
+    def nav_stats_tab(self):
         nav_stats = pf.get_nav_perfstats()
 
         self.layout_row_dynamic(20, 1)
@@ -114,4 +98,51 @@ class PerfStatsWindow(pf.Window):
         self.label_colored_wrap("[Grid Path Cache] Used: {used:04d}/{cap:04d}   Hit Rate: {hr:02.03f}" \
             .format(used=nav_stats["grid_path_used"], cap=nav_stats["grid_path_max"], hr=nav_stats["grid_path_hit_rate"]), \
             (0, 255, 0))
+
+    def on_chart_click(self, index):
+        self.selected_perfstats = self.frame_perfstats[index]
+
+    def update(self):
+
+        if not self.paused:
+            newtick = pf.prev_frame_ms()
+            newstats = pf.prev_frame_perfstats()
+            if newtick > self.max_frame_latency:
+                self.max_frame_latency = newtick
+
+            self.ticksum_ms -= self.frame_times_ms[self.tickindex]
+            self.ticksum_ms += newtick
+            self.frame_times_ms[self.tickindex] = newtick
+            self.frame_perfstats[self.tickindex] = newstats
+            self.selected_perfstats = newstats
+            self.tickindex = (self.tickindex + 1) % len(self.frame_times_ms)
+
+        def on_pause_resume():
+            self.paused = not self.paused
+
+        text = lambda p: "Resume " if p else "Pause"
+        self.layout_row_dynamic(30, 1)
+        self.button_label(text(self.paused), on_pause_resume)
+
+        self.layout_row_dynamic(100, 1)
+        self.simple_chart(pf.NK_CHART_LINES, (0, 150), self.frame_times_ms, self.on_chart_click)
+
+        self.layout_row_dynamic(20, 1)
+        avg_frame_latency_ms = float(self.ticksum_ms)/len(self.frame_times_ms)
+        
+        try:
+            fps = 1000/avg_frame_latency_ms
+            self.label_colored_wrap("FPS: {0}".format(int(fps)), (255, 255, 0))
+        except: 
+            pass
+
+        self.layout_row_dynamic(20, 2)
+        self.label_colored_wrap("Avg. Frame Latency: {0:.1f} ms".format(avg_frame_latency_ms), (255, 255, 0))
+
+        self.layout_row_dynamic(20, 1)
+        self.label_colored_wrap("Max Frame Latency: {0} ms".format(self.max_frame_latency), (255, 255, 0))
+
+        self.tree(pf.NK_TREE_TAB, "Frame Performance", pf.NK_MINIMIZED, self.frame_perf_tab)
+        self.tree(pf.NK_TREE_TAB, "Renderer Info", pf.NK_MINIMIZED, self.render_info_tab)
+        self.tree(pf.NK_TREE_TAB, "Navigation Stats", pf.NK_MINIMIZED, self.nav_stats_tab)
 

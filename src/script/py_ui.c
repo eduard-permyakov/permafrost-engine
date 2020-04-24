@@ -671,10 +671,11 @@ static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args)
 {
     const char *name;
     int group_flags;
-    PyObject *callable;
+    PyObject *callable, *cargs = NULL;
 
-    if(!PyArg_ParseTuple(args, "siO", &name, &group_flags, &callable)) {
-        PyErr_SetString(PyExc_TypeError, "Arguments must be a string, an integer and an object.");
+    if(!PyArg_ParseTuple(args, "siO|O", &name, &group_flags, &callable)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string, an integer and an object. "
+            "Optionally, args to the callable can be supplied.");
         return NULL;
     }
 
