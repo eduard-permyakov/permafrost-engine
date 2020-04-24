@@ -60,6 +60,13 @@ def wrap_text(text, width, indent):
             line_chars += 1
             read += 1
         if read < len(text):
+            last_space_idx = read - 1
+            while not text[last_space_idx].isspace():
+                last_space_idx -= 1
+            assert text[last_space_idx].isspace()
+            trimmed = read - last_space_idx
+            ret = ret[:-trimmed]
+            read -= (trimmed-1)
             ret += '\n'
     return ret
 
