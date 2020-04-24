@@ -57,6 +57,7 @@
 #include "../main.h"
 #include "../ui.h"
 #include "../session.h"
+#include "../perf.h"
 
 #include <SDL.h>
 #include <stdio.h>
@@ -78,6 +79,7 @@ static PyObject *PyPf_global_event(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args);
 static PyObject *PyPf_prev_frame_ms(PyObject *self);
+static PyObject *PyPf_prev_frame_perfstats(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
 static PyObject *PyPf_get_native_resolution(PyObject *self);
 static PyObject *PyPf_get_basedir(PyObject *self);
@@ -195,6 +197,10 @@ static PyMethodDef pf_module_methods[] = {
     {"prev_frame_ms", 
     (PyCFunction)PyPf_prev_frame_ms, METH_NOARGS,
     "Get the duration of the previous game frame in milliseconds."},
+
+    {"prev_frame_perfstats", 
+    (PyCFunction)PyPf_prev_frame_perfstats, METH_NOARGS,
+    "Get a dictionary of the performance data for the previous frame."},
 
     {"get_resolution", 
     (PyCFunction)PyPf_get_resolution, METH_NOARGS,
@@ -614,6 +620,88 @@ static PyObject *PyPf_prev_frame_ms(PyObject *self)
 {
     extern unsigned g_last_frame_ms;
     return Py_BuildValue("i", g_last_frame_ms);
+}
+
+static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
+{
+    struct perf_info *infos[16];
+    size_t nthreads = Perf_Report(ARR_SIZE(infos), (struct perf_info **)&infos);
+    int status;
+
+    PyObject *ret = PyDict_New();
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < nthreads; i++) {
+
+        struct perf_info *curr_info = infos[i];
+        PyObject *parents[curr_info->nentries + 1];
+
+        PyObject *thread_dict = PyDict_New();
+        if(!thread_dict)
+            goto fail;
+        PyDict_SetItemString(ret, curr_info->threadname, thread_dict);
+
+        PyObject *children = PyList_New(0);
+        if(!children)
+            goto fail;
+
+        if(0 != PyDict_SetItemString(thread_dict, "children", children))
+            goto fail;
+
+        parents[0] = thread_dict;
+        for(int j = 0; j < curr_info->nentries; j++) {
+
+            PyObject *newdict = PyDict_New();
+            if(!newdict)
+                goto fail;
+
+            int parent_idx = (curr_info->entries[j].parent_idx == ~((uint32_t)0)) ? 0 : curr_info->entries[j].parent_idx + 1;
+            PyObject *parent = parents[parent_idx];
+            assert(parent && PyDict_Check(parent));
+
+            if(0 != PyList_Append(PyDict_GetItemString(parent, "children"), newdict))
+                goto fail;
+            parents[j + 1] = newdict;
+
+            PyObject *name = PyString_FromString(curr_info->entries[j].funcname);
+            if(!name)
+                goto fail;
+            status = PyDict_SetItemString(newdict, "name", name);
+            Py_DECREF(name);
+            if(0 != status)
+                goto fail;
+
+            PyObject *ms_delta = PyFloat_FromDouble(curr_info->entries[j].ms_delta);
+            if(!ms_delta)
+                goto fail;
+            status = PyDict_SetItemString(newdict, "ms_delta", ms_delta);
+            Py_DECREF(ms_delta);
+            if(0 != status)
+                goto fail;
+
+            PyObject *pc_delta = PyLong_FromUnsignedLongLong(curr_info->entries[j].pc_delta);
+            if(!pc_delta)
+                goto fail;
+            status = PyDict_SetItemString(newdict, "pc_delta", pc_delta);
+            Py_DECREF(pc_delta);
+            if(0 != status)
+                goto fail;
+
+            PyObject *children = PyList_New(0);
+            if(!children)
+                goto fail;
+            status = PyDict_SetItemString(newdict, "children", children);
+            Py_DECREF(children);
+            if(0 != status)
+                goto fail;
+        }
+    }
+    return ret;
+
+fail:
+    Py_DECREF(ret);
+    return NULL;
 }
 
 static PyObject *PyPf_get_resolution(PyObject *self)

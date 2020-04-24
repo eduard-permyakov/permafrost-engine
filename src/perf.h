@@ -37,6 +37,7 @@
 #define PERF_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <SDL_thread.h>
 
 
@@ -58,15 +59,30 @@
     }while(0)
 
 
-void Perf_Push(const char *name);
-void Perf_Pop(void);
+void   Perf_Push(const char *name);
+void   Perf_Pop(void);
+
+struct perf_info{
+    char threadname[64];
+    size_t nentries;
+    struct{
+        const char *funcname; /* borrowed */
+        uint64_t    pc_delta;
+        double      ms_delta;
+        int         parent_idx;
+    }entries[];
+};
+
+/* This returns an array of perf_info structs (one for each thread). They
+ * must be 'free'd by the caller. */
+size_t Perf_Report(size_t maxout, struct perf_info **out);
 
 /* The following can only be called from the main thread, making sure that 
  * none of the other threads are touching the Perf_ API concurrently */
-bool Perf_Init(void);
-void Perf_Shutdown(void);
-bool Perf_RegisterThread(SDL_threadID tid);
-void Perf_FinishTick(void);
+bool   Perf_Init(void);
+void   Perf_Shutdown(void);
+bool   Perf_RegisterThread(SDL_threadID tid, const char *name);
+void   Perf_FinishTick(void);
 
 #endif
 

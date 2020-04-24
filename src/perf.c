@@ -40,6 +40,7 @@
 #include "lib/public/pf_string.h"
 
 #include <assert.h>
+#include <stdio.h>
 
 
 #define PARENT_NONE ~((uint32_t)0)
@@ -60,6 +61,7 @@ VEC_TYPE(idx, uint32_t)
 VEC_IMPL(static inline, idx, uint32_t)
 
 struct perf_state{
+    char              name[64];
     /* The next name ID to hand out 
      */
     uint32_t          next_id;
@@ -126,7 +128,15 @@ static uint32_t name_id_get(const char *name, struct perf_state *ps)
     return new_id;
 }
 
-static bool pstate_init(struct perf_state *out)
+const char *name_for_id(struct perf_state *ps, uint32_t id)
+{
+    khiter_t k = kh_get(id_name, ps->id_name_table, id);
+    if(k != kh_end(ps->id_name_table))
+        return kh_val(ps->id_name_table, k);
+    return NULL;
+}
+
+static bool pstate_init(struct perf_state *out, const char *name)
 {
     out->next_id = 0;
     out->name_id_table = kh_init(name_id);
@@ -144,6 +154,7 @@ static bool pstate_init(struct perf_state *out)
     vec_perf_init(&out->perf_tree_prev);
     if(!vec_perf_resize(&out->perf_tree_prev, 32768))
         goto fail_perf_tree_prev;
+    pf_strlcpy(out->name, name, sizeof(out->name));
     return true;
 
 fail_perf_tree_prev:
@@ -200,7 +211,7 @@ void Perf_Shutdown(void)
     kh_destroy(pstate, s_thread_state_table);
 }
 
-bool Perf_RegisterThread(SDL_threadID tid)
+bool Perf_RegisterThread(SDL_threadID tid, const char *name)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -214,7 +225,7 @@ bool Perf_RegisterThread(SDL_threadID tid)
         return false;
 
     k = kh_get(pstate, s_thread_state_table, tid_to_key(tid));
-    if(!pstate_init(&kh_val(s_thread_state_table, k)))
+    if(!pstate_init(&kh_val(s_thread_state_table, k), name))
         return false;
 
     return true;
@@ -273,5 +284,37 @@ void Perf_FinishTick(void)
         vec_perf_copy(&curr->perf_tree_prev, &curr->perf_tree);
         vec_perf_reset(&curr->perf_tree);
     }
+}
+
+size_t Perf_Report(size_t maxout, struct perf_info **out)
+{
+    size_t ret = 0;
+    for(khiter_t k = kh_begin(s_thread_state_table); k != kh_end(s_thread_state_table); k++) {
+    
+        if(!kh_exist(s_thread_state_table, k))
+            continue;
+        if(ret == maxout)
+            break;
+
+        struct perf_state *ps = &kh_val(s_thread_state_table, k);
+        struct perf_info *info = malloc(sizeof(struct perf_info) + vec_size(&ps->perf_tree_prev) * sizeof(info->entries[0]));
+        if(!info)
+            break;
+
+        pf_strlcpy(info->threadname, ps->name, sizeof(info->threadname));
+        info->nentries = vec_size(&ps->perf_tree_prev);
+
+        for(int i = 0; i < vec_size(&ps->perf_tree_prev); i++) {
+            const struct perf_entry *entry = &vec_AT(&ps->perf_tree_prev, i);
+            const uint64_t hz = SDL_GetPerformanceFrequency();
+
+            info->entries[i].funcname = name_for_id(ps, entry->name_id);
+            info->entries[i].pc_delta = entry->pc_delta;
+            info->entries[i].ms_delta = (entry->pc_delta * 1000.0 / hz);
+            info->entries[i].parent_idx = entry->parent_idx;
+        }
+        out[ret++] = info;
+    }
+    return ret;
 }
 

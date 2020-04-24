@@ -395,8 +395,8 @@ static bool engine_init(char **argv)
         fprintf(stderr, "Failed to initialize performance module.\n");
         goto fail_perf;
     }
-    Perf_RegisterThread(g_main_thread_id);
-    Perf_RegisterThread(g_render_thread_id);
+    Perf_RegisterThread(g_main_thread_id, "main");
+    Perf_RegisterThread(g_render_thread_id, "render");
 
     if(!AL_Init()) {
         fprintf(stderr, "Failed to initialize asset-loading module.\n");
