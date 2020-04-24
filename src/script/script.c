@@ -34,6 +34,7 @@
  */
 
 #include <Python.h> /* Must be included first */
+#include <frameobject.h>
 
 #include "py_entity.h"
 #include "py_ui.h"
@@ -624,15 +625,13 @@ static PyObject *PyPf_prev_frame_ms(PyObject *self)
 
 static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
 {
-    PERF_ENTER();
-
     struct perf_info *infos[16];
     size_t nthreads = Perf_Report(ARR_SIZE(infos), (struct perf_info **)&infos);
     int status;
 
     PyObject *ret = PyDict_New();
     if(!ret)
-        PERF_RETURN(NULL);
+        return NULL;
 
     for(int i = 0; i < nthreads; i++) {
 
@@ -703,11 +702,18 @@ static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
                 goto fail;
         }
     }
-    PERF_RETURN(ret);
+
+    for(int i = 0; i < nthreads; i++) {
+        free(infos[i]);
+    }
+    return ret;
 
 fail:
-    Py_DECREF(ret);
-    PERF_RETURN(NULL);
+    Py_XDECREF(ret);
+    for(int i = 0; i < nthreads; i++) {
+        free(infos[i]);
+    }
+    return NULL;
 }
 
 static PyObject *PyPf_get_resolution(PyObject *self)
@@ -1476,6 +1482,82 @@ static bool s_sys_path_add_dir(const char *filename)
     return true;
 }
 
+static int s_tracefunc(PyObject *obj, struct _frame *frame, int what, PyObject *arg)
+{
+    char name[128];
+
+    switch(what) {
+    case PyTrace_CALL: {
+        pf_snprintf(name, sizeof(name), "[Py] %s", PyString_AS_STRING(frame->f_code->co_name));
+        Perf_Push(name);
+        break;
+    }
+    case PyTrace_EXCEPTION: /* fallthrough */
+    case PyTrace_RETURN: {
+        Perf_Pop();
+        break;
+    }
+    case PyTrace_C_CALL: {
+        assert(PyCFunction_Check(arg));
+        PyCFunctionObject *func = (PyCFunctionObject*)arg;
+
+        pf_snprintf(name, sizeof(name), "[PyC] %s", func->m_ml->ml_name);
+        Perf_Push(name);
+        break;
+    }
+    case PyTrace_C_EXCEPTION: /* fallthrough */
+    case PyTrace_C_RETURN: {
+        Perf_Pop();
+    }
+    case PyTrace_LINE:
+        break; /* no-op */
+    default: assert(0);
+    }
+    return 0;
+}
+
+static bool bool_val_validate(const struct sval *new_val)
+{
+    return (new_val->type == ST_TYPE_BOOL);
+}
+
+static void on_event_start(void *user, void *event)
+{
+    bool new_val = (uintptr_t)user;
+    if(new_val) {
+        PyEval_SetProfile(s_tracefunc, Py_None);
+    }else{
+        PyEval_SetProfile(NULL, NULL);
+    }
+    E_Global_Unregister(EVENT_UPDATE_START, on_event_start);
+}
+
+static void trace_enable_commit(const struct sval *new_val)
+{
+    /* Only change the profile func at frame boundaries so that we're not left 
+     * with unmatched Perf_{Push,Pop} calls. */
+    E_Global_Register(EVENT_UPDATE_START, on_event_start, 
+        (void*)((uintptr_t)new_val->as_bool), G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
+}
+
+static void s_create_settings(void)
+{
+    ss_e status;
+    (void)status;
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.trace_python",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = trace_enable_commit,
+    });
+    assert(status == SS_OKAY);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1498,7 +1580,11 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
     Py_NoSiteFlag = 1;
     Py_SetProgramName((char*)progname);
     s_progname = progname;
-    Py_SetPythonHome("./scripts");
+
+    char script_dir[512];
+    pf_snprintf(script_dir, sizeof(script_dir), "%s/%s", g_basepath, "scripts"); 
+
+    Py_SetPythonHome(script_dir);
     Py_Initialize();
 
     if(!S_UI_Init(ctx))
@@ -1506,14 +1592,10 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
     if(!S_Entity_Init())
         return false;
 
-    char script_dir[512];
-    strcpy(script_dir, g_basepath);
-    strcat(script_dir, "scripts");
     if(0 != PyList_Append(PySys_GetObject("path"), Py_BuildValue("s", script_dir)))
         return false;
 
-    strcpy(script_dir, g_basepath);
-    strcat(script_dir, "scripts/stdlib");
+    pf_snprintf(script_dir, sizeof(script_dir), "%s/%s", g_basepath, "scripts/stdlib");
     if(0 != PyList_Append(PySys_GetObject("path"), Py_BuildValue("s", script_dir)))
         return false;
 
@@ -1526,6 +1608,7 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
     if(!S_Pickle_Init(module))
         return false;
 
+    s_create_settings();
     return true;
 }
 

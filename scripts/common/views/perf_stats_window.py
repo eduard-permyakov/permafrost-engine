@@ -37,7 +37,7 @@ import pf
 class PerfStatsWindow(pf.Window):
 
     WIDTH = 600
-    HEIGHT = 440
+    HEIGHT = 480
 
     def __init__(self):
         vresx, vresy = (1920, 1080)
@@ -52,6 +52,7 @@ class PerfStatsWindow(pf.Window):
         self.frame_perfstats = [{}]*100
         self.selected_perfstats = {}
         self.paused = False
+        self.trace_python = pf.settings_get("pf.debug.trace_python")
 
     def frame_perf_tab(self):
 
@@ -135,6 +136,12 @@ class PerfStatsWindow(pf.Window):
 
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Max Frame Latency: {0} ms".format(self.max_frame_latency), (255, 255, 0))
+
+        self.layout_row_dynamic(20, 1)
+        old_trace_python = self.trace_python
+        self.trace_python = True if self.checkbox("Trace Python", self.trace_python) else False
+        if old_trace_python != self.trace_python:
+            pf.settings_set("pf.debug.trace_python", self.trace_python)
 
         def on_pause_resume():
             self.paused = not self.paused
