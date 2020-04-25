@@ -500,6 +500,9 @@ bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos,
     tile_r = fabs(chunk_base_z - point.z) / TILE_Z_DIM;
     tile_c = fabs(chunk_base_x - point.x) / TILE_X_DIM;
 
+    tile_r = CLAMP(tile_r, 0, res.tile_h-1);
+    tile_c = CLAMP(tile_c, 0, res.tile_w-1);
+
     assert(tile_c >= 0 && tile_c < res.tile_w);
     assert(tile_r >= 0 && tile_r < res.tile_h);
 
