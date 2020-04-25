@@ -188,6 +188,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 {
     struct shared_resource res;
     SDL_RWops *stream;
+    char abs_basepath[512], pfobj_path[512];
 
     size_t alloc_size = sizeof(struct entity) + A_AL_CtxBuffSize();
     struct entity *ret = malloc(alloc_size);
@@ -209,9 +210,13 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
         goto fail_init;
     strcpy(ret->filename, pfobj_name);
 
-    assert(strlen(base_path) < sizeof(ret->basedir));
+    if(strlen(base_path) >= sizeof(ret->basedir))
+        goto fail_init;
     strcpy(ret->basedir, base_path);
-    strcpy(res.key, pfobj_name);
+
+    pf_snprintf(abs_basepath, sizeof(abs_basepath), "%s/%s", g_basepath, base_path);
+    pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
+    pf_snprintf(res.key, sizeof(res.key), pfobj_name);
 
     khiter_t k = kh_get(entity_res, s_name_resource_table, pfobj_name);
     if(k != kh_end(s_name_resource_table)) {
@@ -221,11 +226,6 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 
         struct pfobj_hdr header;
 
-        char pfobj_path[512];
-        if(strlen(g_basepath) + strlen(base_path) + strlen(pfobj_name) + 2 >= sizeof(pfobj_path))
-            goto fail_init;
-        pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
-
         stream = SDL_RWFromFile(pfobj_path, "r");
         if(!stream)
             goto fail_init; 
@@ -234,7 +234,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
             goto fail_parse;
 
         res.ent_flags = 0;
-        res.render_private = R_AL_PrivFromStream(base_path, &header, stream);
+        res.render_private = R_AL_PrivFromStream(abs_basepath, &header, stream);
         if(!res.render_private)
             goto fail_parse;
 

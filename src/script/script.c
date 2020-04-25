@@ -412,7 +412,7 @@ static PyObject *PyPf_new_game(PyObject *self, PyObject *args, PyObject *kwargs)
     }
 
     char pfmap_path[256];
-    pf_snprintf(pfmap_path, sizeof(pfmap_path), "%s/%s", dir, pfmap);
+    pf_snprintf(pfmap_path, sizeof(pfmap_path), "%s/%s/%s", g_basepath, dir, pfmap);
 
     SDL_RWops *stream = SDL_RWFromFile(pfmap_path, "r");
     if(!stream) {
@@ -496,15 +496,18 @@ static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args)
 static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwargs)
 {
     static char *kwlist[] = {"path", "update_navgrid", NULL};
-    const char *path; 
+    const char *relpath; 
     int update_navgrid = true;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s|i", kwlist, &path, &update_navgrid)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s|i", kwlist, &relpath, &update_navgrid)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
         return NULL;
     }
 
-    if(!Scene_Load(path)) {
+    char full_path[512];
+    pf_snprintf(full_path, sizeof(full_path), "%s/%s", g_basepath, relpath);
+
+    if(!Scene_Load(full_path)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to load scene from the specified file.");
         return NULL;
     }

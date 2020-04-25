@@ -135,18 +135,11 @@ bool R_GL_Texture_Load(const char *basedir, const char *name, GLuint *out)
         goto fail;
 
     if(basedir) {
-    
-        assert( strlen(basedir) + strlen(name) < sizeof(texture_path) );
-        strcpy(texture_path, basedir);
-        strcat(texture_path, "/");
-        strcat(texture_path, name);
+        pf_snprintf(texture_path, sizeof(texture_path), "%s/%s", basedir, name);
     }else{
         texture_path[0] = '\0';
     }
-
-    strcpy(texture_path_maps, g_basepath);
-    strcat(texture_path_maps, "assets/map_textures/");
-    strcat(texture_path_maps, name);
+    pf_snprintf(texture_path_maps, sizeof(texture_path_maps), "%s/assets/map_textures/%s", g_basepath, name);
 
     if(!r_texture_gl_init(texture_path, &ret)
     && !r_texture_gl_init(texture_path_maps, &ret))
@@ -293,12 +286,8 @@ bool R_GL_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures,
 
     for(int i = 0; i < num_textures; i++) {
 
-        extern const char *g_basepath;
         char path[512];
-
-        strcpy(path, g_basepath);
-        strcat(path, "/assets/map_textures/");
-        strcat(path, texnames[i]);
+        pf_snprintf(path, sizeof(path), "%s/assets/map_textures/%s", g_basepath, texnames[i]);
 
         int width, height, nr_channels;
         unsigned char *orig_data = stbi_load(path, &width, &height, &nr_channels, 0);
