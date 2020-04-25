@@ -99,10 +99,11 @@ struct gamestate{
      */
     vec_obb_t               visible_obbs;
     /*-------------------------------------------------------------------------
-     * The state of the factions in the current game.
+     * The state of the factions in the current game. 'factions_allocd' has a 
+     * set bit for every faction index that's 'allocated'. Clear bits are 'free'.
      *-------------------------------------------------------------------------
      */
-    size_t                  num_factions;
+    uint16_t                factions_allocd;
     struct faction          factions[MAX_FACTIONS];
     /*-------------------------------------------------------------------------
      * Holds the relationships between every 2 factions. Note that diplomatic

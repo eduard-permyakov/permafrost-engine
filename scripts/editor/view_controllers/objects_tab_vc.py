@@ -91,7 +91,7 @@ class ObjectsVC(vc.ViewController):
             return
         if event[0] == pf.SDL_BUTTON_LEFT:
             if self.current_object:
-                self.current_object.faction_id = self.view.selected_faction_idx
+                self.current_object.faction_id = pf.get_factions_list()[self.view.selected_faction_idx]["id"]
                 globals.active_objects_list.append(self.current_object)
                 self.current_object = self.__object_at_index(self.view.selected_object_idx)
                 self.current_object.pos = pf.map_pos_under_cursor()

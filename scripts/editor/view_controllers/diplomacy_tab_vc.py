@@ -50,10 +50,11 @@ class DiplomacyVC(vc.ViewController):
         self.view.fac_color = factions_list[event]["color"]
 
     def __on_fac_removed(self, event):
-        pf.remove_faction(event)
         factions_list = pf.get_factions_list()
+        globals.active_objects_list = [obj for obj in globals.active_objects_list if obj.faction_id is not event]
+        pf.remove_faction(event)
 
-        if event == len(factions_list): # we removed the last element
+        if event == factions_list[-1]["id"]: # we removed the last element
             self.view.selected_fac_idx = len(factions_list)-1
 
         self.view.fac_name = factions_list[self.view.selected_fac_idx]["name"]

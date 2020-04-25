@@ -252,12 +252,14 @@ static bool pentities_equal(struct entity *const *a, struct entity *const *b)
 }
 
 static bool allied_to_player_controllabe(const bool *controllable,
-                                         size_t num_facs, int faction_id)
+                                         uint16_t fac_mask, int faction_id)
 {
     assert(!controllable[faction_id]);
 
-    for(int i = 0; i < num_facs; i++) {
+    for(int i = 0; fac_mask; fac_mask >>= 1, i++) {
     
+        if(!(fac_mask & 0x1))
+            continue;
         if(i == faction_id)
             continue;
 
@@ -283,24 +285,21 @@ static bool allied_to_player_controllabe(const bool *controllable,
  */
 static void sel_filter_and_set_type(void)
 {
-    char names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
-    vec3_t colors[MAX_FACTIONS];
     bool controllable[MAX_FACTIONS];
-
-    size_t num_facs = G_GetFactions(names, colors, controllable);
+    uint16_t fac_mask = G_GetFactions(NULL, NULL, controllable);
 
     bool has_player = false, has_allied = false;
     for(int i = 0; i < vec_size(&s_selected); i++) {
         
         const struct entity *curr = vec_AT(&s_selected, i);
-        assert(curr->faction_id >= 0 && curr->faction_id < num_facs);
+        assert(fac_mask & (0x1 << curr->faction_id));
 
         if(controllable[curr->faction_id]) {
             has_player = true; 
             break;
         }
 
-        if(allied_to_player_controllabe(controllable, num_facs, curr->faction_id)) {
+        if(allied_to_player_controllabe(controllable, fac_mask, curr->faction_id)) {
             has_allied = true;
         }
     }
@@ -320,8 +319,10 @@ static void sel_filter_and_set_type(void)
         if(has_player && !controllable[curr->faction_id]) {
 
             vec_pentity_del(&s_selected, i);
-        }else if(!has_player && has_allied
-        && !allied_to_player_controllabe(controllable, num_facs, curr->faction_id)) {
+
+        }else if(!has_player 
+              && has_allied
+              && !allied_to_player_controllabe(controllable, fac_mask, curr->faction_id)) {
 
             vec_pentity_del(&s_selected, i);
         }

@@ -145,7 +145,8 @@ class ObjectsTabWindow(pf.Window):
                 self.layout_row_dynamic(20, 1)
                 self.label_colored_wrap(select_str, (255, 255, 255))
 
-                select_str = "Faction: {0}".format(pf.get_factions_list()[sel_obj_list[0].faction_id]["name"])
+                fac = next(f for f in pf.get_factions_list() if f["id"] == sel_obj_list[0].faction_id)
+                select_str = "Faction: {0}".format(fac["name"])
                 self.layout_row_dynamic(20, 1)
                 self.label_colored_wrap(select_str, (255, 255, 255))
 

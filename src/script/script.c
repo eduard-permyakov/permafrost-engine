@@ -871,17 +871,27 @@ static PyObject *PyPf_get_factions_list(PyObject *self)
     vec3_t colors[MAX_FACTIONS];
     bool controllable[MAX_FACTIONS];
 
-    size_t num_facs = G_GetFactions(names, colors, controllable);
+    uint16_t facs = G_GetFactions(names, colors, controllable);
+    size_t num_facs = 0;
+    for(uint16_t fcopy = facs; fcopy; fcopy >>= 1) {
+        if(fcopy & 0x1)
+            num_facs++;
+    }
 
     PyObject *ret = PyList_New(num_facs);
     if(!ret)
         goto fail_list;
 
-    for(int i = 0; i < num_facs; i++) {
+    size_t num_set = 0;
+    for(int i = 0; facs; facs >>= 1, i++) {
+
+        if(!(facs & 0x1))
+            continue;
+
         PyObject *fac_dict = PyDict_New();
         if(!fac_dict)
             goto fail_dict;
-        PyList_SetItem(ret, i, fac_dict); /* ret now owns fac_dict */
+        PyList_SetItem(ret, num_set++, fac_dict); /* ret now owns fac_dict */
 
         PyObject *name = PyString_FromString(names[i]);
         if(!name)
@@ -897,6 +907,12 @@ static PyObject *PyPf_get_factions_list(PyObject *self)
 
         PyObject *control = controllable[i] ? Py_True : Py_False;
         PyDict_SetItemString(fac_dict, "controllable", control);
+
+        PyObject *id = PyInt_FromLong(i);
+        if(!id)
+            goto fail_dict;
+        PyDict_SetItemString(fac_dict, "id", id);
+        Py_DECREF(id);
     }
 
     return ret;
@@ -1622,6 +1638,7 @@ void S_Shutdown(void)
 
 bool S_RunFile(const char *path)
 {
+    bool ret = false;
     FILE *script = fopen(path, "r");
     if(!script)
         return false;
@@ -1629,13 +1646,15 @@ bool S_RunFile(const char *path)
     /* The directory of the script file won't be automatically added by 'PyRun_SimpleFile'.
      * We add it manually to sys.path ourselves. */
     if(!s_sys_path_add_dir(path))
-        return false;
+        goto done;
 
     PyObject *PyFileObject = PyFile_FromString((char*)path, "r");
     PyRun_SimpleFile(PyFile_AsFile(PyFileObject), path);
+    ret = true;
 
+done:
     fclose(script);
-    return true;
+    return ret;
 }
 
 void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, script_opaque_t event_arg)

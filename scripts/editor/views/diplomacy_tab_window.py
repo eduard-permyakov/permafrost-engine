@@ -53,29 +53,31 @@ class DiplomacyTabWindow(pf.Window):
         self.fac_name = factions_list[self.selected_fac_idx]["name"]
         self.fac_color = factions_list[self.selected_fac_idx]["color"]
 
-    def update(self):
+    def factions_group(self):
+        factions_list = pf.get_factions_list()
 
+        self.layout_row_static(25, UI_LEFT_PANE_WIDTH-60, 1)
+        for i in range(0, len(factions_list)):
+            old = self.selected_fac_idx
+            on = self.selectable_label(factions_list[i]["name"], 
+                pf.NK_TEXT_ALIGN_LEFT, i == self.selected_fac_idx)
+            if on: 
+                self.selected_fac_idx = i
+            if self.selected_fac_idx != old:
+                factions_list = pf.get_factions_list()
+                pf.global_event(EVENT_DIPLO_FAC_SELECTION_CHANGED, i)
+
+    def update(self):
         factions_list = pf.get_factions_list()
 
         self.layout_row_dynamic(20, 1)
         self.label_colored_wrap("Factions:", (255, 255, 255))
 
-        def factions_group():
-            self.layout_row_static(25, UI_LEFT_PANE_WIDTH-60, 1)
-            for i in range(0, len(factions_list)):
-                old = self.selected_fac_idx
-                on = self.selectable_label(factions_list[i]["name"], 
-                    pf.NK_TEXT_ALIGN_LEFT, i == self.selected_fac_idx)
-                if on: 
-                    self.selected_fac_idx = i
-                if self.selected_fac_idx != old:
-                    pf.global_event(EVENT_DIPLO_FAC_SELECTION_CHANGED, i)
-
         self.layout_row_static(400, UI_LEFT_PANE_WIDTH-30, 1)
-        self.group("Factions", pf.NK_WINDOW_BORDER, factions_group)
+        self.group("Factions", pf.NK_WINDOW_BORDER, self.factions_group)
 
         def on_delete_selected():
-            pf.global_event(EVENT_DIPLO_FAC_REMOVED, self.selected_fac_idx)
+            pf.global_event(EVENT_DIPLO_FAC_REMOVED, factions_list[self.selected_fac_idx]["id"])
 
         self.layout_row_dynamic(30, 1)
         if len(factions_list) > 1:
@@ -111,7 +113,8 @@ class DiplomacyTabWindow(pf.Window):
         self.layout_row_dynamic(10, 1)
 
         def on_update_fac():
-            pf.global_event(EVENT_DIPLO_FAC_CHANGED, (self.selected_fac_idx, self.fac_name, self.fac_color))
+            facs = pf.get_factions_list()
+            pf.global_event(EVENT_DIPLO_FAC_CHANGED, (facs[self.selected_fac_idx]["id"], self.fac_name, self.fac_color))
 
         def on_new_fac():
             pf.global_event(EVENT_DIPLO_FAC_NEW, (self.fac_name, self.fac_color))

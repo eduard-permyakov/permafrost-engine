@@ -481,6 +481,27 @@ static bool g_load_anim_state(SDL_RWops *stream)
     return true;
 }
 
+static size_t g_num_factions(void)
+{
+    size_t ret = 0;
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        if(s_gs.factions_allocd & (0x1 << i))
+            ret++;
+    }
+    return ret;
+}
+
+static int g_alloc_faction(void)
+{
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        if(0 == (s_gs.factions_allocd & (0x1 << i))) {
+            s_gs.factions_allocd |= (0x1 << i);
+            return i;
+        }
+    }
+    return -1;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -735,7 +756,7 @@ void G_ClearState(void)
         g_reset_camera(s_gs.cameras[i]);
     }
     G_ActivateCamera(0, CAM_MODE_RTS);
-    s_gs.num_factions = 0;
+    s_gs.factions_allocd = 0;
     PERF_RETURN_VOID();
 }
 
@@ -986,8 +1007,8 @@ void G_Render(void)
             .nargs = 3,
             .args = { 
                 g_push_render_input(in),
-                R_PushArg(&refract_setting.as_bool, sizeof(int)),
-                R_PushArg(&reflect_setting.as_bool, sizeof(int)),
+                R_PushArg(&refract_setting.as_bool, sizeof(bool)),
+                R_PushArg(&reflect_setting.as_bool, sizeof(bool)),
             },
         });
     }
@@ -1139,20 +1160,21 @@ bool G_AddFaction(const char *name, vec3_t color)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if(s_gs.num_factions == MAX_FACTIONS)
+    if(g_num_factions() == MAX_FACTIONS)
         return false;
     if(strlen(name) >= sizeof(s_gs.factions[0].name))
         return false;
 
-    int new_fac_id = s_gs.num_factions;
+    int new_fac_id = g_alloc_faction();
     strcpy(s_gs.factions[new_fac_id].name, name);
     s_gs.factions[new_fac_id].color = color;
     s_gs.factions[new_fac_id].controllable = true;
-    s_gs.num_factions++;
 
     /* By default, a new faction is mutually at peace with 
      * every other faction. */
-    for(int i = 0; i < new_fac_id; i++) {
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        if(!(s_gs.factions_allocd & (0x1 << i)))
+            continue;
         s_gs.diplomacy_table[i][new_fac_id] = DIPLOMACY_STATE_PEACE;
         s_gs.diplomacy_table[new_fac_id][i] = DIPLOMACY_STATE_PEACE;
     }
@@ -1164,41 +1186,19 @@ bool G_RemoveFaction(int faction_id)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if(s_gs.num_factions < 2) 
-        return false;
-    if(faction_id < 0 || faction_id >= s_gs.num_factions)
+    if(!(s_gs.factions_allocd & (0x1 << faction_id)))
         return false;
 
-    /* Remove all entities belonging to the faction. There is no problem
-     * with deleting an entry while iterating - the table bin simply gets 
-     * marked as 'deleted'. 
-     * Also, patch the faction_ids (which are used to index 's_gs.factions' 
-     * to account for the shift in entries in this array. */
-    for(khiter_t k = kh_begin(s_gs.active); k != kh_end(s_gs.active); k++) {
+    uint32_t key;
+    struct entity *curr;
+    (void)key;
 
-        if(!kh_exist(s_gs.active, k))
-            continue;
-
-        struct entity *curr = kh_value(s_gs.active, k);
+    kh_foreach(s_gs.active, key, curr, {
         if(curr->faction_id == faction_id)
-            G_RemoveEntity(curr);
-        else if(curr->faction_id > faction_id) 
-            --curr->faction_id;
-    }
+            G_Zombiefy(curr);
+    });
 
-    /* Reflect the faction_id changes in the diplomacy table */
-    memmove(&s_gs.diplomacy_table[faction_id], &s_gs.diplomacy_table[faction_id + 1],
-        sizeof(s_gs.diplomacy_table[0]) * (s_gs.num_factions - faction_id - 1));
-    for(int i = 0; i < s_gs.num_factions-1; i++) {
-
-        memmove(&s_gs.diplomacy_table[i][faction_id], &s_gs.diplomacy_table[i][faction_id + 1],
-            sizeof(enum diplomacy_state) * (s_gs.num_factions - faction_id - 1));
-    }
-
-    memmove(s_gs.factions + faction_id, s_gs.factions + faction_id + 1, 
-        sizeof(struct faction) * (s_gs.num_factions - faction_id - 1));
-    --s_gs.num_factions;
-
+    s_gs.factions_allocd &= ~(0x1 << faction_id);
     return true;
 }
 
@@ -1206,7 +1206,7 @@ bool G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool contro
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if(faction_id >= s_gs.num_factions)
+    if(!(s_gs.factions_allocd & (0x1 << faction_id)))
         return false;
     if(strlen(name) >= sizeof(s_gs.factions[0].name))
         return false;
@@ -1217,15 +1217,17 @@ bool G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool contro
     return true;
 }
 
-int G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl)
+uint16_t G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    for(int i = 0; i < s_gs.num_factions; i++) {
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+
+        if(!(s_gs.factions_allocd & (0x1 << i)))
+            continue;
     
         if(out_names) {
-            strncpy(out_names[i], s_gs.factions[i].name, MAX_FAC_NAME_LEN);
-            out_names[i][MAX_FAC_NAME_LEN-1] = '\0';
+            pf_strlcpy(out_names[i], s_gs.factions[i].name, MAX_FAC_NAME_LEN);
         }
         if(out_colors) {
             out_colors[i] = s_gs.factions[i].color;
@@ -1234,16 +1236,16 @@ int G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *
             out_ctrl[i] = s_gs.factions[i].controllable;
         }
     }
-    return s_gs.num_factions;
+    return s_gs.factions_allocd;
 }
 
 bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if(fac_id_a < 0 || fac_id_a >= s_gs.num_factions)
+    if(!(s_gs.factions_allocd & (0x1 << fac_id_a)))
         return false;
-    if(fac_id_b < 0 || fac_id_b >= s_gs.num_factions)
+    if(!(s_gs.factions_allocd & (0x1 << fac_id_b)))
         return false;
     if(fac_id_a == fac_id_b)
         return false;
@@ -1257,9 +1259,9 @@ bool G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if(fac_id_a < 0 || fac_id_a >= s_gs.num_factions)
+    if(!(s_gs.factions_allocd & (0x1 << fac_id_a)))
         return false;
-    if(fac_id_b < 0 || fac_id_b >= s_gs.num_factions)
+    if(!(s_gs.factions_allocd & (0x1 << fac_id_b)))
         return false;
     if(fac_id_a == fac_id_b)
         return false;
@@ -1512,13 +1514,21 @@ bool G_SaveGlobalState(SDL_RWops *stream)
 
     struct attr num_factions = (struct attr){
         .type = TYPE_INT, 
-        .val.as_int = s_gs.num_factions
+        .val.as_int = g_num_factions()
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_factions, "num_factions"));
 
-    for(int i = 0; i < s_gs.num_factions; i++) {
+    for(int i = 0; i < MAX_FACTIONS; i++) {
 
+        if(!(s_gs.factions_allocd & (0x1 << i)))
+            continue;
         struct faction fac = s_gs.factions[i];
+
+        struct attr fac_id = (struct attr){
+            .type = TYPE_INT, 
+            .val.as_int = i
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &fac_id, "fac_id"));
 
         struct attr fac_color = (struct attr){
             .type = TYPE_VEC3, 
@@ -1632,10 +1642,14 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     CHK_TRUE_RET(attr.type == TYPE_INT);
     int num_factions = attr.val.as_int;
 
-    s_gs.num_factions = num_factions;
     for(int i = 0; i < num_factions; i++) {
 
         struct faction fac;
+        uint16_t fac_id;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        fac_id = attr.val.as_int; 
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_VEC3);
@@ -1649,7 +1663,8 @@ bool G_LoadGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
         fac.controllable = attr.val.as_bool;
 
-        s_gs.factions[i] = fac;
+        s_gs.factions_allocd |= (0x1 << fac_id);
+        s_gs.factions[fac_id] = fac;
     }
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
