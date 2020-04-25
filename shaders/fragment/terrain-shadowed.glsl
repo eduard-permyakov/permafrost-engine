@@ -336,7 +336,9 @@ void main()
     vec3 ambient = (TERRAIN_AMBIENT + height * EXTRA_AMBIENT_PER_LEVEL) * ambient_color;
 
     /* Diffuse calculations */
-    vec3 light_dir = normalize(light_pos - from_vertex.world_pos);  
+    /* Always use light direction relative to world origin. Otherwise different parts of a
+     * large map have too distinct differences in lighting */
+    vec3 light_dir = normalize(light_pos); 
     float diff = max(dot(from_vertex.normal, light_dir), 0.0);
     vec3 diffuse = light_color * (diff * TERRAIN_DIFFUSE);
 

@@ -276,7 +276,9 @@ void main()
     vec3 ambient = (TERRAIN_AMBIENT + height * EXTRA_AMBIENT_PER_LEVEL) * ambient_color;
 
     /* Diffuse calculations */
-    vec3 light_dir = normalize(light_pos - from_vertex.world_pos);  
+    /* Always use light direction relative to world origin. Otherwise different parts of a
+     * large map have too distinct differences in lighting */
+    vec3 light_dir = normalize(light_pos);  
     float diff = max(dot(from_vertex.normal, light_dir), 0.0);
     vec3 diffuse = light_color * (diff * TERRAIN_DIFFUSE);
 
@@ -286,6 +288,6 @@ void main()
     float spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPECULAR_SHININESS);
     vec3 specular = SPECULAR_STRENGTH * light_color * (spec * TERRAIN_SPECULAR);
 
-    o_frag_color = vec4( (ambient + diffuse) * tex_color.xyz, 1.0);
+    o_frag_color = vec4( (ambient + diffuse + specular) * tex_color.xyz, 1.0);
 }
 
