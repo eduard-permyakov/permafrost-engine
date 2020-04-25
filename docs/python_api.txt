@@ -12,17 +12,17 @@ BUILT-IN FUNCTIONS
 
     [activate_camera]
     ----------------------------------------------------------------------------
-    Set the camera specified by the index to be the active camera, meaning the s
-    cene is being rendered from the camera's point of view. The second argument 
-    is teh camera control mode (0 = FPS, 1 = RTS). Note that the position of cam
-    era 0 is restricted to the map boundaries as it is expected to be the main R
-    TS camera. The other cameras are unrestricted.
+    Set the camera specified by the index to be the active camera, meaning the
+    scene is being rendered from the camera's point of view. The second
+    argument is teh camera control mode (0 = FPS, 1 = RTS). Note that the
+    position of camera 0 is restricted to the map boundaries as it is expected
+    to be the main RTS camera. The other cameras are unrestricted.
 
     [add_faction]
     ----------------------------------------------------------------------------
-    Add a new faction with the specified name and color. By default, this factio
-    n is mutually at peace with every other existing faction. By default, new fa
-    ctions are player-controllable.
+    Add a new faction with the specified name and color. By default, this
+    faction is mutually at peace with every other existing faction. By default,
+    new factions are player-controllable.
 
     [clear_unit_selection]
     ----------------------------------------------------------------------------
@@ -30,13 +30,13 @@ BUILT-IN FUNCTIONS
 
     [disable_unit_selection]
     ----------------------------------------------------------------------------
-    Make it impossible to select units with the mouse. Disable drawing of a sele
-    ction box when dragging the mouse.
+    Make it impossible to select units with the mouse. Disable drawing of a
+    selection box when dragging the mouse.
 
     [enable_unit_selection]
     ----------------------------------------------------------------------------
-    Make it possible to select units with the mouse. Enable drawing of a selecti
-    on box when dragging the mouse.
+    Make it possible to select units with the mouse. Enable drawing of a
+    selection box when dragging the mouse.
 
     [get_basedir]
     ----------------------------------------------------------------------------
@@ -68,13 +68,13 @@ BUILT-IN FUNCTIONS
 
     [get_nav_perfstats]
     ----------------------------------------------------------------------------
-    Returns a dictionary holding various performance couners for the navigation 
+    Returns a dictionary holding various performance couners for the navigation
     subsystem.
 
     [get_render_info]
     ----------------------------------------------------------------------------
-    Returns a dictionary describing the renderer context. It will have the strin
-    g keys 'renderer', 'version', 'shading_language_version', and 'vendor'.
+    Returns a dictionary describing the renderer context. It will have the
+    string keys 'renderer', 'version', 'shading_language_version', and 'vendor'.
 
     [get_resolution]
     ----------------------------------------------------------------------------
@@ -94,13 +94,13 @@ BUILT-IN FUNCTIONS
 
     [global_event]
     ----------------------------------------------------------------------------
-    Broadcast a global event so all handlers can get invoked. Any weakref argume
-    nt is automatically unpacked before being sent to the handler.
+    Broadcast a global event so all handlers can get invoked. Any weakref
+    argument is automatically unpacked before being sent to the handler.
 
     [load_scene]
     ----------------------------------------------------------------------------
-    Import list of entities from a PFSCENE file (specified as a path string). Re
-    turns a list of the loaded entities.
+    Import list of entities from a PFSCENE file (specified as a path string).
+    Returns a list of the loaded entities.
 
     [load_session]
     ----------------------------------------------------------------------------
@@ -108,13 +108,13 @@ BUILT-IN FUNCTIONS
 
     [map_height_at_point]
     ----------------------------------------------------------------------------
-    Returns the Y-dimension map height at the specified XZ coordinate. Returns N
-    one if the specified coordinate is outside the map bounds.
+    Returns the Y-dimension map height at the specified XZ coordinate. Returns
+    None if the specified coordinate is outside the map bounds.
 
     [map_pos_under_cursor]
     ----------------------------------------------------------------------------
-    Returns the XYZ coordinate of the point of the map underneath the cursor. Re
-    turns 'None' if the cursor is not over the map.
+    Returns the XYZ coordinate of the point of the map underneath the cursor.
+    Returns 'None' if the cursor is not over the map.
 
     [mouse_over_minimap]
     ----------------------------------------------------------------------------
@@ -126,65 +126,70 @@ BUILT-IN FUNCTIONS
 
     [multiply_quaternions]
     ----------------------------------------------------------------------------
-    Returns the normalized result of multiplying 2 quaternions (specified as a l
-    ist of 4 floats - XYZW order).
+    Returns the normalized result of multiplying 2 quaternions (specified as a
+    list of 4 floats - XYZW order).
 
     [new_game]
     ----------------------------------------------------------------------------
-    Loads the specified map and creates an empty scene. Note that all references
-     to existing _active_ entities _MUST_ be deleted before creating a new game.
+    Loads the specified map and creates an empty scene. Note that all
+    references to existing _active_ entities _MUST_ be deleted before creating
+    a new game.
 
     [new_game_string]
     ----------------------------------------------------------------------------
-    The same as 'new_game' but takes the map contents string as an argument inst
-    ead of a path and filename.
+    The same as 'new_game' but takes the map contents string as an argument
+    instead of a path and filename.
 
     [pickle_object]
     ----------------------------------------------------------------------------
-    Returns an ASCII string holding the serialized representation of the object 
+    Returns an ASCII string holding the serialized representation of the object
     graph.
 
     [prev_frame_ms]
     ----------------------------------------------------------------------------
     Get the duration of the previous game frame in milliseconds.
 
+    [prev_frame_perfstats]
+    ----------------------------------------------------------------------------
+    Get a dictionary of the performance data for the previous frame.
+
     [register_event_handler]
     ----------------------------------------------------------------------------
-    Adds a script event handler to be called when the specified global event occ
-    urs. Any weakref user arguments are automatically unpacked before being pass
-    ed to the handler.
+    Adds a script event handler to be called when the specified global event
+    occurs. Any weakref user arguments are automatically unpacked before being
+    passed to the handler.
 
     [register_ui_event_handler]
     ----------------------------------------------------------------------------
-    Same as 'register_event_handler' but the handler will also be run when the s
-    imulation state is pf.G_PAUSED_UI_RUNNING. This is for UI callbacks that sho
-    uld still be invoked even when the game is in a 'paused' state.
+    Same as 'register_event_handler' but the handler will also be run when the
+    simulation state is pf.G_PAUSED_UI_RUNNING. This is for UI callbacks that
+    should still be invoked even when the game is in a 'paused' state.
 
     [remove_faction]
     ----------------------------------------------------------------------------
-    Remove the faction with the specified faction_id. This will remove all entit
-    ies belonging to that faction. This may change the values of some other enti
-    ties' faction_ids.
+    Remove the faction with the specified faction_id. This will remove all
+    entities belonging to that faction. This may change the values of some
+    other entities' faction_ids.
 
     [save_session]
     ----------------------------------------------------------------------------
-    Save the current state of the engine to the specified file. The session can 
+    Save the current state of the engine to the specified file. The session can
     then be loaded from the file with the 'load_session' call.
 
     [set_ambient_light_color]
     ----------------------------------------------------------------------------
-    Sets the global ambient light color (specified as an RGB multiplier) for the
-     scene.
+    Sets the global ambient light color (specified as an RGB multiplier) for
+    the scene.
 
     [set_attack_on_left_click]
     ----------------------------------------------------------------------------
-    Set the cursor to target mode. The next left click will issue an attack comm
-    and to the location under the cursor.
+    Set the cursor to target mode. The next left click will issue an attack
+    command to the location under the cursor.
 
     [set_diplomacy_state]
     ----------------------------------------------------------------------------
-    Symmetrically sets the diplomacy state between two distinct factions (passed
-     in as IDs).
+    Symmetrically sets the diplomacy state between two distinct factions
+    (passed in as IDs).
 
     [set_emit_light_color]
     ----------------------------------------------------------------------------
@@ -200,8 +205,9 @@ BUILT-IN FUNCTIONS
 
     [set_map_highlight_size]
     ----------------------------------------------------------------------------
-    Determines how many tiles around the currently hovered tile are highlighted.
-     (0 = none, 1 = single tile highlighted, 2 = 3x3 grid highlighted, etc.)
+    Determines how many tiles around the currently hovered tile are
+    highlighted. (0 = none, 1 = single tile highlighted, 2 = 3x3 grid
+    highlighted, etc.)
 
     [set_minimap_position]
     ----------------------------------------------------------------------------
@@ -209,8 +215,8 @@ BUILT-IN FUNCTIONS
 
     [set_minimap_resize_mask]
     ----------------------------------------------------------------------------
-    Set the anchor points for the minimap, to control its bounds as the screen r
-    esizes.
+    Set the anchor points for the minimap, to control its bounds as the screen
+    resizes.
 
     [set_minimap_size]
     ----------------------------------------------------------------------------
@@ -218,8 +224,8 @@ BUILT-IN FUNCTIONS
 
     [set_move_on_left_click]
     ----------------------------------------------------------------------------
-    Set the cursor to target mode. The next left click will issue a move command
-     to the location under the cursor.
+    Set the cursor to target mode. The next left click will issue a move
+    command to the location under the cursor.
 
     [set_simstate]
     ----------------------------------------------------------------------------
@@ -227,36 +233,37 @@ BUILT-IN FUNCTIONS
 
     [settings_create]
     ----------------------------------------------------------------------------
-    Create a new setting, the value of which will be saved in the settings file 
-    and will be accessible in another session. Settings may hold the following t
-    ypes: int, float, string, bool, and tuple of 2 floats (vec2). Setting names 
-    beginning with 'pf' are reserved for the engine.
+    Create a new setting, the value of which will be saved in the settings file
+    and will be accessible in another session. Settings may hold the following
+    types: int, float, string, bool, and tuple of 2 floats (vec2). Setting
+    names beginning with 'pf' are reserved for the engine.
 
     [settings_delete]
     ----------------------------------------------------------------------------
-    Delete a setting with the specified name. Setting names beginning with 'pf' 
+    Delete a setting with the specified name. Setting names beginning with 'pf'
     are reserved for the engine and may not be deleted.
 
     [settings_get]
     ----------------------------------------------------------------------------
-    Returns the value of the setting with the specified name. Will throw an exce
-    ption if the setting is not found.
+    Returns the value of the setting with the specified name. Will throw an
+    exception if the setting is not found.
 
     [settings_set]
     ----------------------------------------------------------------------------
-    Updates the value of the setting with the specified name. Will throw an exce
-    ption if the setting is not found or if the new value for the setting is inv
-    alid.
+    Updates the value of the setting with the specified name. Will throw an
+    exception if the setting is not found or if the new value for the setting
+    is invalid.
 
     [ui_text_edit_has_focus]
     ----------------------------------------------------------------------------
-    Returns True if the mouse cursor is currently in an editable text field of a
-     UI window, such that the field records the keystrokes.
+    Returns True if the mouse cursor is currently in an editable text field of
+    a UI window, such that the field records the keystrokes.
 
     [unpickle_object]
     ----------------------------------------------------------------------------
-    Returns a new reference to an object built from its' serialized representati
-    on. The argument string must an earlier return value of 'pf.pickle_object'.
+    Returns a new reference to an object built from its' serialized
+    representation. The argument string must an earlier return value of
+    'pf.pickle_object'.
 
     [unregister_event_handler]
     ----------------------------------------------------------------------------
@@ -276,8 +283,8 @@ BUILT-IN CLASSES
 
     [AnimEntity]
     ----------------------------------------------------------------------------
-    Permafrost Engine animated entity. This type requires the 'idle_clip' keywor
-    d argument to be passed to __init__. This is a subclass of pf.Entity.
+    Permafrost Engine animated entity. This type requires the 'idle_clip'
+    keyword argument to be passed to __init__. This is a subclass of pf.Entity.
 
         ************************************************************************
         MEMBERS
@@ -289,8 +296,8 @@ BUILT-IN CLASSES
         Custom name given to this enity.
 
         [pfobj_path]
-        The relative path of the PFOBJ file used to instantiate the entity. Read
-        only.
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
 
         [pos]
         The XYZ position in worldspace coordinates.
@@ -305,8 +312,8 @@ BUILT-IN CLASSES
         Flag indicating whether this entity can be selected with the mouse.
 
         [selection_radius]
-        Radius (in OpenGL coordinates) of the unit selection circle for this ent
-        ity.
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
 
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
@@ -324,46 +331,46 @@ BUILT-IN CLASSES
         Removes the entity from the current unit selection, if it is selected.
 
         [move]
-        Issues a 'move' order to the entity at the XZ position specified by the 
+        Issues a 'move' order to the entity at the XZ position specified by the
         argument.
 
         [notify]
-        Send a specific event to an entity in order to invoke the entity's event
-         handlers. Weakref arguments are automatically unpacked before being pas
-        sed to the handler.
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
 
         [play_anim]
-        Play the animation clip with the specified name. Set kwarg 'mode=%d' to 
+        Play the animation clip with the specified name. Set kwarg 'mode=%d' to
         set the animation mode. The default is ANIM_MODE_LOOP.
 
         [register]
-        Registers the specified callable to be invoked when an event of the spec
-        ified type is sent to this entity.
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
 
         [select]
-        Adds the entity to the current unit selection, if it is not present ther
-        e already.
+        Adds the entity to the current unit selection, if it is not present
+        there already.
 
         [stop]
-        Issues a 'stop' command to the entity, stopping its' movement and attack
-        . Cancels 'hold position' order.
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
 
         [unregister]
-        Unregisters a callable previously registered to be invoked on the specif
-        ied event.
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
 
     [CombatableEntity]
     ----------------------------------------------------------------------------
-    Permafrost Engine entity which is able to take part in combat. This type req
-    uires the 'max_hp', 'base_dmg', and 'base_armour' keyword arguments to be pa
-    ssed to __init__. This is a subclass of pf.Entity.
+    Permafrost Engine entity which is able to take part in combat. This type
+    requires the 'max_hp', 'base_dmg', and 'base_armour' keyword arguments to
+    be passed to __init__. This is a subclass of pf.Entity.
 
         ************************************************************************
         MEMBERS
         ************************************************************************
         [base_armour]
-        The base armour (as a fraction from 0.0 to 1.0) specifying which percent
-        age of incoming damage is blocked.
+        The base armour (as a fraction from 0.0 to 1.0) specifying which
+        percentage of incoming damage is blocked.
 
         [base_dmg]
         The base damage for which this entity's attacks hit.
@@ -378,8 +385,8 @@ BUILT-IN CLASSES
         Custom name given to this enity.
 
         [pfobj_path]
-        The relative path of the PFOBJ file used to instantiate the entity. Read
-        only.
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
 
         [pos]
         The XYZ position in worldspace coordinates.
@@ -394,8 +401,8 @@ BUILT-IN CLASSES
         Flag indicating whether this entity can be selected with the mouse.
 
         [selection_radius]
-        Radius (in OpenGL coordinates) of the unit selection circle for this ent
-        ity.
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
 
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
@@ -410,40 +417,40 @@ BUILT-IN CLASSES
         Serialize a Permafrost Engine combatable entity to a string.
 
         [attack]
-        Issues an 'attack move' order to the entity at the XZ position specified
-         by the argument.
+        Issues an 'attack move' order to the entity at the XZ position
+        specified by the argument.
 
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
         [hold_position]
-        Issues a 'hold position' order to the entity, stopping it and preventing
-         it from moving to attack.
+        Issues a 'hold position' order to the entity, stopping it and
+        preventing it from moving to attack.
 
         [move]
-        Issues a 'move' order to the entity at the XZ position specified by the 
+        Issues a 'move' order to the entity at the XZ position specified by the
         argument.
 
         [notify]
-        Send a specific event to an entity in order to invoke the entity's event
-         handlers. Weakref arguments are automatically unpacked before being pas
-        sed to the handler.
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
 
         [register]
-        Registers the specified callable to be invoked when an event of the spec
-        ified type is sent to this entity.
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
 
         [select]
-        Adds the entity to the current unit selection, if it is not present ther
-        e already.
+        Adds the entity to the current unit selection, if it is not present
+        there already.
 
         [stop]
-        Issues a 'stop' command to the entity, stopping its' movement and attack
-        . Cancels 'hold position' order.
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
 
         [unregister]
-        Unregisters a callable previously registered to be invoked on the specif
-        ied event.
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
 
     [Entity]
     ----------------------------------------------------------------------------
@@ -459,8 +466,8 @@ BUILT-IN CLASSES
         Custom name given to this enity.
 
         [pfobj_path]
-        The relative path of the PFOBJ file used to instantiate the entity. Read
-        only.
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
 
         [pos]
         The XYZ position in worldspace coordinates.
@@ -475,8 +482,8 @@ BUILT-IN CLASSES
         Flag indicating whether this entity can be selected with the mouse.
 
         [selection_radius]
-        Radius (in OpenGL coordinates) of the unit selection circle for this ent
-        ity.
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
 
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
@@ -494,29 +501,29 @@ BUILT-IN CLASSES
         Removes the entity from the current unit selection, if it is selected.
 
         [move]
-        Issues a 'move' order to the entity at the XZ position specified by the 
+        Issues a 'move' order to the entity at the XZ position specified by the
         argument.
 
         [notify]
-        Send a specific event to an entity in order to invoke the entity's event
-         handlers. Weakref arguments are automatically unpacked before being pas
-        sed to the handler.
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
 
         [register]
-        Registers the specified callable to be invoked when an event of the spec
-        ified type is sent to this entity.
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
 
         [select]
-        Adds the entity to the current unit selection, if it is not present ther
-        e already.
+        Adds the entity to the current unit selection, if it is not present
+        there already.
 
         [stop]
-        Issues a 'stop' command to the entity, stopping its' movement and attack
-        . Cancels 'hold position' order.
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
 
         [unregister]
-        Unregisters a callable previously registered to be invoked on the specif
-        ied event.
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
 
     [Tile]
     ----------------------------------------------------------------------------
@@ -529,11 +536,11 @@ BUILT-IN CLASSES
         The height level of the bottom plane of the tile.
 
         [blend_mode]
-        The mode which determines how this tile's texture is blended with adjace
-        nt tiles' textures.
+        The mode which determines how this tile's texture is blended with
+        adjacent tiles' textures.
 
         [blend_normals]
-        A boolean which determines if this tile's normals are averaged together 
+        A boolean which determines if this tile's normals are averaged together
         with adjacent normals to create a 'smooth' terrain look.
 
         [bot_left_height]
@@ -561,8 +568,8 @@ BUILT-IN CLASSES
         The height of the top right corner.
 
         [type]
-        Integer value specifying whether this tile is a ramp, which direction it
-         faces, etc.
+        Integer value specifying whether this tile is a ramp, which direction
+        it faces, etc.
 
         ************************************************************************
         METHODS
@@ -578,22 +585,22 @@ BUILT-IN CLASSES
         MEMBERS
         ************************************************************************
         [active]
-        The look of the button in the active (pressed) state - either an (R, G, 
+        The look of the button in the active (pressed) state - either an (R, G,
         B, A) tuple or a string representing a path to an image.
 
         [border]
         A floating-point value of the button border width, in pixels.
 
         [hover]
-        The look of the button when the mouse is hovered over it - either an (R,
-         G, B, A) tuple or a string representing a path to an image.
+        The look of the button when the mouse is hovered over it - either an
+        (R, G, B, A) tuple or a string representing a path to an image.
 
         [image_padding]
         An (X, Y) tuple of floats to control the padding around images.
 
         [normal]
-        The look of the button in the normal state - either an (R, G, B, A) tupl
-        e or a string representing a path to an image.
+        The look of the button in the normal state - either an (R, G, B, A)
+        tuple or a string representing a path to an image.
 
         [padding]
         An (X, Y) tuple of floats to control the padding around buttons.
@@ -602,22 +609,22 @@ BUILT-IN CLASSES
         A floating-point value to control how rounded the button corners are.
 
         [text_active]
-        The (R, G, B, A) color of button text when the button is in the active s
-        tate.
+        The (R, G, B, A) color of button text when the button is in the active
+        state.
 
         [text_alignment]
         A set of flags to control the text alignment of the button label.
 
         [text_background]
-        The (R, G, B, A) background color of the text when an image is used for 
+        The (R, G, B, A) background color of the text when an image is used for
         the button.
 
         [text_hover]
-        The (R, G, B, A) color of button text when the cursor is hovered over th
-        e button.
+        The (R, G, B, A) color of button text when the cursor is hovered over
+        the button.
 
         [text_normal]
-        The (R, G, B, A) color of button text when the button is in the default 
+        The (R, G, B, A) color of button text when the button is in the default
         state.
 
         [touch_padding]
@@ -646,15 +653,15 @@ BUILT-IN CLASSES
         A float to control the border width around a combo section.
 
         [combo_padding]
-        An (X, Y) tuple of floats to control the padding around a combo section 
+        An (X, Y) tuple of floats to control the padding around a combo section
         in a window.
 
         [group_border]
         A float to control the border width around a group.
 
         [group_padding]
-        An (X, Y) tuple of floats to control the padding around a group in a win
-        dow.
+        An (X, Y) tuple of floats to control the padding around a group in a
+        window.
 
         [header_height]
         A float specifying the height of the window header in pixels.
@@ -663,19 +670,19 @@ BUILT-IN CLASSES
         A readonly bool indicating if this window is 'hidden'.
 
         [interactive]
-        A read-write bool to enable or disable user interactivity for this windo
-        w.
+        A read-write bool to enable or disable user interactivity for this
+        window.
 
         [min_row_height_padding]
-        A float to control the minimum number of pixels of padding at the header
-         and footer of a row..
+        A float to control the minimum number of pixels of padding at the
+        header and footer of a row..
 
         [min_size]
         An (X, Y) tuple of floats to control the minimum size of the window.
 
         [padding]
-        An (X, Y) tuple of floats to control the padding (between border and con
-        tent) of a window.
+        An (X, Y) tuple of floats to control the padding (between border and
+        content) of a window.
 
         [position]
         A tuple of two integers specifying the X and Y position of the window.
@@ -684,12 +691,12 @@ BUILT-IN CLASSES
         An (X, Y) tuple of floats to control the size of the scrollbar.
 
         [size]
-        A tuple of two integers specifying the width and height dimentions of th
-        e window.
+        A tuple of two integers specifying the width and height dimentions of
+        the window.
 
         [spacing]
-        An (X, Y) tuple of floats to control the spacing (between components) wi
-        thin a window.
+        An (X, Y) tuple of floats to control the spacing (between components)
+        within a window.
 
         ************************************************************************
         METHODS
@@ -704,19 +711,19 @@ BUILT-IN CLASSES
         Checkbox which can be toggled. Returns True if checked.
 
         [color_picker]
-        Graphical color picker widget. Returns the selected color as an RGBA tup
-        le.
+        Graphical color picker widget. Returns the selected color as an RGBA
+        tuple.
 
         [combo_box]
         Present a combo box with a list of selectable options.
 
         [edit_string]
-        Text field for getting string input from the user. Returns the current t
-        ext.
+        Text field for getting string input from the user. Returns the current
+        text.
 
         [group]
-        The window UI statements within the argument callable will be put in a g
-        roup.
+        The window UI components pushed in the callable argument will be nested
+        under a group.
 
         [hide]
         Make the window invisible.
@@ -737,23 +744,26 @@ BUILT-IN CLASSES
         End a row previously started with 'layout_row_begin'.
 
         [layout_row_push]
-        Add a widget to the currently active row. Note that this must be precede
-        d by a call to 'layout_row_begin'.
+        Add a widget to the currently active row. Note that this must be
+        preceded by a call to 'layout_row_begin'.
 
         [layout_row_static]
         Add a row with a static layout.
 
         [on_hide]
-        Callback that gets invoked when the user hides the window with the close
-         button.
+        Callback that gets invoked when the user hides the window with the
+        close button.
 
         [option_label]
-        Radio button with the specified text. Returns if the radio button is sel
-        ected.
+        Radio button with the specified text. Returns if the radio button is
+        selected.
 
         [selectable_label]
-        Adds a label that can be toggled to be selected with a mouse click. Retu
-        rns the new state of the selectable label.
+        Adds a label that can be toggled to be selected with a mouse click.
+        Returns the new state of the selectable label.
+
+        [selectable_symbol_label]
+        Text label preceded by one of the pf.NK_SYMBOL_ symbols.
 
         [show]
         Make the window visible.
@@ -761,10 +771,18 @@ BUILT-IN CLASSES
         [simple_chart]
         Add a chart with a single slot.
 
+        [tree]
+        The window UI components pushed in the callable argument will be nested
+        under a collapsable tree section.
+
+        [tree_element]
+        The window UI components pushed in the callable argument will be nested
+        under a collapsable non-root tree section.
+
         [update]
-        Handles layout and state changes of the window. Default implementation i
-        s empty. This method should be overridden by subclasses to customize the
-         window look and behavior.
+        Handles layout and state changes of the window. Default implementation
+        is empty. This method should be overridden by subclasses to customize
+        the window look and behavior.
 
 ********************************************************************************
 BUILT-IN CONSTANTS
@@ -811,7 +829,11 @@ BUILT-IN CONSTANTS
     G_PAUSED_FULL 2
     G_PAUSED_UI_RUNNING 4
     G_RUNNING 1
+    NK_BUTTON_DEFAULT 0
+    NK_BUTTON_REPEATER 1
+    NK_CHART_CLICKED 2
     NK_CHART_COLUMN 1
+    NK_CHART_HOVERING 1
     NK_CHART_LINES 0
     NK_CHART_MAX 2
     NK_DYNAMIC 0
@@ -832,7 +854,32 @@ BUILT-IN CONSTANTS
     NK_EDIT_SELECTABLE 32
     NK_EDIT_SIG_ENTER 4
     NK_EDIT_SIMPLE 512
+    NK_FIXED 0
+    NK_HIDDEN 0
+    NK_HORIZONTAL 1
+    NK_MAXIMIZED 1
+    NK_MINIMIZED 0
+    NK_MODIFIABLE 1
+    NK_POPUP_DYNAMIC 1
+    NK_POPUP_STATIC 0
+    NK_RGB 0
+    NK_RGBA 1
+    NK_SHOWN 1
     NK_STATIC 1
+    NK_SYMBOL_CIRCLE_OUTLINE 4
+    NK_SYMBOL_CIRCLE_SOLID 3
+    NK_SYMBOL_MAX 13
+    NK_SYMBOL_MINUS 12
+    NK_SYMBOL_NONE 0
+    NK_SYMBOL_PLUS 11
+    NK_SYMBOL_RECT_OUTLINE 6
+    NK_SYMBOL_RECT_SOLID 5
+    NK_SYMBOL_TRIANGLE_DOWN 8
+    NK_SYMBOL_TRIANGLE_LEFT 9
+    NK_SYMBOL_TRIANGLE_RIGHT 10
+    NK_SYMBOL_TRIANGLE_UP 7
+    NK_SYMBOL_UNDERSCORE 2
+    NK_SYMBOL_X 1
     NK_TEXT_ALIGN_BOTTOM 32
     NK_TEXT_ALIGN_CENTERED 2
     NK_TEXT_ALIGN_LEFT 1
@@ -842,6 +889,9 @@ BUILT-IN CONSTANTS
     NK_TEXT_CENTERED 18
     NK_TEXT_LEFT 17
     NK_TEXT_RIGHT 20
+    NK_TREE_NODE 0
+    NK_TREE_TAB 1
+    NK_VERTICAL 0
     NK_WINDOW_BACKGROUND 256
     NK_WINDOW_BORDER 1
     NK_WINDOW_CLOSABLE 8
@@ -1167,4 +1217,3 @@ BUILT-IN CONSTANTS
     Y_COORDS_PER_TILE 4
     Z_COORDS_PER_TILE 8
     trace_pickling False
-ON USER QUIT
