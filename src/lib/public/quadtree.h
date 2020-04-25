@@ -418,6 +418,8 @@
                 --qt->nrecs;                                                                    \
                 return true;                                                                    \
             }                                                                                   \
+            prev = curr;                                                                        \
+            curr = curr_node->sibling_next;                                                     \
         }                                                                                       \
         return false;                                                                           \
     }                                                                                           \

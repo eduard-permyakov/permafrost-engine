@@ -794,7 +794,7 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
          * Use smooth decay curves in order to curb the 'toggling' or oscillating 
          * behaviour that may arise when there are discontinuities in the forces. 
          */
-        float t = (PFM_Vec2_Len(&diff) - radius*0.85) / radius;
+        float t = (PFM_Vec2_Len(&diff) - radius*0.85) / PFM_Vec2_Len(&diff);
         float scale = exp(-20.0f * t);
         PFM_Vec2_Scale(&diff, scale, &diff);
 
