@@ -36,6 +36,7 @@
 #include "gl_shader.h"
 #include "gl_assert.h"
 #include "../main.h"
+#include "../lib/public/pf_string.h"
 
 #include <SDL.h>
 
@@ -46,13 +47,6 @@
 
 #define SHADER_PATH_LEN 128
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
-
-#define MAKE_PATH(buff, base, file) \
-    do{                             \
-        strcpy(buff, base);         \
-        strcat(buff, file);         \
-    }while(0)
-
 
 struct shader_resource{
     GLint       prog_id;
@@ -315,23 +309,24 @@ bool R_GL_Shader_InitAll(const char *base_path)
 
         struct shader_resource *res = &s_shaders[i];
         GLuint vertex, geometry = 0, fragment;
+
         char path[512];
-    
-        MAKE_PATH(path, base_path, res->vertex_path);
+        pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->vertex_path);
+
         if(!shader_load_and_init(path, &vertex, GL_VERTEX_SHADER)) {
             fprintf(stderr, "Failed to load and init vertex shader.\n");
             return false;
         }
 
         if(res->geo_path)
-            MAKE_PATH(path, base_path, res->geo_path);
+            pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->geo_path);
         if(res->geo_path && !shader_load_and_init(path, &geometry, GL_GEOMETRY_SHADER)) {
             fprintf(stderr, "Failed to load and init geometry shader.\n");
             return false;
         }
         assert(!res->geo_path || geometry > 0);
 
-        MAKE_PATH(path, base_path, res->frag_path);
+        pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->frag_path);
         if(!shader_load_and_init(path, &fragment, GL_FRAGMENT_SHADER)) {
             fprintf(stderr, "Failed to load and init fragment shader.\n");
             return false;

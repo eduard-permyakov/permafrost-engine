@@ -42,6 +42,7 @@
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
 #include "lib/public/vec.h"
+#include "lib/public/pf_string.h"
 #include "game/public/game.h"
 
 #include <stdbool.h>
@@ -233,12 +234,11 @@ static void *push_draw_list(const struct nk_draw_list *dl)
 
 static void ui_init_font_stash(struct nk_context *ctx)
 {
-    char font_path[256];
     const void *image; 
     int w, h;
 
-    strcpy(font_path, g_basepath);
-    strcat(font_path, "assets/fonts/OptimusPrinceps.ttf");
+    char font_path[512];
+    pf_snprintf(font_path, sizeof(font_path), "%s/%s", g_basepath, "assets/fonts/OptimusPrinceps.ttf");
 
     nk_font_atlas_init_default(&s_atlas);
     nk_font_atlas_begin(&s_atlas);

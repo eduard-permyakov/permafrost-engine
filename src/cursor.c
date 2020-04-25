@@ -38,6 +38,7 @@
 #include "event.h"
 #include "main.h"
 #include "game/public/game.h"
+#include "lib/public/pf_string.h"
 
 #include <SDL.h>
 
@@ -196,8 +197,7 @@ bool Cursor_InitAll(const char *basedir)
         struct cursor_resource *curr = &s_cursors[i];
 
         char path[512];
-        strcpy(path, basedir);
-        strcat(path, curr->path);
+        pf_snprintf(path, sizeof(path), "%s/%s", basedir, curr->path);
 
         curr->surface = SDL_LoadBMP(path);
         if(!curr->surface)
