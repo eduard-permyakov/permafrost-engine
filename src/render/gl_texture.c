@@ -111,12 +111,15 @@ bool R_GL_Texture_Init(void)
     return (s_name_tex_table != NULL);
 }
 
-bool R_GL_Texture_GetForName(const char *name, GLuint *out)
+bool R_GL_Texture_GetForName(const char *basedir, const char *name, GLuint *out)
 {
     ASSERT_IN_RENDER_THREAD();
 
+    char qualname[512];
+    pf_snprintf(qualname, sizeof(qualname), "%s/%s", basedir, name);
+
     khiter_t k;
-    if((k = kh_get(tex, s_name_tex_table, name)) == kh_end(s_name_tex_table))
+    if((k = kh_get(tex, s_name_tex_table, qualname)) == kh_end(s_name_tex_table))
         return false;
 
     *out = kh_val(s_name_tex_table, k);
@@ -146,7 +149,7 @@ bool R_GL_Texture_Load(const char *basedir, const char *name, GLuint *out)
         goto fail;
 
     int put_ret;
-    k = kh_put(tex, s_name_tex_table, pf_strdup(name), &put_ret);
+    k = kh_put(tex, s_name_tex_table, pf_strdup(texture_path), &put_ret);
     assert(put_ret != -1 && put_ret != 0);
     kh_value(s_name_tex_table, k) = ret;
 
@@ -343,7 +346,7 @@ void R_GL_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    if(R_GL_Texture_GetForName(name, out))
+    if(R_GL_Texture_GetForName(basedir, name, out))
         return;
 
     R_GL_Texture_Load(basedir, name, out);

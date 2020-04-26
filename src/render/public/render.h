@@ -92,7 +92,7 @@ void R_GL_Texture_Free(const char *name);
  * Get the OpenGL handle of a previously loaded texture.
  * ---------------------------------------------------------------------------
  */
-bool R_GL_Texture_GetForName(const char *name, GLuint *out);
+bool R_GL_Texture_GetForName(const char *basedir, const char *name, GLuint *out);
 
 /* ---------------------------------------------------------------------------
  * Get the dimensions of a previously loaded OpenGL texture
