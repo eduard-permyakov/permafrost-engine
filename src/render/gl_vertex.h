@@ -62,7 +62,7 @@ struct vertex{
 
 struct anim_vert{
     VERTEX_BASE
-    GLint   joint_indices[6];
+    GLubyte joint_indices[6];
     GLfloat weights[6];
 };
 

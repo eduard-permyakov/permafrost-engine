@@ -118,8 +118,10 @@ static bool al_read_anim_vertex(SDL_RWops *stream, struct anim_vert *out)
         if(!string)
             break;
 
-        if(!sscanf(string, "%d/%f", &out->joint_indices[i], &out->weights[i]))
+        int idx;
+        if(!sscanf(string, "%d/%f", &idx, &out->weights[i]))
             goto fail;
+        out->joint_indices[i] = idx;
     }
 
     if(i == 0)

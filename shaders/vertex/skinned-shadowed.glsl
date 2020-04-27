@@ -38,14 +38,14 @@
 #define MAX_JOINTS 96
 #define USE_GEOMETRY 0
 
-layout (location = 0) in vec3 in_pos;
-layout (location = 1) in vec2 in_uv;
-layout (location = 2) in vec3 in_normal;
-layout (location = 3) in int  in_material_idx;
-layout (location = 4) in vec3 in_joint_indices0;
-layout (location = 5) in vec3 in_joint_indices1;
-layout (location = 6) in vec3 in_joint_weights0;
-layout (location = 7) in vec3 in_joint_weights1;
+layout (location = 0) in vec3  in_pos;
+layout (location = 1) in vec2  in_uv;
+layout (location = 2) in vec3  in_normal;
+layout (location = 3) in int   in_material_idx;
+layout (location = 4) in ivec3 in_joint_indices0;
+layout (location = 5) in ivec3 in_joint_indices1;
+layout (location = 6) in vec3  in_joint_weights0;
+layout (location = 7) in vec3  in_joint_weights1;
 
 /*****************************************************************************/
 /* OUTPUTS                                                                   */

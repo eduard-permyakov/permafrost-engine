@@ -37,11 +37,11 @@
 
 #define MAX_JOINTS 96
 
-layout (location = 0) in vec3 in_pos;
-layout (location = 4) in vec3 in_joint_indices0;
-layout (location = 5) in vec3 in_joint_indices1;
-layout (location = 6) in vec3 in_joint_weights0;
-layout (location = 7) in vec3 in_joint_weights1;
+layout (location = 0) in vec3  in_pos;
+layout (location = 4) in ivec3 in_joint_indices0;
+layout (location = 5) in ivec3 in_joint_indices1;
+layout (location = 6) in vec3  in_joint_weights0;
+layout (location = 7) in vec3  in_joint_weights1;
 
 /*****************************************************************************/
 /* UNIFORMS                                                                  */

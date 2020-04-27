@@ -211,11 +211,11 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
          * limited to a maximum of 4 components per attribute. */
 
         /* Attribute 4/5 - joint indices */
-        glVertexAttribPointer(4, 3, GL_INT, GL_FALSE, priv->vertex_stride,
+        glVertexAttribIPointer(4, 3, GL_UNSIGNED_BYTE, priv->vertex_stride,
             (void*)offsetof(struct anim_vert, joint_indices));
         glEnableVertexAttribArray(4);  
-        glVertexAttribPointer(5, 3, GL_INT, GL_FALSE, priv->vertex_stride,
-            (void*)offsetof(struct anim_vert, joint_indices) + 3*sizeof(GLuint));
+        glVertexAttribIPointer(5, 3, GL_UNSIGNED_BYTE, priv->vertex_stride,
+            (void*)offsetof(struct anim_vert, joint_indices) + 3*sizeof(GLubyte));
         glEnableVertexAttribArray(5);
 
         /* Attribute 6/7 - joint weights */
@@ -248,12 +248,12 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
             (void*)offsetof(struct terrain_vert, c2_indices));
         glEnableVertexAttribArray(7);
 
-        /* Attribute 6 - tile top and bottom material indices packed together */
+        /* Attribute 8 - tile top and bottom material indices packed together */
         glVertexAttribIPointer(8, 1, GL_INT, priv->vertex_stride, 
             (void*)offsetof(struct terrain_vert, tb_indices));
         glEnableVertexAttribArray(8);
 
-        /* Attribute 6 - tile left and right material indices packed together */
+        /* Attribute 9 - tile left and right material indices packed together */
         glVertexAttribIPointer(9, 1, GL_INT, priv->vertex_stride, 
             (void*)offsetof(struct terrain_vert, lr_indices));
         glEnableVertexAttribArray(9);
