@@ -62,32 +62,35 @@
 #define MAG(x, y)                   sqrt(pow(x,2) + pow(y,2))
 #define VEC3_EQUAL(a, b)            (0 == memcmp((a).raw, (b).raw, sizeof((a).raw)))
 
-#define INDICES_MASK_8(a, b)        (uint8_t)( (((a) & 0xf) << 4) \
-                                              | ((b) & 0xf) << 0)
+#define CPY2(dst, src)      \
+    do{                     \
+        dst[0] = src[0];    \
+        dst[1] = src[1];    \
+    }while(0)
 
-#define INDICES_MASK_32(a, b, c, d) (uint32_t)( (((a) & 0xff) << 24) \
-                                              | (((b) & 0xff) << 16) \
-                                              | (((c) & 0xff) << 8) \
-                                              | (((d) & 0xff) << 0) )
+#define INDICES_MASK_16(a, b)       (uint16_t)( (((a) & 0xff) << 8) \
+                                              |  ((b) & 0xff) << 0)
 
-#define SAME_INDICES_32(i)          (  ((i) & 0xffff) == (( (i) >> 16) & 0xfffff) \
-                                    && ((i) & 0xff  ) == (( (i) >> 8 ) & 0xff   ) \
-                                    && ((i) & 0xf   ) == (( (i) >> 4 ) & 0xf    ) )
+#define INDICES_MASK_32(a, b)       (uint32_t)( (((a) & 0xffff) << 16) \
+                                              |  ((b) & 0xffff) << 0 )
+
+#define SAME_INDICES_32(i)          (  ((i) & 0xffff) == (((i) >> 16) & 0xffff) \
+                                    && ((i) & 0xff  ) == (((i) >> 8 ) & 0xff  ) )
 
 /* We take the directions to be relative to a normal vector facing outwards
  * from the plane of the face. West is to the right, east is to the left,
  * north is top, south is bottom. */
 struct face{
-    struct vertex nw, ne, se, sw; 
+    struct terrain_vert nw, ne, se, sw; 
 };
 
 struct tile_adj_info{
     const struct tile *tile;
-    uint8_t middle_mask; 
-    uint8_t top_left_mask;
-    uint8_t top_right_mask;
-    uint8_t bot_left_mask;
-    uint8_t bot_right_mask;
+    uint16_t middle_mask; 
+    uint16_t top_left_mask;
+    uint16_t top_right_mask;
+    uint16_t bot_left_mask;
+    uint16_t bot_right_mask;
     int top_center_idx;
     int bot_center_idx;
     int left_center_idx;
@@ -95,7 +98,7 @@ struct tile_adj_info{
 };
 
 struct tri{
-    struct vertex verts[3];
+    struct terrain_vert verts[3];
 };
 
 /* Each top face is made up of 8 triangles, in the following configuration:
@@ -130,41 +133,41 @@ struct tri{
  * for each triangle for backface culling!
  */
 union top_face_vbuff{
-    struct vertex verts[VERTS_PER_TOP_FACE];
+    struct terrain_vert verts[VERTS_PER_TOP_FACE];
     struct tri tris[VERTS_PER_TOP_FACE/3];
     struct{
         /* Tri 0 */
-        struct vertex se0; 
-        struct vertex s0;
-        struct vertex center0;
+        struct terrain_vert se0; 
+        struct terrain_vert s0;
+        struct terrain_vert center0;
         /* Tri 1 */
-        struct vertex center1;
-        struct vertex s1;
-        struct vertex sw0;
+        struct terrain_vert center1;
+        struct terrain_vert s1;
+        struct terrain_vert sw0;
         /* Tri 2 */
-        struct vertex sw1;
-        struct vertex w0;
-        struct vertex center2;
+        struct terrain_vert sw1;
+        struct terrain_vert w0;
+        struct terrain_vert center2;
         /* Tri 3 */
-        struct vertex center3;
-        struct vertex w1;
-        struct vertex nw0;
+        struct terrain_vert center3;
+        struct terrain_vert w1;
+        struct terrain_vert nw0;
         /* Tri 4 */
-        struct vertex nw1;
-        struct vertex n0;
-        struct vertex center4;
+        struct terrain_vert nw1;
+        struct terrain_vert n0;
+        struct terrain_vert center4;
         /* Tri 5 */
-        struct vertex center5;
-        struct vertex n1;
-        struct vertex ne0;
+        struct terrain_vert center5;
+        struct terrain_vert n1;
+        struct terrain_vert ne0;
         /* Tri 6 */
-        struct vertex ne1;
-        struct vertex e0;
-        struct vertex center6;
+        struct terrain_vert ne1;
+        struct terrain_vert e0;
+        struct terrain_vert center6;
         /* Tri 7 */
-        struct vertex center7;
-        struct vertex e1;
-        struct vertex se1;
+        struct terrain_vert center7;
+        struct terrain_vert e1;
+        struct terrain_vert se1;
     };
 };
 
@@ -313,7 +316,7 @@ static void tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[sta
     PFM_Vec3_Normal(out_tri_normals + 1, out_tri_normals + 1);
 }
 
-static void tile_smooth_normals_corner(struct tile *adj_cw[static 4], struct vertex *inout)
+static void tile_smooth_normals_corner(struct tile *adj_cw[static 4], struct terrain_vert *inout)
 {
     enum{
         ADJ_CW_IDX_TOP_LEFT  = 0,
@@ -357,7 +360,7 @@ static void tile_smooth_normals_corner(struct tile *adj_cw[static 4], struct ver
     inout->normal = norm_total;
 }
 
-static void tile_smooth_normals_edge(struct tile *adj_lrtb[static 4], struct vertex *inout)
+static void tile_smooth_normals_edge(struct tile *adj_lrtb[static 4], struct terrain_vert *inout)
 {
     vec3_t norm_total = {0};
     assert((!!adj_lrtb[0] + !!adj_lrtb[1] + !!adj_lrtb[2] + !!adj_lrtb[3]) <= 2);
@@ -404,23 +407,23 @@ static void tile_mat_indices(struct tile_adj_info *inout, bool *out_top_tri_left
      * +---------+               +---------+
      * (sw)      (se)            (sw)      (se)
      */
-    inout->middle_mask = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
+    inout->middle_mask = INDICES_MASK_16(tri_mats[0], tri_mats[1]);
     inout->bot_center_idx = tri_mats[0];
     inout->top_center_idx = tri_mats[1];
 
     if(!(*out_top_tri_left_aligned)) {
-        inout->top_left_mask     = INDICES_MASK_8(tri_mats[1], tri_mats[0]);
-        inout->top_right_mask    = INDICES_MASK_8(tri_mats[1], tri_mats[1]);
-        inout->bot_left_mask     = INDICES_MASK_8(tri_mats[0], tri_mats[0]);
-        inout->bot_right_mask    = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
+        inout->top_left_mask     = INDICES_MASK_16(tri_mats[1], tri_mats[0]);
+        inout->top_right_mask    = INDICES_MASK_16(tri_mats[1], tri_mats[1]);
+        inout->bot_left_mask     = INDICES_MASK_16(tri_mats[0], tri_mats[0]);
+        inout->bot_right_mask    = INDICES_MASK_16(tri_mats[0], tri_mats[1]);
 
         inout->left_center_idx  = tri_mats[0];
         inout->right_center_idx = tri_mats[1];
     }else {
-        inout->top_left_mask     = INDICES_MASK_8(tri_mats[1], tri_mats[1]);
-        inout->top_right_mask    = INDICES_MASK_8(tri_mats[0], tri_mats[1]);
-        inout->bot_left_mask     = INDICES_MASK_8(tri_mats[1], tri_mats[0]);
-        inout->bot_right_mask    = INDICES_MASK_8(tri_mats[0], tri_mats[0]);
+        inout->top_left_mask     = INDICES_MASK_16(tri_mats[1], tri_mats[1]);
+        inout->top_right_mask    = INDICES_MASK_16(tri_mats[0], tri_mats[1]);
+        inout->bot_left_mask     = INDICES_MASK_16(tri_mats[1], tri_mats[0]);
+        inout->bot_right_mask    = INDICES_MASK_16(tri_mats[0], tri_mats[0]);
 
         inout->left_center_idx  = tri_mats[1];
         inout->right_center_idx = tri_mats[0];
@@ -429,12 +432,13 @@ static void tile_mat_indices(struct tile_adj_info *inout, bool *out_top_tri_left
 
 /* When all the materials for the tile are the same, we don't have to perform 
  * blending in the shader. This aids performance. */
-enum blend_mode optimal_blendmode(const struct vertex *vert)
+enum blend_mode optimal_blendmode(const struct terrain_vert *vert)
 {
-    if(SAME_INDICES_32(vert->adjacent_mat_indices[0])
-    && SAME_INDICES_32(vert->adjacent_mat_indices[1])
-    && vert->adjacent_mat_indices[0] == vert->adjacent_mat_indices[1]
-    && (vert->adjacent_mat_indices[0] & 0xf) == vert->material_idx) {
+    if(SAME_INDICES_32(vert->c1_indices[0])
+    && vert->c1_indices[0] == vert->c2_indices[0]
+    && vert->c1_indices[0] == vert->c2_indices[1]
+    && vert->c1_indices[0] == vert->tb_indices
+    && vert->c1_indices[0] == vert->lr_indices) {
     
         return BLEND_MODE_NOBLEND;
     }else{
@@ -545,18 +549,18 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
     PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    struct vertex vbuff[VERTS_PER_TILE];
+    struct terrain_vert vbuff[VERTS_PER_TILE];
     vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
     GLuint VAO, VBO;
     GLuint shader_prog;
     GLuint loc;
 
     const struct render_private *priv = chunk_rprivate;
-    size_t offset = (in->tile_r * (*tiles_per_chunk_x) + in->tile_c) * VERTS_PER_TILE * sizeof(struct vertex);
-    size_t length = VERTS_PER_TILE * sizeof(struct vertex);
+    size_t offset = (in->tile_r * (*tiles_per_chunk_x) + in->tile_c) * VERTS_PER_TILE * sizeof(struct terrain_vert);
+    size_t length = VERTS_PER_TILE * sizeof(struct terrain_vert);
 
     glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
-    const struct vertex *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_READ_BIT);
+    const struct terrain_vert *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_READ_BIT);
     assert(vert_base);
     memcpy(vbuff, vert_base, sizeof(vbuff));
     glUnmapBuffer(GL_ARRAY_BUFFER);
@@ -588,17 +592,17 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
 
     /* Attribute 0 - position */
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct terrain_vert), (void*)0);
     glEnableVertexAttribArray(0);
 
     /* Attribute 1 - texture coordinates */
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
-        (void*)offsetof(struct vertex, uv));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct terrain_vert), 
+        (void*)offsetof(struct terrain_vert, uv));
     glEnableVertexAttribArray(1);
 
     /* Attribute 2 - normal */
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
-        (void*)offsetof(struct vertex, normal));
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(struct terrain_vert), 
+        (void*)offsetof(struct terrain_vert, normal));
     glEnableVertexAttribArray(2);
 
     shader_prog = R_GL_Shader_GetProgForName("mesh.static.tile-outline");
@@ -752,98 +756,99 @@ void R_GL_TilePatchVertsBlend(void *chunk_rprivate, const struct map *map, const
     }
     
     if(!top_right.tile) {
-        top_right.bot_left_mask = top_tile ? INDICES_MASK_8(curr.top_center_idx, top.bot_center_idx)
-                                           : INDICES_MASK_8(curr.right_center_idx, right.left_center_idx); 
+        top_right.bot_left_mask = top_tile ? INDICES_MASK_16(curr.top_center_idx, top.bot_center_idx)
+                                           : INDICES_MASK_16(curr.right_center_idx, right.left_center_idx); 
     }
 
     if(!top_left.tile) {
-        top_left.bot_right_mask = top_tile ? INDICES_MASK_8(curr.top_center_idx, top.bot_center_idx)
-                                           : INDICES_MASK_8(curr.left_center_idx, left.right_center_idx);
+        top_left.bot_right_mask = top_tile ? INDICES_MASK_16(curr.top_center_idx, top.bot_center_idx)
+                                           : INDICES_MASK_16(curr.left_center_idx, left.right_center_idx);
     }
 
     if(!bot_right.tile) {
-        bot_right.top_left_mask = bot_tile ? INDICES_MASK_8(curr.bot_center_idx, bot.top_center_idx)
-                                           : INDICES_MASK_8(curr.right_center_idx, right.left_center_idx);
+        bot_right.top_left_mask = bot_tile ? INDICES_MASK_16(curr.bot_center_idx, bot.top_center_idx)
+                                           : INDICES_MASK_16(curr.right_center_idx, right.left_center_idx);
     }
 
     if(!bot_left.tile) {
-        bot_left.top_right_mask = bot_tile ? INDICES_MASK_8(curr.bot_center_idx, bot.top_center_idx)
-                                           : INDICES_MASK_8(curr.left_center_idx, left.right_center_idx);
+        bot_left.top_right_mask = bot_tile ? INDICES_MASK_16(curr.bot_center_idx, bot.top_center_idx)
+                                           : INDICES_MASK_16(curr.left_center_idx, left.right_center_idx);
     }
 
     /* Now, update all triangles of the top face 
      *
-     * Since 'adjacent_mat_indices' is a flat attribute, we only need to set 
-     * it for the provoking vertex of each triangle.
+     * Since all the material index attributes are flat attribute, we only need to set 
+     * them for the provoking vertex of each triangle.
      *
-     * The first two 'adjacency_mat_indices' elements hold the 8 surrounding materials for 
-     * the triangle's two non-central vertices. If the vertex is surrounded by only
-     * 2 different materials, for example, then the weighting of each of these 
-     * materials at the vertex is determened by the number of occurences of the 
-     * material's index. The final material is the weighted average of the 8 materials,
-     * which may contain repeated indices.
+     * 'c1_indices' and 'c2_indices' hold the 8 surrounding materials for the triangle's 
+     * two non-central vertices. If the vertex is surrounded by only 2 different materials, 
+     * for example, then the weighting of each of these materials at the vertex is determened 
+     * by the number of occurences of the material's index. The final material is the 
+     * weighted average of the 8 materials, which may contain repeated indices.
      *
-     * The next element holds the materials at the midpoints of the edges of this tile and 
-     * the last one holds the materials for the middle_mask of the tile.
+     * 'tb_indices' and 'lr_indices' hold the materials at the midpoints of the edges of this 
+     * tile and 'middle_indices' hold the materials for the center of the tile.
      */
-    size_t offset = VERTS_PER_TILE * (tile->tile_r * TILES_PER_CHUNK_WIDTH + tile->tile_c) * sizeof(struct vertex);
-    size_t length = VERTS_PER_TILE * sizeof(struct vertex);
+    size_t offset = VERTS_PER_TILE * (tile->tile_r * TILES_PER_CHUNK_WIDTH + tile->tile_c) * sizeof(struct terrain_vert);
+    size_t length = VERTS_PER_TILE * sizeof(struct terrain_vert);
 
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    struct vertex *tile_verts_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
+    struct terrain_vert *tile_verts_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
     GL_ASSERT_OK();
     assert(tile_verts_base);
 
-    struct vertex *south_provoking[2] = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 0*3,
-                                         tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 1*3};
-    struct vertex *west_provoking[2]  = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 2*3,
-                                         tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 3*3};
-    struct vertex *north_provoking[2] = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 4*3,
-                                         tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 5*3};
-    struct vertex *east_provoking[2]  = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 6*3,
-                                         tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 7*3};
+    struct terrain_vert *south_provoking[2] = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 0*3,
+                                               tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 1*3};
+    struct terrain_vert *west_provoking[2]  = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 2*3,
+                                               tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 3*3};
+    struct terrain_vert *north_provoking[2] = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 4*3,
+                                               tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 5*3};
+    struct terrain_vert *east_provoking[2]  = {tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 6*3,
+                                               tile_verts_base + (4 * VERTS_PER_SIDE_FACE) + 7*3};
 
     for(int i = 0; i < 2; i++) {
-        south_provoking[i]->adjacent_mat_indices[0] = 
-            INDICES_MASK_32(bot.top_left_mask, bot_left.top_right_mask, left.bot_right_mask, curr.bot_left_mask);
-        south_provoking[i]->adjacent_mat_indices[1] = 
-            INDICES_MASK_32(bot_right.top_left_mask, bot.top_right_mask, curr.bot_right_mask, right.bot_left_mask);
-        south_provoking[i]->blend_mode = optimal_blendmode(south_provoking[i]);
+
+        south_provoking[i]->c1_indices[0] = INDICES_MASK_32(bot.top_left_mask, bot_left.top_right_mask);
+        south_provoking[i]->c1_indices[1] = INDICES_MASK_32(left.bot_right_mask, curr.bot_left_mask);
+
+        south_provoking[i]->c2_indices[0] = INDICES_MASK_32(bot_right.top_left_mask, bot.top_right_mask);
+        south_provoking[i]->c2_indices[1] = INDICES_MASK_32(curr.bot_right_mask, right.bot_left_mask);
+
+        north_provoking[i]->c1_indices[0] = INDICES_MASK_32(curr.top_left_mask, left.top_right_mask);
+        north_provoking[i]->c1_indices[1] = INDICES_MASK_32(top_left.bot_right_mask, top.bot_left_mask);
+
+        north_provoking[i]->c2_indices[0] = INDICES_MASK_32(right.top_left_mask, curr.top_right_mask);
+        north_provoking[i]->c2_indices[1] = INDICES_MASK_32(top.bot_right_mask, top_right.bot_left_mask);
+
+        CPY2(west_provoking[i]->c1_indices, south_provoking[0]->c1_indices);
+        CPY2(west_provoking[i]->c2_indices, north_provoking[0]->c1_indices);
+
+        CPY2(east_provoking[i]->c1_indices, south_provoking[0]->c2_indices);
+        CPY2(east_provoking[i]->c2_indices, north_provoking[0]->c2_indices);
     }
 
-    for(int i = 0; i < 2; i++) {
-        north_provoking[i]->adjacent_mat_indices[0] = 
-            INDICES_MASK_32(curr.top_left_mask, left.top_right_mask, top_left.bot_right_mask, top.bot_left_mask);
-        north_provoking[i]->adjacent_mat_indices[1] = 
-            INDICES_MASK_32(right.top_left_mask, curr.top_right_mask, top.bot_right_mask, top_right.bot_left_mask);
-        north_provoking[i]->blend_mode = optimal_blendmode(north_provoking[i]);
-    }
-
-    for(int i = 0; i < 2; i++) {
-        west_provoking[i]->adjacent_mat_indices[0] = south_provoking[0]->adjacent_mat_indices[0];
-        west_provoking[i]->adjacent_mat_indices[1] = north_provoking[0]->adjacent_mat_indices[0];
-        west_provoking[i]->blend_mode = optimal_blendmode(west_provoking[i]);
-    }
-
-    for(int i = 0; i < 2; i++) {
-        east_provoking[i]->adjacent_mat_indices[0] = south_provoking[0]->adjacent_mat_indices[1];
-        east_provoking[i]->adjacent_mat_indices[1] = north_provoking[0]->adjacent_mat_indices[1];
-        east_provoking[i]->blend_mode = optimal_blendmode(east_provoking[i]);
-    }
-
-    GLuint adj_center_mask = INDICES_MASK_32(
-        INDICES_MASK_8(curr.top_center_idx,     top.bot_center_idx),
-        INDICES_MASK_8(curr.right_center_idx,   right.left_center_idx),
-        INDICES_MASK_8(curr.bot_center_idx,     bot.top_center_idx),
-        INDICES_MASK_8(curr.left_center_idx,    left.right_center_idx)
+    GLuint tb_mask = INDICES_MASK_32(
+        INDICES_MASK_16(curr.top_center_idx, top.bot_center_idx),
+        INDICES_MASK_16(curr.bot_center_idx, bot.top_center_idx)
+    );
+    GLuint lr_mask = INDICES_MASK_32(
+        INDICES_MASK_16(curr.left_center_idx,  left.right_center_idx),
+        INDICES_MASK_16(curr.right_center_idx, right.left_center_idx)
     );
 
-    struct vertex *provoking[] = {south_provoking[0], south_provoking[1], north_provoking[0], north_provoking[1], 
-                                  west_provoking[0], west_provoking[1], east_provoking[0], east_provoking[1]};
+    struct terrain_vert *provoking[] = {
+        south_provoking[0], south_provoking[1], 
+        north_provoking[0], north_provoking[1], 
+        west_provoking[0],  west_provoking[1], 
+        east_provoking[0],  east_provoking[1]
+    };
+
     for(int i = 0; i < ARR_SIZE(provoking); i++) {
 
-        provoking[i]->adjacent_mat_indices[2] = adj_center_mask;
-        provoking[i]->adjacent_mat_indices[3] = curr.middle_mask;
+        provoking[i]->tb_indices = tb_mask;
+        provoking[i]->lr_indices = lr_mask;
+        provoking[i]->middle_indices = curr.middle_mask;
+        provoking[i]->blend_mode = optimal_blendmode(provoking[i]);
     }
 
     glUnmapBuffer(GL_ARRAY_BUFFER);
@@ -859,14 +864,14 @@ void R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, cons
     const struct render_private *priv = chunk_rprivate;
     GLuint VBO = priv->mesh.VBO;
 
-    size_t offset = VERTS_PER_TILE * (tile->tile_r * TILES_PER_CHUNK_WIDTH + tile->tile_c) * sizeof(struct vertex);
-    size_t length = VERTS_PER_TILE * sizeof(struct vertex);
+    size_t offset = VERTS_PER_TILE * (tile->tile_r * TILES_PER_CHUNK_WIDTH + tile->tile_c) * sizeof(struct terrain_vert);
+    size_t length = VERTS_PER_TILE * sizeof(struct terrain_vert);
 
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     union top_face_vbuff *tfvb = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
     GL_ASSERT_OK();
     assert(tfvb);
-    tfvb = (union top_face_vbuff*)(((struct vertex*)tfvb) + (4 * VERTS_PER_SIDE_FACE));
+    tfvb = (union top_face_vbuff*)(((struct terrain_vert*)tfvb) + (4 * VERTS_PER_SIDE_FACE));
 
     struct map_resolution res;
     M_GetResolution(map, &res);
@@ -977,10 +982,10 @@ void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, const struct t
     int ret = M_TileForDesc(map, *desc, &tile);
     assert(ret);
 
-    size_t offset = (desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c) * VERTS_PER_TILE * sizeof(struct vertex);
-    size_t length = VERTS_PER_TILE * sizeof(struct vertex);
+    size_t offset = (desc->tile_r * TILES_PER_CHUNK_WIDTH + desc->tile_c) * VERTS_PER_TILE * sizeof(struct terrain_vert);
+    size_t length = VERTS_PER_TILE * sizeof(struct terrain_vert);
     glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
-    struct vertex *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
+    struct terrain_vert *vert_base = glMapBufferRange(GL_ARRAY_BUFFER, offset, length, GL_MAP_WRITE_BIT);
     assert(vert_base);
     
     R_TileGetVertices(map, *desc, vert_base);
@@ -995,7 +1000,7 @@ void R_GL_TileUpdate(void *chunk_rprivate, const struct map *map, const struct t
     PERF_RETURN_VOID();
 }
 
-void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex *out)
+void R_TileGetVertices(const struct map *map, struct tile_desc td, struct terrain_vert *out)
 {
     PERF_ENTER();
 
@@ -1013,7 +1018,7 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
      */
 
     struct face bot = {
-        .nw = (struct vertex) {
+        .nw = (struct terrain_vert) {
             .pos    = (vec3_t) { 0.0f - ((td.tile_c+1) * X_COORDS_PER_TILE), 
                                  min_vis_height,
                                  0.0f + (td.tile_r * Z_COORDS_PER_TILE) },
@@ -1021,7 +1026,7 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
-        .ne = (struct vertex) {
+        .ne = (struct terrain_vert) {
             .pos    = (vec3_t) { 0.0f - (td.tile_c * X_COORDS_PER_TILE), 
                                  min_vis_height, 
                                  0.0f + (td.tile_r * Z_COORDS_PER_TILE) }, 
@@ -1029,7 +1034,7 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
-        .se = (struct vertex) {
+        .se = (struct terrain_vert) {
             .pos    = (vec3_t) { 0.0f - (td.tile_c * X_COORDS_PER_TILE), 
                                  min_vis_height, 
                                  0.0f + ((td.tile_r+1) * Z_COORDS_PER_TILE) }, 
@@ -1037,7 +1042,7 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
             .normal = (vec3_t) { 0.0f, -1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
-        .sw = (struct vertex) {
+        .sw = (struct terrain_vert) {
             .pos    = (vec3_t) { 0.0f - ((td.tile_c+1) * X_COORDS_PER_TILE),
                                  min_vis_height, 
                                  0.0f + ((td.tile_r+1) * Z_COORDS_PER_TILE) }, 
@@ -1049,28 +1054,28 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
 
     /* Normals for top face get set at the end */
     struct face top = {
-        .nw = (struct vertex) {
+        .nw = (struct terrain_vert) {
             .pos    = (vec3_t) { 0.0f - (td.tile_c * X_COORDS_PER_TILE),
                                  M_Tile_NWHeight(tile) * Y_COORDS_PER_TILE,
                                  0.0f + (td.tile_r * Z_COORDS_PER_TILE) },
             .uv     = (vec2_t) { 0.0f, 1.0f },
             .material_idx  = tile->top_mat_idx,
         },
-        .ne = (struct vertex) {
+        .ne = (struct terrain_vert) {
             .pos    = (vec3_t) { 0.0f - ((td.tile_c+1) * X_COORDS_PER_TILE), 
                                  M_Tile_NEHeight(tile) * Y_COORDS_PER_TILE,
                                  0.0f + (td.tile_r * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 1.0f },
             .material_idx  = tile->top_mat_idx,
         },
-        .se = (struct vertex) {
+        .se = (struct terrain_vert) {
             .pos    = (vec3_t) { 0.0f - ((td.tile_c+1) * X_COORDS_PER_TILE), 
                                  M_Tile_SEHeight(tile) * Y_COORDS_PER_TILE,
                                  0.0f + ((td.tile_r+1) * Z_COORDS_PER_TILE) }, 
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .material_idx  = tile->top_mat_idx,
         },
-        .sw = (struct vertex) {
+        .sw = (struct terrain_vert) {
             .pos    = (vec3_t) { 0.0f - (td.tile_c * X_COORDS_PER_TILE), 
                                  M_Tile_SWHeight(tile) * Y_COORDS_PER_TILE,
                                  0.0f + ((td.tile_r+1) * Z_COORDS_PER_TILE) }, 
@@ -1082,25 +1087,25 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
 #define V_COORD(width, height) (((float)height)/width)
 
     struct face back = {
-        .nw = (struct vertex) {
+        .nw = (struct terrain_vert) {
             .pos    = top.ne.pos,
             .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, back.nw.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
-        .ne = (struct vertex) {
+        .ne = (struct terrain_vert) {
             .pos    = top.nw.pos,
             .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, back.ne.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
-        .se = (struct vertex) {
+        .se = (struct terrain_vert) {
             .pos    = bot.ne.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
-        .sw = (struct vertex) {
+        .sw = (struct terrain_vert) {
             .pos    = bot.nw.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
@@ -1109,25 +1114,25 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
     };
 
     struct face front = {
-        .nw = (struct vertex) {
+        .nw = (struct terrain_vert) {
             .pos    = top.sw.pos,
             .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, front.nw.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
-        .ne = (struct vertex) {
+        .ne = (struct terrain_vert) {
             .pos    = top.se.pos,
             .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, front.ne.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
-        .se = (struct vertex) {
+        .se = (struct terrain_vert) {
             .pos    = bot.sw.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
-        .sw = (struct vertex) {
+        .sw = (struct terrain_vert) {
             .pos    = bot.se.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
@@ -1136,25 +1141,25 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
     };
 
     struct face left = {
-        .nw = (struct vertex) {
+        .nw = (struct terrain_vert) {
             .pos    = top.nw.pos,
             .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, left.nw.pos.y) },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
-        .ne = (struct vertex) {
+        .ne = (struct terrain_vert) {
             .pos    = top.sw.pos,
             .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, left.ne.pos.y) },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
-        .se = (struct vertex) {
+        .se = (struct terrain_vert) {
             .pos    = bot.se.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
-        .sw = (struct vertex) {
+        .sw = (struct terrain_vert) {
             .pos    = bot.ne.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
@@ -1163,25 +1168,25 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
     };
 
     struct face right = {
-        .nw = (struct vertex) {
+        .nw = (struct terrain_vert) {
             .pos    = top.se.pos,
             .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, right.nw.pos.y) },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
-        .ne = (struct vertex) {
+        .ne = (struct terrain_vert) {
             .pos    = top.ne.pos,
             .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, right.ne.pos.y) },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
-        .se = (struct vertex) {
+        .se = (struct terrain_vert) {
             .pos    = bot.nw.pos,
             .uv     = (vec2_t) { 1.0f, 0.0f },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
-        .sw = (struct vertex) {
+        .sw = (struct terrain_vert) {
             .pos    = bot.sw.pos,
             .uv     = (vec2_t) { 0.0f, 0.0f },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
@@ -1200,14 +1205,14 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
         struct face *curr = faces[i];
 
         /* First triangle */
-        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 0, &curr->nw, sizeof(struct vertex));
-        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 1, &curr->ne, sizeof(struct vertex));
-        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 2, &curr->sw, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 0, &curr->nw, sizeof(struct terrain_vert));
+        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 1, &curr->ne, sizeof(struct terrain_vert));
+        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 2, &curr->sw, sizeof(struct terrain_vert));
 
         /* Second triangle */
-        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 3, &curr->se, sizeof(struct vertex));
-        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 4, &curr->sw, sizeof(struct vertex));
-        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 5, &curr->ne, sizeof(struct vertex));
+        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 3, &curr->se, sizeof(struct terrain_vert));
+        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 4, &curr->sw, sizeof(struct terrain_vert));
+        memcpy(out + (i * VERTS_PER_SIDE_FACE) + 5, &curr->ne, sizeof(struct terrain_vert));
     }
 
     /* Lastly, the top face. Unlike the other five faces, it can have different 
@@ -1247,20 +1252,20 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
 	int tri0_idx = tri0_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
 	int tri1_idx = tri1_side_mat ? tile->sides_mat_idx : tile->top_mat_idx;
 
-    struct vertex center_vert_tri0 = (struct vertex) {
+    struct terrain_vert center_vert_tri0 = (struct terrain_vert) {
         .pos    = center_vert_pos,
         .uv     = (vec2_t){0.5f, 0.5f},
         .normal = top_tri_normals[0],
         .material_idx = tri0_idx
     };
-    struct vertex center_vert_tri1 = (struct vertex) {
+    struct terrain_vert center_vert_tri1 = (struct terrain_vert) {
         .pos    = center_vert_pos,
         .uv     = (vec2_t){0.5f, 0.5f},
         .normal = top_tri_normals[1],
         .material_idx = tri1_idx
     };
 
-    struct vertex north_vert = (struct vertex) {
+    struct terrain_vert north_vert = (struct terrain_vert) {
         .pos    = (vec3_t){
             (top.ne.pos.x + top.nw.pos.x)/2, 
             (top.ne.pos.y + top.nw.pos.y)/2, 
@@ -1269,7 +1274,7 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
         .normal = top_tri_normals[1],
         .material_idx = tri1_idx
     };
-    struct vertex south_vert = (struct vertex) {
+    struct terrain_vert south_vert = (struct terrain_vert) {
         .pos    = (vec3_t){
             (top.se.pos.x + top.sw.pos.x)/2, 
             (top.se.pos.y + top.sw.pos.y)/2, 
@@ -1278,7 +1283,7 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
         .normal = top_tri_normals[0],
         .material_idx = tri0_idx
     };
-    struct vertex west_vert = (struct vertex) {
+    struct terrain_vert west_vert = (struct terrain_vert) {
         .pos    = (vec3_t){
             (top.sw.pos.x + top.nw.pos.x)/2, 
             (top.sw.pos.y + top.nw.pos.y)/2, 
@@ -1287,7 +1292,7 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
         .normal = top_tri_left_aligned ? top_tri_normals[1] : top_tri_normals[0],
         .material_idx = (top_tri_left_aligned ? tri1_idx : tri0_idx),
     };
-    struct vertex east_vert = (struct vertex) {
+    struct terrain_vert east_vert = (struct terrain_vert) {
         .pos    = (vec3_t){
             (top.se.pos.x + top.ne.pos.x)/2, 
             (top.se.pos.y + top.ne.pos.y)/2, 
@@ -1297,7 +1302,7 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
         .material_idx = (top_tri_left_aligned ? tri0_idx : tri1_idx),
     };
 
-    assert(sizeof(union top_face_vbuff) == VERTS_PER_TOP_FACE * sizeof(struct vertex));
+    assert(sizeof(union top_face_vbuff) == VERTS_PER_TOP_FACE * sizeof(struct terrain_vert));
     union top_face_vbuff *tfvb = (union top_face_vbuff*)(out + 4 * VERTS_PER_SIDE_FACE);
     tfvb->se0 = top.se;
     tfvb->s0 = south_vert;
@@ -1373,13 +1378,13 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct vertex
         tfvb->se1.normal = top_tri_normals[1];
     }
 
-    for(struct vertex *curr_provoking = out; 
+    for(struct terrain_vert *curr_provoking = out; 
         curr_provoking < out + (4 * VERTS_PER_SIDE_FACE); 
         curr_provoking += 3) {
 
         curr_provoking->blend_mode = BLEND_MODE_NOBLEND;
     }
-    for(struct vertex *curr_provoking = out + (4 * VERTS_PER_SIDE_FACE); 
+    for(struct terrain_vert *curr_provoking = out + (4 * VERTS_PER_SIDE_FACE); 
         curr_provoking < out + VERTS_PER_TILE; 
         curr_provoking += 3) {
 
@@ -1393,7 +1398,7 @@ int R_TileGetTriMesh(const struct map *map, struct tile_desc *td, mat4x4_t *mode
 {
     PERF_ENTER();
 
-    struct vertex verts[VERTS_PER_TILE];
+    struct terrain_vert verts[VERTS_PER_TILE];
     R_TileGetVertices(map, *td, verts);
     int i = 0;
 

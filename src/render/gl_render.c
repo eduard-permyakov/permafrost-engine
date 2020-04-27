@@ -184,24 +184,24 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
 
     glGenBuffers(1, &mesh->VBO);
     glBindBuffer(GL_ARRAY_BUFFER, mesh->VBO);
-    glBufferData(GL_ARRAY_BUFFER, mesh->num_verts * sizeof(struct vertex), vbuff, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, mesh->num_verts * priv->vertex_stride, vbuff, GL_STATIC_DRAW);
 
     /* Attribute 0 - position */
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, priv->vertex_stride, (void*)0);
     glEnableVertexAttribArray(0);
 
     /* Attribute 1 - texture coordinates */
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, priv->vertex_stride, 
         (void*)offsetof(struct vertex, uv));
     glEnableVertexAttribArray(1);
 
     /* Attribute 2 - normal */
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, priv->vertex_stride, 
         (void*)offsetof(struct vertex, normal));
     glEnableVertexAttribArray(2);
 
     /* Attribute 3 - material index */
-    glVertexAttribIPointer(3, 1, GL_INT, sizeof(struct vertex), 
+    glVertexAttribIPointer(3, 1, GL_INT, priv->vertex_stride, 
         (void*)offsetof(struct vertex, material_idx));
     glEnableVertexAttribArray(3);
 
@@ -211,32 +211,52 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
          * limited to a maximum of 4 components per attribute. */
 
         /* Attribute 4/5 - joint indices */
-        glVertexAttribPointer(4, 3, GL_INT, GL_FALSE, sizeof(struct vertex),
-            (void*)offsetof(struct vertex, joint_indices));
+        glVertexAttribPointer(4, 3, GL_INT, GL_FALSE, priv->vertex_stride,
+            (void*)offsetof(struct anim_vert, joint_indices));
         glEnableVertexAttribArray(4);  
-        glVertexAttribPointer(5, 3, GL_INT, GL_FALSE, sizeof(struct vertex),
-            (void*)offsetof(struct vertex, joint_indices) + 3*sizeof(GLuint));
+        glVertexAttribPointer(5, 3, GL_INT, GL_FALSE, priv->vertex_stride,
+            (void*)offsetof(struct anim_vert, joint_indices) + 3*sizeof(GLuint));
         glEnableVertexAttribArray(5);
 
         /* Attribute 6/7 - joint weights */
-        glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
-            (void*)offsetof(struct vertex, weights));
+        glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, priv->vertex_stride,
+            (void*)offsetof(struct anim_vert, weights));
         glEnableVertexAttribArray(6);  
-        glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex),
-            (void*)offsetof(struct vertex, weights) + 3*sizeof(GLfloat));
+        glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, priv->vertex_stride,
+            (void*)offsetof(struct anim_vert, weights) + 3*sizeof(GLfloat));
         glEnableVertexAttribArray(7);  
 
     }else if(strstr(shader, "terrain")) {
 
-        /* Attribute 4 - tile texture blend mode */
-        glVertexAttribIPointer(4, 1, GL_INT, sizeof(struct vertex), 
-            (void*)offsetof(struct vertex, blend_mode));
+        /* Attribute 4 - blend mode */
+        glVertexAttribIPointer(4, 1, GL_SHORT, priv->vertex_stride, 
+            (void*)offsetof(struct terrain_vert, blend_mode));
         glEnableVertexAttribArray(4);
-         
-        /* Attribute 5 - adjacent material indices */
-        glVertexAttribIPointer(5, 4, GL_INT, sizeof(struct vertex), 
-            (void*)offsetof(struct vertex, adjacent_mat_indices));
+
+        /* Attribute 5 - middle material indices packed together */
+        glVertexAttribIPointer(5, 1, GL_SHORT, priv->vertex_stride, 
+          (void*)offsetof(struct terrain_vert, middle_indices));
         glEnableVertexAttribArray(5);
+
+        /* Attribute 6 - corner 1 material indices packed together */
+        glVertexAttribIPointer(6, 2, GL_INT, priv->vertex_stride, 
+            (void*)offsetof(struct terrain_vert, c1_indices));
+        glEnableVertexAttribArray(6);
+
+        /* Attribute 7 - corner 2 material indices packed together */
+        glVertexAttribIPointer(7, 2, GL_INT, priv->vertex_stride, 
+            (void*)offsetof(struct terrain_vert, c2_indices));
+        glEnableVertexAttribArray(7);
+
+        /* Attribute 6 - tile top and bottom material indices packed together */
+        glVertexAttribIPointer(8, 1, GL_INT, priv->vertex_stride, 
+            (void*)offsetof(struct terrain_vert, tb_indices));
+        glEnableVertexAttribArray(8);
+
+        /* Attribute 6 - tile left and right material indices packed together */
+        glVertexAttribIPointer(9, 1, GL_INT, priv->vertex_stride, 
+            (void*)offsetof(struct terrain_vert, lr_indices));
+        glEnableVertexAttribArray(9);
     }
 
     priv->shader_prog = R_GL_Shader_GetProgForName(shader);

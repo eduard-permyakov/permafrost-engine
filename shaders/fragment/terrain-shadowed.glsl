@@ -62,7 +62,11 @@ in VertexToFrag {
          vec3  world_pos;
          vec3  normal;
     flat int   blend_mode;
-    flat ivec4 adjacent_mat_indices;
+    flat int   mid_indices;
+    flat ivec2 c1_indices;
+    flat ivec2 c2_indices; 
+    flat int   tb_indices;
+    flat int   lr_indices;
          vec4  light_space_pos;
 }from_vertex;
 
@@ -94,13 +98,14 @@ vec4 texture_val(int mat_idx, vec2 uv)
     return texture(tex_array0, vec3(uv, mat_idx));
 }
 
-vec4 mixed_texture_val(int adjacency_mats, vec2 uv)
+vec4 mixed_texture_val(ivec2 adjacency_mats, vec2 uv)
 {
     vec4 ret = vec4(0.0f);
-    for(int i = 0; i < 8; i++) {
-        int idx = (adjacency_mats >> (i * 4)) & 0xf;
+    for(int i = 0; i < 2; i++) {
+    for(int j = 0; j < 4; j++) {
+        int idx = (adjacency_mats[i] >> (j * 8)) & 0xff;
         ret += texture_val(idx, uv) * (1.0/8.0);
-    }
+    }}
     return ret;
 }
 
@@ -188,7 +193,7 @@ void main()
     vec4 tex_color;
 
     switch(from_vertex.blend_mode) {
-    case BLEND_MODE_NOBLEND: 
+    case BLEND_MODE_NOBLEND:
         tex_color = texture_val(from_vertex.mat_idx, from_vertex.uv);
         break;
     case BLEND_MODE_BLUR:
@@ -210,8 +215,8 @@ void main()
          *  | / bot \ |
          *  +----+----+
          *
-         * Each of the 4 triangles has a vertex at the center of the tile. The 'adjacent_mat_indices'
-         * is a 'flat' attribute, so it will be the same for all fragments of a triangle.
+         * Each of the 4 triangles has a vertex at the center of the tile. The material indices
+         * are 'flat' attributes, so they will be the same for all fragments of a triangle.
          *
          * The UV coordinates for a tile go from (0.0, 1.0) to (1.0, 1.0) in the diagonal corner so
          * we are able to determine which of the 4 triangles this fragment is in by checking 
@@ -230,17 +235,17 @@ void main()
          * 4 points and use bilinear interpolation to select the texture color for this fragment using 
          * the UV coordinate.
          *
-         * The first two elements of 'adjacent_mat_indices' hold the adjacency information for the 
-         * two non-center vertices for this triangle. Each element has 8 4-bit indices packed into the 
-         * least significant 32 bits, resulting in 8 indices for each of the two vertices. Each index
-         * is the material of one of the 8 triangles touching the vertex.
+         * 'c1_indices' and 'c2_indices' hold the adjacency information for the two non-center vertices 
+         * for this triangle. Each element has 8 8-bit indices packed into 64 bits, resulting in 8 indices 
+         * for each of the two vertices. Each index is the material of one of the 8 triangles touching the 
+         * vertex.
          *
-         * The next element of 'adjacent_mat_indices' holds the materials for the centers of the 
-         * edges of the tile, with 2 4-bit indices for each edge.
+         * 'tb_indices' and 'lr_indices' hold the materials for the centers of the edges of the tile, with 
+         * 2 8-bit indices for each edge.
          * 
-         * The last element of 'adjacent_mat_indices' holds the 2 materials at the central point of 
-         * the tile in the lowest 8 bits. Usually the 2 indices are the same except for some corner tiles
-         * where half of the tile uses a different material.
+         * 'mid_indices' holds the 2 materials at the central point of the tile in the lowest 8 bits. 
+         * Usually the 2 indices are the same except for some corner tiles where half of the tile uses 
+         * a different material.
          *
          */
 
@@ -255,32 +260,32 @@ void main()
         /***********************************************************************
          * Set the fragment texture color
          **********************************************************************/
-        vec4 color1 = mixed_texture_val(from_vertex.adjacent_mat_indices[0], from_vertex.uv);
-        vec4 color2 = mixed_texture_val(from_vertex.adjacent_mat_indices[1], from_vertex.uv);
+        vec4 color1 = mixed_texture_val(from_vertex.c1_indices, from_vertex.uv);
+        vec4 color2 = mixed_texture_val(from_vertex.c2_indices, from_vertex.uv);
 
         vec4 tile_color = mix(
-            texture_val((from_vertex.adjacent_mat_indices[3] >> 0) & 0xf, from_vertex.uv), 
-            texture_val((from_vertex.adjacent_mat_indices[3] >> 4) & 0xf, from_vertex.uv), 
+            texture_val((from_vertex.mid_indices >> 0) & 0xff, from_vertex.uv),
+            texture_val((from_vertex.mid_indices >> 8) & 0xff, from_vertex.uv),
             0.5f
         );
         vec4 left_center_color =  mix(
-            texture_val((from_vertex.adjacent_mat_indices[2] >> 0) & 0xf, from_vertex.uv), 
-            texture_val((from_vertex.adjacent_mat_indices[2] >> 4) & 0xf, from_vertex.uv), 
+            texture_val((from_vertex.lr_indices >> 16) & 0xff, from_vertex.uv),
+            texture_val((from_vertex.lr_indices >> 24) & 0xff, from_vertex.uv),
             0.5f
         );
         vec4 bot_center_color = mix(
-            texture_val((from_vertex.adjacent_mat_indices[2] >> 8) & 0xf, from_vertex.uv),
-            texture_val((from_vertex.adjacent_mat_indices[2] >> 12) & 0xf, from_vertex.uv),
+            texture_val((from_vertex.tb_indices >> 0) & 0xff, from_vertex.uv),
+            texture_val((from_vertex.tb_indices >> 8) & 0xff, from_vertex.uv),
             0.5f
         );
         vec4 right_center_color = mix(
-            texture_val((from_vertex.adjacent_mat_indices[2] >> 16) & 0xf, from_vertex.uv), 
-            texture_val((from_vertex.adjacent_mat_indices[2] >> 20) & 0xf, from_vertex.uv), 
+            texture_val((from_vertex.lr_indices >> 0) & 0xff, from_vertex.uv),
+            texture_val((from_vertex.lr_indices >> 8) & 0xff, from_vertex.uv),
             0.5f
         );
         vec4 top_center_color = mix(
-            texture_val((from_vertex.adjacent_mat_indices[2] >> 24) & 0xf, from_vertex.uv), 
-            texture_val((from_vertex.adjacent_mat_indices[2] >> 28) & 0xf, from_vertex.uv), 
+            texture_val((from_vertex.tb_indices >> 16) & 0xff, from_vertex.uv),
+            texture_val((from_vertex.tb_indices >> 24) & 0xff, from_vertex.uv),
             0.5f
         );
 
@@ -320,7 +325,7 @@ void main()
 
         break;
     default:
-        tex_color = vec4(1.0, 0.0, 1.0, 1.0);
+        o_frag_color = vec4(1.0, 0.0, 1.0, 1.0);
         return;
     }
 

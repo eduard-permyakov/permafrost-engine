@@ -40,6 +40,7 @@
 #include "gl_material.h"
 #include "gl_render.h"
 #include "gl_assert.h"
+#include "gl_shader.h"
 
 #include "../main.h"
 #include "../perf.h"
@@ -62,7 +63,8 @@
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool al_read_vertex(SDL_RWops *stream, struct vertex *out)
+static bool al_read_vertex(SDL_RWops *stream, struct vertex *out, 
+                           char out_weights_line[static MAX_LINE_LEN])
 {
     char line[MAX_LINE_LEN];
 
@@ -78,13 +80,31 @@ static bool al_read_vertex(SDL_RWops *stream, struct vertex *out)
     if(!sscanf(line, "vn %f %f %f", &out->normal.x, &out->normal.y, &out->normal.z))
         goto fail;
 
-    READ_LINE(stream, line, fail);
-    if(!strstr(line, "vw"))
+    /* This really should have been after the material in the PFOBJ format, so 
+     * it could be treated as an optional footer. Oh well... */
+    READ_LINE(stream, out_weights_line, fail);
+
+    READ_LINE(stream, line, fail); 
+    if(!sscanf(line, "vm %d", &out->material_idx))
         goto fail;
 
+    return true;
+fail:
+    return false;
+}
+
+static bool al_read_anim_vertex(SDL_RWops *stream, struct anim_vert *out)
+{
+    char line[MAX_LINE_LEN];
     char *string = line;
     char *saveptr;
     int i;
+
+    if(!al_read_vertex(stream, (struct vertex*)out, line))
+        goto fail;
+
+    if(!strstr(line, "vw"))
+        goto fail;
 
     /* Write 0.0 weights by default */
     memset(out->weights, 0, sizeof(out->weights));
@@ -105,12 +125,7 @@ static bool al_read_vertex(SDL_RWops *stream, struct vertex *out)
     if(i == 0)
         goto fail;
 
-    READ_LINE(stream, line, fail); 
-    if(!sscanf(line, "vm %d", &out->material_idx))
-        goto fail;
-
     return true;
-
 fail:
     return false;
 }
@@ -196,8 +211,11 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     if(!priv)
         goto fail_alloc_priv;
 
-    size_t vbuff_sz = header->num_verts * sizeof(struct vertex);
-    struct vertex *vbuff = malloc(vbuff_sz);
+    bool anim = (header->num_as > 0);
+    priv->vertex_stride = anim ? sizeof(struct anim_vert) : sizeof(struct vertex);
+
+    size_t vbuff_sz = header->num_verts * priv->vertex_stride;
+    void *vbuff = malloc(vbuff_sz);
     if(!vbuff)
         goto fail_alloc_vbuff;
 
@@ -206,7 +224,16 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     priv->materials = (void*)(priv + 1);
 
     for(int i = 0; i < header->num_verts; i++) {
-        if(!al_read_vertex(stream, &vbuff[i]))
+
+        bool status;
+        char ignoreline[MAX_LINE_LEN];
+
+        if(anim) {
+            status = al_read_anim_vertex(stream, ((struct anim_vert*)vbuff) + i);
+        }else{
+            status = al_read_vertex(stream, ((struct vertex*)vbuff) + i, ignoreline);
+        }
+        if(!status)
             goto fail_parse;
     }
 
@@ -226,10 +253,10 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
 
     const char *shader;
     if(sh_setting.as_bool) {
-        shader = (header->num_as > 0) ? "mesh.animated.textured-phong-shadowed" 
+        shader = anim ? "mesh.animated.textured-phong-shadowed" 
                                       : "mesh.static.textured-phong-shadowed";
     }else{
-        shader = (header->num_as > 0) ? "mesh.animated.textured-phong" 
+        shader = anim ? "mesh.animated.textured-phong" 
                                       : "mesh.static.textured-phong";
     }
 
@@ -263,17 +290,20 @@ void R_AL_DumpPrivate(FILE *stream, void *priv_data)
     /* Write verticies */
     for(int i = 0; i < priv->mesh.num_verts; i++) {
 
-        struct vertex *v = &vbuff[i];
+        struct vertex *v = (struct vertex*)(((char*)vbuff) + priv->vertex_stride * i);
 
         fprintf(stream, "v %.6f %.6f %.6f\n", v->pos.x, v->pos.y, v->pos.z); 
         fprintf(stream, "vt %.6f %.6f \n", v->uv.x, v->uv.y); 
         fprintf(stream, "vn %.6f %.6f %.6f\n", v->normal.x, v->normal.y, v->normal.z);
 
         fprintf(stream, "vw ");
-        for(int j = 0; j < 4; j++) {
+        if(strstr("animated", R_GL_Shader_GetName(priv->shader_prog))) {
+            for(int j = 0; j < 6; j++) {
 
-            if(v->weights[j]) {
-                fprintf(stream, "%d/%.6f ", v->joint_indices[j], v->weights[j]);
+                struct anim_vert *av = (struct anim_vert*)v;
+                if(av->weights[j]) {
+                    fprintf(stream, "%d/%.6f ", av->joint_indices[j], av->weights[j]);
+                }
             }
         }
         fprintf(stream, "\n");
@@ -323,12 +353,13 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
 
     struct render_private *priv = priv_buff;
     char *unused_base = (char*)priv_buff + sizeof(struct render_private);
-    size_t vbuff_sz = num_verts * sizeof(struct vertex);
+    size_t vbuff_sz = num_verts * sizeof(struct terrain_vert);
 
-    struct vertex *vbuff = malloc(vbuff_sz);
+    struct terrain_vert *vbuff = malloc(vbuff_sz);
     if(!vbuff)
         goto fail_alloc;
 
+    priv->vertex_stride = sizeof(struct terrain_vert);
     priv->mesh.num_verts = num_verts;
     priv->materials = (void*)unused_base;
     priv->num_materials = 0;
@@ -336,7 +367,7 @@ bool R_AL_InitPrivFromTiles(const struct map *map, int chunk_r, int chunk_c,
     for(int r = 0; r < height; r++) {
     for(int c = 0; c < width;  c++) {
 
-        struct vertex *vert_base = &vbuff[ (r * width + c) * VERTS_PER_TILE ];
+        struct terrain_vert *vert_base = &vbuff[ (r * width + c) * VERTS_PER_TILE ];
         struct tile_desc td = (struct tile_desc){chunk_r, chunk_c, r, c};
         R_TileGetVertices(map, td, vert_base);
     }}

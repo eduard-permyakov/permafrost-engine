@@ -42,5 +42,6 @@
 
 bool  R_GL_Shader_InitAll(const char *base_path);
 GLint R_GL_Shader_GetProgForName(const char *name);
+const char *R_GL_Shader_GetName(GLuint prog);
 
 #endif

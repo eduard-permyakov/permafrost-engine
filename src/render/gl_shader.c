@@ -366,4 +366,18 @@ GLint R_GL_Shader_GetProgForName(const char *name)
     
     return -1;
 }
+
+const char *R_GL_Shader_GetName(GLuint prog)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    for(int i = 0; i < ARR_SIZE(s_shaders); i++) {
+
+        const struct shader_resource *curr = &s_shaders[i];
+        if(curr->prog_id)
+            return curr->name;
+    }
+    
+    return NULL;
+}
     
