@@ -44,8 +44,8 @@ class FileChooser(pf.Window):
         super(FileChooser, self).__init__(title, 
             (vresx / 2 - FileChooser.WINDOW_WIDTH/ 2, vresy / 2 - FileChooser.WINDOW_HEIGHT / 2, 
             FileChooser.WINDOW_WIDTH, FileChooser.WINDOW_HEIGHT), pf.NK_WINDOW_BORDER | pf.NK_WINDOW_NO_SCROLLBAR | pf.NK_WINDOW_TITLE, (vresx, vresy))
-        self.mapstring = pf.get_basedir() + "assets/maps/"
-        self.scenestring = pf.get_basedir() + "assets/maps/"
+        self.mapstring = "assets/maps/"
+        self.scenestring = "assets/maps/"
         self.scene_flag = False
         self.title = title
 
@@ -59,7 +59,7 @@ class FileChooser(pf.Window):
 
         def on_okay():
             scenepath = self.scenestring if self.scene_flag else None
-            pf.global_event(EVENT_FILE_CHOOSER_OKAY, (self.mapstring, scenepath))
+            pf.global_event(EVENT_FILE_CHOOSER_OKAY, (pf.get_basedir() + "/" + self.mapstring, scenepath))
 
         def on_cancel():
             pf.global_event(EVENT_FILE_CHOOSER_CANCEL, None)

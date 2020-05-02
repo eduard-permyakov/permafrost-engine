@@ -624,7 +624,7 @@ def __meta_dict_for_path(path):
     return None
 
 def save_scene(filename):
-    with open(filename, "w") as scenefile:
+    with open(pf.get_basedir() + "/" + filename, "w") as scenefile:
 
         factions_list = pf.get_factions_list()
         scenefile.write("num_factions {0}\n".format(len(factions_list)))
