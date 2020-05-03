@@ -374,7 +374,7 @@ const char *R_GL_Shader_GetName(GLuint prog)
     for(int i = 0; i < ARR_SIZE(s_shaders); i++) {
 
         const struct shader_resource *curr = &s_shaders[i];
-        if(curr->prog_id)
+        if(curr->prog_id == prog)
             return curr->name;
     }
     

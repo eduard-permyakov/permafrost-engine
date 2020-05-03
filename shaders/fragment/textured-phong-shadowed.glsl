@@ -35,7 +35,7 @@
 
 #version 330 core
 
-#define MAX_MATERIALS 8
+#define MAX_MATERIALS 16
 
 /* TODO: Make these as material parameters */
 #define SPECULAR_STRENGTH  0.5
