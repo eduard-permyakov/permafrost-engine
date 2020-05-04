@@ -950,9 +950,6 @@ void G_Update(void)
         if(s_gs.ss == G_RUNNING && curr->flags & ENTITY_FLAG_ANIMATED)
             A_Update(curr);
 
-        if(!(curr->flags & ENTITY_FLAG_COLLISION))
-            continue;
-
         if(curr->flags & ENTITY_FLAG_INVISIBLE)
             continue;
 
