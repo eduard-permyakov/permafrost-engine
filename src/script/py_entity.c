@@ -96,6 +96,7 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args);
 static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_del(PyAnimEntityObject *self);
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
+static PyObject *PyAnimEntity_get_anim(PyAnimEntityObject *self);
 static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self);
 static PyObject *PyAnimEntity_unpickle(PyObject *cls, PyObject *args);
 
@@ -253,6 +254,10 @@ static PyMethodDef PyAnimEntity_methods[] = {
     (PyCFunction)PyAnimEntity_play_anim, METH_VARARGS | METH_KEYWORDS,
     "Play the animation clip with the specified name. "
     "Set kwarg 'mode=\%d' to set the animation mode. The default is ANIM_MODE_LOOP."},
+
+    {"get_anim", 
+    (PyCFunction)PyAnimEntity_get_anim, METH_NOARGS,
+    "Get the name of the currently playing animation clip."},
 
     {"__del__", 
     (PyCFunction)PyAnimEntity_del, METH_NOARGS,
@@ -1178,6 +1183,11 @@ static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args
 
     A_SetActiveClip(self->super.ent, clipname, mode, 24);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyAnimEntity_get_anim(PyAnimEntityObject *self)
+{
+    return PyString_FromString(A_GetCurrClip(self->super.ent));
 }
 
 static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self)

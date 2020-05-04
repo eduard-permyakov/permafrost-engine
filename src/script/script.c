@@ -126,6 +126,7 @@ static PyObject *PyPf_get_simstate(PyObject *self);
 static PyObject *PyPf_set_simstate(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args);
+static PyObject *PyPf_rand(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_pickle_object(PyObject *self, PyObject *args);
 static PyObject *PyPf_unpickle_object(PyObject *self, PyObject *args);
@@ -372,6 +373,10 @@ static PyMethodDef pf_module_methods[] = {
     {"multiply_quaternions",
     (PyCFunction)PyPf_multiply_quaternions, METH_VARARGS,
     "Returns the normalized result of multiplying 2 quaternions (specified as a list of 4 floats - XYZW order)."},
+
+    {"rand",
+    (PyCFunction)PyPf_rand, METH_VARARGS,
+    "Return a pseudo-random number in the range of 0 to the integer argument."},
 
     {"pickle_object",
     (PyCFunction)PyPf_pickle_object, METH_VARARGS,
@@ -1379,6 +1384,19 @@ static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args)
     PFM_Quat_Normal(&ret, &ret);
 
     return Py_BuildValue("(ffff)", ret.x, ret.y, ret.z, ret.w);
+}
+
+static PyObject *PyPf_rand(PyObject *self, PyObject *args)
+{
+    int max;
+    if(!PyArg_ParseTuple(args, "i", &max)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single integer.");
+        return NULL;
+    }
+    int raw = rand();
+    int ret = ((float)raw) / RAND_MAX * max;
+    assert(ret >= 0 && ret <= max);
+    return PyInt_FromLong(ret);
 }
 
 static PyObject *PyPf_pickle_object(PyObject *self, PyObject *args)

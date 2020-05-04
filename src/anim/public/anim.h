@@ -140,6 +140,13 @@ void                   A_AddTimeDelta(const struct entity *ent, uint32_t dt);
 const char            *A_GetIdleClip(const struct entity *ent);
 
 /* ---------------------------------------------------------------------------
+ * Get the name of the idle clip for the entity. The returned string must
+ * not be freed.
+ * ---------------------------------------------------------------------------
+ */
+const char            *A_GetCurrClip(const struct entity *ent);
+
+/* ---------------------------------------------------------------------------
  * Get the name of the clip at a specific index.
  * ---------------------------------------------------------------------------
  */

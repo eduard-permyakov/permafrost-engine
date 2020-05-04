@@ -299,6 +299,12 @@ void A_AddTimeDelta(const struct entity *ent, uint32_t dt)
 const char *A_GetIdleClip(const struct entity *ent)
 {
     struct anim_ctx *ctx = ent->anim_ctx;
+    return ctx->idle->name;
+}
+
+const char *A_GetCurrClip(const struct entity *ent)
+{
+    struct anim_ctx *ctx = ent->anim_ctx;
     return ctx->active->name;
 }
 
