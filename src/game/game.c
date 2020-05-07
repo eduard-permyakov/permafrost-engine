@@ -42,6 +42,7 @@
 #include "combat.h" 
 #include "clearpath.h"
 #include "position.h"
+#include "fog_of_war.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -136,6 +137,7 @@ static void g_init_map(void)
     G_Combat_Init();
     G_ClearPath_Init(s_gs.map);
     G_Pos_Init(s_gs.map);
+    G_Fog_Init(s_gs.map);
     N_FC_ClearAll();
     N_FC_ClearStats();
 }
@@ -741,6 +743,7 @@ void G_ClearState(void)
         G_Combat_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
+        G_Fog_Shutdown();
         s_gs.map = NULL;
     }
 
