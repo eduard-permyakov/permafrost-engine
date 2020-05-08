@@ -381,6 +381,13 @@ static bool bool_val_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_BOOL);
 }
 
+static bool fac_vision_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_INT)
+        return false;
+    return (new_val->as_int >= -1 && new_val->as_int <= MAX_FACTIONS);
+}
+
 static bool faction_id_validate(const struct sval *new_val)
 {
     if(new_val->type != ST_TYPE_INT)
@@ -668,6 +675,17 @@ bool G_Init(void)
         },
         .prio = 0,
         .validate = bool_val_validate,
+        .commit = NULL,
+    });
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_faction_vision",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = -1 /* -1 for none, else the faction ID to show vision for */
+        },
+        .prio = 0,
+        .validate = fac_vision_validate,
         .commit = NULL,
     });
 

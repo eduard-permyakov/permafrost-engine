@@ -240,6 +240,13 @@ bool   M_NavRequestPath(const struct map *map, vec2_t xz_src, vec2_t xz_dest,
  */
 void   M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera *cam, 
                                        dest_id_t id);
+/* ------------------------------------------------------------------------
+ * Render the vision information for a particular faction. Every tile is 
+ * color-coded based on the vision the specified faction has of it. 
+ * (black = unexplored, green = visible, yellow = in fog of war)
+ * ------------------------------------------------------------------------
+ */
+void   M_RenderChunkVisibility(const struct map *map, const struct camera *cam, int faction_id);
 
 /* ------------------------------------------------------------------------
  * Returns the desired velocity vector for moving with the flow field 
@@ -319,6 +326,12 @@ void   M_SetShadowsEnabled(struct map *map, bool on);
  * ------------------------------------------------------------------------
  */
 vec3_t M_GetCenterPos(const struct map *map);
+
+/* ------------------------------------------------------------------------
+ * Returns the position of the top-left corner of the amp, in world space.
+ * ------------------------------------------------------------------------
+ */
+vec3_t M_GetPos(const struct map *map);
 
 
 /*###########################################################################*/

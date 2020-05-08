@@ -83,6 +83,8 @@ static PyObject *PyEntity_get_speed(PyEntityObject *self, void *closure);
 static int       PyEntity_set_speed(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_faction_id(PyEntityObject *self, void *closure);
 static int       PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyEntity_get_vision_range(PyEntityObject *self, void *closure);
+static int       PyEntity_set_vision_range(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args);
@@ -202,6 +204,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"faction_id",
     (getter)PyEntity_get_faction_id, (setter)PyEntity_set_faction_id,
     "Index of the faction that the entity belongs to.",
+    NULL},
+    {"vision_range",
+    (getter)PyEntity_get_vision_range, (setter)PyEntity_set_vision_range,
+    "The radius (in OpenGL coordinates) that the entity sees around itself.",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -648,7 +654,34 @@ static int PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *
         return -1;
     }
 
+    int old = self->ent->faction_id;
+    vec2_t xz_pos = G_Pos_GetXZ(self->ent->uid);
+
     self->ent->faction_id = PyInt_AS_LONG(value);
+
+    G_Fog_UpdateVisionRange(xz_pos, old, self->ent->vision_range, 0.0f);
+    G_Fog_UpdateVisionRange(xz_pos, self->ent->faction_id, 0.0f, self->ent->vision_range);
+    return 0;
+}
+
+static PyObject *PyEntity_get_vision_range(PyEntityObject *self, void *closure)
+{
+    //TODO: also update vision field when changing faction of entity
+    return Py_BuildValue("f", self->ent->vision_range);
+}
+
+static int PyEntity_set_vision_range(PyEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "faction_id attribute must be an integer.");
+        return -1;
+    }
+
+    float old = self->ent->vision_range;
+    vec2_t xz_pos = G_Pos_GetXZ(self->ent->uid);
+
+    self->ent->vision_range = PyFloat_AS_DOUBLE(value);
+    G_Fog_UpdateVisionRange(xz_pos, self->ent->faction_id, old, self->ent->vision_range);
     return 0;
 }
 

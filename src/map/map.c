@@ -262,6 +262,26 @@ void M_RenderChunkBoundaries(const struct map *map, const struct camera *cam)
     }}
 }
 
+void M_RenderChunkVisibility(const struct map *map, const struct camera *cam, int faction_id)
+{
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+    for(int c = 0; c < map->width;  c++) {
+
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
+
+        mat4x4_t chunk_model;
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        G_Fog_RenderChunkVisibility(faction_id, r, c, &chunk_model); 
+    }}
+}
+
 void M_CenterAtOrigin(struct map *map)
 {
     size_t width  = map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
@@ -569,6 +589,11 @@ vec3_t M_GetCenterPos(const struct map *map)
         map->pos.y,
         map->pos.z + (res.chunk_h * res.tile_h * Z_COORDS_PER_TILE)/2.0f,
     };
+}
+
+vec3_t M_GetPos(const struct map *map)
+{
+    return map->pos;
 }
 
 bool M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos, vec2_t xz_dest, float tolerance)

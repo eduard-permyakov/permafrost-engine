@@ -72,6 +72,7 @@ struct entity{
     float        max_speed;        /* The base movement speed in units of OpenGL coords / second */
     int          faction_id;       /* The faction to which this entity belongs to. */
     int          max_hp;           /* 0 for 'invulnerable' entities */
+    float        vision_range;     /* in OpenGL coordinates */
 };
 
 /* State needed for rendering a static entity */

@@ -35,6 +35,7 @@
 
 #include "game_private.h"
 #include "movement.h"
+#include "fog_of_war.h"
 #include "public/game.h"
 #include "../main.h"
 #include "../pf_math.h"
@@ -91,6 +92,8 @@ bool G_Pos_Set(const struct entity *ent, vec3_t pos)
         vec3_t old_pos = kh_val(s_postable, k);
         bool ret = qt_ent_delete(&s_postree, old_pos.x, old_pos.z, ent->uid);
         assert(ret);
+
+        G_Fog_RemoveVision((vec2_t){old_pos.x, old_pos.z}, ent->faction_id, ent->vision_range);
     }
 
     if(!qt_ent_insert(&s_postree, pos.x, pos.z, ent->uid))
@@ -110,6 +113,7 @@ bool G_Pos_Set(const struct entity *ent, vec3_t pos)
     assert(kh_size(s_postable) == s_postree.nrecs);
 
     G_Move_UpdatePos(ent, (vec2_t){pos.x, pos.z});
+    G_Fog_AddVision((vec2_t){pos.x, pos.z}, ent->faction_id, ent->vision_range);
     return true; 
 }
 

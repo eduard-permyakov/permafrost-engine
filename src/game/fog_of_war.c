@@ -35,19 +35,29 @@
 
 #include "fog_of_war.h"
 #include "public/game.h"
+#include "position.h"
+#include "game_private.h"
+#include "../event.h"
+#include "../settings.h"
+#include "../render/public/render.h"
 #include "../lib/public/pqueue.h"
+#include "../lib/public/khash.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 
 #include <stdint.h>
+#include <assert.h>
 
 
-#define MAX(a, b)   ((a) > (b) ? (a) : (b))
+#define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define MAX(a, b)           ((a) > (b) ? (a) : (b))
+#define CLAMP(a, min, max)  (MIN(MAX((a), (min)), (max)))
+#define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 
-enum vision_state{
-    VISION_UNEXPLORED = 0,
-    VISION_IN_FOG,
-    VISION_VISIBLE,
+enum fog_state{
+    STATE_UNEXPLORED = 0,
+    STATE_IN_FOG,
+    STATE_VISIBLE,
 };
 
 PQUEUE_TYPE(td, struct tile_desc)
@@ -60,7 +70,7 @@ PQUEUE_IMPL(static, td, struct tile_desc)
 static const struct map *s_map;
 /* Holds a tile for every tile of the map. The chunks are stored in row-major
  * order. Within a chunk, the tiles are in row-major order. */
-static uint8_t          *s_vision_state[MAX_FACTIONS];
+static uint8_t          *s_fog_state[MAX_FACTIONS];
 /* How many units of a faction currently 'see' every tile. */
 static uint8_t          *s_vision_refcnts[MAX_FACTIONS];
 
@@ -84,9 +94,9 @@ static void update_tile(int faction_id, struct tile_desc td, int delta)
     uint8_t new = old + delta;
 
     if(new) {
-        s_vision_state[faction_id][td_index(td)] = VISION_VISIBLE;
+        s_fog_state[faction_id][td_index(td)] = STATE_VISIBLE;
     }else{
-        s_vision_state[faction_id][td_index(td)] = VISION_IN_FOG;
+        s_fog_state[faction_id][td_index(td)] = STATE_IN_FOG;
     }
 
     s_vision_refcnts[faction_id][td_index(td)] = new;
@@ -106,7 +116,7 @@ static size_t neighbours(struct tile_desc curr, struct tile_desc *out)
             continue;
 
         struct tile_desc cand = curr;
-        bool exists = M_Tile_RelativeDesc(res, &curr, dc, dr);
+        bool exists = M_Tile_RelativeDesc(res, &cand, dc, dr);
         if(!exists)
             continue;
         out[ret++] = cand;
@@ -120,7 +130,7 @@ static vec2_t tile_center_pos(struct tile_desc td)
     struct map_resolution res;
     M_GetResolution(s_map, &res);
 
-    struct box box = M_Tile_Bounds(res, M_GetCenterPos(s_map), td);
+    struct box box = M_Tile_Bounds(res, M_GetPos(s_map), td);
     return (vec2_t){
         box.x - box.width / 2.0f,
         box.z + box.height / 2.0f
@@ -161,7 +171,7 @@ static bool td_is_los_corner(struct tile_desc td, int ref_height)
     return false;
 }
 
-static void wf_create_blocked_line(int xrad, int zrad, bool *wf[xrad * 2 + 1], 
+static void wf_create_blocked_line(int xrad, int zrad, bool wf[][xrad * 2 + 1], 
                                    struct tile_desc origin, int delta_r, int delta_c)
 {
     struct map_resolution res;
@@ -191,7 +201,8 @@ static void wf_create_blocked_line(int xrad, int zrad, bool *wf[xrad * 2 + 1],
     int curr_dr = delta_r, curr_dc = delta_c;
     do {
 
-        wf[curr_dr][curr_dc] = true;
+        fflush(stdout);
+        wf[zrad + curr_dr][xrad + curr_dc] = true;
 
         e2 = 2 * err;
         if(e2 >= dy) {
@@ -203,7 +214,7 @@ static void wf_create_blocked_line(int xrad, int zrad, bool *wf[xrad * 2 + 1],
             curr_dr += sy;
         }
 
-    }while(curr_dr >= -zrad && curr_dr <= zrad && curr_dc >= xrad && curr_dc <= -xrad);
+    }while(abs(curr_dr) <= zrad && abs(curr_dc) <= xrad);
 }
 
 void td_delta(struct tile_desc a, struct tile_desc b, int *out_dr, int *out_dc)
@@ -211,11 +222,11 @@ void td_delta(struct tile_desc a, struct tile_desc b, int *out_dr, int *out_dc)
     struct map_resolution res;
     M_GetResolution(s_map, &res);
 
-    int ar = a.chunk_r * res.chunk_h + a.tile_r;
-    int ac = a.chunk_c * res.chunk_w + a.tile_c;
+    int ar = a.chunk_r * res.tile_h + a.tile_r;
+    int ac = a.chunk_c * res.tile_w + a.tile_c;
 
-    int br = b.chunk_r * res.chunk_h + b.tile_r;
-    int bc = b.chunk_c * res.chunk_w + b.tile_c;
+    int br = b.chunk_r * res.tile_h + b.tile_r;
+    int bc = b.chunk_c * res.tile_w + b.tile_c;
 
     *out_dr = br - ar;
     *out_dc = bc - ac;
@@ -223,11 +234,15 @@ void td_delta(struct tile_desc a, struct tile_desc b, int *out_dr, int *out_dc)
 
 static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int delta)
 {
+    if(radius == 0.0f)
+        return;
+
     struct map_resolution res;
     M_GetResolution(s_map, &res);
 
     struct tile_desc origin;
-    M_Tile_DescForPoint2D(res, M_GetCenterPos(s_map), xz_pos, &origin);
+    bool status = M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &origin);
+    assert(status);
 
     struct tile *tile;
     M_TileForDesc(s_map, origin, &tile);
@@ -235,6 +250,7 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
 
     const int tile_x_radius = ceil(radius / X_COORDS_PER_TILE);
     const int tile_z_radius = ceil(radius / Z_COORDS_PER_TILE);
+    assert(tile_x_radius && tile_z_radius);
 
     /* Declare a byte for every tile within a box having a half-length of 'radius' 
      * that surrounds the position. When the position is near the map edge, some
@@ -265,6 +281,8 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
 
             int dr, dc;
             td_delta(origin, neighbs[i], &dr, &dc);
+            assert(abs(dr) <= tile_z_radius);
+            assert(abs(dc) <= tile_x_radius);
 
             if(visited[tile_x_radius + dr][tile_z_radius + dc])
                 continue;
@@ -283,7 +301,7 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
                 continue;
 
             if(td_is_los_corner(neighbs[i], origin_height))
-                wf_create_blocked_line(tile_x_radius, tile_z_radius, (bool**)wf_blocked, origin, dr, dc);
+                wf_create_blocked_line(tile_x_radius, tile_z_radius, wf_blocked, origin, dr, dc);
 
             if(td_los_blocked(neighbs[i], origin_height))
                 continue;
@@ -294,6 +312,23 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
     }
 
     pq_td_destroy(&frontier);
+}
+
+static void on_render_3d(void *user, void *event)
+{
+    const struct camera *cam = G_GetActiveCamera();
+
+    struct sval setting;
+    ss_e status;
+    (void)status;
+
+    status = Settings_Get("pf.debug.show_faction_vision", &setting);
+    assert(status == SS_OKAY);
+
+    if(setting.as_int == -1)
+        return;
+
+    M_RenderChunkVisibility(s_map, G_GetActiveCamera(), setting.as_int);
 }
 
 /*****************************************************************************/
@@ -307,8 +342,8 @@ bool G_Fog_Init(const struct map *map)
     const size_t ntiles = res.chunk_w * res.chunk_h * res.tile_w * res.tile_h;
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
-        s_vision_state[i] = calloc(sizeof(s_vision_state[0]), ntiles);
-        if(!s_vision_state[i])
+        s_fog_state[i] = calloc(sizeof(s_fog_state[0]), ntiles);
+        if(!s_fog_state[i])
             goto fail;
         s_vision_refcnts[i] = calloc(sizeof(s_vision_refcnts[0]), ntiles);
         if(!s_vision_refcnts[i])
@@ -316,11 +351,12 @@ bool G_Fog_Init(const struct map *map)
     }
 
     s_map = map;
+    E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     return true;
 
 fail:
     for(int i = 0; i < MAX_FACTIONS; i++) {
-        free(s_vision_state[i]);
+        free(s_fog_state[i]);
         free(s_vision_refcnts[i]);
     }
     return false;
@@ -328,11 +364,12 @@ fail:
 
 void G_Fog_Shutdown(void)
 {
+    E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
     for(int i = 0; i < MAX_FACTIONS; i++) {
-        free(s_vision_state[i]);
+        free(s_fog_state[i]);
         free(s_vision_refcnts[i]);
     }
-    memset(s_vision_state, 0, sizeof(s_vision_state));
+    memset(s_fog_state, 0, sizeof(s_fog_state));
     memset(s_vision_refcnts, 0, sizeof(s_vision_refcnts));
     s_map = NULL;
 }
@@ -345,5 +382,87 @@ void G_Fog_AddVision(vec2_t xz_pos, int faction_id, float radius)
 void G_Fog_RemoveVision(vec2_t xz_pos, int faction_id, float radius)
 {
     fog_update_visible(faction_id, xz_pos, radius, -1);
+}
+
+void G_Fog_UpdateVisionRange(vec2_t xz_pos, int faction_id, float old, float new)
+{
+    G_Fog_RemoveVision(xz_pos, faction_id, old);
+    G_Fog_AddVision(xz_pos, faction_id, new);
+}
+
+bool G_Fog_Visible(int faction_id, vec2_t xz_pos)
+{
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    struct tile_desc td;
+    if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &td))
+        return false;
+
+    return (s_fog_state[faction_id][td_index(td)] == STATE_VISIBLE);
+}
+
+bool G_Fog_Explored(int faction_id, vec2_t xz_pos)
+{
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    struct tile_desc td;
+    if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &td))
+        return false;
+
+    return (s_fog_state[faction_id][td_index(td)] != STATE_UNEXPLORED);
+}
+
+void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x4_t *model)
+{
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    vec2_t corners_buff[4 * res.tile_w * res.tile_h];
+    vec3_t colors_buff[res.tile_w * res.tile_h];
+
+    vec2_t *corners_base = corners_buff;
+    vec3_t *colors_base = colors_buff; 
+
+    for(int r = 0; r < res.tile_h; r++) {
+    for(int c = 0; c < res.tile_w; c++) {
+
+        float square_x_len = (1.0f / res.tile_w) * chunk_x_dim;
+        float square_z_len = (1.0f / res.tile_h) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / res.tile_w) * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP( (((float)r) / res.tile_h) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
+
+        *corners_base++ = (vec2_t){square_x, square_z};
+        *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
+        *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
+        *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
+
+        struct tile_desc curr = (struct tile_desc){chunk_r, chunk_c, r, c};
+        enum fog_state state = s_fog_state[faction_id][td_index(curr)];
+        *colors_base++ = state == STATE_UNEXPLORED ? (vec3_t){0.0f, 0.0f, 0.0f}
+                       : state == STATE_IN_FOG     ? (vec3_t){1.0f, 1.0f, 0.0f}
+                       : state == STATE_VISIBLE    ? (vec3_t){0.0f, 1.0f, 0.0f}
+                                                   : (assert(0), (vec3_t){0});
+    }}
+
+    assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
+    assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
+
+    size_t count = res.tile_w * res.tile_h;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawMapOverlayQuads,
+        .nargs = 5,
+        .args = {
+            R_PushArg(corners_buff, sizeof(corners_buff)),
+            R_PushArg(colors_buff, sizeof(colors_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(model, sizeof(*model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
 }
 

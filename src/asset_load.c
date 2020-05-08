@@ -177,6 +177,7 @@ static void al_set_ent_defaults(struct entity *ent)
     ent->selection_radius = 0.0f;
     ent->max_speed = 0.0f;
     ent->faction_id = 0; 
+    ent->vision_range = 0.0f;
 }
 
 /*****************************************************************************/
