@@ -129,6 +129,11 @@ int M_Tile_SEHeight(const struct tile *tile)
         return tile->base_height;
 }
 
+int M_Tile_BaseHeight(const struct tile *tile)
+{
+    return tile->base_height;
+}
+
 bool M_Tile_FrontFaceVisible(const struct tile *tiles, int r, int c)
 {
     assert(r >= 0 && r < TILES_PER_CHUNK_HEIGHT);

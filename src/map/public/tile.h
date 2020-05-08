@@ -130,6 +130,7 @@ int   M_Tile_NWHeight(const struct tile *tile);
 int   M_Tile_NEHeight(const struct tile *tile);
 int   M_Tile_SWHeight(const struct tile *tile);
 int   M_Tile_SEHeight(const struct tile *tile);
+int   M_Tile_BaseHeight(const struct tile *tile);
 
 bool  M_Tile_FrontFaceVisible(const struct tile *tiles, int r, int c);
 bool  M_Tile_BackFaceVisible (const struct tile *tiles, int r, int c);
