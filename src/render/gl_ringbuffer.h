@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2020 Eduard Permyakov 
+ *  Copyright (C) 2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,27 +33,37 @@
  *
  */
 
-#ifndef GL_ASSERT_H
-#define GL_ASSERT_H
+#include <stdbool.h>
+#include <stddef.h>
+#include <GL/glew.h>
 
-#include <assert.h>
-#include <stdio.h>
+/* The ringbuffer is used for efficient submission of streamed data
+ * to the GPU. The key principle is using a manually synchronized buffer,
+ * and filling up 1 section of it every frame. The data is exposed 
+ * to a shader via a pair of uniforms: 
+ * 
+ *     1. uname (samplerBuffer)
+ *     2. uname_offset (int)
+ * 
+ * So long as there is sufficient room in the buffer, this should allow
+ * for the GPU to use one section of the buffer, while the CPU is filling
+ * another with the next frame's data, all without implicit synchronization
+ * and minimal state changes.
+ *
+ * Usage: 
+ *
+ *   ring = R_GL_RingbufferInit(...);
+ *   for each frame:
+ *       R_GL_RingbufferPush(ring, ...);
+ *       // queue the GL draw commands touching buffer data
+ *       R_GL_RingbufferSubmit(ring, ...);
+ *   R_GL_RingbufferDestroy(ring);
+ * 
+ */
+struct gl_ring;
 
-#ifndef NDEBUG
+struct gl_ring *R_GL_RingbufferInit(size_t elem_size);
+void            R_GL_RingbufferDestroy(struct gl_ring *buff);
+bool            R_GL_RingbufferPush(struct gl_ring *buff, void *data);
+void            R_GL_RingbufferSubmit(struct gl_ring *buff, GLuint shader_prog, const char *uname);
 
-#define GL_ASSERT_OK()                                  \
-    do {                                                \
-        GLenum error = glGetError();                    \
-        if(error != GL_NO_ERROR)                        \
-            fprintf(stderr, "%s:%d OpenGL error: %x\n", \
-            __FILE__, __LINE__, error);                 \
-        assert(error == GL_NO_ERROR);                   \
-    }while(0)
-
-#else
-
-#define GL_ASSERT_OK() /* no-op */
-
-#endif
-
-#endif
