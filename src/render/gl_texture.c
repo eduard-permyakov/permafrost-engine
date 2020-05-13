@@ -320,6 +320,11 @@ fail_load:
     return false;
 }
 
+void R_GL_Texture_ArrayFree(struct texture_arr array)
+{
+    glDeleteTextures(1, &array.id);
+}
+
 void R_GL_Texture_ActivateArray(const struct texture_arr *arr, GLuint shader_prog)
 {
     ASSERT_IN_RENDER_THREAD();

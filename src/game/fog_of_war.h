@@ -48,5 +48,7 @@ void G_Fog_Shutdown(void);
 void G_Fog_AddVision(vec2_t xz_pos, int faction_id, float radius);
 void G_Fog_RemoveVision(vec2_t xz_pos, int faction_id, float radius);
 
+void G_Fog_UpdateVisionState(void);
+
 #endif
 

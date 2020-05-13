@@ -365,7 +365,13 @@ void  R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, con
  * Initialize map texture array with the specified list of textures.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures);
+void  R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures, const size_t *nchunks);
+
+/* ---------------------------------------------------------------------------
+ * Free the resources reserved by R_GL_MapInit.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_MapShutdown(void);
 
 /* ---------------------------------------------------------------------------
  * Call prior to rendering any map chunks. Activates the map rendering context.
@@ -379,6 +385,19 @@ void  R_GL_MapBegin(const bool *shadows);
  * ---------------------------------------------------------------------------
  */
 void  R_GL_MapEnd(void);
+
+/* ---------------------------------------------------------------------------
+ * Send the current-frame fog-of-war information to the rendering susbsystem.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_MapUpdateFog(void *buff, const size_t *size);
+
+/* ---------------------------------------------------------------------------
+ * Must be Called once per frame when we are sure there will be no more draw 
+ * commands touching the map data.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_MapFinalize(void);
 
 /*###########################################################################*/
 /* RENDER SHADOWS                                                            */

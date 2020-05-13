@@ -40,6 +40,7 @@
 #include "../event.h"
 #include "../settings.h"
 #include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 #include "../lib/public/pqueue.h"
 #include "../lib/public/khash.h"
 #include "../map/public/map.h"
@@ -49,10 +50,11 @@
 #include <assert.h>
 
 
-#define MIN(a, b)           ((a) < (b) ? (a) : (b))
-#define MAX(a, b)           ((a) > (b) ? (a) : (b))
-#define CLAMP(a, min, max)  (MIN(MAX((a), (min)), (max)))
-#define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
+#define MIN(a, b)               ((a) < (b) ? (a) : (b))
+#define MAX(a, b)               ((a) > (b) ? (a) : (b))
+#define CLAMP(a, min, max)      (MIN(MAX((a), (min)), (max)))
+#define ARR_SIZE(a)             (sizeof(a)/sizeof(a[0]))
+#define FAC_STATE(val, fac_id)  (((val) >> ((fac_id) * 2)) & 0x3)
 
 enum fog_state{
     STATE_UNEXPLORED = 0,
@@ -68,15 +70,33 @@ PQUEUE_IMPL(static, td, struct tile_desc)
 /*****************************************************************************/
 
 static const struct map *s_map;
-/* Holds a tile for every tile of the map. The chunks are stored in row-major
- * order. Within a chunk, the tiles are in row-major order. */
-static uint8_t          *s_fog_state[MAX_FACTIONS];
+/* Holds a 32-bit value for every tile of the map. The chunks are stored in row-major
+ * order. Within a chunk, the tiles are in row-major order. Each 32-bit value encodes
+ * a 2-bit faction state for up to 16 factions. */
+static uint32_t         *s_fog_state;
 /* How many units of a faction currently 'see' every tile. */
 static uint8_t          *s_vision_refcnts[MAX_FACTIONS];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static bool fog_any_visible(uint32_t val)
+{
+    for(;val; val >>= 2) {
+        if((val & 0x3) == STATE_VISIBLE)
+            return true;
+    }
+    return false;
+}
+
+static void fog_set_state(uint32_t *inout_tileval, int faction_id, enum fog_state state)
+{
+    assert(state >= 0 && state < 4);
+    uint32_t val = *inout_tileval & ~(0x3 << faction_id * 2);
+    val |= (state << (faction_id * 2));
+    *inout_tileval = val;
+}
 
 static int td_index(struct tile_desc td)
 {
@@ -94,9 +114,9 @@ static void update_tile(int faction_id, struct tile_desc td, int delta)
     uint8_t new = old + delta;
 
     if(new) {
-        s_fog_state[faction_id][td_index(td)] = STATE_VISIBLE;
+        fog_set_state(s_fog_state + td_index(td), faction_id, STATE_VISIBLE);
     }else{
-        s_fog_state[faction_id][td_index(td)] = STATE_IN_FOG;
+        fog_set_state(s_fog_state + td_index(td), faction_id, STATE_IN_FOG);
     }
 
     s_vision_refcnts[faction_id][td_index(td)] = new;
@@ -341,10 +361,11 @@ bool G_Fog_Init(const struct map *map)
     M_GetResolution(map, &res);
     const size_t ntiles = res.chunk_w * res.chunk_h * res.tile_w * res.tile_h;
 
+    s_fog_state = calloc(sizeof(s_fog_state[0]), ntiles);
+    if(!s_fog_state)
+        goto fail;
+
     for(int i = 0; i < MAX_FACTIONS; i++) {
-        s_fog_state[i] = calloc(sizeof(s_fog_state[0]), ntiles);
-        if(!s_fog_state[i])
-            goto fail;
         s_vision_refcnts[i] = calloc(sizeof(s_vision_refcnts[0]), ntiles);
         if(!s_vision_refcnts[i])
             goto fail;
@@ -355,8 +376,8 @@ bool G_Fog_Init(const struct map *map)
     return true;
 
 fail:
+    free(s_fog_state);
     for(int i = 0; i < MAX_FACTIONS; i++) {
-        free(s_fog_state[i]);
         free(s_vision_refcnts[i]);
     }
     return false;
@@ -365,11 +386,11 @@ fail:
 void G_Fog_Shutdown(void)
 {
     E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
+    free(s_fog_state);
+    s_fog_state = NULL;
     for(int i = 0; i < MAX_FACTIONS; i++) {
-        free(s_fog_state[i]);
         free(s_vision_refcnts[i]);
     }
-    memset(s_fog_state, 0, sizeof(s_fog_state));
     memset(s_vision_refcnts, 0, sizeof(s_vision_refcnts));
     s_map = NULL;
 }
@@ -399,7 +420,7 @@ bool G_Fog_Visible(int faction_id, vec2_t xz_pos)
     if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &td))
         return false;
 
-    return (s_fog_state[faction_id][td_index(td)] == STATE_VISIBLE);
+    return (FAC_STATE(s_fog_state[td_index(td)], faction_id) == STATE_VISIBLE);
 }
 
 bool G_Fog_Explored(int faction_id, vec2_t xz_pos)
@@ -411,7 +432,7 @@ bool G_Fog_Explored(int faction_id, vec2_t xz_pos)
     if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &td))
         return false;
 
-    return (s_fog_state[faction_id][td_index(td)] != STATE_UNEXPLORED);
+    return (FAC_STATE(s_fog_state[td_index(td)], faction_id) == STATE_UNEXPLORED);
 }
 
 void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x4_t *model)
@@ -442,7 +463,7 @@ void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x
         *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
 
         struct tile_desc curr = (struct tile_desc){chunk_r, chunk_c, r, c};
-        enum fog_state state = s_fog_state[faction_id][td_index(curr)];
+        enum fog_state state = FAC_STATE(s_fog_state[td_index(curr)], faction_id);
         *colors_base++ = state == STATE_UNEXPLORED ? (vec3_t){0.0f, 0.0f, 0.0f}
                        : state == STATE_IN_FOG     ? (vec3_t){1.0f, 1.0f, 0.0f}
                        : state == STATE_VISIBLE    ? (vec3_t){0.0f, 1.0f, 0.0f}
@@ -462,6 +483,46 @@ void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x
             R_PushArg(&count, sizeof(count)),
             R_PushArg(model, sizeof(*model)),
             (void*)G_GetPrevTickMap(),
+        },
+    });
+}
+
+void G_Fog_UpdateVisionState(void)
+{
+    bool controllable[MAX_FACTIONS];
+    uint16_t facs = G_GetFactions(NULL, NULL, controllable);
+
+    uint32_t player_mask = 0;
+    for(int i = 0; facs; facs >>= 1, i++) {
+        if((facs & 0x1) && controllable[i])
+            player_mask |= (0x3 << (i * 2));
+    }
+
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    size_t size = res.chunk_h * res.tile_h * res.chunk_w * res.tile_w;
+    unsigned char *visbuff = stalloc(&G_GetSimWS()->args, size);
+
+    for(int r = 0; r < res.chunk_h * res.tile_h; r++) {
+    for(int c = 0; c < res.chunk_w * res.tile_w; c++) {
+
+        int idx = r * (res.chunk_h * res.tile_h) + c;
+        uint32_t player_state = s_fog_state[idx] & player_mask;
+        if(!player_state)
+            visbuff[idx] = STATE_UNEXPLORED;
+        else if(fog_any_visible(player_state))
+            visbuff[idx] = STATE_VISIBLE;
+        else
+            visbuff[idx] = STATE_IN_FOG;
+    }}
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MapUpdateFog,
+        .nargs = 2,
+        .args = {
+            visbuff,
+            R_PushArg(&size, sizeof(size)),
         },
     });
 }

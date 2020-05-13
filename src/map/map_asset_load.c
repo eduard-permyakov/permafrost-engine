@@ -212,6 +212,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
                             SDL_RWops *stream, void *outmap, bool update_navgrid)
 {
     struct map *map = outmap;
+    const size_t nchunks = header->num_cols * header->num_rows;
 
     map->width = header->num_cols;
     map->height = header->num_rows;
@@ -231,10 +232,11 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
 
     R_PushCmd((struct rcmd){
         .func = R_GL_MapInit,
-        .nargs = 2,
+        .nargs = 3,
         .args = {
             R_PushArg(texnames, sizeof(texnames)),
             R_PushArg(&header->num_materials, sizeof(header->num_materials)),
+            R_PushArg(&nchunks, sizeof(nchunks)),
         },
     });
 
@@ -326,7 +328,7 @@ bool M_AL_UpdateTile(struct map *map, const struct tile_desc *desc, const struct
 
 void M_AL_FreePrivate(struct map *map)
 {
-    //TODO: Clean up OpenGL buffers
+    R_PushCmd((struct rcmd){ .func = R_GL_MapShutdown });
     assert(map->nav_private);
     N_FreePrivate(map->nav_private);
 }

@@ -56,6 +56,7 @@ bool R_GL_Texture_AddExisting(const char *name, GLuint id);
 
 void R_GL_Texture_MakeArray(const struct material *mats, size_t num_mats, 
                             struct texture_arr *out);
+void R_GL_Texture_ArrayFree(struct texture_arr array);
 bool R_GL_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures, 
                                struct texture_arr *out);
 

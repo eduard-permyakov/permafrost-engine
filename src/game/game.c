@@ -992,8 +992,8 @@ void G_Update(void)
         }
     });
 
-    /* Next, update the set of currently selected entities. */
     G_Sel_Update(ACTIVE_CAM, &s_gs.visible, &s_gs.visible_obbs);
+    G_Fog_UpdateVisionState();
 
     PERF_RETURN_VOID();
 }
@@ -1030,6 +1030,7 @@ void G_Render(void)
             },
         });
     }
+    R_PushCmd((struct rcmd){ R_GL_MapFinalize, 0 });
     g_destroy_render_input(&in);
 
     enum selection_type sel_type;

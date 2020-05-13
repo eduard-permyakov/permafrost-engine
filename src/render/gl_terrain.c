@@ -36,10 +36,15 @@
 #include "gl_render.h"
 #include "gl_texture.h"
 #include "gl_shader.h"
+#include "gl_ringbuffer.h"
+#include "gl_assert.h"
 #include "../main.h"
 #include "../perf.h"
+#include "../map/public/tile.h"
 
 #include <assert.h>
+
+#define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -47,19 +52,43 @@
 
 static struct texture_arr s_map_textures;
 static bool               s_map_ctx_active = false;
+static struct gl_ring    *s_fog_ring;
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures)
+void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures, const size_t *nchunks)
 {
     PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    bool ret = R_GL_Texture_MakeArrayMap(map_texfiles, *num_textures, &s_map_textures);
-    assert(ret);
+    s_fog_ring = R_GL_RingbufferInit(*nchunks * TILES_PER_CHUNK_WIDTH * TILES_PER_CHUNK_HEIGHT * 3);
+    assert(s_fog_ring);
+
+    bool status = R_GL_Texture_MakeArrayMap(map_texfiles, *num_textures, &s_map_textures);
+    assert(status);
+
     PERF_RETURN_VOID();
+}
+
+void R_GL_MapUpdateFog(void *buff, const size_t *size)
+{
+    PERF_ENTER();
+
+    GLuint shader_progs[] = {
+        R_GL_Shader_GetProgForName("terrain"),
+        R_GL_Shader_GetProgForName("terrain-shadowed"),
+    };
+    R_GL_RingbufferPush(s_fog_ring, buff, *size, shader_progs, ARR_SIZE(shader_progs), "visbuff");
+
+    PERF_RETURN_VOID();
+}
+
+void R_GL_MapShutdown(void)
+{
+    R_GL_Texture_ArrayFree(s_map_textures);
+    R_GL_RingbufferDestroy(s_fog_ring);
 }
 
 void R_GL_MapBegin(const bool *shadows)
@@ -70,7 +99,7 @@ void R_GL_MapBegin(const bool *shadows)
 
     GLuint shader_prog;
     if(*shadows) {
-      shader_prog = R_GL_Shader_GetProgForName("terrain-shadowed");
+        shader_prog = R_GL_Shader_GetProgForName("terrain-shadowed");
     }else {
         shader_prog = R_GL_Shader_GetProgForName("terrain");
     }
@@ -90,6 +119,13 @@ void R_GL_MapEnd(void)
     assert(s_map_ctx_active);
     s_map_ctx_active = false;
 
+    PERF_RETURN_VOID();
+}
+
+void R_GL_MapFinalize(void)
+{
+    PERF_ENTER();
+    R_GL_RingbufferSyncLast(s_fog_ring);
     PERF_RETURN_VOID();
 }
 
