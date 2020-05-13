@@ -38,32 +38,100 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 //TODO: use ARB_buffer_storage if it's available
 
-/* Support triple-buffering efficiently (i.e. 3 slots in the ring) */
-#define RING_SIZE (3)
+/* How many discrete sets of data (guarded by fences) the buffer can hold */
+#define NMAXMARKERS     (12)
+#define TIMEOUT_NSEC    (((uint64_t)10) * 1000 * 1000 * 1000)
+
+struct marker{
+    size_t begin;
+    size_t end;
+};
 
 struct gl_ring{
-    int    iwrite;
-    size_t elem_size;
+    size_t pos;
+    size_t size;
     /* The buffer object backing the ringbuffer */
     GLuint VBO;
     /* The texture buffer object associated with the VBO - 
      * for exposing the buffer to shaders. */
     GLuint tex_buff;
     /* Fences are to make sure we don't overwrite the next 
-     * part of the buffer before it's consumed by the GPU.
-     * With 3+ buffers, we should never stall on a fence, but 
-     * better to stay squeaky clean. */
-    GLsync fences[RING_SIZE];
+     * part of the buffer before it's consumed by the GPU. */
+    GLsync fences[NMAXMARKERS];
+    /* The markers hold the buffer positions guarded by the fences */
+    size_t nmarkers;
+    size_t imark_head, imark_tail;
+    struct marker markers[NMAXMARKERS];
 };
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static bool ring_wait_one(struct gl_ring *ring)
+{
+    if(ring->nmarkers == 0)
+        return false;
+
+    GLenum result = glClientWaitSync(ring->fences[ring->imark_tail], 0, TIMEOUT_NSEC);
+    glDeleteSync(ring->fences[ring->imark_tail]);
+    ring->imark_tail = (ring->imark_tail + 1) % NMAXMARKERS;
+    ring->nmarkers--;
+
+    if(result == GL_TIMEOUT_EXPIRED || result == GL_WAIT_FAILED)
+        return false;
+    return true;
+}
+
+static bool ring_section_free(const struct gl_ring *ring, size_t size)
+{
+    if(ring->nmarkers == NMAXMARKERS)
+        return false;
+    if(ring->nmarkers == 0)
+        return true;
+
+    size_t begin = ring->markers[ring->imark_tail].begin;
+    size_t end = ring->markers[ring->imark_head].end;
+
+    if(end < begin) { /* wrap around */
+        return (ring->pos > end && ring->pos + size < begin);
+    }else{
+        return (ring->pos > begin && ring->pos + size < end);
+    }
+}
+
+static void ring_notify_shaders(const struct gl_ring *ring, GLuint *shader_progs, 
+                                size_t nshaders, const char *uname)
+{
+    char uname_offset[128];
+    pf_snprintf(uname_offset, sizeof(uname_offset), "%s_offset", uname);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_BUFFER, ring->tex_buff);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB8UI, ring->VBO);
+
+    for(int i = 0; i < nshaders; i++) {
+
+        GLuint shader_prog = shader_progs[i];
+        glUseProgram(shader_prog);
+
+        GLuint loc = glGetUniformLocation(shader_prog, uname);
+        glUniform1i(loc, ring->tex_buff);
+
+        loc = glGetUniformLocation(shader_prog, uname_offset);
+        glUniform1i(loc, ring->pos);
+    }
+}
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-struct gl_ring *R_GL_RingbufferInit(size_t elem_size)
+struct gl_ring *R_GL_RingbufferInit(size_t size)
 {
     struct gl_ring *ret = malloc(sizeof(struct gl_ring));
     if(!ret)
@@ -73,56 +141,70 @@ struct gl_ring *R_GL_RingbufferInit(size_t elem_size)
     glGenTextures(1, &ret->tex_buff);
 
     glBindBuffer(GL_ARRAY_BUFFER, ret->VBO);
-    glBufferData(ret->VBO, elem_size * RING_SIZE, NULL, GL_STREAM_DRAW);
+    glBufferData(ret->VBO, size, NULL, GL_STREAM_DRAW);
 
-    ret->iwrite = 0;
-    ret->elem_size = elem_size;
+    ret->pos = 0;
+    ret->size = size;
+    ret->imark_head = 0;
+    ret->imark_tail = 0;
     memset(&ret->fences, 0, sizeof(ret->fences));
+    memset(&ret->markers, 0, sizeof(ret->fences));
     return ret;
 }
 
 void R_GL_RingbufferDestroy(struct gl_ring *ring)
 {
+    while(ring->nmarkers) {
+        ring_wait_one(ring);
+    }
     glDeleteBuffers(1, &ring->VBO);
     glDeleteTextures(1, &ring->tex_buff);
     free(ring);
 }
 
-bool R_GL_RingbufferPush(struct gl_ring *buff, void *data)
+bool R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size,
+                         GLuint *shader_progs, size_t nshaders, const char *uname)
 {
-    if(buff->fences[buff->iwrite]) {
-    
-        GLenum result = glClientWaitSync(buff->fences[buff->iwrite], 0, ((uint64_t)10) * 1000 * 1000 * 1000);
-        glDeleteSync(buff->fences[buff->iwrite]);
-        if(result == GL_TIMEOUT_EXPIRED || result == GL_WAIT_FAILED)
+    while(!ring_section_free(ring, size)) {
+        if(!ring_wait_one(ring))
             return false;
     }
 
-    glBindBuffer(GL_ARRAY_BUFFER, buff->VBO);
-    void *ptr = glMapBufferRange(GL_ARRAY_BUFFER, buff->iwrite * buff->elem_size, buff->elem_size,
-        GL_MAP_READ_BIT | GL_MAP_COHERENT_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+    ring_notify_shaders(ring, shader_progs, nshaders, uname);
+    glBindBuffer(GL_ARRAY_BUFFER, ring->VBO);
 
-    memcpy(ptr, data, buff->elem_size);
+    size_t left = ring->size - ring->pos;
+    size_t old_pos = ring->pos;
+
+    if(size < left) {
+        void *ptr = glMapBufferRange(GL_ARRAY_BUFFER, ring->pos, size,
+            GL_MAP_READ_BIT | GL_MAP_COHERENT_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+        memcpy(ptr, data, size);
+        ring->pos = ring->pos + size;
+    }else{
+        size_t start = left - size;
+        void *ptr = glMapBufferRange(GL_ARRAY_BUFFER, ring->pos, left,
+            GL_MAP_READ_BIT | GL_MAP_COHERENT_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+        memcpy(ptr, data, size);
+
+        /* wrap around */
+        ptr = glMapBufferRange(GL_ARRAY_BUFFER, 0, start,
+            GL_MAP_READ_BIT | GL_MAP_COHERENT_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+        ring->pos = start;
+    }
+
     glUnmapBuffer(GL_ARRAY_BUFFER);
+    ring->markers[ring->imark_head] = (struct marker){old_pos, ring->pos};
+
     return true;
 }
 
-void R_GL_RingbufferSubmit(struct gl_ring *buff, GLuint shader_prog, const char *uname)
+void R_GL_RingringerSyncLast(struct gl_ring *ring)
 {
-    buff->fences[buff->iwrite] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    glUseProgram(shader_prog);
+    assert(ring->nmarkers);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_BUFFER, buff->tex_buff);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB8UI, buff->VBO);
-
-    char uname_offset[128];
-    pf_snprintf(uname_offset, sizeof(uname_offset), "%s_offset", uname);
-
-    GLuint loc = glGetUniformLocation(shader_prog, uname);
-    glUniform1i(loc, buff->tex_buff);
-
-    loc = glGetUniformLocation(shader_prog, uname_offset);
-    glUniform1i(loc, buff->iwrite * buff->elem_size);
+    ring->fences[ring->imark_head] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    ring->imark_head = (ring->imark_head + 1) % NMAXMARKERS;
+    ring->nmarkers++;
 }
 

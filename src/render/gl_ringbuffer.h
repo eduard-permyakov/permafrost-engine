@@ -55,15 +55,16 @@
  *   ring = R_GL_RingbufferInit(...);
  *   for each frame:
  *       R_GL_RingbufferPush(ring, ...);
- *       // queue the GL draw commands touching buffer data
- *       R_GL_RingbufferSubmit(ring, ...);
+ *       // queue the GL draw commands touching buffered data
+ *       R_GL_RingbufferSyncLast(ring, ...);
  *   R_GL_RingbufferDestroy(ring);
  * 
  */
 struct gl_ring;
 
-struct gl_ring *R_GL_RingbufferInit(size_t elem_size);
-void            R_GL_RingbufferDestroy(struct gl_ring *buff);
-bool            R_GL_RingbufferPush(struct gl_ring *buff, void *data);
-void            R_GL_RingbufferSubmit(struct gl_ring *buff, GLuint shader_prog, const char *uname);
+struct gl_ring *R_GL_RingbufferInit(size_t size);
+void            R_GL_RingbufferDestroy(struct gl_ring *ring);
+bool            R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size,
+                                    GLuint *shader_progs, size_t nshaders, const char *uname);
+void            R_GL_RingbufferSyncLast(struct gl_ring *ring);
 
