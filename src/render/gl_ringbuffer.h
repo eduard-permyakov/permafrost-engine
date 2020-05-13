@@ -39,8 +39,8 @@
 
 /* The ringbuffer is used for efficient submission of streamed data
  * to the GPU. The key principle is using a manually synchronized buffer,
- * and filling up 1 section of it every frame. The data is exposed 
- * to a shader via a pair of uniforms: 
+ * (or Persistent Mapped Buffer, if available) and filling up 1 section 
+ * of it every frame. The data is exposed to a shader via a pair of uniforms: 
  * 
  *     1. uname (samplerBuffer)
  *     2. uname_offset (int)

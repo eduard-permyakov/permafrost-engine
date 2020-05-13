@@ -42,13 +42,13 @@
 #include <string.h>
 #include <assert.h>
 
-//TODO: use ARB_buffer_storage if it's available
-
 /* How many discrete sets of data (guarded by fences) the buffer can hold */
 #define NMAXMARKERS     (16)
 #define TIMEOUT_NSEC    (((uint64_t)10) * 1000 * 1000 * 1000)
 
-/* */
+/* On some hardware persistent mapped buffers are faster. However, they
+ * are not part of OpenGL 3.3 core which we are targeting. So, fallback 
+ * to unsynchronized VBOs if the extension isn't present. */
 enum mode{
     MODE_UNSYNCHRONIZED_VBO,
     MODE_PERSISTENT_MAPPED_BUFFER,
@@ -59,21 +59,30 @@ struct marker{
     size_t end;
 };
 
+struct buffer_ops{
+    void  (*init) (struct gl_ring*);
+    void *(*map)  (struct gl_ring*, size_t offset, size_t size);
+    void  (*unmap)(struct gl_ring*);
+};
+
 struct gl_ring{
-    size_t pos;
-    size_t size;
+    enum mode         mode;
+    struct buffer_ops ops;
+    void             *user;
+    size_t            pos;
+    size_t            size;
     /* The buffer object backing the ringbuffer */
-    GLuint VBO;
+    GLuint            VBO;
     /* The texture buffer object associated with the VBO - 
      * for exposing the buffer to shaders. */
-    GLuint tex_buff;
+    GLuint            tex_buff;
     /* Fences are to make sure we don't overwrite the next 
      * part of the buffer before it's consumed by the GPU. */
-    GLsync fences[NMAXMARKERS];
+    GLsync            fences[NMAXMARKERS];
     /* The markers hold the buffer positions guarded by the fences */
-    size_t nmarkers;
-    size_t imark_head, imark_tail;
-    struct marker markers[NMAXMARKERS];
+    size_t            nmarkers;
+    size_t            imark_head, imark_tail;
+    struct marker     markers[NMAXMARKERS];
 };
 
 /*****************************************************************************/
@@ -141,6 +150,41 @@ static void ring_notify_shaders(const struct gl_ring *ring, GLuint *shader_progs
     }
 }
 
+static void pmb_init(struct gl_ring *ring)
+{
+    GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
+    glBindBuffer(GL_ARRAY_BUFFER, ring->VBO);
+    glBufferStorageEXT(GL_ARRAY_BUFFER, ring->size, NULL, flags);
+    ring->user = glMapBufferRange(GL_ARRAY_BUFFER, 0, ring->size, flags);
+}
+
+static void *pmb_map(struct gl_ring *ring, size_t offset, size_t size)
+{
+    return ((unsigned char*)ring->user) + offset;
+}
+
+static void pmb_unmap(struct gl_ring *ring)
+{
+    /* no-op */
+}
+
+static void unsynch_vbo_init(struct gl_ring *ring)
+{
+    glBindBuffer(GL_ARRAY_BUFFER, ring->VBO);
+    glBufferData(GL_ARRAY_BUFFER, ring->size, NULL, GL_STREAM_DRAW);
+}
+
+static void *unsynch_vbo_map(struct gl_ring *ring, size_t offset, size_t size)
+{
+    return glMapBufferRange(GL_ARRAY_BUFFER, offset, size,
+        GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+}
+
+static void unsynch_vbo_unmap(struct gl_ring *ring)
+{
+    glUnmapBuffer(GL_ARRAY_BUFFER);
+}
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -154,9 +198,6 @@ struct gl_ring *R_GL_RingbufferInit(size_t size)
     glGenBuffers(1, &ret->VBO);
     glGenTextures(1, &ret->tex_buff);
 
-    glBindBuffer(GL_ARRAY_BUFFER, ret->VBO);
-    glBufferData(GL_ARRAY_BUFFER, size, NULL, GL_STREAM_DRAW);
-
     ret->pos = 0;
     ret->size = size;
     ret->imark_head = 0;
@@ -164,6 +205,23 @@ struct gl_ring *R_GL_RingbufferInit(size_t size)
     ret->nmarkers = 0;
     memset(&ret->fences, 0, sizeof(ret->fences));
     memset(&ret->markers, 0, sizeof(ret->fences));
+
+    if(GLEW_EXT_buffer_storage) {
+        ret->mode = MODE_PERSISTENT_MAPPED_BUFFER;
+        ret->ops = (struct buffer_ops){
+            pmb_init,
+            pmb_map,
+            pmb_unmap
+        };
+    }else{
+        ret->mode = MODE_UNSYNCHRONIZED_VBO;
+        ret->ops = (struct buffer_ops){
+            unsynch_vbo_init,
+            unsynch_vbo_map,
+            unsynch_vbo_unmap
+        };
+    }
+    ret->ops.init(ret);
 
     GL_ASSERT_OK();
     return ret;
@@ -193,33 +251,29 @@ bool R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size,
     }
 
     ring_notify_shaders(ring, shader_progs, nshaders, uname);
-    glBindBuffer(GL_ARRAY_BUFFER, ring->VBO);
 
     size_t left = ring->size - ring->pos;
     size_t old_pos = ring->pos;
 
     if(size <= left) {
-        void *ptr = glMapBufferRange(GL_ARRAY_BUFFER, ring->pos, size,
-            GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+        void *ptr = ring->ops.map(ring, ring->pos, size);
         memcpy(ptr, data, size);
         ring->pos = ring->pos + size;
     }else{
         size_t start = size - left;
         if(left > 0) {
-            void *ptr = glMapBufferRange(GL_ARRAY_BUFFER, ring->pos, left,
-                GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+            void *ptr = ring->ops.map(ring, ring->pos, left);
             memcpy(ptr, data, left);
-            glUnmapBuffer(GL_ARRAY_BUFFER);
+            ring->ops.unmap(ring);
         }
 
         /* wrap around */
-        void *ptr = glMapBufferRange(GL_ARRAY_BUFFER, 0, start,
-            GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+        void *ptr = ring->ops.map(ring, 0, start);
         memcpy(ptr, data, start);
         ring->pos = start;
     }
 
-    glUnmapBuffer(GL_ARRAY_BUFFER);
+    ring->ops.unmap(ring);
     ring->imark_head = (ring->imark_head + 1) % NMAXMARKERS;
     ring->markers[ring->imark_head] = (struct marker){old_pos, ring->pos};
 
