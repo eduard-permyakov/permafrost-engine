@@ -482,15 +482,11 @@ bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos,
     struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
 
     /* Recall X increases to the left in our engine */
-    if(point.x > map_box.x || point.x < map_box.x - map_box.width) {
-        printf("x no good: %f [%f, %f, %f, %f]\n", point.x, map_pos.x, map_pos.z, (float)width, (float)height);
+    if(point.x > map_box.x || point.x < map_box.x - map_box.width)
         return false;
-    }
 
-    if(point.z < map_box.z || point.z > map_box.z + map_box.height) {
-        printf("z no good: %f\n", point.z);
+    if(point.z < map_box.z || point.z > map_box.z + map_box.height)
         return false;
-    }
 
     int chunk_r, chunk_c;
     chunk_r = fabs(map_box.z - point.z) / CHUNK_HEIGHT;

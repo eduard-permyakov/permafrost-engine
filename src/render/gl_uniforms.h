@@ -104,4 +104,7 @@
 #define GL_U_CAM_FAR        "cam_far"
 #define GL_U_WATER_TILING   "water_tiling"
 
+/* Used by minimap shader */
+#define GL_U_MAP_RES        "map_resolution"
+
 #endif

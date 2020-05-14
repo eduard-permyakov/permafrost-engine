@@ -397,7 +397,7 @@ void  R_GL_MapUpdateFog(void *buff, const size_t *size);
  * commands touching the map data.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapFinalize(void);
+void  R_GL_MapInvalidate(void);
 
 /*###########################################################################*/
 /* RENDER SHADOWS                                                            */

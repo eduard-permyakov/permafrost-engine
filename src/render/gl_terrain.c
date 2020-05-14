@@ -75,13 +75,7 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures, co
 void R_GL_MapUpdateFog(void *buff, const size_t *size)
 {
     PERF_ENTER();
-
-    GLuint shader_progs[] = {
-        R_GL_Shader_GetProgForName("terrain"),
-        R_GL_Shader_GetProgForName("terrain-shadowed"),
-    };
-    R_GL_RingbufferPush(s_fog_ring, buff, *size, shader_progs, ARR_SIZE(shader_progs), "visbuff");
-
+    R_GL_RingbufferPush(s_fog_ring, buff, *size);
     PERF_RETURN_VOID();
 }
 
@@ -122,10 +116,15 @@ void R_GL_MapEnd(void)
     PERF_RETURN_VOID();
 }
 
-void R_GL_MapFinalize(void)
+void R_GL_MapInvalidate(void)
 {
     PERF_ENTER();
     R_GL_RingbufferSyncLast(s_fog_ring);
     PERF_RETURN_VOID();
+}
+
+void R_GL_MapFogBindLast(GLuint tunit, GLuint shader_prog, const char *uname)
+{
+    R_GL_RingbufferBindLast(s_fog_ring, tunit, shader_prog, uname);
 }
 

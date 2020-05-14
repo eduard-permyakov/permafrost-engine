@@ -181,6 +181,13 @@ static struct shader_resource s_shaders[] = {
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment/ui.glsl"
     },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "minimap",
+        .vertex_path = "shaders/vertex/static.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment/minimap.glsl"
+    },
 };
 
 /*****************************************************************************/

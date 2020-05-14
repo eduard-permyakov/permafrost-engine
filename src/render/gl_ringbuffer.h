@@ -33,6 +33,9 @@
  *
  */
 
+#ifndef GL_RINGBUFFER_H
+#define GL_RINGBUFFER_H
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <GL/glew.h>
@@ -42,7 +45,7 @@
  * (or Persistent Mapped Buffer, if available) and filling up 1 section 
  * of it every frame. The data is exposed to a shader via a pair of uniforms: 
  * 
- *     1. uname (samplerBuffer)
+ *     1. uname (usamplerBuffer)
  *     2. uname_offset (int)
  * 
  * So long as there is sufficient room in the buffer, this should allow
@@ -55,6 +58,7 @@
  *   ring = R_GL_RingbufferInit(...);
  *   for each frame:
  *       R_GL_RingbufferPush(ring, ...);
+ *       R_GL_RingbufferBindLast(ring, ...);
  *       // queue the GL draw commands touching buffered data
  *       R_GL_RingbufferSyncLast(ring, ...);
  *   R_GL_RingbufferDestroy(ring);
@@ -64,7 +68,9 @@ struct gl_ring;
 
 struct gl_ring *R_GL_RingbufferInit(size_t size);
 void            R_GL_RingbufferDestroy(struct gl_ring *ring);
-bool            R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size,
-                                    GLuint *shader_progs, size_t nshaders, const char *uname);
+bool            R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size);
+void            R_GL_RingbufferBindLast(struct gl_ring *ring, GLuint tunit, GLuint shader_prog, const char *uname);
 void            R_GL_RingbufferSyncLast(struct gl_ring *ring);
+
+#endif
 

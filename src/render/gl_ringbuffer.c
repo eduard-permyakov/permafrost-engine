@@ -127,35 +127,12 @@ static bool ring_section_free(const struct gl_ring *ring, size_t size)
     }
 }
 
-static void ring_notify_shaders(const struct gl_ring *ring, GLuint *shader_progs, 
-                                size_t nshaders, const char *uname)
-{
-    char uname_offset[128];
-    pf_snprintf(uname_offset, sizeof(uname_offset), "%s_offset", uname);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_BUFFER, ring->tex_buff);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_R8, ring->VBO);
-
-    for(int i = 0; i < nshaders; i++) {
-
-        GLuint shader_prog = shader_progs[i];
-        glUseProgram(shader_prog);
-
-        GLuint loc = glGetUniformLocation(shader_prog, uname);
-        glUniform1i(loc, ring->tex_buff);
-
-        loc = glGetUniformLocation(shader_prog, uname_offset);
-        glUniform1i(loc, ring->pos);
-    }
-}
-
 static void pmb_init(struct gl_ring *ring)
 {
     GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
-    glBindBuffer(GL_ARRAY_BUFFER, ring->VBO);
-    glBufferStorageEXT(GL_ARRAY_BUFFER, ring->size, NULL, flags);
-    ring->user = glMapBufferRange(GL_ARRAY_BUFFER, 0, ring->size, flags);
+    glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
+    glBufferStorageEXT(GL_TEXTURE_BUFFER, ring->size, NULL, flags);
+    ring->user = glMapBufferRange(GL_TEXTURE_BUFFER, 0, ring->size, flags);
 }
 
 static void *pmb_map(struct gl_ring *ring, size_t offset, size_t size)
@@ -170,19 +147,20 @@ static void pmb_unmap(struct gl_ring *ring)
 
 static void unsynch_vbo_init(struct gl_ring *ring)
 {
-    glBindBuffer(GL_ARRAY_BUFFER, ring->VBO);
-    glBufferData(GL_ARRAY_BUFFER, ring->size, NULL, GL_STREAM_DRAW);
+    glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
+    glBufferData(GL_TEXTURE_BUFFER, ring->size, NULL, GL_STREAM_DRAW);
 }
 
 static void *unsynch_vbo_map(struct gl_ring *ring, size_t offset, size_t size)
 {
-    return glMapBufferRange(GL_ARRAY_BUFFER, offset, size,
+    glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
+    return glMapBufferRange(GL_TEXTURE_BUFFER, offset, size,
         GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
 }
 
 static void unsynch_vbo_unmap(struct gl_ring *ring)
 {
-    glUnmapBuffer(GL_ARRAY_BUFFER);
+    glUnmapBuffer(GL_TEXTURE_BUFFER);
 }
 
 /*****************************************************************************/
@@ -223,6 +201,9 @@ struct gl_ring *R_GL_RingbufferInit(size_t size)
     }
     ret->ops.init(ret);
 
+    glBindTexture(GL_TEXTURE_BUFFER, ret->tex_buff);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R8UI, ret->VBO);
+
     GL_ASSERT_OK();
     return ret;
 }
@@ -237,20 +218,16 @@ void R_GL_RingbufferDestroy(struct gl_ring *ring)
     free(ring);
 }
 
-bool R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size,
-                         GLuint *shader_progs, size_t nshaders, const char *uname)
+bool R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size)
 {
-    assert(!ring->nmarkers || ring->fences[ring->imark_tail] > 0);
-
-    if(size > ring->size)
+    if(size > ring->size) {
         return false;
+    }
 
     while(!ring_section_free(ring, size)) {
         if(!ring_wait_one(ring))
             return false;
     }
-
-    ring_notify_shaders(ring, shader_progs, nshaders, uname);
 
     size_t left = ring->size - ring->pos;
     size_t old_pos = ring->pos;
@@ -258,7 +235,7 @@ bool R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size,
     if(size <= left) {
         void *ptr = ring->ops.map(ring, ring->pos, size);
         memcpy(ptr, data, size);
-        ring->pos = ring->pos + size;
+        ring->pos = (ring->pos + size) % ring->size;
     }else{
         size_t start = size - left;
         if(left > 0) {
@@ -286,9 +263,30 @@ bool R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size,
     return true;
 }
 
+void R_GL_RingbufferBindLast(struct gl_ring *ring, GLuint tunit, GLuint shader_prog, const char *uname)
+{
+    assert(ring->nmarkers);
+    assert(ring->fences[ring->imark_head] == 0);
+    size_t bpos = ring->markers[ring->imark_head].begin;
+
+    char uname_offset[128];
+    pf_snprintf(uname_offset, sizeof(uname_offset), "%s_offset", uname);
+
+    glActiveTexture(tunit);
+    glBindTexture(GL_TEXTURE_BUFFER, ring->tex_buff);
+    glUseProgram(shader_prog);
+
+    GLuint loc = glGetUniformLocation(shader_prog, uname);
+    glUniform1i(loc, tunit - GL_TEXTURE0);
+
+    loc = glGetUniformLocation(shader_prog, uname_offset);
+    glUniform1i(loc, bpos);
+}
+
 void R_GL_RingbufferSyncLast(struct gl_ring *ring)
 {
     assert(ring->nmarkers);
+    assert(ring->fences[ring->imark_head] == 0);
     ring->fences[ring->imark_head] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 }
 

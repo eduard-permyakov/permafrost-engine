@@ -330,6 +330,7 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
         "terrain",
         "terrain-shadowed",
         "statusbar",
+        "minimap",
         "water"
     };
 
@@ -362,6 +363,7 @@ void R_GL_SetProj(const mat4x4_t *proj)
         "terrain",
         "terrain-shadowed",
         "statusbar",
+        "minimap",
         "water"
     };
 

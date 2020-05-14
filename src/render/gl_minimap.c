@@ -40,6 +40,7 @@
 #include "gl_uniforms.h"
 #include "gl_assert.h"
 #include "gl_render.h"
+#include "gl_ringbuffer.h"
 #include "render_private.h"
 #include "public/render.h"
 #include "../game/public/game.h"
@@ -73,9 +74,10 @@ struct coord{
 /*****************************************************************************/
 
 struct render_minimap_ctx{
-    struct texture minimap_texture;
-    struct texture water_texture;
-    struct mesh    minimap_mesh;
+    struct map_resolution res;
+    struct texture        minimap_texture;
+    struct texture        water_texture;
+    struct mesh           minimap_mesh;
 }s_ctx;
 
 /*****************************************************************************/
@@ -426,6 +428,8 @@ void R_GL_MinimapBake(const struct map *map, void **chunk_rprivates,
 {
     PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+
+    M_GetResolution(map, &s_ctx.res);
     setup_ortho_view_uniforms(map);
 
     /* Render the map top-down view to the texture. */
@@ -540,13 +544,18 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam,
     glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 
     /* Now draw the minimap texture */
-    shader_prog = R_GL_Shader_GetProgForName("mesh.static.textured");
+    shader_prog = R_GL_Shader_GetProgForName("minimap");
     glUseProgram(shader_prog);
 
     loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
     glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
 
+    loc = glGetUniformLocation(shader_prog, GL_U_MAP_RES);
+    glUniform4i(loc, s_ctx.res.chunk_w, s_ctx.res.chunk_h, s_ctx.res.tile_w, s_ctx.res.tile_h);
+
     R_GL_Texture_Activate(&s_ctx.minimap_texture, shader_prog);
+    R_GL_MapFogBindLast(GL_TEXTURE1, shader_prog, "visbuff");
+
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
     /* Draw a box around the visible area*/

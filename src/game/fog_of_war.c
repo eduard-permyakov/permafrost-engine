@@ -504,17 +504,25 @@ void G_Fog_UpdateVisionState(void)
     size_t size = res.chunk_h * res.tile_h * res.chunk_w * res.tile_w;
     unsigned char *visbuff = stalloc(&G_GetSimWS()->args, size);
 
-    for(int r = 0; r < res.chunk_h * res.tile_h; r++) {
-    for(int c = 0; c < res.chunk_w * res.tile_w; c++) {
 
-        int idx = r * (res.chunk_h * res.tile_h) + c;
-        uint32_t player_state = s_fog_state[idx] & player_mask;
-        if(!player_state)
-            visbuff[idx] = STATE_UNEXPLORED;
-        else if(fog_any_visible(player_state))
-            visbuff[idx] = STATE_VISIBLE;
-        else
-            visbuff[idx] = STATE_IN_FOG;
+    for(int cr = 0; cr < res.chunk_h; cr++) {
+    for(int cc = 0; cc < res.chunk_w; cc++) {
+
+        for(int tr = 0; tr < res.tile_h; tr++) {
+        for(int tc = 0; tc < res.tile_w; tc++) {
+
+            struct tile_desc td = (struct tile_desc){cr, cc, tr, tc};
+            int idx = td_index(td);
+            uint32_t player_state = s_fog_state[idx] & player_mask;
+
+            //visbuff[idx] = 1;
+            if(!player_state)
+                visbuff[idx] = STATE_UNEXPLORED;
+            else if(fog_any_visible(player_state))
+                visbuff[idx] = STATE_VISIBLE;
+            else
+                visbuff[idx] = STATE_IN_FOG;
+        }}
     }}
 
     R_PushCmd((struct rcmd){

@@ -54,4 +54,7 @@ struct render_private{
 /* Tile */
 void R_TileGetVertices(const struct map *map, struct tile_desc td, struct terrain_vert *out);
 
+/* Terrain */
+void R_GL_MapFogBindLast(GLuint tunit, GLuint shader_prog, const char *uname);
+
 #endif
