@@ -38,6 +38,7 @@
 #include "gl_shader.h"
 #include "gl_ringbuffer.h"
 #include "gl_assert.h"
+#include "gl_uniforms.h"
 #include "../main.h"
 #include "../perf.h"
 #include "../map/public/tile.h"
@@ -58,17 +59,32 @@ static struct gl_ring    *s_fog_ring;
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures, const size_t *nchunks)
+void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures, 
+                  const struct map_resolution *res)
 {
     PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    s_fog_ring = R_GL_RingbufferInit(*nchunks * TILES_PER_CHUNK_WIDTH * TILES_PER_CHUNK_HEIGHT * 3);
+    size_t nchunks = res->chunk_w * res->chunk_h;
+    s_fog_ring = R_GL_RingbufferInit(nchunks * TILES_PER_CHUNK_WIDTH * TILES_PER_CHUNK_HEIGHT * 3);
     assert(s_fog_ring);
 
     bool status = R_GL_Texture_MakeArrayMap(map_texfiles, *num_textures, &s_map_textures);
     assert(status);
 
+    GLuint shaders[] = {
+        R_GL_Shader_GetProgForName("terrain"),
+        R_GL_Shader_GetProgForName("terrain-shadowed"),
+    };
+
+    for(int i = 0; i < ARR_SIZE(shaders); i++) {
+
+        glUseProgram(shaders[i]);
+        GLuint loc = glGetUniformLocation(shaders[i], GL_U_MAP_RES);
+        glUniform4i(loc, res->chunk_w, res->chunk_h, res->tile_w, res->tile_h);
+    }
+
+    GL_ASSERT_OK();
     PERF_RETURN_VOID();
 }
 
@@ -85,7 +101,7 @@ void R_GL_MapShutdown(void)
     R_GL_RingbufferDestroy(s_fog_ring);
 }
 
-void R_GL_MapBegin(const bool *shadows)
+void R_GL_MapBegin(const bool *shadows, const bool *fog, const vec2_t *pos)
 {
     PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -99,9 +115,16 @@ void R_GL_MapBegin(const bool *shadows)
     }
     assert(shader_prog != -1);
     glUseProgram(shader_prog);
-    R_GL_Texture_ActivateArray(&s_map_textures, shader_prog);
-    s_map_ctx_active = true;
 
+    R_GL_Texture_ActivateArray(&s_map_textures, shader_prog);
+
+    if(*fog) {
+        GLuint loc = glGetUniformLocation(shader_prog, GL_U_MAP_POS);
+        glUniform2fv(loc, 1, pos->raw);
+        R_GL_RingbufferBindLast(s_fog_ring, GL_TEXTURE1, shader_prog, "visbuff");
+    }
+
+    s_map_ctx_active = true;
     PERF_RETURN_VOID();
 }
 

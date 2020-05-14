@@ -204,7 +204,8 @@ static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_mo
     PERF_ENTER();
 
     const bool fval = false;
-    R_GL_MapBegin(&fval);
+    vec2_t pos = (vec2_t){0.0f, 0.0f};
+    R_GL_MapBegin(&fval, &fval, &pos);
 
     /* Clip everything below the 'Shallow Water' level. The 'Shallow Water' is 
      * rendered as just normal terrain. */

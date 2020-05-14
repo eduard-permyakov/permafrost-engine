@@ -93,13 +93,16 @@ int visbuff_idx(vec2 uv)
     int tile_r = int(mod(uv.y, chunk_height)/chunk_height * tile_h);
     int tile_c = int(mod(uv.x, chunk_width)/chunk_width * tile_w);
 
-    return (chunk_r * tiles_per_chunk * chunk_w) + (chunk_c * tiles_per_chunk) + (tile_r * tile_w) + tile_c;
+    return visbuff_offset + (chunk_r * tiles_per_chunk * chunk_w) 
+                          + (chunk_c * tiles_per_chunk) 
+                          + (tile_r * tile_w) 
+                          + tile_c;
 }
 
 void main()
 {
     vec4 tex_color = texture(texture0,  from_vertex.uv);
-    int idx = visbuff_offset + visbuff_idx(from_vertex.uv);
+    int idx = visbuff_idx(from_vertex.uv);
     int frag_state = int(texelFetch(visbuff, idx).r);
     
     if(frag_state == STATE_UNEXPLORED) {

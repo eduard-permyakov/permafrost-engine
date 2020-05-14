@@ -54,6 +54,7 @@ struct camera;
 struct frustum;
 struct render_input;
 struct nk_draw_list;
+struct map_resolution;
 
 enum render_pass{
     RENDER_PASS_DEPTH,
@@ -365,7 +366,8 @@ void  R_GL_TilePatchVertsSmooth(void *chunk_rprivate, const struct map *map, con
  * Initialize map texture array with the specified list of textures.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures, const size_t *nchunks);
+void  R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures, 
+                   const struct map_resolution *res);
 
 /* ---------------------------------------------------------------------------
  * Free the resources reserved by R_GL_MapInit.
@@ -378,7 +380,7 @@ void  R_GL_MapShutdown(void);
  * Must be followed with a matching call to 'R_GL_MapEnd'.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapBegin(const bool *shadows);
+void  R_GL_MapBegin(const bool *shadows, const bool *fog, const vec2_t *pos);
 
 /* ---------------------------------------------------------------------------
  * Call after finishing rendering all map chunks.

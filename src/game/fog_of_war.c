@@ -515,7 +515,6 @@ void G_Fog_UpdateVisionState(void)
             int idx = td_index(td);
             uint32_t player_state = s_fog_state[idx] & player_mask;
 
-            //visbuff[idx] = 1;
             if(!player_state)
                 visbuff[idx] = STATE_UNEXPLORED;
             else if(fog_any_visible(player_state))

@@ -212,7 +212,6 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
                             SDL_RWops *stream, void *outmap, bool update_navgrid)
 {
     struct map *map = outmap;
-    const size_t nchunks = header->num_cols * header->num_rows;
 
     map->width = header->num_cols;
     map->height = header->num_rows;
@@ -230,13 +229,20 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     }
     map->num_mats = header->num_materials;
 
+    struct map_resolution res = (struct map_resolution){
+        header->num_cols,
+        header->num_rows,
+        TILES_PER_CHUNK_WIDTH,
+        TILES_PER_CHUNK_HEIGHT
+    };
+
     R_PushCmd((struct rcmd){
         .func = R_GL_MapInit,
         .nargs = 3,
         .args = {
             R_PushArg(texnames, sizeof(texnames)),
             R_PushArg(&header->num_materials, sizeof(header->num_materials)),
-            R_PushArg(&nchunks, sizeof(nchunks)),
+            R_PushArg(&res, sizeof(res)),
         },
     });
 

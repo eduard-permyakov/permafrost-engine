@@ -40,6 +40,9 @@
 #define SPECULAR_SHININESS 2
 
 #define Y_COORDS_PER_TILE  4 
+#define X_COORDS_PER_TILE  8 
+#define Z_COORDS_PER_TILE  8 
+
 #define EXTRA_AMBIENT_PER_LEVEL 0.03
 
 #define BLEND_MODE_NOBLEND  0
@@ -51,6 +54,10 @@
 
 #define SHADOW_MAP_BIAS 0.002
 #define SHADOW_MULTIPLIER 0.7
+
+#define STATE_UNEXPLORED 0
+#define STATE_IN_FOG     1
+#define STATE_VISIBLE    2
 
 /*****************************************************************************/
 /* INPUTS                                                                    */
@@ -89,9 +96,41 @@ uniform sampler2D shadow_map;
 
 uniform sampler2DArray tex_array0;
 
+uniform usamplerBuffer visbuff;
+uniform int visbuff_offset;
+
+uniform ivec4 map_resolution;
+uniform vec2 map_pos;
+
 /*****************************************************************************/
 /* PROGRAM                                                                   */
 /*****************************************************************************/
+
+int visbuff_idx(vec3 ws_pos)
+{
+    int chunk_w = map_resolution[0];
+    int chunk_h = map_resolution[1];
+    int tile_w = map_resolution[2];
+    int tile_h = map_resolution[3];
+    int tiles_per_chunk = tile_w * tile_h;
+
+    int chunk_x_dist = tile_w * X_COORDS_PER_TILE;
+    int chunk_z_dist = tile_h * Z_COORDS_PER_TILE;
+
+    int chunk_r = int(abs(map_pos.y - ws_pos.z) / chunk_z_dist);
+    int chunk_c = int(abs(map_pos.x - ws_pos.x) / chunk_x_dist);
+
+    int chunk_base_x = int(map_pos.x - (chunk_c * chunk_x_dist));
+    int chunk_base_z = int(map_pos.y + (chunk_r * chunk_z_dist));
+
+    int tile_c = int(abs(chunk_base_x - ws_pos.x) / X_COORDS_PER_TILE);
+    int tile_r = int(abs(chunk_base_z - ws_pos.z) / Z_COORDS_PER_TILE);
+
+    return visbuff_offset + (chunk_r * tiles_per_chunk * chunk_w) 
+                          + (chunk_c * tiles_per_chunk) 
+                          + (tile_r * tile_w) 
+                          + tile_c;
+}
 
 vec4 texture_val(int mat_idx, vec2 uv)
 {
@@ -190,6 +229,14 @@ float shadow_factor_poisson(vec4 light_space_pos)
 
 void main()
 {
+    int idx = visbuff_idx(from_vertex.world_pos);
+    int frag_state = int(texelFetch(visbuff, idx).r);
+
+    if(frag_state == STATE_UNEXPLORED) {
+        o_frag_color = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
     vec4 tex_color;
 
     switch(from_vertex.blend_mode) {
@@ -359,6 +406,10 @@ void main()
         o_frag_color = vec4(final_color.xyz * (SHADOW_MULTIPLIER + (1.0 - shadow) * (1.0 - SHADOW_MULTIPLIER)), 1.0);
     }else{
         o_frag_color = vec4(final_color.xyz, 1.0);
+    }
+
+    if(frag_state == STATE_IN_FOG) {
+        o_frag_color = o_frag_color * 0.5;
     }
 }
 
