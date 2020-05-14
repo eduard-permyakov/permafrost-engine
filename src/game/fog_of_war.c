@@ -504,7 +504,6 @@ void G_Fog_UpdateVisionState(void)
     size_t size = res.chunk_h * res.tile_h * res.chunk_w * res.tile_w;
     unsigned char *visbuff = stalloc(&G_GetSimWS()->args, size);
 
-
     for(int cr = 0; cr < res.chunk_h; cr++) {
     for(int cc = 0; cc < res.chunk_w; cc++) {
 

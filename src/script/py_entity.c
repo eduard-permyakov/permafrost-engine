@@ -666,14 +666,13 @@ static int PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *
 
 static PyObject *PyEntity_get_vision_range(PyEntityObject *self, void *closure)
 {
-    //TODO: also update vision field when changing faction of entity
     return Py_BuildValue("f", self->ent->vision_range);
 }
 
 static int PyEntity_set_vision_range(PyEntityObject *self, PyObject *value, void *closure)
 {
     if(!PyFloat_Check(value)) {
-        PyErr_SetString(PyExc_TypeError, "faction_id attribute must be an integer.");
+        PyErr_SetString(PyExc_TypeError, "vision_range attribute must be an float.");
         return -1;
     }
 

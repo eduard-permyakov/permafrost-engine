@@ -380,7 +380,7 @@ void  R_GL_MapShutdown(void);
  * Must be followed with a matching call to 'R_GL_MapEnd'.
  * ---------------------------------------------------------------------------
  */
-void  R_GL_MapBegin(const bool *shadows, const bool *fog, const vec2_t *pos);
+void  R_GL_MapBegin(const bool *shadows, const vec2_t *pos);
 
 /* ---------------------------------------------------------------------------
  * Call after finishing rendering all map chunks.

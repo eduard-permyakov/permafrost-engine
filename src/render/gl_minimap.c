@@ -205,7 +205,7 @@ static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_mo
 
     const bool fval = false;
     vec2_t pos = (vec2_t){0.0f, 0.0f};
-    R_GL_MapBegin(&fval, &fval, &pos);
+    R_GL_MapBegin(&fval, &pos);
 
     /* Clip everything below the 'Shallow Water' level. The 'Shallow Water' is 
      * rendered as just normal terrain. */
@@ -283,6 +283,8 @@ static void create_minimap_texture(const struct map *map, void **chunk_rprivates
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, s_ctx.minimap_texture.id, 0);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
+    R_GL_MapClearFog();
+
     for(int r = 0; r < res.chunk_h; r++) {
     for(int c = 0; c < res.chunk_w; c++) {
 
@@ -292,6 +294,8 @@ static void create_minimap_texture(const struct map *map, void **chunk_rprivates
         draw_minimap_water(map, (struct coord){r,c});
         draw_minimap_terrain(priv, mat);
     }}
+
+    R_GL_MapInvalidate();
 
     glDeleteFramebuffers(1, &fb);
     GL_ASSERT_OK();

@@ -74,7 +74,7 @@ void   M_Update(const struct map *map);
  * a different rendering action.
  * ------------------------------------------------------------------------
  */
-void   M_RenderEntireMap(const struct map *map, bool shadows, bool fog, enum render_pass pass);
+void   M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pass);
 
 /* ------------------------------------------------------------------------
  * Renders the chunks of the map that are currently visible by the specified
@@ -83,7 +83,7 @@ void   M_RenderEntireMap(const struct map *map, bool shadows, bool fog, enum ren
  * ------------------------------------------------------------------------
  */
 void   M_RenderVisibleMap(const struct map *map, const struct camera *cam, 
-                          bool shadows, bool fog, enum render_pass pass);
+                          bool shadows, enum render_pass pass);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing which regions are 

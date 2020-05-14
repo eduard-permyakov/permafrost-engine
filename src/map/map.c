@@ -99,16 +99,15 @@ void M_ModelMatrixForChunk(const struct map *map, struct chunkpos p, mat4x4_t *o
     PFM_Mat4x4_MakeTrans(chunk_pos.x, chunk_pos.y, chunk_pos.z, out);
 }
 
-void M_RenderEntireMap(const struct map *map, bool shadows, bool fog, enum render_pass pass)
+void M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pass)
 {
     vec2_t pos = (vec2_t){map->pos.x, map->pos.z};
 
     R_PushCmd((struct rcmd){ 
         .func = R_GL_MapBegin,
-        .nargs = 3,
+        .nargs = 2,
         .args = { 
             R_PushArg(&shadows, sizeof(shadows)),
-            R_PushArg(&fog, sizeof(fog)),
             R_PushArg(&pos, sizeof(pos)),
         },
     });
@@ -149,7 +148,7 @@ void M_RenderEntireMap(const struct map *map, bool shadows, bool fog, enum rende
 }
 
 void M_RenderVisibleMap(const struct map *map, const struct camera *cam, 
-                        bool shadows, bool fog, enum render_pass pass)
+                        bool shadows, enum render_pass pass)
 {
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
@@ -157,10 +156,9 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
 
     R_PushCmd((struct rcmd){ 
         .func = R_GL_MapBegin, 
-        .nargs = 3, 
+        .nargs = 2, 
         .args = {
             R_PushArg(&shadows, sizeof(shadows)),
-            R_PushArg(&fog, sizeof(fog)),
             R_PushArg(&pos, sizeof(pos)),
         },
     });

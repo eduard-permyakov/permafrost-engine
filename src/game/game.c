@@ -159,7 +159,7 @@ static void g_shadow_pass(const struct camera *cam, const struct map *map,
     });
 
     if(map) {
-        M_RenderVisibleMap(map, cam, true, true, RENDER_PASS_DEPTH);
+        M_RenderVisibleMap(map, cam, true, RENDER_PASS_DEPTH);
     }
 
     for(int i = 0; i < vec_size(&stat_ents); i++) {
@@ -211,7 +211,7 @@ static void g_draw_pass(const struct camera *cam, const struct map *map,
                         bool shadows, vec_rstat_t stat_ents, vec_ranim_t anim_ents)
 {
     if(map) {
-        M_RenderVisibleMap(map, cam, shadows, true, RENDER_PASS_REGULAR);
+        M_RenderVisibleMap(map, cam, shadows, RENDER_PASS_REGULAR);
     }
 
     for(int i = 0; i < vec_size(&stat_ents); i++) {

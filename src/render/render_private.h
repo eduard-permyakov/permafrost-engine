@@ -56,5 +56,6 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct terrai
 
 /* Terrain */
 void R_GL_MapFogBindLast(GLuint tunit, GLuint shader_prog, const char *uname);
+void R_GL_MapClearFog(void);
 
 #endif
