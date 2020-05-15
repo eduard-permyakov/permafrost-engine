@@ -33,7 +33,7 @@
  *
  */
 
-#ifndef FOG_FO_WAR_H
+#ifndef FOG_OF_WAR_H
 #define FOG_OF_WAR_H
 
 #include "../pf_math.h"

@@ -46,9 +46,50 @@
 #define CHUNK_HEIGHT (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE)
 #define EPSILON      (1.0f / 1024.0)
 
+#define ARR_SIZE(a)        (sizeof(a)/sizeof(a[0]))
 #define MIN(a, b)          ((a) < (b) ? (a) : (b))
 #define MAX(a, b)          ((a) > (b) ? (a) : (b))
 #define CLAMP(a, min, max) (MIN(MAX((a), (min)), (max)))
+
+#define MAX_TILES_PER_LINE (128)
+
+struct row_desc{
+    int chunk_r;
+    int tile_r;
+};
+
+struct col_desc{
+    int chunk_c;
+    int tile_c;
+};
+
+#define HIGHER(tile_desc, row_desc) \
+       ((tile_desc).chunk_r < (row_desc).chunk_r) \
+    || ((tile_desc).chunk_r == (row_desc).chunk_r && (tile_desc).tile_r < (row_desc).tile_r)
+
+#define LOWER(tile_desc, row_desc) \
+       ((tile_desc).chunk_r > (row_desc).chunk_r) \
+    || ((tile_desc).chunk_r == (row_desc).chunk_r && (tile_desc).tile_r > (row_desc).tile_r)
+
+#define MORE_LEFT(tile_desc, col_desc) \
+       ((tile_desc).chunk_c < (col_desc).chunk_c) \
+    || ((tile_desc).chunk_c == (col_desc).chunk_c && (tile_desc).tile_c < (col_desc).tile_c)
+
+#define MORE_RIGHT(tile_desc, col_desc) \
+       ((tile_desc).chunk_c > (col_desc).chunk_c) \
+    || ((tile_desc).chunk_c == (col_desc).chunk_c && (tile_desc).tile_c > (col_desc).tile_c)
+
+#define MIN_ROW(a, b)          HIGHER((a), (b)) ? (a) : (b)
+#define MIN_ROW_4(a, b, c, d)  MIN_ROW(MIN_ROW((a), (b)), MIN_ROW((c), (d)))
+
+#define MAX_ROW(a, b)          LOWER((a), (b)) ? (a) : (b)
+#define MAX_ROW_4(a, b, c, d)  MAX_ROW(MAX_ROW((a), (b)), MAX_ROW((c), (d)))
+
+#define MIN_COL(a, b)          MORE_LEFT((a), (b)) ? (a) : (b)
+#define MIN_COL_4(a, b, c, d)  MIN_COL(MIN_COL((a), (b)), MIN_COL((c), (d)))
+
+#define MAX_COL(a, b)          MORE_RIGHT((a), (b)) ? (a) : (b)
+#define MAX_COL_4(a, b, c, d)  MAX_COL(MAX_COL((a), (b)), MAX_COL((c), (d)))
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -516,5 +557,101 @@ bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos,
     out->tile_r = tile_r;
     out->tile_c = tile_c;
     return true;
+}
+
+size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struct obb *obb,
+                          struct tile_desc *out, size_t maxout)
+{
+    size_t ret = 0;
+
+    vec3_t bot_corners[4] = {obb->corners[0], obb->corners[1], obb->corners[5], obb->corners[4]};
+    vec2_t bot_corners_2d[4] = {
+        (vec2_t){bot_corners[0].x, bot_corners[0].z},
+        (vec2_t){bot_corners[1].x, bot_corners[1].z},
+        (vec2_t){bot_corners[2].x, bot_corners[2].z},
+        (vec2_t){bot_corners[3].x, bot_corners[3].z},
+    };
+    struct line_seg_2d xz_line_segs[4] = {
+        (struct line_seg_2d){bot_corners[0].x, bot_corners[0].z, bot_corners[1].x, bot_corners[1].z},
+        (struct line_seg_2d){bot_corners[1].x, bot_corners[1].z, bot_corners[2].x, bot_corners[2].z},
+        (struct line_seg_2d){bot_corners[2].x, bot_corners[2].z, bot_corners[3].x, bot_corners[3].z},
+        (struct line_seg_2d){bot_corners[3].x, bot_corners[3].z, bot_corners[0].x, bot_corners[0].z},
+    };
+
+    struct row_desc min_rows[4], max_rows[4];
+    struct col_desc min_cols[4], max_cols[4];
+
+    /* For each line segment of the bottom face of the OBB, find the supercover (set of all 
+     * tiles which intersect the line segment). Keep track of the top-most, bottom-most,
+     * left-most and right-most tiles of the outline.
+     */
+    struct tile_desc descs[MAX_TILES_PER_LINE];
+    for(int i = 0; i < ARR_SIZE(xz_line_segs); i++) {
+
+        min_rows[i] = (struct row_desc){0,0};
+        max_rows[i] = (struct row_desc){res.chunk_h-1, res.tile_h-1};
+        min_cols[i] = (struct col_desc){0,0};
+        max_cols[i] = (struct col_desc){res.chunk_w-1, res.chunk_w-1};
+
+        size_t num_tiles = M_Tile_LineSupercoverTilesSorted(res, map_pos, xz_line_segs[i], descs);
+        for(int j = 0; j < num_tiles; j++) {
+
+            out[ret++] = descs[j];
+            if(ret == maxout)
+                goto done;
+
+            if(HIGHER(descs[j], min_rows[i]))
+                min_rows[i] = (struct row_desc){descs[j].chunk_r, descs[j].tile_r};
+
+            if(LOWER(descs[j], max_rows[i]))
+                max_rows[i] = (struct row_desc){descs[j].chunk_r, descs[j].tile_r};
+
+            if(MORE_LEFT(descs[j], max_cols[i]))
+                min_cols[i] = (struct col_desc){descs[j].chunk_c, descs[j].tile_c};
+
+            if(MORE_RIGHT(descs[j], max_cols[i]))
+                max_cols[i] = (struct col_desc){descs[j].chunk_c, descs[j].tile_c};
+        }
+    }
+
+    struct row_desc min_row = MIN_ROW_4(min_rows[0], min_rows[1], min_rows[2], min_rows[3]);
+    struct row_desc max_row = MAX_ROW_4(max_rows[0], max_rows[1], max_rows[2], max_rows[3]);
+
+    struct col_desc min_col = MIN_COL_4(min_cols[0], min_cols[1], min_cols[2], min_cols[3]);
+    struct col_desc max_col = MAX_COL_4(max_cols[0], max_cols[1], max_cols[2], max_cols[3]);
+
+    /* Now iterate over the square region of tiles defined by the extrema of the outline 
+     * and check whether the tiles of this box fall within the OBB and should have their
+     * cost updated. 
+     */
+    for(int r = min_row.chunk_r * res.tile_h + min_row.tile_r; 
+            r < max_row.chunk_r * res.tile_h + max_row.tile_r; r++) {
+        for(int c = min_col.chunk_c * res.tile_w + min_col.tile_c; 
+                c < max_col.chunk_c * res.tile_w + max_col.tile_c; c++) {
+
+            struct tile_desc desc = {
+                .chunk_r = r / res.tile_h,
+                .chunk_c = c / res.tile_w,
+                .tile_r  = r % res.tile_h,
+                .tile_c  = c % res.tile_w,
+            };
+            struct box bounds = M_Tile_Bounds(res, map_pos, desc);
+            vec2_t center = (vec2_t){
+                bounds.x - bounds.width/2.0f,
+                bounds.z + bounds.height/2.0f
+            };
+
+            if(C_PointInsideRect2D(center, bot_corners_2d[0], bot_corners_2d[1], 
+                bot_corners_2d[2], bot_corners_2d[3])) {
+
+                out[ret++] = desc;
+                if(ret == maxout)
+                    goto done;
+            }
+        }
+    }
+
+done:
+    return ret;
 }
 
