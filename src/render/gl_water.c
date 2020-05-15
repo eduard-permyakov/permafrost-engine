@@ -40,6 +40,7 @@
 #include "gl_shader.h"
 #include "gl_assert.h"
 #include "gl_uniforms.h"
+#include "render_private.h"
 #include "public/render.h"
 #include "../game/public/game.h"
 #include "../settings.h"
@@ -84,6 +85,7 @@ struct water_gl_state{
 #define REFLECT_TUNIT       GL_TEXTURE2
 #define REFRACT_TUNIT       GL_TEXTURE3
 #define REFRACT_DEPTH_TUNIT GL_TEXTURE4
+#define VISBUFF_TUNIT       GL_TEXTURE5
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -321,6 +323,22 @@ static void setup_texture_uniforms(GLuint shader_prog, GLuint refract_tex,
     PERF_RETURN_VOID();
 }
 
+static void setup_fog_uniforms(GLuint shader_prog, const struct map *map)
+{
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+    vec3_t pos = M_GetPos(map);
+    vec2_t pos_xz = (vec2_t){pos.x, pos.z};
+
+    GLuint loc = glGetUniformLocation(shader_prog, GL_U_MAP_RES);
+    glUniform4i(loc, res.chunk_w, res.chunk_h, res.tile_w, res.tile_h);
+
+    loc = glGetUniformLocation(shader_prog, GL_U_MAP_POS);
+    glUniform2fv(loc, 1, pos_xz.raw);
+
+    R_GL_MapFogBindLast(VISBUFF_TUNIT, shader_prog, "visbuff");
+}
+
 static void setup_map_uniforms(GLuint shader_prog)
 {
     PERF_ENTER();
@@ -520,6 +538,7 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
     setup_map_uniforms(shader_prog);
     setup_cam_uniforms(shader_prog);
     setup_texture_uniforms(shader_prog, refract_tex, refract_depth, reflect_tex);
+    setup_fog_uniforms(shader_prog, in->map);
     setup_model_mat(shader_prog, in->map);
     setup_move_factor(shader_prog);
     setup_tiling_uniforms(shader_prog, in->map);

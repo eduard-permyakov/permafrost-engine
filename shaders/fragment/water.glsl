@@ -43,12 +43,20 @@
 
 #define BOUNDARY_THRESH 0.00025
 
+#define X_COORDS_PER_TILE  8 
+#define Z_COORDS_PER_TILE  8 
+
+#define STATE_UNEXPLORED 0
+#define STATE_IN_FOG     1
+#define STATE_VISIBLE    2
+
 /*****************************************************************************/
 /* INPUTS                                                                    */
 /*****************************************************************************/
 
 in VertexToFrag {
     vec4 clip_space_pos;
+    vec3 world_pos;
     vec2 uv;
     vec3 view_dir;
     vec3 light_dir;
@@ -76,9 +84,41 @@ uniform float cam_far;
 
 uniform vec3 light_color;
 
+uniform usamplerBuffer visbuff;
+uniform int visbuff_offset;
+
+uniform ivec4 map_resolution;
+uniform vec2 map_pos;
+
 /*****************************************************************************/
 /* PROGRAM                                                                   */
 /*****************************************************************************/
+
+int visbuff_idx(vec3 ws_pos)
+{
+    int chunk_w = map_resolution[0];
+    int chunk_h = map_resolution[1];
+    int tile_w = map_resolution[2];
+    int tile_h = map_resolution[3];
+    int tiles_per_chunk = tile_w * tile_h;
+
+    int chunk_x_dist = tile_w * X_COORDS_PER_TILE;
+    int chunk_z_dist = tile_h * Z_COORDS_PER_TILE;
+
+    int chunk_r = int(abs(map_pos.y - ws_pos.z) / chunk_z_dist);
+    int chunk_c = int(abs(map_pos.x - ws_pos.x) / chunk_x_dist);
+
+    int chunk_base_x = int(map_pos.x - (chunk_c * chunk_x_dist));
+    int chunk_base_z = int(map_pos.y + (chunk_r * chunk_z_dist));
+
+    int tile_c = int(abs(chunk_base_x - ws_pos.x) / X_COORDS_PER_TILE);
+    int tile_r = int(abs(chunk_base_z - ws_pos.z) / Z_COORDS_PER_TILE);
+
+    return visbuff_offset + (chunk_r * tiles_per_chunk * chunk_w) 
+                          + (chunk_c * tiles_per_chunk) 
+                          + (tile_r * tile_w) 
+                          + tile_c;
+}
 
 float linearize_depth(float z)
 {
@@ -112,6 +152,14 @@ bool should_discard(vec2 ndc_pos)
 
 void main()
 {
+    int idx = visbuff_idx(from_vertex.world_pos);
+    int frag_state = int(texelFetch(visbuff, idx).r);
+
+    if(frag_state == STATE_UNEXPLORED) {
+        o_frag_color = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
     vec2 ndc_pos = (from_vertex.clip_space_pos.xy / from_vertex.clip_space_pos.w)/2.0 + 0.5;
 
     if(should_discard(ndc_pos))
@@ -145,5 +193,9 @@ void main()
     o_frag_color = mix(refract_clr, reflect_clr, 0.5);
     o_frag_color = mix(o_frag_color, WATER_TINT_CLR, 0.1) + vec4(specular, 0.0);
     o_frag_color.a = depth_damping_factor;
+
+    if(frag_state == STATE_IN_FOG) {
+        o_frag_color.xyz *= 0.5;
+    }
 }
 

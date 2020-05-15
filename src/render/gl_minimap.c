@@ -283,7 +283,7 @@ static void create_minimap_texture(const struct map *map, void **chunk_rprivates
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, s_ctx.minimap_texture.id, 0);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
-    R_GL_MapClearFog();
+    R_GL_MapUpdateFogClear();
 
     for(int r = 0; r < res.chunk_h; r++) {
     for(int c = 0; c < res.chunk_w; c++) {
@@ -340,7 +340,10 @@ static void create_water_texture(const struct map *map)
         .light_vis_stat = {0},
         .light_vis_anim = {0},
     };
+
+    R_GL_MapUpdateFogClear();
     R_GL_DrawWater(&in, &fval, &fval);
+    R_GL_MapInvalidate();
 
     glDeleteFramebuffers(1, &fb);
     GL_ASSERT_OK();

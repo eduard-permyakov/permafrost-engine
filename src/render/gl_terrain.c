@@ -107,7 +107,7 @@ void R_GL_MapShutdown(void)
 
 /* Push a fully 'visible' field into the ringbuffer. Must be followed
  * with a matching R_GL_MapInvalidate to consume the fence. */
-void R_GL_MapClearFog(void)
+void R_GL_MapUpdateFogClear(void)
 {
     size_t size = s_res.chunk_w * s_res.chunk_h * s_res.tile_w * s_res.tile_h;
     void *buff = malloc(size);

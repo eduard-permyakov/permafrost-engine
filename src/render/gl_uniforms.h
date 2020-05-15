@@ -107,7 +107,7 @@
 /* Used by minimap, terrain shaders */
 #define GL_U_MAP_RES        "map_resolution"
 
-/* Used by terrain shader */
+/* Used by terrain, water shader */
 #define GL_U_MAP_POS        "map_pos"
 
 #endif
