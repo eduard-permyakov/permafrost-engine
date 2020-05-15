@@ -161,8 +161,7 @@ static void rc_find_intersection(void)
     };
 
     struct tile_desc cts[MAX_CANDIDATE_TILES];
-    int len = M_Tile_LineSupercoverTilesSorted(res, s_ctx.map->pos, y_eq_0_seg, cts);
-    assert(len <= MAX_CANDIDATE_TILES);
+    int len = M_Tile_LineSupercoverTilesSorted(res, s_ctx.map->pos, y_eq_0_seg, cts, MAX_CANDIDATE_TILES);
 
     for(int i = 0; i < len; i++) {
     

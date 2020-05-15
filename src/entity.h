@@ -53,6 +53,7 @@
 /* zombie entities are those that have died in the game simulation, 
  * but are still retained by some scripting variable */
 #define ENTITY_FLAG_ZOMBIE        (1 << 6)
+#define ENTITY_FLAG_MARKER        (1 << 7)
 
 struct entity{
     uint32_t     uid;

@@ -395,7 +395,7 @@ bool M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inout,
  * ('A Fast Voxel Traversal Algorithm for Ray Tracing' by John Amanatides, Andrew Woo)
  */
 int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos, 
-                                     struct line_seg_2d line, struct tile_desc out[])
+                                     struct line_seg_2d line, struct tile_desc out[], size_t maxout)
 {
     int ret = 0;
 
@@ -506,8 +506,7 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
             break;
         }
 
-    }while(ret < 1024);
-    assert(ret < 1024);
+    }while(ret < maxout);
 
     return ret;
 }
@@ -585,7 +584,6 @@ size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struc
      * tiles which intersect the line segment). Keep track of the top-most, bottom-most,
      * left-most and right-most tiles of the outline.
      */
-    struct tile_desc descs[MAX_TILES_PER_LINE];
     for(int i = 0; i < ARR_SIZE(xz_line_segs); i++) {
 
         min_rows[i] = (struct row_desc){0,0};
@@ -593,12 +591,14 @@ size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struc
         min_cols[i] = (struct col_desc){0,0};
         max_cols[i] = (struct col_desc){res.chunk_w-1, res.chunk_w-1};
 
-        size_t num_tiles = M_Tile_LineSupercoverTilesSorted(res, map_pos, xz_line_segs[i], descs);
-        for(int j = 0; j < num_tiles; j++) {
+        size_t num_tiles = M_Tile_LineSupercoverTilesSorted(res, map_pos, xz_line_segs[i], out + ret, maxout - ret);
+        const struct tile_desc *descs = out;
+        ret += num_tiles;
 
-            out[ret++] = descs[j];
-            if(ret == maxout)
-                goto done;
+        if(ret == maxout)
+            goto done;
+
+        for(int j = 0; j < num_tiles; j++) {
 
             if(HIGHER(descs[j], min_rows[i]))
                 min_rows[i] = (struct row_desc){descs[j].chunk_r, descs[j].tile_r};

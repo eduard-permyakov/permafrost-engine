@@ -81,10 +81,10 @@ static uint8_t          *s_vision_refcnts[MAX_FACTIONS];
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool fog_any_visible(uint32_t val)
+static bool fog_any_matches(uint32_t val, enum fog_state state)
 {
     for(;val; val >>= 2) {
-        if((val & 0x3) == STATE_VISIBLE)
+        if((val & 0x3) == state)
             return true;
     }
     return false;
@@ -334,6 +334,35 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
     pq_td_destroy(&frontier);
 }
 
+static bool fog_obj_matches(uint16_t fac_mask, const struct obb *obj, enum fog_state *states, size_t nstates)
+{
+    vec3_t pos = M_GetPos(s_map);
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    uint32_t facstate_mask = 0;
+    for(int i = 0; fac_mask; fac_mask >>= 1, i++) {
+        if(fac_mask & 0x1) {
+            facstate_mask |= (0x3 << (i * 2));
+        }
+    }
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderObj(pos, res, obj, tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntiles; i++) {
+
+        int idx = td_index(tds[i]);
+        uint32_t fac_state = s_fog_state[idx] & facstate_mask;
+
+        for(int j = 0; j < nstates; j++) {
+            if(fog_any_matches(fac_state, states[j]))
+                return true;
+        }
+    }
+    return false;
+}
+
 static void on_render_3d(void *user, void *event)
 {
     const struct camera *cam = G_GetActiveCamera();
@@ -516,7 +545,7 @@ void G_Fog_UpdateVisionState(void)
 
             if(!player_state)
                 visbuff[idx] = STATE_UNEXPLORED;
-            else if(fog_any_visible(player_state))
+            else if(fog_any_matches(player_state, STATE_VISIBLE))
                 visbuff[idx] = STATE_VISIBLE;
             else
                 visbuff[idx] = STATE_IN_FOG;
@@ -531,5 +560,17 @@ void G_Fog_UpdateVisionState(void)
             R_PushArg(&size, sizeof(size)),
         },
     });
+}
+
+bool G_Fog_ObjExplored(uint16_t fac_mask, const struct obb *obb)
+{
+    enum fog_state states[] = {STATE_IN_FOG, STATE_VISIBLE};
+    return fog_obj_matches(fac_mask, obb, states, ARR_SIZE(states));
+}
+
+bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb)
+{
+    enum fog_state states[] = {STATE_VISIBLE};
+    return fog_obj_matches(fac_mask, obb, states, ARR_SIZE(states));
 }
 

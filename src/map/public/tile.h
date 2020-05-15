@@ -152,10 +152,11 @@ bool       M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inou
  * the map resolution in the number of chunks per map and the number of tiles per chunk. 
  */
 int        M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos, 
-                                            struct line_seg_2d line, struct tile_desc out[]);
+                                            struct line_seg_2d line, struct tile_desc out[], size_t maxout);
 
 bool       M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos, 
                                  vec2_t point, struct tile_desc *out);
+
 /* Fills a buffer with all tiles intersecting an object's OBB. Will never give false
  * negatives. It is possible for there to be duplicate tile descriptors in the buffer. */
 size_t     M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struct obb *obb,

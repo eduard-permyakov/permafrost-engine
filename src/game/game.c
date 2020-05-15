@@ -511,6 +511,33 @@ static int g_alloc_faction(void)
     return -1;
 }
 
+static uint16_t g_player_mask(void)
+{
+    bool controllable[MAX_FACTIONS];
+    uint16_t facs = G_GetFactions(NULL, NULL, controllable);
+
+    uint16_t ret = 0;
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        if(facs & (0x1 << i) && controllable[i])
+            ret |= (0x1 << i);
+    }
+    return ret;
+}
+
+static bool g_ent_visible(uint16_t playermask, const struct entity *ent, const struct obb *obb)
+{
+    if(!s_gs.map)
+        return true;
+
+    if(ent->flags & ENTITY_FLAG_MARKER)
+        return true;
+
+    if(ent->flags & ENTITY_FLAG_STATIC)
+        return G_Fog_ObjExplored(playermask, obb);
+
+    return G_Fog_ObjVisible(playermask, obb);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -740,7 +767,7 @@ void G_ClearState(void)
 
     kh_foreach(s_gs.active, key, curr, {
         /* The move markers are removed in G_Move_Shutdown */
-        if(!strcmp(curr->name, "__move_marker__"))
+        if(curr->flags & ENTITY_FLAG_MARKER)
             continue;
         G_RemoveEntity(curr);
         G_SafeFree(curr);
@@ -963,6 +990,8 @@ void G_Update(void)
     struct frustum light_frust;
     R_LightFrustum(s_gs.light_pos, pos, dir, &light_frust);
 
+    uint16_t pm = g_player_mask();
+
     uint32_t key;
     struct entity *curr;
     (void)key;
@@ -981,7 +1010,8 @@ void G_Update(void)
         /* Build the set of currently visible entities. Note that there may be some 
          * false positives due to using the fast frustum cull. 
          */
-        if(C_FrustumOBBIntersectionFast(&cam_frust, &obb) != VOLUME_INTERSEC_OUTSIDE) {
+        if(C_FrustumOBBIntersectionFast(&cam_frust, &obb) != VOLUME_INTERSEC_OUTSIDE
+        && g_ent_visible(pm, curr, &obb)) {
 
             vec_pentity_push(&s_gs.visible, curr);
             vec_obb_push(&s_gs.visible_obbs, obb);

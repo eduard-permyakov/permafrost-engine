@@ -451,6 +451,7 @@ static void move_marker_add(vec3_t pos, bool attack)
                                 : AL_EntityFromPFObj("assets/models/arrow", "arrow-green.pfobj", "__move_marker__", uid);
     assert(ent);
     ent->flags |= ENTITY_FLAG_STATIC;
+    ent->flags |= ENTITY_FLAG_MARKER;
     G_AddEntity(ent, pos);
 
     ent->scale = (vec3_t){2.0f, 2.0f, 2.0f};
