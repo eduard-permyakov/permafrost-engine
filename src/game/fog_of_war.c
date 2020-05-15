@@ -543,6 +543,15 @@ void G_Fog_UpdateVisionState(void)
     size_t size = res.chunk_h * res.tile_h * res.chunk_w * res.tile_w;
     unsigned char *visbuff = stalloc(&G_GetSimWS()->args, size);
 
+    struct sval fog_setting;
+    ss_e status = Settings_Get("pf.game.fog_of_war_enabled", &fog_setting);
+    assert(status == SS_OKAY);
+
+    if(!fog_setting.as_bool) {
+        memset(visbuff, STATE_VISIBLE, size);
+        goto submit;
+    }
+
     for(int cr = 0; cr < res.chunk_h; cr++) {
     for(int cc = 0; cc < res.chunk_w; cc++) {
 
@@ -562,6 +571,7 @@ void G_Fog_UpdateVisionState(void)
         }}
     }}
 
+submit:
     R_PushCmd((struct rcmd){
         .func = R_GL_MapUpdateFog,
         .nargs = 2,
@@ -574,6 +584,12 @@ void G_Fog_UpdateVisionState(void)
 
 bool G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb)
 {
+    struct sval fog_setting;
+    ss_e status = Settings_Get("pf.game.fog_of_war_enabled", &fog_setting);
+    assert(status == SS_OKAY);
+    if(!fog_setting.as_bool)
+        return true;
+
     khiter_t k = kh_get(uid, s_explored_cache, uid);
     if(k != kh_end(s_explored_cache))
         return true;
@@ -591,6 +607,12 @@ bool G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb)
 
 bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb)
 {
+    struct sval fog_setting;
+    ss_e status = Settings_Get("pf.game.fog_of_war_enabled", &fog_setting);
+    assert(status == SS_OKAY);
+    if(!fog_setting.as_bool)
+        return true;
+
     enum fog_state states[] = {STATE_VISIBLE};
     return fog_obj_matches(fac_mask, obb, states, ARR_SIZE(states));
 }

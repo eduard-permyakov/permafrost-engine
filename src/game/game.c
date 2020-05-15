@@ -440,7 +440,7 @@ static bool g_save_anim_state(SDL_RWops *stream)
 
         if(!(curr->flags & ENTITY_FLAG_ANIMATED))
             continue;
-        if(!strcmp(curr->name, "__move_marker__"))
+        if(curr->flags & ENTITY_FLAG_MARKER)
             continue;
         nanim++;
     });
@@ -455,7 +455,7 @@ static bool g_save_anim_state(SDL_RWops *stream)
 
         if(!(curr->flags & ENTITY_FLAG_ANIMATED))
             continue;
-        if(!strcmp(curr->name, "__move_marker__"))
+        if(curr->flags & ENTITY_FLAG_MARKER)
             continue;
 
         struct attr uid = (struct attr){
@@ -676,6 +676,18 @@ bool G_Init(void)
 
     status = Settings_Create((struct setting){
         .name = "pf.game.healthbar_mode",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = true
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.game.fog_of_war_enabled",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
             .as_bool = true
