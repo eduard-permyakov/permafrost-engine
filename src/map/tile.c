@@ -37,6 +37,8 @@
 #include "public/map.h"
 #include "../pf_math.h"
 #include "../collision.h"
+#include "../perf.h"
+#include "../lib/public/pf_string.h"
 
 #include <assert.h>
 #include <string.h>
@@ -79,17 +81,17 @@ struct col_desc{
        ((tile_desc).chunk_c > (col_desc).chunk_c) \
     || ((tile_desc).chunk_c == (col_desc).chunk_c && (tile_desc).tile_c > (col_desc).tile_c)
 
-#define MIN_ROW(a, b)          HIGHER((a), (b)) ? (a) : (b)
-#define MIN_ROW_4(a, b, c, d)  MIN_ROW(MIN_ROW((a), (b)), MIN_ROW((c), (d)))
+#define MIN_ROW(a, b)          (HIGHER((a), (b)) ? (a) : (b))
+#define MIN_ROW_4(a, b, c, d)  (MIN_ROW(MIN_ROW((a), (b)), MIN_ROW((c), (d))))
 
-#define MAX_ROW(a, b)          LOWER((a), (b)) ? (a) : (b)
-#define MAX_ROW_4(a, b, c, d)  MAX_ROW(MAX_ROW((a), (b)), MAX_ROW((c), (d)))
+#define MAX_ROW(a, b)          (LOWER((a), (b)) ? (a) : (b))
+#define MAX_ROW_4(a, b, c, d)  (MAX_ROW(MAX_ROW((a), (b)), MAX_ROW((c), (d))))
 
-#define MIN_COL(a, b)          MORE_LEFT((a), (b)) ? (a) : (b)
-#define MIN_COL_4(a, b, c, d)  MIN_COL(MIN_COL((a), (b)), MIN_COL((c), (d)))
+#define MIN_COL(a, b)          (MORE_LEFT((a), (b)) ? (a) : (b))
+#define MIN_COL_4(a, b, c, d)  (MIN_COL(MIN_COL((a), (b)), MIN_COL((c), (d))))
 
-#define MAX_COL(a, b)          MORE_RIGHT((a), (b)) ? (a) : (b)
-#define MAX_COL_4(a, b, c, d)  MAX_COL(MAX_COL((a), (b)), MAX_COL((c), (d)))
+#define MAX_COL(a, b)          (MORE_RIGHT((a), (b)) ? (a) : (b))
+#define MAX_COL_4(a, b, c, d)  (MAX_COL(MAX_COL((a), (b)), MAX_COL((c), (d))))
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -397,6 +399,7 @@ bool M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inout,
 int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos, 
                                      struct line_seg_2d line, struct tile_desc out[], size_t maxout)
 {
+    PERF_ENTER();
     int ret = 0;
 
     const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
@@ -508,7 +511,7 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
 
     }while(ret < maxout);
 
-    return ret;
+    PERF_RETURN(ret);
 }
 
 bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos, 
@@ -561,6 +564,7 @@ bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos,
 size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struct obb *obb,
                           struct tile_desc *out, size_t maxout)
 {
+    PERF_ENTER();
     size_t ret = 0;
 
     vec3_t bot_corners[4] = {obb->corners[0], obb->corners[1], obb->corners[5], obb->corners[4]};
@@ -586,10 +590,10 @@ size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struc
      */
     for(int i = 0; i < ARR_SIZE(xz_line_segs); i++) {
 
-        min_rows[i] = (struct row_desc){0,0};
-        max_rows[i] = (struct row_desc){res.chunk_h-1, res.tile_h-1};
-        min_cols[i] = (struct col_desc){0,0};
-        max_cols[i] = (struct col_desc){res.chunk_w-1, res.chunk_w-1};
+        min_rows[i] = (struct row_desc){res.chunk_h-1, res.tile_h-1};
+        max_rows[i] = (struct row_desc){0,0};
+        min_cols[i] = (struct col_desc){res.chunk_w-1, res.chunk_w-1};
+        max_cols[i] = (struct col_desc){0,0};
 
         size_t num_tiles = M_Tile_LineSupercoverTilesSorted(res, map_pos, xz_line_segs[i], out + ret, maxout - ret);
         const struct tile_desc *descs = out;
@@ -600,17 +604,13 @@ size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struc
 
         for(int j = 0; j < num_tiles; j++) {
 
-            if(HIGHER(descs[j], min_rows[i]))
-                min_rows[i] = (struct row_desc){descs[j].chunk_r, descs[j].tile_r};
+            struct row_desc rd = (struct row_desc){descs[j].chunk_r, descs[j].tile_r};
+            struct col_desc cd = (struct col_desc){descs[j].chunk_c, descs[j].tile_c};
 
-            if(LOWER(descs[j], max_rows[i]))
-                max_rows[i] = (struct row_desc){descs[j].chunk_r, descs[j].tile_r};
-
-            if(MORE_LEFT(descs[j], max_cols[i]))
-                min_cols[i] = (struct col_desc){descs[j].chunk_c, descs[j].tile_c};
-
-            if(MORE_RIGHT(descs[j], max_cols[i]))
-                max_cols[i] = (struct col_desc){descs[j].chunk_c, descs[j].tile_c};
+            min_rows[i] = MIN_ROW(min_rows[i], rd);
+            max_rows[i] = MAX_ROW(max_rows[i], rd);
+            min_cols[i] = MIN_COL(min_cols[i], cd);
+            max_cols[i] = MAX_COL(max_cols[i], cd);
         }
     }
 
@@ -624,6 +624,12 @@ size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struc
      * and check whether the tiles of this box fall within the OBB and should have their
      * cost updated. 
      */
+    char info[128];
+    pf_snprintf(info, sizeof(info), "inner loop: [dr: %d, dc: %d]", 
+        (max_row.chunk_r * res.tile_h + max_row.tile_r) - (min_row.chunk_r * res.tile_h + min_row.tile_r),
+        (max_col.chunk_c * res.tile_w + max_col.tile_c) - (min_col.chunk_c * res.tile_w + min_col.tile_c));
+    Perf_Push(info);
+
     for(int r = min_row.chunk_r * res.tile_h + min_row.tile_r; 
             r < max_row.chunk_r * res.tile_h + max_row.tile_r; r++) {
         for(int c = min_col.chunk_c * res.tile_w + min_col.tile_c; 
@@ -650,8 +656,9 @@ size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struc
             }
         }
     }
+    Perf_Pop();
 
 done:
-    return ret;
+    PERF_RETURN(ret);
 }
 

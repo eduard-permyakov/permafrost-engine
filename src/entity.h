@@ -91,6 +91,11 @@ struct ent_anim_rstate{
     mat4x4_t        curr_pose[MAX_JOINTS];
 };
 
+struct ent_vis_state{
+    vec2_t xz_pos;
+    float  vis_range;
+};
+
 VEC_TYPE(rstat, struct ent_stat_rstate)
 VEC_IMPL(static inline, rstat, struct ent_stat_rstate)
 

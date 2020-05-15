@@ -44,7 +44,10 @@
 
 #include <stdint.h>
 
+
 #define NUM_CAMERAS  2
+
+VEC_TYPE(vstate, struct ent_vis_state);
 
 struct gamestate{
     enum simstate           ss;
@@ -83,7 +86,8 @@ struct gamestate{
      */
     khash_t(entity)        *dynamic;
     /*-------------------------------------------------------------------------
-     * The set of entities potentially visible by the active camera.
+     * The set of entities potentially visible by the active camera. Updated
+     * every frame.
      *-------------------------------------------------------------------------
      */
     vec_pentity_t           visible;
@@ -98,6 +102,13 @@ struct gamestate{
      *-------------------------------------------------------------------------
      */
     vec_obb_t               visible_obbs;
+    /*-------------------------------------------------------------------------
+     * Holds the vision info for all player-controlled entities that are within
+     * range of seeing on-screen entities. Used to speed-up 'visible' queries.
+     * Updated every frame.
+     *-------------------------------------------------------------------------
+     */
+    vec_vstate_t            vstate;
     /*-------------------------------------------------------------------------
      * The state of the factions in the current game. 'factions_allocd' has a 
      * set bit for every faction index that's 'allocated'. Clear bits are 'free'.

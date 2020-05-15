@@ -39,6 +39,10 @@
 #include <stdbool.h>
 #include <SDL.h>
 
+/* The maximum nubmer of entities we are ever going to render in a single shot. 
+ * In a typical shot, the nubmer will be much less... */
+#define CONFIG_MAX_ENTS_RENDER      (4096)
+
 /* The far end of the camera's clipping frustrum, in OpenGL coordinates */
 #define CONFIG_DRAWDIST             (1000)
 #define CONFIG_TILE_TEX_RES         (128)

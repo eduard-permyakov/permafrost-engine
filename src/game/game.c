@@ -67,6 +67,10 @@
 #define CAM_HEIGHT          175.0f
 #define CAM_TILT_UP_DEGREES 25.0f
 #define CAM_SPEED           0.20f
+#define MAX_VIS_RANGE       150.0f
+
+#define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define MAX(a, b)           ((a) > (b) ? (a) : (b))
 
 #define ACTIVE_CAM          (s_gs.cameras[s_gs.active_cam_idx])
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
@@ -78,6 +82,7 @@
     }while(0)
 
 VEC_IMPL(extern, obb, struct obb)
+VEC_IMPL(static inline, vstate, struct ent_vis_state)
 __KHASH_IMPL(entity, extern, khint32_t, struct entity*, 1, kh_int_hash_func, kh_int_hash_equal)
 
 /*****************************************************************************/
@@ -524,7 +529,8 @@ static uint16_t g_player_mask(void)
     return ret;
 }
 
-static bool g_ent_visible(uint16_t playermask, const struct entity *ent, const struct obb *obb)
+static bool g_ent_visible(uint16_t playermask, const struct entity *ent, 
+                          const struct obb *obb, const vec_vstate_t *vs)
 {
     if(!s_gs.map)
         return true;
@@ -533,9 +539,97 @@ static bool g_ent_visible(uint16_t playermask, const struct entity *ent, const s
         return true;
 
     if(ent->flags & ENTITY_FLAG_STATIC)
-        return G_Fog_ObjExplored(playermask, obb);
+        return G_Fog_ObjExplored(playermask, ent->uid, obb);
 
-    return G_Fog_ObjVisible(playermask, obb);
+    vec2_t ent_pos = G_Pos_GetXZ(ent->uid);
+    for(int i = 0; i < vec_size(vs); i++) {
+
+        vec2_t delta;
+        PFM_Vec2_Sub(&ent_pos, &vec_AT(vs, i).xz_pos, &delta);
+        if(PFM_Vec2_Len(&delta) < vec_AT(vs, i).vis_range)
+            return true;
+    }
+    return false;
+}
+
+/* Returns the vision states of player-controlled entites that are in range 
+ * of the current viewport of the camera (i.e. they can potentially see 
+ * entities that are on screen). */
+static void g_make_vision_set(struct frustum *cam_frust, float max_vis_range, vec_vstate_t *inout)
+{
+    PERF_ENTER();
+
+    bool controllable[MAX_FACTIONS];
+    G_GetFactions(NULL, NULL, controllable);
+
+    vec3_t cam_pos = Camera_GetPos(ACTIVE_CAM);
+    struct plane ground_plane = {
+        .point  = {0.0f, 0.0f, 0.0f},
+        .normal = {0.0f, 1.0f, 0.0f},
+    };
+
+    vec3_t tr_dir, bl_dir; 
+    vec3_t tr_pos, bl_pos;
+
+    PFM_Vec3_Sub(&cam_frust->ftr, &cam_frust->ntr, &tr_dir);
+    PFM_Vec3_Sub(&cam_frust->fbl, &cam_frust->nbl, &bl_dir);
+
+    PFM_Vec3_Normal(&tr_dir, &tr_dir);
+    PFM_Vec3_Normal(&bl_dir, &bl_dir);
+
+    float t_tr, t_bl;
+    if(C_RayIntersectsPlane(cam_pos, tr_dir, ground_plane, &t_tr)
+    && C_RayIntersectsPlane(cam_pos, bl_dir, ground_plane, &t_bl)) {
+
+        PFM_Vec3_Scale(&tr_dir, t_tr, &tr_dir);
+        PFM_Vec3_Scale(&bl_dir, t_bl, &bl_dir);
+
+        PFM_Vec3_Add(&cam_pos, &tr_dir, &tr_pos);
+        PFM_Vec3_Add(&cam_pos, &bl_dir, &bl_pos);
+
+        vec2_t xz_min = (vec2_t){ 
+            MIN(tr_pos.x, bl_pos.x) - max_vis_range,
+            MIN(tr_pos.z, bl_pos.z) - max_vis_range,
+        };
+        vec2_t xz_max = (vec2_t){ 
+            MAX(tr_pos.x, bl_pos.x) + max_vis_range,
+            MAX(tr_pos.z, bl_pos.z) + max_vis_range,
+        };
+        
+        struct entity *ents[2048];
+        size_t nents = G_Pos_EntsInRect(xz_min, xz_max, ents, ARR_SIZE(ents));
+
+        for(int i = 0; i < nents; i++) {
+
+            if(!controllable[ents[i]->faction_id])
+                continue;
+
+            struct ent_vis_state vs = (struct ent_vis_state){
+                .xz_pos = G_Pos_GetXZ(ents[i]->uid),
+                .vis_range = ents[i]->vision_range
+            };
+            vec_vstate_push(inout, vs);
+        }
+        PERF_RETURN_VOID();;
+    }
+
+    /* uncommon case: this is only if we're browsing around withe the FPS camera */
+    uint32_t key;
+    struct entity *curr;
+    (void)key;
+
+    kh_foreach(s_gs.active, key, curr, {
+
+        if(!controllable[curr->faction_id])
+            continue;
+
+        struct ent_vis_state vs = (struct ent_vis_state){
+            .xz_pos = G_Pos_GetXZ(curr->uid),
+            .vis_range = curr->vision_range
+        };
+        vec_vstate_push(inout, vs);
+    });
+    PERF_RETURN_VOID();
 }
 
 /*****************************************************************************/
@@ -550,6 +644,7 @@ bool G_Init(void)
     vec_pentity_init(&s_gs.light_visible);
     vec_obb_init(&s_gs.visible_obbs);
     vec_pentity_init(&s_gs.deleted);
+    vec_vstate_init(&s_gs.vstate);
 
     s_gs.active = kh_init(entity);
     if(!s_gs.active)
@@ -778,6 +873,7 @@ void G_ClearState(void)
     vec_pentity_reset(&s_gs.visible);
     vec_pentity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
+    vec_vstate_reset(&s_gs.vstate);
 
     if(s_gs.map) {
 
@@ -965,6 +1061,7 @@ void G_Shutdown(void)
     vec_pentity_destroy(&s_gs.visible);
     vec_obb_destroy(&s_gs.visible_obbs);
     vec_pentity_destroy(&s_gs.deleted);
+    vec_vstate_destroy(&s_gs.vstate);
 }
 
 void G_Update(void)
@@ -980,6 +1077,7 @@ void G_Update(void)
     vec_pentity_reset(&s_gs.visible);
     vec_pentity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
+    vec_vstate_reset(&s_gs.vstate);
 
     vec3_t pos = Camera_GetPos(ACTIVE_CAM);
     vec3_t dir = Camera_GetDir(ACTIVE_CAM);
@@ -991,6 +1089,7 @@ void G_Update(void)
     R_LightFrustum(s_gs.light_pos, pos, dir, &light_frust);
 
     uint16_t pm = g_player_mask();
+    g_make_vision_set(&cam_frust, MAX_VIS_RANGE, &s_gs.vstate);
 
     uint32_t key;
     struct entity *curr;
@@ -1004,20 +1103,20 @@ void G_Update(void)
         if(curr->flags & ENTITY_FLAG_INVISIBLE)
             continue;
 
+        bool vis = false;
         struct obb obb;
         Entity_CurrentOBB(curr, &obb);
 
-        /* Build the set of currently visible entities. Note that there may be some 
-         * false positives due to using the fast frustum cull. 
-         */
+        /* Note that there may be some false positives due to using the fast frustum cull. */
         if(C_FrustumOBBIntersectionFast(&cam_frust, &obb) != VOLUME_INTERSEC_OUTSIDE
-        && g_ent_visible(pm, curr, &obb)) {
+        && (vis = g_ent_visible(pm, curr, &obb, &s_gs.vstate))) {
 
             vec_pentity_push(&s_gs.visible, curr);
             vec_obb_push(&s_gs.visible_obbs, obb);
         }
 
-        if(C_FrustumOBBIntersectionFast(&light_frust, &obb) != VOLUME_INTERSEC_OUTSIDE) {
+        if(C_FrustumOBBIntersectionFast(&light_frust, &obb) != VOLUME_INTERSEC_OUTSIDE 
+        && (vis || (curr->flags & ENTITY_FLAG_STATIC))) {
 
             vec_pentity_push(&s_gs.light_visible, curr);
         }
@@ -1260,6 +1359,10 @@ bool G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool contro
         return false;
     if(strlen(name) >= sizeof(s_gs.factions[0].name))
         return false;
+
+    if(s_gs.factions[faction_id].controllable != control) {
+        G_Fog_ClearExploredCache();
+    }
 
     strcpy(s_gs.factions[faction_id].name, name);
     s_gs.factions[faction_id].color = color;

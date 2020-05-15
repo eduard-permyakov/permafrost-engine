@@ -65,6 +65,8 @@ enum fog_state{
 PQUEUE_TYPE(td, struct tile_desc)
 PQUEUE_IMPL(static, td, struct tile_desc)
 
+KHASH_SET_INIT_INT(uid)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -76,6 +78,8 @@ static const struct map *s_map;
 static uint32_t         *s_fog_state;
 /* How many units of a faction currently 'see' every tile. */
 static uint8_t          *s_vision_refcnts[MAX_FACTIONS];
+/* Cache all the entities that have been explored by the player, for faster queries */
+static khash_t(uid)     *s_explored_cache;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -400,11 +404,16 @@ bool G_Fog_Init(const struct map *map)
             goto fail;
     }
 
+    s_explored_cache = kh_init(uid);
+    if(!s_explored_cache)
+        goto fail;
+
     s_map = map;
     E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     return true;
 
 fail:
+    kh_destroy(uid, s_explored_cache);
     free(s_fog_state);
     for(int i = 0; i < MAX_FACTIONS; i++) {
         free(s_vision_refcnts[i]);
@@ -415,6 +424,7 @@ fail:
 void G_Fog_Shutdown(void)
 {
     E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
+    kh_destroy(uid, s_explored_cache);
     free(s_fog_state);
     s_fog_state = NULL;
     for(int i = 0; i < MAX_FACTIONS; i++) {
@@ -562,15 +572,31 @@ void G_Fog_UpdateVisionState(void)
     });
 }
 
-bool G_Fog_ObjExplored(uint16_t fac_mask, const struct obb *obb)
+bool G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb)
 {
+    khiter_t k = kh_get(uid, s_explored_cache, uid);
+    if(k != kh_end(s_explored_cache))
+        return true;
+
     enum fog_state states[] = {STATE_IN_FOG, STATE_VISIBLE};
-    return fog_obj_matches(fac_mask, obb, states, ARR_SIZE(states));
+    bool result = fog_obj_matches(fac_mask, obb, states, ARR_SIZE(states));
+
+    if(result) {
+        int status;
+        k = kh_put(uid, s_explored_cache, uid, &status);
+        assert(status != -1 && status != 0);
+    }
+    return result;
 }
 
 bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb)
 {
     enum fog_state states[] = {STATE_VISIBLE};
     return fog_obj_matches(fac_mask, obb, states, ARR_SIZE(states));
+}
+
+void G_Fog_ClearExploredCache(void)
+{
+    kh_clear(uid, s_explored_cache);
 }
 
