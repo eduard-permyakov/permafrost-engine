@@ -110,6 +110,8 @@ Follow the development of Permafrost Engine and EVERGLORY on YouTube: https://ww
 
 [EVERGLORY: Teaser Trailer #1](https://youtu.be/yTJ7wTJy7jc)
 
+[Indie RTS Devlog #4: Fog of War](https://youtu.be/2rXElWzAGrY)
+
 ## Comments/Questions ##
 
 Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com
