@@ -39,6 +39,7 @@
 #include "pf_math.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #define SETT_NAME_LEN 128
 #define SETT_MAX_PRIO 2
@@ -97,6 +98,9 @@ ss_e Settings_Delete(const char *name);
 ss_e Settings_Get(const char *name, struct sval *out);
 ss_e Settings_Set(const char *name, const struct sval *new_val);
 ss_e Settings_SetNoValidate(const char *name, const struct sval *new_val);
+/* The new value is not written to the settings file. Until it is overwritten 
+ * with a persistent value, the old value will be written. */
+ss_e Settings_SetNoPersist(const char *name, const struct sval *new_val);
 
 ss_e Settings_SaveToFile(void);
 ss_e Settings_LoadFromFile(void);

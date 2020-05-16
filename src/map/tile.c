@@ -399,7 +399,6 @@ bool M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inout,
 int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos, 
                                      struct line_seg_2d line, struct tile_desc out[], size_t maxout)
 {
-    PERF_ENTER();
     int ret = 0;
 
     const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
@@ -511,7 +510,7 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
 
     }while(ret < maxout);
 
-    PERF_RETURN(ret);
+    return ret;
 }
 
 bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos, 
@@ -564,7 +563,6 @@ bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos,
 size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struct obb *obb,
                           struct tile_desc *out, size_t maxout)
 {
-    PERF_ENTER();
     size_t ret = 0;
 
     vec3_t bot_corners[4] = {obb->corners[0], obb->corners[1], obb->corners[5], obb->corners[4]};
@@ -624,12 +622,6 @@ size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struc
      * and check whether the tiles of this box fall within the OBB and should have their
      * cost updated. 
      */
-    char info[128];
-    pf_snprintf(info, sizeof(info), "inner loop: [dr: %d, dc: %d]", 
-        (max_row.chunk_r * res.tile_h + max_row.tile_r) - (min_row.chunk_r * res.tile_h + min_row.tile_r),
-        (max_col.chunk_c * res.tile_w + max_col.tile_c) - (min_col.chunk_c * res.tile_w + min_col.tile_c));
-    Perf_Push(info);
-
     for(int r = min_row.chunk_r * res.tile_h + min_row.tile_r; 
             r < max_row.chunk_r * res.tile_h + max_row.tile_r; r++) {
         for(int c = min_col.chunk_c * res.tile_w + min_col.tile_c; 
@@ -656,9 +648,8 @@ size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struc
             }
         }
     }
-    Perf_Pop();
 
 done:
-    PERF_RETURN(ret);
+    return ret;
 }
 

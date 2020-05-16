@@ -118,7 +118,7 @@ static PyObject *PyPf_set_move_on_left_click(PyObject *self);
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
 
 static PyObject *PyPf_settings_get(PyObject *self, PyObject *args);
-static PyObject *PyPf_settings_set(PyObject *self, PyObject *args);
+static PyObject *PyPf_settings_set(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_settings_create(PyObject *self, PyObject *args);
 static PyObject *PyPf_settings_delete(PyObject *self, PyObject *args);
 
@@ -347,7 +347,7 @@ static PyMethodDef pf_module_methods[] = {
     "not found."},
 
     {"settings_set",
-    (PyCFunction)PyPf_settings_set, METH_VARARGS,
+    (PyCFunction)PyPf_settings_set, METH_VARARGS | METH_KEYWORDS,
     "Updates the value of the setting with the specified name. Will throw an exception if the setting is "
     "not found or if the new value for the setting is invalid."},
 
@@ -1246,12 +1246,14 @@ static bool sval_from_pyobj(PyObject *obj, struct sval *out)
     return true;
 }
 
-static PyObject *PyPf_settings_set(PyObject *self, PyObject *args)
+static PyObject *PyPf_settings_set(PyObject *self, PyObject *args, PyObject *kwargs)
 {
+    static char *kwlist[] = {"name", "value", "persist", NULL};
     const char *sname;
     PyObject *nvobj;
+    int persist = true;
 
-    if(!PyArg_ParseTuple(args, "sO", &sname, &nvobj)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "sO|i", kwlist, &sname, &nvobj, &persist)) {
         PyErr_SetString(PyExc_TypeError, "Arguments must be a string and an object.");
         return NULL;
     }
@@ -1262,7 +1264,13 @@ static PyObject *PyPf_settings_set(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    ss_e status = Settings_Set(sname, &newval);
+    ss_e status; 
+    if(!persist) {
+        status = Settings_SetNoPersist(sname, &newval);
+    }else{
+        status = Settings_Set(sname, &newval);
+    }
+
     if(status == SS_NO_SETTING) {
         PyErr_SetString(PyExc_RuntimeError, "The setting with the given name does not exist.");
         return NULL;

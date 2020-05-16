@@ -48,26 +48,36 @@
 #define STR2(x) #x
 #define STR(x)  STR2(x)
 
+#define SETT_FLAGS_NOPERSIST (1 << 0)
 
 struct named_val{
     char name[SETT_NAME_LEN];
     struct sval val;
 };
 
+/* Additional private metadata associated 
+ * with every setting */
+struct setting_priv{
+    uint32_t    flags;
+    struct sval prev;
+};
+
 KHASH_MAP_INIT_STR(setting, struct setting)
+KHASH_MAP_INIT_STR(settpriv, struct setting_priv)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static khash_t(setting) *s_settings_table;
-static char              s_settings_filepath[512];
+static khash_t(setting)  *s_settings_table;
+static khash_t(settpriv) *s_priv_table;
+static char               s_settings_filepath[512];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool parse_line(char *line, int *out_prio, struct named_val *out_val)
+static bool sett_parse_line(char *line, int *out_prio, struct named_val *out_val)
 {
     char *saveptr;
     char *token = pf_strtok_r(line, " \t", &saveptr);
@@ -130,6 +140,41 @@ fail:
     return false;
 }
 
+static bool sett_add_priv(const char *key, struct setting_priv priv)
+{
+    khiter_t k = kh_get(settpriv, s_priv_table, key);
+    assert(k == kh_end(s_priv_table));
+
+    int status;
+    k = kh_put(settpriv, s_priv_table, key, &status);
+    if(status == -1)
+        return false;
+
+    kh_value(s_priv_table, k) = priv;
+    return true;
+}
+
+static void sett_set_priv(const char *name, struct setting_priv priv)
+{
+    khiter_t k = kh_get(settpriv, s_priv_table, name);
+    assert(k != kh_end(s_priv_table));
+    kh_value(s_priv_table, k) = priv;
+}
+
+static void sett_priv_clear(const char *name)
+{
+    khiter_t k = kh_get(settpriv, s_priv_table, name);
+    assert(k != kh_end(s_priv_table));
+    kh_value(s_priv_table, k).flags = 0;
+}
+
+static struct setting_priv sett_get_priv(const char *name)
+{
+    khiter_t k = kh_get(settpriv, s_priv_table, name);
+    assert(k != kh_end(s_priv_table));
+    return kh_value(s_priv_table, k);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -141,6 +186,12 @@ ss_e Settings_Init(void)
     s_settings_table = kh_init(setting);
     if(!s_settings_table)
         return SS_BADALLOC;
+
+    s_priv_table = kh_init(settpriv);
+    if(!s_priv_table) {
+        kh_destroy(setting, s_settings_table);
+        return SS_BADALLOC;
+    }
 
     extern const char *g_basepath;
     strcpy(s_settings_filepath, g_basepath);
@@ -162,6 +213,7 @@ void Settings_Shutdown(void)
         free((char*)key);
     });
     kh_destroy(setting, s_settings_table);
+    kh_destroy(settpriv, s_priv_table);
 }
 
 ss_e Settings_Create(struct setting sett)
@@ -186,6 +238,8 @@ ss_e Settings_Create(struct setting sett)
 
         if(put_status == -1)
             return SS_BADALLOC;
+        if(!sett_add_priv(key, (struct setting_priv){0}))
+            return SS_BADALLOC;
     }
 
     kh_value(s_settings_table, k) = sett;
@@ -193,6 +247,7 @@ ss_e Settings_Create(struct setting sett)
     if(sett.commit)
         sett.commit(&sett.val);
 
+    sett_priv_clear(sett.name);;
     return SS_OKAY;
 }
 
@@ -238,6 +293,7 @@ ss_e Settings_Set(const char *name, const struct sval *new_val)
     if(sett->commit)
         sett->commit(new_val);
         
+    sett_priv_clear(sett->name);
     return SS_OKAY;
 }
 
@@ -255,7 +311,29 @@ ss_e Settings_SetNoValidate(const char *name, const struct sval *new_val)
     if(sett->commit)
         sett->commit(new_val);
         
+    sett_priv_clear(sett->name);
     return SS_OKAY;
+}
+
+ss_e Settings_SetNoPersist(const char *name, const struct sval *new_val)
+{
+    struct sval prev;
+    ss_e ret = Settings_Get(name, &prev);
+    if(ret != SS_OKAY)
+        return ret;
+
+    ret = Settings_Set(name, new_val);
+    if(ret != SS_OKAY)
+        return ret;
+
+    khiter_t k = kh_get(setting, s_settings_table, name);
+    struct setting *sett = &kh_value(s_settings_table, k);
+
+    sett_set_priv(sett->name, (struct setting_priv){
+        .flags = SETT_FLAGS_NOPERSIST,
+        .prev = prev
+    });
+    return ret;
 }
 
 ss_e Settings_SaveToFile(void)
@@ -273,28 +351,34 @@ ss_e Settings_SaveToFile(void)
     const char *name;
     struct setting curr;
     kh_foreach(s_settings_table, name, curr, {
-         
+
         char line[MAX_LINE_LEN];
+        struct sval saveval = curr.val;
+
+        struct setting_priv priv = sett_get_priv(name);
+        if(priv.flags & SETT_FLAGS_NOPERSIST)
+            saveval = priv.prev;
+
         switch(curr.val.type) {
         case ST_TYPE_STRING: 
             snprintf(line, sizeof(line), "%d %s %s %s\n",
-                curr.prio, name, "string", curr.val.as_string);
+                curr.prio, name, "string", saveval.as_string);
             break;
         case ST_TYPE_FLOAT:
             snprintf(line, sizeof(line), "%d %s %s %.6f\n",
-                curr.prio, name, "float", curr.val.as_float);
+                curr.prio, name, "float", saveval.as_float);
             break;
         case ST_TYPE_VEC2:
             snprintf(line, sizeof(line), "%d %s %s %.6f %.6f\n",
-                curr.prio, name, "vec2", curr.val.as_vec2.x, curr.val.as_vec2.y);
+                curr.prio, name, "vec2", saveval.as_vec2.x, saveval.as_vec2.y);
             break;
         case ST_TYPE_BOOL:
             snprintf(line, sizeof(line), "%d %s %s %d\n", 
-                curr.prio, name, "bool", curr.val.as_bool);
+                curr.prio, name, "bool", saveval.as_bool);
             break;
         case ST_TYPE_INT:
             snprintf(line, sizeof(line), "%d %s %s %d\n", 
-                curr.prio, name, "int", curr.val.as_int);
+                curr.prio, name, "int", saveval.as_int);
             break;
         default: assert(0);
         }
@@ -334,7 +418,7 @@ ss_e Settings_LoadFromFile(void)
             int prio;
             struct named_val nv;
 
-            if(!parse_line(line, &prio, &nv)) {
+            if(!sett_parse_line(line, &prio, &nv)) {
                 ret = SS_FILE_PARSING;
                 goto fail_line;
             }
