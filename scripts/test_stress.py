@@ -63,6 +63,8 @@ def setup_scene():
     pf.set_emit_light_color((1.0, 1.0, 1.0))
     pf.set_emit_light_pos((1664.0, 1024.0, 384.0))
 
+    pf.settings_set("pf.game.fog_of_war_enabled", False, persist=False)
+
     pf.new_game("assets/maps", "plain.pfmap")
 
     pf.add_faction("RED", (255, 0, 0, 255))
@@ -99,6 +101,7 @@ def setup_armies():
             knight.faction_id = 0
             knight.selection_radius = 3.25
             knight.selectable = True
+            knight.vision_range = 35.0
             knight.hold_position()
 
             red_army_units += [knight]
@@ -113,6 +116,7 @@ def setup_armies():
             berz.faction_id = 1
             berz.selection_radius = 3.00
             berz.selectable = True
+            berz.vision_range = 35.0
             berz.hold_position()
 
             blue_army_units += [berz]
