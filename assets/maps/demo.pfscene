@@ -168,7 +168,7 @@ entity rock_2 assets/models/varied_rocks/rock_2.pfobj 9
    collision bool 1
    faction_id int 0
    selection_radius float 3.0
-entity tower assets/models/tower/tower.pfobj 9
+entity tower assets/models/tower/tower.pfobj 10
    position vec3 7.019781 12.000000 -290.042664
    scale vec3 5.000000 5.000000 5.000000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -178,7 +178,8 @@ entity tower assets/models/tower/tower.pfobj 9
    collision bool 1
    faction_id int 0
    selection_radius float 8.0
-entity tower assets/models/tower/tower.pfobj 9
+   vision_range float 50.0
+entity tower assets/models/tower/tower.pfobj 10
    position vec3 -65.694481 12.000000 -312.932495
    scale vec3 5.000000 5.000000 5.000000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -188,6 +189,7 @@ entity tower assets/models/tower/tower.pfobj 9
    collision bool 1
    faction_id int 0
    selection_radius float 8.0
+   vision_range float 50.0
 entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 9
    position vec3 2.824116 12.000000 -302.930847
    scale vec3 3.000000 3.000000 3.000000
@@ -1100,7 +1102,7 @@ entity wood_fence_1 assets/models/props/wood_fence_1.pfobj 9
    collision bool 1
    faction_id int 0
    selection_radius float 3.0
-entity chicken assets/models/chicken/chicken.pfobj 12
+entity chicken assets/models/chicken/chicken.pfobj 13
    position vec3 74.991371 12.000000 -183.204361
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 0.461749 0.000000 0.887011
@@ -1116,7 +1118,8 @@ entity chicken assets/models/chicken/chicken.pfobj 12
        string assets/models/chicken
        string chicken.pfobj
        string Chicken
-entity chicken assets/models/chicken/chicken.pfobj 12
+   vision_range float 15.0
+entity chicken assets/models/chicken/chicken.pfobj 13
    position vec3 44.740574 12.000000 -183.708618
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 -0.537300 0.000000 0.843391
@@ -1132,7 +1135,8 @@ entity chicken assets/models/chicken/chicken.pfobj 12
        string assets/models/chicken
        string chicken.pfobj
        string Chicken
-entity chicken assets/models/chicken/chicken.pfobj 12
+   vision_range float 15.0
+entity chicken assets/models/chicken/chicken.pfobj 13
    position vec3 50.394928 12.000000 -184.892029
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 0.422618 0.000000 0.906308
@@ -1148,6 +1152,7 @@ entity chicken assets/models/chicken/chicken.pfobj 12
        string assets/models/chicken
        string chicken.pfobj
        string Chicken
+   vision_range float 15.0
 entity hay_2 assets/models/hay/hay_2.pfobj 9
    position vec3 75.796143 12.000000 -162.301590
    scale vec3 4.000000 4.000000 4.000000
@@ -1158,7 +1163,7 @@ entity hay_2 assets/models/hay/hay_2.pfobj 9
    collision bool 1
    faction_id int 0
    selection_radius float 4.0
-entity chicken assets/models/chicken/chicken.pfobj 12
+entity chicken assets/models/chicken/chicken.pfobj 13
    position vec3 64.537849 12.000000 -161.369080
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 0.887011 0.000000 0.461748
@@ -1174,7 +1179,8 @@ entity chicken assets/models/chicken/chicken.pfobj 12
        string assets/models/chicken
        string chicken.pfobj
        string Chicken
-entity chicken assets/models/chicken/chicken.pfobj 12
+   vision_range float 15.0
+entity chicken assets/models/chicken/chicken.pfobj 13
    position vec3 60.865231 12.000000 -158.994385
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 0.965926 0.000000 -0.258820
@@ -1190,7 +1196,8 @@ entity chicken assets/models/chicken/chicken.pfobj 12
        string assets/models/chicken
        string chicken.pfobj
        string Chicken
-entity chicken assets/models/chicken/chicken.pfobj 12
+   vision_range float 15.0
+entity chicken assets/models/chicken/chicken.pfobj 13
    position vec3 40.127365 12.000000 -171.669800
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 -0.300706 0.000000 0.953717
@@ -1206,7 +1213,8 @@ entity chicken assets/models/chicken/chicken.pfobj 12
        string assets/models/chicken
        string chicken.pfobj
        string Chicken
-entity chicken assets/models/chicken/chicken.pfobj 12
+   vision_range float 15.0
+entity chicken assets/models/chicken/chicken.pfobj 13
    position vec3 39.067101 12.000000 -164.091675
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 -0.887011 0.000000 0.461748
@@ -1222,7 +1230,8 @@ entity chicken assets/models/chicken/chicken.pfobj 12
        string assets/models/chicken
        string chicken.pfobj
        string Chicken
-entity chicken assets/models/chicken/chicken.pfobj 12
+   vision_range float 15.0
+entity chicken assets/models/chicken/chicken.pfobj 13
    position vec3 63.488377 12.000000 -178.838547
    scale vec3 0.400000 0.400000 0.400000
    rotation quat 0.000000 0.043619 0.000000 0.999048
@@ -1238,6 +1247,7 @@ entity chicken assets/models/chicken/chicken.pfobj 12
        string assets/models/chicken
        string chicken.pfobj
        string Chicken
+   vision_range float 15.0
 entity tree_leafy assets/models/tree_leafy/tree_leafy.pfobj 9
    position vec3 -120.588875 12.000000 -109.034225
    scale vec3 10.000000 10.000000 10.000000
@@ -1648,7 +1658,7 @@ entity rock assets/models/rock/rock.pfobj 9
    collision bool 1
    faction_id int 0
    selection_radius float 3.25
-entity Sinbad assets/models/sinbad/Sinbad.pfobj 12
+entity Sinbad assets/models/sinbad/Sinbad.pfobj 13
    position vec3 69.727661 20.000000 -72.038765
    scale vec3 1.200000 1.200000 1.200000
    rotation quat 0.000000 -0.923879 0.000000 -0.382684
@@ -1664,7 +1674,8 @@ entity Sinbad assets/models/sinbad/Sinbad.pfobj 12
        string assets/models/sinbad
        string Sinbad.pfobj
        string Sinbad
-entity knight assets/models/knight/knight.pfobj 12
+   vision_range float 35.0
+entity knight assets/models/knight/knight.pfobj 13
    position vec3 70.701439 20.000000 -111.893204
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.887011 0.000000 0.461748
@@ -1680,7 +1691,8 @@ entity knight assets/models/knight/knight.pfobj 12
        string assets/models/knight
        string knight.pfobj
        string Knight
-entity knight assets/models/knight/knight.pfobj 12
+   vision_range float 35.0
+entity knight assets/models/knight/knight.pfobj 13
    position vec3 66.472794 20.000000 -104.795502
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.866026 0.000000 0.500000
@@ -1696,7 +1708,8 @@ entity knight assets/models/knight/knight.pfobj 12
        string assets/models/knight
        string knight.pfobj
        string Knight
-entity knight assets/models/knight/knight.pfobj 12
+   vision_range float 35.0
+entity knight assets/models/knight/knight.pfobj 13
    position vec3 62.139919 20.000000 -97.142845
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.887011 0.000000 0.461748
@@ -1712,7 +1725,8 @@ entity knight assets/models/knight/knight.pfobj 12
        string assets/models/knight
        string knight.pfobj
        string Knight
-entity knight assets/models/knight/knight.pfobj 12
+   vision_range float 35.0
+entity knight assets/models/knight/knight.pfobj 13
    position vec3 80.126991 20.000000 -108.021248
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.866026 0.000000 0.500000
@@ -1728,7 +1742,8 @@ entity knight assets/models/knight/knight.pfobj 12
        string assets/models/knight
        string knight.pfobj
        string Knight
-entity knight assets/models/knight/knight.pfobj 12
+   vision_range float 35.0
+entity knight assets/models/knight/knight.pfobj 13
    position vec3 75.053375 20.000000 -100.527527
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.887011 0.000000 0.461748
@@ -1744,7 +1759,8 @@ entity knight assets/models/knight/knight.pfobj 12
        string assets/models/knight
        string knight.pfobj
        string Knight
-entity knight assets/models/knight/knight.pfobj 12
+   vision_range float 35.0
+entity knight assets/models/knight/knight.pfobj 13
    position vec3 70.039215 20.000000 -92.729568
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.906308 0.000000 0.422618
@@ -1760,7 +1776,8 @@ entity knight assets/models/knight/knight.pfobj 12
        string assets/models/knight
        string knight.pfobj
        string Knight
-entity knight assets/models/knight/knight.pfobj 12
+   vision_range float 35.0
+entity knight assets/models/knight/knight.pfobj 13
    position vec3 42.974602 20.000000 -77.989342
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.984808 0.000000 0.173648
@@ -1776,7 +1793,8 @@ entity knight assets/models/knight/knight.pfobj 12
        string assets/models/knight
        string knight.pfobj
        string Knight
-entity knight assets/models/knight/knight.pfobj 12
+   vision_range float 35.0
+entity knight assets/models/knight/knight.pfobj 13
    position vec3 33.946815 20.000000 -73.405273
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.976296 0.000000 0.216439
@@ -1792,7 +1810,8 @@ entity knight assets/models/knight/knight.pfobj 12
        string assets/models/knight
        string knight.pfobj
        string Knight
-entity knight assets/models/knight/knight.pfobj 12
+   vision_range float 35.0
+entity knight assets/models/knight/knight.pfobj 13
    position vec3 26.242332 20.000000 -68.941566
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.976296 0.000000 0.216439
@@ -1808,7 +1827,8 @@ entity knight assets/models/knight/knight.pfobj 12
        string assets/models/knight
        string knight.pfobj
        string Knight
-entity knight assets/models/knight/knight.pfobj 12
+   vision_range float 35.0
+entity knight assets/models/knight/knight.pfobj 13
    position vec3 48.372528 20.000000 -69.932045
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.984808 0.000000 0.173648
@@ -1824,7 +1844,8 @@ entity knight assets/models/knight/knight.pfobj 12
        string assets/models/knight
        string knight.pfobj
        string Knight
-entity knight assets/models/knight/knight.pfobj 12
+   vision_range float 35.0
+entity knight assets/models/knight/knight.pfobj 13
    position vec3 39.569252 20.000000 -65.399139
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.984808 0.000000 0.173648
@@ -1840,7 +1861,8 @@ entity knight assets/models/knight/knight.pfobj 12
        string assets/models/knight
        string knight.pfobj
        string Knight
-entity knight assets/models/knight/knight.pfobj 12
+   vision_range float 35.0
+entity knight assets/models/knight/knight.pfobj 13
    position vec3 30.989548 20.000000 -60.347763
    scale vec3 0.800000 0.800000 0.800000
    rotation quat 0.000000 0.991445 0.000000 0.130526
@@ -1856,7 +1878,8 @@ entity knight assets/models/knight/knight.pfobj 12
        string assets/models/knight
        string knight.pfobj
        string Knight
-entity mage assets/models/mage/mage.pfobj 12
+   vision_range float 35.0
+entity mage assets/models/mage/mage.pfobj 13
    position vec3 77.982689 20.000000 -84.175186
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 0.906308 0.000000 0.422618
@@ -1872,7 +1895,8 @@ entity mage assets/models/mage/mage.pfobj 12
        string assets/models/mage
        string mage.pfobj
        string Mage
-entity mage assets/models/mage/mage.pfobj 12
+   vision_range float 35.0
+entity mage assets/models/mage/mage.pfobj 13
    position vec3 56.737705 20.000000 -62.936424
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 0.991445 0.000000 0.130526
@@ -1888,6 +1912,7 @@ entity mage assets/models/mage/mage.pfobj 12
        string assets/models/mage
        string mage.pfobj
        string Mage
+   vision_range float 35.0
 entity war_banner assets/models/war_banner/war_banner.pfobj 10
    position vec3 61.912025 20.000000 -125.741165
    scale vec3 2.500000 2.500000 2.500000
@@ -2320,7 +2345,7 @@ entity grass_3 assets/models/grass/grass_3.pfobj 9
    collision bool 0
    faction_id int 0
    selection_radius float 2.0
-entity mage assets/models/mage/mage.pfobj 12
+entity mage assets/models/mage/mage.pfobj 13
    position vec3 -78.756081 16.000000 -117.482681
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.953717 0.000000 0.300705
@@ -2336,7 +2361,8 @@ entity mage assets/models/mage/mage.pfobj 12
        string assets/models/mage
        string mage.pfobj
        string Mage
-entity mage assets/models/mage/mage.pfobj 12
+   vision_range float 35.0
+entity mage assets/models/mage/mage.pfobj 13
    position vec3 -70.708649 16.000000 -110.598022
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.976296 0.000000 0.216439
@@ -2352,7 +2378,8 @@ entity mage assets/models/mage/mage.pfobj 12
        string assets/models/mage
        string mage.pfobj
        string Mage
-entity mage assets/models/mage/mage.pfobj 12
+   vision_range float 35.0
+entity mage assets/models/mage/mage.pfobj 13
    position vec3 -63.881527 16.000000 -104.296028
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.965926 0.000000 0.258819
@@ -2368,7 +2395,8 @@ entity mage assets/models/mage/mage.pfobj 12
        string assets/models/mage
        string mage.pfobj
        string Mage
-entity mage assets/models/mage/mage.pfobj 12
+   vision_range float 35.0
+entity mage assets/models/mage/mage.pfobj 13
    position vec3 -56.768406 16.000000 -98.008415
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.976296 0.000000 0.216439
@@ -2384,7 +2412,8 @@ entity mage assets/models/mage/mage.pfobj 12
        string assets/models/mage
        string mage.pfobj
        string Mage
-entity mage assets/models/mage/mage.pfobj 12
+   vision_range float 35.0
+entity mage assets/models/mage/mage.pfobj 13
    position vec3 -72.733482 16.000000 -123.733673
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.953717 0.000000 0.300705
@@ -2400,7 +2429,8 @@ entity mage assets/models/mage/mage.pfobj 12
        string assets/models/mage
        string mage.pfobj
        string Mage
-entity mage assets/models/mage/mage.pfobj 12
+   vision_range float 35.0
+entity mage assets/models/mage/mage.pfobj 13
    position vec3 -65.088707 16.000000 -117.410179
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.976296 0.000000 0.216439
@@ -2416,7 +2446,8 @@ entity mage assets/models/mage/mage.pfobj 12
        string assets/models/mage
        string mage.pfobj
        string Mage
-entity mage assets/models/mage/mage.pfobj 12
+   vision_range float 35.0
+entity mage assets/models/mage/mage.pfobj 13
    position vec3 -58.176941 16.000000 -111.340355
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.976296 0.000000 0.216439
@@ -2432,7 +2463,8 @@ entity mage assets/models/mage/mage.pfobj 12
        string assets/models/mage
        string mage.pfobj
        string Mage
-entity mage assets/models/mage/mage.pfobj 12
+   vision_range float 35.0
+entity mage assets/models/mage/mage.pfobj 13
    position vec3 -51.126335 16.000000 -105.341660
    scale vec3 0.600000 0.600000 0.600000
    rotation quat 0.000000 -0.984808 0.000000 0.173648
@@ -2448,6 +2480,7 @@ entity mage assets/models/mage/mage.pfobj 12
        string assets/models/mage
        string mage.pfobj
        string Mage
+   vision_range float 35.0
 entity cart assets/models/cart/cart.pfobj 9
    position vec3 27.409922 12.000000 -198.049561
    scale vec3 2.500000 2.500000 2.500000
@@ -3018,7 +3051,7 @@ entity grass_3 assets/models/grass/grass_3.pfobj 9
    collision bool 0
    faction_id int 0
    selection_radius float 2.0
-entity goblin assets/models/goblin/goblin.pfobj 12
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 422.249268 12.000000 -390.156708
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.342020 0.000000 0.939693
@@ -3034,7 +3067,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 416.073029 12.000000 -397.143555
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.422618 0.000000 0.906308
@@ -3050,7 +3084,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 409.219818 12.000000 -405.614594
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.422618 0.000000 0.906308
@@ -3066,7 +3101,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 401.920624 12.000000 -412.902893
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.342020 0.000000 0.939693
@@ -3082,7 +3118,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 416.209106 12.000000 -384.060638
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.461749 0.000000 0.887011
@@ -3098,7 +3135,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 409.790131 12.000000 -392.342285
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.382684 0.000000 0.923880
@@ -3114,7 +3152,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 404.056183 12.000000 -399.420837
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.422618 0.000000 0.906308
@@ -3130,7 +3169,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 397.245392 12.000000 -406.260437
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.342020 0.000000 0.939693
@@ -3146,7 +3186,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 410.624969 12.000000 -378.267883
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.461749 0.000000 0.887011
@@ -3162,7 +3203,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 403.960388 12.000000 -386.236542
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.461749 0.000000 0.887011
@@ -3178,7 +3220,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 397.699402 12.000000 -392.836243
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.537300 0.000000 0.843391
@@ -3194,7 +3237,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 391.207397 12.000000 -399.331207
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.537300 0.000000 0.843391
@@ -3210,7 +3254,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 404.573578 12.000000 -371.327698
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.461749 0.000000 0.887011
@@ -3226,7 +3271,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 397.734192 12.000000 -379.848999
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.422618 0.000000 0.906308
@@ -3242,7 +3288,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 391.451141 12.000000 -387.356934
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.461749 0.000000 0.887011
@@ -3258,7 +3305,8 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
-entity goblin assets/models/goblin/goblin.pfobj 12
+   vision_range float 35.0
+entity goblin assets/models/goblin/goblin.pfobj 13
    position vec3 384.220825 12.000000 -394.128387
    scale vec3 0.900000 0.900000 0.900000
    rotation quat 0.000000 0.461749 0.000000 0.887011
@@ -3274,6 +3322,7 @@ entity goblin assets/models/goblin/goblin.pfobj 12
        string assets/models/goblin
        string goblin.pfobj
        string Goblin
+   vision_range float 35.0
 entity pine_tree assets/models/pine_tree/pine_tree.pfobj 9
    position vec3 385.924377 12.000000 -431.920471
    scale vec3 15.000000 15.000000 15.000000
@@ -3654,7 +3703,7 @@ entity rock_2 assets/models/varied_rocks/rock_2.pfobj 9
    collision bool 1
    faction_id int 0
    selection_radius float 3.0
-entity berzerker assets/models/berzerker/berzerker.pfobj 12
+entity berzerker assets/models/berzerker/berzerker.pfobj 13
    position vec3 220.317657 0.000000 -478.426208
    scale vec3 0.700000 0.700000 0.700000
    rotation quat 0.000000 0.258819 0.000000 0.965926
@@ -3670,7 +3719,8 @@ entity berzerker assets/models/berzerker/berzerker.pfobj 12
        string assets/models/berzerker
        string berzerker.pfobj
        string Berzerker
-entity berzerker assets/models/berzerker/berzerker.pfobj 12
+   vision_range float 35.0
+entity berzerker assets/models/berzerker/berzerker.pfobj 13
    position vec3 209.310028 0.000000 -482.800354
    scale vec3 0.700000 0.700000 0.700000
    rotation quat 0.000000 0.043619 0.000000 0.999048
@@ -3686,7 +3736,8 @@ entity berzerker assets/models/berzerker/berzerker.pfobj 12
        string assets/models/berzerker
        string berzerker.pfobj
        string Berzerker
-entity berzerker assets/models/berzerker/berzerker.pfobj 12
+   vision_range float 35.0
+entity berzerker assets/models/berzerker/berzerker.pfobj 13
    position vec3 197.290894 0.000000 -484.784546
    scale vec3 0.700000 0.700000 0.700000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -3702,7 +3753,8 @@ entity berzerker assets/models/berzerker/berzerker.pfobj 12
        string assets/models/berzerker
        string berzerker.pfobj
        string Berzerker
-entity berzerker assets/models/berzerker/berzerker.pfobj 12
+   vision_range float 35.0
+entity berzerker assets/models/berzerker/berzerker.pfobj 13
    position vec3 183.913177 0.000000 -484.574036
    scale vec3 0.700000 0.700000 0.700000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -3718,7 +3770,8 @@ entity berzerker assets/models/berzerker/berzerker.pfobj 12
        string assets/models/berzerker
        string berzerker.pfobj
        string Berzerker
-entity berzerker assets/models/berzerker/berzerker.pfobj 12
+   vision_range float 35.0
+entity berzerker assets/models/berzerker/berzerker.pfobj 13
    position vec3 217.867065 0.000000 -467.058411
    scale vec3 0.700000 0.700000 0.700000
    rotation quat 0.000000 0.130526 0.000000 0.991445
@@ -3734,7 +3787,8 @@ entity berzerker assets/models/berzerker/berzerker.pfobj 12
        string assets/models/berzerker
        string berzerker.pfobj
        string Berzerker
-entity berzerker assets/models/berzerker/berzerker.pfobj 12
+   vision_range float 35.0
+entity berzerker assets/models/berzerker/berzerker.pfobj 13
    position vec3 207.251831 0.000000 -470.467102
    scale vec3 0.700000 0.700000 0.700000
    rotation quat 0.000000 0.043619 0.000000 0.999048
@@ -3750,7 +3804,8 @@ entity berzerker assets/models/berzerker/berzerker.pfobj 12
        string assets/models/berzerker
        string berzerker.pfobj
        string Berzerker
-entity berzerker assets/models/berzerker/berzerker.pfobj 12
+   vision_range float 35.0
+entity berzerker assets/models/berzerker/berzerker.pfobj 13
    position vec3 195.851685 0.000000 -472.299377
    scale vec3 0.700000 0.700000 0.700000
    rotation quat 0.000000 0.000000 0.000000 1.000000
@@ -3766,7 +3821,8 @@ entity berzerker assets/models/berzerker/berzerker.pfobj 12
        string assets/models/berzerker
        string berzerker.pfobj
        string Berzerker
-entity berzerker assets/models/berzerker/berzerker.pfobj 12
+   vision_range float 35.0
+entity berzerker assets/models/berzerker/berzerker.pfobj 13
    position vec3 184.136429 0.000000 -471.900879
    scale vec3 0.700000 0.700000 0.700000
    rotation quat 0.000000 -0.043619 0.000000 0.999048
@@ -3782,6 +3838,7 @@ entity berzerker assets/models/berzerker/berzerker.pfobj 12
        string assets/models/berzerker
        string berzerker.pfobj
        string Berzerker
+   vision_range float 35.0
 entity oak_tree assets/models/oak_tree/oak_tree.pfobj 9
    position vec3 297.530670 0.000000 -284.972656
    scale vec3 1.600000 1.600000 1.600000
