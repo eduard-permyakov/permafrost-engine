@@ -5,12 +5,19 @@ It is made in the image of old classics, but incorporating some modern ideas.
 
 ## Engine Showcase ##
 
-<img src="docs/images/engine-01.png" width="768" height="423">
-<img src="docs/images/engine-02.png" width="768" height="432">
-<img src="docs/images/big-battle.png" width="768" height="432">
-<img src="docs/images/editor.png" width="768" height="432">
-<img src="docs/images/pathfinding.gif" width="768" height="432">
-<img src="docs/images/editor.gif" width="768" height="432">
+![everglory-banner](docs/images/everglory-banner.png)
+
+EVERGLORY is the flagship game developed using Permafrost Engine. 
+
+[Support the project - Wishlist on Steam today!](https://store.steampowered.com/app/1309720/EVERGLORY/)
+
+<img src="docs/images/screenshot-1.png" width="768" height="423">
+<img src="docs/images/screenshot-2.png" width="768" height="432">
+<img src="docs/images/screenshot-3.png" width="768" height="432">
+<img src="docs/images/screenshot-4.png" width="768" height="432">
+<img src="docs/images/screenshot-5.png" width="768" height="432">
+<img src="docs/images/pathfinding.gif"  width="768" height="432">
+<img src="docs/images/fog-of-war.gif"   width="768" height="432">
 
 ## Engine Summary ##
 
@@ -39,6 +46,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 * RTS minimap
 * RTS-style unit selection
 * RTS unit combat system
+* RTS fog-of-war system
 * Support for different resolutions and aspect ratios
 * Configurable graphics settings
 * Serialization and deserialization of the entire Python interpreter state
@@ -92,7 +100,15 @@ Permafrost Engine is licensed under the GPLv3, with a special linking exception.
 
 ## Devlog ##
 
-Follow the development of Permafrost Engine and its' flagship game on YouTube: https://www.youtube.com/channel/UCNklkpsPnNpRhC9oVkpIpLA
+Follow the development of Permafrost Engine and EVERGLORY on YouTube: https://www.youtube.com/channel/UCNklkpsPnNpRhC9oVkpIpLA
+
+[Indie RTS Devlog #1: Introducing Permafrost Engine](https://youtu.be/0dEttWferm8)
+
+[Indie RTS Devlog #2: Saving The Python Interpreter](https://youtu.be/ch-zjn05gxQ)
+
+[Indie RTS Devlog #3: Group Pathfinding](https://youtu.be/ALL7AQ1MRas)
+
+[EVERGLORY: Teaser Trailer #1](https://youtu.be/yTJ7wTJy7jc)
 
 ## Comments/Questions ##
 

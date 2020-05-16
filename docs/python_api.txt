@@ -153,6 +153,10 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Get a dictionary of the performance data for the previous frame.
 
+    [rand]
+    ----------------------------------------------------------------------------
+    Return a pseudo-random number in the range of 0 to the integer argument.
+
     [register_event_handler]
     ----------------------------------------------------------------------------
     Adds a script event handler to be called when the specified global event
@@ -318,6 +322,9 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
         ************************************************************************
         METHODS
         ************************************************************************
@@ -329,6 +336,9 @@ BUILT-IN CLASSES
 
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
+
+        [get_anim]
+        Get the name of the currently playing animation clip.
 
         [move]
         Issues a 'move' order to the entity at the XZ position specified by the
@@ -406,6 +416,9 @@ BUILT-IN CLASSES
 
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
 
         ************************************************************************
         METHODS
@@ -487,6 +500,9 @@ BUILT-IN CLASSES
 
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
 
         ************************************************************************
         METHODS
