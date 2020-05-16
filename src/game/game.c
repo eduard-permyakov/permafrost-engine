@@ -1114,8 +1114,8 @@ void G_Render(void)
 
     if(s_gs.map) {
         M_RenderMinimap(s_gs.map, ACTIVE_CAM);
+        R_PushCmd((struct rcmd){ R_GL_MapInvalidate, 0 });
     }
-    R_PushCmd((struct rcmd){ R_GL_MapInvalidate, 0 });
 
     PERF_RETURN_VOID();
 }
