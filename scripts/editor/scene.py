@@ -52,7 +52,8 @@ OBJECTS_LIST = [
         "class"          : "Sinbad",
         "construct_args" : ("assets/models/sinbad", "Sinbad.pfobj", "Sinbad"),
         "static"         : False,
-        "collision"      : True
+        "collision"      : True,
+        "vision_range"   : 35.0
     },
     { 
         "path"           : "knight/knight.pfobj",
@@ -64,7 +65,8 @@ OBJECTS_LIST = [
         "class"          : "Knight",
         "construct_args" : ("assets/models/knight", "knight.pfobj", "Knight"),
         "static"         : False,
-        "collision"      : True
+        "collision"      : True,
+        "vision_range"   : 35.0
     },
     { 
         "path"           : "mage/mage.pfobj",
@@ -76,7 +78,8 @@ OBJECTS_LIST = [
         "class"          : "Mage",
         "construct_args" : ("assets/models/mage", "mage.pfobj", "Mage"),
         "static"         : False,
-        "collision"      : True
+        "collision"      : True,
+        "vision_range"   : 35.0
     },
     { 
         "path"           : "berzerker/berzerker.pfobj",
@@ -88,7 +91,8 @@ OBJECTS_LIST = [
         "class"          : "Berzerker",
         "construct_args" : ("assets/models/berzerker", "berzerker.pfobj", "Berzerker"),
         "static"         : False,
-        "collision"      : True
+        "collision"      : True,
+        "vision_range"   : 35.0
     },
     {
         "path"           : "goblin/goblin.pfobj",
@@ -100,7 +104,8 @@ OBJECTS_LIST = [
         "class"          : "Goblin",
         "construct_args" : ("assets/models/goblin", "goblin.pfobj", "Goblin"),
         "static"         : False,
-        "collision"      : True
+        "collision"      : True,
+        "vision_range"   : 35.0
     },
     {
         "path"           : "deer/doe.pfobj",
@@ -112,7 +117,8 @@ OBJECTS_LIST = [
         "class"          : "Doe",
         "construct_args" : ("assets/models/deer", "doe.pfobj", "Doe"),
         "static"         : False,
-        "collision"      : True
+        "collision"      : True,
+        "vision_range"   : 35.0
     },
     {
         "path"           : "deer/deer.pfobj",
@@ -124,7 +130,8 @@ OBJECTS_LIST = [
         "class"          : "Deer",
         "construct_args" : ("assets/models/deer", "deer.pfobj", "Deer"),
         "static"         : False,
-        "collision"      : True
+        "collision"      : True,
+        "vision_range"   : 35.0
     },
     {
         "path"           : "chicken/chicken.pfobj",
@@ -136,7 +143,8 @@ OBJECTS_LIST = [
         "class"          : "Chicken",
         "construct_args" : ("assets/models/chicken", "chicken.pfobj", "Chicken"),
         "static"         : False,
-        "collision"      : True
+        "collision"      : True,
+        "vision_range"   : 15.0
     },
 
     ########################################################################
@@ -602,7 +610,8 @@ OBJECTS_LIST = [
         "selectable"     : False,
         "sel_radius"     : 7.00,
         "static"         : True,
-        "collision"      : True
+        "collision"      : True,
+        "vision_range"   : 50.0
     },
     {
         "path"           : "tower/tower.pfobj",
@@ -611,7 +620,8 @@ OBJECTS_LIST = [
         "selectable"     : False,
         "sel_radius"     : 8.00,
         "static"         : True,
-        "collision"      : True
+        "collision"      : True,
+        "vision_range"   : 50.0
     },
 ]
 
@@ -645,6 +655,8 @@ def save_scene(filename):
                 num_atts += 1
             if "construct_args" in meta_dict:
                 num_atts += 1
+            if "vision_range" in meta_dict:
+                num_atts += 1
             scenefile.write("entity {0} {1} {2}\n".format(obj.name, MODELS_PREFIX_DIR + meta_dict["path"], num_atts))
             scenefile.write("   position vec3 {0:.6f} {1:.6f} {2:.6f}\n".format(obj.pos[0], obj.pos[1], obj.pos[2]))
             scenefile.write("   scale vec3 {0:.6f} {1:.6f} {2:.6f}\n".format(obj.scale[0], obj.scale[1], obj.scale[2]))
@@ -672,4 +684,6 @@ def save_scene(filename):
                     else:
                         raise ValueError("Constructor arguments must be of type int, float, or basestring")
                     scenefile.write("       {0} {1}\n".format(type, arg))
+            if "vision_range" in meta_dict:
+                scenefile.write("   vision_range float {0}\n".format(meta_dict["vision_range"]))
 

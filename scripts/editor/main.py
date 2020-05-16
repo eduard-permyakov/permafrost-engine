@@ -60,14 +60,16 @@ pf.set_ambient_light_color((1.0, 1.0, 1.0))
 pf.set_emit_light_color((1.0, 1.0, 1.0))
 pf.set_emit_light_pos((1664.0, 1024.0, 384.0))
 
-pf.new_game_string(globals.active_map.pfmap_str())
+pf.new_game_string(globals.active_map.pfmap_str(), update_navgrid=False)
 minimap_pos = pf.get_minimap_position()
 pf.set_minimap_position(UI_LEFT_PANE_WIDTH + minimap_pos[0], minimap_pos[1])
+
 pf.disable_unit_selection()
+pf.settings_set("pf.game.fog_of_war_enabled", False, persist=False)
 
 pf.add_faction(DEFAULT_FACTION_NAME, DEFAULT_FACTION_COLOR)
-
 mouse_events.install()
+
 
 ############################################################
 # Setup UI                                                 #

@@ -1630,6 +1630,10 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
     && (k = kh_get(attr, attr_table, "faction_id")) != kh_end(attr_table))
         PyObject_SetAttrString(ret, "faction_id", s_obj_from_attr(&kh_value(attr_table, k)));
 
+    if(PyObject_HasAttrString(ret, "vision_range") 
+    && (k = kh_get(attr, attr_table, "vision_range")) != kh_end(attr_table))
+        PyObject_SetAttrString(ret, "vision_range", s_obj_from_attr(&kh_value(attr_table, k)));
+
     PyList_Append(s_loaded, ret);
     Py_DECREF(ret);
     return ret;
