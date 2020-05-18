@@ -627,8 +627,7 @@ static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_prev_frame_ms(PyObject *self)
 {
-    extern unsigned g_last_frame_ms;
-    return Py_BuildValue("i", g_last_frame_ms);
+    return Py_BuildValue("i", Perf_LastFrameMS());
 }
 
 static PyObject *PyPf_prev_frame_perfstats(PyObject *self)

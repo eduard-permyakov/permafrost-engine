@@ -72,8 +72,6 @@ VEC_IMPL(static inline, event, SDL_Event)
 /*****************************************************************************/
 
 const char                *g_basepath; /* write-once - path of the base directory */
-
-unsigned                   g_last_frame_ms = 0;
 unsigned long              g_frame_idx = 0;
 
 SDL_threadID               g_main_thread_id;   /* write-once */
@@ -627,9 +625,9 @@ int main(int argc, char **argv)
     G_SwapBuffers();
     Perf_FinishTick();
 
-    uint32_t last_ts = SDL_GetTicks();
     while(!s_quit) {
 
+        Perf_BeginTick();
         enum simstate curr_ss = G_GetSimState();
         bool prev_step_frame = s_step_frame;
 
@@ -656,10 +654,6 @@ int main(int argc, char **argv)
             G_SetSimState(curr_ss);
             s_step_frame = false;
         }
-
-        uint32_t curr_time = SDL_GetTicks();
-        g_last_frame_ms = curr_time - last_ts;
-        last_ts = curr_time;
 
         ++g_frame_idx;
     }

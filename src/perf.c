@@ -43,7 +43,7 @@
 #include <stdio.h>
 
 
-#define PARENT_NONE ~((uint32_t)0)
+#define PARENT_NONE     ~((uint32_t)0)
 
 struct perf_entry{
     uint64_t pc_delta;
@@ -77,9 +77,10 @@ struct perf_state{
     /* The perf tree gets a new entry for each profiled function call.
      * As such, the function calls are added in depth-first fashion.
      */
-    vec_perf_t        perf_tree;
+    int               perf_tree_idx;
+    vec_perf_t        perf_trees[NFRAMES_LOGGED];
     /* A copy of the previous tick's final perf_tree */
-    vec_perf_t        perf_tree_prev;
+    //vec_perf_t        perf_tree_prev;
 };
 
 KHASH_MAP_INIT_INT64(pstate, struct perf_state)
@@ -89,6 +90,9 @@ KHASH_MAP_INIT_INT64(pstate, struct perf_state)
 /*****************************************************************************/
 
 static khash_t(pstate) *s_thread_state_table;
+
+static int              s_last_idx = 0;
+static unsigned         s_last_frames_ms[NFRAMES_LOGGED];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -148,18 +152,25 @@ static bool pstate_init(struct perf_state *out, const char *name)
     vec_idx_init(&out->perf_stack);
     if(!vec_idx_resize(&out->perf_stack, 4096))
         goto fail_perf_stack;
-    vec_perf_init(&out->perf_tree);
-    if(!vec_perf_resize(&out->perf_tree, 32768))
-        goto fail_perf_tree;
-    vec_perf_init(&out->perf_tree_prev);
-    if(!vec_perf_resize(&out->perf_tree_prev, 32768))
-        goto fail_perf_tree_prev;
+
+    for(int i = 0; i < NFRAMES_LOGGED; i++) {
+    
+        vec_perf_init(&out->perf_trees[i]);
+        if(!vec_perf_resize(&out->perf_trees[i], 32768))
+            goto fail_perf_trees;
+    }
+
     pf_strlcpy(out->name, name, sizeof(out->name));
+    out->perf_tree_idx = 0;
     return true;
 
-fail_perf_tree_prev:
-    vec_perf_destroy(&out->perf_tree);
-fail_perf_tree:
+fail_perf_trees:
+    for(int i = 0; i < NFRAMES_LOGGED; i++) {
+
+        if(!out->perf_trees[i].array)
+            continue;
+        vec_perf_destroy(&out->perf_trees[i]);
+    }
     vec_idx_destroy(&out->perf_stack);
 fail_perf_stack:
     kh_destroy(id_name, out->id_name_table);
@@ -171,8 +182,9 @@ fail_name_id:
 
 static void pstate_destroy(struct perf_state *in)
 {
-    vec_perf_destroy(&in->perf_tree_prev);
-    vec_perf_destroy(&in->perf_tree);
+    for(int i = 0; i < NFRAMES_LOGGED; i++) {
+        vec_perf_destroy(&in->perf_trees[i]);
+    }
     vec_idx_destroy(&in->perf_stack);
 
     uint32_t key;
@@ -242,13 +254,13 @@ void Perf_Push(const char *name)
     const size_t ssize = vec_size(&ps->perf_stack);
     uint32_t parent_idx = ssize > 0 ? vec_AT(&ps->perf_stack, ssize-1) : PARENT_NONE;
 
-    vec_perf_push(&ps->perf_tree, (struct perf_entry){
+    vec_perf_push(&ps->perf_trees[ps->perf_tree_idx], (struct perf_entry){
         .pc_delta = SDL_GetPerformanceCounter(),
         .parent_idx = parent_idx,
         .name_id = name_id_get(name, ps)
     });
 
-    uint32_t new_idx = vec_size(&ps->perf_tree)-1;
+    uint32_t new_idx = vec_size(&ps->perf_trees[ps->perf_tree_idx])-1;
     vec_idx_push(&ps->perf_stack, new_idx);
 }
 
@@ -263,9 +275,14 @@ void Perf_Pop(void)
     assert(vec_size(&ps->perf_stack) > 0);
 
     uint32_t idx = vec_idx_pop(&ps->perf_stack);
-    assert(idx < vec_size(&ps->perf_tree));
-    struct perf_entry *pe = &vec_AT(&ps->perf_tree, idx);
+    assert(idx < vec_size(&ps->perf_trees[ps->perf_tree_idx]));
+    struct perf_entry *pe = &vec_AT(&ps->perf_trees[ps->perf_tree_idx], idx);
     pe->pc_delta = SDL_GetPerformanceCounter() - pe->pc_delta;
+}
+
+void Perf_BeginTick(void)
+{
+    s_last_frames_ms[s_last_idx] = SDL_GetTicks();
 }
 
 void Perf_FinishTick(void)
@@ -280,10 +297,14 @@ void Perf_FinishTick(void)
         struct perf_state *curr = &kh_val(s_thread_state_table, k);
         assert(vec_size(&curr->perf_stack) == 0);
 
-        vec_perf_reset(&curr->perf_tree_prev);
-        vec_perf_copy(&curr->perf_tree_prev, &curr->perf_tree);
-        vec_perf_reset(&curr->perf_tree);
+        curr->perf_tree_idx = (curr->perf_tree_idx + 1) % NFRAMES_LOGGED;
+        vec_perf_reset(&curr->perf_trees[curr->perf_tree_idx]);
     }
+
+    uint32_t curr_time = SDL_GetTicks();
+    uint32_t last_ts = s_last_frames_ms[s_last_idx];
+    s_last_frames_ms[s_last_idx] = curr_time - last_ts;
+    s_last_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
 }
 
 size_t Perf_Report(size_t maxout, struct perf_info **out)
@@ -299,15 +320,16 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
             break;
 
         struct perf_state *ps = &kh_val(s_thread_state_table, k);
-        struct perf_info *info = malloc(sizeof(struct perf_info) + vec_size(&ps->perf_tree_prev) * sizeof(info->entries[0]));
+        int read_idx = (ps->perf_tree_idx + 1) % NFRAMES_LOGGED;
+        struct perf_info *info = malloc(sizeof(struct perf_info) + vec_size(&ps->perf_trees[read_idx]) * sizeof(info->entries[0]));
         if(!info)
             break;
 
         pf_strlcpy(info->threadname, ps->name, sizeof(info->threadname));
-        info->nentries = vec_size(&ps->perf_tree_prev);
+        info->nentries = vec_size(&ps->perf_trees[read_idx]);
 
-        for(int i = 0; i < vec_size(&ps->perf_tree_prev); i++) {
-            const struct perf_entry *entry = &vec_AT(&ps->perf_tree_prev, i);
+        for(int i = 0; i < vec_size(&ps->perf_trees[read_idx]); i++) {
+            const struct perf_entry *entry = &vec_AT(&ps->perf_trees[read_idx], i);
             const uint64_t hz = SDL_GetPerformanceFrequency();
 
             info->entries[i].funcname = name_for_id(ps, entry->name_id);
@@ -319,5 +341,11 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
     }
 
     PERF_RETURN(ret);
+}
+
+uint32_t Perf_LastFrameMS(void)
+{
+    int read_idx = (s_last_idx + 1) % NFRAMES_LOGGED;
+    return s_last_frames_ms[read_idx];
 }
 

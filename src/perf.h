@@ -68,8 +68,8 @@
 #endif
 
 
-void   Perf_Push(const char *name);
-void   Perf_Pop(void);
+#define NFRAMES_LOGGED  (3)
+
 
 struct perf_info{
     char threadname[64];
@@ -82,16 +82,29 @@ struct perf_info{
     }entries[];
 };
 
+void     Perf_Push(const char *name);
+void     Perf_Pop(void);
+
+/* Note that due to buffering of the frame timing data, the statistics
+ * reported will be from NFRAMES_LOGGED ago. The reason for this is that
+ * the GPU may be lagging a couple of frames behind the CPU. Let us get
+ * far enough ahead so that the GPU is finished with the frame we're 
+ * getting the statistics for. This way querying the GPU timestamps doesn't 
+ * cause a CPU<->GPU synch, which would negatively impact performance.
+ */
+
 /* This returns an array of perf_info structs (one for each thread). They
  * must be 'free'd by the caller. */
-size_t Perf_Report(size_t maxout, struct perf_info **out);
+size_t   Perf_Report(size_t maxout, struct perf_info **out);
+uint32_t Perf_LastFrameMS(void);
 
 /* The following can only be called from the main thread, making sure that 
  * none of the other threads are touching the Perf_ API concurrently */
-bool   Perf_Init(void);
-void   Perf_Shutdown(void);
-bool   Perf_RegisterThread(SDL_threadID tid, const char *name);
-void   Perf_FinishTick(void);
+bool     Perf_Init(void);
+void     Perf_Shutdown(void);
+bool     Perf_RegisterThread(SDL_threadID tid, const char *name);
+void     Perf_BeginTick(void);
+void     Perf_FinishTick(void);
 
 #endif
 
