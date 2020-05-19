@@ -38,15 +38,28 @@
 #include "lib/public/khash.h"
 #include "lib/public/vec.h"
 #include "lib/public/pf_string.h"
+#include "render/public/render.h"
+#include "render/public/render_ctrl.h"
 
 #include <assert.h>
 #include <stdio.h>
 
 
 #define PARENT_NONE     ~((uint32_t)0)
+#define GPU_STATE_NAME  "GPU"
+#define GPU_STATE_KEY   UINT64_MAX
+#define GPU_TIMER_HZ    (1 * 1000 * 1000 * 1000)
 
 struct perf_entry{
-    uint64_t pc_delta;
+    union{
+        uint64_t pc_delta;
+        struct{
+            union{
+                uint32_t gpu_cookie;
+                uint64_t gpu_ts;
+            }begin, end;
+        };
+    };
     uint32_t parent_idx;
     uint32_t name_id;
 };
@@ -79,8 +92,6 @@ struct perf_state{
      */
     int               perf_tree_idx;
     vec_perf_t        perf_trees[NFRAMES_LOGGED];
-    /* A copy of the previous tick's final perf_tree */
-    //vec_perf_t        perf_tree_prev;
 };
 
 KHASH_MAP_INIT_INT64(pstate, struct perf_state)
@@ -199,6 +210,20 @@ static void pstate_destroy(struct perf_state *in)
     kh_destroy(name_id, in->name_id_table);
 }
 
+static bool register_gpu_state(void)
+{
+    khiter_t k = kh_get(pstate, s_thread_state_table, GPU_STATE_KEY);
+    assert(k == kh_end(s_thread_state_table));
+
+    int status;
+    k = kh_put(pstate, s_thread_state_table, GPU_STATE_KEY, &status);
+    assert(status != -1 && status != 0);
+
+    if(!pstate_init(&kh_val(s_thread_state_table, k), GPU_STATE_NAME))
+        return false;
+    return true;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -208,6 +233,10 @@ bool Perf_Init(void)
     s_thread_state_table = kh_init(pstate);
     if(!s_thread_state_table)
         return false;
+    if(!register_gpu_state()) {
+        kh_destroy(pstate, s_thread_state_table);
+        return false;
+    }
     return true;
 }
 
@@ -280,9 +309,70 @@ void Perf_Pop(void)
     pe->pc_delta = SDL_GetPerformanceCounter() - pe->pc_delta;
 }
 
+void Perf_PushGPU(const char *name, uint32_t cookie)
+{
+    khiter_t k = kh_get(pstate, s_thread_state_table, GPU_STATE_KEY);
+    assert(k != kh_end(s_thread_state_table));
+
+    struct perf_state *ps = &kh_val(s_thread_state_table, k);
+    const size_t ssize = vec_size(&ps->perf_stack);
+    uint32_t parent_idx = ssize > 0 ? vec_AT(&ps->perf_stack, ssize-1) : PARENT_NONE;
+
+    vec_perf_push(&ps->perf_trees[ps->perf_tree_idx], (struct perf_entry){
+        .begin.gpu_cookie = cookie,
+        .parent_idx = parent_idx,
+        .name_id = name_id_get(name, ps)
+    });
+
+    uint32_t new_idx = vec_size(&ps->perf_trees[ps->perf_tree_idx])-1;
+    vec_idx_push(&ps->perf_stack, new_idx);
+}
+
+void Perf_PopGPU(uint32_t cookie)
+{
+    khiter_t k = kh_get(pstate, s_thread_state_table, GPU_STATE_KEY);
+    if(k != kh_end(s_thread_state_table));
+
+    struct perf_state *ps = &kh_val(s_thread_state_table, k);
+    assert(vec_size(&ps->perf_stack) > 0);
+
+    uint32_t idx = vec_idx_pop(&ps->perf_stack);
+    assert(idx < vec_size(&ps->perf_trees[ps->perf_tree_idx]));
+    struct perf_entry *pe = &vec_AT(&ps->perf_trees[ps->perf_tree_idx], idx);
+    pe->end.gpu_cookie = cookie;
+}
+
 void Perf_BeginTick(void)
 {
+    ASSERT_IN_MAIN_THREAD();
     s_last_frames_ms[s_last_idx] = SDL_GetTicks();
+
+    khiter_t k = kh_get(pstate, s_thread_state_table, GPU_STATE_KEY);
+    if(k != kh_end(s_thread_state_table));
+    struct perf_state *gpu_ps = &kh_val(s_thread_state_table, k);
+    int write_idx = (gpu_ps->perf_tree_idx + 2) % NFRAMES_LOGGED;
+
+    for(int i = 0; i < vec_size(&gpu_ps->perf_trees[write_idx]); i++) {
+    
+        struct perf_entry *pe = &vec_AT(&gpu_ps->perf_trees[write_idx], i);
+
+        R_PushCmd((struct rcmd){
+            .func = R_GL_TimestampForCookie,
+            .nargs = 2,
+            .args = {
+                &pe->begin.gpu_cookie,
+                &pe->begin.gpu_ts,
+            }
+        });
+        R_PushCmd((struct rcmd){
+            .func = R_GL_TimestampForCookie,
+            .nargs = 2,
+            .args = {
+                &pe->end.gpu_cookie,
+                &pe->end.gpu_ts,
+            }
+        });
+    }
 }
 
 void Perf_FinishTick(void)
@@ -329,12 +419,21 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
         info->nentries = vec_size(&ps->perf_trees[read_idx]);
 
         for(int i = 0; i < vec_size(&ps->perf_trees[read_idx]); i++) {
+
             const struct perf_entry *entry = &vec_AT(&ps->perf_trees[read_idx], i);
-            const uint64_t hz = SDL_GetPerformanceFrequency();
+
+            if(k == kh_get(pstate, s_thread_state_table, GPU_STATE_KEY)) {
+                uint64_t hz = GPU_TIMER_HZ;
+                uint64_t delta = entry->end.gpu_ts - entry->begin.gpu_ts;
+                info->entries[i].pc_delta = delta;
+                info->entries[i].ms_delta = (delta * 1000.0 / hz);
+            }else{
+                uint64_t hz = SDL_GetPerformanceFrequency();
+                info->entries[i].pc_delta = entry->pc_delta;
+                info->entries[i].ms_delta = (entry->pc_delta * 1000.0 / hz);
+            }
 
             info->entries[i].funcname = name_for_id(ps, entry->name_id);
-            info->entries[i].pc_delta = entry->pc_delta;
-            info->entries[i].ms_delta = (entry->pc_delta * 1000.0 / hz);
             info->entries[i].parent_idx = entry->parent_idx;
         }
         out[ret++] = info;

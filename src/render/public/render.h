@@ -287,6 +287,13 @@ void   R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
 void   R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays, 
                              const size_t *num_vos, const struct map *map);
 
+/* ---------------------------------------------------------------------------
+ * Get a nanosecond-resolution GPU timestamp for a previously created
+ * cookie. The cookie is invalidated.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_TimestampForCookie(uint32_t *cookie, uint64_t *out);
+
 /*###########################################################################*/
 /* RENDER TILES                                                              */
 /*###########################################################################*/

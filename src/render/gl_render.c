@@ -1575,3 +1575,20 @@ void R_GL_GlobalConfig(void)
     PERF_RETURN_VOID();
 }
 
+void R_GL_TimestampForCookie(uint32_t *cookie, uint64_t *out)
+{
+    GLuint timer_query = *cookie;
+
+    GLuint avail = GL_FALSE;
+    glGetQueryObjectuiv(timer_query, GL_QUERY_RESULT_AVAILABLE, &avail);
+
+    if(!avail) {
+        fprintf(stderr, "WARNING: Timestamp query result not yet available. This may negatively impact performance.");
+    }
+
+    extern unsigned long g_frame_idx;
+
+    glGetQueryObjectui64v(timer_query, GL_QUERY_RESULT, out);
+    glDeleteQueries(1, &timer_query);
+}
+

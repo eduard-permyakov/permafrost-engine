@@ -68,7 +68,7 @@
 #endif
 
 
-#define NFRAMES_LOGGED  (3)
+#define NFRAMES_LOGGED  (4)
 
 
 struct perf_info{
@@ -85,9 +85,12 @@ struct perf_info{
 void     Perf_Push(const char *name);
 void     Perf_Pop(void);
 
+void     Perf_PushGPU(const char *name, uint32_t cookie);
+void     Perf_PopGPU(uint32_t cookie);
+
 /* Note that due to buffering of the frame timing data, the statistics
  * reported will be from NFRAMES_LOGGED ago. The reason for this is that
- * the GPU may be lagging a couple of frames behind the CPU. Let us get
+ * the GPU may be lagging a couple of frames behind the CPU. We want to get
  * far enough ahead so that the GPU is finished with the frame we're 
  * getting the statistics for. This way querying the GPU timestamps doesn't 
  * cause a CPU<->GPU synch, which would negatively impact performance.
