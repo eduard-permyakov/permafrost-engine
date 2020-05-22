@@ -36,31 +36,58 @@
 #include "gl_state.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/mpool.h"
 
 #include <assert.h>
 #include <string.h>
 
+
+struct buff{
+    char raw[16384];
+};
+
+struct compval{
+    enum utype type;
+    uint32_t   hash;
+    mp_ref_t   descs;
+    mp_ref_t   data; 
+};
+
+struct arrval{
+    enum utype type;
+    uint32_t   hash;
+    mp_ref_t   data;
+};
+
 /* private uval */
 struct puval{
-    struct uval v;
+    union{
+        struct uval v;
+        struct arrval av;
+        struct compval cv;
+    };
     bool dirty;
 };
 
 KHASH_MAP_INIT_STR(puval, struct puval)
+
+MPOOL_TYPE(buff, struct buff)
+MPOOL_IMPL(static inline, buff, struct buff)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
 static khash_t(puval) *s_state_table;
+static mp_buff_t       s_buff_pool;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static size_t uval_size(const struct uval *uv)
+static size_t uval_size(enum utype type)
 {
-    switch(uv->type) {
+    switch(type) {
     case UTYPE_FLOAT:
         return sizeof(float);
     case UTYPE_VEC2:
@@ -90,7 +117,7 @@ static bool uval_equal(const struct uval *a, const struct uval *b)
 {
     if(a->type != b->type)
         return false;
-    return (0 == memcmp(&a->val, &b->val, uval_size(a)));
+    return (0 == memcmp(&a->val, &b->val, uval_size(a->type)));
 }
 
 static void uval_install(GLuint shader_prog, const char *uname, const struct uval *uv)
@@ -134,6 +161,30 @@ static void uval_install(GLuint shader_prog, const char *uname, const struct uva
     }
 }
 
+static uint32_t hash_adler32(const void *data, size_t len) 
+{
+     const uint8_t *buff = (const uint8_t*)data;
+
+     uint32_t s1 = 1;
+     uint32_t s2 = 0;
+
+     for(size_t n = 0; n < len; n++) {
+        s1 = (s1 + buff[n]) % 65521;
+        s2 = (s2 + s1) % 65521;
+     }     
+     return (s2 << 16) | s1;
+}
+
+static size_t data_len(const struct mdesc *descs, size_t nitems, void *data)
+{
+    size_t len = 0;
+    while(descs->name) {
+        len += uval_size(descs->type);
+        descs++;
+    }
+    return len * nitems;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -142,8 +193,16 @@ bool R_GL_StateInit(void)
 {
     s_state_table = kh_init(puval);
     if(!s_state_table)
-        return false;
+        goto fail_table;
+    mp_buff_init(&s_buff_pool);
+    if(!mp_buff_reserve(&s_buff_pool, 512))
+        goto fail_pool;
     return true;
+
+fail_pool:
+    kh_destroy(puval, s_state_table);
+fail_table:
+    return false;
 }
 
 void R_GL_StateShutdown(void)
@@ -156,6 +215,7 @@ void R_GL_StateShutdown(void)
         free((void*)key);
     });
     kh_destroy(puval, s_state_table);
+    mp_buff_destroy(&s_buff_pool);
 }
 
 void R_GL_StateSet(const char *uname, struct uval val)
@@ -193,5 +253,85 @@ void R_GL_StateInstall(const char *uname, GLuint shader_prog)
         return;
 
     uval_install(shader_prog, uname, &p->v);
+}
+
+void R_GL_SetArray(const char *uname, enum utype itemtype, size_t size, void *data)
+{
+    size_t len = uval_size(itemtype) * size;
+    uint32_t hash = hash_adler32(data, len);
+
+    struct puval *p = NULL;
+    khiter_t k = kh_get(puval, s_state_table, uname);
+
+    if(k != kh_end(s_state_table)) {
+        p = &kh_value(s_state_table, k);
+        if(p->cv.hash == hash)
+            return;
+    }else{
+    
+        int status;
+        k = kh_put(puval, s_state_table, pf_strdup(uname), &status);
+        assert(status != -1 && status != 0);
+        p = &kh_value(s_state_table, k);
+    }
+
+    mp_ref_t data_ref = mp_buff_alloc(&s_buff_pool);
+    assert(data_ref);
+    assert(len <= sizeof(((struct buff*)NULL)->raw));
+
+    memcpy(mp_buff_entry(&s_buff_pool, data_ref)->raw, data, len);
+    *p = (struct puval){
+        .av = (struct arrval){
+            .type = UTYPE_ARRAY,
+            .hash = hash,
+            .data = data_ref
+        },
+        .dirty = true
+    };
+}
+
+void R_GL_StateSetComposite(const char *uname, const struct mdesc *descs, 
+                            size_t nitems, void *data)
+{
+    size_t len = data_len(descs, nitems, data);
+    uint32_t hash = hash_adler32(data, len);
+
+    struct puval *p = NULL;
+    khiter_t k = kh_get(puval, s_state_table, uname);
+
+    if(k != kh_end(s_state_table)) {
+        p = &kh_value(s_state_table, k);
+        if(p->cv.hash == hash)
+            return;
+    }else{
+    
+        int status;
+        k = kh_put(puval, s_state_table, pf_strdup(uname), &status);
+        assert(status != -1 && status != 0);
+        p = &kh_value(s_state_table, k);
+    }
+
+    mp_ref_t data_ref = mp_buff_alloc(&s_buff_pool);
+    mp_ref_t desc_ref = mp_buff_alloc(&s_buff_pool);
+
+    assert(data_ref && desc_ref);
+    assert(len <= sizeof(((struct buff*)NULL)->raw));
+
+    const struct mdesc *curr = descs;
+    struct mdesc *base = (struct mdesc*)mp_buff_entry(&s_buff_pool, desc_ref)->raw;
+    while(curr->name) {
+        *base++ = *curr++;
+    }
+    memcpy(mp_buff_entry(&s_buff_pool, data_ref)->raw, data, len);
+
+    *p = (struct puval){
+        .cv = (struct compval){
+            .type = UTYPE_COMPOSITE,
+            .hash = hash,
+            .descs = desc_ref,
+            .data = data_ref
+        },
+        .dirty = true
+    };
 }
 

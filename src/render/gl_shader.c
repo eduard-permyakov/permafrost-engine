@@ -35,6 +35,8 @@
 
 #include "gl_shader.h"
 #include "gl_assert.h"
+#include "gl_state.h"
+#include "gl_material.h"
 #include "../main.h"
 #include "../lib/public/pf_string.h"
 
@@ -48,12 +50,18 @@
 #define SHADER_PATH_LEN 128
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 
-struct shader_resource{
-    GLint       prog_id;
-    const char *name;
-    const char *vertex_path;
-    const char *geo_path;
-    const char *frag_path;
+struct uniform{
+    int           type;
+    const char   *name;
+};
+
+struct shader{
+    GLint           prog_id;
+    const char     *name;
+    const char     *vertex_path;
+    const char     *geo_path;
+    const char     *frag_path;
+    struct uniform *uniforms;
 };
 
 /*****************************************************************************/
@@ -61,132 +69,394 @@ struct shader_resource{
 /*****************************************************************************/
 
 /* Shader 'prog_id' will be initialized by R_GL_Shader_InitAll */
-static struct shader_resource s_shaders[] = {
+static struct shader s_shaders[] = {
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.colored",
         .vertex_path = "shaders/vertex/basic.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/colored.glsl"
+        .frag_path   = "shaders/fragment/colored.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_VEC4,      GL_U_COLOR,            },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.textured",
         .vertex_path = "shaders/vertex/static.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/textured.glsl"
+        .frag_path   = "shaders/fragment/textured.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
+            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
+            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
+            { UTYPE_VEC3,      GL_U_VIEW_POS          },
+            { UTYPE_INT,       GL_U_TEXTURE0          },
+            { UTYPE_INT,       GL_U_TEXTURE1          },
+            { UTYPE_INT,       GL_U_TEXTURE2          },
+            { UTYPE_INT,       GL_U_TEXTURE3          },
+            { UTYPE_INT,       GL_U_TEXTURE4          },
+            { UTYPE_INT,       GL_U_TEXTURE5          },
+            { UTYPE_INT,       GL_U_TEXTURE6          },
+            { UTYPE_INT,       GL_U_TEXTURE7          },
+            { UTYPE_INT,       GL_U_TEXTURE8          },
+            { UTYPE_INT,       GL_U_TEXTURE9          },
+            { UTYPE_INT,       GL_U_TEXTURE10         },
+            { UTYPE_INT,       GL_U_TEXTURE11         },
+            { UTYPE_INT,       GL_U_TEXTURE12         },
+            { UTYPE_INT,       GL_U_TEXTURE12         },
+            { UTYPE_INT,       GL_U_TEXTURE13         },
+            { UTYPE_INT,       GL_U_TEXTURE14         },
+            { UTYPE_INT,       GL_U_TEXTURE15         },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.textured-phong",
         .vertex_path = "shaders/vertex/static.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/textured-phong.glsl"
+        .frag_path   = "shaders/fragment/textured-phong.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
+            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
+            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
+            { UTYPE_VEC3,      GL_U_VIEW_POS          },
+            { UTYPE_INT,       GL_U_TEXTURE0          },
+            { UTYPE_INT,       GL_U_TEXTURE1          },
+            { UTYPE_INT,       GL_U_TEXTURE2          },
+            { UTYPE_INT,       GL_U_TEXTURE3          },
+            { UTYPE_INT,       GL_U_TEXTURE4          },
+            { UTYPE_INT,       GL_U_TEXTURE5          },
+            { UTYPE_INT,       GL_U_TEXTURE6          },
+            { UTYPE_INT,       GL_U_TEXTURE7          },
+            { UTYPE_INT,       GL_U_TEXTURE8          },
+            { UTYPE_INT,       GL_U_TEXTURE9          },
+            { UTYPE_INT,       GL_U_TEXTURE10         },
+            { UTYPE_INT,       GL_U_TEXTURE11         },
+            { UTYPE_INT,       GL_U_TEXTURE12         },
+            { UTYPE_INT,       GL_U_TEXTURE12         },
+            { UTYPE_INT,       GL_U_TEXTURE13         },
+            { UTYPE_INT,       GL_U_TEXTURE14         },
+            { UTYPE_INT,       GL_U_TEXTURE15         },
+            { UTYPE_COMPOSITE, GL_U_MATERIALS,        },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.tile-outline",
         .vertex_path = "shaders/vertex/static.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/tile-outline.glsl"
+        .frag_path   = "shaders/fragment/tile-outline.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_COLOR,            },
+            {0},
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.animated.textured-phong",
         .vertex_path = "shaders/vertex/skinned.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/textured-phong.glsl"
+        .frag_path   = "shaders/fragment/textured-phong.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_ARRAY,     GL_U_CURR_POSE_MATS    },
+            { UTYPE_ARRAY,     GL_U_INV_BIND_MATS     },
+            { UTYPE_MAT4,      GL_U_NORMAL_MAT        },
+            { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
+            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
+            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
+            { UTYPE_VEC3,      GL_U_VIEW_POS          },
+            { UTYPE_INT,       GL_U_TEXTURE0          },
+            { UTYPE_INT,       GL_U_TEXTURE1          },
+            { UTYPE_INT,       GL_U_TEXTURE2          },
+            { UTYPE_INT,       GL_U_TEXTURE3          },
+            { UTYPE_INT,       GL_U_TEXTURE4          },
+            { UTYPE_INT,       GL_U_TEXTURE5          },
+            { UTYPE_INT,       GL_U_TEXTURE6          },
+            { UTYPE_INT,       GL_U_TEXTURE7          },
+            { UTYPE_INT,       GL_U_TEXTURE8          },
+            { UTYPE_INT,       GL_U_TEXTURE9          },
+            { UTYPE_INT,       GL_U_TEXTURE10         },
+            { UTYPE_INT,       GL_U_TEXTURE11         },
+            { UTYPE_INT,       GL_U_TEXTURE12         },
+            { UTYPE_INT,       GL_U_TEXTURE12         },
+            { UTYPE_INT,       GL_U_TEXTURE13         },
+            { UTYPE_INT,       GL_U_TEXTURE14         },
+            { UTYPE_INT,       GL_U_TEXTURE15         },
+            { UTYPE_COMPOSITE, GL_U_MATERIALS,        },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.normals.colored",
         .vertex_path = "shaders/vertex/static.glsl",
         .geo_path    = "shaders/geometry/normals.glsl",
-        .frag_path   = "shaders/fragment/colored.glsl"
+        .frag_path   = "shaders/fragment/colored.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_VEC4,      GL_U_COLOR,            },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.animated.normals.colored",
         .vertex_path = "shaders/vertex/skinned.glsl",
         .geo_path    = "shaders/geometry/normals.glsl",
-        .frag_path   = "shaders/fragment/colored.glsl"
+        .frag_path   = "shaders/fragment/colored.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_ARRAY,     GL_U_CURR_POSE_MATS    },
+            { UTYPE_ARRAY,     GL_U_INV_BIND_MATS     },
+            { UTYPE_MAT4,      GL_U_NORMAL_MAT        },
+            { UTYPE_VEC4,      GL_U_COLOR,            },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.colored-per-vert",
         .vertex_path = "shaders/vertex/colored.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/colored-per-vert.glsl"
+        .frag_path   = "shaders/fragment/colored-per-vert.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "terrain",
         .vertex_path = "shaders/vertex/terrain.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/terrain.glsl"
+        .frag_path   = "shaders/fragment/terrain.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
+            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
+            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
+            { UTYPE_VEC3,      GL_U_VIEW_POS          },
+            { UTYPE_INT,       GL_U_TEXTURE0          },
+            { UTYPE_INT,       "visbuff",             },
+            { UTYPE_INT,       "visbuff_offset",      },
+            { UTYPE_IVEC4,     GL_U_MAP_RES,          },
+            { UTYPE_VEC2,      GL_U_MAP_POS,          },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "terrain-shadowed",
         .vertex_path = "shaders/vertex/terrain-shadowed.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/terrain-shadowed.glsl"
+        .frag_path   = "shaders/fragment/terrain-shadowed.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
+            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
+            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
+            { UTYPE_VEC3,      GL_U_VIEW_POS          },
+            { UTYPE_INT,       GL_U_TEXTURE0          },
+            { UTYPE_INT,       "visbuff",             },
+            { UTYPE_INT,       "visbuff_offset",      },
+            { UTYPE_IVEC4,     GL_U_MAP_RES,          },
+            { UTYPE_VEC2,      GL_U_MAP_POS,          },
+            { UTYPE_INT,       GL_U_SHADOW_MAP        },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.depth",
         .vertex_path = "shaders/vertex/depth.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/passthrough.glsl"
+        .frag_path   = "shaders/fragment/passthrough.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.animated.depth",
         .vertex_path = "shaders/vertex/skinned-depth.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/passthrough.glsl"
+        .frag_path   = "shaders/fragment/passthrough.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            { UTYPE_ARRAY,     GL_U_CURR_POSE_MATS    },
+            { UTYPE_ARRAY,     GL_U_INV_BIND_MATS     },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.static.textured-phong-shadowed",
         .vertex_path = "shaders/vertex/static-shadowed.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/textured-phong-shadowed.glsl"
+        .frag_path   = "shaders/fragment/textured-phong-shadowed.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "mesh.animated.textured-phong-shadowed",
         .vertex_path = "shaders/vertex/skinned-shadowed.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/textured-phong-shadowed.glsl"
+        .frag_path   = "shaders/fragment/textured-phong-shadowed.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            { UTYPE_ARRAY,     GL_U_CURR_POSE_MATS    },
+            { UTYPE_ARRAY,     GL_U_INV_BIND_MATS     },
+            { UTYPE_MAT4,      GL_U_NORMAL_MAT        },
+            { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
+            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
+            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
+            { UTYPE_VEC3,      GL_U_VIEW_POS          },
+            { UTYPE_INT,       GL_U_TEXTURE0          },
+            { UTYPE_INT,       GL_U_TEXTURE1          },
+            { UTYPE_INT,       GL_U_TEXTURE2          },
+            { UTYPE_INT,       GL_U_TEXTURE3          },
+            { UTYPE_INT,       GL_U_TEXTURE4          },
+            { UTYPE_INT,       GL_U_TEXTURE5          },
+            { UTYPE_INT,       GL_U_TEXTURE6          },
+            { UTYPE_INT,       GL_U_TEXTURE7          },
+            { UTYPE_INT,       GL_U_TEXTURE8          },
+            { UTYPE_INT,       GL_U_TEXTURE9          },
+            { UTYPE_INT,       GL_U_TEXTURE10         },
+            { UTYPE_INT,       GL_U_TEXTURE11         },
+            { UTYPE_INT,       GL_U_TEXTURE12         },
+            { UTYPE_INT,       GL_U_TEXTURE12         },
+            { UTYPE_INT,       GL_U_TEXTURE13         },
+            { UTYPE_INT,       GL_U_TEXTURE14         },
+            { UTYPE_INT,       GL_U_TEXTURE15         },
+            { UTYPE_COMPOSITE, GL_U_MATERIALS,        },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "statusbar",
         .vertex_path = "shaders/vertex/statusbar.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/statusbar.glsl"
+        .frag_path   = "shaders/fragment/statusbar.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_IVEC2,     GL_U_CURR_RES          },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "water",
         .vertex_path = "shaders/vertex/water.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/water.glsl"
+        .frag_path   = "shaders/fragment/water.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
+            { UTYPE_VEC3,      GL_U_VIEW_POS          },
+            { UTYPE_IVEC2,     GL_U_WATER_TILING      },
+            { UTYPE_INT,       GL_U_DUDV_MAP          },
+            { UTYPE_INT,       GL_U_NORMAL_MAP        },
+            { UTYPE_INT,       GL_U_REFRACT_TEX       },
+            { UTYPE_INT,       GL_U_REFLECT_TEX       },
+            { UTYPE_FLOAT,     GL_U_MOVE_FACTOR       },
+            { UTYPE_FLOAT,     GL_U_CAM_NEAR          },
+            { UTYPE_FLOAT,     GL_U_CAM_FAR           },
+            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
+            { UTYPE_INT,       "visbuff"              },
+            { UTYPE_INT,       "visbuff_offset"       },
+            { UTYPE_IVEC4,     GL_U_MAP_RES,          },
+            { UTYPE_VEC2,      GL_U_MAP_POS,          },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "ui",
         .vertex_path = "shaders/vertex/ui.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/ui.glsl"
+        .frag_path   = "shaders/fragment/ui.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_INT,       GL_U_TEXTURE0          },
+            {0}
+        },
     },
     {
         .prog_id     = (intptr_t)NULL,
         .name        = "minimap",
         .vertex_path = "shaders/vertex/static.glsl",
         .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/minimap.glsl"
+        .frag_path   = "shaders/fragment/minimap.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
+            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
+            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
+            { UTYPE_VEC3,      GL_U_VIEW_POS          },
+            { UTYPE_INT,       GL_U_TEXTURE0          },
+            { UTYPE_INT,       "visbuff"              },
+            { UTYPE_INT,       "visbuff_offset"       },
+            { UTYPE_IVEC4,     GL_U_MAP_RES,          },
+            { UTYPE_VEC2,      GL_U_MAP_POS,          },
+            {0}
+        },
     },
 };
 
@@ -314,7 +584,7 @@ bool R_GL_Shader_InitAll(const char *base_path)
 
     for(int i = 0; i < ARR_SIZE(s_shaders); i++){
 
-        struct shader_resource *res = &s_shaders[i];
+        struct shader *res = &s_shaders[i];
         GLuint vertex, geometry = 0, fragment;
 
         char path[512];
@@ -365,7 +635,7 @@ GLint R_GL_Shader_GetProgForName(const char *name)
 
     for(int i = 0; i < ARR_SIZE(s_shaders); i++) {
 
-        const struct shader_resource *curr = &s_shaders[i];
+        const struct shader *curr = &s_shaders[i];
 
         if(!strcmp(curr->name, name))
             return curr->prog_id;
@@ -380,7 +650,7 @@ const char *R_GL_Shader_GetName(GLuint prog)
 
     for(int i = 0; i < ARR_SIZE(s_shaders); i++) {
 
-        const struct shader_resource *curr = &s_shaders[i];
+        const struct shader *curr = &s_shaders[i];
         if(curr->prog_id == prog)
             return curr->name;
     }
@@ -388,3 +658,8 @@ const char *R_GL_Shader_GetName(GLuint prog)
     return NULL;
 }
     
+void R_GL_Shader_Install(const char *name)
+{
+
+}
+
