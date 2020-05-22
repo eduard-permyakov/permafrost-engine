@@ -39,6 +39,7 @@
 #include "gl_texture.h"
 #include "gl_render.h"
 #include "gl_assert.h"
+#include "gl_state.h"
 #include "../settings.h"
 #include "../main.h"
 #include "../ui.h"
@@ -361,12 +362,10 @@ static void render_init_ctx(struct render_init_arg *arg)
     R_GL_SetViewport(&vp[0], &vp[1], &vp[2], &vp[3]);
     R_GL_GlobalConfig();
 
-    if(!R_GL_Shader_InitAll(g_basepath)) {
-        arg->out_success = false;
-        return;
-    }
+    if(!R_GL_Shader_InitAll(g_basepath)
+    || !R_GL_Texture_Init()
+    || !R_GL_StateInit()) {
 
-    if(!R_GL_Texture_Init()) {
         arg->out_success = false;
         return;
     }
