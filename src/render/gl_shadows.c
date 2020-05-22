@@ -39,8 +39,8 @@
 #include "gl_uniforms.h"
 #include "gl_assert.h"
 #include "gl_shader.h"
+#include "gl_perf.h"
 #include "../main.h"
-#include "../perf.h"
 #include "../pf_math.h"
 #include "../config.h"
 #include "../collision.h"
@@ -114,7 +114,7 @@ static void make_light_frustum(vec3_t light_pos, vec3_t cam_pos, vec3_t cam_dir,
 
 void R_GL_InitShadows(void)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     glGenFramebuffers(1, &s_depth_map_FBO);
@@ -139,12 +139,12 @@ void R_GL_InitShadows(void)
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);  
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DepthPassBegin(const vec3_t *light_pos, const vec3_t *cam_pos, const vec3_t *cam_dir)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     assert(!s_depth_pass_active);
@@ -170,12 +170,12 @@ void R_GL_DepthPassBegin(const vec3_t *light_pos, const vec3_t *cam_pos, const v
     glCullFace(GL_FRONT);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DepthPassEnd(void)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     assert(s_depth_pass_active);
@@ -188,12 +188,12 @@ void R_GL_DepthPassEnd(void)
     glCullFace(GL_BACK);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     assert(s_depth_pass_active);
 
@@ -209,12 +209,12 @@ void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_SetShadowsEnabled(void *render_private, const bool *on)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
 
     struct render_private *priv = render_private;
     const char *map[][2] = {
@@ -236,7 +236,7 @@ void R_GL_SetShadowsEnabled(void *render_private, const bool *on)
             priv->shader_prog = to;
     }
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_LightFrustum(vec3_t light_pos, vec3_t cam_pos, vec3_t cam_dir, struct frustum *out)

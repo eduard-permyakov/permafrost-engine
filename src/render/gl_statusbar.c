@@ -37,11 +37,11 @@
 #include "gl_shader.h"
 #include "gl_uniforms.h"
 #include "gl_assert.h"
+#include "gl_perf.h"
 #include "../camera.h"
 #include "../pf_math.h"
 #include "../config.h"
 #include "../main.h"
-#include "../perf.h"
 
 #include <GL/glew.h>
 #include <assert.h>
@@ -56,7 +56,7 @@
 void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc, 
                          vec3_t *ent_top_pos_ws, const struct camera *cam)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     int width, height;
@@ -165,6 +165,6 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 

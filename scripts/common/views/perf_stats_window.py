@@ -37,7 +37,7 @@ import pf
 class PerfStatsWindow(pf.Window):
 
     WIDTH = 600
-    HEIGHT = 480
+    HEIGHT = 500
 
     def __init__(self):
         vresx, vresy = (1920, 1080)
@@ -53,6 +53,7 @@ class PerfStatsWindow(pf.Window):
         self.selected_perfstats = {}
         self.paused = False
         self.trace_python = pf.settings_get("pf.debug.trace_python")
+        self.trace_gpu = pf.settings_get("pf.debug.trace_gpu")
 
     def frame_perf_tab(self):
 
@@ -141,7 +142,13 @@ class PerfStatsWindow(pf.Window):
         old_trace_python = self.trace_python
         self.trace_python = True if self.checkbox("Trace Python", self.trace_python) else False
         if old_trace_python != self.trace_python:
-            pf.settings_set("pf.debug.trace_python", self.trace_python)
+            pf.settings_set("pf.debug.trace_python", self.trace_python, persist=False)
+
+        self.layout_row_dynamic(20, 1)
+        old_trace_gpu = self.trace_gpu
+        self.trace_gpu = True if self.checkbox("Trace GPU", self.trace_gpu) else False
+        if old_trace_gpu != self.trace_gpu:
+            pf.settings_set("pf.debug.trace_gpu", self.trace_gpu, persist=False)
 
         def on_pause_resume():
             self.paused = not self.paused

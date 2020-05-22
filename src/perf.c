@@ -237,6 +237,7 @@ bool Perf_Init(void)
         kh_destroy(pstate, s_thread_state_table);
         return false;
     }
+    assert(NFRAMES_LOGGED >= 3);
     return true;
 }
 
@@ -306,7 +307,7 @@ void Perf_Pop(void)
     uint32_t idx = vec_idx_pop(&ps->perf_stack);
     assert(idx < vec_size(&ps->perf_trees[ps->perf_tree_idx]));
     struct perf_entry *pe = &vec_AT(&ps->perf_trees[ps->perf_tree_idx], idx);
-    pe->pc_delta = SDL_GetPerformanceCounter() - pe->pc_delta;
+    pe->pc_delta = abs(SDL_GetPerformanceCounter() - pe->pc_delta);
 }
 
 void Perf_PushGPU(const char *name, uint32_t cookie)
@@ -349,8 +350,11 @@ void Perf_BeginTick(void)
 
     khiter_t k = kh_get(pstate, s_thread_state_table, GPU_STATE_KEY);
     if(k != kh_end(s_thread_state_table));
+
+    /* commands are just queued now, to be executed next tick when the 
+     * perf_tree_idx moves forward by 1 */
     struct perf_state *gpu_ps = &kh_val(s_thread_state_table, k);
-    int write_idx = (gpu_ps->perf_tree_idx + 2) % NFRAMES_LOGGED;
+    int write_idx = (gpu_ps->perf_tree_idx + 3) % NFRAMES_LOGGED;
 
     for(int i = 0; i < vec_size(&gpu_ps->perf_trees[write_idx]); i++) {
     
@@ -424,7 +428,7 @@ size_t Perf_Report(size_t maxout, struct perf_info **out)
 
             if(k == kh_get(pstate, s_thread_state_table, GPU_STATE_KEY)) {
                 uint64_t hz = GPU_TIMER_HZ;
-                uint64_t delta = entry->end.gpu_ts - entry->begin.gpu_ts;
+                uint64_t delta = abs(entry->end.gpu_ts - entry->begin.gpu_ts);
                 info->entries[i].pc_delta = delta;
                 info->entries[i].ms_delta = (delta * 1000.0 / hz);
             }else{

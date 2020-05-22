@@ -56,6 +56,12 @@
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
 /*****************************************************************************/
+/* GLOBAL VARIABLES                                                          */
+/*****************************************************************************/
+
+bool g_trace_gpu;
+
+/*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
@@ -188,7 +194,7 @@ static void vsync_commit(const struct sval *new_val)
     R_PushCmd((struct rcmd){
         .func = render_set_swap,
         .nargs = 1,
-        .args = { R_PushArg(&new_val->as_bool, sizeof(int)) }
+        .args = { R_PushArg(&new_val->as_bool, sizeof(bool)) }
     });
 }
 
@@ -218,6 +224,20 @@ static void debug_logmask_commit(const struct sval *new_val)
         .func = render_set_logmask,
         .nargs = 1,
         .args = { R_PushArg(&new_val->as_int, sizeof(int)) },
+    });
+}
+
+static void render_set_trace_gpu(const bool *on)
+{
+    g_trace_gpu = *on; 
+}
+
+static void trace_gpu_commit(const struct sval *new_val)
+{
+    R_PushCmd((struct rcmd){
+        .func = render_set_trace_gpu,
+        .nargs = 1,
+        .args = { R_PushArg(&new_val->as_bool, sizeof(bool)) }
     });
 }
 
@@ -607,11 +627,23 @@ bool R_Init(const char *base_path)
         .name = "pf.debug.render_log_mask",
         .val = (struct sval) {
             .type = ST_TYPE_INT,
-            .as_bool = 0x1,
+            .as_int = 0x1,
         },
         .prio = 0,
         .validate = int_val_validate,
         .commit = debug_logmask_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.trace_gpu",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false,
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = trace_gpu_commit,
     });
     assert(status == SS_OKAY);
 

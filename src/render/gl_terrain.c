@@ -39,8 +39,8 @@
 #include "gl_ringbuffer.h"
 #include "gl_assert.h"
 #include "gl_uniforms.h"
+#include "gl_perf.h"
 #include "../main.h"
-#include "../perf.h"
 #include "../map/public/tile.h"
 
 #include <assert.h>
@@ -64,7 +64,7 @@ static struct map_resolution  s_res;
 void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures, 
                   const struct map_resolution *res)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     size_t nchunks = res->chunk_w * res->chunk_h;
@@ -88,15 +88,15 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures,
 
     s_res = *res;
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_MapUpdateFog(void *buff, const size_t *size)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     R_GL_RingbufferPush(s_fog_ring, buff, *size);
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_MapShutdown(void)
@@ -118,7 +118,7 @@ void R_GL_MapUpdateFogClear(void)
 
 void R_GL_MapBegin(const bool *shadows, const vec2_t *pos)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     assert(!s_map_ctx_active);
 
@@ -138,25 +138,25 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos)
     glUniform2fv(loc, 1, pos->raw);
 
     s_map_ctx_active = true;
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_MapEnd(void)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     assert(s_map_ctx_active);
     s_map_ctx_active = false;
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_MapInvalidate(void)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     R_GL_RingbufferSyncLast(s_fog_ring);
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_MapFogBindLast(GLuint tunit, GLuint shader_prog, const char *uname)

@@ -41,6 +41,7 @@
 #include "gl_assert.h"
 #include "gl_render.h"
 #include "gl_ringbuffer.h"
+#include "gl_perf.h"
 #include "render_private.h"
 #include "public/render.h"
 #include "../game/public/game.h"
@@ -51,7 +52,6 @@
 #include "../map/public/map.h"
 #include "../collision.h"
 #include "../main.h"
-#include "../perf.h"
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -86,7 +86,7 @@ struct render_minimap_ctx{
 
 void draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, const struct map *map)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     /* First, find the 4 points where the camera frustum intersects the ground plane (y=0).
      * If there is no intersection, exit early.*/
     vec3_t tr, tl, br, bl;
@@ -196,12 +196,12 @@ void draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, const s
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_model_mat)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
 
     const bool fval = false;
     vec2_t pos = (vec2_t){0.0f, 0.0f};
@@ -222,7 +222,7 @@ static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_mo
     R_GL_MapEnd();
     glDisable(GL_CLIP_DISTANCE0);
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 /* for the minimap, we just blit a pre-rendered water texture. It is too expensive 
@@ -230,7 +230,7 @@ static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_mo
  */
 static void draw_minimap_water(const struct map *map, struct coord cc)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     assert(s_ctx.water_texture.id > 0);
 
     struct map_resolution res;
@@ -259,13 +259,13 @@ static void draw_minimap_water(const struct map *map, struct coord cc)
                       GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glDisable(GL_SCISSOR_TEST);
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 static void create_minimap_texture(const struct map *map, void **chunk_rprivates, 
                                    mat4x4_t *chunk_model_mats)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
 
     struct map_resolution res;
     M_GetResolution(map, &res);
@@ -303,12 +303,12 @@ static void create_minimap_texture(const struct map *map, void **chunk_rprivates
     s_ctx.minimap_texture.tunit = GL_TEXTURE0;
     R_GL_Texture_AddExisting("__minimap__", s_ctx.minimap_texture.id);
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 static void create_water_texture(const struct map *map)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
 
     GLuint fb;
     glGenFramebuffers(1, &fb);
@@ -351,12 +351,12 @@ static void create_water_texture(const struct map *map)
     s_ctx.water_texture.tunit = GL_TEXTURE1;
     R_GL_Texture_AddExisting("__minimap_water__", s_ctx.water_texture.id);
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 static void setup_ortho_view_uniforms(const struct map *map)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
 
     struct map_resolution res;
     M_GetResolution(map, &res);
@@ -382,12 +382,12 @@ static void setup_ortho_view_uniforms(const struct map *map)
     vec2_t top_right = (vec2_t){  (map_dim/2), -(map_dim/2) };
     Camera_TickFinishOrthographic((struct camera*)map_cam, bot_left, top_right);
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 static void setup_verts(void)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
 
     struct vertex map_verts[] = {
         (struct vertex) {
@@ -424,7 +424,7 @@ static void setup_verts(void)
         (void*)offsetof(struct vertex, uv));
     glEnableVertexAttribArray(1);
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 /*****************************************************************************/
@@ -434,7 +434,7 @@ static void setup_verts(void)
 void R_GL_MinimapBake(const struct map *map, void **chunk_rprivates, 
                       mat4x4_t *chunk_model_mats)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     M_GetResolution(map, &s_ctx.res);
@@ -458,13 +458,13 @@ void R_GL_MinimapBake(const struct map *map, void **chunk_rprivates,
     setup_verts();
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate, 
                              mat4x4_t *chunk_model, const int *chunk_r, const int *chunk_c)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     setup_ortho_view_uniforms(map);
 
@@ -492,13 +492,13 @@ void R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
     glDeleteFramebuffers(1, &fb);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_MinimapRender(const struct map *map, const struct camera *cam, 
                         vec2_t *center_pos, const int *side_len_px)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     int width, height;
@@ -575,7 +575,7 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam,
     glDisable(GL_STENCIL_TEST);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_MinimapFree(void)

@@ -35,7 +35,7 @@
 
 #include "gl_ringbuffer.h"
 #include "gl_assert.h"
-#include "../perf.h"
+#include "gl_perf.h"
 #include "../lib/public/pf_string.h"
 
 #include <stdlib.h>
@@ -91,10 +91,10 @@ struct gl_ring{
 
 static bool ring_wait_one(struct gl_ring *ring)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
 
     if(ring->nmarkers == 0)
-        PERF_RETURN(false);
+        GL_PERF_RETURN(false);
 
     GLenum result = glClientWaitSync(ring->fences[ring->imark_tail], 0, TIMEOUT_NSEC);
     glDeleteSync(ring->fences[ring->imark_tail]);
@@ -103,9 +103,9 @@ static bool ring_wait_one(struct gl_ring *ring)
     ring->nmarkers--;
 
     if(result == GL_TIMEOUT_EXPIRED || result == GL_WAIT_FAILED)
-        PERF_RETURN(false);
+        GL_PERF_RETURN(false);
 
-    PERF_RETURN(true);
+    GL_PERF_RETURN(true);
 }
 
 static bool ring_section_free(const struct gl_ring *ring, size_t size)

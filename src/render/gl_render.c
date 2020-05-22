@@ -41,6 +41,7 @@
 #include "gl_material.h"
 #include "gl_assert.h"
 #include "gl_uniforms.h"
+#include "gl_perf.h"
 #include "public/render.h"
 #include "../entity.h"
 #include "../camera.h"
@@ -50,7 +51,6 @@
 #include "../ui.h"
 #include "../map/public/map.h"
 #include "../main.h"
-#include "../perf.h"
 
 #include <GL/glew.h>
 
@@ -175,7 +175,7 @@ static void r_gl_set_vec4(const vec4_t *vec, const char *shader_name, const char
 
 void R_GL_Init(struct render_private *priv, const char *shader, const struct vertex *vbuff)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     struct mesh *mesh = &priv->mesh;
 
@@ -269,12 +269,12 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
 
     assert(priv->shader_prog != -1 && priv->shader_prog_dp != -1);
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_Draw(const void *render_private, mat4x4_t *model)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const struct render_private *priv = render_private;
@@ -294,12 +294,12 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model)
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_BeginFrame(void)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
@@ -308,12 +308,12 @@ void R_GL_BeginFrame(void)
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const char *shaders[] = {
@@ -341,12 +341,12 @@ void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
     }
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_SetProj(const mat4x4_t *proj)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const char *shaders[] = {
@@ -371,12 +371,12 @@ void R_GL_SetProj(const mat4x4_t *proj)
         r_gl_set_mat4(proj, shaders[i], GL_U_PROJECTION);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_SetLightSpaceTrans(const mat4x4_t *trans)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const char *shaders[] = {
@@ -391,12 +391,12 @@ void R_GL_SetLightSpaceTrans(const mat4x4_t *trans)
         r_gl_set_mat4(trans, shaders[i], GL_U_LS_TRANS);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_SetShadowMap(const GLuint shadow_map_tex_id)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const char *shaders[] = {
@@ -419,12 +419,12 @@ void R_GL_SetShadowMap(const GLuint shadow_map_tex_id)
     }
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_SetClipPlane(const vec4_t plane_eq)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const char *shaders[] = {
@@ -440,13 +440,13 @@ void R_GL_SetClipPlane(const vec4_t plane_eq)
         r_gl_set_vec4(&plane_eq, shaders[i], GL_U_CLIP_PLANE0);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, 
                           mat4x4_t *normal_mat, const size_t *count)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const char *shaders[] = {
@@ -464,12 +464,12 @@ void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses,
     }
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_SetAmbientLightColor(const vec3_t *color)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const char *shaders[] = {
@@ -493,12 +493,12 @@ void R_GL_SetAmbientLightColor(const vec3_t *color)
     }
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_SetLightEmitColor(const vec3_t *color)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const char *shaders[] = {
@@ -523,12 +523,12 @@ void R_GL_SetLightEmitColor(const vec3_t *color)
     }
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_SetLightPos(const vec3_t *pos)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const char *shaders[] = {
@@ -553,12 +553,12 @@ void R_GL_SetLightPos(const vec3_t *pos)
     }
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_SetScreenspaceDrawMode(void)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     int width, height;
@@ -577,12 +577,12 @@ void R_GL_SetScreenspaceDrawMode(void)
     glDisable(GL_CULL_FACE);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, const struct camera *cam)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     vec3_t *vbuff;
@@ -674,12 +674,12 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
     free(vbuff);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     vec3_t vbuff[2];
@@ -744,13 +744,13 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
     glDeleteBuffers(1, &VBO);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model, 
                   const vec3_t *color, const float *t)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     vec3_t vbuff[2];
@@ -799,12 +799,12 @@ void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
     glDeleteBuffers(1, &VBO);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DrawOBB(const struct entity *ent)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     if(!(ent->flags & ENTITY_FLAG_COLLISION))
@@ -880,13 +880,13 @@ void R_GL_DrawOBB(const struct entity *ent)
     glDeleteBuffers(1, &VBO);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size, 
                     const vec3_t *color, const float *width)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLuint VAO, VBO;
@@ -949,12 +949,12 @@ void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size,
     glDeleteBuffers(1, &VBO);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, const bool *anim)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const struct render_private *priv = render_private;
@@ -977,7 +977,7 @@ void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, const bool *a
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DumpFBColor_PPM(const char *filename, const int *width, const int *height)
@@ -1066,7 +1066,7 @@ void R_GL_DumpFBDepth_PPM(const char *filename, const int *width, const int *hei
 void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float *width, 
                               const vec3_t *color, const struct map *map)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLuint VAO, VBO;
@@ -1134,12 +1134,12 @@ void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float
     glDeleteBuffers(1, &VBO);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t *color, const struct map *map)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     vec2_t delta;
@@ -1221,12 +1221,12 @@ void R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t 
     glDeleteBuffers(1, &VBO);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DrawQuad(vec2_t corners[static 4], const float *width, const vec3_t *color, const struct map *map)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     vec2_t lines[][2] = {
@@ -1239,13 +1239,13 @@ void R_GL_DrawQuad(vec2_t corners[static 4], const float *width, const vec3_t *c
     for(int i = 0; i < ARR_SIZE(lines); i++)
         R_GL_DrawLine(lines[i], width, color, map);
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *count, 
                               mat4x4_t *model, const struct map *map)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     struct colored_vert surf_vbuff[*count * 4 * 3];
@@ -1372,13 +1372,13 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
     glDeleteBuffers(1, &VBO);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_t *count,
                         mat4x4_t *model, const struct map *map)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLuint VAO, VBO;
@@ -1460,13 +1460,13 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
     glDeleteBuffers(1, &VBO);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays, 
                            const size_t *num_vos, const struct map *map)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     const float RAY_LEN = 150.0f;
@@ -1554,39 +1554,38 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
     glDeleteBuffers(1, &VBO);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_SetViewport(int *x, int *y, int *w, int *h)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     glViewport(*x, *y, *w, *h);
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_GlobalConfig(void)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
 
     glProvokingVertex(GL_FIRST_VERTEX_CONVENTION); 
     glFrontFace(GL_CW);
     glCullFace(GL_BACK);
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_TimestampForCookie(uint32_t *cookie, uint64_t *out)
 {
     GLuint timer_query = *cookie;
 
-    GLuint avail = GL_FALSE;
-    glGetQueryObjectuiv(timer_query, GL_QUERY_RESULT_AVAILABLE, &avail);
+    GLint avail = GL_FALSE;
+    glGetQueryObjectiv(timer_query, GL_QUERY_RESULT_AVAILABLE, &avail);
 
     if(!avail) {
-        fprintf(stderr, "WARNING: Timestamp query result not yet available. This may negatively impact performance.");
+        fprintf(stderr, "WARNING: Timestamp query result not yet available. This may negatively impact performance.\n");
+        fflush(stderr);
     }
-
-    extern unsigned long g_frame_idx;
 
     glGetQueryObjectui64v(timer_query, GL_QUERY_RESULT, out);
     glDeleteQueries(1, &timer_query);

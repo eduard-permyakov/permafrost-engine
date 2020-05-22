@@ -39,8 +39,8 @@
 #include "gl_uniforms.h"
 #include "gl_shader.h"
 #include "gl_render.h"
+#include "gl_perf.h"
 #include "../main.h"
-#include "../perf.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/stb_image.h"
 
@@ -65,7 +65,7 @@ static struct render_ui_ctx{
 
 static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
 
     int w, h;
     Engine_WinDrawableSize(&w, &h);
@@ -126,7 +126,7 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
         offset += cmd->elem_count;
     }
 
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 /*****************************************************************************/
@@ -190,7 +190,7 @@ void R_GL_UI_Shutdown(void)
 
 void R_GL_UI_Render(const struct nk_draw_list *dl)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     /* setup global state */
@@ -230,12 +230,12 @@ void R_GL_UI_Render(const struct nk_draw_list *dl)
     glDisable(GL_SCISSOR_TEST);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
 void R_GL_UI_UploadFontAtlas(void *image, const int *w, const int *h)
 {
-    PERF_ENTER();
+    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     glGenTextures(1, &s_ctx.font_tex);
@@ -246,6 +246,6 @@ void R_GL_UI_UploadFontAtlas(void *image, const int *w, const int *h)
                 GL_RGBA, GL_UNSIGNED_BYTE, image);
 
     GL_ASSERT_OK();
-    PERF_RETURN_VOID();
+    GL_PERF_RETURN_VOID();
 }
 
