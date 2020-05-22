@@ -65,10 +65,15 @@ void   R_GL_SetViewport(int *x, int *y, int *w, int *h);
 void   R_GL_InitShadows(void);
 vec3_t R_GL_GetLightPos(void);
 void   R_GL_SetLightSpaceTrans(const mat4x4_t *trans);
-void   R_GL_SetShadowMap(const GLuint shadow_map_tex_id);
+void   R_GL_ShadowMapBind(void);
 
 /* Water */
 
 void   R_GL_SetClipPlane(vec4_t plane_eq);
+
+/* Terrain */
+void   R_GL_MapFogBindLast(GLuint tunit, GLuint shader_prog, const char *uname);
+void   R_GL_MapUpdateFogClear(void);
+
 
 #endif

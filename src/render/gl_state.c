@@ -34,6 +34,8 @@
  */
 
 #include "gl_state.h"
+#include "gl_shader.h"
+#include "gl_assert.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/mpool.h"
@@ -42,6 +44,8 @@
 #include <string.h>
 
 
+#define NINSTALLED_CACHE (32)
+
 struct buff{
     char raw[16384];
 };
@@ -49,13 +53,17 @@ struct buff{
 struct compval{
     enum utype type;
     uint32_t   hash;
+    size_t     itemsize;
+    size_t     nitems;
     mp_ref_t   descs;
     mp_ref_t   data; 
 };
 
 struct arrval{
     enum utype type;
+    enum utype itemtype;
     uint32_t   hash;
+    size_t     nitems;
     mp_ref_t   data;
 };
 
@@ -66,7 +74,8 @@ struct puval{
         struct arrval av;
         struct compval cv;
     };
-    bool dirty;
+    size_t ninstalled;
+    GLuint installed_progs[NINSTALLED_CACHE];
 };
 
 KHASH_MAP_INIT_STR(puval, struct puval)
@@ -122,42 +131,136 @@ static bool uval_equal(const struct uval *a, const struct uval *b)
 
 static void uval_install(GLuint shader_prog, const char *uname, const struct uval *uv)
 {
-    glUseProgram(shader_prog);
     GLuint loc = glGetUniformLocation(shader_prog, uname);
 
     switch(uv->type) {
     case UTYPE_FLOAT:
-        glUniform1fv(loc,  1, &uv->val.as_float);
+        glUniform1fv(loc, 1, &uv->val.as_float);
         break;
     case UTYPE_VEC2:
-        glUniform1fv(loc,  2, uv->val.as_vec2.raw);
+        glUniform2fv(loc, 1, uv->val.as_vec2.raw);
         break;
     case UTYPE_VEC3:
-        glUniform1fv(loc,  3, uv->val.as_vec3.raw);
+        glUniform3fv(loc, 1, uv->val.as_vec3.raw);
         break;
     case UTYPE_VEC4:
-        glUniform1fv(loc,  4, uv->val.as_vec4.raw);
+        glUniform4fv(loc, 1, uv->val.as_vec4.raw);
         break;
     case UTYPE_INT:
-        glUniform1iv(loc,  1, &uv->val.as_int);
+        glUniform1iv(loc, 1, &uv->val.as_int);
         break;
     case UTYPE_IVEC2:
-        glUniform1iv(loc,  2, uv->val.as_ivec2);
+        glUniform2iv(loc, 1, uv->val.as_ivec2);
         break;
     case UTYPE_IVEC3:
-        glUniform1iv(loc,  3, uv->val.as_ivec3);
+        glUniform3iv(loc, 1, uv->val.as_ivec3);
         break;
     case UTYPE_IVEC4:
-        glUniform1iv(loc,  4, uv->val.as_ivec4);
+        glUniform4iv(loc, 1, uv->val.as_ivec4);
         break;
     case UTYPE_MAT3:
-        glUniform1fv(loc,  9, uv->val.as_mat3.raw);
+        glUniformMatrix3fv(loc, 1, GL_FALSE, uv->val.as_mat3.raw);
         break;
     case UTYPE_MAT4:
-        glUniform1fv(loc, 16, uv->val.as_mat4.raw);
+        glUniformMatrix4fv(loc, 1, GL_FALSE, uv->val.as_mat4.raw);
         break;
     default:
         assert(0);
+    }
+}
+
+static void uval_array_install(GLuint shader_prog, const char *uname, const struct arrval *av)
+{
+    GLuint loc = glGetUniformLocation(shader_prog, uname);
+    void *data = mp_buff_entry(&s_buff_pool, av->data)->raw;
+
+    switch(av->itemtype) {
+    case UTYPE_FLOAT:
+        glUniform1fv(loc, av->nitems, data);
+        break;
+    case UTYPE_VEC2:
+        glUniform2fv(loc, av->nitems, data);
+        break;
+    case UTYPE_VEC3:
+        glUniform3fv(loc, av->nitems, data);
+        break;
+    case UTYPE_VEC4:
+        glUniform4fv(loc, av->nitems, data);
+        break;
+    case UTYPE_INT:
+        glUniform1iv(loc, av->nitems, data);
+        break;
+    case UTYPE_IVEC2:
+        glUniform2iv(loc, av->nitems, data);
+        break;
+    case UTYPE_IVEC3:
+        glUniform3iv(loc, av->nitems, data);
+        break;
+    case UTYPE_IVEC4:
+        glUniform4iv(loc, av->nitems, data);
+        break;
+    case UTYPE_MAT3:
+        glUniformMatrix3fv(loc, av->nitems, GL_FALSE, data);
+        break;
+    case UTYPE_MAT4:
+        glUniformMatrix4fv(loc, av->nitems, GL_FALSE, data);
+        break;
+    default:
+        assert(0);
+    }
+}
+
+static void uval_composite_install(GLuint shader_prog, const char *uname, const struct compval *cv)
+{
+    unsigned char *data = (unsigned char*)mp_buff_entry(&s_buff_pool, cv->data)->raw;
+    const struct mdesc *descs = (const struct mdesc*)mp_buff_entry(&s_buff_pool, cv->descs)->raw;
+
+    for(int i = 0; i < cv->nitems; i++) {
+    
+        const struct mdesc *curr = descs;
+        while(curr->name) {
+
+            char uname_full[256];
+            pf_snprintf(uname_full, sizeof(uname_full), "%s[%d].%s", uname, i, curr->name);
+            GLuint loc = glGetUniformLocation(shader_prog, uname_full);
+
+            switch(curr->type) {
+            case UTYPE_FLOAT:
+                glUniform1fv(loc, 1, (void*)(data + curr->offset));
+                break;
+            case UTYPE_VEC2:
+                glUniform2fv(loc, 1, (void*)(data + curr->offset));
+                break;
+            case UTYPE_VEC3:
+                glUniform3fv(loc, 1, (void*)(data + curr->offset));
+                break;
+            case UTYPE_VEC4:
+                glUniform4fv(loc, 1, (void*)(data + curr->offset));
+                break;
+            case UTYPE_INT:
+                glUniform1iv(loc, 1, (void*)(data + curr->offset));
+                break;
+            case UTYPE_IVEC2:
+                glUniform2iv(loc, 1, (void*)(data + curr->offset));
+                break;
+            case UTYPE_IVEC3:
+                glUniform3iv(loc, 1, (void*)(data + curr->offset));
+                break;
+            case UTYPE_IVEC4:
+                glUniform4iv(loc, 1, (void*)(data + curr->offset));
+                break;
+            case UTYPE_MAT3:
+                glUniformMatrix3fv(loc, 1, GL_FALSE, (void*)(data + curr->offset));
+                break;
+            case UTYPE_MAT4:
+                glUniformMatrix4fv(loc, 1, GL_FALSE, (void*)(data + curr->offset));
+                break;
+            default:
+                assert(0);
+            }
+            curr++;
+        }
+        data += cv->itemsize;
     }
 }
 
@@ -175,14 +278,20 @@ static uint32_t hash_adler32(const void *data, size_t len)
      return (s2 << 16) | s1;
 }
 
-static size_t data_len(const struct mdesc *descs, size_t nitems, void *data)
+static bool uval_installed(const struct puval *p, GLuint prog)
 {
-    size_t len = 0;
-    while(descs->name) {
-        len += uval_size(descs->type);
-        descs++;
+    for(int i = 0; i < p->ninstalled; i++) {
+        if(p->installed_progs[i] == prog)
+            return true;
     }
-    return len * nitems;
+    return false;
+}
+
+static void uval_installed_add(struct puval *p, GLuint prog)
+{
+    if(p->ninstalled == NINSTALLED_CACHE)
+        return;
+    p->installed_progs[p->ninstalled++] = prog;
 }
 
 /*****************************************************************************/
@@ -239,23 +348,48 @@ void R_GL_StateSet(const char *uname, struct uval val)
     assert(p);
     *p = (struct puval){
         .v = val,
-        .dirty = true,
+        .ninstalled = 0,
     };
+}
+
+bool R_GL_StateGet(const char *uname, struct uval *out)
+{
+    struct puval *p = NULL;
+    khiter_t k = kh_get(puval, s_state_table, uname);
+
+    if(k == kh_end(s_state_table))
+        return false;
+
+    p = &kh_value(s_state_table, k);
+    if(p->v.type == UTYPE_COMPOSITE || p->v.type == UTYPE_ARRAY)
+        return false;
+
+    *out = p->v;
+    return true;
 }
 
 void R_GL_StateInstall(const char *uname, GLuint shader_prog)
 {
     khiter_t k = kh_get(puval, s_state_table, uname);
-    assert(k != kh_end(s_state_table));
-    struct puval *p = &kh_value(s_state_table, k);
-
-    if(!p->dirty)
+    if(k == kh_end(s_state_table))
         return;
 
-    uval_install(shader_prog, uname, &p->v);
+    struct puval *p = &kh_value(s_state_table, k);
+    if(uval_installed(p, shader_prog))
+        return;
+
+    if(p->v.type == UTYPE_ARRAY) {
+        uval_array_install(shader_prog, uname, &p->av);
+    }else if(p->v.type == UTYPE_COMPOSITE) {
+        uval_composite_install(shader_prog, uname, &p->cv);
+    }else{
+        uval_install(shader_prog, uname, &p->v);
+    }
+
+    uval_installed_add(p, shader_prog);
 }
 
-void R_GL_SetArray(const char *uname, enum utype itemtype, size_t size, void *data)
+void R_GL_StateSetArray(const char *uname, enum utype itemtype, size_t size, void *data)
 {
     size_t len = uval_size(itemtype) * size;
     uint32_t hash = hash_adler32(data, len);
@@ -265,8 +399,9 @@ void R_GL_SetArray(const char *uname, enum utype itemtype, size_t size, void *da
 
     if(k != kh_end(s_state_table)) {
         p = &kh_value(s_state_table, k);
-        if(p->cv.hash == hash)
+        if(p->av.hash == hash)
             return;
+        mp_buff_free(&s_buff_pool, p->av.data);
     }else{
     
         int status;
@@ -283,17 +418,19 @@ void R_GL_SetArray(const char *uname, enum utype itemtype, size_t size, void *da
     *p = (struct puval){
         .av = (struct arrval){
             .type = UTYPE_ARRAY,
+            .itemtype = itemtype,
             .hash = hash,
+            .nitems = size,
             .data = data_ref
         },
-        .dirty = true
+        .ninstalled = true
     };
 }
 
 void R_GL_StateSetComposite(const char *uname, const struct mdesc *descs, 
-                            size_t nitems, void *data)
+                            size_t itemsize, size_t nitems, void *data)
 {
-    size_t len = data_len(descs, nitems, data);
+    size_t len = nitems * itemsize;
     uint32_t hash = hash_adler32(data, len);
 
     struct puval *p = NULL;
@@ -303,6 +440,8 @@ void R_GL_StateSetComposite(const char *uname, const struct mdesc *descs,
         p = &kh_value(s_state_table, k);
         if(p->cv.hash == hash)
             return;
+        mp_buff_free(&s_buff_pool, p->cv.descs);
+        mp_buff_free(&s_buff_pool, p->cv.data);
     }else{
     
         int status;
@@ -322,16 +461,19 @@ void R_GL_StateSetComposite(const char *uname, const struct mdesc *descs,
     while(curr->name) {
         *base++ = *curr++;
     }
+    *base = (struct mdesc){0};
     memcpy(mp_buff_entry(&s_buff_pool, data_ref)->raw, data, len);
 
     *p = (struct puval){
         .cv = (struct compval){
             .type = UTYPE_COMPOSITE,
             .hash = hash,
+            .itemsize = itemsize,
+            .nitems = nitems,
             .descs = desc_ref,
             .data = data_ref
         },
-        .dirty = true
+        .ninstalled = 0
     };
 }
 

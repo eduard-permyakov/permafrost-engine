@@ -38,8 +38,9 @@
 #include "gl_shader.h"
 #include "gl_ringbuffer.h"
 #include "gl_assert.h"
-#include "gl_uniforms.h"
+#include "gl_state.h"
 #include "gl_perf.h"
+#include "render_private.h"
 #include "../main.h"
 #include "../map/public/tile.h"
 
@@ -74,17 +75,13 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures,
     bool status = R_GL_Texture_MakeArrayMap(map_texfiles, *num_textures, &s_map_textures);
     assert(status);
 
-    GLuint shaders[] = {
-        R_GL_Shader_GetProgForName("terrain"),
-        R_GL_Shader_GetProgForName("terrain-shadowed"),
-    };
-
-    for(int i = 0; i < ARR_SIZE(shaders); i++) {
-
-        glUseProgram(shaders[i]);
-        GLuint loc = glGetUniformLocation(shaders[i], GL_U_MAP_RES);
-        glUniform4i(loc, res->chunk_w, res->chunk_h, res->tile_w, res->tile_h);
-    }
+    R_GL_StateSet(GL_U_MAP_RES, (struct uval){
+        .type = UTYPE_IVEC4,
+        .val.as_ivec4[0] = res->chunk_w, 
+        .val.as_ivec4[1] = res->chunk_h,
+        .val.as_ivec4[2] = res->tile_w,
+        .val.as_ivec4[3] = res->tile_h
+    });
 
     s_res = *res;
     GL_ASSERT_OK();
@@ -129,13 +126,15 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos)
         shader_prog = R_GL_Shader_GetProgForName("terrain");
     }
     assert(shader_prog != -1);
-    glUseProgram(shader_prog);
+    R_GL_Shader_InstallProg(shader_prog);
 
-    R_GL_Texture_ActivateArray(&s_map_textures, shader_prog);
+    R_GL_Texture_BindArray(&s_map_textures, shader_prog);
     R_GL_RingbufferBindLast(s_fog_ring, GL_TEXTURE1, shader_prog, "visbuff");
 
-    GLuint loc = glGetUniformLocation(shader_prog, GL_U_MAP_POS);
-    glUniform2fv(loc, 1, pos->raw);
+	R_GL_StateSet(GL_U_MAP_POS, (struct uval){
+        .type = UTYPE_VEC2,
+        .val.as_vec2 = *pos
+	});
 
     s_map_ctx_active = true;
     GL_PERF_RETURN_VOID();

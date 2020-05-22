@@ -39,7 +39,7 @@
 #include "gl_vertex.h"
 #include "gl_shader.h"
 #include "gl_assert.h"
-#include "gl_uniforms.h"
+#include "gl_state.h"
 #include "gl_perf.h"
 #include "render_private.h"
 #include "public/render.h"
@@ -97,7 +97,7 @@ static struct render_water_ctx s_ctx;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void save_gl_state(struct water_gl_state *out, GLuint shader_prog)
+static void save_gl_state(struct water_gl_state *out)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -106,11 +106,12 @@ static void save_gl_state(struct water_gl_state *out, GLuint shader_prog)
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &out->fb);
     glGetFloatv(GL_COLOR_CLEAR_VALUE, out->clear_clr);
 
-    GLuint sampler_loc = glGetUniformLocation(shader_prog, GL_U_VIEW_POS);
-    glGetUniformfv(shader_prog, sampler_loc, out->u_cam_pos.raw);
+    struct uval pval, tval;
+    R_GL_StateGet(GL_U_VIEW_POS, &pval);
+    R_GL_StateGet(GL_U_VIEW, &tval);
 
-    sampler_loc = glGetUniformLocation(shader_prog, GL_U_VIEW);
-    glGetUniformfv(shader_prog, sampler_loc, out->u_view.raw);
+    out->u_cam_pos = pval.val.as_vec3;
+    out->u_view = tval.val.as_mat4;
 
     GL_PERF_RETURN_VOID();
 }
@@ -303,22 +304,35 @@ static void setup_texture_uniforms(GLuint shader_prog, GLuint refract_tex,
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    GLuint sampler_loc;
-
-    sampler_loc = glGetUniformLocation(shader_prog, GL_U_REFRACT_TEX);
+	/* refraction texture */
     glActiveTexture(REFRACT_TUNIT);
     glBindTexture(GL_TEXTURE_2D, refract_tex);
-    glUniform1i(sampler_loc, REFRACT_TUNIT - GL_TEXTURE0);
 
-    sampler_loc = glGetUniformLocation(shader_prog, GL_U_REFRACT_DEPTH);
+    R_GL_StateSet(GL_U_REFRACT_TEX, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = REFRACT_TUNIT - GL_TEXTURE0
+    });
+    R_GL_StateInstall(GL_U_REFRACT_TEX, shader_prog);
+
+	/* refraction depth texture */
     glActiveTexture(REFRACT_DEPTH_TUNIT);
     glBindTexture(GL_TEXTURE_2D, refract_depth);
-    glUniform1i(sampler_loc, REFRACT_DEPTH_TUNIT - GL_TEXTURE0);
 
-    sampler_loc = glGetUniformLocation(shader_prog, GL_U_REFLECT_TEX);
+    R_GL_StateSet(GL_U_REFRACT_DEPTH, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = REFRACT_DEPTH_TUNIT - GL_TEXTURE0
+    });
+    R_GL_StateInstall(GL_U_REFRACT_DEPTH, shader_prog);
+
+	/* reflection texture */
     glActiveTexture(REFLECT_TUNIT);
     glBindTexture(GL_TEXTURE_2D, reflect_tex);
-    glUniform1i(sampler_loc, REFLECT_TUNIT - GL_TEXTURE0);
+
+    R_GL_StateSet(GL_U_REFLECT_TEX, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = REFLECT_TUNIT - GL_TEXTURE0
+    });
+    R_GL_StateInstall(GL_U_REFLECT_TEX, shader_prog);
 
     GL_PERF_RETURN_VOID();
 }
@@ -330,11 +344,20 @@ static void setup_fog_uniforms(GLuint shader_prog, const struct map *map)
     vec3_t pos = M_GetPos(map);
     vec2_t pos_xz = (vec2_t){pos.x, pos.z};
 
-    GLuint loc = glGetUniformLocation(shader_prog, GL_U_MAP_RES);
-    glUniform4i(loc, res.chunk_w, res.chunk_h, res.tile_w, res.tile_h);
+    R_GL_StateSet(GL_U_MAP_RES, (struct uval){
+        .type = UTYPE_IVEC4,
+        .val.as_ivec4[0] = res.chunk_w, 
+        .val.as_ivec4[1] = res.chunk_h,
+        .val.as_ivec4[2] = res.tile_w,
+        .val.as_ivec4[3] = res.tile_h
+    });
+    R_GL_StateInstall(GL_U_MAP_RES, shader_prog);
 
-    loc = glGetUniformLocation(shader_prog, GL_U_MAP_POS);
-    glUniform2fv(loc, 1, pos_xz.raw);
+    R_GL_StateSet(GL_U_MAP_POS, (struct uval){
+        .type = UTYPE_VEC2,
+        .val.as_vec2 = pos_xz
+    });
+    R_GL_StateInstall(GL_U_MAP_POS, shader_prog);
 
     R_GL_MapFogBindLast(VISBUFF_TUNIT, shader_prog, "visbuff");
 }
@@ -344,17 +367,25 @@ static void setup_map_uniforms(GLuint shader_prog)
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    GLuint sampler_loc;
-
-    sampler_loc = glGetUniformLocation(shader_prog, GL_U_DUDV_MAP);
+	/* DUDV map */
     glActiveTexture(s_ctx.dudv.tunit);
     glBindTexture(GL_TEXTURE_2D, s_ctx.dudv.id);
-    glUniform1i(sampler_loc, s_ctx.dudv.tunit - GL_TEXTURE0);
 
-    sampler_loc = glGetUniformLocation(shader_prog, GL_U_NORMAL_MAP);
+    R_GL_StateSet(GL_U_DUDV_MAP, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = s_ctx.dudv.tunit - GL_TEXTURE0
+    });
+    R_GL_StateInstall(GL_U_DUDV_MAP, shader_prog);
+
+	/* normal map */
     glActiveTexture(s_ctx.normal.tunit);
     glBindTexture(GL_TEXTURE_2D, s_ctx.normal.id);
-    glUniform1i(sampler_loc, s_ctx.normal.tunit - GL_TEXTURE0);
+
+    R_GL_StateSet(GL_U_NORMAL_MAP, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = s_ctx.normal.tunit - GL_TEXTURE0
+    });
+    R_GL_StateInstall(GL_U_NORMAL_MAP, shader_prog);
 
     GL_PERF_RETURN_VOID();
 }
@@ -364,13 +395,17 @@ static void setup_cam_uniforms(GLuint shader_prog)
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    GLuint sampler_loc;
+    R_GL_StateSet(GL_U_CAM_NEAR, (struct uval){
+        .type = UTYPE_FLOAT,
+        .val.as_float = CAM_Z_NEAR_DIST
+    });
+    R_GL_StateInstall(GL_U_CAM_NEAR, shader_prog);
 
-    sampler_loc = glGetUniformLocation(shader_prog, GL_U_CAM_NEAR);
-    glUniform1f(sampler_loc, CAM_Z_NEAR_DIST);
-
-    sampler_loc = glGetUniformLocation(shader_prog, GL_U_CAM_FAR);
-    glUniform1f(sampler_loc, CONFIG_DRAWDIST);
+    R_GL_StateSet(GL_U_CAM_FAR, (struct uval){
+        .type = UTYPE_FLOAT,
+        .val.as_float = CONFIG_DRAWDIST
+    });
+    R_GL_StateInstall(GL_U_CAM_FAR, shader_prog);
 
     GL_PERF_RETURN_VOID();
 }
@@ -384,8 +419,11 @@ static void setup_tiling_uniforms(GLuint shader_prog, const struct map *map)
     M_GetResolution(map, &res);
     vec2_t val = (vec2_t){ res.chunk_w * 1.5f, res.chunk_h * 1.5f };
 
-    GLuint sampler_loc = glGetUniformLocation(shader_prog, GL_U_WATER_TILING);
-    glUniform2fv(sampler_loc, 1, val.raw);
+    R_GL_StateSet(GL_U_WATER_TILING, (struct uval){
+        .type = UTYPE_VEC2,
+        .val.as_vec2 = val
+    });
+    R_GL_StateInstall(GL_U_WATER_TILING, shader_prog);
 
     GL_PERF_RETURN_VOID();
 }
@@ -410,8 +448,11 @@ static void setup_model_mat(GLuint shader_prog, const struct map *map)
     mat4x4_t model;
     PFM_Mat4x4_Mult4x4(&trans, &scale, &model);
 
-    GLuint loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = model
+    });
+    R_GL_StateInstall(GL_U_MODEL, shader_prog);
 
     GL_PERF_RETURN_VOID();
 }
@@ -429,8 +470,11 @@ static void setup_move_factor(GLuint shader_prog)
     s_ctx.move_factor += WAVE_SPEED * (delta/1000.0f);
     s_ctx.move_factor = modf(s_ctx.move_factor, &intpart);
 
-    GLuint sampler_loc = glGetUniformLocation(shader_prog, GL_U_MOVE_FACTOR);
-    glUniform1f(sampler_loc, s_ctx.move_factor);
+    R_GL_StateSet(GL_U_MOVE_FACTOR, (struct uval){
+        .type = UTYPE_FLOAT,
+        .val.as_float = s_ctx.move_factor
+    });
+    R_GL_StateInstall(GL_U_MOVE_FACTOR, shader_prog);
 
     GL_PERF_RETURN_VOID();
 }
@@ -512,11 +556,8 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    GLuint shader_prog = R_GL_Shader_GetProgForName("water");
-    glUseProgram(shader_prog);
-
     struct water_gl_state state;
-    save_gl_state(&state, shader_prog);
+    save_gl_state(&state);
 
     int w = wbuff_width();
     int h = wbuff_height(w);
@@ -534,6 +575,9 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
     render_reflection_tex(reflect_tex, *reflection, *in);
 
     restore_gl_state(&state);
+
+    GLuint shader_prog = R_GL_Shader_GetProgForName("water");
+    R_GL_Shader_InstallProg(shader_prog);
 
     setup_map_uniforms(shader_prog);
     setup_cam_uniforms(shader_prog);

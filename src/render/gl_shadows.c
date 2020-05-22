@@ -36,7 +36,7 @@
 #include "public/render.h"
 #include "render_private.h"
 #include "gl_render.h"
-#include "gl_uniforms.h"
+#include "gl_state.h"
 #include "gl_assert.h"
 #include "gl_shader.h"
 #include "gl_perf.h"
@@ -181,7 +181,10 @@ void R_GL_DepthPassEnd(void)
     assert(s_depth_pass_active);
     s_depth_pass_active = false;
 
-    R_GL_SetShadowMap(s_depth_map_tex);
+    R_GL_StateSet(GL_U_SHADOW_MAP, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = SHADOW_MAP_TUNIT - GL_TEXTURE0
+    });
 
     glViewport(s_saved.viewport[0], s_saved.viewport[1], s_saved.viewport[2], s_saved.viewport[3]);
     glBindFramebuffer(GL_FRAMEBUFFER, s_saved.fb);
@@ -197,13 +200,13 @@ void R_GL_RenderDepthMap(const void *render_private, mat4x4_t *model)
     ASSERT_IN_RENDER_THREAD();
     assert(s_depth_pass_active);
 
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *model
+    });
+
     const struct render_private *priv = render_private;
-    GLuint loc;
-
-    glUseProgram(priv->shader_prog_dp);
-
-    loc = glGetUniformLocation(priv->shader_prog_dp, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
+    R_GL_Shader_InstallProg(priv->shader_prog_dp);
 
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
@@ -237,6 +240,12 @@ void R_GL_SetShadowsEnabled(void *render_private, const bool *on)
     }
 
     GL_PERF_RETURN_VOID();
+}
+
+void R_GL_ShadowMapBind(void)
+{
+    glActiveTexture(SHADOW_MAP_TUNIT);
+    glBindTexture(GL_TEXTURE_2D, s_depth_map_tex);
 }
 
 void R_LightFrustum(vec3_t light_pos, vec3_t cam_pos, vec3_t cam_dir, struct frustum *out)

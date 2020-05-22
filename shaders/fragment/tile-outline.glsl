@@ -59,7 +59,7 @@ in VertexToFrag {
 /* UNIFORMS                                                                  */
 /*****************************************************************************/
 
-uniform vec3 color;
+uniform vec4 color;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
@@ -85,6 +85,6 @@ void main()
     if(!inside_border())
         discard;
 
-    o_frag_color = vec4(color, 1.0);
+    o_frag_color = color;
 }
 

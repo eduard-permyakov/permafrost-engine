@@ -68,6 +68,8 @@ struct shader{
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
+static GLuint s_curr_prog = 0;
+
 /* Shader 'prog_id' will be initialized by R_GL_Shader_InitAll */
 static struct shader s_shaders[] = {
     {
@@ -80,7 +82,6 @@ static struct shader s_shaders[] = {
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
-            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
             { UTYPE_VEC4,      GL_U_COLOR,            },
             {0}
         },
@@ -96,9 +97,6 @@ static struct shader s_shaders[] = {
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
             { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
-            { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
-            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
-            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
             { UTYPE_VEC3,      GL_U_VIEW_POS          },
             { UTYPE_INT,       GL_U_TEXTURE0          },
             { UTYPE_INT,       GL_U_TEXTURE1          },
@@ -265,6 +263,7 @@ static struct shader s_shaders[] = {
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
             { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
             { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
             { UTYPE_VEC3,      GL_U_LIGHT_POS         },
@@ -287,6 +286,8 @@ static struct shader s_shaders[] = {
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_MAT4,      GL_U_LS_TRANS          },
             { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
             { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
             { UTYPE_VEC3,      GL_U_LIGHT_POS         },
@@ -338,7 +339,12 @@ static struct shader s_shaders[] = {
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
+            { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
+            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
+            { UTYPE_VEC3,      GL_U_LIGHT_POS         },
             { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            { UTYPE_COMPOSITE, GL_U_MATERIALS,        },
+            { UTYPE_INT,       GL_U_SHADOW_MAP        },
             {0}
         },
     },
@@ -379,6 +385,7 @@ static struct shader s_shaders[] = {
             { UTYPE_INT,       GL_U_TEXTURE14         },
             { UTYPE_INT,       GL_U_TEXTURE15         },
             { UTYPE_COMPOSITE, GL_U_MATERIALS,        },
+            { UTYPE_INT,       GL_U_SHADOW_MAP        },
             {0}
         },
     },
@@ -392,6 +399,8 @@ static struct shader s_shaders[] = {
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
             { UTYPE_IVEC2,     GL_U_CURR_RES          },
+            { UTYPE_ARRAY,     GL_U_ENT_TOP_OFFSETS_SS},
+            { UTYPE_ARRAY,     GL_U_ENT_HEALTH_PC     },
             {0}
         },
     },
@@ -446,8 +455,6 @@ static struct shader s_shaders[] = {
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
             { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
-            { UTYPE_VEC3,      GL_U_AMBIENT_COLOR     },
-            { UTYPE_VEC3,      GL_U_LIGHT_COLOR       },
             { UTYPE_VEC3,      GL_U_LIGHT_POS         },
             { UTYPE_VEC3,      GL_U_VIEW_POS          },
             { UTYPE_INT,       GL_U_TEXTURE0          },
@@ -574,6 +581,48 @@ static bool shader_make_prog(const GLuint vertex_shader, const GLuint geo_shader
     return true;
 }
 
+static const struct shader *shader_for_name(const char *name)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    for(int i = 0; i < ARR_SIZE(s_shaders); i++) {
+
+        const struct shader *curr = &s_shaders[i];
+        if(!strcmp(curr->name, name))
+            return curr;
+    }
+    return NULL;
+}
+
+static const struct shader *shader_for_prog(GLuint prog)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    for(int i = 0; i < ARR_SIZE(s_shaders); i++) {
+
+        const struct shader *curr = &s_shaders[i];
+        if(curr->prog_id == prog)
+            return curr;
+    }
+    return NULL;
+}
+
+static void shader_install(const struct shader *shader)
+{
+    const struct uniform *curr = shader->uniforms;
+
+    if(s_curr_prog != shader->prog_id) {
+        glUseProgram(shader->prog_id);
+        s_curr_prog = shader->prog_id;
+    }
+
+    while(curr->name) {
+
+        R_GL_StateInstall(curr->name, shader->prog_id);
+        curr++;
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -660,6 +709,22 @@ const char *R_GL_Shader_GetName(GLuint prog)
     
 void R_GL_Shader_Install(const char *name)
 {
+    ASSERT_IN_RENDER_THREAD();
 
+    const struct shader *shader = shader_for_name(name);
+    shader_install(shader);
+}
+
+void R_GL_Shader_InstallProg(GLuint prog)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    const struct shader *shader = shader_for_prog(prog);
+    shader_install(shader);
+}
+
+GLuint R_GL_Shader_GetCurrActive(void)
+{
+    return s_curr_prog;
 }
 

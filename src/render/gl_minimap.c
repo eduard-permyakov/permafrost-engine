@@ -37,7 +37,7 @@
 #include "gl_vertex.h"
 #include "gl_texture.h"
 #include "gl_shader.h"
-#include "gl_uniforms.h"
+#include "gl_state.h"
 #include "gl_assert.h"
 #include "gl_render.h"
 #include "gl_ringbuffer.h"
@@ -169,16 +169,22 @@ void draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, const s
     glEnableVertexAttribArray(0);
 
     GLuint shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
-    glUseProgram(shader_prog);
+    R_GL_Shader_InstallProg(shader_prog);
 
-    GLuint loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, minimap_model->raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *minimap_model
+    });
+    R_GL_StateInstall(GL_U_MODEL, shader_prog);
 
     vec4_t black = (vec4_t){0.0f, 0.0f, 0.0f, 1.0f};
     vec4_t white = (vec4_t){1.0f, 1.0f, 1.0f, 1.0f};
 
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, black.raw);
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = black
+    });
+    R_GL_StateInstall(GL_U_COLOR, shader_prog);
 
     glDrawArrays(GL_LINE_LOOP, 0, 4);
 
@@ -186,10 +192,17 @@ void draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, const s
     PFM_Mat4x4_MakeTrans(-1.0f, -1.0f, 0.0f, &one_px_trans);
     PFM_Mat4x4_Mult4x4(&one_px_trans, minimap_model, &new_model);
 
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, new_model.raw);
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, white.raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = new_model
+    });
+    R_GL_StateInstall(GL_U_MODEL, shader_prog);
+
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = white
+    });
+    R_GL_StateInstall(GL_U_COLOR, shader_prog);
 
     glDrawArrays(GL_LINE_LOOP, 0, 4);
 
@@ -535,13 +548,19 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam,
 
     /* First render a slightly larger colored quad as the border */
     shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
-    glUseProgram(shader_prog);
+    R_GL_Shader_InstallProg(shader_prog);
 
-    GLuint loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, border_model.raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = border_model
+    });
+    R_GL_StateInstall(GL_U_MODEL, shader_prog);
 
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, MINIMAP_BORDER_CLR.raw);
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = MINIMAP_BORDER_CLR
+    });
+    R_GL_StateInstall(GL_U_COLOR, shader_prog);
 
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
@@ -553,15 +572,23 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam,
 
     /* Now draw the minimap texture */
     shader_prog = R_GL_Shader_GetProgForName("minimap");
-    glUseProgram(shader_prog);
+    R_GL_Shader_InstallProg(shader_prog);
 
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = model
+    });
 
-    loc = glGetUniformLocation(shader_prog, GL_U_MAP_RES);
-    glUniform4i(loc, s_ctx.res.chunk_w, s_ctx.res.chunk_h, s_ctx.res.tile_w, s_ctx.res.tile_h);
+    R_GL_StateSet(GL_U_MAP_RES, (struct uval){
+        .type = UTYPE_IVEC4,
+        .val.as_ivec4[0] = s_ctx.res.chunk_w, 
+        .val.as_ivec4[1] = s_ctx.res.chunk_h,
+        .val.as_ivec4[2] = s_ctx.res.tile_w,
+        .val.as_ivec4[3] = s_ctx.res.tile_h
+    });
+    R_GL_StateInstall(GL_U_MAP_RES, shader_prog);
 
-    R_GL_Texture_Activate(&s_ctx.minimap_texture, shader_prog);
+    R_GL_Texture_Bind(&s_ctx.minimap_texture, shader_prog);
     R_GL_MapFogBindLast(GL_TEXTURE1, shader_prog, "visbuff");
 
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);

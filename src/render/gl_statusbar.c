@@ -35,19 +35,22 @@
 
 #include "gl_vertex.h"
 #include "gl_shader.h"
-#include "gl_uniforms.h"
+#include "gl_state.h"
 #include "gl_assert.h"
 #include "gl_perf.h"
 #include "../camera.h"
 #include "../pf_math.h"
 #include "../config.h"
 #include "../main.h"
+#include "../lib/public/pf_string.h"
 
 #include <GL/glew.h>
 #include <assert.h>
 
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+#define MIN(a, b)   ((a) < (b) ? (a) : (b))
+#define MAX_HBS     (256)
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -114,7 +117,6 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
 
     /* OpenGL setup */
     GLuint VAO, VBO;
-    GLuint shader_prog;
 
     glGenVertexArrays(1, &VAO);
     glBindVertexArray(VAO);
@@ -130,32 +132,21 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
         (void*)offsetof(struct textured_vert, uv));
     glEnableVertexAttribArray(1);
 
-    shader_prog = R_GL_Shader_GetProgForName("statusbar");
-    glUseProgram(shader_prog);
-
+    /* set uniforms */
     int w, h;
     Engine_WinDrawableSize(&w, &h);
-    GLuint loc = glGetUniformLocation(shader_prog, GL_U_CURR_RES);
-    glUniform2iv(loc, 1, (int[2]){w, h});
 
-    /* Populate shader uniform arrays with screenspace offsets and health percentages. */
-    for(int i = 0; i < *num_ents; i++) {
-    
-        char locname[128];
-        GLuint loc;
-        int rval;
-        (void)rval;
+    R_GL_StateSet(GL_U_CURR_RES, (struct uval){
+        .type = UTYPE_IVEC2,
+        .val.as_ivec2[0] = w,
+        .val.as_ivec2[1] = h
+    });
 
-        rval = snprintf(locname, sizeof(locname), "%s[%d]", GL_U_ENT_TOP_OFFSETS_SS, i);
-        assert(rval < sizeof(locname));
-        loc = glGetUniformLocation(shader_prog, locname);
-        glUniform2fv(loc, 1, ent_top_pos_ss[i].raw);
+    size_t ndraw = MIN(*num_ents, MAX_HBS);
+    R_GL_StateSetArray(GL_U_ENT_TOP_OFFSETS_SS, UTYPE_VEC2, ndraw, ent_top_pos_ss);
+    R_GL_StateSetArray(GL_U_ENT_HEALTH_PC, UTYPE_FLOAT, ndraw, ent_health_pc);
 
-        rval = snprintf(locname, sizeof(locname), "%s[%d]", GL_U_ENT_HEALTH_PC, i);
-        assert(rval < sizeof(locname));
-        loc = glGetUniformLocation(shader_prog, locname);
-        glUniform1fv(loc, 1, ent_health_pc + i);
-    }
+    R_GL_Shader_Install("statusbar");
 
     /* Draw instances */
     glDrawArraysInstanced(GL_TRIANGLES, 0, ARR_SIZE(vbuff), *num_ents);

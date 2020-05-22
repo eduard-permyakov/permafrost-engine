@@ -40,7 +40,7 @@
 #include "gl_shader.h"
 #include "gl_material.h"
 #include "gl_assert.h"
-#include "gl_uniforms.h"
+#include "gl_state.h"
 #include "gl_perf.h"
 #include "public/render.h"
 #include "../map/public/tile.h"
@@ -551,10 +551,8 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
     ASSERT_IN_RENDER_THREAD();
 
     struct terrain_vert vbuff[VERTS_PER_TILE];
-    vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
+    vec4_t red = (vec4_t){1.0f, 0.0f, 0.0f, 1.0};
     GLuint VAO, VBO;
-    GLuint shader_prog;
-    GLuint loc;
 
     const struct render_private *priv = chunk_rprivate;
     size_t offset = (in->tile_r * (*tiles_per_chunk_x) + in->tile_c) * VERTS_PER_TILE * sizeof(struct terrain_vert);
@@ -606,15 +604,18 @@ void R_GL_TileDrawSelected(const struct tile_desc *in, const void *chunk_rprivat
         (void*)offsetof(struct terrain_vert, normal));
     glEnableVertexAttribArray(2);
 
-    shader_prog = R_GL_Shader_GetProgForName("mesh.static.tile-outline");
-    glUseProgram(shader_prog);
-
     /* Set uniforms */
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, final_model.raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = final_model
+    });
 
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform3fv(loc, 1, red.raw);
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = red
+    });
+
+    R_GL_Shader_Install("mesh.static.tile-outline");
 
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, sizeof(vbuff), vbuff, GL_STATIC_DRAW);

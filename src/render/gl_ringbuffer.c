@@ -36,6 +36,8 @@
 #include "gl_ringbuffer.h"
 #include "gl_assert.h"
 #include "gl_perf.h"
+#include "gl_shader.h"
+#include "gl_state.h"
 #include "../lib/public/pf_string.h"
 
 #include <stdlib.h>
@@ -274,13 +276,19 @@ void R_GL_RingbufferBindLast(struct gl_ring *ring, GLuint tunit, GLuint shader_p
 
     glActiveTexture(tunit);
     glBindTexture(GL_TEXTURE_BUFFER, ring->tex_buff);
-    glUseProgram(shader_prog);
+    R_GL_Shader_InstallProg(shader_prog);
 
-    GLuint loc = glGetUniformLocation(shader_prog, uname);
-    glUniform1i(loc, tunit - GL_TEXTURE0);
+    R_GL_StateSet(uname, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = tunit - GL_TEXTURE0
+    });
+    R_GL_StateInstall(uname, shader_prog);
 
-    loc = glGetUniformLocation(shader_prog, uname_offset);
-    glUniform1i(loc, bpos);
+    R_GL_StateSet(uname_offset, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = bpos
+    });
+    R_GL_StateInstall(uname_offset, shader_prog);
 }
 
 void R_GL_RingbufferSyncLast(struct gl_ring *ring)

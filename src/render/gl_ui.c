@@ -36,7 +36,7 @@
 #include "public/render.h"
 #include "gl_texture.h"
 #include "gl_assert.h"
-#include "gl_uniforms.h"
+#include "gl_state.h"
 #include "gl_shader.h"
 #include "gl_render.h"
 #include "gl_perf.h"
@@ -77,8 +77,11 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
     mat4x4_t ortho;
     PFM_Mat4x4_MakeOrthographic(0.0f, curr_vres.x, curr_vres.y, 0.0f, -1.0f, 1.0f, &ortho);
 
-    GLuint proj_loc = glGetUniformLocation(shader_prog, GL_U_PROJECTION);
-    glUniformMatrix4fv(proj_loc, 1, GL_FALSE, ortho.raw);
+    R_GL_StateSet(GL_U_PROJECTION, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = ortho
+    });
+    R_GL_StateInstall(GL_U_PROJECTION, R_GL_Shader_GetCurrActive());
 
     for(cmd = nk__draw_list_begin(dl, dl->buffer); cmd; 
         cmd = nk__draw_list_next(cmd, dl->buffer, dl)) {
@@ -93,7 +96,11 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
                 curr_vres = ud->vec2i;
 
                 PFM_Mat4x4_MakeOrthographic(0.0f, ud->vec2i.x, ud->vec2i.y, 0.0f, -1.0f, 1.0f, &ortho);
-                glUniformMatrix4fv(proj_loc, 1, GL_FALSE, ortho.raw);
+                R_GL_StateSet(GL_U_PROJECTION, (struct uval){
+                    .type = UTYPE_MAT4,
+                    .val.as_mat4 = ortho
+                });
+                R_GL_StateInstall(GL_U_PROJECTION, R_GL_Shader_GetCurrActive());
 
                 free(ud);
                 continue;
@@ -115,7 +122,7 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
             continue;
 
         struct texture tex = (struct texture){cmd->texture.id, GL_TEXTURE0};
-        R_GL_Texture_Activate(&tex, shader_prog);
+        R_GL_Texture_Bind(&tex, shader_prog);
 
         glScissor((GLint)(cmd->clip_rect.x / (float)curr_vres.x * w),
             h - (GLint)((cmd->clip_rect.y + cmd->clip_rect.h) / (float)curr_vres.y * h),
@@ -208,7 +215,7 @@ void R_GL_UI_Render(const struct nk_draw_list *dl)
     /* setup program */
     GLuint shader_prog = R_GL_Shader_GetProgForName("ui");
     assert(shader_prog);
-    glUseProgram(shader_prog);
+    R_GL_Shader_InstallProg(shader_prog);
 
     /* setup buffers */
     glBindVertexArray(s_ctx.VAO);
@@ -222,7 +229,6 @@ void R_GL_UI_Render(const struct nk_draw_list *dl)
     exec_draw_commands(dl, shader_prog);
 
     /* cleanup state */
-    glUseProgram(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     glBindVertexArray(0);

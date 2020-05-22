@@ -60,8 +60,8 @@ void R_GL_Texture_ArrayFree(struct texture_arr array);
 bool R_GL_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures, 
                                struct texture_arr *out);
 
-void R_GL_Texture_Activate(const struct texture *text, GLuint shader_prog);
-void R_GL_Texture_ActivateArray(const struct texture_arr *arr, GLuint shader_prog);
+void R_GL_Texture_Bind(const struct texture *text, GLuint shader_prog);
+void R_GL_Texture_BindArray(const struct texture_arr *arr, GLuint shader_prog);
 
 void R_GL_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out);
 

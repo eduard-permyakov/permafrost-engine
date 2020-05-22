@@ -40,8 +40,8 @@
 #include "gl_shader.h"
 #include "gl_material.h"
 #include "gl_assert.h"
-#include "gl_uniforms.h"
 #include "gl_perf.h"
+#include "gl_state.h"
 #include "public/render.h"
 #include "../entity.h"
 #include "../camera.h"
@@ -63,111 +63,6 @@
 #define EPSILON                     (1.0f/1024)
 #define ARR_SIZE(a)                 (sizeof(a)/sizeof(a[0]))
 #define MAX(a, b)                   ((a) > (b) ? (a) : (b))
-
-
-/*****************************************************************************/
-/* STATIC FUNCTIONS                                                          */
-/*****************************************************************************/
-
-static void r_gl_set_materials(GLuint shader_prog, size_t num_mats, const struct material *mats)
-{
-    ASSERT_IN_RENDER_THREAD();
-
-    for(unsigned i = 0; i < num_mats; i++) {
-    
-        const struct material *mat = &mats[i];
-        const size_t nmembers = 3; 
-
-        const struct member_desc{
-            const GLchar *name; 
-            size_t        size;
-            ptrdiff_t     offset;
-        }descs[] = {
-            {"ambient_intensity", 1, offsetof(struct material, ambient_intensity) },
-            {"diffuse_clr",       3, offsetof(struct material, diffuse_clr)       },
-            {"specular_clr",      3, offsetof(struct material, specular_clr)      }
-        };
-
-        for(unsigned j = 0; j < nmembers; j++) {
-        
-            char locbuff[64];
-            GLuint loc;
-
-            snprintf(locbuff, sizeof(locbuff), "%s[%u].%s", GL_U_MATERIALS, i, descs[j].name);
-            locbuff[sizeof(locbuff)-1] = '\0';
-
-            loc = glGetUniformLocation(shader_prog, locbuff);
-            switch(descs[j].size) {
-            case 1: glUniform1fv(loc, 1, (void*) ((char*)mat + descs[j].offset) ); break;
-            case 3: glUniform3fv(loc, 1, (void*) ((char*)mat + descs[j].offset) ); break;
-            default: assert(0);
-            }
-
-        }
-    }
-}
-
-static void r_gl_set_uniform_mat4x4_array(mat4x4_t *data, size_t count, 
-                                          const char *uname, const char *shader_name)
-{
-    ASSERT_IN_RENDER_THREAD();
-    GLuint loc, shader_prog;
-
-    shader_prog = R_GL_Shader_GetProgForName(shader_name);
-    glUseProgram(shader_prog);
-
-    loc = glGetUniformLocation(shader_prog, uname);
-    glUniformMatrix4fv(loc, count, GL_FALSE, (void*)data);
-}
-
-static void r_gl_set_uniform_vec4_array(vec4_t *data, size_t count, 
-                                        const char *uname, const char *shader_name)
-{
-    ASSERT_IN_RENDER_THREAD();
-    GLuint loc, shader_prog;
-
-    shader_prog = R_GL_Shader_GetProgForName(shader_name);
-    glUseProgram(shader_prog);
-
-    loc = glGetUniformLocation(shader_prog, uname);
-    glUniform4fv(loc, count, (void*)data);
-}
-
-static void r_gl_set_mat4(const mat4x4_t *trans, const char *shader_name, const char *uname)
-{
-    ASSERT_IN_RENDER_THREAD();
-    GLuint loc, shader_prog;
-
-    shader_prog = R_GL_Shader_GetProgForName(shader_name);
-    glUseProgram(shader_prog);
-
-    loc = glGetUniformLocation(shader_prog, uname);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, trans->raw);
-}
-
-static void r_gl_set_vec3(const vec3_t *vec, const char *shader_name, const char *uname)
-{
-    ASSERT_IN_RENDER_THREAD();
-    GLuint loc, shader_prog;
-
-    shader_prog = R_GL_Shader_GetProgForName(shader_name);
-    glUseProgram(shader_prog);
-
-    loc = glGetUniformLocation(shader_prog, uname);
-    glUniform3fv(loc, 1, vec->raw);
-}
-
-static void r_gl_set_vec4(const vec4_t *vec, const char *shader_name, const char *uname)
-{
-    ASSERT_IN_RENDER_THREAD();
-    GLuint loc, shader_prog;
-
-    shader_prog = R_GL_Shader_GetProgForName(shader_name);
-    glUseProgram(shader_prog);
-
-    loc = glGetUniformLocation(shader_prog, uname);
-    glUniform4fv(loc, 1, vec->raw);
-}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -276,19 +171,26 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
-
     const struct render_private *priv = render_private;
-    GLuint loc;
 
-    glUseProgram(priv->shader_prog);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *model
+    });
 
-    loc = glGetUniformLocation(priv->shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
+    R_GL_StateSetComposite(GL_U_MATERIALS, (struct mdesc[]){
+        { "ambient_intensity",   UTYPE_FLOAT,    offsetof(struct material, ambient_intensity) },
+        { "diffuse_clr",         UTYPE_VEC3,     offsetof(struct material, diffuse_clr)       },
+        { "specular_clr",        UTYPE_VEC3,     offsetof(struct material, specular_clr)      },
+        {0}
+    }, sizeof(struct material), priv->num_materials, priv->materials);
 
-    r_gl_set_materials(priv->shader_prog, priv->num_materials, priv->materials);
+    R_GL_Shader_InstallProg(priv->shader_prog);
+
     for(int i = 0; i < priv->num_materials; i++) {
-        R_GL_Texture_Activate(&priv->materials[i].texture, priv->shader_prog);
+        R_GL_Texture_Bind(&priv->materials[i].texture, priv->shader_prog);
     }
+    R_GL_ShadowMapBind();
     
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
@@ -313,247 +215,89 @@ void R_GL_BeginFrame(void)
 
 void R_GL_SetViewMatAndPos(const mat4x4_t *view, const vec3_t *pos)
 {
-    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    const char *shaders[] = {
-        "mesh.static.colored",
-        "mesh.static.colored-per-vert",
-        "mesh.static.textured",
-        "mesh.static.textured-phong",
-        "mesh.static.textured-phong-shadowed",
-        "mesh.static.tile-outline",
-        "mesh.static.normals.colored",
-        "mesh.animated.textured-phong",
-        "mesh.animated.textured-phong-shadowed",
-        "mesh.animated.normals.colored",
-        "terrain",
-        "terrain-shadowed",
-        "statusbar",
-        "minimap",
-        "water"
-    };
-
-    for(int i = 0; i < ARR_SIZE(shaders); i++) {
-
-        r_gl_set_mat4(view, shaders[i], GL_U_VIEW);
-        r_gl_set_vec3(pos, shaders[i], GL_U_VIEW_POS);
-    }
-
-    GL_ASSERT_OK();
-    GL_PERF_RETURN_VOID();
+    R_GL_StateSet(GL_U_VIEW, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *view
+    });
+    R_GL_StateSet(GL_U_VIEW_POS, (struct uval){
+        .type = UTYPE_VEC3,
+        .val.as_vec3 = *pos
+    });
 }
 
 void R_GL_SetProj(const mat4x4_t *proj)
 {
-    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    const char *shaders[] = {
-        "mesh.static.colored",
-        "mesh.static.colored-per-vert",
-        "mesh.static.textured",
-        "mesh.static.textured-phong",
-        "mesh.static.textured-phong-shadowed",
-        "mesh.static.tile-outline",
-        "mesh.static.normals.colored",
-        "mesh.animated.textured-phong",
-        "mesh.animated.textured-phong-shadowed",
-        "mesh.animated.normals.colored",
-        "terrain",
-        "terrain-shadowed",
-        "statusbar",
-        "minimap",
-        "water"
-    };
-
-    for(int i = 0; i < ARR_SIZE(shaders); i++)
-        r_gl_set_mat4(proj, shaders[i], GL_U_PROJECTION);
-
-    GL_ASSERT_OK();
-    GL_PERF_RETURN_VOID();
+    R_GL_StateSet(GL_U_PROJECTION, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *proj
+    });
 }
 
 void R_GL_SetLightSpaceTrans(const mat4x4_t *trans)
 {
-    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    const char *shaders[] = {
-        "mesh.static.depth",
-        "mesh.animated.depth",
-        "mesh.static.textured-phong-shadowed",
-        "mesh.animated.textured-phong-shadowed",
-        "terrain-shadowed",
-    };
-
-    for(int i = 0; i < ARR_SIZE(shaders); i++)
-        r_gl_set_mat4(trans, shaders[i], GL_U_LS_TRANS);
-
-    GL_ASSERT_OK();
-    GL_PERF_RETURN_VOID();
-}
-
-void R_GL_SetShadowMap(const GLuint shadow_map_tex_id)
-{
-    GL_PERF_ENTER();
-    ASSERT_IN_RENDER_THREAD();
-
-    const char *shaders[] = {
-        "mesh.static.textured-phong-shadowed",
-        "mesh.animated.textured-phong-shadowed",
-        "terrain-shadowed",
-    };
-
-    for(int i = 0; i < ARR_SIZE(shaders); i++) {
-
-        GLuint shader_prog, sampler_loc;
-
-        shader_prog = R_GL_Shader_GetProgForName(shaders[i]);
-        glUseProgram(shader_prog);
-
-        sampler_loc = glGetUniformLocation(shader_prog, GL_U_SHADOW_MAP);
-        glActiveTexture(SHADOW_MAP_TUNIT);
-        glBindTexture(GL_TEXTURE_2D, shadow_map_tex_id);
-        glUniform1i(sampler_loc, SHADOW_MAP_TUNIT - GL_TEXTURE0);
-    }
-
-    GL_ASSERT_OK();
-    GL_PERF_RETURN_VOID();
+    R_GL_StateSet(GL_U_LS_TRANS, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *trans
+    });
 }
 
 void R_GL_SetClipPlane(const vec4_t plane_eq)
 {
-    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    const char *shaders[] = {
-        "terrain",
-        "terrain-shadowed",
-        "mesh.static.textured-phong",
-        "mesh.static.textured-phong-shadowed",
-        "mesh.animated.textured-phong",
-        "mesh.animated.textured-phong-shadowed",
-    };
-
-    for(int i = 0; i < ARR_SIZE(shaders); i++)
-        r_gl_set_vec4(&plane_eq, shaders[i], GL_U_CLIP_PLANE0);
-
-    GL_ASSERT_OK();
-    GL_PERF_RETURN_VOID();
+    R_GL_StateSet(GL_U_CLIP_PLANE0, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = plane_eq
+    });
 }
 
 void R_GL_SetAnimUniforms(mat4x4_t *inv_bind_poses, mat4x4_t *curr_poses, 
                           mat4x4_t *normal_mat, const size_t *count)
 {
-    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    const char *shaders[] = {
-        "mesh.animated.depth",
-        "mesh.animated.textured-phong",
-        "mesh.animated.textured-phong-shadowed",
-        "mesh.animated.normals.colored",
-    };
-
-    for(int i = 0; i < ARR_SIZE(shaders); i++) {
-
-        r_gl_set_uniform_mat4x4_array(inv_bind_poses, *count, GL_U_INV_BIND_MATS, shaders[i]);
-        r_gl_set_uniform_mat4x4_array(curr_poses, *count, GL_U_CURR_POSE_MATS, shaders[i]);
-        r_gl_set_mat4(normal_mat, shaders[i], GL_U_NORMAL_MAT);
-    }
-
-    GL_ASSERT_OK();
-    GL_PERF_RETURN_VOID();
+    R_GL_StateSetArray(GL_U_INV_BIND_MATS, UTYPE_MAT4, *count, inv_bind_poses);
+    R_GL_StateSetArray(GL_U_CURR_POSE_MATS, UTYPE_MAT4, *count, curr_poses);
+    R_GL_StateSet(GL_U_NORMAL_MAT, (struct uval){
+        .type = UTYPE_MAT4, 
+        .val.as_mat4 = *normal_mat
+    });
 }
 
 void R_GL_SetAmbientLightColor(const vec3_t *color)
 {
-    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    const char *shaders[] = {
-        "mesh.static.textured-phong",
-        "mesh.static.textured-phong-shadowed",
-        "mesh.animated.textured-phong",
-        "mesh.animated.textured-phong-shadowed",
-        "terrain",
-        "terrain-shadowed",
-    };
-
-    for(int i = 0; i < ARR_SIZE(shaders); i++) {
-    
-        GLuint loc, shader_prog;
-
-        shader_prog = R_GL_Shader_GetProgForName(shaders[i]);
-        glUseProgram(shader_prog);
-
-        loc = glGetUniformLocation(shader_prog, GL_U_AMBIENT_COLOR);
-        glUniform3fv(loc, 1, color->raw);
-    }
-
-    GL_ASSERT_OK();
-    GL_PERF_RETURN_VOID();
+    R_GL_StateSet(GL_U_AMBIENT_COLOR, (struct uval){
+        .type = UTYPE_VEC3,
+        .val.as_vec3 = *color
+    });
 }
 
 void R_GL_SetLightEmitColor(const vec3_t *color)
 {
-    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    const char *shaders[] = {
-        "mesh.static.textured-phong",
-        "mesh.static.textured-phong-shadowed",
-        "mesh.animated.textured-phong",
-        "mesh.animated.textured-phong-shadowed",
-        "terrain",
-        "terrain-shadowed",
-        "water",
-    };
-
-    for(int i = 0; i < ARR_SIZE(shaders); i++) {
-    
-        GLuint loc, shader_prog;
-
-        shader_prog = R_GL_Shader_GetProgForName(shaders[i]);
-        glUseProgram(shader_prog);
-
-        loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_COLOR);
-        glUniform3fv(loc, 1, color->raw);
-    }
-
-    GL_ASSERT_OK();
-    GL_PERF_RETURN_VOID();
+    R_GL_StateSet(GL_U_LIGHT_COLOR, (struct uval){
+        .type = UTYPE_VEC3,
+        .val.as_vec3 = *color
+    });
 }
 
 void R_GL_SetLightPos(const vec3_t *pos)
 {
-    GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    const char *shaders[] = {
-        "mesh.static.textured-phong",
-        "mesh.static.textured-phong-shadowed",
-        "mesh.animated.textured-phong",
-        "mesh.animated.textured-phong-shadowed",
-        "terrain",
-        "terrain-shadowed",
-        "water",
-    };
-
-    for(int i = 0; i < ARR_SIZE(shaders); i++) {
-
-        GLuint loc, shader_prog;
-    
-        shader_prog = R_GL_Shader_GetProgForName(shaders[i]);
-        glUseProgram(shader_prog);
-
-        loc = glGetUniformLocation(shader_prog, GL_U_LIGHT_POS);
-        glUniform3fv(loc, 1, pos->raw);
-    }
-
-    GL_ASSERT_OK();
-    GL_PERF_RETURN_VOID();
+    R_GL_StateSet(GL_U_LIGHT_POS, (struct uval){
+        .type = UTYPE_VEC3,
+        .val.as_vec3 = *pos
+    });
 }
 
 void R_GL_SetScreenspaceDrawMode(void)
@@ -587,9 +331,6 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
 
     vec3_t *vbuff;
     GLuint VAO, VBO;
-    GLuint shader_prog;
-    GLuint loc;
-    vec4_t green = (vec4_t){0.0f, 1.0f, 0.0f, 1.0f};
 
     int width, height;
     Engine_WinDrawableSize(&width, &height);
@@ -653,15 +394,19 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
-    glUseProgram(shader_prog);
-
     /* Set uniforms */
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, green.raw);
+    vec4_t green = (vec4_t){0.0f, 1.0f, 0.0f, 1.0f};
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = green
+    });
 
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = model
+    });
+
+    R_GL_Shader_Install("mesh.static.colored");
 
     glPointSize(5.0f);
 
@@ -684,8 +429,6 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
 
     vec3_t vbuff[2];
     GLuint VAO, VBO;
-    GLuint shader_prog;
-    GLuint loc;
 
     vec4_t red   = (vec4_t){1.0f, 0.0f, 0.0f, 1.0f};
     vec4_t green = (vec4_t){0.0f, 1.0f, 0.0f, 1.0f};
@@ -701,12 +444,13 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
-    glUseProgram(shader_prog);
-
     /* Set uniforms */
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *model
+    });
+
+    R_GL_Shader_Install("mesh.static.colored");
 
     /* Set line width */
     GLfloat old_width;
@@ -715,25 +459,34 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
 
     /* Render the 3 axis lines at the origin */
     vbuff[0] = (vec3_t){0.0f, 0.0f, 0.0f};
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
 
     for(int i = 0; i < 3; i++) {
 
         switch(i) {
         case 0:
             vbuff[1] = (vec3_t){1.0f, 0.0f, 0.0f}; 
-            glUniform4fv(loc, 1, red.raw);
+            R_GL_StateSet(GL_U_COLOR, (struct uval){
+                .type = UTYPE_VEC4,
+                .val.as_vec4 = red
+            });
             break;
         case 1:
             vbuff[1] = (vec3_t){0.0f, 1.0f, 0.0f}; 
-            glUniform4fv(loc, 1, green.raw);
+            R_GL_StateSet(GL_U_COLOR, (struct uval){
+                .type = UTYPE_VEC4,
+                .val.as_vec4 = green
+            });
             break;
         case 2:
             vbuff[1] = (vec3_t){0.0f, 0.0f, 1.0f}; 
-            glUniform4fv(loc, 1, blue.raw);
+            R_GL_StateSet(GL_U_COLOR, (struct uval){
+                .type = UTYPE_VEC4,
+                .val.as_vec4 = blue
+            });
             break;
         }
     
+        R_GL_StateInstall(GL_U_COLOR, R_GL_Shader_GetCurrActive());
         glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
         glDrawArrays(GL_LINES, 0, 2);
     }
@@ -755,8 +508,6 @@ void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
 
     vec3_t vbuff[2];
     GLuint VAO, VBO;
-    GLuint shader_prog;
-    GLuint loc;
 
     vbuff[0] = *origin; 
     vec3_t dircopy = *dir;
@@ -774,16 +525,19 @@ void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
-    glUseProgram(shader_prog);
-
     /* Set uniforms */
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *model
+    });
 
     vec4_t color4 = (vec4_t){color->x, color->y, color->z, 1.0f};
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, color4.raw);
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = color4
+    });
+
+    R_GL_Shader_Install("mesh.static.colored");
 
     GLfloat old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
@@ -811,8 +565,6 @@ void R_GL_DrawOBB(const struct entity *ent)
         return;
 
     GLuint VAO, VBO;
-    GLuint shader_prog;
-    GLuint loc;
     vec4_t blue = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
 
     const struct aabb *aabb;
@@ -861,15 +613,18 @@ void R_GL_DrawOBB(const struct entity *ent)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
-    glUseProgram(shader_prog);
-
     /* Set uniforms */
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = model
+    });
 
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, blue.raw);
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = blue
+    });
+
+    R_GL_Shader_Install("mesh.static.colored");
 
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
@@ -890,8 +645,6 @@ void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size,
     ASSERT_IN_RENDER_THREAD();
 
     GLuint VAO, VBO;
-    GLuint shader_prog;
-    GLuint loc;
 
     vec3_t vbuff[4] = {
         (vec3_t){screen_pos->x,                  screen_pos->y,                  0.0f},
@@ -923,16 +676,19 @@ void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size,
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
-    glUseProgram(shader_prog);
-
     /* Set uniforms */
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, identity.raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = identity
+    });
 
     vec4_t color4 = (vec4_t){color->x, color->y, color->z, 1.0f};
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, color4.raw);
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = color4
+    });
+
+    R_GL_Shader_Install("mesh.static.colored");
 
     float old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
@@ -957,21 +713,21 @@ void R_GL_DrawNormals(const void *render_private, mat4x4_t *model, const bool *a
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    const struct render_private *priv = render_private;
-
-    GLuint normals_shader = *anim ? R_GL_Shader_GetProgForName("mesh.animated.normals.colored")
-                                  : R_GL_Shader_GetProgForName("mesh.static.normals.colored");
-    assert(normals_shader);
-    glUseProgram(normals_shader);
-
-    GLuint loc;
     vec4_t yellow = (vec4_t){1.0f, 1.0f, 0.0f, 1.0f};
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = yellow
+    });
 
-    loc = glGetUniformLocation(normals_shader, GL_U_COLOR);
-    glUniform4fv(loc, 1, yellow.raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *model
+    });
 
-    loc = glGetUniformLocation(normals_shader, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
+    const struct render_private *priv = render_private;
+    const char *normals_shader = *anim ? "mesh.animated.normals.colored"
+                                       : "mesh.static.normals.colored";
+    R_GL_Shader_Install(normals_shader);
 
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
@@ -1070,8 +826,6 @@ void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float
     ASSERT_IN_RENDER_THREAD();
 
     GLuint VAO, VBO;
-    GLuint shader_prog;
-    GLuint loc;
 
     const int NUM_SAMPLES = 48;
     vec3_t vbuff[NUM_SAMPLES * 2 + 2];
@@ -1108,16 +862,19 @@ void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
-    glUseProgram(shader_prog);
-
     /* Set uniforms */
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, identity.raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = identity
+    });
 
     vec4_t color4 = (vec4_t){color->x, color->y, color->z, 1.0f};
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, color4.raw);
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = color4
+    });
+
+    R_GL_Shader_Install("mesh.static.colored");
 
     float old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
@@ -1183,8 +940,6 @@ void R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t 
 
     /* OpenGL setup */
     GLuint VAO, VBO;
-    GLuint shader_prog;
-    GLuint loc;
 
     glGenVertexArrays(1, &VAO);
     glBindVertexArray(VAO);
@@ -1195,16 +950,19 @@ void R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
-    glUseProgram(shader_prog);
-
     /* Set uniforms */
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, identity.raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = identity
+    });
 
     vec4_t color4 = (vec4_t){color->x, color->y, color->z, 1.0f};
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, color4.raw);
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = color4
+    });
+
+    R_GL_Shader_Install("mesh.static.colored");
 
     float old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
@@ -1251,8 +1009,6 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
     struct colored_vert surf_vbuff[*count * 4 * 3];
     struct colored_vert line_vbuff[*count * 4 * 2];
     GLuint VAO, VBO;
-    GLuint shader_prog;
-    GLuint loc;
 
     struct colored_vert *surf_vbuff_base = surf_vbuff;
     struct colored_vert *line_vbuff_base = line_vbuff;
@@ -1337,20 +1093,23 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
         (void*)offsetof(struct colored_vert, color));
     glEnableVertexAttribArray(1);  
 
-    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored-per-vert");
-    glUseProgram(shader_prog);
-
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     /* Set uniforms */
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *model
+    });
 
     vec4_t color4 = (vec4_t){colors[0].x, colors[0].y, colors[0].z, 0.25f};
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, color4.raw);
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = color4
+    });
+
+    R_GL_Shader_Install("mesh.static.colored-per-vert");
 
     /* Render surface */
     glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(surf_vbuff) * sizeof(struct colored_vert), surf_vbuff, GL_STATIC_DRAW);
@@ -1382,8 +1141,6 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
     ASSERT_IN_RENDER_THREAD();
 
     GLuint VAO, VBO;
-    GLuint shader_prog;
-    GLuint loc;
     vec3_t line_vbuff[*count * 2];
     vec3_t point_vbuff[*count];
 
@@ -1431,16 +1188,19 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
 
-    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
-    glUseProgram(shader_prog);
-
     /* Set uniforms */
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model->raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = *model
+    });
 
     vec4_t red = (vec4_t){1.0f, 0.0f, 0.0f, 1.0f};
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, red.raw);
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = red
+    });
+
+    R_GL_Shader_Install("mesh.static.colored");
 
     GLfloat old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
@@ -1473,8 +1233,6 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
     const int NUM_SAMPLES = 150;
 
     GLuint VAO, VBO;
-    GLuint shader_prog;
-    GLuint loc;
 
     mat4x4_t model;
     PFM_Mat4x4_Identity(&model); /* points are already in world space */
@@ -1529,16 +1287,19 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);
 
-    shader_prog = R_GL_Shader_GetProgForName("mesh.static.colored");
-    glUseProgram(shader_prog);
-
     /* Set uniforms */
-    loc = glGetUniformLocation(shader_prog, GL_U_MODEL);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, model.raw);
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = model
+    });
 
     vec4_t red = (vec4_t){1.0f, 0.0f, 0.0f, 1.0f};
-    loc = glGetUniformLocation(shader_prog, GL_U_COLOR);
-    glUniform4fv(loc, 1, red.raw);
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = red
+    });
+
+    R_GL_Shader_Install("mesh.static.colored");
 
     GLfloat old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);

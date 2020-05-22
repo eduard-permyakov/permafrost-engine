@@ -126,11 +126,15 @@ struct uval{
 
 bool R_GL_StateInit(void);
 void R_GL_StateShutdown(void);
+
 void R_GL_StateSet(const char *uname, struct uval val);
-void R_GL_StateInstall(const char *uname, GLuint shader_prog);
-void R_GL_SetArray(const char *uname, enum utype itemtype, size_t size, void *data);
+bool R_GL_StateGet(const char *uname, struct uval *out);
+void R_GL_StateSetArray(const char *uname, enum utype itemtype, size_t size, void *data);
 void R_GL_StateSetComposite(const char *uname, const struct mdesc *descs, 
-                            size_t nitems, void *data);
+                            size_t itemsize, size_t nitems, void *data);
+
+/* The shader program must have been used before installing the uniforms */
+void R_GL_StateInstall(const char *uname, GLuint shader_prog);
 
 #endif
 

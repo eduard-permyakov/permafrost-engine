@@ -34,7 +34,7 @@
  */
 
 #include "gl_texture.h"
-#include "gl_uniforms.h"
+#include "gl_state.h"
 #include "gl_assert.h"
 #include "gl_material.h"
 #include "../lib/public/stb_image.h"
@@ -192,35 +192,41 @@ void R_GL_Texture_Free(const char *name)
     GL_ASSERT_OK();
 }
 
-void R_GL_Texture_Activate(const struct texture *text, GLuint shader_prog)
+void R_GL_Texture_Bind(const struct texture *text, GLuint shader_prog)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    GLuint sampler_loc = 0;
-    switch(text->tunit) {
-    case GL_TEXTURE0:  sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE0);  break;
-    case GL_TEXTURE1:  sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE1);  break;
-    case GL_TEXTURE2:  sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE2);  break;
-    case GL_TEXTURE3:  sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE3);  break;
-    case GL_TEXTURE4:  sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE4);  break;
-    case GL_TEXTURE5:  sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE5);  break;
-    case GL_TEXTURE6:  sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE6);  break;
-    case GL_TEXTURE7:  sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE7);  break;
-    case GL_TEXTURE8:  sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE8);  break;
-    case GL_TEXTURE9:  sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE9);  break;
-    case GL_TEXTURE10: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE10); break;
-    case GL_TEXTURE11: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE11); break;
-    case GL_TEXTURE12: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE12); break;
-    case GL_TEXTURE13: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE13); break;
-    case GL_TEXTURE14: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE14); break;
-    case GL_TEXTURE15: sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEXTURE15); break;
-
-    default: assert(0);
-    }
-
     glActiveTexture(text->tunit);
     glBindTexture(GL_TEXTURE_2D, text->id);
-    glUniform1i(sampler_loc, text->tunit - GL_TEXTURE0);
+    GLint sampler = text->tunit - GL_TEXTURE0;
+
+    const char *uname_table[] = {
+        GL_U_TEXTURE0,
+        GL_U_TEXTURE1,
+        GL_U_TEXTURE2,
+        GL_U_TEXTURE3,
+        GL_U_TEXTURE4,
+        GL_U_TEXTURE5,
+        GL_U_TEXTURE6,
+        GL_U_TEXTURE7,
+        GL_U_TEXTURE8,
+        GL_U_TEXTURE9,
+        GL_U_TEXTURE10,
+        GL_U_TEXTURE11,
+        GL_U_TEXTURE12,
+        GL_U_TEXTURE13,
+        GL_U_TEXTURE14,
+        GL_U_TEXTURE15,
+    };
+
+    assert(sampler >= 0 && sampler < sizeof(uname_table)/sizeof(uname_table[0]));
+    const char *uname = uname_table[sampler];
+
+    R_GL_StateSet(uname, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = sampler
+    });
+    R_GL_StateInstall(uname, shader_prog);
 
     GL_ASSERT_OK();
 }
@@ -325,14 +331,18 @@ void R_GL_Texture_ArrayFree(struct texture_arr array)
     glDeleteTextures(1, &array.id);
 }
 
-void R_GL_Texture_ActivateArray(const struct texture_arr *arr, GLuint shader_prog)
+void R_GL_Texture_BindArray(const struct texture_arr *arr, GLuint shader_prog)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    GLuint sampler_loc = glGetUniformLocation(shader_prog, GL_U_TEX_ARRAY0);
     glActiveTexture(arr->tunit);
     glBindTexture(GL_TEXTURE_2D_ARRAY, arr->id);
-    glUniform1i(sampler_loc, arr->tunit - GL_TEXTURE0);
+
+    R_GL_StateSet(GL_U_TEX_ARRAY0, (struct uval){
+        .type = UTYPE_INT,
+        .val.as_int = (arr->tunit - GL_TEXTURE0)
+    });
+    R_GL_StateInstall(GL_U_TEX_ARRAY0, shader_prog);
 
     GL_ASSERT_OK();
 }
