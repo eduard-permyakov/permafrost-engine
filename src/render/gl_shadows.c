@@ -117,9 +117,6 @@ void R_GL_InitShadows(void)
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    glGenFramebuffers(1, &s_depth_map_FBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, s_depth_map_FBO);
-
     glGenTextures(1, &s_depth_map_tex);
     glBindTexture(GL_TEXTURE_2D, s_depth_map_tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, 
@@ -131,6 +128,9 @@ void R_GL_InitShadows(void)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glGenFramebuffers(1, &s_depth_map_FBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_depth_map_FBO);
 
     glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, s_depth_map_tex, 0);
     glDrawBuffer(GL_NONE);
