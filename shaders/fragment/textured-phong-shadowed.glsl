@@ -137,8 +137,9 @@ void main()
     case 15: tex_color = texture(texture15, from_vertex.uv); break;
     }
 
-    /* Simple alpha test to reject transparent pixels */
-    if(tex_color.a == 0.0)
+    /* Simple alpha test to reject transparent pixels (with mipmapping) */
+    tex_color.rgb *= tex_color.a;
+    if(tex_color.a <= 0.5)
         discard;
 
     /* Ambient calculations */

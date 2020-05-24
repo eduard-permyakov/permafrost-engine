@@ -455,8 +455,9 @@ void main()
         return;
     }
 
-    /* Simple alpha test to reject transparent pixels */
-    if(tex_color.a == 0.0)
+    /* Simple alpha test to reject transparent pixels (with mipmapping) */
+    tex_color.rgb *= tex_color.a;
+    if(tex_color.a <= 0.5)
         discard;
 
     /* We increase the amount of ambient light that taller tiles get, in order to make
