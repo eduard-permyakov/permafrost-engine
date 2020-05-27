@@ -41,9 +41,9 @@
 struct vertex;
 
 struct mesh{
-    unsigned       num_verts;
-    GLuint         VBO;
-    GLuint         VAO;
+    unsigned num_verts;
+    GLuint   VBO;
+    GLuint   VAO;
 };
 
 #endif

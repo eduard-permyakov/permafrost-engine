@@ -48,6 +48,8 @@
 #include <assert.h>
 
 
+#define LOD_BIAS (-0.5f)
+
 KHASH_MAP_INIT_STR(tex, GLuint)
 
 /*****************************************************************************/
@@ -87,7 +89,7 @@ static bool r_texture_gl_init(const char *path, GLuint *out)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, -1.0f);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
 
     stbi_image_free(data);
     *out = ret;
@@ -232,17 +234,17 @@ void R_GL_Texture_Bind(const struct texture *text, GLuint shader_prog)
 }
 
 void R_GL_Texture_MakeArray(const struct material *mats, size_t num_mats, 
-                            struct texture_arr *out)
+                            struct texture_arr *out, GLuint tunit)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    glActiveTexture(GL_TEXTURE0);
-    out->tunit = GL_TEXTURE0;
+    glActiveTexture(tunit);
+    out->tunit = tunit;
     glGenTextures(1, &out->id);
     glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
 
-    glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGB8, 
-        CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, num_mats);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, 
+        CONFIG_ARR_TEX_RES, CONFIG_ARR_TEX_RES, num_mats, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
@@ -258,37 +260,48 @@ void R_GL_Texture_MakeArray(const struct material *mats, size_t num_mats,
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
 
-        GLubyte orig_data[w * h * 3]; 
-        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, orig_data);
+        GLubyte *orig_data = malloc(w * h * 4);
+        if(!orig_data) {
+            out->id = 0;
+            return;
+        }
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, orig_data);
 
-        GLubyte resized_data[CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3];
-        int res = stbir_resize_uint8(orig_data, w, h, 0, resized_data, CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, 0, 3);
-        assert(1 == res);
+        GLubyte resized_data[CONFIG_ARR_TEX_RES * CONFIG_ARR_TEX_RES * 4];
+        int res = stbir_resize_uint8(orig_data, w, h, 0, resized_data, CONFIG_ARR_TEX_RES, CONFIG_ARR_TEX_RES, 0, 4);
+        if(res != 1) {
+            free(orig_data);
+            out->id = 0;
+            return;
+        }
 
-        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_TILE_TEX_RES, 
-            CONFIG_TILE_TEX_RES, 1, GL_RGB, GL_UNSIGNED_BYTE, resized_data);
+        free(orig_data);
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_ARR_TEX_RES, 
+            CONFIG_ARR_TEX_RES, 1, GL_RGBA, GL_UNSIGNED_BYTE, resized_data);
     }
 
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
 
     GL_ASSERT_OK();
 }
 
 bool R_GL_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures, 
-                               struct texture_arr *out)
+                               struct texture_arr *out, GLuint tunit)
 {
     ASSERT_IN_RENDER_THREAD();
 
-    glActiveTexture(GL_TEXTURE0);
-    out->tunit = GL_TEXTURE0;
+    glActiveTexture(tunit);
+    out->tunit = tunit;
     glGenTextures(1, &out->id);
     glBindTexture(GL_TEXTURE_2D_ARRAY, out->id);
 
-    glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGB8, 
-        CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, num_textures);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, 
+        CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, num_textures, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
@@ -313,10 +326,12 @@ bool R_GL_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures,
             CONFIG_TILE_TEX_RES, 1, GL_RGB, GL_UNSIGNED_BYTE, resized_data);
     }
 
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
 
     GL_ASSERT_OK();
     return true;
@@ -334,15 +349,22 @@ void R_GL_Texture_ArrayFree(struct texture_arr array)
 void R_GL_Texture_BindArray(const struct texture_arr *arr, GLuint shader_prog)
 {
     ASSERT_IN_RENDER_THREAD();
+    int idx = (arr->tunit - GL_TEXTURE0);
+    const char *unit_name[] = {
+        GL_U_TEX_ARRAY0,
+        GL_U_TEX_ARRAY1,
+        GL_U_TEX_ARRAY2,
+        GL_U_TEX_ARRAY3,
+    };
 
     glActiveTexture(arr->tunit);
     glBindTexture(GL_TEXTURE_2D_ARRAY, arr->id);
 
-    R_GL_StateSet(GL_U_TEX_ARRAY0, (struct uval){
+    R_GL_StateSet(unit_name[idx], (struct uval){
         .type = UTYPE_INT,
-        .val.as_int = (arr->tunit - GL_TEXTURE0)
+        .val.as_int = idx
     });
-    R_GL_StateInstall(GL_U_TEX_ARRAY0, shader_prog);
+    R_GL_StateInstall(unit_name[idx], shader_prog);
 
     GL_ASSERT_OK();
 }

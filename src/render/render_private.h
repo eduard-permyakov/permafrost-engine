@@ -37,6 +37,7 @@
 #define RENDER_PRIVATE_H
 
 #include "gl_mesh.h"
+#include "gl_texture.h"
 #include "../map/public/tile.h"
 
 struct terrain_vert;
@@ -46,6 +47,7 @@ struct render_private{
     struct mesh         mesh;
     size_t              num_materials;
     struct material    *materials;
+    struct texture_arr  material_arr;
     GLuint              shader_prog;
     GLuint              shader_prog_dp; /* for the depth pass */
     GLuint              vertex_stride;

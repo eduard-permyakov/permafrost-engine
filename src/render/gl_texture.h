@@ -55,10 +55,10 @@ bool R_GL_Texture_Init(void);
 bool R_GL_Texture_AddExisting(const char *name, GLuint id);
 
 void R_GL_Texture_MakeArray(const struct material *mats, size_t num_mats, 
-                            struct texture_arr *out);
+                            struct texture_arr *out, GLuint tunit);
 void R_GL_Texture_ArrayFree(struct texture_arr array);
 bool R_GL_Texture_MakeArrayMap(const char texnames[][256], size_t num_textures, 
-                               struct texture_arr *out);
+                               struct texture_arr *out, GLuint tunit);
 
 void R_GL_Texture_Bind(const struct texture *text, GLuint shader_prog);
 void R_GL_Texture_BindArray(const struct texture_arr *arr, GLuint shader_prog);

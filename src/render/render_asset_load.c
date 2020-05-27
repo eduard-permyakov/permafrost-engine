@@ -256,10 +256,10 @@ void *R_AL_PrivFromStream(const char *base_path, const struct pfobj_hdr *header,
     const char *shader;
     if(sh_setting.as_bool) {
         shader = anim ? "mesh.animated.textured-phong-shadowed" 
-                                      : "mesh.static.textured-phong-shadowed";
+                      : "mesh.static.textured-phong-shadowed";
     }else{
         shader = anim ? "mesh.animated.textured-phong" 
-                                      : "mesh.static.textured-phong";
+                      : "mesh.static.textured-phong";
     }
 
     R_PushCmd((struct rcmd){
@@ -286,7 +286,8 @@ fail_alloc_priv:
 void R_AL_DumpPrivate(FILE *stream, void *priv_data)
 {
     struct render_private *priv = priv_data;
-    struct vertex *vbuff = glMapNamedBuffer(priv->mesh.VBO, GL_READ_ONLY);
+    glBindBuffer(GL_ARRAY_BUFFER, priv->mesh.VBO);
+    struct vertex *vbuff = glMapBuffer(GL_ARRAY_BUFFER, GL_READ_ONLY);
     assert(vbuff);
 
     /* Write verticies */
@@ -308,12 +309,12 @@ void R_AL_DumpPrivate(FILE *stream, void *priv_data)
                 }
             }
         }
-        fprintf(stream, "\n");
 
+        fprintf(stream, "\n");
         fprintf(stream, "vm %d\n", v->material_idx); 
     }
 
-    glUnmapNamedBuffer(priv->mesh.VBO);
+    glUnmapBuffer(GL_ARRAY_BUFFER);
 
     /* Write materials */
     for(int i = 0; i < priv->num_materials; i++) {
@@ -322,7 +323,7 @@ void R_AL_DumpPrivate(FILE *stream, void *priv_data)
 
         /* We don't keep track of the material names; this isn't strictly necessary */
         char name[32];
-        snprintf(name, sizeof(name), "Material.%d", i + 1);
+        pf_snprintf(name, sizeof(name), "Material.%d", i + 1);
 
         fprintf(stream, "material %s\n", name);
         fprintf(stream, "\tambient %.6f\n", m->ambient_intensity);
