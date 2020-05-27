@@ -39,7 +39,6 @@
 #include <string.h>
 #include <assert.h>
 #include <stdint.h>
-#include <stdio.h> //TMP
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
