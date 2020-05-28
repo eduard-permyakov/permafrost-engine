@@ -37,7 +37,7 @@
 
 #include <stdint.h>
 #include <assert.h>
-#include <stdio.h>
+#include <stdlib.h>
 
 /* The maximum number of discrete allocations from 
  * a single slab. */
@@ -68,6 +68,7 @@
 struct memblock{
     bool             free;
     size_t           size;
+    size_t           offset;
     int              index;
     struct memblock *next, *prev; /* Doubly-linked list of adjacent blocks used for coalesing */
 };
@@ -139,6 +140,7 @@ static struct memblock *heap_split_block(struct memheap *heap, unsigned i, size_
         + (top->size - newsize - ALIGNED(sizeof(struct memblock)))
     );
     new->size = newsize;
+    new->offset = top->offset + (top->size - newsize);
     new->free = false;
     top->size -= (ALIGNED(sizeof(struct memblock)) + newsize);
 
@@ -159,8 +161,69 @@ static void heap_coalese_blocks(struct memheap *heap, unsigned ifirst, unsigned 
     struct memblock *first = heap->blocks[ifirst];
     struct memblock *next = heap->blocks[inext];
 
+    struct memblock *pre = first->prev;
+    struct memblock *post = next->next;
+
     first->size += (ALIGNED(sizeof(struct memblock)) + next->size);
     heap_remove(heap, inext);
+    first->prev = pre;
+    first->next = post;
+}
+
+static struct memblock *meta_split_block(struct memheap *heap, unsigned i, size_t newsize)
+{
+    struct memblock *top = heap->blocks[i]; 
+    newsize = ALIGNED(newsize);
+
+    struct memblock *new = top + 1;
+    new->size = newsize;
+    new->offset = top->offset + (top->size - newsize);
+    new->free = false;
+    top->size -= newsize;
+
+    /* Re-insert the block we just resized into the heap */
+    heap_remove(heap, i);
+    heap_insert(heap, top);
+
+    new->prev = top;
+    new->next = top->next;
+    top->next = new;
+
+    heap_insert(heap, new);
+    return new;
+}
+
+static void meta_coalese_blocks(struct memheap *heap, unsigned ifirst, unsigned inext)
+{
+    struct memblock *first = heap->blocks[ifirst];
+    struct memblock *next = heap->blocks[inext];
+
+    struct memblock *pre = first->prev;
+    struct memblock *post = next->next;
+
+    first->size += next->size;
+    heap_remove(heap, inext);
+    first->prev = pre;
+    first->next = post;
+}
+
+static struct memblock *meta_block_for_offset(struct memheap *heap, size_t offset)
+{
+    int low = 1;
+    int high = heap->nblocks;
+    int mid = (low + high) / 2;
+
+    while(heap->blocks[mid]->offset != offset) {
+
+        if(heap->blocks[mid]->offset > offset) {
+            high = mid - 1;
+        }else{
+            low = mid + 1;
+        }
+        mid = (low + high) / 2;
+    }
+
+    return heap->blocks[mid];
 }
 
 /*****************************************************************************/
@@ -170,11 +233,12 @@ static void heap_coalese_blocks(struct memheap *heap, unsigned ifirst, unsigned 
 bool pf_malloc_init(void *slab, size_t size)
 {
     struct memheap *heap = (struct memheap*)slab;
-    struct memblock *head = (struct memblock*)(heap + 1);
+    struct memblock *head = (struct memblock*)(heap + ALIGNED(sizeof(struct memheap)));
     if(size < ALIGNED(sizeof(*heap)) + ALIGNED(sizeof(*head)))
         return false;
 
     head->size = ALIGNED(size) - ALIGNED(sizeof(struct memheap)) - ALIGNED(sizeof(struct memblock));
+    head->offset = ALIGNED(sizeof(struct memheap)) + ALIGNED(sizeof(struct memblock));
     head->free = true;
     head->next = NULL;
     head->prev = NULL;
@@ -213,6 +277,62 @@ void pf_free(void *slab, void *ptr)
     if(CAN_COALESE_WITH_PREV(mem)) {
         mem->prev->free = true;
         heap_coalese_blocks(heap, mem->prev->index, mem->index);
+    }
+}
+
+void *pf_metamalloc_init(size_t size)
+{
+    size_t metasize = sizeof(struct memheap) + MAX_HEAP_SZ * sizeof(struct memblock);
+    struct memheap *heap = malloc(metasize);
+    if(!heap)
+        return NULL;
+
+    struct memblock *head = (struct memblock*)(heap + ALIGNED(sizeof(struct memheap)));
+    head->size = ALIGNED(size) - ALIGNED(sizeof(struct memheap)) - ALIGNED(sizeof(struct memblock));
+    head->offset = 0;
+    head->free = true;
+    head->next = NULL;
+    head->prev = NULL;
+
+    heap->blocks[1] = head;
+    heap->nblocks = 1;
+    return heap;
+}
+
+void pf_metamalloc_destroy(void *meta)
+{
+    free(meta);
+}
+
+int pf_metamalloc(void *meta, size_t size)
+{
+    struct memheap *heap = (struct memheap*)meta;
+    struct memblock *top = heap->blocks[1];
+
+    if(!top->free || size > top->size || heap->nblocks == MAX_HEAP_SZ) {
+        return -1;
+    }
+
+    if(top->size == size) {
+        top->free = false;
+        return top->offset;
+    }
+
+    return meta_split_block(heap, 1, size)->offset;
+}
+
+void pf_metafree(void *meta, size_t offset)
+{
+    struct memheap *heap = (struct memheap*)meta;
+    struct memblock *mem = meta_block_for_offset(heap, offset);
+
+    if(CAN_COALESE_WITH_NEXT(mem)) {
+        mem->free = true;
+        meta_coalese_blocks(heap, mem->index, mem->next->index);
+    }
+    if(CAN_COALESE_WITH_PREV(mem)) {
+        mem->prev->free = true;
+        meta_coalese_blocks(heap, mem->prev->index, mem->index);
     }
 }
 

@@ -46,5 +46,15 @@ bool  pf_malloc_init(void *slab, size_t size);
 void *pf_malloc(void *slab, size_t size);
 void  pf_free(void *slab, void *ptr);
 
+/* Same as above, except the actual memory slab is 
+ * stored separately. The allocation simply updates 
+ * the block metadata and returns an offset into the 
+ * slab buffer, or -1 if the allocation failed. */
+
+void *pf_metamalloc_init(size_t size);
+void  pf_metamalloc_destroy(void *meta);
+int   pf_metamalloc(void *meta, size_t size);
+void  pf_metafree(void *meta, size_t offset);
+
 #endif
 
