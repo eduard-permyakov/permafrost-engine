@@ -164,7 +164,7 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
     assert(priv->shader_prog != -1 && priv->shader_prog_dp != -1);
 
     if(priv->num_materials > 0) {
-        R_GL_Texture_MakeArray(priv->materials, priv->num_materials, &priv->material_arr, GL_TEXTURE0);
+        R_GL_Texture_ArrayMake(priv->materials, priv->num_materials, &priv->material_arr, GL_TEXTURE0);
     }
 
     GL_ASSERT_OK();
@@ -182,16 +182,16 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model)
         .val.as_mat4 = *model
     });
 
+    R_GL_StateSetComposite(GL_U_MATERIALS, (struct mdesc[]){
+        { "ambient_intensity",   UTYPE_FLOAT,    offsetof(struct material, ambient_intensity) },
+        { "diffuse_clr",         UTYPE_VEC3,     offsetof(struct material, diffuse_clr)       },
+        { "specular_clr",        UTYPE_VEC3,     offsetof(struct material, specular_clr)      },
+        {0}
+    }, sizeof(struct material), priv->num_materials, priv->materials);
+
     R_GL_Shader_InstallProg(priv->shader_prog);
 
     if(priv->num_materials > 0) {
-
-        R_GL_StateSetComposite(GL_U_MATERIALS, (struct mdesc[]){
-            { "ambient_intensity",   UTYPE_FLOAT,    offsetof(struct material, ambient_intensity) },
-            { "diffuse_clr",         UTYPE_VEC3,     offsetof(struct material, diffuse_clr)       },
-            { "specular_clr",        UTYPE_VEC3,     offsetof(struct material, specular_clr)      },
-            {0}
-        }, sizeof(struct material), priv->num_materials, priv->materials);
         R_GL_Texture_BindArray(&priv->material_arr, priv->shader_prog);
     }
     R_GL_ShadowMapBind();

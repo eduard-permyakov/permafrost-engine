@@ -1,6 +1,6 @@
-/*
+/* 
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2020 Eduard Permyakov 
+ *  Copyright (C) 2019-2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,40 +33,16 @@
  *
  */
 
-#ifndef GL_TEXTURE_H
-#define GL_TEXTURE_H
+#ifndef GL_BATCH_H
+#define GL_BATCH_H
 
-#include <GL/glew.h>
 #include <stdbool.h>
 
-struct material;
+struct render_input;
 
-struct texture{
-    GLuint id;
-    GLuint tunit;
-};
-
-struct texture_arr{
-    GLuint id;
-    GLuint tunit;
-};
-
-bool R_GL_Texture_Init(void);
-bool R_GL_Texture_AddExisting(const char *name, GLuint id);
-
-void R_GL_Texture_ArrayAlloc(size_t num_elems, struct texture_arr *out, GLuint tunit);
-void R_GL_Texture_ArrayFree(struct texture_arr array);
-void R_GL_Texture_ArraySetElem(struct texture_arr *arr, int idx, GLuint id);
-void R_GL_Texture_ArrayGenMipmap(struct texture_arr *arr);
-
-void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats, 
-                            struct texture_arr *out, GLuint tunit);
-bool R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures, 
-                               struct texture_arr *out, GLuint tunit);
-
-void R_GL_Texture_Bind(const struct texture *text, GLuint shader_prog);
-void R_GL_Texture_BindArray(const struct texture_arr *arr, GLuint shader_prog);
-
-void R_GL_Texture_GetOrLoad(const char *basedir, const char *name, GLuint *out);
+bool R_GL_Batch_Init(void);
+void R_GL_Batch_Shutdown(void);
+void R_GL_Batch_Draw(struct render_input *in);
 
 #endif
+
