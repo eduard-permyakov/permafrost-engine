@@ -66,7 +66,7 @@
  */
 struct gl_ring;
 
-struct gl_ring *R_GL_RingbufferInit(size_t size);
+struct gl_ring *R_GL_RingbufferInit(size_t size, GLenum target);
 void            R_GL_RingbufferDestroy(struct gl_ring *ring);
 bool            R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size);
 void            R_GL_RingbufferBindLast(struct gl_ring *ring, GLuint tunit, GLuint shader_prog, const char *uname);

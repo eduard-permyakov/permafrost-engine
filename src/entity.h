@@ -39,6 +39,7 @@
 #include "pf_math.h"
 #include "collision.h"
 #include "lib/public/vec.h"
+#include "map/public/tile.h"
 
 #include <stdbool.h>
 
@@ -78,8 +79,9 @@ struct entity{
 
 /* State needed for rendering a static entity */
 struct ent_stat_rstate{
-    void     *render_private;
-    mat4x4_t  model;
+    void            *render_private;
+    mat4x4_t         model;
+    struct tile_desc td; 
 };
 
 /* State needed for rendering an animated entity */

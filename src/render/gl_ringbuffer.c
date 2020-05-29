@@ -73,6 +73,7 @@ struct gl_ring{
     void             *user;
     size_t            pos;
     size_t            size;
+    GLenum            target;
     /* The buffer object backing the ringbuffer */
     GLuint            VBO;
     /* The texture buffer object associated with the VBO - 
@@ -132,9 +133,9 @@ static bool ring_section_free(const struct gl_ring *ring, size_t size)
 static void pmb_init(struct gl_ring *ring)
 {
     GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
-    glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
-    glBufferStorageEXT(GL_TEXTURE_BUFFER, ring->size, NULL, flags);
-    ring->user = glMapBufferRange(GL_TEXTURE_BUFFER, 0, ring->size, flags);
+    glBindBuffer(ring->target, ring->VBO);
+    glBufferStorageEXT(ring->target, ring->size, NULL, flags);
+    ring->user = glMapBufferRange(ring->target, 0, ring->size, flags);
 }
 
 static void *pmb_map(struct gl_ring *ring, size_t offset, size_t size)
@@ -149,27 +150,27 @@ static void pmb_unmap(struct gl_ring *ring)
 
 static void unsynch_vbo_init(struct gl_ring *ring)
 {
-    glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
-    glBufferData(GL_TEXTURE_BUFFER, ring->size, NULL, GL_STREAM_DRAW);
+    glBindBuffer(ring->target, ring->VBO);
+    glBufferData(ring->target, ring->size, NULL, GL_STREAM_DRAW);
 }
 
 static void *unsynch_vbo_map(struct gl_ring *ring, size_t offset, size_t size)
 {
-    glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
-    return glMapBufferRange(GL_TEXTURE_BUFFER, offset, size,
+    glBindBuffer(ring->target, ring->VBO);
+    return glMapBufferRange(ring->target, offset, size,
         GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
 }
 
 static void unsynch_vbo_unmap(struct gl_ring *ring)
 {
-    glUnmapBuffer(GL_TEXTURE_BUFFER);
+    glUnmapBuffer(ring->target);
 }
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-struct gl_ring *R_GL_RingbufferInit(size_t size)
+struct gl_ring *R_GL_RingbufferInit(size_t size, GLenum target)
 {
     struct gl_ring *ret = malloc(sizeof(struct gl_ring));
     if(!ret)
@@ -183,6 +184,7 @@ struct gl_ring *R_GL_RingbufferInit(size_t size)
     ret->imark_head = 0;
     ret->imark_tail = 0;
     ret->nmarkers = 0;
+    ret->target = target;
     memset(&ret->fences, 0, sizeof(ret->fences));
     memset(&ret->markers, 0, sizeof(ret->fences));
 

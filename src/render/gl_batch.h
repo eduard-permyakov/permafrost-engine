@@ -42,7 +42,6 @@ struct render_input;
 
 bool R_GL_Batch_Init(void);
 void R_GL_Batch_Shutdown(void);
-void R_GL_Batch_Draw(struct render_input *in);
 
 #endif
 

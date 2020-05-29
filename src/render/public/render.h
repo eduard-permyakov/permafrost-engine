@@ -500,4 +500,11 @@ void R_GL_UI_Render(const struct nk_draw_list *dl);
 void R_GL_UI_UploadFontAtlas(void *image, const int *w, const int *h);
 
 
+/*###########################################################################*/
+/* RENDER BATCH                                                              */
+/*###########################################################################*/
+
+void R_GL_Batch_Draw(struct render_input *in);
+
+
 #endif

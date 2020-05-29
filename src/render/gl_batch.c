@@ -40,10 +40,13 @@
 #include "gl_assert.h"
 #include "gl_material.h"
 #include "render_private.h"
+#include "../entity.h"
 #include "../lib/public/pf_malloc.h"
 #include "../lib/public/khash.h"
 #include "../map/public/tile.h"
+#include "../game/public/game.h"
 
+#include <inttypes.h>
 #include <assert.h>
 
 
@@ -55,6 +58,9 @@
 
 #define CMD_RING_SZ		(16*1024*1024 * sizeof(struct draw_arrays_cmd))
 #define ATTR_RING_SZ	(512*1024*1024)
+
+#define MAX_BATCHES     (256)
+#define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 
 struct mesh_desc{
     int    vbo_idx;
@@ -77,13 +83,25 @@ struct vbo_desc{
     GLuint  VBO;
 };
 
+struct chunk_batch_desc{
+    int chunk_r, chunk_c; 
+    int start_idx;
+    int end_idx;
+};
+
+struct inst_group_desc{
+    void *render_private;
+    int   start_idx;
+    int   end_idx;
+};
+
 KHASH_MAP_INIT_INT(mdesc, struct mesh_desc)
 KHASH_MAP_INIT_INT(tdesc, struct tex_desc)
 
 struct draw_arrays_cmd{
 	GLuint count;
 	GLuint instance_count;
-	GLuint first;
+	GLuint first_index;
 	GLuint base_instance;
 };
 
@@ -115,7 +133,7 @@ struct gl_batch{
     struct vbo_desc     vbos[MAX_MESH_BUFFS];
 };
 
-KHASH_MAP_INIT_INT64(batch, struct gl_batch*)
+KHASH_MAP_INIT_INT(batch, struct gl_batch*)
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -128,12 +146,16 @@ static khash_t(batch)  *s_chunk_batches;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-uint64_t batch_chunk_key(struct tile_desc td)
+uint32_t batch_td_key(struct tile_desc td)
 {
-    return ((( ((uint64_t)td.chunk_r) & 0xffff) << 48)
-         |  (( ((uint64_t)td.chunk_c) & 0xffff) << 32)
-         |  (( ((uint64_t)td.tile_r)  & 0xffff) << 16)
-         |  (( ((uint64_t)td.tile_c)  & 0xffff) <<  0));
+    return ((( ((uint32_t)td.chunk_r) & 0xffff) << 16)
+         |  (( ((uint32_t)td.chunk_c) & 0xffff) <<  0));
+}
+
+uint32_t batch_chunk_key(int chunk_r, int chunk_c)
+{
+    return ((( ((uint32_t)chunk_r) & 0xffff) << 16)
+         |  (( ((uint32_t)chunk_c) & 0xffff) <<  0));
 }
 
 static int batch_first_free_idx(uint32_t mask)
@@ -314,11 +336,11 @@ static struct gl_batch *batch_init(void)
     if(!batch)
         goto fail_alloc;
 
-    batch->cmd_ring = R_GL_RingbufferInit(CMD_RING_SZ);
+    batch->cmd_ring = R_GL_RingbufferInit(CMD_RING_SZ, GL_DRAW_INDIRECT_BUFFER);
 	if(!batch->cmd_ring)
         goto fail_cmd_ring;
 
-    batch->attr_ring = R_GL_RingbufferInit(ATTR_RING_SZ);
+    batch->attr_ring = R_GL_RingbufferInit(ATTR_RING_SZ, GL_ARRAY_BUFFER);
     if(!batch->attr_ring)
         goto fail_attr_ring;
 
@@ -375,6 +397,108 @@ static void batch_destroy(struct gl_batch *batch)
 	free(batch);
 }
 
+static bool batch_chunk_compare(struct tile_desc a, struct tile_desc b)
+{
+    uint32_t ia = batch_td_key(a);
+    uint32_t ib = batch_td_key(b);
+    return ia > ib;
+}
+
+/* Sort the 'ents' array in-place by the chunk coordinate of the entities. Fill
+ * 'out' with a list of descriptors about what subrange of the sorted array 
+ * corresponds to which chunk */
+static size_t batch_sort_by_chunk(vec_rstat_t *ents, struct chunk_batch_desc *out, size_t maxout)
+{
+    int i = 1;
+    while(i < vec_size(ents)) {
+        int j = i;
+        while(j > 0 && batch_chunk_compare(vec_AT(ents, j - 1).td, vec_AT(ents, j).td)) {
+
+            struct ent_stat_rstate tmp = vec_AT(ents, j - 1);
+            vec_AT(ents, j - 1) = vec_AT(ents, j);
+            vec_AT(ents, j) = tmp;
+            j--;
+        }
+        i++;
+    }
+
+    size_t ret = 0;
+
+    struct chunk_batch_desc curr = (struct chunk_batch_desc){
+        .chunk_r = vec_AT(ents, 0).td.chunk_r,
+        .chunk_c = vec_AT(ents, 0).td.chunk_c,
+        .start_idx = 0,
+    };
+    for(int i = 1; i < vec_size(ents); i++) {
+    
+        if(batch_td_key(vec_AT(ents, i - 1).td) != batch_td_key(vec_AT(ents, i).td)) {
+            curr.end_idx = i - 1;
+            out[ret++] = curr;
+            curr = (struct chunk_batch_desc){
+                .chunk_r = vec_AT(ents, i).td.chunk_r,
+                .chunk_c = vec_AT(ents, i).td.chunk_c,
+                .start_idx = i,
+            };
+        }
+        if(ret == maxout)
+            break;
+    }
+
+    curr.end_idx = i - 1;
+    out[ret++] = curr;
+
+    return ret;
+}
+
+static size_t batch_sort_by_inst(struct ent_stat_rstate *ents, size_t nents, 
+                                 struct inst_group_desc *out, size_t maxout)
+{
+    int i = 1;
+    while(i < nents) {
+        int j = i;
+        while(j > 0 && ((uintptr_t)ents[j - 1].render_private) > ((uintptr_t)ents[j].render_private)) {
+
+            struct ent_stat_rstate tmp = ents[j - 1];
+            ents[j - 1] = ents[j];
+            ents[j] = tmp;
+            j--;
+        }
+        i++;
+    }
+
+    size_t ret = 0;
+
+    struct inst_group_desc curr = (struct inst_group_desc){
+        .render_private = ents[0].render_private,
+        .start_idx = 0,
+    };
+    for(int i = 1; i < nents; i++) {
+    
+        if(((uintptr_t)ents[i - 1].render_private) != ((uintptr_t)ents[i].render_private)) {
+
+            curr.end_idx = i - 1;
+            out[ret++] = curr;
+            curr = (struct inst_group_desc){
+                .render_private = ents[i].render_private,
+                .start_idx = i,
+            };
+        }
+        if(ret == maxout)
+            break;
+    }
+
+    curr.end_idx = i - 1;
+    out[ret++] = curr;
+
+    return ret;
+}
+
+static void batch_render_static(struct gl_batch *batch, struct ent_stat_rstate *ents, size_t nents)
+{
+    struct inst_group_desc descs[MAX_BATCHES];
+    size_t nbatches = batch_sort_by_inst(ents, nents, descs, ARR_SIZE(descs));
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -400,7 +524,7 @@ void R_GL_Batch_Shutdown(void)
 {
     batch_destroy(s_anim_batch);
 
-    uint64_t key;
+    uint32_t key;
     struct gl_batch *curr;
     (void)key;
 
@@ -412,6 +536,25 @@ void R_GL_Batch_Shutdown(void)
 
 void R_GL_Batch_Draw(struct render_input *in)
 {
+    struct chunk_batch_desc descs[MAX_BATCHES];
+    size_t nbatches = batch_sort_by_chunk(&in->cam_vis_stat, descs, ARR_SIZE(descs));
 
+    for(int i = 0; i < nbatches; i++) {
+    
+        const struct chunk_batch_desc *curr = &descs[i];
+        uint32_t key = batch_chunk_key(curr->chunk_r, curr->chunk_c);
+
+        khiter_t k = kh_get(batch, s_chunk_batches, key);
+        if(k == kh_end(s_chunk_batches)) {
+            int status;
+            k = kh_put(batch, s_chunk_batches, key, &status);
+            assert(status != -1 && status != 0);
+            kh_value(s_chunk_batches, k) = batch_init();
+        }
+
+        struct gl_batch *batch = kh_value(s_chunk_batches, k);
+        size_t ndraw = curr->end_idx - curr->start_idx + 1;
+        batch_render_static(batch, &vec_AT(&in->cam_vis_stat, curr->start_idx), ndraw);
+    }
 }
 

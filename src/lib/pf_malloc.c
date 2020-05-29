@@ -136,7 +136,7 @@ static struct memblock *heap_split_block(struct memheap *heap, unsigned i, size_
     newsize = ALIGNED(newsize);
 
     struct memblock *new = (struct memblock*)(
-        MEMBLOCK_MEM(top)
+        (char*)MEMBLOCK_MEM(top)
         + (top->size - newsize - ALIGNED(sizeof(struct memblock)))
     );
     new->size = newsize;
@@ -233,7 +233,7 @@ static struct memblock *meta_block_for_offset(struct memheap *heap, size_t offse
 bool pf_malloc_init(void *slab, size_t size)
 {
     struct memheap *heap = (struct memheap*)slab;
-    struct memblock *head = (struct memblock*)(heap + ALIGNED(sizeof(struct memheap)));
+    struct memblock *head = (struct memblock*)((char*)heap + ALIGNED(sizeof(struct memheap)));
     if(size < ALIGNED(sizeof(*heap)) + ALIGNED(sizeof(*head)))
         return false;
 
@@ -287,7 +287,7 @@ void *pf_metamalloc_init(size_t size)
     if(!heap)
         return NULL;
 
-    struct memblock *head = (struct memblock*)(heap + ALIGNED(sizeof(struct memheap)));
+    struct memblock *head = (struct memblock*)((char*)heap + ALIGNED(sizeof(struct memheap)));
     head->size = ALIGNED(size) - ALIGNED(sizeof(struct memheap)) - ALIGNED(sizeof(struct memblock));
     head->offset = 0;
     head->free = true;
