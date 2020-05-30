@@ -71,7 +71,7 @@ struct ui_vert{
 #define VERTS_PER_TOP_FACE  (24)
 #define VERTS_PER_TILE      (4 * VERTS_PER_SIDE_FACE + VERTS_PER_TOP_FACE)
 #define TILE_DEPTH          (3)
-
+#define MAX_MATERIALS       (16)
 
 /*###########################################################################*/
 /* RENDER TEXTURE                                                            */

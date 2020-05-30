@@ -170,7 +170,7 @@ static void unsynch_vbo_unmap(struct gl_ring *ring)
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-struct gl_ring *R_GL_RingbufferInit(size_t size, GLenum target)
+struct gl_ring *R_GL_RingbufferInit(size_t size, GLenum target, enum ring_format fmt)
 {
     struct gl_ring *ret = malloc(sizeof(struct gl_ring));
     if(!ret)
@@ -206,7 +206,11 @@ struct gl_ring *R_GL_RingbufferInit(size_t size, GLenum target)
     ret->ops.init(ret);
 
     glBindTexture(GL_TEXTURE_BUFFER, ret->tex_buff);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_R8UI, ret->VBO);
+    if(fmt == RING_UBYTE) {
+        glTexBuffer(GL_TEXTURE_BUFFER, GL_R8UI, ret->VBO);
+    }else if(fmt == RING_FLOAT) {
+        glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, ret->VBO);
+    }
 
     GL_ASSERT_OK();
     return ret;
@@ -222,7 +226,7 @@ void R_GL_RingbufferDestroy(struct gl_ring *ring)
     free(ring);
 }
 
-bool R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size)
+bool R_GL_RingbufferPush(struct gl_ring *ring, const void *data, size_t size)
 {
     if(size > ring->size) {
         return false;
@@ -264,6 +268,58 @@ bool R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size)
     ring->nmarkers++;
 
     GL_ASSERT_OK();
+    return true;
+}
+
+bool R_GL_RingbufferAppendLast(struct gl_ring *ring, const void *data, size_t size)
+{
+    assert(ring->nmarkers);
+    assert(ring->fences[ring->imark_head] == 0);
+
+    if(size > ring->size) {
+        return false;
+    }
+
+    while(!ring_section_free(ring, size)) {
+        if(!ring_wait_one(ring))
+            return false;
+    }
+
+    size_t left = ring->size - ring->pos;
+    size_t old_pos = ring->pos;
+
+    if(size <= left) {
+        void *ptr = ring->ops.map(ring, ring->pos, size);
+        memcpy(ptr, data, size);
+        ring->pos = (ring->pos + size) % ring->size;
+    }else{
+        size_t start = size - left;
+        if(left > 0) {
+            void *ptr = ring->ops.map(ring, ring->pos, left);
+            memcpy(ptr, data, left);
+            ring->ops.unmap(ring);
+        }
+
+        /* wrap around */
+        void *ptr = ring->ops.map(ring, 0, start);
+        memcpy(ptr, data, start);
+        ring->pos = start;
+    }
+
+    ring->ops.unmap(ring);
+    ring->markers[ring->imark_head].end = ring->pos;
+
+    GL_ASSERT_OK();
+    return true;
+}
+
+bool R_GL_RingbufferGetLastRange(struct gl_ring *ring, size_t *out_begin, size_t *out_end)
+{
+    if(ring->nmarkers == 0)
+        return false;
+
+    *out_begin = ring->markers[ring->imark_head].begin;
+    *out_end = ring->markers[ring->imark_head].end;
     return true;
 }
 

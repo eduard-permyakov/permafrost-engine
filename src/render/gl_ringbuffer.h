@@ -66,9 +66,16 @@
  */
 struct gl_ring;
 
-struct gl_ring *R_GL_RingbufferInit(size_t size, GLenum target);
+enum ring_format{
+    RING_UBYTE,
+    RING_FLOAT
+};
+
+struct gl_ring *R_GL_RingbufferInit(size_t size, GLenum target, enum ring_format fmt);
 void            R_GL_RingbufferDestroy(struct gl_ring *ring);
-bool            R_GL_RingbufferPush(struct gl_ring *ring, void *data, size_t size);
+bool            R_GL_RingbufferPush(struct gl_ring *ring, const void *data, size_t size);
+bool            R_GL_RingbufferAppendLast(struct gl_ring *ring, const void *data, size_t size);
+bool            R_GL_RingbufferGetLastRange(struct gl_ring *ring, size_t *out_begin, size_t *out_end);
 void            R_GL_RingbufferBindLast(struct gl_ring *ring, GLuint tunit, GLuint shader_prog, const char *uname);
 void            R_GL_RingbufferSyncLast(struct gl_ring *ring);
 
