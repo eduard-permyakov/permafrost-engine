@@ -40,6 +40,7 @@
 #include "gl_assert.h"
 #include "gl_material.h"
 #include "gl_shader.h"
+#include "gl_perf.h"
 #include "render_private.h"
 #include "public/render.h"
 #include "../entity.h"
@@ -296,10 +297,8 @@ static bool batch_append_tex(struct gl_batch *batch, GLuint tid)
     assert(curr_arr_idx >= 0 && curr_arr_idx < batch->ntexarrs);
     assert(slice_idx >= 0 && slice_idx < 32);
 
-    GL_ASSERT_OK();
     R_GL_Texture_BindArray(&batch->textures[curr_arr_idx].arr, R_GL_Shader_GetCurrActive());
     R_GL_Texture_ArraySetElem(&batch->textures[curr_arr_idx].arr, slice_idx, tid);
-    GL_ASSERT_OK();
 
     int status;
     k = kh_put(tdesc, batch->tid_desc_map, tid, &status);
@@ -698,6 +697,8 @@ static void batch_do_drawcall(struct gl_batch *batch, const struct ent_stat_rsta
 
 static void batch_render_static(struct gl_batch *batch, struct ent_stat_rstate *ents, size_t nents)
 {
+    GL_PERF_ENTER();
+
     struct inst_group_desc descs[MAX_BATCHES];
     size_t nbatches = batch_sort_by_inst(ents, nents, descs, ARR_SIZE(descs));
 
@@ -707,6 +708,8 @@ static void batch_render_static(struct gl_batch *batch, struct ent_stat_rstate *
     for(int i = 0; i < ndcalls; i++) {
         batch_do_drawcall(batch, ents, dcalls[i], descs);
     }
+
+    GL_PERF_RETURN_VOID();
 }
 
 /*****************************************************************************/
@@ -746,6 +749,8 @@ void R_GL_Batch_Shutdown(void)
 
 void R_GL_Batch_Draw(struct render_input *in)
 {
+    GL_PERF_ENTER();
+
     struct chunk_batch_desc descs[MAX_BATCHES];
     size_t nbatches = batch_sort_by_chunk(&in->cam_vis_stat, descs, ARR_SIZE(descs));
 
@@ -773,5 +778,43 @@ void R_GL_Batch_Draw(struct render_input *in)
         }
         batch_render_static(batch, &vec_AT(&in->cam_vis_stat, curr->start_idx), ndraw);
     }
+
+    GL_PERF_RETURN_VOID();
+}
+
+void R_GL_Batch_Reset(void)
+{
+    uint32_t key;
+    struct gl_batch *curr;
+    (void)key;
+
+    kh_foreach(s_chunk_batches, key, curr, {
+        batch_destroy(curr);
+    });
+    kh_clear(batch, s_chunk_batches);
+
+    batch_destroy(s_anim_batch);
+    s_anim_batch = batch_init();
+}
+
+void R_GL_Batch_AllocChunks(struct map_resolution *res)
+{
+    GL_PERF_ENTER();
+
+    for(int r = 0; r < res->chunk_h; r++) {
+    for(int c = 0; c < res->chunk_w; c++) {
+    
+        uint32_t key = batch_chunk_key(r, c);
+        khiter_t k = kh_get(batch, s_chunk_batches, key);
+
+        if(k == kh_end(s_chunk_batches)) {
+            int status;
+            k = kh_put(batch, s_chunk_batches, key, &status);
+            assert(status != -1 && status != 0);
+            kh_value(s_chunk_batches, k) = batch_init();
+        }
+    }}
+
+    GL_PERF_RETURN_VOID();
 }
 

@@ -301,6 +301,11 @@ static void g_render_healthbars(void)
 
 static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_ranim_t *out_anim)
 {
+    struct map_resolution res;
+    if(s_gs.map) {
+        M_GetResolution(s_gs.map, &res);
+    }
+
     for(int i = 0; i < vec_size(&ents); i++) {
 
         const struct entity *curr = vec_AT(&ents, i);
@@ -310,12 +315,24 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
 
         if(curr->flags & ENTITY_FLAG_ANIMATED) {
         
-            struct ent_anim_rstate rstate = (struct ent_anim_rstate){curr->render_private, model};
+            struct ent_anim_rstate rstate = (struct ent_anim_rstate){
+                .render_private = curr->render_private, 
+                .model = model
+            };
             A_GetRenderState(curr, &rstate.njoints, rstate.curr_pose, &rstate.inv_bind_pose);
             vec_ranim_push(out_anim, rstate);
         }else{
         
-            struct ent_stat_rstate rstate = (struct ent_stat_rstate){curr->render_private, model};
+            struct tile_desc td = {0};
+            if(s_gs.map) {
+                M_Tile_DescForPoint2D(res, M_GetPos(s_gs.map), G_Pos_GetXZ(curr->uid), &td);
+            }
+
+            struct ent_stat_rstate rstate = (struct ent_stat_rstate){
+                .render_private = curr->render_private, 
+                .model = model,
+                .td = td
+            };
             vec_rstat_push(out_stat, rstate);
         }
     }
@@ -770,6 +787,16 @@ bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
     g_init_map();
     E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
 
+    struct map_resolution res;
+    M_GetResolution(s_gs.map, &res);
+    R_PushCmd((struct rcmd){
+        .func = R_GL_Batch_AllocChunks,
+        .nargs = 1,
+        .args = {
+            R_PushArg(&res, sizeof(res)),
+        }
+    });
+
     PERF_RETURN(true);
 }
 
@@ -822,6 +849,9 @@ void G_ClearState(void)
     }
     G_ActivateCamera(0, CAM_MODE_RTS);
     s_gs.factions_allocd = 0;
+
+    R_PushCmd((struct rcmd) { R_GL_Batch_Reset, 0 });
+
     PERF_RETURN_VOID();
 }
 

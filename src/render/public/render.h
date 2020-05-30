@@ -504,7 +504,29 @@ void R_GL_UI_UploadFontAtlas(void *image, const int *w, const int *h);
 /* RENDER BATCH                                                              */
 /*###########################################################################*/
 
+/* ---------------------------------------------------------------------------
+ * Draw all the camera-visible entities in the render input, making use of 
+ * draw command batching to reduce driver overhead. This is equivalent to calling
+ * R_GL_Draw(...) for every camera-visible entitiy. Meshes and textures that are 
+ * not part of any batch will be added to the batches dynamically.
+ * ---------------------------------------------------------------------------
+ */
 void R_GL_Batch_Draw(struct render_input *in);
+
+/* ---------------------------------------------------------------------------
+ * Free all the resources used by live batches. Free all the per-chunk batches,
+ * resetting the state of the module to that at initialization time.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_Batch_Reset(void);
+
+/* ---------------------------------------------------------------------------
+ * Allocate a new batch for every chunk of the map. Allocating batch
+ * resources has significant overhead so it's advantageous to do this upfront.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_Batch_AllocChunks(struct map_resolution *res);
 
 
 #endif
+
