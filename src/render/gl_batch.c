@@ -271,7 +271,7 @@ static void batch_free_mesh(struct gl_batch *batch, GLuint VBO)
     kh_del(mdesc, batch->vbo_desc_map, k);
 }
 
-static bool batch_append_tex(struct gl_batch *batch, GLuint tid)
+static bool batch_append_tex(struct gl_batch *batch, GLuint tid, int idx, struct texture_arr *arr)
 {
     khiter_t k = kh_get(tdesc, batch->tid_desc_map, tid);
     if(k != kh_end(batch->tid_desc_map))
@@ -298,7 +298,7 @@ static bool batch_append_tex(struct gl_batch *batch, GLuint tid)
     assert(slice_idx >= 0 && slice_idx < 32);
 
     R_GL_Texture_BindArray(&batch->textures[curr_arr_idx].arr, R_GL_Shader_GetCurrActive());
-    R_GL_Texture_ArraySetElem(&batch->textures[curr_arr_idx].arr, slice_idx, tid);
+    R_GL_Texture_ArrayCopyElem(&batch->textures[curr_arr_idx].arr, slice_idx, arr, idx);
 
     int status;
     k = kh_put(tdesc, batch->tid_desc_map, tid, &status);
@@ -329,7 +329,7 @@ static bool batch_append(struct gl_batch *batch, struct render_private *priv)
 
     int tex_idx = 0;
     for(; tex_idx < priv->num_materials; tex_idx++) {
-        if(!batch_append_tex(batch, priv->materials[tex_idx].texture.id))
+        if(!batch_append_tex(batch, priv->materials[tex_idx].texture.id, tex_idx, &priv->material_arr))
             goto fail_append_tex;
     }
 
@@ -438,6 +438,9 @@ static bool batch_chunk_compare(struct tile_desc a, struct tile_desc b)
  * corresponds to which chunk */
 static size_t batch_sort_by_chunk(vec_rstat_t *ents, struct chunk_batch_desc *out, size_t maxout)
 {
+    if(vec_size(ents) == 0)
+        return 0;
+
     int i = 1;
     while(i < vec_size(ents)) {
         int j = i;
@@ -753,6 +756,9 @@ void R_GL_Batch_Draw(struct render_input *in)
 
     struct chunk_batch_desc descs[MAX_BATCHES];
     size_t nbatches = batch_sort_by_chunk(&in->cam_vis_stat, descs, ARR_SIZE(descs));
+
+    if(nbatches == 0)
+        GL_PERF_RETURN_VOID();
 
     //TODO: this can be shadowed or not shadowed
     //R_GL_Shader_Install("mesh.static.textured-phong-shadowed-batched");

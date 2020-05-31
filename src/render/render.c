@@ -386,6 +386,7 @@ static void render_destroy_ctx(void)
 {
     R_GL_Batch_Shutdown();
     R_GL_StateShutdown();
+    R_GL_Texture_Shutdown();
     SDL_GL_DeleteContext(s_context);
 }
 

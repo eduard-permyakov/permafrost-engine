@@ -526,7 +526,7 @@ void R_GL_WaterInit(void)
     GL_PERF_RETURN_VOID();
 
 fail_normal:
-    R_GL_Texture_Free(DUDV_PATH);
+    R_GL_Texture_Free(g_basepath, DUDV_PATH);
 fail_dudv:
     GL_PERF_RETURN_VOID();
 }
@@ -541,8 +541,8 @@ void R_GL_WaterShutdown(void)
     assert(s_ctx.surface.VBO > 0);
     assert(s_ctx.surface.VAO > 0);
 
-    R_GL_Texture_Free(DUDV_PATH);
-    R_GL_Texture_Free(NORM_PATH);
+    R_GL_Texture_Free(g_basepath, DUDV_PATH);
+    R_GL_Texture_Free(g_basepath, NORM_PATH);
 
     glDeleteBuffers(1, &s_ctx.surface.VAO);
     glDeleteBuffers(1, &s_ctx.surface.VBO);

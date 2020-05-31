@@ -613,8 +613,8 @@ void R_GL_MinimapFree(void)
     assert(s_ctx.minimap_mesh.VBO > 0);
     assert(s_ctx.minimap_mesh.VAO > 0);
 
-    R_GL_Texture_Free("__minimap__");
-    R_GL_Texture_Free("__minimap_water__");
+    R_GL_Texture_Free(NULL, "__minimap__");
+    R_GL_Texture_Free(NULL, "__minimap_water__");
     glDeleteBuffers(1, &s_ctx.minimap_mesh.VAO);
     glDeleteBuffers(1, &s_ctx.minimap_mesh.VBO);
     memset(&s_ctx, 0, sizeof(s_ctx));

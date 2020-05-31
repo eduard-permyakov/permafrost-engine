@@ -46,9 +46,14 @@
 
 #include <string.h>
 #include <assert.h>
+#include <math.h>
 
 
 #define LOD_BIAS (-0.5f)
+
+#define MIN(a, b)       ((a) < (b) ? (a) : (b))
+#define MAX(a, b)       ((a) > (b) ? (a) : (b))
+#define MAX3(a, b, c)   (MAX((a), MAX((b), (c))))
 
 KHASH_MAP_INIT_STR(tex, GLuint)
 
@@ -62,7 +67,7 @@ static khash_t(tex) *s_name_tex_table;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool r_texture_gl_init(const char *path, GLuint *out)
+static bool texture_gl_init(const char *path, GLuint *out)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -101,6 +106,26 @@ fail_load:
     return false;
 }
 
+static size_t texture_arr_num_mip_levels(GLuint tex)
+{
+    int max_lvl;
+    glBindTexture(GL_TEXTURE_2D_ARRAY, tex);
+    glGetTexParameteriv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_LEVEL, &max_lvl);
+
+    int w, h, d;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_DEPTH, &d);
+
+    size_t nmips = 1 + floor(log2(MAX3(w, h, d)));
+
+    return MIN(max_lvl + 1, nmips);
+}
+
+static void texture_gen_mipmap(GLuint tex, GLuint target)
+{
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -111,6 +136,20 @@ bool R_GL_Texture_Init(void)
 
     s_name_tex_table = kh_init(tex);
     return (s_name_tex_table != NULL);
+}
+
+void R_GL_Texture_Shutdown(void)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    const char *key;
+    GLuint curr;
+
+    kh_foreach(s_name_tex_table, key, curr, {
+        glDeleteTextures(1, &curr); 
+        free((void*)key);
+    });
+    kh_destroy(tex, s_name_tex_table);
 }
 
 bool R_GL_Texture_GetForName(const char *basedir, const char *name, GLuint *out)
@@ -146,8 +185,8 @@ bool R_GL_Texture_Load(const char *basedir, const char *name, GLuint *out)
     }
     pf_snprintf(texture_path_maps, sizeof(texture_path_maps), "%s/assets/map_textures/%s", g_basepath, name);
 
-    if(!r_texture_gl_init(texture_path, &ret)
-    && !r_texture_gl_init(texture_path_maps, &ret))
+    if(!texture_gl_init(texture_path, &ret)
+    && !texture_gl_init(texture_path_maps, &ret))
         goto fail;
 
     int put_ret;
@@ -178,12 +217,19 @@ bool R_GL_Texture_AddExisting(const char *name, GLuint id)
     return true;
 }
 
-void R_GL_Texture_Free(const char *name)
+void R_GL_Texture_Free(const char *basedir, const char *name)
 {
     ASSERT_IN_RENDER_THREAD();
 
+    char qualname[512];
+    if(basedir) {
+        pf_snprintf(qualname, sizeof(qualname), "%s/%s", basedir, name);
+    }else{
+        pf_strlcpy(qualname, name, sizeof(qualname));
+    }
+
     khiter_t k;
-    if((k = kh_get(tex, s_name_tex_table, name)) != kh_end(s_name_tex_table)) {
+    if((k = kh_get(tex, s_name_tex_table, qualname)) != kh_end(s_name_tex_table)) {
 
         GLuint id = kh_val(s_name_tex_table, k);
         glDeleteTextures(1, &id);
@@ -247,45 +293,46 @@ void R_GL_Texture_ArrayAlloc(size_t num_elems, struct texture_arr *out, GLuint t
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-}
 
-void R_GL_Texture_ArraySetElem(struct texture_arr *arr, int idx, GLuint id)
-{
-    glBindTexture(GL_TEXTURE_2D, id);
-
-    int w, h;
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
-
-    GLubyte *orig_data = malloc(w * h * 4);
-    if(!orig_data) {
-        arr->id = 0;
-        return;
-    }
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, orig_data);
-
-    GLubyte resized_data[CONFIG_ARR_TEX_RES * CONFIG_ARR_TEX_RES * 4];
-    int res = stbir_resize_uint8(orig_data, w, h, 0, resized_data, CONFIG_ARR_TEX_RES, CONFIG_ARR_TEX_RES, 0, 4);
-    if(res != 1) {
-        free(orig_data);
-        arr->id = 0;
-        return;
-    }
-
-    free(orig_data);
-    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, idx, CONFIG_ARR_TEX_RES, 
-        CONFIG_ARR_TEX_RES, 1, GL_RGBA, GL_UNSIGNED_BYTE, resized_data);
-}
-
-void R_GL_Texture_ArrayGenMipmap(struct texture_arr *arr)
-{
-    glBindTexture(GL_TEXTURE_2D_ARRAY, arr->id);
     glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
+}
+
+void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx, struct texture_arr *src, int src_idx)
+{
+    GLuint fbo;
+    if(!GLEW_ARB_copy_image) {
+        glGenFramebuffers(1, &fbo);    
+    }
+
+    for(int i = 0; i < texture_arr_num_mip_levels(dst->id); i++) {
+
+        size_t mip_res = pow(0.5f, i) * CONFIG_ARR_TEX_RES;
+    
+        if(GLEW_ARB_copy_image) {
+            glCopyImageSubData(src->id, GL_TEXTURE_2D_ARRAY, 0, 0, 0, src_idx,
+                               dst->id, GL_TEXTURE_2D_ARRAY, 0, 0, 0, dst_idx,
+                               mip_res, mip_res, 1);
+        }else{
+
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, src->id, i, src_idx);
+            glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, dst->id, i, dst_idx);
+            glReadBuffer(GL_COLOR_ATTACHMENT0);
+            glDrawBuffer(GL_COLOR_ATTACHMENT1);
+            assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+            glBlitFramebuffer(0, 0, mip_res, mip_res, 0, 0, mip_res, mip_res, 
+                              GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        }
+    }
+
+    if(!GLEW_ARB_copy_image) {
+        glDeleteFramebuffers(1, &fbo);    
+    }
 }
 
 void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats, 
@@ -308,10 +355,38 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
 
         if(mats[i].texture.id == 0)
             continue;
-        R_GL_Texture_ArraySetElem(out, i, mats[i].texture.id);
+
+        glBindTexture(GL_TEXTURE_2D, mats[i].texture.id);
+
+        int w, h;
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+
+        GLubyte *orig_data = malloc(w * h * 4);
+        if(!orig_data) {
+            continue;
+        }
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, orig_data);
+
+        GLubyte resized_data[CONFIG_ARR_TEX_RES * CONFIG_ARR_TEX_RES * 4];
+        int res = stbir_resize_uint8(orig_data, w, h, 0, resized_data, CONFIG_ARR_TEX_RES, CONFIG_ARR_TEX_RES, 0, 4);
+        if(res != 1) {
+            free(orig_data);
+            continue;
+        }
+
+        free(orig_data);
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_ARR_TEX_RES, 
+            CONFIG_ARR_TEX_RES, 1, GL_RGBA, GL_UNSIGNED_BYTE, resized_data);
     }
 
-    R_GL_Texture_ArrayGenMipmap(out);
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
+
     GL_ASSERT_OK();
 }
 
@@ -351,7 +426,13 @@ bool R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures,
             CONFIG_TILE_TEX_RES, 1, GL_RGB, GL_UNSIGNED_BYTE, resized_data);
     }
 
-    R_GL_Texture_ArrayGenMipmap(out);
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
+
     GL_ASSERT_OK();
     return true;
 
@@ -388,13 +469,14 @@ void R_GL_Texture_BindArray(const struct texture_arr *arr, GLuint shader_prog)
     GL_ASSERT_OK();
 }
 
-void R_GL_Texture_GetSize(GLuint texid, int *out_w, int *out_h)
+void R_GL_Texture_GetSize(GLuint texid, int *out_w, int *out_h, int *out_d)
 {
     ASSERT_IN_RENDER_THREAD();
 
     glBindTexture(GL_TEXTURE_2D, texid);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, out_w);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, out_h);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_DEPTH, out_d);
     GL_ASSERT_OK();
 }
 

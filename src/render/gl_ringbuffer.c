@@ -134,7 +134,7 @@ static void pmb_init(struct gl_ring *ring)
 {
     GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
     glBindBuffer(ring->target, ring->VBO);
-    glBufferStorageEXT(ring->target, ring->size, NULL, flags);
+    glBufferStorage(ring->target, ring->size, NULL, flags);
     ring->user = glMapBufferRange(ring->target, 0, ring->size, flags);
 }
 
@@ -188,7 +188,7 @@ struct gl_ring *R_GL_RingbufferInit(size_t size, GLenum target, enum ring_format
     memset(&ret->fences, 0, sizeof(ret->fences));
     memset(&ret->markers, 0, sizeof(ret->fences));
 
-    if(GLEW_EXT_buffer_storage) {
+    if(GLEW_ARB_buffer_storage) {
         ret->mode = MODE_PERSISTENT_MAPPED_BUFFER;
         ret->ops = (struct buffer_ops){
             pmb_init,
