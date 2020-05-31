@@ -68,7 +68,7 @@
 #endif
 
 
-#define NFRAMES_LOGGED  (4)
+#define NFRAMES_LOGGED  (5)
 
 
 struct perf_info{
