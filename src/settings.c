@@ -317,10 +317,17 @@ ss_e Settings_SetNoValidate(const char *name, const struct sval *new_val)
 
 ss_e Settings_SetNoPersist(const char *name, const struct sval *new_val)
 {
+    ss_e ret;
     struct sval prev;
-    ss_e ret = Settings_Get(name, &prev);
-    if(ret != SS_OKAY)
-        return ret;
+    struct setting_priv priv = sett_get_priv(name);
+
+    if(priv.flags & SETT_FLAGS_NOPERSIST) {
+        prev = priv.prev;
+    }else{
+        ret = Settings_Get(name, &prev);
+        if(ret != SS_OKAY)
+            return ret;
+    }
 
     ret = Settings_Set(name, new_val);
     if(ret != SS_OKAY)
