@@ -130,12 +130,12 @@ void draw_cam_frustum(const struct camera *cam, mat4x4_t *minimap_model, const s
     /* When the bottom part of the frustum doesn't intersect the ground plane,
      * there is nothing to draw. */
     if(!C_RayIntersectsPlane(cam_pos, br_dir, ground_plane, &t))
-        return;
+        GL_PERF_RETURN_VOID();
     PFM_Vec3_Scale(&br_dir, t, &br_dir);
     PFM_Vec3_Add(&cam_pos, &br_dir, &br);
 
     if(!C_RayIntersectsPlane(cam_pos, bl_dir, ground_plane, &t))
-        return;
+        GL_PERF_RETURN_VOID();
     PFM_Vec3_Scale(&bl_dir, t, &bl_dir);
     PFM_Vec3_Add(&cam_pos, &bl_dir, &bl);
 

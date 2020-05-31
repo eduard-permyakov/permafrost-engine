@@ -41,6 +41,7 @@
 #include "gl_material.h"
 #include "gl_shader.h"
 #include "gl_perf.h"
+#include "gl_vertex.h"
 #include "render_private.h"
 #include "public/render.h"
 #include "../entity.h"
@@ -59,10 +60,11 @@
 #define MAX_TEX_ARRS    (4)
 #define MAX_MESH_BUFFS  (16)
 
-#define CMD_RING_SZ		(16*1024*1024 * sizeof(struct GL_DAI_Cmd))
-#define ATTR_RING_SZ	(512*1024*1024)
+#define CMD_RING_SZ     (4 * 1024 * sizeof(struct GL_DAI_Cmd))
+#define ATTR_RING_SZ    (2*1024*1024)
 
 #define MAX_BATCHES     (256)
+#define MAX_INSTS       (16384)
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 
 #define CMD_RING_TUNIT  (GL_TEXTURE5)
@@ -87,6 +89,7 @@ struct tex_arr_desc{
 struct vbo_desc{
     void   *heap_meta;
     GLuint  VBO;
+    GLuint  VAO;
 };
 
 struct chunk_batch_desc{
@@ -153,6 +156,7 @@ KHASH_MAP_INIT_INT(batch, struct gl_batch*)
 
 static struct gl_batch *s_anim_batch;
 static khash_t(batch)  *s_chunk_batches;
+static GLuint           s_draw_id_vbo;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -192,6 +196,44 @@ static bool batch_alloc_texarray(struct gl_batch *batch)
     return true;
 }
 
+static void batch_init_stat_vao(GLuint *out, GLuint src_vbo)
+{
+    GLuint VAO;
+    glGenVertexArrays(1, &VAO);
+
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, src_vbo);
+
+    /* Attribute 0 - position */
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    /* Attribute 1 - texture coordinates */
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
+        (void*)offsetof(struct vertex, uv));
+    glEnableVertexAttribArray(1);
+
+    /* Attribute 2 - normal */
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), 
+        (void*)offsetof(struct vertex, normal));
+    glEnableVertexAttribArray(2);
+
+    /* Attribute 3 - material index */
+    glVertexAttribIPointer(3, 1, GL_INT, sizeof(struct vertex), 
+        (void*)offsetof(struct vertex, material_idx));
+    glEnableVertexAttribArray(3);
+
+    /* Attribute 4 - draw ID 
+     * This is a per-instance attribute that is sourced from the draw ID buffer */
+    glBindBuffer(GL_ARRAY_BUFFER, s_draw_id_vbo);
+
+    glVertexAttribIPointer(4, 1, GL_INT, sizeof(GLint), 0);
+    glEnableVertexAttribArray(4);
+    glVertexAttribDivisor(4, 1); /* advance the ID once per instance */
+
+    *out = VAO;
+}
+
 static bool batch_alloc_vbo(struct gl_batch *batch)
 {
     if(batch->nvbos == MAX_MESH_BUFFS)
@@ -206,7 +248,10 @@ static bool batch_alloc_vbo(struct gl_batch *batch)
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, MESH_BUFF_SZ, NULL, GL_DYNAMIC_DRAW);
 
-    batch->vbos[batch->nvbos] = (struct vbo_desc){heap_meta, VBO};
+    GLuint VAO;
+    batch_init_stat_vao(&VAO, VBO);
+
+    batch->vbos[batch->nvbos] = (struct vbo_desc){heap_meta, VBO, VAO};
     batch->nvbos++;
     return true;
 }
@@ -227,7 +272,7 @@ static bool batch_append_mesh(struct gl_batch *batch, GLuint VBO)
     int curr_vbo_idx = 0;
     int vbo_offset = -1;
     do{
-        vbo_offset = pf_metamalloc(batch->vbos[curr_vbo_idx].heap_meta, size);
+        vbo_offset = pf_metamemalign(batch->vbos[curr_vbo_idx].heap_meta, sizeof(struct vertex), size);
         if(vbo_offset >= 0)
             break;
     }while(++curr_vbo_idx < batch->nvbos);
@@ -238,7 +283,7 @@ static bool batch_append_mesh(struct gl_batch *batch, GLuint VBO)
         if(!batch_alloc_vbo(batch))
             return false;
         curr_vbo_idx = batch->nvbos-1;
-        vbo_offset = pf_metamalloc(batch->vbos[curr_vbo_idx].heap_meta, size);
+        vbo_offset = pf_metamemalign(batch->vbos[curr_vbo_idx].heap_meta, sizeof(struct vertex), size);
     }
     assert(curr_vbo_idx >= 0 && curr_vbo_idx < batch->nvbos);
     assert(vbo_offset >= 0);
@@ -351,11 +396,11 @@ static struct gl_batch *batch_init(void)
     if(!batch)
         goto fail_alloc;
 
-    batch->cmd_ring = R_GL_RingbufferInit(CMD_RING_SZ, GL_DRAW_INDIRECT_BUFFER, RING_UBYTE);
+    batch->cmd_ring = R_GL_RingbufferInit(CMD_RING_SZ, RING_UBYTE);
 	if(!batch->cmd_ring)
         goto fail_cmd_ring;
 
-    batch->attr_ring = R_GL_RingbufferInit(ATTR_RING_SZ, GL_ARRAY_BUFFER, RING_FLOAT);
+    batch->attr_ring = R_GL_RingbufferInit(ATTR_RING_SZ, RING_FLOAT);
     if(!batch->attr_ring)
         goto fail_attr_ring;
 
@@ -656,13 +701,15 @@ static void batch_push_cmds(struct gl_batch *batch, struct draw_call_desc dcall,
 
         struct render_private *priv = descs[i].render_private;
         struct mesh_desc mdesc = batch_mdesc_for_vbo(batch, priv->mesh.VBO);
+        assert(mdesc.offset % sizeof(struct vertex) == 0);
 
         struct GL_DAI_Cmd cmd = (struct GL_DAI_Cmd){
             .count = priv->mesh.num_verts,
             .instance_count = descs[i].end_idx - descs[i].start_idx + 1,
-            .first_index = mdesc.offset,
+            .first_index = mdesc.offset / sizeof(struct vertex),
             .base_instance = inst_idx,
         };
+
         if(i == dcall.start_idx) {
             R_GL_RingbufferPush(batch->cmd_ring, &cmd, sizeof(struct GL_DAI_Cmd));
         }else{
@@ -675,16 +722,17 @@ static void batch_push_cmds(struct gl_batch *batch, struct draw_call_desc dcall,
     size_t begin, end;
     R_GL_RingbufferGetLastRange(batch->cmd_ring, &begin, &end);
     assert(end > begin ? (end - begin  == sizeof(struct GL_DAI_Cmd) * ncmds)
-                       : ((ATTR_RING_SZ - begin) + end == sizeof(struct GL_DAI_Cmd) * ncmds));
+                       : ((CMD_RING_SZ - begin) + end == sizeof(struct GL_DAI_Cmd) * ncmds));
 }
 
 static void batch_do_drawcall(struct gl_batch *batch, const struct ent_stat_rstate *ents,
                               struct draw_call_desc dcall, struct inst_group_desc *descs)
 {
-    // TODO: need to feed draw_id as a flat vertex attribute to the shader 
+    GLuint VAO = batch->vbos[dcall.vbo_idx].VAO;
 
-    // TODO: add API to get previously submitted buffer range from ringbuffer 
-    // and use that to handle the case where we need to make 2 draw calls
+    GLuint cmd_vbo = R_GL_RingbufferGetVBO(batch->cmd_ring);
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmd_vbo);
 
     batch_push_cmds(batch, dcall, descs);
     R_GL_RingbufferBindLast(batch->cmd_ring, CMD_RING_TUNIT, R_GL_Shader_GetCurrActive(), "cmdbuff");
@@ -692,7 +740,22 @@ static void batch_do_drawcall(struct gl_batch *batch, const struct ent_stat_rsta
     batch_push_stat_attrs(batch, ents, dcall, descs);
     R_GL_RingbufferBindLast(batch->attr_ring, ATTR_RING_TUNIT, R_GL_Shader_GetCurrActive(), "attrbuff");
 
-    /* the drawcall would go here */
+    size_t cmd_begin, cmd_end;
+    R_GL_RingbufferGetLastRange(batch->cmd_ring, &cmd_begin, &cmd_end);
+
+    if(cmd_end < cmd_begin) {
+
+        assert((CMD_RING_SZ - cmd_begin) % sizeof(struct GL_DAI_Cmd) == 0);
+        size_t ncmds_end = (CMD_RING_SZ - cmd_begin) / sizeof(struct GL_DAI_Cmd);
+        glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds_end, 0);
+
+        assert(cmd_end % sizeof(struct GL_DAI_Cmd) == 0);
+        size_t ncmds_begin = cmd_end / sizeof(struct GL_DAI_Cmd);
+        glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)0, ncmds_begin, 0);
+    }else{
+        size_t ncmds = dcall.end_idx - dcall.start_idx + 1;
+        glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds, 0);
+    }
 
     R_GL_RingbufferSyncLast(batch->cmd_ring);
     R_GL_RingbufferSyncLast(batch->attr_ring);
@@ -728,6 +791,14 @@ bool R_GL_Batch_Init(void)
     if(!s_chunk_batches)
         goto fail_chunk_batches;
 
+    GLint draw_id_buff[MAX_INSTS];
+    for(int i = 0; i < MAX_INSTS; i++)
+        draw_id_buff[i] = i; 
+
+    glGenBuffers(1, &s_draw_id_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, s_draw_id_vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(draw_id_buff), draw_id_buff, GL_STATIC_DRAW);
+
     return true;
 
 fail_chunk_batches:
@@ -748,6 +819,7 @@ void R_GL_Batch_Shutdown(void)
         batch_destroy(curr);
     });
     kh_destroy(batch, s_chunk_batches);
+    glDeleteBuffers(1, &s_draw_id_vbo);
 }
 
 void R_GL_Batch_Draw(struct render_input *in)
@@ -761,7 +833,7 @@ void R_GL_Batch_Draw(struct render_input *in)
         GL_PERF_RETURN_VOID();
 
     //TODO: this can be shadowed or not shadowed
-    //R_GL_Shader_Install("mesh.static.textured-phong-shadowed-batched");
+    R_GL_Shader_Install("mesh.static.textured-phong-shadowed-batched");
 
     for(int i = 0; i < nbatches; i++) {
     

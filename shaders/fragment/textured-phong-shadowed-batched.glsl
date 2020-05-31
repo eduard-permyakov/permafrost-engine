@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018-2020 Eduard Permyakov 
+ *  Copyright (C) 2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -35,54 +35,90 @@
 
 #version 330 core
 
-layout (location = 0) in vec3 in_pos;
-layout (location = 1) in vec2 in_uv;
-layout (location = 2) in vec3 in_normal;
-layout (location = 3) in int  in_material_idx;
+#define SPECULAR_STRENGTH  0.5
+#define SPECULAR_SHININESS 2
+
+#define SHADOW_MAP_BIAS 0.002
+#define SHADOW_MULTIPLIER 0.7
+
+#define FLOATS_PER_INST (176)
 
 /*****************************************************************************/
-/* OUTPUTS                                                                   */
+/* INPUTS                                                                    */
 /*****************************************************************************/
 
-out VertexToFrag {
+in VertexToFrag {
          vec2 uv;
     flat int  mat_idx;
          vec3 world_pos;
          vec3 normal;
          vec4 light_space_pos;
-}to_fragment;
+    flat int  draw_id;
+}from_vertex;
 
-out VertexToGeo {
-    vec3 normal;
-}to_geometry;
+/*****************************************************************************/
+/* OUTPUTS                                                                   */
+/*****************************************************************************/
+
+out vec4 o_frag_color;
 
 /*****************************************************************************/
 /* UNIFORMS                                                                  */
 /*****************************************************************************/
 
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
-uniform mat4 light_space_transform;
-uniform vec4 clip_plane0;
+uniform vec3 ambient_color;
+uniform vec3 light_color;
+uniform vec3 light_pos;
+uniform vec3 view_pos;
+
+uniform sampler2D shadow_map;
+
+uniform sampler2DArray tex_array0;
+uniform sampler2DArray tex_array1;
+uniform sampler2DArray tex_array2;
+uniform sampler2DArray tex_array3;
+
+uniform samplerBuffer attrbuff;
+uniform int attrbuff_offset;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
 /*****************************************************************************/
 
+float shadow_factor(vec4 light_space_pos)
+{
+    vec3 proj_coords = (light_space_pos.xyz / light_space_pos.w) * 0.5 + 0.5;
+    float closest_depth = texture(shadow_map, proj_coords.xy).r;
+    float current_depth = proj_coords.z;
+    if(current_depth - SHADOW_MAP_BIAS > closest_depth) {
+        return 1.0;
+    }else {
+        return 0.0;
+    }
+}
+
+int inst_attr_base(int draw_id)
+{
+    int size = textureSize(attrbuff);
+    int inst_offset = draw_id * FLOATS_PER_INST;
+    return int(mod(attrbuff_offset / 4 + inst_offset, size));
+}
+
+vec4 read_vec4(int draw_id)
+{
+    int size = textureSize(attrbuff);
+    int base = inst_attr_base(draw_id);
+
+    return vec4(
+        texelFetch(attrbuff, int(mod(base + 0, size))).r,
+        texelFetch(attrbuff, int(mod(base + 1, size))).r,
+        texelFetch(attrbuff, int(mod(base + 2, size))).r,
+        texelFetch(attrbuff, int(mod(base + 3, size))).r
+    );
+}
+
 void main()
 {
-    to_fragment.uv = in_uv;
-    to_fragment.mat_idx = in_material_idx;
-    to_fragment.world_pos = (model * vec4(in_pos, 1.0)).xyz;
-    to_fragment.normal = normalize(mat3(model) * in_normal);
-    to_fragment.light_space_pos = light_space_transform * vec4(to_fragment.world_pos, 1.0);
-
-#if USE_GEOMETRY
-    to_geometry.normal = normalize(mat3(projection * view * model) * in_normal);
-#endif
-
-    gl_Position = projection * view * model * vec4(in_pos, 1.0);
-    gl_ClipDistance[0] = dot(model * vec4(in_pos, 1.0), clip_plane0);
+    o_frag_color = read_vec4(from_vertex.draw_id);
 }
 

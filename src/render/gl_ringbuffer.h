@@ -45,7 +45,7 @@
  * (or Persistent Mapped Buffer, if available) and filling up 1 section 
  * of it every frame. The data is exposed to a shader via a pair of uniforms: 
  * 
- *     1. uname (usamplerBuffer)
+ *     1. uname ((u)samplerBuffer)
  *     2. uname_offset (int)
  * 
  * So long as there is sufficient room in the buffer, this should allow
@@ -71,13 +71,14 @@ enum ring_format{
     RING_FLOAT
 };
 
-struct gl_ring *R_GL_RingbufferInit(size_t size, GLenum target, enum ring_format fmt);
+struct gl_ring *R_GL_RingbufferInit(size_t size, enum ring_format fmt);
 void            R_GL_RingbufferDestroy(struct gl_ring *ring);
 bool            R_GL_RingbufferPush(struct gl_ring *ring, const void *data, size_t size);
 bool            R_GL_RingbufferAppendLast(struct gl_ring *ring, const void *data, size_t size);
 bool            R_GL_RingbufferGetLastRange(struct gl_ring *ring, size_t *out_begin, size_t *out_end);
 void            R_GL_RingbufferBindLast(struct gl_ring *ring, GLuint tunit, GLuint shader_prog, const char *uname);
 void            R_GL_RingbufferSyncLast(struct gl_ring *ring);
+GLuint          R_GL_RingbufferGetVBO(struct gl_ring *ring);
 
 #endif
 

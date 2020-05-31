@@ -54,6 +54,8 @@ void  pf_free(void *slab, void *ptr);
 void *pf_metamalloc_init(size_t size);
 void  pf_metamalloc_destroy(void *meta);
 int   pf_metamalloc(void *meta, size_t size);
+/* Supports any alignment, not just powers of two */
+int   pf_metamemalign(void *meta, size_t alignment, size_t size);
 void  pf_metafree(void *meta, size_t offset);
 
 #endif

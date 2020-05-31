@@ -82,6 +82,19 @@ struct memheap{
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static size_t align(size_t val, size_t alignment)
+{
+    size_t pad = (alignment - (val % alignment)) % alignment;
+    return val + pad;
+}
+
+static size_t align_down(size_t val, size_t alignment)
+{
+    size_t aval = align(val, alignment);
+    aval = aval == val ? aval : aval - alignment;
+    return aval;
+}
+ 
 static void heap_remove(struct memheap *heap, unsigned i)
 {
     heap->blocks[i] = heap->blocks[heap->nblocks--];
@@ -170,16 +183,17 @@ static void heap_coalese_blocks(struct memheap *heap, unsigned ifirst, unsigned 
     first->next = post;
 }
 
-static struct memblock *meta_split_block(struct memheap *heap, unsigned i, size_t newsize)
+static struct memblock *meta_split_block_aligned(struct memheap *heap, unsigned i, 
+                                                 size_t newsize, size_t newalign)
 {
     struct memblock *top = heap->blocks[i]; 
-    newsize = ALIGNED(newsize);
+    newsize = align(newsize, newalign);
 
     struct memblock *new = top + 1;
-    new->size = newsize;
-    new->offset = top->offset + (top->size - newsize);
+    new->size = newsize + (top->offset + (top->size - newsize)) % newalign;
+    new->offset = align_down(top->offset + (top->size - newsize), newalign);
     new->free = false;
-    top->size -= newsize;
+    top->size = new->offset - top->offset;
 
     /* Re-insert the block we just resized into the heap */
     heap_remove(heap, i);
@@ -288,7 +302,7 @@ void *pf_metamalloc_init(size_t size)
         return NULL;
 
     struct memblock *head = (struct memblock*)((char*)heap + ALIGNED(sizeof(struct memheap)));
-    head->size = ALIGNED(size) - ALIGNED(sizeof(struct memheap)) - ALIGNED(sizeof(struct memblock));
+    head->size = size;
     head->offset = 0;
     head->free = true;
     head->next = NULL;
@@ -318,7 +332,33 @@ int pf_metamalloc(void *meta, size_t size)
         return top->offset;
     }
 
-    return meta_split_block(heap, 1, size)->offset;
+    return meta_split_block_aligned(heap, 1, size, sizeof(intmax_t))->offset;
+}
+
+int pf_metamemalign(void *meta, size_t alignment, size_t size)
+{
+    struct memheap *heap = (struct memheap*)meta;
+    struct memblock *top = heap->blocks[1];
+
+    if(!top->free || heap->nblocks == MAX_HEAP_SZ) {
+        return -1;
+    }
+
+    size_t pad = align(top->offset, alignment) - top->offset;
+    if(top->size + pad < size) {
+        return -1;
+    }
+
+    if(top->size + pad == size) {
+        top->free = false;
+        top->offset += pad;
+        if(top->prev)
+            top->prev->size += pad;
+        return top->offset;
+    }
+
+    int ret = meta_split_block_aligned(heap, 1, size, alignment)->offset;
+    return ret;
 }
 
 void pf_metafree(void *meta, size_t offset)

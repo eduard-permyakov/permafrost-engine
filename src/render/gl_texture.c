@@ -122,10 +122,6 @@ static size_t texture_arr_num_mip_levels(GLuint tex)
     return MIN(max_lvl + 1, nmips);
 }
 
-static void texture_gen_mipmap(GLuint tex, GLuint target)
-{
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
