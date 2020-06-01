@@ -252,7 +252,7 @@ bool R_GL_RingbufferPush(struct gl_ring *ring, const void *data, size_t size)
 
         /* wrap around */
         void *ptr = ring->ops.map(ring, 0, start);
-        memcpy(ptr, data, start);
+        memcpy(ptr, ((char*)data) + left, start);
         ring->pos = start;
     }
 
@@ -300,7 +300,7 @@ bool R_GL_RingbufferAppendLast(struct gl_ring *ring, const void *data, size_t si
 
         /* wrap around */
         void *ptr = ring->ops.map(ring, 0, start);
-        memcpy(ptr, data, start);
+        memcpy(ptr, ((char*)data) + left, start);
         ring->pos = start;
     }
 
@@ -308,6 +308,34 @@ bool R_GL_RingbufferAppendLast(struct gl_ring *ring, const void *data, size_t si
     ring->markers[ring->imark_head].end = ring->pos;
 
     GL_ASSERT_OK();
+    return true;
+}
+
+bool R_GL_RingbufferExtendLast(struct gl_ring *ring, size_t size)
+{
+    assert(ring->nmarkers);
+    assert(ring->fences[ring->imark_head] == 0);
+
+    if(size > ring->size) {
+        return false;
+    }
+
+    while(!ring_section_free(ring, size)) {
+        if(!ring_wait_one(ring))
+            return false;
+    }
+
+    size_t left = ring->size - ring->pos;
+    size_t old_pos = ring->pos;
+
+    if(size <= left) {
+        ring->pos = (ring->pos + size) % ring->size;
+    }else{
+        size_t start = size - left;
+        ring->pos = start;
+    }
+
+    ring->markers[ring->imark_head].end = ring->pos;
     return true;
 }
 

@@ -41,8 +41,6 @@
 #define SHADOW_MAP_BIAS 0.002
 #define SHADOW_MULTIPLIER 0.7
 
-#define FLOATS_PER_INST (176)
-
 /*****************************************************************************/
 /* INPUTS                                                                    */
 /*****************************************************************************/
@@ -90,6 +88,7 @@ uniform sampler2DArray tex_array3;
 
 uniform samplerBuffer attrbuff;
 uniform int attrbuff_offset;
+uniform int attr_stride;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
@@ -110,7 +109,7 @@ float shadow_factor(vec4 light_space_pos)
 int inst_attr_base(int draw_id)
 {
     int size = textureSize(attrbuff);
-    int inst_offset = draw_id * FLOATS_PER_INST;
+    int inst_offset = draw_id * attr_stride;
     return int(mod(attrbuff_offset / 4 + inst_offset, size));
 }
 

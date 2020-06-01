@@ -88,6 +88,7 @@
 #define GL_U_WATER_TILING       "water_tiling"
 #define GL_U_MAP_RES            "map_resolution"
 #define GL_U_MAP_POS            "map_pos"
+#define GL_U_ATTR_STRIDE        "attr_stride"
 
 enum utype{
     UTYPE_FLOAT,
