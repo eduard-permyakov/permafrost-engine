@@ -66,6 +66,16 @@ uniform mat4 projection;
 uniform mat4 light_space_transform;
 uniform vec4 clip_plane0;
 
+/* Per-instance buffer contents:
+ *  +--------------------------------------------------+ <-- base
+ *  | mat4x4_t (16 floats)                             | (model matrix)
+ *  +--------------------------------------------------+
+ *  | vec2_t[16] (32 floats)                           | (material:texture mapping)
+ *  +--------------------------------------------------+
+ *  | {float, float, vec3_t, vec3_t}[16] (128 floats)  | (material properties)
+ *  +--------------------------------------------------+
+ */
+
 uniform samplerBuffer attrbuff;
 uniform int attrbuff_offset;
 

@@ -771,6 +771,10 @@ static void batch_render_static(struct gl_batch *batch, struct ent_stat_rstate *
     struct draw_call_desc dcalls[MAX_BATCHES];
     size_t ndcalls = batch_sort_by_vbo(batch, descs, nbatches, dcalls, ARR_SIZE(dcalls));
 
+    for(int i = 0; i < batch->ntexarrs; i++) {
+        R_GL_Texture_BindArray(&batch->textures[i].arr, R_GL_Shader_GetCurrActive());
+    }
+
     for(int i = 0; i < ndcalls; i++) {
         batch_do_drawcall(batch, ents, dcalls[i], descs);
     }

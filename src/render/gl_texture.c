@@ -310,8 +310,8 @@ void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx, struct tex
         size_t mip_res = pow(0.5f, i) * CONFIG_ARR_TEX_RES;
     
         if(GLEW_ARB_copy_image) {
-            glCopyImageSubData(src->id, GL_TEXTURE_2D_ARRAY, 0, 0, 0, src_idx,
-                               dst->id, GL_TEXTURE_2D_ARRAY, 0, 0, 0, dst_idx,
+            glCopyImageSubData(src->id, GL_TEXTURE_2D_ARRAY, i, 0, 0, src_idx,
+                               dst->id, GL_TEXTURE_2D_ARRAY, i, 0, 0, dst_idx,
                                mip_res, mip_res, 1);
         }else{
 
