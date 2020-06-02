@@ -1,0 +1,5 @@
+GL_NV_shadow_samplers_array
+https://www.khronos.org/registry/OpenGL/extensions/NV/NV_shadow_samplers_array.txt
+GL_NV_shadow_samplers_array
+
+	GL_SAMPLER_2D_ARRAY_SHADOW_NV 0x8DC4

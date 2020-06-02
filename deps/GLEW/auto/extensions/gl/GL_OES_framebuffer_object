@@ -1,0 +1,58 @@
+GL_OES_framebuffer_object
+https://www.khronos.org/registry/OpenGL/extensions/OES/OES_framebuffer_object.txt
+GL_OES_framebuffer_object
+
+	GL_NONE_OES 0
+	GL_INVALID_FRAMEBUFFER_OPERATION_OES 0x0506
+	GL_RGBA4_OES 0x8056
+	GL_RGB5_A1_OES 0x8057
+	GL_DEPTH_COMPONENT16_OES 0x81A5
+	GL_MAX_RENDERBUFFER_SIZE_OES 0x84E8
+	GL_FRAMEBUFFER_BINDING_OES 0x8CA6
+	GL_RENDERBUFFER_BINDING_OES 0x8CA7
+	GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE_OES 0x8CD0
+	GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME_OES 0x8CD1
+	GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL_OES 0x8CD2
+	GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE_OES 0x8CD3
+	GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_3D_ZOFFSET_OES 0x8CD4
+	GL_FRAMEBUFFER_COMPLETE_OES 0x8CD5
+	GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT_OES 0x8CD6
+	GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT_OES 0x8CD7
+	GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS_OES 0x8CD9
+	GL_FRAMEBUFFER_INCOMPLETE_FORMATS_OES 0x8CDA
+	GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER_OES 0x8CDB
+	GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER_OES 0x8CDC
+	GL_FRAMEBUFFER_UNSUPPORTED_OES 0x8CDD
+	GL_COLOR_ATTACHMENT0_OES 0x8CE0
+	GL_DEPTH_ATTACHMENT_OES 0x8D00
+	GL_STENCIL_ATTACHMENT_OES 0x8D20
+	GL_FRAMEBUFFER_OES 0x8D40
+	GL_RENDERBUFFER_OES 0x8D41
+	GL_RENDERBUFFER_WIDTH_OES 0x8D42
+	GL_RENDERBUFFER_HEIGHT_OES 0x8D43
+	GL_RENDERBUFFER_INTERNAL_FORMAT_OES 0x8D44
+	GL_STENCIL_INDEX1_OES 0x8D46
+	GL_STENCIL_INDEX4_OES 0x8D47
+	GL_STENCIL_INDEX8_OES 0x8D48
+	GL_RENDERBUFFER_RED_SIZE_OES 0x8D50
+	GL_RENDERBUFFER_GREEN_SIZE_OES 0x8D51
+	GL_RENDERBUFFER_BLUE_SIZE_OES 0x8D52
+	GL_RENDERBUFFER_ALPHA_SIZE_OES 0x8D53
+	GL_RENDERBUFFER_DEPTH_SIZE_OES 0x8D54
+	GL_RENDERBUFFER_STENCIL_SIZE_OES 0x8D55
+	GL_RGB565_OES 0x8D62
+	void glBindFramebufferOES (GLenum target, GLuint framebuffer)
+	void glBindRenderbufferOES (GLenum target, GLuint renderbuffer)
+	GLenum glCheckFramebufferStatusOES (GLenum target)
+	void glDeleteFramebuffersOES (GLsizei n, const GLuint* framebuffers)
+	void glDeleteRenderbuffersOES (GLsizei n, const GLuint* renderbuffers)
+	void glFramebufferRenderbufferOES (GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer)
+	void glFramebufferTexture2DOES (GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level)
+	void glGenFramebuffersOES (GLsizei n, GLuint* framebuffers)
+	void glGenRenderbuffersOES (GLsizei n, GLuint* renderbuffers)
+	void glGenerateMipmapOES (GLenum target)
+	void glGetFramebufferAttachmentParameterivOES (GLenum target, GLenum attachment, GLenum pname, GLint* params)
+	void glGetRenderbufferParameterivOES (GLenum target, GLenum pname, GLint* params)
+	GLboolean glIsFramebufferOES (GLuint framebuffer)
+	GLboolean glIsRenderbufferOES (GLuint renderbuffer)
+	void glRenderbufferStorageOES (GLenum target, GLenum internalformat, GLsizei width, GLsizei height)

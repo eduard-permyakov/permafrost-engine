@@ -1,0 +1,7 @@
+GL_OES_blend_equation_separate
+https://www.khronos.org/registry/OpenGL/extensions/OES/OES_blend_equation_separate.txt
+GL_OES_blend_equation_separate
+
+	GL_BLEND_EQUATION_RGB_OES 0x8009
+	GL_BLEND_EQUATION_ALPHA_OES 0x883D
+	void glBlendEquationSeparateOES (GLenum modeRGB, GLenum modeAlpha)

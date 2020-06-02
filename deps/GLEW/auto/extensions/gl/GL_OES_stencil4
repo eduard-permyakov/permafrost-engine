@@ -1,0 +1,5 @@
+GL_OES_stencil4
+https://www.khronos.org/registry/OpenGL/extensions/OES/OES_stencil4.txt
+GL_OES_stencil4
+
+	GL_STENCIL_INDEX4_OES 0x8D47

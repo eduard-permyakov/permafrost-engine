@@ -1,0 +1,5 @@
+GL_ARB_explicit_uniform_location
+https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_explicit_uniform_location.txt
+GL_ARB_explicit_uniform_location
+
+	GL_MAX_UNIFORM_LOCATIONS 0x826E

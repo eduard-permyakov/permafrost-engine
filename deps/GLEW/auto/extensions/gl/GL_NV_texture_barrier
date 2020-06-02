@@ -1,0 +1,5 @@
+GL_NV_texture_barrier
+https://www.khronos.org/registry/OpenGL/extensions/NV/NV_texture_barrier.txt
+GL_NV_texture_barrier
+
+	void glTextureBarrierNV (void)

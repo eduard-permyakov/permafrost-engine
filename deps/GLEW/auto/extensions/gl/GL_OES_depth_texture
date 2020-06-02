@@ -1,0 +1,7 @@
+GL_OES_depth_texture
+https://www.khronos.org/registry/OpenGL/extensions/OES/OES_depth_texture.txt
+GL_OES_depth_texture
+
+	GL_UNSIGNED_SHORT 0x1403
+	GL_UNSIGNED_INT 0x1405
+	GL_DEPTH_COMPONENT 0x1902

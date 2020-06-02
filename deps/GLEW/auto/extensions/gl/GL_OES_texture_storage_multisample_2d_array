@@ -1,0 +1,10 @@
+GL_OES_texture_storage_multisample_2d_array
+https://www.khronos.org/registry/OpenGL/extensions/OES/OES_texture_storage_multisample_2d_array.txt
+GL_OES_texture_storage_multisample_2d_array
+
+	GL_TEXTURE_2D_MULTISAMPLE_ARRAY_OES 0x9102
+	GL_TEXTURE_BINDING_2D_MULTISAMPLE_ARRAY_OES 0x9105
+	GL_SAMPLER_2D_MULTISAMPLE_ARRAY_OES 0x910B
+	GL_INT_SAMPLER_2D_MULTISAMPLE_ARRAY_OES 0x910C
+	GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE_ARRAY_OES 0x910D
+	void glTexStorage3DMultisampleOES (GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLboolean fixedsamplelocations)

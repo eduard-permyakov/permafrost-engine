@@ -1,0 +1,5 @@
+GL_SGIX_occlusion_instrument
+https://www.khronos.org/registry/OpenGL/extensions/SGIX/SGIX_occlusion_instrument.txt
+GL_SGIX_occlusion_instrument
+
+	GL_OCCLUSION_INSTRUMENT_SGIX 0x6060

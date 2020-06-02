@@ -1,0 +1,5 @@
+GL_SGIX_blend_cadd
+https://www.khronos.org/registry/OpenGL/extensions/SGIX/SGIX_blend_cadd.txt
+GL_SGIX_blend_cadd
+
+	GL_FUNC_COMPLEX_ADD_EXT 0x601C

@@ -1,0 +1,5 @@
+GL_MESA_framebuffer_flip_x
+https://www.khronos.org/registry/OpenGL/extensions/MESA/MESA_framebuffer_flip_x.txt
+GL_MESA_framebuffer_flip_x
+
+	GL_FRAMEBUFFER_FLIP_X_MESA 0x8BBC

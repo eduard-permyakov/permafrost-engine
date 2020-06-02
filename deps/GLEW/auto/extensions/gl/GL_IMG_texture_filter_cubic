@@ -1,0 +1,7 @@
+GL_IMG_texture_filter_cubic
+https://www.khronos.org/registry/OpenGL/extensions/IMG/IMG_texture_filter_cubic.txt
+GL_IMG_texture_filter_cubic
+
+	GL_CUBIC_IMG 0x9139
+	GL_CUBIC_MIPMAP_NEAREST_IMG 0x913A
+	GL_CUBIC_MIPMAP_LINEAR_IMG 0x913B

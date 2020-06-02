@@ -1,0 +1,12 @@
+GL_AMD_framebuffer_multisample_advanced
+https://www.khronos.org/registry/OpenGL/extensions/AMD/AMD_framebuffer_multisample_advanced.txt
+GL_AMD_framebuffer_multisample_advanced
+
+	GL_RENDERBUFFER_STORAGE_SAMPLES_AMD 0x91B2
+	GL_MAX_COLOR_FRAMEBUFFER_SAMPLES_AMD 0x91B3
+	GL_MAX_COLOR_FRAMEBUFFER_STORAGE_SAMPLES_AMD 0x91B4
+	GL_MAX_DEPTH_STENCIL_FRAMEBUFFER_SAMPLES_AMD 0x91B5
+	GL_NUM_SUPPORTED_MULTISAMPLE_MODES_AMD 0x91B6
+	GL_SUPPORTED_MULTISAMPLE_MODES_AMD 0x91B7
+	void glNamedRenderbufferStorageMultisampleAdvancedAMD (GLuint renderbuffer, GLsizei samples, GLsizei storageSamples, GLenum internalformat, GLsizei width, GLsizei height)
+	void glRenderbufferStorageMultisampleAdvancedAMD (GLenum target, GLsizei samples, GLsizei storageSamples, GLenum internalformat, GLsizei width, GLsizei height)

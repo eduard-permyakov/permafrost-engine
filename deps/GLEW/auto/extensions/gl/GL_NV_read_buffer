@@ -1,0 +1,6 @@
+GL_NV_read_buffer
+https://www.khronos.org/registry/OpenGL/extensions/NV/NV_read_buffer.txt
+GL_NV_read_buffer
+
+	GL_READ_BUFFER_NV 0x0C02
+	void glReadBufferNV (GLenum mode)

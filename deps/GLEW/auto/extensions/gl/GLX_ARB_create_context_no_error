@@ -1,0 +1,5 @@
+GLX_ARB_create_context_no_error
+https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
+GLX_ARB_create_context_no_error
+
+	GLX_CONTEXT_OPENGL_NO_ERROR_ARB 0x31B3

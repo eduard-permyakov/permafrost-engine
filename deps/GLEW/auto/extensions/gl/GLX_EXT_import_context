@@ -1,0 +1,13 @@
+GLX_EXT_import_context
+https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
+GLX_EXT_import_context
+
+	GLX_SHARE_CONTEXT_EXT 0x800A
+	GLX_VISUAL_ID_EXT 0x800B
+	GLX_SCREEN_EXT 0x800C
+	void glXFreeContextEXT (Display* dpy, GLXContext context)
+	GLXContextID glXGetContextIDEXT (const GLXContext context)
+	Display* glXGetCurrentDisplayEXT (void)
+	GLXContext glXImportContextEXT (Display* dpy, GLXContextID contextID)
+	int glXQueryContextInfoEXT (Display* dpy, GLXContext context, int attribute, int* value)
+	typedef XID GLXContextID

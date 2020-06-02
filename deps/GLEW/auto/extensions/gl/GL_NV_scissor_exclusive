@@ -1,0 +1,8 @@
+GL_NV_scissor_exclusive
+https://www.khronos.org/registry/OpenGL/extensions/NV/NV_scissor_exclusive.txt
+GL_NV_scissor_exclusive
+
+	GL_SCISSOR_TEST_EXCLUSIVE_NV 0x9555
+	GL_SCISSOR_BOX_EXCLUSIVE_NV 0x9556
+	void glScissorExclusiveArrayvNV (GLuint first, GLsizei count, const GLint* v)
+	void glScissorExclusiveNV (GLint x, GLint y, GLsizei width, GLsizei height)

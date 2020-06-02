@@ -1,0 +1,5 @@
+GL_NV_vdpau_interop2
+https://www.khronos.org/registry/OpenGL/extensions/NV/NV_vdpau_interop2.txt
+GL_NV_vdpau_interop2
+
+	GLvdpauSurfaceNV glVDPAURegisterVideoSurfaceWithPictureStructureNV (const void *vdpSurface, GLenum target, GLsizei numTextureNames, const GLuint *textureNames, GLboolean isFrameStructure)

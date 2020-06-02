@@ -1,0 +1,6 @@
+GL_EXT_EGL_image_storage
+https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_EGL_image_storage.txt
+GL_EXT_EGL_image_storage
+
+	void glEGLImageTargetTexStorageEXT (GLenum target, GLeglImageOES image, const GLint* attrib_list)
+	void glEGLImageTargetTextureStorageEXT (GLuint texture, GLeglImageOES image, const GLint* attrib_list)

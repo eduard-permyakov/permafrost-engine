@@ -1,0 +1,5 @@
+GL_EXT_index_material
+https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_index_material.txt
+GL_EXT_index_material
+
+	void glIndexMaterialEXT (GLenum face, GLenum mode)

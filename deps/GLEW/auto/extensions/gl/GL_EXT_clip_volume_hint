@@ -1,0 +1,5 @@
+GL_EXT_clip_volume_hint
+https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_clip_volume_hint.txt
+GL_EXT_clip_volume_hint
+
+	GL_CLIP_VOLUME_CLIPPING_HINT_EXT 0x80F0

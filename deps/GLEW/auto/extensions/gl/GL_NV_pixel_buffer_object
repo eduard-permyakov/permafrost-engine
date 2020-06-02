@@ -1,0 +1,8 @@
+GL_NV_pixel_buffer_object
+https://www.khronos.org/registry/OpenGL/extensions/NV/NV_pixel_buffer_object.txt
+GL_NV_pixel_buffer_object
+
+	GL_PIXEL_PACK_BUFFER_NV 0x88EB
+	GL_PIXEL_UNPACK_BUFFER_NV 0x88EC
+	GL_PIXEL_PACK_BUFFER_BINDING_NV 0x88ED
+	GL_PIXEL_UNPACK_BUFFER_BINDING_NV 0x88EF

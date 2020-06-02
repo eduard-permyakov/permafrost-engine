@@ -1,0 +1,6 @@
+EGL_MESA_query_driver
+https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
+EGL_MESA_query_driver
+
+	char* eglGetDisplayDriverConfig (EGLDisplay dpy)
+	const char* eglGetDisplayDriverName (EGLDisplay dpy)

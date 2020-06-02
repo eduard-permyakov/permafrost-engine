@@ -174,7 +174,9 @@ $(BIN): $(PF_OBJS)
 pf: $(BIN)
 
 clean_deps:
-	git submodule foreach git reset --hard	
+	cd deps/GLEW && make clean
+	rm -rf deps/SDL2/build	
+	rm -rf deps/Python/build	
 	rm -rf ./lib/*
 
 clean:

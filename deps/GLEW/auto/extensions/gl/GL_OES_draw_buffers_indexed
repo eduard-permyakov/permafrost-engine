@@ -1,0 +1,12 @@
+GL_OES_draw_buffers_indexed
+https://www.khronos.org/registry/OpenGL/extensions/OES/OES_draw_buffers_indexed.txt
+GL_OES_draw_buffers_indexed
+
+	void glBlendEquationSeparateiOES (GLuint buf, GLenum modeRGB, GLenum modeAlpha)
+	void glBlendEquationiOES (GLuint buf, GLenum mode)
+	void glBlendFuncSeparateiOES (GLuint buf, GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha, GLenum dstAlpha)
+	void glBlendFunciOES (GLuint buf, GLenum src, GLenum dst)
+	void glColorMaskiOES (GLuint buf, GLboolean r, GLboolean g, GLboolean b, GLboolean a)
+	void glDisableiOES (GLenum target, GLuint index)
+	void glEnableiOES (GLenum target, GLuint index)
+	GLboolean glIsEnablediOES (GLenum target, GLuint index)

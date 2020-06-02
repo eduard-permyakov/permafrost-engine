@@ -1,0 +1,10 @@
+GL_IMG_framebuffer_downsample
+https://www.khronos.org/registry/OpenGL/extensions/IMG/IMG_framebuffer_downsample.txt
+GL_IMG_framebuffer_downsample
+
+	GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE_AND_DOWNSAMPLE_IMG 0x913C
+	GL_NUM_DOWNSAMPLE_SCALES_IMG 0x913D
+	GL_DOWNSAMPLE_SCALES_IMG 0x913E
+	GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_SCALE_IMG 0x913F
+	void glFramebufferTexture2DDownsampleIMG (GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLint xscale, GLint yscale)
+	void glFramebufferTextureLayerDownsampleIMG (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint layer, GLint xscale, GLint yscale)

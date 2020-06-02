@@ -1,0 +1,5 @@
+GL_ARB_depth_clamp
+https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_depth_clamp.txt
+GL_ARB_depth_clamp
+
+	GL_DEPTH_CLAMP 0x864F

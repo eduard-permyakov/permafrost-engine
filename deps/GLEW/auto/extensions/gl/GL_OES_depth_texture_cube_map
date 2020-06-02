@@ -1,0 +1,9 @@
+GL_OES_depth_texture_cube_map
+https://www.khronos.org/registry/OpenGL/extensions/OES/OES_depth_texture_cube_map.txt
+GL_OES_depth_texture_cube_map
+
+	GL_UNSIGNED_SHORT 0x1403
+	GL_UNSIGNED_INT 0x1405
+	GL_DEPTH_COMPONENT 0x1902
+	GL_DEPTH_STENCIL_OES 0x84F9
+	GL_DEPTH24_STENCIL8_OES 0x88F0

@@ -1,0 +1,9 @@
+GL_EXT_occlusion_query_boolean
+https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_occlusion_query_boolean.txt
+GL_EXT_occlusion_query_boolean
+
+	GL_CURRENT_QUERY_EXT 0x8865
+	GL_QUERY_RESULT_EXT 0x8866
+	GL_QUERY_RESULT_AVAILABLE_EXT 0x8867
+	GL_ANY_SAMPLES_PASSED_EXT 0x8C2F
+	GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT 0x8D6A

@@ -1,0 +1,5 @@
+EGL_WL_create_wayland_buffer_from_image
+https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
+EGL_WL_create_wayland_buffer_from_image
+
+	struct wl_buffer* eglCreateWaylandBufferFromImageWL (EGLDisplay dpy, EGLImageKHR image)

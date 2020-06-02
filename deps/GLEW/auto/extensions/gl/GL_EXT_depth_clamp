@@ -1,0 +1,5 @@
+GL_EXT_depth_clamp
+https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_depth_clamp.txt
+GL_EXT_depth_clamp
+
+	GL_DEPTH_CLAMP_EXT 0x864F

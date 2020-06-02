@@ -1,0 +1,9 @@
+#! /bin/sh
+set -v
+if [ -n "$1" ]; then
+    CCINSTALL=$($1 -print-search-dirs | head -1 | cut -d' ' -f2)
+    REGENHEADER=${CCINSTALL//\\//}/include/stddef.h
+else
+    REGENHEADER=/usr/include/netinet/in.h
+fi
+eval $PYTHON_FOR_BUILD ../../Tools/scripts/h2py.py -i "'(u_long)'" $REGENHEADER

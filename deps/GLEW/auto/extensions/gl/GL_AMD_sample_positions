@@ -1,0 +1,6 @@
+GL_AMD_sample_positions
+https://www.khronos.org/registry/OpenGL/extensions/AMD/AMD_sample_positions.txt
+GL_AMD_sample_positions
+
+	GL_SUBSAMPLE_DISTANCE_AMD 0x883F
+	void glSetMultisamplefvAMD (GLenum pname, GLuint index, const GLfloat* val)

@@ -1,0 +1,6 @@
+GLX_EXT_fbconfig_packed_float
+https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
+GLX_EXT_fbconfig_packed_float
+
+	GLX_RGBA_UNSIGNED_FLOAT_BIT_EXT 0x00000008
+	GLX_RGBA_UNSIGNED_FLOAT_TYPE_EXT 0x20B1

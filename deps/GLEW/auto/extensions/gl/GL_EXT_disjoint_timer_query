@@ -1,0 +1,21 @@
+GL_EXT_disjoint_timer_query
+https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_disjoint_timer_query.txt
+GL_EXT_disjoint_timer_query
+
+	GL_QUERY_COUNTER_BITS_EXT 0x8864
+	GL_CURRENT_QUERY_EXT 0x8865
+	GL_QUERY_RESULT_EXT 0x8866
+	GL_QUERY_RESULT_AVAILABLE_EXT 0x8867
+	GL_TIME_ELAPSED_EXT 0x88BF
+	GL_TIMESTAMP_EXT 0x8E28
+	GL_GPU_DISJOINT_EXT 0x8FBB
+	void glBeginQueryEXT (GLenum target, GLuint id)
+	void glDeleteQueriesEXT (GLsizei n, const GLuint* ids)
+	void glEndQueryEXT (GLenum target)
+	void glGenQueriesEXT (GLsizei n, GLuint* ids)
+	void glGetInteger64vEXT (GLenum pname, GLint64* data)
+	void glGetQueryObjectivEXT (GLuint id, GLenum pname, GLint* params)
+	void glGetQueryObjectuivEXT (GLuint id, GLenum pname, GLuint* params)
+	void glGetQueryivEXT (GLenum target, GLenum pname, GLint* params)
+	GLboolean glIsQueryEXT (GLuint id)
+	void glQueryCounterEXT (GLuint id, GLenum target)

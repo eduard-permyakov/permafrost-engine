@@ -1,0 +1,6 @@
+GL_ARB_point_sprite
+https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_point_sprite.txt
+GL_ARB_point_sprite
+
+	GL_POINT_SPRITE_ARB 0x8861
+	GL_COORD_REPLACE_ARB 0x8862

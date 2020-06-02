@@ -1,0 +1,5 @@
+GL_OES_vertex_half_float
+https://www.khronos.org/registry/OpenGL/extensions/OES/OES_vertex_half_float.txt
+GL_OES_vertex_half_float
+
+	GL_HALF_FLOAT_OES 0x8D61

@@ -1,0 +1,5 @@
+GL_MESA_resize_buffers
+https://www.khronos.org/registry/OpenGL/extensions/MESA/MESA_resize_buffers.txt
+GL_MESA_resize_buffers
+
+	void glResizeBuffersMESA (void)

@@ -1,0 +1,5 @@
+GL_NV_conservative_raster_pre_snap
+https://www.khronos.org/registry/OpenGL/extensions/NV/NV_conservative_raster_pre_snap.txt
+GL_NV_conservative_raster_pre_snap
+
+	GL_CONSERVATIVE_RASTER_MODE_PRE_SNAP_NV 0x9550

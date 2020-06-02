@@ -1,0 +1,5 @@
+GL_MESA_framebuffer_swap_xy
+https://www.khronos.org/registry/OpenGL/extensions/MESA/MESA_framebuffer_swap_xy.txt
+GL_MESA_framebuffer_swap_xy
+
+	GL_FRAMEBUFFER_SWAP_XY_MESA 0x8BBD

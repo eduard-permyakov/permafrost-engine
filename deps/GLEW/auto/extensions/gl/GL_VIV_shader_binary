@@ -1,0 +1,5 @@
+GL_VIV_shader_binary
+https://www.khronos.org/registry/OpenGL/extensions/VIV/VIV_shader_binary.txt
+GL_VIV_shader_binary
+
+	GL_SHADER_BINARY_VIV 0x8FC4

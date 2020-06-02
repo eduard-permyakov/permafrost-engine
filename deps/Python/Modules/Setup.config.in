@@ -1,0 +1,30 @@
+# This file is transmogrified into Setup.config by config.status.
+
+# For the Permafrost Engine embedded Python interpreter, we don't 
+# want any OS/platform specific stuff - comment it all out
+
+# The purpose of this file is to conditionally enable certain modules
+# based on configure-time options.
+
+# init system calls(posix/nt/...) for INITFUNC (used by makesetup)
+#@INITSYS@ posixmodule.c
+
+# This is needed to find out the user's home dir if $HOME is not set
+#@USE_PWD_MODULE@pwd pwdmodule.c
+
+# Threading
+@USE_THREAD_MODULE@thread threadmodule.c
+
+# The signal module
+@USE_SIGNAL_MODULE@signal signalmodule.c
+
+# build-in modules for windows platform:
+#@USE_WIN32_MODULE@_winreg ../PC/_winreg.c
+#@USE_WIN32_MODULE@_functools _functoolsmodule.c	# Tools for working with functions and callable objects
+#@USE_WIN32_MODULE@operator operator.c	# operator.add() and similar goodies
+#@USE_WIN32_MODULE@_locale _localemodule.c	# -lintl
+#@USE_WIN32_MODULE@time timemodule.c
+#@USE_WIN32_MODULE@msvcrt ../PC/msvcrtmodule.c
+
+# The rest of the modules previously listed in this file are built
+# by the setup.py script in Python 2.1 and later.

@@ -1,0 +1,5 @@
+GL_SGIS_texture_border_clamp
+https://www.khronos.org/registry/OpenGL/extensions/SGIS/SGIS_texture_border_clamp.txt
+GL_SGIS_texture_border_clamp
+
+	GL_CLAMP_TO_BORDER_SGIS 0x812D

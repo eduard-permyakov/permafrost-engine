@@ -1,0 +1,7 @@
+GL_KHR_parallel_shader_compile
+https://www.khronos.org/registry/OpenGL/extensions/KHR/KHR_parallel_shader_compile.txt
+GL_KHR_parallel_shader_compile
+
+	GL_MAX_SHADER_COMPILER_THREADS_KHR 0x91B0
+	GL_COMPLETION_STATUS_KHR 0x91B1
+	void glMaxShaderCompilerThreadsKHR (GLuint count)

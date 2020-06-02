@@ -1,0 +1,5 @@
+GL_ARB_ES3_1_compatibility
+https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_ES3_1_compatibility.txt
+GL_ARB_ES3_1_compatibility
+
+	void glMemoryBarrierByRegion (GLbitfield barriers)

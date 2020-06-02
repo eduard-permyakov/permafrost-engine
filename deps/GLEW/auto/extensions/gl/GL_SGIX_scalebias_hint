@@ -1,0 +1,5 @@
+GL_SGIX_scalebias_hint
+https://www.khronos.org/registry/OpenGL/extensions/SGIX/SGIX_scalebias_hint.txt
+GL_SGIX_scalebias_hint
+
+	GL_SCALEBIAS_HINT_SGIX 0x8322

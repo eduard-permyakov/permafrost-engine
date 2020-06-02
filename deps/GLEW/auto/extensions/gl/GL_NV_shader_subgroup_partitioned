@@ -1,0 +1,5 @@
+GL_NV_shader_subgroup_partitioned
+https://www.khronos.org/registry/OpenGL/extensions/NV/NV_shader_subgroup_partitioned.txt
+GL_NV_shader_subgroup_partitioned
+
+	GL_SUBGROUP_FEATURE_PARTITIONED_BIT_NV 0x00000100

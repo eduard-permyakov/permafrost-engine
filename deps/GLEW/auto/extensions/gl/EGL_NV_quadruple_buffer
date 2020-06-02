@@ -1,0 +1,5 @@
+EGL_NV_quadruple_buffer
+https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
+EGL_NV_quadruple_buffer
+
+	EGL_QUADRUPLE_BUFFER_NV 0x3231

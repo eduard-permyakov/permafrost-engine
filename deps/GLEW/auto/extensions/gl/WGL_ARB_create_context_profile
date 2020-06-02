@@ -1,0 +1,8 @@
+WGL_ARB_create_context_profile
+https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_create_context_profile.txt
+WGL_ARB_create_context_profile
+
+	WGL_CONTEXT_CORE_PROFILE_BIT_ARB 0x00000001
+	WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB 0x00000002
+	ERROR_INVALID_PROFILE_ARB 0x2096
+	WGL_CONTEXT_PROFILE_MASK_ARB 0x9126

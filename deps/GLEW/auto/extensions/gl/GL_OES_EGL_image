@@ -1,0 +1,6 @@
+GL_OES_EGL_image
+https://www.khronos.org/registry/OpenGL/extensions/OES/OES_EGL_image.txt
+GL_OES_EGL_image
+
+	void glEGLImageTargetRenderbufferStorageOES (GLenum target, GLeglImageOES image)
+	void glEGLImageTargetTexture2DOES (GLenum target, GLeglImageOES image)

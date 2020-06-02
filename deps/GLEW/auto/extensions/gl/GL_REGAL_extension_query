@@ -1,0 +1,6 @@
+GL_REGAL_extension_query
+https://www.khronos.org/registry/OpenGL/extensions/REGAL/extension_query.txt
+GL_REGAL_extension_query
+
+	GLboolean glGetExtensionREGAL (const GLchar* ext)
+	GLboolean glIsSupportedREGAL (const GLchar* ext)

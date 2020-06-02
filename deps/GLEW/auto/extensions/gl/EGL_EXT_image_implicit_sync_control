@@ -1,0 +1,7 @@
+EGL_EXT_image_implicit_sync_control
+https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
+EGL_EXT_image_implicit_sync_control
+
+	EGL_IMPORT_SYNC_TYPE_EXT 0x3470
+	EGL_IMPORT_IMPLICIT_SYNC_EXT 0x3471
+	EGL_IMPORT_EXPLICIT_SYNC_EXT 0x3472

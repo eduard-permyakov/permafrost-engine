@@ -1,0 +1,5 @@
+GL_EXT_index_func
+https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_index_func.txt
+GL_EXT_index_func
+
+	void glIndexFuncEXT (GLenum func, GLfloat ref)

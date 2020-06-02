@@ -1,0 +1,15 @@
+EGL_EXT_compositor
+https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
+EGL_EXT_compositor
+
+	EGL_PRIMARY_COMPOSITOR_CONTEXT_EXT 0x3460
+	EGL_EXTERNAL_REF_ID_EXT 0x3461
+	EGL_COMPOSITOR_DROP_NEWEST_FRAME_EXT 0x3462
+	EGL_COMPOSITOR_KEEP_NEWEST_FRAME_EXT 0x3463
+	EGLBoolean eglCompositorBindTexWindowEXT (EGLint external_win_id)
+	EGLBoolean eglCompositorSetContextAttributesEXT (EGLint external_ref_id, const EGLint* context_attributes, EGLint num_entries)
+	EGLBoolean eglCompositorSetContextListEXT (const EGLint* external_ref_ids, EGLint num_entries)
+	EGLBoolean eglCompositorSetSizeEXT (EGLint external_win_id, EGLint width, EGLint height)
+	EGLBoolean eglCompositorSetWindowAttributesEXT (EGLint external_win_id, const EGLint* window_attributes, EGLint num_entries)
+	EGLBoolean eglCompositorSetWindowListEXT (EGLint external_ref_id, const EGLint* external_win_ids, EGLint num_entries)
+	EGLBoolean eglCompositorSwapPolicyEXT (EGLint external_win_id, EGLint policy)

@@ -1,0 +1,7 @@
+GLX_ARB_create_context_profile
+https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
+GLX_ARB_create_context_profile
+
+	GLX_CONTEXT_CORE_PROFILE_BIT_ARB 0x00000001
+	GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB 0x00000002
+	GLX_CONTEXT_PROFILE_MASK_ARB 0x9126

@@ -1,0 +1,5 @@
+GL_ARB_map_buffer_alignment
+https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_map_buffer_alignment.txt
+GL_ARB_map_buffer_alignment
+
+	GL_MIN_MAP_BUFFER_ALIGNMENT 0x90BC

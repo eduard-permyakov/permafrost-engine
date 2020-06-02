@@ -1,0 +1,5 @@
+EGL_NV_context_priority_realtime
+https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
+EGL_NV_context_priority_realtime
+
+	EGL_CONTEXT_PRIORITY_REALTIME_NV 0x3357

@@ -1,0 +1,5 @@
+GL_OES_standard_derivatives
+https://www.khronos.org/registry/OpenGL/extensions/OES/OES_standard_derivatives.txt
+GL_OES_standard_derivatives
+
+	GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES 0x8B8B

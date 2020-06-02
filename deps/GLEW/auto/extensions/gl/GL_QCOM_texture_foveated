@@ -1,0 +1,12 @@
+GL_QCOM_texture_foveated
+https://www.khronos.org/registry/OpenGL/extensions/QCOM/QCOM_texture_foveated.txt
+GL_QCOM_texture_foveated
+
+	GL_FOVEATION_ENABLE_BIT_QCOM 0x1
+	GL_FOVEATION_SCALED_BIN_METHOD_BIT_QCOM 0x2
+	GL_TEXTURE_FOVEATED_FEATURE_BITS_QCOM 0x8BFB
+	GL_TEXTURE_FOVEATED_MIN_PIXEL_DENSITY_QCOM 0x8BFC
+	GL_TEXTURE_FOVEATED_FEATURE_QUERY_QCOM 0x8BFD
+	GL_TEXTURE_FOVEATED_NUM_FOCAL_POINTS_QUERY_QCOM 0x8BFE
+	GL_FRAMEBUFFER_INCOMPLETE_FOVEATION_QCOM 0x8BFF
+	void glTextureFoveationParametersQCOM (GLuint texture, GLuint layer, GLuint focalPoint, GLfloat focalX, GLfloat focalY, GLfloat gainX, GLfloat gainY, GLfloat foveaArea)

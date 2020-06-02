@@ -1,0 +1,7 @@
+GL_OES_sample_shading
+https://www.khronos.org/registry/OpenGL/extensions/OES/OES_sample_shading.txt
+GL_OES_sample_shading
+
+	GL_SAMPLE_SHADING_OES 0x8C36
+	GL_MIN_SAMPLE_SHADING_VALUE_OES 0x8C37
+	void glMinSampleShadingOES (GLfloat value)

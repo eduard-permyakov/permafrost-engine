@@ -1,0 +1,11 @@
+GL_NVX_gpu_multicast2
+https://www.khronos.org/registry/OpenGL/extensions/NVX/NVX_gpu_multicast2.txt
+GL_NVX_gpu_multicast2
+
+	GL_UPLOAD_GPU_MASK_NVX 0x954A
+	GLsync glAsyncCopyBufferSubDataNVX (GLsizei waitSemaphoreCount, const GLuint* waitSemaphoreArray, const GLuint64 *fenceValueArray, GLuint readGpu, GLbitfield writeGpuMask, GLuint readBuffer, GLuint writeBuffer, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size, GLsizei signalSemaphoreCount, const GLuint *signalSemaphoreArray, const GLuint64 *signalValueArray)
+	GLuint glAsyncCopyImageSubDataNVX (GLsizei waitSemaphoreCount, const GLuint* waitSemaphoreArray, const GLuint64 *waitValueArray, GLuint srcGpu, GLbitfield dstGpuMask, GLuint srcName, GLenum srcTarget, GLint srcLevel, GLint srcX, GLint srcY, GLint srcZ, GLuint dstName, GLenum dstTarget, GLint dstLevel, GLint dstX, GLint dstY, GLint dstZ, GLsizei srcWidth, GLsizei srcHeight, GLsizei srcDepth, GLsizei signalSemaphoreCount, const GLuint *signalSemaphoreArray, const GLuint64 *signalValueArray)
+	void glMulticastScissorArrayvNVX (GLuint gpu, GLuint first, GLsizei count, const GLint* v)
+	void glMulticastViewportArrayvNVX (GLuint gpu, GLuint first, GLsizei count, const GLfloat* v)
+	void glMulticastViewportPositionWScaleNVX (GLuint gpu, GLuint index, GLfloat xcoeff, GLfloat ycoeff)
+	void glUploadGpuMaskNVX (GLbitfield mask)

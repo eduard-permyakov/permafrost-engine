@@ -1,0 +1,5 @@
+GL_EXT_rescale_normal
+https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_rescale_normal.txt
+GL_EXT_rescale_normal
+
+	GL_RESCALE_NORMAL_EXT 0x803A

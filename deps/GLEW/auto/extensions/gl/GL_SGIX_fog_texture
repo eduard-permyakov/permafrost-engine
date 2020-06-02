@@ -1,0 +1,5 @@
+GL_SGIX_fog_texture
+https://www.khronos.org/registry/OpenGL/extensions/SGIX/SGIX_fog_texture.txt
+GL_SGIX_fog_texture
+
+	void glTextureFogSGIX (GLenum pname)

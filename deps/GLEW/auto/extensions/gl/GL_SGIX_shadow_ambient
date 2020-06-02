@@ -1,0 +1,5 @@
+GL_SGIX_shadow_ambient
+https://www.khronos.org/registry/OpenGL/extensions/SGIX/SGIX_shadow_ambient.txt
+GL_SGIX_shadow_ambient
+
+	GL_SHADOW_AMBIENT_SGIX 0x80BF

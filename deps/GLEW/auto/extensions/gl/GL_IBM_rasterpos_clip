@@ -1,0 +1,5 @@
+GL_IBM_rasterpos_clip
+https://www.khronos.org/registry/OpenGL/extensions/IBM/IBM_rasterpos_clip.txt
+GL_IBM_rasterpos_clip
+
+	GL_RASTER_POSITION_UNCLIPPED_IBM 103010

@@ -1,0 +1,8 @@
+WGL_I3D_swap_frame_lock
+https://www.khronos.org/registry/OpenGL/extensions/I3D/WGL_I3D_swap_frame_lock.txt
+WGL_I3D_swap_frame_lock
+
+	BOOL wglDisableFrameLockI3D (void)
+	BOOL wglEnableFrameLockI3D (void)
+	BOOL wglIsEnabledFrameLockI3D (BOOL* pFlag)
+	BOOL wglQueryFrameLockMasterI3D (BOOL* pFlag)

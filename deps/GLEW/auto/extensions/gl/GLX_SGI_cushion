@@ -1,0 +1,5 @@
+GLX_SGI_cushion
+https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
+GLX_SGI_cushion
+
+	void glXCushionSGI (Display* dpy, Window window, float cushion)

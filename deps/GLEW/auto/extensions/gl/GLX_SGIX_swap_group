@@ -1,0 +1,5 @@
+GLX_SGIX_swap_group
+https://www.khronos.org/registry/egl/specs/eglspec.1.5.pdf
+GLX_SGIX_swap_group
+
+	void glXJoinSwapGroupSGIX (Display* dpy, GLXDrawable drawable, GLXDrawable member)

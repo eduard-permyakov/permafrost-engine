@@ -1,0 +1,197 @@
+c-api/arg,,:ref,"PyArg_ParseTuple(args, ""O|O:ref"", &object, &callback)"
+c-api/list,,:high,list[low:high]
+c-api/sequence,,:i2,o[i1:i2]
+c-api/tuple,,:high,p[low:high]
+c-api/unicode,,:end,str[start:end]
+distutils/setupscript,,::,
+extending/embedding,,:numargs,"if(!PyArg_ParseTuple(args, "":numargs""))"
+extending/extending,,:set,"if (PyArg_ParseTuple(args, ""O:set_callback"", &temp)) {"
+extending/extending,,:myfunction,"PyArg_ParseTuple(args, ""D:myfunction"", &c);"
+extending/newtypes,,:call,"if (!PyArg_ParseTuple(args, ""sss:call"", &arg1, &arg2, &arg3)) {"
+faq/programming,,:reduce,"print (lambda Ru,Ro,Iu,Io,IM,Sx,Sy:reduce(lambda x,y:x+y,map(lambda y,"
+faq/programming,,:reduce,"Sx=Sx,Sy=Sy:reduce(lambda x,y:x+y,map(lambda x,xc=Ru,yc=yc,Ru=Ru,Ro=Ro,"
+faq/programming,,:chr,">=4.0) or 1+f(xc,yc,x*x-y*y+xc,2.0*x*y+yc,k-1,f):f(xc,yc,x,y,k,f):chr("
+faq/programming,,::,for x in sequence[::-1]:
+howto/cporting,,:encode,"if (!PyArg_ParseTuple(args, ""O:encode_object"", &myobj))"
+howto/cporting,,:say,"if (!PyArg_ParseTuple(args, ""U:say_hello"", &name))"
+howto/curses,,:black,"They are: 0:black, 1:red, 2:green, 3:yellow, 4:blue, 5:magenta, 6:cyan, and"
+howto/curses,,:blue,"They are: 0:black, 1:red, 2:green, 3:yellow, 4:blue, 5:magenta, 6:cyan, and"
+howto/curses,,:cyan,"They are: 0:black, 1:red, 2:green, 3:yellow, 4:blue, 5:magenta, 6:cyan, and"
+howto/curses,,:green,"They are: 0:black, 1:red, 2:green, 3:yellow, 4:blue, 5:magenta, 6:cyan, and"
+howto/curses,,:magenta,"They are: 0:black, 1:red, 2:green, 3:yellow, 4:blue, 5:magenta, 6:cyan, and"
+howto/curses,,:red,"They are: 0:black, 1:red, 2:green, 3:yellow, 4:blue, 5:magenta, 6:cyan, and"
+howto/curses,,:white,"7:white."
+howto/curses,,:yellow,"They are: 0:black, 1:red, 2:green, 3:yellow, 4:blue, 5:magenta, 6:cyan, and"
+howto/logging,,:root,WARNING:root:Watch out!
+howto/logging,,:Watch,WARNING:root:Watch out!
+howto/logging,,:root,DEBUG:root:This message should go to the log file
+howto/logging,,:root,INFO:root:So should this
+howto/logging,,:So,INFO:root:So should this
+howto/logging,,:root,"WARNING:root:And this, too"
+howto/logging,,:And,"WARNING:root:And this, too"
+howto/logging,,:root,INFO:root:Started
+howto/logging,,:Started,INFO:root:Started
+howto/logging,,:root,INFO:root:Doing something
+howto/logging,,:Doing,INFO:root:Doing something
+howto/logging,,:root,INFO:root:Finished
+howto/logging,,:Finished,INFO:root:Finished
+howto/logging,,:root,WARNING:root:Look before you leap!
+howto/logging,,:Look,WARNING:root:Look before you leap!
+howto/logging,,:This,DEBUG:This message should appear on the console
+howto/logging,,:So,INFO:So should this
+howto/logging,,:And,"WARNING:And this, too"
+howto/logging,,:logger,severity:logger name:message
+howto/logging,,:message,severity:logger name:message
+howto/logging,,:This,DEBUG:root:This message should go to the log file
+howto/pyporting,,::,Programming Language :: Python :: 2
+howto/pyporting,,::,Programming Language :: Python :: 3
+howto/regex,,::,
+howto/regex,,:foo,(?:foo)
+howto/urllib2,,:password,"""joe:password@example.com"""
+library/audioop,,:ipos,"# factor = audioop.findfactor(in_test[ipos*2:ipos*2+len(out_test)],"
+library/bisect,,:hi,all(val >= x for val in a[i:hi])
+library/bisect,,:hi,all(val > x for val in a[i:hi])
+library/cookie,,`,!#$%&'*+-.^_`|~
+library/datetime,,:MM,
+library/datetime,,:SS,
+library/decimal,,:optional,"trailneg:optional trailing minus indicator"
+library/difflib,,:ahi,a[alo:ahi]
+library/difflib,,:bhi,b[blo:bhi]
+library/difflib,,:i2,
+library/difflib,,:j2,
+library/difflib,,:i1,
+library/dis,,:TOS,
+library/dis,,`,TOS = `TOS`
+library/doctest,,`,``factorial`` from the ``example`` module:
+library/doctest,,`,The ``example`` module
+library/doctest,,`,Using ``factorial``
+library/exceptions,,:err,err.object[err.start:err.end]
+library/functions,,:step,a[start:stop:step]
+library/functions,,:stop,"a[start:stop, i]"
+library/functions,,:stop,a[start:stop:step]
+library/hotshot,,:lineno,"ncalls  tottime  percall  cumtime  percall filename:lineno(function)"
+library/httplib,,:port,host:port
+library/imaplib,,:MM,"""DD-Mmm-YYYY HH:MM:SS"
+library/imaplib,,:SS,"""DD-Mmm-YYYY HH:MM:SS"
+library/itertools,,:stop,elements from seq[start:stop:step]
+library/itertools,,:step,elements from seq[start:stop:step]
+library/linecache,,:sys,"sys:x:3:3:sys:/dev:/bin/sh"
+library/logging.handlers,,:port,host:port
+library/mmap,,:i2,obj[i1:i2]
+library/multiprocessing,,:queue,">>> QueueManager.register('get_queue', callable=lambda:queue)"
+library/multiprocessing,,`,">>> l._callmethod('__getitem__', (20,))     # equiv to `l[20]`"
+library/multiprocessing,,`,">>> l._callmethod('__getslice__', (2, 7))   # equiv to `l[2:7]`"
+library/multiprocessing,,`,# `BaseManager`.
+library/multiprocessing,,`,# `Pool.imap()` (which will save on the amount of code needed anyway).
+library/multiprocessing,,`,# A test file for the `multiprocessing` package
+library/multiprocessing,,`,# A test of `multiprocessing.Pool` class
+library/multiprocessing,,`,# Add more tasks using `put()`
+library/multiprocessing,,`,# in the original order then consider using `Pool.map()` or
+library/multiprocessing,,`,# Not sure if we should synchronize access to `socket.accept()` method by
+library/multiprocessing,,`,# object.  (We import `multiprocessing.reduction` to enable this pickling.)
+library/multiprocessing,,`,# register the Foo class; make `f()` and `g()` accessible via proxy
+library/multiprocessing,,`,# register the Foo class; make `g()` and `_h()` accessible via proxy
+library/multiprocessing,,`,# register the generator function baz; use `GeneratorProxy` to make proxies
+library/optparse,,:len,"del parser.rargs[:len(value)]"
+library/os.path,,:foo,c:foo
+library/pdb,,:lineno,filename:lineno
+library/posix,,`,"CFLAGS=""`getconf LFS_CFLAGS`"" OPT=""-g -O2 $CFLAGS"""
+library/profile,,:lineno,ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+library/profile,,:lineno,filename:lineno(function)
+library/pyexpat,,:elem1,<py:elem1 />
+library/pyexpat,,:py,"xmlns:py = ""http://www.python.org/ns/"">"
+library/re,,`,!#$%&'*+-.^_`|~:
+library/re,,`,[abcdefghijklmnopqrstuvwxyz0123456789\!\#\$\%\&\'\*\+\-\.\^\_\`\|\~\:]+
+library/smtplib,,:port,method must support that as well as a regular host:port
+library/socket,,::,'5aef:2b::8'
+library/sqlite3,,:memory,
+library/sqlite3,,:who,"cur.execute(""select * from people where name_last=:who and age=:age"", {""who"": who, ""age"": age})"
+library/sqlite3,,:age,"cur.execute(""select * from people where name_last=:who and age=:age"", {""who"": who, ""age"": age})"
+library/ssl,,:My,"Organization Name (eg, company) [Internet Widgits Pty Ltd]:My Organization, Inc."
+library/ssl,,:My,"Organizational Unit Name (eg, section) []:My Group"
+library/ssl,,:myserver,"Common Name (eg, YOUR name) []:myserver.mygroup.myorganization.com"
+library/ssl,,:MyState,State or Province Name (full name) [Some-State]:MyState
+library/ssl,,:ops,Email Address []:ops@myserver.mygroup.myorganization.com
+library/ssl,,:Some,"Locality Name (eg, city) []:Some City"
+library/ssl,,:US,Country Name (2 letter code) [AU]:US
+library/stdtypes,,:len,s[len(s):len(s)]
+library/stdtypes,,:end,s[start:end]
+library/string,,:end,s[start:end]
+library/subprocess,,`,"output=`mycmd myarg`"
+library/subprocess,,`,"output=`dmesg | grep hda`"
+library/tarfile,,:compression,filemode[:compression]
+library/tarfile,,:gz,
+library/tarfile,,:bz2,
+library/time,,:mm,
+library/time,,:ss,
+library/turtle,,::,Example::
+library/urllib,,:port,:port
+library/urllib2,,:password,"""joe:password@python.org"""
+library/urllib2,,:close,Connection:close
+library/uuid,,:uuid,urn:uuid:12345678-1234-5678-1234-567812345678
+library/xml.etree.elementtree,,:sometag,prefix:sometag
+library/xml.etree.elementtree,,:fictional,"<actors xmlns:fictional=""http://characters.example.com"""
+library/xml.etree.elementtree,,:character,<fictional:character>Lancelot</fictional:character>
+library/xml.etree.elementtree,,:character,<fictional:character>Archie Leach</fictional:character>
+library/xml.etree.elementtree,,:character,<fictional:character>Sir Robin</fictional:character>
+library/xml.etree.elementtree,,:character,<fictional:character>Gunther</fictional:character>
+library/xml.etree.elementtree,,:character,<fictional:character>Commander Clement</fictional:character>
+library/xml.etree.elementtree,,:actor,"for actor in root.findall('real_person:actor', ns):"
+library/xml.etree.elementtree,,:name,"name = actor.find('real_person:name', ns)"
+library/xml.etree.elementtree,,:character,"for char in actor.findall('role:character', ns):"
+library/xmlrpclib,,:pass,http://user:pass@host:port/path
+library/xmlrpclib,,:pass,user:pass
+library/xmlrpclib,,:port,http://user:pass@host:port/path
+license,,`,THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
+license,,:zooko,mailto:zooko@zooko.com
+license,,`,THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+license,,`,* THIS SOFTWARE IS PROVIDED BY THE OpenSSL PROJECT ``AS IS'' AND ANY
+license,,`,* THIS SOFTWARE IS PROVIDED BY ERIC YOUNG ``AS IS'' AND
+license,,`,"``Software''), to deal in the Software without restriction, including"
+license,,`,"THE SOFTWARE IS PROVIDED ``AS IS'', WITHOUT WARRANTY OF ANY KIND,"
+reference/datamodel,,:step,a[i:j:step]
+reference/datamodel,,:max,
+reference/expressions,,:index,x[index:index]
+reference/expressions,,`,`expressions...`
+reference/expressions,350,`,`
+reference/grammar,,`,'`' testlist1 '`'
+reference/lexical_analysis,,:fileencoding,# vim:fileencoding=<encoding-name>
+reference/lexical_analysis,,`,",       :       .       `       =       ;"
+tutorial/datastructures,,:value,key:value pairs within the braces adds initial key:value pairs
+tutorial/datastructures,,:value,It is also possible to delete a key:value
+tutorial/stdlib2,,:start,"fields = struct.unpack('<IIIHH', data[start:start+16])"
+tutorial/stdlib2,,:start,extra = data[start:start+extra_size]
+tutorial/stdlib2,,:start,filename = data[start:start+filenamesize]
+tutorial/stdlib2,,:config,"logging.warning('Warning:config file %s not found', 'server.conf')"
+tutorial/stdlib2,,:config,WARNING:root:Warning:config file server.conf not found
+tutorial/stdlib2,,:Critical,CRITICAL:root:Critical error -- shutting down
+tutorial/stdlib2,,:Error,ERROR:root:Error occurred
+tutorial/stdlib2,,:root,CRITICAL:root:Critical error -- shutting down
+tutorial/stdlib2,,:root,ERROR:root:Error occurred
+tutorial/stdlib2,,:root,WARNING:root:Warning:config file server.conf not found
+tutorial/stdlib2,,:Warning,WARNING:root:Warning:config file server.conf not found
+using/cmdline,,:line,file:line: category: message
+using/cmdline,,:category,action:message:category:module:line
+using/cmdline,,:line,action:message:category:module:line
+using/cmdline,,:message,action:message:category:module:line
+using/cmdline,,:module,action:message:category:module:line
+using/cmdline,,:errorhandler,:errorhandler
+using/unix,,:Packaging,https://en.opensuse.org/Portal:Packaging
+whatsnew/2.0,418,:len,
+whatsnew/2.3,,::,
+whatsnew/2.3,,:config,
+whatsnew/2.3,,:Critical,
+whatsnew/2.3,,:Error,
+whatsnew/2.3,,:Problem,
+whatsnew/2.3,,:root,
+whatsnew/2.3,,:Warning,
+whatsnew/2.4,,::,
+whatsnew/2.4,,:System,
+whatsnew/2.5,,:memory,:memory:
+whatsnew/2.5,,:step,[start:stop:step]
+whatsnew/2.5,,:stop,[start:stop:step]
+whatsnew/2.7,,:Sunday,'2009:4:Sunday'
+whatsnew/2.7,,::,"export PYTHONWARNINGS=all,error:::Cookie:0"
+whatsnew/2.7,,:Cookie,"export PYTHONWARNINGS=all,error:::Cookie:0"
+whatsnew/2.7,,::,>>> urlparse.urlparse('http://[1080::8:800:200C:417A]/foo')
+whatsnew/2.7,,::,"ParseResult(scheme='http', netloc='[1080::8:800:200C:417A]',"

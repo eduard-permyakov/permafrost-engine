@@ -1,0 +1,5 @@
+GL_NV_texture_expand_normal
+https://www.khronos.org/registry/OpenGL/extensions/NV/NV_texture_expand_normal.txt
+GL_NV_texture_expand_normal
+
+	GL_TEXTURE_UNSIGNED_REMAP_MODE_NV 0x888F

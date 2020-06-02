@@ -1,0 +1,5 @@
+GL_INGR_interlace_read
+https://www.khronos.org/registry/OpenGL/extensions/INGR/INGR_interlace_read.txt
+GL_INGR_interlace_read
+
+	GL_INTERLACE_READ_INGR 0x8568

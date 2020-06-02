@@ -1,0 +1,6 @@
+GL_EXT_clear_texture
+https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_clear_texture.txt
+GL_EXT_clear_texture
+
+	void glClearTexImageEXT (GLuint texture, GLint level, GLenum format, GLenum type, const void *data)
+	void glClearTexSubImageEXT (GLuint texture, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void *data)

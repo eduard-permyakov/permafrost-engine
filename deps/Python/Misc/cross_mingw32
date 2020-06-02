@@ -1,0 +1,11 @@
+# configure defaults for mingw32 host if cross-build
+
+ac_cv_little_endian_double=yes
+ac_cv_big_endian_double=no
+ac_cv_mixed_endian_double=no
+
+ac_cv_tanh_preserves_zero_sign=yes
+
+ac_cv_wchar_t_signed=no
+
+ac_cv_have_size_t_format=no

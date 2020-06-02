@@ -1,0 +1,11 @@
+GL_OES_mapbuffer
+https://www.khronos.org/registry/OpenGL/extensions/OES/OES_mapbuffer.txt
+GL_OES_mapbuffer
+
+	GL_WRITE_ONLY_OES 0x88B9
+	GL_BUFFER_ACCESS_OES 0x88BB
+	GL_BUFFER_MAPPED_OES 0x88BC
+	GL_BUFFER_MAP_POINTER_OES 0x88BD
+	void glGetBufferPointervOES (GLenum target, GLenum pname, void** params)
+	void * glMapBufferOES (GLenum target, GLenum access)
+	GLboolean glUnmapBufferOES (GLenum target)
