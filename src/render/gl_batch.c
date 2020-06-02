@@ -72,6 +72,14 @@
 #define CMD_RING_TUNIT      (GL_TEXTURE5)
 #define ATTR_RING_TUNIT     (GL_TEXTURE6)
 
+#define GL_PERF_CALL(name, ...)    \
+    do{                             \
+        GL_GPU_PERF_PUSH(name);     \
+        __VA_ARGS__;                \
+        GL_GPU_PERF_POP();          \
+    }while(0)
+
+
 struct mesh_desc{
     int    vbo_idx;
     size_t offset;
@@ -969,14 +977,14 @@ static void batch_do_drawcall_stat(struct gl_batch *batch, const struct ent_stat
 
         assert((CMD_RING_SZ - cmd_begin) % sizeof(struct GL_DAI_Cmd) == 0);
         size_t ncmds_end = (CMD_RING_SZ - cmd_begin) / sizeof(struct GL_DAI_Cmd);
-        glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds_end, 0);
+        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds_end, 0));
 
         assert(cmd_end % sizeof(struct GL_DAI_Cmd) == 0);
         size_t ncmds_begin = cmd_end / sizeof(struct GL_DAI_Cmd);
-        glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)0, ncmds_begin, 0);
+        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)0, ncmds_begin, 0));
     }else{
         size_t ncmds = dcall.end_idx - dcall.start_idx + 1;
-        glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds, 0);
+        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds, 0));
     }
 
     R_GL_RingbufferSyncLast(batch->cmd_ring);
@@ -1004,14 +1012,14 @@ static void batch_do_drawcall_anim(struct gl_batch *batch, const struct ent_anim
 
         assert((CMD_RING_SZ - cmd_begin) % sizeof(struct GL_DAI_Cmd) == 0);
         size_t ncmds_end = (CMD_RING_SZ - cmd_begin) / sizeof(struct GL_DAI_Cmd);
-        glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds_end, 0);
+        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds_end, 0));
 
         assert(cmd_end % sizeof(struct GL_DAI_Cmd) == 0);
         size_t ncmds_begin = cmd_end / sizeof(struct GL_DAI_Cmd);
-        glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)0, ncmds_begin, 0);
+        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)0, ncmds_begin, 0));
     }else{
         size_t ncmds = dcall.end_idx - dcall.start_idx + 1;
-        glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds, 0);
+        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds, 0));
     }
 
     R_GL_RingbufferSyncLast(batch->cmd_ring);
@@ -1172,7 +1180,7 @@ void R_GL_Batch_Draw(struct render_input *in)
 {
     GL_PERF_ENTER();
 
-    //batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
+    batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
     batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR);
 
     GL_PERF_RETURN_VOID();
@@ -1182,7 +1190,7 @@ void R_GL_Batch_RenderDepthMap(struct render_input *in)
 {
     GL_PERF_ENTER();
 
-    //batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_DEPTH);
+    batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_DEPTH);
     batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_DEPTH);
 
     GL_PERF_RETURN_VOID();

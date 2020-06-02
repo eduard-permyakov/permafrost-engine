@@ -94,6 +94,7 @@ struct gl_ring{
 static bool ring_wait_one(struct gl_ring *ring)
 {
     GL_PERF_ENTER();
+    assert(ring->fences[ring->imark_tail] > 0);
 
     if(ring->nmarkers == 0)
         GL_PERF_RETURN(false);

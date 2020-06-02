@@ -146,11 +146,10 @@ static void g_init_map(void)
     N_FC_ClearStats();
 }
 
-static void g_shadow_pass(const struct camera *cam, const struct map *map, 
-                          vec_rstat_t stat_ents, vec_ranim_t anim_ents)
+static void g_shadow_pass(struct render_input *in)
 {
-    vec3_t pos = Camera_GetPos(cam);
-    vec3_t dir = Camera_GetDir(cam);
+    vec3_t pos = Camera_GetPos(in->cam);
+    vec3_t dir = Camera_GetDir(in->cam);
 
     R_PushCmd((struct rcmd){ 
         .func = R_GL_DepthPassBegin, 
@@ -162,13 +161,22 @@ static void g_shadow_pass(const struct camera *cam, const struct map *map,
         },
     });
 
-    if(map) {
-        M_RenderVisibleMap(map, cam, true, RENDER_PASS_DEPTH);
+    if(in->map) {
+        M_RenderVisibleMap(in->map, in->cam, true, RENDER_PASS_DEPTH);
     }
 
-    for(int i = 0; i < vec_size(&stat_ents); i++) {
+#if CONFIG_USE_BATCH_RENDERING
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_Batch_RenderDepthMap,
+        .nargs = 1,
+        .args = { in }
+    });
+
+#else // !CONFIG_USE_BATCH_RENDERING
+    for(int i = 0; i < vec_size(&in->light_vis_stat); i++) {
     
-        struct ent_stat_rstate *curr = &vec_AT(&stat_ents, i);
+        struct ent_stat_rstate *curr = &vec_AT(&in->light_vis_stat, i);
         R_PushCmd((struct rcmd){
             .func = R_GL_RenderDepthMap,
             .nargs = 2,
@@ -179,9 +187,9 @@ static void g_shadow_pass(const struct camera *cam, const struct map *map,
         });
     }
 
-    for(int i = 0; i < vec_size(&anim_ents); i++) {
+    for(int i = 0; i < vec_size(&in->light_vis_anim); i++) {
     
-        struct ent_anim_rstate *curr = &vec_AT(&anim_ents, i);
+        struct ent_anim_rstate *curr = &vec_AT(&in->light_vis_anim, i);
 
         mat4x4_t model, normal;
         PFM_Mat4x4_Inverse(&curr->model, &model);
@@ -207,20 +215,29 @@ static void g_shadow_pass(const struct camera *cam, const struct map *map,
             },
         });
     }
+#endif
 
     R_PushCmd((struct rcmd){ R_GL_DepthPassEnd, 0 });
 }
 
-static void g_draw_pass(const struct camera *cam, const struct map *map, 
-                        bool shadows, vec_rstat_t stat_ents, vec_ranim_t anim_ents)
+static void g_draw_pass(struct render_input *in)
 {
-    if(map) {
-        M_RenderVisibleMap(map, cam, shadows, RENDER_PASS_REGULAR);
+    if(in->map) {
+        M_RenderVisibleMap(in->map, in->cam, in->shadows, RENDER_PASS_REGULAR);
     }
 
-    for(int i = 0; i < vec_size(&stat_ents); i++) {
+#if CONFIG_USE_BATCH_RENDERING
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_Batch_Draw,
+        .nargs = 1,
+        .args = { in }
+    });
+
+#else // !CONFIG_USE_BATCH_RENDERING
+    for(int i = 0; i < vec_size(&in->cam_vis_stat); i++) {
     
-        struct ent_stat_rstate *curr = &vec_AT(&stat_ents, i);
+        struct ent_stat_rstate *curr = &vec_AT(&in->cam_vis_stat, i);
         R_PushCmd((struct rcmd){
             .func = R_GL_Draw,
             .nargs = 2,
@@ -231,9 +248,9 @@ static void g_draw_pass(const struct camera *cam, const struct map *map,
         });
     }
 
-    for(int i = 0; i < vec_size(&anim_ents); i++) {
+    for(int i = 0; i < vec_size(&in->cam_vis_anim); i++) {
     
-        struct ent_anim_rstate *curr = &vec_AT(&anim_ents, i);
+        struct ent_anim_rstate *curr = &vec_AT(&in->cam_vis_anim, i);
 
         mat4x4_t model, normal;
         PFM_Mat4x4_Inverse(&curr->model, &model);
@@ -259,6 +276,7 @@ static void g_draw_pass(const struct camera *cam, const struct map *map,
             },
         });
     }
+#endif
 }
 
 static void g_render_healthbars(void)
@@ -1086,7 +1104,9 @@ void G_Render(void)
 
     struct render_input in;
     g_create_render_input(&in);
-    G_RenderMapAndEntities(in);
+    struct render_input *rcopy = g_push_render_input(in);
+
+    G_RenderMapAndEntities(rcopy);
 
     struct sval refract_setting;
     status = Settings_Get("pf.video.water_refraction", &refract_setting);
@@ -1101,7 +1121,7 @@ void G_Render(void)
             .func = R_GL_DrawWater,
             .nargs = 3,
             .args = { 
-                g_push_render_input(in),
+                rcopy,
                 R_PushArg(&refract_setting.as_bool, sizeof(bool)),
                 R_PushArg(&reflect_setting.as_bool, sizeof(bool)),
             },
@@ -1150,13 +1170,13 @@ void G_Render(void)
     PERF_RETURN_VOID();
 }
 
-void G_RenderMapAndEntities(struct render_input in)
+void G_RenderMapAndEntities(struct render_input *in)
 {
     PERF_ENTER();
-    if(in.shadows) {
-        g_shadow_pass(in.cam, in.map, in.light_vis_stat, in.light_vis_anim);
+    if(in->shadows) {
+        g_shadow_pass(in);
     }
-    g_draw_pass(in.cam, in.map, in.shadows, in.cam_vis_stat, in.cam_vis_anim);
+    g_draw_pass(in);
     PERF_RETURN_VOID();
 }
 

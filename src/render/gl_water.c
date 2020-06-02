@@ -215,7 +215,7 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex, bool on, str
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if(on) {
-        G_RenderMapAndEntities(in);
+        G_RenderMapAndEntities(&in);
     }
 
     /* Clean up framebuffer */
@@ -286,7 +286,7 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     R_GL_SetClipPlane(plane_eq);
 
     /* Render to the texture */
-    G_RenderMapAndEntities(in);
+    G_RenderMapAndEntities(&in);
 
     /* Clean up framebuffer */
     glDeleteRenderbuffers(1, &depth_rb);

@@ -111,7 +111,7 @@ void   G_SwapBuffers(void);
 /* This does not have any side effects besides  making draw calls, 
  * so it is safe to invoke from the render thread. 
  */
-void   G_RenderMapAndEntities(struct render_input in);
+void   G_RenderMapAndEntities(struct render_input *in);
 
 void   G_GetMinimapPos(float *out_x, float *out_y);
 void   G_SetMinimapPos(float x, float y);
