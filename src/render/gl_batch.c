@@ -55,21 +55,22 @@
 #include <assert.h>
 
 
-#define MESH_BUFF_SZ    (4*1024*1024)
-#define TEX_ARR_SZ      (64)
+#define MESH_BUFF_SZ        (4*1024*1024)
+#define TEX_ARR_SZ          (64)
 
-#define MAX_TEX_ARRS    (4)
-#define MAX_MESH_BUFFS  (16)
+#define MAX_TEX_ARRS        (4)
+#define MAX_MESH_BUFFS      (16)
 
-#define CMD_RING_SZ     (4 * 1024 * sizeof(struct GL_DAI_Cmd))
-#define ATTR_RING_SZ    (16*1024*1024 - 256)
+#define CMD_RING_SZ         (4 * 1024 * sizeof(struct GL_DAI_Cmd))
+#define STAT_ATTR_RING_SZ   (4*1024*1024)
+#define ANIM_ATTR_RING_SZ   (32*1024*1024)
 
-#define MAX_BATCHES     (256)
-#define MAX_INSTS       (16384)
-#define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
+#define MAX_BATCHES         (256)
+#define MAX_INSTS           (16384)
+#define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 
-#define CMD_RING_TUNIT  (GL_TEXTURE5)
-#define ATTR_RING_TUNIT (GL_TEXTURE6)
+#define CMD_RING_TUNIT      (GL_TEXTURE5)
+#define ATTR_RING_TUNIT     (GL_TEXTURE6)
 
 struct mesh_desc{
     int    vbo_idx;
@@ -378,7 +379,7 @@ static bool batch_append_tex(struct gl_batch *batch, GLuint tid, int idx, struct
     }while(++curr_arr_idx < batch->ntexarrs);
 
     if(slice_idx == -1) {
-        if(curr_arr_idx == batch->ntexarrs)
+        if(curr_arr_idx == MAX_TEX_ARRS)
             return false;
         if(!batch_alloc_texarray(batch))
             return false;
@@ -447,7 +448,16 @@ static struct gl_batch *batch_init(enum batch_type type)
 	if(!batch->cmd_ring)
         goto fail_cmd_ring;
 
-    batch->attr_ring = R_GL_RingbufferInit(ATTR_RING_SZ, RING_FLOAT);
+    switch(type) {
+    case BATCH_TYPE_STAT: 
+        batch->attr_ring = R_GL_RingbufferInit(STAT_ATTR_RING_SZ, RING_FLOAT);
+        break;
+    case BATCH_TYPE_ANIM: 
+        batch->attr_ring = R_GL_RingbufferInit(ANIM_ATTR_RING_SZ, RING_FLOAT);
+        break;
+    default: assert(0);
+    }
+
     if(!batch->attr_ring)
         goto fail_attr_ring;
 
@@ -783,11 +793,50 @@ static void batch_push_stat_attrs(struct gl_batch *batch, const struct ent_stat_
     size_t begin, end;
     R_GL_RingbufferGetLastRange(batch->attr_ring, &begin, &end);
     assert(end > begin ? (end - begin == 704 * ninsts)
-                       : ((ATTR_RING_SZ - begin) + end == 704 * ninsts));
+                       : ((STAT_ATTR_RING_SZ - begin) + end == 704 * ninsts));
 
     R_GL_StateSet(GL_U_ATTR_STRIDE, (struct uval){ 
         .type = UTYPE_INT, 
         .val.as_int = 176 
+    });
+    R_GL_StateInstall(GL_U_ATTR_STRIDE, R_GL_Shader_GetCurrActive());
+}
+
+static void batch_push_stat_attrs_depth(struct gl_batch *batch, const struct ent_stat_rstate *ents,
+                                        struct draw_call_desc dcall, struct inst_group_desc *descs)
+{
+    /* The per-instance static attributes have the follwing layout in the buffer:
+     *
+     *  +--------------------------------------------------+ <-- base
+     *  | mat4x4_t (16 floats)                             | (model matrix)
+     *  +--------------------------------------------------+
+     *
+     * In total, 16 floats (64 bytes) are pushed per instance.
+     */
+    size_t ninsts = 0;
+    for(int i = dcall.start_idx; i <= dcall.end_idx; i++) {
+
+        const struct inst_group_desc *curr = descs + i;
+        struct render_private *priv = curr->render_private;
+
+        for(int j = curr->start_idx; j <= curr->end_idx; j++) {
+        
+            if(i == dcall.start_idx && j == curr->start_idx) {
+                R_GL_RingbufferPush(batch->attr_ring, &ents[j].model, sizeof(mat4x4_t));
+            }else{
+                R_GL_RingbufferAppendLast(batch->attr_ring, &ents[j].model, sizeof(mat4x4_t));
+            }
+        }
+        ninsts += curr->end_idx - curr->start_idx + 1;
+    }
+    size_t begin, end;
+    R_GL_RingbufferGetLastRange(batch->attr_ring, &begin, &end);
+    assert(end > begin ? (end - begin == 64 * ninsts)
+                       : ((STAT_ATTR_RING_SZ - begin) + end == 64 * ninsts));
+
+    R_GL_StateSet(GL_U_ATTR_STRIDE, (struct uval){ 
+        .type = UTYPE_INT, 
+        .val.as_int = 16
     });
     R_GL_StateInstall(GL_U_ATTR_STRIDE, R_GL_Shader_GetCurrActive());
 }
@@ -849,7 +898,7 @@ static void batch_push_anim_attrs(struct gl_batch *batch, const struct ent_anim_
     size_t begin, end;
     R_GL_RingbufferGetLastRange(batch->attr_ring, &begin, &end);
     assert(end > begin ? (end - begin == 13056 * ninsts)
-                       : ((ATTR_RING_SZ - begin) + end == 13056 * ninsts));
+                       : ((ANIM_ATTR_RING_SZ - begin) + end == 13056 * ninsts));
 
     R_GL_StateSet(GL_U_ATTR_STRIDE, (struct uval){ 
         .type = UTYPE_INT, 
@@ -891,11 +940,20 @@ static void batch_push_cmds(struct gl_batch *batch, struct draw_call_desc dcall,
 }
 
 static void batch_do_drawcall_stat(struct gl_batch *batch, const struct ent_stat_rstate *ents,
-                                   struct draw_call_desc dcall, struct inst_group_desc *descs)
+                                   struct draw_call_desc dcall, struct inst_group_desc *descs,
+                                   enum render_pass pass)
 {
     batch_push_cmds(batch, dcall, descs);
 
-    batch_push_stat_attrs(batch, ents, dcall, descs);
+    switch(pass) {
+    case RENDER_PASS_DEPTH:
+        batch_push_stat_attrs_depth(batch, ents, dcall, descs);
+        break;
+    case RENDER_PASS_REGULAR:
+        batch_push_stat_attrs(batch, ents, dcall, descs);
+        break;
+    default: assert(0);
+    }
     R_GL_RingbufferBindLast(batch->attr_ring, ATTR_RING_TUNIT, R_GL_Shader_GetCurrActive(), "attrbuff");
 
     GLuint VAO = batch->vbos[dcall.vbo_idx].VAO;
@@ -960,22 +1018,23 @@ static void batch_do_drawcall_anim(struct gl_batch *batch, const struct ent_anim
     R_GL_RingbufferSyncLast(batch->attr_ring);
 }
 
-static void batch_render_stat(struct gl_batch *batch, struct ent_stat_rstate *ents, size_t nents)
+static void batch_render_stat(struct gl_batch *batch, struct ent_stat_rstate *ents, 
+                              size_t nents, enum render_pass pass)
 {
     GL_PERF_ENTER();
 
     struct inst_group_desc descs[MAX_BATCHES];
-    size_t nbatches = batch_sort_by_inst_stat(ents, nents, descs, ARR_SIZE(descs));
+    size_t ninsts = batch_sort_by_inst_stat(ents, nents, descs, ARR_SIZE(descs));
 
     struct draw_call_desc dcalls[MAX_BATCHES];
-    size_t ndcalls = batch_sort_by_vbo(batch, descs, nbatches, dcalls, ARR_SIZE(dcalls));
+    size_t ndcalls = batch_sort_by_vbo(batch, descs, ninsts, dcalls, ARR_SIZE(dcalls));
 
     for(int i = 0; i < batch->ntexarrs; i++) {
         R_GL_Texture_BindArray(&batch->textures[i].arr, R_GL_Shader_GetCurrActive());
     }
 
     for(int i = 0; i < ndcalls; i++) {
-        batch_do_drawcall_stat(batch, ents, dcalls[i], descs);
+        batch_do_drawcall_stat(batch, ents, dcalls[i], descs, pass);
     }
 
     GL_PERF_RETURN_VOID();
@@ -986,10 +1045,10 @@ static void batch_render_anim(struct gl_batch *batch, struct ent_anim_rstate *en
     GL_PERF_ENTER();
 
     struct inst_group_desc descs[MAX_BATCHES];
-    size_t nbatches = batch_sort_by_inst_anim(ents, nents, descs, ARR_SIZE(descs));
+    size_t ninsts = batch_sort_by_inst_anim(ents, nents, descs, ARR_SIZE(descs));
 
     struct draw_call_desc dcalls[MAX_BATCHES];
-    size_t ndcalls = batch_sort_by_vbo(batch, descs, nbatches, dcalls, ARR_SIZE(dcalls));
+    size_t ndcalls = batch_sort_by_vbo(batch, descs, ninsts, dcalls, ARR_SIZE(dcalls));
 
     for(int i = 0; i < batch->ntexarrs; i++) {
         R_GL_Texture_BindArray(&batch->textures[i].arr, R_GL_Shader_GetCurrActive());
@@ -1000,6 +1059,69 @@ static void batch_render_anim(struct gl_batch *batch, struct ent_anim_rstate *en
     }
 
     GL_PERF_RETURN_VOID();
+}
+
+static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_pass pass)
+{
+    size_t nanim = vec_size(ents);
+    if(nanim == 0)
+        return;
+
+    switch(pass) {
+    case RENDER_PASS_DEPTH:
+        R_GL_Shader_Install("batched.mesh.animated.depth");
+        break;
+    case RENDER_PASS_REGULAR:
+        R_GL_Shader_Install("batched.mesh.animated.textured-phong-shadowed");
+        break;
+    default: assert(0);
+    }
+
+    for(int i = 0; i < nanim; i++) {
+        batch_append(s_anim_batch, vec_AT(ents, i).render_private);
+    }
+    batch_render_anim(s_anim_batch, &vec_AT(ents, 0), nanim);
+}
+
+static void batch_render_stat_all(vec_rstat_t *ents, bool shadows, enum render_pass pass)
+{
+    struct chunk_batch_desc descs[MAX_BATCHES];
+    size_t nbatches = batch_sort_by_chunk(ents, descs, ARR_SIZE(descs));
+
+    if(nbatches == 0)
+        return;
+
+    switch(pass) {
+    case RENDER_PASS_DEPTH:
+        R_GL_Shader_Install("batched.mesh.static.depth");
+        break;
+    case RENDER_PASS_REGULAR:
+        R_GL_Shader_Install("batched.mesh.static.textured-phong-shadowed");
+        break;
+    default: assert(0);
+    }
+
+    for(int i = 0; i < nbatches; i++) {
+    
+        const struct chunk_batch_desc *curr = &descs[i];
+        uint32_t key = batch_chunk_key(curr->chunk_r, curr->chunk_c);
+
+        khiter_t k = kh_get(batch, s_chunk_batches, key);
+        if(k == kh_end(s_chunk_batches)) {
+            int status;
+            k = kh_put(batch, s_chunk_batches, key, &status);
+            assert(status != -1 && status != 0);
+            kh_value(s_chunk_batches, k) = batch_init(BATCH_TYPE_STAT);
+        }
+
+        struct gl_batch *batch = kh_value(s_chunk_batches, k);
+        size_t ndraw = curr->end_idx - curr->start_idx + 1;
+
+        for(int i = 0; i < ndraw; i++) {
+            batch_append(batch, vec_AT(ents, curr->start_idx + i).render_private);
+        }
+        batch_render_stat(batch, &vec_AT(ents, curr->start_idx), ndraw, pass);
+    }
 }
 
 /*****************************************************************************/
@@ -1050,47 +1172,18 @@ void R_GL_Batch_Draw(struct render_input *in)
 {
     GL_PERF_ENTER();
 
-    size_t nanim = vec_size(&in->cam_vis_anim);
-    if(nanim > 0) {
+    //batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
+    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR);
 
-        R_GL_Shader_Install("mesh.animated.textured-phong-shadowed-batched");
+    GL_PERF_RETURN_VOID();
+}
 
-        for(int i = 0; i < nanim; i++) {
-            batch_append(s_anim_batch, vec_AT(&in->cam_vis_anim, i).render_private);
-        }
-        batch_render_anim(s_anim_batch, &vec_AT(&in->cam_vis_anim, 0), nanim);
-    }
+void R_GL_Batch_RenderDepthMap(struct render_input *in)
+{
+    GL_PERF_ENTER();
 
-    struct chunk_batch_desc descs[MAX_BATCHES];
-    size_t nbatches = batch_sort_by_chunk(&in->cam_vis_stat, descs, ARR_SIZE(descs));
-
-    if(nbatches == 0)
-        GL_PERF_RETURN_VOID();
-
-    //TODO: this can be shadowed or not shadowed
-    R_GL_Shader_Install("mesh.static.textured-phong-shadowed-batched");
-
-    for(int i = 0; i < nbatches; i++) {
-    
-        const struct chunk_batch_desc *curr = &descs[i];
-        uint32_t key = batch_chunk_key(curr->chunk_r, curr->chunk_c);
-
-        khiter_t k = kh_get(batch, s_chunk_batches, key);
-        if(k == kh_end(s_chunk_batches)) {
-            int status;
-            k = kh_put(batch, s_chunk_batches, key, &status);
-            assert(status != -1 && status != 0);
-            kh_value(s_chunk_batches, k) = batch_init(BATCH_TYPE_STAT);
-        }
-
-        struct gl_batch *batch = kh_value(s_chunk_batches, k);
-        size_t ndraw = curr->end_idx - curr->start_idx + 1;
-
-        for(int i = 0; i < ndraw; i++) {
-            batch_append(batch, vec_AT(&in->cam_vis_stat, curr->start_idx + i).render_private);
-        }
-        batch_render_stat(batch, &vec_AT(&in->cam_vis_stat, curr->start_idx), ndraw);
-    }
+    //batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_DEPTH);
+    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_DEPTH);
 
     GL_PERF_RETURN_VOID();
 }

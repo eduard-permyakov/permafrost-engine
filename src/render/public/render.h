@@ -487,6 +487,14 @@ void R_GL_UI_UploadFontAtlas(void *image, const int *w, const int *h);
 void R_GL_Batch_Draw(struct render_input *in);
 
 /* ---------------------------------------------------------------------------
+ * Update the depth map for every light-visible entity in the render input.
+ * This is the equivalent of calling R_GL_RenderDepthMap(...) for every
+ * light-visible entity.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_Batch_RenderDepthMap(struct render_input *in);
+
+/* ---------------------------------------------------------------------------
  * Free all the resources used by live batches. Free all the per-chunk batches,
  * resetting the state of the module to that at initialization time.
  * ---------------------------------------------------------------------------

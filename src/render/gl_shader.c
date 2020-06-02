@@ -262,6 +262,22 @@ static struct shader s_shaders[] = {
         .uniforms    = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            {0}
+        },
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "batched.mesh.static.depth",
+        .vertex_path = "shaders/vertex/depth-batched.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment/passthrough.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_INT,       "attrbuff"             },
+            { UTYPE_INT,       "attrbuff_offset"      },
+            { UTYPE_INT,       GL_U_ATTR_STRIDE       },
             {0}
         },
     },
@@ -277,6 +293,21 @@ static struct shader s_shaders[] = {
             { UTYPE_MAT4,      GL_U_LS_TRANS          },
             { UTYPE_ARRAY,     GL_U_CURR_POSE_MATS    },
             { UTYPE_ARRAY,     GL_U_INV_BIND_MATS     },
+            {0}
+        },
+    },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "batched.mesh.animated.depth",
+        .vertex_path = "shaders/vertex/skinned-depth-batched.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment/passthrough.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            { UTYPE_INT,       "attrbuff"             },
+            { UTYPE_INT,       "attrbuff_offset"      },
+            { UTYPE_INT,       GL_U_ATTR_STRIDE       },
             {0}
         },
     },
@@ -303,7 +334,7 @@ static struct shader s_shaders[] = {
     },
     {
         .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.static.textured-phong-shadowed-batched",
+        .name        = "batched.mesh.static.textured-phong-shadowed",
         .vertex_path = "shaders/vertex/static-shadowed-batched.glsl",
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment/textured-phong-shadowed-batched.glsl",
@@ -354,7 +385,7 @@ static struct shader s_shaders[] = {
     },
     {
         .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.animated.textured-phong-shadowed-batched",
+        .name        = "batched.mesh.animated.textured-phong-shadowed",
         .vertex_path = "shaders/vertex/skinned-shadowed-batched.glsl",
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment/textured-phong-shadowed-batched.glsl",
