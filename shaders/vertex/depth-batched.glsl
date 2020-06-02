@@ -54,6 +54,7 @@ uniform vec4 clip_plane0;
 uniform samplerBuffer attrbuff;
 uniform int attrbuff_offset;
 uniform int attr_stride;
+uniform int attr_offset;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
@@ -62,7 +63,8 @@ uniform int attr_stride;
 int inst_attr_base(int draw_id)
 {
     int size = textureSize(attrbuff);
-    int inst_offset = draw_id * attr_stride;
+    int inst_offset = (attr_offset > 0) ? (attr_offset + gl_InstanceID) * attr_stride 
+                                        : draw_id * attr_stride;
     return int(mod(attrbuff_offset / 4 + inst_offset, size));
 }
 

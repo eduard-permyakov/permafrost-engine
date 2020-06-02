@@ -72,7 +72,7 @@
 #define CMD_RING_TUNIT      (GL_TEXTURE5)
 #define ATTR_RING_TUNIT     (GL_TEXTURE6)
 
-#define GL_PERF_CALL(name, ...)    \
+#define GL_PERF_CALL(name, ...)     \
     do{                             \
         GL_GPU_PERF_PUSH(name);     \
         __VA_ARGS__;                \
@@ -947,12 +947,69 @@ static void batch_push_cmds(struct gl_batch *batch, struct draw_call_desc dcall,
                        : ((CMD_RING_SZ - begin) + end  == sizeof(struct GL_DAI_Cmd) * ncmds));
 }
 
+static void batch_multidraw_legacy(struct gl_batch *batch, struct draw_call_desc dcall,
+                                   struct inst_group_desc *descs)
+{
+    size_t inst_idx = 0;
+    for(int i = dcall.start_idx; i <= dcall.end_idx; i++) {
+
+        const struct inst_group_desc *curr = descs + i;
+        struct render_private *priv = curr->render_private;
+        struct mesh_desc mdesc = batch_mdesc_for_vbo(batch, priv->mesh.VBO);
+
+        R_GL_StateSet(GL_U_ATTR_OFFSET, (struct uval){ 
+            .type = UTYPE_INT, 
+            .val.as_int = inst_idx
+        });
+        R_GL_StateInstall(GL_U_ATTR_OFFSET, R_GL_Shader_GetCurrActive());
+
+        GLint first = mdesc.offset / batch_vert_alignment(batch->type);
+        GLint count = priv->mesh.num_verts;
+        size_t instcount = curr->end_idx - curr->start_idx + 1;
+
+        glDrawArraysInstanced(GL_TRIANGLES, first, count, instcount);
+        inst_idx += instcount;
+    }
+}
+
+static void batch_multidraw(struct gl_batch *batch, struct draw_call_desc dcall,
+                            struct inst_group_desc *descs)
+{
+    R_GL_StateSet(GL_U_ATTR_OFFSET, (struct uval){ 
+        .type = UTYPE_INT, 
+        .val.as_int = 0
+    });
+    R_GL_StateInstall(GL_U_ATTR_OFFSET, R_GL_Shader_GetCurrActive());
+
+    batch_push_cmds(batch, dcall, descs);
+
+    GLuint cmd_vbo = R_GL_RingbufferGetVBO(batch->cmd_ring);
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmd_vbo);
+
+    size_t cmd_begin, cmd_end;
+    R_GL_RingbufferGetLastRange(batch->cmd_ring, &cmd_begin, &cmd_end);
+
+    if(cmd_end < cmd_begin) {
+
+        assert((CMD_RING_SZ - cmd_begin) % sizeof(struct GL_DAI_Cmd) == 0);
+        size_t ncmds_end = (CMD_RING_SZ - cmd_begin) / sizeof(struct GL_DAI_Cmd);
+        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds_end, 0));
+
+        assert(cmd_end % sizeof(struct GL_DAI_Cmd) == 0);
+        size_t ncmds_begin = cmd_end / sizeof(struct GL_DAI_Cmd);
+        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)0, ncmds_begin, 0));
+    }else{
+        size_t ncmds = dcall.end_idx - dcall.start_idx + 1;
+        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds, 0));
+    }
+
+    R_GL_RingbufferSyncLast(batch->cmd_ring);
+}
+
 static void batch_do_drawcall_stat(struct gl_batch *batch, const struct ent_stat_rstate *ents,
                                    struct draw_call_desc dcall, struct inst_group_desc *descs,
                                    enum render_pass pass)
 {
-    batch_push_cmds(batch, dcall, descs);
-
     switch(pass) {
     case RENDER_PASS_DEPTH:
         batch_push_stat_attrs_depth(batch, ents, dcall, descs);
@@ -967,62 +1024,30 @@ static void batch_do_drawcall_stat(struct gl_batch *batch, const struct ent_stat
     GLuint VAO = batch->vbos[dcall.vbo_idx].VAO;
     glBindVertexArray(VAO);
 
-    GLuint cmd_vbo = R_GL_RingbufferGetVBO(batch->cmd_ring);
-    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmd_vbo);
-
-    size_t cmd_begin, cmd_end;
-    R_GL_RingbufferGetLastRange(batch->cmd_ring, &cmd_begin, &cmd_end);
-
-    if(cmd_end < cmd_begin) {
-
-        assert((CMD_RING_SZ - cmd_begin) % sizeof(struct GL_DAI_Cmd) == 0);
-        size_t ncmds_end = (CMD_RING_SZ - cmd_begin) / sizeof(struct GL_DAI_Cmd);
-        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds_end, 0));
-
-        assert(cmd_end % sizeof(struct GL_DAI_Cmd) == 0);
-        size_t ncmds_begin = cmd_end / sizeof(struct GL_DAI_Cmd);
-        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)0, ncmds_begin, 0));
+    if(!GL_ARB_multi_draw_indirect) {
+        batch_multidraw_legacy(batch, dcall, descs);
     }else{
-        size_t ncmds = dcall.end_idx - dcall.start_idx + 1;
-        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds, 0));
+        batch_multidraw(batch, dcall, descs);
     }
 
-    R_GL_RingbufferSyncLast(batch->cmd_ring);
     R_GL_RingbufferSyncLast(batch->attr_ring);
 }
 
 static void batch_do_drawcall_anim(struct gl_batch *batch, const struct ent_anim_rstate *ents,
                                    struct draw_call_desc dcall, struct inst_group_desc *descs)
 {
-    batch_push_cmds(batch, dcall, descs);
-
     batch_push_anim_attrs(batch, ents, dcall, descs);
     R_GL_RingbufferBindLast(batch->attr_ring, ATTR_RING_TUNIT, R_GL_Shader_GetCurrActive(), "attrbuff");
 
     GLuint VAO = batch->vbos[dcall.vbo_idx].VAO;
     glBindVertexArray(VAO);
 
-    GLuint cmd_vbo = R_GL_RingbufferGetVBO(batch->cmd_ring);
-    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmd_vbo);
-
-    size_t cmd_begin, cmd_end;
-    R_GL_RingbufferGetLastRange(batch->cmd_ring, &cmd_begin, &cmd_end);
-
-    if(cmd_end < cmd_begin) {
-
-        assert((CMD_RING_SZ - cmd_begin) % sizeof(struct GL_DAI_Cmd) == 0);
-        size_t ncmds_end = (CMD_RING_SZ - cmd_begin) / sizeof(struct GL_DAI_Cmd);
-        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds_end, 0));
-
-        assert(cmd_end % sizeof(struct GL_DAI_Cmd) == 0);
-        size_t ncmds_begin = cmd_end / sizeof(struct GL_DAI_Cmd);
-        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)0, ncmds_begin, 0));
+    if(!GL_ARB_multi_draw_indirect) {
+        batch_multidraw_legacy(batch, dcall, descs);
     }else{
-        size_t ncmds = dcall.end_idx - dcall.start_idx + 1;
-        GL_PERF_CALL("multidraw", glMultiDrawArraysIndirect(GL_TRIANGLES, (void*)cmd_begin, ncmds, 0));
+        batch_multidraw(batch, dcall, descs);
     }
 
-    R_GL_RingbufferSyncLast(batch->cmd_ring);
     R_GL_RingbufferSyncLast(batch->attr_ring);
 }
 

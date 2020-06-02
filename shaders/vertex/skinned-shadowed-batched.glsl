@@ -91,6 +91,7 @@ uniform vec4 clip_plane0;
 uniform samplerBuffer attrbuff;
 uniform int attrbuff_offset;
 uniform int attr_stride;
+uniform int attr_offset;
 
 /*****************************************************************************/
 /* PROGRAM                                                                   */
@@ -99,7 +100,8 @@ uniform int attr_stride;
 int inst_attr_base(int draw_id)
 {
     int size = textureSize(attrbuff);
-    int inst_offset = draw_id * attr_stride;
+    int inst_offset = (attr_offset > 0) ? (attr_offset + gl_InstanceID) * attr_stride 
+                                        : draw_id * attr_stride;
     return int(mod(attrbuff_offset / 4 + inst_offset, size));
 }
 
@@ -143,7 +145,12 @@ void main()
 
     to_fragment.uv = in_uv;
     to_fragment.mat_idx = in_material_idx;
-    to_fragment.draw_id = in_draw_id;
+
+    if(attr_offset > 0) {
+        to_fragment.draw_id = attr_offset + gl_InstanceID;
+    }else{
+        to_fragment.draw_id = in_draw_id;
+    }
 
     mat3 normal_matrix = mat3(read_mat4(base + 176));
 

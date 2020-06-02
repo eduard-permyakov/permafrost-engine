@@ -89,6 +89,7 @@
 #define GL_U_MAP_RES            "map_resolution"
 #define GL_U_MAP_POS            "map_pos"
 #define GL_U_ATTR_STRIDE        "attr_stride"
+#define GL_U_ATTR_OFFSET        "attr_offset"
 
 enum utype{
     UTYPE_FLOAT,

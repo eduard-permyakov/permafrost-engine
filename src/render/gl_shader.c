@@ -278,6 +278,8 @@ static struct shader s_shaders[] = {
             { UTYPE_INT,       "attrbuff"             },
             { UTYPE_INT,       "attrbuff_offset"      },
             { UTYPE_INT,       GL_U_ATTR_STRIDE       },
+            { UTYPE_INT,       GL_U_ATTR_OFFSET       },
+            { UTYPE_INT,       GL_U_ATTR_OFFSET       },
             {0}
         },
     },
@@ -308,6 +310,7 @@ static struct shader s_shaders[] = {
             { UTYPE_INT,       "attrbuff"             },
             { UTYPE_INT,       "attrbuff_offset"      },
             { UTYPE_INT,       GL_U_ATTR_STRIDE       },
+            { UTYPE_INT,       GL_U_ATTR_OFFSET       },
             {0}
         },
     },
@@ -355,6 +358,7 @@ static struct shader s_shaders[] = {
             { UTYPE_INT,       "attrbuff"             },
             { UTYPE_INT,       "attrbuff_offset"      },
             { UTYPE_INT,       GL_U_ATTR_STRIDE       },
+            { UTYPE_INT,       GL_U_ATTR_OFFSET       },
             {0}
         },
     },
@@ -406,6 +410,7 @@ static struct shader s_shaders[] = {
             { UTYPE_INT,       "attrbuff"             },
             { UTYPE_INT,       "attrbuff_offset"      },
             { UTYPE_INT,       GL_U_ATTR_STRIDE       },
+            { UTYPE_INT,       GL_U_ATTR_OFFSET       },
             {0}
         },
     },
