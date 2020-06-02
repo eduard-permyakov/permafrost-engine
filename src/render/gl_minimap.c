@@ -492,9 +492,13 @@ void R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, s_ctx.minimap_texture.id, 0);
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
+    R_GL_MapUpdateFogClear();
+
     glViewport(0,0, MINIMAP_RES, MINIMAP_RES);
     draw_minimap_water(map, (struct coord){*chunk_r, *chunk_c});
     draw_minimap_terrain(chunk_rprivate, chunk_model);
+
+    R_GL_MapInvalidate();
 
     int width, height;
     Engine_WinDrawableSize(&width, &height);

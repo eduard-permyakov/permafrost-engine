@@ -640,8 +640,8 @@ int main(int argc, char **argv)
 
         process_sdl_events();
         E_ServiceQueue();
-        G_Update();
         Session_ServiceRequests();
+        G_Update();
         G_Render();
         UI_Render();
 
