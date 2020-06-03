@@ -155,7 +155,7 @@ static void g_shadow_pass(struct render_input *in)
         .func = R_GL_DepthPassBegin, 
         .nargs = 3,
         .args = { 
-            R_PushArg(&s_gs.light_pos, sizeof(s_gs.light_pos)),
+            R_PushArg(&in->light_pos, sizeof(in->light_pos)),
             R_PushArg(&pos, sizeof(pos)),
             R_PushArg(&dir, sizeof(dir)),
         },
@@ -367,6 +367,7 @@ static void g_create_render_input(struct render_input *out)
     out->cam = ACTIVE_CAM;
     out->map = s_gs.map;
     out->shadows = shadows_setting.as_bool;
+    out->light_pos = s_gs.light_pos;
 
     vec_rstat_init(&out->cam_vis_stat);
     vec_ranim_init(&out->cam_vis_anim);

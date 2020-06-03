@@ -83,6 +83,7 @@ struct render_input{
     const struct camera *cam;
     const struct map    *map;
     bool                 shadows;
+    vec3_t               light_pos;
     /* The visible entities to render */
     vec_rstat_t         cam_vis_stat;
     vec_ranim_t         cam_vis_anim;

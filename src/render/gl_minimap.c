@@ -348,6 +348,7 @@ static void create_water_texture(const struct map *map)
         .cam = (struct camera*)map_cam,
         .map = map,
         .shadows = false,
+        .light_pos = (vec3_t){0.0f, 1.0f, 0.0f},
         .cam_vis_stat = {0},
         .cam_vis_anim = {0},
         .light_vis_stat = {0},
