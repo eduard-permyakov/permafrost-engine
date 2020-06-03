@@ -1620,6 +1620,8 @@ bool G_SaveGlobalState(SDL_RWops *stream)
             .val.as_int = G_GetMinimapSize()
         };
         CHK_TRUE_RET(Attr_Write(stream, &minimap_size, "minimap_size"));
+
+        CHK_TRUE_RET(G_Fog_SaveState(stream));
     }
 
     struct attr ss = (struct attr){
@@ -1747,6 +1749,8 @@ bool G_LoadGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         G_SetMinimapSize(attr.val.as_int);
+
+        CHK_TRUE_RET(G_Fog_LoadState(stream));
     }else{
         G_ClearState();
         E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);

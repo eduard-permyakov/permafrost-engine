@@ -858,6 +858,12 @@ static PyObject *PyEntity_pickle(PyEntityObject *self)
     Py_DECREF(faction_id);
     CHK_TRUE(status, fail_pickle);
 
+    PyObject *vision_range = Py_BuildValue("f", self->ent->vision_range);
+    CHK_TRUE(vision_range, fail_pickle);
+    status = S_PickleObjgraph(vision_range, stream);
+    Py_DECREF(vision_range);
+    CHK_TRUE(status, fail_pickle);
+
     ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
 
 fail_pickle:
@@ -931,13 +937,17 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args)
     PyObject *faction_id = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
+    PyObject *vision_range = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
     if(!pos
     || !scale
     || !rotation
     || !flags 
     || !sel_radius 
     || !max_speed 
-    || !faction_id) {
+    || !faction_id
+    || !vision_range) {
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle attributes of pf.Entity instance");
         goto fail_unpickle_atts;
     }
@@ -964,6 +974,9 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args)
     status = PyObject_SetAttrString(entobj, "faction_id", faction_id);
     CHK_TRUE(0 == status, fail_unpickle_atts);
 
+    status = PyObject_SetAttrString(entobj, "vision_range", vision_range);
+    CHK_TRUE(0 == status, fail_unpickle_atts);
+
     Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
     ret = Py_BuildValue("(Oi)", entobj, (int)nread);
     Py_DECREF(entobj);
@@ -976,6 +989,7 @@ fail_unpickle_atts:
     Py_XDECREF(sel_radius);
     Py_XDECREF(max_speed);
     Py_XDECREF(faction_id);
+    Py_XDECREF(vision_range);
 fail_unpickle:
     Py_XDECREF(basedir);
     Py_XDECREF(filename);

@@ -41,6 +41,7 @@
 
 struct map;
 struct obb;
+struct SDL_RWops;
 
 
 bool G_Fog_Init(const struct map *map);
@@ -54,6 +55,9 @@ void G_Fog_ClearExploredCache(void);
 
 bool G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb);
 bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb);
+
+bool G_Fog_SaveState(struct SDL_RWops *stream);
+bool G_Fog_LoadState(struct SDL_RWops *stream);
 
 #endif
 

@@ -43,11 +43,13 @@
 #include "../render/public/render_ctrl.h"
 #include "../lib/public/pqueue.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/attr.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 
 #include <stdint.h>
 #include <assert.h>
+#include <SDL.h>
 
 
 #define MIN(a, b)               ((a) < (b) ? (a) : (b))
@@ -55,6 +57,12 @@
 #define CLAMP(a, min, max)      (MIN(MAX((a), (min)), (max)))
 #define ARR_SIZE(a)             (sizeof(a)/sizeof(a[0]))
 #define FAC_STATE(val, fac_id)  (((val) >> ((fac_id) * 2)) & 0x3)
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 enum fog_state{
     STATE_UNEXPLORED = 0,
@@ -620,5 +628,57 @@ bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb)
 void G_Fog_ClearExploredCache(void)
 {
     kh_clear(uid, s_explored_cache);
+}
+
+bool G_Fog_SaveState(struct SDL_RWops *stream)
+{
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+    const size_t ntiles = res.chunk_w * res.chunk_h * res.tile_w * res.tile_h;
+
+    struct attr ntiles_attr = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = ntiles
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &ntiles_attr, "num_tiles"));
+
+    for(int i = 0; i < ntiles; i++) {
+
+        uint32_t fs = s_fog_state[i];
+        for(int j = 0; j < MAX_FACTIONS; j++) {
+            enum fog_state curr = (fs >> (j * 2)) & 0x3;
+            if(curr == STATE_VISIBLE) {
+                curr = STATE_IN_FOG;
+            }
+            fs = fs & ~(0x3 << (j * 2));
+            fs = fs | (curr << (j * 2));
+        }
+
+        struct attr tilestate = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = fs
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &tilestate, "tilestate"));
+    }
+
+    return true;
+}
+
+bool G_Fog_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t ntiles = attr.val.as_int;
+
+    for(int i = 0; i < ntiles; i++) {
+    
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        s_fog_state[i] = attr.val.as_int;
+    }
+
+    return true;
 }
 
