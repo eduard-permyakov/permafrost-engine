@@ -21,13 +21,15 @@ EVERGLORY is the flagship game developed using Permafrost Engine.
 
 ## Engine Summary ##
 
-* OpenGL 3.3 programmable pipeline
+* OpenGL 3.3 programmable pipeline (more modern extensions used where available)
 * Custom ASCII model format with Blender export script
 * Skeletal animation with GPU skinning
 * Phong reflection model with materials
 * Directional light shadow mapping
+* Batched rendering with dynamic batches
+* Ringbuffer-based streaming of data to GPU
 * RTS camera, FPS camera
-* Rendering of tile-based world parsed from ASCII file
+* Rendering of tile-based map parsed from ASCII file
 * Water rendering (including reflection, refraction, soft edge effects)
 * Export/Import of game entites to/from ASCII files
 * Engine internals exposed to Python 2.7 for scripting
@@ -71,7 +73,7 @@ Python is built with a subset of the default modules and packaged with a trimmed
 
 #### For Linux ####
 
-1. `git clone --recursive https://github.com/eduard-permyakov/permafrost-engine.git`
+1. `git clone https://github.com/eduard-permyakov/permafrost-engine.git`
 2. `cd permafrost-engine`
 3. `make deps` (to build the shared library dependencies to `./lib`)
 4. `make pf`
@@ -88,7 +90,7 @@ to the make environment is the only required change.
 
 The compliation can either be done on a Linux host, or natively on Windows using MSYS2 (https://www.msys2.org/).
 
-1. `git clone --recursive https://github.com/eduard-permyakov/permafrost-engine.git`
+1. `git clone https://github.com/eduard-permyakov/permafrost-engine.git`
 2. `cd permafrost-engine`
 3. `make deps PLAT=WINDOWS`
 4. `make pf PLAT=WINDOWS`
@@ -100,7 +102,7 @@ Permafrost Engine is licensed under the GPLv3, with a special linking exception.
 
 ## Devlog ##
 
-Follow the development of Permafrost Engine and EVERGLORY on YouTube: https://www.youtube.com/channel/UCNklkpsPnNpRhC9oVkpIpLA
+Follow the development of Permafrost Engine and EVERGLORY on YouTube: [Channel Link](https://www.youtube.com/channel/UCNklkpsPnNpRhC9oVkpIpLA)
 
 [Indie RTS Devlog #1: Introducing Permafrost Engine](https://youtu.be/0dEttWferm8)
 
@@ -114,5 +116,8 @@ Follow the development of Permafrost Engine and EVERGLORY on YouTube: https://ww
 
 ## Comments/Questions ##
 
-Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com
+Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
+Discuss EVERGLORY and its' development on Discord here: https://discord.gg/jSQ8M6C. Pull requests
+are not accepted until the release of EVERGLORY, which will coincide with the 1.0 milestone of the 
+engine.
 
