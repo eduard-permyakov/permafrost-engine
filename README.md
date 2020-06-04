@@ -114,6 +114,8 @@ Follow the development of Permafrost Engine and EVERGLORY on YouTube: [Channel L
 
 [Indie RTS Devlog #4: Fog of War](https://youtu.be/2rXElWzAGrY)
 
+[Indie RTS Devlog #5: Performance Optimization](https://www.youtube.com/watch?v=HV_CLHkpXpY)
+
 ## Comments/Questions ##
 
 Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
