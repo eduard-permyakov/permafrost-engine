@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2020 Eduard Permyakov 
+ *  Copyright (C) 2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,40 +33,36 @@
  *
  */
 
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef TASK_H
+#define TASK_H
 
-#include <stdbool.h>
-#include <SDL.h>
+#include "lib/public/attr.h"
 
-#define CONFIG_SCHED_TARGET_FPS     (30)
-#define CONFIG_USE_BATCH_RENDERING  (false)
+#include <stdint.h>
+#include <SDL_atomic.h>
 
-/* The far end of the camera's clipping frustrum, in OpenGL coordinates */
-#define CONFIG_DRAWDIST             (1000)
-#define CONFIG_TILE_TEX_RES         (128)
-#define CONFIG_ARR_TEX_RES          (512)
-#define CONFIG_LOADING_SCREEN       "assets/loading_screens/battle_of_kulikovo.png"
+enum comp_status{
+    COMP_INCOMPLETE = 0,
+    COMP_COMPLETE   = 1
+};
 
-#define CONFIG_SHADOW_MAP_RES       (2048)
-/* Determines the draw distance from the light source when creating the
- * shadow map. Note that a higher drawdistance leads to more peterpanning.
- */
-#define CONFIG_SHADOW_DRAWDIST      (1536)
-/* This is the half-width of the light source's frustum, in OpenGL coordinates.
- * Increasing the FOV results in lower-quality shadows for the same shadow map 
- * resolution. However, the light frustum needs to be sufficiently large to 
- * contain all shadow casters visible by the RTS camera.
- */
-#define CONFIG_SHADOW_FOV           (160)
+struct future{
+    struct attr  retval;
+    SDL_atomic_t status;
+};
 
-#define CONFIG_SETTINGS_FILENAME    "pf.conf"
+/* The following may only be called from task context 
+ * (i.e. from the body of a task function) */
 
-#define CONFIG_LOS_CACHE_SZ         (512)
-#define CONFIG_FLOW_CAHCE_SZ        (512)
-#define CONFIG_MAPPING_CACHE_SZ     (512)
-#define CONFIG_GRID_PATH_CACHE_SZ   (8192)
-
-#define CONFIG_FRAME_STEP_HOTKEY    (SDL_SCANCODE_SPACE)
+uint32_t Task_Create(int prio, void (*code)(void *), void *arg, struct future *result);
+uint32_t Task_MyTid(void);
+uint32_t Task_ParentTid(void);
+void     Task_Yield(void);
+void     Task_Exit(struct attr *ret);
+void     Task_Send(uint32_t tid, void *msg, size_t msglen);
+void     Task_Receive(uint32_t *tid, void *msg, size_t msglen);
+void     Task_Reply(uint32_t tid, void *reply, size_t replylen);
+void     Task_AwaitEVent(int event);
 
 #endif
+

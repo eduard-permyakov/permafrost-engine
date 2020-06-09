@@ -806,6 +806,7 @@ bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
     g_init_map();
     E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
 
+#if CONFIG_USE_BATCH_RENDERING
     struct map_resolution res;
     M_GetResolution(s_gs.map, &res);
     R_PushCmd((struct rcmd){
@@ -815,6 +816,7 @@ bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
             R_PushArg(&res, sizeof(res)),
         }
     });
+#endif
 
     PERF_RETURN(true);
 }

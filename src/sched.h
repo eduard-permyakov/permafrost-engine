@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2020 Eduard Permyakov 
+ *  Copyright (C) 2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,40 +33,28 @@
  *
  */
 
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef SCHED_H
+#define SCHED_H
 
 #include <stdbool.h>
-#include <SDL.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#define CONFIG_SCHED_TARGET_FPS     (30)
-#define CONFIG_USE_BATCH_RENDERING  (false)
+struct future;
 
-/* The far end of the camera's clipping frustrum, in OpenGL coordinates */
-#define CONFIG_DRAWDIST             (1000)
-#define CONFIG_TILE_TEX_RES         (128)
-#define CONFIG_ARR_TEX_RES          (512)
-#define CONFIG_LOADING_SCREEN       "assets/loading_screens/battle_of_kulikovo.png"
-
-#define CONFIG_SHADOW_MAP_RES       (2048)
-/* Determines the draw distance from the light source when creating the
- * shadow map. Note that a higher drawdistance leads to more peterpanning.
- */
-#define CONFIG_SHADOW_DRAWDIST      (1536)
-/* This is the half-width of the light source's frustum, in OpenGL coordinates.
- * Increasing the FOV results in lower-quality shadows for the same shadow map 
- * resolution. However, the light frustum needs to be sufficiently large to 
- * contain all shadow casters visible by the RTS camera.
- */
-#define CONFIG_SHADOW_FOV           (160)
-
-#define CONFIG_SETTINGS_FILENAME    "pf.conf"
-
-#define CONFIG_LOS_CACHE_SZ         (512)
-#define CONFIG_FLOW_CAHCE_SZ        (512)
-#define CONFIG_MAPPING_CACHE_SZ     (512)
-#define CONFIG_GRID_PATH_CACHE_SZ   (8192)
-
-#define CONFIG_FRAME_STEP_HOTKEY    (SDL_SCANCODE_SPACE)
+bool     Sched_Init(void);
+void     Sched_Shutdown(void);
+void     Sched_HandleEvent(int event, void *arg);
+void     Sched_Tick(void);
+uint32_t Sched_Create(int prio, void (*code)(void *), void *arg, struct future *result);
+/* Same as Sched_Create, except the task may be scheduled on
+ * one of the worker threads, instead of just the main thread. */
+uint32_t Sched_CreateJob(int prio, void (*code)(void *), void *arg, struct future *result);
+void     Sched_Destroy(uint32_t tid);
+void     Sched_Send(uint32_t tid, void *msg, size_t msglen);
+void     Sched_Receive(uint32_t tid);
+void     Sched_Reply(uint32_t tid);
+void     Sched_AwaitEvent(uint32_t tid);
 
 #endif
+
