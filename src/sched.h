@@ -40,6 +40,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define MAIN_THREAD_TID (0)
+
 struct future;
 
 bool     Sched_Init(void);

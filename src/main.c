@@ -50,6 +50,7 @@
 #include "settings.h"
 #include "session.h"
 #include "perf.h"
+#include "sched.h"
 
 #include <stdbool.h>
 #include <assert.h>
@@ -401,6 +402,11 @@ static bool engine_init(char **argv)
     Perf_RegisterThread(g_main_thread_id, "main");
     Perf_RegisterThread(g_render_thread_id, "render");
 
+    if(!Sched_Init()) {
+        fprintf(stderr, "Failed to initialize scheduling module.\n");
+        goto fail_sched;
+    }
+
     if(!AL_Init()) {
         fprintf(stderr, "Failed to initialize asset-loading module.\n");
         goto fail_al;
@@ -464,6 +470,8 @@ fail_render:
 fail_cursor:
     AL_Shutdown();
 fail_al:
+    Sched_Shutdown();
+fail_sched:
 fail_render_init:
     render_thread_quit();
 fail_rthread:
@@ -502,6 +510,7 @@ static void engine_shutdown(void)
     Cursor_FreeAll();
     AL_Shutdown();
     E_Shutdown();
+    Sched_Shutdown();
     Perf_Shutdown();
 
     vec_event_destroy(&s_prev_tick_events);
