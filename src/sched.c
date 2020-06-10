@@ -36,6 +36,7 @@
 #include "sched.h"
 #include "config.h"
 #include "perf.h"
+#include "main.h"
 #include "lib/public/pqueue.h"
 #include "lib/public/queue.h"
 #include "lib/public/pf_string.h"
@@ -80,12 +81,14 @@ struct task{
     uint32_t       tid;
     uint32_t       parent_tid;
     uint32_t       flags;
+    struct task   *prev, *next;
 };
 
 #define MAX_TASKS               (512)
 #define MAX_WORKER_THREADS      (64)
 #define STACK_SZ                (64 * 1024)
 #define SCHED_TICK_TIMESLICE_MS (1.0f / CONFIG_SCHED_TARGET_FPS * 1000.0f)
+#define ALIGNED(val, align)     (((val) + ((align) - 1)) & ~((align) - 1))
 
 PQUEUE_TYPE(task, struct task*)
 PQUEUE_IMPL(static, task, struct task*)
@@ -93,32 +96,40 @@ PQUEUE_IMPL(static, task, struct task*)
 QUEUE_TYPE(tid, uint32_t)
 QUEUE_IMPL(static, tid, uint32_t)
 
+
+extern int sched_save_ctx(struct context *out);
+extern void sched_load_ctx(const struct context *in);
+static void sched_task_exit(void);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static uint32_t      s_curr_tid;
+//TODO: this needs to be a per-thread structure (every thread can be running a task)
+static uint32_t       s_curr_tid;
+static struct context s_main_ctx;
 
-static bool          s_freelist[MAX_TASKS];
-static struct task   s_tasks[MAX_TASKS];
-static char          s_stacks[MAX_TASKS][STACK_SZ];
+static struct task   *s_freehead;
+static struct task    s_tasks[MAX_TASKS];
+static char           s_stacks[MAX_TASKS][STACK_SZ];
 
-static SDL_SpinLock  s_ready_queue_lock;
-static pq_task_t     s_ready_queue;
+static SDL_SpinLock   s_ready_queue_lock;
+static pq_task_t      s_ready_queue;
 
-static SDL_SpinLock  s_msg_queue_locks[MAX_TASKS];
-static queue_tid_t   s_msg_queues[MAX_TASKS];
+static SDL_SpinLock   s_msg_queue_locks[MAX_TASKS];
+static queue_tid_t    s_msg_queues[MAX_TASKS];
 
-static size_t        s_nworkers;
-static SDL_Thread   *s_worker_threads[MAX_WORKER_THREADS];
-static SDL_atomic_t  s_worker_idle[MAX_WORKER_THREADS];
+static size_t         s_nworkers;
+static SDL_Thread    *s_worker_threads[MAX_WORKER_THREADS];
+static SDL_atomic_t   s_worker_idle[MAX_WORKER_THREADS];
+static struct context s_worker_contexts[MAX_WORKER_THREADS];
 
-static bool          s_worker_work_ready[MAX_WORKER_THREADS];
-static bool          s_worker_should_exit[MAX_WORKER_THREADS];
-static uint32_t      s_worker_work_tids[MAX_WORKER_THREADS];
+static bool           s_worker_work_ready[MAX_WORKER_THREADS];
+static bool           s_worker_should_exit[MAX_WORKER_THREADS];
+static uint32_t       s_worker_work_tids[MAX_WORKER_THREADS];
 
-static SDL_mutex    *s_worker_locks[MAX_WORKER_THREADS];
-static SDL_cond     *s_worker_conds[MAX_WORKER_THREADS];
+static SDL_mutex     *s_worker_locks[MAX_WORKER_THREADS];
+static SDL_cond      *s_worker_conds[MAX_WORKER_THREADS];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -126,47 +137,145 @@ static SDL_cond     *s_worker_conds[MAX_WORKER_THREADS];
 
 #if defined(__x86_64__)
 
-void sched_save_ctx(struct context *out)
-{
-    __asm__("mov %0, %%rbx;" :"=m"(out->rbx)   :: "memory");
-    __asm__("mov %0, %%rsp;" :"=m"(out->rsp)   :: "memory");
-    __asm__("mov %0, %%rbp;" :"=m"(out->rbp)   :: "memory");
-    __asm__("mov %0, %%r12;" :"=m"(out->r12)   :: "memory");
-    __asm__("mov %0, %%r13;" :"=m"(out->r13)   :: "memory");
-    __asm__("mov %0, %%r14;" :"=m"(out->r14)   :: "memory");
-    __asm__("mov %0, %%r15;" :"=m"(out->r15)   :: "memory");
-    __asm__("stmxcsr %0;"    :"=m"(out->mxcsr) :: "memory");
-    __asm__("fstcw %0;"      :"=m"(out->fpucw) :: "memory");
-}
+__asm__(
+".text                          \n"
+"                               \n"
+".type sched_save_ctx,@function \n"
+".type sched_load_ctx,@function \n"
+"                               \n"
+"sched_save_ctx:                \n"
+"   pop %rsi                    \n"
+"   push %rsi                   \n"
+"   lea Lback(%rip), %rdx       \n" 
+"   push %rdx                   \n" 
+"   mov %rbx,  0x0(%rdi)        \n"
+"   mov %rsp,  0x8(%rdi)        \n"
+"   mov %rbp, 0x10(%rdi)        \n"
+"   mov %r12, 0x18(%rdi)        \n"
+"   mov %r13, 0x20(%rdi)        \n"
+"   mov %r14, 0x28(%rdi)        \n"
+"   mov %r15, 0x30(%rdi)        \n"
+"   stmxcsr 0x38(%rdi)          \n"
+"   fstcw   0x3c(%rdi)          \n"
+"   mov $0x0, %rax              \n"
+"   push %rsi                   \n"
+"   ret                         \n"
+"Lback:                         \n"
+"   mov $0x1, %rax              \n"
+"   ret                         \n"
+"                               \n"
+"sched_load_ctx:                \n"
+"   mov  0x0(%rdi), %rbx        \n"
+"   mov  0x8(%rdi), %rsp        \n"
+"   mov 0x10(%rdi), %rbp        \n"
+"   mov 0x18(%rdi), %r12        \n"
+"   mov 0x20(%rdi), %r13        \n"
+"   mov 0x28(%rdi), %r14        \n"
+"   mov 0x30(%rdi), %r15        \n"
+"   ldmxcsr 0x38(%rdi)          \n"
+"   fldcw   0x3c(%rdi)          \n"
+"   ret                         \n"
+"                               \n"
+);
 
-void sched_load_ctx(struct context *in)
+void sched_init_ctx(struct task *task, void *code)
 {
-    __asm__("mov %%rbx, %0;" :: "m"(in->rbx)   :);
-    __asm__("mov %%rsp, %0;" :: "m"(in->rsp)   :);
-    __asm__("mov %%rbp, %0;" :: "m"(in->rbp)   :);
-    __asm__("mov %%r12, %0;" :: "m"(in->r12)   :);
-    __asm__("mov %%r13, %0;" :: "m"(in->r13)   :);
-    __asm__("mov %%r14, %0;" :: "m"(in->r14)   :);
-    __asm__("mov %%r15, %0;" :: "m"(in->r15)   :);
-    __asm__("ldmxcsr %0;"    :: "m"(in->mxcsr) :);
-    __asm__("fldcw %0;"      :: "m"(in->fpucw) :);
+    char *stack_end = s_stacks[task->tid - 1];
+    char *stack_base = stack_end + STACK_SZ;
+    stack_base = (char*)ALIGNED((uintptr_t)stack_base, 32);
+    if(stack_base >= stack_end + STACK_SZ)
+        stack_base -= 32;
+
+    /* This is the address where we will jump to upon 
+     * returning from the task function. This routine
+     * is responsible for context-switching out of the 
+     * task context. */
+    stack_base -= 8;
+    *(uint64_t*)stack_base = (uintptr_t)sched_task_exit;
+
+    /* This is where we will jump to the next time we 
+     * will activate this task. */
+    stack_base -= 8;
+    *(uint64_t*)stack_base = (uintptr_t)code;
+
+    memset(&task->ctx, 0, sizeof(task->ctx));
+    task->ctx.rsp = (uintptr_t)stack_base;
 }
 
 #endif
 
 static struct task *sched_task_alloc(void)
 {
-    return NULL;
+    if(!s_freehead)
+        return NULL;
+
+    struct task *ret = s_freehead;
+    if(ret->prev)
+        ret->prev->next = ret->next;
+    if(ret->next)
+        ret->next->prev = ret->prev;
+
+    s_freehead = s_freehead->next;
+    return ret;
 }
 
-static void sched_task_free(void)
+static void sched_task_free(struct task *task)
 {
-
+    task->next = s_freehead;
+    task->prev = NULL;
+    if(s_freehead)
+        s_freehead->prev = task;
+    s_freehead = task;
 }
 
-static void sched_task_activate(const struct task *task)
+static void sched_task_init(struct task *task, int prio, uint32_t flags, void *code)
 {
+    task->state = TASK_STATE_READY;
+    task->prio = prio;
+    task->parent_tid = s_curr_tid;
+    task->flags = flags;
+    sched_init_ctx(task, code);
 
+    SDL_AtomicLock(&s_ready_queue_lock); 
+    pq_task_push(&s_ready_queue, prio, task);
+    SDL_AtomicUnlock(&s_ready_queue_lock);
+}
+
+static void sched_task_exit(void)
+{
+    //assert(s_curr_tid != MAIN_THREAD_TID);
+    printf("sched_task_exit\n");
+    sched_load_ctx(&s_main_ctx);
+}
+
+static void sched_task_run(const struct task *task)
+{
+    if(SDL_ThreadID() == g_main_thread_id) {
+        if(sched_save_ctx(&s_main_ctx)) {
+            printf("we came back team!!!\n");
+            fflush(stdout);
+            return;
+        }else{
+            printf("we saved the ctx!!!\n");
+            fflush(stdout);
+        }
+        sched_load_ctx(&task->ctx);
+    }else{
+        //TODO:
+        assert(0);
+    }
+    /* We should never get here. Upon context switching back 
+     * from the task, we get a non-zero return value from 
+     * sched_save_ctx, and use that to get out. */
+    assert(0);
+}
+
+static size_t sched_ready_queue_size(void)
+{
+    SDL_AtomicLock(&s_ready_queue_lock); 
+    size_t ret = pq_size(&s_ready_queue);
+    SDL_AtomicUnlock(&s_ready_queue_lock);
+    return ret;
 }
 
 static void sched_signal_worker_quit(int id)
@@ -218,14 +327,26 @@ static int worker_threadfn(void *arg)
 
 bool Sched_Init(void)
 {
-    for(int i = 0; i < MAX_TASKS; i++) {
-        s_freelist[i] = true;
-    }
     s_ready_queue_lock = (SDL_SpinLock){0};
     pq_task_init(&s_ready_queue);
 
+    assert(MAX_TASKS >= 2);
+    s_tasks[0].prev = NULL;
+    s_tasks[0].next = &s_tasks[1];
+    s_tasks[MAX_TASKS-1].prev = &s_tasks[MAX_TASKS - 2];
+    s_tasks[MAX_TASKS-1].next = NULL;
+
+    for(int i = 1; i < MAX_TASKS-1; i++) {
+        s_tasks[i].next = &s_tasks[i + 1];
+        s_tasks[i].prev = &s_tasks[i - 1];
+    }
+    s_freehead = s_tasks;
+
     for(int i = 0; i < MAX_TASKS; i++) {
+
+        s_tasks[i].tid = i + 1;
         s_msg_queue_locks[i] = (SDL_SpinLock){0};
+
         SDL_AtomicSet(s_worker_idle + i, 0);
         if(!queue_tid_init(s_msg_queues + i, 512))
             goto fail_msg_queue;
@@ -307,16 +428,39 @@ void Sched_HandleEvent(int event, void *arg)
 
 void Sched_Tick(void)
 {
+    while(sched_ready_queue_size() > 0) {
 
+        struct task *curr;
+        bool popped;
+
+        SDL_AtomicLock(&s_ready_queue_lock);
+        popped = pq_task_pop(&s_ready_queue, &curr);
+        SDL_AtomicUnlock(&s_ready_queue_lock);
+
+        if(!popped)
+            break;
+        sched_task_run(curr);
+    }
 }
 
 uint32_t Sched_Create(int prio, void (*code)(void *), void *arg, struct future *result)
 {
-    return 0;
+    //TODO: the BG tasks will eventually need to be able to do this too...
+    ASSERT_IN_MAIN_THREAD();
+
+    struct task *task = sched_task_alloc();
+    if(!task)
+        return 0;
+
+    //TODO: handle arg, result....
+    sched_task_init(task, prio, TASK_MAIN_THREAD_AFFINITY, code);
+    return task->tid;
 }
 
 uint32_t Sched_CreateJob(int prio, void (*code)(void *), void *arg, struct future *result)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     return 0;
 }
 

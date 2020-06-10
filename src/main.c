@@ -653,6 +653,7 @@ int main(int argc, char **argv)
         G_Update();
         G_Render();
         UI_Render();
+        Sched_Tick();
 
         wait_render_work_done();
 
