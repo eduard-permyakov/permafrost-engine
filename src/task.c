@@ -45,3 +45,35 @@ void Task_Yield(void)
     Sched_Request((struct request){ .type = SCHED_REQ_YIELD });
 }
 
+void Task_Send(uint32_t tid, void *msg, size_t msglen, void *reply, size_t replylen)
+{
+    Sched_Request((struct request){ 
+        .type = SCHED_REQ_SEND,
+        .argv[0] = (uint64_t)tid,
+        .argv[1] = (uint64_t)msg,
+        .argv[2] = (uint64_t)msglen,
+        .argv[3] = (uint64_t)reply,
+        .argv[4] = (uint64_t)replylen,
+    });
+}
+
+void Task_Receive(uint32_t *tid, void *msg, size_t msglen)
+{
+    Sched_Request((struct request){ 
+        .type = SCHED_REQ_RECEIVE,
+        .argv[0] = (uint64_t)tid,
+        .argv[1] = (uint64_t)msg,
+        .argv[2] = (uint64_t)msglen,
+    });
+}
+
+void Task_Reply(uint32_t tid, void *reply, size_t replylen)
+{
+    Sched_Request((struct request){ 
+        .type = SCHED_REQ_REPLY,
+        .argv[0] = (uint64_t)tid,
+        .argv[1] = (uint64_t)reply,
+        .argv[2] = (uint64_t)replylen,
+    });
+}
+
