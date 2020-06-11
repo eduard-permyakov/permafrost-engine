@@ -86,7 +86,7 @@ struct request{
 /* The following may only be called from task context 
  * (i.e. from the body of a task function) */
 
-void Sched_Request(struct request req);
+uint64_t Sched_Request(struct request req);
 
 #endif
 

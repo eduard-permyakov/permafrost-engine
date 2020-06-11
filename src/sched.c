@@ -103,8 +103,7 @@ QUEUE_IMPL(static, tid, uint32_t)
 KHASH_MAP_INIT_INT64(tid, uint32_t)
 
 
-extern int  sched_save_ctx(struct context *out);
-extern void sched_load_ctx(const struct context *in);
+uint64_t sched_switch_ctx(struct context *save, struct context *restore, int retval);
 static void sched_task_exit(void);
 
 /*****************************************************************************/
@@ -146,44 +145,41 @@ static SDL_cond      *s_worker_conds[MAX_WORKER_THREADS];
 #if defined(__x86_64__)
 
 __asm__(
-".text                          \n"
-"                               \n"
-".type sched_save_ctx,@function \n"
-".type sched_load_ctx,@function \n"
-"                               \n"
-"sched_save_ctx:                \n"
-"   pop %rsi                    \n"
-"   push %rsi                   \n"
-"   lea Lback(%rip), %rdx       \n" 
-"   push %rdx                   \n" 
-"   mov %rbx,  0x0(%rdi)        \n"
-"   mov %rsp,  0x8(%rdi)        \n"
-"   mov %rbp, 0x10(%rdi)        \n"
-"   mov %r12, 0x18(%rdi)        \n"
-"   mov %r13, 0x20(%rdi)        \n"
-"   mov %r14, 0x28(%rdi)        \n"
-"   mov %r15, 0x30(%rdi)        \n"
-"   stmxcsr 0x38(%rdi)          \n"
-"   fstcw   0x3c(%rdi)          \n"
-"   mov $0x0, %rax              \n"
-"   push %rsi                   \n"
-"   ret                         \n"
-"Lback:                         \n"
-"   mov $0x1, %rax              \n"
-"   ret                         \n"
-"                               \n"
-"sched_load_ctx:                \n"
-"   mov  0x0(%rdi), %rbx        \n"
-"   mov  0x8(%rdi), %rsp        \n"
-"   mov 0x10(%rdi), %rbp        \n"
-"   mov 0x18(%rdi), %r12        \n"
-"   mov 0x20(%rdi), %r13        \n"
-"   mov 0x28(%rdi), %r14        \n"
-"   mov 0x30(%rdi), %r15        \n"
-"   ldmxcsr 0x38(%rdi)          \n"
-"   fldcw   0x3c(%rdi)          \n"
-"   ret                         \n"
-"                               \n"
+".text                                  \n"
+"                                       \n"
+".type sched_switch_ctx,@function       \n"
+"                                       \n"
+"# parameter 0 (%rdi) - save ctx ptr    \n"
+"# parameter 1 (%rsi) - load ctx ptr    \n"
+"# parameter 2 (%rdx) - return value    \n"
+"                                       \n"
+"sched_switch_ctx:                      \n"
+"Lsave_ctx:                             \n"
+"   lea Lback(%rip), %rcx               \n" 
+"   push %rcx                           \n" 
+"   mov %rbx,  0x0(%rdi)                \n"
+"   mov %rsp,  0x8(%rdi)                \n"
+"   mov %rbp, 0x10(%rdi)                \n"
+"   mov %r12, 0x18(%rdi)                \n"
+"   mov %r13, 0x20(%rdi)                \n"
+"   mov %r14, 0x28(%rdi)                \n"
+"   mov %r15, 0x30(%rdi)                \n"
+"   stmxcsr 0x38(%rdi)                  \n"
+"   fstcw   0x3c(%rdi)                  \n"
+"Lload_ctx:                             \n"
+"   mov  0x0(%rsi), %rbx                \n"
+"   mov  0x8(%rsi), %rsp                \n"
+"   mov 0x10(%rsi), %rbp                \n"
+"   mov 0x18(%rsi), %r12                \n"
+"   mov 0x20(%rsi), %r13                \n"
+"   mov 0x28(%rsi), %r14                \n"
+"   mov 0x30(%rsi), %r15                \n"
+"   ldmxcsr 0x38(%rsi)                  \n"
+"   fldcw   0x3c(%rsi)                  \n"
+"   mov %rdx, %rax                      \n"
+"Lback:                                 \n"
+"   ret                                 \n"
+"                                       \n"
 );
 
 void sched_init_ctx(struct task *task, void *code)
@@ -266,8 +262,9 @@ static void sched_task_init(struct task *task, int prio, uint32_t flags, void *c
 {
     task->state = TASK_STATE_READY;
     task->prio = prio;
-    //task->parent_tid = s_curr_tid;
+    task->parent_tid = NULL_TID;
     task->flags = flags;
+    task->retval = 0;
     sched_init_ctx(task, code);
 
     SDL_AtomicLock(&s_ready_queue_lock); 
@@ -278,8 +275,14 @@ static void sched_task_init(struct task *task, int prio, uint32_t flags, void *c
 static void sched_task_exit(void)
 {
     //TODO: handle the cases when the task is on other threads...
+    //TODO: also need to free the task on exiting...
     //printf("sched_task_exit\n");
-    sched_load_ctx(&s_main_ctx);
+
+    uint32_t tid = sched_curr_thread_tid();
+    struct task *task = &s_tasks[tid - 1];
+
+    sched_switch_ctx(&task->ctx, &s_main_ctx, 0);
+    //sched_load_ctx(&s_main_ctx);
 }
 
 static void sched_reactivate(struct task *task)
@@ -367,23 +370,11 @@ static void sched_task_run(struct task *task)
     task->state = TASK_STATE_ACTIVE;
 
     if(SDL_ThreadID() == g_main_thread_id) {
-        if(sched_save_ctx(&s_main_ctx)) {
-            //printf("we came back team!!!\n");
-            //fflush(stdout);
-            return;
-        }else{
-            //printf("we saved the ctx!!!\n");
-            //fflush(stdout);
-        }
-        sched_load_ctx(&task->ctx);
+        sched_switch_ctx(&s_main_ctx, &task->ctx, task->retval);
     }else{
         //TODO:
         assert(0);
     }
-    /* We should never get here. Upon context switching back 
-     * from the task, we get a non-zero return value from 
-     * sched_save_ctx, and use that to get out. */
-    assert(0);
 }
 
 static void sched_task_service_request(struct task *task)
@@ -394,8 +385,12 @@ static void sched_task_service_request(struct task *task)
     case SCHED_REQ_CREATE:
         break;
     case SCHED_REQ_MY_TID:
+        task->retval = task->tid;
+        sched_reactivate(task);
         break;
     case SCHED_REQ_MY_PARENT_TID:
+        task->retval = task->parent_tid;
+        sched_reactivate(task);
         break;
     case SCHED_REQ_YIELD:
         sched_reactivate(task);
@@ -676,7 +671,7 @@ uint32_t Sched_CreateJob(int prio, void (*code)(void *), void *arg, struct futur
     return 0;
 }
 
-void Sched_Request(struct request req)
+uint64_t Sched_Request(struct request req)
 {
     uint32_t tid = sched_curr_thread_tid();
     struct task *task = &s_tasks[tid - 1];
@@ -684,11 +679,8 @@ void Sched_Request(struct request req)
     task->req = req;
     sched_queue_request(tid);
 
-    if(sched_save_ctx(&task->ctx))
-        return;
-
     if(SDL_ThreadID() == g_main_thread_id) {
-        sched_load_ctx(&s_main_ctx);
+        return sched_switch_ctx(&task->ctx, &s_main_ctx, 0);
     }else{
         //TODO: need to be able to get the worker index here...
         assert(0);

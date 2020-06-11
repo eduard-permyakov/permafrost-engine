@@ -77,3 +77,13 @@ void Task_Reply(uint32_t tid, void *reply, size_t replylen)
     });
 }
 
+uint32_t Task_MyTid(void)
+{
+    return Sched_Request((struct request){ .type = SCHED_REQ_MY_TID });
+}
+
+uint32_t Task_ParentTid(void)
+{
+    return Sched_Request((struct request){ .type = SCHED_REQ_MY_PARENT_TID });
+}
+
