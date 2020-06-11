@@ -39,6 +39,7 @@
 #include "main.h"
 #include "lib/public/pqueue.h"
 #include "lib/public/queue.h"
+#include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
 
 #include <SDL.h>
@@ -72,6 +73,7 @@ struct context{
 
 enum{
     TASK_MAIN_THREAD_AFFINITY = (1 << 0),
+    TASK_HAS_REQUEST          = (1 << 1),
 };
 
 struct task{
@@ -81,6 +83,9 @@ struct task{
     uint32_t       tid;
     uint32_t       parent_tid;
     uint32_t       flags;
+    struct request req;
+    uint64_t       retval;
+    void          *arg;
     struct task   *prev, *next;
 };
 
@@ -96,8 +101,10 @@ PQUEUE_IMPL(static, task, struct task*)
 QUEUE_TYPE(tid, uint32_t)
 QUEUE_IMPL(static, tid, uint32_t)
 
+KHASH_MAP_INIT_INT64(tid, uint32_t)
 
-extern int sched_save_ctx(struct context *out);
+
+extern int  sched_save_ctx(struct context *out);
 extern void sched_load_ctx(const struct context *in);
 static void sched_task_exit(void);
 
@@ -105,8 +112,9 @@ static void sched_task_exit(void);
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-//TODO: this needs to be a per-thread structure (every thread can be running a task)
-static uint32_t       s_curr_tid;
+/* After initialization, no new keys are added to the map, so it's safe to 
+ * read from different threads. */
+static khash_t(tid)  *s_thread_tid_map;
 static struct context s_main_ctx;
 
 static struct task   *s_freehead;
@@ -182,9 +190,9 @@ void sched_init_ctx(struct task *task, void *code)
 {
     char *stack_end = s_stacks[task->tid - 1];
     char *stack_base = stack_end + STACK_SZ;
-    stack_base = (char*)ALIGNED((uintptr_t)stack_base, 32);
+    stack_base = (char*)ALIGNED((uintptr_t)stack_base, 16);
     if(stack_base >= stack_end + STACK_SZ)
-        stack_base -= 32;
+        stack_base -= 16;
 
     /* This is the address where we will jump to upon 
      * returning from the task function. This routine
@@ -203,6 +211,16 @@ void sched_init_ctx(struct task *task, void *code)
 }
 
 #endif
+
+static uint64_t thread_id_to_key(SDL_threadID tid)
+{
+    union{
+        SDL_threadID as_tid;
+        uint64_t     as_u64;
+    }ret = {0};
+    ret.as_tid = tid;
+    return ret.as_u64;
+}
 
 static struct task *sched_task_alloc(void)
 {
@@ -232,7 +250,7 @@ static void sched_task_init(struct task *task, int prio, uint32_t flags, void *c
 {
     task->state = TASK_STATE_READY;
     task->prio = prio;
-    task->parent_tid = s_curr_tid;
+    //task->parent_tid = s_curr_tid;
     task->flags = flags;
     sched_init_ctx(task, code);
 
@@ -243,13 +261,14 @@ static void sched_task_init(struct task *task, int prio, uint32_t flags, void *c
 
 static void sched_task_exit(void)
 {
-    //assert(s_curr_tid != MAIN_THREAD_TID);
     printf("sched_task_exit\n");
     sched_load_ctx(&s_main_ctx);
 }
 
-static void sched_task_run(const struct task *task)
+static void sched_task_run(struct task *task)
 {
+    task->state = TASK_STATE_ACTIVE;
+
     if(SDL_ThreadID() == g_main_thread_id) {
         if(sched_save_ctx(&s_main_ctx)) {
             printf("we came back team!!!\n");
@@ -270,6 +289,37 @@ static void sched_task_run(const struct task *task)
     assert(0);
 }
 
+static bool sched_task_service_request(struct task *task)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!(task->flags & TASK_HAS_REQUEST))
+        return true;
+
+    switch(task->req.type) {
+    case SCHED_REQ_CREATE:
+        break;
+    case SCHED_REQ_MY_TID:
+        break;
+    case SCHED_REQ_MY_PARENT_TID:
+        break;
+    case SCHED_REQ_YIELD:
+        break;
+    case SCHED_REQ_SEND:
+        break;
+    case SCHED_REQ_RECEIVE:
+        break;
+    case SCHED_REQ_REPLY:
+        break;
+    case SCHED_REQ_AWAIT_EVENT:
+        break;
+    default: assert(0);    
+    }
+    task->flags &= ~TASK_HAS_REQUEST;
+
+    return (task->state == TASK_STATE_READY);
+}
+
 static size_t sched_ready_queue_size(void)
 {
     SDL_AtomicLock(&s_ready_queue_lock); 
@@ -284,6 +334,38 @@ static void sched_signal_worker_quit(int id)
     s_worker_should_exit[id] = true;
     SDL_CondSignal(s_worker_conds[id]);
     SDL_UnlockMutex(s_worker_locks[id]);
+}
+
+static void sched_init_thread_tid_map(void)
+{
+    int status;
+    uint64_t main_key = thread_id_to_key(g_main_thread_id);
+
+    kh_put(tid, s_thread_tid_map, g_main_thread_id, &status);
+    assert(status != -1 && status != 0);
+
+    for(int i = 0; i < s_nworkers; i++) {
+
+        uint64_t key = thread_id_to_key(SDL_GetThreadID(s_worker_threads[i]));
+        kh_put(tid, s_thread_tid_map, key, &status);
+        assert(status != -1 && status != 0);
+    }
+}
+
+static void sched_set_thread_tid(SDL_threadID id, uint32_t tid)
+{
+    uint64_t key = thread_id_to_key(id);
+    khiter_t k = kh_get(tid, s_thread_tid_map, key);
+    assert(k != kh_end(s_thread_tid_map));
+    kh_val(s_thread_tid_map, k) = tid;
+}
+
+static uint32_t sched_curr_thread_tid(void)
+{
+    uint64_t key = thread_id_to_key(SDL_ThreadID());
+    khiter_t k = kh_get(tid, s_thread_tid_map, key);
+    assert(k != kh_end(s_thread_tid_map));
+    return kh_val(s_thread_tid_map, k);
 }
 
 static void worker_wait_on_work(int id)
@@ -327,6 +409,10 @@ static int worker_threadfn(void *arg)
 
 bool Sched_Init(void)
 {
+    s_thread_tid_map = kh_init(tid);
+    if(!s_thread_tid_map)
+        goto fail_thread_tid_map;
+
     s_ready_queue_lock = (SDL_SpinLock){0};
     pq_task_init(&s_ready_queue);
 
@@ -380,7 +466,7 @@ bool Sched_Init(void)
         Perf_RegisterThread(SDL_GetThreadID(s_worker_threads[i]), threadname);
     }
 
-    s_curr_tid = MAIN_THREAD_TID;
+    sched_init_thread_tid_map();
     return true;
 
 fail_workers:
@@ -401,11 +487,14 @@ fail_msg_queue:
     for(int i = 0; i < MAX_TASKS; i++) {
         queue_tid_destroy(s_msg_queues + i);
     }
+    kh_destroy(tid, s_thread_tid_map);
+fail_thread_tid_map:
     return false;
 }
 
 void Sched_Shutdown(void)
 {
+    kh_destroy(tid, s_thread_tid_map);
     pq_task_destroy(&s_ready_queue);
 
     for(int i = 0; i < s_nworkers; i++) {
@@ -428,10 +517,11 @@ void Sched_HandleEvent(int event, void *arg)
 
 void Sched_Tick(void)
 {
+    //TODO: change top-level condition to be timeslice-based
     while(sched_ready_queue_size() > 0) {
 
         struct task *curr;
-        bool popped;
+        bool popped, should_run;
 
         SDL_AtomicLock(&s_ready_queue_lock);
         popped = pq_task_pop(&s_ready_queue, &curr);
@@ -439,13 +529,18 @@ void Sched_Tick(void)
 
         if(!popped)
             break;
+
+        should_run = sched_task_service_request(curr);
+        if(!should_run)
+            continue;
+
+        sched_set_thread_tid(SDL_ThreadID(), curr->tid);
         sched_task_run(curr);
     }
 }
 
 uint32_t Sched_Create(int prio, void (*code)(void *), void *arg, struct future *result)
 {
-    //TODO: the BG tasks will eventually need to be able to do this too...
     ASSERT_IN_MAIN_THREAD();
 
     struct task *task = sched_task_alloc();
@@ -464,28 +559,27 @@ uint32_t Sched_CreateJob(int prio, void (*code)(void *), void *arg, struct futur
     return 0;
 }
 
-void Sched_Destroy(uint32_t tid)
+void Sched_Request(struct request req)
 {
+    uint32_t tid = sched_curr_thread_tid();
+    struct task *task = &s_tasks[tid - 1];
 
-}
+    task->req = req;
+    task->flags |= TASK_HAS_REQUEST;
+    task->state = TASK_STATE_READY;
 
-void Sched_Send(uint32_t tid, void *msg, size_t msglen)
-{
+    SDL_AtomicLock(&s_ready_queue_lock); 
+    pq_task_push(&s_ready_queue, task->prio, task);
+    SDL_AtomicUnlock(&s_ready_queue_lock);
 
-}
+    if(sched_save_ctx(&task->ctx))
+        return;
 
-void Sched_Receive(uint32_t tid)
-{
-
-}
-
-void Sched_Reply(uint32_t tid)
-{
-
-}
-
-void Sched_AwaitEvent(uint32_t tid)
-{
-
+    if(SDL_ThreadID() == g_main_thread_id) {
+        sched_load_ctx(&s_main_ctx);
+    }else{
+        //TODO: need to be able to get the worker index here...
+        assert(0);
+    }
 }
 

@@ -36,20 +36,11 @@
 #ifndef TASK_H
 #define TASK_H
 
-#include "lib/public/attr.h"
-
+#include <stddef.h>
 #include <stdint.h>
-#include <SDL_atomic.h>
 
-enum comp_status{
-    COMP_INCOMPLETE = 0,
-    COMP_COMPLETE   = 1
-};
-
-struct future{
-    struct attr  retval;
-    SDL_atomic_t status;
-};
+struct attr;
+struct future;
 
 /* The following may only be called from task context 
  * (i.e. from the body of a task function) */
@@ -62,7 +53,8 @@ void     Task_Exit(struct attr *ret);
 void     Task_Send(uint32_t tid, void *msg, size_t msglen);
 void     Task_Receive(uint32_t *tid, void *msg, size_t msglen);
 void     Task_Reply(uint32_t tid, void *reply, size_t replylen);
-void     Task_AwaitEVent(int event);
+void     Task_AwaitEvent(int event);
+void     Task_Sleep(int ms);
 
 #endif
 

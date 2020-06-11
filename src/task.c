@@ -34,8 +34,14 @@
  */
 
 #include "task.h"
+#include "sched.h"
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
+
+void Task_Yield(void)
+{
+    Sched_Request((struct request){ .type = SCHED_REQ_YIELD });
+}
 

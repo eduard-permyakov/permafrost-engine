@@ -36,13 +36,27 @@
 #ifndef SCHED_H
 #define SCHED_H
 
+#include "lib/public/attr.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <SDL_atomic.h>
 
-#define MAIN_THREAD_TID (0)
 
-struct future;
+#define NULL_TID (0)
+
+enum comp_status{
+    COMP_INCOMPLETE = 0,
+    COMP_COMPLETE   = 1
+};
+
+struct future{
+    struct attr  retval;
+    SDL_atomic_t status;
+};
+
+/* The following may only be called from main thread context */
 
 bool     Sched_Init(void);
 void     Sched_Shutdown(void);
@@ -52,11 +66,27 @@ uint32_t Sched_Create(int prio, void (*code)(void *), void *arg, struct future *
 /* Same as Sched_Create, except the task may be scheduled on
  * one of the worker threads, instead of just the main thread. */
 uint32_t Sched_CreateJob(int prio, void (*code)(void *), void *arg, struct future *result);
-void     Sched_Destroy(uint32_t tid);
-void     Sched_Send(uint32_t tid, void *msg, size_t msglen);
-void     Sched_Receive(uint32_t tid);
-void     Sched_Reply(uint32_t tid);
-void     Sched_AwaitEvent(uint32_t tid);
+
+enum reqtype{
+    SCHED_REQ_CREATE,
+    SCHED_REQ_MY_TID,
+    SCHED_REQ_MY_PARENT_TID,
+    SCHED_REQ_YIELD,
+    SCHED_REQ_SEND,
+    SCHED_REQ_RECEIVE,
+    SCHED_REQ_REPLY,
+    SCHED_REQ_AWAIT_EVENT,
+};
+
+struct request{
+    enum reqtype type;
+    uint64_t     argv[5];
+};
+
+/* The following may only be called from task context 
+ * (i.e. from the body of a task function) */
+
+void Sched_Request(struct request req);
 
 #endif
 
