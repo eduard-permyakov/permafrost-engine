@@ -75,7 +75,8 @@
     scope void pq_##name##_destroy (pq(name) *pqueue);                                          \
     scope bool pq_##name##_push    (pq(name) *pqueue, float in_prio, type in);                  \
     scope bool pq_##name##_pop     (pq(name) *pqueue, type *out);                               \
-    scope bool pq_##name##_contains(pq(name) *pqueue, type t);
+    scope bool pq_##name##_contains(pq(name) *pqueue, type t);                                  \
+    scope bool pq_##name##_reserve (pq(name) *pqueue, size_t cap);                              \
 
 /***********************************************************************************************/
 
@@ -97,7 +98,7 @@
     {                                                                                           \
         if(pqueue->size + 1 >= pqueue->capacity) {                                              \
                                                                                                 \
-            pqueue->capacity = pqueue->capacity ? pqueue->capacity * 2 : 4;                     \
+            pqueue->capacity = pqueue->capacity ? pqueue->capacity * 2 : 32;                    \
             pqueue->nodes = realloc(pqueue->nodes,                                              \
                 pqueue->capacity * sizeof(pq_##name##_node_t));                                 \
             if(!pqueue->nodes)                                                                  \
@@ -158,6 +159,19 @@
         }                                                                                       \
         return false;                                                                           \
     }                                                                                           \
+                                                                                                \
+    scope bool pq_##name##_reserve(pq(name) *pqueue, size_t cap)                                \
+    {                                                                                           \
+        if(pqueue->capacity < cap) {                                                            \
+                                                                                                \
+            pqueue->capacity = cap;                                                             \
+            pqueue->nodes = realloc(pqueue->nodes,                                              \
+                pqueue->capacity * sizeof(pq_##name##_node_t));                                 \
+            if(!pqueue->nodes)                                                                  \
+                return false;                                                                   \
+        }                                                                                       \
+        return true;                                                                            \
+    }
 
 #endif
 

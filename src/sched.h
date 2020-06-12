@@ -61,6 +61,7 @@ struct future{
 bool     Sched_Init(void);
 void     Sched_Shutdown(void);
 void     Sched_HandleEvent(int event, void *arg);
+void     Sched_StartBackgroundTasks(void);
 void     Sched_Tick(void);
 uint32_t Sched_Create(int prio, void (*code)(void *), void *arg, struct future *result);
 /* Same as Sched_Create, except the task may be scheduled on
