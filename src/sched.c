@@ -104,7 +104,7 @@ KHASH_MAP_INIT_INT64(tid, uint32_t)
 KHASH_MAP_INIT_INT(tqueue, queue_tid_t)
 
 
-uint64_t sched_switch_ctx(struct context *save, struct context *restore, int retval);
+uint64_t sched_switch_ctx(struct context *save, struct context *restore, int retval, void *arg);
 static void sched_task_exit(void);
 
 /*****************************************************************************/
@@ -154,11 +154,13 @@ __asm__(
 "# parameter 0 (%rdi) - save ctx ptr    \n"
 "# parameter 1 (%rsi) - load ctx ptr    \n"
 "# parameter 2 (%rdx) - return value    \n"
+"# parameter 3 (%rcx) - arg passed to   \n"
+"#                      context code    \n"
 "                                       \n"
 "sched_switch_ctx:                      \n"
 "Lsave_ctx:                             \n"
-"   lea Lback(%rip), %rcx               \n" 
-"   push %rcx                           \n" 
+"   lea Lback(%rip), %r8                \n" 
+"   push %r8                            \n" 
 "   mov %rbx,  0x0(%rdi)                \n"
 "   mov %rsp,  0x8(%rdi)                \n"
 "   mov %rbp, 0x10(%rdi)                \n"
@@ -178,6 +180,7 @@ __asm__(
 "   mov 0x30(%rsi), %r15                \n"
 "   ldmxcsr 0x38(%rsi)                  \n"
 "   fldcw   0x3c(%rsi)                  \n"
+"   mov %rcx, %rdi                      \n"
 "   mov %rdx, %rax                      \n"
 "Lback:                                 \n"
 "   ret                                 \n"
@@ -260,13 +263,14 @@ static void sched_task_free(struct task *task)
     s_freehead = task;
 }
 
-static void sched_task_init(struct task *task, int prio, uint32_t flags, void *code)
+static void sched_task_init(struct task *task, int prio, uint32_t flags, void *code, void *arg)
 {
     task->state = TASK_STATE_READY;
     task->prio = prio;
     task->parent_tid = NULL_TID;
     task->flags = flags;
     task->retval = 0;
+    task->arg = arg;
     sched_init_ctx(task, code);
 
     SDL_AtomicLock(&s_ready_queue_lock); 
@@ -283,7 +287,7 @@ static void sched_task_exit(void)
     uint32_t tid = sched_curr_thread_tid();
     struct task *task = &s_tasks[tid - 1];
 
-    sched_switch_ctx(&task->ctx, &s_main_ctx, 0);
+    sched_switch_ctx(&task->ctx, &s_main_ctx, 0, NULL);
     //sched_load_ctx(&s_main_ctx);
 }
 
@@ -390,7 +394,7 @@ static void sched_task_run(struct task *task)
     task->state = TASK_STATE_ACTIVE;
 
     if(SDL_ThreadID() == g_main_thread_id) {
-        sched_switch_ctx(&s_main_ctx, &task->ctx, task->retval);
+        sched_switch_ctx(&s_main_ctx, &task->ctx, task->retval, task->arg);
     }else{
         //TODO:
         assert(0);
@@ -716,7 +720,7 @@ uint32_t Sched_Create(int prio, void (*code)(void *), void *arg, struct future *
         return 0;
 
     //TODO: handle arg, result....
-    sched_task_init(task, prio, TASK_MAIN_THREAD_AFFINITY, code);
+    sched_task_init(task, prio, TASK_MAIN_THREAD_AFFINITY, code, arg);
     printf("created task with tid: %u\n", task->tid);
     return task->tid;
 }
@@ -737,7 +741,7 @@ uint64_t Sched_Request(struct request req)
     sched_enqueue_request(tid);
 
     if(SDL_ThreadID() == g_main_thread_id) {
-        return sched_switch_ctx(&task->ctx, &s_main_ctx, 0);
+        return sched_switch_ctx(&task->ctx, &s_main_ctx, 0, NULL);
     }else{
         //TODO: need to be able to get the worker index here...
         assert(0);
