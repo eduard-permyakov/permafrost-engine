@@ -87,3 +87,11 @@ uint32_t Task_ParentTid(void)
     return Sched_Request((struct request){ .type = SCHED_REQ_MY_PARENT_TID });
 }
 
+void *Task_AwaitEvent(int event)
+{
+    return (void*)Sched_Request((struct request){
+        .type = SCHED_REQ_AWAIT_EVENT,
+        .argv[0] = event,
+    });
+}
+

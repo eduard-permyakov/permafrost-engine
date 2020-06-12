@@ -36,6 +36,7 @@
 #include "event.h"
 #include "main.h"
 #include "perf.h"
+#include "sched.h"
 #include "lib/public/khash.h"
 #include "lib/public/vec.h"
 #include "lib/public/queue.h"
@@ -170,6 +171,8 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
 
 static void e_handle_event(struct event event)
 {
+    Sched_HandleEvent(event.type, event.arg);
+
     uint64_t key = e_key(event.receiver_id, event.type);
     enum simstate ss = G_GetSimState();
     

@@ -91,7 +91,7 @@ struct task{
 #define MAX_TASKS               (512)
 #define MAX_WORKER_THREADS      (64)
 #define STACK_SZ                (64 * 1024)
-#define SCHED_TICK_TIMESLICE_MS (1.0f / CONFIG_SCHED_TARGET_FPS * 1000.0f)
+#define SCHED_TICK_MS           (1.0f / CONFIG_SCHED_TARGET_FPS * 1000.0f)
 #define ALIGNED(val, align)     (((val) + ((align) - 1)) & ~((align) - 1))
 
 PQUEUE_TYPE(task, struct task*)
@@ -101,6 +101,7 @@ QUEUE_TYPE(tid, uint32_t)
 QUEUE_IMPL(static, tid, uint32_t)
 
 KHASH_MAP_INIT_INT64(tid, uint32_t)
+KHASH_MAP_INIT_INT(tqueue, queue_tid_t)
 
 
 uint64_t sched_switch_ctx(struct context *save, struct context *restore, int retval);
@@ -112,31 +113,32 @@ static void sched_task_exit(void);
 
 /* After initialization, no new keys are added to the map, so it's safe to 
  * read from different threads. */
-static khash_t(tid)  *s_thread_tid_map;
-static struct context s_main_ctx;
+static khash_t(tid)    *s_thread_tid_map;
+static struct context   s_main_ctx;
 
-static struct task   *s_freehead;
-static struct task    s_tasks[MAX_TASKS];
-static char           s_stacks[MAX_TASKS][STACK_SZ];
-static queue_tid_t    s_msg_queues[MAX_TASKS];
+static struct task     *s_freehead;
+static struct task      s_tasks[MAX_TASKS];
+static char             s_stacks[MAX_TASKS][STACK_SZ];
+static queue_tid_t      s_msg_queues[MAX_TASKS];
+static khash_t(tqueue) *s_event_queues;
 
-static SDL_SpinLock   s_request_queue_lock;
-static queue_tid_t    s_request_queue;
+static SDL_SpinLock     s_request_queue_lock;
+static queue_tid_t      s_request_queue;
 
-static SDL_SpinLock   s_ready_queue_lock;
-static pq_task_t      s_ready_queue;
+static SDL_SpinLock     s_ready_queue_lock;
+static pq_task_t        s_ready_queue;
 
-static size_t         s_nworkers;
-static SDL_Thread    *s_worker_threads[MAX_WORKER_THREADS];
-static SDL_atomic_t   s_worker_idle[MAX_WORKER_THREADS];
-static struct context s_worker_contexts[MAX_WORKER_THREADS];
+static size_t           s_nworkers;
+static SDL_Thread      *s_worker_threads[MAX_WORKER_THREADS];
+static SDL_atomic_t     s_worker_idle[MAX_WORKER_THREADS];
+static struct context   s_worker_contexts[MAX_WORKER_THREADS];
 
-static bool           s_worker_work_ready[MAX_WORKER_THREADS];
-static bool           s_worker_should_exit[MAX_WORKER_THREADS];
-static uint32_t       s_worker_work_tids[MAX_WORKER_THREADS];
+static bool             s_worker_work_ready[MAX_WORKER_THREADS];
+static bool             s_worker_should_exit[MAX_WORKER_THREADS];
+static uint32_t         s_worker_work_tids[MAX_WORKER_THREADS];
 
-static SDL_mutex     *s_worker_locks[MAX_WORKER_THREADS];
-static SDL_cond      *s_worker_conds[MAX_WORKER_THREADS];
+static SDL_mutex       *s_worker_locks[MAX_WORKER_THREADS];
+static SDL_cond        *s_worker_conds[MAX_WORKER_THREADS];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -147,7 +149,7 @@ static SDL_cond      *s_worker_conds[MAX_WORKER_THREADS];
 __asm__(
 ".text                                  \n"
 "                                       \n"
-".type sched_switch_ctx,@function       \n"
+".type sched_switch_ctx, @function      \n"
 "                                       \n"
 "# parameter 0 (%rdi) - save ctx ptr    \n"
 "# parameter 1 (%rsi) - load ctx ptr    \n"
@@ -364,6 +366,24 @@ static void sched_reply(struct task *task, uint32_t tid, void *reply, size_t rep
     sched_reactivate(task);
 }
 
+static void sched_await_event(struct task *task, int event)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    task->state = TASK_STATE_EVENT_BLOCKED;
+
+    int status;
+    khiter_t k = kh_get(tqueue, s_event_queues, event);
+
+    if(k == kh_end(s_event_queues)) {
+
+        k = kh_put(tqueue, s_event_queues, event, &status);
+        assert(status != -1 && status != 0);
+        queue_tid_init(&kh_val(s_event_queues, k), 32);
+    }
+    queue_tid_push(&kh_val(s_event_queues, k), &task->tid);
+}
+
 static void sched_task_run(struct task *task)
 {
     sched_set_thread_tid(SDL_ThreadID(), task->tid);
@@ -405,12 +425,13 @@ static void sched_task_service_request(struct task *task)
         sched_reply(task, (uint32_t)task->req.argv[0], (void*)task->req.argv[1], (size_t)task->req.argv[2]);
         break;
     case SCHED_REQ_AWAIT_EVENT:
+        sched_await_event(task, (int)task->req.argv[0]);
         break;
     default: assert(0);    
     }
 }
 
-static void sched_queue_request(uint32_t tid)
+static void sched_enqueue_request(uint32_t tid)
 {
     SDL_AtomicLock(&s_request_queue_lock); 
     queue_tid_push(&s_request_queue, &tid);
@@ -525,8 +546,14 @@ bool Sched_Init(void)
     if(!queue_tid_init(&s_request_queue, MAX_TASKS))
         goto fail_req_queue;
 
+    s_event_queues = kh_init(tqueue);
+    if(!s_event_queues)
+        goto fail_event_queue;
+
     s_ready_queue_lock = (SDL_SpinLock){0};
     pq_task_init(&s_ready_queue);
+    if(!pq_task_reserve(&s_ready_queue, MAX_TASKS))
+        goto fail_ready_queue;
 
     assert(MAX_TASKS >= 2);
     s_tasks[0].prev = NULL;
@@ -597,8 +624,13 @@ fail_msg_queue:
     for(int i = 0; i < MAX_TASKS; i++) {
         queue_tid_destroy(s_msg_queues + i);
     }
-    kh_destroy(tid, s_thread_tid_map);
+    pq_task_destroy(&s_ready_queue);
+fail_ready_queue:
+    kh_destroy(tqueue, s_event_queues);
+fail_event_queue:
+    queue_tid_destroy(&s_request_queue);
 fail_req_queue:
+    kh_destroy(tid, s_thread_tid_map);
 fail_thread_tid_map:
     return false;
 }
@@ -606,6 +638,15 @@ fail_thread_tid_map:
 void Sched_Shutdown(void)
 {
     ASSERT_IN_MAIN_THREAD();
+
+    uint32_t key;
+    queue_tid_t curr;
+    (void)key;
+
+    kh_foreach(s_event_queues, key, curr, {
+        queue_tid_destroy(&curr);
+    });
+    kh_destroy(tqueue, s_event_queues);
 
     kh_destroy(tid, s_thread_tid_map);
     queue_tid_destroy(&s_request_queue);
@@ -628,6 +669,22 @@ void Sched_HandleEvent(int event, void *arg)
 {
     ASSERT_IN_MAIN_THREAD();
 
+    khiter_t k = kh_get(tqueue, s_event_queues, event);
+    if(k == kh_end(s_event_queues))
+        return;
+
+    queue_tid_t *waiters = &kh_val(s_event_queues, k);
+    while(queue_size(*waiters) > 0) {
+
+        uint32_t tid;
+        queue_tid_pop(waiters, &tid);
+
+        struct task *task = &s_tasks[tid - 1];
+        assert(task->state == TASK_STATE_EVENT_BLOCKED);
+
+        task->retval = (uint64_t)arg;
+        sched_reactivate(task);
+    }
 }
 
 void Sched_Tick(void)
@@ -677,7 +734,7 @@ uint64_t Sched_Request(struct request req)
     struct task *task = &s_tasks[tid - 1];
 
     task->req = req;
-    sched_queue_request(tid);
+    sched_enqueue_request(tid);
 
     if(SDL_ThreadID() == g_main_thread_id) {
         return sched_switch_ctx(&task->ctx, &s_main_ctx, 0);
