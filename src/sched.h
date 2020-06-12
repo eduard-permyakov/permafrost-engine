@@ -76,6 +76,8 @@ enum reqtype{
     SCHED_REQ_RECEIVE,
     SCHED_REQ_REPLY,
     SCHED_REQ_AWAIT_EVENT,
+    SCHED_REQ_SET_DESTRUCTOR,
+    _SCHED_REQ_COUNT,
 };
 
 struct request{

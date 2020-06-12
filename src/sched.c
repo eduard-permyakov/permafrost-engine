@@ -75,6 +75,10 @@ enum{
     TASK_MAIN_THREAD_AFFINITY = (1 << 0),
 };
 
+enum{
+    _SCHED_REQ_FREE = _SCHED_REQ_COUNT + 1,
+};
+
 struct task{
     enum taskstate state;
     struct context ctx;
@@ -85,6 +89,8 @@ struct task{
     struct request req;
     uint64_t       retval;
     void          *arg;
+    void          (*destructor)(void*);
+    void          *darg;
     struct task   *prev, *next;
 };
 
@@ -271,6 +277,8 @@ static void sched_task_init(struct task *task, int prio, uint32_t flags, void *c
     task->flags = flags;
     task->retval = 0;
     task->arg = arg;
+    task->destructor = NULL;
+    task->darg = NULL;
     sched_init_ctx(task, code);
 
     SDL_AtomicLock(&s_ready_queue_lock); 
@@ -278,17 +286,39 @@ static void sched_task_init(struct task *task, int prio, uint32_t flags, void *c
     SDL_AtomicUnlock(&s_ready_queue_lock);
 }
 
+static void sched_enqueue_request(uint32_t tid)
+{
+    SDL_AtomicLock(&s_request_queue_lock); 
+    queue_tid_push(&s_request_queue, &tid);
+    SDL_AtomicUnlock(&s_request_queue_lock);
+}
+
+static size_t sched_num_requests(void)
+{
+    SDL_AtomicLock(&s_request_queue_lock); 
+    size_t ret = queue_size(s_request_queue);
+    SDL_AtomicUnlock(&s_request_queue_lock);
+    return ret;
+}
+
 static void sched_task_exit(void)
 {
-    //TODO: handle the cases when the task is on other threads...
-    //TODO: also need to free the task on exiting...
-    //printf("sched_task_exit\n");
-
     uint32_t tid = sched_curr_thread_tid();
     struct task *task = &s_tasks[tid - 1];
 
-    sched_switch_ctx(&task->ctx, &s_main_ctx, 0, NULL);
-    //sched_load_ctx(&s_main_ctx);
+    if(task->destructor) {
+        task->destructor(task->darg);
+    }
+
+    task->req.type = _SCHED_REQ_FREE;
+    sched_enqueue_request(task->tid);
+
+    if(SDL_ThreadID() == g_main_thread_id) {
+        sched_switch_ctx(&task->ctx, &s_main_ctx, 0, NULL);
+    }else{
+        //TODO:
+        assert(0);
+    }
 }
 
 static void sched_reactivate(struct task *task)
@@ -405,7 +435,7 @@ static void sched_task_service_request(struct task *task)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    switch(task->req.type) {
+    switch((int)task->req.type) {
     case SCHED_REQ_CREATE:
         break;
     case SCHED_REQ_MY_TID:
@@ -431,23 +461,16 @@ static void sched_task_service_request(struct task *task)
     case SCHED_REQ_AWAIT_EVENT:
         sched_await_event(task, (int)task->req.argv[0]);
         break;
+    case SCHED_REQ_SET_DESTRUCTOR:
+        task->destructor = (void (*)(void*))task->req.argv[0];
+        task->darg = (void*)task->req.argv[1];
+        sched_reactivate(task);
+        break;
+    case _SCHED_REQ_FREE:
+        sched_task_free(task);
+        break;
     default: assert(0);    
     }
-}
-
-static void sched_enqueue_request(uint32_t tid)
-{
-    SDL_AtomicLock(&s_request_queue_lock); 
-    queue_tid_push(&s_request_queue, &tid);
-    SDL_AtomicUnlock(&s_request_queue_lock);
-}
-
-static size_t sched_num_requests(void)
-{
-    SDL_AtomicLock(&s_request_queue_lock); 
-    size_t ret = queue_size(s_request_queue);
-    SDL_AtomicUnlock(&s_request_queue_lock);
-    return ret;
 }
 
 static void sched_service_requests(void)

@@ -95,3 +95,12 @@ void *Task_AwaitEvent(int event)
     });
 }
 
+void Task_SetDestructor(void (*destructor)(void*), void *darg)
+{
+    Sched_Request((struct request){
+        .type = SCHED_REQ_SET_DESTRUCTOR,
+        .argv[0] = (uint64_t)destructor,
+        .argv[1] = (uint64_t)darg
+    });
+}
+
