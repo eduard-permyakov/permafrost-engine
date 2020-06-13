@@ -646,6 +646,7 @@ int main(int argc, char **argv)
         }
 
         render_thread_start_work();
+        Sched_StartBackgroundTasks();
 
         process_sdl_events();
         E_ServiceQueue();

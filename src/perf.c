@@ -452,3 +452,10 @@ uint32_t Perf_LastFrameMS(void)
     return s_last_frames_ms[read_idx];
 }
 
+uint32_t Perf_CurrFrameMS(void)
+{
+    uint32_t curr_time = SDL_GetTicks();
+    uint32_t last_ts = s_last_frames_ms[s_last_idx];
+    return curr_time - last_ts;
+}
+

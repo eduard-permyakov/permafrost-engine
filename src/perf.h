@@ -100,6 +100,7 @@ void     Perf_PopGPU(uint32_t cookie);
  * must be 'free'd by the caller. */
 size_t   Perf_Report(size_t maxout, struct perf_info **out);
 uint32_t Perf_LastFrameMS(void);
+uint32_t Perf_CurrFrameMS(void);
 
 /* The following can only be called from the main thread, making sure that 
  * none of the other threads are touching the Perf_ API concurrently */
