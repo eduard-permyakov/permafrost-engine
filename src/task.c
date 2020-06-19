@@ -104,3 +104,23 @@ void Task_SetDestructor(void (*destructor)(void*), void *darg)
     });
 }
 
+uint32_t Task_Create(int prio, task_t code, void *arg, struct future *result, int flags)
+{
+    return Sched_Request((struct request){
+        .type = SCHED_REQ_CREATE,
+        .argv[0] = (uint64_t)prio,
+        .argv[1] = (uint64_t)code,
+        .argv[2] = (uint64_t)arg,
+        .argv[3] = (uint64_t)result,
+        .argv[4] = (uint64_t)flags,
+    });
+}
+
+bool Task_Wait(uint32_t tid)
+{
+    return Sched_Request((struct request){
+        .type = SCHED_REQ_WAIT,
+        .argv[0] = (uint64_t)tid
+    });
+}
+

@@ -36,8 +36,6 @@
 #ifndef SCHED_H
 #define SCHED_H
 
-#include "lib/public/attr.h"
-
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -45,16 +43,48 @@
 
 
 #define NULL_TID (0)
+#define NULL_RESULT (struct result){0}
+
+enum{
+    RESULT_FLOAT,
+    RESULT_INT,
+    RESULT_BOOL,
+    RESULT_PTR,
+};
+
+/* Careful changing the size of this. It is assumed to be (64-128] bits 
+ * s.t. it's returned via registers.
+ */
+struct result{
+    uint64_t type;
+    union{
+        float    as_float;
+        uint64_t as_int;
+        bool     as_bool;
+        void    *as_ptr;
+    }val;
+};
 
 enum comp_status{
-    COMP_INCOMPLETE = 0,
-    COMP_COMPLETE   = 1
+    FUTURE_INCOMPLETE = 0,
+    FUTURE_COMPLETE   = 1
 };
 
 struct future{
-    struct attr  retval;
-    SDL_atomic_t status;
+    struct result res;
+    SDL_atomic_t  status;
 };
+
+enum{
+    TASK_MAIN_THREAD_AFFINITY = (1 << 0),
+    TASK_DETACHED             = (1 << 1),
+};
+
+typedef struct result (*task_func_t)(void *);
+
+/* The following may only be called from any context */
+
+bool     Sched_FutureIsReady(const struct future *future);
 
 /* The following may only be called from main thread context */
 
@@ -63,10 +93,10 @@ void     Sched_Shutdown(void);
 void     Sched_HandleEvent(int event, void *arg);
 void     Sched_StartBackgroundTasks(void);
 void     Sched_Tick(void);
-uint32_t Sched_Create(int prio, void (*code)(void *), void *arg, struct future *result);
-/* Same as Sched_Create, except the task may be scheduled on
- * one of the worker threads, instead of just the main thread. */
-uint32_t Sched_CreateJob(int prio, void (*code)(void *), void *arg, struct future *result);
+uint32_t Sched_Create(int prio, task_func_t code, void *arg, struct future *result, int flags);
+
+/* The following may only be called from task context 
+ * (i.e. from the body of a task function) */
 
 enum reqtype{
     SCHED_REQ_CREATE,
@@ -78,6 +108,7 @@ enum reqtype{
     SCHED_REQ_REPLY,
     SCHED_REQ_AWAIT_EVENT,
     SCHED_REQ_SET_DESTRUCTOR,
+    SCHED_REQ_WAIT,
     _SCHED_REQ_COUNT,
 };
 
@@ -85,9 +116,6 @@ struct request{
     enum reqtype type;
     uint64_t     argv[5];
 };
-
-/* The following may only be called from task context 
- * (i.e. from the body of a task function) */
 
 uint64_t Sched_Request(struct request req);
 

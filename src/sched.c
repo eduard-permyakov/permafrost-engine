@@ -73,11 +73,6 @@ struct context{
 #endif
 
 enum{
-    TASK_MAIN_THREAD_AFFINITY = (1 << 0),
-    TASK_HAS_REQUEST          = (1 << 1),
-};
-
-enum{
     _SCHED_REQ_FREE = _SCHED_REQ_COUNT + 1,
 };
 
@@ -90,6 +85,7 @@ struct task{
     uint32_t       flags;
     struct request req;
     uint64_t       retval;
+    struct future *future;
     void          *arg;
     void         (*destructor)(void*);
     void          *darg;
@@ -119,8 +115,9 @@ KHASH_MAP_INIT_INT64(tid, uint32_t)
 KHASH_MAP_INIT_INT(tqueue, queue_tid_t)
 
 
-uint64_t sched_switch_ctx(struct context *save, struct context *restore, int retval, void *arg);
-void sched_task_exit(void);
+uint64_t    sched_switch_ctx(struct context *save, struct context *restore, int retval, void *arg);
+void        sched_task_exit_trampoline(void);
+static void sched_task_exit(struct result ret);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -138,6 +135,7 @@ static struct task     *s_freehead;
 static struct task      s_tasks[MAX_TASKS];
 static char             s_stacks[MAX_TASKS][STACK_SZ];
 static queue_tid_t      s_msg_queues[MAX_TASKS];
+static bool             s_parent_waiting[MAX_TASKS];
 static khash_t(tqueue) *s_event_queues;
 
 /* Lock used to serialzie the scheduler requests */
@@ -180,47 +178,61 @@ static SDL_cond        *s_idle_workers_cond;
 #if defined(__x86_64__)
 
 __asm__(
-".text                                  \n"
-"                                       \n"
-".type sched_switch_ctx, @function      \n"
-"                                       \n"
-"# parameter 0 (%rdi) - save ctx ptr    \n"
-"# parameter 1 (%rsi) - load ctx ptr    \n"
-"# parameter 2 (%rdx) - return value    \n"
-"# parameter 3 (%rcx) - arg passed to   \n"
-"#                      context code    \n"
-"                                       \n"
-"sched_switch_ctx:                      \n"
-"Lsave_ctx:                             \n"
-"   lea Lback(%rip), %r8                \n" 
-"   push %r8                            \n" 
-"   mov %rbx,  0x0(%rdi)                \n"
-"   mov %rsp,  0x8(%rdi)                \n"
-"   mov %rbp, 0x10(%rdi)                \n"
-"   mov %r12, 0x18(%rdi)                \n"
-"   mov %r13, 0x20(%rdi)                \n"
-"   mov %r14, 0x28(%rdi)                \n"
-"   mov %r15, 0x30(%rdi)                \n"
-"   stmxcsr 0x38(%rdi)                  \n"
-"   fstcw   0x3c(%rdi)                  \n"
-"Lload_ctx:                             \n"
-"   mov  0x0(%rsi), %rbx                \n"
-"   mov  0x8(%rsi), %rsp                \n"
-"   mov 0x10(%rsi), %rbp                \n"
-"   mov 0x18(%rsi), %r12                \n"
-"   mov 0x20(%rsi), %r13                \n"
-"   mov 0x28(%rsi), %r14                \n"
-"   mov 0x30(%rsi), %r15                \n"
-"   ldmxcsr 0x38(%rsi)                  \n"
-"   fldcw   0x3c(%rsi)                  \n"
-"   mov %rcx, %rdi                      \n"
-"   mov %rdx, %rax                      \n"
-"Lback:                                 \n"
-"   ret                                 \n"
-"                                       \n"
+".text                                          \n"
+"                                               \n"
+".type sched_switch_ctx, @function              \n"
+"                                               \n"
+"# parameter 0 (%rsi) - save ctx ptr            \n"
+"# parameter 1 (%rdx) - load ctx ptr            \n"
+"# parameter 2 (%rcx) - return value            \n"
+"# parameter 3 (%rcx) - arg passed to           \n"
+"#                      context code            \n"
+"                                               \n"
+"sched_switch_ctx:                              \n"
+"Lsave_ctx:                                     \n"
+"   lea Lback(%rip), %r8                        \n" 
+"   push %r8                                    \n" 
+"   mov %rbx,  0x0(%rdi)                        \n"
+"   mov %rsp,  0x8(%rdi)                        \n"
+"   mov %rbp, 0x10(%rdi)                        \n"
+"   mov %r12, 0x18(%rdi)                        \n"
+"   mov %r13, 0x20(%rdi)                        \n"
+"   mov %r14, 0x28(%rdi)                        \n"
+"   mov %r15, 0x30(%rdi)                        \n"
+"   stmxcsr 0x38(%rdi)                          \n"
+"   fstcw   0x3c(%rdi)                          \n"
+"Lload_ctx:                                     \n"
+"   mov  0x0(%rsi), %rbx                        \n"
+"   mov  0x8(%rsi), %rsp                        \n"
+"   mov 0x10(%rsi), %rbp                        \n"
+"   mov 0x18(%rsi), %r12                        \n"
+"   mov 0x20(%rsi), %r13                        \n"
+"   mov 0x28(%rsi), %r14                        \n"
+"   mov 0x30(%rsi), %r15                        \n"
+"   ldmxcsr 0x38(%rsi)                          \n"
+"   fldcw   0x3c(%rsi)                          \n"
+"   mov %rcx, %rdi                              \n"
+"   mov %rdx, %rax                              \n"
+"Lback:                                         \n"
+"   ret                                         \n"
+"                                               \n"
 );
 
-void sched_init_ctx(struct task *task, void *code)
+__asm__(
+".text                                          \n"
+"                                               \n"
+".type sched_task_exit_trampoline, @function    \n"
+"                                               \n"
+"# (%rax) - low 64 bits of task result          \n"
+"# (%rdx) - high 64 bits of task result         \n"
+"                                               \n"
+"sched_task_exit_trampoline:                    \n"
+"   movq %rax, %rdi                             \n"
+"   movq %rdx, %rsi                             \n"
+"   jmp sched_task_exit                         \n"
+);
+
+static void sched_init_ctx(struct task *task, void *code)
 {
     char *stack_end = s_stacks[task->tid - 1];
     char *stack_base = stack_end + STACK_SZ;
@@ -233,7 +245,7 @@ void sched_init_ctx(struct task *task, void *code)
      * is responsible for context-switching out of the 
      * task context. */
     stack_base -= 8;
-    *(uint64_t*)stack_base = (uintptr_t)sched_task_exit;
+    *(uint64_t*)stack_base = (uintptr_t)sched_task_exit_trampoline;
 
     /* This is where we will jump to the next time we 
      * will context switch to this task. */
@@ -283,7 +295,7 @@ __attribute__((always_inline)) static inline void sched_print_backtrace(void)
     int i = 1;
     retaddr = *(((uint64_t*)rbp) + 1);
 
-    while((uintptr_t)retaddr != (uintptr_t)sched_task_exit) {
+    while((uintptr_t)retaddr != (uintptr_t)sched_task_exit_trampoline) {
         printf("#%-2d 0x%016" PRIx64 "\n", i++, retaddr);
         rbp = *((uint64_t*)rbp);
         retaddr = *(((uint64_t*)rbp) + 1);
@@ -361,6 +373,32 @@ static void sched_reactivate(struct task *task)
     SDL_UnlockMutex(s_ready_lock);
 }
 
+__attribute__((used)) static void sched_task_exit(struct result ret)
+{
+    uint32_t tid = sched_curr_thread_tid();
+    struct task *task = &s_tasks[tid - 1];
+
+    if(task->future) {
+        task->future->res = ret;
+        SDL_AtomicSet(&task->future->status, FUTURE_COMPLETE);
+    }
+
+    if(task->destructor) {
+        task->destructor(task->darg);
+    }
+
+    task->req.type = _SCHED_REQ_FREE;
+
+    if(SDL_ThreadID() == g_main_thread_id) {
+        sched_switch_ctx(&task->ctx, &s_main_ctx, 0, NULL);
+    }else{
+        int id = sched_curr_thread_worker_id();
+        sched_switch_ctx(&task->ctx, &s_worker_contexts[id], 0, NULL);
+    }
+
+    assert(0);
+}
+
 static void sched_assert_sp_valid(void)
 {
     uint32_t tid = sched_curr_thread_tid();
@@ -373,15 +411,21 @@ static void sched_assert_sp_valid(void)
     assert(sp >= base && sp < limit);
 }
 
-static void sched_task_init(struct task *task, int prio, uint32_t flags, void *code, void *arg)
+static void sched_task_init(struct task *task, int prio, uint32_t flags, 
+                            void *code, void *arg, struct future *future, uint32_t parent)
 {
     task->prio = prio;
-    task->parent_tid = NULL_TID;
+    task->parent_tid = parent;
     task->flags = flags;
     task->retval = 0;
     task->arg = arg;
     task->destructor = NULL;
     task->darg = NULL;
+    task->future = future;
+
+    if(task->future) {
+        SDL_AtomicSet(&task->future->status, FUTURE_INCOMPLETE);    
+    }
 
     sched_init_ctx(task, code);
     sched_reactivate(task);
@@ -400,6 +444,7 @@ static void sched_send(struct task *task, uint32_t tid, void *msg, size_t msglen
 
         assert(dstlen == msglen);
         memcpy(dst, msg, msglen);
+        *out_send = task->tid;
 
         task->state = TASK_STATE_REPLY_BLOCKED;
         sched_reactivate(recv_task);
@@ -468,6 +513,43 @@ static void sched_await_event(struct task *task, int event)
     queue_tid_push(&kh_val(s_event_queues, k), &task->tid);
 }
 
+static uint32_t sched_create(int prio, task_func_t code, void *arg, struct future *result, 
+                             int flags, uint32_t parent)
+{
+    uint32_t ret = NULL_TID;
+    SDL_LockMutex(s_request_lock);
+
+    struct task *task = sched_task_alloc();
+    if(!task)
+        goto out;
+
+    sched_task_init(task, prio, flags, code, arg, result, parent);
+    ret = task->tid;
+
+out:
+    SDL_UnlockMutex(s_request_lock);
+    return ret;
+}
+
+static bool sched_wait(struct task *task, uint32_t child_tid)
+{
+    if(child_tid > MAX_TASKS)
+        return false;
+
+    struct task *child = &s_tasks[child_tid - 1];
+    if(child->parent_tid != task->tid
+    || (child->flags & TASK_DETACHED))
+        return false;
+
+    if(child->state == TASK_STATE_ZOMBIE) {
+        sched_task_free(child);
+        sched_reactivate(task);
+        return true;
+    }
+
+    s_parent_waiting[child_tid - 1] = true;
+    return true;
+}
 
 static void sched_task_service_request(struct task *task)
 {
@@ -475,6 +557,15 @@ static void sched_task_service_request(struct task *task)
 
     switch((int)task->req.type) {
     case SCHED_REQ_CREATE:
+        task->retval = sched_create(
+            (int)           task->req.argv[0],
+            (task_func_t)   task->req.argv[1],
+            (void*)         task->req.argv[2],
+            (struct future*)task->req.argv[3],
+            (int)           task->req.argv[4],
+            task->tid
+        );
+        sched_reactivate(task);
         break;
     case SCHED_REQ_MY_TID:
         task->retval = task->tid;
@@ -488,50 +579,62 @@ static void sched_task_service_request(struct task *task)
         sched_reactivate(task);
         break;
     case SCHED_REQ_SEND:
-        sched_send(task, (uint32_t)task->req.argv[0], (void*)task->req.argv[1], (size_t)task->req.argv[2]);
+        sched_send(
+            task, 
+            (uint32_t)  task->req.argv[0], 
+            (void*)     task->req.argv[1], 
+            (size_t)    task->req.argv[2]
+        );
         break;
     case SCHED_REQ_RECEIVE:
-        sched_receive(task, (uint32_t*)task->req.argv[0], (void*)task->req.argv[1], (size_t)task->req.argv[2]);
+        sched_receive(
+            task, 
+            (uint32_t*) task->req.argv[0], 
+            (void*)     task->req.argv[1], 
+            (size_t)    task->req.argv[2]
+        );
         break;
     case SCHED_REQ_REPLY:
-        sched_reply(task, (uint32_t)task->req.argv[0], (void*)task->req.argv[1], (size_t)task->req.argv[2]);
+        sched_reply(
+            task, 
+            (uint32_t)  task->req.argv[0], 
+            (void*)     task->req.argv[1], 
+            (size_t)    task->req.argv[2]
+        );
         break;
     case SCHED_REQ_AWAIT_EVENT:
-        sched_await_event(task, (int)task->req.argv[0]);
+        sched_await_event(
+            task, 
+            (int)       task->req.argv[0]
+        );
         break;
     case SCHED_REQ_SET_DESTRUCTOR:
+
         task->destructor = (void (*)(void*))task->req.argv[0];
         task->darg = (void*)task->req.argv[1];
         sched_reactivate(task);
         break;
+    case SCHED_REQ_WAIT:
+        task->retval = sched_wait(task, task->req.argv[0]);
+        break;
     case _SCHED_REQ_FREE:
-        sched_task_free(task);
+
+        if(task->flags & TASK_DETACHED) {
+            sched_task_free(task);
+        }else if(s_parent_waiting[task->tid - 1]) {
+
+            struct task *parent = &s_tasks[task->parent_tid - 1];
+            s_parent_waiting[task->tid - 1] = false;
+            sched_reactivate(parent);
+            sched_task_free(task);
+        }else{
+            task->state = TASK_STATE_ZOMBIE;
+        }
         break;
     default: assert(0);    
     }
 
     SDL_UnlockMutex(s_request_lock);
-}
-
-void sched_task_exit(void)
-{
-    uint32_t tid = sched_curr_thread_tid();
-    struct task *task = &s_tasks[tid - 1];
-
-    if(task->destructor) {
-        task->destructor(task->darg);
-    }
-
-    task->req.type = _SCHED_REQ_FREE;
-
-    if(SDL_ThreadID() == g_main_thread_id) {
-        sched_switch_ctx(&task->ctx, &s_main_ctx, 0, NULL);
-    }else{
-        int id = sched_curr_thread_worker_id();
-        sched_switch_ctx(&task->ctx, &s_worker_contexts[id], 0, NULL);
-    }
-
-    assert(0);
 }
 
 static void sched_task_run(struct task *task)
@@ -919,29 +1022,10 @@ void Sched_Tick(void)
     PERF_RETURN_VOID();
 }
 
-uint32_t Sched_Create(int prio, void (*code)(void *), void *arg, struct future *result)
+uint32_t Sched_Create(int prio, task_func_t code, void *arg, struct future *result, int flags)
 {
     ASSERT_IN_MAIN_THREAD();
-
-    uint32_t ret = NULL_TID;
-    SDL_LockMutex(s_request_lock);
-
-    struct task *task = sched_task_alloc();
-    if(!task)
-        goto out;
-
-    //TODO: handle result....
-    sched_task_init(task, prio, TASK_MAIN_THREAD_AFFINITY, code, arg);
-    ret = task->tid;
-
-out:
-    SDL_UnlockMutex(s_request_lock);
-    return ret;
-}
-
-uint32_t Sched_CreateJob(int prio, void (*code)(void *), void *arg, struct future *result)
-{
-    return 0;
+    return sched_create(prio, code, arg, result, flags | TASK_DETACHED, NULL_TID);
 }
 
 uint64_t Sched_Request(struct request req)
@@ -958,5 +1042,10 @@ uint64_t Sched_Request(struct request req)
         int id = sched_curr_thread_worker_id();
         return sched_switch_ctx(&task->ctx, &s_worker_contexts[id], 0, NULL);
     }
+}
+
+bool Sched_FutureIsReady(const struct future *future)
+{
+    return (SDL_AtomicGet((SDL_atomic_t*)&future->status) == FUTURE_COMPLETE);
 }
 
