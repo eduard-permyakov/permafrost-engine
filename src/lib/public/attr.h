@@ -36,10 +36,10 @@
 #ifndef ATTR_H
 #define ATTR_H
 
-#include <stdbool.h>
-#include <SDL.h> /* for SDL_RWops */
-
 #include "../../pf_math.h"
+#include <stdbool.h>
+
+struct SDL_RWops;
 
 struct attr{
     char key[64];
@@ -64,8 +64,8 @@ struct attr{
 };
 
 /* 'named' attributes start with a single token for the name */
-bool Attr_Parse(SDL_RWops *stream, struct attr *out, bool named);
-bool Attr_Write(SDL_RWops *stream, const struct attr *in, const char name[static 0]);
+bool Attr_Parse(struct SDL_RWops *stream, struct attr *out, bool named);
+bool Attr_Write(struct SDL_RWops *stream, const struct attr *in, const char name[static 0]);
 
 #endif
 

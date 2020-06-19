@@ -39,6 +39,7 @@
 
 #include <string.h>
 #include <assert.h>
+#include <SDL.h> 
 
 
 #define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
@@ -47,7 +48,7 @@
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool Attr_Parse(SDL_RWops *stream, struct attr *out, bool named)
+bool Attr_Parse(struct SDL_RWops *stream, struct attr *out, bool named)
 {
     char line[MAX_LINE_LEN];
     READ_LINE(stream, line, fail);
@@ -137,7 +138,7 @@ fail:
     return false;
 }
 
-bool Attr_Write(SDL_RWops *stream, const struct attr *in, const char name[static 0])
+bool Attr_Write(struct SDL_RWops *stream, const struct attr *in, const char name[static 0])
 {
     if(name) {
         CHK_TRUE(SDL_RWwrite(stream, name, strlen(name), 1), fail);
