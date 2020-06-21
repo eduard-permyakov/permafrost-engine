@@ -57,8 +57,14 @@ void     Task_Send(uint32_t tid, void *msg, size_t msglen, void *reply, size_t r
 void     Task_Receive(uint32_t *tid, void *msg, size_t msglen);
 void     Task_Reply(uint32_t tid, void *reply, size_t replylen);
 void    *Task_AwaitEvent(int event);
-void     Task_Sleep(int ms);
 void     Task_SetDestructor(void (*destructor)(void*), void *darg);
+void     Task_Sleep(int ms);
+void     Task_Register(const char *name);
+uint32_t Task_WhoIs(const char *name);
+
+/* The following may only be called from the main thread */
+
+void     Task_CreateServices(void);
 
 #endif
 

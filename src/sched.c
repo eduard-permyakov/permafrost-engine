@@ -37,6 +37,7 @@
 #include "config.h"
 #include "perf.h"
 #include "main.h"
+#include "task.h"
 #include "lib/public/pqueue.h"
 #include "lib/public/queue.h"
 #include "lib/public/khash.h"
@@ -878,6 +879,7 @@ bool Sched_Init(void)
 
     sched_init_thread_tid_map();
     sched_init_thread_worker_id_map();
+    Task_CreateServices();
     return true;
 
 fail_idle_workers_cond:

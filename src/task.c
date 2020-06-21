@@ -35,6 +35,174 @@
 
 #include "task.h"
 #include "sched.h"
+#include "event.h"
+#include "main.h"
+#include "lib/public/pf_string.h"
+#include "lib/public/pqueue.h"
+#include "lib/public/khash.h"
+
+#include <SDL.h>
+#include <assert.h>
+
+struct delay_desc{
+    uint32_t tid;
+    uint32_t wake_tick;
+};
+
+struct ts_req{
+    enum{
+        TS_REQ_NOTIFY, 
+        TS_REQ_DELAY,
+    }type;
+    uint32_t ticks;
+};
+
+struct ns_req{
+    enum{
+        NS_REQ_REGISTER,
+        NS_REQ_WHOIS
+    }type;
+    const char *name;
+};
+
+PQUEUE_TYPE(delay, struct delay_desc)
+PQUEUE_IMPL(static, delay, struct delay_desc)
+
+KHASH_MAP_INIT_STR(tid, uint32_t)
+
+/*****************************************************************************/
+/* STATIC VARIAVBLES                                                         */
+/*****************************************************************************/
+
+static uint32_t s_ns_tid; /* write-once */
+static uint32_t s_ts_tid; /* write-once */
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static struct result tick_notifier(void *arg)
+{
+    uint32_t ts_tid = Task_ParentTid();
+    struct ts_req request = (struct ts_req){ .type = TS_REQ_NOTIFY };
+    int resp;
+
+    while(1) {
+        Task_AwaitEvent(EVENT_60HZ_TICK);
+        Task_Send(ts_tid, &request, sizeof(request), &resp, sizeof(resp));
+    }
+    return NULL_RESULT;
+}
+
+static void timeserver_exit(void *arg)
+{
+    pq_delay_t *pq = (pq_delay_t*)arg;
+    pq_delay_destroy(pq);
+}
+
+static struct result timeserver_task(void *arg)
+{
+    pq_delay_t descs;
+    pq_delay_init(&descs);
+    Task_SetDestructor(timeserver_exit, &descs);
+
+    struct future res;
+    uint32_t notifier = Task_Create(0, tick_notifier, NULL, &res, 0);
+
+    while(1) {
+        struct ts_req request;
+        uint32_t tid;
+        int reply = 0;
+
+        Task_Receive(&tid, &request, sizeof(request));
+        uint32_t curr_tick = SDL_GetTicks();
+
+        switch(request.type) {
+        case TS_REQ_NOTIFY:
+            Task_Reply(tid, &reply, sizeof(reply));
+            break;
+        case TS_REQ_DELAY: {
+            struct delay_desc dd = (struct delay_desc){
+                .tid = tid,
+                .wake_tick = curr_tick + request.ticks
+            };
+            pq_delay_push(&descs, dd.wake_tick, dd);
+            break;
+        }
+        default: assert(0);
+        }
+
+        /* Check if any tasks need waking */
+        struct delay_desc curr;
+        do{
+            if(!pq_delay_pop(&descs, &curr))
+                break;
+            if(curr.wake_tick > curr_tick) {
+                pq_delay_push(&descs, curr.wake_tick, curr);
+            }else{
+                Task_Reply(curr.tid, &reply, sizeof(reply));
+            }
+        }while(curr.wake_tick <= curr_tick);
+    }
+
+    return NULL_RESULT;
+}
+
+static void nameserver_exit(void *arg)
+{
+    khash_t(tid) *names = (khash_t(tid)*)arg;
+    const char *key;
+    uint32_t tid;
+    (void)tid;
+
+    kh_foreach(names, key, tid, {
+        free((void*)key);
+    });
+    kh_destroy(tid, names);
+}
+
+static struct result nameserver_task(void *arg)
+{
+    khash_t(tid) *names = kh_init(tid);
+    Task_SetDestructor(nameserver_exit, names);
+
+    while(1) {
+        struct ns_req request;
+        uint32_t tid;
+
+        Task_Receive(&tid, &request, sizeof(request));
+
+        switch(request.type) {
+        case NS_REQ_REGISTER: {
+            int status;
+            khiter_t k = kh_get(tid, names, request.name);
+            if(k == kh_end(names)) {
+                k = kh_put(tid, names, pf_strdup(request.name), &status);
+                assert(status != -1 && status != 0);
+            }
+            kh_value(names, k) = tid;
+
+            int reply = 0;
+            Task_Reply(tid, &reply, sizeof(reply));
+            break;
+        }
+        case NS_REQ_WHOIS: {
+            uint32_t resp;
+            khiter_t k = kh_get(tid, names, request.name);
+            if(k == kh_end(names)) {
+                resp = NULL_TID;
+            }else{
+                resp = kh_value(names, k);
+            }
+            Task_Reply(tid, &resp, sizeof(resp));
+            break;
+        }
+        default: assert(0);
+        }
+    }
+
+    return NULL_RESULT;
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -122,5 +290,43 @@ bool Task_Wait(uint32_t tid)
         .type = SCHED_REQ_WAIT,
         .argv[0] = (uint64_t)tid
     });
+}
+
+void Task_Sleep(int ms)
+{
+    struct ts_req tr = (struct ts_req){
+        .type = TS_REQ_DELAY,
+        .ticks = ms
+    };
+    int resp;
+    Task_Send(s_ts_tid, &tr, sizeof(tr), &resp, sizeof(resp));
+}
+
+void Task_Register(const char *name)
+{
+    struct ns_req nr = (struct ns_req){
+        .type = NS_REQ_REGISTER,
+        .name = name
+    };
+    int resp;
+    Task_Send(s_ns_tid, &nr, sizeof(nr), &resp, sizeof(resp));
+}
+
+uint32_t Task_WhoIs(const char *name)
+{
+    struct ns_req nr = (struct ns_req){
+        .type = NS_REQ_WHOIS,
+        .name = name
+    };
+    uint32_t resp;
+    Task_Send(s_ns_tid, &nr, sizeof(nr), &resp, sizeof(resp));
+    return resp;
+}
+
+void Task_CreateServices(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    s_ns_tid = Sched_Create(0, nameserver_task, NULL, NULL, 0);
+    s_ts_tid = Sched_Create(0, timeserver_task, NULL, NULL, 0);
 }
 
