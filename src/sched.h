@@ -39,11 +39,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <assert.h>
 #include <SDL_atomic.h>
 
 
 #define NULL_TID (0)
 #define NULL_RESULT (struct result){0}
+
+#define ASSERT_IN_CTX(tid) \
+    assert(Sched_ActiveTID() == (tid))
 
 enum{
     RESULT_FLOAT,
@@ -76,8 +80,9 @@ struct future{
 };
 
 enum{
-    TASK_MAIN_THREAD_AFFINITY = (1 << 0),
-    TASK_DETACHED             = (1 << 1),
+    TASK_MAIN_THREAD_PINNED = (1 << 0),
+    TASK_DETACHED           = (1 << 1),
+    TASK_BIG_STACK          = (1 << 2),
 };
 
 typedef struct result (*task_func_t)(void *);
@@ -118,6 +123,7 @@ struct request{
 };
 
 uint64_t Sched_Request(struct request req);
+uint32_t Sched_ActiveTID(void);
 
 #endif
 

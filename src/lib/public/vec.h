@@ -75,7 +75,7 @@
     scope bool vec_##name##_del     (vec(name) *vec, int del_idx);                              \
     scope void vec_##name##_indexof (vec(name) *vec, type t, bool (*comparator)(), int *out);   \
     scope void vec_##name##_reset   (vec(name) *vec);                                           \
-    scope bool vec_##name##_copy    (vec(name) *src, vec(name) *dst);                           \
+    scope bool vec_##name##_copy    (vec(name) *dst, vec(name) *src);                           \
     scope type vec_##name##_pop     (vec(name) *vec);
 
 /***********************************************************************************************/

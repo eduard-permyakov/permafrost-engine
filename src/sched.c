@@ -86,6 +86,7 @@ struct task{
     uint32_t       flags;
     struct request req;
     uint64_t       retval;
+    void          *stackmem;
     struct future *future;
     void          *arg;
     void         (*destructor)(void*);
@@ -103,6 +104,7 @@ enum worker_cmd{
 #define MAX_TASKS               (512)
 #define MAX_WORKER_THREADS      (64)
 #define STACK_SZ                (64 * 1024)
+#define BIG_STACK_SZ            (8 * 1024 * 1024)
 #define SCHED_TICK_MS           (1.0f / CONFIG_SCHED_TARGET_FPS * 1000.0f)
 #define ALIGNED(val, align)     (((val) + ((align) - 1)) & ~((align) - 1))
 
@@ -235,7 +237,7 @@ __asm__(
 
 static void sched_init_ctx(struct task *task, void *code)
 {
-    char *stack_end = s_stacks[task->tid - 1];
+    char *stack_end = task->stackmem;
     char *stack_base = stack_end + STACK_SZ;
     stack_base = (char*)ALIGNED((uintptr_t)stack_base, 32);
     if(stack_base >= stack_end + STACK_SZ)
@@ -255,6 +257,39 @@ static void sched_init_ctx(struct task *task, void *code)
 
     memset(&task->ctx, 0, sizeof(task->ctx));
     task->ctx.rsp = (uintptr_t)stack_base;
+
+    /* +-------------------------------------------------------------------+
+     * | Register[bits] | Setting                                          |
+     * + ---------------+--------------------------------------------------+
+     * | FPCSR[0:6]     | Exception masks all 1's (all exceptions masked)  |
+     * | FPCSR[7]       | Reserved - 0                                     |
+     * | FPCSR[8:9]     | Precision Control - 10B (double precision)       |
+     * | FPCSR[10:11]   | Rounding control - 0 (round to nearest)          |
+     * | FPCSR[12]      | Infinity control - 0 (not used)                  |
+     * +----------------+--------------------------------------------------+
+     */
+    task->ctx.fpucw = (((uint16_t)(0x0  & 0x1 )) << 12)
+                    | (((uint16_t)(0x0  & 0x3 )) << 10)
+                    | (((uint16_t)(0x2  & 0x3 )) << 8 )
+                    | (((uint16_t)(0x0  & 0x1 )) << 7 )
+                    | (((uint16_t)(0x3f & 0x3f)) << 0 );
+
+    /* The volatile portion consists of the six status flags, in MXCSR[0:5].
+     * They are caller-saved, so their initial state doesn't matter.
+     *
+     *+-------------------------------------------------------------------+
+     * | Register[bits] | Setting                                          |
+     * + ---------------+--------------------------------------------------+
+     * | MXCSR[6]	    | Denormals are zeros - 0                          |
+     * | MXCSR[7:12]	| Exception masks all 1's (all exceptions masked)  |
+     * | MXCSR[13:14]	| Rounding control - 0 (round to nearest)          |
+     * | MXCSR[15]	    | Flush to zero for masked underflow - 0 (off)     |
+     * +----------------+--------------------------------------------------+
+     */
+    task->ctx.mxcsr = (((uint32_t)(0x0  & 0x1 )) << 15)
+                    | (((uint32_t)(0x0  & 0x3 )) << 13)
+                    | (((uint32_t)(0x3f & 0x3f)) << 7 )
+                    | (((uint32_t)(0x0  & 0x1 )) << 6 );
 }
 
 __attribute__((always_inline)) static inline uint64_t sched_get_sp(void)
@@ -367,9 +402,11 @@ static void sched_task_free(struct task *task)
 
 static void sched_reactivate(struct task *task)
 {
-    task->state = TASK_STATE_READY;
     SDL_LockMutex(s_ready_lock); 
+
+    task->state = TASK_STATE_READY;
     pq_task_push(&s_ready_queue, task->prio, task);
+
     SDL_CondSignal(s_ready_cond);
     SDL_UnlockMutex(s_ready_lock);
 }
@@ -400,18 +437,6 @@ __attribute__((used)) static void sched_task_exit(struct result ret)
     assert(0);
 }
 
-static void sched_assert_sp_valid(void)
-{
-    uint32_t tid = sched_curr_thread_tid();
-    if(tid == NULL_TID)
-        return;
-
-    uint64_t sp = sched_get_sp();
-    uintptr_t base = (uintptr_t)s_stacks[tid - 1];
-    uint64_t limit = (uintptr_t)s_stacks[tid - 1] + STACK_SZ;
-    assert(sp >= base && sp < limit);
-}
-
 static void sched_task_init(struct task *task, int prio, uint32_t flags, 
                             void *code, void *arg, struct future *future, uint32_t parent)
 {
@@ -426,6 +451,12 @@ static void sched_task_init(struct task *task, int prio, uint32_t flags,
 
     if(task->future) {
         SDL_AtomicSet(&task->future->status, FUTURE_INCOMPLETE);    
+    }
+
+    if(flags & TASK_BIG_STACK) {
+        task->stackmem = malloc(BIG_STACK_SZ);
+    }else{
+        task->stackmem = s_stacks[task->tid - 1];
     }
 
     sched_init_ctx(task, code);
@@ -448,6 +479,7 @@ static void sched_send(struct task *task, uint32_t tid, void *msg, size_t msglen
         *out_send = task->tid;
 
         task->state = TASK_STATE_REPLY_BLOCKED;
+        assert(recv_task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(recv_task);
 
     }else{
@@ -475,6 +507,7 @@ static void sched_receive(struct task *task, uint32_t *out_tid, void *msg, size_
 
         assert(send_task->state == TASK_STATE_RECV_BLOCKED);
         send_task->state = TASK_STATE_REPLY_BLOCKED;
+        assert(task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(task);
 
     }else{
@@ -494,7 +527,9 @@ static void sched_reply(struct task *task, uint32_t tid, void *reply, size_t rep
     assert(dstlen == replylen);
     memcpy(dst, reply, replylen);
 
+    assert(send_task->state != TASK_STATE_EVENT_BLOCKED);
     sched_reactivate(send_task);
+    assert(task->state != TASK_STATE_EVENT_BLOCKED);
     sched_reactivate(task);
 }
 
@@ -517,19 +552,12 @@ static void sched_await_event(struct task *task, int event)
 static uint32_t sched_create(int prio, task_func_t code, void *arg, struct future *result, 
                              int flags, uint32_t parent)
 {
-    uint32_t ret = NULL_TID;
-    SDL_LockMutex(s_request_lock);
-
     struct task *task = sched_task_alloc();
     if(!task)
-        goto out;
+        return NULL_TID;
 
     sched_task_init(task, prio, flags, code, arg, result, parent);
-    ret = task->tid;
-
-out:
-    SDL_UnlockMutex(s_request_lock);
-    return ret;
+    return task->tid;
 }
 
 static bool sched_wait(struct task *task, uint32_t child_tid)
@@ -544,6 +572,7 @@ static bool sched_wait(struct task *task, uint32_t child_tid)
 
     if(child->state == TASK_STATE_ZOMBIE) {
         sched_task_free(child);
+        assert(task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(task);
         return true;
     }
@@ -566,17 +595,21 @@ static void sched_task_service_request(struct task *task)
             (int)           task->req.argv[4],
             task->tid
         );
+        assert(task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(task);
         break;
     case SCHED_REQ_MY_TID:
         task->retval = task->tid;
+        assert(task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(task);
         break;
     case SCHED_REQ_MY_PARENT_TID:
         task->retval = task->parent_tid;
+        assert(task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(task);
         break;
     case SCHED_REQ_YIELD:
+        assert(task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(task);
         break;
     case SCHED_REQ_SEND:
@@ -613,6 +646,7 @@ static void sched_task_service_request(struct task *task)
 
         task->destructor = (void (*)(void*))task->req.argv[0];
         task->darg = (void*)task->req.argv[1];
+        assert(task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(task);
         break;
     case SCHED_REQ_WAIT:
@@ -620,12 +654,16 @@ static void sched_task_service_request(struct task *task)
         break;
     case _SCHED_REQ_FREE:
 
+        if(task->flags & TASK_BIG_STACK) {
+            free(task->stackmem);
+        }
         if(task->flags & TASK_DETACHED) {
             sched_task_free(task);
         }else if(s_parent_waiting[task->tid - 1]) {
 
             struct task *parent = &s_tasks[task->parent_tid - 1];
             s_parent_waiting[task->tid - 1] = false;
+            assert(parent->state != TASK_STATE_EVENT_BLOCKED);
             sched_reactivate(parent);
             sched_task_free(task);
         }else{
@@ -649,14 +687,7 @@ static void sched_task_run(struct task *task)
         int id = sched_curr_thread_worker_id();
         sched_switch_ctx(&s_worker_contexts[id], &task->ctx, task->retval, task->arg);
     }
-}
-
-static size_t sched_ready_queue_size(void)
-{
-    SDL_LockMutex(s_ready_lock); 
-    size_t ret = pq_size(&s_ready_queue);
-    SDL_UnlockMutex(s_ready_lock);
-    return ret;
+    sched_set_thread_tid(SDL_ThreadID(), NULL_TID);
 }
 
 static void sched_signal_worker_quit(int id)
@@ -740,6 +771,49 @@ static void worker_notify_done(int id)
     SDL_UnlockMutex(s_idle_workers_lock);
 }
 
+/* Return the first task that is allowed to run on one 
+ * of the worker threads (i.e. not pinned to the main 
+ * thread). Returning NULL if there isn't a compatible
+ * task in the ready queue. */
+static struct task *worker_first_compat(void)
+{
+    size_t npopped = 0;
+    struct task *tasks[MAX_TASKS];
+
+    do{
+        bool popped = false;
+        while(!s_quiesce && !(popped = pq_task_pop(&s_ready_queue, &tasks[npopped]))) {
+            SDL_CondWait(s_ready_cond, s_ready_lock);
+        }
+        if(popped) {
+            npopped++;
+        }
+        if(s_quiesce) {
+            break;
+        }
+        assert(npopped > 0);
+        if(!(tasks[npopped-1]->flags & TASK_MAIN_THREAD_PINNED)) {
+            break;
+        }
+    }while(pq_size(&s_ready_queue) > 0);
+
+    if(!npopped)
+        return NULL;
+
+    for(int i = 0; i < npopped-1; i++) {
+        assert(tasks[i]->state == TASK_STATE_READY);
+        sched_reactivate(tasks[i]);
+    }
+
+    if(tasks[npopped-1]->flags & TASK_MAIN_THREAD_PINNED) {
+        assert(tasks[npopped-1]->state == TASK_STATE_READY);
+        sched_reactivate(tasks[npopped-1]);
+        return NULL;
+    }else{
+        return tasks[npopped-1];
+    }
+}
+
 static struct task *worker_wait_task_or_quiesce(void)
 {
     struct task *task = NULL;
@@ -749,9 +823,7 @@ static struct task *worker_wait_task_or_quiesce(void)
     if(s_nwaiters == s_nworkers) {
         SDL_CondBroadcast(s_ready_cond);
     }
-    while(!s_quiesce && !pq_task_pop(&s_ready_queue, &task)) {
-        SDL_CondWait(s_ready_cond, s_ready_lock);
-    }
+    task = worker_first_compat();
     s_nwaiters--;
     SDL_UnlockMutex(s_ready_lock);
 
@@ -765,6 +837,8 @@ static void worker_do_work(int id)
         struct task *task = worker_wait_task_or_quiesce();
         if(s_quiesce)
             return;
+        if(!task)
+            continue;
 
         assert(task);
         sched_task_run(task);
@@ -958,10 +1032,11 @@ void Sched_Shutdown(void)
 void Sched_HandleEvent(int event, void *arg)
 {
     ASSERT_IN_MAIN_THREAD();
+    SDL_LockMutex(s_request_lock);
 
     khiter_t k = kh_get(tqueue, s_event_queues, event);
     if(k == kh_end(s_event_queues))
-        return;
+        goto out;
 
     queue_tid_t *waiters = &kh_val(s_event_queues, k);
     while(queue_size(*waiters) > 0) {
@@ -975,6 +1050,9 @@ void Sched_HandleEvent(int event, void *arg)
         task->retval = (uint64_t)arg;
         sched_reactivate(task);
     }
+
+out:
+    SDL_UnlockMutex(s_request_lock);
 }
 
 void Sched_StartBackgroundTasks(void)
@@ -1027,7 +1105,12 @@ void Sched_Tick(void)
 uint32_t Sched_Create(int prio, task_func_t code, void *arg, struct future *result, int flags)
 {
     ASSERT_IN_MAIN_THREAD();
-    return sched_create(prio, code, arg, result, flags | TASK_DETACHED, NULL_TID);
+
+    SDL_LockMutex(s_request_lock);
+    uint32_t ret = sched_create(prio, code, arg, result, flags | TASK_DETACHED, NULL_TID);
+    SDL_UnlockMutex(s_request_lock);
+
+    return ret;
 }
 
 uint64_t Sched_Request(struct request req)
@@ -1035,7 +1118,6 @@ uint64_t Sched_Request(struct request req)
     uint32_t tid = sched_curr_thread_tid();
     struct task *task = &s_tasks[tid - 1];
 
-    sched_assert_sp_valid();
     task->req = req;
 
     if(SDL_ThreadID() == g_main_thread_id) {
@@ -1044,6 +1126,11 @@ uint64_t Sched_Request(struct request req)
         int id = sched_curr_thread_worker_id();
         return sched_switch_ctx(&task->ctx, &s_worker_contexts[id], 0, NULL);
     }
+}
+
+uint32_t Sched_ActiveTID(void)
+{
+    return sched_curr_thread_tid();
 }
 
 bool Sched_FutureIsReady(const struct future *future)

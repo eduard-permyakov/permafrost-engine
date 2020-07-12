@@ -227,7 +227,7 @@ void Task_Send(uint32_t tid, void *msg, size_t msglen, void *reply, size_t reply
 
 void Task_Receive(uint32_t *tid, void *msg, size_t msglen)
 {
-    Sched_Request((struct request){ 
+    Sched_Request((struct request){
         .type = SCHED_REQ_RECEIVE,
         .argv[0] = (uint64_t)tid,
         .argv[1] = (uint64_t)msg,
@@ -237,7 +237,7 @@ void Task_Receive(uint32_t *tid, void *msg, size_t msglen)
 
 void Task_Reply(uint32_t tid, void *reply, size_t replylen)
 {
-    Sched_Request((struct request){ 
+    Sched_Request((struct request){
         .type = SCHED_REQ_REPLY,
         .argv[0] = (uint64_t)tid,
         .argv[1] = (uint64_t)reply,
