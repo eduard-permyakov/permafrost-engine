@@ -58,6 +58,36 @@ enum taskstate{
 };
 
 #if defined(__x86_64__)
+
+#if defined(_WIN32)
+
+struct context{
+    uint64_t rbx;
+    uint64_t rsp;
+    uint64_t rbp;
+    uint64_t rdi;
+    uint64_t rsi;
+    uint64_t r12;
+    uint64_t r13;
+    uint64_t r14;
+    uint64_t r15;
+    uint32_t mxcsr;
+    uint16_t fpucw;
+    uint16_t __pad0;
+    __int128 xmm6;
+    __int128 xmm7;
+    __int128 xmm8;
+    __int128 xmm9;
+    __int128 xmm10;
+    __int128 xmm11;
+    __int128 xmm12;
+    __int128 xmm13;
+    __int128 xmm14;
+    __int128 xmm15;
+} __attribute__((packed, aligned(16)));
+
+#else // System V ABI
+
 struct context{
     uint64_t rbx;
     uint64_t rsp;
@@ -68,7 +98,11 @@ struct context{
     uint64_t r15;
     uint32_t mxcsr;
     uint16_t fpucw;
-};
+    uint16_t __pad0;
+} __attribute__((packed, aligned(8)));
+
+#endif
+
 #else
 #error "Unsupported architecture"
 #endif
@@ -92,13 +126,6 @@ struct task{
     void         (*destructor)(void*);
     void          *darg;
     struct task   *prev, *next;
-};
-
-enum worker_cmd{
-    WORKER_CMD_NONE = 0,
-    WORKER_CMD_WORK,
-    WORKER_CMD_QUIESCE,
-    WORKER_CMD_QUIT,
 };
 
 #define MAX_TASKS               (512)
@@ -180,14 +207,92 @@ static SDL_cond        *s_idle_workers_cond;
 
 #if defined(__x86_64__)
 
+#if defined(_WIN32)
+
+__asm__(
+".text                                          \n"
+"                                               \n"
+"# parameter 0 (%rcx) - save ctx ptr            \n"
+"# parameter 1 (%rdx) - load ctx ptr            \n"
+"# parameter 2 (%r8)  - return value            \n"
+"# parameter 3 (%r9)  - arg passed to           \n"
+"#                      context code            \n"
+"                                               \n"
+"sched_switch_ctx:                              \n"
+"Lsave_ctx:                                     \n"
+"   lea Lback(%rip), %rax                       \n" 
+"   push %rax                                   \n" 
+"   mov %rbx,  0x0(%rcx)                        \n"
+"   mov %rsp,  0x8(%rcx)                        \n"
+"   mov %rbp, 0x10(%rcx)                        \n"
+"   mov %rdi, 0x18(%rcx)                        \n"
+"   mov %rsi, 0x20(%rcx)                        \n"
+"   mov %r12, 0x28(%rcx)                        \n"
+"   mov %r13, 0x30(%rcx)                        \n"
+"   mov %r14, 0x38(%rcx)                        \n"
+"   mov %r15, 0x40(%rcx)                        \n"
+"   stmxcsr 0x48(%rcx)                          \n"
+"   fstcw   0x4c(%rcx)                          \n"
+"   movdqa %xmm6, 0x50(%rcx)                    \n"
+"   movdqa %xmm7, 0x60(%rcx)                    \n"
+"   movdqa %xmm8, 0x70(%rcx)                    \n"
+"   movdqa %xmm9, 0x80(%rcx)                    \n"
+"   movdqa %xmm10, 0x90(%rcx)                   \n"
+"   movdqa %xmm11, 0xa0(%rcx)                   \n"
+"   movdqa %xmm12, 0xb0(%rcx)                   \n"
+"   movdqa %xmm13, 0xc0(%rcx)                   \n"
+"   movdqa %xmm14, 0xd0(%rcx)                   \n"
+"   movdqa %xmm15, 0xe0(%rcx)                   \n"
+"Lload_ctx:                                     \n"
+"   mov  0x0(%rdx), %rbx                        \n"
+"   mov  0x8(%rdx), %rsp                        \n"
+"   mov 0x10(%rdx), %rbp                        \n"
+"   mov 0x18(%rdx), %rdi                        \n"
+"   mov 0x20(%rdx), %rsi                        \n"
+"   mov 0x28(%rdx), %r12                        \n"
+"   mov 0x30(%rdx), %r13                        \n"
+"   mov 0x38(%rdx), %r14                        \n"
+"   mov 0x40(%rdx), %r15                        \n"
+"   ldmxcsr 0x48(%rdx)                          \n"
+"   fldcw   0x4c(%rdx)                          \n"
+"   movdqa 0x50(%rdx), %xmm6                    \n"
+"   movdqa 0x60(%rdx), %xmm7                    \n"
+"   movdqa 0x70(%rdx), %xmm8                    \n"
+"   movdqa 0x80(%rdx), %xmm9                    \n"
+"   movdqa 0x90(%rdx), %xmm10                   \n"
+"   movdqa 0xa0(%rdx), %xmm11                   \n"
+"   movdqa 0xb0(%rdx), %xmm12                   \n"
+"   movdqa 0xc0(%rdx), %xmm13                   \n"
+"   movdqa 0xd0(%rdx), %xmm14                   \n"
+"   movdqa 0xe0(%rdx), %xmm15                   \n"
+"   mov %rdx, %rcx # write result to ctx mem    \n"
+"   mov %r9, %rdx                               \n"
+"   mov %r8, %rax                               \n"
+"Lback:                                         \n"
+"   ret                                         \n"
+"                                               \n"
+);
+
+__asm__(
+".text                                          \n"
+"                                               \n"
+"# (%rax) - pointer to 128 bits of task result  \n"
+"                                               \n"
+"sched_task_exit_trampoline:                    \n"
+"   mov %rax, %rcx                              \n"
+"   jmp sched_task_exit                         \n"
+);
+
+#else
+
 __asm__(
 ".text                                          \n"
 "                                               \n"
 ".type sched_switch_ctx, @function              \n"
 "                                               \n"
-"# parameter 0 (%rsi) - save ctx ptr            \n"
-"# parameter 1 (%rdx) - load ctx ptr            \n"
-"# parameter 2 (%rcx) - return value            \n"
+"# parameter 0 (%rdi) - save ctx ptr            \n"
+"# parameter 1 (%rsi) - load ctx ptr            \n"
+"# parameter 2 (%rdx) - return value            \n"
 "# parameter 3 (%rcx) - arg passed to           \n"
 "#                      context code            \n"
 "                                               \n"
@@ -234,6 +339,8 @@ __asm__(
 "   movq %rdx, %rsi                             \n"
 "   jmp sched_task_exit                         \n"
 );
+
+#endif
 
 static void sched_init_ctx(struct task *task, void *code)
 {
@@ -493,9 +600,10 @@ static void sched_receive(struct task *task, uint32_t *out_tid, void *msg, size_
 {
     if(queue_size(s_msg_queues[task->tid - 1]) > 0) {
     
-        uint32_t send_tid;
+        uint32_t send_tid = 0;
         assert(task->state != TASK_STATE_SEND_BLOCKED);
         queue_tid_pop(&s_msg_queues[task->tid - 1], &send_tid);
+        assert(send_tid > 0);
 
         struct task *send_task = &s_tasks[send_tid - 1];
         void *src = (void*)send_task->req.argv[1];
