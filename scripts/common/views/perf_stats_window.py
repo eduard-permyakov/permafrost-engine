@@ -102,6 +102,19 @@ class PerfStatsWindow(pf.Window):
             .format(used=nav_stats["grid_path_used"], cap=nav_stats["grid_path_max"], hr=nav_stats["grid_path_hit_rate"]), \
             (0, 255, 0))
 
+    def threads_tab(self):
+        for name in self.frame_perfstats[self.tickindex]:
+            t_frame_times = [0] * 100
+            for i in range(0, 100):
+                for child in self.frame_perfstats[i][name]["children"]:
+                    t_frame_times[i] += child["ms_delta"]
+
+            t_frame_times = [int(val) for val in t_frame_times]
+            self.layout_row_dynamic(20, 1)
+            self.label_colored_wrap(name, (255, 255, 0))
+            self.layout_row_dynamic(40, 1)
+            self.simple_chart(pf.NK_CHART_LINES, (0, 200), t_frame_times, lambda idx: None)
+
     def on_chart_click(self, index):
         self.selected_perfstats = self.frame_perfstats[index]
 
@@ -158,6 +171,7 @@ class PerfStatsWindow(pf.Window):
         self.button_label(text(self.paused), on_pause_resume)
 
         self.tree(pf.NK_TREE_TAB, "Frame Performance", pf.NK_MINIMIZED, self.frame_perf_tab)
+        self.tree(pf.NK_TREE_TAB, "Threads", pf.NK_MINIMIZED, self.threads_tab)
         self.tree(pf.NK_TREE_TAB, "Renderer Info", pf.NK_MINIMIZED, self.render_info_tab)
         self.tree(pf.NK_TREE_TAB, "Navigation Stats", pf.NK_MINIMIZED, self.nav_stats_tab)
 

@@ -789,12 +789,18 @@ static void sched_task_run(struct task *task)
     sched_set_thread_tid(SDL_ThreadID(), task->tid);
     task->state = TASK_STATE_ACTIVE;
 
+    char name[64];
+    pf_snprintf(name, sizeof(name), "Task %03u", task->tid);
+    Perf_Push(name);
+
     if(SDL_ThreadID() == g_main_thread_id) {
         sched_switch_ctx(&s_main_ctx, &task->ctx, task->retval, task->arg);
     }else{
         int id = sched_curr_thread_worker_id();
         sched_switch_ctx(&s_worker_contexts[id], &task->ctx, task->retval, task->arg);
     }
+
+    Perf_Pop();
     sched_set_thread_tid(SDL_ThreadID(), NULL_TID);
 }
 
