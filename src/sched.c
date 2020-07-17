@@ -179,6 +179,7 @@ static SDL_mutex       *s_request_lock;
  * go back to waiting on a start/quit command. 
  */
 static pq_task_t        s_ready_queue;
+static pq_task_t        s_ready_queue_main;
 static SDL_mutex       *s_ready_lock;
 static SDL_cond        *s_ready_cond;
 static int              s_nwaiters;
@@ -384,13 +385,13 @@ static void sched_init_ctx(struct task *task, void *code)
     /* The volatile portion consists of the six status flags, in MXCSR[0:5].
      * They are caller-saved, so their initial state doesn't matter.
      *
-     *+-------------------------------------------------------------------+
+     * +-------------------------------------------------------------------+
      * | Register[bits] | Setting                                          |
      * + ---------------+--------------------------------------------------+
-     * | MXCSR[6]	    | Denormals are zeros - 0                          |
-     * | MXCSR[7:12]	| Exception masks all 1's (all exceptions masked)  |
-     * | MXCSR[13:14]	| Rounding control - 0 (round to nearest)          |
-     * | MXCSR[15]	    | Flush to zero for masked underflow - 0 (off)     |
+     * | MXCSR[6]       | Denormals are zeros - 0                          |
+     * | MXCSR[7:12]    | Exception masks all 1's (all exceptions masked)  |
+     * | MXCSR[13:14]   | Rounding control - 0 (round to nearest)          |
+     * | MXCSR[15]      | Flush to zero for masked underflow - 0 (off)     |
      * +----------------+--------------------------------------------------+
      */
     task->ctx.mxcsr = (((uint32_t)(0x0  & 0x1 )) << 15)
@@ -510,9 +511,13 @@ static void sched_task_free(struct task *task)
 static void sched_reactivate(struct task *task)
 {
     SDL_LockMutex(s_ready_lock); 
-
     task->state = TASK_STATE_READY;
-    pq_task_push(&s_ready_queue, task->prio, task);
+
+    if(task->flags & TASK_MAIN_THREAD_PINNED) {
+        pq_task_push(&s_ready_queue_main, task->prio, task);
+    }else{
+        pq_task_push(&s_ready_queue, task->prio, task);
+    }
 
     SDL_CondSignal(s_ready_cond);
     SDL_UnlockMutex(s_ready_lock);
@@ -703,21 +708,17 @@ static void sched_task_service_request(struct task *task)
             (int)           task->req.argv[4],
             task->tid
         );
-        assert(task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(task);
         break;
     case SCHED_REQ_MY_TID:
         task->retval = task->tid;
-        assert(task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(task);
         break;
     case SCHED_REQ_MY_PARENT_TID:
         task->retval = task->parent_tid;
-        assert(task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(task);
         break;
     case SCHED_REQ_YIELD:
-        assert(task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(task);
         break;
     case SCHED_REQ_SEND:
@@ -754,7 +755,6 @@ static void sched_task_service_request(struct task *task)
 
         task->destructor = (void (*)(void*))task->req.argv[0];
         task->darg = (void*)task->req.argv[1];
-        assert(task->state != TASK_STATE_EVENT_BLOCKED);
         sched_reactivate(task);
         break;
     case SCHED_REQ_WAIT:
@@ -885,59 +885,21 @@ static void worker_notify_done(int id)
     SDL_UnlockMutex(s_idle_workers_lock);
 }
 
-/* Return the first task that is allowed to run on one 
- * of the worker threads (i.e. not pinned to the main 
- * thread). Returning NULL if there isn't a compatible
- * task in the ready queue. */
-static struct task *worker_first_compat(void)
-{
-    size_t npopped = 0;
-    struct task *tasks[MAX_TASKS];
-
-    do{
-        bool popped = false;
-        while(!s_quiesce && !(popped = pq_task_pop(&s_ready_queue, &tasks[npopped]))) {
-            SDL_CondWait(s_ready_cond, s_ready_lock);
-        }
-        if(popped) {
-            npopped++;
-        }
-        if(s_quiesce) {
-            break;
-        }
-        assert(npopped > 0);
-        if(!(tasks[npopped-1]->flags & TASK_MAIN_THREAD_PINNED)) {
-            break;
-        }
-    }while(pq_size(&s_ready_queue) > 0);
-
-    if(!npopped)
-        return NULL;
-
-    for(int i = 0; i < npopped-1; i++) {
-        assert(tasks[i]->state == TASK_STATE_READY);
-        sched_reactivate(tasks[i]);
-    }
-
-    if(tasks[npopped-1]->flags & TASK_MAIN_THREAD_PINNED) {
-        assert(tasks[npopped-1]->state == TASK_STATE_READY);
-        sched_reactivate(tasks[npopped-1]);
-        return NULL;
-    }else{
-        return tasks[npopped-1];
-    }
-}
-
 static struct task *worker_wait_task_or_quiesce(void)
 {
     struct task *task = NULL;
 
     SDL_LockMutex(s_ready_lock);
     s_nwaiters++;
+
     if(s_nwaiters == s_nworkers) {
         SDL_CondBroadcast(s_ready_cond);
     }
-    task = worker_first_compat();
+
+    while(!s_quiesce && !pq_task_pop(&s_ready_queue, &task)) {
+        SDL_CondWait(s_ready_cond, s_ready_lock);
+    }
+
     s_nwaiters--;
     SDL_UnlockMutex(s_ready_lock);
 
@@ -949,10 +911,8 @@ static void worker_do_work(int id)
     while(Perf_CurrFrameMS() < SCHED_TICK_MS) {
 
         struct task *task = worker_wait_task_or_quiesce();
-        if(s_quiesce)
-            return;
         if(!task)
-            continue;
+            return;
 
         assert(task);
         sched_task_run(task);
@@ -1010,6 +970,10 @@ bool Sched_Init(void)
     pq_task_init(&s_ready_queue);
     if(!pq_task_reserve(&s_ready_queue, MAX_TASKS))
         goto fail_ready_queue;
+
+    pq_task_init(&s_ready_queue_main);
+    if(!pq_task_reserve(&s_ready_queue_main, MAX_TASKS))
+        goto fail_ready_queue_main;
 
     assert(MAX_TASKS >= 2);
     s_tasks[0].prev = NULL;
@@ -1090,6 +1054,8 @@ fail_msg_queue:
     for(int i = 0; i < MAX_TASKS; i++) {
         queue_tid_destroy(s_msg_queues + i);
     }
+    pq_task_destroy(&s_ready_queue_main);
+fail_ready_queue_main:
     pq_task_destroy(&s_ready_queue);
 fail_ready_queue:
     SDL_DestroyCond(s_ready_cond);
@@ -1126,6 +1092,7 @@ void Sched_Shutdown(void)
     kh_destroy(tid, s_thread_worker_id_map);
     SDL_DestroyMutex(s_request_lock);
     pq_task_destroy(&s_ready_queue);
+    pq_task_destroy(&s_ready_queue_main);
 
     SDL_DestroyMutex(s_idle_workers_lock);
     SDL_DestroyCond(s_idle_workers_cond);
@@ -1197,8 +1164,21 @@ void Sched_Tick(void)
         struct task *curr = NULL;
 
         SDL_LockMutex(s_ready_lock);
-        while(!pq_task_pop(&s_ready_queue, &curr) && ((nwaiters = s_nwaiters) < s_nworkers))
+        while(!pq_size(&s_ready_queue_main) && !pq_size(&s_ready_queue) && ((nwaiters = s_nwaiters) < s_nworkers)) {
             SDL_CondWait(s_ready_cond, s_ready_lock);
+        }
+        if(pq_size(&s_ready_queue_main) || pq_size(&s_ready_queue)) {
+
+            float prio_main = -1.0, prio_gen = -1.0;
+            pq_task_top_prio(&s_ready_queue_main, &prio_main);
+            pq_task_top_prio(&s_ready_queue, &prio_gen);
+
+            if(prio_gen > prio_main) {
+                pq_task_pop(&s_ready_queue, &curr);
+            }else {
+                pq_task_pop(&s_ready_queue_main, &curr);
+            }
+        }
         SDL_UnlockMutex(s_ready_lock);
 
         /* When the ready queue is empty and all the workers are in a state of waiting, 
