@@ -41,6 +41,7 @@
 #include "py_tile.h"
 #include "py_constants.h"
 #include "py_pickle.h"
+#include "py_camera.h"
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
@@ -78,7 +79,9 @@ static PyObject *PyPf_register_ui_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_global_event(PyObject *self, PyObject *args);
 
-static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_active_camera(PyObject *self);
+static PyObject *PyPf_set_active_camera(PyObject *self, PyObject *args);
+
 static PyObject *PyPf_prev_frame_ms(PyObject *self);
 static PyObject *PyPf_prev_frame_perfstats(PyObject *self);
 static PyObject *PyPf_get_resolution(PyObject *self);
@@ -188,13 +191,13 @@ static PyMethodDef pf_module_methods[] = {
     "Broadcast a global event so all handlers can get invoked. Any weakref argument is "
     "automatically unpacked before being sent to the handler."},
 
-    {"activate_camera", 
-    (PyCFunction)PyPf_activate_camera, METH_VARARGS,
-    "Set the camera specified by the index to be the active camera, meaning the scene is "
-    "being rendered from the camera's point of view. The second argument is teh camera "
-    "control mode (0 = FPS, 1 = RTS). Note that the position of camera 0 is restricted "
-    "to the map boundaries as it is expected to be the main RTS camera. The other cameras "
-    "are unrestricted."},
+    {"get_active_camera", 
+    (PyCFunction)PyPf_get_active_camera, METH_NOARGS,
+    "Get a pf.Camera object describing the active camera from whose point of view the scene is currently rendered."},
+
+    {"set_active_camera", 
+    (PyCFunction)PyPf_set_active_camera, METH_VARARGS,
+    "Set a pf.Camera object to be the active camera from whose point of view the scene is currently rendered."},
 
     {"prev_frame_ms", 
     (PyCFunction)PyPf_prev_frame_ms, METH_NOARGS,
@@ -611,17 +614,23 @@ static PyObject *PyPf_global_event(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyPf_activate_camera(PyObject *self, PyObject *args)
+static PyObject *PyPf_get_active_camera(PyObject *self)
 {
-    int idx;
-    enum cam_mode mode;
+    return S_Camera_GetActive();
+}
 
-    if(!PyArg_ParseTuple(args, "ii", &idx, &mode)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must a tuple of two integers.");
+static PyObject *PyPf_set_active_camera(PyObject *self, PyObject *args)
+{
+    PyObject *cam;
+    if(!PyArg_ParseTuple(args, "O",  &cam)) {
+        assert(PyErr_Occurred());
         return NULL;
     }
 
-    G_ActivateCamera(idx, mode);
+    if(!S_Camera_SetActive(cam)) {
+        assert(PyErr_Occurred());
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 
@@ -1616,6 +1625,7 @@ PyMODINIT_FUNC initpf(void)
     S_Entity_PyRegister(module);
     S_UI_PyRegister(module);
     S_Tile_PyRegister(module);
+    S_Camera_PyRegister(module);
     S_Constants_Expose(module); 
 }
 
@@ -1645,6 +1655,9 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
 
     initpf();
 
+    if(!S_Camera_Init())
+        return false;
+
     PyObject *module = PyDict_GetItemString(PySys_GetObject("modules"), "pf");
     assert(module);
     /* Initialize the pickler after registering all the built-ins, so that they can
@@ -1660,6 +1673,7 @@ void S_Shutdown(void)
 {
     Py_Finalize();
     S_Pickle_Shutdown();
+    S_Camera_Shutdown();
     S_Entity_Shutdown();
     S_UI_Shutdown();
 }

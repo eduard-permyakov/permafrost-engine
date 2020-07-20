@@ -45,8 +45,6 @@
 #include <stdint.h>
 
 
-#define NUM_CAMERAS  2
-
 struct gamestate{
     enum simstate           ss;
     /*-------------------------------------------------------------------------
@@ -65,13 +63,15 @@ struct gamestate{
      */
     vec3_t                  light_pos;
     /*-------------------------------------------------------------------------
-     * The index into the 'cameras' array. The active camera is the one from
-     * whose perspective the scene is rendered.
+     * The camera from which the scene is currently being rendered.
      *-------------------------------------------------------------------------
      */
-    int                     active_cam_idx;
+    struct camera          *active_cam;
+    /*-------------------------------------------------------------------------
+     * The camera mode determines which camera controller is installed.
+     *-------------------------------------------------------------------------
+     */
     enum cam_mode           active_cam_mode;
-    struct camera          *cameras[NUM_CAMERAS];
     /*-------------------------------------------------------------------------
      * The set of all game entities currently taking part in the game simulation.
      *-------------------------------------------------------------------------

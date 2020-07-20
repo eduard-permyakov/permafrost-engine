@@ -527,6 +527,10 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, G_RUNNING);
     PY_EXPOSE_ENUM(module, G_PAUSED_FULL);
     PY_EXPOSE_ENUM(module, G_PAUSED_UI_RUNNING);
+
+    PY_EXPOSE_ENUM(module, CAM_MODE_FPS);
+    PY_EXPOSE_ENUM(module, CAM_MODE_RTS);
+    PY_EXPOSE_ENUM(module, CAM_MODE_FREE);
 }
 
 static void s_expose_anim_constants(PyObject *module)

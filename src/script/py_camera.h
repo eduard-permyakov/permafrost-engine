@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018-2020 Eduard Permyakov 
+ *  Copyright (C) 2020 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,19 +33,18 @@
  *
  */
 
-#ifndef GAME_PRIVATE_H
-#define GAME_PRIVATE_H
+#ifndef PY_CAMERA_H
+#define PY_CAMERA_H
 
-#include "gamestate.h"
+#include <Python.h> /* must be first */
+#include <stdbool.h>
 
-struct camera;
-struct entity;
+void      S_Camera_PyRegister(PyObject *module);
+bool      S_Camera_Init(void);
+void      S_Camera_Shutdown(void);
 
-const khash_t(entity) *G_GetDynamicEntsSet(void);
-const khash_t(entity) *G_GetAllEntsSet(void);
-void                   G_Zombiefy(struct entity *ent);
-struct entity         *G_EntityForUID(uint32_t uid);
-
+PyObject *S_Camera_GetActive(void);
+bool      S_Camera_SetActive(PyObject *cam);
 
 #endif
 

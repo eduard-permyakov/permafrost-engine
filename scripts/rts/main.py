@@ -72,14 +72,19 @@ pf.set_faction_controllable(3, False)
 # Setup global events                                      #
 ############################################################
 
-active_cam_idx = 0
+main_cam = pf.get_active_camera()
+debug_cam = pf.Camera(mode=pf.CAM_MODE_FPS, position=(0.0, 175.0, 0.0), pitch=-65.0, yaw=135.0)
+active_cam = main_cam
+
 def toggle_camera(user, event):
-    mode_for_idx = [pf.CAM_MODE_RTS, pf.CAM_MODE_FPS]
 
     if event[0] == pf.SDL_SCANCODE_C and not pf.ui_text_edit_has_focus():
-        global active_cam_idx
-        active_cam_idx = (active_cam_idx + 1) % 2
-        pf.activate_camera(active_cam_idx, mode_for_idx[active_cam_idx])
+        global active_cam, main_cam, debug_cam
+        if active_cam == main_cam:
+            active_cam = debug_cam
+        else:
+            active_cam = main_cam
+        pf.set_active_camera(active_cam)
 
 def toggle_pause(user, event):
 

@@ -67,12 +67,11 @@
 #define CAM_HEIGHT          175.0f
 #define CAM_TILT_UP_DEGREES 25.0f
 #define CAM_SPEED           0.20f
+#define CAM_SENS            0.05f
 #define MAX_VIS_RANGE       150.0f
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
-
-#define ACTIVE_CAM          (s_gs.cameras[s_gs.active_cam_idx])
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 
 #define CHK_TRUE_RET(_pred)   \
@@ -115,27 +114,24 @@ static void g_reset_camera(struct camera *cam)
     Camera_SetPos(cam, (vec3_t){ 0.0f, CAM_HEIGHT, 0.0f }); 
 }
 
-static bool g_init_cameras(void) 
+static bool g_init_camera(void) 
 {
-    for(int i = 0; i < NUM_CAMERAS; i++) {
-    
-        s_gs.cameras[i] = Camera_New();
-        if(!s_gs.cameras[i]) {
-            return false;
-        }
-
-        Camera_SetSpeed(s_gs.cameras[i], CAM_SPEED);
-        Camera_SetSens (s_gs.cameras[i], 0.05f);
-        g_reset_camera(s_gs.cameras[i]);
+    s_gs.active_cam = Camera_New();
+    if(!s_gs.active_cam) {
+        return false;
     }
+
+    Camera_SetSpeed(s_gs.active_cam, CAM_SPEED);
+    Camera_SetSens (s_gs.active_cam, CAM_SENS);
+    g_reset_camera (s_gs.active_cam);
     return true;
 }
 
 static void g_init_map(void)
 {
     M_CenterAtOrigin(s_gs.map);
-    M_RestrictRTSCamToMap(s_gs.map, ACTIVE_CAM);
-    M_Raycast_Install(s_gs.map, ACTIVE_CAM);
+    M_RestrictRTSCamToMap(s_gs.map, s_gs.active_cam);
+    M_Raycast_Install(s_gs.map, s_gs.active_cam);
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
     G_Move_Init(s_gs.map);
     G_Combat_Init();
@@ -311,7 +307,7 @@ static void g_render_healthbars(void)
             R_PushArg(&num_combat_visible, sizeof(num_combat_visible)),
             R_PushArg(ent_health_pc, sizeof(ent_health_pc)),
             R_PushArg(ent_top_pos_ws, sizeof(ent_top_pos_ws)),
-            R_PushArg(ACTIVE_CAM, g_sizeof_camera),
+            R_PushArg(s_gs.active_cam, g_sizeof_camera),
         },
     });
     PERF_RETURN_VOID();
@@ -364,7 +360,7 @@ static void g_create_render_input(struct render_input *out)
     ss_e status = Settings_Get("pf.video.shadows_enabled", &shadows_setting);
     assert(status == SS_OKAY);
 
-    out->cam = ACTIVE_CAM;
+    out->cam = s_gs.active_cam;
     out->map = s_gs.map;
     out->shadows = shadows_setting.as_bool;
     out->light_pos = s_gs.light_pos;
@@ -600,8 +596,8 @@ bool G_Init(void)
     if(!s_gs.dynamic)
         goto fail_dynamic;
 
-    if(!g_init_cameras())
-        goto fail_cams; 
+    if(!g_init_camera())
+        goto fail_cam; 
 
     if(!R_InitWS(&s_gs.ws[0]))
         goto fail_ws;
@@ -777,9 +773,8 @@ bool G_Init(void)
     return true;
 
 fail_ws:
-    for(int i = 0; i < NUM_CAMERAS; i++)
-        Camera_Free(s_gs.cameras[i]);
-fail_cams:
+    Camera_Free(s_gs.active_cam);
+fail_cam:
     kh_destroy(entity, s_gs.dynamic);
 fail_dynamic:
     kh_destroy(entity, s_gs.active);
@@ -865,10 +860,9 @@ void G_ClearState(void)
         s_gs.prev_tick_map = NULL;
     }
 
-    for(int i = 0; i < NUM_CAMERAS; i++) {
-        g_reset_camera(s_gs.cameras[i]);
-    }
-    G_ActivateCamera(0, CAM_MODE_RTS);
+    g_reset_camera(s_gs.active_cam);
+    G_SetActiveCamera(s_gs.active_cam, CAM_MODE_RTS);
+
     s_gs.factions_allocd = 0;
 
     R_PushCmd((struct rcmd) { R_GL_Batch_Reset, 0 });
@@ -993,24 +987,6 @@ bool G_UpdateMinimapChunk(int chunk_r, int chunk_c)
     PERF_RETURN(ret);
 }
 
-void G_MoveActiveCamera(vec2_t xz_ground_pos)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    vec3_t old_pos = Camera_GetPos(ACTIVE_CAM);
-    float offset_mag = cos(DEG_TO_RAD(Camera_GetPitch(ACTIVE_CAM))) * Camera_GetHeight(ACTIVE_CAM);
-
-    /* We position the camera such that the camera ray intersects the ground plane (Y=0)
-     * at the specified xz position. */
-    vec3_t new_pos = (vec3_t) {
-        xz_ground_pos.x - cos(DEG_TO_RAD(Camera_GetYaw(ACTIVE_CAM))) * offset_mag,
-        old_pos.y,
-        xz_ground_pos.z + sin(DEG_TO_RAD(Camera_GetYaw(ACTIVE_CAM))) * offset_mag 
-    };
-
-    Camera_SetPos(ACTIVE_CAM, new_pos);
-}
-
 void G_Shutdown(void)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1024,8 +1000,7 @@ void G_Shutdown(void)
     G_Timer_Shutdown();
     G_Sel_Shutdown();
 
-    for(int i = 0; i < NUM_CAMERAS; i++)
-        Camera_Free(s_gs.cameras[i]);
+    Camera_Free(s_gs.active_cam);
 
     kh_destroy(entity, s_gs.active);
     kh_destroy(entity, s_gs.dynamic);
@@ -1049,11 +1024,11 @@ void G_Update(void)
     vec_pentity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
 
-    vec3_t pos = Camera_GetPos(ACTIVE_CAM);
-    vec3_t dir = Camera_GetDir(ACTIVE_CAM);
+    vec3_t pos = Camera_GetPos(s_gs.active_cam);
+    vec3_t dir = Camera_GetDir(s_gs.active_cam);
 
     struct frustum cam_frust;
-    Camera_MakeFrustum(ACTIVE_CAM, &cam_frust);
+    Camera_MakeFrustum(s_gs.active_cam, &cam_frust);
 
     struct frustum light_frust;
     R_LightFrustum(s_gs.light_pos, pos, dir, &light_frust);
@@ -1091,7 +1066,7 @@ void G_Update(void)
         }
     });
 
-    G_Sel_Update(ACTIVE_CAM, &s_gs.visible, &s_gs.visible_obbs);
+    G_Sel_Update(s_gs.active_cam, &s_gs.visible, &s_gs.visible_obbs);
 
     PERF_RETURN_VOID();
 }
@@ -1166,7 +1141,7 @@ void G_Render(void)
     }
 
     if(s_gs.map) {
-        M_RenderMinimap(s_gs.map, ACTIVE_CAM);
+        M_RenderMinimap(s_gs.map, s_gs.active_cam);
         R_PushCmd((struct rcmd){ R_GL_MapInvalidate, 0 });
     }
 
@@ -1394,48 +1369,67 @@ bool G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out)
     return true;
 }
 
-bool G_ActivateCamera(int idx, enum cam_mode mode)
+void G_SetActiveCamera(struct camera *cam, enum cam_mode mode)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if( !(idx >= 0 && idx < NUM_CAMERAS) )
-        return false;
-
-    s_gs.active_cam_idx = idx;
-    s_gs.active_cam_mode = mode;
+    M_Raycast_Uninstall();
 
     switch(mode) {
-    case CAM_MODE_RTS:  CamControl_RTS_Install(s_gs.cameras[idx]); break;
-    case CAM_MODE_FPS:  CamControl_FPS_Install(s_gs.cameras[idx]); break;
+    case CAM_MODE_RTS:  
+
+        CamControl_RTS_Install(cam);
+        if(s_gs.map) {
+            M_RestrictRTSCamToMap(s_gs.map, cam);
+            M_Raycast_Install(s_gs.map, cam);
+        }
+        break;
+
+    case CAM_MODE_FPS:  
+
+        CamControl_FPS_Install(cam);
+        break;
+
+    case CAM_MODE_FREE: 
+
+        CamControl_UninstallActive();
+        break;
+
     default: assert(0);
     }
 
-    return true;
+    s_gs.active_cam = cam;
+    s_gs.active_cam_mode = mode;
 }
 
-vec3_t G_ActiveCamPos(void)
+struct camera *G_GetActiveCamera(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    return s_gs.active_cam;
+}
+
+enum cam_mode G_GetCameraMode(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    return s_gs.active_cam_mode;
+}
+
+void G_MoveActiveCamera(vec2_t xz_ground_pos)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    return Camera_GetPos(ACTIVE_CAM);
-}
+    vec3_t old_pos = Camera_GetPos(s_gs.active_cam);
+    float offset_mag = cos(DEG_TO_RAD(Camera_GetPitch(s_gs.active_cam))) * Camera_GetHeight(s_gs.active_cam);
 
-const struct camera *G_GetActiveCamera(void)
-{
-    ASSERT_IN_MAIN_THREAD();
+    /* We position the camera such that the camera ray intersects the ground plane (Y=0)
+     * at the specified xz position. */
+    vec3_t new_pos = (vec3_t) {
+        xz_ground_pos.x - cos(DEG_TO_RAD(Camera_GetYaw(s_gs.active_cam))) * offset_mag,
+        old_pos.y,
+        xz_ground_pos.z + sin(DEG_TO_RAD(Camera_GetYaw(s_gs.active_cam))) * offset_mag 
+    };
 
-    return ACTIVE_CAM;
-}
-
-vec3_t G_ActiveCamDir(void)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    mat4x4_t lookat;
-    Camera_MakeViewMat(ACTIVE_CAM, &lookat);
-    vec3_t ret = (vec3_t){-lookat.cols[0][2], -lookat.cols[1][2], -lookat.cols[2][2]};
-    PFM_Vec3_Normal(&ret, &ret);
-    return ret;
+    Camera_SetPos(s_gs.active_cam, new_pos);
 }
 
 bool G_UpdateTile(const struct tile_desc *desc, const struct tile *tile)
@@ -1683,46 +1677,35 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Write(stream, &dstate, "diplomacy_state"));
     }}
 
-    for(int i = 0; i < NUM_CAMERAS; i++) {
-
-        const struct camera *cam = s_gs.cameras[i];
-
-        struct attr cam_speed = (struct attr){
-            .type = TYPE_FLOAT,
-            .val.as_float = Camera_GetSpeed(cam)
-        };
-        CHK_TRUE_RET(Attr_Write(stream, &cam_speed, "cam_speed"));
-
-        struct attr cam_sens = (struct attr){
-            .type = TYPE_FLOAT,
-            .val.as_float = Camera_GetSens(cam)
-        };
-        CHK_TRUE_RET(Attr_Write(stream, &cam_sens, "cam_sensitivity"));
-
-        struct attr cam_pitch = (struct attr){
-            .type = TYPE_FLOAT,
-            .val.as_float = Camera_GetPitch(cam)
-        };
-        CHK_TRUE_RET(Attr_Write(stream, &cam_pitch, "cam_pitch"));
-
-        struct attr cam_yaw = (struct attr){
-            .type = TYPE_FLOAT,
-            .val.as_float = Camera_GetYaw(cam)
-        };
-        CHK_TRUE_RET(Attr_Write(stream, &cam_yaw, "cam_yaw"));
-
-        struct attr cam_pos = (struct attr){
-            .type = TYPE_VEC3,
-            .val.as_vec3 = Camera_GetPos(cam)
-        };
-        CHK_TRUE_RET(Attr_Write(stream, &cam_pos, "cam_position"));
-    }
-
-    struct attr active_cam_idx = (struct attr){
-        .type = TYPE_INT, 
-        .val.as_int = s_gs.active_cam_idx
+    struct attr cam_speed = (struct attr){
+        .type = TYPE_FLOAT,
+        .val.as_float = Camera_GetSpeed(s_gs.active_cam)
     };
-    CHK_TRUE_RET(Attr_Write(stream, &active_cam_idx, "active_cam_idx"));
+    CHK_TRUE_RET(Attr_Write(stream, &cam_speed, "cam_speed"));
+
+    struct attr cam_sens = (struct attr){
+        .type = TYPE_FLOAT,
+        .val.as_float = Camera_GetSens(s_gs.active_cam)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &cam_sens, "cam_sensitivity"));
+
+    struct attr cam_pitch = (struct attr){
+        .type = TYPE_FLOAT,
+        .val.as_float = Camera_GetPitch(s_gs.active_cam)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &cam_pitch, "cam_pitch"));
+
+    struct attr cam_yaw = (struct attr){
+        .type = TYPE_FLOAT,
+        .val.as_float = Camera_GetYaw(s_gs.active_cam)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &cam_yaw, "cam_yaw"));
+
+    struct attr cam_pos = (struct attr){
+        .type = TYPE_VEC3,
+        .val.as_vec3 = Camera_GetPos(s_gs.active_cam)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &cam_pos, "cam_position"));
 
     struct attr active_cam_mode = (struct attr){
         .type = TYPE_INT, 
@@ -1803,41 +1786,32 @@ bool G_LoadGlobalState(SDL_RWops *stream)
         s_gs.diplomacy_table[i][j] = attr.val.as_int;
     }}
 
-    for(int i = 0; i < NUM_CAMERAS; i++) {
-
-        struct camera *cam = s_gs.cameras[i];
-
-        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
-        Camera_SetSpeed(cam, attr.val.as_float);
-
-        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
-        Camera_SetSens(cam, attr.val.as_float);
-
-        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
-        float pitch = attr.val.as_float; 
-
-        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
-        float yaw = attr.val.as_float; 
-        Camera_SetPitchAndYaw(cam, pitch, yaw);
-
-        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_VEC3);
-        Camera_SetPos(cam, attr.val.as_vec3);
-    }
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+    Camera_SetSpeed(s_gs.active_cam, attr.val.as_float);
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-    CHK_TRUE_RET(attr.type == TYPE_INT);
-    int active_cam_idx = attr.val.as_int;
+    CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+    Camera_SetSens(s_gs.active_cam, attr.val.as_float);
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+    float pitch = attr.val.as_float; 
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+    float yaw = attr.val.as_float; 
+    Camera_SetPitchAndYaw(s_gs.active_cam, pitch, yaw);
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    Camera_SetPos(s_gs.active_cam, attr.val.as_vec3);
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     int active_cam_mode = attr.val.as_int;
 
-    G_ActivateCamera(active_cam_idx, active_cam_mode);
+    G_SetActiveCamera(s_gs.active_cam, active_cam_mode);
 
     return true;
 }

@@ -65,7 +65,8 @@ KHASH_DECLARE(entity, khint32_t, struct entity*)
 
 enum cam_mode{
     CAM_MODE_FPS,
-    CAM_MODE_RTS
+    CAM_MODE_RTS,
+    CAM_MODE_FREE,
 };
 
 enum diplomacy_state{
@@ -142,10 +143,10 @@ uint16_t G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, b
 bool   G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds);
 bool   G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out);
 
-bool   G_ActivateCamera(int idx, enum cam_mode mode);
-void   G_MoveActiveCamera(vec2_t xz_ground_pos);
-vec3_t G_ActiveCamPos(void);
-vec3_t G_ActiveCamDir(void);
+void           G_SetActiveCamera(struct camera *cam, enum cam_mode mode);
+struct camera *G_GetActiveCamera(void);
+enum cam_mode  G_GetCameraMode(void);
+void           G_MoveActiveCamera(vec2_t xz_ground_pos);
 
 bool   G_UpdateMinimapChunk(int chunk_r, int chunk_c);
 bool   G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
