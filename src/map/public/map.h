@@ -156,6 +156,7 @@ void   M_Raycast_Uninstall(void);
  * ------------------------------------------------------------------------
  */
 void   M_Raycast_SetHighlightSize(size_t size);
+size_t M_Raycast_GetHighlightSize(void);
 
 /* ------------------------------------------------------------------------
  * If returning true, the height of the map under the mouse cursor will be

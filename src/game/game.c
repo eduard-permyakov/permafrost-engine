@@ -361,7 +361,7 @@ static void g_create_render_input(struct render_input *out)
     assert(status == SS_OKAY);
 
     out->cam = s_gs.active_cam;
-    out->map = s_gs.map;
+    out->map = s_gs.prev_tick_map;
     out->shadows = shadows_setting.as_bool;
     out->light_pos = s_gs.light_pos;
 
@@ -797,6 +797,8 @@ bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
     s_gs.map = AL_MapFromPFMapStream(stream, update_navgrid);
     if(!s_gs.map)
         PERF_RETURN(false);
+
+    M_AL_ShallowCopy((struct map*)s_gs.prev_tick_map, s_gs.map);
 
     g_init_map();
     E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
@@ -1617,6 +1619,12 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &minimap_size, "minimap_size"));
 
+        struct attr highlight_size = (struct attr){
+            .type = TYPE_INT, 
+            .val.as_int = M_Raycast_GetHighlightSize()
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &highlight_size, "highlight_size"));
+
         CHK_TRUE_RET(G_Fog_SaveState(stream));
     }
 
@@ -1735,6 +1743,10 @@ bool G_LoadGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_INT);
         G_SetMinimapSize(attr.val.as_int);
 
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        M_Raycast_SetHighlightSize(attr.val.as_int);
+
         CHK_TRUE_RET(G_Fog_LoadState(stream));
     }else{
         G_ClearState();
@@ -1823,13 +1835,17 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!g_save_anim_state(stream))
         return false;
 
+    if(!G_Sel_SaveState(stream))
+        return false;
+
+    /* Movement and combat state is only saved for sessions with a loaded map */
+    if(!s_gs.map)
+        return true;
+    
     if(!G_Move_SaveState(stream))
         return false;
 
     if(!G_Combat_SaveState(stream))
-        return false;
-
-    if(!G_Sel_SaveState(stream))
         return false;
 
     return true;
@@ -1844,13 +1860,16 @@ bool G_LoadEntityState(SDL_RWops *stream)
     if(!g_load_anim_state(stream))
         return false;
 
+    if(!G_Sel_LoadState(stream))
+        return false;
+
+    if(!s_gs.map)
+        return true;
+
     if(!G_Move_LoadState(stream))
         return false;
 
     if(!G_Combat_LoadState(stream))
-        return false;
-
-    if(!G_Sel_LoadState(stream))
         return false;
 
     return true;

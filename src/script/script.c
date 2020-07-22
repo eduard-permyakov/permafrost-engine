@@ -137,6 +137,9 @@ static PyObject *PyPf_unpickle_object(PyObject *self, PyObject *args);
 static PyObject *PyPf_save_session(PyObject *self, PyObject *args);
 static PyObject *PyPf_load_session(PyObject *self, PyObject *args);
 
+static PyObject *PyPf_exec_push(PyObject *self, PyObject *args);
+static PyObject *PyPf_exec_pop(PyObject *self);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -398,6 +401,16 @@ static PyMethodDef pf_module_methods[] = {
     {"load_session",
     (PyCFunction)PyPf_load_session, METH_VARARGS,
     "Load a session previously saved with the 'save_session' call."},
+
+    {"exec_push",
+    (PyCFunction)PyPf_exec_push, METH_VARARGS,
+    "Replace the current subsession with one set up by the provided script, saving the current subsession onto a stack. "
+    "This is performed asynchronously. Failure is notified via an EVENT_SESSION_FAIL_LOAD event."},
+
+    {"exec_pop",
+    (PyCFunction)PyPf_exec_pop, METH_NOARGS,
+    "Pop a previously saved subsession, using it to replace the current subsession. "
+    "This is performed asynchronously. Failure is notified via an EVENT_SESSION_FAIL_LOAD event."},
 
     {NULL}  /* Sentinel */
 };
@@ -1611,6 +1624,25 @@ static void s_create_settings(void)
     assert(status == SS_OKAY);
 }
 
+static PyObject *PyPf_exec_push(PyObject *self, PyObject *args)
+{
+    const char *scriptname;
+
+    if(!PyArg_ParseTuple(args, "s", &scriptname)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
+        return NULL;
+    }
+
+    Session_RequestPush(scriptname);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_exec_pop(PyObject *self)
+{
+    Session_RequestPop();
+    Py_RETURN_NONE;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1773,6 +1805,9 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
 
     case EVENT_GAME_SIMSTATE_CHANGED:
         return Py_BuildValue("(i)", (intptr_t)arg);
+
+    case EVENT_SESSION_FAIL_LOAD:
+        return PyString_FromString(arg);
 
     default:
         Py_RETURN_NONE;

@@ -296,6 +296,11 @@ void M_Raycast_SetHighlightSize(size_t size)
     s_ctx.highlight_size = size;
 }
 
+size_t M_Raycast_GetHighlightSize(void)
+{
+    return s_ctx.highlight_size;
+}
+
 bool M_Raycast_IntersecCoordinate(vec3_t *out)
 {
     if(!s_ctx.valid) {

@@ -486,6 +486,8 @@ static void s_expose_event_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, EVENT_ATTACK_START);
     PY_EXPOSE_ENUM(module, EVENT_ATTACK_END);
     PY_EXPOSE_ENUM(module, EVENT_ENTITY_DEATH);
+    PY_EXPOSE_ENUM(module, EVENT_GAME_SIMSTATE_CHANGED);
+    PY_EXPOSE_ENUM(module, EVENT_SESSION_FAIL_LOAD);
     PY_EXPOSE_ENUM(module, EVENT_ENGINE_LAST);
 }
 

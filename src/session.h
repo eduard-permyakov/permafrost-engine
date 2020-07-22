@@ -37,11 +37,18 @@
 #define SESSION_H
 
 #include <stdbool.h>
-#include <SDL.h> /* for SDL_RWops */
 
-bool Session_Save(SDL_RWops *stream);
-void Session_RequestLoad(const char *path);
+struct SDL_RWops;
+
+bool Session_Init(void);
+void Session_Shutdown(void);
 void Session_ServiceRequests(void);
+
+bool Session_Save(struct SDL_RWops *stream);
+void Session_RequestLoad(const char *path);
+
+void Session_RequestPush(const char *script);
+void Session_RequestPop(void);
 
 #endif
 
