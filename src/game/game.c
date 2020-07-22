@@ -1394,7 +1394,10 @@ void G_SetActiveCamera(struct camera *cam, enum cam_mode mode)
 
     case CAM_MODE_FREE: 
 
-        CamControl_UninstallActive();
+        CamControl_Free_Install(cam);
+        if(s_gs.map) {
+            M_Raycast_Install(s_gs.map, cam);
+        }
         break;
 
     default: assert(0);

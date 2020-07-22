@@ -383,7 +383,6 @@ static bool engine_init(char **argv)
         goto fail_render;
     }
 
-    Cursor_SetRTSMode(true);
     E_Global_Register(SDL_QUIT, on_user_quit, NULL, 
         G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
 

@@ -217,6 +217,9 @@ static void on_mouseclick(void *user, void *event)
     SDL_Event *mouse_event = (SDL_Event*)event;
     assert(mouse_event->type == SDL_MOUSEBUTTONDOWN);
 
+    if(map->minimap_sz == 0)
+        return;
+
     if(!m_mouse_over_screen_rect(map, m_curr_terrain_bounds(map))){
         s_mouse_down_in_minimap = false;
         return;
@@ -369,6 +372,9 @@ void M_SetMinimapSize(struct map *map, int side_len)
 void M_RenderMinimap(const struct map *map, const struct camera *cam)
 {
     assert(map);
+    if(map->minimap_sz == 0)
+        return;
+
     struct quad curr_bounds = m_curr_bounds(map);
 
     vec2_t center;
@@ -395,6 +401,9 @@ void M_RenderMinimap(const struct map *map, const struct camera *cam)
 
 bool M_MouseOverMinimap(const struct map *map)
 {
+    if(map->minimap_sz == 0)
+        return false;
+
     return m_mouse_over_screen_rect(map, m_curr_bounds(map));
 }
 

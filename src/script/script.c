@@ -321,7 +321,8 @@ static PyMethodDef pf_module_methods[] = {
 
     {"set_minimap_size", 
     (PyCFunction)PyPf_set_minimap_size, METH_VARARGS,
-    "Set the center position of the minimap in virtual screen coordinates."},
+    "Set the center position of the minimap in virtual screen coordinates. "
+    "A size of 0 fully hides the minimap."},
 
     {"mouse_over_minimap",
     (PyCFunction)PyPf_mouse_over_minimap, METH_NOARGS,

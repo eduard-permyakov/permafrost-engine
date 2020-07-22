@@ -37,6 +37,7 @@
 #include "config.h"
 #include "event.h"
 #include "main.h"
+#include "cursor.h"
 #include "game/public/game.h"
 
 #include <stdbool.h>
@@ -307,6 +308,12 @@ static void rts_cam_on_update_end(void *unused1, void *unused2)
     Camera_TickFinishPerspective(cam);
 }
 
+static void free_cam_on_update_end(void *unused1, void *unused2)
+{
+    struct camera *cam = s_cam_ctx.active;
+    Camera_TickFinishPerspective(cam);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -351,7 +358,18 @@ void CamControl_RTS_Install(struct camera *cam)
     s_cam_ctx.installed_on_update_end = rts_cam_on_update_end;
     s_cam_ctx.active = cam;
 
-    SDL_SetRelativeMouseMode(false);
+    Cursor_SetRTSMode(true);
+}
+
+void CamControl_Free_Install(struct camera *cam)
+{
+    CamControl_UninstallActive();
+
+    E_Global_Register(EVENT_UPDATE_END, free_cam_on_update_end, NULL, 
+        G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
+
+    s_cam_ctx.installed_on_update_end = free_cam_on_update_end;
+    s_cam_ctx.active = cam;
 }
 
 void CamControl_UninstallActive(void)
@@ -365,6 +383,7 @@ void CamControl_UninstallActive(void)
 
     memset(&s_cam_ctx, 0, sizeof(s_cam_ctx));
 
+    Cursor_SetRTSMode(false);
     SDL_SetRelativeMouseMode(false);
 }
 
