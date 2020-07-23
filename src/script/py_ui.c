@@ -99,6 +99,7 @@ static PyObject *PyWindow_selectable_symbol_label(PyWindowObject *self, PyObject
 static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_checkbox(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_spacing(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -225,6 +226,10 @@ static PyMethodDef PyWindow_methods[] = {
     {"color_picker", 
     (PyCFunction)PyWindow_color_picker, METH_VARARGS,
     "Graphical color picker widget. Returns the selected color as an RGBA tuple."},
+
+    {"spacing", 
+    (PyCFunction)PyWindow_spacing, METH_VARARGS,
+    "Empty widget to consume slots in a row."},
 
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
@@ -493,10 +498,10 @@ static PyObject *PyWindow_layout_row_end(PyWindowObject *self)
 
 static PyObject *PyWindow_layout_row_push(PyWindowObject *self, PyObject *args)
 {
-    int width;
+    float width;
 
-    if(!PyArg_ParseTuple(args, "i", &width)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a single integer.");
+    if(!PyArg_ParseTuple(args, "f", &width)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single float.");
         return NULL;
     }
 
@@ -885,6 +890,19 @@ static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args)
     }
 
     return Py_BuildValue("(i,i,i,i)", color.r, color.g, color.b, color.a);
+}
+
+static PyObject *PyWindow_spacing(PyWindowObject *self, PyObject *args)
+{
+    int ncols;
+
+    if(!PyArg_ParseTuple(args, "i", &ncols)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an int.");
+        return NULL;
+    }
+
+    nk_spacing(s_nk_ctx, ncols);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyWindow_show(PyWindowObject *self)
