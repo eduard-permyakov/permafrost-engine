@@ -135,6 +135,8 @@ static PyObject *PyWindow_get_closed(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_hidden(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_interactive(PyWindowObject *self, void *closure);
 static int       PyWindow_set_interactive(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_background(PyWindowObject *self, void *closure);
+static int       PyWindow_set_background(PyWindowObject *self, PyObject *value, void *closure);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -328,6 +330,11 @@ static PyGetSetDef PyWindow_getset[] = {
     (getter)PyWindow_get_interactive, 
     (setter)PyWindow_set_interactive,
     "A read-write bool to enable or disable user interactivity for this window.",
+    NULL},
+    {"background",
+    (getter)PyWindow_get_background, 
+    (setter)PyWindow_set_background,
+    "An (R, G, B, A) tuple of floats specifying the background color of the window.", 
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -1282,6 +1289,50 @@ static int PyWindow_set_interactive(PyWindowObject *self, PyObject *value, void 
         self->flags &= ~NK_WINDOW_NOT_INTERACTIVE;
     else
         self->flags |= NK_WINDOW_NOT_INTERACTIVE;
+    return 0;
+}
+
+static PyObject *PyWindow_get_background(PyWindowObject *self, void *closure)
+{
+    if(self->style.fixed_background.type == NK_STYLE_ITEM_TEXPATH) {
+        return PyString_FromString(self->style.fixed_background.data.texpath);
+    }else{
+        assert(self->style.fixed_background.type == NK_STYLE_ITEM_COLOR);
+        struct nk_color clr = self->style.fixed_background.data.color;
+        return Py_BuildValue("iiii", clr.r, clr.g, clr.b, clr.a);
+    }
+}
+
+static int PyWindow_set_background(PyWindowObject *self, PyObject *value, void *closure)
+{
+    int r, g, b, a;
+
+    if(PyTuple_Check(value)) {
+    
+        if(!PyArg_ParseTuple(value, "iiii", &r, &g, &b, &a)) {
+            PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255) or a path string.");
+            return -1;
+        }
+
+        struct nk_color bg = (struct nk_color){r, g, b, a};
+        self->style.background = bg;
+        self->style.fixed_background = (struct nk_style_item){
+            .type = NK_STYLE_ITEM_COLOR, 
+            .data.color = bg
+        };
+
+    }else if (PyString_Check(value)) {
+
+        self->style.background = (struct nk_color){0, 0, 0, 0};
+        self->style.fixed_background = (struct nk_style_item){ .type = NK_STYLE_ITEM_TEXPATH };
+        pf_strlcpy(self->style.fixed_background.data.texpath, PyString_AS_STRING(value), 
+            sizeof(self->style.fixed_background.data.texpath));
+    
+    }else{
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255) or a path string.");
+        return -1;
+    }
+
     return 0;
 }
 
