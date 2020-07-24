@@ -67,6 +67,7 @@ typedef struct {
     struct rect             rect; /* In virtual window coordinates */
     int                     flags;
     struct nk_style_window  style;
+    PyObject               *header_style;
     int                     resize_mask;
     /* The resolution for which the position and size of the window are 
      * defined. When the physical screen resolution changes to one that is
@@ -99,7 +100,8 @@ static PyObject *PyWindow_selectable_symbol_label(PyWindowObject *self, PyObject
 static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_checkbox(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args);
-static PyObject *PyWindow_spacing(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_image(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_spacer(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -109,6 +111,7 @@ static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args);
 static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void      PyWindow_dealloc(PyWindowObject *self);
 
+static PyObject *PyWindow_get_header(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure);
@@ -122,6 +125,8 @@ static PyObject *PyWindow_get_combo_padding(PyWindowObject *self, void *closure)
 static int       PyWindow_set_combo_padding(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_border(PyWindowObject *self, void *closure);
 static int       PyWindow_set_border(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_border_color(PyWindowObject *self, void *closure);
+static int       PyWindow_set_border_color(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_group_border(PyWindowObject *self, void *closure);
 static int       PyWindow_set_group_border(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_combo_border(PyWindowObject *self, void *closure);
@@ -227,8 +232,12 @@ static PyMethodDef PyWindow_methods[] = {
     (PyCFunction)PyWindow_color_picker, METH_VARARGS,
     "Graphical color picker widget. Returns the selected color as an RGBA tuple."},
 
-    {"spacing", 
-    (PyCFunction)PyWindow_spacing, METH_VARARGS,
+    {"image", 
+    (PyCFunction)PyWindow_image, METH_VARARGS,
+    "Present an image at the specified path."},
+
+    {"spacer", 
+    (PyCFunction)PyWindow_spacer, METH_VARARGS,
     "Empty widget to consume slots in a row."},
 
     {"show", 
@@ -261,6 +270,10 @@ static PyMethodDef PyWindow_methods[] = {
 };
 
 static PyGetSetDef PyWindow_getset[] = {
+    {"header",
+    (getter)PyWindow_get_header, NULL,
+    "An pf.UIHeaderStyle type for controlling the style parameters of the window header.",
+    NULL},
     {"position",
     (getter)PyWindow_get_pos, NULL,
     "A tuple of two integers specifying the X and Y position of the window.",
@@ -297,6 +310,11 @@ static PyGetSetDef PyWindow_getset[] = {
     (getter)PyWindow_get_border, 
     (setter)PyWindow_set_border,
     "A float to control the border width of a window.", 
+    NULL},
+    {"border_color",
+    (getter)PyWindow_get_border_color, 
+    (setter)PyWindow_set_border_color,
+    "An (R,G,B,A) tuple to control the border color of a window.", 
     NULL},
     {"group_border",
     (getter)PyWindow_get_group_border, 
@@ -432,6 +450,12 @@ static int PyWindow_init(PyWindowObject *self, PyObject *args, PyObject *kwargs)
     || (resize_mask & ANCHOR_Y_MASK) == 0) {
 
         PyErr_SetString(PyExc_RuntimeError, "Invalid reisize mask: the window must have at least one anchor in each dimension.");
+        return -1;
+    }
+
+    self->header_style = PyObject_CallFunctionObjArgs((PyObject*)&PyUIHeaderStyle_type, NULL);
+    if(!self->header_style) {
+        assert(PyErr_Occurred());
         return -1;
     }
 
@@ -892,7 +916,20 @@ static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args)
     return Py_BuildValue("(i,i,i,i)", color.r, color.g, color.b, color.a);
 }
 
-static PyObject *PyWindow_spacing(PyWindowObject *self, PyObject *args)
+static PyObject *PyWindow_image(PyWindowObject *self, PyObject *args)
+{
+    const char *path;
+
+    if(!PyArg_ParseTuple(args, "s", &path)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
+        return NULL;
+    }
+
+    nk_image_texpath(s_nk_ctx, path);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_spacer(PyWindowObject *self, PyObject *args)
 {
     int ncols;
 
@@ -967,6 +1004,9 @@ static PyObject *PyWindow_pickle(PyWindowObject *self)
     Py_DECREF(resize_mask);
     CHK_TRUE(status, fail_pickle);
 
+    status = S_PickleObjgraph(self->header_style, stream);
+    CHK_TRUE(status, fail_pickle);
+
     CHK_TRUE_RET(S_UI_Style_SaveWindow(stream, &self->style));
     ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
 
@@ -1007,6 +1047,9 @@ static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args)
     PyObject *resize_mask = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
+    PyObject *header_style = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
     if(!name
     || !rect
     || !flags
@@ -1037,6 +1080,9 @@ static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args)
         goto fail_window;
     }
 
+    Py_INCREF(header_style);
+    winobj->header_style = header_style;
+
     Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
     ret = Py_BuildValue("(Oi)", winobj, (int)nread);
 
@@ -1047,8 +1093,9 @@ fail_unpickle:
     Py_XDECREF(name);
     Py_XDECREF(rect);
     Py_XDECREF(flags);
-    Py_XDECREF(resize_mask);
     Py_XDECREF(virt_res);
+    Py_XDECREF(resize_mask);
+    Py_XDECREF(header_style);
     SDL_RWclose(stream);
 fail_args:
     return ret;
@@ -1063,12 +1110,20 @@ static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
 static void PyWindow_dealloc(PyWindowObject *self)
 {
+    Py_DECREF(self->header_style);
+
     int idx;
     vec_win_indexof(&s_active_windows, self, equal, &idx);
     vec_win_del(&s_active_windows, idx);
 
     nk_window_close(s_nk_ctx, self->name);
     Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyObject *PyWindow_get_header(PyWindowObject *self, void *closure)
+{
+    Py_INCREF(self->header_style);
+    return self->header_style;
 }
 
 static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure)
@@ -1183,6 +1238,28 @@ static int PyWindow_set_border(PyWindowObject *self, PyObject *value, void *clos
     }
 
     self->style.border = border;
+    return 0;
+}
+
+static PyObject *PyWindow_get_border_color(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("iiii", 
+        self->style.border_color.r,
+        self->style.border_color.g,
+        self->style.border_color.b,
+        self->style.border_color.a
+    );
+}
+
+static int PyWindow_set_border_color(PyWindowObject *self, PyObject *value, void *closure)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(value, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255).");
+        return -1;
+    }
+
+    self->style.border_color = (struct nk_color){r, g, b, a};
     return 0;
 }
 
@@ -1377,6 +1454,7 @@ static void active_windows_update(void *user, void *event)
 
         struct nk_style_window saved_style = s_nk_ctx->style.window;
         s_nk_ctx->style.window = win->style;
+        s_nk_ctx->style.window.header = *S_UIHeaderStyleGet(win->header_style);
 
         struct nk_vec2i adj_vres = TO_VEC2I(UI_ArAdjustedVRes(TO_VEC2T(win->virt_res)));
         struct rect adj_bounds = UI_BoundsForAspectRatio(win->rect, 
@@ -1403,6 +1481,7 @@ static void active_windows_update(void *user, void *event)
         win->flags |= (s_nk_ctx->current->flags & sample_mask);
 
         nk_end(s_nk_ctx);
+        S_UIHeaderStyleSet(win->header_style, &s_nk_ctx->style.window.header);
         s_nk_ctx->style.window = saved_style;
     }
 }

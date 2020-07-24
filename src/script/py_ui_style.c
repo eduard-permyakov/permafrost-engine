@@ -59,147 +59,231 @@ typedef struct {
     struct nk_style_button *style;
 }PyUIButtonStyleObject;
 
-static PyObject *PyPf_UIButtonStyle_get_normal(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_normal(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_hover(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_hover(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_active(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_active(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_border_color(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_border_color(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_text_background(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_text_background(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_text_normal(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_text_normal(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_text_hover(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_text_hover(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_text_active(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_text_active(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_text_alignment(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_text_alignment(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_border(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_border(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_rounding(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_rounding(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_padding(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_padding(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_image_padding(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_image_padding(PyUIButtonStyleObject *self, PyObject *value, void *);
-static PyObject *PyPf_UIButtonStyle_get_touch_padding(PyUIButtonStyleObject *self, void *);
-static int       PyPf_UIButtonStyle_set_touch_padding(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_normal(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_normal(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_hover(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_hover(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_active(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_active(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_border_color(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_border_color(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_text_background(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_text_background(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_text_normal(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_text_normal(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_text_hover(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_text_hover(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_text_active(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_text_active(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_text_alignment(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_text_alignment(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_border(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_border(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_rounding(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_rounding(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_padding(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_padding(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_image_padding(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_image_padding(PyUIButtonStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIButtonStyle_get_touch_padding(PyUIButtonStyleObject *self, void *);
+static int       PyUIButtonStyle_set_touch_padding(PyUIButtonStyleObject *self, PyObject *value, void *);
 
-static PyObject *PyPf_UIButtonStyle_pickle(PyUIButtonStyleObject *self);
-static PyObject *PyPf_UIButtonStyle_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyUIButtonStyle_pickle(PyUIButtonStyleObject *self);
+static PyObject *PyUIButtonStyle_unpickle(PyObject *cls, PyObject *args);
+
+typedef struct {
+    PyObject_HEAD
+    struct nk_style_window_header style;
+}PyUIHeaderStyleObject;
+
+static PyObject *PyUIHeaderStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+
+static PyObject *PyUIHeaderStyle_get_normal(PyUIHeaderStyleObject *self, void *);
+static int       PyUIHeaderStyle_set_normal(PyUIHeaderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIHeaderStyle_get_hover(PyUIHeaderStyleObject *self, void *);
+static int       PyUIHeaderStyle_set_hover(PyUIHeaderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIHeaderStyle_get_active(PyUIHeaderStyleObject *self, void *);
+static int       PyUIHeaderStyle_set_active(PyUIHeaderStyleObject *self, PyObject *value, void *);
+
+static PyObject *PyUIHeaderStyle_get_label_normal(PyUIHeaderStyleObject *self, void *);
+static int       PyUIHeaderStyle_set_label_normal(PyUIHeaderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIHeaderStyle_get_label_hover(PyUIHeaderStyleObject *self, void *);
+static int       PyUIHeaderStyle_set_label_hover(PyUIHeaderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIHeaderStyle_get_label_active(PyUIHeaderStyleObject *self, void *);
+static int       PyUIHeaderStyle_set_label_active(PyUIHeaderStyleObject *self, PyObject *value, void *);
+
+static PyObject *PyUIHeaderStyle_pickle(PyUIHeaderStyleObject *self);
+static PyObject *PyUIHeaderStyle_unpickle(PyObject *cls, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static PyMethodDef PyPf_UIButtonStyle_methods[] = {
+static PyMethodDef PyUIButtonStyle_methods[] = {
     {"__pickle__", 
-    (PyCFunction)PyPf_UIButtonStyle_pickle, METH_NOARGS,
+    (PyCFunction)PyUIButtonStyle_pickle, METH_NOARGS,
     "Serialize a Permafrost Engine UIButtonStyle object to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyPf_UIButtonStyle_unpickle, METH_VARARGS | METH_CLASS,
-    "Create a new pf.Window instance from a string earlier returned from a __pickle__ method."
+    (PyCFunction)PyUIButtonStyle_unpickle, METH_VARARGS | METH_CLASS,
+    "Create a new pf.UIButtonStyle instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
     {NULL}  /* Sentinel */
 };
 
-static PyGetSetDef PyPf_UIButtonStyle_getset[] = {
+static PyGetSetDef PyUIButtonStyle_getset[] = {
     {"normal",
-    (getter)PyPf_UIButtonStyle_get_normal, 
-    (setter)PyPf_UIButtonStyle_set_normal,
+    (getter)PyUIButtonStyle_get_normal, 
+    (setter)PyUIButtonStyle_set_normal,
     "The look of the button in the normal state - either an (R, G, B, A) tuple or a "
     "string representing a path to an image.",
     NULL},
 
     {"hover",
-    (getter)PyPf_UIButtonStyle_get_hover, 
-    (setter)PyPf_UIButtonStyle_set_hover,
+    (getter)PyUIButtonStyle_get_hover, 
+    (setter)PyUIButtonStyle_set_hover,
     "The look of the button when the mouse is hovered over it - either an (R, G, B, A) tuple or a "
     "string representing a path to an image.",
     NULL},
 
     {"active",
-    (getter)PyPf_UIButtonStyle_get_active, 
-    (setter)PyPf_UIButtonStyle_set_active,
+    (getter)PyUIButtonStyle_get_active, 
+    (setter)PyUIButtonStyle_set_active,
     "The look of the button in the active (pressed) state - either an (R, G, B, A) tuple or a "
     "string representing a path to an image.",
     NULL},
 
-    {"active",
-    (getter)PyPf_UIButtonStyle_get_border_color, 
-    (setter)PyPf_UIButtonStyle_set_border_color,
+    {"border_color",
+    (getter)PyUIButtonStyle_get_border_color, 
+    (setter)PyUIButtonStyle_set_border_color,
     "The (R, G, B, A) color of button borders.",
     NULL},
 
     {"text_background",
-    (getter)PyPf_UIButtonStyle_get_text_background, 
-    (setter)PyPf_UIButtonStyle_set_text_background,
+    (getter)PyUIButtonStyle_get_text_background, 
+    (setter)PyUIButtonStyle_set_text_background,
     "The (R, G, B, A) background color of the text when an image is used for the button.",
     NULL},
 
     {"text_normal",
-    (getter)PyPf_UIButtonStyle_get_text_normal, 
-    (setter)PyPf_UIButtonStyle_set_text_normal,
+    (getter)PyUIButtonStyle_get_text_normal, 
+    (setter)PyUIButtonStyle_set_text_normal,
     "The (R, G, B, A) color of button text when the button is in the default state.",
     NULL},
 
     {"text_hover",
-    (getter)PyPf_UIButtonStyle_get_text_hover, 
-    (setter)PyPf_UIButtonStyle_set_text_hover,
+    (getter)PyUIButtonStyle_get_text_hover, 
+    (setter)PyUIButtonStyle_set_text_hover,
     "The (R, G, B, A) color of button text when the cursor is hovered over the button.",
     NULL},
 
     {"text_active",
-    (getter)PyPf_UIButtonStyle_get_text_active, 
-    (setter)PyPf_UIButtonStyle_set_text_active,
+    (getter)PyUIButtonStyle_get_text_active, 
+    (setter)PyUIButtonStyle_set_text_active,
     "The (R, G, B, A) color of button text when the button is in the active state.", 
     NULL},
 
     {"text_alignment",
-    (getter)PyPf_UIButtonStyle_get_text_alignment, 
-    (setter)PyPf_UIButtonStyle_set_text_alignment,
+    (getter)PyUIButtonStyle_get_text_alignment, 
+    (setter)PyUIButtonStyle_set_text_alignment,
     "A set of flags to control the text alignment of the button label.", 
     NULL},
 
     {"border",
-    (getter)PyPf_UIButtonStyle_get_border, 
-    (setter)PyPf_UIButtonStyle_set_border,
+    (getter)PyUIButtonStyle_get_border, 
+    (setter)PyUIButtonStyle_set_border,
     "A floating-point value of the button border width, in pixels.", 
     NULL},
 
     {"rounding",
-    (getter)PyPf_UIButtonStyle_get_rounding, 
-    (setter)PyPf_UIButtonStyle_set_rounding,
+    (getter)PyUIButtonStyle_get_rounding, 
+    (setter)PyUIButtonStyle_set_rounding,
     "A floating-point value to control how rounded the button corners are.", 
     NULL},
 
     {"padding",
-    (getter)PyPf_UIButtonStyle_get_padding, 
-    (setter)PyPf_UIButtonStyle_set_padding,
+    (getter)PyUIButtonStyle_get_padding, 
+    (setter)PyUIButtonStyle_set_padding,
     "An (X, Y) tuple of floats to control the padding around buttons.", 
     NULL},
 
     {"image_padding",
-    (getter)PyPf_UIButtonStyle_get_image_padding, 
-    (setter)PyPf_UIButtonStyle_set_image_padding,
+    (getter)PyUIButtonStyle_get_image_padding, 
+    (setter)PyUIButtonStyle_set_image_padding,
     "An (X, Y) tuple of floats to control the padding around images.", 
     NULL},
 
     {"touch_padding",
-    (getter)PyPf_UIButtonStyle_get_touch_padding, 
-    (setter)PyPf_UIButtonStyle_set_touch_padding,
+    (getter)PyUIButtonStyle_get_touch_padding, 
+    (setter)PyUIButtonStyle_set_touch_padding,
     "An (X, Y) tuple of floats to control the clickable region of the button.", 
     NULL},
 
     {NULL}  /* Sentinel */
 };
 
-static PyTypeObject PyUIButtonStyle_type = {
+static PyMethodDef PyUIHeaderStyle_methods[] = {
+    {"__pickle__", 
+    (PyCFunction)PyUIHeaderStyle_pickle, METH_NOARGS,
+    "Serialize a Permafrost Engine UIButtonStyle object to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyUIHeaderStyle_unpickle, METH_VARARGS | METH_CLASS,
+    "Create a new pf.UIHeaderStyle instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyGetSetDef PyUIHeaderStyle_getset[] = {
+    {"normal",
+    (getter)PyUIHeaderStyle_get_normal, 
+    (setter)PyUIHeaderStyle_set_normal,
+    "The look of the button in the normal state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"hover",
+    (getter)PyUIHeaderStyle_get_hover, 
+    (setter)PyUIHeaderStyle_set_hover,
+    "The look of the button when the mouse is hovered over it - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"active",
+    (getter)PyUIHeaderStyle_get_active, 
+    (setter)PyUIHeaderStyle_set_active,
+    "The look of the button in the active (pressed) state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"label_normal",
+    (getter)PyUIHeaderStyle_get_label_normal, 
+    (setter)PyUIHeaderStyle_set_label_normal,
+    "The (R, G, B, A) color of header label when the window is in the default state.",
+    NULL},
+
+    {"label_hover",
+    (getter)PyUIHeaderStyle_get_label_hover, 
+    (setter)PyUIHeaderStyle_set_label_hover,
+    "The (R, G, B, A) color of header label when the cursor is hovered over the window.",
+    NULL},
+
+    {"label_active",
+    (getter)PyUIHeaderStyle_get_label_active, 
+    (setter)PyUIHeaderStyle_set_label_active,
+    "The (R, G, B, A) color of header label when the window is in the active state.", 
+    NULL},
+
+    {NULL}  /* Sentinel */
+};
+
+/*****************************************************************************/
+/* GLOBAL VARIABLES                                                          */
+/*****************************************************************************/
+
+PyTypeObject PyUIButtonStyle_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "pf.UIButtonStyle",        /* tp_name */
     sizeof(PyUIButtonStyleObject), /* tp_basicsize */
@@ -227,9 +311,9 @@ static PyTypeObject PyUIButtonStyle_type = {
     0,                         /* tp_weaklistoffset */
     0,                         /* tp_iter */
     0,                         /* tp_iternext */
-    PyPf_UIButtonStyle_methods, /* tp_methods */
+    PyUIButtonStyle_methods, /* tp_methods */
     0,                         /* tp_members */
-    PyPf_UIButtonStyle_getset, /* tp_getset */
+    PyUIButtonStyle_getset, /* tp_getset */
     0,                         /* tp_base */
     0,                         /* tp_dict */
     0,                         /* tp_descr_get */
@@ -238,6 +322,47 @@ static PyTypeObject PyUIButtonStyle_type = {
     0,                         /* tp_init */
     0,                         /* tp_alloc */
     0,                         /* tp_new */
+};
+
+PyTypeObject PyUIHeaderStyle_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "pf.UIHeaderStyle",        /* tp_name */
+    sizeof(PyUIHeaderStyleObject), /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    0,                         /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_reserved */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash  */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT, /* tp_flags */
+    "Style configuration for Permafrost Engine UI window headers.", /* tp_doc */
+    0,                         /* tp_traverse */
+    0,                         /* tp_clear */
+    0,                         /* tp_richcompare */
+    0,                         /* tp_weaklistoffset */
+    0,                         /* tp_iter */
+    0,                         /* tp_iternext */
+    PyUIHeaderStyle_methods, /* tp_methods */
+    0,                         /* tp_members */
+    PyUIHeaderStyle_getset, /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    0,                         /* tp_init */
+    0,                         /* tp_alloc */
+    PyUIHeaderStyle_new,       /* tp_new */
 };
 
 /*****************************************************************************/
@@ -285,7 +410,7 @@ static int parse_rgba(PyObject *tuple, float out[4])
     return 0;
 }
 
-static PyObject *PyPf_UIButtonStyle_get_normal(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_normal(PyUIButtonStyleObject *self, void *closure)
 {
     if(self->style->normal.type == NK_STYLE_ITEM_COLOR) {
         return Py_BuildValue("(i,i,i,i)", 
@@ -299,7 +424,7 @@ static PyObject *PyPf_UIButtonStyle_get_normal(PyUIButtonStyleObject *self, void
     }
 }
 
-static int PyPf_UIButtonStyle_set_normal(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_normal(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     float rgba[4];
 
@@ -322,7 +447,7 @@ static int PyPf_UIButtonStyle_set_normal(PyUIButtonStyleObject *self, PyObject *
     }
 }
 
-static PyObject *PyPf_UIButtonStyle_get_hover(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_hover(PyUIButtonStyleObject *self, void *closure)
 {
     if(self->style->hover.type == NK_STYLE_ITEM_COLOR) {
         return Py_BuildValue("(i,i,i,i)", 
@@ -336,7 +461,7 @@ static PyObject *PyPf_UIButtonStyle_get_hover(PyUIButtonStyleObject *self, void 
     }
 }
 
-static int PyPf_UIButtonStyle_set_hover(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_hover(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     float rgba[4];
 
@@ -359,7 +484,7 @@ static int PyPf_UIButtonStyle_set_hover(PyUIButtonStyleObject *self, PyObject *v
     }
 }
 
-static PyObject *PyPf_UIButtonStyle_get_active(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_active(PyUIButtonStyleObject *self, void *closure)
 {
     if(self->style->active.type == NK_STYLE_ITEM_COLOR) {
         return Py_BuildValue("(i,i,i,i)", 
@@ -373,7 +498,7 @@ static PyObject *PyPf_UIButtonStyle_get_active(PyUIButtonStyleObject *self, void
     }
 }
 
-static int PyPf_UIButtonStyle_set_active(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_active(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     float rgba[4];
 
@@ -396,7 +521,7 @@ static int PyPf_UIButtonStyle_set_active(PyUIButtonStyleObject *self, PyObject *
     }
 }
 
-static PyObject *PyPf_UIButtonStyle_get_border_color(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_border_color(PyUIButtonStyleObject *self, void *closure)
 {
     return Py_BuildValue("(i,i,i,i)", 
         self->style->border_color.r,
@@ -405,7 +530,7 @@ static PyObject *PyPf_UIButtonStyle_get_border_color(PyUIButtonStyleObject *self
         self->style->border_color.a);
 }
 
-static int PyPf_UIButtonStyle_set_border_color(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_border_color(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     float rgba[4];
 
@@ -418,7 +543,7 @@ static int PyPf_UIButtonStyle_set_border_color(PyUIButtonStyleObject *self, PyOb
     return 0;
 }
 
-static PyObject *PyPf_UIButtonStyle_get_text_background(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_text_background(PyUIButtonStyleObject *self, void *closure)
 {
     return Py_BuildValue("(i,i,i,i)", 
         self->style->text_background.r,
@@ -427,7 +552,7 @@ static PyObject *PyPf_UIButtonStyle_get_text_background(PyUIButtonStyleObject *s
         self->style->text_background.a);
 }
 
-static int PyPf_UIButtonStyle_set_text_background(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_text_background(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     float rgba[4];
 
@@ -440,7 +565,7 @@ static int PyPf_UIButtonStyle_set_text_background(PyUIButtonStyleObject *self, P
     return 0;
 }
 
-static PyObject *PyPf_UIButtonStyle_get_text_normal(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_text_normal(PyUIButtonStyleObject *self, void *closure)
 {
     return Py_BuildValue("(i,i,i,i)", 
         self->style->text_normal.r,
@@ -449,7 +574,7 @@ static PyObject *PyPf_UIButtonStyle_get_text_normal(PyUIButtonStyleObject *self,
         self->style->text_normal.a);
 }
 
-static int PyPf_UIButtonStyle_set_text_normal(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_text_normal(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     float rgba[4];
 
@@ -462,7 +587,7 @@ static int PyPf_UIButtonStyle_set_text_normal(PyUIButtonStyleObject *self, PyObj
     return 0;
 }
 
-static PyObject *PyPf_UIButtonStyle_get_text_hover(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_text_hover(PyUIButtonStyleObject *self, void *closure)
 {
     return Py_BuildValue("(i,i,i,i)", 
         self->style->text_hover.r,
@@ -471,7 +596,7 @@ static PyObject *PyPf_UIButtonStyle_get_text_hover(PyUIButtonStyleObject *self, 
         self->style->text_hover.a);
 }
 
-static int PyPf_UIButtonStyle_set_text_hover(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_text_hover(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     float rgba[4];
 
@@ -484,7 +609,7 @@ static int PyPf_UIButtonStyle_set_text_hover(PyUIButtonStyleObject *self, PyObje
     return 0;
 }
 
-static PyObject *PyPf_UIButtonStyle_get_text_active(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_text_active(PyUIButtonStyleObject *self, void *closure)
 {
     return Py_BuildValue("(i,i,i,i)", 
         self->style->text_active.r,
@@ -493,7 +618,7 @@ static PyObject *PyPf_UIButtonStyle_get_text_active(PyUIButtonStyleObject *self,
         self->style->text_active.a);
 }
 
-static int PyPf_UIButtonStyle_set_text_active(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_text_active(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     float rgba[4];
 
@@ -506,12 +631,12 @@ static int PyPf_UIButtonStyle_set_text_active(PyUIButtonStyleObject *self, PyObj
     return 0;
 }
 
-static PyObject *PyPf_UIButtonStyle_get_text_alignment(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_text_alignment(PyUIButtonStyleObject *self, void *closure)
 {
     return Py_BuildValue("I", self->style->text_alignment);
 }
 
-static int PyPf_UIButtonStyle_set_text_alignment(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_text_alignment(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     if(!PyInt_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Type must be an unsigned integer.");
@@ -522,12 +647,12 @@ static int PyPf_UIButtonStyle_set_text_alignment(PyUIButtonStyleObject *self, Py
     return 0;
 }
 
-static PyObject *PyPf_UIButtonStyle_get_border(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_border(PyUIButtonStyleObject *self, void *closure)
 {
     return Py_BuildValue("f", self->style->border);
 }
 
-static int PyPf_UIButtonStyle_set_border(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_border(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Type must be a float.");
@@ -538,12 +663,12 @@ static int PyPf_UIButtonStyle_set_border(PyUIButtonStyleObject *self, PyObject *
     return 0;
 }
 
-static PyObject *PyPf_UIButtonStyle_get_rounding(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_rounding(PyUIButtonStyleObject *self, void *closure)
 {
     return Py_BuildValue("f", self->style->rounding);
 }
 
-static int PyPf_UIButtonStyle_set_rounding(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_rounding(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Type must be a float.");
@@ -554,14 +679,14 @@ static int PyPf_UIButtonStyle_set_rounding(PyUIButtonStyleObject *self, PyObject
     return 0;
 }
 
-static PyObject *PyPf_UIButtonStyle_get_padding(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_padding(PyUIButtonStyleObject *self, void *closure)
 {
     return Py_BuildValue("(f,f)", 
         self->style->padding.x,
         self->style->padding.y);
 }
 
-static int PyPf_UIButtonStyle_set_padding(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_padding(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     float x, y;
 
@@ -574,14 +699,14 @@ static int PyPf_UIButtonStyle_set_padding(PyUIButtonStyleObject *self, PyObject 
     return 0;
 }
 
-static PyObject *PyPf_UIButtonStyle_get_image_padding(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_image_padding(PyUIButtonStyleObject *self, void *closure)
 {
     return Py_BuildValue("(f,f)", 
         self->style->image_padding.x,
         self->style->image_padding.y);
 }
 
-static int PyPf_UIButtonStyle_set_image_padding(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_image_padding(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     float x, y;
 
@@ -594,14 +719,14 @@ static int PyPf_UIButtonStyle_set_image_padding(PyUIButtonStyleObject *self, PyO
     return 0;
 }
 
-static PyObject *PyPf_UIButtonStyle_get_touch_padding(PyUIButtonStyleObject *self, void *closure)
+static PyObject *PyUIButtonStyle_get_touch_padding(PyUIButtonStyleObject *self, void *closure)
 {
     return Py_BuildValue("(f,f)", 
         self->style->touch_padding.x,
         self->style->touch_padding.y);
 }
 
-static int PyPf_UIButtonStyle_set_touch_padding(PyUIButtonStyleObject *self, PyObject *value, void *closure)
+static int PyUIButtonStyle_set_touch_padding(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     float x, y;
 
@@ -869,7 +994,7 @@ static bool load_header(struct SDL_RWops *stream, struct nk_style_window_header 
     return true;
 }
 
-static PyObject *PyPf_UIButtonStyle_pickle(PyUIButtonStyleObject *self)
+static PyObject *PyUIButtonStyle_pickle(PyUIButtonStyleObject *self)
 {
     PyObject *ret = NULL;
 
@@ -887,7 +1012,7 @@ fail_alloc:
     return ret;
 }
 
-static PyObject *PyPf_UIButtonStyle_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyUIButtonStyle_unpickle(PyObject *cls, PyObject *args)
 {
     PyObject *ret = NULL;
     const char *str;
@@ -925,6 +1050,259 @@ fail_args:
     return ret;
 }
 
+static PyObject *PyUIHeaderStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    PyUIHeaderStyleObject *self = (PyUIHeaderStyleObject*)type->tp_alloc(type, 0);
+    if(!self)
+        return NULL;
+
+    self->style.align = NK_HEADER_RIGHT;
+    self->style.close_symbol = NK_SYMBOL_X;
+    self->style.minimize_symbol = NK_SYMBOL_MINUS;
+    self->style.maximize_symbol = NK_SYMBOL_PLUS;
+    self->style.normal = nk_style_item_color(nk_rgba(40, 40, 40, 255));
+    self->style.hover = nk_style_item_color(nk_rgba(40, 40, 40, 255));
+    self->style.active = nk_style_item_color(nk_rgba(40, 40, 40, 255));
+    self->style.label_normal = nk_rgba(175,175,175,255);
+    self->style.label_hover = nk_rgba(175,175,175,255);
+    self->style.label_active = nk_rgba(175,175,175,255);
+    self->style.label_padding = nk_vec2(4,4);
+    self->style.padding = nk_vec2(4,4);
+    self->style.spacing = nk_vec2(0,0);
+
+    return (PyObject*)self;
+}
+
+static PyObject *PyUIHeaderStyle_get_normal(PyUIHeaderStyleObject *self, void *closure)
+{
+    if(self->style.normal.type == NK_STYLE_ITEM_COLOR) {
+        return Py_BuildValue("(i,i,i,i)", 
+            self->style.normal.data.color.r,
+            self->style.normal.data.color.g,
+            self->style.normal.data.color.b,
+            self->style.normal.data.color.a);
+    }else{
+
+        return PyString_FromString(self->style.normal.data.texpath);
+    }
+}
+
+static int PyUIHeaderStyle_set_normal(PyUIHeaderStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) == 0) {
+
+        self->style.normal.type = NK_STYLE_ITEM_COLOR;
+        self->style.normal.data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+        return 0;
+
+    }else if(PyString_Check(value)) {
+
+        self->style.normal.type = NK_STYLE_ITEM_TEXPATH;
+        pf_strlcpy(self->style.normal.data.texpath, PyString_AS_STRING(value),
+            ARR_SIZE(self->style.normal.data.texpath));
+        return 0;
+
+    }else{
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
+        return -1; 
+    }
+}
+
+static PyObject *PyUIHeaderStyle_get_hover(PyUIHeaderStyleObject *self, void *closure)
+{
+    if(self->style.hover.type == NK_STYLE_ITEM_COLOR) {
+        return Py_BuildValue("(i,i,i,i)", 
+            self->style.hover.data.color.r,
+            self->style.hover.data.color.g,
+            self->style.hover.data.color.b,
+            self->style.hover.data.color.a);
+    }else{
+
+        return PyString_FromString(self->style.hover.data.texpath);
+    }
+}
+
+static int PyUIHeaderStyle_set_hover(PyUIHeaderStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) == 0) {
+
+        self->style.hover.type = NK_STYLE_ITEM_COLOR;
+        self->style.hover.data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+        return 0;
+
+    }else if(PyString_Check(value)) {
+
+        self->style.hover.type = NK_STYLE_ITEM_TEXPATH;
+        pf_strlcpy(self->style.hover.data.texpath, PyString_AS_STRING(value),
+            ARR_SIZE(self->style.hover.data.texpath));
+        return 0;
+
+    }else{
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
+        return -1; 
+    }
+}
+
+static PyObject *PyUIHeaderStyle_get_active(PyUIHeaderStyleObject *self, void *closure)
+{
+    if(self->style.active.type == NK_STYLE_ITEM_COLOR) {
+        return Py_BuildValue("(i,i,i,i)", 
+            self->style.active.data.color.r,
+            self->style.active.data.color.g,
+            self->style.active.data.color.b,
+            self->style.active.data.color.a);
+    }else{
+
+        return PyString_FromString(self->style.active.data.texpath);
+    }
+}
+
+static int PyUIHeaderStyle_set_active(PyUIHeaderStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) == 0) {
+
+        self->style.active.type = NK_STYLE_ITEM_COLOR;
+        self->style.active.data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+        return 0;
+
+    }else if(PyString_Check(value)) {
+
+        self->style.active.type = NK_STYLE_ITEM_TEXPATH;
+        pf_strlcpy(self->style.active.data.texpath, PyString_AS_STRING(value),
+            ARR_SIZE(self->style.active.data.texpath));
+        return 0;
+
+    }else{
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
+        return -1; 
+    }
+}
+
+static PyObject *PyUIHeaderStyle_get_label_normal(PyUIHeaderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style.label_normal.r,
+        self->style.label_normal.g,
+        self->style.label_normal.b,
+        self->style.label_normal.a);
+}
+
+static int PyUIHeaderStyle_set_label_normal(PyUIHeaderStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style.label_normal = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIHeaderStyle_get_label_hover(PyUIHeaderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style.label_hover.r,
+        self->style.label_hover.g,
+        self->style.label_hover.b,
+        self->style.label_hover.a);
+}
+
+static int PyUIHeaderStyle_set_label_hover(PyUIHeaderStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style.label_hover = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIHeaderStyle_get_label_active(PyUIHeaderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style.label_active.r,
+        self->style.label_active.g,
+        self->style.label_active.b,
+        self->style.label_active.a);
+}
+
+static int PyUIHeaderStyle_set_label_active(PyUIHeaderStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style.label_active = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIHeaderStyle_pickle(PyUIHeaderStyleObject *self)
+{
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+    CHK_TRUE(save_header(stream, &self->style), fail_pickle);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error pickling pf.UIHeaderStyle object");
+    }
+    return ret;
+}
+
+static PyObject *PyUIHeaderStyle_unpickle(PyObject *cls, PyObject *args)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    int status;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyObject *styleobj = PyObject_CallFunctionObjArgs((PyObject*)&PyUIHeaderStyle_type, NULL);
+    assert(styleobj || PyErr_Occurred());
+    CHK_TRUE(styleobj, fail_unpickle);
+
+    CHK_TRUE(load_header(stream, &((PyUIHeaderStyleObject*)styleobj)->style), fail_unpickle);
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", styleobj, (int)nread);
+    Py_DECREF(styleobj);
+
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_args:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error unpickling pf.UIHeaderStyle object");
+    }
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -937,16 +1315,21 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     Py_INCREF(&PyUIButtonStyle_type);
     PyModule_AddObject(module, "UIButtonStyle", (PyObject*)&PyUIButtonStyle_type);
 
+    /* Header style */
+    if(PyType_Ready(&PyUIHeaderStyle_type) < 0)
+        return;
+    Py_INCREF(&PyUIHeaderStyle_type);
+    PyModule_AddObject(module, "UIHeaderStyle", (PyObject*)&PyUIHeaderStyle_type);
+
+    /* Global style objects */
     PyUIButtonStyleObject *global_button_style = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
     assert(global_button_style);
     global_button_style->style = &ctx->style.button;
-
     PyModule_AddObject(module, "button_style", (PyObject*)global_button_style);
 }
 
 bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_window *window)
 {
-    CHK_TRUE_RET(save_header(stream, &window->header));
     CHK_TRUE_RET(save_item(stream, &window->fixed_background));
     CHK_TRUE_RET(save_color(stream, window->background));
 
@@ -986,7 +1369,6 @@ bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_windo
 
 bool S_UI_Style_LoadWindow(struct SDL_RWops *stream, struct nk_style_window *out)
 {
-    CHK_TRUE_RET(load_header(stream, &out->header));
     CHK_TRUE_RET(load_item(stream, &out->fixed_background));
     CHK_TRUE_RET(load_color(stream, &out->background));
 
@@ -1021,6 +1403,25 @@ bool S_UI_Style_LoadWindow(struct SDL_RWops *stream, struct nk_style_window *out
     CHK_TRUE_RET(load_vec2(stream, &out->menu_padding));
     CHK_TRUE_RET(load_vec2(stream, &out->tooltip_padding));
 
+    return true;
+}
+
+struct nk_style_window_header *S_UIHeaderStyleGet(PyObject *obj)
+{
+    if(!PyObject_IsInstance(obj, (PyObject*)&PyUIHeaderStyle_type))
+        return NULL;
+
+    PyUIHeaderStyleObject *headerobj = (PyUIHeaderStyleObject*)obj;
+    return &headerobj->style;
+}
+
+bool S_UIHeaderStyleSet(PyObject *obj, struct nk_style_window_header *header)
+{
+    if(!PyObject_IsInstance(obj, (PyObject*)&PyUIHeaderStyle_type))
+        return false;
+
+    PyUIHeaderStyleObject *headerobj = (PyUIHeaderStyleObject*)obj;
+    headerobj->style = *header;
     return true;
 }
 
