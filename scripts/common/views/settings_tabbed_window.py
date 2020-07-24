@@ -35,6 +35,8 @@
 import pf
 from common.constants import *
 
+import common.button_style_ctx as btc
+
 class SettingsTabbedWindow(pf.Window):
 
     WIDTH = 500
@@ -70,31 +72,22 @@ class SettingsTabbedWindow(pf.Window):
     def update(self):
 
         def settings_tab_group():
-            orig_rounding = pf.button_style.rounding
-            pf.button_style.rounding = 0.0
+            with btc.ButtonStyle(rounding=0.0):
 
-            for idx in range(0, len(self.child_windows)):
+                for idx in range(0, len(self.child_windows)):
 
-                def on_tab_click():
-                    self.active_idx = idx;
-                    pf.global_event(EVENT_SETTINGS_TAB_SEL_CHANGED, self.active_idx)
+                    def on_tab_click():
+                        self.active_idx = idx;
+                        pf.global_event(EVENT_SETTINGS_TAB_SEL_CHANGED, self.active_idx)
 
-                self.layout_row_dynamic(40, 1)
-                if idx == self.active_idx:
-                    normal_style = pf.button_style.normal
-                    hover_style = pf.button_style.hover
-
-                    pf.button_style.normal = SettingsTabbedWindow.SELECTED_COLOR
-                    pf.button_style.hover = SettingsTabbedWindow.SELECTED_HOVER_COLOR
-
-                    self.button_label(self.labels[idx], on_tab_click)
-
-                    pf.button_style.normal = normal_style
-                    pf.button_style.hover = hover_style
-                else:
-                    self.button_label(self.labels[idx], on_tab_click)
-
-            pf.button_style.rounding = orig_rounding
+                    self.layout_row_dynamic(40, 1)
+                    if idx == self.active_idx:
+                        with btc.ButtonStyle(
+                            normal=SettingsTabbedWindow.SELECTED_COLOR, 
+                            hover=SettingsTabbedWindow.SELECTED_HOVER_COLOR):
+                            self.button_label(self.labels[idx], on_tab_click)
+                    else:
+                        self.button_label(self.labels[idx], on_tab_click)
 
         BOT_PAD = 10
         self.layout_row_begin(pf.NK_STATIC, SettingsTabbedWindow.HEIGHT - self.header_height - \

@@ -36,6 +36,8 @@ import pf
 from constants import *
 import globals
 
+import common.button_style_ctx as btc
+
 class DiplomacyTabWindow(pf.Window):
 
     DISABLED_BG_COLOR = (40, 40, 40, 255)
@@ -83,20 +85,17 @@ class DiplomacyTabWindow(pf.Window):
         if len(factions_list) > 1:
             self.button_label("Delete Selected", on_delete_selected)
         else: #disabled - We cannot delete the very last faction
-            old_style = (pf.button_style.normal, pf.button_style.hover, pf.button_style.active)
-            old_style_text = (pf.button_style.text_normal, pf.button_style.text_hover, pf.button_style.text_active)
 
-            pf.button_style.normal = DiplomacyTabWindow.DISABLED_BG_COLOR
-            pf.button_style.hover = DiplomacyTabWindow.DISABLED_BG_COLOR
-            pf.button_style.active = DiplomacyTabWindow.DISABLED_BG_COLOR
-            pf.button_style.text_normal = DiplomacyTabWindow.DISABLED_TEXT_COLOR
-            pf.button_style.text_hover = DiplomacyTabWindow.DISABLED_TEXT_COLOR
-            pf.button_style.text_active = DiplomacyTabWindow.DISABLED_TEXT_COLOR
-
-            self.button_label("Delete Selected", lambda : None)
-
-            pf.button_style.normal, pf.button_style.hover, pf.button_style.active = old_style
-            pf.button_style.text_normal, pf.button_style.text_hover, pf.button_style.text_active = old_style_text
+            button_style = {
+                "normal" : DiplomacyTabWindow.DISABLED_BG_COLOR,
+                "hover" : DiplomacyTabWindow.DISABLED_BG_COLOR,
+                "active" : DiplomacyTabWindow.DISABLED_BG_COLOR,
+                "text_normal" : DiplomacyTabWindow.DISABLED_TEXT_COLOR,
+                "text_hover" : DiplomacyTabWindow.DISABLED_TEXT_COLOR,
+                "text_active" : DiplomacyTabWindow.DISABLED_TEXT_COLOR
+            }
+            with btc.ButtonStyle(**button_style):
+                self.button_label("Delete Selected", lambda : None)
 
         self.layout_row_dynamic(10, 1)
 
@@ -125,21 +124,17 @@ class DiplomacyTabWindow(pf.Window):
             self.layout_row_dynamic(30, 1)
             self.button_label("Add New Faction", on_new_fac)
         else: #disabled - Can't update name to empty string
-            old_style = (pf.button_style.normal, pf.button_style.hover, pf.button_style.active)
-            old_style_text = (pf.button_style.text_normal, pf.button_style.text_hover, pf.button_style.text_active)
-
-            pf.button_style.normal = DiplomacyTabWindow.DISABLED_BG_COLOR
-            pf.button_style.hover = DiplomacyTabWindow.DISABLED_BG_COLOR
-            pf.button_style.active = DiplomacyTabWindow.DISABLED_BG_COLOR
-            pf.button_style.text_normal = DiplomacyTabWindow.DISABLED_TEXT_COLOR
-            pf.button_style.text_hover = DiplomacyTabWindow.DISABLED_TEXT_COLOR
-            pf.button_style.text_active = DiplomacyTabWindow.DISABLED_TEXT_COLOR
-
-            self.layout_row_dynamic(30, 1)
-            self.button_label("Update Selected", lambda : None)
-            self.layout_row_dynamic(30, 1)
-            self.button_label("Add New Faction", lambda : None)
-
-            pf.button_style.normal, pf.button_style.hover, pf.button_style.active = old_style
-            pf.button_style.text_normal, pf.button_style.text_hover, pf.button_style.text_active = old_style_text
+            button_style = {
+                "normal" : DiplomacyTabWindow.DISABLED_BG_COLOR,
+                "hover" : DiplomacyTabWindow.DISABLED_BG_COLOR,
+                "active" : DiplomacyTabWindow.DISABLED_BG_COLOR,
+                "text_normal" : DiplomacyTabWindow.DISABLED_TEXT_COLOR,
+                "text_hover" : DiplomacyTabWindow.DISABLED_TEXT_COLOR,
+                "text_active" : DiplomacyTabWindow.DISABLED_TEXT_COLOR
+            }
+            with btc.ButtonStyle(**button_style):
+                self.layout_row_dynamic(30, 1)
+                self.button_label("Update Selected", lambda : None)
+                self.layout_row_dynamic(30, 1)
+                self.button_label("Add New Faction", lambda : None)
 

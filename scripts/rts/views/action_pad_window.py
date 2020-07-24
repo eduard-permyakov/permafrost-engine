@@ -36,6 +36,8 @@ import pf
 from constants import *
 import action
 
+import common.button_style_ctx as btc
+
 class ActionPadWindow(pf.Window):
 
     BUTTON_WIDTH = 75
@@ -58,63 +60,45 @@ class ActionPadWindow(pf.Window):
         self.clear_actions()
 
     def __disabled_button_label(self, label, action):
-        old_style = (pf.button_style.normal, pf.button_style.hover, pf.button_style.active)
-        old_style_text = (pf.button_style.text_normal, pf.button_style.text_hover, pf.button_style.text_active)
-        
-        pf.button_style.normal = ActionPadWindow.DISABLED_BG_COLOR
-        pf.button_style.hover = ActionPadWindow.DISABLED_BG_COLOR
-        pf.button_style.active = ActionPadWindow.DISABLED_BG_COLOR
-        pf.button_style.text_normal = ActionPadWindow.DISABLED_TEXT_COLOR
-        pf.button_style.text_hover = ActionPadWindow.DISABLED_TEXT_COLOR
-        pf.button_style.text_active = ActionPadWindow.DISABLED_TEXT_COLOR
-        
-        self.button_label(label, action)
-        
-        pf.button_style.normal, pf.button_style.hover, pf.button_style.active = old_style
-        pf.button_style.text_normal, pf.button_style.text_hover, pf.button_style.text_active = old_style_text
+        button_style = {
+            "normal" : ActionPadWindow.DISABLED_BG_COLOR, 
+            "hover" : ActionPadWindow.DISABLED_BG_COLOR,
+            "active" : ActionPadWindow.DISABLED_BG_COLOR,
+            "text_normal" : ActionPadWindow.DISABLED_TEXT_COLOR, 
+            "text_hover" : ActionPadWindow.DISABLED_TEXT_COLOR,
+            "text_active" : ActionPadWindow.DISABLED_TEXT_COLOR,
+        }
+        with btc.ButtonStyle(**button_style):
+            self.button_label(label, action)
 
     def __image_button(self, img_normal, img_hover, img_active, action):
-        old = pf.button_style.normal, pf.button_style.hover, pf.button_style.active
         ss = pf.get_simstate()
-
-        if ss == pf.G_RUNNING:
-            pf.button_style.normal = img_normal
-            pf.button_style.hover = img_hover
-            pf.button_style.active = img_active
-            self.button_label("", action)
-        else:
-            pf.button_style.normal = img_normal
-            pf.button_style.hover = img_normal
-            pf.button_style.active = img_normal
-            self.button_label("", lambda: None)
-
-        pf.button_style.normal, pf.button_style.hover, pf.button_style.active = old
+        with btc.ButtonStyle(normal=img_normal, hover=img_hover, active=img_active):
+            if ss == pf.G_RUNNING:
+                self.button_label("", action)
+            else:
+                self.button_label("", lambda: None)
 
     def clear_actions(self):
         self.actions = [None] * (ACTION_NUM_ROWS * ACTION_NUM_COLS)
 
     def update(self):
-        og_bpad, og_bround = pf.button_style.padding, pf.button_style.rounding
+        with btc.ButtonStyle(padding=(0.0, 0.0), rounding=0.0):
 
-        pf.button_style.padding = (0.0, 0.0)
-        pf.button_style.rounding = 0.0
+            def on_button_pressed(idx):
+                pf.global_event(EVENT_UNIT_ACTION, idx)
 
-        def on_button_pressed(idx):
-            pf.global_event(EVENT_UNIT_ACTION, idx)
+            for r in range(0, ACTION_NUM_ROWS):
+                self.layout_row_static(ActionPadWindow.BUTTON_WIDTH, ActionPadWindow.BUTTON_WIDTH, ACTION_NUM_COLS)
 
-        for r in range(0, ACTION_NUM_ROWS):
-            self.layout_row_static(ActionPadWindow.BUTTON_WIDTH, ActionPadWindow.BUTTON_WIDTH, ACTION_NUM_COLS)
-
-            for c in range(0, ACTION_NUM_COLS):
-                action = self.actions[r * ACTION_NUM_COLS + c]
-                if action:
-                    self.__image_button(
-                        img_normal = action.icon_normal, 
-                        img_hover = action.icon_hover, 
-                        img_active = action.icon_active,
-                        action = action.action)
-                else:
-                    self.__disabled_button_label("", lambda: None)
-
-        pf.button_style.padding, pf.button_style.rounding = og_bpad, og_bround
+                for c in range(0, ACTION_NUM_COLS):
+                    action = self.actions[r * ACTION_NUM_COLS + c]
+                    if action:
+                        self.__image_button(
+                            img_normal = action.icon_normal, 
+                            img_hover = action.icon_hover, 
+                            img_active = action.icon_active,
+                            action = action.action)
+                    else:
+                        self.__disabled_button_label("", lambda: None)
 

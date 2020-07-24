@@ -35,6 +35,8 @@
 import pf
 from constants import *
 
+import common.button_style_ctx as btc
+
 class TabBarWindow(pf.Window):
     SELECTED_COLOR = (90, 90, 90, 255)
     SELECTED_HOVER_COLOR = (75, 75, 75, 255)
@@ -57,31 +59,26 @@ class TabBarWindow(pf.Window):
         self.child_windows.append(window)
 
     def update(self):
-        orig_rounding = pf.button_style.rounding
-        pf.button_style.rounding = 0.0
-        self.layout_row_begin(pf.NK_STATIC, UI_TAB_BAR_HEIGHT-10, UI_TAB_BAR_NUM_COLS)
-        for idx in range(0, len(self.child_windows)):
 
-            def on_tab_click():
-                self.active_idx = idx;
-                self.__show_active()
-                pf.global_event(EVENT_TOP_TAB_SELECTION_CHANGED, self.active_idx)
+        with btc.ButtonStyle(rounding=0.0):
+            self.layout_row_begin(pf.NK_STATIC, UI_TAB_BAR_HEIGHT-10, UI_TAB_BAR_NUM_COLS)
 
-            self.layout_row_push(UI_TAB_BAR_COL_WIDTH)
+            for idx in range(0, len(self.child_windows)):
 
-            if idx == self.active_idx:
-                normal_style = pf.button_style.normal
-                hover_style = pf.button_style.hover
-                pf.button_style.normal = TabBarWindow.SELECTED_COLOR
-                pf.button_style.hover = TabBarWindow.SELECTED_HOVER_COLOR
-                self.button_label(self.labels[idx], on_tab_click)
-                pf.button_style.normal = normal_style
-                pf.button_style.hover = hover_style
-            else:
-                self.button_label(self.labels[idx], on_tab_click)
+                def on_tab_click():
+                    self.active_idx = idx;
+                    self.__show_active()
+                    pf.global_event(EVENT_TOP_TAB_SELECTION_CHANGED, self.active_idx)
 
-        self.layout_row_end()
-        pf.button_style.rounding = orig_rounding
+                self.layout_row_push(UI_TAB_BAR_COL_WIDTH)
+
+                if idx == self.active_idx:
+                    with btc.ButtonStyle(normal=TabBarWindow.SELECTED_COLOR, hover=TabBarWindow.SELECTED_HOVER_COLOR):
+                        self.button_label(self.labels[idx], on_tab_click)
+                else:
+                    self.button_label(self.labels[idx], on_tab_click)
+
+            self.layout_row_end()
 
     def show(self):
         super(TabBarWindow, self).show()
