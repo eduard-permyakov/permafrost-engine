@@ -3118,6 +3118,8 @@ NK_API int nk_selectable_label(struct nk_context*, const char*, nk_flags align, 
 NK_API int nk_selectable_text(struct nk_context*, const char*, int, nk_flags align, int *value);
 NK_API int nk_selectable_image_label(struct nk_context*,struct nk_image,  const char*, nk_flags align, int *value);
 NK_API int nk_selectable_image_text(struct nk_context*,struct nk_image, const char*, int, nk_flags align, int *value);
+NK_API int nk_selectable_texpath_label(struct nk_context*, const char*,  const char*, nk_flags align, int *value);
+NK_API int nk_selectable_texpath_text(struct nk_context*, const char*, const char*, int, nk_flags align, int *value);
 NK_API int nk_selectable_symbol_label(struct nk_context*,enum nk_symbol_type,  const char*, nk_flags align, int *value);
 NK_API int nk_selectable_symbol_text(struct nk_context*,enum nk_symbol_type, const char*, int, nk_flags align, int *value);
 
@@ -5957,9 +5959,10 @@ NK_LIB float nk_do_scrollbarv(nk_flags *state, struct nk_command_buffer *out, st
 NK_LIB float nk_do_scrollbarh(nk_flags *state, struct nk_command_buffer *out, struct nk_rect scroll, int has_scrolling, float offset, float target, float step, float button_pixel_inc, const struct nk_style_scrollbar *style, struct nk_input *in, const struct nk_user_font *font);
 
 /* selectable */
-NK_LIB void nk_draw_selectable(struct nk_command_buffer *out, nk_flags state, const struct nk_style_selectable *style, int active, const struct nk_rect *bounds, const struct nk_rect *icon, const struct nk_image *img, enum nk_symbol_type sym, const char *string, int len, nk_flags align, const struct nk_user_font *font);
+NK_LIB void nk_draw_selectable(struct nk_command_buffer *out, nk_flags state, const struct nk_style_selectable *style, int active, struct nk_rect *bounds, const struct nk_rect *icon, const struct nk_image *img, enum nk_symbol_type sym, const char *string, int len, nk_flags align, const struct nk_user_font *font);
 NK_LIB int nk_do_selectable(nk_flags *state, struct nk_command_buffer *out, struct nk_rect bounds, const char *str, int len, nk_flags align, int *value, const struct nk_style_selectable *style, const struct nk_input *in, const struct nk_user_font *font);
 NK_LIB int nk_do_selectable_image(nk_flags *state, struct nk_command_buffer *out, struct nk_rect bounds, const char *str, int len, nk_flags align, int *value, const struct nk_image *img, const struct nk_style_selectable *style, const struct nk_input *in, const struct nk_user_font *font);
+NK_LIB int nk_do_selectable_texpath(nk_flags *state, struct nk_command_buffer *out, struct nk_rect bounds, const char *str, int len, nk_flags align, int *value, const char *texpath, const struct nk_style_selectable *style, const struct nk_input *in, const struct nk_user_font *font);
 
 /* edit */
 NK_LIB void nk_edit_draw_text(struct nk_command_buffer *out, const struct nk_style_edit *style, float pos_x, float pos_y, float x_offset, const char *text, int byte_len, float row_height, const struct nk_user_font *font, struct nk_color background, struct nk_color foreground, int is_selected);
@@ -20756,7 +20759,7 @@ nk_radio_label(struct nk_context *ctx, const char *label, int *active)
 NK_LIB void
 nk_draw_selectable(struct nk_command_buffer *out,
     nk_flags state, const struct nk_style_selectable *style, int active,
-    const struct nk_rect *bounds,
+    struct nk_rect *bounds,
     const struct nk_rect *icon, const struct nk_image *img, enum nk_symbol_type sym,
     const char *string, int len, nk_flags align, const struct nk_user_font *font)
 {
@@ -20803,6 +20806,72 @@ nk_draw_selectable(struct nk_command_buffer *out,
         if (img) nk_draw_image(out, *icon, img, nk_white);
         else nk_draw_symbol(out, sym, *icon, text.background, text.text, 1, font);
     }
+
+    /* Make sure the text is not overlapping the icon */
+    if(icon) {
+        bounds->x += icon->w + 2 * style->image_padding.x + 2 * style->padding.x;
+        bounds->w -= icon->w + 2 * style->image_padding.x + 2 * style->padding.x;
+    }
+
+    nk_widget_text(out, *bounds, string, len, &text, align, font);
+}
+NK_LIB void
+nk_draw_selectable_texpath(struct nk_command_buffer *out,
+    nk_flags state, const struct nk_style_selectable *style, int active,
+    struct nk_rect *bounds,
+    const struct nk_rect *icon, const char *texpath, enum nk_symbol_type sym,
+    const char *string, int len, nk_flags align, const struct nk_user_font *font)
+{
+    const struct nk_style_item *background;
+    struct nk_text text;
+    text.padding = style->padding;
+
+    /* select correct colors/images */
+    if (!active) {
+        if (state & NK_WIDGET_STATE_ACTIVED) {
+            background = &style->pressed;
+            text.text = style->text_pressed;
+        } else if (state & NK_WIDGET_STATE_HOVER) {
+            background = &style->hover;
+            text.text = style->text_hover;
+        } else {
+            background = &style->normal;
+            text.text = style->text_normal;
+        }
+    } else {
+        if (state & NK_WIDGET_STATE_ACTIVED) {
+            background = &style->pressed_active;
+            text.text = style->text_pressed_active;
+        } else if (state & NK_WIDGET_STATE_HOVER) {
+            background = &style->hover_active;
+            text.text = style->text_hover_active;
+        } else {
+            background = &style->normal_active;
+            text.text = style->text_normal_active;
+        }
+    }
+    /* draw selectable background and text */
+    if (background->type == NK_STYLE_ITEM_IMAGE) {
+        nk_draw_image(out, *bounds, &background->data.image, nk_white);
+        text.background = nk_rgba(0,0,0,0);
+    } else if (background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(out, *bounds, background->data.texpath, nk_white);
+        text.background = nk_rgba(0,0,0,0);
+    } else {
+        nk_fill_rect(out, *bounds, style->rounding, background->data.color);
+        text.background = background->data.color;
+    }
+    if (icon) {
+        if (texpath) nk_draw_texpath(out, *icon, texpath, nk_white);
+        else nk_draw_symbol(out, sym, *icon, text.background, text.text, 1, font);
+    }
+
+    /* Make sure the text is not overlapping the icon */
+    if(icon) {
+        bounds->x += icon->w + 2 * style->image_padding.x + 2 * style->padding.x;
+        bounds->w -= icon->w + 2 * style->image_padding.x + 2 * style->padding.x;
+    }
+
     nk_widget_text(out, *bounds, string, len, &text, align, font);
 }
 NK_LIB int
@@ -20872,10 +20941,7 @@ nk_do_selectable_image(nk_flags *state, struct nk_command_buffer *out,
 
     icon.y = bounds.y + style->padding.y;
     icon.w = icon.h = bounds.h - 2 * style->padding.y;
-    if (align & NK_TEXT_ALIGN_LEFT) {
-        icon.x = (bounds.x + bounds.w) - (2 * style->padding.x + icon.w);
-        icon.x = NK_MAX(icon.x, 0);
-    } else icon.x = bounds.x + 2 * style->padding.x;
+    icon.x = bounds.x + 2 * style->padding.x;
 
     icon.x += style->image_padding.x;
     icon.y += style->image_padding.y;
@@ -20885,6 +20951,50 @@ nk_do_selectable_image(nk_flags *state, struct nk_command_buffer *out,
     /* draw selectable */
     if (style->draw_begin) style->draw_begin(out, style->userdata);
     nk_draw_selectable(out, *state, style, *value, &bounds, &icon, img, NK_SYMBOL_NONE, str, len, align, font);
+    if (style->draw_end) style->draw_end(out, style->userdata);
+    return old_value != *value;
+}
+NK_LIB int
+nk_do_selectable_texpath(nk_flags *state, struct nk_command_buffer *out,
+    struct nk_rect bounds, const char *str, int len, nk_flags align, int *value,
+    const char *texpath, const struct nk_style_selectable *style,
+    const struct nk_input *in, const struct nk_user_font *font)
+{
+    int old_value;
+    struct nk_rect touch;
+    struct nk_rect icon;
+
+    NK_ASSERT(state);
+    NK_ASSERT(out);
+    NK_ASSERT(str);
+    NK_ASSERT(len);
+    NK_ASSERT(value);
+    NK_ASSERT(style);
+    NK_ASSERT(font);
+
+    if (!state || !out || !str || !len || !value || !style || !font) return 0;
+    old_value = *value;
+
+    /* toggle behavior */
+    touch.x = bounds.x - style->touch_padding.x;
+    touch.y = bounds.y - style->touch_padding.y;
+    touch.w = bounds.w + style->touch_padding.x * 2;
+    touch.h = bounds.h + style->touch_padding.y * 2;
+    if (nk_button_behavior(state, touch, in, NK_BUTTON_DEFAULT))
+        *value = !(*value);
+
+    icon.y = bounds.y + style->padding.y;
+    icon.w = icon.h = bounds.h - 2 * style->padding.y;
+    icon.x = bounds.x + 2 * style->padding.x;
+
+    icon.x += style->image_padding.x;
+    icon.y += style->image_padding.y;
+    icon.w -= 2 * style->image_padding.x;
+    icon.h -= 2 * style->image_padding.y;
+
+    /* draw selectable */
+    if (style->draw_begin) style->draw_begin(out, style->userdata);
+    nk_draw_selectable_texpath(out, *state, style, *value, &bounds, &icon, texpath, NK_SYMBOL_NONE, str, len, align, font);
     if (style->draw_end) style->draw_end(out, style->userdata);
     return old_value != *value;
 }
@@ -20995,6 +21105,35 @@ nk_selectable_image_text(struct nk_context *ctx, struct nk_image img,
                 str, len, align, value, &img, &style->selectable, in, style->font);
 }
 NK_API int
+nk_selectable_texpath_text(struct nk_context *ctx, const char *texpath,
+    const char *str, int len, nk_flags align, int *value)
+{
+    struct nk_window *win;
+    struct nk_panel *layout;
+    const struct nk_input *in;
+    const struct nk_style *style;
+
+    enum nk_widget_layout_states state;
+    struct nk_rect bounds;
+
+    NK_ASSERT(ctx);
+    NK_ASSERT(value);
+    NK_ASSERT(ctx->current);
+    NK_ASSERT(ctx->current->layout);
+    if (!ctx || !ctx->current || !ctx->current->layout || !value)
+        return 0;
+
+    win = ctx->current;
+    layout = win->layout;
+    style = &ctx->style;
+
+    state = nk_widget(&bounds, ctx);
+    if (!state) return 0;
+    in = (state == NK_WIDGET_ROM || layout->flags & NK_WINDOW_ROM) ? 0 : &ctx->input;
+    return nk_do_selectable_texpath(&ctx->last_widget_state, &win->buffer, bounds,
+                str, len, align, value, texpath, &style->selectable, in, style->font);
+}
+NK_API int
 nk_selectable_symbol_text(struct nk_context *ctx, enum nk_symbol_type sym,
     const char *str, int len, nk_flags align, int *value)
 {
@@ -21042,6 +21181,11 @@ NK_API int nk_selectable_image_label(struct nk_context *ctx,struct nk_image img,
     const char *str, nk_flags align, int *value)
 {
     return nk_selectable_image_text(ctx, img, str, nk_strlen(str), align, value);
+}
+NK_API int nk_selectable_texpath_label(struct nk_context *ctx, const char *texpath,
+    const char *str, nk_flags align, int *value)
+{
+    return nk_selectable_texpath_text(ctx, texpath, str, nk_strlen(str), align, value);
 }
 NK_API int nk_select_label(struct nk_context *ctx, const char *str, nk_flags align, int value)
 {
