@@ -42,6 +42,7 @@
 #include "../lib/public/vec.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/nk_file_browser.h"
 #include "../game/public/game.h"
 #include "../event.h"
 #include "../collision.h"
@@ -102,6 +103,7 @@ static PyObject *PyWindow_checkbox(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_image(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_spacer(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_file_browser(PyWindowObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -115,6 +117,7 @@ static PyObject *PyWindow_get_header(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure);
+static PyObject *PyWindow_get_content_region(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_spacing(PyWindowObject *self, void *closure);
 static int       PyWindow_set_spacing(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_padding(PyWindowObject *self, void *closure);
@@ -240,6 +243,10 @@ static PyMethodDef PyWindow_methods[] = {
     (PyCFunction)PyWindow_spacer, METH_VARARGS,
     "Empty widget to consume slots in a row."},
 
+    {"file_browser", 
+    (PyCFunction)PyWindow_file_browser, METH_VARARGS | METH_KEYWORDS,
+    "Present a file browser widget."},
+
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
     "Make the window visible."},
@@ -285,6 +292,10 @@ static PyGetSetDef PyWindow_getset[] = {
     {"header_height",
     (getter)PyWindow_get_header_height, NULL,
     "A float specifying the height of the window header in pixels.",
+    NULL},
+    {"content_region",
+    (getter)PyWindow_get_content_region, NULL,
+    "An (X, Y, W, H) tuple of floats specifying the conent (padded) position and size of the current panel.",
     NULL},
     {"spacing",
     (getter)PyWindow_get_spacing, 
@@ -942,6 +953,53 @@ static PyObject *PyWindow_spacer(PyWindowObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyWindow_file_browser(PyWindowObject *self, PyObject *args, PyObject *kwargs)
+{
+    const char *name, *directory;
+    PyObject *selected;
+    int flags;
+
+    static char *kwlist[] = { "name", "directory", "selected", "flags", NULL };
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "ssOi", kwlist, &name, &directory, &selected, &flags)) {
+        goto fail_args;
+    }
+
+    if(selected != Py_None && !PyString_Check(selected)) {
+        goto fail_args;
+    }
+
+    struct nk_fb_state state;
+    pf_strlcpy(state.name, name, sizeof(state.name));
+    pf_strlcpy(state.directory, directory, sizeof(state.directory));
+    state.flags = flags;
+
+    if(selected == Py_None) {
+        state.selected[0] = '\0';
+    }else{
+        pf_strlcpy(state.selected, PyString_AS_STRING(selected), sizeof(state.selected));
+    }
+
+    nk_file_browser(s_nk_ctx, &state);
+
+    if(strlen(state.selected) == 0) {
+        Py_INCREF(Py_None);    
+        selected = Py_None;
+    }else{
+        selected = PyString_FromString(state.selected);
+    }
+
+    return Py_BuildValue("{s:s,s:s,s:O,s:i}", 
+        "name", name,
+        "directory", state.directory, 
+        "selected", selected,
+        "flags", flags);
+
+fail_args:
+    PyErr_SetString(PyExc_TypeError, "4 arguments expected: name (string), directory (string), selected (string or None), flags (int).");
+    return NULL;
+}
+
 static PyObject *PyWindow_show(PyWindowObject *self)
 {
     self->flags &= ~(NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED);
@@ -1142,6 +1200,12 @@ static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure)
                         + 2.0f * self->style.header.padding.y
                         + 2.0f * self->style.header.label_padding.y;
     return Py_BuildValue("i", (int)header_height);
+}
+
+static PyObject *PyWindow_get_content_region(PyWindowObject *self, void *closure)
+{
+    struct nk_rect content = nk_window_get_content_region(s_nk_ctx);
+    return Py_BuildValue("ffff", content.x, content.y, content.w, content.h);
 }
 
 static PyObject *PyWindow_get_spacing(PyWindowObject *self, void *closure)
