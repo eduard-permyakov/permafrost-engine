@@ -43,9 +43,6 @@ struct nk_context;
 struct nk_style_window;
 struct SDL_RWops;
 
-extern PyTypeObject PyUIButtonStyle_type;
-extern PyTypeObject PyUIHeaderStyle_type;
-
 bool S_UI_Style_Init(void);
 void S_UI_Style_Shutdown(void);
 void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx);
@@ -53,8 +50,9 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx);
 bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_window *window);
 bool S_UI_Style_LoadWindow(struct SDL_RWops *stream, struct nk_style_window *out);
 
-struct nk_style_window_header *S_UIHeaderStyleGet(PyObject *obj);
-bool S_UIHeaderStyleSet(PyObject *obj, struct nk_style_window_header *header);
+PyObject *S_UIHeaderStyleNew(void);
+void S_UIHeaderStylePush(PyObject *obj, struct nk_context *ctx);
+void S_UIHeaderStylePop(PyObject *obj, struct nk_context *ctx);
 
 #endif
 

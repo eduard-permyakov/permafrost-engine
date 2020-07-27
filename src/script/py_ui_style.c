@@ -94,9 +94,15 @@ static PyObject *PyUIButtonStyle_unpickle(PyObject *cls, PyObject *args);
 typedef struct {
     PyObject_HEAD
     struct nk_style_window_header style;
+    PyUIButtonStyleObject *close_button; 
+    PyUIButtonStyleObject *minimize_button; 
 }PyUIHeaderStyleObject;
 
 static PyObject *PyUIHeaderStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+static void      PyUIHeaderStyle_dealloc(PyUIHeaderStyleObject *self);
+
+static PyObject *PyUIHeaderStyle_get_close_button(PyUIHeaderStyleObject *self, void *);
+static PyObject *PyUIHeaderStyle_get_minimize_button(PyUIHeaderStyleObject *self, void *);
 
 static PyObject *PyUIHeaderStyle_get_normal(PyUIHeaderStyleObject *self, void *);
 static int       PyUIHeaderStyle_set_normal(PyUIHeaderStyleObject *self, PyObject *value, void *);
@@ -223,6 +229,47 @@ static PyGetSetDef PyUIButtonStyle_getset[] = {
     {NULL}  /* Sentinel */
 };
 
+static PyTypeObject PyUIButtonStyle_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "pf.UIButtonStyle",        /* tp_name */
+    sizeof(PyUIButtonStyleObject), /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    0,                         /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_reserved */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash  */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT, /* tp_flags */
+    "Style configuration for Permafrost Engine UI buttons.", /* tp_doc */
+    0,                         /* tp_traverse */
+    0,                         /* tp_clear */
+    0,                         /* tp_richcompare */
+    0,                         /* tp_weaklistoffset */
+    0,                         /* tp_iter */
+    0,                         /* tp_iternext */
+    PyUIButtonStyle_methods, /* tp_methods */
+    0,                         /* tp_members */
+    PyUIButtonStyle_getset, /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    0,                         /* tp_init */
+    0,                         /* tp_alloc */
+    0,                         /* tp_new */
+};
+
 static PyMethodDef PyUIHeaderStyle_methods[] = {
     {"__pickle__", 
     (PyCFunction)PyUIHeaderStyle_pickle, METH_NOARGS,
@@ -237,6 +284,16 @@ static PyMethodDef PyUIHeaderStyle_methods[] = {
 };
 
 static PyGetSetDef PyUIHeaderStyle_getset[] = {
+    {"close_button",
+    (getter)PyUIHeaderStyle_get_close_button, NULL,
+    "A pf.UIButtonStyle object describing the style of the close button." ,
+    NULL},
+
+    {"minimize_button",
+    (getter)PyUIHeaderStyle_get_minimize_button, NULL,
+    "A pf.UIButtonStyle object describing the style of the minimize button." ,
+    NULL},
+
     {"normal",
     (getter)PyUIHeaderStyle_get_normal, 
     (setter)PyUIHeaderStyle_set_normal,
@@ -279,57 +336,12 @@ static PyGetSetDef PyUIHeaderStyle_getset[] = {
     {NULL}  /* Sentinel */
 };
 
-/*****************************************************************************/
-/* GLOBAL VARIABLES                                                          */
-/*****************************************************************************/
-
-PyTypeObject PyUIButtonStyle_type = {
-    PyVarObject_HEAD_INIT(NULL, 0)
-    "pf.UIButtonStyle",        /* tp_name */
-    sizeof(PyUIButtonStyleObject), /* tp_basicsize */
-    0,                         /* tp_itemsize */
-    0,                         /* tp_dealloc */
-    0,                         /* tp_print */
-    0,                         /* tp_getattr */
-    0,                         /* tp_setattr */
-    0,                         /* tp_reserved */
-    0,                         /* tp_repr */
-    0,                         /* tp_as_number */
-    0,                         /* tp_as_sequence */
-    0,                         /* tp_as_mapping */
-    0,                         /* tp_hash  */
-    0,                         /* tp_call */
-    0,                         /* tp_str */
-    0,                         /* tp_getattro */
-    0,                         /* tp_setattro */
-    0,                         /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT, /* tp_flags */
-    "Style configuration for Permafrost Engine UI buttons.", /* tp_doc */
-    0,                         /* tp_traverse */
-    0,                         /* tp_clear */
-    0,                         /* tp_richcompare */
-    0,                         /* tp_weaklistoffset */
-    0,                         /* tp_iter */
-    0,                         /* tp_iternext */
-    PyUIButtonStyle_methods, /* tp_methods */
-    0,                         /* tp_members */
-    PyUIButtonStyle_getset, /* tp_getset */
-    0,                         /* tp_base */
-    0,                         /* tp_dict */
-    0,                         /* tp_descr_get */
-    0,                         /* tp_descr_set */
-    0,                         /* tp_dictoffset */
-    0,                         /* tp_init */
-    0,                         /* tp_alloc */
-    0,                         /* tp_new */
-};
-
-PyTypeObject PyUIHeaderStyle_type = {
+static PyTypeObject PyUIHeaderStyle_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "pf.UIHeaderStyle",        /* tp_name */
     sizeof(PyUIHeaderStyleObject), /* tp_basicsize */
     0,                         /* tp_itemsize */
-    0,                         /* tp_dealloc */
+    (destructor)PyUIHeaderStyle_dealloc, /* tp_dealloc */
     0,                         /* tp_print */
     0,                         /* tp_getattr */
     0,                         /* tp_setattr */
@@ -364,6 +376,8 @@ PyTypeObject PyUIHeaderStyle_type = {
     0,                         /* tp_alloc */
     PyUIHeaderStyle_new,       /* tp_new */
 };
+
+static struct nk_style_window_header s_saved_header_style;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -1053,24 +1067,52 @@ fail_args:
 static PyObject *PyUIHeaderStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     PyUIHeaderStyleObject *self = (PyUIHeaderStyleObject*)type->tp_alloc(type, 0);
+    struct nk_style_button *button;
     if(!self)
         return NULL;
 
-    self->style.align = NK_HEADER_RIGHT;
-    self->style.close_symbol = NK_SYMBOL_X;
-    self->style.minimize_symbol = NK_SYMBOL_MINUS;
-    self->style.maximize_symbol = NK_SYMBOL_PLUS;
-    self->style.normal = nk_style_item_color(nk_rgba(40, 40, 40, 255));
-    self->style.hover = nk_style_item_color(nk_rgba(40, 40, 40, 255));
-    self->style.active = nk_style_item_color(nk_rgba(40, 40, 40, 255));
-    self->style.label_normal = nk_rgba(175,175,175,255);
-    self->style.label_hover = nk_rgba(175,175,175,255);
-    self->style.label_active = nk_rgba(175,175,175,255);
-    self->style.label_padding = nk_vec2(4,4);
-    self->style.padding = nk_vec2(4,4);
-    self->style.spacing = nk_vec2(0,0);
+    struct nk_context ctx;
+    nk_style_default(&ctx);
+    self->style = ctx.style.window.header;
+
+    self->close_button = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
+    if(!self->close_button) {
+        goto fail_close_button;
+    }
+    self->close_button->style = &self->style.close_button;
+
+    self->minimize_button = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
+    if(!self->minimize_button) {
+        goto fail_minimize_button;
+    }
+    self->minimize_button->style = &self->style.minimize_button;
 
     return (PyObject*)self;
+
+fail_minimize_button:
+    Py_DECREF(self->close_button);
+fail_close_button:
+    Py_DECREF(self);
+    return NULL;
+}
+
+static void PyUIHeaderStyle_dealloc(PyUIHeaderStyleObject *self)
+{
+    Py_DECREF(self->close_button);
+    Py_DECREF(self->minimize_button);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyObject *PyUIHeaderStyle_get_close_button(PyUIHeaderStyleObject *self, void *closure)
+{
+    Py_INCREF(self->close_button);
+    return (PyObject*)self->close_button;
+}
+
+static PyObject *PyUIHeaderStyle_get_minimize_button(PyUIHeaderStyleObject *self, void *closure)
+{
+    Py_INCREF(self->minimize_button);
+    return (PyObject*)self->minimize_button;
 }
 
 static PyObject *PyUIHeaderStyle_get_normal(PyUIHeaderStyleObject *self, void *closure)
@@ -1406,22 +1448,26 @@ bool S_UI_Style_LoadWindow(struct SDL_RWops *stream, struct nk_style_window *out
     return true;
 }
 
-struct nk_style_window_header *S_UIHeaderStyleGet(PyObject *obj)
+PyObject *S_UIHeaderStyleNew(void)
 {
-    if(!PyObject_IsInstance(obj, (PyObject*)&PyUIHeaderStyle_type))
-        return NULL;
-
-    PyUIHeaderStyleObject *headerobj = (PyUIHeaderStyleObject*)obj;
-    return &headerobj->style;
+    return PyObject_CallFunctionObjArgs((PyObject*)&PyUIHeaderStyle_type, NULL);
 }
 
-bool S_UIHeaderStyleSet(PyObject *obj, struct nk_style_window_header *header)
+void S_UIHeaderStylePush(PyObject *obj, struct nk_context *ctx)
 {
-    if(!PyObject_IsInstance(obj, (PyObject*)&PyUIHeaderStyle_type))
-        return false;
+    assert(PyObject_IsInstance(obj, (PyObject*)&PyUIHeaderStyle_type));
+    PyUIHeaderStyleObject *styleobj = (PyUIHeaderStyleObject*)obj;
 
-    PyUIHeaderStyleObject *headerobj = (PyUIHeaderStyleObject*)obj;
-    headerobj->style = *header;
-    return true;
+    s_saved_header_style = ctx->style.window.header;
+    ctx->style.window.header = styleobj->style;
+}
+
+void S_UIHeaderStylePop(PyObject *obj, struct nk_context *ctx)
+{
+    assert(PyObject_IsInstance(obj, (PyObject*)&PyUIHeaderStyle_type));
+    PyUIHeaderStyleObject *styleobj = (PyUIHeaderStyleObject*)obj;
+
+    styleobj->style = ctx->style.window.header;
+    ctx->style.window.header = s_saved_header_style;
 }
 

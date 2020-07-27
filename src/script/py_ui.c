@@ -117,7 +117,6 @@ static PyObject *PyWindow_get_header(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure);
-static PyObject *PyWindow_get_content_region(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_spacing(PyWindowObject *self, void *closure);
 static int       PyWindow_set_spacing(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_padding(PyWindowObject *self, void *closure);
@@ -293,10 +292,6 @@ static PyGetSetDef PyWindow_getset[] = {
     (getter)PyWindow_get_header_height, NULL,
     "A float specifying the height of the window header in pixels.",
     NULL},
-    {"content_region",
-    (getter)PyWindow_get_content_region, NULL,
-    "An (X, Y, W, H) tuple of floats specifying the conent (padded) position and size of the current panel.",
-    NULL},
     {"spacing",
     (getter)PyWindow_get_spacing, 
     (setter)PyWindow_set_spacing,
@@ -464,7 +459,7 @@ static int PyWindow_init(PyWindowObject *self, PyObject *args, PyObject *kwargs)
         return -1;
     }
 
-    self->header_style = PyObject_CallFunctionObjArgs((PyObject*)&PyUIHeaderStyle_type, NULL);
+    self->header_style = S_UIHeaderStyleNew();
     if(!self->header_style) {
         assert(PyErr_Occurred());
         return -1;
@@ -1202,12 +1197,6 @@ static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure)
     return Py_BuildValue("i", (int)header_height);
 }
 
-static PyObject *PyWindow_get_content_region(PyWindowObject *self, void *closure)
-{
-    struct nk_rect content = nk_window_get_content_region(s_nk_ctx);
-    return Py_BuildValue("ffff", content.x, content.y, content.w, content.h);
-}
-
 static PyObject *PyWindow_get_spacing(PyWindowObject *self, void *closure)
 {
     return Py_BuildValue("(f, f)",
@@ -1518,7 +1507,7 @@ static void active_windows_update(void *user, void *event)
 
         struct nk_style_window saved_style = s_nk_ctx->style.window;
         s_nk_ctx->style.window = win->style;
-        s_nk_ctx->style.window.header = *S_UIHeaderStyleGet(win->header_style);
+        S_UIHeaderStylePush(win->header_style, s_nk_ctx);
 
         struct nk_vec2i adj_vres = TO_VEC2I(UI_ArAdjustedVRes(TO_VEC2T(win->virt_res)));
         struct rect adj_bounds = UI_BoundsForAspectRatio(win->rect, 
@@ -1545,7 +1534,7 @@ static void active_windows_update(void *user, void *event)
         win->flags |= (s_nk_ctx->current->flags & sample_mask);
 
         nk_end(s_nk_ctx);
-        S_UIHeaderStyleSet(win->header_style, &s_nk_ctx->style.window.header);
+        S_UIHeaderStylePop(win->header_style, s_nk_ctx);
         s_nk_ctx->style.window = saved_style;
     }
 }
