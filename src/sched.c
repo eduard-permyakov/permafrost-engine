@@ -182,8 +182,9 @@ static pq_task_t        s_ready_queue;
 static pq_task_t        s_ready_queue_main;
 static SDL_mutex       *s_ready_lock;
 static SDL_cond        *s_ready_cond;
-static int              s_nwaiters;
-static bool             s_quiesce;
+static int              s_nwaiters;     /* protected by ready lock */
+static bool             s_quiesce;      /* protected by ready lock */
+static int              s_idle_workers; /* protected by ready lock */
 
 static size_t           s_nworkers;
 static SDL_Thread      *s_worker_threads[MAX_WORKER_THREADS];
@@ -196,11 +197,6 @@ static bool             s_worker_start[MAX_WORKER_THREADS];
 static bool             s_worker_quit[MAX_WORKER_THREADS];
 static SDL_mutex       *s_worker_locks[MAX_WORKER_THREADS];
 static SDL_cond        *s_worker_conds[MAX_WORKER_THREADS];
-
-/* Used by the main thread to wait until all the workers have quiesced */
-static int              s_idle_workers;
-static SDL_mutex       *s_idle_workers_lock;
-static SDL_cond        *s_idle_workers_cond;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -843,10 +839,10 @@ static void sched_init_thread_worker_id_map(void)
 
 static void sched_wait_workers_done(void)
 {
-    SDL_LockMutex(s_idle_workers_lock);
+    SDL_LockMutex(s_ready_lock);
     while(s_idle_workers < s_nworkers)
-        SDL_CondWait(s_idle_workers_cond, s_idle_workers_lock);
-    SDL_UnlockMutex(s_idle_workers_lock);
+        SDL_CondWait(s_ready_cond, s_ready_lock);
+    SDL_UnlockMutex(s_ready_lock);
 
     assert(s_idle_workers == s_nworkers);
     assert(s_nwaiters == 0);
@@ -879,10 +875,10 @@ static void worker_wait_on_cmd(int id)
 
 static void worker_notify_done(int id)
 {
-    SDL_LockMutex(s_idle_workers_lock);
+    SDL_LockMutex(s_ready_lock);
     s_idle_workers++;
-    SDL_CondSignal(s_idle_workers_cond);
-    SDL_UnlockMutex(s_idle_workers_lock);
+    SDL_CondSignal(s_ready_cond);
+    SDL_UnlockMutex(s_ready_lock);
 }
 
 static struct task *worker_wait_task_or_quiesce(void)
@@ -1021,21 +1017,11 @@ bool Sched_Init(void)
         Perf_RegisterThread(SDL_GetThreadID(s_worker_threads[i]), threadname);
     }
 
-    s_idle_workers_lock = SDL_CreateMutex();
-    if(!s_idle_workers_lock)
-        goto fail_workers;
-
-    s_idle_workers_cond = SDL_CreateCond();
-    if(!s_idle_workers_cond)
-        goto fail_idle_workers_cond;
-
     sched_init_thread_tid_map();
     sched_init_thread_worker_id_map();
     Task_CreateServices();
     return true;
 
-fail_idle_workers_cond:
-    SDL_DestroyMutex(s_idle_workers_lock);
 fail_workers:
     for(int i = 0; i < s_nworkers; i++) {
         if(!s_worker_threads[i])
@@ -1094,9 +1080,6 @@ void Sched_Shutdown(void)
     pq_task_destroy(&s_ready_queue);
     pq_task_destroy(&s_ready_queue_main);
 
-    SDL_DestroyMutex(s_idle_workers_lock);
-    SDL_DestroyCond(s_idle_workers_cond);
-
     for(int i = 0; i < s_nworkers; i++) {
         sched_signal_worker_quit(i);
         SDL_WaitThread(s_worker_threads[i], NULL);
@@ -1140,9 +1123,9 @@ void Sched_StartBackgroundTasks(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    SDL_LockMutex(s_idle_workers_lock);
+    SDL_LockMutex(s_ready_lock);
     s_idle_workers = 0;
-    SDL_UnlockMutex(s_idle_workers_lock);
+    SDL_UnlockMutex(s_ready_lock);
 
     for(int i = 0; i < s_nworkers; i++) {
     
@@ -1164,7 +1147,11 @@ void Sched_Tick(void)
         struct task *curr = NULL;
 
         SDL_LockMutex(s_ready_lock);
-        while(!pq_size(&s_ready_queue_main) && !pq_size(&s_ready_queue) && ((nwaiters = s_nwaiters) < s_nworkers)) {
+        while(!pq_size(&s_ready_queue_main) 
+           && !pq_size(&s_ready_queue) 
+           && ((nwaiters = s_nwaiters) < s_nworkers)
+           && (s_idle_workers < s_nworkers)) {
+
             SDL_CondWait(s_ready_cond, s_ready_lock);
         }
         if(pq_size(&s_ready_queue_main) || pq_size(&s_ready_queue)) {
@@ -1185,6 +1172,8 @@ void Sched_Tick(void)
          * there is no more work to be done. In that case, let's not waste any more time. 
          */
         if(curr == NULL && nwaiters == s_nworkers)
+            break;
+        if(curr == NULL && s_idle_workers == s_nworkers)
             break;
 
         assert(curr);
