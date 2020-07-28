@@ -42,7 +42,9 @@
 #include <stdio.h>
 
 #if defined(_WIN32)
-#error "TODO"
+#define UNICODE
+#include <windows.h>
+#include <shlobj.h>
 #else
 #include <unistd.h>
 #include <dirent.h>
@@ -67,6 +69,142 @@ struct file{
 /*****************************************************************************/
 
 #if defined(_WIN32)
+
+static void fb_path_fix_separator(char *path)
+{
+    while(*path) {
+        if(*path == '\\')
+            *path = '/';
+        path++;
+    }
+}
+
+static struct file *fb_get_list(const char *dir, size_t *out_size)
+{
+    size_t capacity = 256;
+    struct file *files = malloc(sizeof(struct file) * capacity);
+    if(!files)
+        return NULL;
+
+    size_t wlen;
+    wchar_t wdir[NK_MAX_PATH_LEN + 1];
+    mbstowcs_s(&wlen, wdir, NK_MAX_PATH_LEN, dir, strlen(dir));
+    wdir[wlen - 1] = '/';
+    wdir[wlen + 0] = '*';
+    wdir[wlen + 1] = '\0';
+
+    size_t nfiles = 0;
+    WIN32_FIND_DATA entry = {0};
+    HANDLE handle;
+
+    handle = FindFirstFile(wdir, &entry);
+    if(handle == INVALID_HANDLE_VALUE) {
+        free(files);
+        return NULL;
+    }
+
+    do{
+        if(nfiles == capacity) {
+            capacity *= 2;
+            struct file *rfiles = realloc(files, sizeof(struct file) * capacity);
+            if(!rfiles) {
+                FindClose(handle);
+                free(files);
+                return NULL;
+            }else{
+                files = rfiles;
+            }
+        }
+
+        size_t len;
+        char cname[MAX_PATH];
+        wcstombs_s(&len, cname, sizeof(cname), entry.cFileName, MAX_PATH);
+
+        files[nfiles].is_dir = (entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
+        pf_strlcpy(files[nfiles].name, cname, NK_MAX_PATH_LEN);
+        nfiles++;
+
+    }while(FindNextFile(handle, &entry));
+
+    FindClose(handle);
+
+    *out_size = nfiles;
+    return files;
+}
+
+static void fb_realpath(const char rel[static NK_MAX_PATH_LEN], char abs[static NK_MAX_PATH_LEN])
+{
+    if(NULL == _fullpath(abs, rel, NK_MAX_PATH_LEN)) {
+        abs[0] = '\0';
+    }
+    fb_path_fix_separator(abs);
+}
+
+static bool fb_homedir(char out[static NK_MAX_PATH_LEN])
+{
+    PWSTR path;
+    KNOWNFOLDERID id = FOLDERID_Profile;
+    HRESULT result = SHGetKnownFolderPath(&id, 0, NULL, &path);
+    if(result != S_OK)
+        return false;
+
+    size_t len;
+    char cpath[NK_MAX_PATH_LEN];
+    wcstombs_s(&len, cpath, sizeof(cpath), path, MAX_PATH);
+
+    pf_strlcpy(out, cpath, NK_MAX_PATH_LEN);
+    fb_path_fix_separator(out);
+    return true;
+}
+
+static size_t fb_get_places(size_t maxout, char out[static maxout][NK_MAX_PATH_LEN], 
+                            char *icons[static maxout], char names[static maxout][32])
+{
+    size_t ret = 0;
+    if(ret == maxout)
+        return ret;
+
+    bool found = fb_homedir(out[0]);
+    if(found) {
+        icons[ret] = DEFAULT_HOME_ICON;
+        pf_strlcpy(names[ret], "Home", 32);
+        ret++;
+    }
+    if(ret == maxout)
+        return ret;
+
+    if(found) {
+        pf_snprintf(out[ret], NK_MAX_PATH_LEN, "%s/Desktop", out[ret-1]);
+        icons[ret] = DEFAULT_DESKTOP_ICON;
+        pf_strlcpy(names[ret], "Desktop", 32);
+        ret++;
+    }
+
+    wchar_t drives[MAX_PATH];
+    size_t len = GetLogicalDriveStrings(MAX_PATH, drives);
+    size_t cursor = 0;
+
+    while(cursor < len) {
+
+        if(ret == maxout)
+            return ret;
+
+        size_t len;
+        char cpath[MAX_PATH];
+        wcstombs_s(&len, cpath, sizeof(cpath), drives + cursor, MAX_PATH);
+
+        icons[ret] = DEFAULT_DISK_ICON;
+        pf_strlcpy(out[ret], cpath, NK_MAX_PATH_LEN);
+        fb_path_fix_separator(out[ret]);
+        pf_strlcpy(names[ret], cpath, len-1);
+        ret++;
+
+        cursor += len;
+    }
+
+    return ret;
+}
+
 #else
 
 static struct file *fb_get_list(const char *dir, size_t *out_size)
@@ -85,6 +223,7 @@ static struct file *fb_get_list(const char *dir, size_t *out_size)
                 capacity *= 2;
                 struct file *rfiles = realloc(files, sizeof(struct file) * capacity);
                 if(!rfiles) {
+                    closedir(d);
                     free(files);
                     return NULL;
                 }else{
@@ -108,7 +247,7 @@ static struct file *fb_get_list(const char *dir, size_t *out_size)
 static void fb_realpath(const char rel[static NK_MAX_PATH_LEN], char abs[static NK_MAX_PATH_LEN])
 {
     char relf[PATH_MAX], absf[PATH_MAX];
-    pf_strlcpy(relf, rel, NK_MAX_PATH_LEN);
+    pf_strlcpy(relf, rel, sizeof(relf));
 
     if(NULL == realpath(relf, absf)) {
         abs[0] = '\0';
@@ -117,13 +256,50 @@ static void fb_realpath(const char rel[static NK_MAX_PATH_LEN], char abs[static 
     }
 }
 
-static const char *fb_homedir(void)
+static bool fb_homedir(char out[static NK_MAX_PATH_LEN])
 {
     const char *home = getenv("HOME");
     if(!home) {
         home = getpwuid(getuid())->pw_dir;
     }
-    return home;
+    if(!home) {
+        return false;
+    }
+    pf_strlcpy(out, home, NK_MAX_PATH_LEN);
+    return true;
+}
+
+static size_t fb_get_places(size_t maxout, char out[static maxout][NK_MAX_PATH_LEN], 
+                            char *icons[static maxout], char names[static maxout][32])
+{
+    size_t ret = 0;
+    if(ret == maxout)
+        return ret;
+
+    bool found = fb_homedir(out[0]);
+    if(found) {
+        icons[ret] = DEFAULT_HOME_ICON;
+        pf_strlcpy(names[ret], "Home", 32);
+        ret++;
+    }
+    if(ret == maxout)
+        return ret;
+
+    if(found) {
+        pf_snprintf(out[ret], NK_MAX_PATH_LEN, "%s/Desktop", out[ret-1]);
+        icons[ret] = DEFAULT_DESKTOP_ICON;
+        pf_strlcpy(names[ret], "Desktop", 32);
+        ret++;
+    }
+    if(ret == maxout)
+        return ret;
+
+    icons[ret] = DEFAULT_DISK_ICON;
+    pf_strlcpy(out[ret], "/", NK_MAX_PATH_LEN);
+    pf_strlcpy(names[ret], "File System", 32);
+    ret++;
+
+    return ret;
 }
 
 #endif
@@ -135,7 +311,9 @@ static void fb_selector_bar(struct nk_context *ctx, struct nk_fb_state *state)
     const size_t buttons_per_row = 6;
 
     char *d = state->directory;
-    char *begin = d + 1;
+    char *begin = d;
+    if(*begin == '/')
+        begin++;
 
     nk_layout_row_dynamic(ctx, SELECTOR_BAR_HEIGHT, buttons_per_row);
 
@@ -145,6 +323,7 @@ static void fb_selector_bar(struct nk_context *ctx, struct nk_fb_state *state)
             if(nk_button_label(ctx, begin)) {
                 *d++ = '/'; 
                 *d = '\0';
+                begin = d + 1;
                 break;
             }
             *d = '/';
@@ -238,29 +417,23 @@ static void fb_file_list(struct nk_context *ctx, struct nk_fb_state *state)
     free(files);
 }
 
-static void fb_favorites_list(struct nk_context *ctx, struct nk_fb_state *state)
+static void fb_places_list(struct nk_context *ctx, struct nk_fb_state *state)
 {
-    const char *home = fb_homedir();
+    const size_t max_places = 16;
+    char paths[max_places][NK_MAX_PATH_LEN];
+    char *icons[max_places];
+    char names[max_places][32];
 
-    nk_layout_row_dynamic(ctx, 25, 1);
-    if(nk_button_texpath_label(ctx, DEFAULT_HOME_ICON, "Home", NK_TEXT_ALIGN_RIGHT)) {
+    size_t nplaces = fb_get_places(max_places, paths, icons, names);
 
-        pf_strlcpy(state->directory, home, sizeof(state->directory));
-        state->selected[0] = '\0';
-    }
+    for(int i = 0; i < nplaces; i++) {
 
-    nk_layout_row_dynamic(ctx, 25, 1);
-    if(nk_button_texpath_label(ctx, DEFAULT_DESKTOP_ICON, "Desktop", NK_TEXT_ALIGN_RIGHT)) {
-    
-        pf_snprintf(state->directory, sizeof(state->directory), "%s/Desktop", home);
-        state->selected[0] = '\0';
-    }
+        nk_layout_row_dynamic(ctx, 25, 1);
+        if(nk_button_texpath_label(ctx, icons[i], names[i], NK_TEXT_ALIGN_RIGHT)) {
 
-    nk_layout_row_dynamic(ctx, 25, 1);
-    if(nk_button_texpath_label(ctx, DEFAULT_DISK_ICON, "File System", NK_TEXT_ALIGN_RIGHT)) {
-
-        pf_strlcpy(state->directory, "/", sizeof(state->directory));
-        state->selected[0] = '\0';
+            pf_strlcpy(state->directory, paths[i], sizeof(state->directory));
+            state->selected[0] = '\0';
+        }
     }
 }
 
@@ -270,6 +443,10 @@ static void fb_favorites_list(struct nk_context *ctx, struct nk_fb_state *state)
 
 void nk_file_browser(struct nk_context *ctx, struct nk_fb_state *state)
 {
+    char abs[NK_MAX_PATH_LEN];
+    fb_realpath(state->directory, abs);
+    pf_strlcpy(state->directory, abs, sizeof(state->directory));
+
     nk_group_begin(ctx, state->name, state->flags);
     {
         struct nk_rect total_space = nk_window_get_content_region(ctx);
@@ -281,7 +458,7 @@ void nk_file_browser(struct nk_context *ctx, struct nk_fb_state *state)
 
         nk_group_begin(ctx, left_name, NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER);
         {
-            fb_favorites_list(ctx, state);
+            fb_places_list(ctx, state);
         }
         nk_group_end(ctx);
 

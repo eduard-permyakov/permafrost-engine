@@ -499,6 +499,8 @@ static int render(void *data)
     bool quit = render_wait_cmd(rstate);
     assert(!quit);
     render_init_ctx(rstate->arg);
+	bool initialized = rstate->arg->out_success;
+
     rstate->arg = NULL; /* arg is stale after signalling main thread */
     render_signal_done(rstate);
 
@@ -515,7 +517,9 @@ static int render(void *data)
         render_signal_done(rstate);
     }
 
-    render_destroy_ctx();
+	if(initialized) {
+    	render_destroy_ctx();
+	}
     return 0;
 }
 

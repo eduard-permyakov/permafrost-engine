@@ -69,7 +69,8 @@ WINDOWS_LDFLAGS = \
 	-lSDL2 \
 	-lglew32 \
 	-llibpython2.7 \
-	-lopengl32
+	-lopengl32 \
+	-luuid
 
 WINDOWS_DEFS = -DMS_WIN64
 

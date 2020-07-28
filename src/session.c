@@ -321,7 +321,7 @@ void Session_ServiceRequests(void)
         return;
 
     char errbuff[512] = {0};
-    bool result;
+    bool result = false;
 
     switch(s_request) {
     case SESH_REQ_LOAD:
