@@ -55,8 +55,10 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <string.h>
+#include <stdlib.h>
 
 #if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
 
@@ -599,27 +601,16 @@ void Engine_ClearPendingEvents(void)
 #if defined(_WIN32)
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, 
                      LPSTR lpCmdLine, int nCmdShow)
+{
+    int argc = __argc;
+    char **argv = __argv;
+
 #else
 int main(int argc, char **argv)
-#endif
 {
-    int ret = EXIT_SUCCESS;
-
-#if defined(_WIN32)
-    LPWSTR *argv_wide;
-    char args[16][256];
-    char *argv[16];
-    int argc;
-    argv_wide = CommandLineToArgvW(GetCommandLineW(), &argc);
-    if(!argv_wide)
-        goto fail_args;
-
-    for(int i = 0; i < argc; i++) {
-        argv[i] = args[i];
-        snprintf(argv[i], sizeof(args[i]), "%S", argv_wide[i]);
-    }
-    LocalFree(argv_wide);
 #endif
+
+    int ret = EXIT_SUCCESS;
 
     if(argc != 3) {
         printf("Usage: %s [base directory path (containing 'assets', 'shaders' and 'scripts' folders)] [script path]\n", argv[0]);
