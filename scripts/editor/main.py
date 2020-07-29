@@ -65,7 +65,7 @@ minimap_pos = pf.get_minimap_position()
 pf.set_minimap_position(UI_LEFT_PANE_WIDTH + minimap_pos[0], minimap_pos[1])
 
 pf.disable_unit_selection()
-pf.settings_set("pf.game.fog_of_war_enabled", False, persist=False)
+pf.disable_fog_of_war()
 
 pf.add_faction(DEFAULT_FACTION_NAME, DEFAULT_FACTION_COLOR)
 mouse_events.install()

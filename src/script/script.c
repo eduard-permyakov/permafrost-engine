@@ -94,6 +94,8 @@ static PyObject *PyPf_mouse_over_ui(PyObject *self);
 static PyObject *PyPf_ui_text_edit_has_focus(PyObject *self);
 static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args);
 
+static PyObject *PyPf_enable_fog_of_war(PyObject *self);
+static PyObject *PyPf_disable_fog_of_war(PyObject *self);
 static PyObject *PyPf_enable_unit_selection(PyObject *self);
 static PyObject *PyPf_disable_unit_selection(PyObject *self);
 static PyObject *PyPf_clear_unit_selection(PyObject *self);
@@ -247,6 +249,14 @@ static PyMethodDef pf_module_methods[] = {
     {"get_file_size", 
     (PyCFunction)PyPf_get_file_size, METH_VARARGS,
     "Get the size (in bytes) of a Python file object."},
+
+    {"enable_fog_of_war", 
+    (PyCFunction)PyPf_enable_fog_of_war, METH_NOARGS,
+    "Enable the fog of war."},
+
+    {"disable_fog_of_war", 
+    (PyCFunction)PyPf_disable_fog_of_war, METH_NOARGS,
+    "Disable the fog of war."},
 
     {"enable_unit_selection", 
     (PyCFunction)PyPf_enable_unit_selection, METH_NOARGS,
@@ -856,6 +866,18 @@ static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args)
 	SDL_FreeRW(rw);
 
 	return ret;
+}
+
+static PyObject *PyPf_enable_fog_of_war(PyObject *self)
+{
+    G_Fog_Enable();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_disable_fog_of_war(PyObject *self)
+{
+    G_Fog_Disable();
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_enable_unit_selection(PyObject *self)

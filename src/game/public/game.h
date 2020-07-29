@@ -245,6 +245,8 @@ void G_Fog_UpdateVisionRange(vec2_t xz_pos, int faction_id, float old, float new
 bool G_Fog_Visible(int faction_id, vec2_t xz_pos);
 bool G_Fog_Explored(int faction_id, vec2_t xz_pos);
 void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x4_t *model);
+void G_Fog_Enable(void);
+void G_Fog_Disable(void);
 
 #endif
 

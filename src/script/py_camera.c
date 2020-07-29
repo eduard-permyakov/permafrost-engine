@@ -557,7 +557,7 @@ bool S_Camera_Init(void)
     }
 
     ((PyCameraObject*)s_active_cam)->cam = G_GetActiveCamera();
-    ((PyCameraObject*)s_active_cam)->mode = G_GetCameraMode();
+    ((PyCameraObject*)s_active_cam)->mode = CAM_MODE_RTS; /* default */
 
     return true;
 }

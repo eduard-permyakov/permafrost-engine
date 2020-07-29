@@ -864,6 +864,7 @@ void G_ClearState(void)
 
     g_reset_camera(s_gs.active_cam);
     G_SetActiveCamera(s_gs.active_cam, CAM_MODE_RTS);
+    G_Sel_Enable();
 
     s_gs.factions_allocd = 0;
 

@@ -59,5 +59,7 @@ bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb);
 bool G_Fog_SaveState(struct SDL_RWops *stream);
 bool G_Fog_LoadState(struct SDL_RWops *stream);
 
+bool G_Fog_Enabled(void);
+
 #endif
 

@@ -88,6 +88,7 @@ static uint32_t         *s_fog_state;
 static uint8_t          *s_vision_refcnts[MAX_FACTIONS];
 /* Cache all the entities that have been explored by the player, for faster queries */
 static khash_t(uid)     *s_explored_cache;
+static bool              s_enabled = true;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -418,6 +419,7 @@ bool G_Fog_Init(const struct map *map)
 
     s_map = map;
     E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
+    s_enabled = true;
     return true;
 
 fail:
@@ -551,11 +553,7 @@ void G_Fog_UpdateVisionState(void)
     size_t size = res.chunk_h * res.tile_h * res.chunk_w * res.tile_w;
     unsigned char *visbuff = stalloc(&G_GetSimWS()->args, size);
 
-    struct sval fog_setting;
-    ss_e status = Settings_Get("pf.game.fog_of_war_enabled", &fog_setting);
-    assert(status == SS_OKAY);
-
-    if(!fog_setting.as_bool) {
+    if(!s_enabled) {
         memset(visbuff, STATE_VISIBLE, size);
         goto submit;
     }
@@ -592,10 +590,7 @@ submit:
 
 bool G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb)
 {
-    struct sval fog_setting;
-    ss_e status = Settings_Get("pf.game.fog_of_war_enabled", &fog_setting);
-    assert(status == SS_OKAY);
-    if(!fog_setting.as_bool)
+    if(!s_enabled)
         return true;
 
     khiter_t k = kh_get(uid, s_explored_cache, uid);
@@ -615,10 +610,7 @@ bool G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb)
 
 bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb)
 {
-    struct sval fog_setting;
-    ss_e status = Settings_Get("pf.game.fog_of_war_enabled", &fog_setting);
-    assert(status == SS_OKAY);
-    if(!fog_setting.as_bool)
+    if(!s_enabled)
         return true;
 
     enum fog_state states[] = {STATE_VISIBLE};
@@ -635,6 +627,12 @@ bool G_Fog_SaveState(struct SDL_RWops *stream)
     struct map_resolution res;
     M_GetResolution(s_map, &res);
     const size_t ntiles = res.chunk_w * res.chunk_h * res.tile_w * res.tile_h;
+
+    struct attr enabled = (struct attr){
+        .type = TYPE_BOOL, 
+        .val.as_bool = s_enabled
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &enabled, "enabled"));
 
     struct attr ntiles_attr = (struct attr){
         .type = TYPE_INT,
@@ -669,6 +667,10 @@ bool G_Fog_LoadState(struct SDL_RWops *stream)
     struct attr attr;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    s_enabled = attr.val.as_bool;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const size_t ntiles = attr.val.as_int;
 
@@ -680,5 +682,20 @@ bool G_Fog_LoadState(struct SDL_RWops *stream)
     }
 
     return true;
+}
+
+void G_Fog_Enable(void)
+{
+    s_enabled = true;
+}
+
+void G_Fog_Disable(void)
+{
+    s_enabled = false;
+}
+
+bool G_Fog_Enabled(void)
+{
+    return s_enabled;
 }
 
