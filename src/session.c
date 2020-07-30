@@ -71,6 +71,7 @@ enum request{
 static vec_stream_t s_subsession_stack;
 static enum request s_request = SESH_REQ_NONE;
 static char         s_req_path[512];
+static char         s_errbuff[512] = {0};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -320,24 +321,23 @@ void Session_ServiceRequests(void)
     if(s_request == SESH_REQ_NONE)
         return;
 
-    char errbuff[512] = {0};
     bool result = false;
 
     switch(s_request) {
     case SESH_REQ_LOAD:
-        result = session_load(s_req_path, errbuff, sizeof(errbuff));
+        result = session_load(s_req_path, s_errbuff, sizeof(s_errbuff));
         break;
     case SESH_REQ_PUSH:
-        result = session_push_subsession(s_req_path, errbuff, sizeof(errbuff));
+        result = session_push_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
         break;
     case SESH_REQ_POP:
-        result = session_pop_subsession(errbuff, sizeof(errbuff));
+        result = session_pop_subsession(s_errbuff, sizeof(s_errbuff));
         break;
     default: assert(0);
     }
 
     if(!result) {
-        E_Global_Notify(EVENT_SESSION_FAIL_LOAD, errbuff, ES_ENGINE);
+        E_Global_Notify(EVENT_SESSION_FAIL_LOAD, s_errbuff, ES_ENGINE);
     }
     s_request = SESH_REQ_NONE;
 }

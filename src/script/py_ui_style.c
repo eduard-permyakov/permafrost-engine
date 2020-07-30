@@ -1453,6 +1453,16 @@ PyObject *S_UIHeaderStyleNew(void)
     return PyObject_CallFunctionObjArgs((PyObject*)&PyUIHeaderStyle_type, NULL);
 }
 
+size_t S_UIHeaderGetHeight(PyObject *obj, struct nk_context *ctx)
+{
+    assert(PyObject_IsInstance(obj, (PyObject*)&PyUIHeaderStyle_type));
+    PyUIHeaderStyleObject *styleobj = (PyUIHeaderStyleObject*)obj;
+
+    return ctx->style.font->height
+         + 2 * styleobj->style.padding.y
+         + 2 * styleobj->style.label_padding.y;
+}
+
 void S_UIHeaderStylePush(PyObject *obj, struct nk_context *ctx)
 {
     assert(PyObject_IsInstance(obj, (PyObject*)&PyUIHeaderStyle_type));

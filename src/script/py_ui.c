@@ -95,6 +95,8 @@ static PyObject *PyWindow_selectable_label(PyWindowObject *self, PyObject *args)
 static PyObject *PyWindow_option_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_edit_string(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_popup(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_popup_close(PyWindowObject *self);
 static PyObject *PyWindow_tree(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_tree_element(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_selectable_symbol_label(PyWindowObject *self, PyObject *args);
@@ -207,6 +209,14 @@ static PyMethodDef PyWindow_methods[] = {
     {"group", 
     (PyCFunction)PyWindow_group, METH_VARARGS,
     "The window UI components pushed in the callable argument will be nested under a group."},
+
+    {"popup", 
+    (PyCFunction)PyWindow_popup, METH_VARARGS,
+    "The window UI components pushed in the callable argument will be presented in a popup."},
+
+    {"popup_close", 
+    (PyCFunction)PyWindow_popup_close, METH_NOARGS,
+    "Close the currently active popup window. Must only be called from poup context."},
 
     {"tree", 
     (PyCFunction)PyWindow_tree, METH_VARARGS,
@@ -715,22 +725,77 @@ static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args)
     int group_flags;
     PyObject *callable, *cargs = NULL;
 
-    if(!PyArg_ParseTuple(args, "siO|O", &name, &group_flags, &callable)) {
+    if(!PyArg_ParseTuple(args, "siO|O", &name, &group_flags, &callable, &cargs)) {
         PyErr_SetString(PyExc_TypeError, "Arguments must be a string, an integer and an object. "
             "Optionally, args to the callable can be supplied.");
         return NULL;
     }
 
     if(!PyCallable_Check(callable)) {
-        PyErr_SetString(PyExc_TypeError, "Second argument must be callable.");
+        PyErr_SetString(PyExc_TypeError, "Third argument must be callable.");
         return NULL;
     }
 
     if(nk_group_begin(s_nk_ctx, name, group_flags)) {
-        PyObject *ret = PyObject_CallObject(callable, NULL);
+        PyObject *ret = PyObject_CallObject(callable, cargs);
         Py_XDECREF(ret);
+
+        nk_group_end(s_nk_ctx);
+        if(!ret)
+            return NULL;
     }
-    nk_group_end(s_nk_ctx);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_popup(PyWindowObject *self, PyObject *args)
+{
+    const char *name;
+    enum nk_popup_type type;
+    int popup_flags;
+    struct nk_rect rect;
+    PyObject *callable, *cargs = NULL;
+
+    if(!PyArg_ParseTuple(args, "sii(ffff)O|O", &name, &type, &popup_flags, &rect.x, &rect.y, &rect.w, &rect.h, &callable, &cargs)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string, an integer (type), an integer (flags), "
+            "a tuple of 4 floats (bounds) and a callable object. "
+            "Optionally, args to the callable can be supplied.");
+        return NULL;
+    }
+
+    if(type != NK_POPUP_STATIC && type != NK_POPUP_DYNAMIC) {
+        PyErr_SetString(PyExc_TypeError, "The type argument must be one of pf.NK_POPUP_STATIC or pf.NK_POPUP_DYNAMIC.");
+        return NULL;
+    }
+
+    if(!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "Fifth argument must be callable.");
+        return NULL;
+    }
+
+    if(nk_popup_begin(s_nk_ctx, type, name, popup_flags, rect)) {
+        PyObject *ret = PyObject_CallObject(callable, cargs);
+        Py_XDECREF(ret);
+        nk_popup_end(s_nk_ctx);
+
+        if(!ret)
+            return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_popup_close(PyWindowObject *self)
+{
+    struct nk_window *popup;
+
+    struct nk_window *win = s_nk_ctx->current;
+    struct nk_panel *panel = win->layout;
+    if(!(panel->type & NK_PANEL_SET_POPUP)) {
+    
+        PyErr_SetString(PyExc_RuntimeError, "The 'popup_close' method must only be called from poup context.");
+        return NULL;
+    }
+
+    nk_popup_close(s_nk_ctx);
     Py_RETURN_NONE;
 }
 
@@ -1191,10 +1256,7 @@ static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure)
 
 static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure)
 {
-    float header_height = s_nk_ctx->style.font->height
-                        + 2.0f * self->style.header.padding.y
-                        + 2.0f * self->style.header.label_padding.y;
-    return Py_BuildValue("i", (int)header_height);
+    return Py_BuildValue("i", (int)S_UIHeaderGetHeight(self->header_style, s_nk_ctx));
 }
 
 static PyObject *PyWindow_get_spacing(PyWindowObject *self, void *closure)
@@ -1595,9 +1657,7 @@ bool S_UI_MouseOverWindow(int mouse_x, int mouse_y)
         struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
         if(nkwin && nkwin->flags & NK_WINDOW_MINIMIZED) {
         
-            float header_height = s_nk_ctx->style.font->height
-                                + 2.0f * s_nk_ctx->style.window.header.padding.y
-                                + 2.0f * s_nk_ctx->style.window.header.label_padding.y;
+            float header_height = S_UIHeaderGetHeight(win->header_style, s_nk_ctx);
             visible_size.y = header_height;
         }
 

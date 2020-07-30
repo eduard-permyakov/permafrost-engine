@@ -51,6 +51,7 @@ bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_windo
 bool S_UI_Style_LoadWindow(struct SDL_RWops *stream, struct nk_style_window *out);
 
 PyObject *S_UIHeaderStyleNew(void);
+size_t S_UIHeaderGetHeight(PyObject *obj, struct nk_context *ctx);
 void S_UIHeaderStylePush(PyObject *obj, struct nk_context *ctx);
 void S_UIHeaderStylePop(PyObject *obj, struct nk_context *ctx);
 

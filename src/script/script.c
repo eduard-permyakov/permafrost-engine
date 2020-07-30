@@ -585,7 +585,10 @@ static PyObject *register_handler(PyObject *self, PyObject *args, int simmask)
     Py_INCREF(user_arg);
 
     bool ret = E_Global_ScriptRegister(event, callable, user_arg, simmask);
-    assert(ret == true);
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not register handler for event.");
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 
@@ -1745,9 +1748,15 @@ bool S_RunFile(const char *path)
     if(!s_sys_path_add_dir(path))
         goto done;
 
-    PyObject *PyFileObject = PyFile_FromString((char*)path, "r");
-    PyRun_SimpleFile(PyFile_AsFile(PyFileObject), path);
-    ret = true;
+    PyObject *main_module = PyImport_AddModule("__main__"); /* borrowed */
+    if(!main_module)
+        goto done;
+    
+    PyObject *global_dict = PyModule_GetDict(main_module); /* borrowed */
+    PyObject *result = PyRun_File(script, path, Py_file_input, global_dict, global_dict);
+
+    ret = (result != NULL);
+    Py_XDECREF(result);
 
 done:
     fclose(script);
