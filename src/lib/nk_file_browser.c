@@ -40,6 +40,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -59,6 +60,7 @@
 #define DEFAULT_DESKTOP_ICON    "assets/icons/desktop-icon.png"
 #define DEFAULT_DISK_ICON       "assets/icons/hard-drive-icon.png"
 #define SELECTOR_BAR_HEIGHT     (25)
+#define BUTTONS_PER_ROW         (6)
 
 struct file{
     bool is_dir;
@@ -309,14 +311,13 @@ static void fb_selector_bar(struct nk_context *ctx, struct nk_fb_state *state)
 {
     float spacing_x = ctx->style.window.spacing.x;
     ctx->style.window.spacing.x = 0;
-    const size_t buttons_per_row = 6;
 
     char *d = state->directory;
     char *begin = d;
     if(*begin == '/')
         begin++;
 
-    nk_layout_row_dynamic(ctx, SELECTOR_BAR_HEIGHT, buttons_per_row);
+    nk_layout_row_dynamic(ctx, SELECTOR_BAR_HEIGHT, BUTTONS_PER_ROW);
 
     while(*d++) {
         if(*d == '/') {
@@ -367,10 +368,22 @@ static void fb_sort_list(struct file *files, size_t nfiles)
     }
 }
 
+static size_t fb_selector_rows(const char *path)
+{
+    size_t ret = 0;
+    char *ch = strchr(path,'/');
+    while(ch) {
+        ret++;
+        ch = strchr(ch + 1, '/');
+    }
+    return ceil(ret / (float)BUTTONS_PER_ROW);
+}
+
 static void fb_file_list(struct nk_context *ctx, struct nk_fb_state *state)
 {
     struct nk_rect total_space = nk_window_get_content_region(ctx);
-    float height = total_space.h - SELECTOR_BAR_HEIGHT - ctx->style.window.spacing.y * 2;
+    float height = total_space.h - ctx->style.window.spacing.y 
+        - fb_selector_rows(state->directory) * (SELECTOR_BAR_HEIGHT + ctx->style.window.spacing.y);
 
     size_t nfiles;
     struct file *files = fb_get_list(state->directory, &nfiles);
