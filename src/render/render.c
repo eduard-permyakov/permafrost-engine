@@ -318,7 +318,7 @@ void debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
     fflush(stderr);
 }
 
-static void render_init_ctx(struct render_init_arg *arg)
+static SDL_GLContext render_new_ctx(struct SDL_Window *window)
 {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -337,7 +337,11 @@ static void render_init_ctx(struct render_init_arg *arg)
     ctx_flags |= SDL_GL_CONTEXT_DEBUG_FLAG;
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, ctx_flags);
 
-    s_context = SDL_GL_CreateContext(arg->in_window);
+    return SDL_GL_CreateContext(window);
+}
+
+static void render_init_ctx(struct render_init_arg *arg)
+{
     SDL_GL_MakeCurrent(arg->in_window, s_context);
 
     glewExperimental = GL_TRUE;
@@ -495,6 +499,8 @@ static int render(void *data)
 {
     struct render_sync_state *rstate = data; 
     SDL_Window *window = rstate->arg->in_window; /* cache window ptr */
+
+    SDL_GL_MakeCurrent(window, s_context);
 
     bool quit = render_wait_cmd(rstate);
     assert(!quit);
@@ -660,6 +666,14 @@ bool R_Init(const char *base_path)
 
 SDL_Thread *R_Run(struct render_sync_state *rstate)
 {
+    ASSERT_IN_MAIN_THREAD();
+
+    /* Create the GL context in the main thread and then hand it off to the render thread. 
+     * Certain drivers crap out when trying to make the context in the render thread directly. 
+     */
+    s_context = render_new_ctx(rstate->arg->in_window);
+    SDL_GL_MakeCurrent(rstate->arg->in_window, NULL);
+
     return SDL_CreateThread(render, "render", rstate);
 }
 
