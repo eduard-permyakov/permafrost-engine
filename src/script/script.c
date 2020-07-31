@@ -1758,6 +1758,10 @@ bool S_RunFile(const char *path)
     ret = (result != NULL);
     Py_XDECREF(result);
 
+    if(PyErr_Occurred()) {
+        PyErr_Print();
+    }
+
 done:
     fclose(script);
     return ret;

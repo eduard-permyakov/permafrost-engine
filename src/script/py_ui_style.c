@@ -121,6 +121,54 @@ static int       PyUIHeaderStyle_set_label_active(PyUIHeaderStyleObject *self, P
 static PyObject *PyUIHeaderStyle_pickle(PyUIHeaderStyleObject *self);
 static PyObject *PyUIHeaderStyle_unpickle(PyObject *cls, PyObject *args);
 
+typedef struct {
+    PyObject_HEAD
+    struct nk_style_selectable *style;
+}PyUISelectableStyleObject;
+
+/* background (inactive) */
+static PyObject *PyUISelectableStyle_get_normal(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_normal(PyUISelectableStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISelectableStyle_get_hover(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_hover(PyUISelectableStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISelectableStyle_get_pressed(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_pressed(PyUISelectableStyleObject *self, PyObject *value, void *);
+/* background (active) */
+static PyObject *PyUISelectableStyle_get_normal_active(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_normal_active(PyUISelectableStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISelectableStyle_get_hover_active(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_hover_active(PyUISelectableStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISelectableStyle_get_pressed_active(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_pressed_active(PyUISelectableStyleObject *self, PyObject *value, void *);
+/* text color (inactive) */
+static PyObject *PyUISelectableStyle_get_text_normal(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_text_normal(PyUISelectableStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISelectableStyle_get_text_hover(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_text_hover(PyUISelectableStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISelectableStyle_get_text_pressed(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_text_pressed(PyUISelectableStyleObject *self, PyObject *value, void *);
+/* text color (active) */
+static PyObject *PyUISelectableStyle_get_text_normal_active(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_text_normal_active(PyUISelectableStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISelectableStyle_get_text_hover_active(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_text_hover_active(PyUISelectableStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISelectableStyle_get_text_pressed_active(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_text_pressed_active(PyUISelectableStyleObject *self, PyObject *value, void *);
+/* properties */
+static PyObject *PyUISelectableStyle_get_text_alignment(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_text_alignment(PyUISelectableStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISelectableStyle_get_rounding(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_rounding(PyUISelectableStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISelectableStyle_get_padding(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_padding(PyUISelectableStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISelectableStyle_get_image_padding(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_image_padding(PyUISelectableStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISelectableStyle_get_touch_padding(PyUISelectableStyleObject *self, void *);
+static int       PyUISelectableStyle_set_touch_padding(PyUISelectableStyleObject *self, PyObject *value, void *);
+
+static PyObject *PyUISelectableStyle_pickle(PyUISelectableStyleObject *self);
+static PyObject *PyUISelectableStyle_unpickle(PyObject *cls, PyObject *args);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -377,6 +425,172 @@ static PyTypeObject PyUIHeaderStyle_type = {
     PyUIHeaderStyle_new,       /* tp_new */
 };
 
+static PyMethodDef PyUISelectableStyle_methods[] = {
+    {"__pickle__", 
+    (PyCFunction)PyUISelectableStyle_pickle, METH_NOARGS,
+    "Serialize a Permafrost Engine UISelectableStyle object to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyUISelectableStyle_unpickle, METH_VARARGS | METH_CLASS,
+    "Create a new pf.UISelectableStyle instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyGetSetDef PyUISelectableStyle_getset[] = {
+    {"normal",
+    (getter)PyUISelectableStyle_get_normal, 
+    (setter)PyUISelectableStyle_set_normal,
+    "The look of the selectable label in the normal (inactive) state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"hover",
+    (getter)PyUISelectableStyle_get_hover, 
+    (setter)PyUISelectableStyle_set_hover,
+    "The look of the selectable label in the hovered (inactive) state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"pressed",
+    (getter)PyUISelectableStyle_get_pressed, 
+    (setter)PyUISelectableStyle_set_pressed,
+    "The look of the selectable label in the pressed (inactive) state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"normal_active",
+    (getter)PyUISelectableStyle_get_normal_active, 
+    (setter)PyUISelectableStyle_set_normal_active,
+    "The look of the selectable label in the normal (active) state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"hover_active",
+    (getter)PyUISelectableStyle_get_hover_active, 
+    (setter)PyUISelectableStyle_set_hover_active,
+    "The look of the selectable label in the hovered (active) state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"pressed_active",
+    (getter)PyUISelectableStyle_get_pressed_active,
+    (setter)PyUISelectableStyle_set_pressed_active,
+    "The look of the selectable label in the pressed (active) state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"text_normal",
+    (getter)PyUISelectableStyle_get_text_normal, 
+    (setter)PyUISelectableStyle_set_text_normal,
+    "The color of the selectable label text in the normal (inactive) state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"text_hover",
+    (getter)PyUISelectableStyle_get_text_hover, 
+    (setter)PyUISelectableStyle_set_text_hover,
+    "The color of the selectable label text in the hovered (inactive) state - an (R, G, B, A) tuple",
+    NULL},
+
+    {"text_pressed",
+    (getter)PyUISelectableStyle_get_text_pressed, 
+    (setter)PyUISelectableStyle_set_text_pressed,
+    "The color of the selectable label text in the pressed (inactive) state - an (R, G, B, A) tuple",
+    NULL},
+
+    {"text_normal_active",
+    (getter)PyUISelectableStyle_get_text_normal_active, 
+    (setter)PyUISelectableStyle_set_text_normal_active,
+    "The color of the selectable label text in the normal (active) state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"text_hover_active",
+    (getter)PyUISelectableStyle_get_text_hover_active, 
+    (setter)PyUISelectableStyle_set_text_hover_active,
+    "The color of the selectable label text in the hovered (active) state - an (R, G, B, A) tuple",
+    NULL},
+
+    {"text_pressed_active",
+    (getter)PyUISelectableStyle_get_text_pressed_active, 
+    (setter)PyUISelectableStyle_set_text_pressed_active,
+    "The color of the selectable label text in the pressed (active) state - an (R, G, B, A) tuple",
+    NULL},
+
+    {"text_alignment",
+    (getter)PyUISelectableStyle_get_text_alignment, 
+    (setter)PyUISelectableStyle_set_text_alignment,
+    "The mode of text alignment (pf.NK_TEXT_CENTERED, etc.).",
+    NULL},
+
+    {"rounding",
+    (getter)PyUISelectableStyle_get_rounding, 
+    (setter)PyUISelectableStyle_set_rounding,
+    "A floating-point value to control how rounded the selectable label corners are.", 
+    NULL},
+
+    {"padding",
+    (getter)PyUISelectableStyle_get_padding, 
+    (setter)PyUISelectableStyle_set_padding,
+    "An (X, Y) tuple of floats to control the padding around selectable labels.", 
+    NULL},
+
+    {"image_padding",
+    (getter)PyUISelectableStyle_get_image_padding, 
+    (setter)PyUISelectableStyle_set_image_padding,
+    "An (X, Y) tuple of floats to control the padding around images.", 
+    NULL},
+
+    {"touch_padding",
+    (getter)PyUISelectableStyle_get_touch_padding, 
+    (setter)PyUISelectableStyle_set_touch_padding,
+    "An (X, Y) tuple of floats to control the clickable region of the selectable label.", 
+    NULL},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyUISelectableStyle_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "pf.UISelectableStyle",        /* tp_name */
+    sizeof(PyUISelectableStyleObject), /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    0,                         /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_reserved */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash  */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT, /* tp_flags */
+    "Style configuration for Permafrost Engine selectable labels.", /* tp_doc */
+    0,                         /* tp_traverse */
+    0,                         /* tp_clear */
+    0,                         /* tp_richcompare */
+    0,                         /* tp_weaklistoffset */
+    0,                         /* tp_iter */
+    0,                         /* tp_iternext */
+    PyUISelectableStyle_methods, /* tp_methods */
+    0,                         /* tp_members */
+    PyUISelectableStyle_getset, /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    0,                         /* tp_init */
+    0,                         /* tp_alloc */
+    0,                         /* tp_new */
+};
+
 static struct nk_style_window_header s_saved_header_style;
 
 /*****************************************************************************/
@@ -424,115 +638,71 @@ static int parse_rgba(PyObject *tuple, float out[4])
     return 0;
 }
 
-static PyObject *PyUIButtonStyle_get_normal(PyUIButtonStyleObject *self, void *closure)
+static PyObject *style_get_item(const struct nk_style_item *item)
 {
-    if(self->style->normal.type == NK_STYLE_ITEM_COLOR) {
+    if(item->type == NK_STYLE_ITEM_COLOR) {
         return Py_BuildValue("(i,i,i,i)", 
-            self->style->normal.data.color.r,
-            self->style->normal.data.color.g,
-            self->style->normal.data.color.b,
-            self->style->normal.data.color.a);
+            item->data.color.r,
+            item->data.color.g,
+            item->data.color.b,
+            item->data.color.a);
     }else{
 
-        return PyString_FromString(self->style->normal.data.texpath);
+        return PyString_FromString(item->data.texpath);
     }
+}
+
+static int style_set_item(PyObject *value, struct nk_style_item *out)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) == 0) {
+
+        out->type = NK_STYLE_ITEM_COLOR;
+        out->data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+        return 0;
+
+    }else if(PyString_Check(value)) {
+
+        out->type = NK_STYLE_ITEM_TEXPATH;
+        pf_strlcpy(out->data.texpath, PyString_AS_STRING(value),
+            ARR_SIZE(out->data.texpath));
+        return 0;
+
+    }else{
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
+        return -1; 
+    }
+}
+
+static PyObject *PyUIButtonStyle_get_normal(PyUIButtonStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->normal);
 }
 
 static int PyUIButtonStyle_set_normal(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
-    float rgba[4];
-
-    if(parse_rgba(value, rgba) == 0) {
-
-        self->style->normal.type = NK_STYLE_ITEM_COLOR;
-        self->style->normal.data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
-        return 0;
-
-    }else if(PyString_Check(value)) {
-
-        self->style->normal.type = NK_STYLE_ITEM_TEXPATH;
-        pf_strlcpy(self->style->normal.data.texpath, PyString_AS_STRING(value),
-            ARR_SIZE(self->style->normal.data.texpath));
-        return 0;
-
-    }else{
-        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
-        return -1; 
-    }
+    return style_set_item(value, &self->style->normal);
 }
 
 static PyObject *PyUIButtonStyle_get_hover(PyUIButtonStyleObject *self, void *closure)
 {
-    if(self->style->hover.type == NK_STYLE_ITEM_COLOR) {
-        return Py_BuildValue("(i,i,i,i)", 
-            self->style->hover.data.color.r,
-            self->style->hover.data.color.g,
-            self->style->hover.data.color.b,
-            self->style->hover.data.color.a);
-    }else{
-
-        return PyString_FromString(self->style->hover.data.texpath);
-    }
+    return style_get_item(&self->style->hover);
 }
 
 static int PyUIButtonStyle_set_hover(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
-    float rgba[4];
-
-    if(parse_rgba(value, rgba) == 0) {
-
-        self->style->hover.type = NK_STYLE_ITEM_COLOR;
-        self->style->hover.data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
-        return 0;
-
-    }else if(PyString_Check(value)) {
-
-        self->style->hover.type = NK_STYLE_ITEM_TEXPATH;
-        pf_strlcpy(self->style->hover.data.texpath, PyString_AS_STRING(value),
-            ARR_SIZE(self->style->hover.data.texpath));
-        return 0;
-
-    }else{
-        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
-        return -1; 
-    }
+    return style_set_item(value, &self->style->hover);
 }
 
 static PyObject *PyUIButtonStyle_get_active(PyUIButtonStyleObject *self, void *closure)
 {
-    if(self->style->active.type == NK_STYLE_ITEM_COLOR) {
-        return Py_BuildValue("(i,i,i,i)", 
-            self->style->active.data.color.r,
-            self->style->active.data.color.g,
-            self->style->active.data.color.b,
-            self->style->active.data.color.a);
-    }else{
-
-        return PyString_FromString(self->style->active.data.texpath);
-    }
+    return style_get_item(&self->style->active);
 }
 
 static int PyUIButtonStyle_set_active(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
-    float rgba[4];
-
-    if(parse_rgba(value, rgba) == 0) {
-
-        self->style->active.type = NK_STYLE_ITEM_COLOR;
-        self->style->active.data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
-        return 0;
-
-    }else if(PyString_Check(value)) {
-
-        self->style->active.type = NK_STYLE_ITEM_TEXPATH;
-        pf_strlcpy(self->style->active.data.texpath, PyString_AS_STRING(value),
-            ARR_SIZE(self->style->active.data.texpath));
-        return 0;
-
-    }else{
-        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
-        return -1; 
-    }
+    return style_set_item(value, &self->style->active);
 }
 
 static PyObject *PyUIButtonStyle_get_border_color(PyUIButtonStyleObject *self, void *closure)
@@ -653,7 +823,7 @@ static PyObject *PyUIButtonStyle_get_text_alignment(PyUIButtonStyleObject *self,
 static int PyUIButtonStyle_set_text_alignment(PyUIButtonStyleObject *self, PyObject *value, void *closure)
 {
     if(!PyInt_Check(value)) {
-        PyErr_SetString(PyExc_TypeError, "Type must be an unsigned integer.");
+        PyErr_SetString(PyExc_TypeError, "Type must be an integer.");
         return -1; 
     }
 
@@ -956,6 +1126,60 @@ bool load_button(struct SDL_RWops *stream, struct nk_style_button *out)
     return true;
 }
 
+bool save_selectable(struct SDL_RWops *stream, const struct nk_style_selectable *selectable)
+{
+    CHK_TRUE_RET(save_item(stream, &selectable->normal));
+    CHK_TRUE_RET(save_item(stream, &selectable->hover));
+    CHK_TRUE_RET(save_item(stream, &selectable->pressed));
+
+    CHK_TRUE_RET(save_item(stream, &selectable->normal_active));
+    CHK_TRUE_RET(save_item(stream, &selectable->hover_active));
+    CHK_TRUE_RET(save_item(stream, &selectable->pressed_active));
+
+    CHK_TRUE_RET(save_color(stream, selectable->text_normal));
+    CHK_TRUE_RET(save_color(stream, selectable->text_hover));
+    CHK_TRUE_RET(save_color(stream, selectable->text_pressed));
+
+    CHK_TRUE_RET(save_color(stream, selectable->text_normal_active));
+    CHK_TRUE_RET(save_color(stream, selectable->text_hover_active));
+    CHK_TRUE_RET(save_color(stream, selectable->text_pressed_active));
+
+    CHK_TRUE_RET(save_int(stream, selectable->text_alignment));
+    CHK_TRUE_RET(save_float(stream, selectable->rounding));
+    CHK_TRUE_RET(save_vec2(stream, selectable->padding));
+    CHK_TRUE_RET(save_vec2(stream, selectable->image_padding));
+    CHK_TRUE_RET(save_vec2(stream, selectable->touch_padding));
+
+    return true;
+}
+
+bool load_selectable(struct SDL_RWops *stream, struct nk_style_selectable *out)
+{
+    CHK_TRUE_RET(load_item(stream, &out->normal));
+    CHK_TRUE_RET(load_item(stream, &out->hover));
+    CHK_TRUE_RET(load_item(stream, &out->pressed));
+
+    CHK_TRUE_RET(load_item(stream, &out->normal_active));
+    CHK_TRUE_RET(load_item(stream, &out->hover_active));
+    CHK_TRUE_RET(load_item(stream, &out->pressed_active));
+
+    CHK_TRUE_RET(load_color(stream, &out->text_normal));
+    CHK_TRUE_RET(load_color(stream, &out->text_hover));
+    CHK_TRUE_RET(load_color(stream, &out->text_pressed));
+
+    CHK_TRUE_RET(load_color(stream, &out->text_normal_active));
+    CHK_TRUE_RET(load_color(stream, &out->text_hover_active));
+    CHK_TRUE_RET(load_color(stream, &out->text_pressed_active));
+
+    CHK_TRUE_RET(load_int(stream, (int*)&out->text_alignment));
+    CHK_TRUE_RET(load_float(stream, &out->rounding));
+    CHK_TRUE_RET(load_vec2(stream, &out->padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->image_padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->touch_padding));
+
+    return true;
+}
+
 static bool save_header(struct SDL_RWops *stream, const struct nk_style_window_header *header)
 {
     CHK_TRUE_RET(save_item(stream, &header->normal));
@@ -1117,113 +1341,32 @@ static PyObject *PyUIHeaderStyle_get_minimize_button(PyUIHeaderStyleObject *self
 
 static PyObject *PyUIHeaderStyle_get_normal(PyUIHeaderStyleObject *self, void *closure)
 {
-    if(self->style.normal.type == NK_STYLE_ITEM_COLOR) {
-        return Py_BuildValue("(i,i,i,i)", 
-            self->style.normal.data.color.r,
-            self->style.normal.data.color.g,
-            self->style.normal.data.color.b,
-            self->style.normal.data.color.a);
-    }else{
-
-        return PyString_FromString(self->style.normal.data.texpath);
-    }
+    return style_get_item(&self->style.normal);
 }
 
 static int PyUIHeaderStyle_set_normal(PyUIHeaderStyleObject *self, PyObject *value, void *closure)
 {
-    float rgba[4];
-
-    if(parse_rgba(value, rgba) == 0) {
-
-        self->style.normal.type = NK_STYLE_ITEM_COLOR;
-        self->style.normal.data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
-        return 0;
-
-    }else if(PyString_Check(value)) {
-
-        self->style.normal.type = NK_STYLE_ITEM_TEXPATH;
-        pf_strlcpy(self->style.normal.data.texpath, PyString_AS_STRING(value),
-            ARR_SIZE(self->style.normal.data.texpath));
-        return 0;
-
-    }else{
-        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
-        return -1; 
-    }
+    return style_set_item(value, &self->style.normal);
 }
 
 static PyObject *PyUIHeaderStyle_get_hover(PyUIHeaderStyleObject *self, void *closure)
 {
-    if(self->style.hover.type == NK_STYLE_ITEM_COLOR) {
-        return Py_BuildValue("(i,i,i,i)", 
-            self->style.hover.data.color.r,
-            self->style.hover.data.color.g,
-            self->style.hover.data.color.b,
-            self->style.hover.data.color.a);
-    }else{
-
-        return PyString_FromString(self->style.hover.data.texpath);
-    }
+    return style_get_item(&self->style.hover);
 }
 
 static int PyUIHeaderStyle_set_hover(PyUIHeaderStyleObject *self, PyObject *value, void *closure)
 {
-    float rgba[4];
-
-    if(parse_rgba(value, rgba) == 0) {
-
-        self->style.hover.type = NK_STYLE_ITEM_COLOR;
-        self->style.hover.data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
-        return 0;
-
-    }else if(PyString_Check(value)) {
-
-        self->style.hover.type = NK_STYLE_ITEM_TEXPATH;
-        pf_strlcpy(self->style.hover.data.texpath, PyString_AS_STRING(value),
-            ARR_SIZE(self->style.hover.data.texpath));
-        return 0;
-
-    }else{
-        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
-        return -1; 
-    }
+    return style_set_item(value, &self->style.hover);
 }
 
 static PyObject *PyUIHeaderStyle_get_active(PyUIHeaderStyleObject *self, void *closure)
 {
-    if(self->style.active.type == NK_STYLE_ITEM_COLOR) {
-        return Py_BuildValue("(i,i,i,i)", 
-            self->style.active.data.color.r,
-            self->style.active.data.color.g,
-            self->style.active.data.color.b,
-            self->style.active.data.color.a);
-    }else{
-
-        return PyString_FromString(self->style.active.data.texpath);
-    }
+    return style_get_item(&self->style.active);
 }
 
 static int PyUIHeaderStyle_set_active(PyUIHeaderStyleObject *self, PyObject *value, void *closure)
 {
-    float rgba[4];
-
-    if(parse_rgba(value, rgba) == 0) {
-
-        self->style.active.type = NK_STYLE_ITEM_COLOR;
-        self->style.active.data.color  = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
-        return 0;
-
-    }else if(PyString_Check(value)) {
-
-        self->style.active.type = NK_STYLE_ITEM_TEXPATH;
-        pf_strlcpy(self->style.active.data.texpath, PyString_AS_STRING(value),
-            ARR_SIZE(self->style.active.data.texpath));
-        return 0;
-
-    }else{
-        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
-        return -1; 
-    }
+    return style_set_item(value, &self->style.active);
 }
 
 static PyObject *PyUIHeaderStyle_get_label_normal(PyUIHeaderStyleObject *self, void *closure)
@@ -1345,6 +1488,346 @@ fail_args:
     return ret;
 }
 
+static PyObject *PyUISelectableStyle_get_normal(PyUISelectableStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->normal);
+}
+
+static int PyUISelectableStyle_set_normal(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->normal);
+}
+
+static PyObject *PyUISelectableStyle_get_hover(PyUISelectableStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->hover);
+}
+
+static int PyUISelectableStyle_set_hover(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->hover);
+}
+
+static PyObject *PyUISelectableStyle_get_pressed(PyUISelectableStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->pressed);
+}
+
+static int PyUISelectableStyle_set_pressed(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->pressed);
+}
+
+static PyObject *PyUISelectableStyle_get_normal_active(PyUISelectableStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->normal_active);
+}
+
+static int PyUISelectableStyle_set_normal_active(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->normal_active);
+}
+
+static PyObject *PyUISelectableStyle_get_hover_active(PyUISelectableStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->hover_active);
+}
+
+static int PyUISelectableStyle_set_hover_active(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->hover_active);
+}
+
+static PyObject *PyUISelectableStyle_get_pressed_active(PyUISelectableStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->pressed_active);
+}
+
+static int PyUISelectableStyle_set_pressed_active(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->pressed_active);
+}
+
+static PyObject *PyUISelectableStyle_get_text_normal(PyUISelectableStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_normal.r,
+        self->style->text_normal.g,
+        self->style->text_normal.b,
+        self->style->text_normal.a);
+}
+
+static int PyUISelectableStyle_set_text_normal(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_normal = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUISelectableStyle_get_text_hover(PyUISelectableStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_hover.r,
+        self->style->text_hover.g,
+        self->style->text_hover.b,
+        self->style->text_hover.a);
+}
+
+static int PyUISelectableStyle_set_text_hover(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_hover = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUISelectableStyle_get_text_pressed(PyUISelectableStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_pressed.r,
+        self->style->text_pressed.g,
+        self->style->text_pressed.b,
+        self->style->text_pressed.a);
+}
+
+static int PyUISelectableStyle_set_text_pressed(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_pressed = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUISelectableStyle_get_text_normal_active(PyUISelectableStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_normal_active.r,
+        self->style->text_normal_active.g,
+        self->style->text_normal_active.b,
+        self->style->text_normal_active.a);
+}
+
+static int PyUISelectableStyle_set_text_normal_active(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_normal_active = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUISelectableStyle_get_text_hover_active(PyUISelectableStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_hover_active.r,
+        self->style->text_hover_active.g,
+        self->style->text_hover_active.b,
+        self->style->text_hover_active.a);
+}
+
+static int PyUISelectableStyle_set_text_hover_active(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_hover_active = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUISelectableStyle_get_text_pressed_active(PyUISelectableStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_pressed_active.r,
+        self->style->text_pressed_active.g,
+        self->style->text_pressed_active.b,
+        self->style->text_pressed_active.a);
+}
+
+static int PyUISelectableStyle_set_text_pressed_active(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_pressed_active = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUISelectableStyle_get_text_alignment(PyUISelectableStyleObject *self, void *closure)
+{
+    return PyInt_FromLong(self->style->text_alignment);
+}
+
+static int PyUISelectableStyle_set_text_alignment(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an integer.");
+        return -1; 
+    }
+
+    self->style->text_alignment = PyInt_AsLong(value);
+    return 0;
+}
+
+static PyObject *PyUISelectableStyle_get_rounding(PyUISelectableStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->rounding);
+}
+
+static int PyUISelectableStyle_set_rounding(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->rounding = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUISelectableStyle_get_padding(PyUISelectableStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->padding.x,
+        self->style->padding.y);
+}
+
+static int PyUISelectableStyle_set_padding(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->padding = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUISelectableStyle_get_image_padding(PyUISelectableStyleObject *self, void *closure)\
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->touch_padding.x,
+        self->style->touch_padding.y);
+}
+
+static int PyUISelectableStyle_set_image_padding(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->touch_padding = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUISelectableStyle_get_touch_padding(PyUISelectableStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->image_padding.x,
+        self->style->image_padding.y);
+}
+
+static int PyUISelectableStyle_set_touch_padding(PyUISelectableStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->image_padding = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUISelectableStyle_pickle(PyUISelectableStyleObject *self)
+{
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+    CHK_TRUE(save_selectable(stream, self->style), fail_pickle);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error pickling pf.UISelectableStyle object");
+    }
+    return ret;
+}
+
+static PyObject *PyUISelectableStyle_unpickle(PyObject *cls, PyObject *args)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    int status;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyObject *styleobj = PyObject_New(PyObject, &PyUISelectableStyle_type);
+    assert(styleobj || PyErr_Occurred());
+    CHK_TRUE(styleobj, fail_unpickle);
+
+    struct nk_context *ctx = UI_GetContext();
+    ((PyUISelectableStyleObject*)styleobj)->style = &ctx->style.selectable;
+
+    CHK_TRUE(load_selectable(stream, ((PyUISelectableStyleObject*)styleobj)->style), fail_unpickle);
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", styleobj, (int)nread);
+    Py_DECREF(styleobj);
+
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_args:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error unpickling pf.UISelectableStyle object");
+    }
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1363,11 +1846,22 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     Py_INCREF(&PyUIHeaderStyle_type);
     PyModule_AddObject(module, "UIHeaderStyle", (PyObject*)&PyUIHeaderStyle_type);
 
+    /* Selectable style */
+    if(PyType_Ready(&PyUISelectableStyle_type) < 0)
+        return;
+    Py_INCREF(&PyUISelectableStyle_type);
+    PyModule_AddObject(module, "UISelectableStyle", (PyObject*)&PyUISelectableStyle_type);
+
     /* Global style objects */
     PyUIButtonStyleObject *global_button_style = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
     assert(global_button_style);
     global_button_style->style = &ctx->style.button;
     PyModule_AddObject(module, "button_style", (PyObject*)global_button_style);
+
+    PyUISelectableStyleObject *global_sel_style = PyObject_New(PyUISelectableStyleObject, &PyUISelectableStyle_type);
+    assert(global_sel_style);
+    global_sel_style->style = &ctx->style.selectable;
+    PyModule_AddObject(module, "selectable_style", (PyObject*)global_sel_style);
 }
 
 bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_window *window)
