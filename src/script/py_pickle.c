@@ -3897,6 +3897,11 @@ static int op_put(struct unpickle_ctx *ctx, SDL_RWops *rw)
         return -1;
     }
 
+    if(idx != ctx->memo.size) {
+        SET_RUNTIME_EXC("Bad index %d (expected %d)", idx, (int)ctx->memo.size);
+        return -1;
+    }
+
     vec_pobj_resize(&ctx->memo, idx + 1);
     ctx->memo.size = idx + 1;    
     vec_AT(&ctx->memo, idx) = TOP(&ctx->stack);
