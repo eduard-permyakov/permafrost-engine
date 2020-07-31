@@ -37,6 +37,7 @@
 #define NK_FILE_BROWSER_H
 
 #include "pf_nuklear.h"
+#include <stdbool.h>
 
 #define NK_MAX_PATH_LEN (512)
 
@@ -47,7 +48,13 @@ struct nk_fb_state{
     char     selected[NK_MAX_PATH_LEN];  /* empty string for no selection */
 };
 
-void nk_file_browser(struct nk_context *ctx, struct nk_fb_state *state);
+struct file{
+    bool is_dir;
+    char name[NK_MAX_PATH_LEN];
+};
+
+void         nk_file_browser(struct nk_context *ctx, struct nk_fb_state *state);
+struct file *nk_file_list(const char *dir, size_t *out_size);
 
 #endif
 

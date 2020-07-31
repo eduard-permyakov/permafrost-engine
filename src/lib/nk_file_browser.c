@@ -37,7 +37,6 @@
 #include "public/pf_string.h"
 #include "../main.h"
 
-#include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -61,11 +60,6 @@
 #define DEFAULT_DISK_ICON       "assets/icons/hard-drive-icon.png"
 #define SELECTOR_BAR_HEIGHT     (25)
 #define BUTTONS_PER_ROW         (6)
-
-struct file{
-    bool is_dir;
-    char name[NK_MAX_PATH_LEN];
-};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -487,5 +481,10 @@ void nk_file_browser(struct nk_context *ctx, struct nk_fb_state *state)
         nk_group_end(ctx);
     }
     nk_group_end(ctx);
+}
+
+struct file *nk_file_list(const char *dir, size_t *out_size)
+{
+    return fb_get_list(dir, out_size);
 }
 

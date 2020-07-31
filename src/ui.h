@@ -87,5 +87,8 @@ struct rect        UI_BoundsForAspectRatio(struct rect from_bounds, vec2_t from_
                                            vec2_t to_res, int resize_mask);
 struct nk_context *UI_GetContext(void);
 
+const char        *UI_GetActiveFont(void);
+bool               UI_SetActiveFont(const char *name);
+
 #endif
 

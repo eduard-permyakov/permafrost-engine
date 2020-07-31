@@ -43,6 +43,8 @@
 #include "render/public/render_ctrl.h"
 #include "lib/public/vec.h"
 #include "lib/public/pf_string.h"
+#include "lib/public/nk_file_browser.h"
+#include "lib/public/khash.h"
 #include "game/public/game.h"
 
 #include <stdbool.h>
@@ -62,6 +64,8 @@ struct text_desc{
 VEC_TYPE(td, struct text_desc)
 VEC_IMPL(static inline, td, struct text_desc)
 
+KHASH_MAP_INIT_STR(font, struct nk_font*)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -70,6 +74,8 @@ static struct nk_context            s_ctx;
 static struct nk_font_atlas         s_atlas;
 static struct nk_draw_null_texture  s_null;
 static vec_td_t                     s_curr_frame_labels;
+static khash_t(font)               *s_fontmap;
+static const char                  *s_active_font = NULL;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -237,15 +243,44 @@ static void ui_init_font_stash(struct nk_context *ctx)
     const void *image; 
     int w, h;
 
-    char font_path[512];
-    pf_snprintf(font_path, sizeof(font_path), "%s/%s", g_basepath, "assets/fonts/OptimusPrinceps.ttf");
+    char fontdir[NK_MAX_PATH_LEN];
+    pf_snprintf(fontdir, sizeof(fontdir), "%s/%s", g_basepath, "assets/fonts");
 
     nk_font_atlas_init_default(&s_atlas);
     nk_font_atlas_begin(&s_atlas);
 
-    struct nk_font *optimus_princeps = nk_font_atlas_add_from_file(&s_atlas, font_path, 16, 0);
-    s_atlas.default_font = optimus_princeps;
+    s_atlas.default_font = nk_font_atlas_add_default(&s_atlas, 16, NULL);
 
+    int result;
+    khiter_t k = kh_put(font, s_fontmap, pf_strdup("__default__"), &result);
+    assert(result != -1 && result != 0);
+    kh_value(s_fontmap, k) = s_atlas.default_font;
+    s_active_font = kh_key(s_fontmap, k);
+
+    size_t nfiles = 0;
+    struct file *files = nk_file_list(fontdir, &nfiles);
+
+    for(int i = 0; i < nfiles; i++) {
+
+        if(files[i].is_dir)
+            continue;
+        if(!pf_endswith(files[i].name, ".ttf"))
+            continue;
+
+        char path[NK_MAX_PATH_LEN];
+        pf_snprintf(path, sizeof(path), "%s/%s", fontdir, files[i].name);
+
+        struct nk_font *font = nk_font_atlas_add_from_file(&s_atlas, path, 16, NULL);
+        if(!font)
+            continue;
+
+        int result;
+        khiter_t k = kh_put(font, s_fontmap, pf_strdup(files[i].name), &result);
+        assert(result != -1 && result != 0);
+        kh_value(s_fontmap, k) = font;
+    }
+
+    free(files);
     image = nk_font_atlas_bake(&s_atlas, &w, &h, NK_FONT_ATLAS_RGBA32);
 
     R_PushCmd((struct rcmd){
@@ -305,6 +340,10 @@ static struct nk_vec2i ui_get_screen_size(void)
 
 bool UI_Init(const char *basedir, SDL_Window *win)
 {
+    s_fontmap = kh_init(font);
+    if(!s_fontmap)
+        return false;
+
     nk_init_default(&s_ctx, 0);
     s_ctx.clip.copy = ui_clipboard_copy;
     s_ctx.clip.paste = ui_clipboard_paste;
@@ -330,6 +369,13 @@ void UI_Shutdown(void)
     nk_font_atlas_clear(&s_atlas);
     nk_free(&s_ctx);
     memset(&s_ctx, 0, sizeof(s_ctx));
+
+    const char *key;
+    struct nk_font *curr;
+    (void)curr;
+
+    kh_foreach(s_fontmap, key, curr, { free((void*)key); });
+    kh_destroy(font, s_fontmap);
 
     R_PushCmd((struct rcmd){ R_GL_UI_Shutdown, 0});
 }
@@ -540,5 +586,24 @@ struct rect UI_BoundsForAspectRatio(struct rect from_bounds, vec2_t from_res,
 struct nk_context *UI_GetContext(void)
 {
     return &s_ctx;
+}
+
+const char *UI_GetActiveFont(void)
+{
+    assert(s_active_font);
+    return s_active_font;
+}
+
+bool UI_SetActiveFont(const char *name)
+{
+    khiter_t k = kh_get(font, s_fontmap, name);
+    if(k == kh_end(s_fontmap))
+        return false;
+
+    struct nk_user_font *uf = &kh_value(s_fontmap, k)->handle;
+    nk_style_set_font(&s_ctx, uf);
+
+    s_active_font = kh_key(s_fontmap, k);
+    return true;
 }
 

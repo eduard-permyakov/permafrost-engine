@@ -84,6 +84,7 @@ static void subsession_clear(void)
     Engine_ClearPendingEvents();
     G_ClearState();
     G_ClearRenderWork();
+    UI_SetActiveFont("__default__");
 }
 
 static bool subsession_save(SDL_RWops *stream)

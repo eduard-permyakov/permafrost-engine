@@ -94,6 +94,9 @@ static PyObject *PyPf_mouse_over_ui(PyObject *self);
 static PyObject *PyPf_ui_text_edit_has_focus(PyObject *self);
 static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args);
 
+static PyObject *PyPf_get_active_font(PyObject *self);
+static PyObject *PyPf_set_active_font(PyObject *self, PyObject *args);
+
 static PyObject *PyPf_enable_fog_of_war(PyObject *self);
 static PyObject *PyPf_disable_fog_of_war(PyObject *self);
 static PyObject *PyPf_enable_unit_selection(PyObject *self);
@@ -249,6 +252,14 @@ static PyMethodDef pf_module_methods[] = {
     {"get_file_size", 
     (PyCFunction)PyPf_get_file_size, METH_VARARGS,
     "Get the size (in bytes) of a Python file object."},
+
+    {"get_active_font", 
+    (PyCFunction)PyPf_get_active_font, METH_NOARGS,
+    "Get the name of the current active font."},
+
+    {"set_active_font", 
+    (PyCFunction)PyPf_set_active_font, METH_VARARGS,
+    "Set the current active font to that of the specified name."},
 
     {"enable_fog_of_war", 
     (PyCFunction)PyPf_enable_fog_of_war, METH_NOARGS,
@@ -869,6 +880,27 @@ static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args)
 	SDL_FreeRW(rw);
 
 	return ret;
+}
+
+static PyObject *PyPf_get_active_font(PyObject *self)
+{
+    return PyString_FromString(UI_GetActiveFont());
+}
+
+static PyObject *PyPf_set_active_font(PyObject *self, PyObject *args)
+{
+    const char *name;
+
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a string.");
+        return NULL;
+    }
+
+    if(!UI_SetActiveFont(name)) {
+        Py_RETURN_FALSE;
+    }else{
+        Py_RETURN_TRUE;
+    }
 }
 
 static PyObject *PyPf_enable_fog_of_war(PyObject *self)

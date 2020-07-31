@@ -116,3 +116,14 @@ int pf_snprintf(char *str, size_t size, const char *format, ...)
     return ret;
 }
 
+int pf_endswith(const char *str, const char *end)
+{
+    size_t slen = strlen(str);
+    size_t elen = strlen(end);
+
+    if(elen > slen)
+        return 0;
+
+    return (0 == strcmp(str + (slen - elen), end));
+}
+

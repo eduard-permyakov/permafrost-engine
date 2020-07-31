@@ -865,7 +865,6 @@ void G_ClearState(void)
     g_reset_camera(s_gs.active_cam);
     G_SetActiveCamera(s_gs.active_cam, CAM_MODE_RTS);
     G_Sel_Enable();
-
     s_gs.factions_allocd = 0;
 
     R_PushCmd((struct rcmd) { R_GL_Batch_Reset, 0 });
@@ -1725,6 +1724,12 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &active_cam_mode, "active_cam_mode"));
 
+    struct attr active_font = (struct attr){
+        .type = TYPE_STRING, 
+    };
+    pf_strlcpy(active_font.val.as_string, UI_GetActiveFont(), sizeof(active_font.val.as_string));
+    CHK_TRUE_RET(Attr_Write(stream, &active_font, "active_font"));
+
     return true;
 }
 
@@ -1828,6 +1833,10 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     int active_cam_mode = attr.val.as_int;
 
     G_SetActiveCamera(s_gs.active_cam, active_cam_mode);
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_STRING);
+    UI_SetActiveFont(attr.val.as_string);
 
     return true;
 }
