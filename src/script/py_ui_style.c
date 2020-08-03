@@ -56,6 +56,11 @@
 
 typedef struct {
     PyObject_HEAD
+    enum button_type{
+        BUTTON_REGULAR,
+        BUTTON_CONTEXTUAL,
+        BUTTON_MENU,
+    }type;
     struct nk_style_button *style;
 }PyUIButtonStyleObject;
 
@@ -133,6 +138,7 @@ static PyObject *PyUISelectableStyle_get_hover(PyUISelectableStyleObject *self, 
 static int       PyUISelectableStyle_set_hover(PyUISelectableStyleObject *self, PyObject *value, void *);
 static PyObject *PyUISelectableStyle_get_pressed(PyUISelectableStyleObject *self, void *);
 static int       PyUISelectableStyle_set_pressed(PyUISelectableStyleObject *self, PyObject *value, void *);
+
 /* background (active) */
 static PyObject *PyUISelectableStyle_get_normal_active(PyUISelectableStyleObject *self, void *);
 static int       PyUISelectableStyle_set_normal_active(PyUISelectableStyleObject *self, PyObject *value, void *);
@@ -140,6 +146,7 @@ static PyObject *PyUISelectableStyle_get_hover_active(PyUISelectableStyleObject 
 static int       PyUISelectableStyle_set_hover_active(PyUISelectableStyleObject *self, PyObject *value, void *);
 static PyObject *PyUISelectableStyle_get_pressed_active(PyUISelectableStyleObject *self, void *);
 static int       PyUISelectableStyle_set_pressed_active(PyUISelectableStyleObject *self, PyObject *value, void *);
+
 /* text color (inactive) */
 static PyObject *PyUISelectableStyle_get_text_normal(PyUISelectableStyleObject *self, void *);
 static int       PyUISelectableStyle_set_text_normal(PyUISelectableStyleObject *self, PyObject *value, void *);
@@ -147,6 +154,7 @@ static PyObject *PyUISelectableStyle_get_text_hover(PyUISelectableStyleObject *s
 static int       PyUISelectableStyle_set_text_hover(PyUISelectableStyleObject *self, PyObject *value, void *);
 static PyObject *PyUISelectableStyle_get_text_pressed(PyUISelectableStyleObject *self, void *);
 static int       PyUISelectableStyle_set_text_pressed(PyUISelectableStyleObject *self, PyObject *value, void *);
+
 /* text color (active) */
 static PyObject *PyUISelectableStyle_get_text_normal_active(PyUISelectableStyleObject *self, void *);
 static int       PyUISelectableStyle_set_text_normal_active(PyUISelectableStyleObject *self, PyObject *value, void *);
@@ -154,6 +162,7 @@ static PyObject *PyUISelectableStyle_get_text_hover_active(PyUISelectableStyleOb
 static int       PyUISelectableStyle_set_text_hover_active(PyUISelectableStyleObject *self, PyObject *value, void *);
 static PyObject *PyUISelectableStyle_get_text_pressed_active(PyUISelectableStyleObject *self, void *);
 static int       PyUISelectableStyle_set_text_pressed_active(PyUISelectableStyleObject *self, PyObject *value, void *);
+
 /* properties */
 static PyObject *PyUISelectableStyle_get_text_alignment(PyUISelectableStyleObject *self, void *);
 static int       PyUISelectableStyle_set_text_alignment(PyUISelectableStyleObject *self, PyObject *value, void *);
@@ -168,6 +177,65 @@ static int       PyUISelectableStyle_set_touch_padding(PyUISelectableStyleObject
 
 static PyObject *PyUISelectableStyle_pickle(PyUISelectableStyleObject *self);
 static PyObject *PyUISelectableStyle_unpickle(PyObject *cls, PyObject *args);
+
+typedef struct {
+    PyObject_HEAD
+    struct nk_style_combo *style;
+    PyUIButtonStyleObject *button; 
+}PyUIComboStyleObject;
+
+static PyObject *PyUIComboStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+static void      PyUIComboStyle_dealloc(PyUIComboStyleObject *self);
+
+/* background */
+static PyObject *PyUIComboStyle_get_normal(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_normal(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_hover(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_hover(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_active(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_active(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_border_color(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_border_color(PyUIComboStyleObject *self, PyObject *value, void *);
+
+/* label */
+static PyObject *PyUIComboStyle_get_label_normal(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_label_normal(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_label_hover(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_label_hover(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_label_active(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_label_active(PyUIComboStyleObject *self, PyObject *value, void *);
+
+/* symbol */
+static PyObject *PyUIComboStyle_get_symbol_normal(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_symbol_normal(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_symbol_hover(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_symbol_hover(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_symbol_active(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_symbol_active(PyUIComboStyleObject *self, PyObject *value, void *);
+
+/* button */
+static PyObject *PyUIComboStyle_get_button(PyUIComboStyleObject *self, void *);
+static PyObject *PyUIComboStyle_get_sym_normal(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_sym_normal(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_sym_hover(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_sym_hover(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_sym_active(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_sym_active(PyUIComboStyleObject *self, PyObject *value, void *);
+
+/* properties */
+static PyObject *PyUIComboStyle_get_border(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_border(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_rounding(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_rounding(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_content_padding(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_content_padding(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_button_padding(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_button_padding(PyUIComboStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIComboStyle_get_spacing(PyUIComboStyleObject *self, void *);
+static int       PyUIComboStyle_set_spacing(PyUIComboStyleObject *self, PyObject *value, void *);
+
+static PyObject *PyUIComboStyle_pickle(PyUIComboStyleObject *self);
+static PyObject *PyUIComboStyle_unpickle(PyObject *cls, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -589,6 +657,180 @@ static PyTypeObject PyUISelectableStyle_type = {
     0,                         /* tp_init */
     0,                         /* tp_alloc */
     0,                         /* tp_new */
+};
+
+static PyMethodDef PyUIComboStyle_methods[] = {
+    {"__pickle__", 
+    (PyCFunction)PyUIComboStyle_pickle, METH_NOARGS,
+    "Serialize a Permafrost Engine UIComboStyle object to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyUIComboStyle_unpickle, METH_VARARGS | METH_CLASS,
+    "Create a new pf.UIComboStyle instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyGetSetDef PyUIComboStyle_getset[] = {
+    {"normal",
+    (getter)PyUIComboStyle_get_normal, 
+    (setter)PyUIComboStyle_set_normal,
+    "The look of the combo element in the normal state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"hover",
+    (getter)PyUIComboStyle_get_hover, 
+    (setter)PyUIComboStyle_set_hover,
+    "The look of the combo element in the hovered state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"active",
+    (getter)PyUIComboStyle_get_active, 
+    (setter)PyUIComboStyle_set_active,
+    "The look of the combo element in the active state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"border_color",
+    (getter)PyUIComboStyle_get_border_color, 
+    (setter)PyUIComboStyle_set_border_color,
+    "The color of the combo box border - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"label_normal",
+    (getter)PyUIComboStyle_get_label_normal, 
+    (setter)PyUIComboStyle_set_label_normal,
+    "The color of the combo item label in the normal state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"label_hover",
+    (getter)PyUIComboStyle_get_label_hover, 
+    (setter)PyUIComboStyle_set_label_hover,
+    "The color of the combo item label in the hovered state - an (R, G, B, A) tuple",
+    NULL},
+
+    {"label_active",
+    (getter)PyUIComboStyle_get_label_active, 
+    (setter)PyUIComboStyle_set_label_active,
+    "The color of the combo item label in the active state - an (R, G, B, A) tuple",
+    NULL},
+
+    {"symbol_normal",
+    (getter)PyUIComboStyle_get_symbol_normal, 
+    (setter)PyUIComboStyle_set_symbol_normal,
+    "The color of the combo symbol in the normal state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"symbol_hover",
+    (getter)PyUIComboStyle_get_symbol_hover, 
+    (setter)PyUIComboStyle_set_symbol_hover,
+    "The color of the combo symbol in the hovered state - an (R, G, B, A) tuple",
+    NULL},
+
+    {"symbol_active",
+    (getter)PyUIComboStyle_get_symbol_active, 
+    (setter)PyUIComboStyle_set_symbol_active,
+    "The color of the combo symbol in the active state - an (R, G, B, A) tuple",
+    NULL},
+
+    {"button",
+    (getter)PyUIComboStyle_get_button, NULL,
+    "A pf.UIButtonStyle object describing the style of the combo box drop-down button.",
+    NULL},
+
+    {"sym_normal",
+    (getter)PyUIComboStyle_get_sym_normal, 
+    (setter)PyUIComboStyle_set_sym_normal,
+    "The type of the combo box drop-down glyph in the normal state - an integer (pf.NK_SYMBOL_X, etc.)",
+    NULL},
+
+    {"sym_hover",
+    (getter)PyUIComboStyle_get_sym_hover, 
+    (setter)PyUIComboStyle_set_sym_hover,
+    "The type of the combo box drop-down glyph in the hovered state - an integer (pf.NK_SYMBOL_X, etc.)",
+    NULL},
+
+    {"sym_active",
+    (getter)PyUIComboStyle_get_sym_active, 
+    (setter)PyUIComboStyle_set_sym_active,
+    "The type of the combo box drop-down glyph in the active state - an integer (pf.NK_SYMBOL_X, etc.)",
+    NULL},
+
+    {"border",
+    (getter)PyUIComboStyle_get_rounding, 
+    (setter)PyUIComboStyle_set_rounding,
+    "A floating-point value to control width of the combo box border.", 
+    NULL},
+
+    {"rounding",
+    (getter)PyUIComboStyle_get_rounding, 
+    (setter)PyUIComboStyle_set_rounding,
+    "A floating-point value to control how rounded the selectable label corners are.", 
+    NULL},
+
+    {"content_padding",
+    (getter)PyUIComboStyle_get_content_padding, 
+    (setter)PyUIComboStyle_set_content_padding,
+    "An (X, Y) tuple of floats to control the padding around combo box contents.", 
+    NULL},
+
+    {"button_padding",
+    (getter)PyUIComboStyle_get_button_padding, 
+    (setter)PyUIComboStyle_set_button_padding,
+    "An (X, Y) tuple of floats to control the padding around combo box drop-down buttons.", 
+    NULL},
+
+    {"spacing",
+    (getter)PyUIComboStyle_get_spacing, 
+    (setter)PyUIComboStyle_set_spacing,
+    "An (X, Y) tuple of floats to control the spacing in between combo box elements.", 
+    NULL},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyUIComboStyle_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "pf.UIComboStyle",        /* tp_name */
+    sizeof(PyUIComboStyleObject), /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    (destructor)PyUIComboStyle_dealloc, /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_reserved */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash  */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT, /* tp_flags */
+    "Style configuration for Permafrost Engine combo box UI elements.", /* tp_doc */
+    0,                         /* tp_traverse */
+    0,                         /* tp_clear */
+    0,                         /* tp_richcompare */
+    0,                         /* tp_weaklistoffset */
+    0,                         /* tp_iter */
+    0,                         /* tp_iternext */
+    PyUIComboStyle_methods, /* tp_methods */
+    0,                         /* tp_members */
+    PyUIComboStyle_getset, /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    0,                         /* tp_init */
+    0,                         /* tp_alloc */
+    PyUIComboStyle_new,        /* tp_new */
 };
 
 static struct nk_style_window_header s_saved_header_style;
@@ -1232,12 +1474,72 @@ static bool load_header(struct SDL_RWops *stream, struct nk_style_window_header 
     return true;
 }
 
+bool save_combo(struct SDL_RWops *stream, const struct nk_style_combo *combo)
+{
+    CHK_TRUE_RET(save_item(stream, &combo->normal));
+    CHK_TRUE_RET(save_item(stream, &combo->hover));
+    CHK_TRUE_RET(save_item(stream, &combo->active));
+    CHK_TRUE_RET(save_color(stream, combo->border_color));
+
+    CHK_TRUE_RET(save_color(stream, combo->label_normal));
+    CHK_TRUE_RET(save_color(stream, combo->label_hover));
+    CHK_TRUE_RET(save_color(stream, combo->label_active));
+
+    CHK_TRUE_RET(save_color(stream, combo->symbol_normal));
+    CHK_TRUE_RET(save_color(stream, combo->symbol_hover));
+    CHK_TRUE_RET(save_color(stream, combo->symbol_active));
+
+    CHK_TRUE_RET(save_button(stream, &combo->button));
+    CHK_TRUE_RET(save_int(stream, combo->sym_normal));
+    CHK_TRUE_RET(save_int(stream, combo->sym_hover));
+    CHK_TRUE_RET(save_int(stream, combo->sym_active));
+
+    CHK_TRUE_RET(save_float(stream, combo->border));
+    CHK_TRUE_RET(save_float(stream, combo->rounding));
+    CHK_TRUE_RET(save_vec2(stream, combo->content_padding));
+    CHK_TRUE_RET(save_vec2(stream, combo->button_padding));
+    CHK_TRUE_RET(save_vec2(stream, combo->spacing));
+
+    return true;
+}
+
+bool load_combo(struct SDL_RWops *stream, struct nk_style_combo *out)
+{
+    CHK_TRUE_RET(load_item(stream, &out->normal));
+    CHK_TRUE_RET(load_item(stream, &out->hover));
+    CHK_TRUE_RET(load_item(stream, &out->active));
+    CHK_TRUE_RET(load_color(stream, &out->border_color));
+
+    CHK_TRUE_RET(load_color(stream, &out->label_normal));
+    CHK_TRUE_RET(load_color(stream, &out->label_hover));
+    CHK_TRUE_RET(load_color(stream, &out->label_active));
+
+    CHK_TRUE_RET(load_color(stream, &out->symbol_normal));
+    CHK_TRUE_RET(load_color(stream, &out->symbol_hover));
+    CHK_TRUE_RET(load_color(stream, &out->symbol_active));
+
+    CHK_TRUE_RET(load_button(stream, &out->button));
+    CHK_TRUE_RET(load_int(stream, (int*)&out->sym_normal));
+    CHK_TRUE_RET(load_int(stream, (int*)&out->sym_hover));
+    CHK_TRUE_RET(load_int(stream, (int*)&out->sym_active));
+
+    CHK_TRUE_RET(load_float(stream, &out->border));
+    CHK_TRUE_RET(load_float(stream, &out->rounding));
+    CHK_TRUE_RET(load_vec2(stream, &out->content_padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->button_padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->spacing));
+
+    return true;
+}
+
 static PyObject *PyUIButtonStyle_pickle(PyUIButtonStyleObject *self)
 {
     PyObject *ret = NULL;
 
     SDL_RWops *stream = PFSDL_VectorRWOps();
     CHK_TRUE(stream, fail_alloc);
+
+    CHK_TRUE(save_int(stream, self->type), fail_pickle);
     CHK_TRUE(save_button(stream, self->style), fail_pickle);
     ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
 
@@ -1267,11 +1569,25 @@ static PyObject *PyUIButtonStyle_unpickle(PyObject *cls, PyObject *args)
     CHK_TRUE(stream, fail_args);
 
     PyObject *styleobj = PyObject_New(PyObject, &PyUIButtonStyle_type);
+    CHK_TRUE(load_int(stream, (int*)&((PyUIButtonStyleObject*)styleobj)->type), fail_unpickle);
+
     assert(styleobj || PyErr_Occurred());
     CHK_TRUE(styleobj, fail_unpickle);
 
     struct nk_context *ctx = UI_GetContext();
-    ((PyUIButtonStyleObject*)styleobj)->style = &ctx->style.button;
+    switch(((PyUIButtonStyleObject*)styleobj)->type) {
+        case BUTTON_REGULAR:
+            ((PyUIButtonStyleObject*)styleobj)->style = &ctx->style.button;
+            break;
+        case BUTTON_CONTEXTUAL:
+            ((PyUIButtonStyleObject*)styleobj)->style = &ctx->style.contextual_button;
+            break;
+        case BUTTON_MENU:
+            ((PyUIButtonStyleObject*)styleobj)->style = &ctx->style.menu_button;
+            break;
+        default:
+            goto fail_unpickle;
+    }
 
     CHK_TRUE(load_button(stream, ((PyUIButtonStyleObject*)styleobj)->style), fail_unpickle);
 
@@ -1828,6 +2144,419 @@ fail_args:
     return ret;
 }
 
+static PyObject *PyUIComboStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    PyUIComboStyleObject *self = (PyUIComboStyleObject*)type->tp_alloc(type, 0);
+    struct nk_style_button *button;
+    if(!self)
+        return NULL;
+
+    self->button = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
+    if(!self->button) {
+        goto fail_button;
+    }
+
+    struct nk_context *ctx = UI_GetContext();
+    self->style = &ctx->style.combo;
+    self->button->style = &ctx->style.combo.button;
+
+    return (PyObject*)self;
+
+fail_button:
+    Py_DECREF(self);
+    return NULL;
+}
+
+static void PyUIComboStyle_dealloc(PyUIComboStyleObject *self)
+{
+    Py_DECREF(self->button);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyObject *PyUIComboStyle_get_normal(PyUIComboStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->normal);
+}
+
+static int PyUIComboStyle_set_normal(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->normal);
+}
+
+static PyObject *PyUIComboStyle_get_hover(PyUIComboStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->hover);
+}
+
+static int PyUIComboStyle_set_hover(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->hover);
+}
+
+static PyObject *PyUIComboStyle_get_active(PyUIComboStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->active);
+}
+
+static int PyUIComboStyle_set_active(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->active);
+}
+
+static PyObject *PyUIComboStyle_get_border_color(PyUIComboStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->border_color.r,
+        self->style->border_color.g,
+        self->style->border_color.b,
+        self->style->border_color.a);
+}
+
+static int PyUIComboStyle_set_border_color(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->border_color = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_label_normal(PyUIComboStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->label_normal.r,
+        self->style->label_normal.g,
+        self->style->label_normal.b,
+        self->style->label_normal.a);
+}
+
+static int PyUIComboStyle_set_label_normal(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->label_normal = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_label_hover(PyUIComboStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->label_hover.r,
+        self->style->label_hover.g,
+        self->style->label_hover.b,
+        self->style->label_hover.a);
+}
+
+static int PyUIComboStyle_set_label_hover(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->label_hover = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_label_active(PyUIComboStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->label_active.r,
+        self->style->label_active.g,
+        self->style->label_active.b,
+        self->style->label_active.a);
+}
+
+static int PyUIComboStyle_set_label_active(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->label_active = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_symbol_normal(PyUIComboStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->symbol_normal.r,
+        self->style->symbol_normal.g,
+        self->style->symbol_normal.b,
+        self->style->symbol_normal.a);
+}
+
+static int PyUIComboStyle_set_symbol_normal(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->symbol_normal = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_symbol_hover(PyUIComboStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->symbol_hover.r,
+        self->style->symbol_hover.g,
+        self->style->symbol_hover.b,
+        self->style->symbol_hover.a);
+}
+
+static int PyUIComboStyle_set_symbol_hover(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->symbol_hover = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_symbol_active(PyUIComboStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->symbol_active.r,
+        self->style->symbol_active.g,
+        self->style->symbol_active.b,
+        self->style->symbol_active.a);
+}
+
+static int PyUIComboStyle_set_symbol_active(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->symbol_active = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_button(PyUIComboStyleObject *self, void *closure)
+{
+    Py_INCREF(self->button);
+    return (PyObject*)self->button;
+}
+
+static PyObject *PyUIComboStyle_get_sym_normal(PyUIComboStyleObject *self, void *closure)
+{
+    return PyInt_FromLong(self->style->sym_normal);
+}
+
+static int PyUIComboStyle_set_sym_normal(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an integer.");
+        return -1; 
+    }
+
+    self->style->sym_normal = PyInt_AsLong(value);
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_sym_hover(PyUIComboStyleObject *self, void *closure)
+{
+    return PyInt_FromLong(self->style->sym_hover);
+}
+
+static int PyUIComboStyle_set_sym_hover(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an integer.");
+        return -1; 
+    }
+
+    self->style->sym_hover = PyInt_AsLong(value);
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_sym_active(PyUIComboStyleObject *self, void *closure)
+{
+    return PyInt_FromLong(self->style->sym_active);
+}
+
+static int PyUIComboStyle_set_sym_active(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an integer.");
+        return -1; 
+    }
+
+    self->style->sym_active = PyInt_AsLong(value);
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_border(PyUIComboStyleObject *self, void *closure)
+{
+    return PyFloat_FromDouble(self->style->border);
+}
+
+static int PyUIComboStyle_set_border(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->border = PyInt_AsLong(value);
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_rounding(PyUIComboStyleObject *self, void *closure)
+{
+    return PyFloat_FromDouble(self->style->rounding);
+}
+
+static int PyUIComboStyle_set_rounding(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->rounding = PyInt_AsLong(value);
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_content_padding(PyUIComboStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->content_padding.x,
+        self->style->content_padding.y);
+}
+
+static int PyUIComboStyle_set_content_padding(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->content_padding = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_button_padding(PyUIComboStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->button_padding.x,
+        self->style->button_padding.y);
+}
+
+static int PyUIComboStyle_set_button_padding(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->button_padding = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_get_spacing(PyUIComboStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->spacing.x,
+        self->style->spacing.y);
+}
+
+static int PyUIComboStyle_set_spacing(PyUIComboStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->spacing = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUIComboStyle_pickle(PyUIComboStyleObject *self)
+{
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+    CHK_TRUE(save_combo(stream, self->style), fail_pickle);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error pickling pf.UIComboStyle object");
+    }
+    return ret;
+}
+
+static PyObject *PyUIComboStyle_unpickle(PyObject *cls, PyObject *args)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    int status;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyUIComboStyleObject *styleobj = 
+        (PyUIComboStyleObject*)PyObject_CallFunctionObjArgs((PyObject*)&PyUIComboStyle_type, NULL);
+    assert(styleobj || PyErr_Occurred());
+    CHK_TRUE(styleobj, fail_unpickle);
+
+    CHK_TRUE(load_combo(stream, ((PyUIComboStyleObject*)styleobj)->style), fail_unpickle);
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", styleobj, (int)nread);
+    Py_DECREF(styleobj);
+
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_args:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error unpickling pf.UIComboStyle object");
+    }
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1852,16 +2581,42 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     Py_INCREF(&PyUISelectableStyle_type);
     PyModule_AddObject(module, "UISelectableStyle", (PyObject*)&PyUISelectableStyle_type);
 
-    /* Global style objects */
-    PyUIButtonStyleObject *global_button_style = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
-    assert(global_button_style);
-    global_button_style->style = &ctx->style.button;
-    PyModule_AddObject(module, "button_style", (PyObject*)global_button_style);
+    /* Combo style */
+    if(PyType_Ready(&PyUIComboStyle_type) < 0)
+        return;
+    Py_INCREF(&PyUIComboStyle_type);
+    PyModule_AddObject(module, "UIComboStyle", (PyObject*)&PyUIComboStyle_type);
 
-    PyUISelectableStyleObject *global_sel_style = PyObject_New(PyUISelectableStyleObject, &PyUISelectableStyle_type);
-    assert(global_sel_style);
-    global_sel_style->style = &ctx->style.selectable;
-    PyModule_AddObject(module, "selectable_style", (PyObject*)global_sel_style);
+    /* Global style objects */
+    PyUIButtonStyleObject *button_style = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
+    assert(button_style);
+    button_style->style = &ctx->style.button;
+    button_style->type = BUTTON_REGULAR;
+    PyModule_AddObject(module, "button_style", (PyObject*)button_style);
+
+    PyUIButtonStyleObject *ctx_button_style = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
+    assert(ctx_button_style);
+    ctx_button_style->style = &ctx->style.contextual_button;
+    ctx_button_style->type = BUTTON_CONTEXTUAL;
+    PyModule_AddObject(module, "contextual_button_style", (PyObject*)ctx_button_style);
+
+    PyUIButtonStyleObject *menu_button_style = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
+    assert(menu_button_style);
+    menu_button_style->style = &ctx->style.menu_button;
+    menu_button_style->type = BUTTON_MENU;
+    PyModule_AddObject(module, "menu_button_style", (PyObject*)menu_button_style);
+
+    PyUISelectableStyleObject *sel_style 
+        = PyObject_New(PyUISelectableStyleObject, &PyUISelectableStyle_type);
+    assert(sel_style);
+    sel_style->style = &ctx->style.selectable;
+    PyModule_AddObject(module, "selectable_style", (PyObject*)sel_style);
+
+    PyUIComboStyleObject *combo_style = 
+        (PyUIComboStyleObject*)PyObject_CallFunctionObjArgs((PyObject*)&PyUIComboStyle_type, NULL);
+    assert(combo_style);
+    combo_style->style = &ctx->style.combo;
+    PyModule_AddObject(module, "combo_style", (PyObject*)combo_style);
 }
 
 bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_window *window)
