@@ -661,6 +661,7 @@ static struct pickle_entry s_pf_dispatch_table[] = {
     {.type = NULL, /* PyUIHeaderStyle_type */             .picklefunc = custom_pickle   },
     {.type = NULL, /* PyUISelectableStyle_type */         .picklefunc = custom_pickle   },
     {.type = NULL, /* PyUIComboStyle_type */              .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyUIToggleStyle_type */             .picklefunc = custom_pickle   },
 };
 
 static unpickle_func_t s_op_dispatch_table[256] = {
@@ -1287,6 +1288,7 @@ static void load_engine_builtin_types(void)
     s_pf_dispatch_table[7].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIHeaderStyle");
     s_pf_dispatch_table[8].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UISelectableStyle");
     s_pf_dispatch_table[9].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIComboStyle");
+    s_pf_dispatch_table[10].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIToggleStyle");
 
     for(int i = 0; i < ARR_SIZE(s_pf_dispatch_table); i++)
         assert(s_pf_dispatch_table[i].type);

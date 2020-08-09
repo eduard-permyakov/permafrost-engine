@@ -237,6 +237,56 @@ static int       PyUIComboStyle_set_spacing(PyUIComboStyleObject *self, PyObject
 static PyObject *PyUIComboStyle_pickle(PyUIComboStyleObject *self);
 static PyObject *PyUIComboStyle_unpickle(PyObject *cls, PyObject *args);
 
+typedef struct {
+    PyObject_HEAD
+    enum toggle_type{
+        TOGGLE_OPTION,
+        TOGGLE_CHECKBOX,
+    }type;
+    struct nk_style_toggle *style;
+}PyUIToggleStyleObject;
+
+/* background */
+static PyObject *PyUIToggleStyle_get_normal(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_normal(PyUIToggleStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIToggleStyle_get_hover(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_hover(PyUIToggleStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIToggleStyle_get_active(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_active(PyUIToggleStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIToggleStyle_get_border_color(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_border_color(PyUIToggleStyleObject *self, PyObject *value, void *);
+
+/* cursor */
+static PyObject *PyUIToggleStyle_get_cursor_normal(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_cursor_normal(PyUIToggleStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIToggleStyle_get_cursor_hover(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_cursor_hover(PyUIToggleStyleObject *self, PyObject *value, void *);
+
+/* text */
+static PyObject *PyUIToggleStyle_get_text_normal(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_text_normal(PyUIToggleStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIToggleStyle_get_text_hover(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_text_hover(PyUIToggleStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIToggleStyle_get_text_active(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_text_active(PyUIToggleStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIToggleStyle_get_text_background(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_text_background(PyUIToggleStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIToggleStyle_get_text_alignment(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_text_alignment(PyUIToggleStyleObject *self, PyObject *value, void *);
+
+/* properties */
+static PyObject *PyUIToggleStyle_get_padding(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_padding(PyUIToggleStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIToggleStyle_get_touch_padding(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_touch_padding(PyUIToggleStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIToggleStyle_get_spacing(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_spacing(PyUIToggleStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIToggleStyle_get_border(PyUIToggleStyleObject *self, void *);
+static int       PyUIToggleStyle_set_border(PyUIToggleStyleObject *self, PyObject *value, void *);
+
+static PyObject *PyUIToggleStyle_pickle(PyUIToggleStyleObject *self);
+static PyObject *PyUIToggleStyle_unpickle(PyObject *cls, PyObject *args);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -831,6 +881,159 @@ static PyTypeObject PyUIComboStyle_type = {
     0,                         /* tp_init */
     0,                         /* tp_alloc */
     PyUIComboStyle_new,        /* tp_new */
+};
+
+static PyMethodDef PyUIToggleStyle_methods[] = {
+    {"__pickle__", 
+    (PyCFunction)PyUIToggleStyle_pickle, METH_NOARGS,
+    "Serialize a Permafrost Engine UIToggleStyle object to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyUIToggleStyle_unpickle, METH_VARARGS | METH_CLASS,
+    "Create a new pf.UIToggleStyle instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyGetSetDef PyUIToggleStyle_getset[] = {
+    {"normal",
+    (getter)PyUIToggleStyle_get_normal, 
+    (setter)PyUIToggleStyle_set_normal,
+    "The look of the toggle button in the normal state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"hover",
+    (getter)PyUIToggleStyle_get_hover, 
+    (setter)PyUIToggleStyle_set_hover,
+    "The look of the toggle button in the hovered state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"active",
+    (getter)PyUIToggleStyle_get_active, 
+    (setter)PyUIToggleStyle_set_active,
+    "The look of the toggle button in the active state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"border_color",
+    (getter)PyUIToggleStyle_get_border_color, 
+    (setter)PyUIToggleStyle_set_border_color,
+    "The color of the toggle button border - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"cursor_normal",
+    (getter)PyUIToggleStyle_get_cursor_normal, 
+    (setter)PyUIToggleStyle_set_cursor_normal,
+    "The look of the toggle button cursor (selection indicator) in the normal state - "
+    "either an (R, G, B, A) tuple or a string representing a path to an image.",
+    NULL},
+
+    {"cursor_hover",
+    (getter)PyUIToggleStyle_get_cursor_hover, 
+    (setter)PyUIToggleStyle_set_cursor_hover,
+    "The look of the toggle button cursor (selection indicator) in the hover state - "
+    "either an (R, G, B, A) tuple or a string representing a path to an image.",
+    NULL},
+
+    {"text_normal",
+    (getter)PyUIToggleStyle_get_text_normal, 
+    (setter)PyUIToggleStyle_set_text_normal,
+    "The color of the option text in the normal state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"text_hover",
+    (getter)PyUIToggleStyle_get_text_hover, 
+    (setter)PyUIToggleStyle_set_text_hover,
+    "The color of the option text in the hovered state - an (R, G, B, A) tuple",
+    NULL},
+
+    {"text_active",
+    (getter)PyUIToggleStyle_get_text_active, 
+    (setter)PyUIToggleStyle_set_text_active,
+    "The color of the option text in the active state - an (R, G, B, A) tuple",
+    NULL},
+
+    {"text_background",
+    (getter)PyUIToggleStyle_get_text_background, 
+    (setter)PyUIToggleStyle_set_text_background,
+    "The color of the option text background - an (R, G, B, A) tuple",
+    NULL},
+
+    {"text_alignment",
+    (getter)PyUIToggleStyle_get_text_alignment, 
+    (setter)PyUIToggleStyle_set_text_alignment,
+    "A set of flags to control the text alignment of the option label.", 
+    NULL},
+
+    {"padding",
+    (getter)PyUIToggleStyle_get_padding, 
+    (setter)PyUIToggleStyle_set_padding,
+    "An (X, Y) tuple of floats to control the padding around toggle buttons.", 
+    NULL},
+
+    {"touch_padding",
+    (getter)PyUIToggleStyle_get_touch_padding, 
+    (setter)PyUIToggleStyle_set_touch_padding,
+    "An (X, Y) tuple of floats to control the clickable region of the toggle button.", 
+    NULL},
+
+    {"spacing",
+    (getter)PyUIToggleStyle_get_spacing, 
+    (setter)PyUIToggleStyle_set_spacing,
+    "A float to control the spacing within a toggle button widget.", 
+    NULL},
+
+    {"border",
+    (getter)PyUIToggleStyle_get_border, 
+    (setter)PyUIToggleStyle_set_border,
+    "A floating-point value of the toggle button border width, in pixels.", 
+    NULL},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyUIToggleStyle_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "pf.UIToggleStyle",        /* tp_name */
+    sizeof(PyUIToggleStyleObject), /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    0,                         /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_reserved */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash  */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT, /* tp_flags */
+    "Style configuration for Permafrost Engine UI toggle-able options.", /* tp_doc */
+    0,                         /* tp_traverse */
+    0,                         /* tp_clear */
+    0,                         /* tp_richcompare */
+    0,                         /* tp_weaklistoffset */
+    0,                         /* tp_iter */
+    0,                         /* tp_iternext */
+    PyUIToggleStyle_methods,   /* tp_methods */
+    0,                         /* tp_members */
+    PyUIToggleStyle_getset,    /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    0,                         /* tp_init */
+    0,                         /* tp_alloc */
+    0,                         /* tp_new */
 };
 
 static struct nk_style_window_header s_saved_header_style;
@@ -1532,6 +1735,54 @@ bool load_combo(struct SDL_RWops *stream, struct nk_style_combo *out)
     return true;
 }
 
+static bool save_toggle(struct SDL_RWops *stream, const struct nk_style_toggle *toggle)
+{
+    CHK_TRUE_RET(save_item(stream, &toggle->normal));
+    CHK_TRUE_RET(save_item(stream, &toggle->hover));
+    CHK_TRUE_RET(save_item(stream, &toggle->active));
+    CHK_TRUE_RET(save_color(stream, toggle->border_color));
+
+    CHK_TRUE_RET(save_item(stream, &toggle->cursor_normal));
+    CHK_TRUE_RET(save_item(stream, &toggle->cursor_hover));
+
+    CHK_TRUE_RET(save_color(stream, toggle->text_normal));
+    CHK_TRUE_RET(save_color(stream, toggle->text_hover));
+    CHK_TRUE_RET(save_color(stream, toggle->text_active));
+    CHK_TRUE_RET(save_color(stream, toggle->text_background));
+    CHK_TRUE_RET(save_int(stream, toggle->text_alignment));
+
+    CHK_TRUE_RET(save_vec2(stream, toggle->padding));
+    CHK_TRUE_RET(save_vec2(stream, toggle->touch_padding));
+    CHK_TRUE_RET(save_float(stream, toggle->spacing));
+    CHK_TRUE_RET(save_float(stream, toggle->border));
+
+    return true;
+}
+
+static bool load_toggle(struct SDL_RWops *stream, struct nk_style_toggle *out)
+{
+    CHK_TRUE_RET(load_item(stream, &out->normal));
+    CHK_TRUE_RET(load_item(stream, &out->hover));
+    CHK_TRUE_RET(load_item(stream, &out->active));
+    CHK_TRUE_RET(load_color(stream, &out->border_color));
+
+    CHK_TRUE_RET(load_item(stream, &out->cursor_normal));
+    CHK_TRUE_RET(load_item(stream, &out->cursor_hover));
+
+    CHK_TRUE_RET(load_color(stream, &out->text_normal));
+    CHK_TRUE_RET(load_color(stream, &out->text_hover));
+    CHK_TRUE_RET(load_color(stream, &out->text_active));
+    CHK_TRUE_RET(load_color(stream, &out->text_background));
+    CHK_TRUE_RET(load_int(stream, (int*)&out->text_alignment));
+
+    CHK_TRUE_RET(load_vec2(stream, &out->padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->touch_padding));
+    CHK_TRUE_RET(load_float(stream, &out->spacing));
+    CHK_TRUE_RET(load_float(stream, &out->border));
+
+    return true;
+}
+
 static PyObject *PyUIButtonStyle_pickle(PyUIButtonStyleObject *self)
 {
     PyObject *ret = NULL;
@@ -1569,12 +1820,12 @@ static PyObject *PyUIButtonStyle_unpickle(PyObject *cls, PyObject *args)
     CHK_TRUE(stream, fail_args);
 
     PyObject *styleobj = PyObject_New(PyObject, &PyUIButtonStyle_type);
-    CHK_TRUE(load_int(stream, (int*)&((PyUIButtonStyleObject*)styleobj)->type), fail_unpickle);
-
     assert(styleobj || PyErr_Occurred());
     CHK_TRUE(styleobj, fail_unpickle);
 
+    CHK_TRUE(load_int(stream, (int*)&((PyUIButtonStyleObject*)styleobj)->type), fail_unpickle);
     struct nk_context *ctx = UI_GetContext();
+
     switch(((PyUIButtonStyleObject*)styleobj)->type) {
         case BUTTON_REGULAR:
             ((PyUIButtonStyleObject*)styleobj)->style = &ctx->style.button;
@@ -2557,6 +2808,322 @@ fail_args:
     return ret;
 }
 
+static PyObject *PyUIToggleStyle_get_normal(PyUIToggleStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->normal);
+}
+
+static int PyUIToggleStyle_set_normal(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->normal);
+}
+
+static PyObject *PyUIToggleStyle_get_hover(PyUIToggleStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->hover);
+}
+
+static int PyUIToggleStyle_set_hover(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->hover);
+}
+
+static PyObject *PyUIToggleStyle_get_active(PyUIToggleStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->active);
+}
+
+static int PyUIToggleStyle_set_active(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->active);
+}
+
+static PyObject *PyUIToggleStyle_get_border_color(PyUIToggleStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->border_color.r,
+        self->style->border_color.g,
+        self->style->border_color.b,
+        self->style->border_color.a);
+}
+
+static int PyUIToggleStyle_set_border_color(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->border_color = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIToggleStyle_get_cursor_normal(PyUIToggleStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->cursor_normal);
+}
+
+static int PyUIToggleStyle_set_cursor_normal(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->cursor_normal);
+}
+
+static PyObject *PyUIToggleStyle_get_cursor_hover(PyUIToggleStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->cursor_hover);
+}
+
+static int PyUIToggleStyle_set_cursor_hover(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->cursor_hover);
+}
+
+static PyObject *PyUIToggleStyle_get_text_normal(PyUIToggleStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_normal.r,
+        self->style->text_normal.g,
+        self->style->text_normal.b,
+        self->style->text_normal.a);
+}
+
+static int PyUIToggleStyle_set_text_normal(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_normal = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIToggleStyle_get_text_hover(PyUIToggleStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_hover.r,
+        self->style->text_hover.g,
+        self->style->text_hover.b,
+        self->style->text_hover.a);
+}
+
+static int PyUIToggleStyle_set_text_hover(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_hover = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIToggleStyle_get_text_active(PyUIToggleStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_active.r,
+        self->style->text_active.g,
+        self->style->text_active.b,
+        self->style->text_active.a);
+}
+
+static int PyUIToggleStyle_set_text_active(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_active = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIToggleStyle_get_text_background(PyUIToggleStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_background.r,
+        self->style->text_background.g,
+        self->style->text_background.b,
+        self->style->text_background.a);
+}
+
+static int PyUIToggleStyle_set_text_background(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_background = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIToggleStyle_get_text_alignment(PyUIToggleStyleObject *self, void *closure)
+{
+    return Py_BuildValue("I", self->style->text_alignment);
+}
+
+static int PyUIToggleStyle_set_text_alignment(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an integer.");
+        return -1; 
+    }
+
+    self->style->text_alignment = PyInt_AsLong(value);
+    return 0;
+}
+
+static PyObject *PyUIToggleStyle_get_padding(PyUIToggleStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->padding.x,
+        self->style->padding.y);
+}
+
+static int PyUIToggleStyle_set_padding(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->padding = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUIToggleStyle_get_touch_padding(PyUIToggleStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->touch_padding.x,
+        self->style->touch_padding.y);
+}
+
+static int PyUIToggleStyle_set_touch_padding(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->touch_padding = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUIToggleStyle_get_spacing(PyUIToggleStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->spacing);
+}
+
+static int PyUIToggleStyle_set_spacing(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->spacing = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIToggleStyle_get_border(PyUIToggleStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->border);
+}
+
+static int PyUIToggleStyle_set_border(PyUIToggleStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->border = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIToggleStyle_pickle(PyUIToggleStyleObject *self)
+{
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+    CHK_TRUE(save_int(stream, self->type), fail_pickle);
+    CHK_TRUE(save_toggle(stream, self->style), fail_pickle);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error pickling pf.UIToggleStyle object");
+    }
+    return ret;
+}
+
+static PyObject *PyUIToggleStyle_unpickle(PyObject *cls, PyObject *args)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    int status;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyObject *styleobj = PyObject_New(PyObject, &PyUIToggleStyle_type);
+    assert(styleobj || PyErr_Occurred());
+    CHK_TRUE(styleobj, fail_unpickle);
+
+    CHK_TRUE(load_int(stream, (int*)&((PyUIToggleStyleObject*)styleobj)->type), fail_unpickle);
+    struct nk_context *ctx = UI_GetContext();
+
+    switch(((PyUIToggleStyleObject*)styleobj)->type) {
+        case TOGGLE_OPTION:
+            ((PyUIToggleStyleObject*)styleobj)->style = &ctx->style.option;
+            break;
+        case TOGGLE_CHECKBOX:
+            ((PyUIToggleStyleObject*)styleobj)->style = &ctx->style.checkbox;
+            break;
+        default:
+            goto fail_unpickle;
+    }
+
+    CHK_TRUE(load_toggle(stream, ((PyUIToggleStyleObject*)styleobj)->style), fail_unpickle);
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", styleobj, (int)nread);
+    Py_DECREF(styleobj);
+
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_args:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error unpickling pf.UIToggleStyle object");
+    }
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -2586,6 +3153,12 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
         return;
     Py_INCREF(&PyUIComboStyle_type);
     PyModule_AddObject(module, "UIComboStyle", (PyObject*)&PyUIComboStyle_type);
+
+    /* Toggle style */
+    if(PyType_Ready(&PyUIToggleStyle_type) < 0)
+        return;
+    Py_INCREF(&PyUIToggleStyle_type);
+    PyModule_AddObject(module, "UIToggleStyle", (PyObject*)&PyUIToggleStyle_type);
 
     /* Global style objects */
     PyUIButtonStyleObject *button_style = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
@@ -2617,6 +3190,18 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     assert(combo_style);
     combo_style->style = &ctx->style.combo;
     PyModule_AddObject(module, "combo_style", (PyObject*)combo_style);
+
+    PyUIToggleStyleObject *option_style = PyObject_New(PyUIToggleStyleObject, &PyUIToggleStyle_type);
+    assert(option_style);
+    option_style->style = &ctx->style.option;
+    option_style->type = TOGGLE_OPTION;
+    PyModule_AddObject(module, "option_style", (PyObject*)option_style);
+
+    PyUIToggleStyleObject *checkbox_style = PyObject_New(PyUIToggleStyleObject, &PyUIToggleStyle_type);
+    assert(checkbox_style);
+    checkbox_style->style = &ctx->style.checkbox;
+    checkbox_style->type = TOGGLE_CHECKBOX;
+    PyModule_AddObject(module, "checkbox_style", (PyObject*)checkbox_style);
 }
 
 bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_window *window)
