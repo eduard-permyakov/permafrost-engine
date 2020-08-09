@@ -20578,7 +20578,10 @@ nk_draw_checkbox(struct nk_command_buffer *out,
     if (background->type == NK_STYLE_ITEM_COLOR) {
         nk_fill_rect(out, *selector, 0, style->border_color);
         nk_fill_rect(out, nk_shrink_rect(*selector, style->border), 0, background->data.color);
-    } else nk_draw_image(out, *selector, &background->data.image, nk_white);
+    } else if(background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(out, *selector, background->data.texpath, nk_white);
+    } else nk_draw_image(out, *selector, &background->data.image, nk_white); 
+
     if (active) {
         if (cursor->type == NK_STYLE_ITEM_IMAGE)
             nk_draw_image(out, *cursors, &cursor->data.image, nk_white);
@@ -20622,7 +20625,10 @@ nk_draw_option(struct nk_command_buffer *out,
     if (background->type == NK_STYLE_ITEM_COLOR) {
         nk_fill_circle(out, *selector, style->border_color);
         nk_fill_circle(out, nk_shrink_rect(*selector, style->border), background->data.color);
-    } else nk_draw_image(out, *selector, &background->data.image, nk_white);
+    } else if(background->type == NK_STYLE_ITEM_TEXPATH) {
+        nk_draw_texpath(out, *selector, background->data.texpath, nk_white);
+    }else nk_draw_image(out, *selector, &background->data.image, nk_white);
+
     if (active) {
         if (cursor->type == NK_STYLE_ITEM_IMAGE)
             nk_draw_image(out, *cursors, &cursor->data.image, nk_white);
