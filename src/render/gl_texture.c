@@ -62,6 +62,7 @@ KHASH_MAP_INIT_STR(tex, GLuint)
 /*****************************************************************************/
 
 static khash_t(tex) *s_name_tex_table;
+static GLuint        s_null_tex;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -106,6 +107,27 @@ fail_load:
     return false;
 }
 
+static void texture_make_null(GLuint *out)
+{
+    ASSERT_IN_RENDER_THREAD();
+
+    glActiveTexture(GL_TEXTURE0);
+    glGenTextures(1, out);
+    glBindTexture(GL_TEXTURE_2D, *out);
+
+    unsigned char data[] = {0, 0, 0};
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
+
+    GL_ASSERT_OK();
+}
+
 static size_t texture_arr_num_mip_levels(GLuint tex)
 {
     int max_lvl;
@@ -131,6 +153,8 @@ bool R_GL_Texture_Init(void)
     ASSERT_IN_RENDER_THREAD();
 
     s_name_tex_table = kh_init(tex);
+    texture_make_null(&s_null_tex);
+
     return (s_name_tex_table != NULL);
 }
 
@@ -146,6 +170,7 @@ void R_GL_Texture_Shutdown(void)
         free((void*)key);
     });
     kh_destroy(tex, s_name_tex_table);
+    glDeleteTextures(1, &s_null_tex); 
 }
 
 bool R_GL_Texture_GetForName(const char *basedir, const char *name, GLuint *out)
@@ -156,8 +181,10 @@ bool R_GL_Texture_GetForName(const char *basedir, const char *name, GLuint *out)
     pf_snprintf(qualname, sizeof(qualname), "%s/%s", basedir, name);
 
     khiter_t k;
-    if((k = kh_get(tex, s_name_tex_table, qualname)) == kh_end(s_name_tex_table))
+    if((k = kh_get(tex, s_name_tex_table, qualname)) == kh_end(s_name_tex_table)) {
+        *out = s_null_tex;
         return false;
+    }
 
     *out = kh_val(s_name_tex_table, k);
     return true;
