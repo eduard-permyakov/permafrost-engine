@@ -341,11 +341,12 @@ static vec2_t compute_vnew(const vec_vec2_t *outside_points, vec2_t des_v, vec2_
 {
     float min_dist = INFINITY, len;
     vec2_t ret;
+    memset( &ret, 0, sizeof( vec2_t ) );
 
     for(int i = 0; i < vec_size(outside_points); i++) {
 
         /* The points are in worldspace coordinates. Convert them to the entity's 
-         * local space to get the adimissible velocities. */
+         * local space to get the admissible velocities. */
         vec2_t curr = vec_AT(outside_points, i), diff;
         PFM_Vec2_Sub(&curr, &ent_xz_pos, &curr);
 

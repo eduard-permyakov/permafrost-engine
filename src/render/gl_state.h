@@ -105,7 +105,7 @@ enum utype{
     UTYPE_MAT4_ARR,
     UTYPE_COMPOSITE,
     UTYPE_ARRAY,
-}type;
+};
 
 struct mdesc{
     const char *name;

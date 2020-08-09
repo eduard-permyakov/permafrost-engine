@@ -23753,7 +23753,6 @@ nk_do_property(nk_flags *ws,
         dst = buffer;
     } else {
         switch (variant->kind) {
-        default: break;
         case NK_PROPERTY_INT:
             nk_itoa(string, variant->value.i);
             num_len = nk_strlen(string);
@@ -23765,6 +23764,9 @@ nk_do_property(nk_flags *ws,
         case NK_PROPERTY_DOUBLE:
             NK_DTOA(string, variant->value.d);
             num_len = nk_string_float_limit(string, NK_MAX_FLOAT_PRECISION);
+            break;
+        default:
+            num_len = 0;
             break;
         }
         size = font->width(font->userdata, font->height, string, num_len);
