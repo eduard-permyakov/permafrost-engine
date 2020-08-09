@@ -119,34 +119,71 @@ static PyObject *PyWindow_get_header(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure);
-static PyObject *PyWindow_get_spacing(PyWindowObject *self, void *closure);
-static int       PyWindow_set_spacing(PyWindowObject *self, PyObject *value, void *closure);
-static PyObject *PyWindow_get_padding(PyWindowObject *self, void *closure);
-static int       PyWindow_set_padding(PyWindowObject *self, PyObject *value, void *closure);
-static PyObject *PyWindow_get_group_padding(PyWindowObject *self, void *closure);
-static int       PyWindow_set_group_padding(PyWindowObject *self, PyObject *value, void *closure);
-static PyObject *PyWindow_get_combo_padding(PyWindowObject *self, void *closure);
-static int       PyWindow_set_combo_padding(PyWindowObject *self, PyObject *value, void *closure);
-static PyObject *PyWindow_get_border(PyWindowObject *self, void *closure);
-static int       PyWindow_set_border(PyWindowObject *self, PyObject *value, void *closure);
+
 static PyObject *PyWindow_get_border_color(PyWindowObject *self, void *closure);
 static int       PyWindow_set_border_color(PyWindowObject *self, PyObject *value, void *closure);
-static PyObject *PyWindow_get_group_border(PyWindowObject *self, void *closure);
-static int       PyWindow_set_group_border(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_popup_border_color(PyWindowObject *self, void *closure);
+static int       PyWindow_set_popup_border_color(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_combo_border_color(PyWindowObject *self, void *closure);
+static int       PyWindow_set_combo_border_color(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_contextual_border_color(PyWindowObject *self, void *closure);
+static int       PyWindow_set_contextual_border_color(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_menu_border_color(PyWindowObject *self, void *closure);
+static int       PyWindow_set_menu_border_color(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_group_border_color(PyWindowObject *self, void *closure);
+static int       PyWindow_set_group_border_color(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_tooltip_border_color(PyWindowObject *self, void *closure);
+static int       PyWindow_set_tooltip_border_color(PyWindowObject *self, PyObject *value, void *closure);
+
+static PyObject *PyWindow_get_border(PyWindowObject *self, void *closure);
+static int       PyWindow_set_border(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_combo_border(PyWindowObject *self, void *closure);
 static int       PyWindow_set_combo_border(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_contextual_border(PyWindowObject *self, void *closure);
+static int       PyWindow_set_contextual_border(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_menu_border(PyWindowObject *self, void *closure);
+static int       PyWindow_set_menu_border(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_group_border(PyWindowObject *self, void *closure);
+static int       PyWindow_set_group_border(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_tooltip_border(PyWindowObject *self, void *closure);
+static int       PyWindow_set_tooltip_border(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_popup_border(PyWindowObject *self, void *closure);
+static int       PyWindow_set_popup_border(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_min_row_height_padding(PyWindowObject *self, void *closure);
 static int       PyWindow_set_min_row_height_padding(PyWindowObject *self, PyObject *value, void *closure);
+
+static PyObject *PyWindow_get_rounding(PyWindowObject *self, void *closure);
+static int       PyWindow_set_rounding(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_spacing(PyWindowObject *self, void *closure);
+static int       PyWindow_set_spacing(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_scrollbar_size(PyWindowObject *self, void *closure);
 static int       PyWindow_set_scrollbar_size(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_min_size(PyWindowObject *self, void *closure);
 static int       PyWindow_set_min_size(PyWindowObject *self, PyObject *value, void *closure);
+
+static PyObject *PyWindow_get_padding(PyWindowObject *self, void *closure);
+static int       PyWindow_set_padding(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_group_padding(PyWindowObject *self, void *closure);
+static int       PyWindow_set_group_padding(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_popup_padding(PyWindowObject *self, void *closure);
+static int       PyWindow_set_popup_padding(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_combo_padding(PyWindowObject *self, void *closure);
+static int       PyWindow_set_combo_padding(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_contextual_padding(PyWindowObject *self, void *closure);
+static int       PyWindow_set_contextual_padding(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_menu_padding(PyWindowObject *self, void *closure);
+static int       PyWindow_set_menu_padding(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_tooltip_padding(PyWindowObject *self, void *closure);
+static int       PyWindow_set_tooltip_padding(PyWindowObject *self, PyObject *value, void *closure);
+
 static PyObject *PyWindow_get_closed(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_hidden(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_interactive(PyWindowObject *self, void *closure);
 static int       PyWindow_set_interactive(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_background(PyWindowObject *self, void *closure);
 static int       PyWindow_set_background(PyWindowObject *self, PyObject *value, void *closure);
+static PyObject *PyWindow_get_fixed_background(PyWindowObject *self, void *closure);
+static int       PyWindow_set_fixed_background(PyWindowObject *self, PyObject *value, void *closure);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -317,30 +354,100 @@ static PyGetSetDef PyWindow_getset[] = {
     (setter)PyWindow_set_group_padding,
     "An (X, Y) tuple of floats to control the padding around a group in a window.", 
     NULL},
+    {"popup_padding",
+    (getter)PyWindow_get_popup_padding, 
+    (setter)PyWindow_set_popup_padding,
+    "An (X, Y) tuple of floats to control the padding in a popup window.", 
+    NULL},
     {"combo_padding",
     (getter)PyWindow_get_combo_padding, 
     (setter)PyWindow_set_combo_padding,
     "An (X, Y) tuple of floats to control the padding around a combo section in a window.", 
     NULL},
-    {"border",
-    (getter)PyWindow_get_border, 
-    (setter)PyWindow_set_border,
-    "A float to control the border width of a window.", 
+    {"contextual_padding",
+    (getter)PyWindow_get_contextual_padding, 
+    (setter)PyWindow_set_contextual_padding,
+    "An (X, Y) tuple of floats to control the padding around a contextual button.", 
+    NULL},
+    {"menu_padding",
+    (getter)PyWindow_get_menu_padding, 
+    (setter)PyWindow_set_menu_padding,
+    "An (X, Y) tuple of floats to control the padding around a menu button in a window.", 
+    NULL},
+    {"tooltip_padding",
+    (getter)PyWindow_get_tooltip_padding, 
+    (setter)PyWindow_set_tooltip_padding,
+    "An (X, Y) tuple of floats to control the padding in a tooltip window.", 
     NULL},
     {"border_color",
     (getter)PyWindow_get_border_color, 
     (setter)PyWindow_set_border_color,
     "An (R,G,B,A) tuple to control the border color of a window.", 
     NULL},
+    {"popup_border_color",
+    (getter)PyWindow_get_popup_border_color, 
+    (setter)PyWindow_set_popup_border_color,
+    "An (R,G,B,A) tuple to control the border color of window popups.", 
+    NULL},
+    {"combo_border_color",
+    (getter)PyWindow_get_combo_border_color, 
+    (setter)PyWindow_set_combo_border_color,
+    "An (R,G,B,A) tuple to control the border color of window combo boxes.", 
+    NULL},
+    {"contextual_border_color",
+    (getter)PyWindow_get_contextual_border_color, 
+    (setter)PyWindow_set_contextual_border_color,
+    "An (R,G,B,A) tuple to control the border color of window contextual panels.", 
+    NULL},
+    {"menu_border_color",
+    (getter)PyWindow_get_menu_border_color, 
+    (setter)PyWindow_set_menu_border_color,
+    "An (R,G,B,A) tuple to control the border color of window menus.", 
+    NULL},
+    {"group_border_color",
+    (getter)PyWindow_get_group_border_color, 
+    (setter)PyWindow_set_group_border_color,
+    "An (R,G,B,A) tuple to control the border color of window group panels.", 
+    NULL},
+    {"tooltip_border_color",
+    (getter)PyWindow_get_tooltip_border_color, 
+    (setter)PyWindow_set_tooltip_border_color,
+    "An (R,G,B,A) tuple to control the border color of tooltip panels.", 
+    NULL},
+    {"border",
+    (getter)PyWindow_get_border, 
+    (setter)PyWindow_set_border,
+    "A float to control the border width of a window.", 
+    NULL},
+    {"combo_border",
+    (getter)PyWindow_get_combo_border, 
+    (setter)PyWindow_set_combo_border,
+    "A float to control the border width around a combo section.",
+    NULL},
+    {"contextual_border",
+    (getter)PyWindow_get_contextual_border, 
+    (setter)PyWindow_set_contextual_border,
+    "A float to control the border width around a contextual button.",
+    NULL},
+    {"menu_border",
+    (getter)PyWindow_get_menu_border, 
+    (setter)PyWindow_set_menu_border,
+    "A float to control the border width around a menu button.",
+    NULL},
     {"group_border",
     (getter)PyWindow_get_group_border, 
     (setter)PyWindow_set_group_border,
     "A float to control the border width around a group.", 
     NULL},
-    {"combo_border",
-    (getter)PyWindow_get_group_border, 
-    (setter)PyWindow_set_group_border,
-    "A float to control the border width around a combo section.",
+    {"tooltip_border",
+    (getter)PyWindow_get_tooltip_border, 
+    (setter)PyWindow_set_tooltip_border,
+    "A float to control the border width around a tooltip window.",
+    NULL},
+    {"popup_border",
+    (getter)PyWindow_get_popup_border, 
+    (setter)PyWindow_set_popup_border,
+    "A float to control the border width around a popup window.",
     NULL},
     {"min_row_height_padding",
     (getter)PyWindow_get_min_row_height_padding, 
@@ -373,7 +480,13 @@ static PyGetSetDef PyWindow_getset[] = {
     {"background",
     (getter)PyWindow_get_background, 
     (setter)PyWindow_set_background,
-    "An (R, G, B, A) tuple of floats specifying the background color of the window.", 
+    "An (R, G, B, A) tuple of floats specifying the background color for some panels "
+    "such as the combo box popup.", 
+    NULL},
+    {"fixed_background",
+    (getter)PyWindow_get_fixed_background, 
+    (setter)PyWindow_set_fixed_background,
+    "An image path or an (R, G, B, A) tuple of floats specifying the background style of the window.", 
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -1326,6 +1439,26 @@ static PyObject *PyWindow_get_combo_padding(PyWindowObject *self, void *closure)
         self->style.combo_padding.y);
 }
 
+static PyObject *PyWindow_get_popup_padding(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("(f, f)",
+        self->style.popup_padding.x,
+        self->style.popup_padding.y);
+}
+
+static int PyWindow_set_popup_padding(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style.popup_padding = nk_vec2(x,y);
+    return 0;
+}
+
 static int PyWindow_set_combo_padding(PyWindowObject *self, PyObject *value, void *closure)
 {
     float x, y;
@@ -1336,6 +1469,66 @@ static int PyWindow_set_combo_padding(PyWindowObject *self, PyObject *value, voi
     }
 
     self->style.combo_padding = nk_vec2(x,y);
+    return 0;
+}
+
+static PyObject *PyWindow_get_contextual_padding(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("(f, f)",
+        self->style.contextual_padding.x,
+        self->style.contextual_padding.y);
+}
+
+static int PyWindow_set_contextual_padding(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style.contextual_padding = nk_vec2(x,y);
+    return 0;
+}
+
+static PyObject *PyWindow_get_menu_padding(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("(f, f)",
+        self->style.menu_padding.x,
+        self->style.menu_padding.y);
+}
+
+static int PyWindow_set_menu_padding(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style.menu_padding = nk_vec2(x,y);
+    return 0;
+}
+
+static PyObject *PyWindow_get_tooltip_padding(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("(f, f)",
+        self->style.tooltip_padding.x,
+        self->style.tooltip_padding.y);
+}
+
+static int PyWindow_set_tooltip_padding(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style.tooltip_padding = nk_vec2(x,y);
     return 0;
 }
 
@@ -1378,6 +1571,138 @@ static int PyWindow_set_border_color(PyWindowObject *self, PyObject *value, void
     return 0;
 }
 
+static PyObject *PyWindow_get_popup_border_color(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("iiii", 
+        self->style.popup_border_color.r,
+        self->style.popup_border_color.g,
+        self->style.popup_border_color.b,
+        self->style.popup_border_color.a
+    );
+}
+
+static int PyWindow_set_popup_border_color(PyWindowObject *self, PyObject *value, void *closure)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(value, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255).");
+        return -1;
+    }
+
+    self->style.popup_border_color = (struct nk_color){r, g, b, a};
+    return 0;
+}
+
+static PyObject *PyWindow_get_combo_border_color(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("iiii", 
+        self->style.combo_border_color.r,
+        self->style.combo_border_color.g,
+        self->style.combo_border_color.b,
+        self->style.combo_border_color.a
+    );
+}
+
+static int PyWindow_set_combo_border_color(PyWindowObject *self, PyObject *value, void *closure)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(value, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255).");
+        return -1;
+    }
+
+    self->style.combo_border_color = (struct nk_color){r, g, b, a};
+    return 0;
+}
+
+static PyObject *PyWindow_get_contextual_border_color(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("iiii", 
+        self->style.contextual_border_color.r,
+        self->style.contextual_border_color.g,
+        self->style.contextual_border_color.b,
+        self->style.contextual_border_color.a
+    );
+}
+
+static int PyWindow_set_contextual_border_color(PyWindowObject *self, PyObject *value, void *closure)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(value, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255).");
+        return -1;
+    }
+
+    self->style.contextual_border_color = (struct nk_color){r, g, b, a};
+    return 0;
+}
+
+static PyObject *PyWindow_get_menu_border_color(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("iiii", 
+        self->style.menu_border_color.r,
+        self->style.menu_border_color.g,
+        self->style.menu_border_color.b,
+        self->style.menu_border_color.a
+    );
+}
+
+static int PyWindow_set_menu_border_color(PyWindowObject *self, PyObject *value, void *closure)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(value, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255).");
+        return -1;
+    }
+
+    self->style.menu_border_color = (struct nk_color){r, g, b, a};
+    return 0;
+}
+
+static PyObject *PyWindow_get_group_border_color(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("iiii", 
+        self->style.group_border_color.r,
+        self->style.group_border_color.g,
+        self->style.group_border_color.b,
+        self->style.group_border_color.a
+    );
+}
+
+static int PyWindow_set_group_border_color(PyWindowObject *self, PyObject *value, void *closure)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(value, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255).");
+        return -1;
+    }
+
+    self->style.group_border_color = (struct nk_color){r, g, b, a};
+    return 0;
+}
+
+static PyObject *PyWindow_get_tooltip_border_color(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("iiii", 
+        self->style.tooltip_border_color.r,
+        self->style.tooltip_border_color.g,
+        self->style.tooltip_border_color.b,
+        self->style.tooltip_border_color.a
+    );
+}
+
+static int PyWindow_set_tooltip_border_color(PyWindowObject *self, PyObject *value, void *closure)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(value, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255).");
+        return -1;
+    }
+
+    self->style.tooltip_border_color = (struct nk_color){r, g, b, a};
+    return 0;
+}
+
 static PyObject *PyWindow_get_group_border(PyWindowObject *self, void *closure)
 {
     return Py_BuildValue("f", self->style.group_border);
@@ -1398,6 +1723,74 @@ static int PyWindow_set_group_border(PyWindowObject *self, PyObject *value, void
 static PyObject *PyWindow_get_combo_border(PyWindowObject *self, void *closure)
 {
     return Py_BuildValue("f", self->style.combo_border);
+}
+
+static PyObject *PyWindow_get_contextual_border(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style.contextual_border);
+}
+
+static int PyWindow_set_contextual_border(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float border;
+    if(!PyArg_ParseTuple(value, "f", &border)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
+        return -1;
+    }
+
+    self->style.contextual_border = border;
+    return 0;
+}
+
+static PyObject *PyWindow_get_menu_border(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style.menu_border);
+}
+
+static int PyWindow_set_menu_border(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float border;
+    if(!PyArg_ParseTuple(value, "f", &border)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
+        return -1;
+    }
+
+    self->style.menu_border = border;
+    return 0;
+}
+
+static PyObject *PyWindow_get_tooltip_border(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style.tooltip_border);
+}
+
+static int PyWindow_set_tooltip_border(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float border;
+    if(!PyArg_ParseTuple(value, "f", &border)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
+        return -1;
+    }
+
+    self->style.group_border = border;
+    return 0;
+}
+
+static PyObject *PyWindow_get_popup_border(PyWindowObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style.popup_border);
+}
+
+static int PyWindow_set_popup_border(PyWindowObject *self, PyObject *value, void *closure)
+{
+    float border;
+    if(!PyArg_ParseTuple(value, "f", &border)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
+        return -1;
+    }
+
+    self->style.group_border = border;
+    return 0;
 }
 
 static int PyWindow_set_combo_border(PyWindowObject *self, PyObject *value, void *closure)
@@ -1504,6 +1897,28 @@ static int PyWindow_set_interactive(PyWindowObject *self, PyObject *value, void 
 
 static PyObject *PyWindow_get_background(PyWindowObject *self, void *closure)
 {
+    return Py_BuildValue("iiii", 
+        self->style.background.r,
+        self->style.background.g,
+        self->style.background.b,
+        self->style.background.a
+    );
+}
+
+static int PyWindow_set_background(PyWindowObject *self, PyObject *value, void *closure)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(value, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 4 integers (0-255).");
+        return -1;
+    }
+
+    self->style.background = (struct nk_color){r, g, b, a};
+    return 0;
+}
+
+static PyObject *PyWindow_get_fixed_background(PyWindowObject *self, void *closure)
+{
     if(self->style.fixed_background.type == NK_STYLE_ITEM_TEXPATH) {
         return PyString_FromString(self->style.fixed_background.data.texpath);
     }else{
@@ -1513,7 +1928,7 @@ static PyObject *PyWindow_get_background(PyWindowObject *self, void *closure)
     }
 }
 
-static int PyWindow_set_background(PyWindowObject *self, PyObject *value, void *closure)
+static int PyWindow_set_fixed_background(PyWindowObject *self, PyObject *value, void *closure)
 {
     int r, g, b, a;
 
@@ -1525,7 +1940,6 @@ static int PyWindow_set_background(PyWindowObject *self, PyObject *value, void *
         }
 
         struct nk_color bg = (struct nk_color){r, g, b, a};
-        self->style.background = bg;
         self->style.fixed_background = (struct nk_style_item){
             .type = NK_STYLE_ITEM_COLOR, 
             .data.color = bg
@@ -1533,7 +1947,6 @@ static int PyWindow_set_background(PyWindowObject *self, PyObject *value, void *
 
     }else if (PyString_Check(value)) {
 
-        self->style.background = (struct nk_color){0, 0, 0, 0};
         self->style.fixed_background = (struct nk_style_item){ .type = NK_STYLE_ITEM_TEXPATH };
         pf_strlcpy(self->style.fixed_background.data.texpath, PyString_AS_STRING(value), 
             sizeof(self->style.fixed_background.data.texpath));
