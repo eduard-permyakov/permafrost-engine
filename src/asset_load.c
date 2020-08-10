@@ -199,21 +199,12 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     al_set_ent_defaults(ret);
     ret->anim_ctx = (void*)(ret + 1);
 
-    if(strlen(name) >= sizeof(ret->name))
-        goto fail_init;
-    strcpy(ret->name, name);
+    ret->name = pf_strdup(name);
+    ret->filename = pf_strdup(pfobj_name);
+    ret->basedir = pf_strdup(base_path);
 
-    if(strlen(name) >= sizeof(ret->name))
+    if(!ret->name || !ret->filename || !ret->basedir)
         goto fail_init;
-    strcpy(ret->name, name);
-
-    if(strlen(pfobj_name) >= sizeof(ret->filename))
-        goto fail_init;
-    strcpy(ret->filename, pfobj_name);
-
-    if(strlen(base_path) >= sizeof(ret->basedir))
-        goto fail_init;
-    strcpy(ret->basedir, base_path);
 
     pf_snprintf(abs_basepath, sizeof(abs_basepath), "%s/%s", g_basepath, base_path);
     pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
@@ -280,6 +271,9 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 fail_parse:
     SDL_RWclose(stream);
 fail_init:
+    free((void*)ret->basedir);
+    free((void*)ret->filename);
+    free((void*)ret->name);
     free(ret);
 fail_alloc:
     return NULL;
@@ -287,6 +281,9 @@ fail_alloc:
 
 void AL_EntityFree(struct entity *entity)
 {
+    free((void*)entity->basedir);
+    free((void*)entity->filename);
+    free((void*)entity->name);
     free(entity);
 }
 

@@ -58,9 +58,9 @@
 
 struct entity{
     uint32_t     uid;
-    char         name[32];
-    char         basedir[64];
-    char         filename[32];
+    const char  *name;
+    const char  *basedir;
+    const char  *filename;
     vec3_t       scale;
     quat_t       rotation;
     uint32_t     flags;

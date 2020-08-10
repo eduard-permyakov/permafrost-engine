@@ -503,13 +503,14 @@ static int PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closur
         return -1;
     }
 
-    const char *s = PyString_AsString(value);
-    if(strlen(s) >= sizeof(self->ent->name)){
-        PyErr_SetString(PyExc_TypeError, "Name string is too long.");
+    const char *s = pf_strdup(PyString_AsString(value));
+    if(!s) {
+        PyErr_NoMemory();
         return -1;
     }
 
-    strcpy(self->ent->name, s);
+    free((void*)self->ent->name);
+    self->ent->name = s;
     return 0;
 }
 
@@ -619,7 +620,7 @@ static int PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, 
 
 static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure)
 {
-    char buff[sizeof(self->ent->basedir) + sizeof(self->ent->filename) + 2];
+    char buff[strlen(self->ent->basedir) + strlen(self->ent->filename) + 2];
     strcpy(buff, self->ent->basedir);
     strcat(buff, "/");
     strcat(buff, self->ent->filename);
