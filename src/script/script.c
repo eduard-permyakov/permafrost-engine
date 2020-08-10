@@ -1785,8 +1785,19 @@ bool S_RunFile(const char *path)
         goto done;
     
     PyObject *global_dict = PyModule_GetDict(main_module); /* borrowed */
-    PyObject *result = PyRun_File(script, path, Py_file_input, global_dict, global_dict);
 
+    if(PyDict_GetItemString(global_dict, "__file__") == NULL) {
+        PyObject *f = PyString_FromString(path);
+        if(f == NULL)
+            goto done;
+        if(PyDict_SetItemString(global_dict, "__file__", f) < 0) {
+            Py_DECREF(f);
+            goto done;
+        }
+        Py_DECREF(f);
+    }
+
+    PyObject *result = PyRun_File(script, path, Py_file_input, global_dict, global_dict);
     ret = (result != NULL);
     Py_XDECREF(result);
 
