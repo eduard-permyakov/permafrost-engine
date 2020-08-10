@@ -10,14 +10,6 @@ Use this script as the engine argument to generate up-to-date API documentation.
 BUILT-IN FUNCTIONS
 ********************************************************************************
 
-    [activate_camera]
-    ----------------------------------------------------------------------------
-    Set the camera specified by the index to be the active camera, meaning the
-    scene is being rendered from the camera's point of view. The second
-    argument is teh camera control mode (0 = FPS, 1 = RTS). Note that the
-    position of camera 0 is restricted to the map boundaries as it is expected
-    to be the main RTS camera. The other cameras are unrestricted.
-
     [add_faction]
     ----------------------------------------------------------------------------
     Add a new faction with the specified name and color. By default, this
@@ -28,15 +20,44 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Clear the current unit seleciton.
 
+    [disable_fog_of_war]
+    ----------------------------------------------------------------------------
+    Disable the fog of war.
+
     [disable_unit_selection]
     ----------------------------------------------------------------------------
     Make it impossible to select units with the mouse. Disable drawing of a
     selection box when dragging the mouse.
 
+    [enable_fog_of_war]
+    ----------------------------------------------------------------------------
+    Enable the fog of war.
+
     [enable_unit_selection]
     ----------------------------------------------------------------------------
     Make it possible to select units with the mouse. Enable drawing of a
     selection box when dragging the mouse.
+
+    [exec_pop]
+    ----------------------------------------------------------------------------
+    Pop a previously saved subsession, using it to replace the current
+    subsession. This is performed asynchronously. Failure is notified via an
+    EVENT_SESSION_FAIL_LOAD event.
+
+    [exec_push]
+    ----------------------------------------------------------------------------
+    Replace the current subsession with one set up by the provided script,
+    saving the current subsession onto a stack. This is performed
+    asynchronously. Failure is notified via an EVENT_SESSION_FAIL_LOAD event.
+
+    [get_active_camera]
+    ----------------------------------------------------------------------------
+    Get a pf.Camera object describing the active camera from whose point of
+    view the scene is currently rendered.
+
+    [get_active_font]
+    ----------------------------------------------------------------------------
+    Get the name of the current active font.
 
     [get_basedir]
     ----------------------------------------------------------------------------
@@ -180,6 +201,15 @@ BUILT-IN FUNCTIONS
     Save the current state of the engine to the specified file. The session can
     then be loaded from the file with the 'load_session' call.
 
+    [set_active_camera]
+    ----------------------------------------------------------------------------
+    Set a pf.Camera object to be the active camera from whose point of view the
+    scene is currently rendered.
+
+    [set_active_font]
+    ----------------------------------------------------------------------------
+    Set the current active font to that of the specified name.
+
     [set_ambient_light_color]
     ----------------------------------------------------------------------------
     Sets the global ambient light color (specified as an RGB multiplier) for
@@ -224,7 +254,8 @@ BUILT-IN FUNCTIONS
 
     [set_minimap_size]
     ----------------------------------------------------------------------------
-    Set the center position of the minimap in virtual screen coordinates.
+    Set the center position of the minimap in virtual screen coordinates. A
+    size of 0 fully hides the minimap.
 
     [set_move_on_left_click]
     ----------------------------------------------------------------------------
@@ -368,6 +399,53 @@ BUILT-IN CLASSES
         [unregister]
         Unregisters a callable previously registered to be invoked on the
         specified event.
+
+    [Camera]
+    ----------------------------------------------------------------------------
+    Permafrost Engine camera object.                               
+                                                                   
+    The camera takes the following (optional) keyword  arguments   
+    in its' constructor:                                           
+                                                                   
+      - mode {pf.CAM_MODE_RTS, pf.CAM_MODE_FPS, pf.CAM_MODE_FREE}  
+      - position (tuple of 3 floats)                               
+      - pitch (float)                                              
+      - yaw (float)                                                
+      - speed (float)                                              
+      - sensitivity (float)                                        
+
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [direction]
+        The current worldspace direction of the camera
+
+        [mode]
+        The mode determines which controller is installed when the camera is
+        activated. Can be one of pf.CAM_MODE_RTS, pf.CAM_MODE_FPS,
+        pf.CAM_MODE_FREE
+
+        [pitch]
+        The camera's pitch (in degrees)
+
+        [position]
+        The current worldspace position of the camera
+
+        [sensitivity]
+        The camera's sensitivity (how fast direction can be changed)
+
+        [speed]
+        The camera's speed (in OpenGL units / ms)
+
+        [yaw]
+        The camera's yaw (in degrees)
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__pickle__]
+        Serialize a Permafrost Engine camera object to a string.
 
     [CombatableEntity]
     ----------------------------------------------------------------------------
@@ -607,6 +685,9 @@ BUILT-IN CLASSES
         [border]
         A floating-point value of the button border width, in pixels.
 
+        [border_color]
+        The (R, G, B, A) color of button borders.
+
         [hover]
         The look of the button when the mouse is hovered over it - either an
         (R, G, B, A) tuple or a string representing a path to an image.
@@ -652,6 +733,286 @@ BUILT-IN CLASSES
         [__pickle__]
         Serialize a Permafrost Engine UIButtonStyle object to a string.
 
+    [UIComboStyle]
+    ----------------------------------------------------------------------------
+    Style configuration for Permafrost Engine combo box UI elements.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [active]
+        The look of the combo element in the active state - either an (R, G, B,
+        A) tuple or a string representing a path to an image.
+
+        [border]
+        A floating-point value to control width of the combo box border.
+
+        [border_color]
+        The color of the combo box border - an (R, G, B, A) tuple.
+
+        [button]
+        A pf.UIButtonStyle object describing the style of the combo box
+        drop-down button.
+
+        [button_padding]
+        An (X, Y) tuple of floats to control the padding around combo box
+        drop-down buttons.
+
+        [content_padding]
+        An (X, Y) tuple of floats to control the padding around combo box
+        contents.
+
+        [hover]
+        The look of the combo element in the hovered state - either an (R, G,
+        B, A) tuple or a string representing a path to an image.
+
+        [label_active]
+        The color of the combo item label in the active state - an (R, G, B, A)
+        tuple
+
+        [label_hover]
+        The color of the combo item label in the hovered state - an (R, G, B,
+        A) tuple
+
+        [label_normal]
+        The color of the combo item label in the normal state - an (R, G, B, A)
+        tuple.
+
+        [normal]
+        The look of the combo element in the normal state - either an (R, G, B,
+        A) tuple or a string representing a path to an image.
+
+        [rounding]
+        A floating-point value to control how rounded the selectable label
+        corners are.
+
+        [spacing]
+        An (X, Y) tuple of floats to control the spacing in between combo box
+        elements.
+
+        [sym_active]
+        The type of the combo box drop-down glyph in the active state - an
+        integer (pf.NK_SYMBOL_X, etc.)
+
+        [sym_hover]
+        The type of the combo box drop-down glyph in the hovered state - an
+        integer (pf.NK_SYMBOL_X, etc.)
+
+        [sym_normal]
+        The type of the combo box drop-down glyph in the normal state - an
+        integer (pf.NK_SYMBOL_X, etc.)
+
+        [symbol_active]
+        The color of the combo symbol in the active state - an (R, G, B, A)
+        tuple
+
+        [symbol_hover]
+        The color of the combo symbol in the hovered state - an (R, G, B, A)
+        tuple
+
+        [symbol_normal]
+        The color of the combo symbol in the normal state - an (R, G, B, A)
+        tuple.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__pickle__]
+        Serialize a Permafrost Engine UIComboStyle object to a string.
+
+    [UIHeaderStyle]
+    ----------------------------------------------------------------------------
+    Style configuration for Permafrost Engine UI window headers.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [active]
+        The look of the button in the active (pressed) state - either an (R, G,
+        B, A) tuple or a string representing a path to an image.
+
+        [close_button]
+        A pf.UIButtonStyle object describing the style of the close button.
+
+        [hover]
+        The look of the button when the mouse is hovered over it - either an
+        (R, G, B, A) tuple or a string representing a path to an image.
+
+        [label_active]
+        The (R, G, B, A) color of header label when the window is in the active
+        state.
+
+        [label_hover]
+        The (R, G, B, A) color of header label when the cursor is hovered over
+        the window.
+
+        [label_normal]
+        The (R, G, B, A) color of header label when the window is in the
+        default state.
+
+        [minimize_button]
+        A pf.UIButtonStyle object describing the style of the minimize button.
+
+        [normal]
+        The look of the button in the normal state - either an (R, G, B, A)
+        tuple or a string representing a path to an image.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__pickle__]
+        Serialize a Permafrost Engine UIButtonStyle object to a string.
+
+    [UISelectableStyle]
+    ----------------------------------------------------------------------------
+    Style configuration for Permafrost Engine selectable labels.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [hover]
+        The look of the selectable label in the hovered (inactive) state -
+        either an (R, G, B, A) tuple or a string representing a path to an
+        image.
+
+        [hover_active]
+        The look of the selectable label in the hovered (active) state - either
+        an (R, G, B, A) tuple or a string representing a path to an image.
+
+        [image_padding]
+        An (X, Y) tuple of floats to control the padding around images.
+
+        [normal]
+        The look of the selectable label in the normal (inactive) state -
+        either an (R, G, B, A) tuple or a string representing a path to an
+        image.
+
+        [normal_active]
+        The look of the selectable label in the normal (active) state - either
+        an (R, G, B, A) tuple or a string representing a path to an image.
+
+        [padding]
+        An (X, Y) tuple of floats to control the padding around selectable
+        labels.
+
+        [pressed]
+        The look of the selectable label in the pressed (inactive) state -
+        either an (R, G, B, A) tuple or a string representing a path to an
+        image.
+
+        [pressed_active]
+        The look of the selectable label in the pressed (active) state - either
+        an (R, G, B, A) tuple or a string representing a path to an image.
+
+        [rounding]
+        A floating-point value to control how rounded the selectable label
+        corners are.
+
+        [text_alignment]
+        The mode of text alignment (pf.NK_TEXT_CENTERED, etc.).
+
+        [text_hover]
+        The color of the selectable label text in the hovered (inactive) state
+        - an (R, G, B, A) tuple
+
+        [text_hover_active]
+        The color of the selectable label text in the hovered (active) state -
+        an (R, G, B, A) tuple
+
+        [text_normal]
+        The color of the selectable label text in the normal (inactive) state -
+        an (R, G, B, A) tuple.
+
+        [text_normal_active]
+        The color of the selectable label text in the normal (active) state -
+        an (R, G, B, A) tuple.
+
+        [text_pressed]
+        The color of the selectable label text in the pressed (inactive) state
+        - an (R, G, B, A) tuple
+
+        [text_pressed_active]
+        The color of the selectable label text in the pressed (active) state -
+        an (R, G, B, A) tuple
+
+        [touch_padding]
+        An (X, Y) tuple of floats to control the clickable region of the
+        selectable label.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__pickle__]
+        Serialize a Permafrost Engine UISelectableStyle object to a string.
+
+    [UIToggleStyle]
+    ----------------------------------------------------------------------------
+    Style configuration for Permafrost Engine UI toggle-able options.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [active]
+        The look of the toggle button in the active state - either an (R, G, B,
+        A) tuple or a string representing a path to an image.
+
+        [border]
+        A floating-point value of the toggle button border width, in pixels.
+
+        [border_color]
+        The color of the toggle button border - an (R, G, B, A) tuple.
+
+        [cursor_hover]
+        The look of the toggle button cursor (selection indicator) in the hover
+        state - either an (R, G, B, A) tuple or a string representing a path to
+        an image.
+
+        [cursor_normal]
+        The look of the toggle button cursor (selection indicator) in the
+        normal state - either an (R, G, B, A) tuple or a string representing a
+        path to an image.
+
+        [hover]
+        The look of the toggle button in the hovered state - either an (R, G,
+        B, A) tuple or a string representing a path to an image.
+
+        [normal]
+        The look of the toggle button in the normal state - either an (R, G, B,
+        A) tuple or a string representing a path to an image.
+
+        [padding]
+        An (X, Y) tuple of floats to control the padding around toggle buttons.
+
+        [spacing]
+        A float to control the spacing within a toggle button widget.
+
+        [text_active]
+        The color of the option text in the active state - an (R, G, B, A) tuple
+
+        [text_alignment]
+        A set of flags to control the text alignment of the option label.
+
+        [text_background]
+        The color of the option text background - an (R, G, B, A) tuple
+
+        [text_hover]
+        The color of the option text in the hovered state - an (R, G, B, A)
+        tuple
+
+        [text_normal]
+        The color of the option text in the normal state - an (R, G, B, A)
+        tuple.
+
+        [touch_padding]
+        An (X, Y) tuple of floats to control the clickable region of the toggle
+        button.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__pickle__]
+        Serialize a Permafrost Engine UIToggleStyle object to a string.
+
     [Window]
     ----------------------------------------------------------------------------
     Permafrost Engine UI window.
@@ -659,8 +1020,15 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [background]
+        An (R, G, B, A) tuple of floats specifying the background color for
+        some panels such as the combo box popup.
+
         [border]
         A float to control the border width of a window.
+
+        [border_color]
+        An (R,G,B,A) tuple to control the border color of a window.
 
         [closed]
         A readonly bool indicating if this window is 'closed'.
@@ -668,16 +1036,41 @@ BUILT-IN CLASSES
         [combo_border]
         A float to control the border width around a combo section.
 
+        [combo_border_color]
+        An (R,G,B,A) tuple to control the border color of window combo boxes.
+
         [combo_padding]
         An (X, Y) tuple of floats to control the padding around a combo section
         in a window.
 
+        [contextual_border]
+        A float to control the border width around a contextual button.
+
+        [contextual_border_color]
+        An (R,G,B,A) tuple to control the border color of window contextual
+        panels.
+
+        [contextual_padding]
+        An (X, Y) tuple of floats to control the padding around a contextual
+        button.
+
+        [fixed_background]
+        An image path or an (R, G, B, A) tuple of floats specifying the
+        background style of the window.
+
         [group_border]
         A float to control the border width around a group.
+
+        [group_border_color]
+        An (R,G,B,A) tuple to control the border color of window group panels.
 
         [group_padding]
         An (X, Y) tuple of floats to control the padding around a group in a
         window.
+
+        [header]
+        An pf.UIHeaderStyle type for controlling the style parameters of the
+        window header.
 
         [header_height]
         A float specifying the height of the window header in pixels.
@@ -689,6 +1082,16 @@ BUILT-IN CLASSES
         A read-write bool to enable or disable user interactivity for this
         window.
 
+        [menu_border]
+        A float to control the border width around a menu button.
+
+        [menu_border_color]
+        An (R,G,B,A) tuple to control the border color of window menus.
+
+        [menu_padding]
+        An (X, Y) tuple of floats to control the padding around a menu button
+        in a window.
+
         [min_row_height_padding]
         A float to control the minimum number of pixels of padding at the
         header and footer of a row..
@@ -699,6 +1102,15 @@ BUILT-IN CLASSES
         [padding]
         An (X, Y) tuple of floats to control the padding (between border and
         content) of a window.
+
+        [popup_border]
+        A float to control the border width around a popup window.
+
+        [popup_border_color]
+        An (R,G,B,A) tuple to control the border color of window popups.
+
+        [popup_padding]
+        An (X, Y) tuple of floats to control the padding in a popup window.
 
         [position]
         A tuple of two integers specifying the X and Y position of the window.
@@ -713,6 +1125,15 @@ BUILT-IN CLASSES
         [spacing]
         An (X, Y) tuple of floats to control the spacing (between components)
         within a window.
+
+        [tooltip_border]
+        A float to control the border width around a tooltip window.
+
+        [tooltip_border_color]
+        An (R,G,B,A) tuple to control the border color of tooltip panels.
+
+        [tooltip_padding]
+        An (X, Y) tuple of floats to control the padding in a tooltip window.
 
         ************************************************************************
         METHODS
@@ -737,12 +1158,18 @@ BUILT-IN CLASSES
         Text field for getting string input from the user. Returns the current
         text.
 
+        [file_browser]
+        Present a file browser widget.
+
         [group]
         The window UI components pushed in the callable argument will be nested
         under a group.
 
         [hide]
         Make the window invisible.
+
+        [image]
+        Present an image at the specified path.
 
         [label_colored]
         Add a colored label layout with the specified alignment.
@@ -774,6 +1201,14 @@ BUILT-IN CLASSES
         Radio button with the specified text. Returns if the radio button is
         selected.
 
+        [popup]
+        The window UI components pushed in the callable argument will be
+        presented in a popup.
+
+        [popup_close]
+        Close the currently active popup window. Must only be called from poup
+        context.
+
         [selectable_label]
         Adds a label that can be toggled to be selected with a mouse click.
         Returns the new state of the selectable label.
@@ -786,6 +1221,9 @@ BUILT-IN CLASSES
 
         [simple_chart]
         Add a chart with a single slot.
+
+        [spacer]
+        Empty widget to consume slots in a row.
 
         [tree]
         The window UI components pushed in the callable argument will be nested
@@ -819,6 +1257,7 @@ BUILT-IN CONSTANTS
     BLEND_MODE_BLUR 1
     BLEND_MODE_NOBLEND 0
     CAM_MODE_FPS 0
+    CAM_MODE_FREE 2
     CAM_MODE_RTS 1
     DIPLOMACY_STATE_PEACE 0
     DIPLOMACY_STATE_WAR 1
@@ -832,12 +1271,14 @@ BUILT-IN CONSTANTS
     EVENT_ATTACK_START 65554
     EVENT_ENGINE_LAST 131071
     EVENT_ENTITY_DEATH 65555
+    EVENT_GAME_SIMSTATE_CHANGED 65557
     EVENT_MOTION_END 65553
     EVENT_MOTION_START 65552
     EVENT_NEW_GAME 65542
     EVENT_RENDER_3D 65539
     EVENT_RENDER_UI 65540
     EVENT_SELECTED_TILE_CHANGED 65541
+    EVENT_SESSION_FAIL_LOAD 65558
     EVENT_UNIT_SELECTION_CHANGED 65543
     EVENT_UPDATE_END 65537
     EVENT_UPDATE_START 65536

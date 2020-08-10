@@ -11,13 +11,14 @@ EVERGLORY is the flagship game developed using Permafrost Engine.
 
 [Support the project - Wishlist on Steam today!](https://store.steampowered.com/app/1309720/EVERGLORY/)
 
-<img src="docs/images/screenshot-1.png" width="768" height="423">
-<img src="docs/images/screenshot-2.png" width="768" height="432">
-<img src="docs/images/screenshot-3.png" width="768" height="432">
-<img src="docs/images/screenshot-4.png" width="768" height="432">
-<img src="docs/images/screenshot-5.png" width="768" height="432">
-<img src="docs/images/pathfinding.gif"  width="768" height="432">
-<img src="docs/images/fog-of-war.gif"   width="768" height="432">
+<img src="docs/images/screenshot-1.png"             width="768" height="423">
+<img src="docs/images/screenshot-2.png"             width="768" height="432">
+<img src="docs/images/screenshot-3.png"             width="768" height="432">
+<img src="docs/images/screenshot-4.png"             width="768" height="432">
+<img src="docs/images/screenshot-5.png"             width="768" height="432">
+<img src="docs/images/pathfinding.gif"              width="768" height="432">
+<img src="docs/images/fog-of-war.gif"               width="768" height="432">
+<img src="docs/images/main-menu-skinned-ui.png"     width="768" height="432">
 
 ## Engine Summary ##
 
