@@ -118,14 +118,18 @@ static bool ring_section_free(const struct gl_ring *ring, size_t size)
     if(ring->nmarkers == 0)
         return true;
 
+    assert((ring->imark_head - ring->imark_tail + 1) % NMAXMARKERS == ring->nmarkers);
     size_t begin = ring->markers[ring->imark_tail].begin;
     size_t end = ring->markers[ring->imark_head].end;
 
+    if(end == begin) /* entire buffer is used up */
+        return false;
+
     if(end < begin) { /* wrap around */
-        return (begin - end) >= size;
+        return begin - end >= size;
     }else{
         size_t end_size = ring->size - end;
-        size_t start_size = ring->pos;
+        size_t start_size = begin;
         return (end_size + start_size) >= size;
     }
 }
