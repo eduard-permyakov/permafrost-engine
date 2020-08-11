@@ -505,7 +505,7 @@ static int render(void *data)
     bool quit = render_wait_cmd(rstate);
     assert(!quit);
     render_init_ctx(rstate->arg);
-	bool initialized = rstate->arg->out_success;
+    bool initialized = rstate->arg->out_success;
 
     rstate->arg = NULL; /* arg is stale after signalling main thread */
     render_signal_done(rstate);
