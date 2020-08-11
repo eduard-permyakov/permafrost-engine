@@ -1,6 +1,6 @@
 /*
- *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2020 Eduard Permyakov 
+ *  This file is part of Permafrost Engine.
+ *  Copyright (C) 2017-2020 Eduard Permyakov
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -14,21 +14,21 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- * 
- *  Linking this software statically or dynamically with other modules is making 
- *  a combined work based on this software. Thus, the terms and conditions of 
- *  the GNU General Public License cover the whole combination. 
- *  
- *  As a special exception, the copyright holders of Permafrost Engine give 
- *  you permission to link Permafrost Engine with independent modules to produce 
- *  an executable, regardless of the license terms of these independent 
- *  modules, and to copy and distribute the resulting executable under 
- *  terms of your choice, provided that you also meet, for each linked 
- *  independent module, the terms and conditions of the license of that 
- *  module. An independent module is a module which is not derived from 
- *  or based on Permafrost Engine. If you modify Permafrost Engine, you may 
- *  extend this exception to your version of Permafrost Engine, but you are not 
- *  obliged to do so. If you do not wish to do so, delete this exception 
+ *
+ *  Linking this software statically or dynamically with other modules is making
+ *  a combined work based on this software. Thus, the terms and conditions of
+ *  the GNU General Public License cover the whole combination.
+ *
+ *  As a special exception, the copyright holders of Permafrost Engine give
+ *  you permission to link Permafrost Engine with independent modules to produce
+ *  an executable, regardless of the license terms of these independent
+ *  modules, and to copy and distribute the resulting executable under
+ *  terms of your choice, provided that you also meet, for each linked
+ *  independent module, the terms and conditions of the license of that
+ *  module. An independent module is a module which is not derived from
+ *  or based on Permafrost Engine. If you modify Permafrost Engine, you may
+ *  extend this exception to your version of Permafrost Engine, but you are not
+ *  obliged to do so. If you do not wish to do so, delete this exception
  *  statement from your version.
  *
  */
@@ -86,11 +86,11 @@ SDL_threadID               g_render_thread_id; /* write-once */
 
 static SDL_Window         *s_window;
 
-/* Flag to perform a single step of the simulation while the game is paused. 
- * Cleared at after performing the step. 
+/* Flag to perform a single step of the simulation while the game is paused.
+ * Cleared at after performing the step.
  */
 static bool                s_step_frame = false;
-static bool                s_quit = false; 
+static bool                s_quit = false;
 static vec_event_t         s_prev_tick_events;
 
 static SDL_Thread         *s_render_thread;
@@ -106,8 +106,8 @@ static void process_sdl_events(void)
     UI_InputBegin();
 
     vec_event_reset(&s_prev_tick_events);
-    SDL_Event event;    
-   
+    SDL_Event event;
+
     while(SDL_PollEvent(&event)) {
 
         UI_HandleEvent(&event);
@@ -115,23 +115,23 @@ static void process_sdl_events(void)
         vec_event_push(&s_prev_tick_events, event);
         assert(vec_size(&s_prev_tick_events) <= 8192);
 
-        E_Global_Notify(event.type, &vec_AT(&s_prev_tick_events, 
+        E_Global_Notify(event.type, &vec_AT(&s_prev_tick_events,
             vec_size(&s_prev_tick_events)-1), ES_ENGINE);
 
         switch(event.type) {
 
         case SDL_KEYDOWN:
             if(event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
-                s_quit = true; 
+                s_quit = true;
             }
             break;
 
         case SDL_USEREVENT:
             if(event.user.code == 0) {
-                E_Global_Notify(EVENT_60HZ_TICK, NULL, ES_ENGINE); 
+                E_Global_Notify(EVENT_60HZ_TICK, NULL, ES_ENGINE);
             }
             break;
-        default: 
+        default:
             break;
         }
     }
@@ -152,7 +152,7 @@ static bool rstate_init(struct render_sync_state *rstate)
     rstate->sq_lock = SDL_CreateMutex();
     if(!rstate->sq_lock)
         goto fail_sq_lock;
-        
+
     rstate->sq_cond = SDL_CreateCond();
     if(!rstate->sq_cond)
         goto fail_sq_cond;
@@ -237,10 +237,10 @@ static bool frame_step_validate(const struct sval *new_val)
 static void frame_step_commit(const struct sval *new_val)
 {
     if(new_val->as_bool) {
-        E_Global_Register(SDL_KEYDOWN, fs_on_key_press, NULL, 
+        E_Global_Register(SDL_KEYDOWN, fs_on_key_press, NULL,
             G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     }else{
-        E_Global_Unregister(SDL_KEYDOWN, fs_on_key_press); 
+        E_Global_Unregister(SDL_KEYDOWN, fs_on_key_press);
     }
 }
 
@@ -250,7 +250,7 @@ static void engine_create_settings(void)
         .name = "pf.debug.paused_frame_step_enabled",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = false 
+            .as_bool = false
         },
         .prio = 0,
         .validate = frame_step_validate,
@@ -272,7 +272,7 @@ static bool engine_init(char **argv)
         goto fail_perf;
     }
 
-    /* Initialize 'Settings' before any subsystem to allow all of them 
+    /* Initialize 'Settings' before any subsystem to allow all of them
      * to register settings. */
     if(Settings_Init() != SS_OKAY) {
         fprintf(stderr, "Failed to initialize settings module.\n");
@@ -281,7 +281,7 @@ static bool engine_init(char **argv)
 
     ss_e status;
     if((status = Settings_LoadFromFile()) != SS_OKAY) {
-        fprintf(stderr, "Could not load settings from file: %s [status: %d]\n", 
+        fprintf(stderr, "Could not load settings from file: %s [status: %d]\n",
             Settings_GetFile(), status);
     }
 
@@ -309,12 +309,30 @@ static bool engine_init(char **argv)
         extra_flags = setting.as_bool ? SDL_WINDOW_ALWAYS_ON_TOP : 0;
     }
 
+
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
+
+        SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+        int ctx_flags = 0;
+        SDL_GL_GetAttribute(SDL_GL_CONTEXT_FLAGS, &ctx_flags);
+        ctx_flags |= SDL_GL_CONTEXT_DEBUG_FLAG;
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, ctx_flags);
+
     s_window = SDL_CreateWindow(
         "Permafrost Engine",
-        SDL_WINDOWPOS_UNDEFINED, 
         SDL_WINDOWPOS_UNDEFINED,
-        res[0], 
-        res[1], 
+        SDL_WINDOWPOS_UNDEFINED,
+        res[0],
+        res[1],
         SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | wf | extra_flags);
 
     Engine_LoadingScreen();
@@ -385,7 +403,7 @@ static bool engine_init(char **argv)
         goto fail_render;
     }
 
-    E_Global_Register(SDL_QUIT, on_user_quit, NULL, 
+    E_Global_Register(SDL_QUIT, on_user_quit, NULL,
         G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
 
     if(!UI_Init(argv[1], s_window)) {
@@ -437,7 +455,7 @@ fail_sdl:
 fail_settings:
     Perf_Shutdown();
 fail_perf:
-    return false; 
+    return false;
 }
 
 static void engine_shutdown(void)
@@ -445,19 +463,19 @@ static void engine_shutdown(void)
     S_Shutdown();
     UI_Shutdown();
 
-    /* Execute the last batch of commands that may have been queued by the 
-     * shutdown routines. 
+    /* Execute the last batch of commands that may have been queued by the
+     * shutdown routines.
      */
     render_thread_start_work();
     wait_render_work_done();
     render_thread_quit();
 
-    /* 'Game' must shut down after 'Scripting'. There are still 
+    /* 'Game' must shut down after 'Scripting'. There are still
      * references to game entities in the Python interpreter that should get
-     * their destructors called during 'S_Shutdown(), which will invoke the 
+     * their destructors called during 'S_Shutdown(), which will invoke the
      * 'G_' API to remove them from the world.
      */
-    G_Shutdown(); 
+    G_Shutdown();
     N_Shutdown();
 
     Cursor_FreeAll();
@@ -470,7 +488,7 @@ static void engine_shutdown(void)
     vec_event_destroy(&s_prev_tick_events);
     rstate_destroy(&s_rstate);
 
-    SDL_DestroyWindow(s_window); 
+    SDL_DestroyWindow(s_window);
     SDL_Quit();
 
     Settings_Shutdown();
@@ -480,8 +498,8 @@ static void engine_shutdown(void)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-/* Fills the framebuffer with the loading screen using SDL's software renderer. 
- * Used to set a loading screen immediately, even before the rendering subsystem 
+/* Fills the framebuffer with the loading screen using SDL's software renderer.
+ * Used to set a loading screen immediately, even before the rendering subsystem
  * is initialized, */
 void Engine_LoadingScreen(void)
 {
@@ -491,7 +509,7 @@ void Engine_LoadingScreen(void)
     SDL_Surface *win_surface = SDL_GetWindowSurface(s_window);
     SDL_Renderer *sw_renderer = SDL_CreateSoftwareRenderer(win_surface);
     if(!sw_renderer) {
-        fprintf(stderr, "Loading Screen: Failed to create SDL software renderer: %s\n", SDL_GetError()); 
+        fprintf(stderr, "Loading Screen: Failed to create SDL software renderer: %s\n", SDL_GetError());
         return;
     }
 
@@ -502,7 +520,7 @@ void Engine_LoadingScreen(void)
     SDL_RenderGetViewport(sw_renderer, &draw_area);
 
     int width, height, orig_format;
-    unsigned char *image = stbi_load(CONFIG_LOADING_SCREEN, &width, &height, 
+    unsigned char *image = stbi_load(CONFIG_LOADING_SCREEN, &width, &height,
         &orig_format, STBI_rgb);
 
     if(!image) {
@@ -510,11 +528,11 @@ void Engine_LoadingScreen(void)
         goto fail_load_image;
     }
 
-    SDL_Surface *img_surface = SDL_CreateRGBSurfaceWithFormatFrom(image, width, height, 
+    SDL_Surface *img_surface = SDL_CreateRGBSurfaceWithFormatFrom(image, width, height,
         24, 3*width, SDL_PIXELFORMAT_RGB24);
 
     if(!img_surface) {
-        fprintf(stderr, "Loading Screen: Failed to create SDL surface: %s\n", SDL_GetError());    
+        fprintf(stderr, "Loading Screen: Failed to create SDL surface: %s\n", SDL_GetError());
         goto fail_surface;
     }
 
@@ -599,7 +617,7 @@ void Engine_ClearPendingEvents(void)
 }
 
 #if defined(_WIN32)
-int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, 
+int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                      LPSTR lpCmdLine, int nCmdShow)
 {
     int argc = __argc;
@@ -621,7 +639,7 @@ int main(int argc, char **argv)
     g_basepath = argv[1];
 
     if(!engine_init(argv)) {
-        ret = EXIT_FAILURE; 
+        ret = EXIT_FAILURE;
         goto fail_init;
     }
 
@@ -641,7 +659,7 @@ int main(int argc, char **argv)
         bool prev_step_frame = s_step_frame;
 
         if(prev_step_frame) {
-            assert(curr_ss != G_RUNNING); 
+            assert(curr_ss != G_RUNNING);
             G_SetSimState(G_RUNNING);
         }
 
@@ -671,7 +689,7 @@ int main(int argc, char **argv)
 
     ss_e status;
     if((status = Settings_SaveToFile()) != SS_OKAY) {
-        fprintf(stderr, "Could not save settings to file: %s [status: %d]\n", 
+        fprintf(stderr, "Could not save settings to file: %s [status: %d]\n",
             Settings_GetFile(), status);
     }
 
@@ -680,4 +698,3 @@ fail_init:
 fail_args:
     exit(ret);
 }
-

@@ -1,6 +1,6 @@
-/* 
- *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2017-2020 Eduard Permyakov 
+/*
+ *  This file is part of Permafrost Engine.
+ *  Copyright (C) 2017-2020 Eduard Permyakov
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -14,21 +14,21 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- * 
- *  Linking this software statically or dynamically with other modules is making 
- *  a combined work based on this software. Thus, the terms and conditions of 
- *  the GNU General Public License cover the whole combination. 
- *  
- *  As a special exception, the copyright holders of Permafrost Engine give 
- *  you permission to link Permafrost Engine with independent modules to produce 
- *  an executable, regardless of the license terms of these independent 
- *  modules, and to copy and distribute the resulting executable under 
- *  terms of your choice, provided that you also meet, for each linked 
- *  independent module, the terms and conditions of the license of that 
- *  module. An independent module is a module which is not derived from 
- *  or based on Permafrost Engine. If you modify Permafrost Engine, you may 
- *  extend this exception to your version of Permafrost Engine, but you are not 
- *  obliged to do so. If you do not wish to do so, delete this exception 
+ *
+ *  Linking this software statically or dynamically with other modules is making
+ *  a combined work based on this software. Thus, the terms and conditions of
+ *  the GNU General Public License cover the whole combination.
+ *
+ *  As a special exception, the copyright holders of Permafrost Engine give
+ *  you permission to link Permafrost Engine with independent modules to produce
+ *  an executable, regardless of the license terms of these independent
+ *  modules, and to copy and distribute the resulting executable under
+ *  terms of your choice, provided that you also meet, for each linked
+ *  independent module, the terms and conditions of the license of that
+ *  module. An independent module is a module which is not derived from
+ *  or based on Permafrost Engine. If you modify Permafrost Engine, you may
+ *  extend this exception to your version of Permafrost Engine, but you are not
+ *  obliged to do so. If you do not wish to do so, delete this exception
  *  statement from your version.
  *
  */
@@ -102,7 +102,7 @@ static void ar_commit(const struct sval *new_val)
     if(fabs(new_ratio - curr_ratio) < EPSILON)
         return;
 
-    /* Here, we choose to always decrease a dimension rather than 
+    /* Here, we choose to always decrease a dimension rather than
      * increase one so the window continues to fit on the screen */
     struct sval new_res = {.type = ST_TYPE_VEC2};
     if(new_ratio > curr_ratio) {
@@ -112,7 +112,7 @@ static void ar_commit(const struct sval *new_val)
             .y = res.as_vec2.y / (new_ratio/curr_ratio)
         };
     }else{
-    
+
         new_res.as_vec2 = (vec2_t){
             .x = res.as_vec2.x / (curr_ratio/new_ratio),
             .y = res.as_vec2.y
@@ -210,13 +210,13 @@ static void render_set_logmask(int *mask)
     if(!GLEW_KHR_debug)
         return;
 
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, 
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE,
         GL_DEBUG_SEVERITY_HIGH, 0, NULL, (*mask & 0x1) ? GL_TRUE : GL_FALSE);
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, 
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE,
         GL_DEBUG_SEVERITY_MEDIUM, 0, NULL, (*mask & 0x2) ? GL_TRUE : GL_FALSE);
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, 
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE,
         GL_DEBUG_SEVERITY_LOW, 0, NULL, (*mask & 0x4) ? GL_TRUE : GL_FALSE);
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, 
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE,
         GL_DEBUG_SEVERITY_NOTIFICATION, 0, NULL, (*mask & 0x8) ? GL_TRUE : GL_FALSE);
 }
 
@@ -231,7 +231,7 @@ static void debug_logmask_commit(const struct sval *new_val)
 
 static void render_set_trace_gpu(const bool *on)
 {
-    g_trace_gpu = *on; 
+    g_trace_gpu = *on;
 }
 
 static void trace_gpu_commit(const struct sval *new_val)
@@ -255,7 +255,7 @@ static bool render_wait_cmd(struct render_sync_state *rstate)
         SDL_UnlockMutex(rstate->sq_lock);
         return true;
     }
-    
+
     assert(rstate->start == true);
     rstate->start = false;
     SDL_UnlockMutex(rstate->sq_lock);
@@ -313,7 +313,7 @@ static const char *severity_str(GLenum severity)
 void debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
                     GLsizei length, const GLchar *message, const void *user)
 {
-    fprintf(stderr, " *** [%s][%s][%s] %s\n", source_str(source), type_str(type), 
+    fprintf(stderr, " *** [%s][%s][%s] %s\n", source_str(source), type_str(type),
         severity_str(severity), message);
     fflush(stderr);
 }
@@ -412,7 +412,7 @@ static void render_dispatch_cmd(struct rcmd cmd)
         );
         break;
     case 3:
-        ((void(*)(void*, void*, 
+        ((void(*)(void*, void*,
                   void*)) cmd.func)(
             cmd.args[0],
             cmd.args[1],
@@ -429,8 +429,8 @@ static void render_dispatch_cmd(struct rcmd cmd)
         );
         break;
     case 5:
-        ((void(*)(void*, void*, 
-                  void*, void*, 
+        ((void(*)(void*, void*,
+                  void*, void*,
                   void*)) cmd.func)(
             cmd.args[0],
             cmd.args[1],
@@ -452,9 +452,9 @@ static void render_dispatch_cmd(struct rcmd cmd)
         );
         break;
     case 7:
-        ((void(*)(void*, void*, 
-                  void*, void*, 
-                  void*, void*, 
+        ((void(*)(void*, void*,
+                  void*, void*,
+                  void*, void*,
                   void*)) cmd.func)(
             cmd.args[0],
             cmd.args[1],
@@ -497,7 +497,7 @@ static void render_process_cmds(queue_rcmd_t *cmds)
 
 static int render(void *data)
 {
-    struct render_sync_state *rstate = data; 
+    struct render_sync_state *rstate = data;
     SDL_Window *window = rstate->arg->in_window; /* cache window ptr */
 
     SDL_GL_MakeCurrent(window, s_context);
@@ -505,13 +505,13 @@ static int render(void *data)
     bool quit = render_wait_cmd(rstate);
     assert(!quit);
     render_init_ctx(rstate->arg);
-	bool initialized = rstate->arg->out_success;
+	  bool initialized = rstate->arg->out_success;
 
     rstate->arg = NULL; /* arg is stale after signalling main thread */
     render_signal_done(rstate);
 
     while(true) {
-    
+
         quit = render_wait_cmd(rstate);
         if(quit)
             break;
@@ -562,7 +562,7 @@ bool R_Init(const char *base_path)
     if(ar < native_ar) {
         res_default = (vec2_t){dm.h * ar, dm.h};
     }else{
-        res_default = (vec2_t){dm.w, dm.w / ar}; 
+        res_default = (vec2_t){dm.w, dm.w / ar};
     }
 
     status = Settings_Create((struct setting){
@@ -593,7 +593,7 @@ bool R_Init(const char *base_path)
         .name = "pf.video.window_always_on_top",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = false 
+            .as_bool = false
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -605,7 +605,7 @@ bool R_Init(const char *base_path)
         .name = "pf.video.vsync",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = false 
+            .as_bool = false
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -617,7 +617,7 @@ bool R_Init(const char *base_path)
         .name = "pf.video.water_reflection",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = true 
+            .as_bool = true
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -629,7 +629,7 @@ bool R_Init(const char *base_path)
         .name = "pf.video.water_refraction",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
-            .as_bool = true 
+            .as_bool = true
         },
         .prio = 0,
         .validate = bool_val_validate,
@@ -661,15 +661,15 @@ bool R_Init(const char *base_path)
     });
     assert(status == SS_OKAY);
 
-    return true; 
+    return true;
 }
 
 SDL_Thread *R_Run(struct render_sync_state *rstate)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    /* Create the GL context in the main thread and then hand it off to the render thread. 
-     * Certain drivers crap out when trying to make the context in the render thread directly. 
+    /* Create the GL context in the main thread and then hand it off to the render thread.
+     * Certain drivers crap out when trying to make the context in the render thread directly.
      */
     s_context = render_new_ctx(rstate->arg->in_window);
     SDL_GL_MakeCurrent(rstate->arg->in_window, NULL);
@@ -679,7 +679,7 @@ SDL_Thread *R_Run(struct render_sync_state *rstate)
 
 void *R_PushArg(const void *src, size_t size)
 {
-    struct render_workspace *ws = (SDL_ThreadID() == g_render_thread_id) ? G_GetRenderWS() 
+    struct render_workspace *ws = (SDL_ThreadID() == g_render_thread_id) ? G_GetRenderWS()
                                                                          : G_GetSimWS();
     void *ret = stalloc(&ws->args, size);
     if(!ret)
@@ -705,7 +705,7 @@ void R_PushCmd(struct rcmd cmd)
 
 bool R_InitWS(struct render_workspace *ws)
 {
-    if(!stalloc_init(&ws->args)) 
+    if(!stalloc_init(&ws->args))
         goto fail_args;
 
     if(!queue_rcmd_init(&ws->commands, 2048))
@@ -741,4 +741,3 @@ const char *R_GetInfo(enum render_info attr)
     default: assert(0);             return NULL;
     }
 }
-
