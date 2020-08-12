@@ -40,6 +40,7 @@
 #include "../task.h"
 #include "../sched.h"
 #include "../main.h"
+#include "../event.h"
 #include "../lib/public/khash.h"
 
 #include <stdint.h>
@@ -69,7 +70,7 @@ static PyObject *PyTask_run(PyTaskObject *self);
 static PyObject *PyTask_wait(PyTaskObject *self, PyObject *args);
 static PyObject *PyTask_yield(PyTaskObject *self);
 static PyObject *PyTask_send(PyTaskObject *self, PyObject *args);
-static PyObject *PyTask_receive(PyTaskObject *self, PyObject *args);
+static PyObject *PyTask_receive(PyTaskObject *self);
 static PyObject *PyTask_reply(PyTaskObject *self, PyObject *args);
 static PyObject *PyTask_await_event(PyTaskObject *self, PyObject *args);
 static PyObject *PyTask_sleep(PyTaskObject *self, PyObject *args);
@@ -109,7 +110,7 @@ static PyMethodDef PyTask_methods[] = {
     "Send a message to another pf.Task instance, becoming blocked until it replies."},
 
     {"receive", 
-    (PyCFunction)PyTask_receive, METH_VARARGS,
+    (PyCFunction)PyTask_receive, METH_NOARGS,
     "Become blocked, waiting until a message is received from the specified task."},
 
     {"reply", 
@@ -211,6 +212,18 @@ static struct result py_task(void *arg)
     );
     Py_XDECREF(ret);
 
+    /* Allow catching of the task exceptions for easier debugging */
+    if(PyErr_Occurred()) {
+        PyObject *exc_info = Py_BuildValue("OOOO",
+            self,
+            ts->curexc_type      ? ts->curexc_type      : Py_None,
+            ts->curexc_value     ? ts->curexc_value     : Py_None,
+            ts->curexc_traceback ? ts->curexc_traceback : Py_None
+        );
+        E_Global_Notify(EVENT_SCRIPT_TASK_EXCEPTION, exc_info, ES_SCRIPT);
+        PyErr_Clear();
+    }
+
     PyThreadState_Swap(s_main_thread_state);
     PyThreadState_Delete(ts);
 
@@ -273,7 +286,11 @@ fail_alloc:
 
 static void PyTask_dealloc(PyTaskObject *self)
 {
-
+    printf("dealloc: %s\n", PyObject_REPR((PyObject*)self));
+    fflush(stdout);
+    assert(self->state != PYTASK_STATE_RUNNING);
+    Py_XDECREF(self->runfunc);
+    Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 static PyObject *PyTask_pickle(PyTaskObject *self)
@@ -291,12 +308,13 @@ static PyObject *PyTask_run(PyTaskObject *self)
     self->tid = Sched_Create(16, py_task, self, NULL, TASK_MAIN_THREAD_PINNED);
     self->state = PYTASK_STATE_RUNNING;
 
+    /* Retain a running task object until it finishes */
+    Py_INCREF(self);
+
     int status;
     khiter_t k = kh_put(task, s_tid_task_map, self->tid, &status);
     assert(status != -1 && status != 0);
     kh_value(s_tid_task_map, k) = self;
-    /* Retain a running task object until it finishes */
-    Py_INCREF(self);
 
     Py_RETURN_NONE;
 }
@@ -326,17 +344,105 @@ static PyObject *PyTask_yield(PyTaskObject *self)
 
 static PyObject *PyTask_send(PyTaskObject *self, PyObject *args)
 {
-    return NULL;
+    ASSERT_IN_MAIN_THREAD();
+
+    if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
+        PyErr_SetString(PyExc_RuntimeError, 
+            "The 'send' method can only be called from the context of the __run__ method.");
+        return NULL;
+    }
+
+    PyObject *recepient, *message;
+    if(!PyArg_ParseTuple(args, "OO", &recepient, &message)
+    || !PyObject_IsInstance(recepient, (PyObject*)&PyTask_type)) {
+        PyErr_SetString(PyExc_TypeError, 
+            "Expecting two arguments: a pf.Task instance (repecient) and a message object.");
+        return NULL;
+    }
+
+    if(((PyTaskObject*)recepient)->state != PYTASK_STATE_RUNNING) {
+        PyErr_SetString(PyExc_RuntimeError, "Can only send messages to a running task.");
+        return NULL;
+    }
+
+    uint32_t recepient_tid = ((PyTaskObject*)recepient)->tid;
+    PyObject *reply = NULL;
+    Py_INCREF(message); /* retain the message object */
+
+    assert(s_main_thread_state);
+    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    Task_Send(recepient_tid, &message, sizeof(message), &reply, sizeof(reply));
+    s_main_thread_state = PyThreadState_Swap(ts);
+
+    return reply; /* steal the reply object reference */
 }
 
-static PyObject *PyTask_receive(PyTaskObject *self, PyObject *args)
+static PyObject *PyTask_receive(PyTaskObject *self)
 {
-    return NULL;
+    ASSERT_IN_MAIN_THREAD();
+
+    if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
+        PyErr_SetString(PyExc_RuntimeError, 
+            "The 'receive' method can only be called from the context of the __run__ method.");
+        return NULL;
+    }
+
+    uint32_t from_tid;
+    PyObject *message;
+
+    assert(s_main_thread_state);
+    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    Task_Receive(&from_tid, &message, sizeof(message));
+    s_main_thread_state = PyThreadState_Swap(ts);
+
+    khiter_t k = kh_get(task, s_tid_task_map, from_tid);
+    assert(k != kh_end(s_tid_task_map));
+    PyTaskObject *from = kh_value(s_tid_task_map, k);
+
+    PyObject *ret = PyTuple_New(2);
+    if(!ret) {
+        Py_DECREF(message);
+        return NULL;
+    }
+
+    Py_INCREF(from);
+    PyTuple_SetItem(ret, 0, (PyObject*)from);
+    PyTuple_SetItem(ret, 1, message); /* steal message ref */
+    return ret;
 }
 
 static PyObject *PyTask_reply(PyTaskObject *self, PyObject *args)
 {
-    return NULL;
+    ASSERT_IN_MAIN_THREAD();
+
+    if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
+        PyErr_SetString(PyExc_RuntimeError, 
+            "The 'reply' method can only be called from the context of the __run__ method.");
+        return NULL;
+    }
+
+    PyObject *recepient, *response;
+    if(!PyArg_ParseTuple(args, "OO", &recepient, &response)
+    || !PyObject_IsInstance(recepient, (PyObject*)&PyTask_type)) {
+        PyErr_SetString(PyExc_TypeError, 
+            "Expecting two arguments: a pf.Task instance (repecient) and a message object.");
+        return NULL;
+    }
+
+    if(((PyTaskObject*)recepient)->state != PYTASK_STATE_RUNNING) {
+        PyErr_SetString(PyExc_RuntimeError, "Can only reply to a running task.");
+        return NULL;
+    }
+
+    uint32_t recepient_tid = ((PyTaskObject*)recepient)->tid;
+    Py_INCREF(response); /* retain response */
+
+    assert(s_main_thread_state);
+    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    Task_Reply(recepient_tid, &response, sizeof(response));
+    s_main_thread_state = PyThreadState_Swap(ts);
+
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyTask_await_event(PyTaskObject *self, PyObject *args)
