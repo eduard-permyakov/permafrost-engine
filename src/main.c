@@ -309,6 +309,23 @@ static bool engine_init(char **argv)
         extra_flags = setting.as_bool ? SDL_WINDOW_ALWAYS_ON_TOP : 0;
     }
 
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
+
+    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+    int ctx_flags = 0;
+    SDL_GL_GetAttribute(SDL_GL_CONTEXT_FLAGS, &ctx_flags);
+    ctx_flags |= SDL_GL_CONTEXT_DEBUG_FLAG;
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, ctx_flags);
+
     s_window = SDL_CreateWindow(
         "Permafrost Engine",
         SDL_WINDOWPOS_UNDEFINED, 
