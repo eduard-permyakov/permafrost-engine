@@ -42,6 +42,7 @@
 #include "py_constants.h"
 #include "py_pickle.h"
 #include "py_camera.h"
+#include "py_task.h"
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
@@ -1716,6 +1717,7 @@ PyMODINIT_FUNC initpf(void)
     S_UI_PyRegister(module);
     S_Tile_PyRegister(module);
     S_Camera_PyRegister(module);
+    S_Task_PyRegister(module);
     S_Constants_Expose(module); 
 }
 
@@ -1734,6 +1736,8 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
     if(!S_UI_Init(ctx))
         return false;
     if(!S_Entity_Init())
+        return false;
+    if(!S_Task_Init())
         return false;
 
     if(0 != PyList_Append(PySys_GetObject("path"), Py_BuildValue("s", script_dir)))
@@ -1764,6 +1768,7 @@ void S_Shutdown(void)
     Py_Finalize();
     S_Pickle_Shutdown();
     S_Camera_Shutdown();
+    S_Task_Shutdown();
     S_Entity_Shutdown();
     S_UI_Shutdown();
 }
