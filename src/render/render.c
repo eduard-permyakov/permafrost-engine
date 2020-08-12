@@ -318,28 +318,6 @@ void debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
     fflush(stderr);
 }
 
-static SDL_GLContext render_new_ctx(struct SDL_Window *window)
-{
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
-
-    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-
-    int ctx_flags = 0;
-    SDL_GL_GetAttribute(SDL_GL_CONTEXT_FLAGS, &ctx_flags);
-    ctx_flags |= SDL_GL_CONTEXT_DEBUG_FLAG;
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, ctx_flags);
-
-    return SDL_GL_CreateContext(window);
-}
-
 static void render_init_ctx(struct render_init_arg *arg)
 {
     SDL_GL_MakeCurrent(arg->in_window, s_context);
@@ -505,7 +483,7 @@ static int render(void *data)
     bool quit = render_wait_cmd(rstate);
     assert(!quit);
     render_init_ctx(rstate->arg);
-	bool initialized = rstate->arg->out_success;
+    bool initialized = rstate->arg->out_success;
 
     rstate->arg = NULL; /* arg is stale after signalling main thread */
     render_signal_done(rstate);
@@ -671,7 +649,7 @@ SDL_Thread *R_Run(struct render_sync_state *rstate)
     /* Create the GL context in the main thread and then hand it off to the render thread. 
      * Certain drivers crap out when trying to make the context in the render thread directly. 
      */
-    s_context = render_new_ctx(rstate->arg->in_window);
+    s_context = SDL_GL_CreateContext(rstate->arg->in_window);
     SDL_GL_MakeCurrent(rstate->arg->in_window, NULL);
 
     return SDL_CreateThread(render, "render", rstate);
