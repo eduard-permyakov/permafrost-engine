@@ -60,7 +60,8 @@ void    *Task_AwaitEvent(int event);
 void     Task_SetDestructor(void (*destructor)(void*), void *darg);
 void     Task_Sleep(int ms);
 void     Task_Register(const char *name);
-uint32_t Task_WhoIs(const char *name);
+void     Task_Unregister(void);
+uint32_t Task_WhoIs(const char *name, bool blocking);
 
 /* The following may only be called from the main thread */
 

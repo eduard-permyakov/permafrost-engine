@@ -39,6 +39,7 @@
 #include "main.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/pqueue.h"
+#include "lib/public/queue.h"
 #include "lib/public/khash.h"
 
 #include <SDL.h>
@@ -60,15 +61,26 @@ struct ts_req{
 struct ns_req{
     enum{
         NS_REQ_REGISTER,
-        NS_REQ_WHOIS
+        NS_REQ_UNREGISTER,
+        NS_REQ_WHOIS,
     }type;
     const char *name;
+    bool blocking;
 };
+
+QUEUE_TYPE(tid, uint32_t)
+QUEUE_IMPL(static, tid, uint32_t)
 
 PQUEUE_TYPE(delay, struct delay_desc)
 PQUEUE_IMPL(static, delay, struct delay_desc)
 
 KHASH_MAP_INIT_STR(tid, uint32_t)
+KHASH_MAP_INIT_STR(tidq, queue_tid_t)
+
+struct ns_state{
+    khash_t(tid) *names;
+    khash_t(tidq) *waiters;
+};
 
 /*****************************************************************************/
 /* STATIC VARIAVBLES                                                         */
@@ -150,21 +162,35 @@ static struct result timeserver_task(void *arg)
 
 static void nameserver_exit(void *arg)
 {
-    khash_t(tid) *names = (khash_t(tid)*)arg;
+    struct ns_state *state = (struct ns_state*)arg;
+
+    khash_t(tid) *names = state->names;
+    khash_t(tidq) *waiters = state->waiters;
+
     const char *key;
     uint32_t tid;
+    queue_tid_t queue;
     (void)tid;
 
     kh_foreach(names, key, tid, {
         free((void*)key);
     });
     kh_destroy(tid, names);
+
+    kh_foreach(waiters, key, queue, {
+        free((void*)key);
+        queue_tid_destroy(&queue);
+    });
+    kh_destroy(tidq, waiters);
 }
 
 static struct result nameserver_task(void *arg)
 {
     khash_t(tid) *names = kh_init(tid);
-    Task_SetDestructor(nameserver_exit, names);
+    khash_t(tidq) *waiters = kh_init(tidq);
+
+    struct ns_state state = { names, waiters };
+    Task_SetDestructor(nameserver_exit, &state);
 
     while(1) {
         struct ns_req request;
@@ -174,9 +200,10 @@ static struct result nameserver_task(void *arg)
 
         switch(request.type) {
         case NS_REQ_REGISTER: {
-            int status;
+
             khiter_t k = kh_get(tid, names, request.name);
             if(k == kh_end(names)) {
+                int status;
                 k = kh_put(tid, names, pf_strdup(request.name), &status);
                 assert(status != -1 && status != 0);
             }
@@ -184,9 +211,21 @@ static struct result nameserver_task(void *arg)
 
             int reply = 0;
             Task_Reply(tid, &reply, sizeof(reply));
+
+            /* Check if anyone is waiting on this name */
+            k = kh_get(tidq, waiters, request.name);
+            if(k != kh_end(waiters)) {
+
+                uint32_t waiter;
+                while(queue_tid_pop(&kh_value(waiters, k), &waiter)) {
+                    Task_Reply(waiter, &tid, sizeof(tid));
+                }
+            }
+
             break;
         }
         case NS_REQ_WHOIS: {
+
             uint32_t resp;
             khiter_t k = kh_get(tid, names, request.name);
             if(k == kh_end(names)) {
@@ -194,7 +233,45 @@ static struct result nameserver_task(void *arg)
             }else{
                 resp = kh_value(names, k);
             }
+
+            if(resp == NULL_TID && request.blocking) {
+
+                khiter_t k = kh_get(tidq, waiters, request.name);
+                if(k == kh_end(waiters)) {
+
+                    queue_tid_t newq;
+                    queue_tid_init(&newq, 16);
+
+                    int status;
+                    k = kh_put(tidq, waiters, pf_strdup(request.name), &status);
+                    assert(status != -1 && status != 0);
+                    kh_value(waiters, k) = newq;
+                }
+                queue_tid_push(&kh_value(waiters, k), &tid);
+                break;
+            }
+
             Task_Reply(tid, &resp, sizeof(resp));
+            break;
+        }
+        case NS_REQ_UNREGISTER: {
+
+            const char *key;
+            uint32_t curr_tid;
+
+            kh_foreach(names, key, curr_tid, {
+                if(curr_tid == tid) {
+
+                    khiter_t k = kh_get(tid, names, key);
+                    assert(k != kh_end(names));
+                    free((void*)key);
+                    kh_del(tid, names, k);
+                    break;
+                }
+            });
+
+            int reply = 0;
+            Task_Reply(tid, &reply, sizeof(reply));
             break;
         }
         default: assert(0);
@@ -312,11 +389,21 @@ void Task_Register(const char *name)
     Task_Send(s_ns_tid, &nr, sizeof(nr), &resp, sizeof(resp));
 }
 
-uint32_t Task_WhoIs(const char *name)
+void Task_Unregister(void)
+{
+    struct ns_req nr = (struct ns_req){
+        .type = NS_REQ_UNREGISTER,
+    };
+    int resp;
+    Task_Send(s_ns_tid, &nr, sizeof(nr), &resp, sizeof(resp));
+}
+
+uint32_t Task_WhoIs(const char *name, bool blocking)
 {
     struct ns_req nr = (struct ns_req){
         .type = NS_REQ_WHOIS,
-        .name = name
+        .name = name,
+        .blocking = blocking
     };
     uint32_t resp;
     Task_Send(s_ns_tid, &nr, sizeof(nr), &resp, sizeof(resp));
