@@ -56,8 +56,8 @@ static PyObject *PyCamera_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 static void      PyCamera_dealloc(PyCameraObject *self);
 static int       PyCamera_init(PyCameraObject *self, PyObject *args, PyObject *kwds);
 
-static PyObject *PyCamera_pickle(PyCameraObject *self);
-static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyCamera_pickle(PyCameraObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static PyObject *PyCamera_get_mode(PyCameraObject *self, void *closure);
 static PyObject *PyCamera_get_pos(PyCameraObject *self, void *closure);
@@ -80,11 +80,11 @@ static PyObject *s_active_cam = NULL;
 
 static PyMethodDef PyCamera_methods[] = {
     {"__pickle__", 
-    (PyCFunction)PyCamera_pickle, METH_NOARGS,
+    (PyCFunction)PyCamera_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine camera object to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyCamera_unpickle, METH_VARARGS | METH_CLASS,
+    (PyCFunction)PyCamera_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
     "Create a new pf.Camera instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
@@ -263,7 +263,7 @@ static int PyCamera_init(PyCameraObject *self, PyObject *args, PyObject *kwds)
     return 0;
 }
 
-static PyObject *PyCamera_pickle(PyCameraObject *self)
+static PyObject *PyCamera_pickle(PyCameraObject *self, PyObject *args, PyObject *kwargs)
 {
     bool status;
     PyObject *ret = NULL;
@@ -321,7 +321,7 @@ fail_alloc:
     return ret;
 }
 
-static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
     const char *str;

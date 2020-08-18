@@ -59,8 +59,8 @@ static PyObject *PyTile_get_top_right_height(PyTileObject *self, void *closure);
 static PyObject *PyTile_get_bot_left_height(PyTileObject *self, void *closure);
 static PyObject *PyTile_get_bot_right_height(PyTileObject *self, void *closure);
 
-static PyObject *PyTile_pickle(PyTileObject *self);
-static PyObject *PyTile_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyTile_pickle(PyTileObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyTile_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -111,11 +111,11 @@ static PyGetSetDef PyTile_getset[] = {
 
 static PyMethodDef PyTile_methods[] = {
     {"__pickle__", 
-    (PyCFunction)PyTile_pickle, METH_NOARGS,
+    (PyCFunction)PyTile_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine tile to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyTile_unpickle, METH_VARARGS | METH_CLASS,
+    (PyCFunction)PyTile_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
     "Create a new pf.Tile instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
@@ -179,7 +179,7 @@ static PyObject *PyTile_get_bot_right_height(PyTileObject *self, void *closure)
     return Py_BuildValue("i", M_Tile_SEHeight(&self->tile));
 }
 
-static PyObject *PyTile_pickle(PyTileObject *self)
+static PyObject *PyTile_pickle(PyTileObject *self, PyObject *args, PyObject *kwargs)
 {
     bool status;
     PyObject *ret = NULL;
@@ -208,7 +208,7 @@ fail_alloc:
     return ret;
 }
 
-static PyObject *PyTile_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyTile_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
     const char *str;

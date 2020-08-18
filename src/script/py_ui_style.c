@@ -93,8 +93,8 @@ static int       PyUIButtonStyle_set_image_padding(PyUIButtonStyleObject *self, 
 static PyObject *PyUIButtonStyle_get_touch_padding(PyUIButtonStyleObject *self, void *);
 static int       PyUIButtonStyle_set_touch_padding(PyUIButtonStyleObject *self, PyObject *value, void *);
 
-static PyObject *PyUIButtonStyle_pickle(PyUIButtonStyleObject *self);
-static PyObject *PyUIButtonStyle_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyUIButtonStyle_pickle(PyUIButtonStyleObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyUIButtonStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 typedef struct {
     PyObject_HEAD
@@ -123,8 +123,8 @@ static int       PyUIHeaderStyle_set_label_hover(PyUIHeaderStyleObject *self, Py
 static PyObject *PyUIHeaderStyle_get_label_active(PyUIHeaderStyleObject *self, void *);
 static int       PyUIHeaderStyle_set_label_active(PyUIHeaderStyleObject *self, PyObject *value, void *);
 
-static PyObject *PyUIHeaderStyle_pickle(PyUIHeaderStyleObject *self);
-static PyObject *PyUIHeaderStyle_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyUIHeaderStyle_pickle(PyUIHeaderStyleObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyUIHeaderStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 typedef struct {
     PyObject_HEAD
@@ -175,8 +175,8 @@ static int       PyUISelectableStyle_set_image_padding(PyUISelectableStyleObject
 static PyObject *PyUISelectableStyle_get_touch_padding(PyUISelectableStyleObject *self, void *);
 static int       PyUISelectableStyle_set_touch_padding(PyUISelectableStyleObject *self, PyObject *value, void *);
 
-static PyObject *PyUISelectableStyle_pickle(PyUISelectableStyleObject *self);
-static PyObject *PyUISelectableStyle_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyUISelectableStyle_pickle(PyUISelectableStyleObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyUISelectableStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 typedef struct {
     PyObject_HEAD
@@ -234,8 +234,8 @@ static int       PyUIComboStyle_set_button_padding(PyUIComboStyleObject *self, P
 static PyObject *PyUIComboStyle_get_spacing(PyUIComboStyleObject *self, void *);
 static int       PyUIComboStyle_set_spacing(PyUIComboStyleObject *self, PyObject *value, void *);
 
-static PyObject *PyUIComboStyle_pickle(PyUIComboStyleObject *self);
-static PyObject *PyUIComboStyle_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyUIComboStyle_pickle(PyUIComboStyleObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyUIComboStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 typedef struct {
     PyObject_HEAD
@@ -284,8 +284,8 @@ static int       PyUIToggleStyle_set_spacing(PyUIToggleStyleObject *self, PyObje
 static PyObject *PyUIToggleStyle_get_border(PyUIToggleStyleObject *self, void *);
 static int       PyUIToggleStyle_set_border(PyUIToggleStyleObject *self, PyObject *value, void *);
 
-static PyObject *PyUIToggleStyle_pickle(PyUIToggleStyleObject *self);
-static PyObject *PyUIToggleStyle_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyUIToggleStyle_pickle(PyUIToggleStyleObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyUIToggleStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -293,11 +293,11 @@ static PyObject *PyUIToggleStyle_unpickle(PyObject *cls, PyObject *args);
 
 static PyMethodDef PyUIButtonStyle_methods[] = {
     {"__pickle__", 
-    (PyCFunction)PyUIButtonStyle_pickle, METH_NOARGS,
+    (PyCFunction)PyUIButtonStyle_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine UIButtonStyle object to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyUIButtonStyle_unpickle, METH_VARARGS | METH_CLASS,
+    (PyCFunction)PyUIButtonStyle_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
     "Create a new pf.UIButtonStyle instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
@@ -438,11 +438,11 @@ static PyTypeObject PyUIButtonStyle_type = {
 
 static PyMethodDef PyUIHeaderStyle_methods[] = {
     {"__pickle__", 
-    (PyCFunction)PyUIHeaderStyle_pickle, METH_NOARGS,
+    (PyCFunction)PyUIHeaderStyle_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine UIButtonStyle object to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyUIHeaderStyle_unpickle, METH_VARARGS | METH_CLASS,
+    (PyCFunction)PyUIHeaderStyle_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
     "Create a new pf.UIHeaderStyle instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
@@ -545,11 +545,11 @@ static PyTypeObject PyUIHeaderStyle_type = {
 
 static PyMethodDef PyUISelectableStyle_methods[] = {
     {"__pickle__", 
-    (PyCFunction)PyUISelectableStyle_pickle, METH_NOARGS,
+    (PyCFunction)PyUISelectableStyle_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine UISelectableStyle object to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyUISelectableStyle_unpickle, METH_VARARGS | METH_CLASS,
+    (PyCFunction)PyUISelectableStyle_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
     "Create a new pf.UISelectableStyle instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
@@ -711,11 +711,11 @@ static PyTypeObject PyUISelectableStyle_type = {
 
 static PyMethodDef PyUIComboStyle_methods[] = {
     {"__pickle__", 
-    (PyCFunction)PyUIComboStyle_pickle, METH_NOARGS,
+    (PyCFunction)PyUIComboStyle_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine UIComboStyle object to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyUIComboStyle_unpickle, METH_VARARGS | METH_CLASS,
+    (PyCFunction)PyUIComboStyle_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
     "Create a new pf.UIComboStyle instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
@@ -885,11 +885,11 @@ static PyTypeObject PyUIComboStyle_type = {
 
 static PyMethodDef PyUIToggleStyle_methods[] = {
     {"__pickle__", 
-    (PyCFunction)PyUIToggleStyle_pickle, METH_NOARGS,
+    (PyCFunction)PyUIToggleStyle_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine UIToggleStyle object to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyUIToggleStyle_unpickle, METH_VARARGS | METH_CLASS,
+    (PyCFunction)PyUIToggleStyle_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
     "Create a new pf.UIToggleStyle instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
@@ -1783,7 +1783,7 @@ static bool load_toggle(struct SDL_RWops *stream, struct nk_style_toggle *out)
     return true;
 }
 
-static PyObject *PyUIButtonStyle_pickle(PyUIButtonStyleObject *self)
+static PyObject *PyUIButtonStyle_pickle(PyUIButtonStyleObject *self, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
 
@@ -1803,7 +1803,7 @@ fail_alloc:
     return ret;
 }
 
-static PyObject *PyUIButtonStyle_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyUIButtonStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
     const char *str;
@@ -2002,7 +2002,7 @@ static int PyUIHeaderStyle_set_label_active(PyUIHeaderStyleObject *self, PyObjec
     return 0;
 }
 
-static PyObject *PyUIHeaderStyle_pickle(PyUIHeaderStyleObject *self)
+static PyObject *PyUIHeaderStyle_pickle(PyUIHeaderStyleObject *self, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
 
@@ -2020,7 +2020,7 @@ fail_alloc:
     return ret;
 }
 
-static PyObject *PyUIHeaderStyle_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyUIHeaderStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
     const char *str;
@@ -2339,7 +2339,7 @@ static int PyUISelectableStyle_set_touch_padding(PyUISelectableStyleObject *self
     return 0;
 }
 
-static PyObject *PyUISelectableStyle_pickle(PyUISelectableStyleObject *self)
+static PyObject *PyUISelectableStyle_pickle(PyUISelectableStyleObject *self, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
 
@@ -2357,7 +2357,7 @@ fail_alloc:
     return ret;
 }
 
-static PyObject *PyUISelectableStyle_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyUISelectableStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
     const char *str;
@@ -2754,7 +2754,7 @@ static int PyUIComboStyle_set_spacing(PyUIComboStyleObject *self, PyObject *valu
     return 0;
 }
 
-static PyObject *PyUIComboStyle_pickle(PyUIComboStyleObject *self)
+static PyObject *PyUIComboStyle_pickle(PyUIComboStyleObject *self, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
 
@@ -2772,7 +2772,7 @@ fail_alloc:
     return ret;
 }
 
-static PyObject *PyUIComboStyle_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyUIComboStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
     const char *str;
@@ -3056,7 +3056,7 @@ static int PyUIToggleStyle_set_border(PyUIToggleStyleObject *self, PyObject *val
     return 0;
 }
 
-static PyObject *PyUIToggleStyle_pickle(PyUIToggleStyleObject *self)
+static PyObject *PyUIToggleStyle_pickle(PyUIToggleStyleObject *self, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
 
@@ -3075,7 +3075,7 @@ fail_alloc:
     return ret;
 }
 
-static PyObject *PyUIToggleStyle_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyUIToggleStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
     const char *str;

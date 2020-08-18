@@ -110,8 +110,8 @@ static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
 static PyObject *PyWindow_on_hide(PyWindowObject *self);
-static PyObject *PyWindow_pickle(PyWindowObject *self);
-static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyWindow_pickle(PyWindowObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void      PyWindow_dealloc(PyWindowObject *self);
 
@@ -311,11 +311,11 @@ static PyMethodDef PyWindow_methods[] = {
     "Callback that gets invoked when the user hides the window with the close button."},
 
     {"__pickle__", 
-    (PyCFunction)PyWindow_pickle, METH_NOARGS,
+    (PyCFunction)PyWindow_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine window to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyWindow_unpickle, METH_VARARGS | METH_CLASS,
+    (PyCFunction)PyWindow_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
     "Create a new pf.Window instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
@@ -1196,7 +1196,7 @@ static PyObject *PyWindow_on_hide(PyWindowObject *self)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyWindow_pickle(PyWindowObject *self)
+static PyObject *PyWindow_pickle(PyWindowObject *self, PyObject *args, PyObject *kwargs)
 {
     bool status;
     PyObject *ret = NULL;
@@ -1247,7 +1247,7 @@ fail_alloc:
     return ret;
 }
 
-static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
     const char *str;

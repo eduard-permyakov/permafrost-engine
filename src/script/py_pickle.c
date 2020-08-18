@@ -38,7 +38,6 @@
 #include "py_pickle.h"
 #include "py_traverse.h"
 #include "private_types.h"
-#include "../lib/public/vec.h"
 #include "../lib/public/pf_string.h"
 #include "../asset_load.h"
 
@@ -224,8 +223,7 @@ struct memo_entry{
     PyObject *obj;
 };
 
-VEC_TYPE(pobj, PyObject*)
-VEC_IMPL(static inline, pobj, PyObject*)
+VEC_IMPL(extern, pobj, PyObject*)
 
 VEC_TYPE(int, int)
 VEC_IMPL(static inline, int, int)
@@ -270,6 +268,7 @@ static bool memo_contains(const struct pickle_ctx *ctx, PyObject *obj);
 static int memo_idx(const struct pickle_ctx *ctx, PyObject *obj);
 static bool emit_get(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
 static bool emit_put(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
+static void deferred_free(struct pickle_ctx *ctx, PyObject *obj);
 
 /* Pickling functions */
 static int type_pickle        (struct pickle_ctx *, PyObject *, SDL_RWops *);
@@ -662,6 +661,7 @@ static struct pickle_entry s_pf_dispatch_table[] = {
     {.type = NULL, /* PyUISelectableStyle_type */         .picklefunc = custom_pickle   },
     {.type = NULL, /* PyUIComboStyle_type */              .picklefunc = custom_pickle   },
     {.type = NULL, /* PyUIToggleStyle_type */             .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyTask_type */                      .picklefunc = custom_pickle   },
 };
 
 static unpickle_func_t s_op_dispatch_table[256] = {
@@ -814,6 +814,7 @@ struct sc_map_entry{
     { NULL, /*&PyWindow_type*/              NULL },
     { NULL, /*&PyTile_type*/                NULL },
     { NULL, /*&PyCamera_type*/              NULL },
+    { NULL, /*&PyTask_type*/                NULL },
 };
 
 /*****************************************************************************/
@@ -1198,6 +1199,7 @@ static void load_subclassable_builtin_refs(void)
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Window");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Tile");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Camera");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Task");
 
 	assert(base_idx == ARR_SIZE(s_subclassable_builtin_map));
 }
@@ -1289,6 +1291,7 @@ static void load_engine_builtin_types(void)
     s_pf_dispatch_table[8].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UISelectableStyle");
     s_pf_dispatch_table[9].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIComboStyle");
     s_pf_dispatch_table[10].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIToggleStyle");
+    s_pf_dispatch_table[11].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Task");
 
     for(int i = 0; i < ARR_SIZE(s_pf_dispatch_table); i++)
         assert(s_pf_dispatch_table[i].type);
@@ -1585,8 +1588,14 @@ static PyObject *nonderived_writable_attrs(PyObject *obj)
          * or AttributeError if the attribute is not writable. */
         if(0 != setattr_nondestructive(obj, name, attr)) {
             assert(PyErr_Occurred());        
-            assert(PyErr_ExceptionMatches(PyExc_TypeError)
-                || PyErr_ExceptionMatches(PyExc_AttributeError));
+            if(obj->ob_type != &PyFrame_Type) {
+                assert(PyErr_ExceptionMatches(PyExc_TypeError)
+                    || PyErr_ExceptionMatches(PyExc_AttributeError));
+            }else{
+                assert(PyErr_ExceptionMatches(PyExc_TypeError)
+                    || PyErr_ExceptionMatches(PyExc_AttributeError)
+                    || PyErr_ExceptionMatches(PyExc_ValueError));
+            }
             PyErr_Clear();
             Py_DECREF(attr);
             continue;
@@ -1666,31 +1675,58 @@ static int custom_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     }
     Py_DECREF(umeth);
 
-    /* id(obj) isn't in the memo now. If it shows up there after saving the 
-     * type, then the type must recursively reference the object. In that case,
-     * just fetch it's value from the memo without pushing anything else onto 
-     * the stack.
-     */
-    assert(!memo_contains(ctx, obj));
-    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
+    const char mark = MARK;
+    CHK_TRUE(rw->write(rw, &mark, 1, 1), fail);
 
-    if(memo_contains(ctx, obj)) {
-        /* Pop the type we just pushed */
-        const char pop[] = {POP};
-        CHK_TRUE(rw->write(rw, pop, ARR_SIZE(pop), 1), fail);
-        /* fetch from memo */
-        CHK_TRUE(emit_get(ctx, obj, rw), fail);
-        return 0;
+    struct py_pickle_ctx user = (struct py_pickle_ctx) {
+        .private_ctx = ctx,
+        .stream = rw,
+        .memo_contains = (void*)memo_contains,
+        .memoize = (void*)memoize,
+        .emit_put = (void*)emit_put,
+        .emit_get = (void*)emit_get,
+        .pickle_obj = (void*)pickle_obj,
+        .deferred_free = (void*)deferred_free,
+    };
+
+    pmeth = PyObject_GetAttrString(obj, "__pickle__");
+    PyObject *args = PyTuple_New(0);
+    PyObject *kwargs = Py_BuildValue("{s:s#}", "__ctx__", (void*)&user, sizeof(struct py_pickle_ctx));
+
+    PyObject * ret = NULL;
+    if(pmeth && args && kwargs) {
+        ret = PyObject_Call(pmeth, args, kwargs);
     }
+    Py_XDECREF(pmeth);
+    Py_XDECREF(args);
+    Py_XDECREF(kwargs);
 
-    PyObject *ret = PyObject_CallMethod(obj, "__pickle__", "()");
     if(!ret || !PyString_Check(ret)) {
         SET_RUNTIME_EXC("Error pickling %s instance (%p)", obj->ob_type->tp_name, obj);
         Py_XDECREF(ret);
         goto fail;
     }
+
+    CHK_TRUE(pickle_obj(ctx, (PyObject*)obj->ob_type, rw), fail);
+
     vec_pobj_push(&ctx->to_free, ret);
     CHK_TRUE(pickle_obj(ctx, ret, rw), fail);
+
+    /* id(obj) isn't in the memo now. If it shows up there after saving the 
+     * type, then the type must recursively reference the object. In that case,
+     * just fetch it's value from the memo without pushing anything else onto 
+     * the stack.
+     */
+    if(memo_contains(ctx, obj)) {
+
+        /* pop the stack stuff we pushed */
+        const char pmark = POP_MARK;
+        CHK_TRUE(rw->write(rw, &pmark, 1, 1), fail);
+
+        /* fetch from memo */
+        CHK_TRUE(emit_get(ctx, obj, rw), fail);
+        return 0;
+    }
 
     const char ops[] = {PF_EXTEND, PF_CUSTOM};
     CHK_TRUE(rw->write(rw, ops, ARR_SIZE(ops), 1), fail);
@@ -2945,12 +2981,6 @@ static int frame_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     TRACE_PICKLE(obj);
     assert(PyFrame_Check(obj));
     PyFrameObject *f = (PyFrameObject*)obj;
-
-    if(f->f_tstate
-    && f->f_tstate != PyThreadState_Get()) {
-        SET_RUNTIME_EXC("Pickling frames from another thread is not supported.");
-        goto fail;
-    }
 
     PyObject *valsize = PyInt_FromSsize_t(frame_extra_size(f));
     vec_pobj_push(&ctx->to_free, valsize);
@@ -7109,6 +7139,12 @@ static int op_ext_custom(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail_underflow;
     }
 
+    if(vec_size(&ctx->mark_stack) == 0) {
+        SET_RUNTIME_EXC("Mark stack underflow");
+        return -1;
+    }
+    vec_int_pop(&ctx->mark_stack);
+
     PyObject *str = vec_pobj_pop(&ctx->stack);
     PyObject *klass = vec_pobj_pop(&ctx->stack);
 
@@ -7124,7 +7160,22 @@ static int op_ext_custom(struct unpickle_ctx *ctx, SDL_RWops *rw)
     PyObject *ctype = constructor_type((PyTypeObject*)klass);
     assert(ctype);
 
-    PyObject *tuple = PyObject_CallMethod(klass, "__unpickle__", "(O)", str);
+    struct py_unpickle_ctx user = (struct py_unpickle_ctx) {
+        .stack = &ctx->stack
+    };
+
+    PyObject *pmeth = PyObject_GetAttrString(klass, "__unpickle__");
+    PyObject *args = Py_BuildValue("(O)", str);
+    PyObject *kwargs = Py_BuildValue("{s:s#}", "__ctx__", (void*)&user, sizeof(user));
+
+    PyObject *tuple = NULL;
+    if(pmeth && args && kwargs) {
+        tuple = PyObject_Call(pmeth, args, kwargs);
+    }
+    Py_XDECREF(pmeth);
+    Py_XDECREF(args);
+    Py_XDECREF(kwargs);
+
     if(!tuple || !PyTuple_Check(tuple)) {
         assert(PyErr_Occurred());
         goto fail_inst;
@@ -7243,6 +7294,11 @@ static bool emit_put(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     pf_snprintf(str, ARR_SIZE(str), "%c%d\n", PUT, memo_idx(ctx, obj));
     str[ARR_SIZE(str)-1] = '\0';
     return rw->write(rw, str, 1, strlen(str));
+}
+
+static void deferred_free(struct pickle_ctx *ctx, PyObject *obj)
+{
+    vec_pobj_push(&ctx->to_free, obj);
 }
 
 static bool pickle_attrs(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)

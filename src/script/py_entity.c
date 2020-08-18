@@ -92,15 +92,15 @@ static PyObject *PyEntity_select(PyEntityObject *self);
 static PyObject *PyEntity_deselect(PyEntityObject *self);
 static PyObject *PyEntity_stop(PyEntityObject *self);
 static PyObject *PyEntity_move(PyEntityObject *self, PyObject *args);
-static PyObject *PyEntity_pickle(PyEntityObject *self);
-static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_del(PyAnimEntityObject *self);
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_get_anim(PyAnimEntityObject *self);
-static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self);
-static PyObject *PyAnimEntity_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyAnimEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static int       PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self);
@@ -112,8 +112,8 @@ static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *se
 static int       PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self);
 static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObject *args);
-static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self);
-static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -157,11 +157,11 @@ static PyMethodDef PyEntity_methods[] = {
     "Issues a 'move' order to the entity at the XZ position specified by the argument."},
 
     {"__pickle__", 
-    (PyCFunction)PyEntity_pickle, METH_NOARGS,
+    (PyCFunction)PyEntity_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine entity to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyEntity_unpickle, METH_VARARGS | METH_CLASS,
+    (PyCFunction)PyEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
     "Create a new pf.Entity instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
@@ -270,11 +270,11 @@ static PyMethodDef PyAnimEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
-    (PyCFunction)PyAnimEntity_pickle, METH_NOARGS,
+    (PyCFunction)PyAnimEntity_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine animated entity to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyAnimEntity_unpickle, METH_VARARGS | METH_CLASS,
+    (PyCFunction)PyAnimEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
     "Create a new pf.Entity instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
@@ -310,11 +310,11 @@ static PyMethodDef PyCombatableEntity_methods[] = {
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
-    (PyCFunction)PyCombatableEntity_pickle, METH_NOARGS,
+    (PyCFunction)PyCombatableEntity_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine combatable entity to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyCombatableEntity_unpickle, METH_VARARGS | METH_CLASS,
+    (PyCFunction)PyCombatableEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
     "Create a new pf.Entity instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
@@ -782,7 +782,7 @@ static PyObject *PyEntity_move(PyEntityObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyEntity_pickle(PyEntityObject *self)
+static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs)
 {
     bool status;
     PyObject *ret = NULL;
@@ -873,7 +873,7 @@ fail_alloc:
     return ret;
 }
 
-static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
     const char *str;
@@ -1036,17 +1036,10 @@ static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObj
     Py_RETURN_NONE;
 }
 
-static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self)
+static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *args = PyTuple_New(0);
-    PyObject *kwargs = PyDict_New();
-    CHK_TRUE(args && kwargs, fail_args);
-
     PyObject *ret = s_call_super_method("__pickle__", (PyObject*)&PyCombatableEntity_type, 
         (PyObject*)self, args, kwargs);
-
-    Py_DECREF(args);
-    Py_DECREF(kwargs);
 
     assert(PyString_Check(ret));
     SDL_RWops *stream = PFSDL_VectorRWOps();
@@ -1086,23 +1079,17 @@ fail_pickle:
     SDL_RWclose(stream);
 fail_stream:
     Py_XDECREF(ret);
-fail_args:
     return NULL;
 }
 
-static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     char tmp;
     PyObject *max_hp = NULL, *base_dmg = NULL, *base_armour = NULL, *curr_hp = NULL;
     PyObject *ret = NULL;
     int status;
 
-    PyObject *kwargs = PyDict_New();
-    if(!kwargs)
-        return NULL;
-
     PyObject *tuple = s_call_super_method("__unpickle__", (PyObject*)&PyCombatableEntity_type, cls, args, kwargs);
-    Py_DECREF(kwargs);
     if(!tuple)
         return NULL;
 
@@ -1237,17 +1224,10 @@ static PyObject *PyAnimEntity_get_anim(PyAnimEntityObject *self)
     return PyString_FromString(A_GetCurrClip(self->super.ent));
 }
 
-static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self)
+static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *args = PyTuple_New(0);
-    PyObject *kwargs = PyDict_New();
-    CHK_TRUE(args && kwargs, fail_args);
-
     PyObject *ret = s_call_super_method("__pickle__", (PyObject*)&PyAnimEntity_type, 
         (PyObject*)self, args, kwargs);
-
-    Py_DECREF(args);
-    Py_DECREF(kwargs);
 
     assert(PyString_Check(ret));
     SDL_RWops *stream = PFSDL_VectorRWOps();
@@ -1269,21 +1249,15 @@ fail_pickle:
     SDL_RWclose(stream);
 fail_stream:
     Py_XDECREF(ret);
-fail_args:
     return NULL;
 }
 
-static PyObject *PyAnimEntity_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyAnimEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     char tmp;
     PyObject *ret = NULL;
 
-    PyObject *kwargs = PyDict_New();
-    if(!kwargs)
-        return NULL;
-
     PyObject *tuple = s_call_super_method("__unpickle__", (PyObject*)&PyAnimEntity_type, cls, args, kwargs);
-    Py_DECREF(kwargs);
     if(!tuple)
         return NULL;
 
