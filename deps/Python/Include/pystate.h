@@ -52,6 +52,7 @@ typedef int (*Py_tracefunc)(PyObject *, struct _frame *, int, PyObject *);
 #define PyTrace_C_CALL 4
 #define PyTrace_C_EXCEPTION 5
 #define PyTrace_C_RETURN 6
+#define PyTrace_OPCODE 7
 
 typedef struct _ts {
     /* See Python/ceval.c for comments explaining most fields */

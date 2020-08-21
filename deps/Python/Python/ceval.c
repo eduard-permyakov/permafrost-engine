@@ -4095,6 +4095,9 @@ maybe_call_line_trace(Py_tracefunc func, PyObject *obj,
         frame->f_lineno = line;
         result = call_trace(func, obj, frame, PyTrace_LINE, Py_None);
     }
+    /* Always emit an opcode event if we're tracing all opcodes. */
+    result = call_trace(func, obj, frame, PyTrace_OPCODE, Py_None);
+
     *instr_prev = frame->f_lasti;
     return result;
 }
