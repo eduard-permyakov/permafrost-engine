@@ -1868,7 +1868,9 @@ bool G_LoadEntityState(SDL_RWops *stream)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    G_BakeNavDataForScene();
+    if(s_gs.map) {
+        G_BakeNavDataForScene();
+    }
 
     if(!g_load_anim_state(stream))
         return false;

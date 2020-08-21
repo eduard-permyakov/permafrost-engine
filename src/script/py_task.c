@@ -33,38 +33,83 @@
  *
  */
 
+// XXX: TODO: we also need to save/restore if the task is registered
+// under some name...
+
+// XXX: TODO: would also be good to save how long 'sleeping' tasks have 
+// slept for already, and only sleep the 'remainder' upon restoring. This
+// can be done with simply taking the timestamp of when the sleep started...
+
 #include <Python.h> /* Must be first */
 #include <frameobject.h>
+#include <opcode.h>
 
 #include "py_task.h"
+#include "py_pickle.h"
 #include "../task.h"
 #include "../sched.h"
 #include "../main.h"
 #include "../event.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/SDL_vec_rwops.h"
 
 #include <stdint.h>
+#include <stdlib.h>
+
+
+#define CALL_FLAG_VAR   1
+#define CALL_FLAG_KW    2
+
+#define CHK_TRUE(_pred, _label)         \
+    do{                                 \
+        if(!(_pred))                    \
+            goto _label;                \
+    }while(0)
+
+struct pyrequest{
+    PyObject *args;
+    PyObject *kwargs;
+    enum{
+        PYREQ_WAIT,
+        PYREQ_YIELD,
+        PYREQ_SEND,
+        PYREQ_RECEIVE,
+        PYREQ_REPLY,
+        PYREQ_AWAIT_EVENT,
+        PYREQ_SLEEP,
+        PYREQ_REGISTER,
+        PYREQ_WHOIS,
+    }type;
+};
 
 typedef struct {
     PyObject_HEAD
     PyObject *runfunc;
+    /* When restoring a saved task, it can get a new TID. So, from 
+     * the client code point-of-view, the TID can change suddenly
+     * at any point. Thus, don't expose it. It's an implementation 
+     * detail. */
     uint32_t tid;
     enum{
         PYTASK_STATE_NOT_STARTED,
         PYTASK_STATE_RUNNING,
         PYTASK_STATE_FINISHED,
     }state;
+    struct pyrequest req;
+    size_t stack_depth;
+    PyThreadState *ts;
 }PyTaskObject;
 
 KHASH_MAP_INIT_INT(task, PyTaskObject*)
 
+static PyObject *PyTask_call(PyTaskObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyTask_getattro(PyTaskObject *self, PyObject *name);
 
 static PyObject *PyTask_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void      PyTask_dealloc(PyTaskObject *self);
 
-static PyObject *PyTask_pickle(PyTaskObject *self);
-static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args);
+static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static PyObject *PyTask_run(PyTaskObject *self);
 static PyObject *PyTask_wait(PyTaskObject *self, PyObject *args);
@@ -83,11 +128,11 @@ static PyObject *PyTask_who_is(PyTaskObject *self, PyObject *args, PyObject *kwa
 
 static PyMethodDef PyTask_methods[] = {
     {"__pickle__", 
-    (PyCFunction)PyTask_pickle, METH_NOARGS,
+    (PyCFunction)PyTask_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine task object to a string."},
 
     {"__unpickle__", 
-    (PyCFunction)PyTask_unpickle, METH_VARARGS | METH_CLASS,
+    (PyCFunction)PyTask_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
     "Create a new pf.Task instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
@@ -151,7 +196,7 @@ static PyTypeObject PyTask_type = {
     0,                         /* tp_as_sequence */
     0,                         /* tp_as_mapping */
     0,                         /* tp_hash  */
-    0,                         /* tp_call */
+    (ternaryfunc)PyTask_call,  /* tp_call */
     0,                         /* tp_str */
     (getattrofunc)PyTask_getattro, /* tp_getattro */
     0,                         /* tp_setattro */
@@ -184,6 +229,88 @@ static khash_t(task) *s_tid_task_map;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+/* Like PyThreadState_New, but don't add it to the circular list managed by the 
+ * interpreter core. The returned pointer must be free'd with pytask_ts_delete'. */
+static PyThreadState *pytask_ts_new(PyInterpreterState *interp)
+{
+    PyThreadState *tstate = calloc(1, sizeof(PyThreadState));
+    if(tstate) {
+        tstate->interp = interp;
+    }
+    return tstate;
+}
+
+static void pytask_ts_delete(PyThreadState *tstate)
+{
+    PyThreadState_Clear(tstate);
+    free(tstate);
+}
+
+static PyObject *pytask_call_method(PyObject *func(), PyTaskObject *self, PyObject *args, PyObject *kwargs)
+{
+    if(kwargs) {
+        return func(self, args, kwargs);
+    }else if(args) {
+        return func(self, args);
+    }else{
+        return func(self);
+    }
+}
+
+static PyObject *pytask_resume_request(PyTaskObject *self)
+{
+    PyObject *args = self->req.args;
+    PyObject *kwargs = self->req.kwargs;
+    int reqtype = self->req.type;
+
+    PyObject *ret = NULL;
+    self->req = (struct pyrequest){0};
+
+    switch(reqtype) {
+    case PYREQ_WAIT:
+        ret = pytask_call_method(PyTask_wait, self, args, kwargs);
+        break;
+    case PYREQ_YIELD:
+        ret = pytask_call_method(PyTask_yield, self, args, kwargs);
+        break;
+    case PYREQ_SEND:
+        ret = pytask_call_method(PyTask_send, self, args, kwargs);
+        break;
+    case PYREQ_RECEIVE:
+        ret = pytask_call_method(PyTask_receive, self, args, kwargs);
+        break;
+    case PYREQ_REPLY:
+        ret = pytask_call_method(PyTask_reply, self, args, kwargs);
+        break;
+    case PYREQ_AWAIT_EVENT:
+        ret = pytask_call_method(PyTask_await_event, self, args, kwargs);
+        break;
+    case PYREQ_SLEEP:
+        ret = pytask_call_method(PyTask_sleep, self, args, kwargs);
+        break;
+    case PYREQ_REGISTER:
+        ret = pytask_call_method(PyTask_register, self, args, kwargs);
+        break;
+    case PYREQ_WHOIS:
+        ret = pytask_call_method(PyTask_who_is, self, args, kwargs);
+        break;
+    }
+
+    Py_XDECREF(args);
+    Py_XDECREF(kwargs);
+    return ret;
+}
+
+static int pytask_tracefunc(PyTaskObject *self, PyFrameObject *frame, int what, PyObject *arg)
+{
+    if(what == PyTrace_OPCODE) {
+        assert(frame->f_stacktop);
+        size_t stack_depth = (size_t)(frame->f_stacktop - frame->f_valuestack);
+        self->stack_depth = stack_depth;
+    }
+    return 0;
+}
+
 static struct result py_task(void *arg)
 {
     PyTaskObject *self = (PyTaskObject*)arg;
@@ -191,41 +318,96 @@ static struct result py_task(void *arg)
     ASSERT_IN_MAIN_THREAD();
     ASSERT_IN_CTX(self->tid);
 
-    /* Create a new PyThreadState for each fiber. Since we only run it in the 
-     * main thread in a fiber which cannot be pre-empted and yields control at
-     * known boundaries, there is no need to take the GIL before switching to it.
-     */
-    PyInterpreterState *interp = PyThreadState_Get()->interp;
-    PyThreadState *ts = PyThreadState_New(interp);
-    s_main_thread_state = PyThreadState_Swap(ts);
+    s_main_thread_state = PyThreadState_Swap(self->ts);
 
-    // TODO: when we resume a saved session, we're going to need to use the frame API
-    // to begin execution mid-way...
-    PyObject *ret = PyEval_EvalCodeEx(
-        (PyCodeObject *)PyFunction_GET_CODE(self->runfunc),
-        PyFunction_GET_GLOBALS(self->runfunc), 
-        NULL,
-        (PyObject**)&self, 1,
-        NULL, 0, 
-        NULL, 0,
-        PyFunction_GET_CLOSURE(self->runfunc)
-    );
-    Py_XDECREF(ret);
+    if(self->state == PYTASK_STATE_RUNNING) {
+
+        PyObject *req_result = pytask_resume_request(self);
+        assert(self->ts->frame);
+
+        if(req_result) {
+
+            /* Implementation details from Python/ceval.c
+             */
+            const unsigned char *bytecode = (unsigned char *)PyString_AS_STRING(self->ts->frame->f_code->co_code);
+            const int lasti = self->ts->frame->f_lasti;
+
+            int opcode = bytecode[lasti];
+            int oparg = (bytecode[lasti + 2] << 8) + bytecode[lasti + 1];
+            self->ts->frame->f_lasti += 2;
+
+            assert(opcode == CALL_FUNCTION
+                || opcode == CALL_FUNCTION_VAR
+                || opcode == CALL_FUNCTION_KW
+                || opcode == CALL_FUNCTION_VAR_KW);
+
+            int na = oparg & 0xff;
+            int nk = (oparg >> 8) & 0xff;
+            int n = na + 2 * nk;
+
+            if(opcode != CALL_FUNCTION) {
+                int flags = (opcode - CALL_FUNCTION) & 3;
+                if (flags & CALL_FLAG_VAR)
+                    n++;
+                if (flags & CALL_FLAG_KW)
+                    n++;
+            }
+
+            PyObject **pfunc = (self->ts->frame->f_stacktop) - n - 1;
+
+            /* Clear the stack of the function object. Also removes
+             * the arguments in case they weren't consumed already.  
+             */
+            while((self->ts->frame->f_stacktop) > pfunc) {
+                PyObject *w = *(--self->ts->frame->f_stacktop);
+                Py_DECREF(w);
+            }
+            assert(self->ts->frame->f_stacktop >= self->ts->frame->f_valuestack);
+
+            /* Push the result of the function call onto the evaluation stack. 
+             */
+            Py_INCREF(req_result);
+            *(self->ts->frame->f_stacktop++) = req_result;
+
+            PyObject *ret = PyEval_EvalFrameEx(self->ts->frame, 0);
+            Py_XDECREF(ret);
+        }
+        Py_XDECREF(req_result);
+
+    }else{
+
+        assert(self->state == PYTASK_STATE_NOT_STARTED);
+        assert(!self->ts->frame);
+        assert(self->ts->recursion_depth == 0);
+
+        self->state = PYTASK_STATE_RUNNING;
+
+        PyObject *ret = PyEval_EvalCodeEx(
+            (PyCodeObject *)PyFunction_GET_CODE(self->runfunc),
+            PyFunction_GET_GLOBALS(self->runfunc), 
+            NULL,
+            (PyObject**)&self, 1,
+            NULL, 0, 
+            NULL, 0,
+            PyFunction_GET_CLOSURE(self->runfunc)
+        );
+        Py_XDECREF(ret);
+    }
 
     /* Allow catching of the task exceptions for easier debugging */
     if(PyErr_Occurred()) {
         PyObject *exc_info = Py_BuildValue("OOOO",
             self,
-            ts->curexc_type      ? ts->curexc_type      : Py_None,
-            ts->curexc_value     ? ts->curexc_value     : Py_None,
-            ts->curexc_traceback ? ts->curexc_traceback : Py_None
+            self->ts->curexc_type      ? self->ts->curexc_type      : Py_None,
+            self->ts->curexc_value     ? self->ts->curexc_value     : Py_None,
+            self->ts->curexc_traceback ? self->ts->curexc_traceback : Py_None
         );
         E_Global_Notify(EVENT_SCRIPT_TASK_EXCEPTION, exc_info, ES_SCRIPT);
         PyErr_Clear();
     }
 
+    assert(self->ts == PyThreadState_Get());
     PyThreadState_Swap(s_main_thread_state);
-    PyThreadState_Delete(ts);
 
     khiter_t k = kh_get(task, s_tid_task_map, self->tid);
     assert(k != kh_end(s_tid_task_map));
@@ -239,6 +421,44 @@ static struct result py_task(void *arg)
     return NULL_RESULT;
 }
 
+static void pytask_push_ctx(PyTaskObject *self)
+{
+    s_main_thread_state = PyThreadState_Swap(self->ts);
+
+    /* During frame evaluation, CPython NULLs out the current frame's
+     * f_stacktop member. As such, there is no reliable way to get the 
+     * size of the current evaluation stack of a frame. One exception
+     * is that CPython sets f_stacktop to the correct value for trace
+     * calls. We use this hook to capture the evaluation stack size
+     * before every opcode execution. The evaluation stack size is 
+     * normally a hidden implementation detail, but we use to save and 
+     * restore running tasks.
+     */
+    PyEval_SetTrace((Py_tracefunc)pytask_tracefunc, (PyObject*)self);
+}
+
+static void pytask_pop_ctx(PyTaskObject *self)
+{
+    assert(s_main_thread_state);
+    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    assert(ts == self->ts);
+    PyEval_SetTrace(NULL, NULL);
+}
+
+static void pytask_req_set(PyTaskObject *task, PyObject *args, PyObject *kwargs, int type)
+{
+    Py_XINCREF(args);
+    Py_XINCREF(kwargs);
+    task->req = (struct pyrequest){args, kwargs, type};
+}
+
+static void pytask_req_clear(PyTaskObject *task)
+{
+    Py_XDECREF(task->req.args);
+    Py_XDECREF(task->req.kwargs);
+    task->req = (struct pyrequest){0};
+}
+
 static PyObject *PyTask_getattro(PyTaskObject *self, PyObject *name)
 {
     if(PyString_Check(name) && !strcmp(PyString_AS_STRING(name), "__run__")) {
@@ -247,6 +467,14 @@ static PyObject *PyTask_getattro(PyTaskObject *self, PyObject *name)
         return NULL;
     }
     return PyObject_GenericGetAttr((PyObject*)self, name);
+}
+
+static PyObject *PyTask_call(PyTaskObject *self, PyObject *args, PyObject *kwargs)
+{
+    PyEval_SetTrace((Py_tracefunc)pytask_tracefunc, (PyObject*)self);
+    PyObject *ret = PyObject_Call((PyObject*)self, args, kwargs);
+    PyEval_SetTrace(NULL, NULL);
+    return ret;
 }
 
 static PyObject *PyTask_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
@@ -272,9 +500,22 @@ static PyObject *PyTask_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         goto fail_run;
     }
 
+    /* Create a new PyThreadState for each task. Since we only run it in the 
+     * main thread in a fiber which cannot be pre-empted and yields control at
+     * known boundaries, there is no need to take the GIL before switching to it.
+     */
+    PyInterpreterState *interp = PyThreadState_Get()->interp;
+    self->ts = pytask_ts_new(interp);
+    if(!self->ts) {
+        assert(PyErr_Occurred());
+        goto fail_run;
+    }
+
     Py_INCREF(func);
     self->runfunc = func;
     self->state = PYTASK_STATE_NOT_STARTED;
+    self->req = (struct pyrequest){0};
+    self->stack_depth = 0;
     return (PyObject*)self;
 
 fail_run:
@@ -286,27 +527,244 @@ fail_alloc:
 
 static void PyTask_dealloc(PyTaskObject *self)
 {
-    printf("dealloc: %s\n", PyObject_REPR((PyObject*)self));
-    fflush(stdout);
     assert(self->state != PYTASK_STATE_RUNNING);
+
+    Py_XDECREF(self->ts->curexc_type);
+    Py_XDECREF(self->ts->curexc_value);
+    Py_XDECREF(self->ts->curexc_traceback);
+
+    pytask_ts_delete(self->ts);
     Py_XDECREF(self->runfunc);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
-static PyObject *PyTask_pickle(PyTaskObject *self)
+static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwargs)
 {
-    return NULL;
+    bool status;
+    PyObject *ret = NULL;
+
+    assert(self->state >= PYTASK_STATE_NOT_STARTED && self->state <= PYTASK_STATE_FINISHED);
+
+    static char *kwlist[] = {"__ctx__", NULL};
+    struct py_pickle_ctx *ctx = NULL;
+    int len;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "|s#", kwlist, (char*)&ctx, &len)) {
+        assert(PyErr_Occurred());
+        return NULL;
+    }
+    if(!ctx) {
+        PyErr_SetString(PyExc_TypeError, "Expecting __ctx__ keyword argument with pointer to pickling context.");
+        return NULL;
+    }
+    assert(len == sizeof(struct py_pickle_ctx));
+
+    PyObject *state = PyInt_FromLong(self->state);
+    CHK_TRUE(state, fail_pickle);
+    status = ctx->pickle_obj(ctx->private_ctx, state, ctx->stream);
+    ctx->deferred_free(ctx->private_ctx, state);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject **old = self->ts->frame->f_stacktop;
+    if(self->state == PYTASK_STATE_RUNNING) {
+        self->ts->frame->f_stacktop = self->ts->frame->f_valuestack + self->stack_depth;
+    }
+
+    PyObject *ts = Py_BuildValue("OiOOOOOOO",
+        self->ts->frame             ? (PyObject*)self->ts->frame    : Py_None,
+        self->ts->recursion_depth,
+        self->ts->curexc_type       ? self->ts->curexc_type         : Py_None,
+        self->ts->curexc_value      ? self->ts->curexc_value        : Py_None,
+        self->ts->curexc_traceback  ? self->ts->curexc_traceback    : Py_None,
+        self->ts->exc_type          ? self->ts->exc_type            : Py_None,
+        self->ts->exc_value         ? self->ts->exc_value           : Py_None,
+        self->ts->exc_traceback     ? self->ts->exc_traceback       : Py_None,
+        self->ts->dict              ? self->ts->dict                : Py_None
+    );
+    CHK_TRUE(ts, fail_pickle);
+    status = ctx->pickle_obj(ctx->private_ctx, ts, ctx->stream);
+    ctx->deferred_free(ctx->private_ctx, ts);
+
+    if(self->state == PYTASK_STATE_RUNNING) {
+        self->ts->frame->f_stacktop = old;
+    }
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *request = Py_BuildValue("OOi",
+        self->req.args      ? self->req.args    : Py_None,
+        self->req.kwargs    ? self->req.kwargs  : Py_None,
+        self->req.type
+    );
+    CHK_TRUE(request, fail_pickle);
+    status = ctx->pickle_obj(ctx->private_ctx, request, ctx->stream);
+    ctx->deferred_free(ctx->private_ctx, request);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *func = self->runfunc ? self->runfunc : Py_None;
+    status = ctx->pickle_obj(ctx->private_ctx, func, ctx->stream);
+    CHK_TRUE(status, fail_pickle);
+
+    ret = PyString_FromString("");
+fail_pickle:
+    return ret;
 }
 
-static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args)
+static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
-    return NULL;
+    PyTaskObject *ret = NULL;
+    char *str;
+    int status, slen;
+    char tmp;
+
+    static char *kwlist[] = {"str", "__ctx__", NULL};
+    struct py_unpickle_ctx *ctx = NULL;
+    int len;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s#|s#", kwlist, &str, &slen, &ctx, &len)) {
+        assert(PyErr_Occurred());
+        goto fail_args;
+    }
+
+    if(!ctx) {
+        PyErr_SetString(PyExc_TypeError, "Expecting __ctx__ keyword argument with pointer to unpickling context.");
+        return NULL;
+    }
+    assert(len == sizeof(struct py_unpickle_ctx));
+
+    if(vec_size(ctx->stack) < 4) {
+        PyErr_SetString(PyExc_RuntimeError, "Stack underflow");
+        goto fail_args;
+    }
+
+    PyObject *func = vec_pobj_pop(ctx->stack);
+    PyObject *request = vec_pobj_pop(ctx->stack);
+    PyObject *ts = vec_pobj_pop(ctx->stack);
+    PyObject *state = vec_pobj_pop(ctx->stack);
+
+    CHK_TRUE(PyInt_Check(state), fail_unpickle);
+    CHK_TRUE(PyInt_AS_LONG(state) >= PYTASK_STATE_NOT_STARTED 
+          && PyInt_AS_LONG(state) <= PYTASK_STATE_FINISHED, fail_unpickle);
+    CHK_TRUE(PyFunction_Check(func), fail_unpickle);
+
+    PyObject *frame;
+    int recursion_depth;
+    PyObject *curexc_type, *curexc_value, *curexc_traceback;
+    PyObject *exc_type, *exc_value, *exc_traceback;
+    PyObject *dict;
+
+    if(!PyTuple_Check(ts) || !PyArg_ParseTuple(ts, "OiOOOOOOO", &frame, &recursion_depth,
+        &curexc_type, &curexc_value, &curexc_traceback,
+        &exc_type, &exc_value, &exc_traceback, &dict)) {
+        goto fail_unpickle;
+    }
+
+    if(PyInt_AS_LONG(state) == PYTASK_STATE_RUNNING
+    && (frame == Py_None || recursion_depth == 0)) {
+        goto fail_unpickle;
+    }
+    CHK_TRUE(dict == Py_None || PyDict_Check(dict), fail_unpickle);
+
+    PyObject *reqargs;
+    PyObject *reqkwargs;
+    int reqtype;
+
+    if(!PyTuple_Check(request) || !PyArg_ParseTuple(request, "OOi", &reqargs, &reqkwargs, &reqtype))
+        goto fail_unpickle;
+
+    if(reqargs == Py_None && reqkwargs != Py_None)
+        goto fail_unpickle;
+
+    if(!(reqargs == Py_None || PyTuple_Check(reqargs))
+    || !(reqkwargs == Py_None || PyDict_Check(reqkwargs)))
+        goto fail_unpickle;
+
+    ret = (PyTaskObject*)((PyTypeObject*)cls)->tp_alloc((struct _typeobject*)cls, 0);
+    CHK_TRUE(ret, fail_unpickle);
+
+    PyInterpreterState *interp = PyThreadState_Get()->interp;
+    ret->ts = pytask_ts_new(interp);
+    if(!ret->ts) {
+        Py_CLEAR(ret);
+        goto fail_unpickle;
+    }
+    ret->ts->frame = (frame == Py_None) ? NULL : (Py_INCREF(frame), (PyFrameObject*)frame);
+    ret->ts->recursion_depth = recursion_depth;
+    ret->ts->dict = (dict == Py_None) ? NULL : (Py_INCREF(dict), dict);
+
+    ret->ts->curexc_type = (curexc_type == Py_None) ? NULL : (Py_INCREF(curexc_type), curexc_type);
+    ret->ts->curexc_value = (curexc_value == Py_None) ? NULL : (Py_INCREF(curexc_value), curexc_value);
+    ret->ts->curexc_traceback = (curexc_traceback == Py_None) ? NULL 
+        : (Py_INCREF(curexc_traceback), curexc_traceback);
+
+    ret->ts->exc_type = (exc_type == Py_None) ? NULL : (Py_INCREF(exc_type), exc_type);
+    ret->ts->exc_value = (exc_value == Py_None) ? NULL : (Py_INCREF(exc_value), exc_value);
+    ret->ts->exc_traceback = (exc_traceback == Py_None) ? NULL 
+        : (Py_INCREF(exc_traceback), exc_traceback);
+
+    ret->req.args = (reqargs == Py_None) ? NULL : (Py_INCREF(reqargs), reqargs);
+    ret->req.kwargs = (reqkwargs == Py_None) ? NULL : (Py_INCREF(reqkwargs), reqkwargs);
+    ret->req.type = reqtype;
+
+    ret->state = PyInt_AS_LONG(state);
+    ret->runfunc = (Py_INCREF(func), func);
+
+    if(ret->state == PYTASK_STATE_RUNNING) {
+    
+        assert(ret->ts->frame->f_stacktop);
+        ret->tid = Sched_Create(16, py_task, ret, NULL, TASK_MAIN_THREAD_PINNED);
+
+        if(ret->tid == NULL_TID) {
+            PyErr_SetString(PyExc_RuntimeError, "Unable to start fiber for task.");
+            Py_CLEAR(ret);
+            goto fail_unpickle;
+        }
+
+        /* Retain a running task object until it finishes */
+        Py_INCREF(ret);
+
+        int status;
+        khiter_t k = kh_put(task, s_tid_task_map, ret->tid, &status);
+        assert(status != -1 && status != 0);
+        kh_value(s_tid_task_map, k) = ret;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    Py_ssize_t nread = 0;
+    if(!stream) {
+        Py_XDECREF(ret);
+        goto fail_unpickle;
+    }
+    nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    SDL_RWclose(stream);
+
+fail_unpickle:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not unpickle pf.Task instance");
+    }
+    Py_XDECREF(func);
+    Py_XDECREF(request);
+    Py_XDECREF(ts);
+    Py_XDECREF(state);
+fail_args:
+
+    if(ret) {
+        PyObject *rval = Py_BuildValue("(Oi)", ret, (int)nread);
+        Py_DECREF(ret);
+        return rval;
+    }else{
+        return NULL;
+    }
 }
 
 static PyObject *PyTask_run(PyTaskObject *self)
 {
+    ASSERT_IN_MAIN_THREAD();
     self->tid = Sched_Create(16, py_task, self, NULL, TASK_MAIN_THREAD_PINNED);
-    self->state = PYTASK_STATE_RUNNING;
+
+    if(self->tid == NULL_TID) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to start fiber for task.");
+        return NULL;
+    }
 
     /* Retain a running task object until it finishes */
     Py_INCREF(self);
@@ -334,10 +792,13 @@ static PyObject *PyTask_yield(PyTaskObject *self)
         return NULL;
     }
 
-    assert(s_main_thread_state);
-    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    pytask_req_set(self, NULL, NULL, PYREQ_YIELD);
+    pytask_pop_ctx(self);
+
     Task_Yield();
-    s_main_thread_state = PyThreadState_Swap(ts);
+
+    pytask_push_ctx(self);
+    pytask_req_clear(self);
 
     Py_RETURN_NONE;
 }
@@ -369,10 +830,13 @@ static PyObject *PyTask_send(PyTaskObject *self, PyObject *args)
     PyObject *reply = NULL;
     Py_INCREF(message); /* retain the message object */
 
-    assert(s_main_thread_state);
-    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    pytask_req_set(self, args, NULL, PYREQ_SEND);
+    pytask_pop_ctx(self);
+
     Task_Send(recepient_tid, &message, sizeof(message), &reply, sizeof(reply));
-    s_main_thread_state = PyThreadState_Swap(ts);
+
+    pytask_push_ctx(self);
+    pytask_req_clear(self);
 
     return reply; /* steal the reply object reference */
 }
@@ -390,10 +854,13 @@ static PyObject *PyTask_receive(PyTaskObject *self)
     uint32_t from_tid;
     PyObject *message;
 
-    assert(s_main_thread_state);
-    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    pytask_req_set(self, NULL, NULL, PYREQ_RECEIVE);
+    pytask_pop_ctx(self);
+
     Task_Receive(&from_tid, &message, sizeof(message));
-    s_main_thread_state = PyThreadState_Swap(ts);
+
+    pytask_push_ctx(self);
+    pytask_req_clear(self);
 
     khiter_t k = kh_get(task, s_tid_task_map, from_tid);
     assert(k != kh_end(s_tid_task_map));
@@ -437,10 +904,13 @@ static PyObject *PyTask_reply(PyTaskObject *self, PyObject *args)
     uint32_t recepient_tid = ((PyTaskObject*)recepient)->tid;
     Py_INCREF(response); /* retain response */
 
-    assert(s_main_thread_state);
-    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    pytask_req_set(self, args, NULL, PYREQ_REPLY);
+    pytask_pop_ctx(self);
+
     Task_Reply(recepient_tid, &response, sizeof(response));
-    s_main_thread_state = PyThreadState_Swap(ts);
+
+    pytask_push_ctx(self);
+    pytask_req_clear(self);
 
     Py_RETURN_NONE;
 }
@@ -461,10 +931,13 @@ static PyObject *PyTask_await_event(PyTaskObject *self, PyObject *args)
         return NULL;
     }
 
-    assert(s_main_thread_state);
-    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    pytask_req_set(self, args, NULL, PYREQ_AWAIT_EVENT);
+    pytask_pop_ctx(self);
+
     Task_AwaitEvent(event);
-    s_main_thread_state = PyThreadState_Swap(ts);
+
+    pytask_push_ctx(self);
+    pytask_req_clear(self);
 
     Py_RETURN_NONE;
 }
@@ -485,10 +958,13 @@ static PyObject *PyTask_sleep(PyTaskObject *self, PyObject *args)
         return NULL;
     }
 
-    assert(s_main_thread_state);
-    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    pytask_req_set(self, args, NULL, PYREQ_SLEEP);
+    pytask_pop_ctx(self);
+
     Task_Sleep(ms);
-    s_main_thread_state = PyThreadState_Swap(ts);
+
+    pytask_push_ctx(self);
+    pytask_req_clear(self);
 
     Py_RETURN_NONE;
 }
@@ -509,10 +985,13 @@ static PyObject *PyTask_register(PyTaskObject *self, PyObject *args)
         return NULL;
     }
 
-    assert(s_main_thread_state);
-    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    pytask_req_set(self, args, NULL, PYREQ_REGISTER);
+    pytask_pop_ctx(self);
+
     Task_Register(name);
-    s_main_thread_state = PyThreadState_Swap(ts);
+
+    pytask_push_ctx(self);
+    pytask_req_clear(self);
 
     Py_RETURN_NONE;
 }
@@ -536,10 +1015,13 @@ static PyObject *PyTask_who_is(PyTaskObject *self, PyObject *args, PyObject *kwa
         return NULL;
     }
 
-    assert(s_main_thread_state);
-    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    pytask_req_set(self, args, kwargs, PYREQ_WHOIS);
+    pytask_pop_ctx(self);
+
     uint32_t tid = Task_WhoIs(name, blocking);
-    s_main_thread_state = PyThreadState_Swap(ts);
+
+    pytask_push_ctx(self);
+    pytask_req_clear(self);
 
     if(tid == NULL_TID) {
         Py_RETURN_NONE;    
@@ -577,6 +1059,33 @@ bool S_Task_Init(void)
 
 void S_Task_Shutdown(void)
 {
+    uint32_t key;
+    PyTaskObject *curr;
+    (void)key;
+
+    kh_foreach(s_tid_task_map, key, curr, {
+        Py_DECREF(curr);
+    });
     kh_destroy(task, s_tid_task_map);
+}
+
+PyObject *S_Task_GetAll(void)
+{
+    PyObject *ret = PyTuple_New(kh_size(s_tid_task_map));
+    if(!ret)
+        return NULL;
+
+    uint32_t key;
+    PyTaskObject *curr;
+    (void)key;
+
+    size_t nset = 0;
+    kh_foreach(s_tid_task_map, key, curr, {
+        Py_INCREF(curr);
+        PyTuple_SetItem(ret, nset++, (PyObject*)curr);
+    });
+
+    assert(nset == PyTuple_GET_SIZE(ret));
+    return ret;
 }
 

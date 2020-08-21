@@ -37,6 +37,7 @@
 #include "event.h"
 #include "main.h"
 #include "ui.h"
+#include "sched.h"
 #include "lib/public/attr.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/vec.h"
@@ -53,7 +54,7 @@
 VEC_TYPE(stream, SDL_RWops*)
 VEC_IMPL(static, stream, SDL_RWops*)
 
-enum request{
+enum srequest{
     SESH_REQ_NONE,
     SESH_REQ_LOAD,
     SESH_REQ_PUSH,
@@ -68,10 +69,10 @@ enum request{
  * A session is a stack of subsessions.
  */
 
-static vec_stream_t s_subsession_stack;
-static enum request s_request = SESH_REQ_NONE;
-static char         s_req_path[512];
-static char         s_errbuff[512] = {0};
+static vec_stream_t  s_subsession_stack;
+static enum srequest s_request = SESH_REQ_NONE;
+static char          s_req_path[512];
+static char          s_errbuff[512] = {0};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -79,6 +80,7 @@ static char         s_errbuff[512] = {0};
 
 static void subsession_clear(void)
 {
+    Sched_ClearState();
     E_DeleteScriptHandlers();
     S_ClearState();
     Engine_ClearPendingEvents();

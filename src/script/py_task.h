@@ -39,9 +39,10 @@
 #include <Python.h> /* Must be first */
 #include <stdbool.h>
 
-bool S_Task_Init(void);
-void S_Task_Shutdown(void);
-void S_Task_PyRegister(PyObject *module);
+bool      S_Task_Init(void);
+void      S_Task_Shutdown(void);
+void      S_Task_PyRegister(PyObject *module);
+PyObject *S_Task_GetAll(void);
 
 #endif
 

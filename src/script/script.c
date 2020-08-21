@@ -1936,14 +1936,18 @@ bool S_SaveState(SDL_RWops *stream)
         PyObject *val = Py_BuildValue("lllOO", handlers[i].event, handlers[i].id, 
             handlers[i].simmask, (PyObject*)handlers[i].handler, (PyObject*)handlers[i].arg);
         if(!val)
-            goto fail;
+            goto fail_handlers;
         PyTuple_SET_ITEM(saved_handlers, i, val);
     }
 
     PyInterpreterState *interp = PyThreadState_Get()->interp;
     assert(interp);
 
-    PyObject *state = Py_BuildValue("OOOOOOOO", 
+    PyObject *tasks = S_Task_GetAll();
+    if(!tasks)
+        goto fail_tasks;
+
+    PyObject *state = Py_BuildValue("OOOOOOOOO", 
         interp->modules, 
         interp->sysdict, 
         interp->builtins,
@@ -1951,16 +1955,20 @@ bool S_SaveState(SDL_RWops *stream)
         interp->codec_search_path,
         interp->codec_search_cache,
         interp->codec_error_registry,
-        saved_handlers
+        saved_handlers,
+        tasks
     );
     if(!state)
-        goto fail;
+        goto fail_state;
 
     ret = S_PickleObjgraph(state, stream);
     Py_DECREF(state);
     SDL_RWwrite(stream, "\n", 1, 1);
 
-fail:
+fail_state:
+    Py_DECREF(tasks);
+fail_tasks:
+fail_handlers:
     Py_DECREF(saved_handlers);
 fail_tuple:
     return ret;
@@ -1976,7 +1984,7 @@ bool S_LoadState(SDL_RWops *stream)
     if(!state)
         return false;
 
-    if(!PyTuple_Check(state) || (PyTuple_GET_SIZE(state) != 8))
+    if(!PyTuple_Check(state) || (PyTuple_GET_SIZE(state) != 9))
         goto fail;
 
     PyInterpreterState_Clear(interp);
@@ -2034,6 +2042,9 @@ bool S_LoadState(SDL_RWops *stream)
     }
     ret = true;
 
+    /* Tasks are already installed and retained during unpickling. We don't 
+     * need to do anything more with them. */
+
     char tmp[1];
     SDL_RWread(stream, tmp, sizeof(tmp), 1); /* consume NULL byte */
     do{
@@ -2043,5 +2054,4 @@ bool S_LoadState(SDL_RWops *stream)
 fail:
     Py_DECREF(state);
     return ret;
-}
-
+} 

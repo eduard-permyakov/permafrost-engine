@@ -1141,8 +1141,8 @@ void Sched_Tick(void)
     ASSERT_IN_MAIN_THREAD();
     PERF_ENTER();
 
-    while(Perf_CurrFrameMS() < SCHED_TICK_MS) {
-
+    /* Use a do-while to ensure we're always making at least _some_ forward progress */
+     do{
         int nwaiters = 0;
         struct task *curr = NULL;
 
@@ -1179,7 +1179,8 @@ void Sched_Tick(void)
         assert(curr);
         sched_task_run(curr);
         sched_task_service_request(curr);
-    }
+
+    }while(Perf_CurrFrameMS() < SCHED_TICK_MS);
 
     sched_quiesce_workers();
     PERF_RETURN_VOID();
@@ -1194,6 +1195,48 @@ uint32_t Sched_Create(int prio, task_func_t code, void *arg, struct future *resu
     SDL_UnlockMutex(s_request_lock);
 
     return ret;
+}
+
+void Sched_ClearState(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    sched_quiesce_workers();
+
+    SDL_LockMutex(s_ready_lock);
+
+    while(pq_size(&s_ready_queue)) {
+        struct task *curr = NULL;
+        pq_task_pop(&s_ready_queue, &curr);
+        if(curr->destructor) {
+            curr->destructor(curr->darg);
+        }
+        sched_task_free(curr);
+    }
+
+    while(pq_size(&s_ready_queue_main)) {
+        struct task *curr = NULL;
+        pq_task_pop(&s_ready_queue_main, &curr);
+        if(curr->destructor) {
+            curr->destructor(curr->darg);
+        }
+        sched_task_free(curr);
+    }
+
+    SDL_UnlockMutex(s_ready_lock);
+
+    for(khiter_t k = kh_begin(s_event_queues); k != kh_end(s_event_queues); k++) {
+        if(!kh_exist(s_event_queues, k))
+            continue;
+        queue_tid_clear(&kh_val(s_event_queues, k));
+    }
+
+    for(int i = 0; i < MAX_TASKS; i++) {
+        queue_tid_clear(&s_msg_queues[i]);
+        s_parent_waiting[i] = false;
+    }
+
+    Task_CreateServices();
 }
 
 uint64_t Sched_Request(struct request req)

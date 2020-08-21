@@ -6980,6 +6980,27 @@ static int op_ext_bi_method(struct unpickle_ctx *ctx, SDL_RWops *rw)
         }
     }
 
+    PyObject *bases;
+    if(!found && (bases = tp_type->tp_bases)) {
+
+        assert(PyTuple_Check(bases));
+
+        for(int i = 0; i < PyTuple_GET_SIZE(bases); i++) {
+
+            tp_type = (PyTypeObject*)PyTuple_GET_ITEM(bases, i);
+            assert(PyType_Check(tp_type));
+
+            for(PyMethodDef *curr = tp_type->tp_methods; curr && curr->ml_name; curr++) {
+            
+                if(0 == strcmp(curr->ml_name, PyString_AS_STRING(name))) {
+                    found = curr; 
+                    goto done;
+                }
+            }
+        }
+    }
+done:
+
     if(!found) {
         SET_RUNTIME_EXC("Could not find method (%s) of type (%s)",
             PyString_AS_STRING(name), tp_type->tp_name);

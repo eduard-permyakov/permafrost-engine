@@ -99,6 +99,7 @@ void     Sched_HandleEvent(int event, void *arg);
 void     Sched_StartBackgroundTasks(void);
 void     Sched_Tick(void);
 uint32_t Sched_Create(int prio, task_func_t code, void *arg, struct future *result, int flags);
+void     Sched_ClearState(void);
 
 /* The following may only be called from task context 
  * (i.e. from the body of a task function) */
