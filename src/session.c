@@ -247,6 +247,7 @@ static bool session_push_subsession(const char *script, char *errstr, size_t err
 {
     SDL_RWops *stream = PFSDL_VectorRWOps();
     bool result;
+    (void)result;
 
     if(!subsession_save(stream)) {
         SDL_RWclose(stream);

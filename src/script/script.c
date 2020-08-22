@@ -125,6 +125,7 @@ static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 static PyObject *PyPf_set_move_on_left_click(PyObject *self);
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
+static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_settings_get(PyObject *self, PyObject *args);
 static PyObject *PyPf_settings_set(PyObject *self, PyObject *args, PyObject *kwargs);
@@ -369,6 +370,11 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_attack_on_left_click, METH_NOARGS,
     "Set the cursor to target mode. The next left click will issue an attack command to the location "
     "under the cursor."},
+
+    {"draw_text",
+    (PyCFunction)PyPf_draw_text, METH_VARARGS,
+    "Draw a text label with the specified bounds (X, Y, W, H) )and with the specified color (R, G, B, A). "
+    "The label lasts for one frame, meaning this should be called every tick to keep the label fixed."},
 
     {"settings_get",
     (PyCFunction)PyPf_settings_get, METH_VARARGS,
@@ -1264,6 +1270,22 @@ static PyObject *PyPf_set_move_on_left_click(PyObject *self)
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self)
 {
     G_Move_SetAttackOnLeftClick();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_draw_text(PyObject *self, PyObject *args)
+{
+    const char *text;
+    struct rect rect;
+    int r, g, b, a;
+
+    if(!PyArg_ParseTuple(args, "s(iiii)(iiii)", &text, &rect.x, &rect.y, &rect.w, &rect.h, &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, 
+            "Expecting 3 arguments: A text string, a tuple of 4 ints (bounds) and a tuple of 4 ints (RGBA color).");
+        return NULL;
+    }
+
+    UI_DrawText(text, rect, (struct rgba){r, g, b, a});
     Py_RETURN_NONE;
 }
 
