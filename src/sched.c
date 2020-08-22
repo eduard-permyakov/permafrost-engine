@@ -38,6 +38,7 @@
 #include "perf.h"
 #include "main.h"
 #include "task.h"
+#include "game/public/game.h"
 #include "lib/public/pqueue.h"
 #include "lib/public/queue.h"
 #include "lib/public/khash.h"
@@ -171,15 +172,22 @@ static khash_t(tqueue) *s_event_queues;
 /* Lock used to serialzie the scheduler requests */
 static SDL_mutex       *s_request_lock;
 
-/* The active worker threads are waiting on the ready cond to 
- * be notified when the ready queue becomes non-empty, so that
+/* The active worker threads wait on the ready cond to be 
+ * notified when the ready queue(s) becomes non-empty, so that
  * they can pop a task to execute. At the end of a frame, the 
  * ready condition variable is also used to notify the workers 
  * that the 'quiesce' flags has been set, instructing them to 
  * go back to waiting on a start/quit command. 
+ * 
+ * We have 2 diff. queues to allow only de-queuing tasks based
+ * on the thread. The worker threads will not dequeue from the 
+ * 'main' queues.
+ *
+ * All the queues are protected by the ready lock.
  */
 static pq_task_t        s_ready_queue;
 static pq_task_t        s_ready_queue_main;
+
 static SDL_mutex       *s_ready_lock;
 static SDL_cond        *s_ready_cond;
 static int              s_nwaiters;     /* protected by ready lock */
@@ -197,6 +205,8 @@ static bool             s_worker_start[MAX_WORKER_THREADS];
 static bool             s_worker_quit[MAX_WORKER_THREADS];
 static SDL_mutex       *s_worker_locks[MAX_WORKER_THREADS];
 static SDL_cond        *s_worker_conds[MAX_WORKER_THREADS];
+
+static enum simstate    s_prev_ss;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -1123,6 +1133,10 @@ void Sched_StartBackgroundTasks(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
+    s_prev_ss = G_GetSimState();
+    if(s_prev_ss != G_RUNNING)
+        return;
+
     SDL_LockMutex(s_ready_lock);
     s_idle_workers = 0;
     SDL_UnlockMutex(s_ready_lock);
@@ -1140,6 +1154,9 @@ void Sched_Tick(void)
 {
     ASSERT_IN_MAIN_THREAD();
     PERF_ENTER();
+
+    if(s_prev_ss != G_RUNNING)
+        PERF_RETURN_VOID();
 
     /* Use a do-while to ensure we're always making at least _some_ forward progress */
      do{
