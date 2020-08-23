@@ -146,7 +146,7 @@ KHASH_MAP_INIT_INT64(tid, uint32_t)
 KHASH_MAP_INIT_INT(tqueue, queue_tid_t)
 
 
-uint64_t    sched_switch_ctx(struct context *save, struct context *restore, int retval, void *arg);
+uint64_t    sched_switch_ctx(struct context *save, struct context *restore, uint64_t retval, void *arg);
 void        sched_task_exit_trampoline(void);
 static void sched_task_exit(struct result ret);
 
