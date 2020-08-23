@@ -1863,6 +1863,11 @@ void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, scrip
     }
 }
 
+void S_Retain(script_opaque_t obj)
+{
+    Py_XINCREF(obj);
+}
+
 void S_Release(script_opaque_t obj)
 {
     Py_XDECREF(obj);

@@ -38,7 +38,9 @@
 #include "perf.h"
 #include "main.h"
 #include "task.h"
+#include "event.h"
 #include "game/public/game.h"
+#include "script/public/script.h"
 #include "lib/public/pqueue.h"
 #include "lib/public/queue.h"
 #include "lib/public/khash.h"
@@ -127,6 +129,7 @@ struct task{
     void         (*destructor)(void*);
     void          *darg;
     struct task   *prev, *next;
+    SDL_Event      earg;
 };
 
 #define MAX_TASKS               (512)
@@ -1103,7 +1106,7 @@ void Sched_Shutdown(void)
     }
 }
 
-void Sched_HandleEvent(int event, void *arg)
+void Sched_HandleEvent(int event, void *arg, int event_source)
 {
     ASSERT_IN_MAIN_THREAD();
     SDL_LockMutex(s_request_lock);
@@ -1120,6 +1123,22 @@ void Sched_HandleEvent(int event, void *arg)
 
         struct task *task = &s_tasks[tid - 1];
         assert(task->state == TASK_STATE_EVENT_BLOCKED);
+
+        int *source = (void*)task->req.argv[1];
+        *source = event_source;
+
+        /* We don't know when the task will be scheduled next, so we've 
+         * got to be careful about making sure that the event arg pointer
+         * doesn't become stale between now and when the task is actually
+         * run. 
+         */
+        if(event_source == ES_SCRIPT) {
+            S_Retain(arg);
+        }
+        if(event < SDL_LASTEVENT) {
+            task->earg = *(SDL_Event*)arg;
+            arg = &task->earg;
+        }
 
         task->retval = (uint64_t)arg;
         sched_reactivate(task);

@@ -171,7 +171,7 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
 
 static void e_handle_event(struct event event)
 {
-    Sched_HandleEvent(event.type, event.arg);
+    Sched_HandleEvent(event.type, event.arg, event.source);
 
     uint64_t key = e_key(event.receiver_id, event.type);
     enum simstate ss = G_GetSimState();

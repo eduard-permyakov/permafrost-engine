@@ -319,6 +319,7 @@ static struct result py_task(void *arg)
     ASSERT_IN_CTX(self->tid);
 
     s_main_thread_state = PyThreadState_Swap(self->ts);
+    PyObject *ret = NULL;
 
     if(self->state == PYTASK_STATE_RUNNING) {
 
@@ -373,8 +374,7 @@ static struct result py_task(void *arg)
             Py_INCREF(req_result);
             *(self->ts->frame->f_stacktop++) = req_result;
 
-            PyObject *ret = PyEval_EvalFrameEx(self->ts->frame, 0);
-            Py_XDECREF(ret);
+            ret = PyEval_EvalFrameEx(self->ts->frame, 0);
         }
         Py_XDECREF(req_result);
 
@@ -386,7 +386,7 @@ static struct result py_task(void *arg)
 
         self->state = PYTASK_STATE_RUNNING;
 
-        PyObject *ret = PyEval_EvalCodeEx(
+        ret = PyEval_EvalCodeEx(
             (PyCodeObject *)PyFunction_GET_CODE(self->runfunc),
             PyFunction_GET_GLOBALS(self->runfunc), 
             NULL,
@@ -395,7 +395,15 @@ static struct result py_task(void *arg)
             NULL, 0,
             PyFunction_GET_CLOSURE(self->runfunc)
         );
-        Py_XDECREF(ret);
+    }
+
+    if(ret) {
+        PyObject *rval = Py_BuildValue("(OO)", (PyObject*)self, ret);
+        E_Global_Notify(EVENT_SCRIPT_TASK_FINISHED, rval, ES_SCRIPT);
+        Py_DECREF(ret);
+    }else{
+        E_Global_Notify(EVENT_SCRIPT_TASK_FINISHED, Py_BuildValue("(OO)", 
+            (PyObject*)self, self->ts->curexc_type), ES_SCRIPT);
     }
 
     /* Allow catching of the task exceptions for easier debugging */
@@ -818,7 +826,46 @@ static PyObject *PyTask_run(PyTaskObject *self)
 
 static PyObject *PyTask_wait(PyTaskObject *self, PyObject *args)
 {
-    return NULL;
+    ASSERT_IN_MAIN_THREAD();
+
+    if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
+        PyErr_SetString(PyExc_RuntimeError, 
+            "The 'wait' method can only be called from the context of the __run__ method.");
+        return NULL;
+    }
+
+    PyObject *task;
+    if(!PyArg_ParseTuple(args, "O", &task)
+    || !PyObject_IsInstance(task, (PyObject*)&PyTask_type)) {
+        PyErr_SetString(PyExc_TypeError, 
+            "Expecting one argument: a pf.Task instance (task to wait on).");
+        return NULL;
+    }
+
+    if(((PyTaskObject*)task)->state == PYTASK_STATE_FINISHED) {
+        PyErr_SetString(PyExc_RuntimeError, 
+            "Cannot wait on a task that's already finished.");
+        return NULL;
+    }
+
+    pytask_req_set(self, NULL, NULL, PYREQ_YIELD);
+    pytask_pop_ctx(self);
+
+    PyObject *arg;
+    int source;
+    do{
+        arg = Task_AwaitEvent(EVENT_SCRIPT_TASK_FINISHED, &source);
+        if(!PyTuple_Check(arg) || PyTuple_GET_SIZE(arg) != 2)
+            continue;
+    }while(PyTuple_GET_ITEM(arg, 0) != task);
+
+    pytask_push_ctx(self);
+    pytask_req_clear(self);
+
+    PyObject *ret = PyTuple_GET_ITEM(arg, 1);
+    Py_INCREF(ret);
+    Py_DECREF(arg);
+    return ret;
 }
 
 static PyObject *PyTask_yield(PyTaskObject *self)
@@ -973,12 +1020,17 @@ static PyObject *PyTask_await_event(PyTaskObject *self, PyObject *args)
     pytask_req_set(self, args, NULL, PYREQ_AWAIT_EVENT);
     pytask_pop_ctx(self);
 
-    void *arg = Task_AwaitEvent(event);
+    int source;
+    void *arg = Task_AwaitEvent(event, &source);
 
     pytask_push_ctx(self);
     pytask_req_clear(self);
 
-    return S_WrapEngineEventArg(event, arg);
+    if(source == ES_ENGINE) {
+        return S_WrapEngineEventArg(event, arg);
+    }else{
+        return (PyObject*)arg; /* steal ref */
+    }
 }
 
 static PyObject *PyTask_sleep(PyTaskObject *self, PyObject *args)

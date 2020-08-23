@@ -60,6 +60,7 @@ bool            S_RunFile(const char *path);
 void            S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, 
                                   void *event_arg);
 
+void            S_Retain(script_opaque_t obj);
 /* Decrement reference count for Python objects. 
  * No-op in the case of a NULL-pointer passed in */
 void            S_Release(script_opaque_t obj);

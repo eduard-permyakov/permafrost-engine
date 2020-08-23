@@ -97,10 +97,10 @@ static struct result tick_notifier(void *arg)
 {
     uint32_t ts_tid = Task_ParentTid();
     struct ts_req request = (struct ts_req){ .type = TS_REQ_NOTIFY };
-    int resp;
+    int resp, source;
 
     while(1) {
-        Task_AwaitEvent(EVENT_60HZ_TICK);
+        Task_AwaitEvent(EVENT_60HZ_TICK, &source);
         Task_Send(ts_tid, &request, sizeof(request), &resp, sizeof(resp));
     }
     return NULL_RESULT;
@@ -332,11 +332,12 @@ uint32_t Task_ParentTid(void)
     return Sched_Request((struct request){ .type = SCHED_REQ_MY_PARENT_TID });
 }
 
-void *Task_AwaitEvent(int event)
+void *Task_AwaitEvent(int event, int *source)
 {
     return (void*)Sched_Request((struct request){
         .type = SCHED_REQ_AWAIT_EVENT,
-        .argv[0] = event,
+        .argv[0] = (uint64_t)event,
+        .argv[1] = (uint64_t)source,
     });
 }
 
