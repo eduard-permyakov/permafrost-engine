@@ -33,25 +33,22 @@
  *
  */
 
-// XXX: TODO: we also need to save/restore if the task is registered
-// under some name...
-
-// XXX: TODO: would also be good to save how long 'sleeping' tasks have 
-// slept for already, and only sleep the 'remainder' upon restoring. This
-// can be done with simply taking the timestamp of when the sleep started...
-
 #include <Python.h> /* Must be first */
 #include <frameobject.h>
 #include <opcode.h>
 
 #include "py_task.h"
 #include "py_pickle.h"
+#include "public/script.h"
 #include "../task.h"
 #include "../sched.h"
 #include "../main.h"
 #include "../event.h"
+#include "../perf.h"
+#include "../game/public/game.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
+#include "../lib/public/pf_string.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -98,6 +95,8 @@ typedef struct {
     struct pyrequest req;
     size_t stack_depth;
     PyThreadState *ts;
+    const char *regname;
+    uint32_t sleep_elapsed;
 }PyTaskObject;
 
 KHASH_MAP_INIT_INT(task, PyTaskObject*)
@@ -224,6 +223,7 @@ static PyTypeObject PyTask_type = {
 
 static PyThreadState *s_main_thread_state;
 static khash_t(task) *s_tid_task_map;
+static uint32_t       s_pause_tick;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -321,6 +321,10 @@ static struct result py_task(void *arg)
     s_main_thread_state = PyThreadState_Swap(self->ts);
 
     if(self->state == PYTASK_STATE_RUNNING) {
+
+        if(self->regname) {
+            Task_Register(self->regname);
+        }
 
         PyObject *req_result = pytask_resume_request(self);
         assert(self->ts->frame);
@@ -516,6 +520,8 @@ static PyObject *PyTask_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     self->state = PYTASK_STATE_NOT_STARTED;
     self->req = (struct pyrequest){0};
     self->stack_depth = 0;
+    self->regname = NULL;
+    self->sleep_elapsed = 0;
     return (PyObject*)self;
 
 fail_run:
@@ -534,6 +540,7 @@ static void PyTask_dealloc(PyTaskObject *self)
     Py_XDECREF(self->ts->curexc_traceback);
 
     pytask_ts_delete(self->ts);
+    free((void*)self->regname);
     Py_XDECREF(self->runfunc);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
@@ -604,6 +611,24 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
     status = ctx->pickle_obj(ctx->private_ctx, func, ctx->stream);
     CHK_TRUE(status, fail_pickle);
 
+    if(!self->regname) {
+        status = ctx->pickle_obj(ctx->private_ctx, Py_None, ctx->stream);
+    }else{
+        PyObject *str = PyString_FromString(self->regname);
+        CHK_TRUE(str, fail_pickle);
+        status = ctx->pickle_obj(ctx->private_ctx, str, ctx->stream);
+        ctx->deferred_free(ctx->private_ctx, str);
+    }
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *sleep_elapsed = PyInt_FromLong(self->sleep_elapsed);
+    status = ctx->pickle_obj(ctx->private_ctx, sleep_elapsed, ctx->stream);
+    CHK_TRUE(status, fail_pickle);
+
+    if(self->req.type == PYREQ_SLEEP) {
+        uint32_t curr = SDL_GetTicks();
+    }
+
     ret = PyString_FromString("");
 fail_pickle:
     return ret;
@@ -631,16 +656,20 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     }
     assert(len == sizeof(struct py_unpickle_ctx));
 
-    if(vec_size(ctx->stack) < 4) {
+    if(vec_size(ctx->stack) < 6) {
         PyErr_SetString(PyExc_RuntimeError, "Stack underflow");
         goto fail_args;
     }
 
+    PyObject *sleep_elapsed = vec_pobj_pop(ctx->stack);
+    PyObject *regname = vec_pobj_pop(ctx->stack);
     PyObject *func = vec_pobj_pop(ctx->stack);
     PyObject *request = vec_pobj_pop(ctx->stack);
     PyObject *ts = vec_pobj_pop(ctx->stack);
     PyObject *state = vec_pobj_pop(ctx->stack);
 
+    CHK_TRUE(PyInt_Check(sleep_elapsed), fail_unpickle);
+    CHK_TRUE(regname == Py_None || PyString_Check(regname), fail_unpickle);
     CHK_TRUE(PyInt_Check(state), fail_unpickle);
     CHK_TRUE(PyInt_AS_LONG(state) >= PYTASK_STATE_NOT_STARTED 
           && PyInt_AS_LONG(state) <= PYTASK_STATE_FINISHED, fail_unpickle);
@@ -681,6 +710,13 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     ret = (PyTaskObject*)((PyTypeObject*)cls)->tp_alloc((struct _typeobject*)cls, 0);
     CHK_TRUE(ret, fail_unpickle);
 
+    if(regname == Py_None) {
+        ret->regname = NULL;
+    }else{
+        assert(PyString_Check(regname));
+        ret->regname = pf_strdup(PyString_AS_STRING(regname));
+    }
+
     PyInterpreterState *interp = PyThreadState_Get()->interp;
     ret->ts = pytask_ts_new(interp);
     if(!ret->ts) {
@@ -707,6 +743,7 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
 
     ret->state = PyInt_AS_LONG(state);
     ret->runfunc = (Py_INCREF(func), func);
+    ret->sleep_elapsed = PyInt_AS_LONG(sleep_elapsed);
 
     if(ret->state == PYTASK_STATE_RUNNING) {
     
@@ -741,6 +778,8 @@ fail_unpickle:
     if(!ret) {
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle pf.Task instance");
     }
+    Py_XDECREF(sleep_elapsed);
+    Py_XDECREF(regname);
     Py_XDECREF(func);
     Py_XDECREF(request);
     Py_XDECREF(ts);
@@ -934,12 +973,12 @@ static PyObject *PyTask_await_event(PyTaskObject *self, PyObject *args)
     pytask_req_set(self, args, NULL, PYREQ_AWAIT_EVENT);
     pytask_pop_ctx(self);
 
-    Task_AwaitEvent(event);
+    void *arg = Task_AwaitEvent(event);
 
     pytask_push_ctx(self);
     pytask_req_clear(self);
 
-    Py_RETURN_NONE;
+    return S_WrapEngineEventArg(event, arg);
 }
 
 static PyObject *PyTask_sleep(PyTaskObject *self, PyObject *args)
@@ -961,8 +1000,9 @@ static PyObject *PyTask_sleep(PyTaskObject *self, PyObject *args)
     pytask_req_set(self, args, NULL, PYREQ_SLEEP);
     pytask_pop_ctx(self);
 
-    Task_Sleep(ms);
+    Task_Sleep(ms - self->sleep_elapsed);
 
+    self->sleep_elapsed = 0;
     pytask_push_ctx(self);
     pytask_req_clear(self);
 
@@ -984,6 +1024,8 @@ static PyObject *PyTask_register(PyTaskObject *self, PyObject *args)
         PyErr_SetString(PyExc_TypeError, "Expecting one string argument (the name to register under)");
         return NULL;
     }
+
+    self->regname = pf_strdup(name);
 
     pytask_req_set(self, args, NULL, PYREQ_REGISTER);
     pytask_pop_ctx(self);
@@ -1037,6 +1079,19 @@ static PyObject *PyTask_who_is(PyTaskObject *self, PyObject *args, PyObject *kwa
     return (PyObject*)ret;
 }
 
+static void on_update_start(void *user, void *event)
+{
+    uint32_t elapsed = Perf_LastFrameMS();
+    PyTaskObject *curr;
+    uint32_t key;
+    (void)key;
+
+    kh_foreach(s_tid_task_map, key, curr, {
+        if(curr->req.type == PYREQ_SLEEP)
+            curr->sleep_elapsed += elapsed;
+    });
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1054,6 +1109,7 @@ bool S_Task_Init(void)
     s_tid_task_map = kh_init(task);
     if(!s_tid_task_map)
         return false;
+    E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_RUNNING);
     return true;
 }
 
@@ -1067,6 +1123,7 @@ void S_Task_Shutdown(void)
         Py_DECREF(curr);
     });
     kh_destroy(task, s_tid_task_map);
+    E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
 }
 
 PyObject *S_Task_GetAll(void)
