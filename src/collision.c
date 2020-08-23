@@ -577,20 +577,25 @@ bool C_FrustumAABBIntersectionExact(const struct frustum *frustum, const struct 
     PFM_Vec3_Sub((vec3_t*)&frustum->fbl, (vec3_t*)&frustum->nbl, &frust_edges[5]);
 
     /* For AABBs, edge axes and normals are the same */
+    size_t ncrosses = 0;
     vec3_t edge_cross_products[ARR_SIZE(aabb_axes) * ARR_SIZE(frust_edges)];
 
     for(int i = 0; i < ARR_SIZE(aabb_axes); i++) {
         for(int j = 0; j < ARR_SIZE(frust_edges); j++) {
 
-            PFM_Vec3_Cross(&aabb_axes[i], &frust_edges[j], &edge_cross_products[i * ARR_SIZE(frust_edges) + j]);
-            PFM_Vec3_Normal(&edge_cross_products[i * ARR_SIZE(frust_edges) + j], &edge_cross_products[i * ARR_SIZE(frust_edges) + j]);
+            PFM_Vec3_Cross(&aabb_axes[i], &frust_edges[j], &edge_cross_products[ncrosses]);
+            if(PFM_Vec3_Len(&edge_cross_products[ncrosses]) > EPSILON) {
+                PFM_Vec3_Normal(&edge_cross_products[ncrosses], &edge_cross_products[ncrosses]);
+                ncrosses++;
+            }
         }
     }
 
-    for(int i = 0; i < ARR_SIZE(edge_cross_products); i++) {
+    for(int i = 0; i < ncrosses; i++) {
     
-        if(separating_axis_exists(edge_cross_products[i], frustum, aabb_corners)) 
+        if(separating_axis_exists(edge_cross_products[i], frustum, aabb_corners)) {
             return false;
+        }
     }
 
     return true;
@@ -628,17 +633,21 @@ bool C_FrustumOBBIntersectionExact(const struct frustum *frustum, const struct o
     PFM_Vec3_Sub((vec3_t*)&frustum->fbl, (vec3_t*)&frustum->nbl, &frust_edges[5]);
 
     /* For OBBs, edge axes and normals are the same */
+    size_t ncrosses = 0;
     vec3_t edge_cross_products[ARR_SIZE(obb->axes) * ARR_SIZE(frust_edges)];
 
     for(int i = 0; i < ARR_SIZE(obb->axes); i++) {
         for(int j = 0; j < ARR_SIZE(frust_edges); j++) {
 
-            PFM_Vec3_Cross((vec3_t*)&obb->axes[i], &frust_edges[j], &edge_cross_products[i * ARR_SIZE(frust_edges) + j]);
-            PFM_Vec3_Normal(&edge_cross_products[i * ARR_SIZE(frust_edges) + j], &edge_cross_products[i * ARR_SIZE(frust_edges) + j]);
+            PFM_Vec3_Cross((vec3_t*)&obb->axes[i], &frust_edges[j], &edge_cross_products[ncrosses]);
+            if(PFM_Vec3_Len(&edge_cross_products[ncrosses]) > EPSILON) {
+                PFM_Vec3_Normal(&edge_cross_products[ncrosses], &edge_cross_products[ncrosses]);
+                ncrosses++;
+            }
         }
     }
 
-    for(int i = 0; i < ARR_SIZE(edge_cross_products); i++) {
+    for(int i = 0; i < ncrosses; i++) {
     
         if(separating_axis_exists(edge_cross_products[i], frustum, obb->corners))
             return false;
