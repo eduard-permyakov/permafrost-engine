@@ -538,7 +538,13 @@ static void engine_shutdown(void)
  * is initialized, */
 void Engine_LoadingScreen(void)
 {
+    ASSERT_IN_MAIN_THREAD();
     assert(s_window);
+
+    /* Make sure the render therad doesn't overwrite the screen... */
+    if(g_render_thread_id) {
+        Engine_WaitRenderWorkDone();
+    }
 
     SDL_Surface *win_surface = SDL_GetWindowSurface(s_window);
     SDL_Renderer *sw_renderer = SDL_CreateSoftwareRenderer(win_surface);
