@@ -233,7 +233,6 @@ static bool session_pop_subsession(char *errstr, size_t errlen)
     }
 
     subsession_clear();
-    Engine_LoadingScreen();
 
     SDL_RWops *stream = vec_stream_pop(&s_subsession_stack);
     bool result = subsession_load(stream, errstr, errlen);
@@ -256,7 +255,6 @@ static bool session_push_subsession(const char *script, char *errstr, size_t err
     SDL_RWseek(stream, 0, RW_SEEK_SET);
 
     subsession_clear();
-    Engine_LoadingScreen();
 
     if(!S_RunFile(script)) {
         result = subsession_load(stream, errstr, errlen);
@@ -326,6 +324,7 @@ void Session_ServiceRequests(void)
         return;
 
     bool result = false;
+    Engine_LoadingScreen();
 
     switch(s_request) {
     case SESH_REQ_LOAD:

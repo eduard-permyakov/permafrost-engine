@@ -85,6 +85,7 @@ SDL_threadID               g_render_thread_id; /* write-once */
 /*****************************************************************************/
 
 static SDL_Window         *s_window;
+static SDL_Surface        *s_loading_screen;
 
 /* Flag to perform a single step of the simulation while the game is paused. 
  * Cleared at after performing the step. 
@@ -111,9 +112,7 @@ static void process_sdl_events(void)
     while(SDL_PollEvent(&event)) {
 
         UI_HandleEvent(&event);
-
         vec_event_push(&s_prev_tick_events, event);
-        assert(vec_size(&s_prev_tick_events) <= 8192);
 
         E_Global_Notify(event.type, &vec_AT(&s_prev_tick_events, 
             vec_size(&s_prev_tick_events)-1), ES_ENGINE);
@@ -259,6 +258,35 @@ static void engine_create_settings(void)
     assert(status == SS_OKAY);
 }
 
+static SDL_Surface *engine_create_loading_screen(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    SDL_Surface *ret = NULL;
+
+    int width, height, orig_format;
+    unsigned char *image = stbi_load(CONFIG_LOADING_SCREEN, &width, &height, 
+        &orig_format, STBI_rgb);
+
+    if(!image) {
+        fprintf(stderr, "Loading Screen: Failed to load image: %s\n", CONFIG_LOADING_SCREEN);
+        goto fail_load_image;
+    }
+
+    ret = SDL_CreateRGBSurfaceWithFormat(0, width, height, 24, SDL_PIXELFORMAT_RGB24);
+
+    if(!ret) {
+        fprintf(stderr, "Loading Screen: Failed to create SDL surface: %s\n", SDL_GetError());    
+        goto fail_surface;
+    }
+
+    memcpy(ret->pixels, image, width * height * 3);
+
+fail_surface:
+    stbi_image_free(image);
+fail_load_image:
+    return ret;
+}
+
 static bool engine_init(char **argv)
 {
     g_main_thread_id = SDL_ThreadID();
@@ -334,8 +362,10 @@ static bool engine_init(char **argv)
         res[1], 
         SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | wf | extra_flags);
 
-    Engine_LoadingScreen();
+    s_loading_screen = engine_create_loading_screen();
     stbi_set_flip_vertically_on_load(true);
+
+    Engine_LoadingScreen();
 
     if(!rstate_init(&s_rstate)) {
         fprintf(stderr, "Failed to initialize the render sync state.\n");
@@ -447,6 +477,9 @@ fail_render_init:
 fail_rthread:
     rstate_destroy(&s_rstate);
 fail_rstate:
+    if(s_loading_screen) {
+        SDL_FreeSurface(s_loading_screen);
+    }
     SDL_DestroyWindow(s_window);
     SDL_Quit();
 fail_sdl:
@@ -487,6 +520,9 @@ static void engine_shutdown(void)
     vec_event_destroy(&s_prev_tick_events);
     rstate_destroy(&s_rstate);
 
+    if(s_loading_screen) {
+        SDL_FreeSurface(s_loading_screen);
+    }
     SDL_DestroyWindow(s_window); 
     SDL_Quit();
 
@@ -503,55 +539,22 @@ static void engine_shutdown(void)
 void Engine_LoadingScreen(void)
 {
     assert(s_window);
-    stbi_set_flip_vertically_on_load(false);
 
     SDL_Surface *win_surface = SDL_GetWindowSurface(s_window);
     SDL_Renderer *sw_renderer = SDL_CreateSoftwareRenderer(win_surface);
-    if(!sw_renderer) {
-        fprintf(stderr, "Loading Screen: Failed to create SDL software renderer: %s\n", SDL_GetError()); 
-        return;
-    }
+    assert(sw_renderer);
 
-    SDL_SetRenderDrawColor(sw_renderer, 0xff, 0xff, 0xff, 0xff);
+    SDL_SetRenderDrawColor(sw_renderer, 0x00, 0x00, 0x00, 0xff);
     SDL_RenderClear(sw_renderer);
 
-    SDL_Rect draw_area;
-    SDL_RenderGetViewport(sw_renderer, &draw_area);
-
-    int width, height, orig_format;
-    unsigned char *image = stbi_load(CONFIG_LOADING_SCREEN, &width, &height, 
-        &orig_format, STBI_rgb);
-
-    if(!image) {
-        fprintf(stderr, "Loading Screen: Failed to load image: %s\n", CONFIG_LOADING_SCREEN);
-        goto fail_load_image;
+    SDL_Texture *tex;
+    if(s_loading_screen && (tex = SDL_CreateTextureFromSurface(sw_renderer, s_loading_screen))) {
+        SDL_RenderCopy(sw_renderer, tex, NULL, NULL);
+        SDL_DestroyTexture(tex);
     }
 
-    SDL_Surface *img_surface = SDL_CreateRGBSurfaceWithFormatFrom(image, width, height, 
-        24, 3*width, SDL_PIXELFORMAT_RGB24);
-
-    if(!img_surface) {
-        fprintf(stderr, "Loading Screen: Failed to create SDL surface: %s\n", SDL_GetError());    
-        goto fail_surface;
-    }
-
-    SDL_Texture *img_tex = SDL_CreateTextureFromSurface(sw_renderer, img_surface);
-    if(!img_tex) {
-        fprintf(stderr, "Loading Screen: Failed to create SDL texture: %s\n", SDL_GetError());
-        goto fail_texture;
-    }
-
-    SDL_RenderCopy(sw_renderer, img_tex, NULL, NULL);
     SDL_UpdateWindowSurface(s_window);
-    SDL_DestroyTexture(img_tex);
-
-fail_texture:
-    SDL_FreeSurface(img_surface);
-fail_surface:
-    stbi_image_free(image);
-fail_load_image:
     SDL_DestroyRenderer(sw_renderer);
-    stbi_set_flip_vertically_on_load(true);
 }
 
 int Engine_SetRes(int w, int h)

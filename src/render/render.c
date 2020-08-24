@@ -501,9 +501,9 @@ static int render(void *data)
         render_signal_done(rstate);
     }
 
-	if(initialized) {
-    	render_destroy_ctx();
-	}
+    if(initialized) {
+        render_destroy_ctx();
+    }
     return 0;
 }
 
