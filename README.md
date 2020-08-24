@@ -57,6 +57,7 @@ EVERGLORY is the flagship game developed using Permafrost Engine.
 * Multithreaded: simulation and rendering in a 2-stage pipeline
 * Advanced debug visualizations and profiling instrumentatation
 * Fiber system for putting work in lightweight tasks that are scheduled in userspace
+* Fiber-backed Python tasks, allowing cooperative multitasking logic in Python
 * Cross-platform (Linux and Windows)
 
 ## Dependencies ##

@@ -29,6 +29,12 @@ BUILT-IN FUNCTIONS
     Make it impossible to select units with the mouse. Disable drawing of a
     selection box when dragging the mouse.
 
+    [draw_text]
+    ----------------------------------------------------------------------------
+    Draw a text label with the specified bounds (X, Y, W, H) )and with the
+    specified color (R, G, B, A). The label lasts for one frame, meaning this
+    should be called every tick to keep the label fixed.
+
     [enable_fog_of_war]
     ----------------------------------------------------------------------------
     Enable the fog of war.
@@ -618,6 +624,53 @@ BUILT-IN CLASSES
         [unregister]
         Unregisters a callable previously registered to be invoked on the
         specified event.
+
+    [Task]
+    ----------------------------------------------------------------------------
+    Permafrost Engine runnable task.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__call__]
+        x.__call__(...) <==> x(...)
+
+        [__pickle__]
+        Serialize a Permafrost Engine task object to a string.
+
+        [await_event]
+        Become blocked unitl a particular event takes place.
+
+        [receive]
+        Become blocked, waiting until a message is received from the specified
+        task.
+
+        [register]
+        Register this task for a specific name.
+
+        [reply]
+        Respond to a sent message from another task, unblocking it.
+
+        [run]
+        Start the task, invoking its' __run__ method in a fiber context.
+
+        [send]
+        Send a message to another pf.Task instance, becoming blocked until it
+        replies.
+
+        [sleep]
+        Become blocked for a period of time specified in milliseconds.
+
+        [wait]
+        Block until the completion of another pf.Task instance.
+
+        [who_is]
+        Look up a task for a specific name
+
+        [yield_]
+        Yield to the scheduler, allowing other tasks to run. The task may be
+        suspended until the next frame. Yielding periodically is a means to
+        make sure that long-running tasks don't exceed the frame's time budget.
 
     [Tile]
     ----------------------------------------------------------------------------
@@ -1277,6 +1330,8 @@ BUILT-IN CONSTANTS
     EVENT_NEW_GAME 65542
     EVENT_RENDER_3D 65539
     EVENT_RENDER_UI 65540
+    EVENT_SCRIPT_TASK_EXCEPTION 65559
+    EVENT_SCRIPT_TASK_FINISHED 65560
     EVENT_SELECTED_TILE_CHANGED 65541
     EVENT_SESSION_FAIL_LOAD 65558
     EVENT_UNIT_SELECTION_CHANGED 65543
