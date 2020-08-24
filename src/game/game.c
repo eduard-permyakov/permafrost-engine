@@ -798,9 +798,9 @@ bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
     if(!s_gs.map)
         PERF_RETURN(false);
 
+    g_init_map();
     M_AL_ShallowCopy((struct map*)s_gs.prev_tick_map, s_gs.map);
 
-    g_init_map();
     E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
 
 #if CONFIG_USE_BATCH_RENDERING

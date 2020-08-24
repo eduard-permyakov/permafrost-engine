@@ -654,6 +654,7 @@ int main(int argc, char **argv)
     S_RunFile(argv[2]);
 
     /* Run the first frame of the simulation, and prepare the buffers for rendering. */
+    E_ServiceQueue();
     G_Update();
     G_Render();
     UI_Render();
