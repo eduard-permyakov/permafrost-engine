@@ -66,6 +66,7 @@ struct py_pickle_ctx{
     void (*memoize)(void *ctx, PyObject *obj);
     bool (*emit_put)(void *ctx, PyObject *obj, struct SDL_RWops *stream);
     bool (*emit_get)(void *ctx, PyObject *obj, struct SDL_RWops *stream);
+    bool (*emit_alloc)(void *ctx, struct SDL_RWops *stream);
     bool (*pickle_obj)(void *ctx, PyObject *obj, struct SDL_RWops *stream);
     void (*deferred_free)(void *ctx, PyObject *obj);
 };

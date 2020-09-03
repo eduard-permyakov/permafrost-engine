@@ -43,18 +43,21 @@
 
 #include <stdbool.h>
 
-#define MAX_JOINTS                (96)
+#define MAX_JOINTS  (96)
 
-#define ENTITY_FLAG_ANIMATED      (1 << 0)
-#define ENTITY_FLAG_COLLISION     (1 << 1)
-#define ENTITY_FLAG_SELECTABLE    (1 << 2)
-#define ENTITY_FLAG_STATIC        (1 << 3)
-#define ENTITY_FLAG_COMBATABLE    (1 << 4)
-#define ENTITY_FLAG_INVISIBLE     (1 << 5)
-/* zombie entities are those that have died in the game simulation, 
- * but are still retained by some scripting variable */
-#define ENTITY_FLAG_ZOMBIE        (1 << 6)
-#define ENTITY_FLAG_MARKER        (1 << 7)
+enum{
+    ENTITY_FLAG_ANIMATED            = (1 << 0),
+    ENTITY_FLAG_COLLISION           = (1 << 1),
+    ENTITY_FLAG_SELECTABLE          = (1 << 2),
+    ENTITY_FLAG_STATIC              = (1 << 3),
+    ENTITY_FLAG_COMBATABLE          = (1 << 4),
+    ENTITY_FLAG_INVISIBLE           = (1 << 5),
+    /* zombie entities are those that have died in the game simulation, 
+     * but are still retained by some scripting variable */
+    ENTITY_FLAG_ZOMBIE              = (1 << 6),
+    ENTITY_FLAG_MARKER              = (1 << 7),
+    ENTITY_FLAG_BUILDING            = (1 << 8),
+};
 
 struct entity{
     uint32_t     uid;

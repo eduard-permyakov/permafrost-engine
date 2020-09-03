@@ -694,10 +694,11 @@ static PyObject *PyWindow_label_colored_wrap(PyWindowObject *self, PyObject *arg
 static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args)
 {
     const char *str;
-    PyObject *callable;
+    PyObject *callable, *cargs = NULL;
 
-    if(!PyArg_ParseTuple(args, "sO", &str, &callable)) {
-        PyErr_SetString(PyExc_TypeError, "Arguments must be a string and an object.");
+    if(!PyArg_ParseTuple(args, "sO|O", &str, &callable, &cargs)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string and an object. "
+            "Optionally, an argument to the callable can be provided.");
         return NULL;
     }
 
@@ -707,7 +708,7 @@ static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args)
     }
 
     if(nk_button_label(s_nk_ctx, str)) {
-        PyObject *ret = PyObject_CallObject(callable, NULL);
+        PyObject *ret = PyObject_CallObject(callable, cargs);
         Py_XDECREF(ret);
     }
 

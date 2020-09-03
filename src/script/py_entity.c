@@ -63,6 +63,10 @@ typedef struct {
     PyEntityObject super; 
 }PyCombatableEntityObject;
 
+typedef struct {
+    PyEntityObject super; 
+}PyBuildableEntityObject;
+
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void      PyEntity_dealloc(PyEntityObject *self);
 static PyObject *PyEntity_del(PyEntityObject *self);
@@ -114,6 +118,10 @@ static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self
 static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObject *args);
 static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self);
+static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyBuildableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -275,7 +283,7 @@ static PyMethodDef PyAnimEntity_methods[] = {
 
     {"__unpickle__", 
     (PyCFunction)PyAnimEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
-    "Create a new pf.Entity instance from a string earlier returned from a __pickle__ method."
+    "Create a new pf.AnimEntity instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
     {NULL}  /* Sentinel */
@@ -315,7 +323,7 @@ static PyMethodDef PyCombatableEntity_methods[] = {
 
     {"__unpickle__", 
     (PyCFunction)PyCombatableEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
-    "Create a new pf.Entity instance from a string earlier returned from a __pickle__ method."
+    "Create a new pf.CombatableEntity instance from a string earlier returned from a __pickle__ method."
     "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
     {NULL}  /* Sentinel */
@@ -350,6 +358,31 @@ static PyTypeObject PyCombatableEntity_type = {
     .tp_base      = &PyEntity_type,
     .tp_getset    = PyCombatableEntity_getset,
     .tp_init      = (initproc)PyCombatableEntity_init,
+};
+
+/* pf.BuildableEntity */
+
+static PyMethodDef PyBuildableEntity_methods[] = {
+    {"__pickle__", 
+    (PyCFunction)PyBuildableEntity_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine buildable entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyBuildableEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.BuildableEntity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyBuildableEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.BuildableEntity",
+    .tp_basicsize = sizeof(PyBuildableEntityObject), 
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine entity buildable entity. This is a subclass of pf.Entity.",
+    .tp_methods   = PyBuildableEntity_methods,
+    .tp_base      = &PyEntity_type,
 };
 
 KHASH_MAP_INIT_INT(PyObject, PyObject*)
@@ -466,6 +499,9 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyCombatableEntity_type))
         self->ent->flags |= ENTITY_FLAG_COMBATABLE;
+
+    if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyBuildableEntity_type))
+        self->ent->flags |= ENTITY_FLAG_BUILDING;
 
     G_AddEntity(self->ent, (vec3_t){0.0f, 0.0f, 0.0f});
 
@@ -1398,6 +1434,23 @@ static int PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, Py
     return 0;
 }
 
+static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self)
+{
+    return s_super_del((PyObject*)self, &PyBuildableEntity_type);
+}
+
+static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs)
+{
+    return s_call_super_method("__pickle__", (PyObject*)&PyBuildableEntity_type, 
+        (PyObject*)self, args, kwargs);
+}
+
+static PyObject *PyBuildableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    return s_call_super_method("__unpickle__", (PyObject*)&PyBuildableEntity_type, 
+        cls, args, kwargs);
+}
+
 static PyObject *s_obj_from_attr(const struct attr *attr)
 {
     switch(attr->type){
@@ -1531,6 +1584,11 @@ void S_Entity_PyRegister(PyObject *module)
         return;
     Py_INCREF(&PyCombatableEntity_type);
     PyModule_AddObject(module, "CombatableEntity", (PyObject*)&PyCombatableEntity_type);
+
+    if(PyType_Ready(&PyBuildableEntity_type) < 0)
+        return;
+    Py_INCREF(&PyBuildableEntity_type);
+    PyModule_AddObject(module, "BuildableEntity", (PyObject*)&PyBuildableEntity_type);
 }
 
 bool S_Entity_Init(void)

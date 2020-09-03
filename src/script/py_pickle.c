@@ -214,6 +214,7 @@ typedef void *mod_ty; //symtable.h wants this
 #define PF_OP_ATTRGET   ')' /* Push an operator.attrgetter instance from top 2 TOS items */
 #define PF_OP_METHODCALL '-' /* Push an operator.methodcaller instance from top 3 TOS items */
 #define PF_CUSTOM       '+' /* Push an instance returned by an __unpickle__ static method of a type */
+#define PF_ALLOC        ':' /* Allocate an object (call tp_alloc) using the type on TOS */
 
 #define EXC_START_MAGIC ((void*)0x1234)
 #define EXC_END_MAGIC   ((void*)0x4321)
@@ -268,6 +269,7 @@ static bool memo_contains(const struct pickle_ctx *ctx, PyObject *obj);
 static int memo_idx(const struct pickle_ctx *ctx, PyObject *obj);
 static bool emit_get(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
 static bool emit_put(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw);
+static bool emit_alloc(const struct pickle_ctx *ctx, SDL_RWops *rw);
 static void deferred_free(struct pickle_ctx *ctx, PyObject *obj);
 
 /* Pickling functions */
@@ -447,6 +449,7 @@ static int op_ext_oper_itemgetter(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_oper_attrgetter(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_oper_methodcaller(struct unpickle_ctx *, SDL_RWops *);
 static int op_ext_custom    (struct unpickle_ctx *, SDL_RWops *);
+static int op_ext_alloc     (struct unpickle_ctx *, SDL_RWops *);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -662,6 +665,7 @@ static struct pickle_entry s_pf_dispatch_table[] = {
     {.type = NULL, /* PyUIComboStyle_type */              .picklefunc = custom_pickle   },
     {.type = NULL, /* PyUIToggleStyle_type */             .picklefunc = custom_pickle   },
     {.type = NULL, /* PyTask_type */                      .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyBuildableEntity_type */           .picklefunc = custom_pickle   },
 };
 
 static unpickle_func_t s_op_dispatch_table[256] = {
@@ -762,6 +766,7 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_OP_ATTRGET] = op_ext_oper_attrgetter,
     [PF_OP_METHODCALL] = op_ext_oper_methodcaller,
     [PF_CUSTOM] = op_ext_custom,
+    [PF_ALLOC] = op_ext_alloc,
 };
 
 /* Statically-linked builtin modules not imported on initialization which also contain C builtins */
@@ -815,6 +820,7 @@ struct sc_map_entry{
     { NULL, /*&PyTile_type*/                NULL },
     { NULL, /*&PyCamera_type*/              NULL },
     { NULL, /*&PyTask_type*/                NULL },
+    { NULL, /*&PyBuildableEntity_type*/     NULL },
 };
 
 /*****************************************************************************/
@@ -1200,6 +1206,7 @@ static void load_subclassable_builtin_refs(void)
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Tile");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Camera");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Task");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "BuildableEntity");
 
 	assert(base_idx == ARR_SIZE(s_subclassable_builtin_map));
 }
@@ -1292,6 +1299,7 @@ static void load_engine_builtin_types(void)
     s_pf_dispatch_table[9].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIComboStyle");
     s_pf_dispatch_table[10].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIToggleStyle");
     s_pf_dispatch_table[11].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Task");
+    s_pf_dispatch_table[12].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "BuildableEntity");
 
     for(int i = 0; i < ARR_SIZE(s_pf_dispatch_table); i++)
         assert(s_pf_dispatch_table[i].type);
@@ -1572,6 +1580,11 @@ static PyObject *nonderived_writable_attrs(PyObject *obj)
         if(attr_is_user_descr(obj, name))
             continue;
 
+        /* Don't touch the frame's locals - getting this causes modification of 
+         * the frame. We save the locals when we save the frame */
+        if(PyFrame_Check(obj) && !strcmp(PyString_AS_STRING(name), "f_locals"))
+            continue;
+
         if(!PyObject_HasAttr(obj, name))
             continue;
 
@@ -1685,6 +1698,7 @@ static int custom_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
         .memoize = (void*)memoize,
         .emit_put = (void*)emit_put,
         .emit_get = (void*)emit_get,
+        .emit_alloc = (void*)emit_alloc,
         .pickle_obj = (void*)pickle_obj,
         .deferred_free = (void*)deferred_free,
     };
@@ -3043,13 +3057,10 @@ static int frame_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     }
 
     /* Pickle the 'fast' locals namespace */
-    const size_t ncells = PyTuple_GET_SIZE(f->f_code->co_cellvars);
-    const size_t nfrees = PyTuple_GET_SIZE(f->f_code->co_freevars);
-    size_t extras = f->f_code->co_nlocals + ncells + nfrees;
-
     CHK_TRUE(rw->write(rw, mark, ARR_SIZE(mark), 1), fail);
-    for(int i = extras-1; i >= 0; i--) {
 
+    size_t nextra = f->f_valuestack - f->f_localsplus;
+    for(int i = nextra-1; i >= 0; i--) {
         PyObject *curr = f->f_localsplus[i];
         if(!curr) {
             const char ops[] = {PF_EXTEND, PF_NULLVAL}; 
@@ -5254,7 +5265,7 @@ static int op_ext_newinst(struct unpickle_ctx *ctx, SDL_RWops *rw)
     PyObject *inst = vec_pobj_pop(&ctx->stack);
 
     if(!PyType_Check(type)) {
-        SET_RUNTIME_EXC("PF_NEWINST: Expecting type on TOS"); 
+        SET_RUNTIME_EXC("PF_NEWINST: Expecting type on TOS");
         goto fail_typecheck;
     }
 
@@ -5988,11 +5999,15 @@ static int convert_frame(PyFrameObject *frame, PyCodeObject *code,
     if(old_valsize != frame_extra_size(frame))
         return -1;
 
-    size_t extras = frame_extra_size(frame) - code->co_stacksize;
+    const size_t ncells = PyTuple_GET_SIZE(code->co_cellvars);
+    const size_t nfrees = PyTuple_GET_SIZE(code->co_freevars);
+    size_t extras = code->co_nlocals + ncells + nfrees;
+
     frame->f_valuestack = frame->f_localsplus + extras;
+    frame->f_stacktop = frame->f_valuestack;
+
     for(int i = 0; i < extras; i++)
         frame->f_localsplus[i] = NULL;
-    frame->f_stacktop = frame->f_valuestack;
 
     assert(frame->f_builtins && frame->f_code && frame->f_globals);
     frame->f_iblock = 0;
@@ -7016,6 +7031,7 @@ fail_method:
 fail_typecheck:
     Py_DECREF(name);
     Py_DECREF(type);
+    Py_DECREF(inst);
 fail_underflow:
     return ret;
 }
@@ -7217,6 +7233,35 @@ fail_underflow:
     return ret;
 }
 
+static int op_ext_alloc(struct unpickle_ctx *ctx, SDL_RWops *rw)
+{
+    TRACE_OP(PF_ALLOC, ctx);
+    int ret = -1;
+
+    if(vec_size(&ctx->stack) < 1) {
+        SET_RUNTIME_EXC("Stack underflow");
+        goto fail_underflow;
+    }
+    PyObject *klass = vec_pobj_pop(&ctx->stack);
+
+    if(!PyType_Check(klass)) {
+        SET_RUNTIME_EXC("PF_CUSTOM: Expecting type at TOS1");
+        goto fail_typecheck;
+    }
+
+    PyObject *rval = ((PyTypeObject*)klass)->tp_alloc((struct _typeobject*)klass, 0);
+    CHK_TRUE(rval, fail_inst);
+
+    vec_pobj_push(&ctx->stack, rval);
+    ret = 0;
+
+fail_inst:
+fail_typecheck:
+    Py_DECREF(klass);
+fail_underflow:
+    return ret;
+}
+
 static int op_ext_nullimporter(struct unpickle_ctx *ctx, SDL_RWops *rw)
 {
     TRACE_OP(PF_NULLIMPORTER, ctx);
@@ -7315,6 +7360,12 @@ static bool emit_put(const struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw)
     pf_snprintf(str, ARR_SIZE(str), "%c%d\n", PUT, memo_idx(ctx, obj));
     str[ARR_SIZE(str)-1] = '\0';
     return rw->write(rw, str, 1, strlen(str));
+}
+
+static bool emit_alloc(const struct pickle_ctx *ctx, SDL_RWops *rw)
+{
+    const char ops[] = {PF_EXTEND, PF_ALLOC};
+    return rw->write(rw, ops, sizeof(ops), 1);
 }
 
 static void deferred_free(struct pickle_ctx *ctx, PyObject *obj)
@@ -7549,6 +7600,11 @@ PyObject *S_UnpickleObjgraph(SDL_RWops *stream)
 
     if(vec_size(&ctx.stack) != 1) {
         SET_RUNTIME_EXC("Unexpected stack size [%u] after 'STOP'", (unsigned)vec_size(&ctx.stack));
+        goto err;
+    }
+
+    if(vec_size(&ctx.mark_stack) != 0) {
+        SET_RUNTIME_EXC("Unexpected mark stack size [%u] after 'STOP'", (unsigned)vec_size(&ctx.mark_stack));
         goto err;
     }
 

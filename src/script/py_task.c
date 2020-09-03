@@ -121,9 +121,19 @@ static PyObject *PyTask_sleep(PyTaskObject *self, PyObject *args);
 static PyObject *PyTask_register(PyTaskObject *self, PyObject *args);
 static PyObject *PyTask_who_is(PyTaskObject *self, PyObject *args, PyObject *kwargs);
 
+static PyObject *PyTask_get_completed(PyTaskObject *self, void *closure);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
+
+static PyGetSetDef PyTask_getset[] = {
+    {"completed",
+    (getter)PyTask_get_completed, NULL,
+    "Returns True if the task has ran to completion",
+    NULL},
+    {NULL}  /* Sentinel */
+};
 
 static PyMethodDef PyTask_methods[] = {
     {"__pickle__", 
@@ -180,7 +190,7 @@ static PyMethodDef PyTask_methods[] = {
     {NULL}  /* Sentinel */
 };
 
-static PyTypeObject PyTask_type = {
+PyTypeObject PyTask_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "pf.Task",               /* tp_name */
     sizeof(PyTaskObject),    /* tp_basicsize */
@@ -210,7 +220,7 @@ static PyTypeObject PyTask_type = {
     0,                         /* tp_iternext */
     PyTask_methods,            /* tp_methods */
     0,                         /* tp_members */
-    0,                         /* tp_getset */
+    PyTask_getset,             /* tp_getset */
     0,                         /* tp_base */
     0,                         /* tp_dict */
     0,                         /* tp_descr_get */
@@ -311,6 +321,30 @@ static int pytask_tracefunc(PyTaskObject *self, PyFrameObject *frame, int what, 
     return 0;
 }
 
+static void pytask_push_ctx(PyTaskObject *self)
+{
+    s_main_thread_state = PyThreadState_Swap(self->ts);
+
+    /* During frame evaluation, CPython NULLs out the current frame's
+     * f_stacktop member. As such, there is no reliable way to get the 
+     * size of the current evaluation stack of a frame. One exception
+     * is that CPython sets f_stacktop to the correct value for trace
+     * calls. We use this hook to capture the evaluation stack size
+     * before every opcode execution. The evaluation stack size is 
+     * normally a hidden implementation detail, but we use to save and 
+     * restore running tasks.
+     */
+    PyEval_SetTrace((Py_tracefunc)pytask_tracefunc, (PyObject*)self);
+}
+
+static void pytask_pop_ctx(PyTaskObject *self)
+{
+    PyEval_SetTrace(NULL, NULL);
+    assert(s_main_thread_state);
+    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
+    assert(ts == self->ts);
+}
+
 static struct result py_task(void *arg)
 {
     PyTaskObject *self = (PyTaskObject*)arg;
@@ -318,7 +352,7 @@ static struct result py_task(void *arg)
     ASSERT_IN_MAIN_THREAD();
     ASSERT_IN_CTX(self->tid);
 
-    s_main_thread_state = PyThreadState_Swap(self->ts);
+    pytask_push_ctx(self);
     PyObject *ret = NULL;
 
     if(self->state == PYTASK_STATE_RUNNING) {
@@ -329,6 +363,7 @@ static struct result py_task(void *arg)
 
         PyObject *req_result = pytask_resume_request(self);
         assert(self->ts->frame);
+        PyFrameObject *frame = self->ts->frame;
 
         if(req_result) {
 
@@ -376,6 +411,7 @@ static struct result py_task(void *arg)
 
             ret = PyEval_EvalFrameEx(self->ts->frame, 0);
         }
+        Py_CLEAR(frame);
         Py_XDECREF(req_result);
 
     }else{
@@ -418,8 +454,8 @@ static struct result py_task(void *arg)
         PyErr_Clear();
     }
 
-    assert(self->ts == PyThreadState_Get());
-    PyThreadState_Swap(s_main_thread_state);
+    assert(!self->ts->frame);
+    pytask_pop_ctx(self);
 
     khiter_t k = kh_get(task, s_tid_task_map, self->tid);
     assert(k != kh_end(s_tid_task_map));
@@ -431,30 +467,6 @@ static struct result py_task(void *arg)
 
     Task_Unregister();
     return NULL_RESULT;
-}
-
-static void pytask_push_ctx(PyTaskObject *self)
-{
-    s_main_thread_state = PyThreadState_Swap(self->ts);
-
-    /* During frame evaluation, CPython NULLs out the current frame's
-     * f_stacktop member. As such, there is no reliable way to get the 
-     * size of the current evaluation stack of a frame. One exception
-     * is that CPython sets f_stacktop to the correct value for trace
-     * calls. We use this hook to capture the evaluation stack size
-     * before every opcode execution. The evaluation stack size is 
-     * normally a hidden implementation detail, but we use to save and 
-     * restore running tasks.
-     */
-    PyEval_SetTrace((Py_tracefunc)pytask_tracefunc, (PyObject*)self);
-}
-
-static void pytask_pop_ctx(PyTaskObject *self)
-{
-    assert(s_main_thread_state);
-    PyThreadState *ts = PyThreadState_Swap(s_main_thread_state);
-    assert(ts == self->ts);
-    PyEval_SetTrace(NULL, NULL);
 }
 
 static void pytask_req_set(PyTaskObject *task, PyObject *args, PyObject *kwargs, int type)
@@ -557,8 +569,10 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
 {
     bool status;
     PyObject *ret = NULL;
+    size_t og_refcount = self->ob_refcnt;
 
     assert(self->state >= PYTASK_STATE_NOT_STARTED && self->state <= PYTASK_STATE_FINISHED);
+    assert(self->ts->c_tracefunc == NULL);
 
     static char *kwlist[] = {"__ctx__", NULL};
     struct py_pickle_ctx *ctx = NULL;
@@ -639,12 +653,14 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
 
     ret = PyString_FromString("");
 fail_pickle:
+    assert(self->ob_refcnt == og_refcount);
     return ret;
 }
 
 static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     PyTaskObject *ret = NULL;
+    Py_ssize_t nread = 0;
     char *str;
     int status, slen;
     char tmp;
@@ -774,7 +790,6 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     }
 
     SDL_RWops *stream = SDL_RWFromConstMem(str, len);
-    Py_ssize_t nread = 0;
     if(!stream) {
         Py_XDECREF(ret);
         goto fail_unpickle;
@@ -783,7 +798,7 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     SDL_RWclose(stream);
 
 fail_unpickle:
-    if(!ret) {
+    if(!ret && !PyErr_Occurred()) {
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle pf.Task instance");
     }
     Py_XDECREF(sleep_elapsed);
@@ -1039,7 +1054,7 @@ static PyObject *PyTask_sleep(PyTaskObject *self, PyObject *args)
 
     if(self->state != PYTASK_STATE_RUNNING || Sched_ActiveTID() != self->tid) {
         PyErr_SetString(PyExc_RuntimeError, 
-            "The 'await_event' method can only be called from the context of the __run__ method.");
+            "The 'sleep' method can only be called from the context of the __run__ method.");
         return NULL;
     }
 
@@ -1129,6 +1144,15 @@ static PyObject *PyTask_who_is(PyTaskObject *self, PyObject *args, PyObject *kwa
     PyTaskObject *ret = kh_value(s_tid_task_map, k);
     Py_INCREF(ret);
     return (PyObject*)ret;
+}
+
+static PyObject *PyTask_get_completed(PyTaskObject *self, void *closure)
+{
+    if(self->state == PYTASK_STATE_FINISHED) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
 }
 
 static void on_update_start(void *user, void *event)
