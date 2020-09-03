@@ -229,7 +229,7 @@ static void draw_minimap_terrain(struct render_private *priv, mat4x4_t *chunk_mo
     /* Always use 'terrain' shader for rendering to not draw any shadows */
     GLuint old_shader_prog = priv->shader_prog;
     priv->shader_prog = R_GL_Shader_GetProgForName("terrain");
-    R_GL_Draw(priv, chunk_model_mat); 
+    R_GL_Draw(priv, chunk_model_mat, &fval); 
     priv->shader_prog = old_shader_prog;
 
     R_GL_MapEnd();

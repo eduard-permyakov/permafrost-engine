@@ -171,11 +171,16 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_Draw(const void *render_private, mat4x4_t *model)
+void R_GL_Draw(const void *render_private, mat4x4_t *model, const bool *translucent)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
     const struct render_private *priv = render_private;
+
+    if(*translucent) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
+    }
 
     R_GL_StateSet(GL_U_MODEL, (struct uval){
         .type = UTYPE_MAT4,
@@ -198,6 +203,10 @@ void R_GL_Draw(const void *render_private, mat4x4_t *model)
     
     glBindVertexArray(priv->mesh.VAO);
     glDrawArrays(GL_TRIANGLES, 0, priv->mesh.num_verts);
+
+    if(*translucent) {
+        glDisable(GL_BLEND);
+    }
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();

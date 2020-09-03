@@ -102,6 +102,7 @@ void M_ModelMatrixForChunk(const struct map *map, struct chunkpos p, mat4x4_t *o
 void M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pass)
 {
     vec2_t pos = (vec2_t){map->pos.x, map->pos.z};
+    const bool fval = false;
 
     R_PushCmd((struct rcmd){ 
         .func = R_GL_MapBegin,
@@ -133,10 +134,11 @@ void M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pas
         case RENDER_PASS_REGULAR:
             R_PushCmd((struct rcmd){
                 .func = R_GL_Draw,
-                .nargs = 2,
+                .nargs = 3,
                 .args = {
                     chunk->render_private,
                     R_PushArg(&chunk_model, sizeof(chunk_model)),
+                    R_PushArg(&fval, sizeof(fval)),
                 },
             });
             break;
@@ -153,6 +155,7 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
     vec2_t pos = (vec2_t){map->pos.x, map->pos.z};
+    const bool fval = false;
 
     R_PushCmd((struct rcmd){ 
         .func = R_GL_MapBegin, 
@@ -195,10 +198,11 @@ void M_RenderVisibleMap(const struct map *map, const struct camera *cam,
         case RENDER_PASS_REGULAR:
             R_PushCmd((struct rcmd){
                 .func = R_GL_Draw,
-                .nargs = 2,
+                .nargs = 3,
                 .args = {
                     chunk->render_private,
                     R_PushArg(&chunk_model, sizeof(chunk_model)),
+                    R_PushArg(&fval, sizeof(fval)),
                 },
             });
             break;

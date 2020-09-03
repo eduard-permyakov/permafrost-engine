@@ -83,7 +83,7 @@ struct ui_vert{
  * contents of its' private data.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_Draw(const void *render_private, mat4x4_t *model);
+void   R_GL_Draw(const void *render_private, mat4x4_t *model, const bool *translucent);
 
 /* ---------------------------------------------------------------------------
  * Clear the draw buffer and set up the global OpenGL state at the beginning 

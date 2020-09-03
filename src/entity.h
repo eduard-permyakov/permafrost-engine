@@ -57,6 +57,7 @@ enum{
     ENTITY_FLAG_ZOMBIE              = (1 << 6),
     ENTITY_FLAG_MARKER              = (1 << 7),
     ENTITY_FLAG_BUILDING            = (1 << 8),
+    ENTITY_FLAG_TRANSLUCENT         = (1 << 9),
 };
 
 struct entity{
@@ -84,6 +85,7 @@ struct entity{
 struct ent_stat_rstate{
     void            *render_private;
     mat4x4_t         model;
+    bool             translucent;
     struct tile_desc td; 
 };
 
@@ -91,6 +93,7 @@ struct ent_stat_rstate{
 struct ent_anim_rstate{
     void           *render_private;
     mat4x4_t        model;
+    bool            translucent;
     size_t          njoints;
     const mat4x4_t *inv_bind_pose; /* static, use shallow copy */
     mat4x4_t        curr_pose[MAX_JOINTS];

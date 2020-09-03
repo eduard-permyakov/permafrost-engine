@@ -236,10 +236,11 @@ static void g_draw_pass(struct render_input *in)
         struct ent_stat_rstate *curr = &vec_AT(&in->cam_vis_stat, i);
         R_PushCmd((struct rcmd){
             .func = R_GL_Draw,
-            .nargs = 2,
+            .nargs = 3,
             .args = {
                 curr->render_private,
                 R_PushArg(&curr->model, sizeof(curr->model)),
+                R_PushArg(&curr->translucent, sizeof(curr->translucent)),
             },
         });
     }
@@ -265,10 +266,11 @@ static void g_draw_pass(struct render_input *in)
 
         R_PushCmd((struct rcmd){
             .func = R_GL_Draw,
-            .nargs = 2,
+            .nargs = 3,
             .args = {
                 curr->render_private,
                 R_PushArg(&curr->model, sizeof(curr->model)),
+                R_PushArg(&curr->translucent, sizeof(curr->translucent)),
             },
         });
     }
@@ -331,7 +333,8 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
         
             struct ent_anim_rstate rstate = (struct ent_anim_rstate){
                 .render_private = curr->render_private, 
-                .model = model
+                .model = model,
+                .translucent = curr->flags & ENTITY_FLAG_TRANSLUCENT
             };
             A_GetRenderState(curr, &rstate.njoints, rstate.curr_pose, &rstate.inv_bind_pose);
             vec_ranim_push(out_anim, rstate);
@@ -345,6 +348,7 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
             struct ent_stat_rstate rstate = (struct ent_stat_rstate){
                 .render_private = curr->render_private, 
                 .model = model,
+                .translucent = curr->flags & ENTITY_FLAG_TRANSLUCENT,
                 .td = td
             };
             vec_rstat_push(out_stat, rstate);
