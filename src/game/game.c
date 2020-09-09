@@ -172,19 +172,6 @@ static void g_shadow_pass(struct render_input *in)
     });
 
 #else // !CONFIG_USE_BATCH_RENDERING
-    for(int i = 0; i < vec_size(&in->light_vis_stat); i++) {
-    
-        struct ent_stat_rstate *curr = &vec_AT(&in->light_vis_stat, i);
-        R_PushCmd((struct rcmd){
-            .func = R_GL_RenderDepthMap,
-            .nargs = 2,
-            .args = {
-                curr->render_private,
-                R_PushArg(&curr->model, sizeof(curr->model)),
-            },
-        });
-    }
-
     for(int i = 0; i < vec_size(&in->light_vis_anim); i++) {
     
         struct ent_anim_rstate *curr = &vec_AT(&in->light_vis_anim, i);
@@ -204,6 +191,19 @@ static void g_shadow_pass(struct render_input *in)
             },
         });
 
+        R_PushCmd((struct rcmd){
+            .func = R_GL_RenderDepthMap,
+            .nargs = 2,
+            .args = {
+                curr->render_private,
+                R_PushArg(&curr->model, sizeof(curr->model)),
+            },
+        });
+    }
+
+    for(int i = 0; i < vec_size(&in->light_vis_stat); i++) {
+    
+        struct ent_stat_rstate *curr = &vec_AT(&in->light_vis_stat, i);
         R_PushCmd((struct rcmd){
             .func = R_GL_RenderDepthMap,
             .nargs = 2,
@@ -233,20 +233,6 @@ static void g_draw_pass(struct render_input *in)
     });
 
 #else // !CONFIG_USE_BATCH_RENDERING
-    for(int i = 0; i < vec_size(&in->cam_vis_stat); i++) {
-    
-        struct ent_stat_rstate *curr = &vec_AT(&in->cam_vis_stat, i);
-        R_PushCmd((struct rcmd){
-            .func = R_GL_Draw,
-            .nargs = 3,
-            .args = {
-                curr->render_private,
-                R_PushArg(&curr->model, sizeof(curr->model)),
-                R_PushArg(&curr->translucent, sizeof(curr->translucent)),
-            },
-        });
-    }
-
     for(int i = 0; i < vec_size(&in->cam_vis_anim); i++) {
     
         struct ent_anim_rstate *curr = &vec_AT(&in->cam_vis_anim, i);
@@ -266,6 +252,20 @@ static void g_draw_pass(struct render_input *in)
             },
         });
 
+        R_PushCmd((struct rcmd){
+            .func = R_GL_Draw,
+            .nargs = 3,
+            .args = {
+                curr->render_private,
+                R_PushArg(&curr->model, sizeof(curr->model)),
+                R_PushArg(&curr->translucent, sizeof(curr->translucent)),
+            },
+        });
+    }
+
+    for(int i = 0; i < vec_size(&in->cam_vis_stat); i++) {
+    
+        struct ent_stat_rstate *curr = &vec_AT(&in->cam_vis_stat, i);
         R_PushCmd((struct rcmd){
             .func = R_GL_Draw,
             .nargs = 3,
@@ -317,6 +317,38 @@ static void g_render_healthbars(void)
     PERF_RETURN_VOID();
 }
 
+static void g_sort_stat_list(vec_rstat_t *inout)
+{
+    int i = 1;
+    while(i < vec_size(inout)) {
+        int j = i;
+        while(j > 0 && vec_AT(inout, j - 1).translucent && !vec_AT(inout, j).translucent) {
+
+            struct ent_stat_rstate tmp = vec_AT(inout, j - 1);
+            vec_AT(inout, j - 1) = vec_AT(inout, j);
+            vec_AT(inout, j) = tmp;
+            j--;
+        }
+        i++;
+    }
+}
+
+static void g_sort_anim_list(vec_ranim_t *inout)
+{
+    int i = 1;
+    while(i < vec_size(inout)) {
+        int j = i;
+        while(j > 0 && vec_AT(inout, j - 1).translucent && !vec_AT(inout, j).translucent) {
+
+            struct ent_anim_rstate tmp = vec_AT(inout, j - 1);
+            vec_AT(inout, j - 1) = vec_AT(inout, j);
+            vec_AT(inout, j) = tmp;
+            j--;
+        }
+        i++;
+    }
+}
+
 static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_ranim_t *out_anim)
 {
     struct map_resolution res;
@@ -356,6 +388,9 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
             vec_rstat_push(out_stat, rstate);
         }
     }
+
+    g_sort_stat_list(out_stat);
+    g_sort_anim_list(out_anim);
 }
 
 static void g_create_render_input(struct render_input *out)
