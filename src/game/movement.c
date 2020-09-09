@@ -1234,7 +1234,7 @@ bool G_Move_Init(const struct map *map)
     vec_flock_init(&s_flocks);
 
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
-    E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL, G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
+    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
 
     s_map = map;
@@ -1246,7 +1246,7 @@ void G_Move_Shutdown(void)
     s_map = NULL;
 
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
-    E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
+    E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
 
     for(int i = 0; i < vec_size(&s_move_markers); i++) {

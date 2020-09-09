@@ -1482,6 +1482,81 @@ void N_RenderNavigationBlockers(void *nav_private, const struct map *map,
     });
 }
 
+void N_RenderBuildableTiles(void *nav_private, const struct map *map, 
+                            mat4x4_t *chunk_model, int chunk_r, int chunk_c,
+                            const struct obb *obb)
+{
+    struct nav_private *priv = nav_private;
+    const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
+
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+    vec3_t map_pos = M_GetPos(map);
+
+    struct tile_desc tds[4096];
+    size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
+
+    vec2_t corners_buff[4 * FIELD_RES_R * FIELD_RES_C];
+    vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
+
+    size_t count = 0;
+    vec2_t *corners_base = corners_buff;
+    vec3_t *colors_base = colors_buff; 
+
+    for(int i = 0; i < ntiles; i++) {
+
+        if(tds[i].chunk_r != chunk_r || tds[i].chunk_c != chunk_c)
+            continue;
+
+        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim;
+        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)tds[i].tile_c) / FIELD_RES_C) * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP( (((float)tds[i].tile_r) / FIELD_RES_R) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
+
+        *corners_base++ = (vec2_t){square_x, square_z};
+        *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
+        *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
+        *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
+
+        vec4_t center_homo = (vec4_t) {
+            square_x - square_x_len / 2.0,
+            0.0,
+            square_z + square_z_len / 2.0,
+            1.0
+        };
+        vec4_t ws_center_homo;
+        PFM_Mat4x4_Mult4x1(chunk_model, &center_homo, &ws_center_homo);
+        ws_center_homo.x /= ws_center_homo.w;
+        ws_center_homo.z /= ws_center_homo.w;
+
+        if(chunk->blockers [tds[i].tile_r][tds[i].tile_c]
+        || chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE
+        || !G_Fog_PlayerExplored((vec2_t){ws_center_homo.x, ws_center_homo.z})) {
+            *colors_base++ = (vec3_t){1.0f, 0.0f, 0.0f};
+        }else{
+            *colors_base++ = (vec3_t){0.0f, 1.0f, 0.0f};
+        }
+        count++;
+    }
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawMapOverlayQuads,
+        .nargs = 5,
+        .args = {
+            R_PushArg(corners_buff, sizeof(corners_buff)),
+            R_PushArg(colors_buff, sizeof(colors_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
+}
+
 void N_RenderNavigationPortals(void *nav_private, const struct map *map, 
                                mat4x4_t *chunk_model, int chunk_r, int chunk_c)
 {

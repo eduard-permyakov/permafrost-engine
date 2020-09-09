@@ -631,14 +631,14 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
 
 void G_ClearPath_Init(const struct map *map)
 {
-    E_Global_Register(EVENT_RENDER_3D, on_render_3d, (struct map*)map, 
+    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, (struct map*)map, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     vec_vec2_init(&s_debug_saved.xpoints);
 }
 
 void G_ClearPath_Shutdown(void)
 {
-    E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
+    E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     vec_vec2_destroy(&s_debug_saved.xpoints);
 }
 

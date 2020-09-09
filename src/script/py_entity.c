@@ -120,6 +120,11 @@ static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObj
 static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self);
+static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self);
+static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self);
+static PyObject *PyBuildableEntity_get_state(PyBuildableEntityObject *self, void *closure);
+static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure);
+static int       PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyBuildableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -363,6 +368,16 @@ static PyTypeObject PyCombatableEntity_type = {
 /* pf.BuildableEntity */
 
 static PyMethodDef PyBuildableEntity_methods[] = {
+    {"mark", 
+    (PyCFunction)PyBuildableEntity_mark, METH_NOARGS,
+    "Advance a building to the 'MARKED' state from the initial 'PLACEMENT' state, "
+    "where it will wait for a worker to found it."},
+
+    {"found", 
+    (PyCFunction)PyBuildableEntity_mark, METH_NOARGS,
+    "Advance a building to the 'FOUNDED' state from the 'MARKED' state, "
+    "where it become a build site and wait for workes to finish constructing it."},
+
     {"__pickle__", 
     (PyCFunction)PyBuildableEntity_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine buildable entity to a string."},
@@ -375,14 +390,33 @@ static PyMethodDef PyBuildableEntity_methods[] = {
     {NULL}  /* Sentinel */
 };
 
+static PyGetSetDef PyBuildableEntity_getset[] = {
+    {"state",
+    (getter)PyBuildableEntity_get_state, NULL,
+    "Get the current state of the building (PLACEMENT, MARKED, FOUNDED, BUILT)",
+    NULL},
+    {"pos",
+    (getter)PyBuildableEntity_get_pos, (setter)PyBuildableEntity_set_pos,
+    "The XYZ position in worldspace coordinates.",
+    NULL},
+    {"selectable",
+    (getter)PyEntity_get_selectable, NULL,
+    "Flag indicating whether this entity can be selected with the mouse.",
+    NULL},
+    {NULL}  /* Sentinel */
+};
+
 static PyTypeObject PyBuildableEntity_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name      = "pf.BuildableEntity",
     .tp_basicsize = sizeof(PyBuildableEntityObject), 
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
-    .tp_doc       = "Permafrost Engine entity buildable entity. This is a subclass of pf.Entity.",
+    .tp_doc       = "Permafrost Engine entity buildable entity. This is a subclass of pf.Entity. "
+                    "The building starts out in the 'PLACEMENT' state. It must then go through the 'MARKED', "
+                    "'FOUNDED', and 'COMPLETED' states.",
     .tp_methods   = PyBuildableEntity_methods,
     .tp_base      = &PyEntity_type,
+    .tp_getset    = PyBuildableEntity_getset,
 };
 
 KHASH_MAP_INIT_INT(PyObject, PyObject*)
@@ -1437,6 +1471,51 @@ static int PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, Py
 static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self)
 {
     return s_super_del((PyObject*)self, &PyBuildableEntity_type);
+}
+
+static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self)
+{
+    if(!G_Build_Mark(self->super.ent)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to mark building. It must be in the PLACEMENT state.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self)
+{
+    return NULL;
+}
+
+static PyObject *PyBuildableEntity_get_state(PyBuildableEntityObject *self, void *closure)
+{
+    return NULL;
+}
+
+static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure)
+{
+    vec3_t pos = G_Pos_Get(self->super.ent->uid);
+    return Py_BuildValue("(f,f,f)", pos.x, pos.y, pos.z);
+}
+
+static int PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyTuple_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple.");
+        return -1;
+    }
+    
+    vec3_t newpos;
+    if(!PyArg_ParseTuple(value, "fff", 
+        &newpos.raw[0], &newpos.raw[1], &newpos.raw[2])) {
+        return -1;
+    }
+
+    newpos.x -= fmod(newpos.x, X_COORDS_PER_TILE);
+    newpos.z -= fmod(newpos.z, Z_COORDS_PER_TILE);
+
+    G_Pos_Set(self->super.ent, newpos);
+    return 0;
 }
 
 static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs)

@@ -116,6 +116,14 @@ void   M_NavRenderVisibleEnemySeekField(const struct map *map, const struct came
 void   M_NavRenderNavigationBlockers(const struct map *map, const struct camera *cam);
 
 /* ------------------------------------------------------------------------
+ * Render a layer over the visible map surface showing which tiles under
+ * an object's OBB can currently be built on.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam, 
+                                 const struct obb *obb);
+
+/* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing portals between chunks
  * and their status.
  * ------------------------------------------------------------------------

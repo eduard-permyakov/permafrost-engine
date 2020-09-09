@@ -151,6 +151,16 @@ void      N_RenderNavigationBlockers(void *nav_private, const struct map *map,
                                      mat4x4_t *chunk_model, int chunk_r, int chunk_c);
 
 /* ------------------------------------------------------------------------
+ * Render the tiles under the OBB on which buildings can be placed. Buildable
+ * tiles are those that are pathable, explored by the player, and not currently
+ * blocked.
+ * ------------------------------------------------------------------------
+ */
+void      N_RenderBuildableTiles(void *nav_private, const struct map *map, 
+                                 mat4x4_t *chunk_model, int chunk_r, int chunk_c,
+                                 const struct obb *obb);
+
+/* ------------------------------------------------------------------------
  * Debug rendering to show the portals between chunks. 'Active' portals
  * are green and 'blocked' portals are red.
  * ------------------------------------------------------------------------

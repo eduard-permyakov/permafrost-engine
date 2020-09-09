@@ -418,7 +418,7 @@ bool G_Fog_Init(const struct map *map)
         goto fail;
 
     s_map = map;
-    E_Global_Register(EVENT_RENDER_3D, on_render_3d, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
+    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     s_enabled = true;
     return true;
 
@@ -433,7 +433,7 @@ fail:
 
 void G_Fog_Shutdown(void)
 {
-    E_Global_Unregister(EVENT_RENDER_3D, on_render_3d);
+    E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     kh_destroy(uid, s_explored_cache);
     free(s_fog_state);
     s_fog_state = NULL;
@@ -472,6 +472,28 @@ bool G_Fog_Visible(int faction_id, vec2_t xz_pos)
     return (FAC_STATE(s_fog_state[td_index(td)], faction_id) == STATE_VISIBLE);
 }
 
+bool G_Fog_PlayerVisible(vec2_t xz_pos)
+{
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    struct tile_desc td;
+    if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &td))
+        return false;
+
+    bool controllable[MAX_FACTIONS];
+    uint16_t facs = G_GetFactions(NULL, NULL, controllable);
+    uint32_t fs = s_fog_state[td_index(td)];
+
+    for(int i = 0; facs; facs >>= 1, i++) {
+        if(!(facs & 0x1) || !controllable[i])
+            continue;
+        if(FAC_STATE(fs, i) == STATE_VISIBLE)
+            return true;
+    }
+    return false;
+}
+
 bool G_Fog_Explored(int faction_id, vec2_t xz_pos)
 {
     struct map_resolution res;
@@ -481,7 +503,29 @@ bool G_Fog_Explored(int faction_id, vec2_t xz_pos)
     if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &td))
         return false;
 
-    return (FAC_STATE(s_fog_state[td_index(td)], faction_id) == STATE_UNEXPLORED);
+    return (FAC_STATE(s_fog_state[td_index(td)], faction_id) != STATE_UNEXPLORED);
+}
+
+bool G_Fog_PlayerExplored(vec2_t xz_pos)
+{
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    struct tile_desc td;
+    if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), xz_pos, &td))
+        return false;
+
+    bool controllable[MAX_FACTIONS];
+    uint16_t facs = G_GetFactions(NULL, NULL, controllable);
+    uint32_t fs = s_fog_state[td_index(td)];
+
+    for(int i = 0; facs; facs >>= 1, i++) {
+        if(!(facs & 0x1) || !controllable[i])
+            continue;
+        if(FAC_STATE(fs, i) != STATE_UNEXPLORED)
+            return true;
+    }
+    return false;
 }
 
 void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x4_t *model)

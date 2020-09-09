@@ -470,7 +470,8 @@ static void s_expose_event_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, EVENT_UPDATE_START);
     PY_EXPOSE_ENUM(module, EVENT_UPDATE_END);
     PY_EXPOSE_ENUM(module, EVENT_UPDATE_UI);
-    PY_EXPOSE_ENUM(module, EVENT_RENDER_3D);
+    PY_EXPOSE_ENUM(module, EVENT_RENDER_3D_PRE);
+    PY_EXPOSE_ENUM(module, EVENT_RENDER_3D_POST);
     PY_EXPOSE_ENUM(module, EVENT_RENDER_UI);
     PY_EXPOSE_ENUM(module, EVENT_SELECTED_TILE_CHANGED);
     PY_EXPOSE_ENUM(module, EVENT_NEW_GAME);

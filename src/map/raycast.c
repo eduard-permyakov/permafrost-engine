@@ -273,7 +273,7 @@ int M_Raycast_Install(struct map *map, struct camera *cam)
     s_ctx.cam = cam;
 
     E_Global_Register(SDL_MOUSEMOTION, on_mousemove, NULL, G_RUNNING);
-    E_Global_Register(EVENT_RENDER_3D, on_render, NULL, G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
+    E_Global_Register(EVENT_RENDER_3D_POST, on_render, NULL, G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_RUNNING);
 
     return 0;
@@ -282,7 +282,7 @@ int M_Raycast_Install(struct map *map, struct camera *cam)
 void M_Raycast_Uninstall(void)
 {
     E_Global_Unregister(SDL_MOUSEMOTION, on_mousemove);
-    E_Global_Unregister(EVENT_RENDER_3D, on_render);
+    E_Global_Unregister(EVENT_RENDER_3D_POST, on_render);
     E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
 
     s_ctx.map = NULL;

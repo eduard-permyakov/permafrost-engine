@@ -594,7 +594,7 @@ size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struc
         max_cols[i] = (struct col_desc){0,0};
 
         size_t num_tiles = M_Tile_LineSupercoverTilesSorted(res, map_pos, xz_line_segs[i], out + ret, maxout - ret);
-        const struct tile_desc *descs = out;
+        const struct tile_desc *descs = out + ret;
         ret += num_tiles;
 
         if(ret == maxout)
