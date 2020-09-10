@@ -33,20 +33,18 @@
  *
  */
 
-#ifndef BUILDING_H
-#define BUILDING_H
+#ifndef BUILDER_H
+#define BUILDER_H
 
 #include <stdbool.h>
 
 struct entity;
 struct map;
 
-bool G_Building_Init(const struct map *map);
-void G_Building_Shutdown(void);
-
-void G_Building_AddEntity(struct entity *ent);
-void G_Building_RemoveEntity(const struct entity *ent);
-int  G_Building_GetState(const struct entity *ent);
+bool G_Builder_Init(struct map *map);
+void G_Builder_Shutdown(void);
+void G_Builder_AddEntity(struct entity *ent);
+void G_Builder_RemoveEntity(const struct entity *ent);
 
 #endif
 

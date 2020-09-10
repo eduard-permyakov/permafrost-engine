@@ -67,6 +67,10 @@ typedef struct {
     PyEntityObject super; 
 }PyBuildableEntityObject;
 
+typedef struct {
+    PyEntityObject super; 
+}PyBuilderEntityObject;
+
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void      PyEntity_dealloc(PyEntityObject *self);
 static PyObject *PyEntity_del(PyEntityObject *self);
@@ -122,11 +126,16 @@ static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyOb
 static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self);
-static PyObject *PyBuildableEntity_get_state(PyBuildableEntityObject *self, void *closure);
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure);
 static int       PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyBuildableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+static PyObject *PyBuilderEntity_del(PyBuilderEntityObject *self);
+static int       PyBuilderEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
+static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args);
+static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyBuilderEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -391,10 +400,6 @@ static PyMethodDef PyBuildableEntity_methods[] = {
 };
 
 static PyGetSetDef PyBuildableEntity_getset[] = {
-    {"state",
-    (getter)PyBuildableEntity_get_state, NULL,
-    "Get the current state of the building (PLACEMENT, MARKED, FOUNDED, BUILT)",
-    NULL},
     {"pos",
     (getter)PyBuildableEntity_get_pos, (setter)PyBuildableEntity_set_pos,
     "The XYZ position in worldspace coordinates.",
@@ -417,6 +422,36 @@ static PyTypeObject PyBuildableEntity_type = {
     .tp_methods   = PyBuildableEntity_methods,
     .tp_base      = &PyEntity_type,
     .tp_getset    = PyBuildableEntity_getset,
+};
+
+static PyMethodDef PyBuilderEntity_methods[] = {
+    {"build", 
+    (PyCFunction)PyBuilderEntity_build, METH_VARARGS,
+    "Issue an order to build a specific buildable entity."},
+
+    {"__pickle__", 
+    (PyCFunction)PyBuilderEntity_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine builder entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyBuilderEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.BuilderEntity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyBuilderEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.BuilderEntity",
+    .tp_basicsize = sizeof(PyBuilderEntityObject), 
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine builder entity. This is a subclass of pf.Entity. This kind of "
+                    "entity is able to construct and repair pf.BuildableEntity instances. This type "
+                    "requires the 'build_speed' keyword argument to be passed to '__init__'.",
+    .tp_methods   = PyBuilderEntity_methods,
+    .tp_base      = &PyEntity_type,
+    .tp_init      = (initproc)PyBuilderEntity_init,
 };
 
 KHASH_MAP_INIT_INT(PyObject, PyObject*)
@@ -536,6 +571,9 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyBuildableEntity_type))
         self->ent->flags |= ENTITY_FLAG_BUILDING;
+
+    if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyBuilderEntity_type))
+        self->ent->flags |= ENTITY_FLAG_BUILDER;
 
     G_AddEntity(self->ent, (vec3_t){0.0f, 0.0f, 0.0f});
 
@@ -1475,7 +1513,7 @@ static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self)
 
 static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self)
 {
-    if(!G_Build_Mark(self->super.ent)) {
+    if(!G_Building_Mark(self->super.ent)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to mark building. It must be in the PLACEMENT state.");
         return NULL;
     }
@@ -1483,11 +1521,6 @@ static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self)
 }
 
 static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self)
-{
-    return NULL;
-}
-
-static PyObject *PyBuildableEntity_get_state(PyBuildableEntityObject *self, void *closure)
 {
     return NULL;
 }
@@ -1528,6 +1561,64 @@ static PyObject *PyBuildableEntity_unpickle(PyObject *cls, PyObject *args, PyObj
 {
     return s_call_super_method("__unpickle__", (PyObject*)&PyBuildableEntity_type, 
         cls, args, kwargs);
+}
+
+static PyObject *PyBuilderEntity_del(PyBuilderEntityObject *self)
+{
+    return s_super_del((PyObject*)self, &PyBuilderEntity_type);
+}
+
+static int PyBuilderEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds)
+{
+    PyObject *build_speed;
+
+    if(!kwds || ((build_speed = PyDict_GetItemString(kwds, "build_speed")) == NULL)) {
+        PyErr_SetString(PyExc_TypeError, 
+            "'build_speed' keyword argument required for initializing pf.BuilderEntity types.");
+        return -1;
+    }
+
+    if(!PyInt_Check(build_speed)) {
+        PyErr_SetString(PyExc_TypeError, "'build_speed' keyword argument must be an integer.");
+        return -1; 
+    }
+
+    G_Builder_SetBuildSpeed(self->super.ent, PyInt_AS_LONG(build_speed));
+
+    /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
+     * MRO to complete in cases when this class is one of multiple base classes of another type. 
+     * This allows this type to be used as one of many mix-in bases. */
+    PyObject *ret = s_call_super_method("__init__", (PyObject*)&PyBuilderEntity_type, (PyObject*)self, args, kwds);
+    if(!ret)
+        return -1; /* Exception already set */
+    Py_DECREF(ret);
+    return 0;
+}
+
+static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args)
+{
+    PyObject *building;
+
+    if(!PyArg_ParseTuple(args, "O", &building)
+    || !PyObject_IsInstance(building, (PyObject*)&PyBuildableEntity_type)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting 1 argument: a pf.BuildableEntity instance");
+        return NULL;
+    }
+
+    G_Builder_Build(self->super.ent, ((PyBuildableEntityObject*)building)->super.ent);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs)
+{
+    //TODO:
+    return NULL;
+}
+
+static PyObject *PyBuilderEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    //TODO:
+    return NULL;
 }
 
 static PyObject *s_obj_from_attr(const struct attr *attr)
@@ -1668,6 +1759,11 @@ void S_Entity_PyRegister(PyObject *module)
         return;
     Py_INCREF(&PyBuildableEntity_type);
     PyModule_AddObject(module, "BuildableEntity", (PyObject*)&PyBuildableEntity_type);
+
+    if(PyType_Ready(&PyBuilderEntity_type) < 0)
+        return;
+    Py_INCREF(&PyBuilderEntity_type);
+    PyModule_AddObject(module, "BuilderEntity", (PyObject*)&PyBuilderEntity_type);
 }
 
 bool S_Entity_Init(void)

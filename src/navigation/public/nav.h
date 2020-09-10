@@ -269,6 +269,14 @@ void      N_BlockersDecref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav
 bool      N_IsMaximallyClose(void *nav_private, vec3_t map_pos, 
                              vec2_t xz_pos, vec2_t xz_dest, float tolerance);
 
+/* ------------------------------------------------------------------------
+ * Returns true if the specified entities have at least one overlapping tile 
+ * or a shared edge between any of the tiles under their selection circles.
+ * ------------------------------------------------------------------------
+ */
+bool      N_ObjsAdjacent(void *nav_private, vec3_t map_pos, 
+                         const struct entity *a, const struct entity *b);
+
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */
 /*###########################################################################*/

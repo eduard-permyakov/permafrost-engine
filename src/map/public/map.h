@@ -312,6 +312,14 @@ bool     M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos,
 uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
+ * Returns true if the specified entities have at least one overlapping tile 
+ * or a shared edge between any of the tiles under their selection circles.
+ * ------------------------------------------------------------------------
+ */
+bool     M_NavObjsAdjacent(const struct map *map, 
+                           const struct entity *a, const struct entity *b);
+
+/* ------------------------------------------------------------------------
  * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 
  * Returns 'true' on success, 'false' on failure.
  * ------------------------------------------------------------------------

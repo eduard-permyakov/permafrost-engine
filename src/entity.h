@@ -57,7 +57,8 @@ enum{
     ENTITY_FLAG_ZOMBIE              = (1 << 6),
     ENTITY_FLAG_MARKER              = (1 << 7),
     ENTITY_FLAG_BUILDING            = (1 << 8),
-    ENTITY_FLAG_TRANSLUCENT         = (1 << 9),
+    ENTITY_FLAG_BUILDER             = (1 << 9),
+    ENTITY_FLAG_TRANSLUCENT         = (1 << 10),
 };
 
 struct entity{
@@ -114,7 +115,7 @@ VEC_IMPL(static inline, ranim, struct ent_anim_rstate)
 void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
 uint32_t Entity_NewUID(void);
 void     Entity_SetNextUID(uint32_t uid);
-void     Entity_CurrentOBB(const struct entity *ent, struct obb *out);
+void     Entity_CurrentOBB(const struct entity *ent, struct obb *out, bool identity);
 vec3_t   Entity_TopCenterPointWS(const struct entity *ent);
 
 #endif

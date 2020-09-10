@@ -497,6 +497,8 @@ static void on_mousedown(void *user, void *event)
         for(int i = 0; i < vec_size(sel); i++) {
 
             const struct entity *curr = vec_AT(sel, i);
+            E_Entity_Notify(EVENT_MOVE_ISSUED, curr->uid, NULL, ES_ENGINE);
+
             if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
                 continue;
 
@@ -1311,6 +1313,14 @@ bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz)
         return false;
     *out_xz = fl->target_xz;
     return true;
+}
+
+bool G_Move_Still(const struct entity *ent)
+{
+    struct movestate *ms = movestate_get(ent);
+    if(!ms)
+        return true;
+    return (ms->state == STATE_ARRIVED);
 }
 
 void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz)

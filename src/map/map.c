@@ -635,3 +635,8 @@ uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos)
     return N_DestIDForPos(map->nav_private, map->pos, xz_pos);
 }
 
+bool M_NavObjsAdjacent(const struct map *map, const struct entity *a, const struct entity *b)
+{
+    return N_ObjsAdjacent(map->nav_private, map->pos, a, b);
+}
+

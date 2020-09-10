@@ -2381,3 +2381,30 @@ int N_TilesUnderCircle(const struct nav_private *priv, vec2_t xz_center, float r
     return ret;
 }
 
+bool N_ObjsAdjacent(void *nav_private, vec3_t map_pos, const struct entity *a, const struct entity *b)
+{
+    vec2_t apos = G_Pos_GetXZ(a->uid);
+    vec2_t bpos = G_Pos_GetXZ(b->uid);
+
+    struct tile_desc tds_a[4096];
+    size_t ntiles_a = N_TilesUnderCircle(nav_private, apos, a->selection_radius, map_pos, tds_a, ARR_SIZE(tds_a));
+
+    struct tile_desc tds_b[4096];
+    size_t ntiles_b = N_TilesUnderCircle(nav_private, bpos, b->selection_radius, map_pos, tds_b, ARR_SIZE(tds_b));
+
+    for(int i = 0; i < ntiles_a; i++) {
+    for(int j = 0; j < ntiles_b; j++) {
+    
+        size_t arow = tds_a[i].chunk_r * FIELD_RES_R + tds_a[i].tile_r;
+        size_t acol = tds_a[i].chunk_c * FIELD_RES_C + tds_a[i].tile_c;
+
+        size_t brow = tds_b[j].chunk_r * FIELD_RES_R + tds_b[j].tile_r;
+        size_t bcol = tds_b[j].chunk_c * FIELD_RES_C + tds_b[j].tile_c;
+
+        size_t manhattan_dist = abs(arow - brow) + abs(bcol - acol);
+        if(manhattan_dist <= 1)
+            return true;
+    }}
+    return false;
+}
+

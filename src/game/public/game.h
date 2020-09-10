@@ -254,15 +254,16 @@ void G_Fog_Disable(void);
 /* GAME BUILDING                                                             */
 /*###########################################################################*/
 
-enum buildstate{
-    BUILD_STATE_PLACEMENT,
-    BUILD_STATE_MARKED,
-    BUILD_STATE_FOUNDED,
-    BUILD_STATE_COMPLETED,
-};
+bool G_Building_Mark(const struct entity *ent);
+bool G_Building_Found(const struct entity *ent);
 
-bool G_Build_Mark(const struct entity *ent);
-bool G_Build_Found(const struct entity *ent);
+/*###########################################################################*/
+/* GAME BUILDER                                                              */
+/*###########################################################################*/
+
+bool G_Builder_Build(struct entity *builder, struct entity *building);
+void G_Builder_SetBuildSpeed(const struct entity *ent, int speed);
+int  G_Builder_GetBuildSpeed(const struct entity *ent);
 
 #endif
 

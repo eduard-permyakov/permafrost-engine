@@ -44,6 +44,13 @@
 
 #include <assert.h>
 
+enum buildstate{
+    BUILDING_STATE_PLACEMENT,
+    BUILDING_STATE_MARKED,
+    BUILDING_STATE_FOUNDED,
+    BUILDING_STATE_COMPLETED,
+};
+
 KHASH_MAP_INIT_INT(state, enum buildstate)
 
 /*****************************************************************************/
@@ -94,12 +101,12 @@ static void on_render_3d(void *user, void *event)
 
     kh_foreach(s_entity_state_table, key, curr, {
 
-        if(curr != BUILD_STATE_PLACEMENT)
+        if(curr != BUILDING_STATE_PLACEMENT)
             continue;
 
         const struct entity *ent = G_EntityForUID(key);
         struct obb obb;
-        Entity_CurrentOBB(ent, &obb);
+        Entity_CurrentOBB(ent, &obb, true);
 
         M_NavRenderBuildableTiles(s_map, cam, &obb);
     });
@@ -109,7 +116,7 @@ static void on_render_3d(void *user, void *event)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool G_Build_Init(const struct map *map)
+bool G_Building_Init(const struct map *map)
 {
     if(NULL == (s_entity_state_table = kh_init(state)))
         return false;
@@ -119,44 +126,43 @@ bool G_Build_Init(const struct map *map)
     return true;
 }
 
-void G_Build_Shutdown(void)
+void G_Building_Shutdown(void)
 {
     s_map = NULL;
     E_Global_Unregister(EVENT_RENDER_3D_PRE, on_render_3d);
     kh_destroy(state, s_entity_state_table);
 }
 
-void G_Build_AddEntity(struct entity *ent)
+void G_Building_AddEntity(struct entity *ent)
 {
     assert(buildstate_get(ent->uid) == NULL);
     assert(ent->flags & ENTITY_FLAG_BUILDING);
 
-    buildstate_set(ent, BUILD_STATE_PLACEMENT);
+    buildstate_set(ent, BUILDING_STATE_PLACEMENT);
     ent->flags |= ENTITY_FLAG_TRANSLUCENT;
     ent->flags |= ENTITY_FLAG_STATIC;
-    ent->flags &= ~ENTITY_FLAG_SELECTABLE;
 }
 
-void G_Build_RemoveEntity(const struct entity *ent)
+void G_Building_RemoveEntity(const struct entity *ent)
 {
     if(!(ent->flags & ENTITY_FLAG_BUILDING))
         return;
     buildstate_remove(ent);
 }
 
-bool G_Build_Mark(const struct entity *ent)
+bool G_Building_Mark(const struct entity *ent)
 {
     enum buildstate *bs = buildstate_get(ent->uid);
     assert(bs);
 
-    if(*bs != BUILD_STATE_PLACEMENT)
+    if(*bs != BUILDING_STATE_PLACEMENT)
         return false;
 
-    *bs = BUILD_STATE_MARKED;
+    *bs = BUILDING_STATE_MARKED;
     return true;
 }
 
-bool G_Build_Found(const struct entity *ent)
+bool G_Building_Found(const struct entity *ent)
 {
     return true;
 }

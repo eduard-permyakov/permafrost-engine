@@ -44,6 +44,7 @@
 #include "position.h"
 #include "fog_of_war.h"
 #include "building.h"
+#include "builder.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -136,7 +137,8 @@ static void g_init_map(void)
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
     G_Move_Init(s_gs.map);
     G_Combat_Init();
-    G_Build_Init(s_gs.map);
+    G_Building_Init(s_gs.map);
+    G_Builder_Init(s_gs.map);
     G_ClearPath_Init(s_gs.map);
     G_Pos_Init(s_gs.map);
     G_Fog_Init(s_gs.map);
@@ -889,7 +891,8 @@ void G_ClearState(void)
         AL_MapFree(s_gs.map);
         G_Move_Shutdown();
         G_Combat_Shutdown();
-        G_Build_Shutdown();
+        G_Building_Shutdown();
+        G_Builder_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
         G_Fog_Shutdown();
@@ -1012,7 +1015,7 @@ void G_BakeNavDataForScene(void)
             continue;
 
         struct obb obb;
-        Entity_CurrentOBB(curr, &obb);
+        Entity_CurrentOBB(curr, &obb, false);
         M_NavCutoutStaticObject(s_gs.map, &obb);
     });
 
@@ -1093,7 +1096,7 @@ void G_Update(void)
 
         bool vis = false;
         struct obb obb;
-        Entity_CurrentOBB(curr, &obb);
+        Entity_CurrentOBB(curr, &obb, false);
 
         /* Note that there may be some false positives due to using the fast frustum cull. */
         if(C_FrustumOBBIntersectionFast(&cam_frust, &obb) != VOLUME_INTERSEC_OUTSIDE
@@ -1207,6 +1210,7 @@ void G_RenderMapAndEntities(struct render_input *in)
 bool G_AddEntity(struct entity *ent, vec3_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
+    assert(!(ent->flags & ENTITY_FLAG_BUILDING) || !(ent->flags & ENTITY_FLAG_BUILDER));
 
     int ret;
     khiter_t k;
@@ -1217,7 +1221,10 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
     kh_value(s_gs.active, k) = ent;
 
     if(ent->flags & ENTITY_FLAG_BUILDING)
-        G_Build_AddEntity(ent);
+        G_Building_AddEntity(ent);
+
+    if(ent->flags & ENTITY_FLAG_BUILDER)
+        G_Builder_AddEntity(ent);
 
     if(ent->flags & ENTITY_FLAG_COMBATABLE)
         G_Combat_AddEntity(ent, COMBAT_STANCE_AGGRESSIVE);
@@ -1254,7 +1261,8 @@ bool G_RemoveEntity(struct entity *ent)
 
     G_Move_RemoveEntity(ent);
     G_Combat_RemoveEntity(ent);
-    G_Build_RemoveEntity(ent);
+    G_Building_RemoveEntity(ent);
+    G_Builder_RemoveEntity(ent);
     G_Pos_Delete(ent->uid);
     return true;
 }
