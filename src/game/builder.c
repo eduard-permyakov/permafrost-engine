@@ -190,8 +190,7 @@ bool G_Builder_Build(struct entity *builder, struct entity *building)
     if(!(building->flags & ENTITY_FLAG_BUILDING))
         return false;
 
-    vec2_t pos = G_Pos_GetXZ(building->uid);
-    G_Move_SetDest(builder, pos);
+    G_Move_SetSurroundEntity(builder, building);
     E_Entity_Register(EVENT_MOTION_END, builder->uid, on_motion_end, (void*)((uintptr_t)builder->uid), G_RUNNING);
 
     bs->state = STATE_MOVING_TO_TARGET;

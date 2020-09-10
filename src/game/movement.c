@@ -95,6 +95,9 @@ enum arrival_state{
     /* The navigation system was unable to guide the entity closer
      * to the goal. It stops and waits. */
     STATE_WAITING,
+    /* Move towards the closest point touching the target entity, but 
+     * stop before actually stepping on it's tiles. */
+    STATE_SURROUND_ENTITY,
 };
 
 struct movestate{
@@ -116,6 +119,8 @@ struct movestate{
     /* History of the previous ticks' velocities. Used for velocity smoothing. */
     vec2_t             vel_hist[VEL_HIST_LEN];
     int                vel_hist_idx;
+    /* Entity that we're moving towards when in the 'SURROUND_STATIC_ENTITY' state */
+    uint32_t           surround_target_uid;
 };
 
 KHASH_MAP_INIT_INT(state, struct movestate)
@@ -963,6 +968,16 @@ static vec2_t vel_wma(const struct movestate *ms)
     return ret;
 }
 
+static bool adjacent_check_fast(const struct entity *a, const struct entity *b)
+{
+    vec2_t apos = G_Pos_GetXZ(a->uid);
+    vec2_t bpos = G_Pos_GetXZ(b->uid);
+
+    vec2_t diff;
+    PFM_Vec2_Sub(&apos, &bpos, &diff);
+    return (PFM_Vec2_Len(&diff) < a->selection_radius + b->selection_radius + 12.0f);
+}
+
 static void entity_update(struct entity *ent, vec2_t new_vel)
 {
     struct movestate *ms = movestate_get(ent);
@@ -1054,6 +1069,31 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
 
             entity_finish_moving(ent, STATE_WAITING);
         }
+        break;
+    }
+    case STATE_SURROUND_ENTITY: {
+
+        struct entity *target = G_EntityForUID(ms->surround_target_uid);
+        if(!target) {
+            entity_finish_moving(ent, STATE_ARRIVED);
+            break;
+        }
+        vec2_t pos = G_Pos_GetXZ(ms->surround_target_uid);
+        struct flock *flock = flock_for_ent(ent);
+
+        vec2_t diff;
+        PFM_Vec2_Sub(&flock->target_xz, &pos, &diff);
+
+        if(flock && PFM_Vec2_Len(&diff) > EPSILON) {
+            G_Move_SetDest(ent, pos);
+            break;
+        }
+
+        if(adjacent_check_fast(ent, target) && M_NavObjsAdjacent(s_map, ent, target)) {
+            entity_finish_moving(ent, STATE_ARRIVED);
+            break;
+        }
+
         break;
     }
     case STATE_WAITING: {
@@ -1403,6 +1443,18 @@ void G_Move_SetSeekEnemies(const struct entity *ent)
     }
 
     ms->state = STATE_SEEK_ENEMIES;
+}
+
+void G_Move_SetSurroundEntity(const struct entity *ent, const struct entity *target)
+{
+    struct movestate *ms = movestate_get(ent);
+    assert(ms);
+
+    vec2_t pos = G_Pos_GetXZ(target->uid);
+    G_Move_SetDest(ent, pos);
+
+    ms->state = STATE_SURROUND_ENTITY;
+    ms->surround_target_uid = target->uid;
 }
 
 void G_Move_UpdatePos(const struct entity *ent, vec2_t pos)
