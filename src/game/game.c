@@ -1439,7 +1439,6 @@ void G_SetActiveCamera(struct camera *cam, enum cam_mode mode)
         CamControl_RTS_Install(cam);
         if(s_gs.map) {
             M_RestrictRTSCamToMap(s_gs.map, cam);
-            M_Raycast_Install(s_gs.map, cam);
         }
         break;
 
@@ -1451,9 +1450,6 @@ void G_SetActiveCamera(struct camera *cam, enum cam_mode mode)
     case CAM_MODE_FREE: 
 
         CamControl_Free_Install(cam);
-        if(s_gs.map) {
-            M_Raycast_Install(s_gs.map, cam);
-        }
         break;
 
     default: assert(0);
@@ -1461,6 +1457,10 @@ void G_SetActiveCamera(struct camera *cam, enum cam_mode mode)
 
     s_gs.active_cam = cam;
     s_gs.active_cam_mode = mode;
+
+    if(s_gs.map) {
+        M_Raycast_Install(s_gs.map, cam);
+    }
 }
 
 struct camera *G_GetActiveCamera(void)

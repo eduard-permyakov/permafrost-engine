@@ -1611,14 +1611,78 @@ static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *ar
 
 static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs)
 {
-    //TODO:
+    PyObject *ret = s_call_super_method("__pickle__", (PyObject*)&PyBuilderEntity_type, 
+        (PyObject*)self, args, kwargs);
+
+    assert(PyString_Check(ret));
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_stream);
+    CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(ret), PyString_GET_SIZE(ret), 1), fail_stream);
+
+    PyObject *build_speed = PyInt_FromLong(G_Builder_GetBuildSpeed(self->super.ent));
+    CHK_TRUE(build_speed, fail_pickle);
+    bool status = S_PickleObjgraph(build_speed, stream);
+    Py_DECREF(build_speed);
+    CHK_TRUE(status, fail_pickle);
+
+    Py_DECREF(ret);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+    SDL_RWclose(stream);
+    return ret;
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_stream:
+    Py_XDECREF(ret);
+    PyErr_SetString(PyExc_RuntimeError, "Unable to pickle pf.BuilderEntity state");
     return NULL;
 }
 
 static PyObject *PyBuilderEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
-    //TODO:
-    return NULL;
+    char tmp;
+    PyObject *ret = NULL;
+
+    PyObject *tuple = s_call_super_method("__unpickle__", (PyObject*)&PyBuilderEntity_type, cls, args, kwargs);
+    if(!tuple)
+        return NULL;
+
+    PyObject *ent;
+    int nread; 
+    if(!PyArg_ParseTuple(tuple, "Oi", &ent, &nread)) {
+        Py_DECREF(tuple);
+        return NULL;
+    }
+    Py_INCREF(ent);
+    Py_DECREF(tuple);
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_stream);
+
+    PyObject *str = PyTuple_GET_ITEM(args, 0); /* borrowed */
+    CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(str), PyString_GET_SIZE(str), 1), fail_unpickle);
+
+    SDL_RWseek(stream, nread, RW_SEEK_SET);
+    PyObject *build_speed = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+    CHK_TRUE(build_speed, fail_unpickle);
+    CHK_TRUE(PyInt_Check(build_speed), fail_parse);
+
+    nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    G_Builder_SetBuildSpeed(((PyBuilderEntityObject*)ent)->super.ent, PyInt_AS_LONG(build_speed));
+
+    ret = Py_BuildValue("Oi", ent, nread);
+
+fail_parse:
+    Py_DECREF(build_speed);
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_stream:
+    Py_DECREF(ent);
+    if(!ret && !PyErr_Occurred()) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to unpickle pf.BuilderEntity state");
+    }
+    return ret;
 }
 
 static PyObject *s_obj_from_attr(const struct attr *attr)
