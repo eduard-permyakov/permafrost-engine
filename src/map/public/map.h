@@ -310,6 +310,7 @@ void   M_NavBlockersDecref(vec2_t xz_pos, float range, const struct map *map);
 bool     M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos, 
                              vec2_t xz_dest, float tolerance);
 uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos);
+void     M_NavGetResolution(const struct map *map, struct map_resolution *out);
 
 /* ------------------------------------------------------------------------
  * Returns true if the specified entities have at least one overlapping tile 

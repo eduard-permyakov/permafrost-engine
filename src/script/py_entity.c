@@ -383,7 +383,7 @@ static PyMethodDef PyBuildableEntity_methods[] = {
     "where it will wait for a worker to found it."},
 
     {"found", 
-    (PyCFunction)PyBuildableEntity_mark, METH_NOARGS,
+    (PyCFunction)PyBuildableEntity_found, METH_NOARGS,
     "Advance a building to the 'FOUNDED' state from the 'MARKED' state, "
     "where it become a build site and wait for workes to finish constructing it."},
 
@@ -570,7 +570,7 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         self->ent->flags |= ENTITY_FLAG_COMBATABLE;
 
     if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyBuildableEntity_type))
-        self->ent->flags |= ENTITY_FLAG_BUILDING;
+        self->ent->flags |= (ENTITY_FLAG_BUILDING | ENTITY_FLAG_STATIC);
 
     if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyBuilderEntity_type))
         self->ent->flags |= ENTITY_FLAG_BUILDER;
@@ -1522,7 +1522,11 @@ static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self)
 
 static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self)
 {
-    return NULL;
+    if(!G_Building_Found(self->super.ent)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to found building. It must be in the MARKED state.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure)

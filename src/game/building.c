@@ -39,19 +39,40 @@
 #include "../event.h"
 #include "../collision.h"
 #include "../entity.h"
+#include "../asset_load.h"
 #include "../map/public/map.h"
+#include "../map/public/tile.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/vec.h"
 
 #include <assert.h>
+#include <stdint.h>
 
-enum buildstate{
-    BUILDING_STATE_PLACEMENT,
-    BUILDING_STATE_MARKED,
-    BUILDING_STATE_FOUNDED,
-    BUILDING_STATE_COMPLETED,
+
+#define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
+#define MARKER_DIR          "assets/models/build_site_marker"
+#define MARKER_OBJ          "build-site-marker.pfobj"
+#define CENTER_MARKER_DIR   "assets/models/build_site"
+#define CENTER_MARKER_OBJ   "build-site.pfobj"
+#define FLAG_SAVE_MASK      (ENTITY_FLAG_SELECTABLE | ENTITY_FLAG_TRANSLUCENT)
+#define EPSILON             (1.0 / 1024)
+
+VEC_TYPE(uid, uint32_t)
+VEC_IMPL(static inline, uid, uint32_t)
+
+struct buildstate{
+    enum{
+        BUILDING_STATE_PLACEMENT,
+        BUILDING_STATE_MARKED,
+        BUILDING_STATE_FOUNDED,
+        BUILDING_STATE_COMPLETED,
+    }state;
+    uint32_t old_flags;
+    vec_uid_t markers;
 };
 
-KHASH_MAP_INIT_INT(state, enum buildstate)
+KHASH_MAP_INIT_INT(state, struct buildstate)
+KHASH_SET_INIT_INT64(td)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -64,7 +85,7 @@ static khash_t(state)       *s_entity_state_table;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static enum buildstate *buildstate_get(uint32_t uid)
+static struct buildstate *buildstate_get(uint32_t uid)
 {
     khiter_t k = kh_get(state, s_entity_state_table, uid);
     if(k == kh_end(s_entity_state_table))
@@ -73,7 +94,7 @@ static enum buildstate *buildstate_get(uint32_t uid)
     return &kh_value(s_entity_state_table, k);
 }
 
-static void buildstate_set(const struct entity *ent, enum buildstate bs)
+static void buildstate_set(const struct entity *ent, struct buildstate bs)
 {
     int ret;
     assert(ent->flags & ENTITY_FLAG_BUILDING);
@@ -88,8 +109,12 @@ static void buildstate_remove(const struct entity *ent)
     assert(ent->flags & ENTITY_FLAG_BUILDING);
 
     khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
-    if(k != kh_end(s_entity_state_table))
+    if(k != kh_end(s_entity_state_table)) {
+
+        struct buildstate *bs = &kh_value(s_entity_state_table, k);
+        vec_uid_destroy(&bs->markers);
         kh_del(state, s_entity_state_table, k);
+    }
 }
 
 static void on_render_3d(void *user, void *event)
@@ -97,11 +122,11 @@ static void on_render_3d(void *user, void *event)
     const struct camera *cam = G_GetActiveCamera();
 
     uint32_t key;
-    enum buildstate curr;
+    struct buildstate curr;
 
     kh_foreach(s_entity_state_table, key, curr, {
 
-        if(curr != BUILDING_STATE_PLACEMENT)
+        if(curr.state != BUILDING_STATE_PLACEMENT)
             continue;
 
         const struct entity *ent = G_EntityForUID(key);
@@ -110,6 +135,117 @@ static void on_render_3d(void *user, void *event)
 
         M_NavRenderBuildableTiles(s_map, cam, &obb);
     });
+}
+
+static uint64_t td_key(const struct tile_desc *td)
+{
+    return (((uint64_t)td->chunk_r << 48)
+          | ((uint64_t)td->chunk_c << 32)
+          | ((uint64_t)td->tile_r  << 16)
+          | ((uint64_t)td->tile_c  <<  0));
+}
+
+static void building_mark_border(struct buildstate *bs, struct tile_desc *a, struct tile_desc *b)
+{
+    vec3_t map_pos = M_GetPos(s_map);
+
+    struct map_resolution res;
+    M_NavGetResolution(s_map, &res);
+
+    struct box abox = M_Tile_Bounds(res, map_pos, *a);
+    struct box bbox = M_Tile_Bounds(res, map_pos, *b);
+
+    vec2_t acenter = (vec2_t){
+        abox.x - abox.width / 2.0f,
+        abox.z + abox.height / 2.0f
+    };
+    vec2_t bcenter = (vec2_t){
+        bbox.x - bbox.width / 2.0f,
+        bbox.z + bbox.height / 2.0f
+    };
+
+    vec2_t center;
+    PFM_Vec2_Add(&acenter, &bcenter, &center);
+    PFM_Vec2_Scale(&center, 0.5f, &center);
+
+    vec3_t marker_pos = (vec3_t) {
+        center.x,
+        M_HeightAtPoint(s_map, center),
+        center.z
+    };
+
+    struct entity *ent = AL_EntityFromPFObj(MARKER_DIR, MARKER_OBJ, 
+        "__build_site_marker__", Entity_NewUID());
+    if(!ent)
+        return;
+
+    if(fabs(acenter.z - bcenter.z) > EPSILON) {
+        ent->rotation = (quat_t){ 0, 1.0 / sqrt(2.0), 0, 1.0 / sqrt(2.0) };
+    }
+    ent->scale = (vec3_t){1.0, 1.5f, 1.0f};
+    ent->flags |= ENTITY_FLAG_STATIC;
+
+    G_AddEntity(ent, marker_pos);
+    vec_uid_push(&bs->markers, ent->uid);
+}
+
+static void building_mark_center(struct buildstate *bs, const struct entity *ent)
+{
+    vec3_t pos = G_Pos_Get(ent->uid);
+
+    struct entity *marker = AL_EntityFromPFObj(CENTER_MARKER_DIR, CENTER_MARKER_OBJ, 
+        "__build_site_marker__", Entity_NewUID());
+    if(!marker)
+        return;
+
+    marker->scale = (vec3_t){2.5, 2.5f, 2.5f};
+    marker->flags |= ENTITY_FLAG_STATIC;
+
+    G_AddEntity(marker, pos);
+    vec_uid_push(&bs->markers, marker->uid);
+}
+
+static void building_place_markers(struct buildstate *bs, const struct entity *ent)
+{
+    struct obb obb;
+    Entity_CurrentOBB(ent, &obb, true);
+
+    struct map_resolution res;
+    M_NavGetResolution(s_map, &res);
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderObj(M_GetPos(s_map), res, &obb, tds, ARR_SIZE(tds));
+
+    /* Build a set of which tiles are under the building */
+    khash_t(td) *set = kh_init(td);
+    for(int i = 0; i < ntiles; i++) {
+        int status;
+        kh_put(td, set, td_key(tds + i), &status);
+    }
+
+    for(int i = 0; i < ntiles; i++) {
+
+        struct tile_desc curr = tds[i];
+        int deltas[][2] = {
+            {-1,  0},
+            {+1,  0},
+            { 0, -1},
+            { 0, +1},
+        };
+
+        for(int j = 0; j < ARR_SIZE(deltas); j++) {
+        
+            struct tile_desc adj = curr;
+
+            if(!M_Tile_RelativeDesc(res, &adj, deltas[j][0], deltas[j][1])
+            || (kh_get(td, set, td_key(&adj)) == kh_end(set))) {
+
+                building_mark_border(bs, &adj, &curr);
+            }
+        }
+    }
+    kh_destroy(td, set);
+    building_mark_center(bs, ent);
 }
 
 /*****************************************************************************/
@@ -130,6 +266,15 @@ void G_Building_Shutdown(void)
 {
     s_map = NULL;
     E_Global_Unregister(EVENT_RENDER_3D_PRE, on_render_3d);
+
+    uint32_t key;
+    struct buildstate curr;
+    (void)key;
+
+    kh_foreach(s_entity_state_table, key, curr, {
+        vec_uid_destroy(&curr.markers);
+    });
+
     kh_destroy(state, s_entity_state_table);
 }
 
@@ -137,32 +282,67 @@ void G_Building_AddEntity(struct entity *ent)
 {
     assert(buildstate_get(ent->uid) == NULL);
     assert(ent->flags & ENTITY_FLAG_BUILDING);
+    assert(ent->flags & ENTITY_FLAG_STATIC);
 
-    buildstate_set(ent, BUILDING_STATE_PLACEMENT);
+    struct buildstate new_bs = (struct buildstate) {
+        .state = BUILDING_STATE_PLACEMENT,
+        .old_flags = ent->flags & FLAG_SAVE_MASK,
+        .markers = {0}
+    };
+    buildstate_set(ent, new_bs);
+
     ent->flags |= ENTITY_FLAG_TRANSLUCENT;
-    ent->flags |= ENTITY_FLAG_STATIC;
+    ent->flags &= ~ENTITY_FLAG_SELECTABLE;
 }
 
 void G_Building_RemoveEntity(const struct entity *ent)
 {
     if(!(ent->flags & ENTITY_FLAG_BUILDING))
         return;
+
+    struct buildstate *bs = buildstate_get(ent->uid);
+    assert(bs);
+
+    for(int i = 0; i < vec_size(&bs->markers); i++) {
+        struct entity *tofree = G_EntityForUID(vec_AT(&bs->markers, i));
+        G_RemoveEntity(tofree);
+        G_SafeFree(tofree);
+    }
+
     buildstate_remove(ent);
 }
 
 bool G_Building_Mark(const struct entity *ent)
 {
-    enum buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(ent->uid);
     assert(bs);
 
-    if(*bs != BUILDING_STATE_PLACEMENT)
+    if(bs->state != BUILDING_STATE_PLACEMENT)
         return false;
 
-    *bs = BUILDING_STATE_MARKED;
+    bs->state = BUILDING_STATE_MARKED;
     return true;
 }
 
-bool G_Building_Found(const struct entity *ent)
+bool G_Building_Found(struct entity *ent)
+{
+    struct buildstate *bs = buildstate_get(ent->uid);
+    assert(bs);
+
+    if(bs->state != BUILDING_STATE_MARKED)
+        return false;
+
+    ent->flags &= ~FLAG_SAVE_MASK;
+    ent->flags |= (bs->old_flags & FLAG_SAVE_MASK);
+    ent->flags |= ENTITY_FLAG_INVISIBLE;
+
+    building_place_markers(bs, ent);
+    bs->state = BUILDING_STATE_FOUNDED;
+
+    return true;
+}
+
+bool G_Building_Complete(const struct entity *ent)
 {
     return true;
 }

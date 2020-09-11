@@ -454,7 +454,9 @@ static void move_marker_add(vec3_t pos, bool attack)
     const uint32_t uid = Entity_NewUID();
     struct entity *ent = attack ? AL_EntityFromPFObj("assets/models/arrow", "arrow-red.pfobj", "__move_marker__", uid) 
                                 : AL_EntityFromPFObj("assets/models/arrow", "arrow-green.pfobj", "__move_marker__", uid);
-    assert(ent);
+    if(!ent)
+        return;
+
     ent->flags |= ENTITY_FLAG_STATIC;
     ent->flags |= ENTITY_FLAG_MARKER;
     G_AddEntity(ent, pos);

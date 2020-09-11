@@ -640,3 +640,8 @@ bool M_NavObjsAdjacent(const struct map *map, const struct entity *a, const stru
     return N_ObjsAdjacent(map->nav_private, map->pos, a, b);
 }
 
+void M_NavGetResolution(const struct map *map, struct map_resolution *out)
+{
+    return N_GetResolution(map->nav_private, out);
+}
+

@@ -255,7 +255,7 @@ void G_Fog_Disable(void);
 /*###########################################################################*/
 
 bool G_Building_Mark(const struct entity *ent);
-bool G_Building_Found(const struct entity *ent);
+bool G_Building_Found(struct entity *ent);
 
 /*###########################################################################*/
 /* GAME BUILDER                                                              */

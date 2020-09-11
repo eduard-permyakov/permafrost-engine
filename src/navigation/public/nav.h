@@ -44,6 +44,7 @@ struct tile;
 struct map;
 struct obb;
 struct entity;
+struct map_resolution;
 
 typedef uint32_t dest_id_t;
 
@@ -276,6 +277,12 @@ bool      N_IsMaximallyClose(void *nav_private, vec3_t map_pos,
  */
 bool      N_ObjsAdjacent(void *nav_private, vec3_t map_pos, 
                          const struct entity *a, const struct entity *b);
+
+/* ------------------------------------------------------------------------
+ * Get the resolution (chunks, tiles) of the navigation data.
+ * ------------------------------------------------------------------------
+ */
+void      N_GetResolution(void *nav_private, struct map_resolution *out);
 
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */

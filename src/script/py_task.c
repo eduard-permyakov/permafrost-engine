@@ -772,7 +772,7 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     if(ret->state == PYTASK_STATE_RUNNING) {
     
         assert(ret->ts->frame->f_stacktop);
-        ret->tid = Sched_Create(16, py_task, ret, NULL, TASK_MAIN_THREAD_PINNED);
+        ret->tid = Sched_Create(16, py_task, ret, NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
 
         if(ret->tid == NULL_TID) {
             PyErr_SetString(PyExc_RuntimeError, "Unable to start fiber for task.");
@@ -821,7 +821,7 @@ fail_args:
 static PyObject *PyTask_run(PyTaskObject *self)
 {
     ASSERT_IN_MAIN_THREAD();
-    self->tid = Sched_Create(16, py_task, self, NULL, TASK_MAIN_THREAD_PINNED);
+    self->tid = Sched_Create(16, py_task, self, NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
 
     if(self->tid == NULL_TID) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to start fiber for task.");

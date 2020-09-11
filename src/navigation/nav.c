@@ -2408,3 +2408,13 @@ bool N_ObjsAdjacent(void *nav_private, vec3_t map_pos, const struct entity *a, c
     return false;
 }
 
+void N_GetResolution(void *nav_private, struct map_resolution *out)
+{
+    struct nav_private *priv = nav_private;
+
+    out->chunk_w = priv->width;
+    out->chunk_h = priv->height;
+    out->tile_w = FIELD_RES_C;
+    out->tile_h = FIELD_RES_R;
+}
+
