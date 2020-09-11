@@ -635,13 +635,18 @@ uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos)
     return N_DestIDForPos(map->nav_private, map->pos, xz_pos);
 }
 
-bool M_NavObjsAdjacent(const struct map *map, const struct entity *a, const struct entity *b)
+bool M_NavObjAdjacentToStatic(const struct map *map, const struct entity *ent, const struct obb *stat)
 {
-    return N_ObjsAdjacent(map->nav_private, map->pos, a, b);
+    return N_ObjAdjacentToStatic(map->nav_private, map->pos, ent, stat);
 }
 
 void M_NavGetResolution(const struct map *map, struct map_resolution *out)
 {
     return N_GetResolution(map->nav_private, out);
+}
+
+bool M_NavObjectBuildable(const struct map *map, const struct obb *obb)
+{
+    return N_ObjectBuildable(map->nav_private, map->pos, obb);
 }
 

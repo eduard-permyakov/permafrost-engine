@@ -248,6 +248,17 @@ static void building_place_markers(struct buildstate *bs, const struct entity *e
     building_mark_center(bs, ent);
 }
 
+static void building_clear_markers(struct buildstate *bs)
+{
+    for(int i = 0; i < vec_size(&bs->markers); i++) {
+        struct entity *tofree = G_EntityForUID(vec_AT(&bs->markers, i));
+        if(!tofree)
+            continue; /* May have already been deleted during shutdown */
+        G_RemoveEntity(tofree);
+        G_SafeFree(tofree);
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -303,12 +314,7 @@ void G_Building_RemoveEntity(const struct entity *ent)
     struct buildstate *bs = buildstate_get(ent->uid);
     assert(bs);
 
-    for(int i = 0; i < vec_size(&bs->markers); i++) {
-        struct entity *tofree = G_EntityForUID(vec_AT(&bs->markers, i));
-        G_RemoveEntity(tofree);
-        G_SafeFree(tofree);
-    }
-
+    building_clear_markers(bs);
     buildstate_remove(ent);
 }
 
@@ -332,6 +338,9 @@ bool G_Building_Found(struct entity *ent)
     if(bs->state != BUILDING_STATE_MARKED)
         return false;
 
+    if(!G_Building_Unobstructed(ent))
+        return false;
+
     ent->flags &= ~FLAG_SAVE_MASK;
     ent->flags |= (bs->old_flags & FLAG_SAVE_MASK);
     ent->flags |= ENTITY_FLAG_INVISIBLE;
@@ -345,5 +354,13 @@ bool G_Building_Found(struct entity *ent)
 bool G_Building_Complete(const struct entity *ent)
 {
     return true;
+}
+
+bool G_Building_Unobstructed(const struct entity *ent)
+{
+    struct obb obb;
+    Entity_CurrentOBB(ent, &obb, true);
+
+    return M_NavObjectBuildable(s_map, &obb);
 }
 

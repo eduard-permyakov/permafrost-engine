@@ -271,18 +271,26 @@ bool      N_IsMaximallyClose(void *nav_private, vec3_t map_pos,
                              vec2_t xz_pos, vec2_t xz_dest, float tolerance);
 
 /* ------------------------------------------------------------------------
- * Returns true if the specified entities have at least one overlapping tile 
- * or a shared edge between any of the tiles under their selection circles.
+ * Returns true if the tiles under the entity selection cirlce overlap or 
+ * share an edge with any of the tiles under the OBB.
  * ------------------------------------------------------------------------
  */
-bool      N_ObjsAdjacent(void *nav_private, vec3_t map_pos, 
-                         const struct entity *a, const struct entity *b);
+bool      N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, 
+                                const struct entity *ent, const struct obb *stat);
 
 /* ------------------------------------------------------------------------
  * Get the resolution (chunks, tiles) of the navigation data.
  * ------------------------------------------------------------------------
  */
 void      N_GetResolution(void *nav_private, struct map_resolution *out);
+
+/* ------------------------------------------------------------------------
+ * Returns true if the building with the specified OBB can be successfully
+ * placed, meaning all tiles under it are pathable, explored by the player, 
+ * and not currently blocked.
+ * ------------------------------------------------------------------------
+ */
+bool      N_ObjectBuildable(void *nav_private, vec3_t map_pos, const struct obb *obb);
 
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */

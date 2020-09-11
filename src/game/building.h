@@ -46,7 +46,6 @@ void G_Building_Shutdown(void);
 
 void G_Building_AddEntity(struct entity *ent);
 void G_Building_RemoveEntity(const struct entity *ent);
-int  G_Building_GetState(const struct entity *ent);
 
 #endif
 

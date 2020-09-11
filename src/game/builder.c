@@ -34,6 +34,7 @@
  */
 
 #include "builder.h"
+#include "building.h"
 #include "game_private.h"
 #include "movement.h"
 #include "position.h"
@@ -146,18 +147,29 @@ static void on_motion_end(void *user, void *event)
     }
 
     assert(bs->target_uid != UID_NONE);
-    const struct entity *target = G_EntityForUID(bs->target_uid);
+    struct entity *target = G_EntityForUID(bs->target_uid);
+
+    struct obb obb;
+    if(target) {
+        Entity_CurrentOBB(target, &obb, false);
+    }
 
     if(!target
-    || !M_NavObjsAdjacent(s_map, ent, target)) {
+    || !M_NavObjAdjacentToStatic(s_map, ent, &obb)) {
         bs->state = STATE_NOT_BUILDING;
         bs->target_uid = UID_NONE;
         return; /* builder could not reach the building */
     }
 
-    //TODO: try to "found" the building here... (?)
+    if(!G_Building_Found(target)) {
+        bs->state = STATE_NOT_BUILDING;
+        bs->target_uid = UID_NONE;
+        return; 
+    }
+
     bs->state = STATE_BUILDING; 
     E_Entity_Notify(EVENT_BUILD_BEGIN, uid, NULL, ES_ENGINE);
+    return;
 }
 
 /*****************************************************************************/

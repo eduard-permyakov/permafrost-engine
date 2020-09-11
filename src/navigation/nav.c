@@ -2381,25 +2381,30 @@ int N_TilesUnderCircle(const struct nav_private *priv, vec2_t xz_center, float r
     return ret;
 }
 
-bool N_ObjsAdjacent(void *nav_private, vec3_t map_pos, const struct entity *a, const struct entity *b)
+bool N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, const struct entity *ent, const struct obb *stat)
 {
-    vec2_t apos = G_Pos_GetXZ(a->uid);
-    vec2_t bpos = G_Pos_GetXZ(b->uid);
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
 
-    struct tile_desc tds_a[4096];
-    size_t ntiles_a = N_TilesUnderCircle(nav_private, apos, a->selection_radius, map_pos, tds_a, ARR_SIZE(tds_a));
+    vec2_t pos = G_Pos_GetXZ(ent->uid);
 
-    struct tile_desc tds_b[4096];
-    size_t ntiles_b = N_TilesUnderCircle(nav_private, bpos, b->selection_radius, map_pos, tds_b, ARR_SIZE(tds_b));
+    struct tile_desc tds_stat[2048];
+    size_t ntiles_stat = M_Tile_AllUnderObj(map_pos, res, stat, tds_stat, ARR_SIZE(tds_stat));
 
-    for(int i = 0; i < ntiles_a; i++) {
-    for(int j = 0; j < ntiles_b; j++) {
+    struct tile_desc tds_ent[2048];
+    size_t ntiles_ent = N_TilesUnderCircle(priv, pos, ent->selection_radius, map_pos, tds_ent, ARR_SIZE(tds_ent));
+
+    for(int i = 0; i < ntiles_stat; i++) {
+    for(int j = 0; j < ntiles_ent;  j++) {
     
-        size_t arow = tds_a[i].chunk_r * FIELD_RES_R + tds_a[i].tile_r;
-        size_t acol = tds_a[i].chunk_c * FIELD_RES_C + tds_a[i].tile_c;
+        size_t arow = tds_stat[i].chunk_r * FIELD_RES_R + tds_stat[i].tile_r;
+        size_t acol = tds_stat[i].chunk_c * FIELD_RES_C + tds_stat[i].tile_c;
 
-        size_t brow = tds_b[j].chunk_r * FIELD_RES_R + tds_b[j].tile_r;
-        size_t bcol = tds_b[j].chunk_c * FIELD_RES_C + tds_b[j].tile_c;
+        size_t brow = tds_ent[j].chunk_r * FIELD_RES_R + tds_ent[j].tile_r;
+        size_t bcol = tds_ent[j].chunk_c * FIELD_RES_C + tds_ent[j].tile_c;
 
         size_t manhattan_dist = abs(arow - brow) + abs(bcol - acol);
         if(manhattan_dist <= 1)
@@ -2416,5 +2421,34 @@ void N_GetResolution(void *nav_private, struct map_resolution *out)
     out->chunk_h = priv->height;
     out->tile_w = FIELD_RES_C;
     out->tile_h = FIELD_RES_R;
+}
+
+bool N_ObjectBuildable(void *nav_private, vec3_t map_pos, const struct obb *obb)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntiles; i++) {
+
+        const struct nav_chunk *chunk = &priv->chunks[IDX(tds[i].chunk_r, priv->width, tds[i].chunk_c)];
+        struct box bounds = M_Tile_Bounds(res, map_pos, tds[i]);
+        vec2_t center = (vec2_t){
+            bounds.x - bounds.width / 2.0f,
+            bounds.z + bounds.height / 2.0f
+        };
+    
+        if(chunk->blockers [tds[i].tile_r][tds[i].tile_c]
+        || chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE
+        || !G_Fog_PlayerExplored((vec2_t){center.x, center.z})) {
+            return false;
+        }
+    }
+    return true;
 }
 

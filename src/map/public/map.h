@@ -307,18 +307,19 @@ void   M_NavBlockersDecref(vec2_t xz_pos, float range, const struct map *map);
  * Wrapper around navigation APIs.
  * ------------------------------------------------------------------------
  */
-bool     M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos, 
-                             vec2_t xz_dest, float tolerance);
 uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos);
 void     M_NavGetResolution(const struct map *map, struct map_resolution *out);
+bool     M_NavObjectBuildable(const struct map *map, const struct obb *obb);
+bool     M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos, 
+                               vec2_t xz_dest, float tolerance);
 
 /* ------------------------------------------------------------------------
- * Returns true if the specified entities have at least one overlapping tile 
- * or a shared edge between any of the tiles under their selection circles.
+ * Returns true if the tiles under the entity selection cirlce overlap or 
+ * share an edge with any of the tiles under the OBB.
  * ------------------------------------------------------------------------
  */
-bool     M_NavObjsAdjacent(const struct map *map, 
-                           const struct entity *a, const struct entity *b);
+bool     M_NavObjAdjacentToStatic(const struct map *map, const struct entity *ent, 
+                                  const struct obb *stat);
 
 /* ------------------------------------------------------------------------
  * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 

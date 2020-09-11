@@ -1523,7 +1523,8 @@ static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self)
 static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self)
 {
     if(!G_Building_Found(self->super.ent)) {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to found building. It must be in the MARKED state.");
+        PyErr_SetString(PyExc_RuntimeError, "Unable to found building. It must be in the MARKED state. "
+            "The tiles under the building must also not be obstructed by any objects.");
         return NULL;
     }
     Py_RETURN_NONE;
