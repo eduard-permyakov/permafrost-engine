@@ -1188,7 +1188,15 @@ void Sched_Tick(void)
            && ((nwaiters = s_nwaiters) < s_nworkers)
            && (s_idle_workers < s_nworkers)) {
 
-            SDL_CondWait(s_ready_cond, s_ready_lock);
+            size_t left = (Perf_CurrFrameMS() < SCHED_TICK_MS) 
+                        ? SCHED_TICK_MS - Perf_CurrFrameMS() 
+                        : 0;
+
+            SDL_CondWaitTimeout(s_ready_cond, s_ready_lock, left);
+            if(left == 0) {
+                s_quiesce = true;
+                SDL_CondBroadcast(s_ready_cond); 
+            }
         }
         if(pq_size(&s_ready_queue_main) || pq_size(&s_ready_queue)) {
 
