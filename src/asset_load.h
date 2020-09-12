@@ -79,6 +79,7 @@ void           AL_Shutdown(void);
 
 struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, 
                                   const char *name, uint32_t uid);
+bool           AL_EntitySetPFObj(struct entity *ent, const char *base_path, const char *pfobj_name);
 void           AL_EntityFree(struct entity *entity);
 
 struct map    *AL_MapFromPFMapStream(SDL_RWops *stream, bool update_navgrid);

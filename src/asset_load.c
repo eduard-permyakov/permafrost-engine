@@ -54,7 +54,6 @@
 
 
 struct shared_resource{
-    char         key[64];
     uint32_t     ent_flags;
     void        *render_private;
     void        *anim_private;
@@ -169,6 +168,62 @@ static void al_set_ent_defaults(struct entity *ent)
     ent->vision_range = 0.0f;
 }
 
+static bool al_get_resource(const char *path, const char *basedir, 
+                            const char *pfobj_name, struct shared_resource *out)
+{
+    SDL_RWops *stream;
+    struct pfobj_hdr header;
+
+    khiter_t k = kh_get(entity_res, s_name_resource_table, pfobj_name);
+    if(k != kh_end(s_name_resource_table)) {
+
+        *out = kh_value(s_name_resource_table, k);
+        return true;
+    }
+
+    stream = SDL_RWFromFile(path, "r");
+    if(!stream)
+        goto fail_init; 
+
+    if(!al_parse_pfobj_header(stream, &header))
+        goto fail_parse;
+
+    out->ent_flags = 0;
+    out->render_private = R_AL_PrivFromStream(basedir, &header, stream);
+    if(!out->render_private)
+        goto fail_parse;
+
+    out->anim_private = A_AL_PrivFromStream(&header, stream);
+    if(!out->anim_private)
+        goto fail_parse;
+
+    if(header.num_as > 0) {
+        out->ent_flags |= ENTITY_FLAG_ANIMATED;
+    }
+
+    if(!header.has_collision) {
+        fprintf(stderr, "Imported entities required to have bounding boxes.\n");
+        goto fail_parse;
+    }
+
+    out->ent_flags |= ENTITY_FLAG_COLLISION;
+    if(!AL_ParseAABB(stream, &out->aabb))
+        goto fail_parse;
+
+    int put_ret;
+    k = kh_put(entity_res, s_name_resource_table, pf_strdup(pfobj_name), &put_ret);
+    assert(put_ret != -1 && put_ret != 0);
+    kh_value(s_name_resource_table, k) = *out;
+
+    SDL_RWclose(stream);
+    return true;
+
+fail_parse:
+    SDL_RWclose(stream);
+fail_init:
+    return false;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -177,7 +232,6 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
                                   const char *name, uint32_t uid)
 {
     struct shared_resource res;
-    SDL_RWops *stream;
     char abs_basepath[512], pfobj_path[512];
 
     size_t alloc_size = sizeof(struct entity) + A_AL_CtxBuffSize();
@@ -197,52 +251,9 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 
     pf_snprintf(abs_basepath, sizeof(abs_basepath), "%s/%s", g_basepath, base_path);
     pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
-    pf_snprintf(res.key, sizeof(res.key), pfobj_name);
 
-    khiter_t k = kh_get(entity_res, s_name_resource_table, pfobj_name);
-    if(k != kh_end(s_name_resource_table)) {
-
-        res = kh_value(s_name_resource_table, k);
-    }else{
-
-        struct pfobj_hdr header;
-
-        stream = SDL_RWFromFile(pfobj_path, "r");
-        if(!stream)
-            goto fail_init; 
-
-        if(!al_parse_pfobj_header(stream, &header))
-            goto fail_parse;
-
-        res.ent_flags = 0;
-        res.render_private = R_AL_PrivFromStream(abs_basepath, &header, stream);
-        if(!res.render_private)
-            goto fail_parse;
-
-        res.anim_private = A_AL_PrivFromStream(&header, stream);
-        if(!res.anim_private)
-            goto fail_parse;
-
-        if(header.num_as > 0) {
-            res.ent_flags |= ENTITY_FLAG_ANIMATED;
-        }
-
-        if(!header.has_collision) {
-            fprintf(stderr, "Imported entities required to have bounding boxes.\n");
-            goto fail_parse;
-        }
-
-        res.ent_flags |= ENTITY_FLAG_COLLISION;
-        if(!AL_ParseAABB(stream, &res.aabb))
-            goto fail_parse;
-
-        SDL_RWclose(stream);
-
-        int put_ret;
-        k = kh_put(entity_res, s_name_resource_table, pf_strdup(pfobj_name), &put_ret);
-        assert(put_ret != -1 && put_ret != 0);
-        kh_value(s_name_resource_table, k) = res;
-    }
+    if(!al_get_resource(pfobj_path, abs_basepath, pfobj_name, &res))
+        goto fail_init;
 
     ret->flags |= res.ent_flags;
     ret->render_private = res.render_private;
@@ -256,8 +267,6 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 
     return ret;
 
-fail_parse:
-    SDL_RWclose(stream);
 fail_init:
     free((void*)ret->basedir);
     free((void*)ret->filename);
@@ -265,6 +274,44 @@ fail_init:
     free(ret);
 fail_alloc:
     return NULL;
+}
+
+bool AL_EntitySetPFObj(struct entity *ent, const char *base_path, const char *pfobj_name)
+{
+    struct shared_resource res;
+    char abs_basepath[512], pfobj_path[512];
+
+    pf_snprintf(abs_basepath, sizeof(abs_basepath), "%s/%s", g_basepath, base_path);
+    pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
+
+    if(!al_get_resource(pfobj_path, abs_basepath, pfobj_name, &res))
+        goto fail_init;
+
+    const char *newdir = pf_strdup(base_path);
+    const char *newobj = pf_strdup(pfobj_name);
+
+    if(!newdir || !newobj)
+        goto fail_alloc;
+
+    free((void*)ent->basedir);
+    free((void*)ent->filename);
+    ent->basedir = newdir;
+    ent->filename = newobj;
+
+    ent->render_private = res.render_private;
+    ent->anim_private = res.anim_private;
+    ent->identity_aabb = res.aabb;
+
+    if(ent->flags & ENTITY_FLAG_ANIMATED) {
+        A_InitCtx(ent, A_GetClip(ent, 0), 24);
+    }
+    return true;
+
+fail_alloc:
+    free((void*)newdir);
+    free((void*)newobj);
+fail_init:
+    return false;
 }
 
 void AL_EntityFree(struct entity *entity)

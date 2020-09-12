@@ -100,6 +100,7 @@ static PyObject *PyEntity_select(PyEntityObject *self);
 static PyObject *PyEntity_deselect(PyEntityObject *self);
 static PyObject *PyEntity_stop(PyEntityObject *self);
 static PyObject *PyEntity_move(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_set_model(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -177,6 +178,10 @@ static PyMethodDef PyEntity_methods[] = {
     {"move", 
     (PyCFunction)PyEntity_move, METH_VARARGS,
     "Issues a 'move' order to the entity at the XZ position specified by the argument."},
+
+    {"set_model", 
+    (PyCFunction)PyEntity_set_model, METH_VARARGS,
+    "Replace the current entity's current model and animation data with the specified PFOBJ data."},
 
     {"__pickle__", 
     (PyCFunction)PyEntity_pickle, METH_KEYWORDS,
@@ -887,6 +892,26 @@ static PyObject *PyEntity_move(PyEntityObject *self, PyObject *args)
     }
 
     G_Move_SetDest(self->ent, xz_pos);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_set_model(PyEntityObject *self, PyObject *args)
+{
+    const char *dirpath, *filename;
+    if(!PyArg_ParseTuple(args, "ss", &dirpath, &filename)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two string arguments: directory path and PFOBJ file name.");
+        return NULL;
+    }
+
+    if(!strcmp(self->ent->basedir, dirpath)
+    && !strcmp(self->ent->filename, filename)) {
+        Py_RETURN_NONE;
+    }
+
+    if(!AL_EntitySetPFObj(self->ent, dirpath, filename)) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not set the model to the specified PFOBJ file.");
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 
