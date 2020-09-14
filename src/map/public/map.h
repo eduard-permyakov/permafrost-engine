@@ -303,6 +303,9 @@ vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz
 void   M_NavBlockersIncref(vec2_t xz_pos, float range, const struct map *map);
 void   M_NavBlockersDecref(vec2_t xz_pos, float range, const struct map *map);
 
+void   M_NavBlockersIncrefOBB(const struct map *map, const struct obb *obb);
+void   M_NavBlockersDecrefOBB(const struct map *map, const struct obb *obb);
+
 /* ------------------------------------------------------------------------
  * Wrapper around navigation APIs.
  * ------------------------------------------------------------------------

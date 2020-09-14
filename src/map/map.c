@@ -568,6 +568,16 @@ void M_NavBlockersDecref(vec2_t xz_pos, float range, const struct map *map)
     N_BlockersDecref(xz_pos, range, map->pos, map->nav_private);
 }
 
+void M_NavBlockersIncrefOBB(const struct map *map, const struct obb *obb)
+{
+    N_BlockersIncrefOBB(map->nav_private, map->pos, obb);
+}
+
+void M_NavBlockersDecrefOBB(const struct map *map, const struct obb *obb)
+{
+    N_BlockersDecrefOBB(map->nav_private, map->pos, obb);
+}
+
 bool M_TileForDesc(const struct map *map, struct tile_desc desc, struct tile **out)
 {
     if(desc.chunk_r < 0 || desc.chunk_r >= map->height)

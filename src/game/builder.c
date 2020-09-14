@@ -130,6 +130,21 @@ static void on_30hz_tick(void *user, void *event)
     PERF_RETURN_VOID();
 }
 
+static void on_motion_begin(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)user;
+    const struct entity *ent = G_EntityForUID(uid);
+
+    E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
+
+    struct builderstate *bs = builderstate_get(uid);
+    assert(bs);
+    assert(bs->state == STATE_BUILDING);
+
+    bs->state = STATE_NOT_BUILDING;
+    E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
+}
+
 static void on_motion_end(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
@@ -161,15 +176,17 @@ static void on_motion_end(void *user, void *event)
         return; /* builder could not reach the building */
     }
 
-    if(!G_Building_Found(target)) {
+    if(!G_Building_IsFounded(target)
+    && !G_Building_Found(target)) {
         bs->state = STATE_NOT_BUILDING;
         bs->target_uid = UID_NONE;
         return; 
     }
 
-    bs->state = STATE_BUILDING; 
+    G_Move_Stop(ent);
     E_Entity_Notify(EVENT_BUILD_BEGIN, uid, NULL, ES_ENGINE);
-    return;
+    bs->state = STATE_BUILDING; 
+    E_Entity_Register(EVENT_MOTION_START, uid, on_motion_begin, (void*)((uintptr_t)uid), G_RUNNING);
 }
 
 /*****************************************************************************/
@@ -227,6 +244,7 @@ void G_Builder_RemoveEntity(const struct entity *ent)
     if(!(ent->flags & ENTITY_FLAG_BUILDER))
         return;
     E_Entity_Unregister(EVENT_MOTION_END, ent->uid, on_motion_end);
+    E_Entity_Unregister(EVENT_MOTION_START, ent->uid, on_motion_begin);
     builderstate_remove(ent);
 }
 

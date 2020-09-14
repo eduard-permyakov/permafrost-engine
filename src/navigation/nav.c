@@ -797,12 +797,8 @@ static void n_update_dirty_local_islands(void *nav_private)
     s_local_islands_dirty = false;
 }
 
-static void n_update_blockers(struct nav_private *priv, vec2_t xz_pos, float range, 
-                              vec3_t map_pos, int ref_delta)
+static void n_update_blockers(struct nav_private *priv, struct tile_desc *tds, size_t ntds, int ref_delta)
 {
-    struct tile_desc tds[256];
-    int ntds = N_TilesUnderCircle(priv, xz_pos, range, map_pos, tds, ARR_SIZE(tds));
-
     for(int i = 0; i < ntds; i++) {
     
         struct tile_desc curr = tds[i];
@@ -824,6 +820,27 @@ static void n_update_blockers(struct nav_private *priv, vec2_t xz_pos, float ran
             s_local_islands_dirty = true;
         }
     }
+}
+
+static void n_update_blockers_circle(struct nav_private *priv, vec2_t xz_pos, float range, 
+                                     vec3_t map_pos, int ref_delta)
+{
+    struct tile_desc tds[256];
+    int ntds = N_TilesUnderCircle(priv, xz_pos, range, map_pos, tds, ARR_SIZE(tds));
+    n_update_blockers(priv, tds, ntds, ref_delta);
+}
+
+static void n_update_blockers_obb(struct nav_private *priv, const struct obb *obb, 
+                                  vec3_t map_pos, int ref_delta)
+{
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc tds[1024];
+    int ntds = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
+    n_update_blockers(priv, tds, ntds, ref_delta);
 }
 
 static int manhattan_dist(struct tile_desc a, struct tile_desc b)
@@ -2221,12 +2238,22 @@ vec2_t N_TileDims(void)
 
 void N_BlockersIncref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private)
 {
-    n_update_blockers(nav_private, xz_pos, range, map_pos, +1);
+    n_update_blockers_circle(nav_private, xz_pos, range, map_pos, +1);
 }
 
 void N_BlockersDecref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private)
 {
-    n_update_blockers(nav_private, xz_pos, range, map_pos, -1);
+    n_update_blockers_circle(nav_private, xz_pos, range, map_pos, -1);
+}
+
+void N_BlockersIncrefOBB(void *nav_private, vec3_t map_pos, const struct obb *obb)
+{
+    n_update_blockers_obb(nav_private, obb, map_pos, +1);
+}
+
+void N_BlockersDecrefOBB(void *nav_private, vec3_t map_pos, const struct obb *obb)
+{
+    n_update_blockers_obb(nav_private, obb, map_pos, -1);
 }
 
 bool N_IsMaximallyClose(void *nav_private, vec3_t map_pos, 

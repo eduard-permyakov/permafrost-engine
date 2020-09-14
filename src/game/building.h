@@ -46,6 +46,7 @@ void G_Building_Shutdown(void);
 
 void G_Building_AddEntity(struct entity *ent);
 void G_Building_RemoveEntity(const struct entity *ent);
+bool G_Building_IsFounded(struct entity *ent);
 
 #endif
 

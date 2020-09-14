@@ -314,6 +314,12 @@ void G_Building_RemoveEntity(const struct entity *ent)
     struct buildstate *bs = buildstate_get(ent->uid);
     assert(bs);
 
+    if(bs->state >= BUILDING_STATE_FOUNDED) {
+        struct obb obb;
+        Entity_CurrentOBB(ent, &obb, true);
+        M_NavBlockersDecrefOBB(s_map, &obb);
+    }
+
     building_clear_markers(bs);
     buildstate_remove(ent);
 }
@@ -348,6 +354,10 @@ bool G_Building_Found(struct entity *ent)
     building_place_markers(bs, ent);
     bs->state = BUILDING_STATE_FOUNDED;
 
+    struct obb obb;
+    Entity_CurrentOBB(ent, &obb, true);
+    M_NavBlockersIncrefOBB(s_map, &obb);
+
     return true;
 }
 
@@ -362,5 +372,12 @@ bool G_Building_Unobstructed(const struct entity *ent)
     Entity_CurrentOBB(ent, &obb, true);
 
     return M_NavObjectBuildable(s_map, &obb);
+}
+
+bool G_Building_IsFounded(struct entity *ent)
+{
+    struct buildstate *bs = buildstate_get(ent->uid);
+    assert(bs);
+    return (bs->state == BUILDING_STATE_FOUNDED);
 }
 
