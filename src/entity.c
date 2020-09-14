@@ -39,6 +39,9 @@
 
 #include <assert.h>
 
+
+#define EPSILON (1.0/1024)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -153,5 +156,21 @@ vec3_t Entity_TopCenterPointWS(const struct entity *ent)
         out_ws_homo.y / out_ws_homo.w,
         out_ws_homo.z / out_ws_homo.w,
     };
+}
+
+void Entity_FaceTowards(struct entity *ent, vec2_t point)
+{
+    vec2_t delta;
+    vec2_t pos = G_Pos_GetXZ(ent->uid);
+    PFM_Vec2_Sub(&point, &pos, &delta);
+
+    float radians = atan2(delta.x, delta.z);
+
+    mat4x4_t rotmat;
+    PFM_Mat4x4_MakeRotY(radians, &rotmat);
+
+    quat_t rot;
+    PFM_Quat_FromRotMat(&rotmat, &rot);
+    ent->rotation = rot;
 }
 

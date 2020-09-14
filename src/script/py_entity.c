@@ -100,6 +100,7 @@ static PyObject *PyEntity_select(PyEntityObject *self);
 static PyObject *PyEntity_deselect(PyEntityObject *self);
 static PyObject *PyEntity_stop(PyEntityObject *self);
 static PyObject *PyEntity_move(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_face_towards(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_set_model(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
@@ -178,6 +179,10 @@ static PyMethodDef PyEntity_methods[] = {
     {"move", 
     (PyCFunction)PyEntity_move, METH_VARARGS,
     "Issues a 'move' order to the entity at the XZ position specified by the argument."},
+
+    {"face_towards", 
+    (PyCFunction)PyEntity_face_towards, METH_VARARGS,
+    "Make the entity face towards the specified point."},
 
     {"set_model", 
     (PyCFunction)PyEntity_set_model, METH_VARARGS,
@@ -892,6 +897,18 @@ static PyObject *PyEntity_move(PyEntityObject *self, PyObject *args)
     }
 
     G_Move_SetDest(self->ent, xz_pos);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_face_towards(PyEntityObject *self, PyObject *args)
+{
+    vec3_t pos;
+    if(!PyArg_ParseTuple(args, "(fff)", &pos.raw[0], &pos.raw[1], &pos.raw[2])) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 3 floats (position to face).");
+        return NULL;
+    }
+
+    Entity_FaceTowards(self->ent, (vec2_t){pos.x, pos.z});
     Py_RETURN_NONE;
 }
 

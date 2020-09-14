@@ -117,5 +117,6 @@ uint32_t Entity_NewUID(void);
 void     Entity_SetNextUID(uint32_t uid);
 void     Entity_CurrentOBB(const struct entity *ent, struct obb *out, bool identity);
 vec3_t   Entity_TopCenterPointWS(const struct entity *ent);
+void     Entity_FaceTowards(struct entity *ent, vec2_t point);
 
 #endif

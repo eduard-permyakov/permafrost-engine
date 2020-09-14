@@ -148,7 +148,7 @@ static void on_motion_begin(void *user, void *event)
 static void on_motion_end(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
-    const struct entity *ent = G_EntityForUID(uid);
+    struct entity *ent = G_EntityForUID(uid);
 
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
