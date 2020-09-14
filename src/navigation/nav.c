@@ -100,6 +100,7 @@ enum edge_type{
 };
 
 KHASH_SET_INIT_INT(coord)
+KHASH_SET_INIT_INT64(td)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -111,6 +112,14 @@ static bool            s_local_islands_dirty = false;
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static uint64_t td_key(const struct tile_desc *td)
+{
+    return (((uint64_t)td->chunk_r << 48)
+          | ((uint64_t)td->chunk_c << 32)
+          | ((uint64_t)td->tile_r  << 16)
+          | ((uint64_t)td->tile_c  <<  0));
+}
 
 static bool n_tile_pathable(const struct tile *tile)
 {
@@ -1097,6 +1106,43 @@ static bool n_normally_reachable(const struct nav_chunk *chunk, struct coord a, 
     return true;
 }
 
+static bool n_moving_entity(const struct entity *ent, void *arg)
+{
+    return !G_Move_Still(ent);
+}
+
+static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t map_pos, const struct obb *area)
+{
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    vec2_t center_xz = (vec2_t){area->center.x, area->center.z};
+    float radius = MAX(area->half_lengths[0], area->half_lengths[2]);
+
+    struct entity *ents[1024];
+    size_t nents = G_Pos_EntsInCircleWithPred(center_xz, radius, ents, ARR_SIZE(ents), n_moving_entity, NULL);
+
+    khash_t(td) *ret = kh_init(td);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < nents; i++) {
+
+        vec2_t xz_pos = G_Pos_GetXZ(ents[i]->uid);
+        struct tile_desc tile;
+
+        bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile);
+        assert(result);
+
+        int status;
+        kh_put(td, ret, td_key(&tile), &status);
+    }
+
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1518,6 +1564,9 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
     struct tile_desc tds[4096];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
 
+    khash_t(td) *tileset = n_moving_entities_tileset(priv, map_pos, obb);
+    assert(tileset);
+
     vec2_t corners_buff[4 * FIELD_RES_R * FIELD_RES_C];
     vec3_t colors_buff[FIELD_RES_R * FIELD_RES_C];
 
@@ -1553,13 +1602,15 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
 
         if(chunk->blockers [tds[i].tile_r][tds[i].tile_c]
         || chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE
-        || !G_Fog_PlayerExplored((vec2_t){ws_center_homo.x, ws_center_homo.z})) {
+        || !G_Fog_PlayerExplored((vec2_t){ws_center_homo.x, ws_center_homo.z})
+        || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))) {
             *colors_base++ = (vec3_t){1.0f, 0.0f, 0.0f};
         }else{
             *colors_base++ = (vec3_t){0.0f, 1.0f, 0.0f};
         }
         count++;
     }
+    free(tileset);
 
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawMapOverlayQuads,
@@ -2461,6 +2512,10 @@ bool N_ObjectBuildable(void *nav_private, vec3_t map_pos, const struct obb *obb)
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
 
+    khash_t(td) *tileset = n_moving_entities_tileset(priv, map_pos, obb);
+    assert(tileset);
+    bool ret = false;
+
     for(int i = 0; i < ntiles; i++) {
 
         const struct nav_chunk *chunk = &priv->chunks[IDX(tds[i].chunk_r, priv->width, tds[i].chunk_c)];
@@ -2472,10 +2527,14 @@ bool N_ObjectBuildable(void *nav_private, vec3_t map_pos, const struct obb *obb)
     
         if(chunk->blockers [tds[i].tile_r][tds[i].tile_c]
         || chunk->cost_base[tds[i].tile_r][tds[i].tile_c] == COST_IMPASSABLE
-        || !G_Fog_PlayerExplored((vec2_t){center.x, center.z})) {
-            return false;
+        || !G_Fog_PlayerExplored((vec2_t){center.x, center.z})
+        || (kh_get(td, tileset, td_key(tds + i)) != kh_end(tileset))) {
+            goto out;
         }
     }
-    return true;
+    ret = true;
+out:
+    free(tileset);
+    return ret;
 }
 

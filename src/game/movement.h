@@ -53,7 +53,6 @@ void G_Move_RemoveEntity(const struct entity *ent);
 void G_Move_Stop(const struct entity *ent);
 
 bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz);
-bool G_Move_Still(const struct entity *ent);
 
 void G_Move_SetSeekEnemies(const struct entity *ent);
 void G_Move_SetSurroundEntity(const struct entity *ent, const struct entity *target);

@@ -228,19 +228,35 @@ int G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
+    int ret = G_Pos_EntsInCircleWithPred(xz_point, range, out, maxout, any_ent, NULL);
+    PERF_RETURN(ret);
+}
+
+int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **out, size_t maxout,
+                               bool (*predicate)(const struct entity *ent, void *arg), void *arg)
+{
+    PERF_ENTER();
+    ASSERT_IN_MAIN_THREAD();
+
     uint32_t ent_ids[maxout];
     const khash_t(entity) *ents = G_GetAllEntsSet();
     for(int i = 0; i < maxout; i++)
         ent_ids[i] = (uint32_t)-1;
 
-    int ret = qt_ent_inrange_circle(&s_postree, 
+    int ntotal = qt_ent_inrange_circle(&s_postree, 
         xz_point.x, xz_point.z, range, ent_ids, maxout);
+    int ret = 0;
 
-    for(int i = 0; i < ret; i++) {
+    for(int i = 0; i < ntotal; i++) {
         assert(ent_ids[i] != (uint32_t)-1);
         khiter_t k = kh_get(entity, ents, ent_ids[i]);
         assert(k != kh_end(s_postable));
-        out[i] = kh_val(ents, k);
+        struct entity *curr = kh_val(ents, k);
+
+        if(!predicate(curr, arg))
+            continue;
+
+        out[ret++] = curr;
     }
     PERF_RETURN(ret);
 }

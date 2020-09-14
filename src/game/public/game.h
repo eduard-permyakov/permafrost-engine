@@ -192,6 +192,7 @@ void G_Move_SetMoveOnLeftClick(void);
 void G_Move_SetAttackOnLeftClick(void);
 void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz);
 void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius);
+bool G_Move_Still(const struct entity *ent);
 
 
 /*###########################################################################*/
@@ -232,6 +233,8 @@ int    G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_
 int    G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout,
                                 bool (*predicate)(const struct entity *ent, void *arg), void *arg);
 int    G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t maxout);
+int    G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **out, size_t maxout,
+                                  bool (*predicate)(const struct entity *ent, void *arg), void *arg);
 
 struct entity *G_Pos_Nearest(vec2_t xz_point);
 struct entity *G_Pos_NearestWithPred(vec2_t xz_point, 
