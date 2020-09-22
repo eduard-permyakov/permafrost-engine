@@ -1619,8 +1619,8 @@ static int PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *va
         return -1;
     }
 
-    newpos.x -= fmod(newpos.x, X_COORDS_PER_TILE);
-    newpos.z -= fmod(newpos.z, Z_COORDS_PER_TILE);
+    newpos.x -= fmod(newpos.x, X_COORDS_PER_TILE / 2.0);
+    newpos.z -= fmod(newpos.z, Z_COORDS_PER_TILE / 2.0);
 
     G_Pos_Set(self->super.ent, newpos);
     return 0;

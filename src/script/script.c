@@ -104,6 +104,7 @@ static PyObject *PyPf_enable_unit_selection(PyObject *self);
 static PyObject *PyPf_disable_unit_selection(PyObject *self);
 static PyObject *PyPf_clear_unit_selection(PyObject *self);
 static PyObject *PyPf_get_unit_selection(PyObject *self);
+static PyObject *PyPf_get_hovered_unit(PyObject *self);
 
 static PyObject *PyPf_get_factions_list(PyObject *self);
 static PyObject *PyPf_add_faction(PyObject *self, PyObject *args);
@@ -125,6 +126,7 @@ static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 static PyObject *PyPf_set_move_on_left_click(PyObject *self);
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
+static PyObject *PyPf_set_build_on_left_click(PyObject *self);
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_settings_get(PyObject *self, PyObject *args);
@@ -287,6 +289,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_get_unit_selection, METH_NOARGS,
     "Returns a list of objects currently selected by the player."},
 
+    {"get_hovered_unit", 
+    (PyCFunction)PyPf_get_hovered_unit, METH_NOARGS,
+    "Get the closest unit under the mouse cursor, or None."},
+
     {"get_factions_list",
     (PyCFunction)PyPf_get_factions_list, METH_NOARGS,
     "Returns a list of descriptors (dictionaries) for each faction in the game."},
@@ -369,6 +375,11 @@ static PyMethodDef pf_module_methods[] = {
     {"set_attack_on_left_click",
     (PyCFunction)PyPf_set_attack_on_left_click, METH_NOARGS,
     "Set the cursor to target mode. The next left click will issue an attack command to the location "
+    "under the cursor."},
+
+    {"set_build_on_left_click",
+    (PyCFunction)PyPf_set_build_on_left_click, METH_NOARGS,
+    "Set the cursor to target mode. The next left click will issue a build command to the building "
     "under the cursor."},
 
     {"draw_text",
@@ -959,6 +970,18 @@ static PyObject *PyPf_get_unit_selection(PyObject *self)
     return ret;
 }
 
+static PyObject *PyPf_get_hovered_unit(PyObject *self)
+{
+    struct entity *hovered  = G_Sel_GetHovered();
+    if(hovered) {
+        PyObject *obj = S_Entity_ObjForUID(hovered->uid);
+        Py_INCREF(obj);
+        return obj;
+    }
+    printf("ain't nothing hovered\n");
+    Py_RETURN_NONE;
+}
+
 static PyObject *PyPf_get_factions_list(PyObject *self)
 {
     char names[MAX_FACTIONS][MAX_FAC_NAME_LEN];
@@ -1270,6 +1293,12 @@ static PyObject *PyPf_set_move_on_left_click(PyObject *self)
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self)
 {
     G_Move_SetAttackOnLeftClick();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_build_on_left_click(PyObject *self)
+{
+    G_Builder_SetBuildOnLeftClick();
     Py_RETURN_NONE;
 }
 
@@ -1919,6 +1948,12 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
 
     case EVENT_SESSION_FAIL_LOAD:
         return PyString_FromString(arg);
+
+    case EVENT_BUILD_TARGET_ACQUIRED: {
+        PyObject *ent = S_Entity_ObjForUID(((struct entity*)arg)->uid);
+        Py_INCREF(ent);
+        return ent;
+    }
 
     default:
         Py_RETURN_NONE;

@@ -45,6 +45,7 @@ bool G_Builder_Init(struct map *map);
 void G_Builder_Shutdown(void);
 void G_Builder_AddEntity(struct entity *ent);
 void G_Builder_RemoveEntity(const struct entity *ent);
+bool G_Builder_InTargetMode(void);
 
 #endif
 

@@ -1654,6 +1654,17 @@ const struct map *G_GetPrevTickMap(void)
     return s_gs.prev_tick_map;
 }
 
+bool G_MouseInTargetMode(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(G_Move_InTargetMode())
+        return true;
+    if(G_Builder_InTargetMode())
+        return true;
+    return false;
+}
+
 bool G_SaveGlobalState(SDL_RWops *stream)
 {
     ASSERT_IN_MAIN_THREAD();

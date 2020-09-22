@@ -45,6 +45,7 @@
 struct obb;
 struct camera;
 struct SDL_RWops;
+struct entity;
 
 VEC_TYPE(obb, struct obb)
 VEC_PROTOTYPES(extern, obb, struct obb)

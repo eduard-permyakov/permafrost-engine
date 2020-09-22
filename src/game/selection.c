@@ -88,7 +88,10 @@ static struct selection_ctx{
     enum selection_type type;
 }s_ctx;
 
-static vec_pentity_t s_selected;
+static vec_pentity_t  s_selected;
+
+static bool           s_hovered_dirty = true;
+static struct entity *s_hovered;
 
 /*****************************************************************************/
 /* GLOBAL VARIABLES                                                          */
@@ -117,6 +120,9 @@ static void on_mousedown(void *user, void *event)
     if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
         return;
 
+    if(G_MouseInTargetMode())
+        return;
+
     int w, h;
     Engine_WinDrawableSize(&w, &h);
 
@@ -128,6 +134,11 @@ static void on_mousedown(void *user, void *event)
 
     s_ctx.state = STATE_MOUSE_SEL_DOWN;
     s_ctx.mouse_down_coord = (vec2_t){mouse_event->x, mouse_event->y};
+}
+
+static void on_mousemove(void *user, void *event)
+{
+    s_hovered_dirty = true;
 }
 
 static void on_mouseup(void *user, void *event)
@@ -246,6 +257,41 @@ static void sel_make_frustum(struct camera *cam, vec2_t mouse_down, vec2_t mouse
     PFM_Vec3_Normal(&out->left.normal, &out->left.normal);
 }
 
+static void sel_compute_hovered(struct camera *cam, const vec_pentity_t *visible, const vec_obb_t *visible_obbs)
+{
+    if(!s_hovered_dirty)
+        return;
+
+    int mouse_x, mouse_y;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+
+    vec3_t ray_origin = sel_unproject_mouse_coords(cam, (vec2_t){mouse_x, mouse_y}, -1.0f);
+    vec3_t ray_dir;
+
+    vec3_t cam_pos = Camera_GetPos(cam);
+    PFM_Vec3_Sub(&ray_origin, &cam_pos, &ray_dir);
+    PFM_Vec3_Normal(&ray_dir, &ray_dir);
+
+    float t_min = FLT_MAX;
+    s_hovered = NULL;
+
+    for(int i = 0; i < vec_size(visible_obbs); i++) {
+
+        if(!(vec_AT(visible, i)->flags & ENTITY_FLAG_SELECTABLE))
+            continue;
+    
+        float t;
+        if(C_RayIntersectsOBB(ray_origin, ray_dir, vec_AT(visible_obbs, i), &t)) {
+
+            if(t < t_min) {
+                t_min = t;
+                s_hovered = vec_AT(visible, i);
+            }
+        }
+    }
+    s_hovered_dirty = false;
+}
+
 static bool pentities_equal(struct entity *const *a, struct entity *const *b)
 {
     return ((*a) == (*b));
@@ -336,12 +382,14 @@ static void sel_filter_and_set_type(void)
 bool G_Sel_Init(void)
 {
     vec_pentity_init(&s_selected);
+    E_Global_Register(SDL_MOUSEMOTION, on_mousemove, NULL, G_RUNNING);
     return true;
 }
 
 void G_Sel_Shutdown(void)
 {
     G_Sel_Disable();
+    E_Global_Unregister(SDL_MOUSEMOTION, on_mousemove);
     vec_pentity_destroy(&s_selected);
 }
 
@@ -375,6 +423,8 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
 {
     PERF_ENTER();
 
+    sel_compute_hovered(cam, visible, visible_obbs);
+
     if(s_ctx.state != STATE_MOUSE_SEL_RELEASED)
         PERF_RETURN_VOID();
     s_ctx.state = STATE_MOUSE_SEL_UP;
@@ -388,29 +438,10 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
          * The behaviour is that only a single entity can be selected with a 'click' action, even if multiple
          * OBBs intersect with the mouse ray. We pick the one with the closest intersection point.
          */
-        vec3_t ray_origin = sel_unproject_mouse_coords(cam, s_ctx.mouse_up_coord, -1.0f);
-        vec3_t ray_dir;
-
-        vec3_t cam_pos = Camera_GetPos(cam);
-        PFM_Vec3_Sub(&ray_origin, &cam_pos, &ray_dir);
-        PFM_Vec3_Normal(&ray_dir, &ray_dir);
-
-        float t_min = FLT_MAX;
-        for(int i = 0; i < vec_size(visible_obbs); i++) {
-
-            if(!(vec_AT(visible, i)->flags & ENTITY_FLAG_SELECTABLE))
-                continue;
-        
-            float t;
-            if(C_RayIntersectsOBB(ray_origin, ray_dir, vec_AT(visible_obbs, i), &t)) {
-
-                sel_empty = false;
-                if(t < t_min) {
-                    t_min = t;
-                    vec_pentity_reset(&s_selected);                
-                    vec_pentity_push(&s_selected, vec_AT(visible, i));
-                }
-            }
+        if(s_hovered) {
+            sel_empty = false;
+            vec_pentity_reset(&s_selected);                
+            vec_pentity_push(&s_selected, s_hovered);
         }
 
     }else{
@@ -533,6 +564,12 @@ bool G_Sel_LoadState(struct SDL_RWops *stream)
         vec_pentity_push(&s_selected, ent);
     }
 
+    s_hovered_dirty = true;
     return true;
+}
+
+struct entity *G_Sel_GetHovered(void)
+{
+    return s_hovered;
 }
 

@@ -182,6 +182,7 @@ void                  G_Sel_Clear(void);
 void                  G_Sel_Add(struct entity *ent);
 void                  G_Sel_Remove(struct entity *ent);
 const vec_pentity_t  *G_Sel_Get(enum selection_type *out_type);
+struct entity        *G_Sel_GetHovered(void);
 
 
 /*###########################################################################*/
@@ -269,6 +270,7 @@ bool G_Building_Unobstructed(const struct entity *ent);
 bool G_Builder_Build(struct entity *builder, struct entity *building);
 void G_Builder_SetBuildSpeed(const struct entity *ent, int speed);
 int  G_Builder_GetBuildSpeed(const struct entity *ent);
+void G_Builder_SetBuildOnLeftClick(void);
 
 #endif
 

@@ -475,6 +475,7 @@ static void on_mousedown(void *user, void *event)
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
 
     assert(!s_move_on_lclick || !s_attack_on_lclick);
+    bool targeting = s_attack_on_lclick || s_move_on_lclick;
     bool attack = s_attack_on_lclick && (mouse_event->button == SDL_BUTTON_LEFT);
     bool move = s_move_on_lclick ? mouse_event->button == SDL_BUTTON_LEFT
                                  : mouse_event->button == SDL_BUTTON_RIGHT;
@@ -488,6 +489,9 @@ static void on_mousedown(void *user, void *event)
         return;
 
     if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
+        return;
+
+    if((mouse_event->button == SDL_BUTTON_RIGHT) && (targeting || G_MouseInTargetMode()))
         return;
 
     if(!attack && !move)
@@ -1725,5 +1729,10 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
     }
 
     return true;
+}
+
+bool G_Move_InTargetMode(void)
+{
+    return (s_move_on_lclick || s_attack_on_lclick);
 }
 

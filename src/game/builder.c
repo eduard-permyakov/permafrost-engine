@@ -43,6 +43,7 @@
 #include "../perf.h"
 #include "../event.h"
 #include "../collision.h"
+#include "../cursor.h"
 #include "../map/public/map.h"
 #include "../lib/public/khash.h"
 
@@ -72,6 +73,7 @@ static void on_build_anim_finished(void *user, void *event);
 
 static khash_t(state) *s_entity_state_table;
 static struct map     *s_map;
+static bool            s_build_on_lclick = false;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -208,6 +210,46 @@ static void on_motion_end(void *user, void *event)
     E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished, (void*)((uintptr_t)uid), G_RUNNING);
 }
 
+static void on_mousedown(void *user, void *event)
+{
+    SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
+    bool targeting = s_build_on_lclick;
+
+    s_build_on_lclick = false;
+    Cursor_SetRTSPointer(CURSOR_POINTER);
+
+    if(G_MouseOverMinimap())
+        return;
+
+    if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
+        return;
+
+    if((mouse_event->button == SDL_BUTTON_RIGHT) && (targeting || G_MouseInTargetMode()))
+        return;
+
+    struct entity *target = G_Sel_GetHovered();
+    if(!target || !(target->flags & ENTITY_FLAG_BUILDING))
+        return;
+
+    enum selection_type sel_type;
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+
+    for(int i = 0; i < vec_size(sel); i++) {
+
+        struct entity *curr = vec_AT(sel, i);
+        if(!(curr->flags & ENTITY_FLAG_BUILDER))
+            continue;
+
+        struct builderstate *bs = builderstate_get(curr->uid);
+        assert(bs);
+
+        bs->state = STATE_NOT_BUILDING;
+        E_Entity_Notify(EVENT_BUILD_END, curr->uid, NULL, ES_ENGINE);
+
+        G_Builder_Build(curr, target);
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -218,12 +260,14 @@ bool G_Builder_Init(struct map *map)
         return false;
 
     s_map = map;
+    E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     return true;
 }
 
 void G_Builder_Shutdown(void)
 {
     s_map = NULL;
+    E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     kh_destroy(state, s_entity_state_table);
 }
 
@@ -244,6 +288,7 @@ bool G_Builder_Build(struct entity *builder, struct entity *building)
 
     bs->state = STATE_MOVING_TO_TARGET;
     bs->target_uid = building->uid;
+    E_Entity_Notify(EVENT_BUILD_TARGET_ACQUIRED, builder->uid, building, ES_ENGINE);
     return true;
 }
 
@@ -281,5 +326,16 @@ int G_Builder_GetBuildSpeed(const struct entity *ent)
     struct builderstate *bs = builderstate_get(ent->uid);
     assert(bs);
     return bs->build_speed;
+}
+
+void G_Builder_SetBuildOnLeftClick(void)
+{
+    s_build_on_lclick = true;
+    Cursor_SetRTSPointer(CURSOR_TARGET);
+}
+
+bool G_Builder_InTargetMode(void)
+{
+    return s_build_on_lclick;
 }
 
