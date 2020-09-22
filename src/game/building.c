@@ -54,8 +54,8 @@
 #define MARKER_OBJ          "build-site-marker.pfobj"
 #define CENTER_MARKER_DIR   "assets/models/build_site"
 #define CENTER_MARKER_OBJ   "build-site.pfobj"
-#define FLAG_SAVE_MASK      (ENTITY_FLAG_SELECTABLE | ENTITY_FLAG_TRANSLUCENT)
 #define EPSILON             (1.0 / 1024)
+#define UID_NONE            (~((uint32_t)0))
 
 VEC_TYPE(uid, uint32_t)
 VEC_IMPL(static inline, uid, uint32_t)
@@ -67,8 +67,8 @@ struct buildstate{
         BUILDING_STATE_FOUNDED,
         BUILDING_STATE_COMPLETED,
     }state;
-    uint32_t old_flags;
     vec_uid_t markers;
+    uint32_t  progress_model;
 };
 
 KHASH_MAP_INIT_INT(state, struct buildstate)
@@ -297,8 +297,8 @@ void G_Building_AddEntity(struct entity *ent)
 
     struct buildstate new_bs = (struct buildstate) {
         .state = BUILDING_STATE_PLACEMENT,
-        .old_flags = ent->flags & FLAG_SAVE_MASK,
-        .markers = {0}
+        .markers = {0},
+        .progress_model = UID_NONE
     };
     buildstate_set(ent, new_bs);
 
@@ -320,6 +320,11 @@ void G_Building_RemoveEntity(const struct entity *ent)
         M_NavBlockersDecrefOBB(s_map, &obb);
     }
 
+    struct entity *progress = G_EntityForUID(bs->progress_model);
+    if(progress) {
+        G_RemoveEntity(progress);
+        G_SafeFree(progress);
+    }
     building_clear_markers(bs);
     buildstate_remove(ent);
 }
@@ -347,22 +352,55 @@ bool G_Building_Found(struct entity *ent)
     if(!G_Building_Unobstructed(ent))
         return false;
 
-    ent->flags &= ~FLAG_SAVE_MASK;
-    ent->flags |= (bs->old_flags & FLAG_SAVE_MASK);
+    struct obb obb;
+    Entity_CurrentOBB(ent, &obb, true);
+    float height = obb.half_lengths[1] * 2;
+
+    struct entity *progress = AL_EntityFromPFObj(ent->basedir, ent->filename, ent->name, Entity_NewUID());
+    if(progress) {
+        progress->flags |= ENTITY_FLAG_TRANSLUCENT;
+        progress->scale = ent->scale;
+        progress->rotation = ent->rotation;
+
+        G_AddEntity(progress, G_Pos_Get(ent->uid));
+        bs->progress_model = progress->uid;
+    }
+
+    if(ent->flags & ENTITY_FLAG_COMBATABLE) {
+        G_Combat_SetHP(ent, ent->max_hp * 0.1f);
+        G_Building_UpdateProgress(ent, 0.1f);
+    }
+
+    ent->flags &= ~ENTITY_FLAG_TRANSLUCENT;
+    ent->flags |= ENTITY_FLAG_SELECTABLE;
     ent->flags |= ENTITY_FLAG_INVISIBLE;
 
     building_place_markers(bs, ent);
     bs->state = BUILDING_STATE_FOUNDED;
 
-    struct obb obb;
-    Entity_CurrentOBB(ent, &obb, true);
     M_NavBlockersIncrefOBB(s_map, &obb);
-
     return true;
 }
 
-bool G_Building_Complete(const struct entity *ent)
+bool G_Building_Complete(struct entity *ent)
 {
+    struct buildstate *bs = buildstate_get(ent->uid);
+    assert(bs);
+
+    if(bs->state != BUILDING_STATE_FOUNDED)
+        return false;
+
+    struct entity *progress = G_EntityForUID(bs->progress_model);
+    if(progress) {
+        G_RemoveEntity(progress);
+        G_SafeFree(progress);
+    }
+    building_clear_markers(bs);
+
+    bs->state = BUILDING_STATE_COMPLETED;
+    bs->progress_model = UID_NONE;
+    ent->flags &= ~ENTITY_FLAG_INVISIBLE;
+
     return true;
 }
 
@@ -378,6 +416,27 @@ bool G_Building_IsFounded(struct entity *ent)
 {
     struct buildstate *bs = buildstate_get(ent->uid);
     assert(bs);
-    return (bs->state == BUILDING_STATE_FOUNDED);
+    return (bs->state >= BUILDING_STATE_FOUNDED);
+}
+
+void G_Building_UpdateProgress(struct entity *ent, float frac_done)
+{
+    struct buildstate *bs = buildstate_get(ent->uid);
+    if(!bs)
+        return;
+
+    struct entity *pent = G_EntityForUID(bs->progress_model);
+    if(!pent)
+        return;
+
+    struct obb obb;
+    Entity_CurrentOBB(pent, &obb, true);
+    float height = obb.half_lengths[1] * 2;
+
+    vec3_t pos = G_Pos_Get(pent->uid);
+    float map_height = M_HeightAtPoint(s_map, (vec2_t){pos.x, pos.z});
+
+    pos.y = map_height - (height * (1.0f - frac_done));
+    G_Pos_Set(pent, pos);
 }
 

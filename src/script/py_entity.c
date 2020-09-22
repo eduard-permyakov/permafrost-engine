@@ -128,6 +128,8 @@ static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyOb
 static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self);
+static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self);
+static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure);
 static int       PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
@@ -395,7 +397,15 @@ static PyMethodDef PyBuildableEntity_methods[] = {
     {"found", 
     (PyCFunction)PyBuildableEntity_found, METH_NOARGS,
     "Advance a building to the 'FOUNDED' state from the 'MARKED' state, "
-    "where it become a build site and wait for workes to finish constructing it."},
+    "where it becomes a build site and wait for workes to finish constructing it."},
+
+    {"complete", 
+    (PyCFunction)PyBuildableEntity_complete, METH_NOARGS,
+    "Advance a building to the 'COMPLETED' state from the 'FOUNDED' state."},
+
+    {"unobstructed", 
+    (PyCFunction)PyBuildableEntity_unobstructed, METH_NOARGS,
+    "Returns True if there is no obstruction under any of the building's tiles."},
 
     {"__pickle__", 
     (PyCFunction)PyBuildableEntity_pickle, METH_KEYWORDS,
@@ -1570,6 +1580,24 @@ static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self)
         return NULL;
     }
     Py_RETURN_NONE;
+}
+
+static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self)
+{
+    if(!G_Building_Complete(self->super.ent)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to complete building. It must be in the FOUNDED state.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self)
+{
+    if(G_Building_Unobstructed(self->super.ent)) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
 }
 
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure)

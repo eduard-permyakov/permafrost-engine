@@ -296,9 +296,14 @@ static void g_render_healthbars(void)
 
         if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
             continue;
+        if((curr->flags & ENTITY_FLAG_BUILDING) && !G_Building_IsFounded(curr))
+            continue;
 
         int max_health = curr->max_hp;
         int curr_health = G_Combat_GetCurrentHP(curr);
+
+        if(curr_health == 0)
+            continue;
 
         ent_top_pos_ws[num_combat_visible] = Entity_TopCenterPointWS(curr);
         ent_health_pc[num_combat_visible] = ((GLfloat)curr_health)/max_health;
@@ -362,6 +367,9 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
 
         const struct entity *curr = vec_AT(&ents, i);
 
+        if(curr->flags & ENTITY_FLAG_INVISIBLE)
+            continue;
+
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
 
@@ -416,9 +424,6 @@ static void g_create_render_input(struct render_input *out)
 
     g_make_draw_list(s_gs.visible, &out->cam_vis_stat, &out->cam_vis_anim);
     g_make_draw_list(s_gs.light_visible, &out->light_vis_stat, &out->light_vis_anim);
-
-    assert(vec_size(&out->cam_vis_stat) + vec_size(&out->cam_vis_anim) == vec_size(&s_gs.visible));
-    assert(vec_size(&out->light_vis_stat) + vec_size(&out->light_vis_anim) == vec_size(&s_gs.light_visible));
 
     PERF_RETURN_VOID();
 }
@@ -1091,9 +1096,6 @@ void G_Update(void)
         if(s_gs.ss == G_RUNNING && curr->flags & ENTITY_FLAG_ANIMATED)
             A_Update(curr);
 
-        if(curr->flags & ENTITY_FLAG_INVISIBLE)
-            continue;
-
         bool vis = false;
         struct obb obb;
         Entity_CurrentOBB(curr, &obb, false);
@@ -1587,10 +1589,14 @@ void G_Zombiefy(struct entity *ent)
     }
 
     G_Move_RemoveEntity(ent);
+    G_Combat_RemoveEntity(ent);
+    G_Building_RemoveEntity(ent);
 
     ent->flags &= ~ENTITY_FLAG_SELECTABLE;
     ent->flags &= ~ENTITY_FLAG_COLLISION;
     ent->flags &= ~ENTITY_FLAG_ANIMATED;
+    ent->flags &= ~ENTITY_FLAG_COMBATABLE;
+    ent->flags &= ~ENTITY_FLAG_BUILDING;
 
     ent->flags |= ENTITY_FLAG_INVISIBLE;
     ent->flags |= ENTITY_FLAG_STATIC;

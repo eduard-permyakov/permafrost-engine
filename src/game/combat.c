@@ -36,11 +36,12 @@
 #include "combat.h"
 #include "game_private.h"
 #include "movement.h"
+#include "building.h"
+#include "public/game.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../main.h"
 #include "../perf.h"
-#include "public/game.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
 
@@ -204,6 +205,8 @@ static struct entity *closest_enemy_in_range(const struct entity *ent)
             continue;
         if(curr->flags & ENTITY_FLAG_ZOMBIE)
             continue;
+        if((curr->flags & ENTITY_FLAG_BUILDING) && !G_Building_IsFounded(curr))
+            continue;
         if(!enemies(ent, curr))
             continue;
 
@@ -290,7 +293,12 @@ static void on_attack_anim_finish(void *user, void *event)
 
             E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_attack_anim_finish);
             E_Entity_Notify(EVENT_ENTITY_DEATH, cs->target_uid, NULL, ES_ENGINE);
-            E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_death_anim_finish, target, G_RUNNING);
+
+            if(target->flags & ENTITY_FLAG_ANIMATED) {
+                E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_death_anim_finish, target, G_RUNNING);
+            }else{
+                G_Zombiefy(target);
+            }
 
             vec_pentity_push(&s_dying_ents, target);
             target_cs->state = STATE_DEATH_ANIM_PLAYING;

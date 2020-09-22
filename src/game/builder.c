@@ -50,6 +50,7 @@
 #include <assert.h>
 
 #define UID_NONE  (~((uint32_t)0))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 struct builderstate{
     enum{
@@ -62,6 +63,8 @@ struct builderstate{
 };
 
 KHASH_MAP_INIT_INT(state, struct builderstate)
+
+static void on_build_anim_finished(void *user, void *event);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -102,40 +105,13 @@ static void builderstate_remove(const struct entity *ent)
         kh_del(state, s_entity_state_table, k);
 }
 
-static void on_30hz_tick(void *user, void *event)
-{
-    PERF_ENTER();
-
-    uint32_t key;
-    struct builderstate curr;
-
-    struct entity *ent;
-    (void)ent;
-
-    kh_foreach(s_entity_state_table, key, curr, {
-
-        ent = G_EntityForUID(key);
-        switch(curr.state) {
-        case STATE_NOT_BUILDING:
-            /* no-op */
-            break;
-        case STATE_MOVING_TO_TARGET:
-            break;
-        case STATE_BUILDING:
-            break;
-        default: assert(0);
-        }
-    });
-
-    PERF_RETURN_VOID();
-}
-
 static void on_motion_begin(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
     const struct entity *ent = G_EntityForUID(uid);
 
     E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished);
 
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
@@ -143,6 +119,47 @@ static void on_motion_begin(void *user, void *event)
 
     bs->state = STATE_NOT_BUILDING;
     E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
+}
+
+static void finish_building(struct builderstate *bs, uint32_t uid)
+{
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished);
+    E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
+
+    bs->state = STATE_NOT_BUILDING;
+    bs->target_uid = UID_NONE;
+    E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
+}
+
+static void on_build_anim_finished(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)user;
+    const struct entity *ent = G_EntityForUID(uid);
+
+    struct builderstate *bs = builderstate_get(uid);
+    assert(bs);
+
+    struct entity *target = G_EntityForUID(bs->target_uid);
+    if(!target) {
+        finish_building(bs, uid);
+        return;
+    }
+
+    if(!(target->flags & ENTITY_FLAG_COMBATABLE)) {
+        G_Building_Complete(target);
+        finish_building(bs, uid);
+        return;
+    }
+
+    int hp = MIN(G_Combat_GetCurrentHP(target) + bs->build_speed, target->max_hp);
+    G_Combat_SetHP(target, hp);
+    G_Building_UpdateProgress(target, hp / (float)target->max_hp);
+
+    if(hp == target->max_hp) {
+        G_Building_Complete(target);
+        finish_building(bs, uid);
+        return;
+    }
 }
 
 static void on_motion_end(void *user, void *event)
@@ -180,6 +197,7 @@ static void on_motion_end(void *user, void *event)
     && !G_Building_Found(target)) {
         bs->state = STATE_NOT_BUILDING;
         bs->target_uid = UID_NONE;
+        E_Entity_Notify(EVENT_BUILD_FAIL_FOUND, uid, NULL, ES_ENGINE);
         return; 
     }
 
@@ -187,6 +205,7 @@ static void on_motion_end(void *user, void *event)
     E_Entity_Notify(EVENT_BUILD_BEGIN, uid, NULL, ES_ENGINE);
     bs->state = STATE_BUILDING; 
     E_Entity_Register(EVENT_MOTION_START, uid, on_motion_begin, (void*)((uintptr_t)uid), G_RUNNING);
+    E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished, (void*)((uintptr_t)uid), G_RUNNING);
 }
 
 /*****************************************************************************/
@@ -198,8 +217,6 @@ bool G_Builder_Init(struct map *map)
     if(NULL == (s_entity_state_table = kh_init(state)))
         return false;
 
-    E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
-
     s_map = map;
     return true;
 }
@@ -207,7 +224,6 @@ bool G_Builder_Init(struct map *map)
 void G_Builder_Shutdown(void)
 {
     s_map = NULL;
-    E_Global_Unregister(EVENT_30HZ_TICK, on_30hz_tick);
     kh_destroy(state, s_entity_state_table);
 }
 
@@ -219,8 +235,12 @@ bool G_Builder_Build(struct entity *builder, struct entity *building)
     if(!(building->flags & ENTITY_FLAG_BUILDING))
         return false;
 
-    G_Move_SetSurroundEntity(builder, building);
+    E_Entity_Unregister(EVENT_MOTION_END, builder->uid, on_motion_end);
+    E_Entity_Unregister(EVENT_MOTION_START, builder->uid, on_motion_begin);
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, builder->uid, on_build_anim_finished);
+
     E_Entity_Register(EVENT_MOTION_END, builder->uid, on_motion_end, (void*)((uintptr_t)builder->uid), G_RUNNING);
+    G_Move_SetSurroundEntity(builder, building);
 
     bs->state = STATE_MOVING_TO_TARGET;
     bs->target_uid = building->uid;
@@ -245,6 +265,7 @@ void G_Builder_RemoveEntity(const struct entity *ent)
         return;
     E_Entity_Unregister(EVENT_MOTION_END, ent->uid, on_motion_end);
     E_Entity_Unregister(EVENT_MOTION_START, ent->uid, on_motion_begin);
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_build_anim_finished);
     builderstate_remove(ent);
 }
 
