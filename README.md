@@ -50,6 +50,7 @@ EVERGLORY is the flagship game developed using Permafrost Engine.
 * RTS-style unit selection
 * RTS unit combat system
 * RTS fog-of-war system
+* RTS base-building mechanics
 * Support for different resolutions and aspect ratios
 * Configurable graphics settings
 * Serialization and deserialization of the entire Python interpreter state

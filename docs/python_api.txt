@@ -77,6 +77,10 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Get the size (in bytes) of a Python file object.
 
+    [get_hovered_unit]
+    ----------------------------------------------------------------------------
+    Get the closest unit under the mouse cursor, or None.
+
     [get_minimap_position]
     ----------------------------------------------------------------------------
     Returns the current minimap position in virtual screen coordinates.
@@ -226,6 +230,11 @@ BUILT-IN FUNCTIONS
     Set the cursor to target mode. The next left click will issue an attack
     command to the location under the cursor.
 
+    [set_build_on_left_click]
+    ----------------------------------------------------------------------------
+    Set the cursor to target mode. The next left click will issue a build
+    command to the building under the cursor.
+
     [set_diplomacy_state]
     ----------------------------------------------------------------------------
     Symmetrically sets the diplomacy state between two distinct factions
@@ -374,6 +383,9 @@ BUILT-IN CLASSES
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
+        [face_towards]
+        Make the entity face towards the specified point.
+
         [get_anim]
         Get the name of the currently playing animation clip.
 
@@ -397,6 +409,200 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
+
+        [unregister]
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
+
+    [BuildableEntity]
+    ----------------------------------------------------------------------------
+    Permafrost Engine entity buildable entity. This is a subclass of pf.Entity.
+    The building starts out in the 'PLACEMENT' state. It must then go through
+    the 'MARKED', 'FOUNDED', and 'COMPLETED' states.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
+        [name]
+        Custom name given to this enity.
+
+        [pfobj_path]
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
+
+        [pos]
+        The XYZ position in worldspace coordinates.
+
+        [rotation]
+        XYZW quaternion for rotaion about local origin.
+
+        [scale]
+        The XYZ scaling factors.
+
+        [selectable]
+        Flag indicating whether this entity can be selected with the mouse.
+
+        [selection_radius]
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
+
+        [speed]
+        Entity's movement speed (in OpenGL coordinates per second).
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__del__]
+        Calls the next __del__ in the MRO if there is one, otherwise do nothing.
+
+        [__pickle__]
+        Serialize a Permafrost Engine buildable entity to a string.
+
+        [complete]
+        Advance a building to the 'COMPLETED' state from the 'FOUNDED' state.
+
+        [deselect]
+        Removes the entity from the current unit selection, if it is selected.
+
+        [face_towards]
+        Make the entity face towards the specified point.
+
+        [found]
+        Advance a building to the 'FOUNDED' state from the 'MARKED' state,
+        where it becomes a build site and wait for workes to finish
+        constructing it.
+
+        [mark]
+        Advance a building to the 'MARKED' state from the initial 'PLACEMENT'
+        state, where it will wait for a worker to found it.
+
+        [move]
+        Issues a 'move' order to the entity at the XZ position specified by the
+        argument.
+
+        [notify]
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
+
+        [register]
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
+
+        [select]
+        Adds the entity to the current unit selection, if it is not present
+        there already.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
+
+        [unobstructed]
+        Returns True if there is no obstruction under any of the building's
+        tiles.
+
+        [unregister]
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
+
+    [BuilderEntity]
+    ----------------------------------------------------------------------------
+    Permafrost Engine builder entity. This is a subclass of pf.Entity. This
+    kind of entity is able to construct and repair pf.BuildableEntity
+    instances. This type requires the 'build_speed' keyword argument to be
+    passed to '__init__'.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
+        [name]
+        Custom name given to this enity.
+
+        [pfobj_path]
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
+
+        [pos]
+        The XYZ position in worldspace coordinates.
+
+        [rotation]
+        XYZW quaternion for rotaion about local origin.
+
+        [scale]
+        The XYZ scaling factors.
+
+        [selectable]
+        Flag indicating whether this entity can be selected with the mouse.
+
+        [selection_radius]
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
+
+        [speed]
+        Entity's movement speed (in OpenGL coordinates per second).
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__del__]
+        Calls the next __del__ in the MRO if there is one, otherwise do nothing.
+
+        [__pickle__]
+        Serialize a Permafrost Engine builder entity to a string.
+
+        [build]
+        Issue an order to build a specific buildable entity.
+
+        [deselect]
+        Removes the entity from the current unit selection, if it is selected.
+
+        [face_towards]
+        Make the entity face towards the specified point.
+
+        [move]
+        Issues a 'move' order to the entity at the XZ position specified by the
+        argument.
+
+        [notify]
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
+
+        [register]
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
+
+        [select]
+        Adds the entity to the current unit selection, if it is not present
+        there already.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
 
         [stop]
         Issues a 'stop' command to the entity, stopping its' movement and
@@ -520,6 +726,9 @@ BUILT-IN CLASSES
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
+        [face_towards]
+        Make the entity face towards the specified point.
+
         [hold_position]
         Issues a 'hold position' order to the entity, stopping it and
         preventing it from moving to attack.
@@ -540,6 +749,10 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
 
         [stop]
         Issues a 'stop' command to the entity, stopping its' movement and
@@ -600,6 +813,9 @@ BUILT-IN CLASSES
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
+        [face_towards]
+        Make the entity face towards the specified point.
+
         [move]
         Issues a 'move' order to the entity at the XZ position specified by the
         argument.
@@ -617,6 +833,10 @@ BUILT-IN CLASSES
         Adds the entity to the current unit selection, if it is not present
         there already.
 
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
         [stop]
         Issues a 'stop' command to the entity, stopping its' movement and
         attack. Cancels 'hold position' order.
@@ -628,6 +848,12 @@ BUILT-IN CLASSES
     [Task]
     ----------------------------------------------------------------------------
     Permafrost Engine runnable task.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [completed]
+        Returns True if the task has ran to completion
 
         ************************************************************************
         METHODS
@@ -1314,27 +1540,34 @@ BUILT-IN CONSTANTS
     CAM_MODE_RTS 1
     DIPLOMACY_STATE_PEACE 0
     DIPLOMACY_STATE_WAR 1
-    EVENT_10HZ_TICK 65548
-    EVENT_1HZ_TICK 65549
-    EVENT_30HZ_TICK 65545
-    EVENT_60HZ_TICK 65544
-    EVENT_ANIM_CYCLE_FINISHED 65551
-    EVENT_ANIM_FINISHED 65550
-    EVENT_ATTACK_END 65556
-    EVENT_ATTACK_START 65554
+    EVENT_10HZ_TICK 65549
+    EVENT_1HZ_TICK 65550
+    EVENT_30HZ_TICK 65546
+    EVENT_60HZ_TICK 65545
+    EVENT_ANIM_CYCLE_FINISHED 65552
+    EVENT_ANIM_FINISHED 65551
+    EVENT_ATTACK_END 65558
+    EVENT_ATTACK_START 65556
+    EVENT_BUILD_BEGIN 65563
+    EVENT_BUILD_END 65564
+    EVENT_BUILD_FAIL_FOUND 65565
+    EVENT_BUILD_TARGET_ACQUIRED 65566
     EVENT_ENGINE_LAST 131071
-    EVENT_ENTITY_DEATH 65555
-    EVENT_GAME_SIMSTATE_CHANGED 65557
-    EVENT_MOTION_END 65553
-    EVENT_MOTION_START 65552
-    EVENT_NEW_GAME 65542
-    EVENT_RENDER_3D 65539
-    EVENT_RENDER_UI 65540
-    EVENT_SCRIPT_TASK_EXCEPTION 65559
-    EVENT_SCRIPT_TASK_FINISHED 65560
-    EVENT_SELECTED_TILE_CHANGED 65541
-    EVENT_SESSION_FAIL_LOAD 65558
-    EVENT_UNIT_SELECTION_CHANGED 65543
+    EVENT_ENTITY_DEATH 65557
+    EVENT_ENTITY_STOP 65567
+    EVENT_GAME_SIMSTATE_CHANGED 65559
+    EVENT_MOTION_END 65555
+    EVENT_MOTION_START 65554
+    EVENT_MOVE_ISSUED 65553
+    EVENT_NEW_GAME 65543
+    EVENT_RENDER_3D_POST 65540
+    EVENT_RENDER_3D_PRE 65539
+    EVENT_RENDER_UI 65541
+    EVENT_SCRIPT_TASK_EXCEPTION 65561
+    EVENT_SCRIPT_TASK_FINISHED 65562
+    EVENT_SELECTED_TILE_CHANGED 65542
+    EVENT_SESSION_FAIL_LOAD 65560
+    EVENT_UNIT_SELECTION_CHANGED 65544
     EVENT_UPDATE_END 65537
     EVENT_UPDATE_START 65536
     EVENT_UPDATE_UI 65538
