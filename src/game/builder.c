@@ -46,12 +46,19 @@
 #include "../cursor.h"
 #include "../map/public/map.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/attr.h"
 
 #include <stdint.h>
 #include <assert.h>
 
 #define UID_NONE  (~((uint32_t)0))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 struct builderstate{
     enum{
@@ -345,11 +352,95 @@ bool G_Builder_InTargetMode(void)
 
 bool G_Builder_SaveState(struct SDL_RWops *stream)
 {
+    struct attr num_builders = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_entity_state_table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_builders, "num_builders"));
+
+    uint32_t uid;
+    struct builderstate curr;
+
+    kh_foreach(s_entity_state_table, uid, curr, {
+
+        struct attr buid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &buid, "builder_uid"));
+
+        struct attr state = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.state
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &state, "builder_state"));
+
+        struct attr speed = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.build_speed
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &speed, "builder_speed"));
+
+        struct attr target = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.target_uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &target, "builder_target"));
+    });
+
     return true;
 }
 
 bool G_Builder_LoadState(struct SDL_RWops *stream)
 {
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const int num_builders = attr.val.as_int;
+
+    for(int i = 0; i < num_builders; i++) {
+    
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uint32_t uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int state = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int speed = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int target = attr.val.as_int;
+
+        struct builderstate *bs = builderstate_get(uid);
+        CHK_TRUE_RET(bs);
+
+        bs->state = state;
+        bs->build_speed = speed;
+        bs->target_uid = target;
+
+        switch(state) {
+        case STATE_NOT_BUILDING:
+            break;
+        case STATE_MOVING_TO_TARGET:
+            E_Entity_Register(EVENT_MOTION_END, uid, 
+                on_motion_end, (void*)((uintptr_t)uid), G_RUNNING);
+            break;
+        case STATE_BUILDING:
+            E_Entity_Register(EVENT_MOTION_START, uid, 
+                on_motion_begin, (void*)((uintptr_t)uid), G_RUNNING);
+            E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, 
+                on_build_anim_finished, (void*)((uintptr_t)uid), G_RUNNING);
+            break;
+        default:
+            return false;
+        }
+    }
     return true;
 }
 

@@ -1927,7 +1927,7 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Sel_SaveState(stream))
         return false;
 
-    /* Movement and combat state is only saved for sessions with a loaded map */
+    /* Movement, combat, etc. state is only saved for sessions with a loaded map */
     if(!s_gs.map)
         return true;
     
@@ -1938,6 +1938,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
         return false;
 
     if(!G_Building_SaveState(stream))
+        return false;
+
+    if(!G_Builder_SaveState(stream))
         return false;
 
     return true;
@@ -1967,6 +1970,9 @@ bool G_LoadEntityState(SDL_RWops *stream)
         return false;
 
     if(!G_Building_LoadState(stream))
+        return false;
+
+    if(!G_Builder_LoadState(stream))
         return false;
 
     return true;
