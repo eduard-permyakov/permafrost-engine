@@ -1966,6 +1966,7 @@ script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg)
     if(PyWeakref_Check(arg)) {
         return PyWeakref_GetObject(arg); 
     }
+    Py_INCREF(arg);
     return arg;
 }
 

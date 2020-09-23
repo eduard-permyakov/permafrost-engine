@@ -470,12 +470,28 @@ static void move_marker_add(vec3_t pos, bool attack)
     vec_pentity_push(&s_move_markers, ent);
 }
 
+static bool build_action(void)
+{
+    enum selection_type sel_type;
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+
+    if(vec_size(sel) == 0 || (sel_type != SELECTION_TYPE_PLAYER))
+        return false;
+    
+    struct entity *hovered = G_Sel_GetHovered();
+    if(!hovered)
+        return false;
+
+    struct entity *first = vec_AT(sel, 0);
+    return (first->flags & ENTITY_FLAG_BUILDER) && (hovered->flags & ENTITY_FLAG_BUILDING);
+}
+
 static void on_mousedown(void *user, void *event)
 {
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
 
     assert(!s_move_on_lclick || !s_attack_on_lclick);
-    bool targeting = s_attack_on_lclick || s_move_on_lclick;
+    bool targeting = G_MouseInTargetMode();
     bool attack = s_attack_on_lclick && (mouse_event->button == SDL_BUTTON_LEFT);
     bool move = s_move_on_lclick ? mouse_event->button == SDL_BUTTON_LEFT
                                  : mouse_event->button == SDL_BUTTON_RIGHT;
@@ -491,10 +507,13 @@ static void on_mousedown(void *user, void *event)
     if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
         return;
 
-    if((mouse_event->button == SDL_BUTTON_RIGHT) && (targeting || G_MouseInTargetMode()))
+    if((mouse_event->button == SDL_BUTTON_RIGHT) && targeting)
         return;
 
     if(!attack && !move)
+        return;
+
+    if(build_action())
         return;
 
     vec3_t mouse_coord;
@@ -503,6 +522,7 @@ static void on_mousedown(void *user, void *event)
 
     enum selection_type sel_type;
     const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+
     if(vec_size(sel) > 0 && sel_type == SELECTION_TYPE_PLAYER) {
 
         for(int i = 0; i < vec_size(sel); i++) {
@@ -1292,6 +1312,8 @@ bool G_Move_Init(const struct map *map)
     E_Global_Register(EVENT_20HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
 
     s_map = map;
+    s_attack_on_lclick = false;
+    s_move_on_lclick = false;
     return true;
 }
 

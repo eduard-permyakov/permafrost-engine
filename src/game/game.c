@@ -1018,6 +1018,8 @@ void G_BakeNavDataForScene(void)
         if(((ENTITY_FLAG_COLLISION | ENTITY_FLAG_STATIC) & curr->flags) 
          != (ENTITY_FLAG_COLLISION | ENTITY_FLAG_STATIC))
             continue;
+        if(curr->flags & ENTITY_FLAG_BUILDING)
+            continue;
 
         struct obb obb;
         Entity_CurrentOBB(curr, &obb, false);
@@ -1222,6 +1224,8 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
         return false;
     kh_value(s_gs.active, k) = ent;
 
+    G_Pos_Set(ent, pos);
+
     if(ent->flags & ENTITY_FLAG_BUILDING)
         G_Building_AddEntity(ent);
 
@@ -1231,15 +1235,14 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
     if(ent->flags & ENTITY_FLAG_COMBATABLE)
         G_Combat_AddEntity(ent, COMBAT_STANCE_AGGRESSIVE);
 
-    G_Pos_Set(ent, pos);
-    if(ent->flags & ENTITY_FLAG_STATIC)
-        return true;
+    if(!(ent->flags & ENTITY_FLAG_STATIC)) {
+    
+        k = kh_put(entity, s_gs.dynamic, ent->uid, &ret);
+        assert(ret != -1 && ret != 0);
+        kh_value(s_gs.dynamic, k) = ent;
 
-    k = kh_put(entity, s_gs.dynamic, ent->uid, &ret);
-    assert(ret != -1 && ret != 0);
-    kh_value(s_gs.dynamic, k) = ent;
-
-    G_Move_AddEntity(ent);
+        G_Move_AddEntity(ent);
+    }
     return true;
 }
 
@@ -1285,7 +1288,7 @@ void G_SetStatic(struct entity *ent, bool on)
     khiter_t k;
     int ret;
 
-    if(on && (ent->flags & ~ENTITY_FLAG_STATIC)) {
+    if(on && !(ent->flags & ENTITY_FLAG_STATIC)) {
 
         k = kh_get(entity, s_gs.dynamic, ent->uid);
         assert(k != kh_end(s_gs.dynamic));
@@ -1934,6 +1937,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Combat_SaveState(stream))
         return false;
 
+    if(!G_Building_SaveState(stream))
+        return false;
+
     return true;
 }
 
@@ -1958,6 +1964,9 @@ bool G_LoadEntityState(SDL_RWops *stream)
         return false;
 
     if(!G_Combat_LoadState(stream))
+        return false;
+
+    if(!G_Building_LoadState(stream))
         return false;
 
     return true;

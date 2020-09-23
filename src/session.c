@@ -101,12 +101,6 @@ static bool subsession_save(SDL_RWops *stream)
     if(!S_SaveState(stream))
         return false;
 
-    /* After the entities are loaded, populate all the auxiliary entity state that
-     * isn't visible via the scripting API. (animation context, pricise movement 
-     * state, etc) */
-    if(!G_SaveEntityState(stream))
-        return false;
-
     /* Roll forward the 'next_uid' so there's no collision with already loaded 
      * entities (which preserve their UIDs from the old session) */
     struct attr next_uid = (struct attr){
@@ -114,6 +108,12 @@ static bool subsession_save(SDL_RWops *stream)
         .val.as_int = Entity_NewUID()
     };
     if(!Attr_Write(stream, &next_uid, "next_uid"))
+        return false;
+
+    /* After the entities are loaded, populate all the auxiliary entity state that
+     * isn't visible via the scripting API. (animation context, pricise movement 
+     * state, etc) */
+    if(!G_SaveEntityState(stream))
         return false;
 
     return true;
@@ -136,22 +136,23 @@ static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
         goto fail;
     }
 
+    if(!Attr_Parse(stream, &attr, true) || attr.type != TYPE_INT) {
+        pf_snprintf(errstr, errlen, 
+            "Could not read version next_uid attribute from session file");
+        goto fail;
+    }
+    Entity_SetNextUID(attr.val.as_int);
+
     if(!G_LoadEntityState(stream)) {
         pf_snprintf(errstr, errlen, 
             "Could not de-serialize addional entity state from session file");
         goto fail;
     }
 
-    if(!Attr_Parse(stream, &attr, true) || attr.type != TYPE_INT) {
-        pf_snprintf(errstr, errlen, 
-            "Could not read version next_uid attribute from session file");
-        goto fail;
-    }
-
-    Entity_SetNextUID(attr.val.as_int);
     return true;
 
 fail:
+    printf("%s\n", errstr);
     subsession_clear();
     return false;
 }

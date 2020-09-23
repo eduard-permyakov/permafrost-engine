@@ -213,7 +213,7 @@ static void on_motion_end(void *user, void *event)
 static void on_mousedown(void *user, void *event)
 {
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
-    bool targeting = s_build_on_lclick;
+    bool targeting = G_MouseInTargetMode();
 
     s_build_on_lclick = false;
     Cursor_SetRTSPointer(CURSOR_POINTER);
@@ -224,7 +224,10 @@ static void on_mousedown(void *user, void *event)
     if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
         return;
 
-    if((mouse_event->button == SDL_BUTTON_RIGHT) && (targeting || G_MouseInTargetMode()))
+    if((mouse_event->button == SDL_BUTTON_RIGHT) && targeting)
+        return;
+
+    if((mouse_event->button == SDL_BUTTON_LEFT) && !targeting)
         return;
 
     struct entity *target = G_Sel_GetHovered();
@@ -260,6 +263,7 @@ bool G_Builder_Init(struct map *map)
         return false;
 
     s_map = map;
+    s_build_on_lclick = false;
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     return true;
 }
@@ -337,5 +341,15 @@ void G_Builder_SetBuildOnLeftClick(void)
 bool G_Builder_InTargetMode(void)
 {
     return s_build_on_lclick;
+}
+
+bool G_Builder_SaveState(struct SDL_RWops *stream)
+{
+    return true;
+}
+
+bool G_Builder_LoadState(struct SDL_RWops *stream)
+{
+    return true;
 }
 

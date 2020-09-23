@@ -44,6 +44,7 @@
 #include "../map/public/tile.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
+#include "../lib/public/attr.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -57,6 +58,12 @@
 #define EPSILON             (1.0 / 1024)
 #define UID_NONE            (~((uint32_t)0))
 
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
+
 VEC_TYPE(uid, uint32_t)
 VEC_IMPL(static inline, uid, uint32_t)
 
@@ -67,6 +74,7 @@ struct buildstate{
         BUILDING_STATE_FOUNDED,
         BUILDING_STATE_COMPLETED,
     }state;
+    float     frac_done;
     vec_uid_t markers;
     uint32_t  progress_model;
 };
@@ -297,6 +305,7 @@ void G_Building_AddEntity(struct entity *ent)
 
     struct buildstate new_bs = (struct buildstate) {
         .state = BUILDING_STATE_PLACEMENT,
+        .frac_done = 0.0,
         .markers = {0},
         .progress_model = UID_NONE
     };
@@ -358,7 +367,7 @@ bool G_Building_Found(struct entity *ent)
 
     struct entity *progress = AL_EntityFromPFObj(ent->basedir, ent->filename, ent->name, Entity_NewUID());
     if(progress) {
-        progress->flags |= ENTITY_FLAG_TRANSLUCENT;
+        progress->flags |= (ENTITY_FLAG_TRANSLUCENT | ENTITY_FLAG_STATIC);
         progress->scale = ent->scale;
         progress->rotation = ent->rotation;
 
@@ -438,5 +447,111 @@ void G_Building_UpdateProgress(struct entity *ent, float frac_done)
 
     pos.y = map_height - (height * (1.0f - frac_done));
     G_Pos_Set(pent, pos);
+    bs->frac_done = frac_done;
+}
+
+bool G_Building_SaveState(struct SDL_RWops *stream)
+{
+    struct attr num_buildings = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_entity_state_table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_buildings, "num_buildings"));
+
+    uint32_t uid;
+    struct buildstate curr;
+
+    kh_foreach(s_entity_state_table, uid, curr, {
+
+        struct entity *ent = G_EntityForUID(uid);
+        assert(ent);
+
+        struct attr buid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &buid, "building_uid"));
+    
+        struct attr state = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.state
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &state, "building_state"));
+
+        struct attr frac_done = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = curr.frac_done
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &frac_done, "building_frac_done"));
+
+        struct attr building_hp = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = (ent->flags & ENTITY_FLAG_COMBATABLE) ? G_Combat_GetCurrentHP(ent) : 0
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &building_hp, "building_hp"));
+    });
+
+    return true;
+}
+
+bool G_Building_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const int num_buildings = attr.val.as_int;
+
+    for(int i = 0; i < num_buildings; i++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uint32_t uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int state = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        float frac_done = attr.val.as_float;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int hp = attr.val.as_int;
+
+        struct entity *ent = G_EntityForUID(uid);
+        CHK_TRUE_RET(ent);
+        CHK_TRUE_RET(ent->flags & ENTITY_FLAG_BUILDING);
+
+        struct buildstate *bs = buildstate_get(ent->uid);
+        assert(bs);
+
+        switch(state) {
+        case BUILDING_STATE_PLACEMENT:
+            break;
+        case BUILDING_STATE_MARKED:
+            G_Building_Mark(ent);
+            break;
+        case BUILDING_STATE_FOUNDED:
+            G_Building_Mark(ent);
+            G_Building_Found(ent);
+            G_Building_UpdateProgress(ent, frac_done);
+            break;
+        case BUILDING_STATE_COMPLETED:
+            G_Building_Mark(ent);
+            G_Building_Found(ent);
+            G_Building_UpdateProgress(ent, frac_done);
+            G_Building_Complete(ent);
+            break;
+        default:
+            return false;
+        }
+
+        if(ent->flags & ENTITY_FLAG_COMBATABLE) {
+            G_Combat_SetHP(ent, hp);
+        }
+    }
+    return true;
 }
 

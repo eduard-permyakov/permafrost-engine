@@ -215,7 +215,9 @@ static void e_handle_event(struct event event)
                     ? S_UnwrapIfWeakref(event.arg)
                     : S_WrapEngineEventArg(event.type, event.arg);
                 assert(script_arg);
+
                 S_RunEventHandler(elem->handler.as_script_callable, S_UnwrapIfWeakref(elem->user_arg), script_arg);
+                S_Release(script_arg);
             }
 
             ran = true;

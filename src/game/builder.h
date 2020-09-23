@@ -40,12 +40,16 @@
 
 struct entity;
 struct map;
+struct SDL_RWops;
 
 bool G_Builder_Init(struct map *map);
 void G_Builder_Shutdown(void);
 void G_Builder_AddEntity(struct entity *ent);
 void G_Builder_RemoveEntity(const struct entity *ent);
 bool G_Builder_InTargetMode(void);
+
+bool G_Builder_SaveState(struct SDL_RWops *stream);
+bool G_Builder_LoadState(struct SDL_RWops *stream);
 
 #endif
 
