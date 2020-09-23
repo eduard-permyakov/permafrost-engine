@@ -1281,6 +1281,7 @@ void G_StopEntity(const struct entity *ent)
         G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
     }
     G_Move_Stop(ent);
+    E_Entity_Notify(EVENT_ENTITY_STOP, ent->uid, NULL, ES_ENGINE);
 }
 
 void G_SetStatic(struct entity *ent, bool on)

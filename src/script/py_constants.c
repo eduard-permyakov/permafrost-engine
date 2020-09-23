@@ -496,6 +496,7 @@ static void s_expose_event_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, EVENT_BUILD_END);
     PY_EXPOSE_ENUM(module, EVENT_BUILD_FAIL_FOUND);
     PY_EXPOSE_ENUM(module, EVENT_BUILD_TARGET_ACQUIRED);
+    PY_EXPOSE_ENUM(module, EVENT_ENTITY_STOP);
     PY_EXPOSE_ENUM(module, EVENT_ENGINE_LAST);
 }
 
