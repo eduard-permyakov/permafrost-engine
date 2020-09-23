@@ -598,6 +598,15 @@ OBJECTS_LIST = [
         "static"         : True,
         "collision"      : True
     },
+    {
+        "path"           : "build_site_marker/build-site-marker.pfobj",
+        "anim"           : False,
+        "scale"          : (2.5,  2.5,  2.5),
+        "selectable"     : False,
+        "sel_radius"     : 3.50,
+        "static"         : True,
+        "collision"      : True
+    },
 
     ########################################################################
     # BUILDINGS                                                            #
