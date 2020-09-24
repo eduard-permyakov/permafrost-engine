@@ -77,6 +77,7 @@ struct buildstate{
     float     frac_done;
     vec_uid_t markers;
     uint32_t  progress_model;
+    float     vision_range;
 };
 
 KHASH_MAP_INIT_INT(state, struct buildstate)
@@ -410,6 +411,11 @@ bool G_Building_Complete(struct entity *ent)
     bs->progress_model = UID_NONE;
     ent->flags &= ~ENTITY_FLAG_INVISIBLE;
 
+    float old = ent->vision_range;
+    vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
+    ent->vision_range = bs->vision_range;
+    G_Fog_UpdateVisionRange(xz_pos, ent->faction_id, old, ent->vision_range);
+
     return true;
 }
 
@@ -426,6 +432,30 @@ bool G_Building_IsFounded(struct entity *ent)
     struct buildstate *bs = buildstate_get(ent->uid);
     assert(bs);
     return (bs->state >= BUILDING_STATE_FOUNDED);
+}
+
+void G_Building_SetVisionRange(struct entity *ent, float vision_range)
+{
+    struct buildstate *bs = buildstate_get(ent->uid);
+    assert(bs);
+    bs->vision_range = vision_range;
+
+    /* Buildings have no vision until they are completed */
+    if(bs->state < BUILDING_STATE_COMPLETED)
+        return;
+
+    float old = ent->vision_range;
+    vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
+
+    ent->vision_range = vision_range;
+    G_Fog_UpdateVisionRange(xz_pos, ent->faction_id, old, ent->vision_range);
+}
+
+float G_Building_GetVisionRange(const struct entity *ent)
+{
+    struct buildstate *bs = buildstate_get(ent->uid);
+    assert(bs);
+    return bs->vision_range;
 }
 
 void G_Building_UpdateProgress(struct entity *ent, float frac_done)
@@ -489,6 +519,12 @@ bool G_Building_SaveState(struct SDL_RWops *stream)
             .val.as_int = (ent->flags & ENTITY_FLAG_COMBATABLE) ? G_Combat_GetCurrentHP(ent) : 0
         };
         CHK_TRUE_RET(Attr_Write(stream, &building_hp, "building_hp"));
+
+        struct attr building_vis_range = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = curr.vision_range
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &building_vis_range, "building_vis_range"));
     });
 
     return true;
@@ -520,12 +556,17 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_INT);
         int hp = attr.val.as_int;
 
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        float vis_range = attr.val.as_float;
+
         struct entity *ent = G_EntityForUID(uid);
         CHK_TRUE_RET(ent);
         CHK_TRUE_RET(ent->flags & ENTITY_FLAG_BUILDING);
 
         struct buildstate *bs = buildstate_get(ent->uid);
         assert(bs);
+        bs->vision_range = vis_range;
 
         switch(state) {
         case BUILDING_STATE_PLACEMENT:

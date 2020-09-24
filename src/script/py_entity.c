@@ -132,6 +132,8 @@ static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure);
 static int       PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyBuildableEntity_get_vision_range(PyBuildableEntityObject *self, void *closure);
+static int       PyBuildableEntity_set_vision_range(PyBuildableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyBuildableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -423,6 +425,10 @@ static PyGetSetDef PyBuildableEntity_getset[] = {
     {"pos",
     (getter)PyBuildableEntity_get_pos, (setter)PyBuildableEntity_set_pos,
     "The XYZ position in worldspace coordinates.",
+    NULL},
+    {"vision_range",
+    (getter)PyBuildableEntity_get_vision_range, (setter)PyBuildableEntity_set_vision_range,
+    "The radius (in OpenGL coordinates) that the entity sees around itself.",
     NULL},
     {"selectable",
     (getter)PyEntity_get_selectable, NULL,
@@ -1623,6 +1629,22 @@ static int PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *va
     newpos.z -= fmod(newpos.z, Z_COORDS_PER_TILE / 2.0);
 
     G_Pos_Set(self->super.ent, newpos);
+    return 0;
+}
+
+static PyObject *PyBuildableEntity_get_vision_range(PyBuildableEntityObject *self, void *closure)
+{
+    return Py_BuildValue("f", G_Building_GetVisionRange(self->super.ent));
+}
+
+static int PyBuildableEntity_set_vision_range(PyBuildableEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "vision_range attribute must be an float.");
+        return -1;
+    }
+
+    G_Building_SetVisionRange(self->super.ent, PyFloat_AS_DOUBLE(value));
     return 0;
 }
 
