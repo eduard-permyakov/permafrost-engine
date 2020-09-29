@@ -250,6 +250,7 @@ struct unpickle_ctx{
     vec_pobj_t     stack;
     vec_pobj_t     memo;
     vec_int_t      mark_stack;
+    vec_pobj_t     to_free;
     bool           stop;
 };
 
@@ -6331,7 +6332,7 @@ static int op_ext_weakref(struct unpickle_ctx *ctx, SDL_RWops *rw)
 fail_ref:
 fail_typecheck:
     Py_DECREF(callback);
-    Py_DECREF(referent);
+    vec_pobj_push(&ctx->to_free, referent);
 fail_underflow:
     return ret;
 }
@@ -7308,6 +7309,7 @@ static bool unpickle_ctx_init(struct unpickle_ctx *ctx)
     vec_pobj_init(&ctx->stack);
     vec_pobj_init(&ctx->memo);
     vec_int_init(&ctx->mark_stack);
+    vec_pobj_init(&ctx->to_free);
     ctx->stop = false;
     return true;
 }
@@ -7317,7 +7319,12 @@ static void unpickle_ctx_destroy(struct unpickle_ctx *ctx)
     for(int i = 0; i < vec_size(&ctx->memo); i++) {
         Py_DECREF(vec_AT(&ctx->memo, i));
     }
+
+    for(int i = 0; i < vec_size(&ctx->to_free); i++) {
+        Py_DECREF(vec_AT(&ctx->to_free, i));
+    }
     
+    vec_pobj_destroy(&ctx->to_free);
     vec_int_destroy(&ctx->mark_stack);
     vec_pobj_destroy(&ctx->memo);
     vec_pobj_destroy(&ctx->stack);

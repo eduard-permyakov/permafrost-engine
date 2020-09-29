@@ -152,7 +152,6 @@ static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
     return true;
 
 fail:
-    printf("%s\n", errstr);
     subsession_clear();
     return false;
 }
