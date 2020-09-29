@@ -916,6 +916,7 @@ void G_ClearState(void)
     G_SetActiveCamera(s_gs.active_cam, CAM_MODE_RTS);
     G_Sel_Enable();
     s_gs.factions_allocd = 0;
+    s_gs.hide_healthbars = false;
 
     R_PushCmd((struct rcmd) { R_GL_Batch_Reset, 0 });
 
@@ -1189,7 +1190,7 @@ void G_Render(void)
     status = Settings_Get("pf.game.healthbar_mode", &hb_setting);
     assert(status == SS_OKAY);
 
-    if(hb_setting.as_bool) {
+    if(hb_setting.as_bool && !s_gs.hide_healthbars) {
         g_render_healthbars();
     }
 
@@ -1669,6 +1670,13 @@ bool G_MouseInTargetMode(void)
     return false;
 }
 
+void G_SetHideHealthbars(bool on)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    s_gs.hide_healthbars = on;
+}
+
 bool G_SaveGlobalState(SDL_RWops *stream)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1807,6 +1815,12 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     pf_strlcpy(active_font.val.as_string, UI_GetActiveFont(), sizeof(active_font.val.as_string));
     CHK_TRUE_RET(Attr_Write(stream, &active_font, "active_font"));
 
+    struct attr hide_healthbars = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = s_gs.hide_healthbars
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &hide_healthbars, "hide_healthbars"));
+
     return true;
 }
 
@@ -1914,6 +1928,10 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_STRING);
     UI_SetActiveFont(attr.val.as_string);
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    s_gs.hide_healthbars = attr.val.as_int;
 
     return true;
 }

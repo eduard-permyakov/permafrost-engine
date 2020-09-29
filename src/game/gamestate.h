@@ -63,6 +63,12 @@ struct gamestate{
      */
     vec3_t                  light_pos;
     /*-------------------------------------------------------------------------
+     * Boolean to disable rendering of healthbars. Overrides the user-modifiable
+     * setting.
+     *-------------------------------------------------------------------------
+     */
+    bool                    hide_healthbars;
+    /*-------------------------------------------------------------------------
      * The camera from which the scene is currently being rendered.
      *-------------------------------------------------------------------------
      */

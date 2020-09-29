@@ -155,6 +155,7 @@ bool   G_GetTile(const struct tile_desc *desc, struct tile *out);
 void          G_SetSimState(enum simstate ss);
 enum simstate G_GetSimState(void);
 void          G_SetLightPos(vec3_t pos);
+void          G_SetHideHealthbars(bool on);
 
 struct render_workspace *G_GetSimWS(void);
 struct render_workspace *G_GetRenderWS(void);

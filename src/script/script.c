@@ -106,6 +106,9 @@ static PyObject *PyPf_clear_unit_selection(PyObject *self);
 static PyObject *PyPf_get_unit_selection(PyObject *self);
 static PyObject *PyPf_get_hovered_unit(PyObject *self);
 
+static PyObject *PyPf_hide_healthbars(PyObject *self);
+static PyObject *PyPf_show_healthbars(PyObject *self);
+
 static PyObject *PyPf_get_factions_list(PyObject *self);
 static PyObject *PyPf_add_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_remove_faction(PyObject *self, PyObject *args);
@@ -292,6 +295,15 @@ static PyMethodDef pf_module_methods[] = {
     {"get_hovered_unit", 
     (PyCFunction)PyPf_get_hovered_unit, METH_NOARGS,
     "Get the closest unit under the mouse cursor, or None."},
+
+    {"hide_healthbars", 
+    (PyCFunction)PyPf_hide_healthbars, METH_NOARGS,
+    "Disable rendering of healthbars. Overrides the user-configurable dynamic setting."},
+
+    {"show_healthbars", 
+    (PyCFunction)PyPf_show_healthbars, METH_NOARGS,
+    "Re-enable showing the healthbars after a 'hide_healthbars' call. Note that the healthbars will only "
+    "be rendered if the corresponding user-configurable setting is set."},
 
     {"get_factions_list",
     (PyCFunction)PyPf_get_factions_list, METH_NOARGS,
@@ -978,7 +990,18 @@ static PyObject *PyPf_get_hovered_unit(PyObject *self)
         Py_INCREF(obj);
         return obj;
     }
-    printf("ain't nothing hovered\n");
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_hide_healthbars(PyObject *self)
+{
+    G_SetHideHealthbars(true);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_show_healthbars(PyObject *self)
+{
+    G_SetHideHealthbars(false);
     Py_RETURN_NONE;
 }
 
