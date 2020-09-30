@@ -42,6 +42,7 @@
 #include <math.h>
 
 #if defined(_WIN32)
+#define NTDDI_VERSION 0x06000000
 #define WIN32_LEAN_AND_MEAN
 #define UNICODE
 #include <windows.h>
