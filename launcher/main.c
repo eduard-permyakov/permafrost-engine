@@ -70,8 +70,12 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     return ret;
 }
 #else
+
+#define LIB_PATH "./lib"
+
 int main(int argc, char **argv)
 {
+    putenv("LD_LIBRARY_PATH=" STR(LIB_PATH));
     return system(STR(BIN_PATH) " ./ " STR(SCRIPT_PATH));
 }
 #endif
