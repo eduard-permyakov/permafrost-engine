@@ -216,6 +216,7 @@ static bool session_load(const char *file, char *errstr, size_t errlen)
 
     SDL_RWclose(vec_stream_pop(&loaded));
     vec_stream_copy(&s_subsession_stack, &loaded);
+    ret = true;
 
 fail_parse:
     SDL_RWclose(stream);
@@ -341,6 +342,8 @@ void Session_ServiceRequests(void)
 
     if(!result) {
         E_Global_Notify(EVENT_SESSION_FAIL_LOAD, s_errbuff, ES_ENGINE);
+    }else{
+        E_Global_Notify(EVENT_SESSION_LOADED, NULL, ES_ENGINE);
     }
     s_request = SESH_REQ_NONE;
 }
