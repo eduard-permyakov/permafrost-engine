@@ -1542,13 +1542,12 @@ static PyObject *PyWindow_get_border(PyWindowObject *self, void *closure)
 
 static int PyWindow_set_border(PyWindowObject *self, PyObject *value, void *closure)
 {
-    float border;
-    if(!PyArg_ParseTuple(value, "f", &border)) {
+    if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
         return -1;
     }
 
-    self->style.border = border;
+    self->style.border = PyFloat_AS_DOUBLE(value);
     return 0;
 }
 
@@ -1713,13 +1712,12 @@ static PyObject *PyWindow_get_group_border(PyWindowObject *self, void *closure)
 
 static int PyWindow_set_group_border(PyWindowObject *self, PyObject *value, void *closure)
 {
-    float border;
-    if(!PyArg_ParseTuple(value, "f", &border)) {
+    if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
         return -1;
     }
 
-    self->style.group_border = border;
+    self->style.group_border = PyFloat_AS_DOUBLE(value);
     return 0;
 }
 
@@ -1735,13 +1733,12 @@ static PyObject *PyWindow_get_contextual_border(PyWindowObject *self, void *clos
 
 static int PyWindow_set_contextual_border(PyWindowObject *self, PyObject *value, void *closure)
 {
-    float border;
-    if(!PyArg_ParseTuple(value, "f", &border)) {
+    if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
         return -1;
     }
 
-    self->style.contextual_border = border;
+    self->style.contextual_border = PyFloat_AS_DOUBLE(value);
     return 0;
 }
 
@@ -1752,13 +1749,12 @@ static PyObject *PyWindow_get_menu_border(PyWindowObject *self, void *closure)
 
 static int PyWindow_set_menu_border(PyWindowObject *self, PyObject *value, void *closure)
 {
-    float border;
-    if(!PyArg_ParseTuple(value, "f", &border)) {
+    if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
         return -1;
     }
 
-    self->style.menu_border = border;
+    self->style.menu_border = PyFloat_AS_DOUBLE(value);
     return 0;
 }
 
@@ -1769,13 +1765,12 @@ static PyObject *PyWindow_get_tooltip_border(PyWindowObject *self, void *closure
 
 static int PyWindow_set_tooltip_border(PyWindowObject *self, PyObject *value, void *closure)
 {
-    float border;
-    if(!PyArg_ParseTuple(value, "f", &border)) {
+    if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
         return -1;
     }
 
-    self->style.group_border = border;
+    self->style.group_border = PyFloat_AS_DOUBLE(value);
     return 0;
 }
 
@@ -1786,25 +1781,23 @@ static PyObject *PyWindow_get_popup_border(PyWindowObject *self, void *closure)
 
 static int PyWindow_set_popup_border(PyWindowObject *self, PyObject *value, void *closure)
 {
-    float border;
-    if(!PyArg_ParseTuple(value, "f", &border)) {
+    if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
         return -1;
     }
 
-    self->style.group_border = border;
+    self->style.group_border = PyFloat_AS_DOUBLE(value);
     return 0;
 }
 
 static int PyWindow_set_combo_border(PyWindowObject *self, PyObject *value, void *closure)
 {
-    float border;
-    if(!PyArg_ParseTuple(value, "f", &border)) {
+    if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
         return -1;
     }
 
-    self->style.combo_border = border;
+    self->style.combo_border = PyFloat_AS_DOUBLE(value);
     return 0;
 }
 
@@ -1815,13 +1808,12 @@ static PyObject *PyWindow_get_min_row_height_padding(PyWindowObject *self, void 
 
 static int PyWindow_set_min_row_height_padding(PyWindowObject *self, PyObject *value, void *closure)
 {
-    float min;
-    if(!PyArg_ParseTuple(value, "f", &min)) {
+    if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a float.");
         return -1;
     }
 
-    self->style.min_row_height_padding = min;
+    self->style.min_row_height_padding = PyFloat_AS_DOUBLE(value);
     return 0;
 }
 
