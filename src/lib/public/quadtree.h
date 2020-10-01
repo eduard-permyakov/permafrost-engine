@@ -189,6 +189,7 @@
         assert(qt->root > 0);                                                                   \
         if(!node->parent) {                                                                     \
                                                                                                 \
+            assert(node->depth == 0);                                                           \
             *out_xmin = qt->xmin;                                                               \
             *out_xmax = qt->xmax;                                                               \
             *out_ymin = qt->ymin;                                                               \
@@ -275,7 +276,9 @@
     {                                                                                           \
         float xmin, xmax, ymin, ymax;                                                           \
                                                                                                 \
+        qt_node(name) *curr = mp_##name##_entry(&qt->node_pool, ref);                       \
         _qt_##name##_node_bounds(qt, ref, &xmin, &xmax, &ymin, &ymax);                          \
+                                                                                                \
         _qt_##name##_extend_bounds(&xmin, &xmax, &ymin, &ymax, range);                          \
                                                                                                 \
         if(_qt_##name##_point_in_bounds(xmin, xmax, ymin, ymax, x, y)) {                        \
@@ -296,12 +299,17 @@
         int orig_maxout = *inout_maxout;                                                        \
         if(_qt_##name##_node_isleaf(root)) {                                                    \
                                                                                                 \
-            if(root->has_record                                                                 \
-            && (_qt_##name##_dist(x, y, root->x, root->y) <= range)) {                          \
+            if(root->has_record) {                                                              \
                                                                                                 \
-                *out = root->record;                                                            \
+                *out++ = root->record;                                                          \
                 *inout_maxout -= 1;                                                             \
-                return 1;                                                                       \
+                                                                                                \
+                while(root->sibling_next && *inout_maxout) {                                    \
+                    root = mp_##name##_entry(&qt->node_pool, root->sibling_next);               \
+                    *out++ = root->record;                                                      \
+                    *inout_maxout -= 1;                                                         \
+                }                                                                               \
+                return (orig_maxout - *inout_maxout);                                           \
             }                                                                                   \
             return 0;                                                                           \
         }                                                                                       \
@@ -349,9 +357,15 @@
             if(root->has_record                                                                 \
             && _qt_##name##_point_in_bounds(xmin, xmax, ymin, ymax, root->x, root->y)) {        \
                                                                                                 \
-                *out = root->record;                                                            \
+                *out++ = root->record;                                                          \
                 *inout_maxout -= 1;                                                             \
-                return 1;                                                                       \
+                                                                                                \
+                while(root->sibling_next && *inout_maxout) {                                    \
+                    root = mp_##name##_entry(&qt->node_pool, root->sibling_next);               \
+                    *out++ = root->record;                                                      \
+                    *inout_maxout -= 1;                                                         \
+                }                                                                               \
+                return (orig_maxout - *inout_maxout);                                           \
             }                                                                                   \
             return 0;                                                                           \
         }                                                                                       \
@@ -374,9 +388,10 @@
         _CHK_TRUE_RET(sib, false);                                                              \
                                                                                                 \
         qt_node(name) *sib_node = mp_##name##_entry(&qt->node_pool, sib);                       \
-        _qt_##name##_node_init(sib_node, 0);                                                    \
+        _qt_##name##_node_init(sib_node, node->depth);                                          \
         sib_node->x = node->x;                                                                  \
         sib_node->y = node->y;                                                                  \
+        sib_node->parent = node->parent;                                                        \
                                                                                                 \
         mp_ref_t curr = node->sibling_next;                                                     \
         mp_ref_t prev = ref;                                                                    \
@@ -552,6 +567,14 @@
         rec_node->has_record = true;                                                            \
         rec_node->sibling_next = saved_sibnext;                                                 \
                                                                                                 \
+        mp_ref_t sib = rec_node->sibling_next;                                                  \
+        while(sib) {                                                                            \
+            qt_node(name) *sib_node = mp_##name##_entry(&qt->node_pool, sib);                   \
+            sib_node->depth = rec_node->depth;                                                  \
+            sib_node->parent = rec_node->parent;                                                \
+            sib = sib_node->sibling_next;                                                       \
+        }                                                                                       \
+                                                                                                \
         return true;                                                                            \
                                                                                                 \
     fail:                                                                                       \
@@ -606,6 +629,15 @@
         node->x = mp_##name##_entry(&qt->node_pool, rec)->x;                                    \
         node->y = mp_##name##_entry(&qt->node_pool, rec)->y;                                    \
         node->sibling_next = rec_node->sibling_next;                                            \
+                                                                                                \
+        mp_ref_t curr = node->sibling_next;                                                     \
+        while(curr) {                                                                           \
+            qt_node(name) *curr_sib_node = mp_##name##_entry(&qt->node_pool, curr);             \
+            curr_sib_node->depth = node->depth;                                                 \
+            curr_sib_node->parent = node->parent;                                               \
+            curr = curr_sib_node->sibling_next;                                                 \
+        }                                                                                       \
+                                                                                                \
         return true;                                                                            \
     }                                                                                           \
                                                                                                 \
@@ -615,6 +647,67 @@
         if(node->ne == oldref) node->ne = newref;                                               \
         if(node->sw == oldref) node->sw = newref;                                               \
         if(node->se == oldref) node->se = newref;                                               \
+    }                                                                                           \
+                                                                                                \
+    static void _qt_##name##_node_check_consistent(qt(name) *qt, mp_ref_t ref)                  \
+    {                                                                                           \
+        qt_node(name) *node = mp_##name##_entry(&qt->node_pool, ref);                           \
+        float xmin, xmax, ymin, ymax;                                                           \
+        _qt_##name##_node_bounds(qt, ref, &xmin, &xmax, &ymin, &ymax);                          \
+                                                                                                \
+        if(!(xmin <= node->x)                                                                   \
+        || !(xmax >= node->x)                                                                   \
+        || !(ymin <= node->y)                                                                   \
+        || !(ymax >= node->y)) {                                                                \
+            printf("Inconsistent Quadtree: [node (%f, %f) misplaced]\n", node->x, node->y);     \
+            qt_##name##_print(qt);                                                              \
+            fflush(stdout);                                                                     \
+        }                                                                                       \
+                                                                                                \
+        assert(xmin <= node->x);                                                                \
+        assert(xmax >= node->x);                                                                \
+        assert(ymin <= node->y);                                                                \
+        assert(ymax >= node->y);                                                                \
+                                                                                                \
+        mp_ref_t sib = node->sibling_next;                                                      \
+        while(sib) {                                                                            \
+            qt_node(name) *sib_node = mp_##name##_entry(&qt->node_pool, sib);                   \
+            if(sib_node->depth != node->depth || sib_node->parent != node->parent) {            \
+                printf("Mismatching sibling depths/parents for node (%f, %f) [%zu] and its' sibling (%f, %f) [%zu]\n", \
+                    node->x, node->y, node->depth, sib_node->x, sib_node->y, sib_node->depth);  \
+                qt_##name##_print(qt);                                                          \
+                fflush(stdout);                                                                 \
+            }                                                                                   \
+            assert(sib_node->depth == node->depth);                                             \
+            assert(sib_node->parent == node->parent);                                           \
+            sib = sib_node->sibling_next;                                                       \
+        }                                                                                       \
+                                                                                                \
+        if(node->parent) {                                                                      \
+            qt_node(name) *parent = mp_##name##_entry(&qt->node_pool, node->parent);            \
+            if(node->depth - parent->depth != 1) {                                              \
+                printf("Mismatching depths for node (%f, %f) [%zu] and its' parent (%f, %f) [%zu]\n", \
+                    node->x, node->y, node->depth, parent->x, parent->y, parent->depth);        \
+                qt_##name##_print(qt);                                                          \
+                fflush(stdout);                                                                 \
+            }                                                                                   \
+            assert(node->depth - parent->depth == 1);                                           \
+        }                                                                                       \
+                                                                                                \
+        if(_qt_##name##_node_isleaf(node))                                                      \
+            return;                                                                             \
+                                                                                                \
+        _qt_##name##_node_check_consistent(qt, node->nw);                                       \
+        _qt_##name##_node_check_consistent(qt, node->ne);                                       \
+        _qt_##name##_node_check_consistent(qt, node->sw);                                       \
+        _qt_##name##_node_check_consistent(qt, node->se);                                       \
+    }                                                                                           \
+                                                                                                \
+    static void _qt_##name##_check_consistent(qt(name) *qt)                                     \
+    {                                                                                           \
+        if(!qt->root)                                                                           \
+            return;                                                                             \
+        _qt_##name##_node_check_consistent(qt, qt->root);                                       \
     }                                                                                           \
                                                                                                 \
     scope bool qt_##name##_init(qt(name) *qt,                                                   \
