@@ -86,6 +86,9 @@ class MenuVC(vc.ViewController):
         pf.set_minimap_position(UI_LEFT_PANE_WIDTH + minimap_pos[0], minimap_pos[1])
         self.view.hide()
 
+        pf.disable_unit_selection()
+        pf.disable_fog_of_war()
+
         if event[1] is not None:
             assert len(globals.active_objects_list) == 0 
             try:
