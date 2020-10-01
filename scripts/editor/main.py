@@ -39,6 +39,7 @@ import globals
 import mouse_events
 
 from math import cos, pi
+import sys
 
 import view_controllers.terrain_tab_vc as ttvc
 import view_controllers.objects_tab_vc as otvc
@@ -59,22 +60,35 @@ import views.menu_window as mw
 pf.set_ambient_light_color((1.0, 1.0, 1.0))
 pf.set_emit_light_color((1.0, 1.0, 1.0))
 pf.set_emit_light_pos((1664.0, 1024.0, 384.0))
+
 pf.set_active_font("OptimusPrinceps.ttf")
-
-pf.new_game_string(globals.active_map.pfmap_str(), update_navgrid=False)
-minimap_pos = pf.get_minimap_position()
-pf.set_minimap_position(UI_LEFT_PANE_WIDTH + minimap_pos[0], minimap_pos[1])
-
 pf.disable_unit_selection()
 pf.disable_fog_of_war()
 
 pf.add_faction(DEFAULT_FACTION_NAME, DEFAULT_FACTION_COLOR)
 mouse_events.install()
 
+############################################################
+# Setup Map, Scene                                         #
+############################################################
+
+if len(sys.argv) > 1:
+    pf.load_map(pf.get_basedir(), sys.argv[1], update_navgrid=False)
+else:
+    pf.load_map_string(globals.active_map.pfmap_str(), update_navgrid=False)
+
+if len(sys.argv) > 2:
+    globals.active_objects_list = pf.load_scene(sys.argv[2], update_navgrid=False)
+    globals.scene_filename = sys.argv[2]
+    for obj in globals.active_objects_list:
+        obj.selectable = True
 
 ############################################################
 # Setup UI                                                 #
 ############################################################
+
+minimap_pos = pf.get_minimap_position()
+pf.set_minimap_position(UI_LEFT_PANE_WIDTH + minimap_pos[0], minimap_pos[1])
 
 terrain_tab_vc = ttvc.TerrainTabVC(ttw.TerrainTabWindow())
 objects_tab_vc = otvc.ObjectsVC(otw.ObjectsTabWindow())

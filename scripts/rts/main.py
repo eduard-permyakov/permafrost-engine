@@ -58,7 +58,7 @@ pf.set_active_font("OptimusPrinceps.ttf")
 # Setup map/scene                                          #
 ############################################################
 
-pf.new_game("assets/maps", "demo.pfmap")
+pf.load_map("assets/maps", "demo.pfmap")
 globals.scene_objs = pf.load_scene("assets/maps/demo.pfscene")
 
 pf.set_diplomacy_state(1, 2, pf.DIPLOMACY_STATE_WAR)

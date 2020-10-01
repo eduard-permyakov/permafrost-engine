@@ -75,23 +75,15 @@ class DiplomacyVC(vc.ViewController):
         pf.add_faction(new_name, new_clr)
         self.view.selected_fac_idx = len(pf.get_factions_list())-1
 
-    def __on_new_game(self, event):
-        self.view.selected_fac_idx = 0
-        factions_list = pf.get_factions_list()
-        self.view.fac_name = factions_list[0]["name"]
-        self.view.fac_color= factions_list[0]["color"]
-
     def activate(self):
         pf.register_event_handler(EVENT_DIPLO_FAC_SELECTION_CHANGED, DiplomacyVC.__on_fac_sel_changed, self)
         pf.register_event_handler(EVENT_DIPLO_FAC_REMOVED, DiplomacyVC.__on_fac_removed, self)
         pf.register_event_handler(EVENT_DIPLO_FAC_CHANGED, DiplomacyVC.__on_fac_changed, self)
         pf.register_event_handler(EVENT_DIPLO_FAC_NEW, DiplomacyVC.__on_fac_new, self)
-        pf.register_event_handler(pf.EVENT_NEW_GAME, DiplomacyVC.__on_new_game, self)
 
     def deactivate(self):
         pf.unregister_event_handler(EVENT_DIPLO_FAC_SELECTION_CHANGED, DiplomacyVC.__on_fac_sel_changed)
         pf.unregister_event_handler(EVENT_DIPLO_FAC_REMOVED, DiplomacyVC.__on_fac_removed)
         pf.unregister_event_handler(EVENT_DIPLO_FAC_CHANGED, DiplomacyVC.__on_fac_changed)
         pf.unregister_event_handler(EVENT_DIPLO_FAC_NEW, DiplomacyVC.__on_fac_new)
-        pf.unregister_event_handler(pf.EVENT_NEW_GAME, DiplomacyVC.__on_new_game)
 

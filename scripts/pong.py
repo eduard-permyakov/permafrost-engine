@@ -49,7 +49,7 @@ pf.register_event_handler(pf.EVENT_SCRIPT_TASK_EXCEPTION, on_task_exc, None)
 # Global configs                                           #
 ############################################################
 
-pf.new_game("assets/maps", "plain.pfmap")
+pf.load_map("assets/maps", "plain.pfmap")
 pf.set_ambient_light_color((1.0, 1.0, 1.0))
 pf.set_emit_light_color((1.0, 1.0, 1.0))
 pf.set_emit_light_pos((1664.0, 1024.0, 384.0))

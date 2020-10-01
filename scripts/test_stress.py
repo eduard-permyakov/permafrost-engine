@@ -63,9 +63,9 @@ def setup_scene():
     pf.set_emit_light_color((1.0, 1.0, 1.0))
     pf.set_emit_light_pos((1664.0, 1024.0, 384.0))
 
-    pf.settings_set("pf.game.fog_of_war_enabled", False, persist=False)
+    pf.disable_fog_of_war()
 
-    pf.new_game("assets/maps", "plain.pfmap")
+    pf.load_map("assets/maps", "plain.pfmap")
 
     pf.add_faction("RED", (255, 0, 0, 255))
     pf.add_faction("BLUE", (0, 0, 255, 255))

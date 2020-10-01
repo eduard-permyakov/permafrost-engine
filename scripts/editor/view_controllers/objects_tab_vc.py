@@ -115,11 +115,6 @@ class ObjectsVC(vc.ViewController):
         elif self.view.mode == self.view.OBJECTS_MODE_SELECT:
             self.current_object = None
 
-    def __on_new_game(self, event):
-        if self.view.mode == self.view.OBJECTS_MODE_PLACE and pf.map_pos_under_cursor():
-            self.current_object = self.__object_at_index(self.view.selected_object_idx)
-            self.current_object.pos = pf.map_pos_under_cursor()
-
     def __on_selected_unit_picked(self, event):
         assert isinstance(event, pf.Entity)
         pf.clear_unit_selection()
@@ -145,21 +140,15 @@ class ObjectsVC(vc.ViewController):
         else:
             obj.rotation = pf.multiply_quaternions(obj.rotation, CW_ROT_5DEG)
 
-    def __on_old_game_teardown_begin(self, event):
-        self.view.selected_faction_idx = 0
-        self.current_object = None
-
     def activate(self):
         pf.register_event_handler(pf.SDL_MOUSEMOTION, ObjectsVC.__on_mousemove, self)
         pf.register_event_handler(pf.SDL_MOUSEBUTTONDOWN, ObjectsVC.__on_click, self)
         pf.register_event_handler(pf.SDL_MOUSEBUTTONUP, ObjectsVC.__on_release, self)
         pf.register_event_handler(pf.SDL_MOUSEWHEEL, ObjectsVC.__on_mousewheel, self)
-        pf.register_event_handler(pf.EVENT_NEW_GAME, ObjectsVC.__on_new_game, self)
         pf.register_event_handler(EVENT_OBJECT_SELECTION_CHANGED, ObjectsVC.__on_selected_object_changed, self)
         pf.register_event_handler(EVENT_OBJECTS_TAB_MODE_CHANGED, ObjectsVC.__on_mode_changed, self)
         pf.register_event_handler(EVENT_OBJECT_SELECTED_UNIT_PICKED, ObjectsVC.__on_selected_unit_picked, self)
         pf.register_event_handler(EVENT_OBJECT_DELETE_SELECTION, ObjectsVC.__on_delete_selection, self)
-        pf.register_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, ObjectsVC.__on_old_game_teardown_begin, self)
         self.__set_selection_for_mode()
         if self.view.mode == self.view.OBJECTS_MODE_PLACE:
             self.current_object = self.__object_at_index(self.view.selected_object_idx)
@@ -175,12 +164,10 @@ class ObjectsVC(vc.ViewController):
         pf.unregister_event_handler(pf.SDL_MOUSEBUTTONDOWN, ObjectsVC.__on_click)
         pf.unregister_event_handler(pf.SDL_MOUSEBUTTONUP, ObjectsVC.__on_release)
         pf.unregister_event_handler(pf.SDL_MOUSEWHEEL, ObjectsVC.__on_mousewheel)
-        pf.unregister_event_handler(pf.EVENT_NEW_GAME, ObjectsVC.__on_new_game)
         pf.unregister_event_handler(EVENT_OBJECT_SELECTION_CHANGED, ObjectsVC.__on_selected_object_changed)
         pf.unregister_event_handler(EVENT_OBJECTS_TAB_MODE_CHANGED, ObjectsVC.__on_mode_changed)
         pf.unregister_event_handler(EVENT_OBJECT_SELECTED_UNIT_PICKED, ObjectsVC.__on_selected_unit_picked)
         pf.unregister_event_handler(EVENT_OBJECT_DELETE_SELECTION, ObjectsVC.__on_delete_selection)
-        pf.unregister_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, ObjectsVC.__on_old_game_teardown_begin)
         pf.clear_unit_selection()
         pf.disable_unit_selection()
         self.current_object = None

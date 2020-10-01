@@ -40,6 +40,7 @@ import globals
 import scene
 from math import cos, pi
 import traceback
+import sys
 
 import common.view_controllers.view_controller as vc
 import common.view_controllers.tab_bar_vc as tbvc
@@ -68,46 +69,8 @@ class MenuVC(vc.ViewController):
         self.__settings_shown = False
         self.__session_window = sw.SessionWindow()
 
-
-    ### NEW ###
-
-    # We boradcast a 'TEARDOWN_BEGIN' event before loading the new game to 
-    # give a chance for cleanup handlers to run
-    def __on_old_game_teardown_begin(self, event):
-        pf.global_event(EVENT_OLD_GAME_TEARDOWN_END, event)
-
-    def __on_old_game_teardown_end(self, event):
-        assert isinstance(event[0], map.Map)
-        del globals.active_objects_list[:]
-
-        globals.active_map = event[0]
-        pf.new_game_string(globals.active_map.pfmap_str(), update_navgrid=False)
-        minimap_pos = pf.get_minimap_position()
-        pf.set_minimap_position(UI_LEFT_PANE_WIDTH + minimap_pos[0], minimap_pos[1])
-        self.view.hide()
-
-        pf.disable_unit_selection()
-        pf.disable_fog_of_war()
-
-        if event[1] is not None:
-            assert len(globals.active_objects_list) == 0 
-            try:
-                globals.active_objects_list = pf.load_scene(event[1], update_navgrid=False)
-                globals.scene_filename = event[1]
-                for obj in globals.active_objects_list:
-                    obj.selectable = True
-                faction_descs = pf.get_factions_list() 
-            except:
-                print("Failed to load scene! [{0}]".format(event[1]))
-
-        if len(pf.get_factions_list()) == 0:
-            pf.add_faction(DEFAULT_FACTION_NAME, DEFAULT_FACTION_COLOR)
-
-
     def __on_new(self, event):
-        pf.global_event(EVENT_OLD_GAME_TEARDOWN_BEGIN, (map.Map(4, 4), None))
-
-    ### LOAD ###
+        pf.exec_(sys.argv[0], ())
 
     def __on_load(self, event):
         assert self.fc is None
@@ -127,12 +90,8 @@ class MenuVC(vc.ViewController):
         self.fc = None
         self.activate()
 
-        try:
-            new_map = map.Map.from_filepath(event[0])
-        except:
-            print("Failed to load map! [{0}]".format(event[0]))
-        else:
-            pf.global_event(EVENT_OLD_GAME_TEARDOWN_BEGIN, (new_map, event[1]))
+        args = event if event[1] is not None else (event[0],)
+        pf.exec_(sys.argv[0], args)
 
     def __on_load_cancel(self, event):
         pf.unregister_event_handler(EVENT_FILE_CHOOSER_OKAY, MenuVC.__on_load_confirm)
@@ -142,8 +101,6 @@ class MenuVC(vc.ViewController):
         self.fc.hide()
         self.fc = None
         self.activate()
-
-    ### SAVE AS ###
 
     def __on_save_as(self, event):
         assert self.fc is None
@@ -186,30 +143,19 @@ class MenuVC(vc.ViewController):
         self.fc = None
         self.activate()
         
-    ### SAVE ###
-
     def __on_save(self, event):
-        success = True
-        if globals.active_map.filename is not None:
-            try: 
-                globals.active_map.write_to_file()
-            except: 
-                success = False
-                print("Failed to save map!")
-        else:
+        if globals.active_map.filename is None:
             self.__on_save_as(None)
-
-        if globals.scene_filename is not None:
-            try: 
+            return
+        try: 
+            globals.active_map.write_to_file()
+            if globals.scene_filename: 
                 scene.save_scene(globals.scene_filename)
-            except: 
-                success = False
-                print("Failed to save scene!")
-
-        if success:
+        except:
+            print("Failed to save map/scene!")
+            traceback.print_exc() 
+        else: 
             self.view.hide()
-
-    ### OTHER ###
 
     def __on_settings_show(self, event):
         if not self.__settings_shown:
@@ -254,8 +200,6 @@ class MenuVC(vc.ViewController):
         pf.register_event_handler(common.constants.EVENT_SETTINGS_HIDE, MenuVC.__on_settings_hide, self)
         pf.register_event_handler(EVENT_MENU_PERF_SHOW, MenuVC.__on_perf_show, self)
         pf.register_event_handler(EVENT_MENU_SESSION_SHOW, MenuVC.__on_session_show, self)
-        pf.register_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, MenuVC.__on_old_game_teardown_begin, self)
-        pf.register_event_handler(EVENT_OLD_GAME_TEARDOWN_END, MenuVC.__on_old_game_teardown_end, self)
         pf.register_ui_event_handler(common.constants.EVENT_SESSION_SAVE_REQUESTED, MenuVC.__on_session_save, self)
         pf.register_ui_event_handler(common.constants.EVENT_SESSION_LOAD_REQUESTED, MenuVC.__on_session_load, self)
 
@@ -270,8 +214,6 @@ class MenuVC(vc.ViewController):
         pf.unregister_event_handler(common.constants.EVENT_SETTINGS_HIDE, MenuVC.__on_settings_hide)
         pf.unregister_event_handler(EVENT_MENU_PERF_SHOW, MenuVC.__on_perf_show)
         pf.unregister_event_handler(EVENT_MENU_SESSION_SHOW, MenuVC.__on_session_show)
-        pf.unregister_event_handler(EVENT_OLD_GAME_TEARDOWN_BEGIN, MenuVC.__on_old_game_teardown_begin)
-        pf.unregister_event_handler(EVENT_OLD_GAME_TEARDOWN_END, MenuVC.__on_old_game_teardown_end)
         pf.unregister_event_handler(common.constants.EVENT_SESSION_SAVE_REQUESTED, MenuVC.__on_session_save)
         pf.unregister_event_handler(common.constants.EVENT_SESSION_LOAD_REQUESTED, MenuVC.__on_session_load)
 
