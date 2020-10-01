@@ -419,7 +419,6 @@ bool G_Fog_Init(const struct map *map)
 
     s_map = map;
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
-    s_enabled = true;
     return true;
 
 fail:

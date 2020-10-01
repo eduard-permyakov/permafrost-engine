@@ -100,7 +100,7 @@ struct render_input{
 /*###########################################################################*/
 
 bool   G_Init(void);
-bool   G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid);
+bool   G_LoadMap(SDL_RWops *stream, bool update_navgrid);
 void   G_Shutdown(void);
 
 void   G_ClearState(void);
@@ -115,11 +115,11 @@ void   G_SwapBuffers(void);
  */
 void   G_RenderMapAndEntities(struct render_input *in);
 
-void   G_GetMinimapPos(float *out_x, float *out_y);
-void   G_SetMinimapPos(float x, float y);
-int    G_GetMinimapSize(void);
-void   G_SetMinimapSize(int size);
-void   G_SetMinimapResizeMask(int mask);
+bool   G_GetMinimapPos(float *out_x, float *out_y);
+bool   G_SetMinimapPos(float x, float y);
+bool   G_GetMinimapSize(int *out_size);
+bool   G_SetMinimapSize(int size);
+bool   G_SetMinimapResizeMask(int mask);
 bool   G_MouseOverMinimap(void);
 bool   G_MapHeightAtPoint(vec2_t xz, float *out_height);
 bool   G_PointInsideMap(vec2_t xz);

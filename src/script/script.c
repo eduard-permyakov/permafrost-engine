@@ -68,8 +68,8 @@
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
-static PyObject *PyPf_new_game(PyObject *self, PyObject *args, PyObject *kwargs);
-static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_load_map(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_load_map_string(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args);
@@ -159,16 +159,13 @@ static PyObject *PyPf_exec_pop(PyObject *self);
 
 static PyMethodDef pf_module_methods[] = {
 
-    {"new_game", 
-    (PyCFunction)PyPf_new_game, METH_VARARGS | METH_KEYWORDS,
-    "Loads the specified map and creates an empty scene. Note that all "
-    "references to existing _active_ entities _MUST_ be deleted before creating a "
-    "new game."},
+    {"load_map", 
+    (PyCFunction)PyPf_load_map, METH_VARARGS | METH_KEYWORDS,
+    "Loads the map from the specified file."},
 
-    {"new_game_string", 
-    (PyCFunction)PyPf_new_game_string, METH_VARARGS | METH_KEYWORDS,
-    "The same as 'new_game' but takes the map contents string as an argument instead of "
-    "a path and filename."},
+    {"load_map_string", 
+    (PyCFunction)PyPf_load_map_string, METH_VARARGS | METH_KEYWORDS,
+    "Loads the map from the specified PFMAP string."},
 
     {"set_ambient_light_color", 
     (PyCFunction)PyPf_set_ambient_light_color, METH_VARARGS,
@@ -479,7 +476,7 @@ const char *s_progname = NULL;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static PyObject *PyPf_new_game(PyObject *self, PyObject *args, PyObject *kwargs)
+static PyObject *PyPf_load_map(PyObject *self, PyObject *args, PyObject *kwargs)
 {
     static char *kwlist[] = {"dir", "pfmap", "update_navgrid", NULL};
     const char *dir, *pfmap;
@@ -500,8 +497,8 @@ static PyObject *PyPf_new_game(PyObject *self, PyObject *args, PyObject *kwargs)
         PyErr_SetString(PyExc_RuntimeError, errbuff);
     }
 
-    if(!G_NewGameWithMap(stream, update_navgrid)) {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to create new game with the specified map file.");
+    if(!G_LoadMap(stream, update_navgrid)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to load the specified map file.");
         SDL_RWclose(stream);
         return NULL; 
     }
@@ -510,7 +507,7 @@ static PyObject *PyPf_new_game(PyObject *self, PyObject *args, PyObject *kwargs)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args, PyObject *kwargs)
+static PyObject *PyPf_load_map_string(PyObject *self, PyObject *args, PyObject *kwargs)
 {
     static char *kwlist[] = {"mapstr", "update_navgrid", NULL};
     const char *mapstr;
@@ -524,8 +521,8 @@ static PyObject *PyPf_new_game_string(PyObject *self, PyObject *args, PyObject *
     SDL_RWops *stream = SDL_RWFromConstMem(mapstr, strlen(mapstr));
     assert(stream);
 
-    if(!G_NewGameWithMap(stream, update_navgrid)) {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to create new game with the specified map file.");
+    if(!G_LoadMap(stream, update_navgrid)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to load the specified map.");
         SDL_RWclose(stream);
         return NULL;
     }
@@ -1224,7 +1221,10 @@ static PyObject *PyPf_set_map_highlight_size(PyObject *self, PyObject *args)
 static PyObject *PyPf_get_minimap_position(PyObject *self, PyObject *args)
 {
     float x, y;    
-    G_GetMinimapPos(&x, &y);
+    if(!G_GetMinimapPos(&x, &y)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to get minimap position. A map must be loaded.");
+        return NULL;
+    }
     return Py_BuildValue("(f,f)", x, y);
 }
 
@@ -1237,7 +1237,10 @@ static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    G_SetMinimapPos(x, y);
+    if(!G_SetMinimapPos(x, y)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to set minimap position. A map must be loaded.");
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 
@@ -1256,13 +1259,21 @@ static PyObject *PyPf_set_minimap_resize_mask(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    G_SetMinimapResizeMask(resize_mask);
+    if(!G_SetMinimapResizeMask(resize_mask)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to set minimap resize mask. A map must be loaded.");
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_get_minimap_size(PyObject *self)
 {
-    return Py_BuildValue("i", G_GetMinimapSize());
+    int size;
+    if(!G_GetMinimapSize(&size)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to get minimap size. A map must be loaded.");
+        return NULL;
+    }
+    return Py_BuildValue("i", size);
 }
 
 static PyObject *PyPf_set_minimap_size(PyObject *self, PyObject *args)
@@ -1274,7 +1285,10 @@ static PyObject *PyPf_set_minimap_size(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    G_SetMinimapSize(size);
+    if(!G_SetMinimapSize(size)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to set minimap size. A map must be loaded.");
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 

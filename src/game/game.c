@@ -623,6 +623,32 @@ static bool g_ent_visible(uint16_t playermask, const struct entity *ent, const s
     return G_Fog_ObjVisible(playermask, obb);
 }
 
+static void g_clear_map_state(void)
+{
+    if(s_gs.map) {
+
+        M_Raycast_Uninstall();
+        M_FreeMinimap(s_gs.map);
+        AL_MapFree(s_gs.map);
+        G_Move_Shutdown();
+        G_Combat_Shutdown();
+        G_Building_Shutdown();
+        G_Builder_Shutdown();
+        G_ClearPath_Shutdown();
+        G_Pos_Shutdown();
+        G_Fog_Shutdown();
+        s_gs.map = NULL;
+    }
+
+    if(s_gs.prev_tick_map) {
+        /* The render thread still owns the previous tick map. Wait 
+         * for it to complete before we free the buffer. */
+        Engine_WaitRenderWorkDone();
+        free((void*)s_gs.prev_tick_map);
+        s_gs.prev_tick_map = NULL;
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -830,12 +856,12 @@ fail_active:
     return false;
 }
 
-bool G_NewGameWithMap(SDL_RWops *stream, bool update_navgrid)
+bool G_LoadMap(SDL_RWops *stream, bool update_navgrid)
 {
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
-    G_ClearState();
+    g_clear_map_state();
 
     size_t copysize = AL_MapShallowCopySize(stream);
     s_gs.prev_tick_map = malloc(copysize);
@@ -889,32 +915,14 @@ void G_ClearState(void)
     vec_pentity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
 
-    if(s_gs.map) {
-
-        M_Raycast_Uninstall();
-        M_FreeMinimap(s_gs.map);
-        AL_MapFree(s_gs.map);
-        G_Move_Shutdown();
-        G_Combat_Shutdown();
-        G_Building_Shutdown();
-        G_Builder_Shutdown();
-        G_ClearPath_Shutdown();
-        G_Pos_Shutdown();
-        G_Fog_Shutdown();
-        s_gs.map = NULL;
-    }
-
-    if(s_gs.prev_tick_map) {
-        /* The render thread still owns the previous tick map. Wait 
-         * for it to complete before we free the buffer. */
-        Engine_WaitRenderWorkDone();
-        free((void*)s_gs.prev_tick_map);
-        s_gs.prev_tick_map = NULL;
-    }
+    g_clear_map_state();
 
     g_reset_camera(s_gs.active_cam);
     G_SetActiveCamera(s_gs.active_cam, CAM_MODE_RTS);
+
     G_Sel_Enable();
+    G_Fog_Enable();
+
     s_gs.factions_allocd = 0;
     s_gs.hide_healthbars = false;
 
@@ -930,47 +938,62 @@ void G_ClearRenderWork(void)
     R_ClearWS(&s_gs.ws[1]);
 }
 
-void G_GetMinimapPos(float *out_x, float *out_y)
+bool G_GetMinimapPos(float *out_x, float *out_y)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    assert(s_gs.map);
+    if(!s_gs.map)
+        return false;
+
     vec2_t center_pos;
     M_GetMinimapPos(s_gs.map, &center_pos);
     *out_x = center_pos.x;
     *out_y = center_pos.y;
+    return true;
 }
 
-void G_SetMinimapPos(float x, float y)
+bool G_SetMinimapPos(float x, float y)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    assert(s_gs.map);
+    if(!s_gs.map)
+        return false;
+
     M_SetMinimapPos(s_gs.map, (vec2_t){x, y});
+    return true;
 }
 
-int G_GetMinimapSize(void)
+bool G_GetMinimapSize(int *out_size)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    assert(s_gs.map);
-    return M_GetMinimapSize(s_gs.map);
+    if(!s_gs.map)
+        return false;
+
+    *out_size = M_GetMinimapSize(s_gs.map);
+    return true;
 }
 
-void G_SetMinimapSize(int size)
+bool G_SetMinimapSize(int size)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    assert(s_gs.map);
+    if(!s_gs.map)
+        return false;
+
     M_SetMinimapSize(s_gs.map, size);
+    return true;
 }
 
-void G_SetMinimapResizeMask(int mask)
+bool G_SetMinimapResizeMask(int mask)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    assert(s_gs.map);
+    if(!s_gs.map)
+        return false;
+
     M_SetMinimapResizeMask(s_gs.map, mask);
+    return true;
 }
 
 bool G_MouseOverMinimap(void)
@@ -1037,7 +1060,9 @@ bool G_UpdateMinimapChunk(int chunk_r, int chunk_c)
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
-    assert(s_gs.map);
+    if(!s_gs.map)
+        PERF_RETURN(false);
+
     bool ret = M_UpdateMinimapChunk(s_gs.map, chunk_r, chunk_c);
     PERF_RETURN(ret);
 }
@@ -1701,9 +1726,11 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &minimap_pos, "minimap_pos"));
 
+        int mm_size;
+        G_GetMinimapSize(&mm_size);
         struct attr minimap_size = (struct attr){
             .type = TYPE_INT, 
-            .val.as_int = G_GetMinimapSize()
+            .val.as_int = mm_size
         };
         CHK_TRUE_RET(Attr_Write(stream, &minimap_size, "minimap_size"));
 
@@ -1833,7 +1860,7 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     CHK_TRUE_RET(attr.type == TYPE_BOOL);
 
     if(attr.val.as_bool) {
-        CHK_TRUE_RET(G_NewGameWithMap(stream, true));
+        CHK_TRUE_RET(G_LoadMap(stream, true));
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_VEC2);
