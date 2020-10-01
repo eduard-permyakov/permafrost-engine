@@ -1336,13 +1336,15 @@ fail_args:
 static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     PyObject *self = type->tp_alloc(type, 0);
+    ((PyWindowObject*)self)->header_style = NULL;
+    ((PyWindowObject*)self)->resize_mask = ANCHOR_DEFAULT;
     vec_win_push(&s_active_windows, (PyWindowObject*)self);
     return self;
 }
 
 static void PyWindow_dealloc(PyWindowObject *self)
 {
-    Py_DECREF(self->header_style);
+    Py_XDECREF(self->header_style);
 
     int idx;
     vec_win_indexof(&s_active_windows, self, equal, &idx);
@@ -1983,7 +1985,9 @@ static void active_windows_update(void *user, void *event)
 
         struct nk_style_window saved_style = s_nk_ctx->style.window;
         s_nk_ctx->style.window = win->style;
-        S_UIHeaderStylePush(win->header_style, s_nk_ctx);
+        if(win->header_style) {
+            S_UIHeaderStylePush(win->header_style, s_nk_ctx);
+        }
 
         struct nk_vec2i adj_vres = TO_VEC2I(UI_ArAdjustedVRes(TO_VEC2T(win->virt_res)));
         struct rect adj_bounds = UI_BoundsForAspectRatio(win->rect, 
@@ -2010,7 +2014,9 @@ static void active_windows_update(void *user, void *event)
         win->flags |= (s_nk_ctx->current->flags & sample_mask);
 
         nk_end(s_nk_ctx);
-        S_UIHeaderStylePop(win->header_style, s_nk_ctx);
+        if(win->header_style) {
+            S_UIHeaderStylePop(win->header_style, s_nk_ctx);
+        }
         s_nk_ctx->style.window = saved_style;
     }
 }
