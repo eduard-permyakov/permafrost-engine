@@ -149,6 +149,7 @@ static PyObject *PyPf_unpickle_object(PyObject *self, PyObject *args);
 static PyObject *PyPf_save_session(PyObject *self, PyObject *args);
 static PyObject *PyPf_load_session(PyObject *self, PyObject *args);
 
+static PyObject *PyPf_exec(PyObject *self, PyObject *args);
 static PyObject *PyPf_exec_push(PyObject *self, PyObject *args);
 static PyObject *PyPf_exec_pop(PyObject *self);
 
@@ -453,6 +454,11 @@ static PyMethodDef pf_module_methods[] = {
     {"load_session",
     (PyCFunction)PyPf_load_session, METH_VARARGS,
     "Load a session previously saved with the 'save_session' call."},
+
+    {"exec_",
+    (PyCFunction)PyPf_exec, METH_VARARGS,
+    "Replace the current subsession with one set up by the provided script. "
+    "This is performed asynchronously. Failure is notified via an EVENT_SESSION_FAIL_LOAD event."},
 
     {"exec_push",
     (PyCFunction)PyPf_exec_push, METH_VARARGS,
@@ -1757,6 +1763,38 @@ static void s_create_settings(void)
     assert(status == SS_OKAY);
 }
 
+static PyObject *PyPf_exec(PyObject *self, PyObject *args)
+{
+    const char *scriptname;
+    PyObject *sargs;
+
+    if(!PyArg_ParseTuple(args, "sO", &scriptname, &sargs)
+    || !PyTuple_Check(sargs)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a string and a tuple or arguments.");
+        return NULL;
+    }
+
+    int argc = PyTuple_GET_SIZE(sargs);
+    char *argv[32];
+
+    if(argc > ARR_SIZE(argv)) {
+        PyErr_SetString(PyExc_RuntimeError, "Maximum number of arguments exceeded.");
+        return NULL;
+    }
+
+    for(int i = 0; i < argc; i++) {
+        PyObject *arg = PyTuple_GET_ITEM(sargs, i);
+        if(!PyString_Check(arg)) {
+            PyErr_SetString(PyExc_TypeError, "Script arguments must be strings");
+            return NULL;
+        }
+        argv[i] = PyString_AS_STRING(arg);
+    }
+
+    Session_RequestExec(scriptname, argc, argv);
+    Py_RETURN_NONE;
+}
+
 static PyObject *PyPf_exec_push(PyObject *self, PyObject *args)
 {
     const char *scriptname;
@@ -1847,12 +1885,18 @@ void S_Shutdown(void)
     S_UI_Shutdown();
 }
 
-bool S_RunFile(const char *path)
+bool S_RunFile(const char *path, int argc, char **argv)
 {
     bool ret = false;
     FILE *script = fopen(path, "r");
     if(!script)
         return false;
+
+    char *cargv[argc + 1];
+    cargv[0] = (char*)path;
+    if(argc) {
+        memcpy(cargv + 1, argv, sizeof(*argv) * argc);
+    }
 
     /* The directory of the script file won't be automatically added by 'PyRun_SimpleFile'.
      * We add it manually to sys.path ourselves. */
@@ -1876,6 +1920,7 @@ bool S_RunFile(const char *path)
         Py_DECREF(f);
     }
 
+    PySys_SetArgvEx(argc + 1, cargv, 0);
     PyObject *result = PyRun_File(script, path, Py_file_input, global_dict, global_dict);
     ret = (result != NULL);
     Py_XDECREF(result);

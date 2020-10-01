@@ -49,6 +49,7 @@ void Session_RequestLoad(const char *path);
 
 void Session_RequestPush(const char *script);
 void Session_RequestPop(void);
+void Session_RequestExec(const char *script, int argc, char **argv);
 
 #endif
 

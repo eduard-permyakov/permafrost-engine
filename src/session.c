@@ -50,6 +50,8 @@
 
 
 #define PFSAVE_VERSION  (1.0f)
+#define MAX_ARGC        (32)
+#define MIN(a, b)       ((a) < (b) ? (a) : (b))
 
 VEC_TYPE(stream, SDL_RWops*)
 VEC_IMPL(static, stream, SDL_RWops*)
@@ -59,6 +61,7 @@ enum srequest{
     SESH_REQ_LOAD,
     SESH_REQ_PUSH,
     SESH_REQ_POP,
+    SESH_REQ_EXEC,
 };
 
 /*****************************************************************************/
@@ -71,6 +74,8 @@ enum srequest{
 
 static vec_stream_t  s_subsession_stack;
 static enum srequest s_request = SESH_REQ_NONE;
+static int           s_argc;
+static char          s_argv[MAX_ARGC][128];
 static char          s_req_path[512];
 static char          s_errbuff[512] = {0};
 
@@ -257,7 +262,11 @@ static bool session_push_subsession(const char *script, char *errstr, size_t err
 
     subsession_clear();
 
-    if(!S_RunFile(script)) {
+    char *argv[s_argc];
+    for(int i = 0; i < s_argc; i++)
+        argv[i] = s_argv[i];
+
+    if(!S_RunFile(script, s_argc, argv)) {
         result = subsession_load(stream, errstr, errlen);
         assert(result);
         SDL_RWclose(stream);
@@ -265,6 +274,17 @@ static bool session_push_subsession(const char *script, char *errstr, size_t err
     }
 
     vec_stream_push(&s_subsession_stack, stream);
+    return true;
+}
+
+static bool session_exec_subsession(const char *script, char *errstr, size_t errlen)
+{
+    if(!session_push_subsession(script, errstr, errlen))
+        return false;
+
+    assert(vec_size(&s_subsession_stack) > 0);
+    SDL_RWops *stream = vec_stream_pop(&s_subsession_stack);
+    SDL_RWclose(stream);
     return true;
 }
 
@@ -314,6 +334,16 @@ void Session_RequestPush(const char *script)
     pf_snprintf(s_req_path, sizeof(s_req_path), "%s", script);
 }
 
+void Session_RequestExec(const char *script, int argc, char **argv)
+{
+    s_argc = MIN(argc, MAX_ARGC);
+    for(int i = 0; i < s_argc; i++) {
+        pf_strlcpy(s_argv[i], argv[i], sizeof(s_argv[i]));
+    }
+    s_request = SESH_REQ_EXEC;
+    pf_snprintf(s_req_path, sizeof(s_req_path), "%s", script);
+}
+
 void Session_RequestPop(void)
 {
     s_request = SESH_REQ_POP;
@@ -337,6 +367,9 @@ void Session_ServiceRequests(void)
     case SESH_REQ_POP:
         result = session_pop_subsession(s_errbuff, sizeof(s_errbuff));
         break;
+    case SESH_REQ_EXEC:
+        result = session_exec_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
+        break;
     default: assert(0);
     }
 
@@ -345,6 +378,8 @@ void Session_ServiceRequests(void)
     }else{
         E_Global_Notify(EVENT_SESSION_LOADED, NULL, ES_ENGINE);
     }
+
+    s_argc = 0;
     s_request = SESH_REQ_NONE;
 }
 

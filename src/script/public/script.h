@@ -55,7 +55,7 @@ struct nk_context;
 
 bool            S_Init(const char *progname, const char *base_path, struct nk_context *ctx);
 void            S_Shutdown(void);
-bool            S_RunFile(const char *path);
+bool            S_RunFile(const char *path, int argc, char **argv);
 
 void            S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, 
                                   void *event_arg);
