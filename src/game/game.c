@@ -1622,6 +1622,9 @@ void G_Zombiefy(struct entity *ent)
     G_Combat_RemoveEntity(ent);
     G_Building_RemoveEntity(ent);
 
+    vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
+    G_Fog_RemoveVision(xz_pos, ent->faction_id, ent->vision_range);
+
     ent->flags &= ~ENTITY_FLAG_SELECTABLE;
     ent->flags &= ~ENTITY_FLAG_COLLISION;
     ent->flags &= ~ENTITY_FLAG_ANIMATED;
@@ -1726,7 +1729,7 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &minimap_pos, "minimap_pos"));
 
-        int mm_size;
+        int mm_size = 0;
         G_GetMinimapSize(&mm_size);
         struct attr minimap_size = (struct attr){
             .type = TYPE_INT, 
