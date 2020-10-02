@@ -478,23 +478,34 @@ const char *s_progname = NULL;
 
 static PyObject *PyPf_load_map(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    static char *kwlist[] = {"dir", "pfmap", "update_navgrid", NULL};
+    static char *kwlist[] = {"dir", "pfmap", "update_navgrid", "absolute", NULL};
     const char *dir, *pfmap;
     int update_navgrid = true;
+    int absolute = false;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "ss|i", kwlist, &dir, &pfmap, &update_navgrid)) {
-        PyErr_SetString(PyExc_TypeError, "Arguments must be two strings.");
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "zs|ii", kwlist, &dir, &pfmap, &update_navgrid, &absolute)) {
+        PyErr_SetString(PyExc_TypeError, "The first argument must be a string or NULL (base directory). "
+            "The second argument must be a string (PFMAP filepath).");
         return NULL;
     }
 
-    char pfmap_path[256];
-    pf_snprintf(pfmap_path, sizeof(pfmap_path), "%s/%s/%s", g_basepath, dir, pfmap);
+    char pfmap_path[512] = { [0] = '\0' };
+    if(!absolute) {
+        pf_strlcat(pfmap_path, g_basepath, sizeof(pfmap_path));
+        pf_strlcat(pfmap_path, "/", sizeof(pfmap_path));
+    }
+    if(dir && strlen(dir) > 0) {
+        pf_strlcat(pfmap_path, dir, sizeof(pfmap_path));
+        pf_strlcat(pfmap_path, "/", sizeof(pfmap_path));
+    }
+    pf_strlcat(pfmap_path, pfmap, sizeof(pfmap_path));
 
     SDL_RWops *stream = SDL_RWFromFile(pfmap_path, "r");
     if(!stream) {
         char errbuff[256];
         pf_snprintf(errbuff, sizeof(errbuff), "Unable to open PFMap file %s", pfmap_path);
         PyErr_SetString(PyExc_RuntimeError, errbuff);
+        return NULL;
     }
 
     if(!G_LoadMap(stream, update_navgrid)) {
@@ -571,17 +582,22 @@ static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    static char *kwlist[] = {"path", "update_navgrid", NULL};
+    static char *kwlist[] = {"path", "update_navgrid", "absolute", NULL};
     const char *relpath; 
     int update_navgrid = true;
+    int absolute = false;
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s|i", kwlist, &relpath, &update_navgrid)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s|ii", kwlist, &relpath, &update_navgrid, &absolute)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
         return NULL;
     }
 
     char full_path[512];
-    pf_snprintf(full_path, sizeof(full_path), "%s/%s", g_basepath, relpath);
+    if(absolute) {
+        pf_strlcpy(full_path, relpath, sizeof(full_path));
+    }else{
+        pf_snprintf(full_path, sizeof(full_path), "%s/%s", g_basepath, relpath);
+    }
 
     if(!Scene_Load(full_path)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to load scene from the specified file.");
@@ -1514,7 +1530,7 @@ static PyObject *PyPf_settings_delete(PyObject *self, PyObject *args)
     ss_e status = Settings_Delete(name);
     if(status != SS_OKAY) {
         char errstr[256];
-        sprintf(errstr, "Could not delete setting. [err: %d]", status);
+        pf_snprintf(errstr, sizeof(errstr), "Could not delete setting. [err: %d]", status);
         PyErr_SetString(PyExc_RuntimeError, errstr);
         return NULL;
     }

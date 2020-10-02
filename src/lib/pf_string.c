@@ -127,3 +127,18 @@ int pf_endswith(const char *str, const char *end)
     return (0 == strcmp(str + (slen - elen), end));
 }
 
+char *pf_strlcat(char *dest, const char *src, size_t size)
+{
+    size_t srclen = strlen(src);
+    size_t dstlen = strlen(dest);
+    if(size < 2)
+        return dest;
+    if(dstlen >= size-1)
+        return dest;
+    size_t left = size - 1 - dstlen;
+    size_t ncpy = left > srclen ? srclen : left;
+    memcpy(dest + dstlen, src, ncpy);
+    dest[dstlen + ncpy] = '\0';
+    return dest;
+}
+

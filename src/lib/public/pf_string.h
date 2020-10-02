@@ -44,6 +44,7 @@ char  *pf_strapp(char *str, const char *append);
 size_t pf_strlcpy(char *dest, const char *src, size_t size);
 int    pf_snprintf(char *str, size_t size, const char *format, ...);
 int    pf_endswith(const char *str, const char *end);
+char  *pf_strlcat(char *dest, const char *src, size_t size);
 
 #endif
 
