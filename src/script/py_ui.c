@@ -70,6 +70,7 @@ typedef struct {
     struct nk_style_window  style;
     PyObject               *header_style;
     int                     resize_mask;
+    bool                    suspend_on_pause;
     /* The resolution for which the position and size of the window are 
      * defined. When the physical screen resolution changes to one that is
      * not equal to this window's virtual resolution, the window bounds
@@ -567,10 +568,11 @@ static int PyWindow_init(PyWindowObject *self, PyObject *args, PyObject *kwargs)
     int flags;
     int vres[2];
     int resize_mask = ANCHOR_DEFAULT;
-    static char *kwlist[] = { "name", "bounds", "flags", "virtual_resolution", "resize_mask", NULL };
+    int suspend_on_pause = false;
+    static char *kwlist[] = { "name", "bounds", "flags", "virtual_resolution", "resize_mask", "suspend_on_pause", NULL };
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s(iiii)i(ii)|i", kwlist, &name, &rect.x, &rect.y, 
-                                    &rect.w, &rect.h, &flags, &vres[0], &vres[1], &resize_mask)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s(iiii)i(ii)|ii", kwlist, &name, &rect.x, &rect.y, 
+                                    &rect.w, &rect.h, &flags, &vres[0], &vres[1], &resize_mask, &suspend_on_pause)) {
         PyErr_SetString(PyExc_TypeError, "4 arguments expected: integer, tuple of 4 integers, integer, and a tuple of 2 integers.");
         return -1;
     }
@@ -593,6 +595,7 @@ static int PyWindow_init(PyWindowObject *self, PyObject *args, PyObject *kwargs)
     self->flags = flags;
     self->style = s_nk_ctx->style.window;
     self->resize_mask = resize_mask;
+    self->suspend_on_pause = !!suspend_on_pause;
     self->virt_res.x = vres[0];
     self->virt_res.y = vres[1];
 
@@ -1236,6 +1239,12 @@ static PyObject *PyWindow_pickle(PyWindowObject *self, PyObject *args, PyObject 
     Py_DECREF(resize_mask);
     CHK_TRUE(status, fail_pickle);
 
+    PyObject *sop = PyInt_FromLong(self->suspend_on_pause);
+    CHK_TRUE(sop, fail_pickle);
+    status = S_PickleObjgraph(sop, stream);
+    Py_DECREF(sop);
+    CHK_TRUE(status, fail_pickle);
+
     status = S_PickleObjgraph(self->header_style, stream);
     CHK_TRUE(status, fail_pickle);
 
@@ -1279,6 +1288,9 @@ static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     PyObject *resize_mask = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
+    PyObject *sop = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
     PyObject *header_style = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
@@ -1286,26 +1298,31 @@ static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     || !rect
     || !flags
     || !resize_mask
+    || !sop
     || !virt_res) {
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle internal state of pf.Window instance");
         goto fail_unpickle;
     }
 
-    PyObject *win_args = Py_BuildValue("(OOOOO)", name, rect, flags, virt_res, resize_mask);
+    PyObject *win_args = Py_BuildValue("(OOOOOO)", name, rect, flags, virt_res, resize_mask, sop);
     PyWindowObject *winobj = (PyWindowObject*)((PyTypeObject*)cls)->tp_new((struct _typeobject*)cls, win_args, NULL);
     assert(winobj || PyErr_Occurred());
     CHK_TRUE(winobj, fail_window);
 
     const char *namestr;
-    if(!PyArg_ParseTuple(win_args, "s(iiii)i(ii)|i", &namestr,
+    int isop;
+
+    if(!PyArg_ParseTuple(win_args, "s(iiii)i(ii)|ii", &namestr,
         &winobj->rect.x, &winobj->rect.y, 
         &winobj->rect.w, &winobj->rect.h, 
         &winobj->flags, 
         &winobj->virt_res.x, &winobj->virt_res.y, 
-        &winobj->resize_mask)) {
+        &winobj->resize_mask,
+        &isop)) {
         goto fail_window;
     }
     pf_strlcpy(winobj->name, namestr, sizeof(winobj->name));
+    winobj->suspend_on_pause = !!isop;
 
     if(!S_UI_Style_LoadWindow(stream, &winobj->style)) {
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle style state of pf.Window instance");
@@ -1338,6 +1355,7 @@ static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     PyObject *self = type->tp_alloc(type, 0);
     ((PyWindowObject*)self)->header_style = NULL;
     ((PyWindowObject*)self)->resize_mask = ANCHOR_DEFAULT;
+    ((PyWindowObject*)self)->suspend_on_pause = false;
     vec_win_push(&s_active_windows, (PyWindowObject*)self);
     return self;
 }
@@ -1975,6 +1993,10 @@ static void active_windows_update(void *user, void *event)
         if(win->flags & (NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED))
             continue;
 
+        bool interactive = !(win->flags & NK_WINDOW_NOT_INTERACTIVE);
+        if(win->suspend_on_pause && G_GetSimState() != G_RUNNING)
+            win->flags |= NK_WINDOW_NOT_INTERACTIVE;
+
         struct nk_style_window saved_style = s_nk_ctx->style.window;
         s_nk_ctx->style.window = win->style;
         if(win->header_style) {
@@ -2004,6 +2026,9 @@ static void active_windows_update(void *user, void *event)
         int sample_mask = NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED;
         win->flags &= ~sample_mask; 
         win->flags |= (s_nk_ctx->current->flags & sample_mask);
+        if(interactive) {
+            win->flags &= ~NK_WINDOW_NOT_INTERACTIVE;
+        }
 
         nk_end(s_nk_ctx);
         if(win->header_style) {
