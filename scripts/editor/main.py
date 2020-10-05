@@ -65,7 +65,6 @@ pf.set_active_font("OptimusPrinceps.ttf")
 pf.disable_unit_selection()
 pf.disable_fog_of_war()
 
-pf.add_faction(DEFAULT_FACTION_NAME, DEFAULT_FACTION_COLOR)
 mouse_events.install()
 
 ############################################################
@@ -74,6 +73,7 @@ mouse_events.install()
 
 if len(sys.argv) > 1:
     pf.load_map(pf.get_basedir(), sys.argv[1], update_navgrid=False)
+    globals.active_map = map.Map.from_filepath(pf.get_basedir() + "/" + sys.argv[1])
 else:
     pf.load_map_string(globals.active_map.pfmap_str(), update_navgrid=False)
 
@@ -82,6 +82,8 @@ if len(sys.argv) > 2:
     globals.scene_filename = sys.argv[2]
     for obj in globals.active_objects_list:
         obj.selectable = True
+else:
+    pf.add_faction(DEFAULT_FACTION_NAME, DEFAULT_FACTION_COLOR)
 
 ############################################################
 # Setup UI                                                 #
