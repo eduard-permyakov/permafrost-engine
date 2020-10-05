@@ -51,7 +51,7 @@
 #include <assert.h>
 
 
-#define LIGHT_EXTRA_HEIGHT (250.0f)
+#define LIGHT_EXTRA_HEIGHT (280.0f)
 
 struct shadow_gl_state{
     GLint viewport[4];
