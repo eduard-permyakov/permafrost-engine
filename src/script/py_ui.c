@@ -76,6 +76,7 @@ typedef struct {
      * not equal to this window's virtual resolution, the window bounds
      * will be transformed according to the resize mask. */
     struct nk_vec2i         virt_res;
+    bool                    hide;
 }PyWindowObject;
 
 VEC_TYPE(win, PyWindowObject*)
@@ -1181,12 +1182,13 @@ static PyObject *PyWindow_show(PyWindowObject *self)
 {
     self->flags &= ~(NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED);
     nk_window_show(s_nk_ctx, self->name, NK_SHOWN);
+    self->hide = false;
     Py_RETURN_NONE;
 }
 
 static PyObject *PyWindow_hide(PyWindowObject *self)
 {
-    self->flags |= (NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED);
+    self->hide = true;
     Py_RETURN_NONE;
 }
 
@@ -1245,6 +1247,12 @@ static PyObject *PyWindow_pickle(PyWindowObject *self, PyObject *args, PyObject 
     Py_DECREF(sop);
     CHK_TRUE(status, fail_pickle);
 
+    PyObject *hide = PyInt_FromLong(self->hide);
+    CHK_TRUE(hide, fail_pickle);
+    status = S_PickleObjgraph(hide, stream);
+    Py_DECREF(hide);
+    CHK_TRUE(status, fail_pickle);
+
     status = S_PickleObjgraph(self->header_style, stream);
     CHK_TRUE(status, fail_pickle);
 
@@ -1291,6 +1299,9 @@ static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     PyObject *sop = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
+    PyObject *hide = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
     PyObject *header_style = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
@@ -1299,6 +1310,7 @@ static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     || !flags
     || !resize_mask
     || !sop
+    || !hide
     || !virt_res) {
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle internal state of pf.Window instance");
         goto fail_unpickle;
@@ -1324,6 +1336,9 @@ static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     pf_strlcpy(winobj->name, namestr, sizeof(winobj->name));
     winobj->suspend_on_pause = !!isop;
 
+    CHK_TRUE(PyInt_Check(hide), fail_window);
+    winobj->hide = !!PyInt_AS_LONG(hide);
+
     if(!S_UI_Style_LoadWindow(stream, &winobj->style)) {
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle style state of pf.Window instance");
         goto fail_window;
@@ -1344,6 +1359,8 @@ fail_unpickle:
     Py_XDECREF(flags);
     Py_XDECREF(virt_res);
     Py_XDECREF(resize_mask);
+    Py_XDECREF(sop);
+    Py_XDECREF(hide);
     Py_XDECREF(header_style);
     SDL_RWclose(stream);
 fail_args:
@@ -1356,6 +1373,7 @@ static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     ((PyWindowObject*)self)->header_style = NULL;
     ((PyWindowObject*)self)->resize_mask = ANCHOR_DEFAULT;
     ((PyWindowObject*)self)->suspend_on_pause = false;
+    ((PyWindowObject*)self)->hide = false;
     vec_win_push(&s_active_windows, (PyWindowObject*)self);
     return self;
 }
@@ -2013,7 +2031,7 @@ static void active_windows_update(void *user, void *event)
             call_critfail((PyObject*)win, "update");
         }
 
-        if(s_nk_ctx->current->flags & NK_WINDOW_HIDDEN && !(win->flags & NK_WINDOW_HIDDEN)) {
+        if(win->hide || (s_nk_ctx->current->flags & NK_WINDOW_HIDDEN && !(win->flags & NK_WINDOW_HIDDEN))) {
         
             call_critfail((PyObject*)win, "on_hide");
         }
@@ -2026,6 +2044,7 @@ static void active_windows_update(void *user, void *event)
         int sample_mask = NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED;
         win->flags &= ~sample_mask; 
         win->flags |= (s_nk_ctx->current->flags & sample_mask);
+
         if(interactive) {
             win->flags &= ~NK_WINDOW_NOT_INTERACTIVE;
         }
@@ -2035,6 +2054,12 @@ static void active_windows_update(void *user, void *event)
             S_UIHeaderStylePop(win->header_style, s_nk_ctx);
         }
         s_nk_ctx->style.window = saved_style;
+
+        if(win->hide) {
+            nk_window_close(s_nk_ctx, win->name);
+            win->flags |= (NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED);
+            win->hide = false;
+        }
     }
 }
 
