@@ -345,19 +345,36 @@ static void remove_from_flocks(const struct entity *ent)
     assert(NULL == flock_for_ent(ent));
 }
 
+static void filter_selection_pathable(const vec_pentity_t *in_sel, vec_pentity_t *out_sel)
+{
+    vec_pentity_init(out_sel);
+    for(int i = 0; i < vec_size(in_sel); i++) {
+
+        struct entity *curr = vec_AT(in_sel, i);
+        vec2_t xz_pos = G_Pos_GetXZ(curr->uid);
+
+        if(!M_NavPositionPathable(s_map, xz_pos))
+            continue;
+        vec_pentity_push(out_sel, curr);
+    }
+}
+
 static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz, bool attack)
 {
-    if(vec_size(sel) == 0)
-        return false;
+    vec_pentity_t fsel = {0};
+    filter_selection_pathable(sel, &fsel);
+
+    if(vec_size(&fsel) == 0)
+        goto out_false;
 
     /* The following won't be optimal when the entities in the selection are on different 
      * 'islands'. Handling that case is not a top priority. 
      */
-    vec2_t first_ent_pos_xz = G_Pos_GetXZ(vec_AT(sel, 0)->uid);
+    vec2_t first_ent_pos_xz = G_Pos_GetXZ(vec_AT(&fsel, 0)->uid);
     target_xz = M_NavClosestReachableDest(s_map, first_ent_pos_xz, target_xz);
 
     /* First remove the entities in the selection from any active flocks */
-    for(int i = 0; i < vec_size(sel); i++) {
+    for(int i = 0; i < vec_size(&fsel); i++) {
 
         const struct entity *curr_ent = vec_AT(sel, i);
         if(stationary(curr_ent))
@@ -372,11 +389,11 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
     };
 
     if(!new_flock.ents)
-        return false;
+        goto out_false;
 
-    for(int i = 0; i < vec_size(sel); i++) {
+    for(int i = 0; i < vec_size(&fsel); i++) {
 
-        const struct entity *curr_ent = vec_AT(sel, i);
+        const struct entity *curr_ent = vec_AT(&fsel, i);
         if(stationary(curr_ent))
             continue;
 
@@ -416,11 +433,18 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
         s_last_cmd_dest_valid = true;
         s_last_cmd_dest = new_flock.dest_id;
 
-        return true;
+        goto out_true;
     }else{
         kh_destroy(entity, new_flock.ents);
-        return false;
+        goto out_false;
     }
+
+out_true:
+    vec_pentity_destroy(&fsel);
+    return true;
+out_false:
+    vec_pentity_destroy(&fsel);
+    return false;
 }
 
 size_t adjacent_flock_members(const struct entity *ent, const struct flock *flock, 
