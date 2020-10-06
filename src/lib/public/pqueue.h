@@ -71,17 +71,42 @@
 
 #define PQUEUE_PROTOTYPES(scope, name, type)                                                    \
                                                                                                 \
-    scope void  pq_##name##_init    (pq(name) *pqueue);                                         \
-    scope void  pq_##name##_destroy (pq(name) *pqueue);                                         \
-    scope bool  pq_##name##_push    (pq(name) *pqueue, float in_prio, type in);                 \
-    scope bool  pq_##name##_pop     (pq(name) *pqueue, type *out);                              \
-    scope bool  pq_##name##_contains(pq(name) *pqueue, type t);                                 \
-    scope bool  pq_##name##_reserve (pq(name) *pqueue, size_t cap);                             \
-    scope bool  pq_##name##_top_prio(pq(name) *pqueue, float *out);                             \
+    static void _pq_##name##_balance (pq(name) *pqueue, int root_idx);                          \
+    scope  void  pq_##name##_init    (pq(name) *pqueue);                                        \
+    scope  void  pq_##name##_destroy (pq(name) *pqueue);                                        \
+    scope  bool  pq_##name##_push    (pq(name) *pqueue, float in_prio, type in);                \
+    scope  bool  pq_##name##_pop     (pq(name) *pqueue, type *out);                             \
+    scope  bool  pq_##name##_remove  (pq(name) *pqueue, int compare(void *a, void *b), type t); \
+    scope  bool  pq_##name##_contains(pq(name) *pqueue, int compare(void *a, void *b), type t); \
+    scope  bool  pq_##name##_reserve (pq(name) *pqueue, size_t cap);                            \
+    scope  bool  pq_##name##_top_prio(pq(name) *pqueue, float *out);                            \
 
 /***********************************************************************************************/
 
 #define PQUEUE_IMPL(scope, name, type)                                                          \
+                                                                                                \
+    static void _pq_##name##_balance(pq(name) *pqueue, int root_idx)                            \
+    {                                                                                           \
+        while(root_idx != pqueue->size + 1) {                                                   \
+                                                                                                \
+            int target_idx = pqueue->size + 1;                                                  \
+            int left_child_idx = root_idx * 2;                                                  \
+            int right_child_idx = left_child_idx + 1;                                           \
+                                                                                                \
+            if(left_child_idx <= pqueue->size                                                   \
+            && pqueue->nodes[left_child_idx].priority < pqueue->nodes[target_idx].priority) {   \
+                target_idx = left_child_idx;                                                    \
+            }                                                                                   \
+                                                                                                \
+            if(right_child_idx <= pqueue->size                                                  \
+            && pqueue->nodes[right_child_idx].priority < pqueue->nodes[target_idx].priority) {  \
+                target_idx = right_child_idx;                                                   \
+            }                                                                                   \
+                                                                                                \
+            pqueue->nodes[root_idx] = pqueue->nodes[target_idx];                                \
+            root_idx = target_idx;                                                              \
+        }                                                                                       \
+    }                                                                                           \
                                                                                                 \
     scope void pq_##name##_init(pq(name) *pqueue)                                               \
     {                                                                                           \
@@ -128,34 +153,35 @@
                                                                                                 \
         *out = pqueue->nodes[1].data;                                                           \
         pqueue->nodes[1] = pqueue->nodes[pqueue->size--];                                       \
+        _pq_##name##_balance(pqueue, 1);                                                        \
                                                                                                 \
-        int curr_idx = 1;                                                                       \
-        while(curr_idx != pqueue->size + 1) {                                                   \
-                                                                                                \
-            int target_idx = pqueue->size + 1;                                                  \
-            int left_child_idx = curr_idx * 2;                                                  \
-            int right_child_idx = left_child_idx + 1;                                           \
-                                                                                                \
-            if(left_child_idx <= pqueue->size                                                   \
-            && pqueue->nodes[left_child_idx].priority < pqueue->nodes[target_idx].priority) {   \
-                target_idx = left_child_idx;                                                    \
-            }                                                                                   \
-                                                                                                \
-            if(right_child_idx <= pqueue->size                                                  \
-            && pqueue->nodes[right_child_idx].priority < pqueue->nodes[target_idx].priority) {  \
-                target_idx = right_child_idx;                                                   \
-            }                                                                                   \
-                                                                                                \
-            pqueue->nodes[curr_idx] = pqueue->nodes[target_idx];                                \
-            curr_idx = target_idx;                                                              \
-        }                                                                                       \
         return true;                                                                            \
     }                                                                                           \
                                                                                                 \
-    scope bool pq_##name##_contains(pq(name) *pqueue, type t)                                   \
+    scope bool pq_##name##_remove(pq(name) *pqueue, int compare(void *a, void *b), type t)      \
     {                                                                                           \
-        for(int i = 0; i < pqueue->size; i++) {                                                 \
-            if(0 == memcmp(&pqueue->nodes[i].data, &t, sizeof(t)))                              \
+        if(pqueue->size == 0)                                                                   \
+            return false;                                                                       \
+                                                                                                \
+        int idx = -1;                                                                           \
+        for(int i = 1; i <= pqueue->size; i++) {                                                \
+            if(0 == compare(&pqueue->nodes[i].data, &t)) {                                      \
+                idx = i;                                                                        \
+                break;                                                                          \
+            }                                                                                   \
+        }                                                                                       \
+        if(idx == -1)                                                                           \
+            return false;                                                                       \
+                                                                                                \
+        pqueue->nodes[idx] = pqueue->nodes[pqueue->size--];                                     \
+        _pq_##name##_balance(pqueue, idx);                                                      \
+        return true;                                                                            \
+    }                                                                                           \
+                                                                                                \
+    scope bool pq_##name##_contains(pq(name) *pqueue, int compare(void *a, void *b), type t)    \
+    {                                                                                           \
+        for(int i = 1; i <= pqueue->size; i++) {                                                \
+            if(0 == compare(&pqueue->nodes[i].data, &t))                                        \
                 return true;                                                                    \
         }                                                                                       \
         return false;                                                                           \

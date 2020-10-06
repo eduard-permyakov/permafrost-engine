@@ -944,6 +944,13 @@ static int worker_threadfn(void *arg)
     return 0;
 }
 
+static int tasks_compare(void *a, void *b)
+{
+    struct task *ta = *(struct task**)a;
+    struct task *tb = *(struct task**)b;
+    return ((uintptr_t)(ta) - (uintptr_t)(tb));
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1238,6 +1245,35 @@ uint32_t Sched_Create(int prio, task_func_t code, void *arg, struct future *resu
     uint32_t ret = sched_create(prio, code, arg, result, flags | TASK_DETACHED, NULL_TID);
     SDL_UnlockMutex(s_request_lock);
 
+    return ret;
+}
+
+bool Sched_RunSync(uint32_t tid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    SDL_LockMutex(s_request_lock);
+    bool ret = false;
+
+    struct task *task = &s_tasks[tid - 1];
+    if(!(task->flags & TASK_DETACHED)) {
+        goto out;
+    }
+
+    SDL_LockMutex(s_ready_lock);
+    bool found = pq_task_remove(&s_ready_queue, tasks_compare, task) 
+              || pq_task_remove(&s_ready_queue_main, tasks_compare, task);
+    SDL_UnlockMutex(s_ready_lock);
+
+    if(!found)
+        goto out;
+
+    sched_task_run(task);
+    sched_task_service_request(task);
+    ret = true;
+
+out:
+    SDL_UnlockMutex(s_request_lock);
     return ret;
 }
 

@@ -78,6 +78,14 @@ vec2_t g_flow_dir_lookup[9] = {
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static int compare_tiles(void *a, void *b)
+{
+    //return memcmp(a, b, sizeof(struct coord));
+    struct coord *ac = a;
+    struct coord *bc = b;
+    return !((bc->r == ac->r) && (bc->c == ac->c));
+}
+
 static bool tile_passable(const struct nav_chunk *chunk, struct coord tile)
 {
     if(chunk->cost_base[tile.r][tile.c] == COST_IMPASSABLE)
@@ -353,7 +361,7 @@ static void build_integration_field(pq_coord_t *frontier, const struct nav_chunk
             if(total_cost < inout[neighbours[i].r][neighbours[i].c]) {
 
                 inout[neighbours[i].r][neighbours[i].c] = total_cost;
-                if(!pq_coord_contains(frontier, neighbours[i]))
+                if(!pq_coord_contains(frontier, compare_tiles, neighbours[i]))
                     pq_coord_push(frontier, total_cost, neighbours[i]);
             }
         }
@@ -384,7 +392,7 @@ static void build_integration_field_nonpass(pq_coord_t *frontier, const struct n
             if(total_cost < inout[neighbours[i].r][neighbours[i].c]) {
 
                 inout[neighbours[i].r][neighbours[i].c] = total_cost;
-                if(!pq_coord_contains(frontier, neighbours[i]))
+                if(!pq_coord_contains(frontier, compare_tiles, neighbours[i]))
                     pq_coord_push(frontier, total_cost, neighbours[i]);
             }
         }
@@ -1009,7 +1017,7 @@ void N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc t
                 if(new_cost < integration_field[neighbours[i].r][neighbours[i].c]) {
 
                     integration_field[nr][nc] = new_cost;
-                    if(!pq_coord_contains(&frontier, neighbours[i]))
+                    if(!pq_coord_contains(&frontier, compare_tiles, neighbours[i]))
                         pq_coord_push(&frontier, new_cost, neighbours[i]);
                 }
             }
