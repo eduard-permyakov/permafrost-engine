@@ -38,7 +38,15 @@
 
 #include <stdbool.h>
 
+#define MAX_ARGC (32)
+
+
 struct SDL_RWops;
+
+struct arg_desc{
+    int   argc;
+    char *argv[MAX_ARGC + 1];
+};
 
 bool Session_Init(void);
 void Session_Shutdown(void);
@@ -47,8 +55,8 @@ void Session_ServiceRequests(void);
 bool Session_Save(struct SDL_RWops *stream);
 void Session_RequestLoad(const char *path);
 
-void Session_RequestPush(const char *script);
-void Session_RequestPop(void);
+void Session_RequestPush(const char *script, int argc, char **argv);
+void Session_RequestPop(int argc, char **argv);
 void Session_RequestExec(const char *script, int argc, char **argv);
 
 #endif

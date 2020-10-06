@@ -50,7 +50,6 @@
 
 
 #define PFSAVE_VERSION  (1.0f)
-#define MAX_ARGC        (32)
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
 
 VEC_TYPE(stream, SDL_RWops*)
@@ -72,12 +71,15 @@ enum srequest{
  * A session is a stack of subsessions.
  */
 
-static vec_stream_t  s_subsession_stack;
-static enum srequest s_request = SESH_REQ_NONE;
-static int           s_argc;
-static char          s_argv[MAX_ARGC][128];
-static char          s_req_path[512];
-static char          s_errbuff[512] = {0};
+static vec_stream_t    s_subsession_stack;
+static enum srequest   s_request = SESH_REQ_NONE;
+static int             s_argc;
+static char            s_argv[MAX_ARGC][128];
+static char            s_req_path[512];
+static char            s_errbuff[512] = {0};
+
+static struct arg_desc s_saved_args;
+static char            s_saved_argv[MAX_ARGC + 1][128];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -92,6 +94,17 @@ static void subsession_clear(void)
     G_ClearState();
     G_ClearRenderWork();
     UI_SetActiveFont("__default__");
+}
+
+static void subsession_save_args(void)
+{
+    pf_strlcpy(s_saved_argv[0], s_req_path, sizeof(s_saved_argv[0]));
+    memcpy(s_saved_argv + 1, s_argv, sizeof(s_argv));
+
+    s_saved_args.argc = s_argc + 1;
+    for(int i = 0; i < s_argc + 1; i++) {
+        s_saved_args.argv[i] = s_saved_argv[i];
+    }
 }
 
 static bool subsession_save(SDL_RWops *stream)
@@ -244,6 +257,9 @@ static bool session_pop_subsession(char *errstr, size_t errlen)
     bool result = subsession_load(stream, errstr, errlen);
     assert(result);
 
+    subsession_save_args();
+    E_Global_Notify(EVENT_SESSION_POPPED, &s_saved_args, ES_ENGINE);
+
     SDL_RWclose(stream);
     return true;
 }
@@ -328,8 +344,12 @@ void Session_RequestLoad(const char *path)
     pf_snprintf(s_req_path, sizeof(s_req_path), "%s", path);
 }
 
-void Session_RequestPush(const char *script)
+void Session_RequestPush(const char *script, int argc, char **argv)
 {
+    s_argc = MIN(argc, MAX_ARGC);
+    for(int i = 0; i < s_argc; i++) {
+        pf_strlcpy(s_argv[i], argv[i], sizeof(s_argv[i]));
+    }
     s_request = SESH_REQ_PUSH;
     pf_snprintf(s_req_path, sizeof(s_req_path), "%s", script);
 }
@@ -344,8 +364,12 @@ void Session_RequestExec(const char *script, int argc, char **argv)
     pf_snprintf(s_req_path, sizeof(s_req_path), "%s", script);
 }
 
-void Session_RequestPop(void)
+void Session_RequestPop(int argc, char **argv)
 {
+    s_argc = MIN(argc, MAX_ARGC);
+    for(int i = 0; i < s_argc; i++) {
+        pf_strlcpy(s_argv[i], argv[i], sizeof(s_argv[i]));
+    }
     s_request = SESH_REQ_POP;
 }
 

@@ -787,6 +787,9 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
         khiter_t k = kh_put(task, s_tid_task_map, ret->tid, &status);
         assert(status != -1 && status != 0);
         kh_value(s_tid_task_map, k) = ret;
+
+        bool success = Sched_RunSync(ret->tid);
+        assert(success);
     }
 
     SDL_RWops *stream = SDL_RWFromConstMem(str, len);

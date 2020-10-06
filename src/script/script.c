@@ -151,7 +151,7 @@ static PyObject *PyPf_load_session(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_exec(PyObject *self, PyObject *args);
 static PyObject *PyPf_exec_push(PyObject *self, PyObject *args);
-static PyObject *PyPf_exec_pop(PyObject *self);
+static PyObject *PyPf_exec_pop(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -463,7 +463,7 @@ static PyMethodDef pf_module_methods[] = {
     "This is performed asynchronously. Failure is notified via an EVENT_SESSION_FAIL_LOAD event."},
 
     {"exec_pop",
-    (PyCFunction)PyPf_exec_pop, METH_NOARGS,
+    (PyCFunction)PyPf_exec_pop, METH_VARARGS,
     "Pop a previously saved subsession, using it to replace the current subsession. "
     "This is performed asynchronously. Failure is notified via an EVENT_SESSION_FAIL_LOAD event."},
 
@@ -1793,6 +1793,25 @@ static void s_create_settings(void)
     assert(status == SS_OKAY);
 }
 
+static PyObject *s_wrap_argv(struct arg_desc *args)
+{
+    PyObject *ret = PyTuple_New(args->argc);
+    if(!ret)
+        goto fail;
+
+    for(int i = 0; i < args->argc; i++) {
+        PyObject *str = PyString_FromString(args->argv[i]);
+        if(!str)
+            goto fail;
+        PyTuple_SET_ITEM(ret, i, str);
+    }
+    return ret;
+
+fail:
+    Py_XDECREF(ret);
+    return NULL;
+}
+
 static PyObject *PyPf_exec(PyObject *self, PyObject *args)
 {
     const char *scriptname;
@@ -1828,19 +1847,63 @@ static PyObject *PyPf_exec(PyObject *self, PyObject *args)
 static PyObject *PyPf_exec_push(PyObject *self, PyObject *args)
 {
     const char *scriptname;
+    PyObject *sargs = NULL;
 
-    if(!PyArg_ParseTuple(args, "s", &scriptname)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
+    if(!PyArg_ParseTuple(args, "s|O", &scriptname, &sargs)
+    || (sargs && !PyTuple_Check(sargs))) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string (and optionally a tuple of arguments).");
         return NULL;
     }
 
-    Session_RequestPush(scriptname);
+    int argc = sargs ? PyTuple_GET_SIZE(sargs) : 0;
+    char *argv[32];
+
+    if(argc > ARR_SIZE(argv)) {
+        PyErr_SetString(PyExc_RuntimeError, "Maximum number of arguments exceeded.");
+        return NULL;
+    }
+
+    for(int i = 0; i < argc; i++) {
+        PyObject *arg = PyTuple_GET_ITEM(sargs, i);
+        if(!PyString_Check(arg)) {
+            PyErr_SetString(PyExc_TypeError, "Script arguments must be strings");
+            return NULL;
+        }
+        argv[i] = PyString_AS_STRING(arg);
+    }
+
+    Session_RequestPush(scriptname, argc, argv);
     Py_RETURN_NONE;
 }
 
-static PyObject *PyPf_exec_pop(PyObject *self)
+static PyObject *PyPf_exec_pop(PyObject *self, PyObject *args)
 {
-    Session_RequestPop();
+    PyObject *sargs = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O", &sargs)
+    || (sargs && !PyTuple_Check(sargs))) {
+        PyErr_SetString(PyExc_TypeError, "One optional arument: tuple of strings.");
+        return NULL;
+    }
+
+    int argc = sargs ? PyTuple_GET_SIZE(sargs) : 0;
+    char *argv[32];
+
+    if(argc > ARR_SIZE(argv)) {
+        PyErr_SetString(PyExc_RuntimeError, "Maximum number of arguments exceeded.");
+        return NULL;
+    }
+
+    for(int i = 0; i < argc; i++) {
+        PyObject *arg = PyTuple_GET_ITEM(sargs, i);
+        if(!PyString_Check(arg)) {
+            PyErr_SetString(PyExc_TypeError, "Script arguments must be strings");
+            return NULL;
+        }
+        argv[i] = PyString_AS_STRING(arg);
+    }
+
+    Session_RequestPop(argc, argv);
     Py_RETURN_NONE;
 }
 
@@ -2052,6 +2115,8 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
         Py_INCREF(ent);
         return ent;
     }
+    case EVENT_SESSION_POPPED:
+        return s_wrap_argv(arg);
 
     default:
         Py_RETURN_NONE;
