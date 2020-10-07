@@ -643,13 +643,13 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
     }
     CHK_TRUE(status, fail_pickle);
 
+    PyObject *stack_depth = PyInt_FromLong(self->stack_depth);
+    status = ctx->pickle_obj(ctx->private_ctx, stack_depth, ctx->stream);
+    CHK_TRUE(status, fail_pickle);
+
     PyObject *sleep_elapsed = PyInt_FromLong(self->sleep_elapsed);
     status = ctx->pickle_obj(ctx->private_ctx, sleep_elapsed, ctx->stream);
     CHK_TRUE(status, fail_pickle);
-
-    if(self->req.type == PYREQ_SLEEP) {
-        uint32_t curr = SDL_GetTicks();
-    }
 
     ret = PyString_FromString("");
 fail_pickle:
@@ -680,12 +680,13 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     }
     assert(len == sizeof(struct py_unpickle_ctx));
 
-    if(vec_size(ctx->stack) < 6) {
+    if(vec_size(ctx->stack) < 7) {
         PyErr_SetString(PyExc_RuntimeError, "Stack underflow");
         goto fail_args;
     }
 
     PyObject *sleep_elapsed = vec_pobj_pop(ctx->stack);
+    PyObject *stack_depth = vec_pobj_pop(ctx->stack);
     PyObject *regname = vec_pobj_pop(ctx->stack);
     PyObject *func = vec_pobj_pop(ctx->stack);
     PyObject *request = vec_pobj_pop(ctx->stack);
@@ -693,6 +694,7 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     PyObject *state = vec_pobj_pop(ctx->stack);
 
     CHK_TRUE(PyInt_Check(sleep_elapsed), fail_unpickle);
+    CHK_TRUE(PyInt_Check(stack_depth), fail_unpickle);
     CHK_TRUE(regname == Py_None || PyString_Check(regname), fail_unpickle);
     CHK_TRUE(PyInt_Check(state), fail_unpickle);
     CHK_TRUE(PyInt_AS_LONG(state) >= PYTASK_STATE_NOT_STARTED 
@@ -768,6 +770,7 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     ret->state = PyInt_AS_LONG(state);
     ret->runfunc = (Py_INCREF(func), func);
     ret->sleep_elapsed = PyInt_AS_LONG(sleep_elapsed);
+    ret->stack_depth = PyInt_AS_LONG(stack_depth);
 
     if(ret->state == PYTASK_STATE_RUNNING) {
     
@@ -805,6 +808,7 @@ fail_unpickle:
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle pf.Task instance");
     }
     Py_XDECREF(sleep_elapsed);
+    Py_XDECREF(stack_depth);
     Py_XDECREF(regname);
     Py_XDECREF(func);
     Py_XDECREF(request);

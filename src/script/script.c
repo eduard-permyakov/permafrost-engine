@@ -2129,7 +2129,9 @@ script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg)
 {
     assert(arg);
     if(PyWeakref_Check(arg)) {
-        return PyWeakref_GetObject(arg); 
+        PyObject *ret = PyWeakref_GetObject(arg);
+        Py_INCREF(ret);
+        return ret;
     }
     Py_INCREF(arg);
     return arg;
