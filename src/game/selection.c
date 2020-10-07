@@ -521,6 +521,12 @@ bool G_Sel_SaveState(struct SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &installed, "installed"));
 
+    struct attr sel_type = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = s_ctx.type
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &sel_type, "sel_type"));
+
     struct attr num_selected = (struct attr){
         .type = TYPE_INT,
         .val.as_int = vec_size(&s_selected)
@@ -550,6 +556,10 @@ bool G_Sel_LoadState(struct SDL_RWops *stream)
     }else{
         G_Sel_Disable();
     }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    s_ctx.type = attr.val.as_int;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
