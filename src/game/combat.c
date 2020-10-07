@@ -292,6 +292,7 @@ static void on_attack_anim_finish(void *user, void *event)
             }
 
             E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_attack_anim_finish);
+            E_Global_Notify(EVENT_ENTITY_DIED, target, ES_ENGINE);
             E_Entity_Notify(EVENT_ENTITY_DEATH, cs->target_uid, NULL, ES_ENGINE);
 
             if(target->flags & ENTITY_FLAG_ANIMATED) {

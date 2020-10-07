@@ -415,6 +415,7 @@ bool G_Building_Complete(struct entity *ent)
     vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
     ent->vision_range = bs->vision_range;
     G_Fog_UpdateVisionRange(xz_pos, ent->faction_id, old, ent->vision_range);
+    E_Global_Notify(EVENT_BUILDING_COMPLETED, ent, ES_ENGINE);
 
     return true;
 }
