@@ -1203,6 +1203,7 @@ void S_Task_Shutdown(void)
     (void)key;
 
     kh_foreach(s_tid_task_map, key, curr, {
+        pytask_push_ctx(curr);
         Py_DECREF(curr);
     });
     kh_destroy(task, s_tid_task_map);
