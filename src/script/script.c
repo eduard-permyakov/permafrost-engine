@@ -2027,6 +2027,24 @@ done:
     return ret;
 }
 
+bool S_GetFilePath(char *out, size_t maxout)
+{
+    PyObject *main_module = PyImport_AddModule("__main__"); /* borrowed */
+    if(!main_module)
+        return false;
+
+    PyObject *global_dict = PyModule_GetDict(main_module); /* borrowed */
+    if(PyDict_GetItemString(global_dict, "__file__") == NULL)
+        return false;
+
+    PyObject *file = PyDict_GetItemString(global_dict, "__file__"); /* borrowed */
+    if(!PyString_Check(file))
+        return false;
+
+    pf_strlcpy(out, PyString_AS_STRING(file), maxout);
+    return true;
+}
+
 void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, script_opaque_t event_arg)
 {
     PyObject *args, *ret;

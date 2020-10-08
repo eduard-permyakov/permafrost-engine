@@ -98,10 +98,12 @@ static void subsession_clear(void)
 
 static void subsession_save_args(void)
 {
-    pf_strlcpy(s_saved_argv[0], s_req_path, sizeof(s_saved_argv[0]));
-    memcpy(s_saved_argv + 1, s_argv, sizeof(s_argv));
+    s_saved_argv[0][0] = '\0';
+    S_GetFilePath(s_saved_argv[0], sizeof(s_saved_argv[0]));
 
+    memcpy(s_saved_argv + 1, s_argv, sizeof(s_argv));
     s_saved_args.argc = s_argc + 1;
+
     for(int i = 0; i < s_argc + 1; i++) {
         s_saved_args.argv[i] = s_saved_argv[i];
     }
@@ -251,13 +253,13 @@ static bool session_pop_subsession(char *errstr, size_t errlen)
         return false;
     }
 
+    subsession_save_args();
     subsession_clear();
 
     SDL_RWops *stream = vec_stream_pop(&s_subsession_stack);
     bool result = subsession_load(stream, errstr, errlen);
     assert(result);
 
-    subsession_save_args();
     E_Global_Notify(EVENT_SESSION_POPPED, &s_saved_args, ES_ENGINE);
 
     SDL_RWclose(stream);
