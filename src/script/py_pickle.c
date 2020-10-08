@@ -6309,7 +6309,7 @@ static int op_ext_weakref(struct unpickle_ctx *ctx, SDL_RWops *rw)
         goto fail_typecheck;
     }
 
-    if(!PyType_SUPPORTS_WEAKREFS(Py_TYPE(referent))) {
+    if(!PyType_SUPPORTS_WEAKREFS(Py_TYPE(referent)) && referent != Py_None) {
         SET_RUNTIME_EXC("PF_WEAKREF: Expecting object of type that supports weakrefs on TOS1");
         goto fail_typecheck;
     }
