@@ -44,10 +44,22 @@ BUILT-IN FUNCTIONS
     Make it possible to select units with the mouse. Enable drawing of a
     selection box when dragging the mouse.
 
+    [exec_]
+    ----------------------------------------------------------------------------
+    Replace the current subsession with one set up by the provided script. This
+    is performed asynchronously. Failure is notified via an
+    EVENT_SESSION_FAIL_LOAD event.
+
     [exec_pop]
     ----------------------------------------------------------------------------
     Pop a previously saved subsession, using it to replace the current
     subsession. This is performed asynchronously. Failure is notified via an
+    EVENT_SESSION_FAIL_LOAD event.
+
+    [exec_pop_to_root]
+    ----------------------------------------------------------------------------
+    Pop the root subsession, using it to replace the current subsession. This
+    is performed asynchronously. Failure is notified via an
     EVENT_SESSION_FAIL_LOAD event.
 
     [exec_push]
@@ -128,6 +140,19 @@ BUILT-IN FUNCTIONS
     Broadcast a global event so all handlers can get invoked. Any weakref
     argument is automatically unpacked before being sent to the handler.
 
+    [hide_healthbars]
+    ----------------------------------------------------------------------------
+    Disable rendering of healthbars. Overrides the user-configurable dynamic
+    setting.
+
+    [load_map]
+    ----------------------------------------------------------------------------
+    Loads the map from the specified file.
+
+    [load_map_string]
+    ----------------------------------------------------------------------------
+    Loads the map from the specified PFMAP string.
+
     [load_scene]
     ----------------------------------------------------------------------------
     Import list of entities from a PFSCENE file (specified as a path string).
@@ -159,17 +184,6 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Returns the normalized result of multiplying 2 quaternions (specified as a
     list of 4 floats - XYZW order).
-
-    [new_game]
-    ----------------------------------------------------------------------------
-    Loads the specified map and creates an empty scene. Note that all
-    references to existing _active_ entities _MUST_ be deleted before creating
-    a new game.
-
-    [new_game_string]
-    ----------------------------------------------------------------------------
-    The same as 'new_game' but takes the map contents string as an argument
-    instead of a path and filename.
 
     [pickle_object]
     ----------------------------------------------------------------------------
@@ -303,6 +317,12 @@ BUILT-IN FUNCTIONS
     Updates the value of the setting with the specified name. Will throw an
     exception if the setting is not found or if the new value for the setting
     is invalid.
+
+    [show_healthbars]
+    ----------------------------------------------------------------------------
+    Re-enable showing the healthbars after a 'hide_healthbars' call. Note that
+    the healthbars will only be rendered if the corresponding user-configurable
+    setting is set.
 
     [ui_text_edit_has_focus]
     ----------------------------------------------------------------------------
@@ -1548,13 +1568,15 @@ BUILT-IN CONSTANTS
     EVENT_ANIM_FINISHED 65551
     EVENT_ATTACK_END 65558
     EVENT_ATTACK_START 65556
-    EVENT_BUILD_BEGIN 65563
-    EVENT_BUILD_END 65564
-    EVENT_BUILD_FAIL_FOUND 65565
-    EVENT_BUILD_TARGET_ACQUIRED 65566
+    EVENT_BUILDING_COMPLETED 65569
+    EVENT_BUILD_BEGIN 65565
+    EVENT_BUILD_END 65566
+    EVENT_BUILD_FAIL_FOUND 65567
+    EVENT_BUILD_TARGET_ACQUIRED 65568
     EVENT_ENGINE_LAST 131071
     EVENT_ENTITY_DEATH 65557
-    EVENT_ENTITY_STOP 65567
+    EVENT_ENTITY_DIED 65570
+    EVENT_ENTITY_STOP 65571
     EVENT_GAME_SIMSTATE_CHANGED 65559
     EVENT_MOTION_END 65555
     EVENT_MOTION_START 65554
@@ -1563,10 +1585,12 @@ BUILT-IN CONSTANTS
     EVENT_RENDER_3D_POST 65540
     EVENT_RENDER_3D_PRE 65539
     EVENT_RENDER_UI 65541
-    EVENT_SCRIPT_TASK_EXCEPTION 65561
-    EVENT_SCRIPT_TASK_FINISHED 65562
+    EVENT_SCRIPT_TASK_EXCEPTION 65563
+    EVENT_SCRIPT_TASK_FINISHED 65564
     EVENT_SELECTED_TILE_CHANGED 65542
-    EVENT_SESSION_FAIL_LOAD 65560
+    EVENT_SESSION_FAIL_LOAD 65562
+    EVENT_SESSION_LOADED 65560
+    EVENT_SESSION_POPPED 65561
     EVENT_UNIT_SELECTION_CHANGED 65544
     EVENT_UPDATE_END 65537
     EVENT_UPDATE_START 65536
