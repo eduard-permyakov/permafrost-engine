@@ -152,6 +152,7 @@ static PyObject *PyPf_load_session(PyObject *self, PyObject *args);
 static PyObject *PyPf_exec(PyObject *self, PyObject *args);
 static PyObject *PyPf_exec_push(PyObject *self, PyObject *args);
 static PyObject *PyPf_exec_pop(PyObject *self, PyObject *args);
+static PyObject *PyPf_exec_pop_to_root(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -465,6 +466,11 @@ static PyMethodDef pf_module_methods[] = {
     {"exec_pop",
     (PyCFunction)PyPf_exec_pop, METH_VARARGS,
     "Pop a previously saved subsession, using it to replace the current subsession. "
+    "This is performed asynchronously. Failure is notified via an EVENT_SESSION_FAIL_LOAD event."},
+
+    {"exec_pop_to_root",
+    (PyCFunction)PyPf_exec_pop_to_root, METH_VARARGS,
+    "Pop the root subsession, using it to replace the current subsession. "
     "This is performed asynchronously. Failure is notified via an EVENT_SESSION_FAIL_LOAD event."},
 
     {NULL}  /* Sentinel */
@@ -1904,6 +1910,37 @@ static PyObject *PyPf_exec_pop(PyObject *self, PyObject *args)
     }
 
     Session_RequestPop(argc, argv);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_exec_pop_to_root(PyObject *self, PyObject *args)
+{
+    PyObject *sargs = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O", &sargs)
+    || (sargs && !PyTuple_Check(sargs))) {
+        PyErr_SetString(PyExc_TypeError, "One optional arument: tuple of strings.");
+        return NULL;
+    }
+
+    int argc = sargs ? PyTuple_GET_SIZE(sargs) : 0;
+    char *argv[32];
+
+    if(argc > ARR_SIZE(argv)) {
+        PyErr_SetString(PyExc_RuntimeError, "Maximum number of arguments exceeded.");
+        return NULL;
+    }
+
+    for(int i = 0; i < argc; i++) {
+        PyObject *arg = PyTuple_GET_ITEM(sargs, i);
+        if(!PyString_Check(arg)) {
+            PyErr_SetString(PyExc_TypeError, "Script arguments must be strings");
+            return NULL;
+        }
+        argv[i] = PyString_AS_STRING(arg);
+    }
+
+    Session_RequestPopToRoot(argc, argv);
     Py_RETURN_NONE;
 }
 

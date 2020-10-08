@@ -57,6 +57,7 @@ void Session_RequestLoad(const char *path);
 
 void Session_RequestPush(const char *script, int argc, char **argv);
 void Session_RequestPop(int argc, char **argv);
+void Session_RequestPopToRoot(int argc, char **argv);
 void Session_RequestExec(const char *script, int argc, char **argv);
 
 #endif

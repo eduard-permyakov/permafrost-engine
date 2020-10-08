@@ -60,6 +60,7 @@ enum srequest{
     SESH_REQ_LOAD,
     SESH_REQ_PUSH,
     SESH_REQ_POP,
+    SESH_REQ_POP_TO_ROOT,
     SESH_REQ_EXEC,
 };
 
@@ -266,6 +267,29 @@ static bool session_pop_subsession(char *errstr, size_t errlen)
     return true;
 }
 
+static bool session_pop_subsession_to_root(char *errstr, size_t errlen)
+{
+    if(vec_size(&s_subsession_stack) == 0) {
+        pf_snprintf(errstr, errlen, "Cannot pop subsession: stack is empty");
+        return false;
+    }
+
+    subsession_save_args();
+    subsession_clear();
+
+    SDL_RWops *stream = vec_AT(&s_subsession_stack, 0);
+    bool result = subsession_load(stream, errstr, errlen);
+    assert(result);
+
+    while(vec_size(&s_subsession_stack) > 0) {
+        stream = vec_stream_pop(&s_subsession_stack);
+        SDL_RWclose(stream);
+    }
+
+    E_Global_Notify(EVENT_SESSION_POPPED, &s_saved_args, ES_ENGINE);
+    return true;
+}
+
 static bool session_push_subsession(const char *script, char *errstr, size_t errlen)
 {
     SDL_RWops *stream = PFSDL_VectorRWOps();
@@ -375,6 +399,15 @@ void Session_RequestPop(int argc, char **argv)
     s_request = SESH_REQ_POP;
 }
 
+void Session_RequestPopToRoot(int argc, char **argv)
+{
+    s_argc = MIN(argc, MAX_ARGC);
+    for(int i = 0; i < s_argc; i++) {
+        pf_strlcpy(s_argv[i], argv[i], sizeof(s_argv[i]));
+    }
+    s_request = SESH_REQ_POP_TO_ROOT;
+}
+
 void Session_ServiceRequests(void)
 {
     if(s_request == SESH_REQ_NONE)
@@ -392,6 +425,9 @@ void Session_ServiceRequests(void)
         break;
     case SESH_REQ_POP:
         result = session_pop_subsession(s_errbuff, sizeof(s_errbuff));
+        break;
+    case SESH_REQ_POP_TO_ROOT:
+        result = session_pop_subsession_to_root(s_errbuff, sizeof(s_errbuff));
         break;
     case SESH_REQ_EXEC:
         result = session_exec_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
