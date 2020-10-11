@@ -33,27 +33,20 @@
  *
  */
 
-#ifndef STRING_INTERN_H
-#define STRING_INTERN_H
+#ifndef RESOURCE_H
+#define RESOURCE_H
 
-#include "mpool.h"
-#include "khash.h"
-
+#include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>
 
-#ifndef STRBUFF_SZ
-#define STRBUFF_SZ (256)
-#endif
+bool G_Resource_Init(void);
+void G_Resource_Shutdown(void);
+bool G_Resource_AddEntity(uint32_t uid, const char *name, int init_amount);
+void G_Resource_RemoveEntity(uint32_t uid);
 
-typedef char strbuff_t[STRBUFF_SZ];
-
-MPOOL_TYPE(strbuff, strbuff_t)
-__KHASH_TYPE(stridx, khint32_t, mp_ref_t)
-
-bool        si_init(mp_strbuff_t *pool, khash_t(stridx) **index, size_t size);
-const char *si_intern(const char *str, mp_strbuff_t *pool, khash_t(stridx) *index);
-void        si_shutdown(mp_strbuff_t *pool, khash_t(stridx) *index);
+int  G_Resource_GetAmount(uint32_t uid);
+void G_Resource_SetAmount(uint32_t uid, int amount);
+const char *G_Resource_GetName(uint32_t uid);
 
 #endif
 
