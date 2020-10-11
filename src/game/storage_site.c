@@ -33,12 +33,11 @@
  *
  */
 
-#include "harvester.h"
+#include "storage_site.h"
 #include "../lib/public/mpool.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/string_intern.h"
 
-#include <stddef.h>
 #include <assert.h>
 
 static void *pmalloc(size_t size);
@@ -58,18 +57,9 @@ static void  pfree(void *ptr);
 
 KHASH_MAP_INIT_STR(int, int)
 
-enum harvester_state{
-    STATE_NOT_HARVESTING,
-    STATE_MOVING_TO_RESOURCE,
-    STATE_HARVESTING,
-    STATE_MOVING_TO_STORAGE,
-};
-
-struct hstate{
-    enum harvester_state state;
-    kh_int_t *gather_speeds;    /* How much of each resource the entity gets each cycle */
-    kh_int_t *max_carry;        /* The maximum amount of each resource the entity can carry */
-    kh_int_t *curr_carry;       /* The amount of each resource the entity currently holds */
+struct ss_state{
+    kh_int_t *capacity;
+    kh_int_t *curr;
 };
 
 typedef char buff_t[512];
@@ -88,7 +78,8 @@ MPOOL_IMPL(static, buff, buff_t)
 #define krealloc realloc
 #define kfree    free
 
-KHASH_MAP_INIT_INT(state, struct hstate)
+KHASH_MAP_INIT_INT(state, struct ss_state)
+KHASH_MAP_INIT_STR(res, int)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -98,6 +89,7 @@ static mp_buff_t        s_mpool;
 static khash_t(stridx) *s_stridx;
 static mp_strbuff_t     s_stringpool;
 static khash_t(state)  *s_entity_state_table;
+static khash_t(res)    *s_global_resource_table;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -135,7 +127,7 @@ static void pfree(void *ptr)
     mp_buff_free(&s_mpool, ref);
 }
 
-static struct hstate *hstate_get(uint32_t uid)
+static struct ss_state *ss_state_get(uint32_t uid)
 {
     khiter_t k = kh_get(state, s_entity_state_table, uid);
     if(k == kh_end(s_entity_state_table))
@@ -144,7 +136,7 @@ static struct hstate *hstate_get(uint32_t uid)
     return &kh_value(s_entity_state_table, k);
 }
 
-static bool hstate_set(uint32_t uid, struct hstate hs)
+static bool ss_state_set(uint32_t uid, struct ss_state hs)
 {
     int status;
     khiter_t k = kh_put(state, s_entity_state_table, uid, &status);
@@ -154,38 +146,34 @@ static bool hstate_set(uint32_t uid, struct hstate hs)
     return true;
 }
 
-static void hstate_remove(uint32_t uid)
+static void ss_state_remove(uint32_t uid)
 {
     khiter_t k = kh_get(state, s_entity_state_table, uid);
     if(k != kh_end(s_entity_state_table))
         kh_del(state, s_entity_state_table, k);
 }
 
-static bool hstate_init(struct hstate *hs)
+static bool ss_state_init(struct ss_state *hs)
 {
-    hs->gather_speeds = kh_init(int);
-    hs->max_carry = kh_init(int);
-    hs->curr_carry = kh_init(int);
+    hs->capacity = kh_init(int);
+    hs->curr = kh_init(int);
 
-    if(!hs->gather_speeds || !hs->max_carry || !hs->curr_carry) {
+    if(!hs->capacity || !hs->curr) {
     
-        kh_destroy(int, hs->gather_speeds);
-        kh_destroy(int, hs->max_carry);
-        kh_destroy(int, hs->curr_carry);
+        kh_destroy(int, hs->capacity);
+        kh_destroy(int, hs->curr);
         return false;
     }
-    hs->state = STATE_NOT_HARVESTING;
     return true;
 }
 
-static void hstate_destroy(struct hstate *hs)
+static void ss_state_destroy(struct ss_state *hs)
 {
-    kh_destroy(int, hs->gather_speeds);
-    kh_destroy(int, hs->max_carry);
-    kh_destroy(int, hs->curr_carry);
+    kh_destroy(int, hs->capacity);
+    kh_destroy(int, hs->curr);
 }
 
-static bool hstate_set_key(khash_t(int) *table, const char *name, int val)
+static bool ss_state_set_key(khash_t(int) *table, const char *name, int val)
 {
     const char *key = si_intern(name, &s_stringpool, s_stridx);
     if(!key)
@@ -207,7 +195,7 @@ static bool hstate_set_key(khash_t(int) *table, const char *name, int val)
     return true;
 }
 
-static bool hstate_get_key(khash_t(int) *table, const char *name, int *out)
+static bool ss_state_get_key(khash_t(int) *table, const char *name, int *out)
 {
     const char *key = si_intern(name, &s_stringpool, s_stridx);
     if(!key)
@@ -220,11 +208,35 @@ static bool hstate_get_key(khash_t(int) *table, const char *name, int *out)
     return true;
 }
 
+static bool update_res_delta(const char *rname, int delta)
+{
+    const char *key = si_intern(rname, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
+
+    khiter_t k = kh_get(res, s_global_resource_table, key);
+    if(k != kh_end(s_global_resource_table)) {
+        int val = kh_value(s_global_resource_table, k);
+        val += delta;
+        kh_value(s_global_resource_table, k) = val;
+        return true;
+    }
+
+    int status;
+    k = kh_put(res, s_global_resource_table, key, &status);
+    if(status == -1)
+        return false;
+
+    assert(status == 1);
+    kh_value(s_global_resource_table, k) = delta;
+    return true;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool G_Harvester_Init(void)
+bool G_StorageSite_Init(void)
 {
     mp_buff_init(&s_mpool);
 
@@ -232,12 +244,16 @@ bool G_Harvester_Init(void)
         goto fail_mpool; 
     if(!(s_entity_state_table = kh_init(state)))
         goto fail_table;
+    if(!(s_global_resource_table = kh_init(res)))
+        goto fail_res;
     if(!si_init(&s_stringpool, &s_stridx, 512))
         goto fail_strintern;
 
     return true;
 
 fail_strintern:
+    kh_destroy(res, s_global_resource_table);
+fail_res:
     kh_destroy(state, s_entity_state_table);
 fail_table:
     mp_buff_destroy(&s_mpool);
@@ -245,79 +261,82 @@ fail_mpool:
     return false;
 }
 
-void G_Harvester_Shutdown(void)
+void G_StorageSite_Shutdown(void)
 {
     si_shutdown(&s_stringpool, s_stridx);
+    kh_destroy(res, s_global_resource_table);
     kh_destroy(state, s_entity_state_table);
     mp_buff_destroy(&s_mpool);
 }
 
-bool G_Harvester_AddEntity(uint32_t uid)
+bool G_StorageSite_AddEntity(uint32_t uid)
 {
-    struct hstate hs;
-    if(!hstate_init(&hs))
+    struct ss_state ss;
+    if(!ss_state_init(&ss))
         return false;
-    if(!hstate_set(uid, hs))
+    if(!ss_state_set(uid, ss))
         return false;
     return true;
 }
 
-void G_Harvester_RemoveEntity(uint32_t uid)
+void G_StorageSite_RemoveEntity(uint32_t uid)
 {
-    struct hstate *hs = hstate_get(uid);
-    assert(hs);
-    hstate_destroy(hs);
-    hstate_remove(uid);
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    ss_state_destroy(ss);
+    ss_state_remove(uid);
 }
 
-bool G_Harvester_SetGatherSpeed(uint32_t uid, const char *rname, int speed)
+bool G_StorageSite_SetCapacity(uint32_t uid, const char *rname, int max)
 {
-    struct hstate *hs = hstate_get(uid);
-    assert(hs);
-    return hstate_set_key(hs->gather_speeds, rname, speed);
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    return ss_state_set_key(ss->capacity, rname, max);
 }
 
-int G_Harvester_GetGatherSpeed(uint32_t uid, const char *rname)
+int G_StorageSite_GetCapacity(uint32_t uid, const char *rname)
 {
-    int ret = DEFAULT_GATHER_SPEED;
-    struct hstate *hs = hstate_get(uid);
-    assert(hs);
+    int ret = DEFAULT_CAPACITY;
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
 
-    hstate_get_key(hs->gather_speeds, rname, &ret);
+    ss_state_get_key(ss->capacity, rname, &ret);
     return ret;
 }
 
-bool G_Harvester_SetMaxCarry(uint32_t uid, const char *rname, int max)
+bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr)
 {
-    struct hstate *hs = hstate_get(uid);
-    assert(hs);
-    return hstate_set_key(hs->max_carry, rname, max);
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+
+    int prev = 0;
+    ss_state_get_key(ss->curr, rname, &prev);
+    int delta = curr - prev;
+    update_res_delta(rname, delta);
+
+    return ss_state_set_key(ss->curr, rname, curr);
 }
 
-int G_Harvester_GetMaxCarry(uint32_t uid, const char *rname)
-{
-    int ret = DEFAULT_MAX_CARRY;
-    struct hstate *hs = hstate_get(uid);
-    assert(hs);
-
-    hstate_get_key(hs->max_carry, rname, &ret);
-    return ret;
-}
-
-bool G_Harvester_SetCurrCarry(uint32_t uid, const char *rname, int curr)
-{
-    struct hstate *hs = hstate_get(uid);
-    assert(hs);
-    return hstate_set_key(hs->curr_carry, rname, curr);
-}
-
-int G_Harvester_GetCurrCarry(uint32_t uid, const char *rname)
+int G_StorageSite_GetCurr(uint32_t uid, const char *rname)
 {
     int ret = 0;
-    struct hstate *hs = hstate_get(uid);
-    assert(hs);
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
 
-    hstate_get_key(hs->curr_carry, rname, &ret);
+    ss_state_get_key(ss->curr, rname, &ret);
     return ret;
+}
+
+int G_StorageSite_GetTotal(const char *rname)
+{
+    const char *key = si_intern(rname, &s_stringpool, s_stridx);
+    if(!key)
+        return 0;
+
+    khiter_t k = kh_get(res, s_global_resource_table, key);
+    if(k == kh_end(s_global_resource_table))
+        return 0;
+
+    return kh_value(s_global_resource_table, k);
 }
 
