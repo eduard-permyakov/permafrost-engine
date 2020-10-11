@@ -79,7 +79,8 @@ typedef uint16_t mp_ref_t;
     /* The entryory pointer may invalidated when a new allocation is filled by the mempool. */  \
     /* For this reason, cache the reference but not the pointer. */                             \
     scope type    *mp_##name##_entry  (mp(name) *mp, mp_ref_t ref);                             \
-    scope void     mp_##name##_clear  (mp(name) *mp);
+    scope void     mp_##name##_clear  (mp(name) *mp);                                           \
+    scope mp_ref_t mp_##name##_ref    (mp(name) *mp, void *mem);
 
 /***********************************************************************************************/
 
@@ -169,7 +170,14 @@ typedef uint16_t mp_ref_t;
             mp->pool[i].inext_free = i + 1;                                                     \
         }                                                                                       \
         mp->pool[mp->capacity].inext_free = 0;                                                  \
-    }
+    }                                                                                           \
+                                                                                                \
+    scope mp_ref_t mp_##name##_ref(mp(name) *mp, void *mem)                                     \
+    {                                                                                           \
+        ptrdiff_t diff = (uintptr_t)mem - sizeof(mp_ref_t) - (uintptr_t)mp->pool;               \
+        assert(diff % sizeof(mp->pool[0].entry) == 0);                                          \
+        return diff / sizeof(mp->pool[0].entry);                                                \
+    }                                                                                           \
 
 #endif
 
