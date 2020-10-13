@@ -49,7 +49,7 @@ enum{
     ENTITY_FLAG_ANIMATED            = (1 << 0),
     ENTITY_FLAG_COLLISION           = (1 << 1),
     ENTITY_FLAG_SELECTABLE          = (1 << 2),
-    ENTITY_FLAG_STATIC              = (1 << 3),
+    ENTITY_FLAG_MOVABLE             = (1 << 3),
     ENTITY_FLAG_COMBATABLE          = (1 << 4),
     ENTITY_FLAG_INVISIBLE           = (1 << 5),
     /* zombie entities are those that have died in the game simulation, 

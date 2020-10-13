@@ -255,7 +255,7 @@ static void entity_unblock(const struct entity *ent)
 
 static bool stationary(const struct entity *ent)
 {
-    return (ent->flags & ENTITY_FLAG_STATIC) || (ent->max_speed == 0.0f);
+    return !(ent->flags & ENTITY_FLAG_MOVABLE) || (ent->max_speed == 0.0f);
 }
 
 static bool entities_equal(struct entity **a, struct entity **b)
@@ -481,7 +481,6 @@ static void move_marker_add(vec3_t pos, bool attack)
     if(!ent)
         return;
 
-    ent->flags |= ENTITY_FLAG_STATIC;
     ent->flags |= ENTITY_FLAG_MARKER;
     G_AddEntity(ent, pos);
 
@@ -710,7 +709,6 @@ static vec2_t seek_force(const struct entity *ent, vec2_t target_xz)
  */
 static vec2_t arrive_force(const struct entity *ent, dest_id_t dest_id, vec2_t target_xz)
 {
-    assert(0 == (ent->flags & ENTITY_FLAG_STATIC));
     vec2_t ret, desired_velocity;
     vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
     float distance;
@@ -838,7 +836,7 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
         struct entity *curr = near_ents[i];
         if(curr == ent)
             continue;
-        if(curr->flags & ENTITY_FLAG_STATIC)
+        if(!(curr->flags & ENTITY_FLAG_MOVABLE))
             continue;
 
         vec2_t diff;
@@ -1178,8 +1176,8 @@ static void find_neighbours(const struct entity *ent,
                             vec_cp_ent_t *out_dyn,
                             vec_cp_ent_t *out_stat)
 {
-    /* For the ClearPath algorithm, we only consider entities without
-     * ENTITY_FLAG_STATIC set, as they are the only ones that may need
+    /* For the ClearPath algorithm, we only consider entities with
+     * ENTITY_FLAG_MOVABLE set, as they are the only ones that may need
      * to be avoided during moving. Here, 'static' entites refer
      * to those entites that are not currently in a 'moving' state,
      * meaning they will not perform collision avoidance maneuvers of
@@ -1195,7 +1193,7 @@ static void find_neighbours(const struct entity *ent,
         if(curr->uid == ent->uid)
             continue;
 
-        if(curr->flags & ENTITY_FLAG_STATIC)
+        if(!(curr->flags & ENTITY_FLAG_MOVABLE))
             continue;
 
         if(curr->selection_radius == 0.0f)

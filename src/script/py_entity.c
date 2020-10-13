@@ -637,7 +637,7 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         self->ent->flags |= ENTITY_FLAG_COMBATABLE;
 
     if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyBuildableEntity_type))
-        self->ent->flags |= (ENTITY_FLAG_BUILDING | ENTITY_FLAG_STATIC);
+        self->ent->flags |= ENTITY_FLAG_BUILDING;
 
     if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyBuilderEntity_type))
         self->ent->flags |= ENTITY_FLAG_BUILDER;
@@ -1218,7 +1218,7 @@ static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self
 {
     assert(self->super.ent);
 
-    if(!(self->super.ent->flags & ENTITY_FLAG_STATIC))
+    if(self->super.ent->flags & ENTITY_FLAG_MOVABLE)
         G_StopEntity(self->super.ent);
 
     assert(self->super.ent->flags & ENTITY_FLAG_COMBATABLE);
@@ -1243,7 +1243,7 @@ static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObj
     assert(self->super.ent->flags & ENTITY_FLAG_COMBATABLE);
     G_Combat_SetStance(self->super.ent, COMBAT_STANCE_AGGRESSIVE);
 
-    if(!(self->super.ent->flags & ENTITY_FLAG_STATIC))
+    if(self->super.ent->flags & ENTITY_FLAG_MOVABLE)
         G_Move_SetDest(self->super.ent, xz_pos);
 
     Py_RETURN_NONE;
@@ -2088,8 +2088,8 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
     uint32_t extra_flags = 0;
 
     if(((k = kh_get(attr, attr_table, "static")) != kh_end(attr_table))
-    && kh_value(attr_table, k).val.as_bool) {
-        extra_flags |= ENTITY_FLAG_STATIC;
+    && !kh_value(attr_table, k).val.as_bool) {
+        extra_flags |= ENTITY_FLAG_MOVABLE;
     }
 
     /* First, attempt to make an instance of the custom class specified in the 

@@ -497,7 +497,8 @@ void G_Sel_Add(struct entity *ent)
 
 void G_Sel_Remove(struct entity *ent)
 {
-    assert(ent->flags & ENTITY_FLAG_SELECTABLE);
+    if(!(ent->flags & ENTITY_FLAG_SELECTABLE))
+        return;
 
     int idx;
     vec_pentity_indexof(&s_selected, ent, pentities_equal, &idx);

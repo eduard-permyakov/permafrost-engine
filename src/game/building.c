@@ -192,7 +192,6 @@ static void building_mark_border(struct buildstate *bs, struct tile_desc *a, str
         ent->rotation = (quat_t){ 0, 1.0 / sqrt(2.0), 0, 1.0 / sqrt(2.0) };
     }
     ent->scale = (vec3_t){1.0, 1.5f, 1.0f};
-    ent->flags |= ENTITY_FLAG_STATIC;
 
     G_AddEntity(ent, marker_pos);
     vec_uid_push(&bs->markers, ent->uid);
@@ -208,7 +207,6 @@ static void building_mark_center(struct buildstate *bs, const struct entity *ent
         return;
 
     marker->scale = (vec3_t){2.5, 2.5f, 2.5f};
-    marker->flags |= ENTITY_FLAG_STATIC;
 
     G_AddEntity(marker, pos);
     vec_uid_push(&bs->markers, marker->uid);
@@ -302,7 +300,7 @@ void G_Building_AddEntity(struct entity *ent)
 {
     assert(buildstate_get(ent->uid) == NULL);
     assert(ent->flags & ENTITY_FLAG_BUILDING);
-    assert(ent->flags & ENTITY_FLAG_STATIC);
+    assert(!(ent->flags & ENTITY_FLAG_MOVABLE));
 
     struct buildstate new_bs = (struct buildstate) {
         .state = BUILDING_STATE_PLACEMENT,
@@ -368,7 +366,7 @@ bool G_Building_Found(struct entity *ent)
 
     struct entity *progress = AL_EntityFromPFObj(ent->basedir, ent->filename, ent->name, Entity_NewUID());
     if(progress) {
-        progress->flags |= (ENTITY_FLAG_TRANSLUCENT | ENTITY_FLAG_STATIC);
+        progress->flags |= ENTITY_FLAG_TRANSLUCENT;
         progress->scale = ent->scale;
         progress->rotation = ent->rotation;
 

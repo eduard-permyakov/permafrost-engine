@@ -619,7 +619,7 @@ static bool g_ent_visible(uint16_t playermask, const struct entity *ent, const s
     if(ent->flags & ENTITY_FLAG_MARKER)
         return true;
 
-    if(ent->flags & ENTITY_FLAG_STATIC) {
+    if(!(ent->flags & ENTITY_FLAG_MOVABLE)) {
         return G_Fog_ObjExplored(playermask, ent->uid, obb);
     }
 
@@ -1049,7 +1049,7 @@ void G_BakeNavDataForScene(void)
 
         if(!(curr->flags & ENTITY_FLAG_COLLISION))
             continue;
-        if(!(curr->flags & ENTITY_FLAG_STATIC))
+        if(curr->flags & ENTITY_FLAG_MOVABLE)
             continue;
         if(curr->flags & ENTITY_FLAG_BUILDING)
             continue;
@@ -1150,7 +1150,7 @@ void G_Update(void)
         }
 
         if(C_FrustumOBBIntersectionFast(&light_frust, &obb) != VOLUME_INTERSEC_OUTSIDE 
-        && (vis || (curr->flags & ENTITY_FLAG_STATIC))) {
+        && (vis || !(curr->flags & ENTITY_FLAG_MOVABLE))) {
 
             vec_pentity_push(&s_gs.light_visible, curr);
         }
@@ -1274,7 +1274,7 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
     if(ent->flags & ENTITY_FLAG_COMBATABLE)
         G_Combat_AddEntity(ent, COMBAT_STANCE_AGGRESSIVE);
 
-    if(!(ent->flags & ENTITY_FLAG_STATIC)) {
+    if(ent->flags & ENTITY_FLAG_MOVABLE) {
     
         k = kh_put(entity, s_gs.dynamic, ent->uid, &ret);
         assert(ret != -1 && ret != 0);
@@ -1294,15 +1294,13 @@ bool G_RemoveEntity(struct entity *ent)
         return false;
     kh_del(entity, s_gs.active, k);
 
-    if(ent->flags & ENTITY_FLAG_SELECTABLE)
-        G_Sel_Remove(ent);
-
-    if(!(ent->flags & ENTITY_FLAG_STATIC)) {
+    if(ent->flags & ENTITY_FLAG_MOVABLE) {
         k = kh_get(entity, s_gs.dynamic, ent->uid);
         assert(k != kh_end(s_gs.dynamic));
         kh_del(entity, s_gs.dynamic, k);
     }
 
+    G_Sel_Remove(ent);
     G_Move_RemoveEntity(ent);
     G_Combat_RemoveEntity(ent);
     G_Building_RemoveEntity(ent);
@@ -1600,7 +1598,7 @@ void G_Zombiefy(struct entity *ent)
     if(ent->flags & ENTITY_FLAG_SELECTABLE)
         G_Sel_Remove(ent);
 
-    if(!(ent->flags & ENTITY_FLAG_STATIC)) {
+    if(ent->flags & ENTITY_FLAG_MOVABLE) {
         khiter_t k = kh_get(entity, s_gs.dynamic, ent->uid);
         assert(k != kh_end(s_gs.dynamic));
         kh_del(entity, s_gs.dynamic, k);
@@ -1618,9 +1616,9 @@ void G_Zombiefy(struct entity *ent)
     ent->flags &= ~ENTITY_FLAG_ANIMATED;
     ent->flags &= ~ENTITY_FLAG_COMBATABLE;
     ent->flags &= ~ENTITY_FLAG_BUILDING;
+    ent->flags &= ~ENTITY_FLAG_MOVABLE;
 
     ent->flags |= ENTITY_FLAG_INVISIBLE;
-    ent->flags |= ENTITY_FLAG_STATIC;
     ent->flags |= ENTITY_FLAG_ZOMBIE;
 }
 
