@@ -49,27 +49,12 @@
 
 
 #define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
+#define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
 typedef struct {
     PyObject_HEAD
     struct entity *ent;
 }PyEntityObject;
-
-typedef struct {
-    PyEntityObject super; 
-}PyAnimEntityObject;
-
-typedef struct {
-    PyEntityObject super; 
-}PyCombatableEntityObject;
-
-typedef struct {
-    PyEntityObject super; 
-}PyBuildableEntityObject;
-
-typedef struct {
-    PyEntityObject super; 
-}PyBuilderEntityObject;
 
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void      PyEntity_dealloc(PyEntityObject *self);
@@ -105,12 +90,20 @@ static PyObject *PyEntity_set_model(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
+typedef struct {
+    PyEntityObject super; 
+}PyAnimEntityObject;
+
 static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_del(PyAnimEntityObject *self);
 static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyAnimEntity_get_anim(PyAnimEntityObject *self);
 static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyAnimEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+typedef struct {
+    PyEntityObject super; 
+}PyCombatableEntityObject;
 
 static int       PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self);
@@ -125,6 +118,10 @@ static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObj
 static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
+typedef struct {
+    PyEntityObject super; 
+}PyBuildableEntityObject;
+
 static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self);
@@ -137,11 +134,22 @@ static int       PyBuildableEntity_set_vision_range(PyBuildableEntityObject *sel
 static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyBuildableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
+typedef struct {
+    PyEntityObject super; 
+}PyBuilderEntityObject;
+
 static PyObject *PyBuilderEntity_del(PyBuilderEntityObject *self);
-static int       PyBuilderEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
+static int       PyBuilderEntity_init(PyBuilderEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args);
 static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyBuilderEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+typedef struct {
+    PyEntityObject super;
+}PyResourceEntityObject;
+
+static PyObject *PyResourceEntity_del(PyResourceEntityObject *self);
+static int       PyResourceEntity_init(PyResourceEntityObject *self, PyObject *args, PyObject *kwds);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -295,7 +303,7 @@ static PyMethodDef PyAnimEntity_methods[] = {
     {"play_anim", 
     (PyCFunction)PyAnimEntity_play_anim, METH_VARARGS | METH_KEYWORDS,
     "Play the animation clip with the specified name. "
-    "Set kwarg 'mode=\%d' to set the animation mode. The default is ANIM_MODE_LOOP."},
+    "Set kwarg 'mode=%d' to set the animation mode. The default is ANIM_MODE_LOOP."},
 
     {"get_anim", 
     (PyCFunction)PyAnimEntity_get_anim, METH_NOARGS,
@@ -409,6 +417,10 @@ static PyMethodDef PyBuildableEntity_methods[] = {
     (PyCFunction)PyBuildableEntity_unobstructed, METH_NOARGS,
     "Returns True if there is no obstruction under any of the building's tiles."},
 
+    {"__del__", 
+    (PyCFunction)PyBuildableEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
     {"__pickle__", 
     (PyCFunction)PyBuildableEntity_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine buildable entity to a string."},
@@ -450,10 +462,16 @@ static PyTypeObject PyBuildableEntity_type = {
     .tp_getset    = PyBuildableEntity_getset,
 };
 
+/* pf.BuilderEntity */
+
 static PyMethodDef PyBuilderEntity_methods[] = {
     {"build", 
     (PyCFunction)PyBuilderEntity_build, METH_VARARGS,
     "Issue an order to build a specific buildable entity."},
+
+    {"__del__", 
+    (PyCFunction)PyBuilderEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
     {"__pickle__", 
     (PyCFunction)PyBuilderEntity_pickle, METH_KEYWORDS,
@@ -476,6 +494,29 @@ static PyTypeObject PyBuilderEntity_type = {
                     "entity is able to construct and repair pf.BuildableEntity instances. This type "
                     "requires the 'build_speed' keyword argument to be passed to '__init__'.",
     .tp_methods   = PyBuilderEntity_methods,
+    .tp_base      = &PyEntity_type,
+    .tp_init      = (initproc)PyBuilderEntity_init,
+};
+
+/* pf.ResourceEntity */
+
+static PyMethodDef PyResourceEntity_methods[] = {
+
+    {"__del__", 
+    (PyCFunction)PyResourceEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyResourceEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.ResourceEntity",
+    .tp_basicsize = sizeof(PyResourceEntityObject), 
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine resource entity. This is a subclass of pf.Entity. This type "
+                    "requires the 'resource_name' and 'resource_amount' keyword arguments to be passed to '__init__'.",
+    .tp_methods   = PyResourceEntity_methods,
     .tp_base      = &PyEntity_type,
     .tp_init      = (initproc)PyBuilderEntity_init,
 };
@@ -600,6 +641,17 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyBuilderEntity_type))
         self->ent->flags |= ENTITY_FLAG_BUILDER;
+
+    if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyResourceEntity_type))
+        self->ent->flags |= ENTITY_FLAG_RESOURCE;
+
+    uint32_t extra_flags = 0;
+    if(kwds) {
+        PyObject *flags = PyDict_GetItemString(kwds, "__extra_flags__");
+        if(flags && PyInt_Check(flags))
+            extra_flags = PyInt_AS_LONG(flags);
+    }
+    self->ent->flags |= extra_flags;
 
     G_AddEntity(self->ent, (vec3_t){0.0f, 0.0f, 0.0f});
 
@@ -1072,17 +1124,6 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
         goto fail_unpickle;
     }
 
-    PyObject *ent_args = Py_BuildValue("(OOO)", basedir, filename, name);
-    PyObject *ent_kwargs = Py_BuildValue("{s:O}", "__uid__", uid);
-
-    assert(((PyTypeObject*)cls)->tp_new);
-    PyObject *entobj = ((PyTypeObject*)cls)->tp_new((struct _typeobject*)cls, ent_args, ent_kwargs);
-    assert(entobj || PyErr_Occurred());
-
-    Py_DECREF(ent_args);
-    Py_DECREF(ent_kwargs);
-    CHK_TRUE(entobj, fail_unpickle);
-
     PyObject *pos = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
@@ -1119,6 +1160,17 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
         goto fail_unpickle_atts;
     }
 
+    PyObject *ent_args = Py_BuildValue("(OOO)", basedir, filename, name);
+    PyObject *ent_kwargs = Py_BuildValue("{s:O, s:O}", "__uid__", uid, "__extra_flags__", flags);
+
+    assert(((PyTypeObject*)cls)->tp_new);
+    PyObject *entobj = ((PyTypeObject*)cls)->tp_new((struct _typeobject*)cls, ent_args, ent_kwargs);
+    assert(entobj || PyErr_Occurred());
+
+    Py_DECREF(ent_args);
+    Py_DECREF(ent_kwargs);
+    CHK_TRUE(entobj, fail_unpickle);
+
     struct entity *ent = ((PyEntityObject*)entobj)->ent;
     vec3_t rawpos;
     CHK_TRUE(PyArg_ParseTuple(pos, "fff", &rawpos.x, &rawpos.y, &rawpos.z), fail_unpickle_atts);
@@ -1126,11 +1178,6 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
 
     CHK_TRUE(PyArg_ParseTuple(scale, "fff", &ent->scale.x, &ent->scale.y, &ent->scale.z), fail_unpickle_atts);
     CHK_TRUE(PyArg_ParseTuple(rotation, "ffff", &ent->rotation.x, &ent->rotation.y, &ent->rotation.z, &ent->rotation.w), fail_unpickle_atts);
-
-    uint32_t rawflags;
-    CHK_TRUE((-1 != (rawflags = PyInt_AsLong(flags))), fail_unpickle_atts);
-    G_SetStatic(ent, rawflags & ENTITY_FLAG_STATIC);
-    ent->flags = rawflags;
 
     status = PyObject_SetAttrString(entobj, "selection_radius", sel_radius);
     CHK_TRUE(0 == status, fail_unpickle_atts);
@@ -1665,7 +1712,7 @@ static PyObject *PyBuilderEntity_del(PyBuilderEntityObject *self)
     return s_super_del((PyObject*)self, &PyBuilderEntity_type);
 }
 
-static int PyBuilderEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds)
+static int PyBuilderEntity_init(PyBuilderEntityObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *build_speed;
 
@@ -1782,6 +1829,45 @@ fail_stream:
     return ret;
 }
 
+static PyObject *PyResourceEntity_del(PyResourceEntityObject *self)
+{
+    return s_super_del((PyObject*)self, &PyResourceEntity_type);
+}
+
+static int PyResourceEntity_init(PyResourceEntityObject *self, PyObject *args, PyObject *kwds)
+{
+    PyObject *name, *amount;
+
+    if(!kwds 
+    || ((name = PyDict_GetItemString(kwds, "resource_name")) == NULL)
+    || ((amount = PyDict_GetItemString(kwds, "resource_amount")) == NULL)) {
+        PyErr_SetString(PyExc_TypeError, 
+            "'resource_name' and 'resource_amount' keyword arguments required for initializing pf.ResourceEntity types.");
+        return -1;
+    }
+
+    if(!PyString_Check(name)) {
+        PyErr_SetString(PyExc_TypeError, "'resource_name' keyword argument must be a string.");
+        return -1;
+    }
+
+    if(!PyInt_Check(amount)) {
+        PyErr_SetString(PyExc_TypeError, "'resource_amount' keyword argument must be a string.");
+        return -1;
+    }
+
+    G_Resource_AddEntity(self->super.ent->uid, PyString_AsString(name), PyInt_AS_LONG(amount));
+
+    /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
+     * MRO to complete in cases when this class is one of multiple base classes of another type. 
+     * This allows this type to be used as one of many mix-in bases. */
+    PyObject *ret = s_call_super_method("__init__", (PyObject*)&PyResourceEntity_type, (PyObject*)self, args, kwds);
+    if(!ret)
+        return -1; /* Exception already set */
+    Py_DECREF(ret);
+    return 0;
+}
+
 static PyObject *s_obj_from_attr(const struct attr *attr)
 {
     switch(attr->type){
@@ -1809,7 +1895,8 @@ static PyObject *s_tuple_from_attr_vec(const vec_attr_t *attr_vec)
     return ret;
 }
 
-static PyObject *s_entity_from_atts(const char *path, const char *name, const khash_t(attr) *attr_table)
+static PyObject *s_entity_from_atts(const char *path, const char *name, 
+                                    const khash_t(attr) *attr_table, uint32_t extra_flags)
 {
     PyObject *ret;
 
@@ -1839,32 +1926,46 @@ static PyObject *s_entity_from_atts(const char *path, const char *name, const kh
     PyTuple_SetItem(args, 1, PyString_FromString(filename));
     PyTuple_SetItem(args, 2, PyString_FromString(name));
 
-    if(anim) {
-        k = kh_get(attr, attr_table, "idle_clip");
-        if(k == kh_end(attr_table)) {
-            Py_DECREF(args);
-            return NULL;
-        }
-
-        PyObject *kwargs = PyDict_New();
-        if(!kwargs) {
-            Py_DECREF(args);
-            return NULL;
-        }
-
-        PyDict_SetItemString(kwargs, "idle_clip", s_obj_from_attr(&kh_value(attr_table, k)));
-        ret = PyObject_Call((PyObject*)&PyAnimEntity_type, args, kwargs);
+    PyObject *kwargs = PyDict_New();
+    if(!kwargs) {
+        Py_DECREF(args);
+        return NULL;
+    }
+    PyObject *flags = PyInt_FromLong(extra_flags);
+    if(!flags) {
+        Py_DECREF(args);
         Py_DECREF(kwargs);
+        return NULL;
+    }
+    PyDict_SetItemString(kwargs, "__extra_flags__", flags);
+    Py_DECREF(flags);
+
+    if(anim) {
+        PyObject *idle_clip;
+        k = kh_get(attr, attr_table, "idle_clip");
+
+        if(k == kh_end(attr_table) || !(idle_clip = s_obj_from_attr(&kh_value(attr_table, k)))) {
+            Py_DECREF(args);
+            Py_DECREF(kwargs);
+            return NULL;
+        }
+
+        PyDict_SetItemString(kwargs, "idle_clip", idle_clip);
+        Py_DECREF(idle_clip);
+        ret = PyObject_Call((PyObject*)&PyAnimEntity_type, args, kwargs);
     }else{
-        ret = PyObject_CallObject((PyObject*)&PyEntity_type, args);
+        ret = PyObject_Call((PyObject*)&PyEntity_type, args, kwargs);
     }
 
+    Py_DECREF(kwargs);
     Py_DECREF(args);
     return ret;
 }
 
-static PyObject *s_new_custom_class(const char *name, const vec_attr_t *construct_args)
+static PyObject *s_new_custom_class(const char *name, const vec_attr_t *construct_args, 
+                                    uint32_t extra_flags)
 {
+    PyObject *ret = NULL;
     PyObject *sys_mod_dict = PyImport_GetModuleDict();
     PyObject *modules = PyMapping_Values(sys_mod_dict);
     PyObject *class = NULL;
@@ -1877,20 +1978,37 @@ static PyObject *s_new_custom_class(const char *name, const vec_attr_t *construc
     Py_DECREF(modules);
     if(!class)
         return NULL;
-
-    PyObject *args = s_tuple_from_attr_vec(construct_args);
-    if(!args){
+    if(!PyType_Check(class)) {
         Py_DECREF(class);
         return NULL;
     }
-    PyObject *ret = PyObject_CallObject(class, args);
-    if(!ret) {
-        PyErr_Print();
-        exit(EXIT_FAILURE);
+
+    PyObject *args = s_tuple_from_attr_vec(construct_args);
+    if(!args)
+        goto fail_args;
+
+    PyObject *kwargs = PyDict_New();
+    if(!kwargs)
+        goto fail_kwargs;
+
+    PyObject *flags = PyInt_FromLong(extra_flags);
+    if(!flags)
+        goto fail_kwargs;
+
+    PyDict_SetItemString(kwargs, "__extra_flags__", PyInt_FromLong(extra_flags));
+    Py_DECREF(flags);
+
+    PyTypeObject *tp_class = (PyTypeObject*)class;
+    ret = tp_class->tp_new(tp_class, args, kwargs);
+    if(ret) {
+        tp_class->tp_init(ret, args, NULL);
     }
 
-    Py_DECREF(class);
+    Py_DECREF(kwargs);
+fail_kwargs:
     Py_DECREF(args);
+fail_args:
+    Py_DECREF(class);
 
     return ret;
 }
@@ -1925,6 +2043,11 @@ void S_Entity_PyRegister(PyObject *module)
         return;
     Py_INCREF(&PyBuilderEntity_type);
     PyModule_AddObject(module, "BuilderEntity", (PyObject*)&PyBuilderEntity_type);
+
+    if(PyType_Ready(&PyResourceEntity_type) < 0)
+        return;
+    Py_INCREF(&PyResourceEntity_type);
+    PyModule_AddObject(module, "ResourceEntity", (PyObject*)&PyResourceEntity_type);
 }
 
 bool S_Entity_Init(void)
@@ -1962,60 +2085,61 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
 {
     khiter_t k;
     PyObject *ret = NULL;
+    uint32_t extra_flags = 0;
+
+    if(((k = kh_get(attr, attr_table, "static")) != kh_end(attr_table))
+    && kh_value(attr_table, k).val.as_bool) {
+        extra_flags |= ENTITY_FLAG_STATIC;
+    }
 
     /* First, attempt to make an instance of the custom class specified in the 
      * attributes dictionary, if the key is present. */
     if((k = kh_get(attr, attr_table, "class")) != kh_end(attr_table)) {
-        ret = s_new_custom_class(kh_value(attr_table, k).val.as_string, construct_args);
+
+        const char *cls = kh_value(attr_table, k).val.as_string;
+        ret = s_new_custom_class(cls, construct_args, extra_flags);
     }
 
     /* If we could not make a custom class, fall back to instantiating a basic entity */
-    if(!ret){
-        ret = s_entity_from_atts(path, name, attr_table); 
+    if(!ret) {
+        ret = s_entity_from_atts(path, name, attr_table, extra_flags); 
     }
 
     if(!ret){
         return NULL;
     }
 
-    if((k = kh_get(attr, attr_table, "static")) != kh_end(attr_table)) {
-        G_SetStatic(((PyEntityObject*)ret)->ent, kh_value(attr_table, k).val.as_bool);
+    if(((k = kh_get(attr, attr_table, "collision")) != kh_end(attr_table))
+    && !kh_value(attr_table, k).val.as_bool) {
+        ((PyEntityObject*)ret)->ent->flags &= ~ ENTITY_FLAG_COLLISION;
     }
 
-    if((k = kh_get(attr, attr_table, "collision")) != kh_end(attr_table)) {
-        if(kh_value(attr_table, k).val.as_bool)
-            ((PyEntityObject*)ret)->ent->flags |= ENTITY_FLAG_COLLISION;
-        else
-            ((PyEntityObject*)ret)->ent->flags &= ~ENTITY_FLAG_COLLISION;
+    struct entity *ent = ((PyEntityObject*)ret)->ent;
+    const char *attrs[][2] = {
+        {"selection_radius",    "selection_radius"  },
+        {"pos",                 "position"          },
+        {"scale",               "scale"             },
+        {"rotation",            "rotation"          },
+        {"selectable",          "selectable"        },
+        {"faction_id",          "faction_id"        },
+        {"vision_range",        "vision_range"      },
+    };
+
+    for(int i = 0; i < ARR_SIZE(attrs); i++) {
+    
+        const char *ent_attr = attrs[i][0];
+        const char *scene_attr = attrs[i][1];
+
+        if(PyObject_HasAttrString(ret, ent_attr) 
+        && ((k = kh_get(attr, attr_table, scene_attr)) != kh_end(attr_table))) {
+
+            PyObject *val = s_obj_from_attr(&kh_value(attr_table, k));
+            if(val) {
+                PyObject_SetAttrString(ret, ent_attr, val);
+            }
+            Py_XDECREF(val);
+        }
     }
-
-    if(PyObject_HasAttrString(ret, "selection_radius") 
-    && (k = kh_get(attr, attr_table, "selection_radius")) != kh_end(attr_table))
-        PyObject_SetAttrString(ret, "selection_radius", s_obj_from_attr(&kh_value(attr_table, k)));
-
-    if(PyObject_HasAttrString(ret, "pos") 
-    && (k = kh_get(attr, attr_table, "position")) != kh_end(attr_table))
-        PyObject_SetAttrString(ret, "pos", s_obj_from_attr(&kh_value(attr_table, k)));
-
-    if(PyObject_HasAttrString(ret, "scale") 
-    && (k = kh_get(attr, attr_table, "scale")) != kh_end(attr_table))
-        PyObject_SetAttrString(ret, "scale", s_obj_from_attr(&kh_value(attr_table, k)));
-
-    if(PyObject_HasAttrString(ret, "rotation") 
-    && (k = kh_get(attr, attr_table, "rotation")) != kh_end(attr_table))
-        PyObject_SetAttrString(ret, "rotation", s_obj_from_attr(&kh_value(attr_table, k)));
-
-    if(PyObject_HasAttrString(ret, "selectable") 
-    && (k = kh_get(attr, attr_table, "selectable")) != kh_end(attr_table))
-        PyObject_SetAttrString(ret, "selectable", s_obj_from_attr(&kh_value(attr_table, k)));
-
-    if(PyObject_HasAttrString(ret, "faction_id") 
-    && (k = kh_get(attr, attr_table, "faction_id")) != kh_end(attr_table))
-        PyObject_SetAttrString(ret, "faction_id", s_obj_from_attr(&kh_value(attr_table, k)));
-
-    if(PyObject_HasAttrString(ret, "vision_range") 
-    && (k = kh_get(attr, attr_table, "vision_range")) != kh_end(attr_table))
-        PyObject_SetAttrString(ret, "vision_range", s_obj_from_attr(&kh_value(attr_table, k)));
 
     PyList_Append(s_loaded, ret);
     Py_DECREF(ret);

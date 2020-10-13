@@ -55,7 +55,7 @@ bool si_init(mp_strbuff_t *pool, khash_t(stridx) **index, size_t size)
         goto fail_stringpool; 
     if(!(*index = kh_init(stridx)))
         goto fail_stridx;
-    if(!kh_resize(stridx, *index, size))
+    if(0 != kh_resize(stridx, *index, size))
         goto fail_resize;
 
     return true;

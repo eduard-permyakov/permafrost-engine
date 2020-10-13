@@ -59,6 +59,9 @@ enum{
     ENTITY_FLAG_BUILDING            = (1 << 8),
     ENTITY_FLAG_BUILDER             = (1 << 9),
     ENTITY_FLAG_TRANSLUCENT         = (1 << 10),
+    ENTITY_FLAG_RESOURCE            = (1 << 11),
+    ENTITY_FLAG_HARVESTER           = (1 << 12),
+    ENTITY_FLAG_STORAGE_SITE        = (1 << 13),
 };
 
 struct entity{

@@ -129,7 +129,6 @@ void   G_BakeNavDataForScene(void);
 bool   G_AddEntity(struct entity *ent, vec3_t pos);
 bool   G_RemoveEntity(struct entity *ent);
 void   G_StopEntity(const struct entity *ent);
-void   G_SetStatic(struct entity *ent, bool on);
 
 /* Wrapper around AL_EntityFree to defer the call until the render thread 
  * (which owns some part of entity resources) finishes its' work. */
@@ -274,6 +273,15 @@ bool G_Builder_Build(struct entity *builder, struct entity *building);
 void G_Builder_SetBuildSpeed(const struct entity *ent, int speed);
 int  G_Builder_GetBuildSpeed(const struct entity *ent);
 void G_Builder_SetBuildOnLeftClick(void);
+
+/*###########################################################################*/
+/* GAME RESOURCE                                                             */
+/*###########################################################################*/
+
+bool        G_Resource_AddEntity(uint32_t uid, const char *name, int init_amount);
+int         G_Resource_GetAmount(uint32_t uid);
+void        G_Resource_SetAmount(uint32_t uid, int amount);
+const char *G_Resource_GetName(uint32_t uid);
 
 #endif
 

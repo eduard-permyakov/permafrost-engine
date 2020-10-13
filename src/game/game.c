@@ -45,6 +45,9 @@
 #include "fog_of_war.h"
 #include "building.h"
 #include "builder.h"
+#include "harvester.h"
+#include "storage_site.h"
+#include "resource.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -682,9 +685,14 @@ bool G_Init(void)
     }
 
     G_ClearState();
+
     G_Sel_Init();
     G_Sel_Enable();
     G_Timer_Init();
+    G_Harvester_Init();
+    G_StorageSite_Init();
+    G_Resource_Init();
+
     R_PushCmd((struct rcmd){ R_GL_WaterInit, 0 });
 
     ss_e status;
@@ -1039,8 +1047,9 @@ void G_BakeNavDataForScene(void)
 
     kh_foreach(s_gs.active, key, curr, {
 
-        if(((ENTITY_FLAG_COLLISION | ENTITY_FLAG_STATIC) & curr->flags) 
-         != (ENTITY_FLAG_COLLISION | ENTITY_FLAG_STATIC))
+        if(!(curr->flags & ENTITY_FLAG_COLLISION))
+            continue;
+        if(!(curr->flags & ENTITY_FLAG_STATIC))
             continue;
         if(curr->flags & ENTITY_FLAG_BUILDING)
             continue;
@@ -1077,6 +1086,10 @@ void G_Shutdown(void)
     R_DestroyWS(&s_gs.ws[1]);
 
     R_PushCmd((struct rcmd){ R_GL_WaterShutdown, 0 });
+
+    G_Resource_Shutdown();
+    G_StorageSite_Shutdown();
+    G_Harvester_Shutdown();
     G_Timer_Shutdown();
     G_Sel_Shutdown();
 
@@ -1308,31 +1321,6 @@ void G_StopEntity(const struct entity *ent)
     }
     G_Move_Stop(ent);
     E_Entity_Notify(EVENT_ENTITY_STOP, ent->uid, NULL, ES_ENGINE);
-}
-
-void G_SetStatic(struct entity *ent, bool on)
-{
-    khiter_t k;
-    int ret;
-
-    if(on && !(ent->flags & ENTITY_FLAG_STATIC)) {
-
-        k = kh_get(entity, s_gs.dynamic, ent->uid);
-        assert(k != kh_end(s_gs.dynamic));
-        kh_del(entity, s_gs.dynamic, k);
-
-        G_Move_RemoveEntity(ent);
-        ent->flags |= ENTITY_FLAG_STATIC;
-
-    }else if(!on && (ent->flags & ENTITY_FLAG_STATIC)){
-
-        k = kh_put(entity, s_gs.dynamic, ent->uid, &ret);
-        assert(ret != -1 && ret != 0);
-        kh_value(s_gs.dynamic, k) = ent;
-
-        G_Move_AddEntity(ent);
-        ent->flags &= ~ENTITY_FLAG_STATIC;
-    }
 }
 
 void G_SafeFree(struct entity *ent)

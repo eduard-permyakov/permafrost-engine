@@ -41,12 +41,7 @@
 
 bool G_Resource_Init(void);
 void G_Resource_Shutdown(void);
-bool G_Resource_AddEntity(uint32_t uid, const char *name, int init_amount);
 void G_Resource_RemoveEntity(uint32_t uid);
-
-int  G_Resource_GetAmount(uint32_t uid);
-void G_Resource_SetAmount(uint32_t uid, int amount);
-const char *G_Resource_GetName(uint32_t uid);
 
 #endif
 
