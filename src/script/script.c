@@ -130,6 +130,7 @@ static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 static PyObject *PyPf_set_move_on_left_click(PyObject *self);
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
 static PyObject *PyPf_set_build_on_left_click(PyObject *self);
+static PyObject *PyPf_set_gather_on_left_click(PyObject *self);
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_settings_get(PyObject *self, PyObject *args);
@@ -391,6 +392,11 @@ static PyMethodDef pf_module_methods[] = {
     {"set_build_on_left_click",
     (PyCFunction)PyPf_set_build_on_left_click, METH_NOARGS,
     "Set the cursor to target mode. The next left click will issue a build command to the building "
+    "under the cursor."},
+
+    {"set_gather_on_left_click",
+    (PyCFunction)PyPf_set_gather_on_left_click, METH_NOARGS,
+    "Set the cursor to target mode. The next left click will issue a gather command to the resource "
     "under the cursor."},
 
     {"draw_text",
@@ -1367,6 +1373,12 @@ static PyObject *PyPf_set_build_on_left_click(PyObject *self)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_set_gather_on_left_click(PyObject *self)
+{
+    G_Harvester_SetGatherOnLeftClick();
+    Py_RETURN_NONE;
+}
+
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args)
 {
     const char *text;
@@ -2169,6 +2181,7 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_ENTITY_DIED:
     case EVENT_BUILDING_COMPLETED: {
         PyObject *ent = S_Entity_ObjForUID(((struct entity*)arg)->uid);
+        assert(ent);
         Py_INCREF(ent);
         return ent;
     }

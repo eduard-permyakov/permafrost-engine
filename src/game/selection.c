@@ -277,9 +277,6 @@ static void sel_compute_hovered(struct camera *cam, const vec_pentity_t *visible
 
     for(int i = 0; i < vec_size(visible_obbs); i++) {
 
-        if(!(vec_AT(visible, i)->flags & ENTITY_FLAG_SELECTABLE))
-            continue;
-    
         float t;
         if(C_RayIntersectsOBB(ray_origin, ray_dir, vec_AT(visible_obbs, i), &t)) {
 
@@ -438,7 +435,7 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
          * The behaviour is that only a single entity can be selected with a 'click' action, even if multiple
          * OBBs intersect with the mouse ray. We pick the one with the closest intersection point.
          */
-        if(s_hovered) {
+        if(s_hovered && (s_hovered->flags & ENTITY_FLAG_SELECTABLE)) {
             sel_empty = false;
             vec_pentity_reset(&s_selected);                
             vec_pentity_push(&s_selected, s_hovered);

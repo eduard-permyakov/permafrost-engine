@@ -151,6 +151,12 @@ typedef struct {
 static PyObject *PyResourceEntity_del(PyResourceEntityObject *self);
 static int       PyResourceEntity_init(PyResourceEntityObject *self, PyObject *args, PyObject *kwds);
 
+typedef struct {
+    PyEntityObject super;
+}PyHarvesterEntityObject;
+
+static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -518,7 +524,29 @@ static PyTypeObject PyResourceEntity_type = {
                     "requires the 'resource_name' and 'resource_amount' keyword arguments to be passed to '__init__'.",
     .tp_methods   = PyResourceEntity_methods,
     .tp_base      = &PyEntity_type,
-    .tp_init      = (initproc)PyBuilderEntity_init,
+    .tp_init      = (initproc)PyResourceEntity_init,
+};
+
+/* pf.HarvesterEntity */
+
+static PyMethodDef PyHarvesterEntity_methods[] = {
+
+    {"__del__", 
+    (PyCFunction)PyHarvesterEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyHarvesterEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.HarvesterEntity",
+    .tp_basicsize = sizeof(PyHarvesterEntityObject), 
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine resource entity. This is a subclass of pf.Entity. This kind of "
+                    "entity is able to gather and transport resources (from pf.ResourceEntity types).",
+    .tp_methods   = PyHarvesterEntity_methods,
+    .tp_base      = &PyEntity_type,
 };
 
 KHASH_MAP_INIT_INT(PyObject, PyObject*)
@@ -633,26 +661,29 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         self->ent = ent; 
     }
 
-    if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyCombatableEntity_type))
-        self->ent->flags |= ENTITY_FLAG_COMBATABLE;
-
-    if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyBuildableEntity_type))
-        self->ent->flags |= ENTITY_FLAG_BUILDING;
-
-    if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyBuilderEntity_type))
-        self->ent->flags |= ENTITY_FLAG_BUILDER;
-
-    if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyResourceEntity_type))
-        self->ent->flags |= ENTITY_FLAG_RESOURCE;
-
     uint32_t extra_flags = 0;
     if(kwds) {
         PyObject *flags = PyDict_GetItemString(kwds, "__extra_flags__");
         if(flags && PyInt_Check(flags))
             extra_flags = PyInt_AS_LONG(flags);
     }
-    self->ent->flags |= extra_flags;
 
+    if(PyType_IsSubtype(type, &PyCombatableEntity_type))
+        extra_flags |= ENTITY_FLAG_COMBATABLE;
+
+    if(PyType_IsSubtype(type, &PyBuildableEntity_type))
+        extra_flags |= ENTITY_FLAG_BUILDING;
+
+    if(PyType_IsSubtype(type, &PyBuilderEntity_type))
+        extra_flags |= ENTITY_FLAG_BUILDER;
+
+    if(PyType_IsSubtype(type, &PyResourceEntity_type))
+        extra_flags |= ENTITY_FLAG_RESOURCE;
+
+    if(PyType_IsSubtype(type, &PyHarvesterEntity_type))
+        extra_flags |= ENTITY_FLAG_HARVESTER;
+
+    self->ent->flags |= extra_flags;
     G_AddEntity(self->ent, (vec3_t){0.0f, 0.0f, 0.0f});
 
     int ret;
@@ -1856,7 +1887,8 @@ static int PyResourceEntity_init(PyResourceEntityObject *self, PyObject *args, P
         return -1;
     }
 
-    G_Resource_AddEntity(self->super.ent->uid, PyString_AsString(name), PyInt_AS_LONG(amount));
+    G_Resource_SetName(self->super.ent->uid, PyString_AS_STRING(name));
+    G_Resource_SetAmount(self->super.ent->uid, PyInt_AS_LONG(amount));
 
     /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
      * MRO to complete in cases when this class is one of multiple base classes of another type. 
@@ -1866,6 +1898,11 @@ static int PyResourceEntity_init(PyResourceEntityObject *self, PyObject *args, P
         return -1; /* Exception already set */
     Py_DECREF(ret);
     return 0;
+}
+
+static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self)
+{
+    return s_super_del((PyObject*)self, &PyHarvesterEntity_type);
 }
 
 static PyObject *s_obj_from_attr(const struct attr *attr)
@@ -2048,6 +2085,11 @@ void S_Entity_PyRegister(PyObject *module)
         return;
     Py_INCREF(&PyResourceEntity_type);
     PyModule_AddObject(module, "ResourceEntity", (PyObject*)&PyResourceEntity_type);
+
+    if(PyType_Ready(&PyHarvesterEntity_type) < 0)
+        return;
+    Py_INCREF(&PyHarvesterEntity_type);
+    PyModule_AddObject(module, "HarvesterEntity", (PyObject*)&PyHarvesterEntity_type);
 }
 
 bool S_Entity_Init(void)

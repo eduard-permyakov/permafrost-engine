@@ -278,10 +278,24 @@ void G_Builder_SetBuildOnLeftClick(void);
 /* GAME RESOURCE                                                             */
 /*###########################################################################*/
 
-bool        G_Resource_AddEntity(uint32_t uid, const char *name, int init_amount);
 int         G_Resource_GetAmount(uint32_t uid);
 void        G_Resource_SetAmount(uint32_t uid, int amount);
+bool        G_Resource_SetName(uint32_t uid, const char *name);
 const char *G_Resource_GetName(uint32_t uid);
+
+/*###########################################################################*/
+/* GAME HARVESTER                                                            */
+/*###########################################################################*/
+
+void G_Harvester_SetGatherOnLeftClick(void);
+bool G_Harvester_Gather(struct entity *harvester, struct entity *resource);
+
+bool G_Harvester_SetGatherSpeed(uint32_t uid, const char *rname, int speed);
+int  G_Harvester_GetGatherSpeed(uint32_t uid, const char *rname);
+bool G_Harvester_SetMaxCarry(uint32_t uid, const char *rname, int max);
+int  G_Harvester_GetMaxCarry(uint32_t uid, const char *rname);
+bool G_Harvester_SetCurrCarry(uint32_t uid, const char *rname, int curr);
+int  G_Harvester_GetCurrCarry(uint32_t uid, const char *rname);
 
 #endif
 

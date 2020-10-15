@@ -42,19 +42,14 @@
 #define DEFAULT_GATHER_SPEED (0)
 #define DEFAULT_MAX_CARRY    (0)
 
+struct map;
 struct entity;
 
-bool G_Harvester_Init(void);
+bool G_Harvester_Init(const struct map *map);
 void G_Harvester_Shutdown(void);
 bool G_Harvester_AddEntity(uint32_t uid);
 void G_Harvester_RemoveEntity(uint32_t uid);
-
-bool G_Harvester_SetGatherSpeed(uint32_t uid, const char *rname, int speed);
-int  G_Harvester_GetGatherSpeed(uint32_t uid, const char *rname);
-bool G_Harvester_SetMaxCarry(uint32_t uid, const char *rname, int max);
-int  G_Harvester_GetMaxCarry(uint32_t uid, const char *rname);
-bool G_Harvester_SetCurrCarry(uint32_t uid, const char *rname, int curr);
-int  G_Harvester_GetCurrCarry(uint32_t uid, const char *rname);
+bool G_Harvester_InTargetMode(void);
 
 #endif
 

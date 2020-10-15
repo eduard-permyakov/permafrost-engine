@@ -41,6 +41,7 @@
 
 bool G_Resource_Init(void);
 void G_Resource_Shutdown(void);
+bool G_Resource_AddEntity(uint32_t uid);
 void G_Resource_RemoveEntity(uint32_t uid);
 
 #endif

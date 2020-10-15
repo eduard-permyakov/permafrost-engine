@@ -107,15 +107,11 @@ void G_Resource_Shutdown(void)
     kh_destroy(state, s_entity_state_table);
 }
 
-bool G_Resource_AddEntity(uint32_t uid, const char *name, int init_amount)
+bool G_Resource_AddEntity(uint32_t uid)
 {
-    const char *key = si_intern(name, &s_stringpool, s_stridx);
-    if(!key)
-        return false;
-
     struct rstate rs = (struct rstate) {
-        .name = key,
-        .amount = init_amount
+        .name = "",
+        .amount = 0
     };
     if(!rstate_set(uid, rs))
         return false;
@@ -146,5 +142,18 @@ const char *G_Resource_GetName(uint32_t uid)
     struct rstate *rs = rstate_get(uid);
     assert(rs);
     return rs->name;
+}
+
+bool G_Resource_SetName(uint32_t uid, const char *name)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+
+    const char *key = si_intern(name, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
+
+    rs->name = key;
+    return true;
 }
 

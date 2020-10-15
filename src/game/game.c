@@ -142,6 +142,7 @@ static void g_init_map(void)
     G_Combat_Init();
     G_Building_Init(s_gs.map);
     G_Builder_Init(s_gs.map);
+    G_Harvester_Init(s_gs.map);
     G_ClearPath_Init(s_gs.map);
     G_Pos_Init(s_gs.map);
     G_Fog_Init(s_gs.map);
@@ -637,6 +638,7 @@ static void g_clear_map_state(void)
         G_Combat_Shutdown();
         G_Building_Shutdown();
         G_Builder_Shutdown();
+        G_Harvester_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
         G_Fog_Shutdown();
@@ -689,7 +691,6 @@ bool G_Init(void)
     G_Sel_Init();
     G_Sel_Enable();
     G_Timer_Init();
-    G_Harvester_Init();
     G_StorageSite_Init();
     G_Resource_Init();
 
@@ -1089,7 +1090,6 @@ void G_Shutdown(void)
 
     G_Resource_Shutdown();
     G_StorageSite_Shutdown();
-    G_Harvester_Shutdown();
     G_Timer_Shutdown();
     G_Sel_Shutdown();
 
@@ -1273,6 +1273,12 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
 
     if(ent->flags & ENTITY_FLAG_COMBATABLE)
         G_Combat_AddEntity(ent, COMBAT_STANCE_AGGRESSIVE);
+
+    if(ent->flags & ENTITY_FLAG_RESOURCE)
+        G_Resource_AddEntity(ent->uid);
+
+    if(ent->flags & ENTITY_FLAG_HARVESTER)
+        G_Harvester_AddEntity(ent->uid);
 
     if(ent->flags & ENTITY_FLAG_MOVABLE) {
     
@@ -1681,6 +1687,8 @@ bool G_MouseInTargetMode(void)
     if(G_Move_InTargetMode())
         return true;
     if(G_Builder_InTargetMode())
+        return true;
+    if(G_Harvester_InTargetMode())
         return true;
     return false;
 }

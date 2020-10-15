@@ -34,12 +34,20 @@
  */
 
 #include "harvester.h"
+#include "movement.h"
+#include "game_private.h"
+#include "public/game.h"
+#include "../event.h"
+#include "../cursor.h"
 #include "../lib/public/mpool.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/string_intern.h"
 
 #include <stddef.h>
 #include <assert.h>
+
+#define UID_NONE            (~((uint32_t)0))
+#define REACQUIRE_RADIUS    (25.0)
 
 static void *pmalloc(size_t size);
 static void *pcalloc(size_t n, size_t size);
@@ -67,6 +75,7 @@ enum harvester_state{
 
 struct hstate{
     enum harvester_state state;
+    uint32_t target_uid;
     kh_int_t *gather_speeds;    /* How much of each resource the entity gets each cycle */
     kh_int_t *max_carry;        /* The maximum amount of each resource the entity can carry */
     kh_int_t *curr_carry;       /* The amount of each resource the entity currently holds */
@@ -94,10 +103,12 @@ KHASH_MAP_INIT_INT(state, struct hstate)
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static mp_buff_t        s_mpool;
-static khash_t(stridx) *s_stridx;
-static mp_strbuff_t     s_stringpool;
-static khash_t(state)  *s_entity_state_table;
+static mp_buff_t         s_mpool;
+static khash_t(stridx)  *s_stridx;
+static mp_strbuff_t      s_stringpool;
+static khash_t(state)   *s_entity_state_table;
+static bool              s_gather_on_lclick = false;
+static const struct map *s_map;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -174,6 +185,8 @@ static bool hstate_init(struct hstate *hs)
         kh_destroy(int, hs->curr_carry);
         return false;
     }
+
+    hs->target_uid = UID_NONE;
     hs->state = STATE_NOT_HARVESTING;
     return true;
 }
@@ -220,11 +233,65 @@ static bool hstate_get_key(khash_t(int) *table, const char *name, int *out)
     return true;
 }
 
+static void on_mousedown(void *user, void *event)
+{
+    SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
+    bool targeting = G_MouseInTargetMode();
+
+    s_gather_on_lclick = false;
+    Cursor_SetRTSPointer(CURSOR_POINTER);
+
+    if(G_MouseOverMinimap())
+        return;
+
+    if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
+        return;
+
+    if((mouse_event->button == SDL_BUTTON_RIGHT) && targeting)
+        return;
+
+    if((mouse_event->button == SDL_BUTTON_LEFT) && !targeting)
+        return;
+
+    struct entity *target = G_Sel_GetHovered();
+    if(!target || !(target->flags & ENTITY_FLAG_RESOURCE))
+        return;
+
+    enum selection_type sel_type;
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+
+    for(int i = 0; i < vec_size(sel); i++) {
+
+        struct entity *curr = vec_AT(sel, i);
+        if(!(curr->flags & ENTITY_FLAG_HARVESTER))
+            continue;
+
+        struct hstate *hs = hstate_get(curr->uid);
+        assert(hs);
+
+        hs->state = STATE_NOT_HARVESTING;
+        E_Entity_Notify(EVENT_HARVEST_END, curr->uid, NULL, ES_ENGINE);
+
+        G_Harvester_Gather(curr, target);
+    }
+}
+
+static void on_motion_end(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)user;
+    struct entity *ent = G_EntityForUID(uid);
+
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool G_Harvester_Init(void)
+bool G_Harvester_Init(const struct map *map)
 {
     mp_buff_init(&s_mpool);
 
@@ -235,6 +302,8 @@ bool G_Harvester_Init(void)
     if(!si_init(&s_stringpool, &s_stridx, 512))
         goto fail_strintern;
 
+    s_map = map;
+    E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     return true;
 
 fail_strintern:
@@ -247,6 +316,9 @@ fail_mpool:
 
 void G_Harvester_Shutdown(void)
 {
+    s_map = NULL;
+    E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
+
     si_shutdown(&s_stringpool, s_stridx);
     kh_destroy(state, s_entity_state_table);
     mp_buff_destroy(&s_mpool);
@@ -319,5 +391,32 @@ int G_Harvester_GetCurrCarry(uint32_t uid, const char *rname)
 
     hstate_get_key(hs->curr_carry, rname, &ret);
     return ret;
+}
+
+void G_Harvester_SetGatherOnLeftClick(void)
+{
+    s_gather_on_lclick  = true;
+    Cursor_SetRTSPointer(CURSOR_TARGET);
+}
+
+bool G_Harvester_Gather(struct entity *harvester, struct entity *resource)
+{
+    struct hstate *hs = hstate_get(harvester->uid);
+    assert(hs);
+
+    if(!(resource->flags & ENTITY_FLAG_RESOURCE))
+        return false;
+
+    E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_motion_end, (void*)((uintptr_t)harvester->uid), G_RUNNING);
+    G_Move_SetSurroundEntity(harvester, resource);
+
+    hs->state = STATE_MOVING_TO_RESOURCE;
+    hs->target_uid = resource->uid;
+    return true;
+}
+
+bool G_Harvester_InTargetMode(void)
+{
+    return s_gather_on_lclick;
 }
 
