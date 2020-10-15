@@ -295,6 +295,14 @@ bool   M_NavPositionPathable(const struct map *map, vec2_t xz_pos);
 vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz_dst);
 
 /* ------------------------------------------------------------------------
+ * If true is returned, 'out' is set to the worldspace XZ position of the 
+ * closest reachable point on the map that is adjacent to the specified entity.
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavClosestReachableAdjacentPos(const struct map *map, vec2_t xz_src, 
+                                        const struct obb *target, vec2_t *out);
+
+/* ------------------------------------------------------------------------
  * Change the blocker reference count for the navigation tile under the
  * specified position. Flow fields will steer around tiles with a blocker 
  * count of greater than 0.

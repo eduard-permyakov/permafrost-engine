@@ -254,6 +254,14 @@ vec2_t    N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_sr
                                  vec2_t xz_dst);
 
 /* ------------------------------------------------------------------------
+ * If true is returned, 'out' is set to the worldspace XZ position of the 
+ * closest reachable point on the map that is adjacent to the specified entity.
+ * ------------------------------------------------------------------------
+ */
+bool      N_ClosestReachableAdjacentPos(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
+                                        const struct obb *target, vec2_t *out);
+
+/* ------------------------------------------------------------------------
  * Changes the blocker reference count for the navigation tile under the
  * cursor position. This may cause flow field eviction from caches.
  * ------------------------------------------------------------------------

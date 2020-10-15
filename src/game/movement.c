@@ -54,6 +54,7 @@
 #include "../map/public/tile.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/attr.h"
+#include "../lib/public/pf_string.h"
 #include "../anim/public/anim.h"
 
 #include <assert.h>
@@ -594,7 +595,7 @@ static void on_render_3d(void *user, void *event)
         if(ms) {
 
             char strbuff[256];
-            snprintf(strbuff, ARR_SIZE(strbuff), "Arrival State: %s Velocity: (%f, %f)", 
+            pf_snprintf(strbuff, ARR_SIZE(strbuff), "Arrival State: %s Velocity: (%f, %f)", 
                 s_state_str[ms->state], ms->velocity.x, ms->velocity.z);
             strbuff[ARR_SIZE(strbuff)-1] = '\0';
             struct rgba text_color = (struct rgba){255, 0, 0, 255};
@@ -1021,6 +1022,10 @@ static bool adjacent_check_fast(const struct entity *a, const struct entity *b)
     vec2_t apos = G_Pos_GetXZ(a->uid);
     vec2_t bpos = G_Pos_GetXZ(b->uid);
 
+    if(!(a->flags & ENTITY_FLAG_SELECTABLE)
+    || !(b->flags & ENTITY_FLAG_SELECTABLE))
+        return true;
+
     vec2_t diff;
     PFM_Vec2_Sub(&apos, &bpos, &diff);
     return (PFM_Vec2_Len(&diff) < a->selection_radius + b->selection_radius + 12.0f);
@@ -1126,22 +1131,31 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
             entity_finish_moving(ent, STATE_ARRIVED);
             break;
         }
-        vec2_t pos = G_Pos_GetXZ(ms->surround_target_uid);
-        struct flock *flock = flock_for_ent(ent);
+
+        struct obb obb;
+        Entity_CurrentOBB(target, &obb, false);
+
+        vec2_t dest;
+        vec2_t target_pos = G_Pos_GetXZ(ms->surround_target_uid);
+        bool hasdest = M_NavClosestReachableAdjacentPos(s_map, G_Pos_GetXZ(ent->uid), &obb, &dest);
+
+        if(!hasdest) {
+            entity_finish_moving(ent, STATE_ARRIVED);
+            break;
+        }
 
         vec2_t diff;
-        PFM_Vec2_Sub(&flock->target_xz, &pos, &diff);
+        struct flock *flock = flock_for_ent(ent);
+        PFM_Vec2_Sub(&flock->target_xz, &dest, &diff);
 
         if(flock && PFM_Vec2_Len(&diff) > EPSILON) {
-            G_Move_SetDest(ent, pos);
+            G_Move_SetDest(ent, dest);
+            ms->state = STATE_SURROUND_ENTITY;
             break;
         }
 
         if(!adjacent_check_fast(ent, target))
             break;
-
-        struct obb obb;
-        Entity_CurrentOBB(target, &obb, false);
 
         if(M_NavObjAdjacentToStatic(s_map, ent, &obb)) {
             entity_finish_moving(ent, STATE_ARRIVED);
@@ -1499,6 +1513,11 @@ void G_Move_SetSeekEnemies(const struct entity *ent)
     }
 
     ms->state = STATE_SEEK_ENEMIES;
+}
+
+void G_Move_SetSeekResource(const struct entity *ent, const char *rname)
+{
+
 }
 
 void G_Move_SetSurroundEntity(const struct entity *ent, const struct entity *target)

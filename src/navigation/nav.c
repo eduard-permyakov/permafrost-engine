@@ -1561,7 +1561,7 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
     };
     vec3_t map_pos = M_GetPos(map);
 
-    struct tile_desc tds[4096];
+    struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
 
     khash_t(td) *tileset = n_moving_entities_tileset(priv, map_pos, obb);
@@ -1673,7 +1673,7 @@ void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *o
         FIELD_RES_C, FIELD_RES_R
     };
 
-    struct tile_desc tds[4096];
+    struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntiles; i++) {
@@ -2275,6 +2275,69 @@ vec2_t N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
         map_pos.z + (closest_td.chunk_r * FIELD_RES_R + closest_td.tile_r + 0.5f) * tile_dims.z,
     };
     return ret;
+}
+
+bool N_ClosestReachableAdjacentPos(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
+                                   const struct obb *target, vec2_t *out)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc src_desc;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
+    assert(result);
+
+    const struct nav_chunk *src_chunk = &priv->chunks[src_desc.chunk_r * priv->width + src_desc.chunk_c];
+    const uint16_t src_iid = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderObj(map_pos, res, target, tds, ARR_SIZE(tds));
+    vec2_t tile_dims = N_TileDims();
+
+    float min_dist = INFINITY;
+    vec2_t min_pos = {0};
+
+    for(int i = 0; i < ntiles; i++) {
+
+        for(int dr = -1; dr <= +1; dr++) {
+        for(int dc = -1; dc <= +1; dc++) {
+
+            struct tile_desc td = tds[i];
+            if(!M_Tile_RelativeDesc(res, &td, dc, dr))
+                continue;
+
+            const struct nav_chunk *chunk = &priv->chunks[td.chunk_r * priv->width + td.chunk_c];
+            const uint16_t iid = chunk->islands[td.tile_r][td.tile_c];
+
+            if(iid != src_iid)
+                continue;
+            if(chunk->blockers[td.tile_r][td.tile_c])
+                continue;
+            if(chunk->cost_base[td.tile_r][td.tile_c] == COST_IMPASSABLE)
+                continue;
+
+            vec2_t tile_center = (vec2_t){
+                map_pos.x - (td.chunk_c * FIELD_RES_C + td.tile_c) * tile_dims.x,
+                map_pos.z + (td.chunk_r * FIELD_RES_R + td.tile_r) * tile_dims.z,
+            };
+            vec2_t delta;
+            PFM_Vec2_Sub(&xz_src, &tile_center, &delta);
+
+            if(PFM_Vec2_Len(&delta) < min_dist) {
+                min_dist = PFM_Vec2_Len(&delta);
+                min_pos = tile_center;
+            }
+        }}
+    }
+
+    if(min_dist == INFINITY)
+        return false;
+
+    *out = min_pos;
+    return true;
 }
 
 vec2_t N_TileDims(void)

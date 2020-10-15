@@ -558,6 +558,13 @@ vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz
     return N_ClosestReachableDest(map->nav_private, map->pos, xz_src, xz_dst);
 }
 
+bool M_NavClosestReachableAdjacentPos(const struct map *map, vec2_t xz_src, 
+                                      const struct obb *target, vec2_t *out)
+{
+    assert(M_NavPositionPathable(map, xz_src));
+    return N_ClosestReachableAdjacentPos(map->nav_private, map->pos, xz_src, target, out);
+}
+
 void M_NavBlockersIncref(vec2_t xz_pos, float range, const struct map *map)
 {
     N_BlockersIncref(xz_pos, range, map->pos, map->nav_private);
