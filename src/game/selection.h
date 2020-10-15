@@ -57,5 +57,6 @@ void G_Sel_Shutdown(void);
 void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_obb_t *visible_obbs);
 bool G_Sel_SaveState(struct SDL_RWops *stream);
 bool G_Sel_LoadState(struct SDL_RWops *stream);
+void G_Sel_MarkHoveredDirty(void);
 
 #endif

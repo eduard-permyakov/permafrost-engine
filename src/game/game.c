@@ -1324,6 +1324,7 @@ void G_StopEntity(const struct entity *ent)
 void G_SafeFree(struct entity *ent)
 {
     ASSERT_IN_MAIN_THREAD();
+    G_Sel_MarkHoveredDirty();
     vec_pentity_push(&s_gs.deleted, ent);
 }
 

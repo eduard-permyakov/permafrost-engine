@@ -584,3 +584,8 @@ struct entity *G_Sel_GetHovered(void)
     return s_hovered;
 }
 
+void G_Sel_MarkHoveredDirty(void)
+{
+    s_hovered_dirty = true;
+}
+

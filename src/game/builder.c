@@ -241,6 +241,9 @@ static void on_mousedown(void *user, void *event)
     if(!target || !(target->flags & ENTITY_FLAG_BUILDING))
         return;
 
+    if(!G_Building_IsFounded(target))
+        return;
+
     enum selection_type sel_type;
     const vec_pentity_t *sel = G_Sel_Get(&sel_type);
 
