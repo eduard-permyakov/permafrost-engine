@@ -473,6 +473,9 @@ bool G_Fog_Visible(int faction_id, vec2_t xz_pos)
 
 bool G_Fog_PlayerVisible(vec2_t xz_pos)
 {
+    if(!s_enabled)
+        return true;
+
     struct map_resolution res;
     M_GetResolution(s_map, &res);
 
@@ -507,6 +510,9 @@ bool G_Fog_Explored(int faction_id, vec2_t xz_pos)
 
 bool G_Fog_PlayerExplored(vec2_t xz_pos)
 {
+    if(!s_enabled)
+        return true;
+
     struct map_resolution res;
     M_GetResolution(s_map, &res);
 
