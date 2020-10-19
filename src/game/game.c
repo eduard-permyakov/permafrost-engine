@@ -1693,6 +1693,17 @@ bool G_MouseInTargetMode(void)
     return false;
 }
 
+bool G_MouseHasRightClickAction(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(G_Builder_HasRightClickAction())
+        return true;
+    if(G_Harvester_HasRightClickAction())
+        return true;
+    return false;
+}
+
 void G_SetHideHealthbars(bool on)
 {
     ASSERT_IN_MAIN_THREAD();

@@ -46,6 +46,7 @@ const khash_t(entity) *G_GetAllEntsSet(void);
 void                   G_Zombiefy(struct entity *ent);
 struct entity         *G_EntityForUID(uint32_t uid);
 bool                   G_MouseInTargetMode(void);
+bool                   G_MouseHasRightClickAction(void);
 
 
 #endif

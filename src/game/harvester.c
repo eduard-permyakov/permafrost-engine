@@ -233,6 +233,82 @@ static bool hstate_get_key(khash_t(int) *table, const char *name, int *out)
     return true;
 }
 
+static void on_harvest_anim_finished(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)user;
+    const struct entity *ent = G_EntityForUID(uid);
+
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+
+    struct entity *target = G_EntityForUID(hs->target_uid);
+    //TODO: Get the Resource Here
+}
+
+static void on_motion_begin(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)user;
+    const struct entity *ent = G_EntityForUID(uid);
+
+    E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
+
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+    assert(hs->state == STATE_HARVESTING);
+
+    hs->state = STATE_NOT_HARVESTING;
+    E_Entity_Notify(EVENT_HARVEST_END, uid, NULL, ES_ENGINE);
+}
+
+static void finish_harvesting(struct hstate *hs, uint32_t uid)
+{
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
+    E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
+
+    hs->state = STATE_NOT_HARVESTING;
+    hs->target_uid = UID_NONE;
+    E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
+}
+
+static void on_motion_end(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)user;
+    struct entity *ent = G_EntityForUID(uid);
+
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
+
+    if(!G_Move_Still(ent)) {
+        hs->state = STATE_NOT_HARVESTING;
+        hs->target_uid = UID_NONE;
+        return; /* harvester received a new destination */
+    }
+
+    assert(hs->target_uid != UID_NONE);
+    struct entity *target = G_EntityForUID(hs->target_uid);
+
+    struct obb obb;
+    if(target) {
+        Entity_CurrentOBB(target, &obb, false);
+    }
+
+    if(!target
+    || !M_NavObjAdjacentToStatic(s_map, ent, &obb)) {
+        hs->state = STATE_NOT_HARVESTING;
+        hs->target_uid = UID_NONE;
+        return; /* harvester could not reach the resource */
+    }
+
+    E_Entity_Notify(EVENT_HARVEST_BEGIN, uid, NULL, ES_ENGINE);
+    hs->state = STATE_HARVESTING; 
+    E_Entity_Register(EVENT_MOTION_START, uid, on_motion_begin, (void*)((uintptr_t)uid), G_RUNNING);
+    E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished, 
+        (void*)((uintptr_t)uid), G_RUNNING);
+}
+
 static void on_mousedown(void *user, void *event)
 {
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
@@ -269,22 +345,9 @@ static void on_mousedown(void *user, void *event)
         struct hstate *hs = hstate_get(curr->uid);
         assert(hs);
 
-        hs->state = STATE_NOT_HARVESTING;
-        E_Entity_Notify(EVENT_HARVEST_END, curr->uid, NULL, ES_ENGINE);
-
+        finish_harvesting(hs, curr->uid);
         G_Harvester_Gather(curr, target);
     }
-}
-
-static void on_motion_end(void *user, void *event)
-{
-    uint32_t uid = (uintptr_t)user;
-    struct entity *ent = G_EntityForUID(uid);
-
-    struct hstate *hs = hstate_get(uid);
-    assert(hs);
-
-    E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
 }
 
 /*****************************************************************************/
@@ -407,16 +470,37 @@ bool G_Harvester_Gather(struct entity *harvester, struct entity *resource)
     if(!(resource->flags & ENTITY_FLAG_RESOURCE))
         return false;
 
-    E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_motion_end, (void*)((uintptr_t)harvester->uid), G_RUNNING);
+    E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_motion_end, 
+        (void*)((uintptr_t)harvester->uid), G_RUNNING);
     G_Move_SetSurroundEntity(harvester, resource);
 
     hs->state = STATE_MOVING_TO_RESOURCE;
     hs->target_uid = resource->uid;
+    E_Entity_Notify(EVENT_HARVEST_TARGET_ACQUIRED, harvester->uid, resource, ES_ENGINE);
     return true;
 }
 
 bool G_Harvester_InTargetMode(void)
 {
     return s_gather_on_lclick;
+}
+
+bool G_Harvester_HasRightClickAction(void)
+{
+    struct entity *hovered = G_Sel_GetHovered();
+    if(!hovered)
+        return false;
+
+    enum selection_type sel_type;
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+
+    if(vec_size(sel) == 0)
+        return false;
+
+    const struct entity *first = vec_AT(sel, 0);
+    if(first->flags & ENTITY_FLAG_HARVESTER && hovered->flags & ENTITY_FLAG_RESOURCE)
+        return true;
+
+    return false;
 }
 

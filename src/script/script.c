@@ -2178,8 +2178,9 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
         return PyString_FromString(arg);
 
     case EVENT_BUILD_TARGET_ACQUIRED: 
-    case EVENT_ENTITY_DIED:
-    case EVENT_BUILDING_COMPLETED: {
+    case EVENT_HARVEST_TARGET_ACQUIRED:
+    case EVENT_BUILDING_COMPLETED: 
+    case EVENT_ENTITY_DIED: {
         PyObject *ent = S_Entity_ObjForUID(((struct entity*)arg)->uid);
         assert(ent);
         Py_INCREF(ent);

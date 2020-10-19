@@ -494,22 +494,6 @@ static void move_marker_add(vec3_t pos, bool attack)
     vec_pentity_push(&s_move_markers, ent);
 }
 
-static bool build_action(void)
-{
-    enum selection_type sel_type;
-    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
-
-    if(vec_size(sel) == 0 || (sel_type != SELECTION_TYPE_PLAYER))
-        return false;
-    
-    struct entity *hovered = G_Sel_GetHovered();
-    if(!hovered)
-        return false;
-
-    struct entity *first = vec_AT(sel, 0);
-    return (first->flags & ENTITY_FLAG_BUILDER) && (hovered->flags & ENTITY_FLAG_BUILDING);
-}
-
 static void on_mousedown(void *user, void *event)
 {
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
@@ -537,7 +521,7 @@ static void on_mousedown(void *user, void *event)
     if(!attack && !move)
         return;
 
-    if(build_action())
+    if(G_MouseHasRightClickAction())
         return;
 
     vec3_t mouse_coord;
@@ -1513,11 +1497,6 @@ void G_Move_SetSeekEnemies(const struct entity *ent)
     }
 
     ms->state = STATE_SEEK_ENEMIES;
-}
-
-void G_Move_SetSeekResource(const struct entity *ent, const char *rname)
-{
-
 }
 
 void G_Move_SetSurroundEntity(const struct entity *ent, const struct entity *target)

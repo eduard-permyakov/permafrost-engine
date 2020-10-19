@@ -210,11 +210,11 @@ static void on_motion_end(void *user, void *event)
         return; 
     }
 
-    G_Move_Stop(ent);
     E_Entity_Notify(EVENT_BUILD_BEGIN, uid, NULL, ES_ENGINE);
     bs->state = STATE_BUILDING; 
     E_Entity_Register(EVENT_MOTION_START, uid, on_motion_begin, (void*)((uintptr_t)uid), G_RUNNING);
-    E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished, (void*)((uintptr_t)uid), G_RUNNING);
+    E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished, 
+        (void*)((uintptr_t)uid), G_RUNNING);
 }
 
 static void on_mousedown(void *user, void *event)
@@ -256,9 +256,7 @@ static void on_mousedown(void *user, void *event)
         struct builderstate *bs = builderstate_get(curr->uid);
         assert(bs);
 
-        bs->state = STATE_NOT_BUILDING;
-        E_Entity_Notify(EVENT_BUILD_END, curr->uid, NULL, ES_ENGINE);
-
+        finish_building(bs, curr->uid);
         G_Builder_Build(curr, target);
     }
 }
@@ -351,6 +349,27 @@ void G_Builder_SetBuildOnLeftClick(void)
 bool G_Builder_InTargetMode(void)
 {
     return s_build_on_lclick;
+}
+
+bool G_Builder_HasRightClickAction(void)
+{
+    struct entity *hovered = G_Sel_GetHovered();
+    if(!hovered)
+        return false;
+
+    enum selection_type sel_type;
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+
+    if(vec_size(sel) == 0)
+        return false;
+
+    const struct entity *first = vec_AT(sel, 0);
+    if(first->flags & ENTITY_FLAG_BUILDER 
+    && hovered->flags & ENTITY_FLAG_BUILDING
+    && G_Building_IsFounded(hovered))
+        return true;
+
+    return false;
 }
 
 bool G_Builder_SaveState(struct SDL_RWops *stream)
