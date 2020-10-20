@@ -203,7 +203,9 @@ static void on_motion_end(void *user, void *event)
     }
 
     if(!G_Building_IsFounded(target)
-    && !G_Building_Found(target)) {
+    &&  G_Building_Unobstructed(target)
+    && !G_Building_Found(target, true)) {
+
         bs->state = STATE_NOT_BUILDING;
         bs->target_uid = UID_NONE;
         E_Entity_Notify(EVENT_BUILD_FAIL_FOUND, uid, NULL, ES_ENGINE);

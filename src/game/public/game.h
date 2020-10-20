@@ -259,9 +259,10 @@ void G_Fog_Disable(void);
 /*###########################################################################*/
 
 bool  G_Building_Mark(const struct entity *ent);
-bool  G_Building_Found(struct entity *ent);
+bool  G_Building_Found(struct entity *ent, bool blocking);
 bool  G_Building_Complete(struct entity *ent);
 bool  G_Building_Unobstructed(const struct entity *ent);
+bool  G_Building_IsFounded(const struct entity *ent);
 void  G_Building_SetVisionRange(struct entity *ent, float vision_range);
 float G_Building_GetVisionRange(const struct entity *ent);
 

@@ -107,6 +107,8 @@ typedef struct {
 
 static int       PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self);
+static PyObject *PyCombatableEntity_get_hp(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_hp(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_get_max_hp(PyCombatableEntityObject *self, void *closure);
 static int       PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self, void *closure);
@@ -124,7 +126,7 @@ typedef struct {
 
 static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self);
-static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self);
+static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure);
@@ -372,6 +374,10 @@ static PyMethodDef PyCombatableEntity_methods[] = {
 };
 
 static PyGetSetDef PyCombatableEntity_getset[] = {
+    {"hp",
+    (getter)PyCombatableEntity_get_hp, (setter)PyCombatableEntity_set_hp,
+    "The current number of hitpoints that the entity has.",
+    NULL},
     {"max_hp",
     (getter)PyCombatableEntity_get_max_hp, (setter)PyCombatableEntity_set_max_hp,
     "The maximum number of hitpoints that the entity starts out with.",
@@ -411,7 +417,7 @@ static PyMethodDef PyBuildableEntity_methods[] = {
     "where it will wait for a worker to found it."},
 
     {"found", 
-    (PyCFunction)PyBuildableEntity_found, METH_NOARGS,
+    (PyCFunction)PyBuildableEntity_found, METH_VARARGS | METH_KEYWORDS,
     "Advance a building to the 'FOUNDED' state from the 'MARKED' state, "
     "where it becomes a build site and wait for workes to finish constructing it."},
 
@@ -1576,6 +1582,28 @@ static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self)
     return s_super_del((PyObject*)self, &PyCombatableEntity_type);
 }
 
+static PyObject *PyCombatableEntity_get_hp(PyCombatableEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(G_Combat_GetCurrentHP(self->super.ent));
+}
+
+static int PyCombatableEntity_set_hp(PyCombatableEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "hp attribute must be an integer.");
+        return -1;
+    }
+    
+    int hp = PyInt_AS_LONG(value);
+    if(hp <= 0) {
+        PyErr_SetString(PyExc_RuntimeError, "hp must be greater than 0.");
+        return -1;
+    }
+
+    G_Combat_SetHP(self->super.ent, hp);
+    return 0;
+}
+
 static PyObject *PyCombatableEntity_get_max_hp(PyCombatableEntityObject *self, void *closure)
 {
     return Py_BuildValue("i", self->super.ent->max_hp);
@@ -1656,11 +1684,24 @@ static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self)
+static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs)
 {
-    if(!G_Building_Found(self->super.ent)) {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to found building. It must be in the MARKED state. "
-            "The tiles under the building must also not be obstructed by any objects.");
+    static char *kwlist[] = {"blocking", "force", NULL};
+    int blocking = 1;
+    int force = 0;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "|ii", kwlist, &blocking, &force)) {
+        PyErr_SetString(PyExc_TypeError, "Two (optional) arguments: blocking (int) and force (int)");
+        return NULL;
+    }
+
+    if(!force && !G_Building_Unobstructed(self->super.ent)) {
+        PyErr_SetString(PyExc_RuntimeError, "The tiles under the building must not be obstructed by any objects.");
+        return NULL;
+    }
+
+    if(!G_Building_Found(self->super.ent, blocking)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to found building. It must be in the MARKED state.");
         return NULL;
     }
     Py_RETURN_NONE;
@@ -2038,7 +2079,10 @@ static PyObject *s_new_custom_class(const char *name, const vec_attr_t *construc
     PyTypeObject *tp_class = (PyTypeObject*)class;
     ret = tp_class->tp_new(tp_class, args, kwargs);
     if(ret) {
-        tp_class->tp_init(ret, args, NULL);
+        int status = tp_class->tp_init(ret, args, NULL);
+        if(status) {
+            Py_CLEAR(ret);
+        }
     }
 
     Py_DECREF(kwargs);
@@ -2144,19 +2188,26 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
 
     /* If we could not make a custom class, fall back to instantiating a basic entity */
     if(!ret) {
+        PyErr_Clear();
         ret = s_entity_from_atts(path, name, attr_table, extra_flags); 
     }
 
     if(!ret){
         return NULL;
     }
+    struct entity *ent = ((PyEntityObject*)ret)->ent;
 
     if(((k = kh_get(attr, attr_table, "collision")) != kh_end(attr_table))
     && !kh_value(attr_table, k).val.as_bool) {
         ((PyEntityObject*)ret)->ent->flags &= ~ ENTITY_FLAG_COLLISION;
     }
 
-    struct entity *ent = ((PyEntityObject*)ret)->ent;
+    if(PyObject_IsInstance(ret, (PyObject*)&PyBuildableEntity_type)) {
+        G_Building_Mark(ent);
+        G_Building_Found(ent, true);
+        G_Building_Complete(ent);
+    }
+
     const char *attrs[][2] = {
         {"selection_radius",    "selection_radius"  },
         {"pos",                 "position"          },
@@ -2165,6 +2216,7 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
         {"selectable",          "selectable"        },
         {"faction_id",          "faction_id"        },
         {"vision_range",        "vision_range"      },
+        {"hp",                  "hp"                },
     };
 
     for(int i = 0; i < ARR_SIZE(attrs); i++) {
@@ -2178,6 +2230,7 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
             PyObject *val = s_obj_from_attr(&kh_value(attr_table, k));
             if(val) {
                 PyObject_SetAttrString(ret, ent_attr, val);
+                PyErr_Clear();
             }
             Py_XDECREF(val);
         }

@@ -74,10 +74,12 @@ struct buildstate{
         BUILDING_STATE_FOUNDED,
         BUILDING_STATE_COMPLETED,
     }state;
-    float     frac_done;
-    vec_uid_t markers;
-    uint32_t  progress_model;
-    float     vision_range;
+    float      frac_done;
+    vec_uid_t  markers;
+    uint32_t   progress_model;
+    float      vision_range;
+    bool       blocking;
+    struct obb obb;
 };
 
 KHASH_MAP_INIT_INT(state, struct buildstate)
@@ -306,7 +308,8 @@ void G_Building_AddEntity(struct entity *ent)
         .state = BUILDING_STATE_PLACEMENT,
         .frac_done = 0.0,
         .markers = {0},
-        .progress_model = UID_NONE
+        .progress_model = UID_NONE,
+        .obb = {0}
     };
     buildstate_set(ent, new_bs);
 
@@ -322,10 +325,8 @@ void G_Building_RemoveEntity(const struct entity *ent)
     struct buildstate *bs = buildstate_get(ent->uid);
     assert(bs);
 
-    if(bs->state >= BUILDING_STATE_FOUNDED) {
-        struct obb obb;
-        Entity_CurrentOBB(ent, &obb, true);
-        M_NavBlockersDecrefOBB(s_map, &obb);
+    if(bs->state >= BUILDING_STATE_FOUNDED && bs->blocking) {
+        M_NavBlockersDecrefOBB(s_map, &bs->obb);
     }
 
     struct entity *progress = G_EntityForUID(bs->progress_model);
@@ -349,15 +350,12 @@ bool G_Building_Mark(const struct entity *ent)
     return true;
 }
 
-bool G_Building_Found(struct entity *ent)
+bool G_Building_Found(struct entity *ent, bool blocking)
 {
     struct buildstate *bs = buildstate_get(ent->uid);
     assert(bs);
 
     if(bs->state != BUILDING_STATE_MARKED)
-        return false;
-
-    if(!G_Building_Unobstructed(ent))
         return false;
 
     struct obb obb;
@@ -386,7 +384,11 @@ bool G_Building_Found(struct entity *ent)
     building_place_markers(bs, ent);
     bs->state = BUILDING_STATE_FOUNDED;
 
-    M_NavBlockersIncrefOBB(s_map, &obb);
+    bs->blocking = blocking;
+    if(bs->blocking) {
+        M_NavBlockersIncrefOBB(s_map, &obb);
+        bs->obb = obb;
+    }
     return true;
 }
 
@@ -426,7 +428,7 @@ bool G_Building_Unobstructed(const struct entity *ent)
     return M_NavObjectBuildable(s_map, &obb);
 }
 
-bool G_Building_IsFounded(struct entity *ent)
+bool G_Building_IsFounded(const struct entity *ent)
 {
     struct buildstate *bs = buildstate_get(ent->uid);
     assert(bs);
@@ -479,6 +481,23 @@ void G_Building_UpdateProgress(struct entity *ent, float frac_done)
     bs->frac_done = frac_done;
 }
 
+void G_Building_UpdateBounds(const struct entity *ent)
+{
+    struct buildstate *bs = buildstate_get(ent->uid);
+    if(!bs)
+        return;
+
+    if(!G_Building_IsFounded(ent))
+        return;
+
+    if(!bs->blocking)
+        return;
+
+    M_NavBlockersDecrefOBB(s_map, &bs->obb);
+    Entity_CurrentOBB(ent, &bs->obb, true);
+    M_NavBlockersIncrefOBB(s_map, &bs->obb);
+}
+
 bool G_Building_SaveState(struct SDL_RWops *stream)
 {
     struct attr num_buildings = (struct attr){
@@ -524,6 +543,14 @@ bool G_Building_SaveState(struct SDL_RWops *stream)
             .val.as_float = curr.vision_range
         };
         CHK_TRUE_RET(Attr_Write(stream, &building_vis_range, "building_vis_range"));
+
+        struct attr building_blocking = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.blocking
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &building_vis_range, "building_blocking"));
+
+        CHK_TRUE_RET(AL_SaveOBB(stream, &curr.obb));
     });
 
     return true;
@@ -559,6 +586,10 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_FLOAT);
         float vis_range = attr.val.as_float;
 
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        bool blocking = attr.val.as_bool;
+
         struct entity *ent = G_EntityForUID(uid);
         CHK_TRUE_RET(ent);
         CHK_TRUE_RET(ent->flags & ENTITY_FLAG_BUILDING);
@@ -566,6 +597,8 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         struct buildstate *bs = buildstate_get(ent->uid);
         assert(bs);
         bs->vision_range = vis_range;
+
+        CHK_TRUE_RET(AL_LoadOBB(stream, &bs->obb));
 
         switch(state) {
         case BUILDING_STATE_PLACEMENT:
@@ -575,12 +608,12 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
             break;
         case BUILDING_STATE_FOUNDED:
             G_Building_Mark(ent);
-            G_Building_Found(ent);
+            G_Building_Found(ent, blocking);
             G_Building_UpdateProgress(ent, frac_done);
             break;
         case BUILDING_STATE_COMPLETED:
             G_Building_Mark(ent);
-            G_Building_Found(ent);
+            G_Building_Found(ent, blocking);
             G_Building_UpdateProgress(ent, frac_done);
             G_Building_Complete(ent);
             break;

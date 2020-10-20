@@ -1288,6 +1288,7 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
 
         G_Move_AddEntity(ent);
     }
+
     return true;
 }
 

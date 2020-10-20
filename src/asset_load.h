@@ -55,6 +55,7 @@
 struct entity;
 struct map;
 struct aabb;
+struct obb;
 
 struct pfobj_hdr{
     float    version; 
@@ -88,5 +89,8 @@ size_t         AL_MapShallowCopySize(SDL_RWops *stream);
 
 bool           AL_ReadLine(SDL_RWops *stream, char *outbuff);
 bool           AL_ParseAABB(SDL_RWops *stream, struct aabb *out);
+
+bool           AL_SaveOBB(SDL_RWops *stream, const struct obb *obb);
+bool           AL_LoadOBB(SDL_RWops *stream, struct obb *out);
 
 #endif

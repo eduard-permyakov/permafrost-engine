@@ -47,8 +47,8 @@ void G_Building_Shutdown(void);
 
 void G_Building_AddEntity(struct entity *ent);
 void G_Building_RemoveEntity(const struct entity *ent);
-bool G_Building_IsFounded(struct entity *ent);
 void G_Building_UpdateProgress(struct entity *ent, float frac_done);
+void G_Building_UpdateBounds(const struct entity *ent);
 
 bool G_Building_SaveState(struct SDL_RWops *stream);
 bool G_Building_LoadState(struct SDL_RWops *stream);

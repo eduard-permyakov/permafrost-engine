@@ -35,6 +35,7 @@
 
 #include "game_private.h"
 #include "movement.h"
+#include "building.h"
 #include "fog_of_war.h"
 #include "public/game.h"
 #include "../main.h"
@@ -113,6 +114,7 @@ bool G_Pos_Set(const struct entity *ent, vec3_t pos)
     assert(kh_size(s_postable) == s_postree.nrecs);
 
     G_Move_UpdatePos(ent, (vec2_t){pos.x, pos.z});
+    G_Building_UpdateBounds(ent);
     G_Fog_AddVision((vec2_t){pos.x, pos.z}, ent->faction_id, ent->vision_range);
     return true; 
 }

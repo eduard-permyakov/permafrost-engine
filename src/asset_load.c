@@ -40,6 +40,7 @@
 #include "render/public/render_al.h"
 #include "anim/public/anim.h"
 #include "game/public/game.h"
+#include "lib/public/attr.h"
 #include "map/public/map.h"
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
@@ -52,6 +53,12 @@
 #include <string.h>
 #include <stdlib.h> 
 
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 struct shared_resource{
     uint32_t     ent_flags;
@@ -431,5 +438,113 @@ void AL_Shutdown(void)
         free(curr.anim_private);
     });
     kh_destroy(entity_res, s_name_resource_table);
+}
+
+bool AL_SaveOBB(SDL_RWops *stream, const struct obb *obb)
+{
+    struct attr curr;
+
+    curr = (struct attr){.type = TYPE_VEC3, .val.as_vec3 = obb->center };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_center"));
+
+    curr = (struct attr){.type = TYPE_VEC3, .val.as_vec3 = obb->axes[0] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_x_axis"));
+    curr = (struct attr){.type = TYPE_VEC3, .val.as_vec3 = obb->axes[1] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_y_axis"));
+    curr = (struct attr){.type = TYPE_VEC3, .val.as_vec3 = obb->axes[2] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_z_axis"));
+
+    curr = (struct attr){.type = TYPE_FLOAT, .val.as_float = obb->half_lengths[0] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_x_half_len"));
+    curr = (struct attr){.type = TYPE_FLOAT, .val.as_float = obb->half_lengths[1] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_y_half_len"));
+    curr = (struct attr){.type = TYPE_FLOAT, .val.as_float = obb->half_lengths[2] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_z_half_len"));
+
+    curr = (struct attr){.type = TYPE_VEC3, .val.as_vec3 = obb->corners[0] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_0_corner"));
+    curr = (struct attr){.type = TYPE_VEC3, .val.as_vec3 = obb->corners[1] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_1_corner"));
+    curr = (struct attr){.type = TYPE_VEC3, .val.as_vec3 = obb->corners[2] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_2_corner"));
+    curr = (struct attr){.type = TYPE_VEC3, .val.as_vec3 = obb->corners[3] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_3_corner"));
+    curr = (struct attr){.type = TYPE_VEC3, .val.as_vec3 = obb->corners[4] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_4_corner"));
+    curr = (struct attr){.type = TYPE_VEC3, .val.as_vec3 = obb->corners[5] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_5_corner"));
+    curr = (struct attr){.type = TYPE_VEC3, .val.as_vec3 = obb->corners[6] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_6_corner"));
+    curr = (struct attr){.type = TYPE_VEC3, .val.as_vec3 = obb->corners[7] };
+    CHK_TRUE_RET(Attr_Write(stream, &curr, "obb_7_corner"));
+
+    return true;
+}
+
+bool AL_LoadOBB(SDL_RWops *stream, struct obb *out)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    out->center = attr.val.as_vec3;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    out->axes[0] = attr.val.as_vec3;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    out->axes[1] = attr.val.as_vec3;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    out->axes[2] = attr.val.as_vec3;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+    out->half_lengths[0] = attr.val.as_float;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+    out->half_lengths[1] = attr.val.as_float;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+    out->half_lengths[2] = attr.val.as_float;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    out->corners[0] = attr.val.as_vec3;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    out->corners[1] = attr.val.as_vec3;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    out->corners[2] = attr.val.as_vec3;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    out->corners[3] = attr.val.as_vec3;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    out->corners[4] = attr.val.as_vec3;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    out->corners[5] = attr.val.as_vec3;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    out->corners[6] = attr.val.as_vec3;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    out->corners[7] = attr.val.as_vec3;
+
+    return true;
 }
 
