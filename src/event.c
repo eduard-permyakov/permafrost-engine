@@ -169,9 +169,9 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
     return true;
 }
 
-static void e_handle_event(struct event event)
+static void e_handle_event(struct event event, bool immediate)
 {
-    Sched_HandleEvent(event.type, event.arg, event.source);
+    Sched_HandleEvent(event.type, event.arg, event.source, immediate);
 
     uint64_t key = e_key(event.receiver_id, event.type);
     enum simstate ss = G_GetSimState();
@@ -281,17 +281,17 @@ void E_ServiceQueue(void)
     queue_event_t *queue = &s_event_queues[s_front_queue_idx];
     s_front_queue_idx = (s_front_queue_idx + 1) % 2;
 
-    e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID} );
+    e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID}, false);
 
     struct event event;
     while(queue_event_pop(queue, &event)) {
     
-        e_handle_event(event);
+        e_handle_event(event, false);
         /* event arg already released */
     }
 
-    e_handle_event( (struct event){EVENT_UPDATE_UI,  NULL, ES_ENGINE, GLOBAL_ID} );
-    e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID} );
+    e_handle_event( (struct event){EVENT_UPDATE_UI,  NULL, ES_ENGINE, GLOBAL_ID}, false);
+    e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID}, false);
 
     PERF_RETURN_VOID();
 }
@@ -427,7 +427,7 @@ bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler)
 void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_source source)
 {
     struct event e = (struct event){event, event_arg, source, GLOBAL_ID};
-    e_handle_event(e);
+    e_handle_event(e, true);
 }
 
 /*

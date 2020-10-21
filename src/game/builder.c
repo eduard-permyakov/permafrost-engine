@@ -248,6 +248,7 @@ static void on_mousedown(void *user, void *event)
 
     enum selection_type sel_type;
     const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+    size_t nbuilding = 0;
 
     for(int i = 0; i < vec_size(sel); i++) {
 
@@ -260,6 +261,11 @@ static void on_mousedown(void *user, void *event)
 
         finish_building(bs, curr->uid);
         G_Builder_Build(curr, target);
+        nbuilding++;
+    }
+
+    if(nbuilding) {
+        Entity_Ping(target);
     }
 }
 

@@ -38,6 +38,7 @@
 #include "game_private.h"
 #include "public/game.h"
 #include "../event.h"
+#include "../entity.h"
 #include "../cursor.h"
 #include "../lib/public/mpool.h"
 #include "../lib/public/khash.h"
@@ -268,7 +269,7 @@ static void finish_harvesting(struct hstate *hs, uint32_t uid)
 
     hs->state = STATE_NOT_HARVESTING;
     hs->target_uid = UID_NONE;
-    E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
+    E_Entity_Notify(EVENT_HARVEST_END, uid, NULL, ES_ENGINE);
 }
 
 static void on_motion_end(void *user, void *event)
@@ -335,6 +336,7 @@ static void on_mousedown(void *user, void *event)
 
     enum selection_type sel_type;
     const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+    size_t ngather = 0;
 
     for(int i = 0; i < vec_size(sel); i++) {
 
@@ -347,6 +349,11 @@ static void on_mousedown(void *user, void *event)
 
         finish_harvesting(hs, curr->uid);
         G_Harvester_Gather(curr, target);
+        ngather++;
+    }
+
+    if(ngather) {
+        Entity_Ping(target);
     }
 }
 

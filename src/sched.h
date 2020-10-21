@@ -95,7 +95,7 @@ bool     Sched_FutureIsReady(const struct future *future);
 
 bool     Sched_Init(void);
 void     Sched_Shutdown(void);
-void     Sched_HandleEvent(int event, void *arg, int event_source);
+void     Sched_HandleEvent(int event, void *arg, int event_source, bool immediate);
 void     Sched_StartBackgroundTasks(void);
 void     Sched_Tick(void);
 uint32_t Sched_Create(int prio, task_func_t code, void *arg, struct future *result, int flags);

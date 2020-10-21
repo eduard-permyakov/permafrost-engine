@@ -34,6 +34,11 @@
  */
 
 #include "entity.h" 
+#include "sched.h"
+#include "task.h"
+#include "event.h"
+#include "render/public/render.h"
+#include "render/public/render_ctrl.h"
 #include "game/public/game.h"
 #include "anim/public/anim.h"
 
@@ -47,6 +52,51 @@
 /*****************************************************************************/
 
 static uint32_t s_next_uid = 0;
+
+/*****************************************************************************/
+/* STATIC FUNCTIONS                                                          */
+/*****************************************************************************/
+
+static struct result ping_task(void *arg)
+{
+    struct entity *ent = arg;
+
+    /* Cache all the params */
+    vec2_t pos = G_Pos_GetXZ(ent->uid);
+    float radius = ent->selection_radius;
+    const float width = 0.4f;
+    vec3_t color = (vec3_t){1.0f, 1.0f, 0.0f};
+
+    uint32_t elapsed = 0;
+    uint32_t start = SDL_GetTicks();
+    int source;
+
+    while(elapsed < 1200) {
+        Task_AwaitEvent(EVENT_RENDER_3D_POST, &source);
+
+        uint32_t curr = SDL_GetTicks();
+        elapsed = curr - start;
+
+        if((elapsed / 400) == 1)
+            continue;
+
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawSelectionCircle,
+            .nargs = 5,
+            .args = {
+                R_PushArg(&pos, sizeof(pos)),
+                R_PushArg(&radius, sizeof(radius)),
+                R_PushArg(&width, sizeof(width)),
+                R_PushArg(&color, sizeof(color)),
+                (void*)G_GetPrevTickMap(),
+            },
+        });
+    }
+
+    /* Ensure render thread is no longer touching our stack */
+    Task_AwaitEvent(EVENT_UPDATE_START, &source);
+    return NULL_RESULT;
+}
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -172,5 +222,11 @@ void Entity_FaceTowards(struct entity *ent, vec2_t point)
     quat_t rot;
     PFM_Quat_FromRotMat(&rotmat, &rot);
     ent->rotation = rot;
+}
+
+void Entity_Ping(const struct entity *ent)
+{
+    uint32_t tid = Sched_Create(1, ping_task, (void*)ent, NULL, TASK_MAIN_THREAD_PINNED);
+    Sched_RunSync(tid);
 }
 

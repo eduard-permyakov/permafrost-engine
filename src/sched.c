@@ -1113,10 +1113,13 @@ void Sched_Shutdown(void)
     }
 }
 
-void Sched_HandleEvent(int event, void *arg, int event_source)
+void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
 {
     ASSERT_IN_MAIN_THREAD();
     SDL_LockMutex(s_request_lock);
+
+    queue_tid_t torun;
+    queue_tid_init(&torun, 32);
 
     khiter_t k = kh_get(tqueue, s_event_queues, event);
     if(k == kh_end(s_event_queues))
@@ -1148,12 +1151,28 @@ void Sched_HandleEvent(int event, void *arg, int event_source)
         }
 
         task->retval = (uint64_t)arg;
-        sched_reactivate(task);
+
+        if(immediate) {
+            queue_tid_push(&torun, &tid);
+        }else{
+            sched_reactivate(task);
+        }
+    }
+
+    while(queue_size(torun) > 0) {
+
+        uint32_t tid;
+        queue_tid_pop(&torun, &tid);
+
+        struct task *task = &s_tasks[tid - 1];
+        sched_task_run(task);
+        sched_task_service_request(task);
     }
 
 out:
+    queue_tid_destroy(&torun);
     SDL_UnlockMutex(s_request_lock);
-}
+}    
 
 void Sched_StartBackgroundTasks(void)
 {
