@@ -128,6 +128,8 @@ Follow the development of Permafrost Engine and EVERGLORY on YouTube: [Channel L
 
 [Indie RTS Devlog #9: Base Building](https://www.youtube.com/watch?v=U3lvwZfXss0)
 
+[Indie RTS Devlog #10: Demo Gameplay](https://www.youtube.com/watch?v=Nh8FBpvbKUc)
+
 ## Comments/Questions ##
 
 Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
