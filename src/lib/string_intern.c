@@ -89,6 +89,7 @@ const char *si_intern(const char *str, mp_strbuff_t *pool, khash_t(stridx) *inde
         return NULL;
     }
     assert(status == 1);
+    kh_value(index, k) = ref;
 
     if(strlen(str) > sizeof(strbuff_t)-1) {
         kh_del(stridx, index, k);

@@ -46,12 +46,5 @@ void G_StorageSite_Shutdown(void);
 bool G_StorageSite_AddEntity(uint32_t uid);
 void G_StorageSite_RemoveEntity(uint32_t uid);
 
-bool G_StorageSite_SetCapacity(uint32_t uid, const char *rname, int max);
-int  G_StorageSite_GetCapacity(uint32_t uid, const char *rname);
-bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr);
-int  G_StorageSite_GetCurr(uint32_t uid, const char *rname);
-
-int  G_StorageSite_GetTotal(const char *rname);
-
 #endif
 

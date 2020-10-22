@@ -250,6 +250,9 @@ static void on_mousedown(void *user, void *event)
     const vec_pentity_t *sel = G_Sel_Get(&sel_type);
     size_t nbuilding = 0;
 
+    if(sel_type != SELECTION_TYPE_PLAYER)
+        return;
+
     for(int i = 0; i < vec_size(sel); i++) {
 
         struct entity *curr = vec_AT(sel, i);

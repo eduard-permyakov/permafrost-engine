@@ -114,6 +114,8 @@ static void *pcalloc(size_t n, size_t size)
 
 static void *prealloc(void *ptr, size_t size)
 {
+    if(!ptr)
+        return pmalloc(size);
     if(size <= sizeof(buff_t))
         return ptr;
     return NULL;
@@ -282,7 +284,8 @@ bool G_StorageSite_AddEntity(uint32_t uid)
 void G_StorageSite_RemoveEntity(uint32_t uid)
 {
     struct ss_state *ss = ss_state_get(uid);
-    assert(ss);
+    if(!ss)
+        return;
     ss_state_destroy(ss);
     ss_state_remove(uid);
 }

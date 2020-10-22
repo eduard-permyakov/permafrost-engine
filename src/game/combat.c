@@ -187,41 +187,31 @@ static float ents_distance(const struct entity *a, const struct entity *b)
     return PFM_Vec2_Len(&dist) - a->selection_radius - b->selection_radius;
 }
 
+static bool valid_enemy(const struct entity *curr, void *arg)
+{
+    const struct entity *ent = arg;
+
+    if(curr == ent)
+        return false;
+    if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
+        return false;
+    if((curr->flags & ENTITY_FLAG_BUILDING) && !G_Building_IsFounded(curr))
+        return false;
+    if(!enemies(ent, curr))
+        return false;
+
+    struct combatstate *cs = combatstate_get(curr->uid);
+    assert(cs);
+    if(cs->state == STATE_DEATH_ANIM_PLAYING)
+        return false;
+
+    return true;
+}
+
 static struct entity *closest_enemy_in_range(const struct entity *ent)
 {
-    float min_dist = FLT_MAX;
-    struct entity *ret = NULL;
-
-    struct entity *near_ents[128];
-    int num_near = G_Pos_EntsInCircle(G_Pos_GetXZ(ent->uid), 
-        ENEMY_TARGET_ACQUISITION_RANGE, near_ents, ARR_SIZE(near_ents));
-
-    for(int i = 0; i < num_near; i++) {
-
-        struct entity *curr = near_ents[i];
-        if(curr == ent)
-            continue;
-        if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
-            continue;
-        if(curr->flags & ENTITY_FLAG_ZOMBIE)
-            continue;
-        if((curr->flags & ENTITY_FLAG_BUILDING) && !G_Building_IsFounded(curr))
-            continue;
-        if(!enemies(ent, curr))
-            continue;
-
-        struct combatstate *cs = combatstate_get(curr->uid);
-        assert(cs);
-        if(cs->state == STATE_DEATH_ANIM_PLAYING)
-            continue;
-   
-        float dist = ents_distance(ent, curr);
-        if(dist < min_dist) {
-            min_dist = dist; 
-            ret = curr;
-        }
-    }
-    return ret;
+    vec2_t pos = G_Pos_GetXZ(ent->uid);
+    return G_Pos_NearestWithPred(pos, valid_enemy, (void*)ent, ENEMY_TARGET_ACQUISITION_RANGE);
 }
 
 static quat_t quat_from_vec(vec2_t dir)

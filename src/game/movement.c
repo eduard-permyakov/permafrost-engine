@@ -167,10 +167,11 @@ static bool                    s_last_cmd_dest_valid = false;
 static dest_id_t               s_last_cmd_dest;
 
 static const char *s_state_str[] = {
-    [STATE_MOVING]       = STR(STATE_MOVING),
-    [STATE_ARRIVED]      = STR(STATE_ARRIVED),
-    [STATE_SEEK_ENEMIES] = STR(STATE_SEEK_ENEMIES),
-    [STATE_WAITING]      = STR(STATE_WAITING),
+    [STATE_MOVING]          = STR(STATE_MOVING),
+    [STATE_ARRIVED]         = STR(STATE_ARRIVED),
+    [STATE_SEEK_ENEMIES]    = STR(STATE_SEEK_ENEMIES),
+    [STATE_WAITING]         = STR(STATE_WAITING),
+    [STATE_SURROUND_ENTITY] = STR(STATE_SURROUND_ENTITY),
 };
 
 /*****************************************************************************/
@@ -599,6 +600,10 @@ static void on_render_3d(void *user, void *event)
             case STATE_SEEK_ENEMIES:
                 M_NavRenderVisibleEnemySeekField(s_map, cam, ent->faction_id);
                 break;
+            case STATE_SURROUND_ENTITY:
+                assert(flock);
+                M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
+                break;
             default: assert(0);
             }
         }
@@ -1003,16 +1008,17 @@ static vec2_t vel_wma(const struct movestate *ms)
 
 static bool adjacent_check_fast(const struct entity *a, const struct entity *b)
 {
+    struct obb obb_a, obb_b;
+    Entity_CurrentOBB(a, &obb_a, false);
+    Entity_CurrentOBB(b, &obb_b, false);
+
     vec2_t apos = G_Pos_GetXZ(a->uid);
     vec2_t bpos = G_Pos_GetXZ(b->uid);
-
-    if(!(a->flags & ENTITY_FLAG_SELECTABLE)
-    || !(b->flags & ENTITY_FLAG_SELECTABLE))
-        return true;
+    float len = obb_a.half_lengths[1] + obb_b.half_lengths[1];
 
     vec2_t diff;
     PFM_Vec2_Sub(&apos, &bpos, &diff);
-    return (PFM_Vec2_Len(&diff) < a->selection_radius + b->selection_radius + 12.0f);
+    return (PFM_Vec2_Len(&diff) < len + 15.0f);
 }
 
 static void entity_update(struct entity *ent, vec2_t new_vel)
@@ -1406,6 +1412,16 @@ bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz)
     if(!fl)
         return false;
     *out_xz = fl->target_xz;
+    return true;
+}
+
+bool G_Move_GetSurrounding(const struct entity *ent, uint32_t *out_uid)
+{
+    struct movestate *ms = movestate_get(ent);
+    assert(ms);
+    if(ms->state != STATE_SURROUND_ENTITY)
+        return false;
+    *out_uid = ms->surround_target_uid;
     return true;
 }
 

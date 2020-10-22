@@ -129,6 +129,7 @@ void   G_BakeNavDataForScene(void);
 bool   G_AddEntity(struct entity *ent, vec3_t pos);
 bool   G_RemoveEntity(struct entity *ent);
 void   G_StopEntity(const struct entity *ent);
+void   G_UpdateBounds(const struct entity *ent);
 
 /* Wrapper around AL_EntityFree to defer the call until the render thread 
  * (which owns some part of entity resources) finishes its' work. */
@@ -239,7 +240,8 @@ int    G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **
 
 struct entity *G_Pos_Nearest(vec2_t xz_point);
 struct entity *G_Pos_NearestWithPred(vec2_t xz_point, 
-                                     bool (*predicate)(const struct entity *ent, void *arg), void *arg);
+                                     bool (*predicate)(const struct entity *ent, void *arg), 
+                                     void *arg, float max_range);
 
 /*###########################################################################*/
 /* GAME FOG-OF-WAR                                                           */
@@ -297,6 +299,17 @@ bool G_Harvester_SetMaxCarry(uint32_t uid, const char *rname, int max);
 int  G_Harvester_GetMaxCarry(uint32_t uid, const char *rname);
 bool G_Harvester_SetCurrCarry(uint32_t uid, const char *rname, int curr);
 int  G_Harvester_GetCurrCarry(uint32_t uid, const char *rname);
+int  G_Harvester_GetCurrTotalCarry(uint32_t uid);
+
+/*###########################################################################*/
+/* GAME STORAGE SITE                                                         */
+/*###########################################################################*/
+
+bool G_StorageSite_SetCapacity(uint32_t uid, const char *rname, int max);
+int  G_StorageSite_GetCapacity(uint32_t uid, const char *rname);
+bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr);
+int  G_StorageSite_GetCurr(uint32_t uid, const char *rname);
+int  G_StorageSite_GetTotal(const char *rname);
 
 #endif
 

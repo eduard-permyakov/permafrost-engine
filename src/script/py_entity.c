@@ -51,6 +51,12 @@
 #define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
+KHASH_MAP_INIT_INT(PyObject, PyObject*)
+
+/*****************************************************************************/
+/* pf.Entity                                                                 */
+/*****************************************************************************/
+
 typedef struct {
     PyObject_HEAD
     struct entity *ent;
@@ -89,81 +95,6 @@ static PyObject *PyEntity_face_towards(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_set_model(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
-
-typedef struct {
-    PyEntityObject super; 
-}PyAnimEntityObject;
-
-static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
-static PyObject *PyAnimEntity_del(PyAnimEntityObject *self);
-static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
-static PyObject *PyAnimEntity_get_anim(PyAnimEntityObject *self);
-static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self, PyObject *args, PyObject *kwargs);
-static PyObject *PyAnimEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
-
-typedef struct {
-    PyEntityObject super; 
-}PyCombatableEntityObject;
-
-static int       PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds);
-static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self);
-static PyObject *PyCombatableEntity_get_hp(PyCombatableEntityObject *self, void *closure);
-static int       PyCombatableEntity_set_hp(PyCombatableEntityObject *self, PyObject *value, void *closure);
-static PyObject *PyCombatableEntity_get_max_hp(PyCombatableEntityObject *self, void *closure);
-static int       PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObject *value, void *closure);
-static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self, void *closure);
-static int       PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObject *value, void *closure);
-static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *self, void *closure);
-static int       PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure);
-static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self);
-static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObject *args);
-static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObject *args, PyObject *kwargs);
-static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
-
-typedef struct {
-    PyEntityObject super; 
-}PyBuildableEntityObject;
-
-static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self);
-static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self);
-static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
-static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self);
-static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self);
-static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure);
-static int       PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *value, void *closure);
-static PyObject *PyBuildableEntity_get_vision_range(PyBuildableEntityObject *self, void *closure);
-static int       PyBuildableEntity_set_vision_range(PyBuildableEntityObject *self, PyObject *value, void *closure);
-static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
-static PyObject *PyBuildableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
-
-typedef struct {
-    PyEntityObject super; 
-}PyBuilderEntityObject;
-
-static PyObject *PyBuilderEntity_del(PyBuilderEntityObject *self);
-static int       PyBuilderEntity_init(PyBuilderEntityObject *self, PyObject *args, PyObject *kwds);
-static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args);
-static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs);
-static PyObject *PyBuilderEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
-
-typedef struct {
-    PyEntityObject super;
-}PyResourceEntityObject;
-
-static PyObject *PyResourceEntity_del(PyResourceEntityObject *self);
-static int       PyResourceEntity_init(PyResourceEntityObject *self, PyObject *args, PyObject *kwds);
-
-typedef struct {
-    PyEntityObject super;
-}PyHarvesterEntityObject;
-
-static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self);
-
-/*****************************************************************************/
-/* STATIC VARIABLES                                                          */
-/*****************************************************************************/
-
-/* pf.Entity */
 
 static PyMethodDef PyEntity_methods[] = {
     {"__del__", 
@@ -305,7 +236,20 @@ static PyTypeObject PyEntity_type = {
     PyEntity_new,              /* tp_new */
 };
 
-/* pf.AnimEntity */
+/*****************************************************************************/
+/* pf.AnimEntity                                                             */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super; 
+}PyAnimEntityObject;
+
+static int       PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
+static PyObject *PyAnimEntity_del(PyAnimEntityObject *self);
+static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args, PyObject *kwds);
+static PyObject *PyAnimEntity_get_anim(PyAnimEntityObject *self);
+static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyAnimEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static PyMethodDef PyAnimEntity_methods[] = {
     {"play_anim", 
@@ -345,8 +289,29 @@ static PyTypeObject PyAnimEntity_type = {
     .tp_base      = &PyEntity_type,
     .tp_init      = (initproc)PyAnimEntity_init,
 };
+ 
+/*****************************************************************************/
+/* pf.CombatableEntity                                                       */
+/*****************************************************************************/
 
-/* pf.CombatableEntity */
+typedef struct {
+    PyEntityObject super; 
+}PyCombatableEntityObject;
+
+static int       PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds);
+static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self);
+static PyObject *PyCombatableEntity_get_hp(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_hp(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_get_max_hp(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self);
+static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObject *args);
+static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static PyMethodDef PyCombatableEntity_methods[] = {
     {"hold_position", 
@@ -408,7 +373,25 @@ static PyTypeObject PyCombatableEntity_type = {
     .tp_init      = (initproc)PyCombatableEntity_init,
 };
 
-/* pf.BuildableEntity */
+/*****************************************************************************/
+/* pf.BuildableEntity                                                        */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super; 
+}PyBuildableEntityObject;
+
+static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self);
+static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self);
+static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self);
+static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self);
+static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure);
+static int       PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyBuildableEntity_get_vision_range(PyBuildableEntityObject *self, void *closure);
+static int       PyBuildableEntity_set_vision_range(PyBuildableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyBuildableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static PyMethodDef PyBuildableEntity_methods[] = {
     {"mark", 
@@ -474,7 +457,19 @@ static PyTypeObject PyBuildableEntity_type = {
     .tp_getset    = PyBuildableEntity_getset,
 };
 
-/* pf.BuilderEntity */
+/*****************************************************************************/
+/* pf.BuilderEntity                                                          */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super; 
+}PyBuilderEntityObject;
+
+static PyObject *PyBuilderEntity_del(PyBuilderEntityObject *self);
+static int       PyBuilderEntity_init(PyBuilderEntityObject *self, PyObject *args, PyObject *kwds);
+static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args);
+static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyBuilderEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static PyMethodDef PyBuilderEntity_methods[] = {
     {"build", 
@@ -510,13 +505,33 @@ static PyTypeObject PyBuilderEntity_type = {
     .tp_init      = (initproc)PyBuilderEntity_init,
 };
 
-/* pf.ResourceEntity */
+/*****************************************************************************/
+/* pf.ResourceEntity                                                         */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super;
+}PyResourceEntityObject;
+
+static PyObject *PyResourceEntity_del(PyResourceEntityObject *self);
+static int       PyResourceEntity_init(PyResourceEntityObject *self, PyObject *args, PyObject *kwds);
+static PyObject *PyResourceEntity_pickle(PyResourceEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyResourceEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static PyMethodDef PyResourceEntity_methods[] = {
 
     {"__del__", 
     (PyCFunction)PyResourceEntity_del, METH_NOARGS,
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {"__pickle__", 
+    (PyCFunction)PyResourceEntity_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine combatable entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyResourceEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.ResourceEntity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
 
     {NULL}  /* Sentinel */
 };
@@ -533,7 +548,20 @@ static PyTypeObject PyResourceEntity_type = {
     .tp_init      = (initproc)PyResourceEntity_init,
 };
 
-/* pf.HarvesterEntity */
+/*****************************************************************************/
+/* pf.HarvesterEntity                                                        */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super;
+}PyHarvesterEntityObject;
+
+static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self);
+static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_pickle(PyHarvesterEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyHarvesterEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+static PyObject *PyHarvesterEntity_get_total_carry(PyHarvesterEntityObject *self, void *closure);
 
 static PyMethodDef PyHarvesterEntity_methods[] = {
 
@@ -541,6 +569,31 @@ static PyMethodDef PyHarvesterEntity_methods[] = {
     (PyCFunction)PyHarvesterEntity_del, METH_NOARGS,
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
+    {"set_max_carry", 
+    (PyCFunction)PyHarvesterEntity_set_max_carry, METH_VARARGS,
+    "Set how much of the specified resource the entity is able to carry at a time."},
+
+    {"set_gather_speed", 
+    (PyCFunction)PyHarvesterEntity_set_gather_speed, METH_VARARGS,
+    "Set how much of the specified resource the entity gathers in a single animation."},
+
+    {"__pickle__", 
+    (PyCFunction)PyHarvesterEntity_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine combatable entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyHarvesterEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.HarvesterEntity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyGetSetDef PyHarvesterEntity_getset[] = {
+    {"total_carry",
+    (getter)PyHarvesterEntity_get_total_carry, NULL,
+    "Get the total amount of resources currently carried by the entity.",
+    NULL},
     {NULL}  /* Sentinel */
 };
 
@@ -553,9 +606,100 @@ static PyTypeObject PyHarvesterEntity_type = {
                     "entity is able to gather and transport resources (from pf.ResourceEntity types).",
     .tp_methods   = PyHarvesterEntity_methods,
     .tp_base      = &PyEntity_type,
+    .tp_getset    = PyHarvesterEntity_getset,
 };
 
-KHASH_MAP_INIT_INT(PyObject, PyObject*)
+/*****************************************************************************/
+/* pf.StorageSiteEntity                                                      */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super;
+}PyStorageSiteEntityObject;
+
+static PyObject *PyStorageSiteEntity_del(PyStorageSiteEntityObject *self);
+static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_pickle(PyStorageSiteEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyStorageSiteEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+static PyMethodDef PyStorageSiteEntity_methods[] = {
+
+    {"__del__", 
+    (PyCFunction)PyStorageSiteEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {"set_capacity", 
+    (PyCFunction)PyStorageSiteEntity_set_capacity, METH_VARARGS,
+    "Sets the maximum amount of the specified resource that can be stored in the storage site."},
+
+    {"__pickle__", 
+    (PyCFunction)PyStorageSiteEntity_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine combatable entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyStorageSiteEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.StorageSiteEntity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyStorageSiteEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.StorageSiteEntity",
+    .tp_basicsize = sizeof(PyStorageSiteEntityObject), 
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine storage site entity. This is a subclass of pf.Entity. This kind of "
+                    "entity is able to hold resources that can be dropped off by pf.HarvesterEntity types.",
+    .tp_methods   = PyStorageSiteEntity_methods,
+    .tp_base      = &PyEntity_type,
+};
+
+/*****************************************************************************/
+/* pf.MovableEntity                                                          */
+/*****************************************************************************/
+
+typedef struct {
+    PyEntityObject super; 
+}PyMovableEntityObject;
+
+static PyObject *PyMovableEntity_del(PyMovableEntityObject *self);
+static PyObject *PyMovableEntity_pickle(PyMovableEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyMovableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+static PyMethodDef PyMovableEntity_methods[] = {
+
+    {"__del__", 
+    (PyCFunction)PyMovableEntity_del, METH_NOARGS,
+    "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {"__pickle__", 
+    (PyCFunction)PyMovableEntity_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine combatable entity to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyMovableEntity_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.MovableEntity instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyMovableEntity_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "pf.MovableEntity",
+    .tp_basicsize = sizeof(PyMovableEntityObject), 
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "Permafrost Engine movable entity. This is a subclass of pf.Entity. This kind of "
+                    "entity is able to receive move orders and travel around the map.",
+    .tp_methods   = PyMovableEntity_methods,
+    .tp_base      = &PyEntity_type,
+};
+
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
 static khash_t(PyObject) *s_uid_pyobj_table;
 static PyObject          *s_loaded;
 
@@ -654,7 +798,7 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     struct entity *ent = AL_EntityFromPFObj(dirpath, filename, name, uid);
     if(!ent) {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to initialize pf.Entity from the given arguments.");
+        PyErr_SetString(PyExc_RuntimeError, "Unable to load specified pf.Entity PFOBJ model.");
         return NULL;
     }
 
@@ -688,6 +832,12 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
     if(PyType_IsSubtype(type, &PyHarvesterEntity_type))
         extra_flags |= ENTITY_FLAG_HARVESTER;
+
+    if(PyType_IsSubtype(type, &PyStorageSiteEntity_type))
+        extra_flags |= ENTITY_FLAG_STORAGE_SITE;
+
+    if(PyType_IsSubtype(type, &PyMovableEntity_type))
+        extra_flags |= ENTITY_FLAG_MOVABLE;
 
     self->ent->flags |= extra_flags;
     G_AddEntity(self->ent, (vec3_t){0.0f, 0.0f, 0.0f});
@@ -776,6 +926,7 @@ static int PyEntity_set_scale(PyEntityObject *self, PyObject *value, void *closu
         &self->ent->scale.raw[0], &self->ent->scale.raw[1], &self->ent->scale.raw[2]))
         return -1;
 
+    G_UpdateBounds(self->ent);
     return 0;
 }
 
@@ -797,6 +948,7 @@ static int PyEntity_set_rotation(PyEntityObject *self, PyObject *value, void *cl
         &self->ent->rotation.raw[2], &self->ent->rotation.raw[3]))
         return -1;
 
+    G_UpdateBounds(self->ent);
     return 0;
 }
 
@@ -1941,9 +2093,124 @@ static int PyResourceEntity_init(PyResourceEntityObject *self, PyObject *args, P
     return 0;
 }
 
+static PyObject *PyResourceEntity_pickle(PyResourceEntityObject *self, PyObject *args, PyObject *kwargs)
+{
+    //TODO
+    return NULL;
+}
+
+static PyObject *PyResourceEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    //TODO
+    return NULL;
+}
+
 static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self)
 {
     return s_super_del((PyObject*)self, &PyHarvesterEntity_type);
+}
+
+static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, PyObject *args)
+{
+    const char *name;
+    int amount;
+
+    if(!PyArg_ParseTuple(args, "si", &name, &amount)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and amount (integer).");
+        return NULL;
+    }
+
+    if(!G_Harvester_SetMaxCarry(self->super.ent->uid, name, amount)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to set the max carry amount.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *self, PyObject *args)
+{
+    const char *name;
+    int amount;
+
+    if(!PyArg_ParseTuple(args, "si", &name, &amount)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and amount (integer).");
+        return NULL;
+    }
+
+    if(!G_Harvester_SetGatherSpeed(self->super.ent->uid, name, amount)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to set the gathering speed.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyHarvesterEntity_pickle(PyHarvesterEntityObject *self, PyObject *args, PyObject *kwargs)
+{
+    //TODO
+    return NULL;
+}
+
+static PyObject *PyHarvesterEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    //TODO
+    return NULL;
+}
+
+static PyObject *PyHarvesterEntity_get_total_carry(PyHarvesterEntityObject *self, void *closure)
+{
+    int total = G_Harvester_GetCurrTotalCarry(self->super.ent->uid);
+    return PyInt_FromLong(total);
+}
+
+static PyObject *PyStorageSiteEntity_del(PyStorageSiteEntityObject *self)
+{
+    return s_super_del((PyObject*)self, &PyStorageSiteEntity_type);
+}
+
+static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    const char *name;
+    int amount;
+
+    if(!PyArg_ParseTuple(args, "si", &name, &amount)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and amount (integer).");
+        return NULL;
+    }
+
+    if(!G_StorageSite_SetCapacity(self->super.ent->uid, name, amount)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to set the resource capacity.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_pickle(PyStorageSiteEntityObject *self, PyObject *args, PyObject *kwargs)
+{
+    //TODO
+    return NULL;
+}
+
+static PyObject *PyStorageSiteEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    //TODO
+    return NULL;
+}
+
+static PyObject *PyMovableEntity_del(PyMovableEntityObject *self)
+{
+    return s_super_del((PyObject*)self, &PyStorageSiteEntity_type);
+}
+
+static PyObject *PyMovableEntity_pickle(PyMovableEntityObject *self, PyObject *args, PyObject *kwargs)
+{
+    //TODO
+    return NULL;
+}
+
+static PyObject *PyMovableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    //TODO
+    return NULL;
 }
 
 static PyObject *s_obj_from_attr(const struct attr *attr)
@@ -2054,9 +2321,15 @@ static PyObject *s_new_custom_class(const char *name, const vec_attr_t *construc
         }
     }
     Py_DECREF(modules);
-    if(!class)
+    if(!class) {
+        char buff[256];
+        pf_snprintf(buff, sizeof(buff), "Unable to find class %s", name);
+        PyErr_SetString(PyExc_RuntimeError, buff);
         return NULL;
+    }
     if(!PyType_Check(class)) {
+        char buff[256];
+        pf_snprintf(buff, sizeof(buff), "%s is not a 'type' instance", name);
         Py_DECREF(class);
         return NULL;
     }
@@ -2101,39 +2374,49 @@ fail_args:
 void S_Entity_PyRegister(PyObject *module)
 {
     if(PyType_Ready(&PyEntity_type) < 0)
-        return;
+        Py_FatalError("Can't initialize pf.Entity type");
     Py_INCREF(&PyEntity_type);
     PyModule_AddObject(module, "Entity", (PyObject*)&PyEntity_type);
 
     if(PyType_Ready(&PyAnimEntity_type) < 0)
-        return;
+        Py_FatalError("Can't initialize pf.AnimEntity type");
     Py_INCREF(&PyAnimEntity_type);
     PyModule_AddObject(module, "AnimEntity", (PyObject*)&PyAnimEntity_type);
 
     if(PyType_Ready(&PyCombatableEntity_type) < 0)
-        return;
+        Py_FatalError("Can't initialize pf.CombatableEntity type");
     Py_INCREF(&PyCombatableEntity_type);
     PyModule_AddObject(module, "CombatableEntity", (PyObject*)&PyCombatableEntity_type);
 
     if(PyType_Ready(&PyBuildableEntity_type) < 0)
-        return;
+        Py_FatalError("Can't initialize pf.BuildableEntity type");
     Py_INCREF(&PyBuildableEntity_type);
     PyModule_AddObject(module, "BuildableEntity", (PyObject*)&PyBuildableEntity_type);
 
     if(PyType_Ready(&PyBuilderEntity_type) < 0)
-        return;
+        Py_FatalError("Can't initialize pf.BuilderEntity type");
     Py_INCREF(&PyBuilderEntity_type);
     PyModule_AddObject(module, "BuilderEntity", (PyObject*)&PyBuilderEntity_type);
 
     if(PyType_Ready(&PyResourceEntity_type) < 0)
-        return;
+        Py_FatalError("Can't initialize pf.ResourceEntity type");
     Py_INCREF(&PyResourceEntity_type);
     PyModule_AddObject(module, "ResourceEntity", (PyObject*)&PyResourceEntity_type);
 
     if(PyType_Ready(&PyHarvesterEntity_type) < 0)
-        return;
+        Py_FatalError("Can't initialize pf.HarvesterEntity type");
     Py_INCREF(&PyHarvesterEntity_type);
     PyModule_AddObject(module, "HarvesterEntity", (PyObject*)&PyHarvesterEntity_type);
+
+    if(PyType_Ready(&PyStorageSiteEntity_type) < 0)
+        Py_FatalError("Can't initialize pf.StorageSiteEntity type");
+    Py_INCREF(&PyStorageSiteEntity_type);
+    PyModule_AddObject(module, "StorageSiteEntity", (PyObject*)&PyStorageSiteEntity_type);
+
+    if(PyType_Ready(&PyMovableEntity_type) < 0)
+        Py_FatalError("Can't initialize pf.MovableEntity type");
+    Py_INCREF(&PyMovableEntity_type);
+    PyModule_AddObject(module, "MovableEntity", (PyObject*)&PyMovableEntity_type);
 }
 
 bool S_Entity_Init(void)
@@ -2184,11 +2467,18 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
 
         const char *cls = kh_value(attr_table, k).val.as_string;
         ret = s_new_custom_class(cls, construct_args, extra_flags);
+
+        if(PyErr_Occurred()) {
+            PyThreadState *tstate = PyThreadState_GET();
+            PyObject *repr = PyObject_Repr(tstate->curexc_value);
+            printf("[IMPORT] Unable to make %s instance: %s\n", cls, PyString_AS_STRING(repr));
+            Py_DECREF(repr);
+            PyErr_Clear();
+        }
     }
 
     /* If we could not make a custom class, fall back to instantiating a basic entity */
     if(!ret) {
-        PyErr_Clear();
         ret = s_entity_from_atts(path, name, attr_table, extra_flags); 
     }
 

@@ -39,10 +39,14 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-bool G_Resource_Init(void);
+struct map;
+struct entity;
+
+bool G_Resource_Init(const struct map *map);
 void G_Resource_Shutdown(void);
-bool G_Resource_AddEntity(uint32_t uid);
+bool G_Resource_AddEntity(const struct entity *ent);
 void G_Resource_RemoveEntity(uint32_t uid);
+void G_Resource_UpdateBounds(const struct entity *ent);
 
 #endif
 

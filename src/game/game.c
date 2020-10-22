@@ -142,6 +142,7 @@ static void g_init_map(void)
     G_Combat_Init();
     G_Building_Init(s_gs.map);
     G_Builder_Init(s_gs.map);
+    G_Resource_Init(s_gs.map);
     G_Harvester_Init(s_gs.map);
     G_ClearPath_Init(s_gs.map);
     G_Pos_Init(s_gs.map);
@@ -638,6 +639,7 @@ static void g_clear_map_state(void)
         G_Combat_Shutdown();
         G_Building_Shutdown();
         G_Builder_Shutdown();
+        G_Resource_Shutdown();
         G_Harvester_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
@@ -692,7 +694,6 @@ bool G_Init(void)
     G_Sel_Enable();
     G_Timer_Init();
     G_StorageSite_Init();
-    G_Resource_Init();
 
     R_PushCmd((struct rcmd){ R_GL_WaterInit, 0 });
 
@@ -1054,6 +1055,8 @@ void G_BakeNavDataForScene(void)
             continue;
         if(curr->flags & ENTITY_FLAG_BUILDING)
             continue;
+        if(curr->flags & ENTITY_FLAG_RESOURCE)
+            continue;
 
         struct obb obb;
         Entity_CurrentOBB(curr, &obb, false);
@@ -1088,7 +1091,6 @@ void G_Shutdown(void)
 
     R_PushCmd((struct rcmd){ R_GL_WaterShutdown, 0 });
 
-    G_Resource_Shutdown();
     G_StorageSite_Shutdown();
     G_Timer_Shutdown();
     G_Sel_Shutdown();
@@ -1275,10 +1277,13 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
         G_Combat_AddEntity(ent, COMBAT_STANCE_AGGRESSIVE);
 
     if(ent->flags & ENTITY_FLAG_RESOURCE)
-        G_Resource_AddEntity(ent->uid);
+        G_Resource_AddEntity(ent);
 
     if(ent->flags & ENTITY_FLAG_HARVESTER)
         G_Harvester_AddEntity(ent->uid);
+
+    if(ent->flags & ENTITY_FLAG_STORAGE_SITE)
+        G_StorageSite_AddEntity(ent->uid);
 
     if(ent->flags & ENTITY_FLAG_MOVABLE) {
     
@@ -1312,6 +1317,9 @@ bool G_RemoveEntity(struct entity *ent)
     G_Combat_RemoveEntity(ent);
     G_Building_RemoveEntity(ent);
     G_Builder_RemoveEntity(ent);
+    G_Harvester_RemoveEntity(ent->uid);
+    G_Resource_RemoveEntity(ent->uid);
+    G_StorageSite_RemoveEntity(ent->uid);
     G_Pos_Delete(ent->uid);
     return true;
 }
@@ -1615,6 +1623,10 @@ void G_Zombiefy(struct entity *ent)
     G_Move_RemoveEntity(ent);
     G_Combat_RemoveEntity(ent);
     G_Building_RemoveEntity(ent);
+    G_Builder_RemoveEntity(ent);
+    G_Harvester_RemoveEntity(ent->uid);
+    G_Resource_RemoveEntity(ent->uid);
+    G_StorageSite_RemoveEntity(ent->uid);
 
     vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
     G_Fog_RemoveVision(xz_pos, ent->faction_id, ent->vision_range);
@@ -1625,6 +1637,10 @@ void G_Zombiefy(struct entity *ent)
     ent->flags &= ~ENTITY_FLAG_COMBATABLE;
     ent->flags &= ~ENTITY_FLAG_BUILDING;
     ent->flags &= ~ENTITY_FLAG_MOVABLE;
+    ent->flags &= ~ENTITY_FLAG_BUILDER;
+    ent->flags &= ~ENTITY_FLAG_HARVESTER;
+    ent->flags &= ~ENTITY_FLAG_RESOURCE;
+    ent->flags &= ~ENTITY_FLAG_STORAGE_SITE;
 
     ent->flags |= ENTITY_FLAG_INVISIBLE;
     ent->flags |= ENTITY_FLAG_ZOMBIE;
@@ -1710,6 +1726,14 @@ void G_SetHideHealthbars(bool on)
     ASSERT_IN_MAIN_THREAD();
 
     s_gs.hide_healthbars = on;
+}
+
+void G_UpdateBounds(const struct entity *ent)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    G_Building_UpdateBounds(ent);
+    G_Resource_UpdateBounds(ent);
 }
 
 bool G_SaveGlobalState(SDL_RWops *stream)

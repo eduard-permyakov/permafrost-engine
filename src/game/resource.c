@@ -34,12 +34,17 @@
  */
 
 #include "resource.h"
+#include "game_private.h"
+#include "../entity.h"
+#include "../collision.h"
+#include "../map/public/map.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/string_intern.h"
 
 struct rstate{
     const char *name;
     int         amount;
+    struct obb  blocking;
 };
 
 KHASH_MAP_INIT_INT(state, struct rstate)
@@ -48,9 +53,10 @@ KHASH_MAP_INIT_INT(state, struct rstate)
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static khash_t(stridx) *s_stridx;
-static mp_strbuff_t     s_stringpool;
-static khash_t(state)  *s_entity_state_table;
+static khash_t(stridx)  *s_stridx;
+static mp_strbuff_t      s_stringpool;
+static khash_t(state)   *s_entity_state_table;
+static const struct map *s_map;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -86,13 +92,14 @@ static void rstate_remove(uint32_t uid)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool G_Resource_Init(void)
+bool G_Resource_Init(const struct map *map)
 {
     if(!(s_entity_state_table = kh_init(state)))
         goto fail_table;
     if(!si_init(&s_stringpool, &s_stridx, 512))
         goto fail_strintern;
 
+    s_map = map;
     return true;
 
 fail_strintern:
@@ -107,20 +114,41 @@ void G_Resource_Shutdown(void)
     kh_destroy(state, s_entity_state_table);
 }
 
-bool G_Resource_AddEntity(uint32_t uid)
+bool G_Resource_AddEntity(const struct entity *ent)
 {
     struct rstate rs = (struct rstate) {
         .name = "",
         .amount = 0
     };
-    if(!rstate_set(uid, rs))
+
+    Entity_CurrentOBB(ent, &rs.blocking, true);
+    M_NavBlockersIncrefOBB(s_map, &rs.blocking);
+
+    if(!rstate_set(ent->uid, rs))
         return false;
+
     return true;
 }
 
 void G_Resource_RemoveEntity(uint32_t uid)
 {
+    struct rstate *rs = rstate_get(uid);
+    if(!rs)
+        return;
+
+    M_NavBlockersDecrefOBB(s_map, &rs->blocking);
     rstate_remove(uid);
+}
+
+void G_Resource_UpdateBounds(const struct entity *ent)
+{
+    struct rstate *rs = rstate_get(ent->uid);
+    if(!rs)
+        return;
+
+    M_NavBlockersDecrefOBB(s_map, &rs->blocking);
+    Entity_CurrentOBB(ent, &rs->blocking, true);
+    M_NavBlockersIncrefOBB(s_map, &rs->blocking);
 }
 
 int G_Resource_GetAmount(uint32_t uid)

@@ -36,6 +36,7 @@
 #include "game_private.h"
 #include "movement.h"
 #include "building.h"
+#include "resource.h"
 #include "fog_of_war.h"
 #include "public/game.h"
 #include "../main.h"
@@ -58,7 +59,8 @@ KHASH_MAP_INIT_INT(pos, vec3_t)
 
 #define POSBUF_INIT_SIZE (16384)
 #define MAX_SEARCH_ENTS  (8192)
-#define MAX(a, b)        ((a) < (b) ? (a) : (b))
+#define MAX(a, b)        ((a) > (b) ? (a) : (b))
+#define MIN(a, b)        ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)      (sizeof(a)/sizeof(a[0]))
 
 /*****************************************************************************/
@@ -115,7 +117,9 @@ bool G_Pos_Set(const struct entity *ent, vec3_t pos)
 
     G_Move_UpdatePos(ent, (vec2_t){pos.x, pos.z});
     G_Building_UpdateBounds(ent);
+    G_Resource_UpdateBounds(ent);
     G_Fog_AddVision((vec2_t){pos.x, pos.z}, ent->faction_id, ent->vision_range);
+
     return true; 
 }
 
@@ -265,7 +269,7 @@ int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **out
 
 struct entity *G_Pos_NearestWithPred(vec2_t xz_point, 
                                      bool (*predicate)(const struct entity *ent, void *arg), 
-                                     void *arg)
+                                     void *arg, float max_range)
 {
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
@@ -276,7 +280,12 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
     const float qt_len = MAX(s_postree.xmax - s_postree.xmin, s_postree.ymax - s_postree.ymin);
     float len = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / 8.0f;
 
-    while(len < qt_len) {
+    if(max_range == 0.0) {
+        max_range = qt_len;
+    }
+    max_range = MIN(qt_len, max_range);
+
+    while(len <= max_range) {
         float min_dist = FLT_MAX;
         struct entity *ret = NULL;
 
@@ -310,6 +319,6 @@ struct entity *G_Pos_Nearest(vec2_t xz_point)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    return G_Pos_NearestWithPred(xz_point, any_ent, NULL);
+    return G_Pos_NearestWithPred(xz_point, any_ent, NULL, 0.0);
 }
 

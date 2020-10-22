@@ -2086,7 +2086,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map
             map_pos.z + (chunk.r + 0.5f) * Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT,
         };
         struct entity *nearest_enemy = G_Pos_NearestWithPred(chunk_center, enemy_ent, 
-                                                             (void*)(uintptr_t)target.enemies.faction_id);
+                                                             (void*)(uintptr_t)target.enemies.faction_id, 0.0f);
         if(!nearest_enemy)
             return (vec2_t){0.0f, 0.0f};
 
@@ -2547,8 +2547,7 @@ bool N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, const struct entit
         size_t brow = tds_ent[j].chunk_r * FIELD_RES_R + tds_ent[j].tile_r;
         size_t bcol = tds_ent[j].chunk_c * FIELD_RES_C + tds_ent[j].tile_c;
 
-        size_t manhattan_dist = abs(arow - brow) + abs(bcol - acol);
-        if(manhattan_dist <= 1)
+        if(abs(brow - arow) <= 1 && abs(bcol - acol) <= 1)
             return true;
     }}
     return false;

@@ -41,6 +41,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 /* Hold on to objects by their handles. Unlike pointers, they don't need to be */
 /* invalidated when a realloc takes place. */
@@ -174,9 +175,10 @@ typedef uint16_t mp_ref_t;
                                                                                                 \
     scope mp_ref_t mp_##name##_ref(mp(name) *mp, void *mem)                                     \
     {                                                                                           \
-        ptrdiff_t diff = (uintptr_t)mem - sizeof(mp_ref_t) - (uintptr_t)mp->pool;               \
-        assert(diff % sizeof(mp->pool[0].entry) == 0);                                          \
-        return diff / sizeof(mp->pool[0].entry);                                                \
+        ptrdiff_t diff = (uintptr_t)mem                                                         \
+            - offsetof(mp_##name##_node_t, entry) - (uintptr_t)mp->pool;                        \
+        assert(diff % sizeof(mp->pool[0]) == 0);                                                \
+        return diff / sizeof(mp->pool[0]);                                                      \
     }                                                                                           \
 
 #endif
