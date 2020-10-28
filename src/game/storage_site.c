@@ -34,6 +34,11 @@
  */
 
 #include "storage_site.h"
+#include "game_private.h"
+#include "../ui.h"
+#include "../event.h"
+#include "../lib/public/pf_nuklear.h"
+#include "../lib/public/pf_string.h"
 #include "../lib/public/mpool.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/string_intern.h"
@@ -54,6 +59,10 @@ static void  pfree(void *ptr);
 #define kcalloc  pcalloc
 #define krealloc prealloc
 #define kfree    pfree
+
+#define ARR_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+#define MAX(a, b)   ((a) > (b) ? (a) : (b))
+#define MIN(a, b)   ((a) < (b) ? (a) : (b))
 
 KHASH_MAP_INIT_STR(int, int)
 
@@ -169,6 +178,31 @@ static bool ss_state_init(struct ss_state *hs)
     return true;
 }
 
+static int compare_keys(const void *a, const void *b)
+{
+    char *stra = *(char**)a;
+    char *strb = *(char**)b;
+    return strcmp(stra, strb);
+}
+
+static size_t ss_get_keys(struct ss_state *hs, const char **out, size_t maxout)
+{
+    size_t ret = 0;
+
+    const char *key;
+    int amount;
+    (void)amount;
+
+    kh_foreach(hs->capacity, key, amount, {
+        if(ret == maxout)
+            break;
+        out[ret++] = key;
+    });
+
+    qsort(out, ret, sizeof(char*), compare_keys);
+    return ret;
+}
+
 static void ss_state_destroy(struct ss_state *hs)
 {
     kh_destroy(int, hs->capacity);
@@ -234,6 +268,60 @@ static bool update_res_delta(const char *rname, int delta)
     return true;
 }
 
+static void on_update_ui(void *user, void *event)
+{
+    uint32_t key;
+    struct ss_state curr;
+
+    kh_foreach(s_entity_state_table, key, curr, {
+
+        char name[256];
+        pf_snprintf(name, sizeof(name), "__storage_site__.%x", key);
+
+        const struct entity *ent = G_EntityForUID(key);
+        vec2_t ss_pos = Entity_TopScreenPos(ent);
+
+        const int width = 160;
+        const int height = MIN(kh_size(curr.capacity), 16) * 22;
+        const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + 20};
+        const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BORDER | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
+
+        const vec2_t vres = (vec2_t){1920, 1080};
+        const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
+
+        struct rect adj_bounds = UI_BoundsForAspectRatio(
+            (struct rect){pos.x, pos.y, width, height}, 
+            vres, adj_vres, ANCHOR_DEFAULT
+        );
+
+        const char *names[16];
+        size_t nnames = ss_get_keys(&curr, names, ARR_SIZE(names));
+        struct nk_context *ctx = UI_GetContext();
+
+        if(nk_begin_with_vres(ctx, name, 
+            (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h}, 
+            flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
+
+            for(int i = 0; i < nnames; i++) {
+
+                char status[256];
+                pf_snprintf(status, sizeof(status), "%4d/%4d", 
+                    G_StorageSite_GetCurr(key, names[i]), G_StorageSite_GetCapacity(key, names[i]));
+
+                nk_layout_row_begin(ctx, NK_DYNAMIC, 16, 2);
+                nk_layout_row_push(ctx, 0.5f);
+                nk_label_colored(ctx, names[i], NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
+                    (struct nk_color){255, 0, 0, 255});
+                nk_layout_row_push(ctx, 0.5f);
+                nk_label_colored(ctx, status, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
+                    (struct nk_color){255, 0, 0, 255});
+                nk_layout_row_end(ctx);
+            }
+        }
+        nk_end(ctx);
+    });
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -251,6 +339,7 @@ bool G_StorageSite_Init(void)
     if(!si_init(&s_stringpool, &s_stridx, 512))
         goto fail_strintern;
 
+    E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     return true;
 
 fail_strintern:
@@ -265,6 +354,8 @@ fail_mpool:
 
 void G_StorageSite_Shutdown(void)
 {
+    E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
+
     si_shutdown(&s_stringpool, s_stridx);
     kh_destroy(res, s_global_resource_table);
     kh_destroy(state, s_entity_state_table);

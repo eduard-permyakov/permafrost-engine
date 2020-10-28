@@ -122,5 +122,6 @@ void     Entity_CurrentOBB(const struct entity *ent, struct obb *out, bool ident
 vec3_t   Entity_TopCenterPointWS(const struct entity *ent);
 void     Entity_FaceTowards(struct entity *ent, vec2_t point);
 void     Entity_Ping(const struct entity *ent);
+vec2_t   Entity_TopScreenPos(const struct entity *ent);
 
 #endif

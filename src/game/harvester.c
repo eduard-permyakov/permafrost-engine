@@ -529,7 +529,7 @@ static void on_arrive_at_storage(void *user, void *event)
 
     if(left >= carry) {
         G_Harvester_SetCurrCarry(uid, hs->res_name, 0);
-        G_StorageSite_SetCurr(target->uid, hs->res_name, left - carry);
+        G_StorageSite_SetCurr(target->uid, hs->res_name, curr + carry);
 
         struct entity *resource = target_resource(hs);
         if(resource) {
