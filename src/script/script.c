@@ -2190,6 +2190,10 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_SESSION_POPPED:
         return s_wrap_argv(arg);
 
+    case EVENT_STORAGE_SITE_AMOUNT_CHANGED: {
+        struct ss_delta_event *event = arg;
+        return Py_BuildValue("si", event->name, event->delta);
+    }
     default:
         Py_RETURN_NONE;
     }

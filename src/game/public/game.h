@@ -305,6 +305,11 @@ int  G_Harvester_GetCurrTotalCarry(uint32_t uid);
 /* GAME STORAGE SITE                                                         */
 /*###########################################################################*/
 
+struct ss_delta_event{
+    const char *name;
+    int delta;
+};
+
 bool G_StorageSite_SetCapacity(uint32_t uid, const char *rname, int max);
 int  G_StorageSite_GetCapacity(uint32_t uid, const char *rname);
 bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr);

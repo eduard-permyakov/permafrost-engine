@@ -67,8 +67,9 @@ static void  pfree(void *ptr);
 KHASH_MAP_INIT_STR(int, int)
 
 struct ss_state{
-    kh_int_t *capacity;
-    kh_int_t *curr;
+    kh_int_t              *capacity;
+    kh_int_t              *curr;
+    struct ss_delta_event  last_change;
 };
 
 typedef char buff_t[512];
@@ -175,6 +176,7 @@ static bool ss_state_init(struct ss_state *hs)
         kh_destroy(int, hs->curr);
         return false;
     }
+    hs->last_change = (struct ss_delta_event){0};
     return true;
 }
 
@@ -334,6 +336,8 @@ bool G_StorageSite_Init(void)
         goto fail_mpool; 
     if(!(s_entity_state_table = kh_init(state)))
         goto fail_table;
+    if(0 != kh_resize(state, s_entity_state_table, 4096))
+        goto fail_res;
     if(!(s_global_resource_table = kh_init(res)))
         goto fail_res;
     if(!si_init(&s_stringpool, &s_stridx, 512))
@@ -407,6 +411,14 @@ bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr)
     ss_state_get_key(ss->curr, rname, &prev);
     int delta = curr - prev;
     update_res_delta(rname, delta);
+
+    if(delta) {
+        ss->last_change = (struct ss_delta_event){
+            .name = si_intern(rname, &s_stringpool, s_stridx),
+            .delta = delta
+        };
+        E_Entity_Notify(EVENT_STORAGE_SITE_AMOUNT_CHANGED, uid, &ss->last_change, ES_ENGINE);
+    }
 
     return ss_state_set_key(ss->curr, rname, curr);
 }

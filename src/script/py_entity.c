@@ -78,6 +78,7 @@ static int       PyEntity_set_selectable(PyEntityObject *self, PyObject *value, 
 static PyObject *PyEntity_get_selection_radius(PyEntityObject *self, void *closure);
 static int       PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_top_screen_pos(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_speed(PyEntityObject *self, void *closure);
 static int       PyEntity_set_speed(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_faction_id(PyEntityObject *self, void *closure);
@@ -90,9 +91,9 @@ static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_select(PyEntityObject *self);
 static PyObject *PyEntity_deselect(PyEntityObject *self);
 static PyObject *PyEntity_stop(PyEntityObject *self);
-static PyObject *PyEntity_move(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_face_towards(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_set_model(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_ping(PyEntityObject *self);
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -127,10 +128,6 @@ static PyMethodDef PyEntity_methods[] = {
     (PyCFunction)PyEntity_stop, METH_NOARGS,
     "Issues a 'stop' command to the entity, stopping its' movement and attack. Cancels 'hold position' order."},
 
-    {"move", 
-    (PyCFunction)PyEntity_move, METH_VARARGS,
-    "Issues a 'move' order to the entity at the XZ position specified by the argument."},
-
     {"face_towards", 
     (PyCFunction)PyEntity_face_towards, METH_VARARGS,
     "Make the entity face towards the specified point."},
@@ -138,6 +135,10 @@ static PyMethodDef PyEntity_methods[] = {
     {"set_model", 
     (PyCFunction)PyEntity_set_model, METH_VARARGS,
     "Replace the current entity's current model and animation data with the specified PFOBJ data."},
+
+    {"ping", 
+    (PyCFunction)PyEntity_ping, METH_NOARGS,
+    "Temporarily blink the enitity's selection circle."},
 
     {"__pickle__", 
     (PyCFunction)PyEntity_pickle, METH_KEYWORDS,
@@ -179,6 +180,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"pfobj_path",
     (getter)PyEntity_get_pfobj_path, NULL,
     "The relative path of the PFOBJ file used to instantiate the entity. Readonly.",
+    NULL},
+    {"top_screen_pos",
+    (getter)PyEntity_get_top_screen_pos, NULL,
+    "Get the location of the top center point of the entity, in screenspace coordinates.",
     NULL},
     {"speed",
     (getter)PyEntity_get_speed, (setter)PyEntity_set_speed,
@@ -663,11 +668,16 @@ typedef struct {
     PyEntityObject super; 
 }PyMovableEntityObject;
 
+static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *args);
 static PyObject *PyMovableEntity_del(PyMovableEntityObject *self);
 static PyObject *PyMovableEntity_pickle(PyMovableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyMovableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 static PyMethodDef PyMovableEntity_methods[] = {
+
+    {"move", 
+    (PyCFunction)PyMovableEntity_move, METH_VARARGS,
+    "Issues a 'move' order to the entity at the XZ position specified by the argument."},
 
     {"__del__", 
     (PyCFunction)PyMovableEntity_del, METH_NOARGS,
@@ -1002,6 +1012,12 @@ static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure)
     return PyString_FromString(buff); 
 }
 
+static PyObject *PyEntity_get_top_screen_pos(PyEntityObject *self, void *closure)
+{
+    vec2_t coord = Entity_TopScreenPos(self->ent);
+    return Py_BuildValue("ii", (int)coord.x, (int)coord.y);
+}
+
 static PyObject *PyEntity_get_speed(PyEntityObject *self, void *closure)
 {
     return PyFloat_FromDouble(self->ent->max_speed);
@@ -1139,24 +1155,6 @@ static PyObject *PyEntity_stop(PyEntityObject *self)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyEntity_move(PyEntityObject *self, PyObject *args)
-{
-    vec2_t xz_pos;
-
-    if(!PyArg_ParseTuple(args, "(ff)", &xz_pos.x, &xz_pos.z)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 2 floats.");
-        return NULL;
-    }
-
-    if(!G_PointInsideMap(xz_pos)) {
-        PyErr_SetString(PyExc_RuntimeError, "The movement point must be within the map bounds.");
-        return NULL;
-    }
-
-    G_Move_SetDest(self->ent, xz_pos);
-    Py_RETURN_NONE;
-}
-
 static PyObject *PyEntity_face_towards(PyEntityObject *self, PyObject *args)
 {
     vec3_t pos;
@@ -1186,6 +1184,12 @@ static PyObject *PyEntity_set_model(PyEntityObject *self, PyObject *args)
         PyErr_SetString(PyExc_RuntimeError, "Could not set the model to the specified PFOBJ file.");
         return NULL;
     }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_ping(PyEntityObject *self)
+{
+    Entity_Ping(self->ent);
     Py_RETURN_NONE;
 }
 
@@ -2195,6 +2199,25 @@ static PyObject *PyStorageSiteEntity_unpickle(PyObject *cls, PyObject *args, PyO
     //TODO
     return NULL;
 }
+
+static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *args)
+{
+    vec2_t xz_pos;
+
+    if(!PyArg_ParseTuple(args, "(ff)", &xz_pos.x, &xz_pos.z)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 2 floats.");
+        return NULL;
+    }
+
+    if(!G_PointInsideMap(xz_pos)) {
+        PyErr_SetString(PyExc_RuntimeError, "The movement point must be within the map bounds.");
+        return NULL;
+    }
+
+    G_Move_SetDest(self->super.ent, xz_pos);
+    Py_RETURN_NONE;
+}
+
 
 static PyObject *PyMovableEntity_del(PyMovableEntityObject *self)
 {
