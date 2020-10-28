@@ -1332,7 +1332,13 @@ void G_StopEntity(const struct entity *ent)
         G_Combat_StopAttack(ent);
         G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
     }
-    G_Move_Stop(ent);
+    if(ent->flags & ENTITY_FLAG_HARVESTER) {
+        G_Harvester_Stop(ent->uid);
+    }
+    if(ent->flags & ENTITY_FLAG_MOVABLE) {
+        G_Move_Stop(ent);
+    }
+
     E_Entity_Notify(EVENT_ENTITY_STOP, ent->uid, NULL, ES_ENGINE);
 }
 

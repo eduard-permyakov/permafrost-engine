@@ -323,6 +323,8 @@ static void entity_drop_off(const struct entity *ent, struct entity *ss)
 
     E_Entity_Register(EVENT_MOTION_END, ent->uid, on_arrive_at_storage, 
         (void*)((uintptr_t)ent->uid), G_RUNNING);
+    E_Entity_Register(EVENT_MOVE_ISSUED, ent->uid, on_motion_begin_travel, 
+        (void*)((uintptr_t)ent->uid), G_RUNNING);
 
     E_Entity_Notify(EVENT_STORAGE_TARGET_ACQUIRED, ent->uid, ss, ES_ENGINE);
     G_Move_SetSurroundEntity(ent, ss);
@@ -394,28 +396,28 @@ static void on_harvest_anim_finished(void *user, void *event)
     int resource_left = G_Resource_GetAmount(target->uid);
 
     int gather_speed = G_Harvester_GetGatherSpeed(uid, rname);
-    int curr_carry = G_Harvester_GetCurrCarry(uid, rname);
+    int old_carry = G_Harvester_GetCurrCarry(uid, rname);
     int max_carry = G_Harvester_GetMaxCarry(uid, rname);
 
-    curr_carry = MIN(max_carry, curr_carry + MIN(gather_speed, resource_left));
-    resource_left = MAX(0, resource_left - gather_speed);
+    int new_carry = MIN(max_carry, old_carry + MIN(gather_speed, resource_left));
+    resource_left = MAX(0, resource_left - (new_carry - old_carry));
 
     G_Resource_SetAmount(target->uid, resource_left);
-    G_Harvester_SetCurrCarry(uid, rname, curr_carry);
+    G_Harvester_SetCurrCarry(uid, rname, new_carry);
 
     if(resource_left == 0) {
 
         E_Entity_Notify(EVENT_RESOURCE_EXHAUSTED, target->uid, NULL, ES_ENGINE);
         G_Zombiefy(target);
 
-        if(curr_carry < max_carry) {
+        if(new_carry < max_carry) {
             entity_try_retarget(ent);
             return;
         }
     }
 
     /* Bring the resource to the nearest storage site, if possible */
-    if(curr_carry == max_carry) {
+    if(new_carry == max_carry) {
 
         E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
         E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin_harvest);
@@ -481,6 +483,13 @@ static void on_arrive_at_resource(void *user, void *event)
         /* harvester could not reach the resource */
         entity_try_gather_nearest(ent, hs->res_name);
         return; 
+    }
+
+    if(G_Harvester_GetCurrCarry(uid, hs->res_name) == G_Harvester_GetMaxCarry(uid, hs->res_name)) {
+
+        /* harvester cannot carry any more of the resource */
+        entity_try_drop_off(ent, hs->res_name);
+        return;
     }
 
     E_Entity_Notify(EVENT_HARVEST_BEGIN, uid, NULL, ES_ENGINE);
@@ -655,6 +664,8 @@ void G_Harvester_RemoveEntity(uint32_t uid)
     struct hstate *hs = hstate_get(uid);
     if(!hs)
         return;
+
+    G_Harvester_Stop(uid);
     hstate_destroy(hs);
     hstate_remove(uid);
 }
@@ -755,6 +766,20 @@ bool G_Harvester_Gather(struct entity *harvester, struct entity *resource)
 
     E_Entity_Notify(EVENT_HARVEST_TARGET_ACQUIRED, harvester->uid, resource, ES_ENGINE);
     return true;
+}
+
+void G_Harvester_Stop(uint32_t uid)
+{
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
+    E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin_harvest);
+    E_Entity_Unregister(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel);
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource);
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_storage);
+
+    hs->state = STATE_NOT_HARVESTING;
 }
 
 bool G_Harvester_InTargetMode(void)

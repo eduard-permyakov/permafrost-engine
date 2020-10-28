@@ -51,6 +51,7 @@ bool G_Harvester_AddEntity(uint32_t uid);
 void G_Harvester_RemoveEntity(uint32_t uid);
 bool G_Harvester_InTargetMode(void);
 bool G_Harvester_HasRightClickAction(void);
+void G_Harvester_Stop(uint32_t uid);
 
 #endif
 
