@@ -562,6 +562,8 @@ typedef struct {
 }PyHarvesterEntityObject;
 
 static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self);
+static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_pickle(PyHarvesterEntityObject *self, PyObject *args, PyObject *kwargs);
@@ -573,6 +575,14 @@ static PyMethodDef PyHarvesterEntity_methods[] = {
     {"__del__", 
     (PyCFunction)PyHarvesterEntity_del, METH_NOARGS,
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
+
+    {"gather", 
+    (PyCFunction)PyHarvesterEntity_gather, METH_VARARGS,
+    "Instruct an entity to harvest a particular resource."},
+
+    {"drop_off", 
+    (PyCFunction)PyHarvesterEntity_drop_off, METH_VARARGS,
+    "Instruct an entity to bring the resources it is currently holding to the specified storage site."},
 
     {"set_max_carry", 
     (PyCFunction)PyHarvesterEntity_set_max_carry, METH_VARARGS,
@@ -2112,6 +2122,40 @@ static PyObject *PyResourceEntity_unpickle(PyObject *cls, PyObject *args, PyObje
 static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self)
 {
     return s_super_del((PyObject*)self, &PyHarvesterEntity_type);
+}
+
+static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObject *args)
+{
+    PyResourceEntityObject *resource;
+
+    if(!PyArg_ParseTuple(args, "O", &resource)
+    || !PyObject_IsInstance((PyObject*)resource, (PyObject*)&PyResourceEntity_type)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.ResourceEntity instance.");
+        return NULL;
+    }
+
+    if(!G_Harvester_Gather(self->super.ent, resource->super.ent)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to gather the specified resource.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObject *args)
+{
+    PyStorageSiteEntityObject *storage;
+
+    if(!PyArg_ParseTuple(args, "O", &storage)
+    || !PyObject_IsInstance((PyObject*)storage, (PyObject*)&PyStorageSiteEntity_type)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.StorageSiteEntity instance.");
+        return NULL;
+    }
+
+    if(!G_Harvester_DropOff(self->super.ent, storage->super.ent)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to drop off resource at the specified storage site.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, PyObject *args)

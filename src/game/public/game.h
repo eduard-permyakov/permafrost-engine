@@ -291,7 +291,9 @@ const char *G_Resource_GetName(uint32_t uid);
 /*###########################################################################*/
 
 void G_Harvester_SetGatherOnLeftClick(void);
+void G_Harvester_SetDropOffOnLeftClick(void);
 bool G_Harvester_Gather(struct entity *harvester, struct entity *resource);
+bool G_Harvester_DropOff(struct entity *harvester, struct entity *storage);
 
 bool G_Harvester_SetGatherSpeed(uint32_t uid, const char *rname, int speed);
 int  G_Harvester_GetGatherSpeed(uint32_t uid, const char *rname);

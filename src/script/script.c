@@ -132,6 +132,7 @@ static PyObject *PyPf_set_move_on_left_click(PyObject *self);
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
 static PyObject *PyPf_set_build_on_left_click(PyObject *self);
 static PyObject *PyPf_set_gather_on_left_click(PyObject *self);
+static PyObject *PyPf_set_drop_off_on_left_click(PyObject *self);
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_settings_get(PyObject *self, PyObject *args);
@@ -403,6 +404,11 @@ static PyMethodDef pf_module_methods[] = {
     {"set_gather_on_left_click",
     (PyCFunction)PyPf_set_gather_on_left_click, METH_NOARGS,
     "Set the cursor to target mode. The next left click will issue a gather command to the resource "
+    "under the cursor."},
+
+    {"set_drop_off_on_left_click",
+    (PyCFunction)PyPf_set_drop_off_on_left_click, METH_NOARGS,
+    "Set the cursor to target mode. The next left click will issue a 'drop off' command to the storage site "
     "under the cursor."},
 
     {"draw_text",
@@ -1398,6 +1404,12 @@ static PyObject *PyPf_set_build_on_left_click(PyObject *self)
 static PyObject *PyPf_set_gather_on_left_click(PyObject *self)
 {
     G_Harvester_SetGatherOnLeftClick();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_drop_off_on_left_click(PyObject *self)
+{
+    G_Harvester_SetDropOffOnLeftClick();
     Py_RETURN_NONE;
 }
 

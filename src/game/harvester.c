@@ -127,6 +127,7 @@ static khash_t(stridx)  *s_stridx;
 static mp_strbuff_t      s_stringpool;
 static khash_t(state)   *s_entity_state_table;
 static bool              s_gather_on_lclick = false;
+static bool              s_drop_off_on_lclick = false;
 static const struct map *s_map;
 
 /*****************************************************************************/
@@ -557,26 +558,8 @@ static void on_arrive_at_storage(void *user, void *event)
     }
 }
 
-static void on_mousedown(void *user, void *event)
+static void selection_order_gather(void)
 {
-    SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
-    bool targeting = G_MouseInTargetMode();
-
-    s_gather_on_lclick = false;
-    Cursor_SetRTSPointer(CURSOR_POINTER);
-
-    if(G_MouseOverMinimap())
-        return;
-
-    if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
-        return;
-
-    if((mouse_event->button == SDL_BUTTON_RIGHT) && targeting)
-        return;
-
-    if((mouse_event->button == SDL_BUTTON_LEFT) && !targeting)
-        return;
-
     struct entity *target = G_Sel_GetHovered();
     if(!target || !(target->flags & ENTITY_FLAG_RESOURCE))
         return;
@@ -610,6 +593,67 @@ static void on_mousedown(void *user, void *event)
     if(ngather) {
         Entity_Ping(target);
     }
+}
+
+static void selection_order_drop_off(void)
+{
+    struct entity *target = G_Sel_GetHovered();
+    if(!target || !(target->flags & ENTITY_FLAG_STORAGE_SITE))
+        return;
+
+    enum selection_type sel_type;
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+    size_t ngather = 0;
+
+    if(sel_type != SELECTION_TYPE_PLAYER)
+        return;
+
+    for(int i = 0; i < vec_size(sel); i++) {
+
+        struct entity *curr = vec_AT(sel, i);
+        if(!(curr->flags & ENTITY_FLAG_HARVESTER))
+            continue;
+
+        struct hstate *hs = hstate_get(curr->uid);
+        assert(hs);
+
+        if(G_Harvester_GetCurrTotalCarry(curr->uid) == 0)
+            continue;
+
+        finish_harvesting(hs, curr->uid);
+        G_Harvester_DropOff(curr, target);
+        ngather++;
+    }
+
+    if(ngather) {
+        Entity_Ping(target);
+    }
+}
+
+static void on_mousedown(void *user, void *event)
+{
+    SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
+    bool targeting = G_MouseInTargetMode();
+
+    s_gather_on_lclick = false;
+    s_drop_off_on_lclick = false;
+
+    Cursor_SetRTSPointer(CURSOR_POINTER);
+
+    if(G_MouseOverMinimap())
+        return;
+
+    if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
+        return;
+
+    if((mouse_event->button == SDL_BUTTON_RIGHT) && targeting)
+        return;
+
+    if((mouse_event->button == SDL_BUTTON_LEFT) && !targeting)
+        return;
+
+    selection_order_gather();
+    selection_order_drop_off();
 }
 
 /*****************************************************************************/
@@ -741,6 +785,14 @@ int G_Harvester_GetCurrTotalCarry(uint32_t uid)
 void G_Harvester_SetGatherOnLeftClick(void)
 {
     s_gather_on_lclick  = true;
+    s_drop_off_on_lclick = false;
+    Cursor_SetRTSPointer(CURSOR_TARGET);
+}
+
+void G_Harvester_SetDropOffOnLeftClick(void)
+{
+    s_gather_on_lclick  = false;
+    s_drop_off_on_lclick = true;
     Cursor_SetRTSPointer(CURSOR_TARGET);
 }
 
@@ -768,6 +820,21 @@ bool G_Harvester_Gather(struct entity *harvester, struct entity *resource)
     return true;
 }
 
+bool G_Harvester_DropOff(struct entity *harvester, struct entity *storage)
+{
+    struct hstate *hs = hstate_get(harvester->uid);
+    assert(hs);
+
+    if(!(storage->flags & ENTITY_FLAG_STORAGE_SITE))
+        return false;
+
+    if(G_Harvester_GetCurrTotalCarry(harvester->uid) == 0)
+        return true;
+
+    entity_drop_off(harvester, storage);
+    return true;
+}
+
 void G_Harvester_Stop(uint32_t uid)
 {
     struct hstate *hs = hstate_get(uid);
@@ -783,7 +850,7 @@ void G_Harvester_Stop(uint32_t uid)
 
 bool G_Harvester_InTargetMode(void)
 {
-    return s_gather_on_lclick;
+    return s_gather_on_lclick || s_drop_off_on_lclick;
 }
 
 bool G_Harvester_HasRightClickAction(void)
