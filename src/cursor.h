@@ -62,13 +62,15 @@ void Cursor_FreeAll(void);
 void Cursor_SetActive(enum cursortype type);
 bool Cursor_LoadBMP(enum cursortype type, const char *path, int hotx, int hoty);
 
-bool Cursor_NamedLoadBMP(const char *name, const char *path, int hotx, int hoty);
-bool Cursor_NamedSetActive(const char *name);
-
 /* When RTS mode is set, an event handler will continuosly update the cursor icon to be
  * the correct scrolling icon for the cursor's current position on the screen 
  * Must be called after Event subsystem is initialized. */
 void Cursor_SetRTSMode(bool on);
 void Cursor_SetRTSPointer(enum cursortype type);
 
+bool Cursor_NamedLoadBMP(const char *name, const char *path, int hotx, int hoty);
+bool Cursor_NamedSetActive(const char *name);
+bool Cursor_NamedSetRTSPointer(const char *name);
+
 #endif
+

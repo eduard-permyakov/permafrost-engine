@@ -498,6 +498,23 @@ void G_Building_UpdateBounds(const struct entity *ent)
     M_NavBlockersIncrefOBB(s_map, &bs->obb);
 }
 
+bool G_Building_NeedsRepair(const struct entity *ent)
+{
+    struct buildstate *bs = buildstate_get(ent->uid);
+    assert(bs);
+
+    if(bs->state < BUILDING_STATE_FOUNDED)
+        return false;
+    if(bs->state < BUILDING_STATE_COMPLETED)
+        return true;
+
+    if(!(ent->flags & ENTITY_FLAG_COMBATABLE) || ent->max_hp == 0)
+        return false;
+
+    int hp = G_Combat_GetCurrentHP(ent);
+    return (hp < ent->max_hp);
+}
+
 bool G_Building_SaveState(struct SDL_RWops *stream)
 {
     struct attr num_buildings = (struct attr){

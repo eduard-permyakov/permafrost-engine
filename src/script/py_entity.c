@@ -522,6 +522,8 @@ static PyObject *PyResourceEntity_del(PyResourceEntityObject *self);
 static int       PyResourceEntity_init(PyResourceEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyResourceEntity_pickle(PyResourceEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyResourceEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+static PyObject *PyResourceEntity_get_cursor(PyResourceEntityObject *self, void *closure);
+static int       PyResourceEntity_set_cursor(PyResourceEntityObject *self, PyObject *value, void *closure);
 
 static PyMethodDef PyResourceEntity_methods[] = {
 
@@ -541,6 +543,14 @@ static PyMethodDef PyResourceEntity_methods[] = {
     {NULL}  /* Sentinel */
 };
 
+static PyGetSetDef PyResourceEntity_getset[] = {
+    {"cursor",
+    (getter)PyResourceEntity_get_cursor, (setter)PyResourceEntity_set_cursor,
+    "The name of the cursor to display as a contextual gather command indicator when hovering over the resource.",
+    NULL},
+    {NULL}  /* Sentinel */
+};
+
 static PyTypeObject PyResourceEntity_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name      = "pf.ResourceEntity",
@@ -550,6 +560,7 @@ static PyTypeObject PyResourceEntity_type = {
                     "requires the 'resource_name' and 'resource_amount' keyword arguments to be passed to '__init__'.",
     .tp_methods   = PyResourceEntity_methods,
     .tp_base      = &PyEntity_type,
+    .tp_getset    = PyResourceEntity_getset,
     .tp_init      = (initproc)PyResourceEntity_init,
 };
 
@@ -2117,6 +2128,23 @@ static PyObject *PyResourceEntity_unpickle(PyObject *cls, PyObject *args, PyObje
 {
     //TODO
     return NULL;
+}
+
+static PyObject *PyResourceEntity_get_cursor(PyResourceEntityObject *self, void *closure)
+{
+    return Py_BuildValue("s", G_Resource_GetCursor(self->super.ent->uid));
+}
+
+static int PyResourceEntity_set_cursor(PyResourceEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyObject_IsInstance(value, (PyObject*)&PyString_Type)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
+        return -1;
+    }
+
+    const char *s = PyString_AsString(value);
+    G_Resource_SetCursor(self->super.ent->uid, s);
+    return 0;
 }
 
 static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self)

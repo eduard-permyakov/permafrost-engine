@@ -50,6 +50,7 @@ void G_Combat_AddEntity(const struct entity *ent, enum combat_stance initial);
 void G_Combat_RemoveEntity(const struct entity *ent);
 void G_Combat_StopAttack(const struct entity *ent);
 void G_Combat_ClearSavedMoveCmd(const struct entity *ent);
+int  G_Combat_CurrContextualAction(void);
 
 bool G_Combat_SaveState(struct SDL_RWops *stream);
 bool G_Combat_LoadState(struct SDL_RWops *stream);

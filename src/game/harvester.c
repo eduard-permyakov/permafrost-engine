@@ -43,6 +43,7 @@
 #include "../cursor.h"
 #include "../lib/public/mpool.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/pf_string.h"
 #include "../lib/public/string_intern.h"
 
 #include <stddef.h>
@@ -558,7 +559,7 @@ static void on_arrive_at_storage(void *user, void *event)
     }
 }
 
-static void selection_order_gather(void)
+static void selection_try_order_gather(void)
 {
     struct entity *target = G_Sel_GetHovered();
     if(!target || !(target->flags & ENTITY_FLAG_RESOURCE))
@@ -595,7 +596,7 @@ static void selection_order_gather(void)
     }
 }
 
-static void selection_order_drop_off(void)
+static void selection_try_order_drop_off(void)
 {
     struct entity *target = G_Sel_GetHovered();
     if(!target || !(target->flags & ENTITY_FLAG_STORAGE_SITE))
@@ -633,12 +634,13 @@ static void selection_order_drop_off(void)
 static void on_mousedown(void *user, void *event)
 {
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
-    bool targeting = G_MouseInTargetMode();
+
+    bool targeting = G_Harvester_InTargetMode();
+    bool right = (mouse_event->button == SDL_BUTTON_RIGHT);
+    bool left = (mouse_event->button == SDL_BUTTON_LEFT);
 
     s_gather_on_lclick = false;
     s_drop_off_on_lclick = false;
-
-    Cursor_SetRTSPointer(CURSOR_POINTER);
 
     if(G_MouseOverMinimap())
         return;
@@ -646,14 +648,18 @@ static void on_mousedown(void *user, void *event)
     if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
         return;
 
-    if((mouse_event->button == SDL_BUTTON_RIGHT) && targeting)
+    if(right && targeting)
         return;
 
-    if((mouse_event->button == SDL_BUTTON_LEFT) && !targeting)
+    if(left && !targeting)
         return;
 
-    selection_order_gather();
-    selection_order_drop_off();
+    int action = G_CurrContextualAction();
+    if(right && (action != CTX_ACTION_GATHER) && (action != CTX_ACTION_DROP_OFF))
+        return;
+
+    selection_try_order_gather();
+    selection_try_order_drop_off();
 }
 
 /*****************************************************************************/
@@ -786,14 +792,12 @@ void G_Harvester_SetGatherOnLeftClick(void)
 {
     s_gather_on_lclick  = true;
     s_drop_off_on_lclick = false;
-    Cursor_SetRTSPointer(CURSOR_TARGET);
 }
 
 void G_Harvester_SetDropOffOnLeftClick(void)
 {
     s_gather_on_lclick  = false;
     s_drop_off_on_lclick = true;
-    Cursor_SetRTSPointer(CURSOR_TARGET);
 }
 
 bool G_Harvester_Gather(struct entity *harvester, struct entity *resource)
@@ -870,5 +874,49 @@ bool G_Harvester_HasRightClickAction(void)
         return true;
 
     return false;
+}
+
+int G_Harvester_CurrContextualAction(void)
+{
+    struct entity *hovered = G_Sel_GetHovered();
+    if(!hovered)
+        return CTX_ACTION_NONE;
+
+    if(G_Harvester_InTargetMode())
+        return CTX_ACTION_NONE;
+
+    enum selection_type sel_type;
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+
+    if(vec_size(sel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
+        return CTX_ACTION_NONE;
+
+    const struct entity *first = vec_AT(sel, 0);
+    if(!(first->flags & ENTITY_FLAG_HARVESTER))
+        return CTX_ACTION_NONE;
+
+    if(hovered->flags & ENTITY_FLAG_RESOURCE
+    && G_Harvester_GetGatherSpeed(first->uid, G_Resource_GetName(hovered->uid)) > 0)
+        return CTX_ACTION_GATHER;
+
+    if(hovered->flags & ENTITY_FLAG_STORAGE_SITE
+    && G_Harvester_GetCurrTotalCarry(first->uid) > 0)
+        return CTX_ACTION_DROP_OFF;
+
+    return CTX_ACTION_NONE;
+}
+
+bool G_Harvester_GetContextualCursor(char *out, size_t maxout)
+{
+    struct entity *hovered = G_Sel_GetHovered();
+    if(!hovered)
+        return false;
+
+    if(!(hovered->flags & ENTITY_FLAG_RESOURCE))
+        return false;
+
+    const char *name = G_Resource_GetCursor(hovered->uid);
+    pf_strlcpy(out, name, maxout);
+    return true;
 }
 

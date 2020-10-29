@@ -285,6 +285,8 @@ int         G_Resource_GetAmount(uint32_t uid);
 void        G_Resource_SetAmount(uint32_t uid, int amount);
 bool        G_Resource_SetName(uint32_t uid, const char *name);
 const char *G_Resource_GetName(uint32_t uid);
+const char *G_Resource_GetCursor(uint32_t uid);
+bool        G_Resource_SetCursor(uint32_t uid, const char *cursor);
 
 /*###########################################################################*/
 /* GAME HARVESTER                                                            */

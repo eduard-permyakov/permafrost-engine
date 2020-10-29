@@ -512,6 +512,39 @@ void G_Combat_ClearSavedMoveCmd(const struct entity *ent)
     }
 }
 
+int G_Combat_CurrContextualAction(void)
+{
+    struct entity *hovered = G_Sel_GetHovered();
+    if(!hovered)
+        return CTX_ACTION_NONE;
+
+    enum selection_type sel_type;
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+
+    if(vec_size(sel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
+        return CTX_ACTION_NONE;
+
+    const struct entity *first = vec_AT(sel, 0);
+    if(!(first->flags & ENTITY_FLAG_COMBATABLE))
+        return CTX_ACTION_NONE;
+
+    if(G_Combat_GetBaseDamage(first) == 0)
+        return CTX_ACTION_NONE;
+
+    if(!(hovered->flags & ENTITY_FLAG_COMBATABLE))
+        return CTX_ACTION_NONE;
+
+    bool controllable[MAX_FACTIONS];
+    uint16_t facs = G_GetFactions(NULL, NULL, controllable);
+    if(controllable[hovered->faction_id])
+        return CTX_ACTION_NONE;
+
+    if(enemies(hovered, first))
+        return CTX_ACTION_ATTACK;
+
+    return CTX_ACTION_NO_ATTACK;
+}
+
 void G_Combat_StopAttack(const struct entity *ent)
 {
     struct combatstate *cs = combatstate_get(ent->uid);

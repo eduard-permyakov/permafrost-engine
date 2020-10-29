@@ -38,6 +38,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #define DEFAULT_GATHER_SPEED (0)
 #define DEFAULT_MAX_CARRY    (0)
@@ -49,9 +50,10 @@ bool G_Harvester_Init(const struct map *map);
 void G_Harvester_Shutdown(void);
 bool G_Harvester_AddEntity(uint32_t uid);
 void G_Harvester_RemoveEntity(uint32_t uid);
-bool G_Harvester_InTargetMode(void);
-bool G_Harvester_HasRightClickAction(void);
 void G_Harvester_Stop(uint32_t uid);
+bool G_Harvester_InTargetMode(void);
+int  G_Harvester_CurrContextualAction(void);
+bool G_Harvester_GetContextualCursor(char *out, size_t maxout);
 
 #endif
 

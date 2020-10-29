@@ -65,6 +65,7 @@
 #include "../main.h"
 #include "../ui.h"
 #include "../perf.h"
+#include "../cursor.h"
 
 #include <assert.h> 
 
@@ -656,6 +657,39 @@ static void g_clear_map_state(void)
     }
 }
 
+static void g_set_contextual_cursor(void)
+{
+    if(G_MouseInTargetMode()) {
+        Cursor_SetRTSPointer(CURSOR_TARGET);
+        return;
+    }
+
+    int action = G_CurrContextualAction();
+    switch(action) {
+    case CTX_ACTION_ATTACK:
+        Cursor_SetRTSPointer(CURSOR_ATTACK);
+        break;
+    case CTX_ACTION_NO_ATTACK:
+        Cursor_SetRTSPointer(CURSOR_NO_ATTACK);
+        break;
+    case CTX_ACTION_BUILD:
+        Cursor_SetRTSPointer(CURSOR_BUILD);
+        break;
+    case CTX_ACTION_GATHER: {
+        char name[256] = { [0] = '\0' };
+        G_Harvester_GetContextualCursor(name, sizeof(name));
+        Cursor_NamedSetRTSPointer(name);
+        break;
+    }
+    case CTX_ACTION_DROP_OFF:
+        Cursor_SetRTSPointer(CURSOR_DROP_OFF);
+        break;
+    default:
+        Cursor_SetRTSPointer(CURSOR_POINTER);
+        break;
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1159,6 +1193,7 @@ void G_Update(void)
     });
 
     G_Sel_Update(s_gs.active_cam, &s_gs.visible, &s_gs.visible_obbs);
+    g_set_contextual_cursor();
 
     PERF_RETURN_VOID();
 }
@@ -1716,15 +1751,16 @@ bool G_MouseInTargetMode(void)
     return false;
 }
 
-bool G_MouseHasRightClickAction(void)
+enum ctx_action G_CurrContextualAction(void)
 {
-    ASSERT_IN_MAIN_THREAD();
-
-    if(G_Builder_HasRightClickAction())
-        return true;
-    if(G_Harvester_HasRightClickAction())
-        return true;
-    return false;
+    int action;
+    if((action = G_Harvester_CurrContextualAction()) != CTX_ACTION_NONE)
+        return action;
+    if((action = G_Builder_CurrContextualAction()) != CTX_ACTION_NONE)
+        return action;
+    if((action = G_Combat_CurrContextualAction()) != CTX_ACTION_NONE)
+        return action;
+    return CTX_ACTION_NONE;
 }
 
 void G_SetHideHealthbars(bool on)

@@ -134,7 +134,8 @@ static struct cursor_resource s_cursors[_CURSOR_MAX] = {
     },
 };
 
-static enum cursortype  s_rts_pointer = CURSOR_POINTER;
+static bool             s_moved = false;
+static SDL_Cursor      *s_rts_pointer;
 static khash_t(cursor) *s_named_cursors;
 
 /*****************************************************************************/
@@ -143,6 +144,11 @@ static khash_t(cursor) *s_named_cursors;
 
 static void cursor_rts_set_active(int mouse_x, int mouse_y)
 {
+    if(!s_moved) {
+        SDL_SetCursor(s_rts_pointer);
+        return;
+    }
+
     int width, height;
     Engine_WinDrawableSize(&width, &height);
 
@@ -169,7 +175,7 @@ static void cursor_rts_set_active(int mouse_x, int mouse_y)
     }else if(right) {
         Cursor_SetActive(CURSOR_SCROLL_RIGHT); 
     }else {
-        Cursor_SetActive(s_rts_pointer); 
+        SDL_SetCursor(s_rts_pointer);
     }
 }
 
@@ -178,6 +184,7 @@ static void cursor_on_mousemove(void *unused1, void *unused2)
     int mouse_x, mouse_y;
     SDL_GetMouseState(&mouse_x, &mouse_y);
     
+    s_moved = true;
     cursor_rts_set_active(mouse_x, mouse_y); 
 }
 
@@ -212,6 +219,8 @@ bool Cursor_InitDefault(const char *basedir)
                 goto fail;
         }
     }
+
+    s_rts_pointer = s_cursors[CURSOR_POINTER].cursor;
     return true;
 
 fail:
@@ -327,10 +336,28 @@ bool Cursor_NamedSetActive(const char *name)
 
 void Cursor_SetRTSPointer(enum cursortype type)
 {
-    s_rts_pointer = type;
+    assert(type >= 0 && type < ARR_SIZE(s_cursors));
+
+    struct cursor_resource *curr = &s_cursors[type];
+    s_rts_pointer = curr->cursor;
 
     int x, y;
     SDL_GetMouseState(&x, &y);
     cursor_rts_set_active(x, y);
+}
+
+bool Cursor_NamedSetRTSPointer(const char *name)
+{
+    khiter_t k = kh_get(cursor, s_named_cursors, name);
+    if(k == kh_end(s_named_cursors))
+        return false;
+
+    struct cursor_resource *entry = &kh_value(s_named_cursors, k);
+    s_rts_pointer = entry->cursor;
+
+    int x, y;
+    SDL_GetMouseState(&x, &y);
+    cursor_rts_set_active(x, y);
+    return true;
 }
 

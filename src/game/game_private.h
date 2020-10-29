@@ -41,13 +41,21 @@
 struct camera;
 struct entity;
 
+enum ctx_action{
+    CTX_ACTION_NONE,
+    CTX_ACTION_ATTACK,
+    CTX_ACTION_NO_ATTACK,
+    CTX_ACTION_BUILD,
+    CTX_ACTION_GATHER,
+    CTX_ACTION_DROP_OFF,
+};
+
 const khash_t(entity) *G_GetDynamicEntsSet(void);
 const khash_t(entity) *G_GetAllEntsSet(void);
 void                   G_Zombiefy(struct entity *ent);
 struct entity         *G_EntityForUID(uint32_t uid);
 bool                   G_MouseInTargetMode(void);
-bool                   G_MouseHasRightClickAction(void);
-
+enum ctx_action        G_CurrContextualAction(void);
 
 #endif
 

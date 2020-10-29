@@ -43,6 +43,7 @@
 
 struct rstate{
     const char *name;
+    const char *cursor;
     int         amount;
     struct obb  blocking;
 };
@@ -118,6 +119,7 @@ bool G_Resource_AddEntity(const struct entity *ent)
 {
     struct rstate rs = (struct rstate) {
         .name = "",
+        .cursor = "",
         .amount = 0
     };
 
@@ -182,6 +184,26 @@ bool G_Resource_SetName(uint32_t uid, const char *name)
         return false;
 
     rs->name = key;
+    return true;
+}
+
+const char *G_Resource_GetCursor(uint32_t uid)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+    return rs->cursor;
+}
+
+bool G_Resource_SetCursor(uint32_t uid, const char *cursor)
+{
+    struct rstate *rs = rstate_get(uid);
+    assert(rs);
+
+    const char *key = si_intern(cursor, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
+
+    rs->cursor = key;
     return true;
 }
 

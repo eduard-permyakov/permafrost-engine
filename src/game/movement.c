@@ -499,16 +499,16 @@ static void on_mousedown(void *user, void *event)
 {
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
 
-    assert(!s_move_on_lclick || !s_attack_on_lclick);
-    bool targeting = G_MouseInTargetMode();
+    bool targeting = G_Move_InTargetMode();
     bool attack = s_attack_on_lclick && (mouse_event->button == SDL_BUTTON_LEFT);
     bool move = s_move_on_lclick ? mouse_event->button == SDL_BUTTON_LEFT
                                  : mouse_event->button == SDL_BUTTON_RIGHT;
+
+    assert(!s_move_on_lclick || !s_attack_on_lclick);
     assert(!attack || !move);
 
     s_attack_on_lclick = false;
     s_move_on_lclick = false;
-    Cursor_SetRTSPointer(CURSOR_POINTER);
 
     if(G_MouseOverMinimap())
         return;
@@ -522,7 +522,7 @@ static void on_mousedown(void *user, void *event)
     if(!attack && !move)
         return;
 
-    if(G_MouseHasRightClickAction())
+    if(G_CurrContextualAction() != CTX_ACTION_NONE)
         return;
 
     vec3_t mouse_coord;
@@ -1479,14 +1479,12 @@ void G_Move_SetMoveOnLeftClick(void)
 {
     s_attack_on_lclick = false;
     s_move_on_lclick = true;
-    Cursor_SetRTSPointer(CURSOR_TARGET);
 }
 
 void G_Move_SetAttackOnLeftClick(void)
 {
     s_attack_on_lclick = true;
     s_move_on_lclick = false;
-    Cursor_SetRTSPointer(CURSOR_TARGET);
 }
 
 void G_Move_SetSeekEnemies(const struct entity *ent)

@@ -222,10 +222,12 @@ static void on_motion_end(void *user, void *event)
 static void on_mousedown(void *user, void *event)
 {
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
-    bool targeting = G_MouseInTargetMode();
+
+    bool targeting = G_Builder_InTargetMode();
+    bool right = (mouse_event->button == SDL_BUTTON_RIGHT);
+    bool left = (mouse_event->button == SDL_BUTTON_LEFT);
 
     s_build_on_lclick = false;
-    Cursor_SetRTSPointer(CURSOR_POINTER);
 
     if(G_MouseOverMinimap())
         return;
@@ -233,17 +235,17 @@ static void on_mousedown(void *user, void *event)
     if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
         return;
 
-    if((mouse_event->button == SDL_BUTTON_RIGHT) && targeting)
+    if(right && targeting)
         return;
 
-    if((mouse_event->button == SDL_BUTTON_LEFT) && !targeting)
+    if(left && !targeting)
+        return;
+
+    if(right && G_CurrContextualAction() != CTX_ACTION_BUILD)
         return;
 
     struct entity *target = G_Sel_GetHovered();
-    if(!target || !(target->flags & ENTITY_FLAG_BUILDING))
-        return;
-
-    if(!G_Building_IsFounded(target))
+    if(!target || !(target->flags & ENTITY_FLAG_BUILDING) || !G_Building_NeedsRepair(target))
         return;
 
     enum selection_type sel_type;
@@ -354,7 +356,6 @@ int G_Builder_GetBuildSpeed(const struct entity *ent)
 void G_Builder_SetBuildOnLeftClick(void)
 {
     s_build_on_lclick = true;
-    Cursor_SetRTSPointer(CURSOR_TARGET);
 }
 
 bool G_Builder_InTargetMode(void)
@@ -381,6 +382,32 @@ bool G_Builder_HasRightClickAction(void)
         return true;
 
     return false;
+}
+
+int G_Builder_CurrContextualAction(void)
+{
+    struct entity *hovered = G_Sel_GetHovered();
+    if(!hovered)
+        return CTX_ACTION_NONE;
+
+    if(G_Builder_InTargetMode())
+        return CTX_ACTION_NONE;
+
+    enum selection_type sel_type;
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+
+    if(vec_size(sel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
+        return CTX_ACTION_NONE;
+
+    const struct entity *first = vec_AT(sel, 0);
+    if(!(first->flags & ENTITY_FLAG_BUILDER))
+        return CTX_ACTION_NONE;
+
+    if(hovered->flags & ENTITY_FLAG_BUILDING
+    && G_Building_NeedsRepair(hovered))
+        return CTX_ACTION_BUILD;
+
+    return CTX_ACTION_NONE;
 }
 
 bool G_Builder_SaveState(struct SDL_RWops *stream)
