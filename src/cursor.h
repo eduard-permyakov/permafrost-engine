@@ -48,12 +48,22 @@ enum cursortype{
     CURSOR_SCROLL_BOT_LEFT,
     CURSOR_SCROLL_LEFT,
     CURSOR_SCROLL_TOP_LEFT,
-    CURSOR_TARGET
+    CURSOR_TARGET,
+    CURSOR_ATTACK,
+    CURSOR_NO_ATTACK,
+    CURSOR_BUILD,
+    CURSOR_DROP_OFF,
+    _CURSOR_MAX
 };
 
-bool Cursor_InitAll(const char *basedir);
+bool Cursor_InitDefault(const char *basedir);
 void Cursor_FreeAll(void);
+
 void Cursor_SetActive(enum cursortype type);
+bool Cursor_LoadBMP(enum cursortype type, const char *path, int hotx, int hoty);
+
+bool Cursor_NamedLoadBMP(const char *name, const char *path, int hotx, int hoty);
+bool Cursor_NamedSetActive(const char *name);
 
 /* When RTS mode is set, an event handler will continuosly update the cursor icon to be
  * the correct scrolling icon for the cursor's current position on the screen 

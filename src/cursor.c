@@ -39,6 +39,7 @@
 #include "main.h"
 #include "game/public/game.h"
 #include "lib/public/pf_string.h"
+#include "lib/public/khash.h"
 
 #include <SDL.h>
 
@@ -54,11 +55,13 @@ struct cursor_resource{
     size_t       hot_x, hot_y;
 };
 
+KHASH_MAP_INIT_STR(cursor, struct cursor_resource)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static struct cursor_resource s_cursors[] = {
+static struct cursor_resource s_cursors[_CURSOR_MAX] = {
     [CURSOR_POINTER] = {
         .cursor  = NULL,
         .surface = NULL,
@@ -131,7 +134,8 @@ static struct cursor_resource s_cursors[] = {
     },
 };
 
-static enum cursortype s_rts_pointer = CURSOR_POINTER;
+static enum cursortype  s_rts_pointer = CURSOR_POINTER;
+static khash_t(cursor) *s_named_cursors;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -190,24 +194,24 @@ void Cursor_SetRTSMode(bool on)
     }
 }
 
-bool Cursor_InitAll(const char *basedir)
+bool Cursor_InitDefault(const char *basedir)
 {
+    s_named_cursors = kh_init(cursor);
+    if(!s_named_cursors)
+        return false;
+
     for(int i = 0; i < ARR_SIZE(s_cursors); i++) {
     
         struct cursor_resource *curr = &s_cursors[i];
 
-        char path[512];
-        pf_snprintf(path, sizeof(path), "%s/%s", basedir, curr->path);
+        if(!curr->path 
+        || !Cursor_LoadBMP(i, curr->path, curr->hot_x, curr->hot_y)) {
 
-        curr->surface = SDL_LoadBMP(path);
-        if(!curr->surface)
-            goto fail;
-
-        curr->cursor = SDL_CreateColorCursor(curr->surface, curr->hot_x, curr->hot_y);
-        if(!curr->cursor)
-            goto fail;
+            curr->cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+            if(!curr->cursor)
+                goto fail;
+        }
     }
-
     return true;
 
 fail:
@@ -217,12 +221,20 @@ fail:
 
 void Cursor_FreeAll(void)
 {
+    const char *key;
+    struct cursor_resource curr;
+
+    kh_foreach(s_named_cursors, key, curr, {
+        free((void*)key);
+        SDL_FreeSurface(curr.surface);
+        SDL_FreeCursor(curr.cursor);
+    });
+
     for(int i = 0; i < ARR_SIZE(s_cursors); i++) {
     
         struct cursor_resource *curr = &s_cursors[i];
-        
-        if(curr->surface) SDL_FreeSurface(curr->surface);
-        if(curr->cursor)  SDL_FreeCursor(curr->cursor);
+        SDL_FreeSurface(curr->surface);
+        SDL_FreeCursor(curr->cursor);
     }
 }
 
@@ -230,6 +242,87 @@ void Cursor_SetActive(enum cursortype type)
 {
     assert(type >= 0 && type < ARR_SIZE(s_cursors));
     SDL_SetCursor(s_cursors[type].cursor);
+}
+
+bool Cursor_LoadBMP(enum cursortype type, const char *path, int hotx, int hoty)
+{
+    if(type < 0 || type >= _CURSOR_MAX)
+        return false;
+
+    char fullpath[512];
+    pf_snprintf(fullpath, sizeof(fullpath), "%s/%s", g_basepath, path);
+
+    SDL_Cursor *cursor = NULL;
+    SDL_Surface *surface = SDL_LoadBMP(fullpath);
+    if(!surface)
+        goto fail;
+
+    cursor = SDL_CreateColorCursor(surface, hotx, hoty);
+    if(!cursor)
+        goto fail;
+
+    struct cursor_resource *curr = &s_cursors[type];
+    SDL_FreeSurface(curr->surface);
+    SDL_FreeCursor(curr->cursor);
+
+    curr->cursor = cursor;
+    curr->surface = surface;
+    curr->hot_x = hotx;
+    curr->hot_y = hoty;
+
+    return true;
+
+fail:
+    SDL_FreeSurface(surface);
+    SDL_FreeCursor(cursor);
+    return false;
+}
+
+bool Cursor_NamedLoadBMP(const char *name, const char *path, int hotx, int hoty)
+{
+    char fullpath[512];
+    pf_snprintf(fullpath, sizeof(fullpath), "%s/%s", g_basepath, path);
+
+    SDL_Cursor *cursor = NULL;
+    SDL_Surface *surface = SDL_LoadBMP(fullpath);
+    if(!surface)
+        goto fail;
+
+    cursor = SDL_CreateColorCursor(surface, hotx, hoty);
+    if(!cursor)
+        goto fail;
+
+    struct cursor_resource entry = (struct cursor_resource) {
+        .cursor  = cursor,
+        .surface = surface,
+        .path    = NULL,
+        .hot_x   = hotx,
+        .hot_y   = hoty
+    };
+
+    int status;
+    khiter_t k = kh_put(cursor, s_named_cursors, pf_strdup(name), &status);
+    if(status == -1)
+        goto fail;
+    kh_value(s_named_cursors, k) = entry;
+
+    return true;
+
+fail:
+    SDL_FreeSurface(surface);
+    SDL_FreeCursor(cursor);
+    return false;
+}
+
+bool Cursor_NamedSetActive(const char *name)
+{
+    khiter_t k = kh_get(cursor, s_named_cursors, name);
+    if(k == kh_end(s_named_cursors))
+        return false;
+
+    struct cursor_resource *entry = &kh_value(s_named_cursors, k);
+    SDL_SetCursor(entry->cursor);
+    return true;
 }
 
 void Cursor_SetRTSPointer(enum cursortype type)

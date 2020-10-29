@@ -43,6 +43,7 @@
 #include "../anim/public/anim.h"
 #include "../main.h"
 #include "../ui.h"
+#include "../cursor.h"
 
 #include <SDL.h>
 
@@ -582,6 +583,25 @@ static void s_expose_ui_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, ANCHOR_Y_MASK);
 }
 
+static void s_expose_cursor_constants(PyObject *module)
+{
+    PY_EXPOSE_ENUM(module, CURSOR_POINTER);
+    PY_EXPOSE_ENUM(module, CURSOR_SCROLL_TOP);
+    PY_EXPOSE_ENUM(module, CURSOR_SCROLL_TOP_RIGHT);
+    PY_EXPOSE_ENUM(module, CURSOR_SCROLL_RIGHT);
+    PY_EXPOSE_ENUM(module, CURSOR_SCROLL_BOT_RIGHT);
+    PY_EXPOSE_ENUM(module, CURSOR_SCROLL_BOT);
+    PY_EXPOSE_ENUM(module, CURSOR_SCROLL_BOT_LEFT);
+    PY_EXPOSE_ENUM(module, CURSOR_SCROLL_LEFT);
+    PY_EXPOSE_ENUM(module, CURSOR_SCROLL_TOP_LEFT);
+    PY_EXPOSE_ENUM(module, CURSOR_TARGET);
+    PY_EXPOSE_ENUM(module, CURSOR_ATTACK);
+    PY_EXPOSE_ENUM(module, CURSOR_NO_ATTACK);
+    PY_EXPOSE_ENUM(module, CURSOR_BUILD);
+    PY_EXPOSE_ENUM(module, CURSOR_DROP_OFF);
+    PY_EXPOSE_ENUM(module, _CURSOR_MAX);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -596,5 +616,6 @@ void S_Constants_Expose(PyObject *module)
     s_expose_anim_constants(module);
     s_expose_engine_constants(module);
     s_expose_ui_constants(module);
+    s_expose_cursor_constants(module);
 }
 

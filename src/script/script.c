@@ -61,6 +61,7 @@
 #include "../ui.h"
 #include "../session.h"
 #include "../perf.h"
+#include "../cursor.h"
 
 #include <SDL.h>
 #include <stdio.h>
@@ -140,6 +141,11 @@ static PyObject *PyPf_settings_delete(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_get_simstate(PyObject *self);
 static PyObject *PyPf_set_simstate(PyObject *self, PyObject *args);
+
+static PyObject *PyPf_set_system_cursor(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_named_cursor(PyObject *self, PyObject *args);
+static PyObject *PyPf_activate_system_cursor(PyObject *self, PyObject *args);
+static PyObject *PyPf_activate_named_cursor(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args);
 static PyObject *PyPf_rand(PyObject *self, PyObject *args);
@@ -432,6 +438,22 @@ static PyMethodDef pf_module_methods[] = {
     {"set_simstate",
     (PyCFunction)PyPf_set_simstate, METH_VARARGS,
     "Set the current simulation state."},
+
+    {"set_system_cursor",
+    (PyCFunction)PyPf_set_system_cursor, METH_VARARGS,
+    "Set a BMP for one of the cursors used by the engine core."},
+
+    {"set_named_cursor",
+    (PyCFunction)PyPf_set_named_cursor, METH_VARARGS,
+    "Load a BMP cursor and associate it with a particular name."},
+
+    {"activate_system_cursor",
+    (PyCFunction)PyPf_activate_system_cursor, METH_VARARGS,
+    "Make a cursor (specified by CURSOR enum type) the currently displayed cursor."},
+
+    {"activate_named_cursor",
+    (PyCFunction)PyPf_activate_named_cursor, METH_VARARGS,
+    "Make a cursor (specified by name) the currently displayed cursor."},
 
     {"multiply_quaternions",
     (PyCFunction)PyPf_multiply_quaternions, METH_VARARGS,
@@ -1572,6 +1594,73 @@ static PyObject *PyPf_set_simstate(PyObject *self, PyObject *args)
     }
 
     G_SetSimState(ss);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_system_cursor(PyObject *self, PyObject *args)
+{
+    int type;
+    const char *path;
+    int hotx, hoty;
+
+    if(!PyArg_ParseTuple(args, "isii", &type, &path, &hotx, &hoty)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an int (CURSOR type), a string (path), and two ints (hotx, hoty).");
+        return NULL;
+    }
+
+    if(!Cursor_LoadBMP(type, path, hotx, hoty)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to load cursor image for the specified type.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_named_cursor(PyObject *self, PyObject *args)
+{
+    const char *name, *path;
+    int hotx, hoty;
+
+    if(!PyArg_ParseTuple(args, "ssii", &name, &path, &hotx, &hoty)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string (name), a string (path), and two ints (hotx, hoty).");
+        return NULL;
+    }
+
+    if(!Cursor_NamedLoadBMP(name, path, hotx, hoty)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to load cursor image for the specified name.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_activate_system_cursor(PyObject *self, PyObject *args)
+{
+    int type;
+    if(!PyArg_ParseTuple(args, "i", &type)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an int (CURSOR type).");
+        return NULL;
+    }
+
+    if(type < 0 || type >= _CURSOR_MAX) {
+        PyErr_SetString(PyExc_TypeError, "Invalid CURSOR type. It must be a CURSOR enum value.");
+        return NULL;
+    }
+
+    Cursor_SetActive(type);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_activate_named_cursor(PyObject *self, PyObject *args)
+{
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
+        return NULL;
+    }
+
+    if(!Cursor_NamedSetActive(name)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to activate cursor with the specified name.");
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 

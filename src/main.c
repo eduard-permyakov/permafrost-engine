@@ -94,8 +94,8 @@ static bool                s_step_frame = false;
 static bool                s_quit = false; 
 static vec_event_t         s_prev_tick_events;
 
-static SDL_Thread         *s_render_thread;
-static struct render_sync_state s_rstate;
+static SDL_Thread               *s_render_thread;
+static struct render_sync_state  s_rstate;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -411,7 +411,7 @@ static bool engine_init(char **argv)
         goto fail_al;
     }
 
-    if(!Cursor_InitAll(argv[1])) {
+    if(!Cursor_InitDefault(argv[1])) {
         fprintf(stderr, "Failed to initialize cursor module\n");
         goto fail_cursor;
     }

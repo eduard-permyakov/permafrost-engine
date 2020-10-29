@@ -772,14 +772,13 @@ void G_Harvester_Stop(uint32_t uid)
 {
     struct hstate *hs = hstate_get(uid);
     assert(hs);
+    hs->state = STATE_NOT_HARVESTING;
 
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
     E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin_harvest);
     E_Entity_Unregister(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel);
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource);
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_storage);
-
-    hs->state = STATE_NOT_HARVESTING;
 }
 
 bool G_Harvester_InTargetMode(void)
