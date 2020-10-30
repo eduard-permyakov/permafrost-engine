@@ -2185,6 +2185,34 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map
     return g_flow_dir_lookup[dir_idx];
 }
 
+bool N_HasEntityLOS(vec2_t curr_pos, const struct entity *ent, void *nav_private, vec3_t map_pos)
+{
+    vec2_t ent_pos = G_Pos_GetXZ(ent->uid);
+    struct tile_desc ent_tile, tile;
+    bool result;
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    result = M_Tile_DescForPoint2D(res, map_pos, ent_pos, &ent_tile);
+    if(!result)
+        return false;
+
+    result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &tile);
+    if(!result)
+        return false;
+
+    dest_id_t id = n_dest_id(ent_tile);
+    if(!N_FC_ContainsLOSField(id, (struct coord){tile.chunk_r, tile.chunk_c})) {
+        N_RequestPath(nav_private, curr_pos, ent_pos, map_pos, &id);
+    }
+
+    return N_HasDestLOS(id, curr_pos, nav_private, map_pos);
+}
+
 bool N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_pos)
 {
     struct nav_private *priv = nav_private;

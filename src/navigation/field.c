@@ -496,7 +496,18 @@ static bool enemy_ent(int faction_id, const struct entity *ent)
     enum diplomacy_state ds;
     bool result = G_GetDiplomacyState(faction_id, ent->faction_id, &ds);
     assert(result);
-    return (ds == DIPLOMACY_STATE_WAR);
+
+    if(ds != DIPLOMACY_STATE_WAR)
+        return false;
+
+    struct obb obb;
+    Entity_CurrentOBB(ent, &obb, false);
+    uint16_t pmask = G_GetPlayerControlledFactions();
+
+    if(!G_Fog_ObjVisible(pmask, &obb))
+        return false;
+
+    return true;
 }
 
 static int manhattan_dist(struct coord a, struct coord b)

@@ -139,6 +139,7 @@ bool   G_AddFaction(const char *name, vec3_t color);
 bool   G_RemoveFaction(int faction_id);
 bool   G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool control);
 uint16_t G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl);
+uint16_t G_GetPlayerControlledFactions(void);
 
 bool   G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds);
 bool   G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out);
@@ -212,7 +213,8 @@ enum combat_stance{
     COMBAT_STANCE_NO_ENGAGEMENT,
 };
 
-/* Can only be called with entities that have 'ENTITY_FLAG_COMBATABLE' set */
+void  G_Combat_AttackUnit(const struct entity *ent, const struct entity *target);
+
 bool  G_Combat_SetStance(const struct entity *ent, enum combat_stance stance);
 void  G_Combat_SetHP(const struct entity *ent, int hp);
 int   G_Combat_GetCurrentHP(const struct entity *ent);
@@ -247,6 +249,8 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
 /* GAME FOG-OF-WAR                                                           */
 /*###########################################################################*/
 
+bool G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb);
+bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb);
 void G_Fog_UpdateVisionRange(vec2_t xz_pos, int faction_id, float old, float new);
 bool G_Fog_Visible(int faction_id, vec2_t xz_pos);
 bool G_Fog_PlayerVisible(vec2_t xz_pos);

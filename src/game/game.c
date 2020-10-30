@@ -139,8 +139,8 @@ static void g_init_map(void)
     M_RestrictRTSCamToMap(s_gs.map, s_gs.active_cam);
     M_Raycast_Install(s_gs.map, s_gs.active_cam);
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
-    G_Move_Init(s_gs.map);
     G_Combat_Init();
+    G_Move_Init(s_gs.map);
     G_Building_Init(s_gs.map);
     G_Builder_Init(s_gs.map);
     G_Resource_Init(s_gs.map);
@@ -636,8 +636,8 @@ static void g_clear_map_state(void)
         M_Raycast_Uninstall();
         M_FreeMinimap(s_gs.map);
         AL_MapFree(s_gs.map);
-        G_Move_Shutdown();
         G_Combat_Shutdown();
+        G_Move_Shutdown();
         G_Building_Shutdown();
         G_Builder_Shutdown();
         G_Resource_Shutdown();
@@ -880,6 +880,17 @@ bool G_Init(void)
         },
         .prio = 0,
         .validate = fac_vision_validate,
+        .commit = NULL,
+    });
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_combat_targets",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
         .commit = NULL,
     });
 
@@ -1471,6 +1482,21 @@ uint16_t G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, b
     return s_gs.factions_allocd;
 }
 
+uint16_t G_GetPlayerControlledFactions(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    uint16_t ret = 0;
+
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        if(!(s_gs.factions_allocd & (0x1 << i)))
+            continue;
+        if(!s_gs.factions[i].controllable)
+            continue;
+        ret |= (0x1 << i);
+    }
+    return ret;
+}
+
 bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1753,6 +1779,8 @@ bool G_MouseInTargetMode(void)
 
 enum ctx_action G_CurrContextualAction(void)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     int action;
     if((action = G_Harvester_CurrContextualAction()) != CTX_ACTION_NONE)
         return action;

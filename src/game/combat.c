@@ -37,11 +37,16 @@
 #include "game_private.h"
 #include "movement.h"
 #include "building.h"
+#include "fog_of_war.h"
+#include "position.h"
 #include "public/game.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../main.h"
 #include "../perf.h"
+#include "../settings.h"
+#include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
 
@@ -96,10 +101,12 @@ struct combatstate{
     enum{
         STATE_NOT_IN_COMBAT,
         STATE_MOVING_TO_TARGET,
+        STATE_MOVING_TO_TARGET_LOCKED,
         STATE_CAN_ATTACK,
         STATE_ATTACK_ANIM_PLAYING,
         STATE_DEATH_ANIM_PLAYING,
     }state;
+    bool               sticky;
     uint32_t           target_uid;
     /* If the target gained a target while moving, save and restore
      * its' intial move command once it finishes combat. */
@@ -205,13 +212,14 @@ static bool valid_enemy(const struct entity *curr, void *arg)
     if(cs->state == STATE_DEATH_ANIM_PLAYING)
         return false;
 
-    return true;
-}
+    struct obb obb;
+    Entity_CurrentOBB(curr, &obb, false);
 
-static struct entity *closest_enemy_in_range(const struct entity *ent)
-{
-    vec2_t pos = G_Pos_GetXZ(ent->uid);
-    return G_Pos_NearestWithPred(pos, valid_enemy, (void*)ent, ENEMY_TARGET_ACQUISITION_RANGE);
+    uint16_t pmask = G_GetPlayerControlledFactions();
+    if(!G_Fog_ObjVisible(pmask, &obb))
+        return false;
+
+    return true;
 }
 
 static quat_t quat_from_vec(vec2_t dir)
@@ -297,6 +305,16 @@ static void on_attack_anim_finish(void *user, void *event)
     }
 }
 
+static bool entity_dead(const struct entity *ent)
+{
+    if(!ent  /* dead and gone */
+    || (ent->flags & ENTITY_FLAG_ZOMBIE) /* zombie */
+    || combatstate_get(ent->uid)->state == STATE_DEATH_ANIM_PLAYING) /* dying */
+        return true;
+
+    return false;
+}
+
 static void on_30hz_tick(void *user, void *event)
 {
     PERF_ENTER();
@@ -321,7 +339,7 @@ static void on_30hz_tick(void *user, void *event)
 
             /* Make the entity seek enemy units. */
             struct entity *enemy;
-            if((enemy = closest_enemy_in_range(curr)) != NULL) {
+            if((enemy = G_Combat_ClosestEligibleEnemy(curr)) != NULL) {
 
                 if(ents_distance(curr, enemy) <= ENEMY_MELEE_ATTACK_RANGE) {
 
@@ -352,7 +370,7 @@ static void on_30hz_tick(void *user, void *event)
         case STATE_MOVING_TO_TARGET:
         {
             /* Handle the case where our target dies before we reach it */
-            struct entity *enemy = closest_enemy_in_range(curr);
+            struct entity *enemy = G_Combat_ClosestEligibleEnemy(curr);
             if(!enemy) {
 
                 cs->state = STATE_NOT_IN_COMBAT; 
@@ -380,18 +398,68 @@ static void on_30hz_tick(void *user, void *event)
             }
             break;
         }
+        case STATE_MOVING_TO_TARGET_LOCKED:
+        {
+            struct entity *target = G_EntityForUID(cs->target_uid);
+            if(!target || !(target->flags & ENTITY_FLAG_COMBATABLE)) {
+
+                cs->state = STATE_NOT_IN_COMBAT;
+                cs->sticky = false;
+                G_Move_Stop(curr);
+                break;
+            }
+
+            /* If our target goes out of vision, give up the pursuit */
+            struct obb obb;
+            Entity_CurrentOBB(target, &obb, false);
+
+            uint16_t pmask = G_GetPlayerControlledFactions();
+            if(!G_Fog_ObjVisible(pmask, &obb)) {
+            
+                cs->state = STATE_NOT_IN_COMBAT;
+                cs->sticky = false;
+                G_Move_Stop(curr);
+                break;
+            }
+
+            /* Check if we're within attacking range of our target */
+            if(ents_distance(curr, target) <= ENEMY_MELEE_ATTACK_RANGE) {
+
+                cs->state = STATE_CAN_ATTACK;
+                G_Move_Stop(curr);
+                entity_turn_to_target(curr, target);
+                E_Entity_Notify(EVENT_ATTACK_START, curr->uid, NULL, ES_ENGINE);
+                break;
+            }
+
+            /* We approached the target, but it slipped away from us. Re-engage. */
+            if(G_Move_Still(curr)) {
+                G_Move_SetSurroundEntity(curr, target);
+            }
+            break;
+        }
         case STATE_CAN_ATTACK:
         {
             /* Our target could have 'died' or gotten out of combat range - check this first. */
             const struct entity *target = G_EntityForUID(cs->target_uid);
 
-            if(!target  /* dead and gone */
-            || (target->flags & ENTITY_FLAG_ZOMBIE) /* zombie */
-            || combatstate_get(cs->target_uid)->state == STATE_DEATH_ANIM_PLAYING /* dying */
+            if(entity_dead(target)
             || ents_distance(curr, target) > ENEMY_MELEE_ATTACK_RANGE) {
 
+                if(cs->sticky) {
+                    if(!entity_dead(target)) {
+
+                        E_Entity_Notify(EVENT_ATTACK_END, curr->uid, NULL, ES_ENGINE);
+                        cs->state = STATE_MOVING_TO_TARGET_LOCKED;
+                        G_Move_SetSurroundEntity(curr, target);
+                        break;
+                    }else{
+                        cs->sticky = false;
+                    }
+                }
+
                 /* First check if there's another suitable target */
-                struct entity *enemy = closest_enemy_in_range(curr);
+                struct entity *enemy = G_Combat_ClosestEligibleEnemy(curr);
                 if(enemy && ents_distance(curr, enemy) <= ENEMY_MELEE_ATTACK_RANGE) {
 
                     cs->target_uid = enemy->uid;
@@ -403,7 +471,8 @@ static void on_30hz_tick(void *user, void *event)
                 E_Entity_Notify(EVENT_ATTACK_END, curr->uid, NULL, ES_ENGINE);
 
                 if(cs->move_cmd_interrupted) {
-                    G_Move_SetDest(curr, cs->move_cmd_xz); cs->move_cmd_interrupted = false;
+                    G_Move_SetDest(curr, cs->move_cmd_xz); 
+                    cs->move_cmd_interrupted = false;
                 }
 
             }else{
@@ -425,6 +494,120 @@ static void on_30hz_tick(void *user, void *event)
     PERF_RETURN_VOID();
 }
 
+static void on_mousedown(void *user, void *event)
+{
+    SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
+
+    bool targeting = G_Move_InTargetMode();
+    bool right = (mouse_event->button == SDL_BUTTON_RIGHT);
+    bool left = (mouse_event->button == SDL_BUTTON_LEFT);
+
+    if(G_MouseOverMinimap())
+        return;
+
+    if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
+        return;
+
+    if(right && targeting)
+        return;
+
+    if(left && !targeting)
+        return;
+
+    if(right && (G_CurrContextualAction() != CTX_ACTION_ATTACK))
+        return;
+
+    enum selection_type sel_type;
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+    size_t nattacking = 0;
+
+    if(vec_size(sel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
+        return;
+
+    struct entity *first = vec_AT(sel, 0);
+    struct entity *target = G_Sel_GetHovered();
+
+    if(!target || !(target->flags & ENTITY_FLAG_COMBATABLE) || !enemies(first, target))
+        return;
+
+    for(int i = 0; i < vec_size(sel); i++) {
+
+        struct entity *curr = vec_AT(sel, i);
+        if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
+            continue;
+
+        G_Combat_AttackUnit(curr, target);
+        nattacking++;
+    }
+
+    if(nattacking) {
+        Entity_Ping(target);
+    }
+}
+
+static void on_render_3d(void *user, void *event)
+{
+    const struct camera *cam = G_GetActiveCamera();
+
+    struct sval setting;
+    ss_e status;
+    (void)status;
+
+    status = Settings_Get("pf.debug.show_combat_targets", &setting);
+    assert(status == SS_OKAY);
+
+    if(!setting.as_bool)
+        return;
+
+    uint32_t key;
+    struct combatstate curr;
+
+    kh_foreach(s_entity_state_table, key, curr, {
+
+        switch(curr.state) {
+        case STATE_MOVING_TO_TARGET:
+        case STATE_MOVING_TO_TARGET_LOCKED:
+        case STATE_CAN_ATTACK: {
+        
+            vec2_t ent_pos = G_Pos_GetXZ(key);
+            vec2_t target_pos = G_Pos_GetXZ(curr.target_uid);
+
+            vec2_t delta;
+            PFM_Vec2_Sub(&target_pos, &ent_pos, &delta);
+
+            float t = PFM_Vec2_Len(&delta);
+            PFM_Vec2_Normal(&delta, &delta);
+            vec3_t dir = (vec3_t){delta.x, 0.0f, delta.z};
+
+            mat4x4_t ident;
+            PFM_Mat4x4_Identity(&ident);
+            vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
+
+            vec3_t raised_pos = (vec3_t){
+                ent_pos.x,
+                M_HeightAtPoint(G_GetPrevTickMap(), (vec2_t){ent_pos.x, ent_pos.z}) + 5.0f, 
+                ent_pos.z 
+            };
+
+            R_PushCmd((struct rcmd){
+                .func = R_GL_DrawRay,
+                .nargs = 5,
+                .args = {
+                    R_PushArg(&raised_pos, sizeof(raised_pos)),
+                    R_PushArg(&dir, sizeof(dir)),
+                    R_PushArg(&ident, sizeof(ident)),
+                    R_PushArg(&red, sizeof(red)),
+                    R_PushArg(&t, sizeof(t)),
+                },
+            });
+            break;
+        }
+        default:
+            break;
+        }
+    });
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -436,12 +619,16 @@ bool G_Combat_Init(void)
 
     vec_pentity_init(&s_dying_ents);
     E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
+    E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
+    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     return true;
 }
 
 void G_Combat_Shutdown(void)
 {
     E_Global_Unregister(EVENT_30HZ_TICK, on_30hz_tick);
+    E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
+    E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     vec_pentity_destroy(&s_dying_ents);
     kh_destroy(state, s_entity_state_table);
 }
@@ -456,6 +643,7 @@ void G_Combat_AddEntity(const struct entity *ent, enum combat_stance initial)
         .current_hp = ent->max_hp,
         .stance = initial,
         .state = STATE_NOT_IN_COMBAT,
+        .sticky = false,
         .move_cmd_interrupted = false
     };
     combatstate_set(ent, &new_cs);
@@ -531,18 +719,35 @@ int G_Combat_CurrContextualAction(void)
     if(G_Combat_GetBaseDamage(first) == 0)
         return CTX_ACTION_NONE;
 
+    if(first->faction_id == hovered->faction_id)
+        return CTX_ACTION_NONE;
+
+    if((hovered->flags & ENTITY_FLAG_MARKER) || (hovered->flags & ENTITY_FLAG_ZOMBIE))
+        return CTX_ACTION_NONE;
+
     if(!(hovered->flags & ENTITY_FLAG_COMBATABLE))
-        return CTX_ACTION_NONE;
+        return CTX_ACTION_NO_ATTACK;
 
-    bool controllable[MAX_FACTIONS];
-    uint16_t facs = G_GetFactions(NULL, NULL, controllable);
-    if(controllable[hovered->faction_id])
-        return CTX_ACTION_NONE;
-
-    if(enemies(hovered, first))
+    if(enemies(hovered, first)) {
         return CTX_ACTION_ATTACK;
+    }else{
+        return CTX_ACTION_NO_ATTACK;
+    }
+}
 
-    return CTX_ACTION_NO_ATTACK;
+void G_Combat_AttackUnit(const struct entity *ent, const struct entity *target)
+{
+    struct combatstate *cs = combatstate_get(ent->uid);
+    assert(cs);
+
+    G_Combat_StopAttack(ent);
+
+    cs->sticky = true;
+    cs->target_uid = target->uid;
+    cs->state = STATE_MOVING_TO_TARGET_LOCKED;
+    cs->move_cmd_interrupted = false;
+
+    G_Move_SetSurroundEntity(ent, target);
 }
 
 void G_Combat_StopAttack(const struct entity *ent)
@@ -564,6 +769,12 @@ void G_Combat_StopAttack(const struct entity *ent)
         G_Move_SetDest(ent, cs->move_cmd_xz);
         cs->move_cmd_interrupted = false;
     }
+}
+
+struct entity *G_Combat_ClosestEligibleEnemy(const struct entity *ent)
+{
+    vec2_t pos = G_Pos_GetXZ(ent->uid);
+    return G_Pos_NearestWithPred(pos, valid_enemy, (void*)ent, ENEMY_TARGET_ACQUISITION_RANGE);
 }
 
 int G_Combat_GetCurrentHP(const struct entity *ent)

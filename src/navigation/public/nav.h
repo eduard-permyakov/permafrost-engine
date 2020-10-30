@@ -225,6 +225,13 @@ vec2_t    N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private,
                                      vec3_t map_pos, int faction_id);
 
 /* ------------------------------------------------------------------------
+ * Returns true if the particular entity is in direct line of sight of the 
+ * specified position.
+ * ------------------------------------------------------------------------
+ */
+bool      N_HasEntityLOS(vec2_t curr_pos, const struct entity *ent, void *nav_private, vec3_t map_pos);
+
+/* ------------------------------------------------------------------------
  * Returns true if the particular destination is in direct line of sight 
  * of the specified position.
  * ------------------------------------------------------------------------

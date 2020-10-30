@@ -531,23 +531,27 @@ static void on_mousedown(void *user, void *event)
 
     enum selection_type sel_type;
     const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+    size_t nmoved = 0;
 
-    if(vec_size(sel) > 0 && sel_type == SELECTION_TYPE_PLAYER) {
+    if(vec_size(sel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
+        return;
 
-        for(int i = 0; i < vec_size(sel); i++) {
+    for(int i = 0; i < vec_size(sel); i++) {
 
-            const struct entity *curr = vec_AT(sel, i);
-            E_Entity_Notify(EVENT_MOVE_ISSUED, curr->uid, NULL, ES_ENGINE);
+        const struct entity *curr = vec_AT(sel, i);
+        if(!(curr->flags & ENTITY_FLAG_MOVABLE))
+            continue;
 
-            if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
-                continue;
+        E_Entity_Notify(EVENT_MOVE_ISSUED, curr->uid, NULL, ES_ENGINE);
+        nmoved++;
 
-            if(curr->flags & ENTITY_FLAG_COMBATABLE) {
-                G_Combat_ClearSavedMoveCmd(curr);
-                G_Combat_SetStance(curr, attack ? COMBAT_STANCE_AGGRESSIVE : COMBAT_STANCE_NO_ENGAGEMENT);
-            }
+        if(curr->flags & ENTITY_FLAG_COMBATABLE) {
+            G_Combat_ClearSavedMoveCmd(curr);
+            G_Combat_SetStance(curr, attack ? COMBAT_STANCE_AGGRESSIVE : COMBAT_STANCE_NO_ENGAGEMENT);
         }
+    }
 
+    if(nmoved) {
         move_marker_add(mouse_coord, attack);
         make_flock_from_selection(sel, (vec2_t){mouse_coord.x, mouse_coord.z}, attack);
     }
@@ -584,7 +588,7 @@ static void on_render_3d(void *user, void *event)
                 s_state_str[ms->state], ms->velocity.x, ms->velocity.z);
             strbuff[ARR_SIZE(strbuff)-1] = '\0';
             struct rgba text_color = (struct rgba){255, 0, 0, 255};
-            UI_DrawText(strbuff, (struct rect){5,5,450,50}, text_color);
+            UI_DrawText(strbuff, (struct rect){5,50,450,50}, text_color);
 
             const struct camera *cam = G_GetActiveCamera();
             struct flock *flock = flock_for_ent(ent);
@@ -697,7 +701,7 @@ static vec2_t seek_force(const struct entity *ent, vec2_t target_xz)
  * When not within line of sight of the destination, this will steer the entity along the 
  * flow field.
  */
-static vec2_t arrive_force(const struct entity *ent, dest_id_t dest_id, vec2_t target_xz)
+static vec2_t arrive_force_point(const struct entity *ent, dest_id_t dest_id, vec2_t target_xz)
 {
     vec2_t ret, desired_velocity;
     vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
@@ -719,6 +723,44 @@ static vec2_t arrive_force(const struct entity *ent, dest_id_t dest_id, vec2_t t
 
     }else{
 
+        PFM_Vec2_Scale(&ms->vdes, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
+    }
+
+    PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
+    vec2_truncate(&ret, MAX_FORCE);
+    return ret;
+}
+
+static vec2_t arrive_force_enemies(const struct entity *ent)
+{
+    vec2_t ret, desired_velocity;
+    vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
+    float distance;
+
+    struct movestate *ms = movestate_get(ent);
+    assert(ms);
+
+    struct entity *enemy = G_Combat_ClosestEligibleEnemy(ent);
+    if(!enemy) {
+
+        PFM_Vec2_Scale(&ms->vdes, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
+        PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
+        vec2_truncate(&ret, MAX_FORCE);
+        return ret;
+    }
+
+    vec2_t enemy_pos = G_Pos_GetXZ(enemy->uid);
+    if(M_NavHasEntityLOS(s_map, enemy_pos, enemy)) {
+    
+        PFM_Vec2_Sub(&enemy_pos, &pos_xz, &desired_velocity);
+        distance = PFM_Vec2_Len(&desired_velocity);
+        PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
+        PFM_Vec2_Scale(&desired_velocity, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
+
+        if(distance < ARRIVE_SLOWING_RADIUS) {
+            PFM_Vec2_Scale(&desired_velocity, distance / ARRIVE_SLOWING_RADIUS, &desired_velocity);
+        }
+    }else{
         PFM_Vec2_Scale(&ms->vdes, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
     }
 
@@ -860,7 +902,7 @@ static vec2_t point_seek_total_force(const struct entity *ent, const struct floc
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
-    vec2_t arrive = arrive_force(ent, flock->dest_id, flock->target_xz);
+    vec2_t arrive = arrive_force_point(ent, flock->dest_id, flock->target_xz);
     vec2_t cohesion = cohesion_force(ent, flock);
     vec2_t separation = separation_force(ent, SEPARATION_BUFFER_DIST);
 
@@ -884,7 +926,7 @@ static vec2_t enemy_seek_total_force(const struct entity *ent)
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
-    vec2_t arrive = arrive_force(ent, DEST_ID_INVALID, (vec2_t){0.0f, 0.0f});
+    vec2_t arrive = arrive_force_enemies(ent);
     vec2_t separation = separation_force(ent, SEPARATION_BUFFER_DIST);
 
     PFM_Vec2_Scale(&arrive,     MOVE_ARRIVE_FORCE_SCALE,   &arrive);
@@ -938,7 +980,7 @@ static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flo
         switch(prio) {
         case 0: steer_force = point_seek_total_force(ent, flock); break;
         case 1: steer_force = separation_force(ent, SEPARATION_BUFFER_DIST); break;
-        case 2: steer_force = arrive_force(ent, flock->dest_id, flock->target_xz); break;
+        case 2: steer_force = arrive_force_point(ent, flock->dest_id, flock->target_xz); break;
         }
 
         nullify_impass_components(ent, &steer_force);

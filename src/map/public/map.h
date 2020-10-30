@@ -280,6 +280,13 @@ vec2_t M_NavDesiredEnemySeekVelocity(const struct map *map, vec2_t curr_pos, int
 bool   M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos);
 
 /* ------------------------------------------------------------------------
+ * Returns true if the particular entity is in direct line of sight of the 
+ * specified position.
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavHasEntityLOS(const struct map *map, vec2_t xz_pos, const struct entity *ent);
+
+/* ------------------------------------------------------------------------
  * Returns true if the specified positions is pathable (i.e. a unit is 
  * allowed to stand on this region of the map)
  * ------------------------------------------------------------------------

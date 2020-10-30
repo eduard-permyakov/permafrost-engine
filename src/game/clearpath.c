@@ -53,6 +53,7 @@
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../map/public/map.h"
+#include "../lib/public/pf_string.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -113,7 +114,7 @@ static void compute_vo_edges(struct cp_ent ent, struct cp_ent neighb,
     PFM_Vec2_Sub(&neighb.xz_pos, &ent.xz_pos, &ent_to_nb);
     PFM_Vec2_Normal(&ent_to_nb, &ent_to_nb);
 
-    right = (vec2_t){-ent_to_nb.raw[1], ent_to_nb.raw[0]};
+    right = (vec2_t){-ent_to_nb.z, ent_to_nb.x};
     PFM_Vec2_Scale(&right, neighb.radius + ent.radius + CLEARPATH_BUFFER_RADIUS, &right);
 
     vec2_t right_tangent, left_tangent;
@@ -225,27 +226,27 @@ static bool inside_pcr(const struct line_2d *vo_lr_pairs, size_t n_rays, vec2_t 
     for(int i = 0; i < n_rays; i+=2) {
 
         assert(fabs(PFM_Vec2_Len(&vo_lr_pairs[i + 0].dir) - 1.0f) < EPSILON);
-        const float left_dir_x = vo_lr_pairs[i + 0].dir.raw[0];
-        const float left_dir_z = vo_lr_pairs[i + 0].dir.raw[1];
+        const float left_dir_x = vo_lr_pairs[i + 0].dir.x;
+        const float left_dir_z = vo_lr_pairs[i + 0].dir.z;
 
         vec2_t point_to_test;
         PFM_Vec2_Sub(&test, (vec2_t*)&vo_lr_pairs[i + 0].point, &point_to_test);
         PFM_Vec2_Normal(&point_to_test, &point_to_test);
 
-        float left_det = (point_to_test.raw[1] * left_dir_x) - (point_to_test.raw[0] * left_dir_z);
+        float left_det = (point_to_test.z * left_dir_x) - (point_to_test.x * left_dir_z);
         bool left_of_vo = (left_det < EPSILON);
 
         if(left_of_vo)
             continue;
 
         assert(fabs(PFM_Vec2_Len(&vo_lr_pairs[i + 1].dir) - 1.0f) < EPSILON);
-        const float right_dir_x = vo_lr_pairs[i + 1].dir.raw[0];
-        const float right_dir_z = vo_lr_pairs[i + 1].dir.raw[1];
+        const float right_dir_x = vo_lr_pairs[i + 1].dir.x;
+        const float right_dir_z = vo_lr_pairs[i + 1].dir.z;
 
         PFM_Vec2_Sub(&test, (vec2_t*)&vo_lr_pairs[i + 1].point, &point_to_test);
         PFM_Vec2_Normal(&point_to_test, &point_to_test);
 
-        float right_det = (point_to_test.raw[1] * right_dir_x) - (point_to_test.raw[0] * right_dir_z);
+        float right_det = (point_to_test.z * right_dir_x) - (point_to_test.x * right_dir_z);
         bool right_of_vo = (right_det > -EPSILON);
 
         if(right_of_vo)
@@ -474,13 +475,13 @@ static void on_render_3d(void *user, void *event)
     PFM_Mat4x4_Identity(&ident);
 
     vec3_t origin_pos = (vec3_t){
-        cpent->xz_pos.raw[0], 
+        cpent->xz_pos.x, 
         M_HeightAtPoint(map, cpent->xz_pos) + 5.0f, 
-        cpent->xz_pos.raw[1]
+        cpent->xz_pos.z
     };
 
     vec2_t des_v = s_debug_saved.ent_des_v;
-    vec3_t des_vel_dir = (vec3_t){des_v.raw[0], 0.0f, des_v.raw[1]};
+    vec3_t des_vel_dir = (vec3_t){des_v.x, 0.0f, des_v.z};
     PFM_Vec3_Normal(&des_vel_dir, &des_vel_dir);
 
     float t = PFM_Vec2_Len(&des_v) * MOVE_TICK_RES;
@@ -497,7 +498,7 @@ static void on_render_3d(void *user, void *event)
     });
 
     vec2_t v_new = s_debug_saved.v_new;
-    vec3_t vel_dir = (vec3_t){v_new.raw[0], 0.0f, v_new.raw[1]};
+    vec3_t vel_dir = (vec3_t){v_new.x, 0.0f, v_new.z};
     PFM_Vec3_Normal(&vel_dir, &vel_dir);
 
     t = PFM_Vec2_Len(&v_new) * MOVE_TICK_RES;
@@ -532,11 +533,11 @@ static void on_render_3d(void *user, void *event)
     }
 
     char strbuff[256];
-    strcpy(strbuff, "Desired Velocity in PCR:");
-    strcat(strbuff, s_debug_saved.des_v_in_pcr ? "true" : "false");
+    pf_strlcpy(strbuff, "Desired Velocity in PCR:", sizeof(strbuff));
+    pf_strlcat(strbuff, s_debug_saved.des_v_in_pcr ? "true" : "false", sizeof(strbuff));
     struct rgba text_color = s_debug_saved.des_v_in_pcr ? (struct rgba){255, 0, 0, 255}
                                                         : (struct rgba){0, 255, 0, 255};
-    UI_DrawText(strbuff, (struct rect){5,5,200,50}, text_color);
+    UI_DrawText(strbuff, (struct rect){5,50,200,50}, text_color);
 }
 
 static bool clearpath_new_velocity(struct cp_ent cpent,

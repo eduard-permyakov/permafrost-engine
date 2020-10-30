@@ -38,6 +38,7 @@
 
 #include "public/game.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 struct entity;
 struct SDL_RWops;
@@ -54,6 +55,8 @@ int  G_Combat_CurrContextualAction(void);
 
 bool G_Combat_SaveState(struct SDL_RWops *stream);
 bool G_Combat_LoadState(struct SDL_RWops *stream);
+
+struct entity *G_Combat_ClosestEligibleEnemy(const struct entity *ent);
 
 #endif
 

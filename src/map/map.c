@@ -667,3 +667,8 @@ bool M_NavObjectBuildable(const struct map *map, const struct obb *obb)
     return N_ObjectBuildable(map->nav_private, map->pos, obb);
 }
 
+bool M_NavHasEntityLOS(const struct map *map, vec2_t xz_pos, const struct entity *ent)
+{
+    return N_HasEntityLOS(xz_pos, ent, map->nav_private, map->pos);
+}
+
