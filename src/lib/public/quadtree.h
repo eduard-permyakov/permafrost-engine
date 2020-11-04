@@ -267,6 +267,12 @@
         return sqrt(pow(x2-x1, 2) + pow(y2-y1, 2));                                             \
     }                                                                                           \
                                                                                                 \
+    static bool _qt_##name##_point_in_circle(float cirx, float ciry, float radius,              \
+                                             float x, float y)                                  \
+    {                                                                                           \
+        return (_qt_##name##_dist(cirx, ciry, x, y) <= radius);                                 \
+    }                                                                                           \
+                                                                                                \
     static int _qt_##name##_node_inrange_circle(qt(name)*, qt_node(name)*,                      \
                                          float, float, float, type*, int*);                     \
                                                                                                 \
@@ -299,7 +305,8 @@
         int orig_maxout = *inout_maxout;                                                        \
         if(_qt_##name##_node_isleaf(root)) {                                                    \
                                                                                                 \
-            if(root->has_record) {                                                              \
+            if(root->has_record                                                                 \
+            && _qt_##name##_point_in_circle(x, y, range, root->x, root->y)) {                   \
                                                                                                 \
                 *out++ = root->record;                                                          \
                 *inout_maxout -= 1;                                                             \

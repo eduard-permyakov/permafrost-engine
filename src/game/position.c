@@ -286,6 +286,7 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
     max_range = MIN(qt_len, max_range);
 
     while(len <= max_range) {
+
         float min_dist = FLT_MAX;
         struct entity *ret = NULL;
 
@@ -300,6 +301,7 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
 
             vec2_t delta, can_pos_xz = G_Pos_GetXZ(curr->uid);
             PFM_Vec2_Sub(&xz_point, &can_pos_xz, &delta);
+            assert(PFM_Vec2_Len(&delta) <= len);
 
             if(PFM_Vec2_Len(&delta) < min_dist && predicate(curr, arg)) {
                 min_dist = PFM_Vec2_Len(&delta);
@@ -310,7 +312,11 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
         if(ret)
             PERF_RETURN(ret);
 
+        if(len == max_range)
+            break;
+
         len *= 2.0f; 
+        len = MIN(max_range, len);
     }
     PERF_RETURN(NULL);
 }

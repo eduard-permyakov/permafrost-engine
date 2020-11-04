@@ -586,7 +586,6 @@ static void on_render_3d(void *user, void *event)
             char strbuff[256];
             pf_snprintf(strbuff, ARR_SIZE(strbuff), "Arrival State: %s Velocity: (%f, %f)", 
                 s_state_str[ms->state], ms->velocity.x, ms->velocity.z);
-            strbuff[ARR_SIZE(strbuff)-1] = '\0';
             struct rgba text_color = (struct rgba){255, 0, 0, 255};
             UI_DrawText(strbuff, (struct rect){5,50,450,50}, text_color);
 
@@ -627,26 +626,30 @@ static void on_render_3d(void *user, void *event)
     status = Settings_Get("pf.debug.show_navigation_blockers", &setting);
     assert(status == SS_OKAY);
 
-    if(setting.as_bool)
+    if(setting.as_bool) {
         M_NavRenderNavigationBlockers(s_map, cam);
+    }
 
     status = Settings_Get("pf.debug.show_navigation_portals", &setting);
     assert(status == SS_OKAY);
 
-    if(setting.as_bool)
+    if(setting.as_bool) {
         M_NavRenderNavigationPortals(s_map, cam);
+    }
 
     status = Settings_Get("pf.debug.show_navigation_cost_base", &setting);
     assert(status == SS_OKAY);
 
-    if(setting.as_bool)
+    if(setting.as_bool) {
         M_RenderVisiblePathableLayer(s_map, cam);
+    }
 
     status = Settings_Get("pf.debug.show_chunk_boundaries", &setting);
     assert(status == SS_OKAY);
 
-    if(setting.as_bool)
+    if(setting.as_bool) {
         M_RenderChunkBoundaries(s_map, cam);
+    }
 }
 
 static quat_t dir_quat_from_velocity(vec2_t velocity)
@@ -750,7 +753,7 @@ static vec2_t arrive_force_enemies(const struct entity *ent)
     }
 
     vec2_t enemy_pos = G_Pos_GetXZ(enemy->uid);
-    if(M_NavHasEntityLOS(s_map, enemy_pos, enemy)) {
+    if(M_NavHasEntityLOS(s_map, pos_xz, enemy)) {
     
         PFM_Vec2_Sub(&enemy_pos, &pos_xz, &desired_velocity);
         distance = PFM_Vec2_Len(&desired_velocity);

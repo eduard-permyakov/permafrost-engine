@@ -132,6 +132,16 @@ static bool n_tile_pathable(const struct tile *tile)
     return true;
 }
 
+static bool n_tile_blocked(struct nav_private *priv, const struct tile_desc td)
+{
+    struct nav_chunk *chunk = &priv->chunks[IDX(td.chunk_r, priv->width, td.chunk_c)];
+    if(chunk->cost_base[td.tile_r][td.tile_c] == COST_IMPASSABLE)
+        return true;
+    if(chunk->blockers[td.tile_r][td.tile_c] > 0)
+        return true;
+    return false;
+}
+
 static void n_set_cost_for_tile(struct nav_chunk *chunk, 
                                 size_t chunk_w, size_t chunk_h,
                                 size_t tile_r,  size_t tile_c,
@@ -2188,7 +2198,6 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, vec3_t map
 bool N_HasEntityLOS(vec2_t curr_pos, const struct entity *ent, void *nav_private, vec3_t map_pos)
 {
     vec2_t ent_pos = G_Pos_GetXZ(ent->uid);
-    struct tile_desc ent_tile, tile;
     bool result;
 
     struct nav_private *priv = nav_private;
@@ -2197,20 +2206,19 @@ bool N_HasEntityLOS(vec2_t curr_pos, const struct entity *ent, void *nav_private
         FIELD_RES_C, FIELD_RES_R
     };
 
-    result = M_Tile_DescForPoint2D(res, map_pos, ent_pos, &ent_tile);
-    if(!result)
-        return false;
+    struct line_seg_2d line = (struct line_seg_2d){
+        ent_pos.x, ent_pos.z,
+        curr_pos.x, curr_pos.z
+    };
 
-    result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &tile);
-    if(!result)
-        return false;
+    struct tile_desc tds[(int)ceil(sqrt(pow(FIELD_RES_R, 2) + pow(FIELD_RES_C, 2)))];
+    size_t ntds = M_Tile_LineSupercoverTilesSorted(res, map_pos, line, tds, ARR_SIZE(tds));
 
-    dest_id_t id = n_dest_id(ent_tile);
-    if(!N_FC_ContainsLOSField(id, (struct coord){tile.chunk_r, tile.chunk_c})) {
-        N_RequestPath(nav_private, curr_pos, ent_pos, map_pos, &id);
+    for(int i = 0; i < ntds; i++) {
+        if(n_tile_blocked(priv, tds[i]))
+            return false;
     }
-
-    return N_HasDestLOS(id, curr_pos, nav_private, map_pos);
+    return true;
 }
 
 bool N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_pos)

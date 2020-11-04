@@ -40,6 +40,7 @@
 #include "fog_of_war.h"
 #include "position.h"
 #include "public/game.h"
+#include "../ui.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../main.h"
@@ -119,6 +120,15 @@ KHASH_MAP_INIT_INT(state, struct combatstate)
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
+
+static const char *s_name_for_state[] = {
+    [STATE_NOT_IN_COMBAT]           = "NOT_IN_COMBAT",
+    [STATE_MOVING_TO_TARGET]        = "MOVING_TO_TARGET",
+    [STATE_MOVING_TO_TARGET_LOCKED] = "MOVING_TO_TARGET_LOCKED",
+    [STATE_CAN_ATTACK]              = "STATE_CAN_ATTACK",
+    [STATE_ATTACK_ANIM_PLAYING]     = "ATTACK_ANIM_PLAYING",
+    [STATE_DEATH_ANIM_PLAYING]      = "DEATH_ANIM_PLAYING"
+};
 
 static khash_t(state) *s_entity_state_table;
 /* For saving/restoring state */
@@ -564,24 +574,27 @@ static void on_render_3d(void *user, void *event)
 
     kh_foreach(s_entity_state_table, key, curr, {
 
+        vec2_t ent_pos = G_Pos_GetXZ(key);
+        mat4x4_t ident;
+        PFM_Mat4x4_Identity(&ident);
+
+        const float radius = ENEMY_TARGET_ACQUISITION_RANGE;
+        const float width = 0.25f;
+        vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
+        vec3_t blue = (vec3_t){0.0f, 0.0f, 1.0f};
+
         switch(curr.state) {
         case STATE_MOVING_TO_TARGET:
         case STATE_MOVING_TO_TARGET_LOCKED:
         case STATE_CAN_ATTACK: {
         
-            vec2_t ent_pos = G_Pos_GetXZ(key);
-            vec2_t target_pos = G_Pos_GetXZ(curr.target_uid);
-
             vec2_t delta;
+            vec2_t target_pos = G_Pos_GetXZ(curr.target_uid);
             PFM_Vec2_Sub(&target_pos, &ent_pos, &delta);
 
             float t = PFM_Vec2_Len(&delta);
             PFM_Vec2_Normal(&delta, &delta);
             vec3_t dir = (vec3_t){delta.x, 0.0f, delta.z};
-
-            mat4x4_t ident;
-            PFM_Mat4x4_Identity(&ident);
-            vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
 
             vec3_t raised_pos = (vec3_t){
                 ent_pos.x,
@@ -605,6 +618,23 @@ static void on_render_3d(void *user, void *event)
         default:
             break;
         }
+
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawSelectionCircle,
+            .nargs = 5,
+            .args = {
+                R_PushArg(&ent_pos, sizeof(ent_pos)),
+                R_PushArg(&radius, sizeof(radius)),
+                R_PushArg(&width, sizeof(width)),
+                R_PushArg(&blue, sizeof(blue)),
+                (void*)G_GetPrevTickMap(),
+            },
+        });
+
+        vec2_t ss_pos = Entity_TopScreenPos(G_EntityForUID(key));
+        struct rect bounds = (struct rect){ss_pos.x - 75, ss_pos.y + 5, 150, 16};
+        struct rgba color = (struct rgba){255, 0, 0, 255};
+        UI_DrawText(s_name_for_state[curr.state], bounds, color);
     });
 }
 
@@ -774,7 +804,16 @@ void G_Combat_StopAttack(const struct entity *ent)
 struct entity *G_Combat_ClosestEligibleEnemy(const struct entity *ent)
 {
     vec2_t pos = G_Pos_GetXZ(ent->uid);
-    return G_Pos_NearestWithPred(pos, valid_enemy, (void*)ent, ENEMY_TARGET_ACQUISITION_RANGE);
+    struct entity *ret = G_Pos_NearestWithPred(pos, valid_enemy, (void*)ent, ENEMY_TARGET_ACQUISITION_RANGE);
+
+    if(!ret)
+        return NULL;
+
+    vec2_t enemy_pos = G_Pos_GetXZ(ret->uid);
+    vec2_t delta;
+    PFM_Vec2_Sub(&pos, &enemy_pos, &delta);
+    assert(PFM_Vec2_Len(&delta) <= ENEMY_TARGET_ACQUISITION_RANGE);
+    return ret;
 }
 
 int G_Combat_GetCurrentHP(const struct entity *ent)
