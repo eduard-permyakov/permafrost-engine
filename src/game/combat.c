@@ -735,6 +735,11 @@ int G_Combat_CurrContextualAction(void)
     if(!hovered)
         return CTX_ACTION_NONE;
 
+    int mouse_x, mouse_y;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+    if(S_UI_MouseOverWindow(mouse_x, mouse_y))
+        return CTX_ACTION_NONE;
+
     enum selection_type sel_type;
     const vec_pentity_t *sel = G_Sel_Get(&sel_type);
 
@@ -892,6 +897,12 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &state, "state"));
 
+        struct attr sticky = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_int = curr.sticky
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &sticky, "sticky"));
+
         struct attr target_uid = (struct attr){
             .type = TYPE_INT,
             .val.as_int = curr.target_uid 
@@ -959,6 +970,10 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         cs->state = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        cs->sticky = attr.val.as_bool;
 
         if(cs->state == STATE_ATTACK_ANIM_PLAYING) {
             struct entity *ent = G_EntityForUID(uid);

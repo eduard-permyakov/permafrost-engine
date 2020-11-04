@@ -390,6 +390,11 @@ int G_Builder_CurrContextualAction(void)
     if(!hovered)
         return CTX_ACTION_NONE;
 
+    int mouse_x, mouse_y;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+    if(S_UI_MouseOverWindow(mouse_x, mouse_y))
+        return CTX_ACTION_NONE;
+
     if(G_Builder_InTargetMode())
         return CTX_ACTION_NONE;
 

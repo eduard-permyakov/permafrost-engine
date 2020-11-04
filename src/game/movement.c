@@ -1769,6 +1769,11 @@ void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius)
     ms->last_stop_radius = sel_radius;
 }
 
+bool G_Move_InTargetMode(void)
+{
+    return (s_move_on_lclick || s_attack_on_lclick);
+}
+
 bool G_Move_SaveState(struct SDL_RWops *stream)
 {
     /* save flock info */
@@ -1886,6 +1891,12 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.vel_hist_idx
         };
         CHK_TRUE_RET(Attr_Write(stream, &vel_hist_idx, "vel_hist_idx"));
+
+        struct attr surround_target_uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.surround_target_uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &surround_target_uid, "surround_target_uid"));
     });
 
     return true;
@@ -1997,13 +2008,12 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         ms->vel_hist_idx = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ms->surround_target_uid = attr.val.as_int;
     }
 
     return true;
-}
-
-bool G_Move_InTargetMode(void)
-{
-    return (s_move_on_lclick || s_attack_on_lclick);
 }
 
