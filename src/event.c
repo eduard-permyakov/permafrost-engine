@@ -129,8 +129,7 @@ static bool e_register_handler(uint64_t key, struct handler_desc *desc)
     
         vec_hd_t vec = kh_value(s_event_handler_table, k);
 
-        int idx;
-        vec_hd_indexof(&vec, *desc, handlers_equal, &idx);
+        int idx = vec_hd_indexof(&vec, *desc, handlers_equal);
         if(idx != -1)
             return false; /* Don't allow registering duplicate handlers for the same event */
 
@@ -151,8 +150,7 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
 
     vec_hd_t vec = kh_value(s_event_handler_table, k);
 
-    int idx;
-    vec_hd_indexof(&vec, *desc, handlers_equal, &idx);
+    int idx = vec_hd_indexof(&vec, *desc, handlers_equal);
     if(idx == -1)
         return false;
     struct handler_desc to_del = vec_AT(&vec, idx);
@@ -197,8 +195,7 @@ static void e_handle_event(struct event event, bool immediate)
         for(int i = 0; i < vec_size(&vec); i++) {
         
             struct handler_desc *elem = &vec_AT(&vec, i);
-            int idx;
-            vec_hd_indexof(&execd_handlers, *elem, handlers_equal, &idx); 
+            int idx = vec_hd_indexof(&execd_handlers, *elem, handlers_equal); 
             if(idx != -1)
                 continue;
             /* memoize any handlers that we've already ran */

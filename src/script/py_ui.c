@@ -1382,8 +1382,7 @@ static void PyWindow_dealloc(PyWindowObject *self)
 {
     Py_XDECREF(self->header_style);
 
-    int idx;
-    vec_win_indexof(&s_active_windows, self, equal, &idx);
+    int idx = vec_win_indexof(&s_active_windows, self, equal);
     vec_win_del(&s_active_windows, idx);
 
     nk_window_close(s_nk_ctx, self->name);

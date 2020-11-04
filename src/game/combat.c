@@ -176,8 +176,7 @@ static bool pentities_equal(struct entity *const *a, struct entity *const *b)
 
 static void dying_remove(const struct entity *ent)
 {
-    int idx;
-    vec_pentity_indexof(&s_dying_ents, (struct entity*)ent, pentities_equal, &idx);
+    int idx = vec_pentity_indexof(&s_dying_ents, (struct entity*)ent, pentities_equal);
     if(idx == -1)
         return;
     vec_pentity_del(&s_dying_ents, idx);

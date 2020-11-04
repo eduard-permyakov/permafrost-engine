@@ -48,6 +48,8 @@
 #include "../settings.h"
 #include "../ui.h"
 #include "../perf.h"
+#include "../sched.h"
+#include "../task.h"
 #include "../script/public/script.h"
 #include "../render/public/render.h"
 #include "../map/public/map.h"
@@ -55,6 +57,7 @@
 #include "../lib/public/vec.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/stalloc.h"
 #include "../anim/public/anim.h"
 
 #include <assert.h>
@@ -68,6 +71,7 @@
 #define MAX_FORCE    (0.75f)
 
 #define SIGNUM(x)    (((x) > 0) - ((x) < 0))
+#define MAX(a, b)    ((a) > (b) ? (a) : (b))
 #define MIN(a, b)    ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)  (sizeof(a)/sizeof(a[0]))
 #define STR(a)       #a
@@ -85,6 +89,7 @@
     }while(0)
 
 #define VEL_HIST_LEN (14)
+#define MAX_CP_TASKS (64)
 
 enum arrival_state{
     /* Entity is moving towards the flock's destination point */
@@ -124,13 +129,42 @@ struct movestate{
     uint32_t           surround_target_uid;
 };
 
-KHASH_MAP_INIT_INT(state, struct movestate)
-
 struct flock{
     khash_t(entity) *ents;
     vec2_t           target_xz; 
     dest_id_t        dest_id;
 };
+
+struct cp_work_in{
+    struct       cp_ent ent;
+    uint32_t     ent_uid;
+    vec2_t       ent_des_v;
+    vec_cp_ent_t dyn_neighbs;
+    vec_cp_ent_t stat_neighbs;
+    bool         save_debug;
+};
+
+struct cp_work_out{
+    uint32_t ent_uid;
+    vec2_t   ent_vel;
+};
+
+struct cp_task_arg{
+    size_t begin_idx;
+    size_t end_idx;
+};
+
+struct cp_work{
+    struct memstack     mem;
+    struct cp_work_in  *in;
+    struct cp_work_out *out;
+    size_t              nwork;
+    size_t              ntasks;
+    uint32_t            tids[MAX_CP_TASKS];
+    struct future       futures[MAX_CP_TASKS];
+};
+
+KHASH_MAP_INIT_INT(state, struct movestate)
 
 VEC_TYPE(flock, struct flock)
 VEC_IMPL(static inline, flock, struct flock)
@@ -165,6 +199,8 @@ static khash_t(state)         *s_entity_state_table;
 /* Store the most recently issued move command location for debug rendering */
 static bool                    s_last_cmd_dest_valid = false;
 static dest_id_t               s_last_cmd_dest;
+
+static struct cp_work          s_cp_work;
 
 static const char *s_state_str[] = {
     [STATE_MOVING]          = STR(STATE_MOVING),
@@ -303,11 +339,10 @@ static void entity_finish_moving(const struct entity *ent, enum arrival_state ne
 
 static void on_marker_anim_finish(void *user, void *event)
 {
-    int idx;
     struct entity *ent = user;
     assert(ent);
 
-    vec_pentity_indexof(&s_move_markers, ent, entities_equal, &idx);
+    int idx = vec_pentity_indexof(&s_move_markers, ent, entities_equal);
     assert(idx != -1);
     vec_pentity_del(&s_move_markers, idx);
 
@@ -1295,18 +1330,147 @@ static void disband_empty_flocks(void)
     }
 }
 
-static void on_20hz_tick(void *user, void *event)
+static void *cp_vec_realloc(void *ptr, size_t size)
+{
+    if(!ptr)
+        return stalloc(&s_cp_work.mem, size);
+
+    void *ret = stalloc(&s_cp_work.mem, size);
+    if(!ret)
+        return NULL;
+
+    memcpy(ret, ptr, size / 2);
+    return ret;
+}
+
+static void cp_vec_free(void *ptr)
+{
+    /* no-op */
+}
+
+static struct result clearpath_task(void *arg)
+{
+    struct cp_task_arg *cp_arg = arg;
+    size_t ncomputed = 0;
+
+    for(int i = cp_arg->begin_idx; i <= cp_arg->end_idx; i++) {
+
+        struct cp_work_in *in = &s_cp_work.in[i];
+        struct cp_work_out *out = &s_cp_work.out[i];
+
+        vec2_t new_vel = G_ClearPath_NewVelocity(in->ent, in->ent_uid, 
+            in->ent_des_v, in->dyn_neighbs, in->stat_neighbs, in->save_debug);
+        out->ent_uid = in->ent_uid;
+        out->ent_vel = new_vel;
+
+        ncomputed++;
+        if(ncomputed % 64 == 0)
+            Task_Yield();
+    }
+    return NULL_RESULT;
+}
+
+static void clearpath_run_to_completion(int idx)
+{
+    while(!Sched_FutureIsReady(&s_cp_work.futures[idx])) {
+        Sched_RunSync(s_cp_work.tids[idx]);
+    }
+}
+
+static void clearpath_finish_work(void)
 {
     PERF_ENTER();
 
-    vec_cp_ent_t dyn, stat;
-    vec_cp_ent_init(&dyn);
-    vec_cp_ent_init(&stat);
+    if(s_cp_work.ntasks == 0)
+        PERF_RETURN_VOID();
+
+    for(int i = 0; i < s_cp_work.ntasks; i++) {
+        clearpath_run_to_completion(i);    
+    }
+
+    for(int i = 0; i < s_cp_work.nwork; i++) {
+
+        struct entity *ent = G_EntityForUID(s_cp_work.out[i].ent_uid);
+        assert(ent);
+
+        struct movestate *ms = movestate_get(ent);
+        assert(ms);
+
+        ms->vnew = s_cp_work.out[i].ent_vel;
+        update_vel_hist(ms, ms->vnew);
+
+        vec2_t vel_diff;
+        PFM_Vec2_Sub(&ms->vnew, &ms->velocity, &vel_diff);
+
+        PFM_Vec2_Add(&ms->velocity, &vel_diff, &ms->vnew);
+        vec2_truncate(&ms->vnew, ent->max_speed / MOVE_TICK_RES);
+    }
+
+    uint32_t key;
+    struct entity *curr;
+    (void)key;
+
+    kh_foreach(G_GetDynamicEntsSet(), key, curr, {
+
+        struct movestate *ms = movestate_get(curr);
+        assert(ms);
+        entity_update(curr, ms->vnew);
+    });
+
+    stalloc_clear(&s_cp_work.mem);
+    s_cp_work.in = NULL;
+    s_cp_work.out = NULL;
+    s_cp_work.nwork = 0;
+    s_cp_work.ntasks = 0;
+
+    PERF_RETURN_VOID();
+}
+
+static void clearpath_prepare_work(void)
+{
+    size_t ndynamic = kh_size(G_GetDynamicEntsSet());
+    s_cp_work.in = stalloc(&s_cp_work.mem, ndynamic * sizeof(struct cp_work_in));
+    s_cp_work.out = stalloc(&s_cp_work.mem, ndynamic * sizeof(struct cp_work_out));
+}
+
+static void clearpath_push_work(struct cp_work_in in)
+{
+    s_cp_work.in[s_cp_work.nwork++] = in;
+}
+
+static void clearpath_submit_work(void)
+{
+    if(s_cp_work.nwork == 0)
+        return;
+
+    size_t ntasks = SDL_GetCPUCount();
+    if(s_cp_work.nwork < 64)
+        ntasks = 1;
+
+    for(int i = 0; i < ntasks; i++) {
+
+        struct cp_task_arg *arg = stalloc(&s_cp_work.mem, sizeof(struct cp_task_arg));
+        size_t nitems = ceil((float)s_cp_work.nwork / ntasks);
+
+        arg->begin_idx = nitems * i;
+        arg->end_idx = MIN(nitems * (i + 1) - 1, s_cp_work.nwork-1);
+
+        SDL_AtomicSet(&s_cp_work.futures[i].status, FUTURE_INCOMPLETE);
+        s_cp_work.tids[s_cp_work.ntasks++] = Sched_Create(4, clearpath_task, arg, 
+            &s_cp_work.futures[i], TASK_BIG_STACK);
+    }
+    s_cp_work.ntasks = ntasks;
+}
+
+static void on_20hz_tick(void *user, void *event)
+{
+    PERF_ENTER();
 
     uint32_t key;
     struct entity *curr;
 
     disband_empty_flocks();
+    clearpath_prepare_work();
 
     kh_foreach(G_GetDynamicEntsSet(), key, curr, {
 
@@ -1337,30 +1501,28 @@ static void on_20hz_tick(void *user, void *event)
             .radius = curr->selection_radius,
         };
 
-        vec_cp_ent_reset(&dyn);
-        vec_cp_ent_reset(&stat);
-        find_neighbours(curr, &dyn, &stat);
+        vec_cp_ent_t *dyn, *stat;
+        dyn = stalloc(&s_cp_work.mem, sizeof(vec_cp_ent_t));
+        stat = stalloc(&s_cp_work.mem, sizeof(vec_cp_ent_t));
 
-        ms->vnew = G_ClearPath_NewVelocity(curr_cp, key, vpref, dyn, stat);
-        update_vel_hist(ms, ms->vnew);
+        vec_cp_ent_init_alloc(dyn, cp_vec_realloc, cp_vec_free);
+        vec_cp_ent_init_alloc(stat, cp_vec_realloc, cp_vec_free);
 
-        vec2_t vel_diff;
-        PFM_Vec2_Sub(&ms->vnew, &ms->velocity, &vel_diff);
+        find_neighbours(curr, dyn, stat);
 
-        PFM_Vec2_Add(&ms->velocity, &vel_diff, &ms->vnew);
-        vec2_truncate(&ms->vnew, curr->max_speed / MOVE_TICK_RES);
+        assert(vpref.x != NAN && vpref.z != NAN);
+        clearpath_push_work((struct cp_work_in){
+            .ent = curr_cp,
+            .ent_uid = key,
+            .ent_des_v = vpref,
+            .dyn_neighbs = *dyn,
+            .stat_neighbs = *stat,
+            .save_debug = G_ClearPath_ShouldSaveDebug(key)
+        });
     });
 
-    kh_foreach(G_GetDynamicEntsSet(), key, curr, {
-    
-        struct movestate *ms = movestate_get(curr);
-        assert(ms);
-
-        entity_update(curr, ms->vnew);
-    });
-
-    vec_cp_ent_destroy(&dyn);
-    vec_cp_ent_destroy(&stat);
+    clearpath_submit_work();
+    clearpath_finish_work();
 
     PERF_RETURN_VOID();
 }
@@ -1375,6 +1537,12 @@ bool G_Move_Init(const struct map *map)
     if(NULL == (s_entity_state_table = kh_init(state))) {
         return false;
     }
+
+    if(!stalloc_init(&s_cp_work.mem)) {
+        kh_destroy(state, s_entity_state_table);
+        return NULL;
+    }
+
     vec_pentity_init(&s_move_markers);
     vec_flock_init(&s_flocks);
 
@@ -1404,6 +1572,7 @@ void G_Move_Shutdown(void)
 
     vec_flock_destroy(&s_flocks);
     vec_pentity_destroy(&s_move_markers);
+    stalloc_destroy(&s_cp_work.mem);
     kh_destroy(state, s_entity_state_table);
 }
 
@@ -1414,6 +1583,7 @@ void G_Move_AddEntity(const struct entity *ent)
         .blocking = false,
         .state = STATE_ARRIVED,
         .vel_hist_idx = 0,
+        .vnew = (vec2_t){0.0f, 0.0f},
     };
     memset(new_ms.vel_hist, 0, sizeof(new_ms.vel_hist));
 

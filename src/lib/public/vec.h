@@ -49,6 +49,8 @@
         size_t size;                                                                            \
         size_t capacity;                                                                        \
         type *array;                                                                            \
+        void *(*vrealloc)(void *ptr, size_t size);                                              \
+        void  (*vfree)(void *ptr);                                                              \
     } vec_##name##_t;
 
 /***********************************************************************************************/
@@ -69,11 +71,14 @@
 #define VEC_PROTOTYPES(scope, name, type)                                                       \
                                                                                                 \
     scope void vec_##name##_init    (vec(name) *vec);                                           \
+    scope void vec_##name##_init_alloc(vec(name) *vec,                                          \
+                                       void *(*vrealloc)(void *ptr, size_t size),               \
+                                       void (*vfree)(void *ptr));                               \
     scope bool vec_##name##_resize  (vec(name) *vec, size_t new_cap);                           \
     scope void vec_##name##_destroy (vec(name) *vec);                                           \
     scope bool vec_##name##_push    (vec(name) *vec, type in);                                  \
     scope bool vec_##name##_del     (vec(name) *vec, int del_idx);                              \
-    scope void vec_##name##_indexof (vec(name) *vec, type t, bool (*comparator)(), int *out);   \
+    scope int  vec_##name##_indexof(vec(name) *vec, type t, bool (*comparator)());              \
     scope void vec_##name##_reset   (vec(name) *vec);                                           \
     scope bool vec_##name##_copy    (vec(name) *dst, vec(name) *src);                           \
     scope type vec_##name##_pop     (vec(name) *vec);
@@ -87,6 +92,19 @@
         vec->size = 0;                                                                          \
         vec->capacity = 0;                                                                      \
         vec->array = NULL;                                                                      \
+        vec->vrealloc = realloc;                                                                \
+        vec->vfree = free;                                                                      \
+    }                                                                                           \
+                                                                                                \
+    scope void vec_##name##_init_alloc(vec(name) *vec,                                          \
+                                       void *(*vrealloc)(void *ptr, size_t size),               \
+                                       void (*vfree)(void *ptr))                                \
+    {                                                                                           \
+        vec->size = 0;                                                                          \
+        vec->capacity = 0;                                                                      \
+        vec->array = NULL;                                                                      \
+        vec->vrealloc = vrealloc;                                                               \
+        vec->vfree = vfree;                                                                     \
     }                                                                                           \
                                                                                                 \
     scope bool vec_##name##_resize(vec(name) *vec, size_t new_cap)                              \
@@ -94,7 +112,7 @@
         if(vec->capacity >= new_cap)                                                            \
             return true;                                                                        \
                                                                                                 \
-        type *new_array = realloc(vec->array, new_cap * sizeof(type));                          \
+        type *new_array = vec->vrealloc(vec->array, new_cap * sizeof(type));                    \
         if(!new_array)                                                                          \
             return false;                                                                       \
                                                                                                 \
@@ -105,7 +123,7 @@
                                                                                                 \
     scope void vec_##name##_destroy(vec(name) *vec)                                             \
     {                                                                                           \
-        free(vec->array);                                                                       \
+        vec->vfree(vec->array);                                                                       \
     }                                                                                           \
                                                                                                 \
     scope bool vec_##name##_push(vec(name) *vec, type in)                                       \
@@ -127,7 +145,7 @@
         return true;                                                                            \
     }                                                                                           \
                                                                                                 \
-    scope void vec_##name##_indexof(vec(name) *vec, type t, bool (*comparator)(), int *out)     \
+    scope int vec_##name##_indexof(vec(name) *vec, type t, bool (*comparator)())                \
     {                                                                                           \
         int ret = -1;                                                                           \
         for(int i = 0; i < vec->size; i++) {                                                    \
@@ -136,7 +154,7 @@
                 break;                                                                          \
             }                                                                                   \
         }                                                                                       \
-        *out = ret;                                                                             \
+        return ret;                                                                             \
     }                                                                                           \
                                                                                                 \
     scope void vec_##name##_reset(vec(name) *vec)                                               \

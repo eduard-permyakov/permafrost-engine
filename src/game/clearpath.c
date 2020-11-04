@@ -44,6 +44,7 @@
 #include "clearpath.h"
 #include "public/game.h"
 #include "movement.h"
+#include "../main.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../collision.h"
@@ -341,8 +342,7 @@ static size_t compute_vdes_proj_points(struct line_2d *rays, size_t n_rays,
 static vec2_t compute_vnew(const vec_vec2_t *outside_points, vec2_t des_v, vec2_t ent_xz_pos)
 {
     float min_dist = INFINITY, len;
-    vec2_t ret;
-    memset( &ret, 0, sizeof( vec2_t ) );
+    vec2_t ret = (vec2_t){0.0f, 0.0f};
 
     for(int i = 0; i < vec_size(outside_points); i++) {
 
@@ -391,25 +391,6 @@ static void remove_furthest(vec2_t xz_pos, vec_cp_ent_t *dyn_inout, vec_cp_ent_t
         assert(del_idx != -1);
         vec_cp_ent_del(del_vec, del_idx);
     }
-}
-
-/* Save the combined HRVO of the first selected entity for debug rendering */
-static bool should_save_debug(uint32_t ent_uid)
-{
-    struct sval setting;
-    ss_e status = Settings_Get("pf.debug.show_first_sel_combined_hrvo", &setting);
-    assert(status == SS_OKAY);
-
-    if(!setting.as_bool)
-        return false;
-
-    enum selection_type seltype;
-    const vec_pentity_t *sel = G_Sel_Get(&seltype);
-
-    if(vec_size(sel) == 0)
-        return false; 
-
-    return true;
 }
 
 static void on_render_3d(void *user, void *event)
@@ -545,6 +526,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
                                    vec2_t ent_des_v,
                                    const vec_cp_ent_t dyn_neighbs,
                                    const vec_cp_ent_t stat_neighbs,
+                                   bool save_debug,
                                    vec2_t *out)
 {
     struct HRVO dyn_hrvos[vec_size(&dyn_neighbs)];
@@ -564,7 +546,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
     struct line_2d rays[n_rays];
     rays_repr(dyn_hrvos, n_hrvos, stat_vos, n_vos, rays);
 
-    if(should_save_debug(ent_uid)) {
+    if(save_debug) {
 
         size_t nsaved_hrvos = n_hrvos <= MAX_SAVED_VOS ? n_hrvos : MAX_SAVED_VOS;
         memcpy(s_debug_saved.hrvos, dyn_hrvos, nsaved_hrvos * sizeof(struct HRVO));
@@ -614,7 +596,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
 
     vec2_t ret = compute_vnew(&xpoints, ent_des_v, cpent.xz_pos);
 
-    if(should_save_debug(ent_uid)) {
+    if(save_debug) {
     
         vec_vec2_copy(&s_debug_saved.xpoints, &xpoints);
         s_debug_saved.v_new = ret;
@@ -629,6 +611,26 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
+
+bool G_ClearPath_ShouldSaveDebug(uint32_t ent_uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct sval setting;
+    ss_e status = Settings_Get("pf.debug.show_first_sel_combined_hrvo", &setting);
+    assert(status == SS_OKAY);
+
+    if(!setting.as_bool)
+        return false;
+
+    enum selection_type seltype;
+    const vec_pentity_t *sel = G_Sel_Get(&seltype);
+
+    if(vec_size(sel) == 0)
+        return false; 
+
+    return true;
+}
 
 void G_ClearPath_Init(const struct map *map)
 {
@@ -647,13 +649,14 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
                                uint32_t ent_uid,
                                vec2_t ent_des_v,
                                vec_cp_ent_t dyn_neighbs,
-                               vec_cp_ent_t stat_neighbs)
+                               vec_cp_ent_t stat_neighbs,
+                               bool save_debug)
 {
     PERF_ENTER();
 
     do{
         vec2_t ret;
-        bool found = clearpath_new_velocity(cpent, ent_uid, ent_des_v, dyn_neighbs, stat_neighbs, &ret);
+        bool found = clearpath_new_velocity(cpent, ent_uid, ent_des_v, dyn_neighbs, stat_neighbs, save_debug, &ret);
         if(found)
             PERF_RETURN(ret);
 

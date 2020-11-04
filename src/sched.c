@@ -917,7 +917,7 @@ static struct task *worker_wait_task_or_quiesce(void)
 
 static void worker_do_work(int id)
 {
-    while(Perf_CurrFrameMS() < SCHED_TICK_MS) {
+    while(true) {
 
         struct task *task = worker_wait_task_or_quiesce();
         if(!task)

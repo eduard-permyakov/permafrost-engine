@@ -484,8 +484,7 @@ void G_Sel_Add(struct entity *ent)
 {
     assert(ent->flags & ENTITY_FLAG_SELECTABLE);
 
-    int idx;
-    vec_pentity_indexof(&s_selected, ent, pentities_equal, &idx);
+    int idx = vec_pentity_indexof(&s_selected, ent, pentities_equal);
     if(idx == -1) {
         vec_pentity_push(&s_selected, ent);
         sel_filter_and_set_type();
@@ -497,8 +496,7 @@ void G_Sel_Remove(struct entity *ent)
     if(!(ent->flags & ENTITY_FLAG_SELECTABLE))
         return;
 
-    int idx;
-    vec_pentity_indexof(&s_selected, ent, pentities_equal, &idx);
+    int idx = vec_pentity_indexof(&s_selected, ent, pentities_equal);
     if(idx != -1) {
         vec_pentity_del(&s_selected, idx);
         E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);

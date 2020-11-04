@@ -311,6 +311,7 @@ void G_Building_AddEntity(struct entity *ent)
         .progress_model = UID_NONE,
         .obb = {0}
     };
+    vec_uid_init(&new_bs.markers);
     buildstate_set(ent, new_bs);
 
     ent->flags |= ENTITY_FLAG_TRANSLUCENT;
