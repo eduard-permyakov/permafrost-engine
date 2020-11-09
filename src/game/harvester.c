@@ -41,6 +41,7 @@
 #include "../event.h"
 #include "../entity.h"
 #include "../cursor.h"
+#include "../lib/public/vec.h"
 #include "../lib/public/mpool.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_string.h"
@@ -72,6 +73,9 @@ static void  pfree(void *ptr);
 
 KHASH_MAP_INIT_STR(int, int)
 
+VEC_TYPE(name, const char*)
+VEC_IMPL(static, name, const char*)
+
 enum harvester_state{
     STATE_NOT_HARVESTING,
     STATE_MOVING_TO_RESOURCE,
@@ -81,6 +85,7 @@ enum harvester_state{
 
 struct hstate{
     enum harvester_state state;
+    enum tstrategy strategy;
     uint32_t    ss_uid;
     uint32_t    res_uid;
     vec2_t      res_last_pos;
@@ -88,6 +93,7 @@ struct hstate{
     kh_int_t   *gather_speeds;    /* How much of each resource the entity gets each cycle */
     kh_int_t   *max_carry;        /* The maximum amount of each resource the entity can carry */
     kh_int_t   *curr_carry;       /* The amount of each resource the entity currently holds */
+    vec_name_t  priority;         /* The order in which the harvester will transport resources */
 };
 
 struct searcharg{
@@ -195,17 +201,27 @@ static void hstate_remove(uint32_t uid)
         kh_del(state, s_entity_state_table, k);
 }
 
+static void hstate_destroy(struct hstate *hs)
+{
+    vec_name_destroy(&hs->priority);
+    kh_destroy(int, hs->gather_speeds);
+    kh_destroy(int, hs->max_carry);
+    kh_destroy(int, hs->curr_carry);
+}
+
 static bool hstate_init(struct hstate *hs)
 {
+    vec_name_init_alloc(&hs->priority, prealloc, pfree);
+    if(!vec_name_resize(&hs->priority, sizeof(buff_t) / sizeof(char*)))
+        return false;
+
     hs->gather_speeds = kh_init(int);
     hs->max_carry = kh_init(int);
     hs->curr_carry = kh_init(int);
 
     if(!hs->gather_speeds || !hs->max_carry || !hs->curr_carry) {
-    
-        kh_destroy(int, hs->gather_speeds);
-        kh_destroy(int, hs->max_carry);
-        kh_destroy(int, hs->curr_carry);
+
+        hstate_destroy(hs);
         return false;
     }
 
@@ -214,14 +230,8 @@ static bool hstate_init(struct hstate *hs)
     hs->res_last_pos = (vec2_t){0};
     hs->res_name = NULL;
     hs->state = STATE_NOT_HARVESTING;
+    hs->strategy = TRANSPORT_STRATEGY_EXCESS;
     return true;
-}
-
-static void hstate_destroy(struct hstate *hs)
-{
-    kh_destroy(int, hs->gather_speeds);
-    kh_destroy(int, hs->max_carry);
-    kh_destroy(int, hs->curr_carry);
 }
 
 static bool hstate_set_key(khash_t(int) *table, const char *name, int val)
@@ -258,6 +268,46 @@ static bool hstate_get_key(khash_t(int) *table, const char *name, int *out)
         return false;
     *out = kh_value(table, k);
     return true;
+}
+
+static bool compare_keys(const char **a, const char **b)
+{
+    /* Since all strings are interned, we can use direct pointer comparision */
+    return *a == *b;
+}
+
+static void hstate_remove_prio(struct hstate *hs, const char *name)
+{
+    int idx = vec_name_indexof(&hs->priority, name, compare_keys);
+    if(idx == -1)
+        return;
+    vec_name_del(&hs->priority, idx);
+}
+
+static void hstate_insert_prio(struct hstate *hs, const char *name)
+{
+    int idx = vec_name_indexof(&hs->priority, name, compare_keys);
+    if(idx != -1)
+        return;
+
+    for(idx = 0; idx < vec_size(&hs->priority); idx++) {
+        if(strcmp(vec_AT(&hs->priority, idx), name) > 0)
+            break;
+    }
+
+    if(idx < vec_size(&hs->priority)) {
+        if(!vec_name_resize(&hs->priority, vec_size(&hs->priority) + 1))
+            return;
+
+        memmove(hs->priority.array + idx + 1, hs->priority.array + idx, 
+            sizeof(const char*) * (vec_size(&hs->priority) - idx));
+
+        hs->priority.array[idx] = name;
+        hs->priority.size++;
+
+    }else{
+        vec_name_push(&hs->priority, name);
+    }
 }
 
 static bool valid_storage_site(const struct entity *curr, void *arg)
@@ -741,6 +791,16 @@ bool G_Harvester_SetMaxCarry(uint32_t uid, const char *rname, int max)
 {
     struct hstate *hs = hstate_get(uid);
     assert(hs);
+
+    const char *key = si_intern(rname, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
+
+    if(max == 0) {
+        hstate_remove_prio(hs, key);
+    }else{
+        hstate_insert_prio(hs, key);
+    }
     return hstate_set_key(hs->max_carry, rname, max);
 }
 
@@ -768,6 +828,74 @@ int G_Harvester_GetCurrCarry(uint32_t uid, const char *rname)
     assert(hs);
 
     hstate_get_key(hs->curr_carry, rname, &ret);
+    return ret;
+}
+
+void G_Harvester_SetStrategy(uint32_t uid, enum tstrategy strat)
+{
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+    hs->strategy = strat;
+}
+
+int G_Harvester_GetStrategy(uint32_t uid)
+{
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+    return hs->strategy;
+}
+
+bool G_Harvester_IncreaseTransportPrio(uint32_t uid, const char *rname)
+{
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+
+    const char *key = si_intern(rname, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
+
+    int idx = vec_name_indexof(&hs->priority, key, compare_keys);
+    if(idx == -1)
+        return false;
+    if(idx == 0)
+        return false;
+
+    const char *tmp = vec_AT(&hs->priority, idx - 1);
+    vec_AT(&hs->priority, idx - 1) = key;
+    vec_AT(&hs->priority, idx) = tmp;
+
+    return true;
+}
+
+bool G_Harvester_DecreaseTransportPrio(uint32_t uid, const char *rname)
+{
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+
+    const char *key = si_intern(rname, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
+
+    int idx = vec_name_indexof(&hs->priority, key, compare_keys);
+    if(idx == -1)
+        return false;
+    if(idx == vec_size(&hs->priority) - 1)
+        return false;
+
+    const char *tmp = vec_AT(&hs->priority, idx + 1);
+    vec_AT(&hs->priority, idx + 1) = key;
+    vec_AT(&hs->priority, idx) = tmp;
+
+    return true;
+}
+
+int G_Harvester_GetTransportPrio(uint32_t uid, size_t maxout, const char *out[static maxout])
+{
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+    size_t ret = MIN(maxout, vec_size(&hs->priority));
+
+    memcpy(out, hs->priority.array, ret * sizeof(const char*));
     return ret;
 }
 
@@ -880,6 +1008,10 @@ int G_Harvester_CurrContextualAction(void)
 {
     struct entity *hovered = G_Sel_GetHovered();
     if(!hovered)
+        return CTX_ACTION_NONE;
+
+    if((hovered->flags & ENTITY_FLAG_BUILDING)
+    && !G_Building_IsCompleted(hovered))
         return CTX_ACTION_NONE;
 
     int mouse_x, mouse_y;

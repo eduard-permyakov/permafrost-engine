@@ -524,6 +524,8 @@ static PyObject *PyResourceEntity_pickle(PyResourceEntityObject *self, PyObject 
 static PyObject *PyResourceEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 static PyObject *PyResourceEntity_get_cursor(PyResourceEntityObject *self, void *closure);
 static int       PyResourceEntity_set_cursor(PyResourceEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyResourceEntity_get_name(PyResourceEntityObject *self, void *closure);
+static PyObject *PyResourceEntity_get_amount(PyResourceEntityObject *self, void *closure);
 
 static PyMethodDef PyResourceEntity_methods[] = {
 
@@ -547,6 +549,14 @@ static PyGetSetDef PyResourceEntity_getset[] = {
     {"cursor",
     (getter)PyResourceEntity_get_cursor, (setter)PyResourceEntity_set_cursor,
     "The name of the cursor to display as a contextual gather command indicator when hovering over the resource.",
+    NULL},
+    {"resource_name",
+    (getter)PyResourceEntity_get_name, NULL,
+    "The name of resource that can be harvested from this entity",
+    NULL},
+    {"resource_amount",
+    (getter)PyResourceEntity_get_amount, NULL,
+    "The amount of resources that this entity currently holds",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -577,9 +587,14 @@ static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObjec
 static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_increase_transport_priority(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_decrease_transport_priority(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_pickle(PyHarvesterEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyHarvesterEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+static PyObject *PyHarvesterEntity_get_strategy(PyHarvesterEntityObject *self, void *closure);
+static int       PyHarvesterEntity_set_strategy(PyHarvesterEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyHarvesterEntity_get_total_carry(PyHarvesterEntityObject *self, void *closure);
+static PyObject *PyHarvesterEntity_get_transport_priority(PyHarvesterEntityObject *self, void *closure);
 
 static PyMethodDef PyHarvesterEntity_methods[] = {
 
@@ -603,6 +618,16 @@ static PyMethodDef PyHarvesterEntity_methods[] = {
     (PyCFunction)PyHarvesterEntity_set_gather_speed, METH_VARARGS,
     "Set how much of the specified resource the entity gathers in a single animation."},
 
+    {"increase_transport_priority", 
+    (PyCFunction)PyHarvesterEntity_increase_transport_priority, METH_VARARGS,
+    "Move the specified resource up in the priority list the peasant uses for selecting which resource "
+    "to bring next to the target storage site."},
+
+    {"decrease_transport_priority", 
+    (PyCFunction)PyHarvesterEntity_decrease_transport_priority, METH_VARARGS,
+    "Move the specified resource down in the priority list the peasant uses for selecting which resource "
+    "to bring next to the target storage site."},
+
     {"__pickle__", 
     (PyCFunction)PyHarvesterEntity_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine combatable entity to a string."},
@@ -619,6 +644,15 @@ static PyGetSetDef PyHarvesterEntity_getset[] = {
     {"total_carry",
     (getter)PyHarvesterEntity_get_total_carry, NULL,
     "Get the total amount of resources currently carried by the entity.",
+    NULL},
+    {"transport_priority",
+    (getter)PyHarvesterEntity_get_transport_priority, NULL,
+    "Get the ordered list of the resource names that the harvester will prioritize transporting.",
+    NULL},
+    {"strategy",
+    (getter)PyHarvesterEntity_get_strategy, (setter)PyHarvesterEntity_set_strategy,
+    "The approach used by the harvester to pick the next storage site to get resources from. "
+    "Must be a pf.TRANSPORT_ enum value.",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -2147,6 +2181,16 @@ static int PyResourceEntity_set_cursor(PyResourceEntityObject *self, PyObject *v
     return 0;
 }
 
+static PyObject *PyResourceEntity_get_name(PyResourceEntityObject *self, void *closure)
+{
+    return PyString_FromString(G_Resource_GetName(self->super.ent->uid));
+}
+
+static PyObject *PyResourceEntity_get_amount(PyResourceEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(G_Resource_GetAmount(self->super.ent->uid));
+}
+
 static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self)
 {
     return s_super_del((PyObject*)self, &PyHarvesterEntity_type);
@@ -2220,6 +2264,36 @@ static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *sel
     Py_RETURN_NONE;
 }
 
+static PyObject *PyHarvesterEntity_increase_transport_priority(PyHarvesterEntityObject *self, PyObject *args)
+{
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a string arument (resource name).");
+        return NULL;
+    }
+
+    if(G_Harvester_IncreaseTransportPrio(self->super.ent->uid, name)) {
+        Py_RETURN_TRUE;
+    }else {
+        Py_RETURN_FALSE;
+    }
+}
+
+static PyObject *PyHarvesterEntity_decrease_transport_priority(PyHarvesterEntityObject *self, PyObject *args)
+{
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a string arument (resource name).");
+        return NULL;
+    }
+
+    if(G_Harvester_DecreaseTransportPrio(self->super.ent->uid, name)) {
+        Py_RETURN_TRUE;
+    }else {
+        Py_RETURN_FALSE;
+    }
+}
+
 static PyObject *PyHarvesterEntity_pickle(PyHarvesterEntityObject *self, PyObject *args, PyObject *kwargs)
 {
     //TODO
@@ -2236,6 +2310,44 @@ static PyObject *PyHarvesterEntity_get_total_carry(PyHarvesterEntityObject *self
 {
     int total = G_Harvester_GetCurrTotalCarry(self->super.ent->uid);
     return PyInt_FromLong(total);
+}
+
+static PyObject *PyHarvesterEntity_get_transport_priority(PyHarvesterEntityObject *self, void *closure)
+{
+    const char *names[64];
+    int nres = G_Harvester_GetTransportPrio(self->super.ent->uid, ARR_SIZE(names), names);
+
+    PyObject *ret = PyList_New(nres);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < nres; i++) {
+        PyObject *str = PyString_FromString(names[i]);
+        if(!str) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+        PyList_SetItem(ret, i, str);
+    }
+    return ret;
+}
+
+static PyObject *PyHarvesterEntity_get_strategy(PyHarvesterEntityObject *self, void *closure)
+{
+    enum tstrategy strat = G_Harvester_GetStrategy(self->super.ent->uid);
+    return PyInt_FromLong(strat);
+}
+
+static int PyHarvesterEntity_set_strategy(PyHarvesterEntityObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)
+    || (PyInt_AS_LONG(value) > TRANSPORT_STRATEGY_EXCESS)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.TRANSPORT_ enum value.");
+        return -1;
+    }
+
+    G_Harvester_SetStrategy(self->super.ent->uid, PyInt_AS_LONG(value));
+    return 0;
 }
 
 static PyObject *PyStorageSiteEntity_del(PyStorageSiteEntityObject *self)

@@ -436,6 +436,13 @@ bool G_Building_IsFounded(const struct entity *ent)
     return (bs->state >= BUILDING_STATE_FOUNDED);
 }
 
+bool G_Building_IsCompleted(const struct entity *ent)
+{
+    struct buildstate *bs = buildstate_get(ent->uid);
+    assert(bs);
+    return (bs->state >= BUILDING_STATE_COMPLETED);
+}
+
 void G_Building_SetVisionRange(struct entity *ent, float vision_range)
 {
     struct buildstate *bs = buildstate_get(ent->uid);

@@ -270,6 +270,16 @@ static bool update_res_delta(const char *rname, int delta)
     return true;
 }
 
+static void remove_all_resources(struct ss_state *ss)
+{
+    const char *key;
+    int amount;
+
+    kh_foreach(ss->curr, key, amount, {
+        update_res_delta(key, -amount);
+    });
+}
+
 static void on_update_ui(void *user, void *event)
 {
     uint32_t key;
@@ -284,7 +294,7 @@ static void on_update_ui(void *user, void *event)
         vec2_t ss_pos = Entity_TopScreenPos(ent);
 
         const int width = 160;
-        const int height = MIN(kh_size(curr.capacity), 16) * 22;
+        const int height = MIN(kh_size(curr.capacity), 16) * 20 + 4;
         const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + 20};
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BORDER | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
 
@@ -381,6 +391,7 @@ void G_StorageSite_RemoveEntity(uint32_t uid)
     struct ss_state *ss = ss_state_get(uid);
     if(!ss)
         return;
+    remove_all_resources(ss);
     ss_state_destroy(ss);
     ss_state_remove(uid);
 }

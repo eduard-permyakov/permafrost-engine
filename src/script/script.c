@@ -110,6 +110,7 @@ static PyObject *PyPf_get_hovered_unit(PyObject *self);
 static PyObject *PyPf_hide_healthbars(PyObject *self);
 static PyObject *PyPf_show_healthbars(PyObject *self);
 
+static PyObject *PyPf_get_resource_list(PyObject *self);
 static PyObject *PyPf_get_factions_list(PyObject *self);
 static PyObject *PyPf_add_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_remove_faction(PyObject *self, PyObject *args);
@@ -311,6 +312,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_show_healthbars, METH_NOARGS,
     "Re-enable showing the healthbars after a 'hide_healthbars' call. Note that the healthbars will only "
     "be rendered if the corresponding user-configurable setting is set."},
+
+    {"get_resource_list",
+    (PyCFunction)PyPf_get_resource_list, METH_NOARGS,
+    "Returns a list of the names of all the resources that are present (or have ever been present) in the current session."},
 
     {"get_factions_list",
     (PyCFunction)PyPf_get_factions_list, METH_NOARGS,
@@ -1062,6 +1067,26 @@ static PyObject *PyPf_show_healthbars(PyObject *self)
 {
     G_SetHideHealthbars(false);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_resource_list(PyObject *self)
+{
+    const char *names[64];
+    int nres = G_Resource_GetAllNames(ARR_SIZE(names), names);
+
+    PyObject *ret = PyList_New(nres);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < nres; i++) {
+        PyObject *str = PyString_FromString(names[i]);
+        if(!str) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+        PyList_SetItem(ret, i, str);
+    }
+    return ret;
 }
 
 static PyObject *PyPf_get_factions_list(PyObject *self)

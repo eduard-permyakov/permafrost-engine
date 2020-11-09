@@ -55,6 +55,8 @@
         pq_##name##_node_t *nodes;                                                              \
         size_t capacity;                                                                        \
         size_t size;                                                                            \
+        void *(*prealloc)(void *ptr, size_t size);                                              \
+        void  (*pfree)(void *ptr);                                                              \
     } pq_##name##_t;                                                                            \
 
 /***********************************************************************************************/
@@ -73,6 +75,9 @@
                                                                                                 \
     static void _pq_##name##_balance (pq(name) *pqueue, int root_idx);                          \
     scope  void  pq_##name##_init    (pq(name) *pqueue);                                        \
+    scope  void  pq_##name##_init_alloc(pq(name) *pqueue,                                       \
+                                        void *(*prealloc)(void *ptr, size_t size),              \
+                                        void (*pfree)(void *ptr));                              \
     scope  void  pq_##name##_destroy (pq(name) *pqueue);                                        \
     scope  bool  pq_##name##_push    (pq(name) *pqueue, float in_prio, type in);                \
     scope  bool  pq_##name##_pop     (pq(name) *pqueue, type *out);                             \
@@ -113,6 +118,19 @@
         pqueue->nodes = NULL;                                                                   \
         pqueue->capacity = 0;                                                                   \
         pqueue->size = 0;                                                                       \
+        pqueue->prealloc = realloc;                                                             \
+        pqueue->pfree = free;                                                                   \
+    }                                                                                           \
+                                                                                                \
+    scope void pq_##name##_init_alloc(pq(name) *pqueue,                                         \
+                                      void *(*prealloc)(void *ptr, size_t size),                \
+                                      void (*pfree)(void *ptr))                                 \
+    {                                                                                           \
+        pqueue->nodes = NULL;                                                                   \
+        pqueue->capacity = 0;                                                                   \
+        pqueue->size = 0;                                                                       \
+        pqueue->prealloc = prealloc;                                                            \
+        pqueue->pfree = pfree;                                                                  \
     }                                                                                           \
                                                                                                 \
     scope void pq_##name##_destroy(pq(name) *pqueue)                                            \
@@ -125,10 +143,11 @@
         if(pqueue->size + 1 >= pqueue->capacity) {                                              \
                                                                                                 \
             pqueue->capacity = pqueue->capacity ? pqueue->capacity * 2 : 32;                    \
-            pqueue->nodes = realloc(pqueue->nodes,                                              \
+            void *nodes = pqueue->prealloc(pqueue->nodes,                                       \
                 pqueue->capacity * sizeof(pq_##name##_node_t));                                 \
-            if(!pqueue->nodes)                                                                  \
+            if(!nodes)                                                                          \
                 return false;                                                                   \
+            pqueue->nodes = nodes;                                                              \
         }                                                                                       \
                                                                                                 \
         int curr_idx = pqueue->size + 1;                                                        \
@@ -192,10 +211,11 @@
         if(pqueue->capacity < cap) {                                                            \
                                                                                                 \
             pqueue->capacity = cap;                                                             \
-            pqueue->nodes = realloc(pqueue->nodes,                                              \
+            void *nodes = pqueue->prealloc(pqueue->nodes,                                       \
                 pqueue->capacity * sizeof(pq_##name##_node_t));                                 \
-            if(!pqueue->nodes)                                                                  \
+            if(!nodes)                                                                          \
                 return false;                                                                   \
+            pqueue->nodes = nodes;                                                              \
         }                                                                                       \
         return true;                                                                            \
     }                                                                                           \

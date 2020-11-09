@@ -1364,7 +1364,7 @@ bool G_RemoveEntity(struct entity *ent)
     G_Building_RemoveEntity(ent);
     G_Builder_RemoveEntity(ent);
     G_Harvester_RemoveEntity(ent->uid);
-    G_Resource_RemoveEntity(ent->uid);
+    G_Resource_RemoveEntity(ent);
     G_StorageSite_RemoveEntity(ent->uid);
     G_Pos_Delete(ent->uid);
     return true;
@@ -1692,7 +1692,7 @@ void G_Zombiefy(struct entity *ent)
     G_Building_RemoveEntity(ent);
     G_Builder_RemoveEntity(ent);
     G_Harvester_RemoveEntity(ent->uid);
-    G_Resource_RemoveEntity(ent->uid);
+    G_Resource_RemoveEntity(ent);
     G_StorageSite_RemoveEntity(ent->uid);
 
     vec2_t xz_pos = G_Pos_GetXZ(ent->uid);

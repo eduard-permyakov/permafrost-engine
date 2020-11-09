@@ -269,6 +269,7 @@ bool  G_Building_Found(struct entity *ent, bool blocking);
 bool  G_Building_Complete(struct entity *ent);
 bool  G_Building_Unobstructed(const struct entity *ent);
 bool  G_Building_IsFounded(const struct entity *ent);
+bool  G_Building_IsCompleted(const struct entity *ent);
 void  G_Building_SetVisionRange(struct entity *ent, float vision_range);
 float G_Building_GetVisionRange(const struct entity *ent);
 
@@ -291,10 +292,22 @@ bool        G_Resource_SetName(uint32_t uid, const char *name);
 const char *G_Resource_GetName(uint32_t uid);
 const char *G_Resource_GetCursor(uint32_t uid);
 bool        G_Resource_SetCursor(uint32_t uid, const char *cursor);
+int         G_Resource_GetAllNames(size_t maxout, const char *out[static maxout]);
 
 /*###########################################################################*/
 /* GAME HARVESTER                                                            */
 /*###########################################################################*/
+
+enum tstrategy{
+    /* The harvester will take resources from the closest eligible
+     * storage site, ragardless of whether or not that will cause 
+     * the stored amount to dip under the desired stockpile amount. */
+    TRANSPORT_STRATEGY_NEAREST,
+    /* The harvester will respect the desired stockpile settings of 
+     * all storage sites and take resources only from those sites 
+     * that have 'excess' resources. */
+    TRANSPORT_STRATEGY_EXCESS,
+};
 
 void G_Harvester_SetGatherOnLeftClick(void);
 void G_Harvester_SetDropOffOnLeftClick(void);
@@ -307,6 +320,11 @@ bool G_Harvester_SetMaxCarry(uint32_t uid, const char *rname, int max);
 int  G_Harvester_GetMaxCarry(uint32_t uid, const char *rname);
 bool G_Harvester_SetCurrCarry(uint32_t uid, const char *rname, int curr);
 int  G_Harvester_GetCurrCarry(uint32_t uid, const char *rname);
+void G_Harvester_SetStrategy(uint32_t uid, enum tstrategy strat);
+int  G_Harvester_GetStrategy(uint32_t uid);
+bool G_Harvester_IncreaseTransportPrio(uint32_t uid, const char *rname);
+bool G_Harvester_DecreaseTransportPrio(uint32_t uid, const char *rname);
+int  G_Harvester_GetTransportPrio(uint32_t uid, size_t maxout, const char *out[static maxout]);
 int  G_Harvester_GetCurrTotalCarry(uint32_t uid);
 
 /*###########################################################################*/

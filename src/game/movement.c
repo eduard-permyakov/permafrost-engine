@@ -1094,11 +1094,14 @@ static bool adjacent_check_fast(const struct entity *a, const struct entity *b)
 
     vec2_t apos = G_Pos_GetXZ(a->uid);
     vec2_t bpos = G_Pos_GetXZ(b->uid);
-    float len = obb_a.half_lengths[1] + obb_b.half_lengths[1];
+
+    float alen = MAX(obb_a.half_lengths[0], obb_a.half_lengths[2]);
+    float blen = MAX(obb_b.half_lengths[0], obb_b.half_lengths[2]);
+    float len = alen + blen;
 
     vec2_t diff;
     PFM_Vec2_Sub(&apos, &bpos, &diff);
-    return (PFM_Vec2_Len(&diff) < len + 15.0f);
+    return (PFM_Vec2_Len(&diff) < len + 10.0f);
 }
 
 static void entity_update(struct entity *ent, vec2_t new_vel)

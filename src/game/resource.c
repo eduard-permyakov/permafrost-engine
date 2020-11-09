@@ -49,6 +49,7 @@ struct rstate{
 };
 
 KHASH_MAP_INIT_INT(state, struct rstate)
+KHASH_SET_INIT_STR(name)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -58,6 +59,8 @@ static khash_t(stridx)  *s_stridx;
 static mp_strbuff_t      s_stringpool;
 static khash_t(state)   *s_entity_state_table;
 static const struct map *s_map;
+/* The set of all resources that exist (or have existed) in the current session */
+static khash_t(name)    *s_all_names;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -89,6 +92,13 @@ static void rstate_remove(uint32_t uid)
         kh_del(state, s_entity_state_table, k);
 }
 
+static int compare_keys(const void *a, const void *b)
+{
+    char *stra = *(char**)a;
+    char *strb = *(char**)b;
+    return strcmp(stra, strb);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -99,10 +109,14 @@ bool G_Resource_Init(const struct map *map)
         goto fail_table;
     if(!si_init(&s_stringpool, &s_stridx, 512))
         goto fail_strintern;
+    if(!(s_all_names = kh_init(name)))
+        goto fail_name_set;
 
     s_map = map;
     return true;
 
+fail_name_set:
+    si_shutdown(&s_stringpool, s_stridx);
 fail_strintern:
     kh_destroy(state, s_entity_state_table);
 fail_table:
@@ -111,6 +125,7 @@ fail_table:
 
 void G_Resource_Shutdown(void)
 {
+    kh_destroy(name, s_all_names);
     si_shutdown(&s_stringpool, s_stridx);
     kh_destroy(state, s_entity_state_table);
 }
@@ -123,8 +138,10 @@ bool G_Resource_AddEntity(const struct entity *ent)
         .amount = 0
     };
 
-    Entity_CurrentOBB(ent, &rs.blocking, true);
-    M_NavBlockersIncrefOBB(s_map, &rs.blocking);
+    if(!(ent->flags & ENTITY_FLAG_RESOURCE)) {
+        Entity_CurrentOBB(ent, &rs.blocking, true);
+        M_NavBlockersIncrefOBB(s_map, &rs.blocking);
+    }
 
     if(!rstate_set(ent->uid, rs))
         return false;
@@ -132,14 +149,17 @@ bool G_Resource_AddEntity(const struct entity *ent)
     return true;
 }
 
-void G_Resource_RemoveEntity(uint32_t uid)
+void G_Resource_RemoveEntity(struct entity *ent)
 {
-    struct rstate *rs = rstate_get(uid);
+    struct rstate *rs = rstate_get(ent->uid);
     if(!rs)
         return;
 
-    M_NavBlockersDecrefOBB(s_map, &rs->blocking);
-    rstate_remove(uid);
+    if(!(ent->flags & ENTITY_FLAG_RESOURCE)) {
+        M_NavBlockersDecrefOBB(s_map, &rs->blocking);
+    }
+
+    rstate_remove(ent->uid);
 }
 
 void G_Resource_UpdateBounds(const struct entity *ent)
@@ -148,9 +168,11 @@ void G_Resource_UpdateBounds(const struct entity *ent)
     if(!rs)
         return;
 
-    M_NavBlockersDecrefOBB(s_map, &rs->blocking);
-    Entity_CurrentOBB(ent, &rs->blocking, true);
-    M_NavBlockersIncrefOBB(s_map, &rs->blocking);
+    if(!(ent->flags & ENTITY_FLAG_RESOURCE)) {
+        M_NavBlockersDecrefOBB(s_map, &rs->blocking);
+        Entity_CurrentOBB(ent, &rs->blocking, true);
+        M_NavBlockersIncrefOBB(s_map, &rs->blocking);
+    }
 }
 
 int G_Resource_GetAmount(uint32_t uid)
@@ -184,6 +206,7 @@ bool G_Resource_SetName(uint32_t uid, const char *name)
         return false;
 
     rs->name = key;
+    kh_put(name, s_all_names, key, &(int){0});
     return true;
 }
 
@@ -205,5 +228,21 @@ bool G_Resource_SetCursor(uint32_t uid, const char *cursor)
 
     rs->cursor = key;
     return true;
+}
+
+int G_Resource_GetAllNames(size_t maxout, const char *out[static maxout])
+{
+    size_t ret = 0;
+
+    for(khiter_t k = kh_begin(s_all_names); k != kh_end(s_all_names); k++) {
+        if(!kh_exist(s_all_names, k))
+            continue;
+        if(ret == maxout)
+            break;
+        out[ret++] = kh_key(s_all_names, k);
+    }
+
+    qsort(out, ret, sizeof(char*), compare_keys);
+    return ret;
 }
 
