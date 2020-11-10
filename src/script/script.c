@@ -111,6 +111,8 @@ static PyObject *PyPf_hide_healthbars(PyObject *self);
 static PyObject *PyPf_show_healthbars(PyObject *self);
 
 static PyObject *PyPf_get_resource_list(PyObject *self);
+static PyObject *PyPf_get_resource_stored(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_resource_capacity(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_factions_list(PyObject *self);
 static PyObject *PyPf_add_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_remove_faction(PyObject *self, PyObject *args);
@@ -316,6 +318,14 @@ static PyMethodDef pf_module_methods[] = {
     {"get_resource_list",
     (PyCFunction)PyPf_get_resource_list, METH_NOARGS,
     "Returns a list of the names of all the resources that are present (or have ever been present) in the current session."},
+
+    {"get_resource_stored",
+    (PyCFunction)PyPf_get_resource_stored, METH_VARARGS,
+    "Returns the total amount of a particular resource between all player-controlled storage sites."},
+
+    {"get_resource_capacity",
+    (PyCFunction)PyPf_get_resource_capacity, METH_VARARGS,
+    "Returns the total capacity for storing a particular resource between all player-controlled storage sites."},
 
     {"get_factions_list",
     (PyCFunction)PyPf_get_factions_list, METH_NOARGS,
@@ -1087,6 +1097,30 @@ static PyObject *PyPf_get_resource_list(PyObject *self)
         PyList_SetItem(ret, i, str);
     }
     return ret;
+}
+
+static PyObject *PyPf_get_resource_stored(PyObject *self, PyObject *args)
+{
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one arguments: resource name (string).");
+        return NULL;
+    }
+
+    int stored = G_StorageSite_GetPlayerStored(name);
+    return PyInt_FromLong(stored);
+}
+
+static PyObject *PyPf_get_resource_capacity(PyObject *self, PyObject *args)
+{
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one arguments: resource name (string).");
+        return NULL;
+    }
+
+    int cap = G_StorageSite_GetPlayerCapacity(name);
+    return PyInt_FromLong(cap);
 }
 
 static PyObject *PyPf_get_factions_list(PyObject *self)

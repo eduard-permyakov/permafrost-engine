@@ -40,11 +40,12 @@
 #include <stdint.h>
 
 #define DEFAULT_CAPACITY (0)
+struct entity;
 
 bool G_StorageSite_Init(void);
 void G_StorageSite_Shutdown(void);
-bool G_StorageSite_AddEntity(uint32_t uid);
-void G_StorageSite_RemoveEntity(uint32_t uid);
+bool G_StorageSite_AddEntity(const struct entity *ent);
+void G_StorageSite_RemoveEntity(const struct entity *ent);
 
 #endif
 

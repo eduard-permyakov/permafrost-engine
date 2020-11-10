@@ -336,11 +336,15 @@ struct ss_delta_event{
     int delta;
 };
 
-bool G_StorageSite_SetCapacity(uint32_t uid, const char *rname, int max);
+bool G_StorageSite_SetCapacity(const struct entity *ent, const char *rname, int max);
 int  G_StorageSite_GetCapacity(uint32_t uid, const char *rname);
-bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr);
+bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr);
 int  G_StorageSite_GetCurr(uint32_t uid, const char *rname);
-int  G_StorageSite_GetTotal(const char *rname);
+int  G_StorageSite_GetDesired(uint32_t uid, const char *rname);
+bool G_StorageSite_SetDesired(uint32_t uid, const char *rname, int des);
+int  G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char *out[static maxout]);
+int  G_StorageSite_GetPlayerStored(const char *rname);
+int  G_StorageSite_GetPlayerCapacity(const char *rname);
 
 #endif
 

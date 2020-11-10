@@ -69,6 +69,7 @@ KHASH_MAP_INIT_STR(int, int)
 struct ss_state{
     kh_int_t              *capacity;
     kh_int_t              *curr;
+    kh_int_t              *desired;
     struct ss_delta_event  last_change;
 };
 
@@ -99,7 +100,8 @@ static mp_buff_t        s_mpool;
 static khash_t(stridx) *s_stridx;
 static mp_strbuff_t     s_stringpool;
 static khash_t(state)  *s_entity_state_table;
-static khash_t(res)    *s_global_resource_table;
+static khash_t(res)    *s_global_resource_tables[MAX_FACTIONS];
+static khash_t(res)    *s_global_capacity_tables[MAX_FACTIONS];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -165,15 +167,22 @@ static void ss_state_remove(uint32_t uid)
         kh_del(state, s_entity_state_table, k);
 }
 
+static void ss_state_destroy(struct ss_state *hs)
+{
+    kh_destroy(int, hs->capacity);
+    kh_destroy(int, hs->curr);
+    kh_destroy(int, hs->desired);
+}
+
 static bool ss_state_init(struct ss_state *hs)
 {
     hs->capacity = kh_init(int);
     hs->curr = kh_init(int);
+    hs->desired = kh_init(int);
 
     if(!hs->capacity || !hs->curr) {
-    
-        kh_destroy(int, hs->capacity);
-        kh_destroy(int, hs->curr);
+
+        ss_state_destroy(hs);
         return false;
     }
     hs->last_change = (struct ss_delta_event){0};
@@ -193,22 +202,17 @@ static size_t ss_get_keys(struct ss_state *hs, const char **out, size_t maxout)
 
     const char *key;
     int amount;
-    (void)amount;
 
     kh_foreach(hs->capacity, key, amount, {
         if(ret == maxout)
             break;
+        if(amount == 0)
+            continue;
         out[ret++] = key;
     });
 
     qsort(out, ret, sizeof(char*), compare_keys);
     return ret;
-}
-
-static void ss_state_destroy(struct ss_state *hs)
-{
-    kh_destroy(int, hs->capacity);
-    kh_destroy(int, hs->curr);
 }
 
 static bool ss_state_set_key(khash_t(int) *table, const char *name, int val)
@@ -246,38 +250,63 @@ static bool ss_state_get_key(khash_t(int) *table, const char *name, int *out)
     return true;
 }
 
-static bool update_res_delta(const char *rname, int delta)
+static bool update_res_delta(const char *rname, int delta, int faction_id)
 {
     const char *key = si_intern(rname, &s_stringpool, s_stridx);
     if(!key)
         return false;
 
-    khiter_t k = kh_get(res, s_global_resource_table, key);
-    if(k != kh_end(s_global_resource_table)) {
-        int val = kh_value(s_global_resource_table, k);
+    khiter_t k = kh_get(res, s_global_resource_tables[faction_id], key);
+    if(k != kh_end(s_global_resource_tables[faction_id])) {
+        int val = kh_value(s_global_resource_tables[faction_id], k);
         val += delta;
-        kh_value(s_global_resource_table, k) = val;
+        kh_value(s_global_resource_tables[faction_id], k) = val;
         return true;
     }
 
     int status;
-    k = kh_put(res, s_global_resource_table, key, &status);
+    k = kh_put(res, s_global_resource_tables[faction_id], key, &status);
     if(status == -1)
         return false;
 
     assert(status == 1);
-    kh_value(s_global_resource_table, k) = delta;
+    kh_value(s_global_resource_tables[faction_id], k) = delta;
     return true;
 }
 
-static void remove_all_resources(struct ss_state *ss)
+static bool update_cap_delta(const char *rname, int delta, int faction_id)
 {
-    const char *key;
-    int amount;
+    const char *key = si_intern(rname, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
 
-    kh_foreach(ss->curr, key, amount, {
-        update_res_delta(key, -amount);
-    });
+    khiter_t k = kh_get(res, s_global_capacity_tables[faction_id], key);
+    if(k != kh_end(s_global_capacity_tables[faction_id])) {
+        int val = kh_value(s_global_capacity_tables[faction_id], k);
+        val += delta;
+        kh_value(s_global_capacity_tables[faction_id], k) = val;
+        return true;
+    }
+
+    int status;
+    k = kh_put(res, s_global_capacity_tables[faction_id], key, &status);
+    if(status == -1)
+        return false;
+
+    assert(status == 1);
+    kh_value(s_global_capacity_tables[faction_id], k) = delta;
+    return true;
+}
+
+static void constrain_desired(struct ss_state *ss, const char *rname)
+{
+    int cap = 0, desired = 0;
+    ss_state_get_key(ss->capacity, rname, &cap);
+    ss_state_get_key(ss->desired, rname, &desired);
+
+    desired = MIN(desired, cap);
+    desired = MAX(desired, 0);
+    ss_state_set_key(ss->desired, rname, desired);
 }
 
 static void on_update_ui(void *user, void *event)
@@ -293,7 +322,7 @@ static void on_update_ui(void *user, void *event)
         const struct entity *ent = G_EntityForUID(key);
         vec2_t ss_pos = Entity_TopScreenPos(ent);
 
-        const int width = 160;
+        const int width = 224;
         const int height = MIN(kh_size(curr.capacity), 16) * 20 + 4;
         const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + 20};
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BORDER | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
@@ -316,18 +345,31 @@ static void on_update_ui(void *user, void *event)
 
             for(int i = 0; i < nnames; i++) {
 
-                char status[256];
-                pf_snprintf(status, sizeof(status), "%4d/%4d", 
-                    G_StorageSite_GetCurr(key, names[i]), G_StorageSite_GetCapacity(key, names[i]));
+                char curr[5], cap[5], desired[7];
+                pf_snprintf(curr, sizeof(curr), "%4d", G_StorageSite_GetCurr(key, names[i]));
+                pf_snprintf(cap, sizeof(cap), "%4d", G_StorageSite_GetCapacity(key, names[i]));
+                pf_snprintf(desired, sizeof(desired), "(%4d)", G_StorageSite_GetDesired(key, names[i]));
 
                 nk_layout_row_begin(ctx, NK_DYNAMIC, 16, 2);
-                nk_layout_row_push(ctx, 0.5f);
+                nk_layout_row_push(ctx, 0.30f);
                 nk_label_colored(ctx, names[i], NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
                     (struct nk_color){255, 0, 0, 255});
-                nk_layout_row_push(ctx, 0.5f);
-                nk_label_colored(ctx, status, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
+
+                nk_layout_row_push(ctx, 0.20f);
+                nk_label_colored(ctx, curr, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
                     (struct nk_color){255, 0, 0, 255});
-                nk_layout_row_end(ctx);
+
+                nk_layout_row_push(ctx, 0.05f);
+                nk_label_colored(ctx, "/", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
+                    (struct nk_color){255, 0, 0, 255});
+
+                nk_layout_row_push(ctx, 0.20f);
+                nk_label_colored(ctx, cap, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
+                    (struct nk_color){255, 0, 0, 255});
+
+                nk_layout_row_push(ctx, 0.30f);
+                nk_label_colored(ctx, desired, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
+                    (struct nk_color){255, 0, 0, 255});
             }
         }
         nk_end(ctx);
@@ -348,8 +390,23 @@ bool G_StorageSite_Init(void)
         goto fail_table;
     if(0 != kh_resize(state, s_entity_state_table, 4096))
         goto fail_res;
-    if(!(s_global_resource_table = kh_init(res)))
-        goto fail_res;
+
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        if(!(s_global_resource_tables[i] = kh_init(res))) {
+            for(--i; i; i--)
+                kh_destroy(res, s_global_resource_tables[i]);
+            goto fail_res;
+        }
+    }
+
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        if(!(s_global_capacity_tables[i] = kh_init(res))) {
+            for(--i; i; i--)
+                kh_destroy(res, s_global_capacity_tables[i]);
+            goto fail_cap;
+        }
+    }
+
     if(!si_init(&s_stringpool, &s_stridx, 512))
         goto fail_strintern;
 
@@ -357,7 +414,11 @@ bool G_StorageSite_Init(void)
     return true;
 
 fail_strintern:
-    kh_destroy(res, s_global_resource_table);
+    for(int i = 0; i < MAX_FACTIONS; i++)
+        kh_destroy(res, s_global_capacity_tables[i]);
+fail_cap:
+    for(int i = 0; i < MAX_FACTIONS; i++)
+        kh_destroy(res, s_global_resource_tables[i]);
 fail_res:
     kh_destroy(state, s_entity_state_table);
 fail_table:
@@ -370,37 +431,59 @@ void G_StorageSite_Shutdown(void)
 {
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
 
+    for(int i = 0; i < MAX_FACTIONS; i++)
+        kh_destroy(res, s_global_capacity_tables[i]);
+    for(int i = 0; i < MAX_FACTIONS; i++)
+        kh_destroy(res, s_global_resource_tables[i]);
+
     si_shutdown(&s_stringpool, s_stridx);
-    kh_destroy(res, s_global_resource_table);
     kh_destroy(state, s_entity_state_table);
     mp_buff_destroy(&s_mpool);
 }
 
-bool G_StorageSite_AddEntity(uint32_t uid)
+bool G_StorageSite_AddEntity(const struct entity *ent)
 {
     struct ss_state ss;
     if(!ss_state_init(&ss))
         return false;
-    if(!ss_state_set(uid, ss))
+    if(!ss_state_set(ent->uid, ss))
         return false;
     return true;
 }
 
-void G_StorageSite_RemoveEntity(uint32_t uid)
+void G_StorageSite_RemoveEntity(const struct entity *ent)
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_state_get(ent->uid);
     if(!ss)
         return;
-    remove_all_resources(ss);
+
+    const char *key;
+    int amount;
+
+    kh_foreach(ss->curr, key, amount, {
+        update_res_delta(key, -amount, ent->faction_id);
+    });
+    kh_foreach(ss->capacity, key, amount, {
+        update_cap_delta(key, -amount, ent->faction_id);
+    });
+
     ss_state_destroy(ss);
-    ss_state_remove(uid);
+    ss_state_remove(ent->uid);
 }
 
-bool G_StorageSite_SetCapacity(uint32_t uid, const char *rname, int max)
+bool G_StorageSite_SetCapacity(const struct entity *ent, const char *rname, int max)
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_state_get(ent->uid);
     assert(ss);
-    return ss_state_set_key(ss->capacity, rname, max);
+
+    int prev = 0;
+    ss_state_get_key(ss->curr, rname, &prev);
+    int delta = max - prev;
+    update_cap_delta(rname, delta, ent->faction_id);
+
+    bool ret = ss_state_set_key(ss->capacity, rname, max);
+    constrain_desired(ss, rname);
+    return ret;
 }
 
 int G_StorageSite_GetCapacity(uint32_t uid, const char *rname)
@@ -413,22 +496,22 @@ int G_StorageSite_GetCapacity(uint32_t uid, const char *rname)
     return ret;
 }
 
-bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr)
+bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr)
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_state_get(ent->uid);
     assert(ss);
 
     int prev = 0;
     ss_state_get_key(ss->curr, rname, &prev);
     int delta = curr - prev;
-    update_res_delta(rname, delta);
+    update_res_delta(rname, delta, ent->faction_id);
 
     if(delta) {
         ss->last_change = (struct ss_delta_event){
             .name = si_intern(rname, &s_stringpool, s_stridx),
             .delta = delta
         };
-        E_Entity_Notify(EVENT_STORAGE_SITE_AMOUNT_CHANGED, uid, &ss->last_change, ES_ENGINE);
+        E_Entity_Notify(EVENT_STORAGE_SITE_AMOUNT_CHANGED, ent->uid, &ss->last_change, ES_ENGINE);
     }
 
     return ss_state_set_key(ss->curr, rname, curr);
@@ -444,16 +527,61 @@ int G_StorageSite_GetCurr(uint32_t uid, const char *rname)
     return ret;
 }
 
-int G_StorageSite_GetTotal(const char *rname)
+bool G_StorageSite_SetDesired(uint32_t uid, const char *rname, int des)
 {
-    const char *key = si_intern(rname, &s_stringpool, s_stridx);
-    if(!key)
-        return 0;
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    bool ret = ss_state_set_key(ss->desired, rname, des);
+    constrain_desired(ss, rname);
+    return ret;
+}
 
-    khiter_t k = kh_get(res, s_global_resource_table, key);
-    if(k == kh_end(s_global_resource_table))
-        return 0;
+int G_StorageSite_GetDesired(uint32_t uid, const char *rname)
+{
+    int ret = DEFAULT_CAPACITY;
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
 
-    return kh_value(s_global_resource_table, k);
+    ss_state_get_key(ss->desired, rname, &ret);
+    return ret;
+}
+
+int G_StorageSite_GetPlayerStored(const char *rname)
+{
+    int ret = 0;
+    uint16_t pfacs = G_GetPlayerControlledFactions();
+
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        if(!(pfacs & (0x1 << i)))
+            continue;
+        khiter_t k = kh_get(res, s_global_resource_tables[i], rname);
+        if(k == kh_end(s_global_resource_tables[i]))
+            continue;
+        ret += kh_value(s_global_resource_tables[i], k);
+    }
+    return ret;
+}
+
+int G_StorageSite_GetPlayerCapacity(const char *rname)
+{
+    int ret = 0;
+    uint16_t pfacs = G_GetPlayerControlledFactions();
+
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        if(!(pfacs & (0x1 << i)))
+            continue;
+        khiter_t k = kh_get(res, s_global_capacity_tables[i], rname);
+        if(k == kh_end(s_global_capacity_tables[i]))
+            continue;
+        ret += kh_value(s_global_capacity_tables[i], k);
+    }
+    return ret;
+}
+
+int G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char *out[static maxout])
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    return ss_get_keys(ss, out, maxout);
 }
 

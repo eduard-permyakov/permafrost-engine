@@ -678,7 +678,12 @@ typedef struct {
 }PyStorageSiteEntityObject;
 
 static PyObject *PyStorageSiteEntity_del(PyStorageSiteEntityObject *self);
+static PyObject *PyStorageSiteEntity_get_curr_amount(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_get_storable(PyStorageSiteEntityObject *self, void *closure);
+static PyObject *PyStorageSiteEntity_get_desired(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_set_desired(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_pickle(PyStorageSiteEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyStorageSiteEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -688,9 +693,25 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     (PyCFunction)PyStorageSiteEntity_del, METH_NOARGS,
     "Calls the next __del__ in the MRO if there is one, otherwise do nothing."},
 
+    {"get_curr_amount", 
+    (PyCFunction)PyStorageSiteEntity_get_curr_amount, METH_VARARGS,
+    "Gets the amount of the specified resource currently stored in the storage site."},
+
+    {"get_capacity", 
+    (PyCFunction)PyStorageSiteEntity_get_capacity, METH_VARARGS,
+    "Gets the maximum amount of the specified resource that can be stored in the storage site."},
+
     {"set_capacity", 
     (PyCFunction)PyStorageSiteEntity_set_capacity, METH_VARARGS,
     "Sets the maximum amount of the specified resource that can be stored in the storage site."},
+
+    {"get_desired", 
+    (PyCFunction)PyStorageSiteEntity_get_desired, METH_VARARGS,
+    "Gets the target amount of the specified resource that harvesters will aim to store there."},
+
+    {"set_desired", 
+    (PyCFunction)PyStorageSiteEntity_set_desired, METH_VARARGS,
+    "Sets the target amount of the specified resource that harvesters will aim to store there."},
 
     {"__pickle__", 
     (PyCFunction)PyStorageSiteEntity_pickle, METH_KEYWORDS,
@@ -704,6 +725,14 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     {NULL}  /* Sentinel */
 };
 
+static PyGetSetDef PyStorageSiteEntity_getset[] = {
+    {"storable",
+    (getter)PyStorageSiteEntity_get_storable, NULL,
+    "The list of resources that are currently able to be held at this storage site.",
+    NULL},
+    {NULL}  /* Sentinel */
+};
+
 static PyTypeObject PyStorageSiteEntity_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name      = "pf.StorageSiteEntity",
@@ -713,6 +742,7 @@ static PyTypeObject PyStorageSiteEntity_type = {
                     "entity is able to hold resources that can be dropped off by pf.HarvesterEntity types.",
     .tp_methods   = PyStorageSiteEntity_methods,
     .tp_base      = &PyEntity_type,
+    .tp_getset    = PyStorageSiteEntity_getset,
 };
 
 /*****************************************************************************/
@@ -2355,6 +2385,30 @@ static PyObject *PyStorageSiteEntity_del(PyStorageSiteEntityObject *self)
     return s_super_del((PyObject*)self, &PyStorageSiteEntity_type);
 }
 
+static PyObject *PyStorageSiteEntity_get_curr_amount(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+
+    int curr = G_StorageSite_GetCurr(self->super.ent->uid, name);
+    return PyInt_FromLong(curr);
+}
+
+static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+
+    int cap = G_StorageSite_GetCapacity(self->super.ent->uid, name);
+    return PyInt_FromLong(cap);
+}
+
 static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *self, PyObject *args)
 {
     const char *name;
@@ -2365,11 +2419,60 @@ static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *sel
         return NULL;
     }
 
-    if(!G_StorageSite_SetCapacity(self->super.ent->uid, name, amount)) {
+    if(!G_StorageSite_SetCapacity(self->super.ent, name, amount)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to set the resource capacity.");
         return NULL;
     }
     Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_get_desired(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    const char *name;
+    if(!PyArg_ParseTuple(args, "s", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
+        return NULL;
+    }
+
+    int cap = G_StorageSite_GetDesired(self->super.ent->uid, name);
+    return PyInt_FromLong(cap);
+}
+
+static PyObject *PyStorageSiteEntity_set_desired(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    const char *name;
+    int amount;
+
+    if(!PyArg_ParseTuple(args, "si", &name, &amount)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and amount (integer).");
+        return NULL;
+    }
+
+    if(!G_StorageSite_SetDesired(self->super.ent->uid, name, amount)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to set the resource capacity.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyStorageSiteEntity_get_storable(PyStorageSiteEntityObject *self, void *closure)
+{
+    const char *names[64];
+    int nres = G_StorageSite_GetStorableResources(self->super.ent->uid, ARR_SIZE(names), names);
+
+    PyObject *ret = PyList_New(nres);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < nres; i++) {
+        PyObject *str = PyString_FromString(names[i]);
+        if(!str) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+        PyList_SetItem(ret, i, str);
+    }
+    return ret;
 }
 
 static PyObject *PyStorageSiteEntity_pickle(PyStorageSiteEntityObject *self, PyObject *args, PyObject *kwargs)

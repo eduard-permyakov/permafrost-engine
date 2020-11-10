@@ -230,7 +230,7 @@ static bool hstate_init(struct hstate *hs)
     hs->res_last_pos = (vec2_t){0};
     hs->res_name = NULL;
     hs->state = STATE_NOT_HARVESTING;
-    hs->strategy = TRANSPORT_STRATEGY_EXCESS;
+    hs->strategy = TRANSPORT_STRATEGY_NEAREST;
     return true;
 }
 
@@ -590,7 +590,7 @@ static void on_arrive_at_storage(void *user, void *event)
 
     if(left >= carry) {
         G_Harvester_SetCurrCarry(uid, hs->res_name, 0);
-        G_StorageSite_SetCurr(target->uid, hs->res_name, curr + carry);
+        G_StorageSite_SetCurr(target, hs->res_name, curr + carry);
 
         struct entity *resource = target_resource(hs);
         if(resource) {
@@ -603,7 +603,7 @@ static void on_arrive_at_storage(void *user, void *event)
     }else{
 
         G_Harvester_SetCurrCarry(uid, hs->res_name, carry - left);
-        G_StorageSite_SetCurr(target->uid, hs->res_name, cap);
+        G_StorageSite_SetCurr(target, hs->res_name, cap);
 
         entity_try_drop_off(ent, hs->res_name);
     }

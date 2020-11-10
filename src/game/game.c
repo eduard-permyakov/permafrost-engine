@@ -1329,7 +1329,7 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
         G_Harvester_AddEntity(ent->uid);
 
     if(ent->flags & ENTITY_FLAG_STORAGE_SITE)
-        G_StorageSite_AddEntity(ent->uid);
+        G_StorageSite_AddEntity(ent);
 
     if(ent->flags & ENTITY_FLAG_MOVABLE) {
     
@@ -1365,7 +1365,7 @@ bool G_RemoveEntity(struct entity *ent)
     G_Builder_RemoveEntity(ent);
     G_Harvester_RemoveEntity(ent->uid);
     G_Resource_RemoveEntity(ent);
-    G_StorageSite_RemoveEntity(ent->uid);
+    G_StorageSite_RemoveEntity(ent);
     G_Pos_Delete(ent->uid);
     return true;
 }
@@ -1693,7 +1693,7 @@ void G_Zombiefy(struct entity *ent)
     G_Builder_RemoveEntity(ent);
     G_Harvester_RemoveEntity(ent->uid);
     G_Resource_RemoveEntity(ent);
-    G_StorageSite_RemoveEntity(ent->uid);
+    G_StorageSite_RemoveEntity(ent);
 
     vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
     G_Fog_RemoveVision(xz_pos, ent->faction_id, ent->vision_range);
