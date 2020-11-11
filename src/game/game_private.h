@@ -48,6 +48,7 @@ enum ctx_action{
     CTX_ACTION_BUILD,
     CTX_ACTION_GATHER,
     CTX_ACTION_DROP_OFF,
+    CTX_ACTION_TRANSPORT,
 };
 
 const khash_t(entity) *G_GetDynamicEntsSet(void);

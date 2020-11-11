@@ -684,6 +684,9 @@ static void g_set_contextual_cursor(void)
     case CTX_ACTION_DROP_OFF:
         Cursor_SetRTSPointer(CURSOR_DROP_OFF);
         break;
+    case CTX_ACTION_TRANSPORT:
+        Cursor_SetRTSPointer(CURSOR_TRANSPORT);
+        break;
     default:
         Cursor_SetRTSPointer(CURSOR_POINTER);
         break;

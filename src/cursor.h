@@ -53,6 +53,7 @@ enum cursortype{
     CURSOR_NO_ATTACK,
     CURSOR_BUILD,
     CURSOR_DROP_OFF,
+    CURSOR_TRANSPORT,
     _CURSOR_MAX
 };
 

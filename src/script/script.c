@@ -136,6 +136,7 @@ static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
 static PyObject *PyPf_set_build_on_left_click(PyObject *self);
 static PyObject *PyPf_set_gather_on_left_click(PyObject *self);
 static PyObject *PyPf_set_drop_off_on_left_click(PyObject *self);
+static PyObject *PyPf_set_transport_on_left_click(PyObject *self);
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_settings_get(PyObject *self, PyObject *args);
@@ -424,6 +425,11 @@ static PyMethodDef pf_module_methods[] = {
     {"set_drop_off_on_left_click",
     (PyCFunction)PyPf_set_drop_off_on_left_click, METH_NOARGS,
     "Set the cursor to target mode. The next left click will issue a 'drop off' command to the storage site "
+    "under the cursor."},
+
+    {"set_transport_on_left_click",
+    (PyCFunction)PyPf_set_transport_on_left_click, METH_NOARGS,
+    "Set the cursor to target mode. The next left click will issue a 'transport' command to the storage site "
     "under the cursor."},
 
     {"draw_text",
@@ -1472,6 +1478,12 @@ static PyObject *PyPf_set_drop_off_on_left_click(PyObject *self)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_set_transport_on_left_click(PyObject *self)
+{
+    G_Harvester_SetTransportOnLeftClick();
+    Py_RETURN_NONE;
+}
+
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args)
 {
     const char *text;
@@ -2340,6 +2352,7 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_BUILD_TARGET_ACQUIRED: 
     case EVENT_HARVEST_TARGET_ACQUIRED:
     case EVENT_STORAGE_TARGET_ACQUIRED:
+    case EVENT_TRANSPORT_TARGET_ACQUIRED:
     case EVENT_BUILDING_COMPLETED: 
     case EVENT_ENTITY_DIED: {
         PyObject *ent = S_Entity_ObjForUID(((struct entity*)arg)->uid);

@@ -585,6 +585,7 @@ typedef struct {
 static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self);
 static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_transport(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_increase_transport_priority(PyHarvesterEntityObject *self, PyObject *args);
@@ -609,6 +610,11 @@ static PyMethodDef PyHarvesterEntity_methods[] = {
     {"drop_off", 
     (PyCFunction)PyHarvesterEntity_drop_off, METH_VARARGS,
     "Instruct an entity to bring the resources it is currently holding to the specified storage site."},
+
+    {"transport", 
+    (PyCFunction)PyHarvesterEntity_transport, METH_VARARGS,
+    "Instruct an entity to bring resources to the target storage site, using its' strategy and priority list "
+    "to select the appropriate source storage sites."},
 
     {"set_max_carry", 
     (PyCFunction)PyHarvesterEntity_set_max_carry, METH_VARARGS,
@@ -2255,6 +2261,23 @@ static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObj
 
     if(!G_Harvester_DropOff(self->super.ent, storage->super.ent)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to drop off resource at the specified storage site.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyHarvesterEntity_transport(PyHarvesterEntityObject *self, PyObject *args)
+{
+    PyStorageSiteEntityObject *storage;
+
+    if(!PyArg_ParseTuple(args, "O", &storage)
+    || !PyObject_IsInstance((PyObject*)storage, (PyObject*)&PyStorageSiteEntity_type)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a pf.StorageSiteEntity instance.");
+        return NULL;
+    }
+
+    if(!G_Harvester_Transport(self->super.ent, storage->super.ent)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to transport resources to the specified storage site.");
         return NULL;
     }
     Py_RETURN_NONE;
