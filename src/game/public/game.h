@@ -55,6 +55,8 @@ struct tile;
 struct faction;
 struct render_workspace;
 struct nk_context;
+struct nk_style_item;
+struct nk_color;
 
 
 VEC_TYPE(pentity, struct entity *)
@@ -348,6 +350,9 @@ bool G_StorageSite_SetDesired(uint32_t uid, const char *rname, int des);
 int  G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char *out[static maxout]);
 int  G_StorageSite_GetPlayerStored(const char *rname);
 int  G_StorageSite_GetPlayerCapacity(const char *rname);
+void G_StorageSite_SetFontColor(const struct nk_color *clr);
+void G_StorageSite_SetBorderColor(const struct nk_color *clr);
+void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style);
 
 #endif
 

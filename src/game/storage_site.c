@@ -103,6 +103,10 @@ static khash_t(state)  *s_entity_state_table;
 static khash_t(res)    *s_global_resource_tables[MAX_FACTIONS];
 static khash_t(res)    *s_global_capacity_tables[MAX_FACTIONS];
 
+static struct nk_style_item s_bg_style = {0};
+static struct nk_color      s_border_clr = {0};
+static struct nk_color      s_font_clr = {0};
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -313,6 +317,10 @@ static void on_update_ui(void *user, void *event)
 {
     uint32_t key;
     struct ss_state curr;
+    struct nk_context *ctx = UI_GetContext();
+
+    nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, s_bg_style);
+    nk_style_push_color(ctx, &ctx->style.window.border_color, s_border_clr);
 
     kh_foreach(s_entity_state_table, key, curr, {
 
@@ -337,7 +345,6 @@ static void on_update_ui(void *user, void *event)
 
         const char *names[16];
         size_t nnames = ss_get_keys(&curr, names, ARR_SIZE(names));
-        struct nk_context *ctx = UI_GetContext();
 
         if(nk_begin_with_vres(ctx, name, 
             (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h}, 
@@ -352,28 +359,26 @@ static void on_update_ui(void *user, void *event)
 
                 nk_layout_row_begin(ctx, NK_DYNAMIC, 16, 2);
                 nk_layout_row_push(ctx, 0.30f);
-                nk_label_colored(ctx, names[i], NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
-                    (struct nk_color){255, 0, 0, 255});
+                nk_label_colored(ctx, names[i], NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
 
                 nk_layout_row_push(ctx, 0.20f);
-                nk_label_colored(ctx, curr, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
-                    (struct nk_color){255, 0, 0, 255});
+                nk_label_colored(ctx, curr, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
 
                 nk_layout_row_push(ctx, 0.05f);
-                nk_label_colored(ctx, "/", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
-                    (struct nk_color){255, 0, 0, 255});
+                nk_label_colored(ctx, "/", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
 
                 nk_layout_row_push(ctx, 0.20f);
-                nk_label_colored(ctx, cap, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
-                    (struct nk_color){255, 0, 0, 255});
+                nk_label_colored(ctx, cap, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
 
                 nk_layout_row_push(ctx, 0.30f);
-                nk_label_colored(ctx, desired, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, 
-                    (struct nk_color){255, 0, 0, 255});
+                nk_label_colored(ctx, desired, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
             }
         }
         nk_end(ctx);
     });
+
+    nk_style_pop_style_item(ctx);
+    nk_style_pop_color(ctx);
 }
 
 /*****************************************************************************/
@@ -409,6 +414,13 @@ bool G_StorageSite_Init(void)
 
     if(!si_init(&s_stringpool, &s_stridx, 512))
         goto fail_strintern;
+
+    struct nk_context ctx;
+    nk_style_default(&ctx);
+
+    s_bg_style = ctx.style.window.fixed_background;
+    s_border_clr = ctx.style.window.border_color;
+    s_font_clr = ctx.style.text.color;
 
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     return true;
@@ -583,5 +595,20 @@ int G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char *
     struct ss_state *ss = ss_state_get(uid);
     assert(ss);
     return ss_get_keys(ss, out, maxout);
+}
+
+void G_StorageSite_SetFontColor(const struct nk_color *clr)
+{
+    s_font_clr = *clr;
+}
+
+void G_StorageSite_SetBorderColor(const struct nk_color *clr)
+{
+    s_border_clr = *clr;
+}
+
+void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style)
+{
+    s_bg_style = *style;
 }
 

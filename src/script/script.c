@@ -53,6 +53,7 @@
 #include "../map/public/tile.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/pf_nuklear.h"
 #include "../event.h"
 #include "../config.h"
 #include "../scene.h"
@@ -131,13 +132,17 @@ static PyObject *PyPf_set_minimap_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_mouse_over_minimap(PyObject *self);
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
+static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_storage_site_ui_border_color(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_storage_site_ui_font_color(PyObject *self, PyObject *args);
+
 static PyObject *PyPf_set_move_on_left_click(PyObject *self);
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
 static PyObject *PyPf_set_build_on_left_click(PyObject *self);
 static PyObject *PyPf_set_gather_on_left_click(PyObject *self);
 static PyObject *PyPf_set_drop_off_on_left_click(PyObject *self);
 static PyObject *PyPf_set_transport_on_left_click(PyObject *self);
-static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_settings_get(PyObject *self, PyObject *args);
 static PyObject *PyPf_settings_set(PyObject *self, PyObject *args, PyObject *kwargs);
@@ -436,6 +441,18 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_draw_text, METH_VARARGS,
     "Draw a text label with the specified bounds (X, Y, W, H) )and with the specified color (R, G, B, A). "
     "The label lasts for one frame, meaning this should be called every tick to keep the label fixed."},
+
+    {"set_storage_site_ui_style",
+    (PyCFunction)PyPf_set_storage_site_ui_style, METH_VARARGS,
+    "Set the storage site UI background to the specified color (R, G, B, A) or image (string)."},
+
+    {"set_storage_site_ui_border_color",
+    (PyCFunction)PyPf_set_storage_site_ui_border_color, METH_VARARGS,
+    "Set the storage site UI border color to the specified color (R, G, B, A)."},
+
+    {"set_storage_site_ui_font_color",
+    (PyCFunction)PyPf_set_storage_site_ui_font_color, METH_VARARGS,
+    "Set the storage site UI text color to the specified color (R, G, B, A)."},
 
     {"settings_get",
     (PyCFunction)PyPf_settings_get, METH_VARARGS,
@@ -1497,6 +1514,70 @@ static PyObject *PyPf_draw_text(PyObject *self, PyObject *args)
     }
 
     UI_DrawText(text, rect, (struct rgba){r, g, b, a});
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args)
+{
+    struct nk_style_item style;
+    PyObject *val;
+
+    if(!PyArg_ParseTuple(args, "O", &val)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an (R, G, B, A) tuple or an image path.");
+        return NULL;
+    }
+
+    if(PyTuple_Check(val) 
+    && PyTuple_GET_SIZE(val) == 4
+    && PyInt_Check(PyTuple_GET_ITEM(val, 0))
+    && PyInt_Check(PyTuple_GET_ITEM(val, 1))
+    && PyInt_Check(PyTuple_GET_ITEM(val, 2))
+    && PyInt_Check(PyTuple_GET_ITEM(val, 3))) {
+
+        style.type = NK_STYLE_ITEM_COLOR;
+        style.data.color.r = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 0));
+        style.data.color.g = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 1));
+        style.data.color.b = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 2));
+        style.data.color.a = PyInt_AS_LONG(PyTuple_GET_ITEM(val, 3));
+
+    }else if(PyString_Check(val)) {
+
+        style.type = NK_STYLE_ITEM_TEXPATH;
+        pf_strlcpy(style.data.texpath, PyString_AS_STRING(val),
+            ARR_SIZE(style.data.texpath));
+
+    }else{
+        PyErr_SetString(PyExc_TypeError, "Argument must be an (R, G, B, A) tuple or an image path.");
+        return NULL; 
+    }
+
+    G_StorageSite_SetBackgroundStyle(&style);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_storage_site_ui_border_color(PyObject *self, PyObject *args)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(args, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
+        return NULL;
+    }
+
+    struct nk_color clr = (struct nk_color){r, g, b, a};
+    G_StorageSite_SetBorderColor(&clr);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_storage_site_ui_font_color(PyObject *self, PyObject *args)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(args, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple or an image path.");
+        return NULL;
+    }
+
+    struct nk_color clr = (struct nk_color){r, g, b, a};
+    G_StorageSite_SetFontColor(&clr);
     Py_RETURN_NONE;
 }
 
