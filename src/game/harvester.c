@@ -644,14 +644,9 @@ static void on_arrive_at_resource(void *user, void *event)
     assert(hs->res_uid != UID_NONE);
     struct entity *target = G_EntityForUID(hs->res_uid);
 
-    struct obb obb;
-    if(target) {
-        Entity_CurrentOBB(target, &obb, false);
-    }
-
     if(!target
     || (target->flags & ENTITY_FLAG_ZOMBIE)
-    || !M_NavObjAdjacentToStatic(s_map, ent, &obb)) {
+    || !M_NavObjAdjacent(s_map, ent, target)) {
 
         /* harvester could not reach the resource */
         entity_try_gather_nearest(ent, hs->res_name);
@@ -689,14 +684,9 @@ static void on_arrive_at_storage(void *user, void *event)
     assert(hs->ss_uid != UID_NONE);
     struct entity *target = G_EntityForUID(hs->ss_uid);
 
-    struct obb obb;
-    if(target) {
-        Entity_CurrentOBB(target, &obb, false);
-    }
-
     if(!target 
     || (target->flags & ENTITY_FLAG_ZOMBIE)
-    || !M_NavObjAdjacentToStatic(s_map, ent, &obb)) {
+    || !M_NavObjAdjacent(s_map, ent, target)) {
         /* harvester could not reach the storage site */
         entity_try_drop_off(ent);
         return; 
@@ -753,14 +743,9 @@ static void on_arrive_at_transport_source(void *user, void *event)
     assert(hs);
     struct entity *src = G_EntityForUID(hs->transport_src_uid);
 
-    struct obb obb;
-    if(src) {
-        Entity_CurrentOBB(src, &obb, false);
-    }
-
     if(!src
     || (src->flags & ENTITY_FLAG_ZOMBIE)
-    || !M_NavObjAdjacentToStatic(s_map, ent, &obb)) {
+    || !M_NavObjAdjacent(s_map, ent, src)) {
 
         /* harvester could not reach the storage site */
         struct entity *dest = G_EntityForUID(hs->transport_dest_uid);
@@ -861,14 +846,9 @@ static void on_arrive_at_transport_dest(void *user, void *event)
     assert(hs);
     struct entity *dest = G_EntityForUID(hs->transport_dest_uid);
 
-    struct obb obb;
-    if(dest) {
-        Entity_CurrentOBB(dest, &obb, false);
-    }
-
     if(!dest 
     || (dest->flags & ENTITY_FLAG_ZOMBIE)
-    || !M_NavObjAdjacentToStatic(s_map, ent, &obb)) {
+    || !M_NavObjAdjacent(s_map, ent, dest)) {
         /* harvester could not reach the destination storage site */
         finish_transporing(hs);
         return;

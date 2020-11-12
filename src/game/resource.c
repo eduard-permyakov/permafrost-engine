@@ -45,7 +45,8 @@ struct rstate{
     const char *name;
     const char *cursor;
     int         amount;
-    struct obb  blocking;
+    vec2_t      blocking_pos;
+    int         blocking_radius;
 };
 
 KHASH_MAP_INIT_INT(state, struct rstate)
@@ -135,17 +136,17 @@ bool G_Resource_AddEntity(const struct entity *ent)
     struct rstate rs = (struct rstate) {
         .name = "",
         .cursor = "",
-        .amount = 0
+        .amount = 0,
+        .blocking_pos = G_Pos_GetXZ(ent->uid),
+        .blocking_radius = ent->selection_radius,
     };
-
-    if(!(ent->flags & ENTITY_FLAG_RESOURCE)) {
-        Entity_CurrentOBB(ent, &rs.blocking, true);
-        M_NavBlockersIncrefOBB(s_map, &rs.blocking);
-    }
 
     if(!rstate_set(ent->uid, rs))
         return false;
 
+    if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
+        M_NavBlockersIncref(rs.blocking_pos, rs.blocking_radius, s_map);
+    }
     return true;
 }
 
@@ -155,8 +156,8 @@ void G_Resource_RemoveEntity(struct entity *ent)
     if(!rs)
         return;
 
-    if(!(ent->flags & ENTITY_FLAG_RESOURCE)) {
-        M_NavBlockersDecrefOBB(s_map, &rs->blocking);
+    if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
+        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, s_map);
     }
 
     rstate_remove(ent->uid);
@@ -168,10 +169,23 @@ void G_Resource_UpdateBounds(const struct entity *ent)
     if(!rs)
         return;
 
-    if(!(ent->flags & ENTITY_FLAG_RESOURCE)) {
-        M_NavBlockersDecrefOBB(s_map, &rs->blocking);
-        Entity_CurrentOBB(ent, &rs->blocking, true);
-        M_NavBlockersIncrefOBB(s_map, &rs->blocking);
+    if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
+        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, s_map);
+        rs->blocking_pos = G_Pos_GetXZ(ent->uid);
+        M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, s_map);
+    }
+}
+
+void G_Resource_UpdateSelectionRadius(const struct entity *ent, float radius)
+{
+    struct rstate *rs = rstate_get(ent->uid);
+    if(!rs)
+        return;
+
+    if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
+        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, s_map);
+        rs->blocking_radius = radius;
+        M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, s_map);
     }
 }
 

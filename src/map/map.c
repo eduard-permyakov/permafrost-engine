@@ -559,10 +559,19 @@ vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz
 }
 
 bool M_NavClosestReachableAdjacentPos(const struct map *map, vec2_t xz_src, 
-                                      const struct obb *target, vec2_t *out)
+                                      const struct entity *target, vec2_t *out)
 {
-    assert(M_NavPositionPathable(map, xz_src));
-    return N_ClosestReachableAdjacentPos(map->nav_private, map->pos, xz_src, target, out);
+    if(target->flags & ENTITY_FLAG_MOVABLE) {
+
+        return N_ClosestReachableAdjacentPosDynamic(map->nav_private, map->pos, 
+            xz_src, G_Pos_GetXZ(target->uid), target->selection_radius, out);
+    }else{
+
+        struct obb obb;
+        Entity_CurrentOBB(target, &obb, false);
+        return N_ClosestReachableAdjacentPosStatic(map->nav_private, 
+            map->pos, xz_src, &obb, out);
+    }
 }
 
 void M_NavBlockersIncref(vec2_t xz_pos, float range, const struct map *map)
@@ -652,9 +661,18 @@ uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos)
     return N_DestIDForPos(map->nav_private, map->pos, xz_pos);
 }
 
-bool M_NavObjAdjacentToStatic(const struct map *map, const struct entity *ent, const struct obb *stat)
+bool M_NavObjAdjacent(const struct map *map, const struct entity *ent, struct entity *target)
 {
-    return N_ObjAdjacentToStatic(map->nav_private, map->pos, ent, stat);
+    if(target->flags & ENTITY_FLAG_MOVABLE) {
+
+        return N_ObjAdjacentToDynamic(map->nav_private, map->pos, ent, 
+            G_Pos_GetXZ(target->uid), target->selection_radius);
+    }else{
+
+        struct obb obb;
+        Entity_CurrentOBB(target, &obb, false);
+        return N_ObjAdjacentToStatic(map->nav_private, map->pos, ent, &obb);
+    }
 }
 
 void M_NavGetResolution(const struct map *map, struct map_resolution *out)

@@ -1205,12 +1205,9 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
             break;
         }
 
-        struct obb obb;
-        Entity_CurrentOBB(target, &obb, false);
-
         vec2_t dest;
         vec2_t target_pos = G_Pos_GetXZ(ms->surround_target_uid);
-        bool hasdest = M_NavClosestReachableAdjacentPos(s_map, G_Pos_GetXZ(ent->uid), &obb, &dest);
+        bool hasdest = M_NavClosestReachableAdjacentPos(s_map, G_Pos_GetXZ(ent->uid), target, &dest);
 
         if(!hasdest) {
             entity_finish_moving(ent, STATE_ARRIVED);
@@ -1230,7 +1227,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         if(!adjacent_check_fast(ent, target))
             break;
 
-        if(M_NavObjAdjacentToStatic(s_map, ent, &obb)) {
+        if(M_NavObjAdjacent(s_map, ent, target)) {
             entity_finish_moving(ent, STATE_ARRIVED);
             break;
         }

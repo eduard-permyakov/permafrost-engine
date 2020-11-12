@@ -304,10 +304,12 @@ vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz
 /* ------------------------------------------------------------------------
  * If true is returned, 'out' is set to the worldspace XZ position of the 
  * closest reachable point on the map that is adjacent to the specified entity.
+ * For 'static' entities, the tiles under the OBB are used, else the tiles
+ * under the selection circle are used.
  * ------------------------------------------------------------------------
  */
 bool   M_NavClosestReachableAdjacentPos(const struct map *map, vec2_t xz_src, 
-                                        const struct obb *target, vec2_t *out);
+                                        const struct entity *target, vec2_t *out);
 
 /* ------------------------------------------------------------------------
  * Change the blocker reference count for the navigation tile under the
@@ -333,11 +335,12 @@ bool     M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos,
 
 /* ------------------------------------------------------------------------
  * Returns true if the tiles under the entity selection cirlce overlap or 
- * share an edge with any of the tiles under the OBB.
+ * share an edge with any of the tiles under the target entity.
+ * For 'static' enties, the OBB is used. Else, the selection circle is used.
  * ------------------------------------------------------------------------
  */
-bool     M_NavObjAdjacentToStatic(const struct map *map, const struct entity *ent, 
-                                  const struct obb *stat);
+bool     M_NavObjAdjacent(const struct map *map, const struct entity *ent, 
+                         struct entity *target);
 
 /* ------------------------------------------------------------------------
  * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 

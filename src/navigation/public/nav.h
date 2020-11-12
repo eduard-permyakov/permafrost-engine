@@ -265,8 +265,10 @@ vec2_t    N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_sr
  * closest reachable point on the map that is adjacent to the specified entity.
  * ------------------------------------------------------------------------
  */
-bool      N_ClosestReachableAdjacentPos(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
-                                        const struct obb *target, vec2_t *out);
+bool N_ClosestReachableAdjacentPosStatic(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
+                                         const struct obb *target, vec2_t *out);
+bool N_ClosestReachableAdjacentPosDynamic(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
+                                          vec2_t xz_pos, float radius, vec2_t *out);
 
 /* ------------------------------------------------------------------------
  * Changes the blocker reference count for the navigation tile under the
@@ -295,6 +297,14 @@ bool      N_IsMaximallyClose(void *nav_private, vec3_t map_pos,
  */
 bool      N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, 
                                 const struct entity *ent, const struct obb *stat);
+
+/* ------------------------------------------------------------------------
+ * Returns true if the tiles under the entity selection cirlce overlap or 
+ * share an edge with any of the tiles under the other entity's selection circle.
+ * ------------------------------------------------------------------------
+ */
+bool      N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, 
+                                 const struct entity *ent, vec2_t xz_pos, float radius);
 
 /* ------------------------------------------------------------------------
  * Get the resolution (chunks, tiles) of the navigation data.

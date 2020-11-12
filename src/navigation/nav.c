@@ -1153,6 +1153,94 @@ static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t m
     return ret;
 }
 
+bool n_closest_adjacent_pos(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
+                            size_t ntiles, const struct tile_desc tds[static ntiles], vec2_t *out)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc src_desc;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
+    assert(result);
+
+    const struct nav_chunk *src_chunk = &priv->chunks[src_desc.chunk_r * priv->width + src_desc.chunk_c];
+    const uint16_t src_iid = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
+
+    vec2_t tile_dims = N_TileDims();
+    float min_dist = INFINITY;
+    vec2_t min_pos = {0};
+
+    for(int i = 0; i < ntiles; i++) {
+
+        for(int dr = -1; dr <= +1; dr++) {
+        for(int dc = -1; dc <= +1; dc++) {
+
+            struct tile_desc td = tds[i];
+            if(!M_Tile_RelativeDesc(res, &td, dc, dr))
+                continue;
+
+            const struct nav_chunk *chunk = &priv->chunks[td.chunk_r * priv->width + td.chunk_c];
+            const uint16_t iid = chunk->islands[td.tile_r][td.tile_c];
+
+            if(iid != src_iid)
+                continue;
+            if(chunk->blockers[td.tile_r][td.tile_c])
+                continue;
+            if(chunk->cost_base[td.tile_r][td.tile_c] == COST_IMPASSABLE)
+                continue;
+
+            vec2_t tile_center = (vec2_t){
+                map_pos.x - (td.chunk_c * FIELD_RES_C + td.tile_c) * tile_dims.x,
+                map_pos.z + (td.chunk_r * FIELD_RES_R + td.tile_r) * tile_dims.z,
+            };
+            vec2_t delta;
+            PFM_Vec2_Sub(&xz_src, &tile_center, &delta);
+
+            if(PFM_Vec2_Len(&delta) < min_dist) {
+                min_dist = PFM_Vec2_Len(&delta);
+                min_pos = tile_center;
+            }
+        }}
+    }
+
+    if(min_dist == INFINITY)
+        return false;
+
+    *out = min_pos;
+    return true;
+}
+
+bool n_objects_adjacent(void *nav_private, vec3_t map_pos, const struct entity *ent, 
+                        size_t ntiles, const struct tile_desc tds[static ntiles])
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc tds_ent[2048];
+    size_t ntiles_ent = N_TilesUnderCircle(priv, G_Pos_GetXZ(ent->uid), ent->selection_radius, 
+        map_pos, tds_ent, ARR_SIZE(tds_ent));
+
+    for(int i = 0; i < ntiles; i++) {
+    for(int j = 0; j < ntiles_ent; j++) {
+    
+        size_t arow = tds[i].chunk_r * FIELD_RES_R + tds[i].tile_r;
+        size_t acol = tds[i].chunk_c * FIELD_RES_C + tds[i].tile_c;
+
+        size_t brow = tds_ent[j].chunk_r * FIELD_RES_R + tds_ent[j].tile_r;
+        size_t bcol = tds_ent[j].chunk_c * FIELD_RES_C + tds_ent[j].tile_c;
+
+        if(abs(brow - arow) <= 1 && abs(bcol - acol) <= 1)
+            return true;
+    }}
+    return false;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -2313,8 +2401,8 @@ vec2_t N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
     return ret;
 }
 
-bool N_ClosestReachableAdjacentPos(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
-                                   const struct obb *target, vec2_t *out)
+bool N_ClosestReachableAdjacentPosStatic(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
+                                         const struct obb *target, vec2_t *out)
 {
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
@@ -2322,58 +2410,25 @@ bool N_ClosestReachableAdjacentPos(void *nav_private, vec3_t map_pos, vec2_t xz_
         FIELD_RES_C, FIELD_RES_R
     };
 
-    struct tile_desc src_desc;
-    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
-    assert(result);
-
-    const struct nav_chunk *src_chunk = &priv->chunks[src_desc.chunk_r * priv->width + src_desc.chunk_c];
-    const uint16_t src_iid = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
-
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, target, tds, ARR_SIZE(tds));
-    vec2_t tile_dims = N_TileDims();
 
-    float min_dist = INFINITY;
-    vec2_t min_pos = {0};
+    return n_closest_adjacent_pos(nav_private, map_pos, xz_src, ntiles, tds, out);
+}
 
-    for(int i = 0; i < ntiles; i++) {
+bool N_ClosestReachableAdjacentPosDynamic(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
+                                          vec2_t xz_pos, float radius, vec2_t *out)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
 
-        for(int dr = -1; dr <= +1; dr++) {
-        for(int dc = -1; dc <= +1; dc++) {
+    struct tile_desc tds[2048];
+    size_t ntiles = N_TilesUnderCircle(priv, xz_pos, radius, map_pos, tds, ARR_SIZE(tds));
 
-            struct tile_desc td = tds[i];
-            if(!M_Tile_RelativeDesc(res, &td, dc, dr))
-                continue;
-
-            const struct nav_chunk *chunk = &priv->chunks[td.chunk_r * priv->width + td.chunk_c];
-            const uint16_t iid = chunk->islands[td.tile_r][td.tile_c];
-
-            if(iid != src_iid)
-                continue;
-            if(chunk->blockers[td.tile_r][td.tile_c])
-                continue;
-            if(chunk->cost_base[td.tile_r][td.tile_c] == COST_IMPASSABLE)
-                continue;
-
-            vec2_t tile_center = (vec2_t){
-                map_pos.x - (td.chunk_c * FIELD_RES_C + td.tile_c) * tile_dims.x,
-                map_pos.z + (td.chunk_r * FIELD_RES_R + td.tile_r) * tile_dims.z,
-            };
-            vec2_t delta;
-            PFM_Vec2_Sub(&xz_src, &tile_center, &delta);
-
-            if(PFM_Vec2_Len(&delta) < min_dist) {
-                min_dist = PFM_Vec2_Len(&delta);
-                min_pos = tile_center;
-            }
-        }}
-    }
-
-    if(min_dist == INFINITY)
-        return false;
-
-    *out = min_pos;
-    return true;
+    return n_closest_adjacent_pos(nav_private, map_pos, xz_src, ntiles, tds, out);
 }
 
 vec2_t N_TileDims(void)
@@ -2566,27 +2621,24 @@ bool N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, const struct entit
         FIELD_RES_C, FIELD_RES_R
     };
 
-    vec2_t pos = G_Pos_GetXZ(ent->uid);
-
     struct tile_desc tds_stat[2048];
     size_t ntiles_stat = M_Tile_AllUnderObj(map_pos, res, stat, tds_stat, ARR_SIZE(tds_stat));
 
-    struct tile_desc tds_ent[2048];
-    size_t ntiles_ent = N_TilesUnderCircle(priv, pos, ent->selection_radius, map_pos, tds_ent, ARR_SIZE(tds_ent));
+    return n_objects_adjacent(nav_private, map_pos, ent, ntiles_stat, tds_stat);
+}
 
-    for(int i = 0; i < ntiles_stat; i++) {
-    for(int j = 0; j < ntiles_ent;  j++) {
-    
-        size_t arow = tds_stat[i].chunk_r * FIELD_RES_R + tds_stat[i].tile_r;
-        size_t acol = tds_stat[i].chunk_c * FIELD_RES_C + tds_stat[i].tile_c;
+bool N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, const struct entity *ent, vec2_t xz_pos, float radius)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
 
-        size_t brow = tds_ent[j].chunk_r * FIELD_RES_R + tds_ent[j].tile_r;
-        size_t bcol = tds_ent[j].chunk_c * FIELD_RES_C + tds_ent[j].tile_c;
+    struct tile_desc tds_dyn[512];
+    size_t ntiles_dyn = N_TilesUnderCircle(priv, xz_pos, radius, map_pos, tds_dyn, ARR_SIZE(tds_dyn));
 
-        if(abs(brow - arow) <= 1 && abs(bcol - acol) <= 1)
-            return true;
-    }}
-    return false;
+    return n_objects_adjacent(nav_private, map_pos, ent, ntiles_dyn, tds_dyn);
 }
 
 void N_GetResolution(void *nav_private, struct map_resolution *out)

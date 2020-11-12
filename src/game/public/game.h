@@ -295,6 +295,7 @@ const char *G_Resource_GetName(uint32_t uid);
 const char *G_Resource_GetCursor(uint32_t uid);
 bool        G_Resource_SetCursor(uint32_t uid, const char *cursor);
 int         G_Resource_GetAllNames(size_t maxout, const char *out[static maxout]);
+void        G_Resource_UpdateSelectionRadius(const struct entity *ent, float radius);
 
 /*###########################################################################*/
 /* GAME HARVESTER                                                            */

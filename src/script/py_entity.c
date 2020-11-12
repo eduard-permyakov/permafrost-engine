@@ -1091,6 +1091,7 @@ static int PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, 
 
     self->ent->selection_radius = PyFloat_AsDouble(value);
     G_Move_UpdateSelectionRadius(self->ent, self->ent->selection_radius);
+    G_Resource_UpdateSelectionRadius(self->ent, self->ent->selection_radius);
     return 0;
 }
 

@@ -190,13 +190,8 @@ static void on_motion_end(void *user, void *event)
     assert(bs->target_uid != UID_NONE);
     struct entity *target = G_EntityForUID(bs->target_uid);
 
-    struct obb obb;
-    if(target) {
-        Entity_CurrentOBB(target, &obb, false);
-    }
-
     if(!target
-    || !M_NavObjAdjacentToStatic(s_map, ent, &obb)) {
+    || !M_NavObjAdjacent(s_map, ent, target)) {
         bs->state = STATE_NOT_BUILDING;
         bs->target_uid = UID_NONE;
         return; /* builder could not reach the building */

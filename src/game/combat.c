@@ -56,7 +56,7 @@
 
 
 #define ENEMY_TARGET_ACQUISITION_RANGE (50.0f)
-#define ENEMY_MELEE_ATTACK_RANGE       (5.0f)
+#define ENEMY_MELEE_ATTACK_RANGE       (7.5f)
 #define EPSILON                        (1.0f/1024)
 #define MAX(a, b)                      ((a) > (b) ? (a) : (b))
 #define MIN(a, b)                      ((a) < (b) ? (a) : (b))
