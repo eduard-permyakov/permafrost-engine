@@ -2146,7 +2146,9 @@ bool S_UI_TextEditHasFocus(void)
         }
 
         struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
-        assert(nkwin);
+        if(!nkwin)
+            continue;
+
         if(nkwin->edit.active == nk_true)
             return true;
     }
