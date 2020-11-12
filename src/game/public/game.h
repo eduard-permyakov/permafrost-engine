@@ -101,73 +101,73 @@ struct render_input{
 /* GAME GENERAL                                                              */
 /*###########################################################################*/
 
-bool   G_Init(void);
-bool   G_LoadMap(SDL_RWops *stream, bool update_navgrid);
-void   G_Shutdown(void);
+bool            G_Init(void);
+bool            G_LoadMap(SDL_RWops *stream, bool update_navgrid);
+void            G_Shutdown(void);
 
-void   G_ClearState(void);
-void   G_ClearRenderWork(void);
+void            G_ClearState(void);
+void            G_ClearRenderWork(void);
 
-void   G_Update(void);
-void   G_Render(void);
-void   G_SwapBuffers(void);
+void            G_Update(void);
+void            G_Render(void);
+void            G_SwapBuffers(void);
 
 /* This does not have any side effects besides  making draw calls, 
  * so it is safe to invoke from the render thread. 
  */
-void   G_RenderMapAndEntities(struct render_input *in);
+void            G_RenderMapAndEntities(struct render_input *in);
 
-bool   G_GetMinimapPos(float *out_x, float *out_y);
-bool   G_SetMinimapPos(float x, float y);
-bool   G_GetMinimapSize(int *out_size);
-bool   G_SetMinimapSize(int size);
-bool   G_SetMinimapResizeMask(int mask);
-bool   G_MouseOverMinimap(void);
-bool   G_MapHeightAtPoint(vec2_t xz, float *out_height);
-bool   G_PointInsideMap(vec2_t xz);
+bool            G_GetMinimapPos(float *out_x, float *out_y);
+bool            G_SetMinimapPos(float x, float y);
+bool            G_GetMinimapSize(int *out_size);
+bool            G_SetMinimapSize(int size);
+bool            G_SetMinimapResizeMask(int mask);
+bool            G_MouseOverMinimap(void);
+bool            G_MapHeightAtPoint(vec2_t xz, float *out_height);
+bool            G_PointInsideMap(vec2_t xz);
 
-void   G_BakeNavDataForScene(void);
+void            G_BakeNavDataForScene(void);
 
-bool   G_AddEntity(struct entity *ent, vec3_t pos);
-bool   G_RemoveEntity(struct entity *ent);
-void   G_StopEntity(const struct entity *ent);
-void   G_UpdateBounds(const struct entity *ent);
+bool            G_AddEntity(struct entity *ent, vec3_t pos);
+bool            G_RemoveEntity(struct entity *ent);
+void            G_StopEntity(const struct entity *ent);
+void            G_UpdateBounds(const struct entity *ent);
 
 /* Wrapper around AL_EntityFree to defer the call until the render thread 
  * (which owns some part of entity resources) finishes its' work. */
-void   G_SafeFree(struct entity *ent);
+void            G_SafeFree(struct entity *ent);
 
-bool   G_AddFaction(const char *name, vec3_t color);
-bool   G_RemoveFaction(int faction_id);
-bool   G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool control);
-uint16_t G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl);
-uint16_t G_GetPlayerControlledFactions(void);
+bool            G_AddFaction(const char *name, vec3_t color);
+bool            G_RemoveFaction(int faction_id);
+bool            G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool control);
+uint16_t        G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl);
+uint16_t        G_GetPlayerControlledFactions(void);
 
-bool   G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds);
-bool   G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out);
+bool            G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds);
+bool            G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out);
 
-void           G_SetActiveCamera(struct camera *cam, enum cam_mode mode);
-struct camera *G_GetActiveCamera(void);
-enum cam_mode  G_GetCameraMode(void);
-void           G_MoveActiveCamera(vec2_t xz_ground_pos);
+void            G_SetActiveCamera(struct camera *cam, enum cam_mode mode);
+struct camera  *G_GetActiveCamera(void);
+enum cam_mode   G_GetCameraMode(void);
+void            G_MoveActiveCamera(vec2_t xz_ground_pos);
 
-bool   G_UpdateMinimapChunk(int chunk_r, int chunk_c);
-bool   G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
-bool   G_GetTile(const struct tile_desc *desc, struct tile *out);
+bool            G_UpdateMinimapChunk(int chunk_r, int chunk_c);
+bool            G_UpdateTile(const struct tile_desc *desc, const struct tile *tile);
+bool            G_GetTile(const struct tile_desc *desc, struct tile *out);
 
-void          G_SetSimState(enum simstate ss);
-enum simstate G_GetSimState(void);
-void          G_SetLightPos(vec3_t pos);
-void          G_SetHideHealthbars(bool on);
+void            G_SetSimState(enum simstate ss);
+enum simstate   G_GetSimState(void);
+void            G_SetLightPos(vec3_t pos);
+void            G_SetHideHealthbars(bool on);
+
+bool            G_SaveGlobalState(SDL_RWops *stream);
+bool            G_LoadGlobalState(SDL_RWops *stream);
+bool            G_SaveEntityState(SDL_RWops *stream);
+bool            G_LoadEntityState(SDL_RWops *stream);
 
 struct render_workspace *G_GetSimWS(void);
 struct render_workspace *G_GetRenderWS(void);
 const struct map        *G_GetPrevTickMap(void);
-
-bool   G_SaveGlobalState(SDL_RWops *stream);
-bool   G_LoadGlobalState(SDL_RWops *stream);
-bool   G_SaveEntityState(SDL_RWops *stream);
-bool   G_LoadEntityState(SDL_RWops *stream);
 
 /*###########################################################################*/
 /* GAME SELECTION                                                            */
@@ -231,15 +231,15 @@ int   G_Combat_GetBaseDamage(const struct entity *ent);
 /* GAME POSITION                                                             */
 /*###########################################################################*/
 
-bool   G_Pos_Set(const struct entity *ent, vec3_t pos);
-vec3_t G_Pos_Get(uint32_t uid);
-vec2_t G_Pos_GetXZ(uint32_t uid);
+bool           G_Pos_Set(const struct entity *ent, vec3_t pos);
+vec3_t         G_Pos_Get(uint32_t uid);
+vec2_t         G_Pos_GetXZ(uint32_t uid);
 
-int    G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout);
-int    G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout,
-                                bool (*predicate)(const struct entity *ent, void *arg), void *arg);
-int    G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t maxout);
-int    G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **out, size_t maxout,
+int            G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout);
+int            G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout,
+                                        bool (*predicate)(const struct entity *ent, void *arg), void *arg);
+int            G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t maxout);
+int            G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **out, size_t maxout,
                                   bool (*predicate)(const struct entity *ent, void *arg), void *arg);
 
 struct entity *G_Pos_Nearest(vec2_t xz_point);
