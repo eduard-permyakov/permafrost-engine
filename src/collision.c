@@ -826,6 +826,35 @@ bool C_BoxPointIntersection(float px, float pz, struct box bounds)
         && (pz >= bounds.z && pz <= bounds.z + bounds.height);
 }
 
+float C_PointLineSegmentShortestDist(vec2_t point, struct line_seg_2d seg)
+{
+    float len_sqrt = pow(seg.bz - seg.az, 2) + pow(seg.bx - seg.ax, 2);
+    if(len_sqrt < EPSILON) {
+        return sqrt(pow(seg.az - point.z, 2) + pow(seg.ax - point.x, 2));
+    }
+
+    /* Consider the line extending the segment, parameterized as a + t * (b - a). 
+     * We find the projection of the point onto this line. 
+     */
+    vec2_t a = (vec2_t){seg.ax, seg.az}, b = (vec2_t){seg.bx, seg.bz};
+    vec2_t dir;
+    PFM_Vec2_Sub(&b, &a, &dir);
+
+    vec2_t to;
+    PFM_Vec2_Sub(&point, &a, &to);
+    float t = PFM_Vec2_Dot(&to, &dir) / len_sqrt;
+
+    /* We clamp t from [0, 1] to handle points outside the segment 
+     */
+    t = MAX(MIN(t, 1.0f), 0.0f);
+
+    vec2_t proj, delta;
+    PFM_Vec2_Scale(&dir, t, &delta);
+    PFM_Vec2_Add(&a, &delta, &proj);
+
+    return sqrt(pow(proj.z - point.z, 2) + pow(proj.x - point.x, 2));
+}
+
 bool C_LineCircleIntersection(struct line_seg_2d line, vec2_t center_xz, float radius, float *out_t)
 {
     float cx = center_xz.raw[0];

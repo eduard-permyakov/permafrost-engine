@@ -1086,24 +1086,6 @@ static vec2_t vel_wma(const struct movestate *ms)
     return ret;
 }
 
-static bool adjacent_check_fast(const struct entity *a, const struct entity *b)
-{
-    struct obb obb_a, obb_b;
-    Entity_CurrentOBB(a, &obb_a, false);
-    Entity_CurrentOBB(b, &obb_b, false);
-
-    vec2_t apos = G_Pos_GetXZ(a->uid);
-    vec2_t bpos = G_Pos_GetXZ(b->uid);
-
-    float alen = MAX(obb_a.half_lengths[0], obb_a.half_lengths[2]);
-    float blen = MAX(obb_b.half_lengths[0], obb_b.half_lengths[2]);
-    float len = alen + blen;
-
-    vec2_t diff;
-    PFM_Vec2_Sub(&apos, &bpos, &diff);
-    return (PFM_Vec2_Len(&diff) < len + 10.0f);
-}
-
 static void entity_update(struct entity *ent, vec2_t new_vel)
 {
     struct movestate *ms = movestate_get(ent);
@@ -1224,7 +1206,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
             break;
         }
 
-        if(!adjacent_check_fast(ent, target))
+        if(!Entity_MaybeAdjacentFast(ent, target, 10.0f))
             break;
 
         if(M_NavObjAdjacent(s_map, ent, target)) {

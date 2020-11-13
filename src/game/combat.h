@@ -42,9 +42,10 @@
 
 struct entity;
 struct SDL_RWops;
+struct map;
 
 
-bool G_Combat_Init(void);
+bool G_Combat_Init(const struct map *map);
 void G_Combat_Shutdown(void);
 
 void G_Combat_AddEntity(const struct entity *ent, enum combat_stance initial);

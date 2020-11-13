@@ -56,7 +56,6 @@
 
 
 #define ENEMY_TARGET_ACQUISITION_RANGE (50.0f)
-#define ENEMY_MELEE_ATTACK_RANGE       (7.5f)
 #define EPSILON                        (1.0f/1024)
 #define MAX(a, b)                      ((a) > (b) ? (a) : (b))
 #define MIN(a, b)                      ((a) < (b) ? (a) : (b))
@@ -130,9 +129,10 @@ static const char *s_name_for_state[] = {
     [STATE_DEATH_ANIM_PLAYING]      = "DEATH_ANIM_PLAYING"
 };
 
-static khash_t(state) *s_entity_state_table;
+static khash_t(state)   *s_entity_state_table;
 /* For saving/restoring state */
-static vec_pentity_t   s_dying_ents;
+static vec_pentity_t     s_dying_ents;
+static const struct map *s_map;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -201,6 +201,13 @@ static float ents_distance(const struct entity *a, const struct entity *b)
     vec2_t xz_pos_b = G_Pos_GetXZ(b->uid);
     PFM_Vec2_Sub(&xz_pos_a, &xz_pos_b, &dist);
     return PFM_Vec2_Len(&dist) - a->selection_radius - b->selection_radius;
+}
+
+static bool melee_can_attack(const struct entity *ent, const struct entity *target)
+{
+    if(!Entity_MaybeAdjacentFast(ent, target, 10.0))
+        return false;
+    return M_NavObjAdjacent(s_map, ent, target);
 }
 
 static bool valid_enemy(const struct entity *curr, void *arg)
@@ -284,7 +291,7 @@ static void on_attack_anim_finish(void *user, void *event)
     if(target_cs->state == STATE_DEATH_ANIM_PLAYING)
         return; 
 
-    if(ents_distance(self, target) <= ENEMY_MELEE_ATTACK_RANGE) {
+    if(melee_can_attack(self, target)) {
 
         float dmg = G_Combat_GetBaseDamage(self) * (1.0f - G_Combat_GetBaseArmour(target));
         target_cs->current_hp = MAX(0, target_cs->current_hp - dmg);
@@ -350,7 +357,7 @@ static void on_30hz_tick(void *user, void *event)
             struct entity *enemy;
             if((enemy = G_Combat_ClosestEligibleEnemy(curr)) != NULL) {
 
-                if(ents_distance(curr, enemy) <= ENEMY_MELEE_ATTACK_RANGE) {
+                if(melee_can_attack(curr, enemy)) {
 
                     assert(cs->stance == COMBAT_STANCE_AGGRESSIVE 
                         || cs->stance == COMBAT_STANCE_HOLD_POSITION);
@@ -398,7 +405,7 @@ static void on_30hz_tick(void *user, void *event)
             }
 
             /* Check if we're within attacking range of our target */
-            if(ents_distance(curr, enemy) <= ENEMY_MELEE_ATTACK_RANGE) {
+            if(melee_can_attack(curr, enemy)) {
 
                 cs->state = STATE_CAN_ATTACK;
                 G_Move_Stop(curr);
@@ -432,7 +439,7 @@ static void on_30hz_tick(void *user, void *event)
             }
 
             /* Check if we're within attacking range of our target */
-            if(ents_distance(curr, target) <= ENEMY_MELEE_ATTACK_RANGE) {
+            if(melee_can_attack(curr, target)) {
 
                 cs->state = STATE_CAN_ATTACK;
                 G_Move_Stop(curr);
@@ -453,7 +460,7 @@ static void on_30hz_tick(void *user, void *event)
             const struct entity *target = G_EntityForUID(cs->target_uid);
 
             if(entity_dead(target)
-            || ents_distance(curr, target) > ENEMY_MELEE_ATTACK_RANGE) {
+            || !melee_can_attack(curr, target)) {
 
                 if(cs->sticky) {
                     if(!entity_dead(target)) {
@@ -469,7 +476,7 @@ static void on_30hz_tick(void *user, void *event)
 
                 /* First check if there's another suitable target */
                 struct entity *enemy = G_Combat_ClosestEligibleEnemy(curr);
-                if(enemy && ents_distance(curr, enemy) <= ENEMY_MELEE_ATTACK_RANGE) {
+                if(enemy && melee_can_attack(curr, enemy)) {
 
                     cs->target_uid = enemy->uid;
                     entity_turn_to_target(curr, enemy);
@@ -641,7 +648,7 @@ static void on_render_3d(void *user, void *event)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool G_Combat_Init(void)
+bool G_Combat_Init(const struct map *map)
 {
     if(NULL == (s_entity_state_table = kh_init(state)))
         return false;
@@ -650,11 +657,13 @@ bool G_Combat_Init(void)
     E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
+    s_map = map;
     return true;
 }
 
 void G_Combat_Shutdown(void)
 {
+    s_map = NULL;
     E_Global_Unregister(EVENT_30HZ_TICK, on_30hz_tick);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);

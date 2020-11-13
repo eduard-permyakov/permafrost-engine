@@ -661,7 +661,7 @@ uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos)
     return N_DestIDForPos(map->nav_private, map->pos, xz_pos);
 }
 
-bool M_NavObjAdjacent(const struct map *map, const struct entity *ent, struct entity *target)
+bool M_NavObjAdjacent(const struct map *map, const struct entity *ent, const struct entity *target)
 {
     if(target->flags & ENTITY_FLAG_MOVABLE) {
 

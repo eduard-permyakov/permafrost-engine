@@ -48,6 +48,7 @@
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 #define MAX_ENTS_PER_CHUNK  (4096)
+#define SEARCH_BUFFER       (64.0f)
 #define IDX(r, width, c)    ((r) * (width) + (c))
 
 PQUEUE_TYPE(coord, struct coord)
@@ -655,11 +656,16 @@ static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struc
 
     struct entity *ents[MAX_ENTS_PER_CHUNK];
     size_t num_ents = G_Pos_EntsInRect(
-        (vec2_t){bounds.x_min, bounds.z_min},
-        (vec2_t){bounds.x_max, bounds.z_max},
+        (vec2_t){bounds.x_min - SEARCH_BUFFER, bounds.z_min + SEARCH_BUFFER},
+        (vec2_t){bounds.x_max + SEARCH_BUFFER, bounds.z_max + SEARCH_BUFFER},
         ents, ARR_SIZE(ents)
     );
     assert(num_ents);
+
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
 
     bool has_enemy[FIELD_RES_R][FIELD_RES_C] = {0};
     for(int i = 0; i < num_ents; i++) {
@@ -668,9 +674,17 @@ static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struc
         if(!enemy_ent(enemies->faction_id, curr_enemy))
             continue;
 
-        struct tile_desc tds[256];
-        int ntds = N_TilesUnderCircle(priv, G_Pos_GetXZ(curr_enemy->uid), 
-            curr_enemy->selection_radius, enemies->map_pos, tds, ARR_SIZE(tds));
+        struct tile_desc tds[512];
+        int ntds;
+        if(curr_enemy->flags & ENTITY_FLAG_BUILDING) {
+
+            struct obb obb;
+            Entity_CurrentOBB(curr_enemy, &obb, true);
+            ntds = M_Tile_AllUnderObj(enemies->map_pos, res, &obb, tds, ARR_SIZE(tds));
+        }else{
+            ntds = N_TilesUnderCircle(priv, G_Pos_GetXZ(curr_enemy->uid), 
+                curr_enemy->selection_radius, enemies->map_pos, tds, ARR_SIZE(tds));
+        }
 
         for(int j = 0; j < ntds; j++) {
 

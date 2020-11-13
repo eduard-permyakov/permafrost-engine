@@ -301,7 +301,6 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
 
             vec2_t delta, can_pos_xz = G_Pos_GetXZ(curr->uid);
             PFM_Vec2_Sub(&xz_point, &can_pos_xz, &delta);
-            assert(PFM_Vec2_Len(&delta) <= len);
 
             if(PFM_Vec2_Len(&delta) < min_dist && predicate(curr, arg)) {
                 min_dist = PFM_Vec2_Len(&delta);

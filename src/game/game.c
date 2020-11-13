@@ -139,7 +139,7 @@ static void g_init_map(void)
     M_RestrictRTSCamToMap(s_gs.map, s_gs.active_cam);
     M_Raycast_Install(s_gs.map, s_gs.active_cam);
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
-    G_Combat_Init();
+    G_Combat_Init(s_gs.map);
     G_Move_Init(s_gs.map);
     G_Building_Init(s_gs.map);
     G_Builder_Init(s_gs.map);

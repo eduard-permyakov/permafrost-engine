@@ -47,7 +47,9 @@
 #include <assert.h>
 
 
-#define EPSILON (1.0/1024)
+#define EPSILON     (1.0/1024)
+#define MIN(a, b)   ((a) < (b) ? (a) : (b))
+#define MAX(a, b)   ((a) > (b) ? (a) : (b))
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -271,5 +273,23 @@ vec2_t Entity_TopScreenPos(const struct entity *ent)
     float screen_x = (ndc.x + 1.0f) * width/2.0f;
     float screen_y = height - ((ndc.y + 1.0f) * height/2.0f);
     return (vec2_t){screen_x, screen_y};
+}
+
+bool Entity_MaybeAdjacentFast(const struct entity *a, const struct entity *b, float buffer)
+{
+    struct obb obb_a, obb_b;
+    Entity_CurrentOBB(a, &obb_a, false);
+    Entity_CurrentOBB(b, &obb_b, false);
+
+    vec2_t apos = G_Pos_GetXZ(a->uid);
+    vec2_t bpos = G_Pos_GetXZ(b->uid);
+
+    float alen = MAX(obb_a.half_lengths[0], obb_a.half_lengths[2]);
+    float blen = MAX(obb_b.half_lengths[0], obb_b.half_lengths[2]);
+    float len = alen + blen;
+
+    vec2_t diff;
+    PFM_Vec2_Sub(&apos, &bpos, &diff);
+    return (PFM_Vec2_Len(&diff) < len + buffer);
 }
 

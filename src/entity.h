@@ -123,5 +123,8 @@ vec3_t   Entity_TopCenterPointWS(const struct entity *ent);
 void     Entity_FaceTowards(struct entity *ent, vec2_t point);
 void     Entity_Ping(const struct entity *ent);
 vec2_t   Entity_TopScreenPos(const struct entity *ent);
+/* Coarse-grained test that can give false positives. Use the check to get
+ * positives, but confirm positive results with a more precise check */
+bool     Entity_MaybeAdjacentFast(const struct entity *a, const struct entity *b, float buffer);
 
 #endif

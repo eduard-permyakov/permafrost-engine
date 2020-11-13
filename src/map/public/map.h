@@ -340,7 +340,7 @@ bool     M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos,
  * ------------------------------------------------------------------------
  */
 bool     M_NavObjAdjacent(const struct map *map, const struct entity *ent, 
-                         struct entity *target);
+                         const struct entity *target);
 
 /* ------------------------------------------------------------------------
  * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 
