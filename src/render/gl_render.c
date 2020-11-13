@@ -63,6 +63,7 @@
 #define EPSILON                     (1.0f/1024)
 #define ARR_SIZE(a)                 (sizeof(a)/sizeof(a[0]))
 #define MAX(a, b)                   ((a) > (b) ? (a) : (b))
+#define MIN(a, b)                   ((a) < (b) ? (a) : (b))
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -889,15 +890,120 @@ void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float
 
     R_GL_Shader_Install("mesh.static.colored");
 
-    float old_width;
-    glGetFloatv(GL_LINE_WIDTH, &old_width);
-    glLineWidth(*width);
-
     /* buffer & render */
     glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, ARR_SIZE(vbuff));
 
-    glLineWidth(old_width);
+    /* cleanup */
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
+
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
+
+void R_GL_DrawSelectionRectangle(const struct obb *box, const float *width, 
+                                 const vec3_t *color, const struct map *map)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+
+    GLuint VAO, VBO;
+    const float PAD = 1.0f;
+
+    vec2_t corners[4] = {
+        {box->corners[0].x, box->corners[0].z},
+        {box->corners[1].x, box->corners[1].z},
+        {box->corners[5].x, box->corners[5].z},
+        {box->corners[4].x, box->corners[4].z},
+    };
+
+    float lens[4];
+    vec2_t deltas[4];
+    float tot_len = 0;
+
+    PFM_Vec2_Sub(&corners[1], &corners[0], &deltas[0]);
+    PFM_Vec2_Sub(&corners[2], &corners[1], &deltas[1]);
+    PFM_Vec2_Sub(&corners[3], &corners[2], &deltas[2]);
+    PFM_Vec2_Sub(&corners[0], &corners[3], &deltas[3]);
+
+    for(int i = 0; i < 4; i++) {
+        lens[i] = PFM_Vec2_Len(&deltas[i]);
+        tot_len += lens[i];
+        PFM_Vec2_Normal(&deltas[i], &deltas[i]);
+    }
+
+    float sample_dist = MIN(X_COORDS_PER_TILE, Z_COORDS_PER_TILE);
+    size_t nsamples = 0;
+    for(int i = 0; i < 4; i++) {
+        nsamples += ceil(lens[i] / sample_dist) + 1;
+    }
+
+    vec3_t vbuff[nsamples * 2 + 2];
+    int vbuff_idx = 0;
+
+    for(int i = 0; i < 4; i++) {
+
+        vec3_t pdir = (vec3_t){-deltas[i].z, 0.0f, deltas[i].x};
+        PFM_Vec3_Scale(&pdir, *width/2.0f, &pdir);
+
+        for(int j = 0; j < ceil(lens[i] / sample_dist) + 1; j++) {
+
+            vec2_t dir = deltas[i];
+            PFM_Vec2_Scale(&dir, MIN(j * sample_dist, lens[i]), &dir);
+
+            vec2_t xz;
+            PFM_Vec2_Add(&corners[i], &dir, &xz);
+
+            vec3_t point = (vec3_t){
+                xz.x, 
+                M_HeightAtPoint(map, M_ClampedMapCoordinate(map, xz)) + 0.1f, 
+                xz.z
+            };
+
+            vec3_t nudge = (vec3_t){-deltas[i].z, 0.0f, deltas[i].x}, nudged;
+            PFM_Vec3_Scale(&nudge, PAD, &nudge);
+            PFM_Vec3_Add(&point, &nudge, &nudged);
+
+            PFM_Vec3_Sub(&nudged, &pdir, &vbuff[vbuff_idx++]);
+            PFM_Vec3_Add(&nudged, &pdir, &vbuff[vbuff_idx++]);
+        }
+    }
+    assert(vbuff_idx == nsamples * 2);
+
+    vbuff[nsamples * 2 + 0] = vbuff[0];
+    vbuff[nsamples * 2 + 1] = vbuff[1];
+
+    mat4x4_t identity;
+    PFM_Mat4x4_Identity(&identity);
+
+    /* OpenGL setup */
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(0);  
+
+    /* Set uniforms */
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = identity
+    });
+
+    vec4_t color4 = (vec4_t){color->x, color->y, color->z, 1.0f};
+    R_GL_StateSet(GL_U_COLOR, (struct uval){
+        .type = UTYPE_VEC4,
+        .val.as_vec4 = color4
+    });
+
+    R_GL_Shader_Install("mesh.static.colored");
+
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, ARR_SIZE(vbuff));
 
     /* cleanup */
     glDeleteVertexArrays(1, &VAO);

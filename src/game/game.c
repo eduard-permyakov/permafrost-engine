@@ -1257,17 +1257,34 @@ void G_Render(void)
         vec2_t curr_pos = G_Pos_GetXZ(curr->uid);
         const float width = 0.4f;
 
-        R_PushCmd((struct rcmd){
-            .func = R_GL_DrawSelectionCircle,
-            .nargs = 5,
-            .args = {
-                R_PushArg(&curr_pos, sizeof(curr_pos)),
-                R_PushArg(&curr->selection_radius, sizeof(curr->selection_radius)),
-                R_PushArg(&width, sizeof(width)),
-                R_PushArg(&g_seltype_color_map[sel_type], sizeof(g_seltype_color_map[0])),
-                (void*)s_gs.prev_tick_map,
-            },
-        });
+        if(curr->flags & ENTITY_FLAG_BUILDING) {
+
+            struct obb obb;
+            Entity_CurrentOBB(curr, &obb, false);
+            R_PushCmd((struct rcmd){
+                .func = R_GL_DrawSelectionRectangle,
+                .nargs = 4,
+                .args = {
+                    R_PushArg(&obb, sizeof(obb)),
+                    R_PushArg(&width, sizeof(width)),
+                    R_PushArg(&g_seltype_color_map[sel_type], sizeof(g_seltype_color_map[0])),
+                    (void*)s_gs.prev_tick_map,
+                },
+            });
+        }else{
+        
+            R_PushCmd((struct rcmd){
+                .func = R_GL_DrawSelectionCircle,
+                .nargs = 5,
+                .args = {
+                    R_PushArg(&curr_pos, sizeof(curr_pos)),
+                    R_PushArg(&curr->selection_radius, sizeof(curr->selection_radius)),
+                    R_PushArg(&width, sizeof(width)),
+                    R_PushArg(&g_seltype_color_map[sel_type], sizeof(g_seltype_color_map[0])),
+                    (void*)s_gs.prev_tick_map,
+                },
+            });
+        }
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_3D_POST, NULL, ES_ENGINE);

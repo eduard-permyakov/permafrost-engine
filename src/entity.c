@@ -69,6 +69,9 @@ static struct result ping_task(void *arg)
     const float width = 0.4f;
     vec3_t color = (vec3_t){1.0f, 1.0f, 0.0f};
 
+    struct obb obb;
+    Entity_CurrentOBB(ent, &obb, false);
+
     uint32_t elapsed = 0;
     uint32_t start = SDL_GetTicks();
     int source;
@@ -82,17 +85,32 @@ static struct result ping_task(void *arg)
         if((elapsed / 400) == 1)
             continue;
 
-        R_PushCmd((struct rcmd){
-            .func = R_GL_DrawSelectionCircle,
-            .nargs = 5,
-            .args = {
-                R_PushArg(&pos, sizeof(pos)),
-                R_PushArg(&radius, sizeof(radius)),
-                R_PushArg(&width, sizeof(width)),
-                R_PushArg(&color, sizeof(color)),
-                (void*)G_GetPrevTickMap(),
-            },
-        });
+        if(ent->flags & ENTITY_FLAG_BUILDING) {
+
+            R_PushCmd((struct rcmd){
+                .func = R_GL_DrawSelectionRectangle,
+                .nargs = 4,
+                .args = {
+                    R_PushArg(&obb, sizeof(obb)),
+                    R_PushArg(&width, sizeof(width)),
+                    R_PushArg(&color, sizeof(color)),
+                    (void*)G_GetPrevTickMap(),
+                },
+            });
+        }else{
+
+            R_PushCmd((struct rcmd){
+                .func = R_GL_DrawSelectionCircle,
+                .nargs = 5,
+                .args = {
+                    R_PushArg(&pos, sizeof(pos)),
+                    R_PushArg(&radius, sizeof(radius)),
+                    R_PushArg(&width, sizeof(width)),
+                    R_PushArg(&color, sizeof(color)),
+                    (void*)G_GetPrevTickMap(),
+                },
+            });
+        }
     }
 
     /* Ensure render thread is no longer touching our stack */

@@ -315,6 +315,35 @@ static bool allied_to_player_controllabe(const bool *controllable,
     return false;
 }
 
+/* An additional rule of selection is that units are prioritized 
+ * over buildings. If there are units in the selection, remove 
+ * any buildings. 
+ */
+static void sel_filter_buildings(void)
+{
+    bool has_units = false;
+    for(int i = 0; i < vec_size(&s_selected); i++) {
+
+        const struct entity *curr = vec_AT(&s_selected, i);
+        if(!(curr->flags & ENTITY_FLAG_BUILDING)) {
+            has_units = true;
+            break;
+        }
+    }
+
+    if(!has_units)
+        return;
+
+    /* Iterate the vector backwards so we can delete while iterating. */
+    for(int i = vec_size(&s_selected)-1; i >= 0; i--) {
+
+        const struct entity *curr = vec_AT(&s_selected, i);
+        if(curr->flags & ENTITY_FLAG_BUILDING) {
+            vec_pentity_del(&s_selected, i);
+        }
+    }
+}
+
 /* Apply the following rules to the selection set:
  * 
  * 1) If there is at least one player-controllable entity in the selection set,
@@ -370,6 +399,8 @@ static void sel_filter_and_set_type(void)
             vec_pentity_del(&s_selected, i);
         }
     }
+
+    sel_filter_buildings();
 }
 
 /*****************************************************************************/

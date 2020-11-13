@@ -55,6 +55,7 @@ struct frustum;
 struct render_input;
 struct nk_draw_list;
 struct map_resolution;
+struct obb;
 
 enum render_pass{
     RENDER_PASS_DEPTH,
@@ -199,6 +200,13 @@ void   R_GL_DumpFBDepth_PPM(const char *filename, const int *width, const int *h
  */
 void   R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float *width, 
                                 const vec3_t *color, const struct map *map);
+
+/* ---------------------------------------------------------------------------
+ * Render a selection rectangle over the map surface.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawSelectionRectangle(const struct obb *box, const float *width, 
+                                   const vec3_t *color, const struct map *map);
 
 /* ---------------------------------------------------------------------------
  * Render a line over the map surface.
