@@ -40,6 +40,16 @@
 #include "../map/public/map.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/string_intern.h"
+#include "../lib/public/attr.h"
+#include "../lib/public/pf_string.h"
+
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
+
 
 struct rstate{
     const char *name;
@@ -258,5 +268,104 @@ int G_Resource_GetAllNames(size_t maxout, const char *out[static maxout])
 
     qsort(out, ret, sizeof(char*), compare_keys);
     return ret;
+}
+
+bool G_Resource_SaveState(struct SDL_RWops *stream)
+{
+    struct attr num_ents = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_entity_state_table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_ents, "num_ents"));
+
+    uint32_t key;
+    struct rstate curr;
+
+    kh_foreach(s_entity_state_table, key, curr, {
+
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = key
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
+
+        struct attr name = (struct attr){ .type = TYPE_STRING };
+        pf_strlcpy(name.val.as_string, curr.name, sizeof(name.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &name, "name"));
+
+        struct attr cursor = (struct attr){ .type = TYPE_STRING };
+        pf_strlcpy(cursor.val.as_string, curr.cursor, sizeof(cursor.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &cursor, "cursor"));
+
+        struct attr amount = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.amount
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &amount, "amount"));
+    });
+
+    struct attr num_names = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_all_names)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_names, "num_names"));
+
+    for(khiter_t k = kh_begin(s_all_names); k != kh_end(s_all_names); k++) {
+
+        if(!kh_exist(s_all_names, k))
+            continue;
+
+        const char *key = kh_key(s_all_names, k);
+        struct attr name = (struct attr){ .type = TYPE_STRING };
+        pf_strlcpy(name.val.as_string, key, sizeof(name.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &name, "name"));
+    }
+
+    return true;
+}
+
+bool G_Resource_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_ents = attr.val.as_int;
+
+    for(int i = 0; i < num_ents; i++) {
+
+        uint32_t uid;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        G_Resource_SetName(uid, attr.val.as_string);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        G_Resource_SetCursor(uid, attr.val.as_string);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        G_Resource_SetAmount(uid, attr.val.as_int);
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_names = attr.val.as_int;
+
+    for(int i = 0; i < num_names; i++) {
+    
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+
+        const char *key = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
+        kh_put(name, s_all_names, key, &(int){0});
+    }
+
+    return true;
 }
 
