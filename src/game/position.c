@@ -38,6 +38,7 @@
 #include "building.h"
 #include "resource.h"
 #include "fog_of_war.h"
+#include "combat.h"
 #include "public/game.h"
 #include "../main.h"
 #include "../pf_math.h"
@@ -96,6 +97,7 @@ bool G_Pos_Set(const struct entity *ent, vec3_t pos)
         bool ret = qt_ent_delete(&s_postree, old_pos.x, old_pos.z, ent->uid);
         assert(ret);
 
+        G_Combat_RemoveRef(ent->faction_id, (vec2_t){old_pos.x, old_pos.z});
         G_Fog_RemoveVision((vec2_t){old_pos.x, old_pos.z}, ent->faction_id, ent->vision_range);
     }
 
@@ -116,6 +118,7 @@ bool G_Pos_Set(const struct entity *ent, vec3_t pos)
     assert(kh_size(s_postable) == s_postree.nrecs);
 
     G_Move_UpdatePos(ent, (vec2_t){pos.x, pos.z});
+    G_Combat_AddRef(ent->faction_id, (vec2_t){pos.x, pos.z});
     G_Building_UpdateBounds(ent);
     G_Resource_UpdateBounds(ent);
     G_Fog_AddVision((vec2_t){pos.x, pos.z}, ent->faction_id, ent->vision_range);

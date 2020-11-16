@@ -220,6 +220,7 @@ void  G_Combat_AttackUnit(const struct entity *ent, const struct entity *target)
 bool  G_Combat_SetStance(const struct entity *ent, enum combat_stance stance);
 void  G_Combat_SetHP(const struct entity *ent, int hp);
 int   G_Combat_GetCurrentHP(const struct entity *ent);
+void  G_Combat_UpdateRef(int oldfac, int newfac, vec2_t pos);
 
 void  G_Combat_SetBaseArmour(const struct entity *ent, float armour_pc);
 float G_Combat_GetBaseArmour(const struct entity *ent);

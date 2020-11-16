@@ -60,6 +60,8 @@
 #define MAX(a, b)                      ((a) > (b) ? (a) : (b))
 #define MIN(a, b)                      ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)                    (sizeof(a)/sizeof(a[0]))
+#define X_BINS_PER_CHUNK               (8)
+#define Z_BINS_PER_CHUNK               (8)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -133,6 +135,9 @@ static khash_t(state)   *s_entity_state_table;
 /* For saving/restoring state */
 static vec_pentity_t     s_dying_ents;
 static const struct map *s_map;
+/* How many units of a faction currently currently occupy that bin.
+ * For quickly finding that there are no enemy units nearby */
+static uint16_t         *s_fac_refcnts[MAX_FACTIONS];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -201,6 +206,69 @@ static float ents_distance(const struct entity *a, const struct entity *b)
     vec2_t xz_pos_b = G_Pos_GetXZ(b->uid);
     PFM_Vec2_Sub(&xz_pos_a, &xz_pos_b, &dist);
     return PFM_Vec2_Len(&dist) - a->selection_radius - b->selection_radius;
+}
+
+static bool enemies_in_bin(int faction_id, struct map_resolution binres, struct tile_desc td)
+{
+    uint16_t facs = G_GetFactions(NULL, NULL, NULL);
+
+    size_t x = td.chunk_c * X_BINS_PER_CHUNK + td.tile_c;
+    size_t z = td.chunk_r * Z_BINS_PER_CHUNK + td.tile_r;
+    size_t idx = x * (binres.chunk_w * binres.tile_w) + z;
+
+    for(int i = 0; facs; facs >>= 1, i++) {
+
+        if(!(facs & 0x1))
+            continue;
+        if(i == faction_id)
+            continue;
+
+        enum diplomacy_state ds;
+        G_GetDiplomacyState(faction_id, i, &ds);
+        if(ds != DIPLOMACY_STATE_WAR)
+            continue;
+
+        if(s_fac_refcnts[i][idx] > 0)
+            return true;
+    }
+    return false;
+}
+
+static bool maybe_enemy_near(const struct entity *ent)
+{
+    PERF_ENTER();
+    vec2_t pos = G_Pos_GetXZ(ent->uid);
+    int binlen = MAX(
+        (float)(X_COORDS_PER_TILE * TILES_PER_CHUNK_WIDTH)  / X_BINS_PER_CHUNK,
+        (float)(Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT) / Z_BINS_PER_CHUNK
+    );
+    int binrange = ceil(ENEMY_TARGET_ACQUISITION_RANGE / binlen);
+
+    struct map_resolution mapres;
+    M_GetResolution(s_map, &mapres);
+
+    struct map_resolution binres = (struct map_resolution){
+        mapres.chunk_w, mapres.chunk_h,
+        X_BINS_PER_CHUNK, Z_BINS_PER_CHUNK
+    };
+
+    struct tile_desc td;
+    bool found = M_Tile_DescForPoint2D(binres, M_GetPos(s_map), pos, &td);
+    assert(found);
+
+    size_t binx = td.chunk_c * X_COORDS_PER_TILE + td.tile_c;
+    size_t binz = td.chunk_r * Z_COORDS_PER_TILE + td.tile_r;
+
+    for(int dr = -binrange; dr <= binrange; dr++) {
+    for(int dc = -binrange; dc <= binrange; dc++) {
+
+        struct tile_desc bin = td;
+        if(!M_Tile_RelativeDesc(binres, &bin, dc, dr))
+            continue;
+        if(enemies_in_bin(ent->faction_id, binres, bin))
+            PERF_RETURN(true);
+    }}
+    PERF_RETURN(false);
 }
 
 static bool melee_can_attack(const struct entity *ent, const struct entity *target)
@@ -331,7 +399,7 @@ static bool entity_dead(const struct entity *ent)
     return false;
 }
 
-static void on_30hz_tick(void *user, void *event)
+static void on_20hz_tick(void *user, void *event)
 {
     PERF_ENTER();
 
@@ -351,6 +419,9 @@ static void on_30hz_tick(void *user, void *event)
         case STATE_NOT_IN_COMBAT: 
         {
             if(cs->stance == COMBAT_STANCE_NO_ENGAGEMENT)
+                break;
+
+            if(!maybe_enemy_near(curr))
                 break;
 
             /* Make the entity seek enemy units. */
@@ -653,21 +724,40 @@ bool G_Combat_Init(const struct map *map)
     if(NULL == (s_entity_state_table = kh_init(state)))
         return false;
 
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+        s_fac_refcnts[i] = calloc((res.chunk_w * X_BINS_PER_CHUNK) 
+                                * (res.chunk_h * Z_BINS_PER_CHUNK) 
+                                * sizeof(uint16_t), 1);
+        if(!s_fac_refcnts[i])
+            goto fail_refcnts;
+    }
+
     vec_pentity_init(&s_dying_ents);
-    E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
+    E_Global_Register(EVENT_30HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     s_map = map;
     return true;
+
+fail_refcnts:
+    for(int i = 0; i < MAX_FACTIONS; i++)
+        free(s_fac_refcnts[i]);
+    kh_destroy(state, s_entity_state_table);
+    return false;
 }
 
 void G_Combat_Shutdown(void)
 {
     s_map = NULL;
-    E_Global_Unregister(EVENT_30HZ_TICK, on_30hz_tick);
+    E_Global_Unregister(EVENT_30HZ_TICK, on_20hz_tick);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     vec_pentity_destroy(&s_dying_ents);
+    for(int i = 0; i < MAX_FACTIONS; i++)
+        free(s_fac_refcnts[i]);
     kh_destroy(state, s_entity_state_table);
 }
 
@@ -827,6 +917,55 @@ struct entity *G_Combat_ClosestEligibleEnemy(const struct entity *ent)
     PFM_Vec2_Sub(&pos, &enemy_pos, &delta);
     assert(PFM_Vec2_Len(&delta) <= ENEMY_TARGET_ACQUISITION_RANGE);
     return ret;
+}
+
+void G_Combat_AddRef(int faction_id, vec2_t pos)
+{
+    struct map_resolution mapres;
+    M_GetResolution(s_map, &mapres);
+
+    struct map_resolution binres = (struct map_resolution){
+        mapres.chunk_w, mapres.chunk_h,
+        X_BINS_PER_CHUNK, Z_BINS_PER_CHUNK
+    };
+
+    struct tile_desc td;
+    if(!M_Tile_DescForPoint2D(binres, M_GetPos(s_map), pos, &td))
+        return;
+
+    size_t x = td.chunk_c * X_BINS_PER_CHUNK + td.tile_c;
+    size_t z = td.chunk_r * Z_BINS_PER_CHUNK + td.tile_r;
+    size_t idx = x * (binres.chunk_w * binres.tile_w) + z;
+
+    s_fac_refcnts[faction_id][idx]++;
+}
+
+void G_Combat_RemoveRef(int faction_id, vec2_t pos)
+{
+    struct map_resolution mapres;
+    M_GetResolution(s_map, &mapres);
+
+    struct map_resolution binres = (struct map_resolution){
+        mapres.chunk_w, mapres.chunk_h,
+        X_BINS_PER_CHUNK, Z_BINS_PER_CHUNK
+    };
+
+    struct tile_desc td;
+    if(!M_Tile_DescForPoint2D(binres, M_GetPos(s_map), pos, &td))
+        return;
+
+    size_t x = td.chunk_c * X_BINS_PER_CHUNK + td.tile_c;
+    size_t z = td.chunk_r * Z_BINS_PER_CHUNK + td.tile_r;
+    size_t idx = x * (binres.chunk_w * binres.tile_w) + z;
+
+    assert(s_fac_refcnts[faction_id][idx] < UINT16_MAX);
+    s_fac_refcnts[faction_id][idx]--;
+}
+
+void G_Combat_UpdateRef(int oldfac, int newfac, vec2_t pos)
+{
+    G_Combat_RemoveRef(oldfac, pos);
+    G_Combat_AddRef(newfac, pos);
 }
 
 int G_Combat_GetCurrentHP(const struct entity *ent)

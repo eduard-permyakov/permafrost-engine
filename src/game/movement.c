@@ -1370,6 +1370,7 @@ static void clearpath_finish_work(void)
         clearpath_run_to_completion(i);    
     }
 
+    Perf_Push("velocity updates");
     for(int i = 0; i < s_cp_work.nwork; i++) {
 
         struct entity *ent = G_EntityForUID(s_cp_work.out[i].ent_uid);
@@ -1387,17 +1388,20 @@ static void clearpath_finish_work(void)
         PFM_Vec2_Add(&ms->velocity, &vel_diff, &ms->vnew);
         vec2_truncate(&ms->vnew, ent->max_speed / MOVE_TICK_RES);
     }
+    Perf_Pop();
 
     uint32_t key;
     struct entity *curr;
     (void)key;
 
+    Perf_Push("position updates");
     kh_foreach(G_GetDynamicEntsSet(), key, curr, {
 
         struct movestate *ms = movestate_get(curr);
         assert(ms);
         entity_update(curr, ms->vnew);
     });
+    Perf_Pop();
 
     stalloc_clear(&s_cp_work.mem);
     s_cp_work.in = NULL;

@@ -54,6 +54,9 @@ void G_Combat_StopAttack(const struct entity *ent);
 void G_Combat_ClearSavedMoveCmd(const struct entity *ent);
 int  G_Combat_CurrContextualAction(void);
 
+void G_Combat_AddRef(int faction_id, vec2_t pos);
+void G_Combat_RemoveRef(int faction_id, vec2_t pos);
+
 bool G_Combat_SaveState(struct SDL_RWops *stream);
 bool G_Combat_LoadState(struct SDL_RWops *stream);
 
