@@ -443,6 +443,114 @@ static bool load_color(struct nk_color *out, SDL_RWops *stream)
     return true;
 }
 
+static bool save_global_resources(int i, SDL_RWops *stream)
+{
+    struct attr num_global_resources = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_global_resource_tables[i])
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_global_resources, "num_global_resources"));
+
+    const char *resource_key;
+    int resource_amount;
+
+    kh_foreach(s_global_resource_tables[i], resource_key, resource_amount, {
+    
+        struct attr resource_key_attr = (struct attr){ .type = TYPE_STRING, };
+        pf_strlcpy(resource_key_attr.val.as_string, resource_key, sizeof(resource_key_attr.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &resource_key_attr, "resource_key"));
+
+        struct attr resource_amount_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = resource_amount
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &resource_amount_attr, "resource_amount"));
+    });
+    return true;
+}
+
+static bool load_global_resources(int i, SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_resources  = attr.val.as_int;
+
+    for(int j = 0; j < num_resources; j++) {
+
+        struct attr keyattr;
+        CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+        CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+        const char *key = keyattr.val.as_string;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int val = attr.val.as_int;
+
+        khiter_t k = kh_get(res, s_global_resource_tables[i], key);
+        if(k == kh_end(s_global_resource_tables[i])) {
+            k = kh_put(res, s_global_resource_tables[i], key, &(int){0});
+        }
+        kh_value(s_global_resource_tables[i], k) = val;
+    }
+    return true;
+}
+
+static bool save_global_capacities(int i, SDL_RWops *stream)
+{
+    struct attr num_global_capacities = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_global_capacity_tables[i])
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_global_capacities, "num_global_capacities"));
+
+    const char *capacity_key;
+    int capacity_amount;
+
+    kh_foreach(s_global_capacity_tables[i], capacity_key, capacity_amount, {
+    
+        struct attr capacity_key_attr = (struct attr){ .type = TYPE_STRING, };
+        pf_strlcpy(capacity_key_attr.val.as_string, capacity_key, sizeof(capacity_key_attr.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &capacity_key_attr, "capacity_key"));
+
+        struct attr capacity_amount_attr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = capacity_amount
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &capacity_amount_attr, "capacity_amount"));
+    });
+    return true;
+}
+
+static bool load_global_capacities(int i, SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_capacities  = attr.val.as_int;
+
+    for(int j = 0; j < num_capacities; j++) {
+
+        struct attr keyattr;
+        CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+        CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+        const char *key = keyattr.val.as_string;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int val = attr.val.as_int;
+
+        khiter_t k = kh_get(res, s_global_capacity_tables[i], key);
+        if(k == kh_end(s_global_capacity_tables[i])) {
+            k = kh_put(res, s_global_capacity_tables[i], key, &(int){0});
+        }
+        kh_value(s_global_capacity_tables[i], k) = val;
+    }
+    return true;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -701,7 +809,6 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
 
         const char *cap_key;
         int cap_amount;
-
         kh_foreach(curr.capacity, cap_key, cap_amount, {
         
             struct attr cap_key_attr = (struct attr){ .type = TYPE_STRING, };
@@ -723,7 +830,6 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
 
         const char *curr_key;
         int curr_amount;
-
         kh_foreach(curr.curr, curr_key, curr_amount, {
         
             struct attr curr_key_attr = (struct attr){ .type = TYPE_STRING, };
@@ -745,7 +851,6 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
 
         const char *desired_key;
         int desired_amount;
-
         kh_foreach(curr.desired, desired_key, desired_amount, {
         
             struct attr desired_key_attr = (struct attr){ .type = TYPE_STRING, };
@@ -764,49 +869,8 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
      */
     for(int i = 0; i < MAX_FACTIONS; i++) {
     
-        struct attr num_global_resources = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = kh_size(s_global_resource_tables[i])
-        };
-        CHK_TRUE_RET(Attr_Write(stream, &num_global_resources, "num_global_resources"));
-
-        const char *resource_key;
-        int resource_amount;
-
-        kh_foreach(s_global_resource_tables[i], resource_key, resource_amount, {
-        
-            struct attr resource_key_attr = (struct attr){ .type = TYPE_STRING, };
-            pf_strlcpy(resource_key_attr.val.as_string, resource_key, sizeof(resource_key_attr.val.as_string));
-            CHK_TRUE_RET(Attr_Write(stream, &resource_key_attr, "resource_key"));
-
-            struct attr resource_amount_attr = (struct attr){
-                .type = TYPE_INT,
-                .val.as_int = resource_amount
-            };
-            CHK_TRUE_RET(Attr_Write(stream, &resource_amount_attr, "resource_amount"));
-        });
-
-        struct attr num_global_capacities = (struct attr){
-            .type = TYPE_INT,
-            .val.as_int = kh_size(s_global_capacity_tables[i])
-        };
-        CHK_TRUE_RET(Attr_Write(stream, &num_global_capacities, "num_global_capacities"));
-
-        const char *capacity_key;
-        int capacity_amount;
-
-        kh_foreach(s_global_capacity_tables[i], capacity_key, capacity_amount, {
-        
-            struct attr capacity_key_attr = (struct attr){ .type = TYPE_STRING, };
-            pf_strlcpy(capacity_key_attr.val.as_string, capacity_key, sizeof(capacity_key_attr.val.as_string));
-            CHK_TRUE_RET(Attr_Write(stream, &capacity_key_attr, "capacity_key"));
-
-            struct attr capacity_amount_attr = (struct attr){
-                .type = TYPE_INT,
-                .val.as_int = capacity_amount
-            };
-            CHK_TRUE_RET(Attr_Write(stream, &capacity_amount_attr, "capacity_amount"));
-        });
+        CHK_TRUE_RET(save_global_resources(i, stream));
+        CHK_TRUE_RET(save_global_capacities(i, stream));
     }
 
     /* save UI style 
@@ -917,49 +981,8 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
      */
     for(int i = 0; i < MAX_FACTIONS; i++) {
 
-        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_INT);
-        const size_t num_resources  = attr.val.as_int;
-
-        for(int j = 0; j < num_resources; j++) {
-
-            struct attr keyattr;
-            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
-            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
-            const char *key = keyattr.val.as_string;
-
-            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-            CHK_TRUE_RET(attr.type == TYPE_INT);
-            int val = attr.val.as_int;
-
-            khiter_t k = kh_get(res, s_global_resource_tables[i], key);
-            if(k == kh_end(s_global_resource_tables[i])) {
-                k = kh_put(res, s_global_resource_tables[i], key, &(int){0});
-            }
-            kh_value(s_global_resource_tables[i], k) = val;
-        }
-
-        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_INT);
-        const size_t num_capacities  = attr.val.as_int;
-
-        for(int j = 0; j < num_capacities; j++) {
-
-            struct attr keyattr;
-            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
-            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
-            const char *key = keyattr.val.as_string;
-
-            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-            CHK_TRUE_RET(attr.type == TYPE_INT);
-            int val = attr.val.as_int;
-
-            khiter_t k = kh_get(res, s_global_capacity_tables[i], key);
-            if(k == kh_end(s_global_capacity_tables[i])) {
-                k = kh_put(res, s_global_capacity_tables[i], key, &(int){0});
-            }
-            kh_value(s_global_capacity_tables[i], k) = val;
-        }
+        CHK_TRUE_RET(load_global_resources(i, stream));
+        CHK_TRUE_RET(load_global_capacities(i, stream));
     }
 
     /* load UI style 

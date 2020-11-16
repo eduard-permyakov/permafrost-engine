@@ -45,6 +45,7 @@
 
 struct map;
 struct entity;
+struct SDL_RWops;
 
 bool G_Harvester_Init(const struct map *map);
 void G_Harvester_Shutdown(void);
@@ -54,6 +55,9 @@ void G_Harvester_Stop(uint32_t uid);
 bool G_Harvester_InTargetMode(void);
 int  G_Harvester_CurrContextualAction(void);
 bool G_Harvester_GetContextualCursor(char *out, size_t maxout);
+
+bool G_Harvester_SaveState(struct SDL_RWops *stream);
+bool G_Harvester_LoadState(struct SDL_RWops *stream);
 
 #endif
 

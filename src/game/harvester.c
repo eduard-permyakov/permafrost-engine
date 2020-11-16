@@ -46,6 +46,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/string_intern.h"
+#include "../lib/public/attr.h"
 
 #include <stddef.h>
 #include <assert.h>
@@ -55,6 +56,12 @@
 #define REACQUIRE_RADIUS    (50.0)
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 static void *pmalloc(size_t size);
 static void *pcalloc(size_t n, size_t size);
@@ -1461,6 +1468,361 @@ bool G_Harvester_GetContextualCursor(char *out, size_t maxout)
 
     const char *name = G_Resource_GetCursor(hovered->uid);
     pf_strlcpy(out, name, maxout);
+    return true;
+}
+
+bool G_Harvester_SaveState(struct SDL_RWops *stream)
+{
+    struct attr num_ents = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_entity_state_table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_ents, "num_ents"));
+
+    uint32_t key;
+    struct hstate curr;
+
+    kh_foreach(s_entity_state_table, key, curr, {
+
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = key
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
+
+        struct attr state = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.state
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &state, "state"));
+
+        struct attr strategy = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.strategy
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &strategy, "strategy"));
+
+        struct attr ss_uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.ss_uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &ss_uid, "ss_uid"));
+
+        struct attr res_uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.res_uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &res_uid, "res_uid"));
+
+        struct attr res_last_pos = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr.res_last_pos
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &res_last_pos, "res_last_pos"));
+
+        struct attr has_res_name = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool  = curr.res_name != NULL
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &has_res_name, "has_res_name"));
+
+        if(has_res_name.val.as_bool) {
+        
+            struct attr res_name = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(res_name.val.as_string, curr.res_name, sizeof(res_name.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &res_name, "res_name"));
+        }
+
+        struct attr num_speeds = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(curr.gather_speeds)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_speeds, "num_speeds"));
+
+        const char *speed_key;
+        int speed_amount;
+        kh_foreach(curr.gather_speeds, speed_key, speed_amount, {
+        
+            struct attr speed_key_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(speed_key_attr.val.as_string, speed_key, sizeof(speed_key_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &speed_key_attr, "speed_key"));
+
+            struct attr speed_amount_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = speed_amount
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &speed_amount_attr, "speed_amount"));
+        });
+
+        struct attr num_max = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(curr.max_carry)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_max, "num_max"));
+
+        const char *max_key;
+        int max_amount;
+        kh_foreach(curr.max_carry, max_key, max_amount, {
+        
+            struct attr max_key_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(max_key_attr.val.as_string, max_key, sizeof(max_key_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &max_key_attr, "max_key"));
+
+            struct attr max_amount_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = max_amount
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &max_amount_attr, "max_amount"));
+        });
+
+        struct attr num_carry = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(curr.curr_carry)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_carry, "num_carry"));
+
+        const char *curr_key;
+        int curr_amount;
+        kh_foreach(curr.curr_carry, curr_key, curr_amount, {
+        
+            struct attr curr_key_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(curr_key_attr.val.as_string, curr_key, sizeof(curr_key_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &curr_key_attr, "curr_key"));
+
+            struct attr curr_amount_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = curr_amount
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &curr_amount_attr, "curr_amount"));
+        });
+
+        struct attr num_priorities = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = vec_size(&curr.priority)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_priorities, "num_priorities"));
+
+        for(int i = 0; i < vec_size(&curr.priority); i++) {
+        
+            struct attr prio_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(prio_attr.val.as_string, vec_AT(&curr.priority, i), sizeof(prio_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &prio_attr, "prio"));
+        }
+
+        struct attr drop_off_only = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool  = curr.drop_off_only
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &drop_off_only, "drop_off_only"));
+
+        struct attr cmd_type = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.queued.cmd
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cmd_type, "cmd_type"));
+
+        struct attr cmd_arg = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.queued.uid_arg
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cmd_arg, "cmd_arg"));
+
+        struct attr transport_src_uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.transport_src_uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &transport_src_uid, "transport_src_uid"));
+
+        struct attr transport_dest_uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.transport_dest_uid
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &transport_dest_uid, "transport_dest_uid"));
+    });
+    return true;
+}
+
+bool G_Harvester_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_ents = attr.val.as_int;
+
+    for(int i = 0; i < num_ents; i++) {
+
+        uint32_t uid;
+        struct hstate *hs;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uid = attr.val.as_int;
+
+        /* The entity should have already been loaded from the scripting state */
+        khiter_t k = kh_get(state, s_entity_state_table, uid);
+        CHK_TRUE_RET(k != kh_end(s_entity_state_table));
+        hs = &kh_value(s_entity_state_table, k);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        hs->state = attr.val.as_int;
+
+        switch(hs->state) {
+        case STATE_NOT_HARVESTING:
+            break;
+        case STATE_HARVESTING_SEEK_RESOURCE:
+            E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_resource, 
+                (void*)((uintptr_t)uid), G_RUNNING);
+            E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+                (void*)((uintptr_t)uid), G_RUNNING);
+            break;
+        case STATE_HARVESTING:
+            E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished, 
+                (void*)((uintptr_t)uid), G_RUNNING);
+            E_Entity_Register(EVENT_MOTION_START, uid, on_motion_begin_harvest, 
+                (void*)((uintptr_t)uid), G_RUNNING);
+            break;
+        case STATE_HARVESTING_SEEK_STORAGE:
+            E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_storage, 
+                (void*)((uintptr_t)uid), G_RUNNING);
+            E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+                (void*)((uintptr_t)uid), G_RUNNING);
+            break;
+        case STATE_TRANSPORT_GETTING:
+            E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_transport_source, 
+                (void*)((uintptr_t)uid), G_RUNNING);
+            E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+                (void*)((uintptr_t)uid), G_RUNNING);
+            break;
+        case STATE_TRANSPORT_PUTTING:
+            E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_transport_dest, 
+                (void*)((uintptr_t)uid), G_RUNNING);
+            E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+                (void*)((uintptr_t)uid), G_RUNNING);
+            break;
+        default: 
+            return false;
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        hs->strategy = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        hs->ss_uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        hs->res_uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        hs->res_last_pos = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        bool has_res_name = attr.val.as_bool;
+
+        if(has_res_name) {
+        
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_STRING);
+            const char *key = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
+            hs->res_name = key;
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int num_speeds = attr.val.as_int;
+
+        for(int j = 0; j < num_speeds; j++) {
+        
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+            const char *key = keyattr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            int val = attr.val.as_int;
+
+            G_Harvester_SetGatherSpeed(uid, key, val);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int num_max  = attr.val.as_int;
+
+        for(int j = 0; j < num_max; j++) {
+        
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+            const char *key = keyattr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            int val = attr.val.as_int;
+
+            G_Harvester_SetMaxCarry(uid, key, val);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int num_curr  = attr.val.as_int;
+
+        for(int j = 0; j < num_curr; j++) {
+        
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+            const char *key = keyattr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            int val = attr.val.as_int;
+
+            G_Harvester_SetCurrCarry(uid, key, val);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int num_prios  = attr.val.as_int;
+
+        vec_name_reset(&hs->priority);
+        for(int j = 0; j < num_prios; j++) {
+        
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+
+            const char *key = si_intern(keyattr.val.as_string, &s_stringpool, s_stridx);
+            vec_name_push(&hs->priority, key);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        hs->drop_off_only = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        hs->queued.cmd = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        hs->queued.uid_arg = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        hs->transport_src_uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        hs->transport_dest_uid = attr.val.as_int;
+    };
+
     return true;
 }
 
