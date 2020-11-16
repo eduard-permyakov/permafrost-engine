@@ -334,63 +334,7 @@ static struct nk_vec2i ui_get_screen_size(void)
     return (struct nk_vec2i){dm.w, dm.h};
 }
 
-/*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
-/*****************************************************************************/
-
-bool UI_Init(const char *basedir, SDL_Window *win)
-{
-    s_fontmap = kh_init(font);
-    if(!s_fontmap)
-        return false;
-
-    nk_init_default(&s_ctx, 0);
-    s_ctx.clip.copy = ui_clipboard_copy;
-    s_ctx.clip.paste = ui_clipboard_paste;
-    s_ctx.clip.userdata = nk_handle_ptr(0);
-    s_ctx.screen.get_drawable_size = ui_get_drawable_size;
-    s_ctx.screen.get_screen_size = ui_get_screen_size;
-
-    R_PushCmd((struct rcmd) { R_GL_UI_Init, 0 });
-
-    ui_init_font_stash(&s_ctx);
-
-    vec_td_init(&s_curr_frame_labels);
-    E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING);
-
-    return true;
-}
-
-void UI_Shutdown(void)
-{
-    E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
-    vec_td_destroy(&s_curr_frame_labels);
-
-    nk_font_atlas_clear(&s_atlas);
-    nk_free(&s_ctx);
-    memset(&s_ctx, 0, sizeof(s_ctx));
-
-    const char *key;
-    struct nk_font *curr;
-    (void)curr;
-
-    kh_foreach(s_fontmap, key, curr, { free((void*)key); });
-    kh_destroy(font, s_fontmap);
-
-    R_PushCmd((struct rcmd){ R_GL_UI_Shutdown, 0});
-}
-
-void UI_InputBegin(void)
-{
-    nk_input_begin(&s_ctx);
-}
-
-void UI_InputEnd(void)
-{
-    nk_input_end(&s_ctx);
-}
-
-void UI_Render(void)
+static void ui_render(void *user, void *event)
 {
     struct nk_buffer cmds, vbuf, ebuf;
     const enum nk_anti_aliasing aa = NK_ANTI_ALIASING_ON;
@@ -436,6 +380,64 @@ void UI_Render(void)
 
     nk_buffer_free(&cmds);
     nk_clear(&s_ctx);
+}
+
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
+bool UI_Init(const char *basedir, SDL_Window *win)
+{
+    s_fontmap = kh_init(font);
+    if(!s_fontmap)
+        return false;
+
+    nk_init_default(&s_ctx, 0);
+    s_ctx.clip.copy = ui_clipboard_copy;
+    s_ctx.clip.paste = ui_clipboard_paste;
+    s_ctx.clip.userdata = nk_handle_ptr(0);
+    s_ctx.screen.get_drawable_size = ui_get_drawable_size;
+    s_ctx.screen.get_screen_size = ui_get_screen_size;
+
+    R_PushCmd((struct rcmd) { R_GL_UI_Init, 0 });
+
+    ui_init_font_stash(&s_ctx);
+
+    vec_td_init(&s_curr_frame_labels);
+    E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING);
+    E_Global_Register(EVENT_RENDER_FINISH, ui_render, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
+
+    return true;
+}
+
+void UI_Shutdown(void)
+{
+    E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
+    E_Global_Unregister(EVENT_RENDER_FINISH, ui_render);
+    vec_td_destroy(&s_curr_frame_labels);
+
+    nk_font_atlas_clear(&s_atlas);
+    nk_free(&s_ctx);
+    memset(&s_ctx, 0, sizeof(s_ctx));
+
+    const char *key;
+    struct nk_font *curr;
+    (void)curr;
+
+    kh_foreach(s_fontmap, key, curr, { free((void*)key); });
+    kh_destroy(font, s_fontmap);
+
+    R_PushCmd((struct rcmd){ R_GL_UI_Shutdown, 0});
+}
+
+void UI_InputBegin(void)
+{
+    nk_input_begin(&s_ctx);
+}
+
+void UI_InputEnd(void)
+{
+    nk_input_end(&s_ctx);
 }
 
 void UI_HandleEvent(SDL_Event *evt)

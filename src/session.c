@@ -88,10 +88,14 @@ static char            s_saved_argv[MAX_ARGC + 1][128];
 
 static void subsession_clear(void)
 {
+    /* Drain the event queue to make sure we don't lose any events 
+     * when moving from sessin to session. A 'lost' event can cause
+     * some event-driven state machines to enter a bad state. 
+     */
+    E_FlushEventQueue();
     Sched_ClearState();
     E_DeleteScriptHandlers();
     S_ClearState();
-    Engine_ClearPendingEvents();
     G_ClearState();
     G_ClearRenderWork();
     UI_SetActiveFont("__default__");

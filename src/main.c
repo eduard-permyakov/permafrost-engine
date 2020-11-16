@@ -657,7 +657,6 @@ int main(int argc, char **argv)
     E_ServiceQueue();
     G_Update();
     G_Render();
-    UI_Render();
     G_SwapBuffers();
     Perf_FinishTick();
 
@@ -680,7 +679,6 @@ int main(int argc, char **argv)
         Session_ServiceRequests();
         G_Update();
         G_Render();
-        UI_Render();
         Sched_Tick();
 
         wait_render_work_done();

@@ -74,7 +74,6 @@ bool               UI_Init(const char *basedir, SDL_Window *win);
 void               UI_Shutdown(void);
 void               UI_InputBegin(void);
 void               UI_InputEnd(void);
-void               UI_Render(void);
 void               UI_HandleEvent(SDL_Event *evt);
 void               UI_DrawText(const char *text, struct rect rect, struct rgba rgba);
 

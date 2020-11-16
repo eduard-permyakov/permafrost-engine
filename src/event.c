@@ -298,6 +298,25 @@ void E_ClearPendingEvents(void)
     queue_event_clear(&s_event_queues[s_front_queue_idx]);
 }
 
+void E_FlushEventQueue(void)
+{
+    while(queue_size(s_event_queues[s_front_queue_idx]) > 0) {
+
+        queue_event_t *queue = &s_event_queues[s_front_queue_idx];
+        s_front_queue_idx = (s_front_queue_idx + 1) % 2;
+
+        e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID}, true);
+        e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID}, true);
+
+        struct event event;
+        while(queue_event_pop(queue, &event)) {
+            e_handle_event(event, true);
+        }
+        e_handle_event( (struct event){EVENT_UPDATE_UI,  NULL, ES_ENGINE, GLOBAL_ID}, true);
+        e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID}, true);
+    }
+}
+
 void E_DeleteScriptHandlers(void)
 {
     uint64_t keys_to_del[kh_size(s_event_handler_table)];

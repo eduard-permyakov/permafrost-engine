@@ -1305,6 +1305,7 @@ void G_Render(void)
         R_PushCmd((struct rcmd){ R_GL_MapInvalidate, 0 });
     }
 
+    E_Global_NotifyImmediate(EVENT_RENDER_FINISH, NULL, ES_ENGINE);
     PERF_RETURN_VOID();
 }
 
