@@ -42,6 +42,7 @@
 #include "../lib/public/mpool.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/string_intern.h"
+#include "../lib/public/attr.h"
 
 #include <assert.h>
 
@@ -63,6 +64,12 @@ static void  pfree(void *ptr);
 #define ARR_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 #define MAX(a, b)   ((a) > (b) ? (a) : (b))
 #define MIN(a, b)   ((a) < (b) ? (a) : (b))
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 KHASH_MAP_INIT_STR(int, int)
 
@@ -384,6 +391,58 @@ static void on_update_ui(void *user, void *event)
     nk_style_pop_color(ctx);
 }
 
+static bool save_color(struct nk_color clr, SDL_RWops *stream)
+{
+    struct attr clr_r = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = clr.r
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &clr_r, "clr_r"));
+
+    struct attr clr_g = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = clr.g
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &clr_g, "clr_g"));
+
+    struct attr clr_b = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = clr.b
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &clr_b, "clr_b"));
+
+    struct attr clr_a = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = clr.a
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &clr_a, "clr_a"));
+
+    return true;
+}
+
+static bool load_color(struct nk_color *out, SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    out->r = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    out->g = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    out->b = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    out->a = attr.val.as_int;
+
+    return true;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -613,5 +672,322 @@ void G_StorageSite_SetBorderColor(const struct nk_color *clr)
 void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style)
 {
     s_bg_style = *style;
+}
+
+bool G_StorageSite_SaveState(struct SDL_RWops *stream)
+{
+    struct attr num_ents = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_entity_state_table)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_ents, "num_ents"));
+
+    uint32_t key;
+    struct ss_state curr;
+
+    kh_foreach(s_entity_state_table, key, curr, {
+
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = key
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
+
+        struct attr num_capacity = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(curr.capacity)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_capacity, "num_capacity"));
+
+        const char *cap_key;
+        int cap_amount;
+
+        kh_foreach(curr.capacity, cap_key, cap_amount, {
+        
+            struct attr cap_key_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(cap_key_attr.val.as_string, cap_key, sizeof(cap_key_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &cap_key_attr, "cap_key"));
+
+            struct attr cap_amount_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = cap_amount
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &cap_amount_attr, "cap_amount"));
+        });
+
+        struct attr num_curr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(curr.curr)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_curr, "num_curr"));
+
+        const char *curr_key;
+        int curr_amount;
+
+        kh_foreach(curr.curr, curr_key, curr_amount, {
+        
+            struct attr curr_key_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(curr_key_attr.val.as_string, curr_key, sizeof(curr_key_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &curr_key_attr, "curr_key"));
+
+            struct attr curr_amount_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = curr_amount
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &curr_amount_attr, "curr_amount"));
+        });
+
+        struct attr num_desired = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(curr.desired)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_desired, "num_desired"));
+
+        const char *desired_key;
+        int desired_amount;
+
+        kh_foreach(curr.desired, desired_key, desired_amount, {
+        
+            struct attr desired_key_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(desired_key_attr.val.as_string, desired_key, sizeof(desired_key_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &desired_key_attr, "desired_key"));
+
+            struct attr desired_amount_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = desired_amount
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &desired_amount_attr, "desired_amount"));
+        });
+    });
+
+    /* save global resource/capacity tables 
+     */
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+    
+        struct attr num_global_resources = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(s_global_resource_tables[i])
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_global_resources, "num_global_resources"));
+
+        const char *resource_key;
+        int resource_amount;
+
+        kh_foreach(s_global_resource_tables[i], resource_key, resource_amount, {
+        
+            struct attr resource_key_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(resource_key_attr.val.as_string, resource_key, sizeof(resource_key_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &resource_key_attr, "resource_key"));
+
+            struct attr resource_amount_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = resource_amount
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &resource_amount_attr, "resource_amount"));
+        });
+
+        struct attr num_global_capacities = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(s_global_capacity_tables[i])
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_global_capacities, "num_global_capacities"));
+
+        const char *capacity_key;
+        int capacity_amount;
+
+        kh_foreach(s_global_capacity_tables[i], capacity_key, capacity_amount, {
+        
+            struct attr capacity_key_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(capacity_key_attr.val.as_string, capacity_key, sizeof(capacity_key_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &capacity_key_attr, "capacity_key"));
+
+            struct attr capacity_amount_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = capacity_amount
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &capacity_amount_attr, "capacity_amount"));
+        });
+    }
+
+    /* save UI style 
+     */
+    struct attr bg_style_type = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = s_bg_style.type
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &bg_style_type, "bg_style_type"));
+
+    switch(s_bg_style.type) {
+    case NK_STYLE_ITEM_COLOR: {
+
+        CHK_TRUE_RET(save_color(s_bg_style.data.color, stream));
+        break;
+    }
+    case NK_STYLE_ITEM_TEXPATH: {
+
+        struct attr bg_texpath = (struct attr){ .type = TYPE_STRING };
+        pf_strlcpy(bg_texpath.val.as_string, s_bg_style.data.texpath, sizeof(bg_texpath.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &bg_texpath, "bg_texpath"));
+        break;
+    }
+    default: assert(0);
+    }
+
+    CHK_TRUE_RET(save_color(s_border_clr, stream));
+    CHK_TRUE_RET(save_color(s_font_clr, stream));
+
+    return true;
+}
+
+bool G_StorageSite_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_ents = attr.val.as_int;
+
+    for(int i = 0; i < num_ents; i++) {
+
+        uint32_t uid;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        uid = attr.val.as_int;
+
+        struct entity *ent = G_EntityForUID(uid);
+        CHK_TRUE_RET(ent);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t num_capacity = attr.val.as_int;
+
+        for(int i = 0; i < num_capacity; i++) {
+        
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+            const char *key = keyattr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            int val = attr.val.as_int;
+
+            G_StorageSite_SetCapacity(ent, key, val);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t num_curr = attr.val.as_int;
+
+        for(int i = 0; i < num_curr; i++) {
+        
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+            const char *key = keyattr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            int val = attr.val.as_int;
+
+            G_StorageSite_SetCurr(ent, key, val);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t num_desired = attr.val.as_int;
+
+        for(int i = 0; i < num_desired; i++) {
+        
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+            const char *key = keyattr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            int val = attr.val.as_int;
+
+            G_StorageSite_SetDesired(uid, key, val);
+        }
+    }
+
+    /* load global resource/capacity tables 
+     */
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t num_resources  = attr.val.as_int;
+
+        for(int j = 0; j < num_resources; j++) {
+
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+            const char *key = keyattr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            int val = attr.val.as_int;
+
+            khiter_t k = kh_get(res, s_global_resource_tables[i], key);
+            if(k == kh_end(s_global_resource_tables[i])) {
+                k = kh_put(res, s_global_resource_tables[i], key, &(int){0});
+            }
+            kh_value(s_global_resource_tables[i], k) = val;
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t num_capacities  = attr.val.as_int;
+
+        for(int j = 0; j < num_capacities; j++) {
+
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+            const char *key = keyattr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            int val = attr.val.as_int;
+
+            khiter_t k = kh_get(res, s_global_capacity_tables[i], key);
+            if(k == kh_end(s_global_capacity_tables[i])) {
+                k = kh_put(res, s_global_capacity_tables[i], key, &(int){0});
+            }
+            kh_value(s_global_capacity_tables[i], k) = val;
+        }
+    }
+
+    /* load UI style 
+     */
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    s_bg_style.type = attr.val.as_int;
+
+    switch(s_bg_style.type) {
+    case NK_STYLE_ITEM_COLOR: {
+
+        CHK_TRUE_RET(load_color(&s_bg_style.data.color, stream));
+        break;
+    }
+    case NK_STYLE_ITEM_TEXPATH: {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        pf_strlcpy(s_bg_style.data.texpath, attr.val.as_string, sizeof(s_bg_style.data.texpath));
+        break;
+    }
+    default: 
+        return false;
+    }
+
+    CHK_TRUE_RET(load_color(&s_border_clr, stream));
+    CHK_TRUE_RET(load_color(&s_font_clr, stream));
+
+    return true;
 }
 

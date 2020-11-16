@@ -2113,6 +2113,9 @@ bool G_SaveEntityState(SDL_RWops *stream)
     if(!G_Builder_SaveState(stream))
         return false;
 
+    if(!G_StorageSite_SaveState(stream))
+        return false;
+
     return true;
 }
 
@@ -2143,6 +2146,9 @@ bool G_LoadEntityState(SDL_RWops *stream)
         return false;
 
     if(!G_Builder_LoadState(stream))
+        return false;
+
+    if(!G_StorageSite_LoadState(stream))
         return false;
 
     return true;
