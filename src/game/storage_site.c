@@ -346,6 +346,9 @@ static void on_update_ui(void *user, void *event)
         const char *names[16];
         size_t nnames = ss_get_keys(&curr, names, ARR_SIZE(names));
 
+        if(nnames == 0)
+            continue;
+
         if(nk_begin_with_vres(ctx, name, 
             (struct nk_rect){adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h}, 
             flags, (struct nk_vec2i){adj_vres.x, adj_vres.y})) {

@@ -573,7 +573,7 @@ bool G_Building_SaveState(struct SDL_RWops *stream)
             .type = TYPE_BOOL,
             .val.as_bool = curr.blocking
         };
-        CHK_TRUE_RET(Attr_Write(stream, &building_vis_range, "building_blocking"));
+        CHK_TRUE_RET(Attr_Write(stream, &building_blocking, "building_blocking"));
 
         CHK_TRUE_RET(AL_SaveOBB(stream, &curr.obb));
     });

@@ -2192,14 +2192,88 @@ static int PyResourceEntity_init(PyResourceEntityObject *self, PyObject *args, P
 
 static PyObject *PyResourceEntity_pickle(PyResourceEntityObject *self, PyObject *args, PyObject *kwargs)
 {
-    //TODO
+    PyObject *ret = s_call_super_method("__pickle__", (PyObject*)&PyResourceEntity_type, 
+        (PyObject*)self, args, kwargs);
+
+    assert(PyString_Check(ret));
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_stream);
+    CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(ret), PyString_GET_SIZE(ret), 1), fail_stream);
+
+    PyObject *name = PyString_FromString(G_Resource_GetName(self->super.ent->uid));
+    CHK_TRUE(name, fail_pickle);
+    bool status = S_PickleObjgraph(name, stream);
+    Py_DECREF(name);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *amount = PyInt_FromLong(G_Resource_GetAmount(self->super.ent->uid));
+    CHK_TRUE(amount, fail_pickle);
+    status = S_PickleObjgraph(amount, stream);
+    Py_DECREF(amount);
+    CHK_TRUE(status, fail_pickle);
+
+    Py_DECREF(ret);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+    SDL_RWclose(stream);
+    return ret;
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_stream:
+    Py_XDECREF(ret);
     return NULL;
 }
 
 static PyObject *PyResourceEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
-    //TODO
-    return NULL;
+    char tmp;
+    PyObject *ret = NULL;
+
+    PyObject *tuple = s_call_super_method("__unpickle__", (PyObject*)&PyResourceEntity_type, 
+        cls, args, kwargs);
+    if(!tuple)
+        return NULL;
+
+    PyObject *ent;
+    int nread; 
+    if(!PyArg_ParseTuple(tuple, "Oi", &ent, &nread)) {
+        Py_DECREF(tuple);
+        return NULL;
+    }
+    Py_INCREF(ent);
+    Py_DECREF(tuple);
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_stream);
+
+    PyObject *str = PyTuple_GET_ITEM(args, 0); /* borrowed */
+    CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(str), PyString_GET_SIZE(str), 1), fail_unpickle);
+    SDL_RWseek(stream, nread, RW_SEEK_SET);
+
+    PyObject *name = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+    CHK_TRUE(name, fail_unpickle);
+    CHK_TRUE(PyString_Check(name), fail_name);
+    G_Resource_SetName(((PyResourceEntityObject*)ent)->super.ent->uid, PyString_AS_STRING(name));
+
+    PyObject *amount = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+    CHK_TRUE(amount, fail_name);
+    CHK_TRUE(PyInt_Check(amount), fail_amount);
+    G_Resource_SetAmount(((PyResourceEntityObject*)ent)->super.ent->uid, PyInt_AS_LONG(amount));
+
+    nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("Oi", ent, nread);
+
+fail_amount:
+    Py_DECREF(amount);
+fail_name:
+    Py_DECREF(name);
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_stream:
+    Py_DECREF(ent);
+    return ret;
 }
 
 static PyObject *PyResourceEntity_get_cursor(PyResourceEntityObject *self, void *closure)
@@ -2209,6 +2283,11 @@ static PyObject *PyResourceEntity_get_cursor(PyResourceEntityObject *self, void 
 
 static int PyResourceEntity_set_cursor(PyResourceEntityObject *self, PyObject *value, void *closure)
 {
+    if(value == NULL) {
+        PyErr_SetString(PyExc_AttributeError, "Cannot delete 'cursor' attribute.");
+        return -1;
+    }
+
     if(!PyObject_IsInstance(value, (PyObject*)&PyString_Type)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
         return -1;
@@ -2351,14 +2430,13 @@ static PyObject *PyHarvesterEntity_decrease_transport_priority(PyHarvesterEntity
 
 static PyObject *PyHarvesterEntity_pickle(PyHarvesterEntityObject *self, PyObject *args, PyObject *kwargs)
 {
-    //TODO
-    return NULL;
+    return s_call_super_method("__pickle__", (PyObject*)&PyHarvesterEntity_type, 
+        (PyObject*)self, args, kwargs);
 }
 
 static PyObject *PyHarvesterEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
-    //TODO
-    return NULL;
+    return s_call_super_method("__unpickle__", (PyObject*)&PyHarvesterEntity_type, cls, args, kwargs);
 }
 
 static PyObject *PyHarvesterEntity_get_total_carry(PyHarvesterEntityObject *self, void *closure)
@@ -2502,14 +2580,13 @@ static PyObject *PyStorageSiteEntity_get_storable(PyStorageSiteEntityObject *sel
 
 static PyObject *PyStorageSiteEntity_pickle(PyStorageSiteEntityObject *self, PyObject *args, PyObject *kwargs)
 {
-    //TODO
-    return NULL;
+    return s_call_super_method("__pickle__", (PyObject*)&PyStorageSiteEntity_type, 
+        (PyObject*)self, args, kwargs);
 }
 
 static PyObject *PyStorageSiteEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
-    //TODO
-    return NULL;
+    return s_call_super_method("__unpickle__", (PyObject*)&PyStorageSiteEntity_type, cls, args, kwargs);
 }
 
 static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *args)
@@ -2538,14 +2615,13 @@ static PyObject *PyMovableEntity_del(PyMovableEntityObject *self)
 
 static PyObject *PyMovableEntity_pickle(PyMovableEntityObject *self, PyObject *args, PyObject *kwargs)
 {
-    //TODO
-    return NULL;
+    return s_call_super_method("__pickle__", (PyObject*)&PyMovableEntity_type, 
+        (PyObject*)self, args, kwargs);
 }
 
 static PyObject *PyMovableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
-    //TODO
-    return NULL;
+    return s_call_super_method("__unpickle__", (PyObject*)&PyMovableEntity_type, cls, args, kwargs);
 }
 
 static PyObject *s_obj_from_attr(const struct attr *attr)
