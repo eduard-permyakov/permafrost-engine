@@ -1502,7 +1502,10 @@ fail_args:
 
 static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self)
 {
-    assert(self->super.ent);
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
 
     if(self->super.ent->flags & ENTITY_FLAG_MOVABLE)
         G_StopEntity(self->super.ent);
@@ -1514,8 +1517,12 @@ static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self
 
 static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObject *args)
 {
-    vec2_t xz_pos;
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
 
+    vec2_t xz_pos;
     if(!PyArg_ParseTuple(args, "(ff)", &xz_pos.x, &xz_pos.z)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 2 floats.");
         return NULL;
@@ -1545,25 +1552,34 @@ static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObj
     CHK_TRUE(stream, fail_stream);
     CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(ret), PyString_GET_SIZE(ret), 1), fail_stream);
 
-    PyObject *max_hp = PyInt_FromLong(self->super.ent->max_hp);
-    PyObject *base_dmg = PyInt_FromLong(G_Combat_GetBaseDamage(self->super.ent));
-    PyObject *base_armour = PyFloat_FromDouble(G_Combat_GetBaseArmour(self->super.ent));
-    PyObject *curr_hp = PyInt_FromLong(G_Combat_GetCurrentHP(self->super.ent));
-    CHK_TRUE(max_hp && base_dmg && base_armour && curr_hp, fail_pickle);
+    PyObject *max_hp = NULL;
+    PyObject *base_dmg = NULL;
+    PyObject *base_armour = NULL;
+    PyObject *curr_hp = NULL;
 
-    bool status;
-    status = S_PickleObjgraph(max_hp, stream);
-    CHK_TRUE(status, fail_pickle);
-    status = S_PickleObjgraph(base_dmg, stream);
-    CHK_TRUE(status, fail_pickle);
-    status = S_PickleObjgraph(base_armour, stream);
-    CHK_TRUE(status, fail_pickle);
-    status = S_PickleObjgraph(curr_hp, stream);
-    CHK_TRUE(status, fail_pickle);
+    if(!(self->super.ent->flags & ENTITY_FLAG_ZOMBIE)) {
+    
+        max_hp = PyInt_FromLong(self->super.ent->max_hp);
+        base_dmg = PyInt_FromLong(G_Combat_GetBaseDamage(self->super.ent));
+        base_armour = PyFloat_FromDouble(G_Combat_GetBaseArmour(self->super.ent));
+        curr_hp = PyInt_FromLong(G_Combat_GetCurrentHP(self->super.ent));
+        CHK_TRUE(max_hp && base_dmg && base_armour && curr_hp, fail_pickle);
 
-    Py_DECREF(max_hp);
-    Py_DECREF(base_dmg);
-    Py_DECREF(base_armour);
+        bool status;
+        status = S_PickleObjgraph(max_hp, stream);
+        CHK_TRUE(status, fail_pickle);
+        status = S_PickleObjgraph(base_dmg, stream);
+        CHK_TRUE(status, fail_pickle);
+        status = S_PickleObjgraph(base_armour, stream);
+        CHK_TRUE(status, fail_pickle);
+        status = S_PickleObjgraph(curr_hp, stream);
+        CHK_TRUE(status, fail_pickle);
+
+        Py_DECREF(max_hp);
+        Py_DECREF(base_dmg);
+        Py_DECREF(base_armour);
+        Py_DECREF(curr_hp);
+    }
 
     Py_DECREF(ret);
     ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
@@ -1608,29 +1624,32 @@ static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyOb
     CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(str), PyString_GET_SIZE(str), 1), fail_unpickle);
     SDL_RWseek(stream, nread, RW_SEEK_SET);
 
-    max_hp = S_UnpickleObjgraph(stream);
-    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+    if(!(((PyCombatableEntityObject*)ent)->super.ent->flags & ENTITY_FLAG_ZOMBIE)) {
 
-    status = PyObject_SetAttrString(ent, "max_hp", max_hp);
-    CHK_TRUE(0 == status, fail_unpickle);
+        max_hp = S_UnpickleObjgraph(stream);
+        SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
-    base_dmg = S_UnpickleObjgraph(stream);
-    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+        status = PyObject_SetAttrString(ent, "max_hp", max_hp);
+        CHK_TRUE(0 == status, fail_unpickle);
 
-    status = PyObject_SetAttrString(ent, "base_dmg", base_dmg);
-    CHK_TRUE(0 == status, fail_unpickle);
+        base_dmg = S_UnpickleObjgraph(stream);
+        SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
-    base_armour = S_UnpickleObjgraph(stream);
-    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+        status = PyObject_SetAttrString(ent, "base_dmg", base_dmg);
+        CHK_TRUE(0 == status, fail_unpickle);
 
-    status = PyObject_SetAttrString(ent, "base_armour", base_armour);
-    CHK_TRUE(0 == status, fail_unpickle);
+        base_armour = S_UnpickleObjgraph(stream);
+        SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
-    curr_hp = S_UnpickleObjgraph(stream);
-    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+        status = PyObject_SetAttrString(ent, "base_armour", base_armour);
+        CHK_TRUE(0 == status, fail_unpickle);
 
-    CHK_TRUE(PyInt_Check(curr_hp), fail_unpickle);
-    G_Combat_SetHP(((PyEntityObject*)ent)->ent, PyInt_AS_LONG(curr_hp));
+        curr_hp = S_UnpickleObjgraph(stream);
+        SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+        CHK_TRUE(PyInt_Check(curr_hp), fail_unpickle);
+        G_Combat_SetHP(((PyEntityObject*)ent)->ent, PyInt_AS_LONG(curr_hp));
+    }
 
     nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
     ret = Py_BuildValue("Oi", ent, nread);
@@ -1833,11 +1852,20 @@ static PyObject *PyCombatableEntity_del(PyCombatableEntityObject *self)
 
 static PyObject *PyCombatableEntity_get_hp(PyCombatableEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
     return PyInt_FromLong(G_Combat_GetCurrentHP(self->super.ent));
 }
 
 static int PyCombatableEntity_set_hp(PyCombatableEntityObject *self, PyObject *value, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
     if(!PyInt_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "hp attribute must be an integer.");
         return -1;
@@ -1855,11 +1883,21 @@ static int PyCombatableEntity_set_hp(PyCombatableEntityObject *self, PyObject *v
 
 static PyObject *PyCombatableEntity_get_max_hp(PyCombatableEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
     return Py_BuildValue("i", self->super.ent->max_hp);
 }
 
 static int PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObject *value, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
     if(!PyInt_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "max_hp attribute must be an integer.");
         return -1;
@@ -1877,11 +1915,20 @@ static int PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObjec
 
 static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
     return PyInt_FromLong(G_Combat_GetBaseDamage(self->super.ent));
 }
 
 static int PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObject *value, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
     if(!PyInt_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "base_dmg attribute must be an integer.");
         return -1;
@@ -1899,11 +1946,21 @@ static int PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObj
 
 static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
     return PyFloat_FromDouble(G_Combat_GetBaseArmour(self->super.ent));
 }
 
 static int PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
     if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "base_armour attribute must be a float.");
         return -1;
@@ -1926,6 +1983,11 @@ static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self)
 
 static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
     if(!G_Building_Mark(self->super.ent)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to mark building. It must be in the PLACEMENT state.");
         return NULL;
@@ -1935,6 +1997,11 @@ static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self)
 
 static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
     static char *kwlist[] = {"blocking", "force", NULL};
     int blocking = 1;
     int force = 0;
@@ -1958,6 +2025,11 @@ static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self, PyObject
 
 static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
     if(!G_Building_Complete(self->super.ent)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to complete building. It must be in the FOUNDED state.");
         return NULL;
@@ -1967,6 +2039,11 @@ static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self)
 
 static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
     if(G_Building_Unobstructed(self->super.ent)) {
         Py_RETURN_TRUE;
     }else{
@@ -2062,8 +2139,12 @@ static int PyBuilderEntity_init(PyBuilderEntityObject *self, PyObject *args, PyO
 
 static PyObject *PyBuilderEntity_build(PyBuilderEntityObject *self, PyObject *args)
 {
-    PyObject *building;
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
 
+    PyObject *building;
     if(!PyArg_ParseTuple(args, "O", &building)
     || !PyObject_IsInstance(building, (PyObject*)&PyBuildableEntity_type)) {
         PyErr_SetString(PyExc_TypeError, "Expecting 1 argument: a pf.BuildableEntity instance");
@@ -2084,11 +2165,14 @@ static PyObject *PyBuilderEntity_pickle(PyBuilderEntityObject *self, PyObject *a
     CHK_TRUE(stream, fail_stream);
     CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(ret), PyString_GET_SIZE(ret), 1), fail_stream);
 
-    PyObject *build_speed = PyInt_FromLong(G_Builder_GetBuildSpeed(self->super.ent));
-    CHK_TRUE(build_speed, fail_pickle);
-    bool status = S_PickleObjgraph(build_speed, stream);
-    Py_DECREF(build_speed);
-    CHK_TRUE(status, fail_pickle);
+    if(!(self->super.ent->flags & ENTITY_FLAG_ZOMBIE)) {
+    
+        PyObject *build_speed = PyInt_FromLong(G_Builder_GetBuildSpeed(self->super.ent));
+        CHK_TRUE(build_speed, fail_pickle);
+        bool status = S_PickleObjgraph(build_speed, stream);
+        Py_DECREF(build_speed);
+        CHK_TRUE(status, fail_pickle);
+    }
 
     Py_DECREF(ret);
     ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
@@ -2126,12 +2210,16 @@ static PyObject *PyBuilderEntity_unpickle(PyObject *cls, PyObject *args, PyObjec
 
     PyObject *str = PyTuple_GET_ITEM(args, 0); /* borrowed */
     CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(str), PyString_GET_SIZE(str), 1), fail_unpickle);
+    PyObject *build_speed = NULL;
 
-    SDL_RWseek(stream, nread, RW_SEEK_SET);
-    PyObject *build_speed = S_UnpickleObjgraph(stream);
-    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
-    CHK_TRUE(build_speed, fail_unpickle);
-    CHK_TRUE(PyInt_Check(build_speed), fail_parse);
+    if(!(((PyBuilderEntityObject*)ent)->super.ent->flags & ENTITY_FLAG_ZOMBIE)) {
+
+        SDL_RWseek(stream, nread, RW_SEEK_SET);
+        build_speed = S_UnpickleObjgraph(stream);
+        SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+        CHK_TRUE(build_speed, fail_unpickle);
+        CHK_TRUE(PyInt_Check(build_speed), fail_parse);
+    }
 
     nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
     G_Builder_SetBuildSpeed(((PyBuilderEntityObject*)ent)->super.ent, PyInt_AS_LONG(build_speed));
@@ -2200,17 +2288,20 @@ static PyObject *PyResourceEntity_pickle(PyResourceEntityObject *self, PyObject 
     CHK_TRUE(stream, fail_stream);
     CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(ret), PyString_GET_SIZE(ret), 1), fail_stream);
 
-    PyObject *name = PyString_FromString(G_Resource_GetName(self->super.ent->uid));
-    CHK_TRUE(name, fail_pickle);
-    bool status = S_PickleObjgraph(name, stream);
-    Py_DECREF(name);
-    CHK_TRUE(status, fail_pickle);
+    if(!(self->super.ent->flags & ENTITY_FLAG_ZOMBIE)) {
+    
+        PyObject *name = PyString_FromString(G_Resource_GetName(self->super.ent->uid));
+        CHK_TRUE(name, fail_pickle);
+        bool status = S_PickleObjgraph(name, stream);
+        Py_DECREF(name);
+        CHK_TRUE(status, fail_pickle);
 
-    PyObject *amount = PyInt_FromLong(G_Resource_GetAmount(self->super.ent->uid));
-    CHK_TRUE(amount, fail_pickle);
-    status = S_PickleObjgraph(amount, stream);
-    Py_DECREF(amount);
-    CHK_TRUE(status, fail_pickle);
+        PyObject *amount = PyInt_FromLong(G_Resource_GetAmount(self->super.ent->uid));
+        CHK_TRUE(amount, fail_pickle);
+        status = S_PickleObjgraph(amount, stream);
+        Py_DECREF(amount);
+        CHK_TRUE(status, fail_pickle);
+    }
 
     Py_DECREF(ret);
     ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
@@ -2250,25 +2341,31 @@ static PyObject *PyResourceEntity_unpickle(PyObject *cls, PyObject *args, PyObje
     CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(str), PyString_GET_SIZE(str), 1), fail_unpickle);
     SDL_RWseek(stream, nread, RW_SEEK_SET);
 
-    PyObject *name = S_UnpickleObjgraph(stream);
-    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
-    CHK_TRUE(name, fail_unpickle);
-    CHK_TRUE(PyString_Check(name), fail_name);
-    G_Resource_SetName(((PyResourceEntityObject*)ent)->super.ent->uid, PyString_AS_STRING(name));
+    PyObject *name = NULL;
+    PyObject *amount = NULL;
 
-    PyObject *amount = S_UnpickleObjgraph(stream);
-    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
-    CHK_TRUE(amount, fail_name);
-    CHK_TRUE(PyInt_Check(amount), fail_amount);
-    G_Resource_SetAmount(((PyResourceEntityObject*)ent)->super.ent->uid, PyInt_AS_LONG(amount));
+    if(!(((PyResourceEntityObject*)ent)->super.ent->flags & ENTITY_FLAG_ZOMBIE)) {
+
+        name = S_UnpickleObjgraph(stream);
+        SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+        CHK_TRUE(name, fail_unpickle);
+        CHK_TRUE(PyString_Check(name), fail_name);
+        G_Resource_SetName(((PyResourceEntityObject*)ent)->super.ent->uid, PyString_AS_STRING(name));
+
+        amount = S_UnpickleObjgraph(stream);
+        SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+        CHK_TRUE(amount, fail_name);
+        CHK_TRUE(PyInt_Check(amount), fail_amount);
+        G_Resource_SetAmount(((PyResourceEntityObject*)ent)->super.ent->uid, PyInt_AS_LONG(amount));
+    }
 
     nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
     ret = Py_BuildValue("Oi", ent, nread);
 
 fail_amount:
-    Py_DECREF(amount);
+    Py_XDECREF(amount);
 fail_name:
-    Py_DECREF(name);
+    Py_XDECREF(name);
 fail_unpickle:
     SDL_RWclose(stream);
 fail_stream:
@@ -2278,11 +2375,21 @@ fail_stream:
 
 static PyObject *PyResourceEntity_get_cursor(PyResourceEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
     return Py_BuildValue("s", G_Resource_GetCursor(self->super.ent->uid));
 }
 
 static int PyResourceEntity_set_cursor(PyResourceEntityObject *self, PyObject *value, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
     if(value == NULL) {
         PyErr_SetString(PyExc_AttributeError, "Cannot delete 'cursor' attribute.");
         return -1;
@@ -2300,11 +2407,21 @@ static int PyResourceEntity_set_cursor(PyResourceEntityObject *self, PyObject *v
 
 static PyObject *PyResourceEntity_get_name(PyResourceEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
     return PyString_FromString(G_Resource_GetName(self->super.ent->uid));
 }
 
 static PyObject *PyResourceEntity_get_amount(PyResourceEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
     return PyInt_FromLong(G_Resource_GetAmount(self->super.ent->uid));
 }
 
@@ -2315,8 +2432,12 @@ static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self)
 
 static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObject *args)
 {
-    PyResourceEntityObject *resource;
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
 
+    PyResourceEntityObject *resource;
     if(!PyArg_ParseTuple(args, "O", &resource)
     || !PyObject_IsInstance((PyObject*)resource, (PyObject*)&PyResourceEntity_type)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a pf.ResourceEntity instance.");
@@ -2332,8 +2453,12 @@ static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObjec
 
 static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObject *args)
 {
-    PyStorageSiteEntityObject *storage;
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
 
+    PyStorageSiteEntityObject *storage;
     if(!PyArg_ParseTuple(args, "O", &storage)
     || !PyObject_IsInstance((PyObject*)storage, (PyObject*)&PyStorageSiteEntity_type)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a pf.StorageSiteEntity instance.");
@@ -2349,8 +2474,12 @@ static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObj
 
 static PyObject *PyHarvesterEntity_transport(PyHarvesterEntityObject *self, PyObject *args)
 {
-    PyStorageSiteEntityObject *storage;
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
 
+    PyStorageSiteEntityObject *storage;
     if(!PyArg_ParseTuple(args, "O", &storage)
     || !PyObject_IsInstance((PyObject*)storage, (PyObject*)&PyStorageSiteEntity_type)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a pf.StorageSiteEntity instance.");
@@ -2366,6 +2495,11 @@ static PyObject *PyHarvesterEntity_transport(PyHarvesterEntityObject *self, PyOb
 
 static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, PyObject *args)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return NULL;
+    }
+
     const char *name;
     int amount;
 
@@ -2383,6 +2517,11 @@ static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, 
 
 static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *self, PyObject *args)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return NULL;
+    }
+
     const char *name;
     int amount;
 
@@ -2400,6 +2539,11 @@ static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *sel
 
 static PyObject *PyHarvesterEntity_increase_transport_priority(PyHarvesterEntityObject *self, PyObject *args)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
     const char *name;
     if(!PyArg_ParseTuple(args, "s", &name)) {
         PyErr_SetString(PyExc_TypeError, "Expecting a string arument (resource name).");
@@ -2415,6 +2559,11 @@ static PyObject *PyHarvesterEntity_increase_transport_priority(PyHarvesterEntity
 
 static PyObject *PyHarvesterEntity_decrease_transport_priority(PyHarvesterEntityObject *self, PyObject *args)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
     const char *name;
     if(!PyArg_ParseTuple(args, "s", &name)) {
         PyErr_SetString(PyExc_TypeError, "Expecting a string arument (resource name).");
@@ -2441,12 +2590,22 @@ static PyObject *PyHarvesterEntity_unpickle(PyObject *cls, PyObject *args, PyObj
 
 static PyObject *PyHarvesterEntity_get_total_carry(PyHarvesterEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
     int total = G_Harvester_GetCurrTotalCarry(self->super.ent->uid);
     return PyInt_FromLong(total);
 }
 
 static PyObject *PyHarvesterEntity_get_transport_priority(PyHarvesterEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
     const char *names[64];
     int nres = G_Harvester_GetTransportPrio(self->super.ent->uid, ARR_SIZE(names), names);
 
@@ -2467,12 +2626,22 @@ static PyObject *PyHarvesterEntity_get_transport_priority(PyHarvesterEntityObjec
 
 static PyObject *PyHarvesterEntity_get_strategy(PyHarvesterEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
     enum tstrategy strat = G_Harvester_GetStrategy(self->super.ent->uid);
     return PyInt_FromLong(strat);
 }
 
 static int PyHarvesterEntity_set_strategy(PyHarvesterEntityObject *self, PyObject *value, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
     if(!PyInt_Check(value)
     || (PyInt_AS_LONG(value) > TRANSPORT_STRATEGY_EXCESS)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a pf.TRANSPORT_ enum value.");
@@ -2490,6 +2659,11 @@ static PyObject *PyStorageSiteEntity_del(PyStorageSiteEntityObject *self)
 
 static PyObject *PyStorageSiteEntity_get_curr_amount(PyStorageSiteEntityObject *self, PyObject *args)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
     const char *name;
     if(!PyArg_ParseTuple(args, "s", &name)) {
         PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
@@ -2502,6 +2676,11 @@ static PyObject *PyStorageSiteEntity_get_curr_amount(PyStorageSiteEntityObject *
 
 static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *self, PyObject *args)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
     const char *name;
     if(!PyArg_ParseTuple(args, "s", &name)) {
         PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
@@ -2514,6 +2693,11 @@ static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *sel
 
 static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *self, PyObject *args)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return NULL;
+    }
+
     const char *name;
     int amount;
 
@@ -2531,6 +2715,11 @@ static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *sel
 
 static PyObject *PyStorageSiteEntity_get_desired(PyStorageSiteEntityObject *self, PyObject *args)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
     const char *name;
     if(!PyArg_ParseTuple(args, "s", &name)) {
         PyErr_SetString(PyExc_TypeError, "Expecting one argument: name (string).");
@@ -2543,6 +2732,11 @@ static PyObject *PyStorageSiteEntity_get_desired(PyStorageSiteEntityObject *self
 
 static PyObject *PyStorageSiteEntity_set_desired(PyStorageSiteEntityObject *self, PyObject *args)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return NULL;
+    }
+
     const char *name;
     int amount;
 
@@ -2560,6 +2754,11 @@ static PyObject *PyStorageSiteEntity_set_desired(PyStorageSiteEntityObject *self
 
 static PyObject *PyStorageSiteEntity_get_storable(PyStorageSiteEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return NULL;
+    }
+
     const char *names[64];
     int nres = G_StorageSite_GetStorableResources(self->super.ent->uid, ARR_SIZE(names), names);
 
@@ -2591,8 +2790,12 @@ static PyObject *PyStorageSiteEntity_unpickle(PyObject *cls, PyObject *args, PyO
 
 static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *args)
 {
-    vec2_t xz_pos;
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
 
+    vec2_t xz_pos;
     if(!PyArg_ParseTuple(args, "(ff)", &xz_pos.x, &xz_pos.z)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 2 floats.");
         return NULL;

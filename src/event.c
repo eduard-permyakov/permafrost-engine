@@ -481,3 +481,10 @@ void E_Entity_Notify(enum eventtype event, uint32_t ent_uid, void *event_arg,
     queue_event_push(&s_event_queues[s_front_queue_idx], &e);
 }
 
+void E_Entity_NotifyImmediate(enum eventtype event, uint32_t ent_uid, void *event_arg, 
+                              enum event_source source)
+{
+    struct event e = (struct event){event, event_arg, source, ent_uid};
+    e_handle_event(e, true);
+}
+

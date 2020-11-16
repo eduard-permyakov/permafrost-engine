@@ -161,6 +161,8 @@ bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid,
 bool E_Entity_ScriptUnregister(enum eventtype event, uint32_t ent_uid, 
                                script_opaque_t handler);
 void E_Entity_Notify(enum eventtype, uint32_t ent_uid, void *event_arg, enum event_source);
+void E_Entity_NotifyImmediate(enum eventtype event, uint32_t ent_uid, void *event_arg, 
+                              enum event_source source);
 
 #endif
 

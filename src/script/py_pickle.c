@@ -1625,7 +1625,8 @@ static PyObject *nonderived_writable_attrs(PyObject *obj)
             assert(PyErr_Occurred());        
             if(obj->ob_type != &PyFrame_Type) {
                 assert(PyErr_ExceptionMatches(PyExc_TypeError)
-                    || PyErr_ExceptionMatches(PyExc_AttributeError));
+                    || PyErr_ExceptionMatches(PyExc_AttributeError)
+                    || PyErr_ExceptionMatches(PyExc_RuntimeError));
             }else{
                 assert(PyErr_ExceptionMatches(PyExc_TypeError)
                     || PyErr_ExceptionMatches(PyExc_AttributeError)
