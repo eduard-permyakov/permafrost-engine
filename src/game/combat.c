@@ -421,6 +421,9 @@ static void on_20hz_tick(void *user, void *event)
             if(cs->stance == COMBAT_STANCE_NO_ENGAGEMENT)
                 break;
 
+            if(G_Combat_GetBaseDamage(curr) == 0)
+                break;
+
             if(!maybe_enemy_near(curr))
                 break;
 
