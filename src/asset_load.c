@@ -213,7 +213,6 @@ static bool al_get_resource(const char *path, const char *basedir,
         goto fail_parse;
     }
 
-    out->ent_flags |= ENTITY_FLAG_COLLISION;
     if(!AL_ParseAABB(stream, &out->aabb))
         goto fail_parse;
 

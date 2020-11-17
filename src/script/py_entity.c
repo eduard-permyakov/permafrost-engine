@@ -3102,8 +3102,8 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
     struct entity *ent = ((PyEntityObject*)ret)->ent;
 
     if(((k = kh_get(attr, attr_table, "collision")) != kh_end(attr_table))
-    && !kh_value(attr_table, k).val.as_bool) {
-        ((PyEntityObject*)ret)->ent->flags &= ~ ENTITY_FLAG_COLLISION;
+    && kh_value(attr_table, k).val.as_bool) {
+        ((PyEntityObject*)ret)->ent->flags |= ENTITY_FLAG_COLLISION;
     }
 
     if(PyObject_IsInstance(ret, (PyObject*)&PyBuildableEntity_type)) {

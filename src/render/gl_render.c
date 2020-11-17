@@ -575,9 +575,6 @@ void R_GL_DrawOBB(const struct entity *ent)
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    if(!(ent->flags & ENTITY_FLAG_COLLISION))
-        return;
-
     GLuint VAO, VBO;
     vec4_t blue = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
 
