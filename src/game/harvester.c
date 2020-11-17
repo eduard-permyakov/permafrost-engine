@@ -583,7 +583,7 @@ static void on_harvest_anim_finished(void *user, void *event)
 
     if(resource_left == 0) {
 
-        E_Entity_NotifyImmediate(EVENT_RESOURCE_EXHAUSTED, target->uid, NULL, ES_ENGINE);
+        E_Entity_Notify(EVENT_RESOURCE_EXHAUSTED, target->uid, NULL, ES_ENGINE);
         G_Zombiefy(target);
 
         if(new_carry < max_carry) {

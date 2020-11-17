@@ -65,6 +65,7 @@ typedef struct {
 static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void      PyEntity_dealloc(PyEntityObject *self);
 static PyObject *PyEntity_del(PyEntityObject *self);
+static PyObject *PyEntity_get_uid(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_name(PyEntityObject *self, void *closure);
 static int       PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure);
@@ -153,6 +154,10 @@ static PyMethodDef PyEntity_methods[] = {
 };
 
 static PyGetSetDef PyEntity_getset[] = {
+    {"uid",
+    (getter)PyEntity_get_uid, NULL,
+    "The unique integer ID of this entity",
+    NULL},
     {"name",
     (getter)PyEntity_get_name, (setter)PyEntity_set_name,
     "Custom name given to this enity.",
@@ -918,26 +923,27 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         if(flags && PyInt_Check(flags))
             extra_flags = PyInt_AS_LONG(flags);
     }
+    bool zombie = (extra_flags & ENTITY_FLAG_ZOMBIE);
 
-    if(PyType_IsSubtype(type, &PyCombatableEntity_type))
+    if(!zombie && PyType_IsSubtype(type, &PyCombatableEntity_type))
         extra_flags |= ENTITY_FLAG_COMBATABLE;
 
-    if(PyType_IsSubtype(type, &PyBuildableEntity_type))
+    if(!zombie && PyType_IsSubtype(type, &PyBuildableEntity_type))
         extra_flags |= ENTITY_FLAG_BUILDING;
 
-    if(PyType_IsSubtype(type, &PyBuilderEntity_type))
+    if(!zombie && PyType_IsSubtype(type, &PyBuilderEntity_type))
         extra_flags |= ENTITY_FLAG_BUILDER;
 
-    if(PyType_IsSubtype(type, &PyResourceEntity_type))
+    if(!zombie && PyType_IsSubtype(type, &PyResourceEntity_type))
         extra_flags |= ENTITY_FLAG_RESOURCE;
 
-    if(PyType_IsSubtype(type, &PyHarvesterEntity_type))
+    if(!zombie && PyType_IsSubtype(type, &PyHarvesterEntity_type))
         extra_flags |= ENTITY_FLAG_HARVESTER;
 
-    if(PyType_IsSubtype(type, &PyStorageSiteEntity_type))
+    if(!zombie && PyType_IsSubtype(type, &PyStorageSiteEntity_type))
         extra_flags |= ENTITY_FLAG_STORAGE_SITE;
 
-    if(PyType_IsSubtype(type, &PyMovableEntity_type))
+    if(!zombie && PyType_IsSubtype(type, &PyMovableEntity_type))
         extra_flags |= ENTITY_FLAG_MOVABLE;
 
     self->ent->flags |= extra_flags;
@@ -963,6 +969,11 @@ static void PyEntity_dealloc(PyEntityObject *self)
     G_SafeFree(self->ent);
 
     Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyObject *PyEntity_get_uid(PyEntityObject *self, void *closure)
+{
+    return PyInt_FromLong(self->ent->uid);
 }
 
 static PyObject *PyEntity_get_name(PyEntityObject *self, void *closure)

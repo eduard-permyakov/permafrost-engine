@@ -693,6 +693,33 @@ static void g_set_contextual_cursor(void)
     }
 }
 
+static void g_change_simstate(void)
+{
+    if(s_gs.ss == s_gs.requested_ss)
+        return;
+
+    uint32_t curr_tick = SDL_GetTicks();
+    if(s_gs.requested_ss == G_RUNNING) {
+    
+        uint32_t key;
+        struct entity *curr;
+        (void)key;
+
+        kh_foreach(s_gs.active, key, curr, {
+           
+            if(!(curr->flags & ENTITY_FLAG_ANIMATED))
+                continue;
+            A_AddTimeDelta(curr, curr_tick - s_gs.ss_change_tick);
+        });
+    }
+
+    E_FlushEventQueue();
+
+    E_Global_Notify(EVENT_GAME_SIMSTATE_CHANGED, (void*)s_gs.requested_ss, ES_ENGINE);
+    s_gs.ss_change_tick = curr_tick;
+    s_gs.ss = s_gs.requested_ss;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -901,6 +928,7 @@ bool G_Init(void)
     s_gs.curr_ws_idx = 0;
     s_gs.light_pos = (vec3_t){120.0f, 150.0f, 120.0f};
     s_gs.ss = G_RUNNING;
+    s_gs.requested_ss = G_RUNNING;
 
     return true;
 
@@ -1653,27 +1681,11 @@ void G_SetSimState(enum simstate ss)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if(ss == s_gs.ss)
-        return;
-
-    uint32_t curr_tick = SDL_GetTicks();
-    if(ss == G_RUNNING) {
-    
-        uint32_t key;
-        struct entity *curr;
-        (void)key;
-
-        kh_foreach(s_gs.active, key, curr, {
-           
-            if(!(curr->flags & ENTITY_FLAG_ANIMATED))
-                continue;
-            A_AddTimeDelta(curr, curr_tick - s_gs.ss_change_tick);
-        });
-    }
-
-    E_Global_Notify(EVENT_GAME_SIMSTATE_CHANGED, (void*)ss, ES_ENGINE);
-    s_gs.ss_change_tick = curr_tick;
-    s_gs.ss = ss;
+    /* Only change the simulation states at frame boundaries. This has some nice 
+     * guarantees, such as that all handlers for a particular event will run, even
+     * if some handler requests a change of the simulation state state midway. 
+     */
+    s_gs.requested_ss = ss;
 }
 
 void G_SetLightPos(vec3_t pos)
@@ -1776,6 +1788,8 @@ void G_SwapBuffers(void)
     assert(queue_size(s_gs.ws[render_idx].commands) == 0);
     R_ClearWS(&s_gs.ws[render_idx]);
     s_gs.curr_ws_idx = render_idx;
+
+    g_change_simstate();
 }
 
 const struct map *G_GetPrevTickMap(void)

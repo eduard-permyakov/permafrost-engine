@@ -80,6 +80,7 @@ enum simstate{
     G_RUNNING           = (1 << 0),
     G_PAUSED_FULL       = (1 << 1),
     G_PAUSED_UI_RUNNING = (1 << 2),
+    G_ALL               = G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING
 };
 
 struct render_input{

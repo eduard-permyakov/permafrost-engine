@@ -88,11 +88,7 @@ static char            s_saved_argv[MAX_ARGC + 1][128];
 
 static void subsession_clear(void)
 {
-    /* Drain the event queue to make sure we don't lose any events 
-     * when moving from sessin to session. A 'lost' event can cause
-     * some event-driven state machines to enter a bad state. 
-     */
-    E_FlushEventQueue();
+    E_ClearPendingEvents();
     Sched_ClearState();
     E_DeleteScriptHandlers();
     S_ClearState();
@@ -116,6 +112,12 @@ static void subsession_save_args(void)
 
 static bool subsession_save(SDL_RWops *stream)
 {
+    /* Drain the event queue to make sure we don't lose any events 
+     * when moving from sessin to session. A 'lost' event can cause
+     * some event-driven state machines to enter a bad state. 
+     */
+    E_FlushEventQueue();
+
     /* First save the state of the map, lighting, camera, etc. (everything that 
      * isn't entities). Loading this state initalizes the session. */
     if(!G_SaveGlobalState(stream))

@@ -126,13 +126,14 @@ struct script_handler{
 /* EVENT GENERAL                                                             */
 /*###########################################################################*/
 
-bool   E_Init(void);
-void   E_ServiceQueue(void);
-void   E_Shutdown(void);
-void   E_DeleteScriptHandlers(void);
-size_t E_GetScriptHandlers(size_t max_out, struct script_handler *out);
-void   E_ClearPendingEvents(void);
-void   E_FlushEventQueue(void);
+bool        E_Init(void);
+void        E_ServiceQueue(void);
+void        E_Shutdown(void);
+void        E_DeleteScriptHandlers(void);
+size_t      E_GetScriptHandlers(size_t max_out, struct script_handler *out);
+void        E_ClearPendingEvents(void);
+void        E_FlushEventQueue(void);
+const char *E_EngineEventString(enum eventtype event);
 
 /*###########################################################################*/
 /* EVENT GLOBAL                                                              */

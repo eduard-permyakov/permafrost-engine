@@ -375,7 +375,7 @@ static void on_attack_anim_finish(void *user, void *event)
 
             E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_attack_anim_finish);
             E_Global_Notify(EVENT_ENTITY_DIED, target, ES_ENGINE);
-            E_Entity_NotifyImmediate(EVENT_ENTITY_DEATH, cs->target_uid, NULL, ES_ENGINE);
+            E_Entity_Notify(EVENT_ENTITY_DEATH, cs->target_uid, NULL, ES_ENGINE);
 
             if(target->flags & ENTITY_FLAG_ANIMATED) {
                 E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_death_anim_finish, target, G_RUNNING);
@@ -809,7 +809,8 @@ bool G_Combat_SetStance(const struct entity *ent, enum combat_stance stance)
         G_Combat_StopAttack(ent);
     }
 
-    if(stance == COMBAT_STANCE_HOLD_POSITION && cs->state == STATE_MOVING_TO_TARGET) {
+    if(stance == COMBAT_STANCE_HOLD_POSITION 
+    && (cs->state == STATE_MOVING_TO_TARGET || cs->state == STATE_MOVING_TO_TARGET_LOCKED)) {
 
         G_Move_RemoveEntity(ent);
         cs->state = STATE_NOT_IN_COMBAT;

@@ -594,8 +594,10 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
     ctx->deferred_free(ctx->private_ctx, state);
     CHK_TRUE(status, fail_pickle);
 
-    PyObject **old = self->ts->frame->f_stacktop;
+    PyObject **old = NULL;
     if(self->state == PYTASK_STATE_RUNNING) {
+        assert(self->ts->frame);
+        old = self->ts->frame->f_stacktop;
         self->ts->frame->f_stacktop = self->ts->frame->f_valuestack + self->stack_depth;
     }
 
@@ -699,7 +701,7 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     CHK_TRUE(PyInt_Check(state), fail_unpickle);
     CHK_TRUE(PyInt_AS_LONG(state) >= PYTASK_STATE_NOT_STARTED 
           && PyInt_AS_LONG(state) <= PYTASK_STATE_FINISHED, fail_unpickle);
-    CHK_TRUE(PyFunction_Check(func), fail_unpickle);
+    CHK_TRUE(PyFunction_Check(func) || func == Py_None, fail_unpickle);
 
     PyObject *frame;
     int recursion_depth;
@@ -768,7 +770,7 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     ret->req.type = reqtype;
 
     ret->state = PyInt_AS_LONG(state);
-    ret->runfunc = (Py_INCREF(func), func);
+    ret->runfunc = func == Py_None ? NULL : (Py_INCREF(func), func);
     ret->sleep_elapsed = PyInt_AS_LONG(sleep_elapsed);
     ret->stack_depth = PyInt_AS_LONG(stack_depth);
 

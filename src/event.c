@@ -81,9 +81,60 @@ KHASH_MAP_INIT_INT64(handler_desc, vec_hd_t)
 QUEUE_TYPE(event, struct event)
 QUEUE_IMPL(static, event, struct event)
 
+#define STR(_event) [_event - EVENT_UPDATE_START] = #_event
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
+
+static const char *s_event_str_table[] = {
+    STR(EVENT_UPDATE_START),
+    STR(EVENT_UPDATE_END),
+    STR(EVENT_UPDATE_UI),
+    STR(EVENT_RENDER_3D_PRE),
+    STR(EVENT_RENDER_3D_POST),
+    STR(EVENT_RENDER_UI),
+    STR(EVENT_RENDER_FINISH),
+    STR(EVENT_SELECTED_TILE_CHANGED),
+    STR(EVENT_NEW_GAME),
+    STR(EVENT_UNIT_SELECTION_CHANGED),
+    STR(EVENT_60HZ_TICK),
+    STR(EVENT_30HZ_TICK),
+    STR(EVENT_20HZ_TICK),
+    STR(EVENT_15HZ_TICK),
+    STR(EVENT_10HZ_TICK),
+    STR(EVENT_1HZ_TICK),
+    STR(EVENT_ANIM_FINISHED),
+    STR(EVENT_ANIM_CYCLE_FINISHED),
+    STR(EVENT_MOVE_ISSUED),
+    STR(EVENT_MOTION_START),
+    STR(EVENT_MOTION_END),
+    STR(EVENT_ATTACK_START),
+    STR(EVENT_ENTITY_DEATH),
+    STR(EVENT_ATTACK_END),
+    STR(EVENT_GAME_SIMSTATE_CHANGED),
+    STR(EVENT_SESSION_LOADED),
+    STR(EVENT_SESSION_POPPED),
+    STR(EVENT_SESSION_FAIL_LOAD),
+    STR(EVENT_SCRIPT_TASK_EXCEPTION),
+    STR(EVENT_SCRIPT_TASK_FINISHED),
+    STR(EVENT_BUILD_BEGIN),
+    STR(EVENT_BUILD_END),
+    STR(EVENT_BUILD_FAIL_FOUND),
+    STR(EVENT_BUILD_TARGET_ACQUIRED),
+    STR(EVENT_BUILDING_COMPLETED),
+    STR(EVENT_ENTITY_DIED),
+    STR(EVENT_ENTITY_STOP),
+    STR(EVENT_HARVEST_BEGIN),
+    STR(EVENT_HARVEST_END),
+    STR(EVENT_HARVEST_TARGET_ACQUIRED),
+    STR(EVENT_TRANSPORT_TARGET_ACQUIRED),
+    STR(EVENT_STORAGE_TARGET_ACQUIRED),
+    STR(EVENT_STORAGE_SITE_AMOUNT_CHANGED),
+    STR(EVENT_RESOURCE_DROPPED_OFF),
+    STR(EVENT_RESOURCE_PICKED_UP),
+    STR(EVENT_RESOURCE_EXHAUSTED),
+};
 
 static khash_t(handler_desc) *s_event_handler_table;
 static queue(event)           s_event_queues[2];
@@ -300,13 +351,15 @@ void E_ClearPendingEvents(void)
 
 void E_FlushEventQueue(void)
 {
-    while(queue_size(s_event_queues[s_front_queue_idx]) > 0) {
+    e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID}, true);
+
+    while(queue_size(s_event_queues[0]) > 0 
+       || queue_size(s_event_queues[1]) > 0) {
 
         queue_event_t *queue = &s_event_queues[s_front_queue_idx];
         s_front_queue_idx = (s_front_queue_idx + 1) % 2;
 
-        e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID}, true);
-        e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID}, true);
+        e_handle_event( (struct event){EVENT_UPDATE_START,  NULL, ES_ENGINE, GLOBAL_ID}, true);
 
         struct event event;
         while(queue_event_pop(queue, &event)) {
@@ -314,6 +367,7 @@ void E_FlushEventQueue(void)
         }
         e_handle_event( (struct event){EVENT_UPDATE_UI,  NULL, ES_ENGINE, GLOBAL_ID}, true);
         e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID}, true);
+        e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID}, true);
     }
 }
 
@@ -505,5 +559,14 @@ void E_Entity_NotifyImmediate(enum eventtype event, uint32_t ent_uid, void *even
 {
     struct event e = (struct event){event, event_arg, source, ent_uid};
     e_handle_event(e, true);
+}
+
+const char *E_EngineEventString(enum eventtype event)
+{
+    if(event <= (int)SDL_LASTEVENT)
+        return NULL;
+    if(event - EVENT_UPDATE_START > sizeof(s_event_str_table)/sizeof(const char *))
+        return NULL;
+    return s_event_str_table[event - EVENT_UPDATE_START];
 }
 

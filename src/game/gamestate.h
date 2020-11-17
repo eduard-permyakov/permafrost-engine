@@ -48,6 +48,11 @@
 struct gamestate{
     enum simstate           ss;
     /*-------------------------------------------------------------------------
+     * The requested simulation state to change to at the end of the tick.
+     *-------------------------------------------------------------------------
+     */
+    enum simstate           requested_ss;
+    /*-------------------------------------------------------------------------
      * The SDL tick during which we last changed simulation states.
      *-------------------------------------------------------------------------
      */
