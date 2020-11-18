@@ -862,7 +862,11 @@ int G_Combat_CurrContextualAction(void)
     if((hovered->flags & ENTITY_FLAG_MARKER) || (hovered->flags & ENTITY_FLAG_ZOMBIE))
         return CTX_ACTION_NONE;
 
-    if(!(hovered->flags & ENTITY_FLAG_COMBATABLE))
+    bool can_target = (hovered->flags & ENTITY_FLAG_MOVABLE) && !(hovered->flags & ENTITY_FLAG_RESOURCE);
+    if(!(hovered->flags & ENTITY_FLAG_COMBATABLE) && !can_target)
+        return CTX_ACTION_NONE;
+
+    if(!(hovered->flags & ENTITY_FLAG_COMBATABLE) && can_target)
         return CTX_ACTION_NO_ATTACK;
 
     if(enemies(hovered, first)) {
