@@ -1817,9 +1817,9 @@ enum ctx_action G_CurrContextualAction(void)
     ASSERT_IN_MAIN_THREAD();
 
     int action;
-    if((action = G_Harvester_CurrContextualAction()) != CTX_ACTION_NONE)
-        return action;
     if((action = G_Builder_CurrContextualAction()) != CTX_ACTION_NONE)
+        return action;
+    if((action = G_Harvester_CurrContextualAction()) != CTX_ACTION_NONE)
         return action;
     if((action = G_Combat_CurrContextualAction()) != CTX_ACTION_NONE)
         return action;

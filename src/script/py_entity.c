@@ -2089,6 +2089,15 @@ static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self, PyObject
 
 static PyObject *PyBuildableEntity_supply(PyBuildableEntityObject *self)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+
+    if(!G_Building_Supply(self->super.ent)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to supply building. It must be in the FOUNDED state.");
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 
@@ -2100,7 +2109,7 @@ static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self)
     }
 
     if(!G_Building_Complete(self->super.ent)) {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to complete building. It must be in the FOUNDED state.");
+        PyErr_SetString(PyExc_RuntimeError, "Unable to complete building. It must be in the SUPPLIED state.");
         return NULL;
     }
     Py_RETURN_NONE;
@@ -2712,7 +2721,7 @@ static int PyHarvesterEntity_set_strategy(PyHarvesterEntityObject *self, PyObjec
     }
 
     if(!PyInt_Check(value)
-    || (PyInt_AS_LONG(value) > TRANSPORT_STRATEGY_EXCESS)) {
+    || (PyInt_AS_LONG(value) > TRANSPORT_STRATEGY_GATHERING)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a pf.TRANSPORT_ enum value.");
         return -1;
     }

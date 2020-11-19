@@ -316,6 +316,10 @@ enum tstrategy{
      * all storage sites and take resources only from those sites 
      * that have 'excess' resources. */
     TRANSPORT_STRATEGY_EXCESS,
+    /* The harvester will attempt to gather resources to keep the 
+     * target storage site saturated. The harvester will fall back 
+     * to the 'NEAREST' strategy. */
+    TRANSPORT_STRATEGY_GATHERING,
 };
 
 void G_Harvester_SetGatherOnLeftClick(void);
