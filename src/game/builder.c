@@ -35,6 +35,8 @@
 
 #include "builder.h"
 #include "building.h"
+#include "harvester.h"
+#include "storage_site.h"
 #include "game_private.h"
 #include "movement.h"
 #include "position.h"
@@ -117,14 +119,14 @@ static void builderstate_remove(const struct entity *ent)
 static void on_motion_begin(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
-    const struct entity *ent = G_EntityForUID(uid);
-
-    E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
-    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished);
+    struct entity *ent = G_EntityForUID(uid);
 
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
     assert(bs->state == STATE_BUILDING);
+
+    E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished);
 
     bs->state = STATE_NOT_BUILDING;
     E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
@@ -197,18 +199,34 @@ static void on_motion_end(void *user, void *event)
         return; /* builder could not reach the building */
     }
 
-    if(!G_Building_IsFounded(target)
-    &&  G_Building_Unobstructed(target)
-    && !G_Building_Found(target, true)) {
+    if(!G_Building_IsFounded(target)) {
 
-        bs->state = STATE_NOT_BUILDING;
-        bs->target_uid = UID_NONE;
-        E_Entity_Notify(EVENT_BUILD_FAIL_FOUND, uid, NULL, ES_ENGINE);
-        return; 
+        if(G_Building_Unobstructed(target) && G_Building_Found(target, true)) {
+            E_Entity_Notify(EVENT_BUILDING_FOUNDED, target->uid, NULL, ES_ENGINE);
+        }else{
+            bs->state = STATE_NOT_BUILDING;
+            bs->target_uid = UID_NONE;
+            E_Entity_Notify(EVENT_BUILD_FAIL_FOUND, uid, NULL, ES_ENGINE);
+            return; 
+        }
     }
 
-    E_Entity_Notify(EVENT_BUILD_BEGIN, uid, NULL, ES_ENGINE);
+    if(!G_Building_IsSupplied(target)
+    && G_StorageSite_IsSaturated(target->uid)) {
+        G_Building_Supply(target);
+    }
+
+    if(!G_Building_IsSupplied(target)) {
+        if(ent->flags & ENTITY_FLAG_HARVESTER) {
+            G_Harvester_Stop(ent->uid);
+            G_Harvester_SupplyBuilding(ent, target);
+        }
+        bs->state = STATE_NOT_BUILDING;
+        return;
+    }
+
     bs->state = STATE_BUILDING; 
+    E_Entity_Notify(EVENT_BUILD_BEGIN, uid, NULL, ES_ENGINE);
     E_Entity_Register(EVENT_MOTION_START, uid, on_motion_begin, (void*)((uintptr_t)uid), G_RUNNING);
     E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished, 
         (void*)((uintptr_t)uid), G_RUNNING);
@@ -303,12 +321,17 @@ bool G_Builder_Build(struct entity *builder, struct entity *building)
     E_Entity_Unregister(EVENT_MOTION_START, builder->uid, on_motion_begin);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, builder->uid, on_build_anim_finished);
 
-    E_Entity_Register(EVENT_MOTION_END, builder->uid, on_motion_end, (void*)((uintptr_t)builder->uid), G_RUNNING);
-    G_Move_SetSurroundEntity(builder, building);
-
     bs->state = STATE_MOVING_TO_TARGET;
     bs->target_uid = building->uid;
     E_Entity_Notify(EVENT_BUILD_TARGET_ACQUIRED, builder->uid, building, ES_ENGINE);
+
+    if(M_NavObjAdjacent(s_map, builder, building)) {
+        on_motion_end((void*)((uintptr_t)builder->uid), NULL);
+    }else{
+        G_Move_SetSurroundEntity(builder, building);
+        E_Entity_Register(EVENT_MOTION_END, builder->uid, on_motion_end, (void*)((uintptr_t)builder->uid), G_RUNNING);
+    }
+
     return true;
 }
 

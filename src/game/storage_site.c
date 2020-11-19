@@ -78,6 +78,11 @@ struct ss_state{
     kh_int_t              *curr;
     kh_int_t              *desired;
     struct ss_delta_event  last_change;
+    /* Alternative capacity/desired parameters that 
+     *can be turned on/off */
+    bool                   use_alt;
+    kh_int_t              *alt_capacity;
+    kh_int_t              *alt_desired;
 };
 
 typedef char buff_t[512];
@@ -183,6 +188,9 @@ static void ss_state_destroy(struct ss_state *hs)
     kh_destroy(int, hs->capacity);
     kh_destroy(int, hs->curr);
     kh_destroy(int, hs->desired);
+
+    kh_destroy(int, hs->alt_capacity);
+    kh_destroy(int, hs->alt_desired);
 }
 
 static bool ss_state_init(struct ss_state *hs)
@@ -190,13 +198,18 @@ static bool ss_state_init(struct ss_state *hs)
     hs->capacity = kh_init(int);
     hs->curr = kh_init(int);
     hs->desired = kh_init(int);
+    hs->alt_capacity = kh_init(int);
+    hs->alt_desired = kh_init(int);
 
-    if(!hs->capacity || !hs->curr) {
+    if(!hs->capacity || !hs->curr || !hs->desired
+    || !hs->alt_capacity || !hs->alt_desired) {
 
         ss_state_destroy(hs);
         return false;
     }
+
     hs->last_change = (struct ss_delta_event){0};
+    hs->use_alt = false;
     return true;
 }
 
@@ -213,8 +226,9 @@ static size_t ss_get_keys(struct ss_state *hs, const char **out, size_t maxout)
 
     const char *key;
     int amount;
+    khash_t(int) *table = (hs->use_alt) ? hs->alt_capacity : hs->capacity;
 
-    kh_foreach(hs->capacity, key, amount, {
+    kh_foreach(table, key, amount, {
         if(ret == maxout)
             break;
         if(amount == 0)
@@ -336,9 +350,10 @@ static void on_update_ui(void *user, void *event)
 
         const struct entity *ent = G_EntityForUID(key);
         vec2_t ss_pos = Entity_TopScreenPos(ent);
+        khash_t(int) *table = (curr.use_alt) ? curr.alt_capacity : curr.capacity;
 
         const int width = 224;
-        const int height = MIN(kh_size(curr.capacity), 16) * 20 + 4;
+        const int height = MIN(kh_size(table), 16) * 20 + 4;
         const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + 20};
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BORDER | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
 
@@ -362,10 +377,15 @@ static void on_update_ui(void *user, void *event)
 
             for(int i = 0; i < nnames; i++) {
 
-                char curr[5], cap[5], desired[7];
+                int capacity = curr.use_alt ? G_StorageSite_GetAltCapacity(key, names[i]) 
+                                            : G_StorageSite_GetCapacity(key, names[i]);
+                int desired = curr.use_alt ? G_StorageSite_GetAltDesired(key, names[i]) 
+                                           : G_StorageSite_GetDesired(key, names[i]);
+
+                char curr[5], cap[5], des[7];
                 pf_snprintf(curr, sizeof(curr), "%4d", G_StorageSite_GetCurr(key, names[i]));
-                pf_snprintf(cap, sizeof(cap), "%4d", G_StorageSite_GetCapacity(key, names[i]));
-                pf_snprintf(desired, sizeof(desired), "(%4d)", G_StorageSite_GetDesired(key, names[i]));
+                pf_snprintf(cap, sizeof(cap), "%4d", capacity);
+                pf_snprintf(des, sizeof(des), "(%4d)", desired);
 
                 nk_layout_row_begin(ctx, NK_DYNAMIC, 16, 2);
                 nk_layout_row_push(ctx, 0.30f);
@@ -381,7 +401,7 @@ static void on_update_ui(void *user, void *event)
                 nk_label_colored(ctx, cap, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
 
                 nk_layout_row_push(ctx, 0.30f);
-                nk_label_colored(ctx, desired, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
+                nk_label_colored(ctx, des, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, s_font_clr);
             }
         }
         nk_end(ctx);
@@ -645,12 +665,31 @@ void G_StorageSite_RemoveEntity(const struct entity *ent)
     kh_foreach(ss->curr, key, amount, {
         update_res_delta(key, -amount, ent->faction_id);
     });
-    kh_foreach(ss->capacity, key, amount, {
+
+    khash_t(int) *cap = ss->use_alt ? ss->alt_capacity : ss->capacity;
+    kh_foreach(cap, key, amount, {
         update_cap_delta(key, -amount, ent->faction_id);
     });
 
     ss_state_destroy(ss);
     ss_state_remove(ent->uid);
+}
+
+bool G_StorageSite_IsSaturated(uint32_t uid)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+
+    const char *key;
+    int amount;
+    khash_t(int) *table = ss->use_alt ? ss->alt_capacity : ss->capacity;
+
+    kh_foreach(table, key, amount, {
+        int curr = G_StorageSite_GetCurr(uid, key);
+        if(curr < amount)
+            return false;
+    });
+    return true;
 }
 
 bool G_StorageSite_SetCapacity(const struct entity *ent, const char *rname, int max)
@@ -661,7 +700,10 @@ bool G_StorageSite_SetCapacity(const struct entity *ent, const char *rname, int 
     int prev = 0;
     ss_state_get_key(ss->curr, rname, &prev);
     int delta = max - prev;
-    update_cap_delta(rname, delta, ent->faction_id);
+
+    if(!ss->use_alt) {
+        update_cap_delta(rname, delta, ent->faction_id);
+    }
 
     bool ret = ss_state_set_key(ss->capacity, rname, max);
     constrain_desired(ss, rname);
@@ -782,6 +824,106 @@ void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style)
     s_bg_style = *style;
 }
 
+void G_StorageSite_SetUseAlt(const struct entity *ent, bool use)
+{
+    struct ss_state *ss = ss_state_get(ent->uid);
+    assert(ss);
+
+    if(use == ss->use_alt)
+        return;
+
+    const char *key;
+    int amount;
+
+    if(use) {
+        kh_foreach(ss->capacity, key, amount, {
+            update_cap_delta(key, -amount, ent->faction_id);
+        });
+        kh_foreach(ss->alt_capacity, key, amount, {
+            update_cap_delta(key, amount, ent->faction_id);
+        });
+    }else{
+        kh_foreach(ss->alt_capacity, key, amount, {
+            update_cap_delta(key, -amount, ent->faction_id);
+        });
+        kh_foreach(ss->capacity, key, amount, {
+            update_cap_delta(key, amount, ent->faction_id);
+        });
+    }
+    ss->use_alt = use;
+}
+
+bool G_StorageSite_GetUseAlt(uint32_t uid)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    return ss->use_alt;
+}
+
+void G_StorageSite_ClearAlt(uint32_t uid)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+
+    kh_clear(int, ss->alt_capacity);
+    kh_clear(int, ss->alt_desired);
+}
+
+void G_StorageSite_ClearCurr(uint32_t uid)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+
+    kh_clear(int, ss->curr);
+}
+
+bool G_StorageSite_SetAltCapacity(const struct entity *ent, const char *rname, int max)
+{
+    struct ss_state *ss = ss_state_get(ent->uid);
+    assert(ss);
+
+    int prev = 0;
+    ss_state_get_key(ss->curr, rname, &prev);
+    int delta = max - prev;
+
+    if(ss->use_alt) {
+        update_cap_delta(rname, delta, ent->faction_id);
+    }
+
+    bool ret = ss_state_set_key(ss->alt_capacity, rname, max);
+    constrain_desired(ss, rname);
+    return ret;
+}
+
+int G_StorageSite_GetAltCapacity(uint32_t uid, const char *rname)
+{
+    int ret = DEFAULT_CAPACITY;
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+
+    ss_state_get_key(ss->alt_capacity, rname, &ret);
+    return ret;
+}
+
+bool G_StorageSite_SetAltDesired(uint32_t uid, const char *rname, int des)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    bool ret = ss_state_set_key(ss->alt_desired, rname, des);
+    constrain_desired(ss, rname);
+    return ret;
+}
+
+int G_StorageSite_GetAltDesired(uint32_t uid, const char *rname)
+{
+    int ret = DEFAULT_CAPACITY;
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+
+    ss_state_get_key(ss->alt_desired, rname, &ret);
+    return ret;
+}
+
 bool G_StorageSite_SaveState(struct SDL_RWops *stream)
 {
     struct attr num_ents = (struct attr){
@@ -800,6 +942,12 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
             .val.as_int = key
         };
         CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
+
+        struct attr use_alt = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.use_alt
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &use_alt, "use_alt"));
 
         struct attr num_capacity = (struct attr){
             .type = TYPE_INT,
@@ -863,6 +1011,48 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
             };
             CHK_TRUE_RET(Attr_Write(stream, &desired_amount_attr, "desired_amount"));
         });
+
+        struct attr num_alt_cap = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(curr.alt_capacity)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_alt_cap, "num_alt_cap"));
+
+        const char *alt_cap_key;
+        int alt_cap_amount;
+        kh_foreach(curr.alt_capacity, alt_cap_key, alt_cap_amount, {
+        
+            struct attr alt_cap_key_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(alt_cap_key_attr.val.as_string, alt_cap_key, sizeof(alt_cap_key_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &alt_cap_key_attr, "alt_cap_key"));
+
+            struct attr alt_cap_amount_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = alt_cap_amount
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &alt_cap_amount_attr, "alt_cap_amount"));
+        });
+
+        struct attr num_alt_desired = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(curr.alt_desired)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_alt_desired, "num_alt_desired"));
+
+        const char *alt_desired_key;
+        int alt_desired_amount;
+        kh_foreach(curr.alt_desired, alt_desired_key, alt_desired_amount, {
+        
+            struct attr alt_desired_key_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(alt_desired_key_attr.val.as_string, alt_desired_key, sizeof(alt_desired_key_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &alt_desired_key_attr, "alt_desired_key"));
+
+            struct attr alt_desired_amount_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = alt_desired_amount
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &alt_desired_amount_attr, "alt_desired_amount"));
+        });
     });
 
     /* save global resource/capacity tables 
@@ -922,6 +1112,13 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         struct entity *ent = G_EntityForUID(uid);
         CHK_TRUE_RET(ent);
 
+        struct ss_state *ss = ss_state_get(uid);
+        CHK_TRUE_RET(ss);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        ss->use_alt = attr.val.as_bool;
+
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         const size_t num_capacity = attr.val.as_int;
@@ -974,6 +1171,42 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
             int val = attr.val.as_int;
 
             G_StorageSite_SetDesired(uid, key, val);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t num_alt_capacity = attr.val.as_int;
+
+        for(int i = 0; i < num_alt_capacity; i++) {
+        
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+            const char *key = keyattr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            int val = attr.val.as_int;
+
+            G_StorageSite_SetAltCapacity(ent, key, val);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t num_alt_desired = attr.val.as_int;
+
+        for(int i = 0; i < num_alt_desired; i++) {
+        
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+            const char *key = keyattr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            int val = attr.val.as_int;
+
+            G_StorageSite_SetAltDesired(uid, key, val);
         }
     }
 

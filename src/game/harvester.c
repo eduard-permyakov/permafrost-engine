@@ -36,6 +36,7 @@
 #include "harvester.h"
 #include "movement.h"
 #include "resource.h"
+#include "storage_site.h"
 #include "game_private.h"
 #include "public/game.h"
 #include "../event.h"
@@ -109,6 +110,8 @@ struct hstate{
             CMD_NONE,
             CMD_GATHER,
             CMD_TRANSPORT,
+            CMD_BUILD,
+            CMD_SUPPLY,
         }cmd;
         uint32_t uid_arg;
     }queued;
@@ -198,6 +201,24 @@ static void pfree(void *ptr)
         return;
     mp_ref_t ref = mp_buff_ref(&s_mpool, ptr);
     mp_buff_free(&s_mpool, ref);
+}
+
+static int ss_desired(uint32_t uid, const char *rname)
+{
+    if(G_StorageSite_GetUseAlt(uid)) {
+        return G_StorageSite_GetAltDesired(uid, rname);
+    }else{
+        return G_StorageSite_GetDesired(uid, rname);
+    }
+}
+
+static int ss_capacity(uint32_t uid, const char *rname)
+{
+    if(G_StorageSite_GetUseAlt(uid)) {
+        return G_StorageSite_GetAltCapacity(uid, rname);
+    }else{
+        return G_StorageSite_GetCapacity(uid, rname);
+    }
 }
 
 static struct hstate *hstate_get(uint32_t uid)
@@ -350,7 +371,7 @@ static bool valid_storage_site_dropoff(const struct entity *curr, void *arg)
         return false;
 
     int stored = G_StorageSite_GetCurr(curr->uid, sarg->rname);
-    int cap = G_StorageSite_GetCapacity(curr->uid, sarg->rname);
+    int cap = ss_capacity(curr->uid, sarg->rname);
 
     if(cap == 0)
         return false;
@@ -373,8 +394,8 @@ static bool valid_storage_site_source(const struct entity *curr, void *arg)
         return false;
 
     int stored = G_StorageSite_GetCurr(curr->uid, sarg->rname);
-    int cap = G_StorageSite_GetCapacity(curr->uid, sarg->rname);
-    int desired = G_StorageSite_GetDesired(curr->uid, sarg->rname);
+    int cap = ss_capacity(curr->uid, sarg->rname);
+    int desired = ss_desired(curr->uid, sarg->rname);
 
     if(sarg->strat == TRANSPORT_STRATEGY_EXCESS && (stored >= desired))
         return false;
@@ -426,6 +447,7 @@ static void finish_harvesting(struct hstate *hs, uint32_t uid)
 {
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
     E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin_harvest);
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource);
 
     hs->state = STATE_NOT_HARVESTING;
     hs->res_uid = UID_NONE;
@@ -523,16 +545,37 @@ static void clear_queued_command(struct entity *ent)
     uint32_t arg = hs->queued.uid_arg;
     hs->queued.cmd = CMD_NONE;
 
-    if(cmd == CMD_GATHER) {
+    switch(cmd) {
+    case CMD_GATHER: {
         struct entity *resource = G_EntityForUID(arg);
         if(resource) {
             G_Harvester_Gather(ent, resource);
         }
-    }else if(cmd == CMD_TRANSPORT) {
+        break;
+    }
+    case CMD_TRANSPORT: {
         struct entity *storage = G_EntityForUID(arg);
         if(storage) {
             G_Harvester_Transport(ent, storage);
         }
+        break;
+    }
+    case CMD_BUILD: {
+        struct entity *building = G_EntityForUID(arg);
+        if((ent->flags & ENTITY_FLAG_BUILDER) && building) {
+            G_Builder_Build(ent, building);
+        }
+        break;
+    }
+    case CMD_SUPPLY: {
+        struct entity *storage = G_EntityForUID(arg);
+        if(storage) {
+            G_Harvester_SupplyBuilding(ent, storage);
+        }
+        break;
+    }
+    default:
+        break;
     }
     hs->drop_off_only = false;
 }
@@ -703,7 +746,7 @@ static void on_arrive_at_storage(void *user, void *event)
     assert(rname);
 
     int carry = G_Harvester_GetCurrCarry(uid, rname);
-    int cap = G_StorageSite_GetCapacity(target->uid, rname);
+    int cap = ss_capacity(target->uid, rname);
     int curr = G_StorageSite_GetCurr(target->uid, rname);
     int left = cap - curr;
 
@@ -765,9 +808,9 @@ static void on_arrive_at_transport_source(void *user, void *event)
         return;
     }
 
-    int store_cap = G_StorageSite_GetCapacity(src->uid, hs->res_name);
+    int store_cap = ss_capacity(src->uid, hs->res_name);
     int store_curr = G_StorageSite_GetCurr(src->uid, hs->res_name);
-    int desired = G_StorageSite_GetDesired(src->uid, hs->res_name);
+    int desired = ss_desired(src->uid, hs->res_name);
     int excess = store_curr - desired;
 
     int max_carry = G_Harvester_GetMaxCarry(uid, hs->res_name);
@@ -825,6 +868,15 @@ static void on_arrive_at_transport_source(void *user, void *event)
         }
     }
 
+    if(curr_carry + take == 0) {
+    
+        hs->transport_dest_uid = UID_NONE;
+        hs->transport_src_uid = UID_NONE;
+        hs->res_name = NULL;
+        hs->state = STATE_NOT_HARVESTING;
+        return;
+    }
+
     /* Lastly, drop off our stuff at the destination
      */
     E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_transport_dest, 
@@ -865,7 +917,7 @@ static void on_arrive_at_transport_dest(void *user, void *event)
     assert(rname);
 
     int carry = G_Harvester_GetCurrCarry(uid, rname);
-    int cap = G_StorageSite_GetCapacity(dest->uid, rname);
+    int cap = ss_capacity(dest->uid, rname);
     int curr = G_StorageSite_GetCurr(dest->uid, rname);
     int left = cap - curr;
 
@@ -916,7 +968,7 @@ static void selection_try_order_gather(void)
         struct hstate *hs = hstate_get(curr->uid);
         assert(hs);
 
-        finish_harvesting(hs, curr->uid);
+        G_Harvester_Stop(curr->uid);
         G_Harvester_Gather(curr, target);
         ngather++;
     }
@@ -953,7 +1005,7 @@ static void selection_try_order_drop_off(void)
         if(G_Harvester_GetCurrTotalCarry(curr->uid) == 0)
             continue;
 
-        finish_harvesting(hs, curr->uid);
+        G_Harvester_Stop(curr->uid);
         G_Harvester_DropOff(curr, target);
         ngather++;
     }
@@ -987,7 +1039,7 @@ static void selection_try_order_transport(void)
         struct hstate *hs = hstate_get(curr->uid);
         assert(hs);
 
-        finish_harvesting(hs, curr->uid);
+        G_Harvester_Stop(curr->uid);
         G_Harvester_Transport(curr, target);
         ntransport++;
     }
@@ -1040,7 +1092,7 @@ static const char *transport_resource(struct hstate *hs, struct entity *target)
     for(int i = 0; i < vec_size(&hs->priority); i++) {
 
         const char *rname = vec_AT(&hs->priority, i);
-        int desired = G_StorageSite_GetDesired(target->uid, rname);
+        int desired = ss_desired(target->uid, rname);
         int stored = G_StorageSite_GetCurr(target->uid, rname);
 
         if(desired > stored) {
@@ -1298,19 +1350,22 @@ bool G_Harvester_Gather(struct entity *harvester, struct entity *resource)
         }
     }
 
-    E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_arrive_at_resource, 
-        (void*)((uintptr_t)harvester->uid), G_RUNNING);
-    E_Entity_Register(EVENT_MOVE_ISSUED, harvester->uid, on_motion_begin_travel, 
-        (void*)((uintptr_t)harvester->uid), G_RUNNING);
-
-    G_Move_SetSurroundEntity(harvester, resource);
-
     hs->state = STATE_HARVESTING_SEEK_RESOURCE;
     hs->res_uid = resource->uid;
     hs->res_last_pos = G_Pos_GetXZ(resource->uid);
     hs->res_name = G_Resource_GetName(resource->uid);
-
     E_Entity_Notify(EVENT_HARVEST_TARGET_ACQUIRED, harvester->uid, resource, ES_ENGINE);
+
+    if(M_NavObjAdjacent(s_map, harvester, resource)) {
+        on_arrive_at_resource((void*)((uintptr_t)harvester->uid), NULL);
+    }else{
+        E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_arrive_at_resource, 
+            (void*)((uintptr_t)harvester->uid), G_RUNNING);
+        E_Entity_Register(EVENT_MOVE_ISSUED, harvester->uid, on_motion_begin_travel, 
+            (void*)((uintptr_t)harvester->uid), G_RUNNING);
+        G_Move_SetSurroundEntity(harvester, resource);
+    }
+
     return true;
 }
 
@@ -1338,6 +1393,11 @@ bool G_Harvester_Transport(struct entity *harvester, struct entity *storage)
     if(!(storage->flags & ENTITY_FLAG_STORAGE_SITE))
         return false;
 
+    if(hs->queued.cmd != CMD_NONE) {
+        clear_queued_command(harvester);
+        return false;
+    }
+
     if(G_Harvester_GetCurrTotalCarry(harvester->uid)) {
 
         const char *carryname = carried_resource_name(hs);
@@ -1358,19 +1418,48 @@ bool G_Harvester_Transport(struct entity *harvester, struct entity *storage)
     if(!src)
         return false;
 
-    E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_arrive_at_transport_source, 
-        (void*)((uintptr_t)harvester->uid), G_RUNNING);
-    E_Entity_Register(EVENT_MOVE_ISSUED, harvester->uid, on_motion_begin_travel, 
-        (void*)((uintptr_t)harvester->uid), G_RUNNING);
-
-    G_Move_SetSurroundEntity(harvester, src);
-
     hs->state = STATE_TRANSPORT_GETTING;
     hs->transport_dest_uid = storage->uid;
     hs->transport_src_uid = src->uid;
     hs->res_name = rname;
-
     E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, harvester->uid, storage, ES_ENGINE);
+
+    if(M_NavObjAdjacent(s_map, harvester, src)) {
+        on_arrive_at_transport_source((void*)((uintptr_t)harvester->uid), NULL);
+    }else{
+        E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_arrive_at_transport_source, 
+            (void*)((uintptr_t)harvester->uid), G_RUNNING);
+        E_Entity_Register(EVENT_MOVE_ISSUED, harvester->uid, on_motion_begin_travel, 
+            (void*)((uintptr_t)harvester->uid), G_RUNNING);
+        G_Move_SetSurroundEntity(harvester, src);
+    }
+
+    return true;
+}
+
+bool G_Harvester_SupplyBuilding(struct entity *harvester, struct entity *building)
+{
+    struct hstate *hs = hstate_get(harvester->uid);
+    assert(hs);
+
+    if(G_Harvester_GetCurrTotalCarry(harvester->uid)) {
+
+        const char *carryname = carried_resource_name(hs);
+        struct entity *nearest = nearest_storage_site_dropff(harvester, carryname);
+
+        hs->queued.cmd = CMD_SUPPLY;
+        hs->queued.uid_arg = building->uid;
+
+        G_Harvester_DropOff(harvester, nearest);
+        return true;
+    }
+
+    if(!G_Harvester_Transport(harvester, building)) {
+        return false;
+    }
+
+    hs->queued.cmd = CMD_BUILD;
+    hs->queued.uid_arg = building->uid;
     return true;
 }
 
@@ -1378,7 +1467,13 @@ void G_Harvester_Stop(uint32_t uid)
 {
     struct hstate *hs = hstate_get(uid);
     assert(hs);
+
+    if(hs->state == STATE_HARVESTING) {
+        E_Entity_Notify(EVENT_HARVEST_END, uid, NULL, ES_ENGINE);
+    }
+
     hs->state = STATE_NOT_HARVESTING;
+    hs->queued.cmd = CMD_NONE;
 
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
     E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin_harvest);

@@ -391,9 +391,11 @@ typedef struct {
     PyEntityObject super; 
 }PyBuildableEntityObject;
 
+static int       PyBuildableEntity_init(PyBuildableEntityObject *self, PyObject *args, PyObject *kwds);
 static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_mark(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyBuildableEntity_supply(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure);
@@ -412,11 +414,16 @@ static PyMethodDef PyBuildableEntity_methods[] = {
     {"found", 
     (PyCFunction)PyBuildableEntity_found, METH_VARARGS | METH_KEYWORDS,
     "Advance a building to the 'FOUNDED' state from the 'MARKED' state, "
-    "where it becomes a build site and wait for workes to finish constructing it."},
+    "where it becomes a build site and wait for workers to supply it."},
+
+    {"supply", 
+    (PyCFunction)PyBuildableEntity_supply, METH_NOARGS,
+    "Advance a building to the 'SUPPLIED' state from the 'FOUNDED' state, "
+    "where it meets the construction resource requirements and wait for workers to finish constructing it."},
 
     {"complete", 
     (PyCFunction)PyBuildableEntity_complete, METH_NOARGS,
-    "Advance a building to the 'COMPLETED' state from the 'FOUNDED' state."},
+    "Advance a building to the 'COMPLETED' state from the 'SUPPLIED' state."},
 
     {"unobstructed", 
     (PyCFunction)PyBuildableEntity_unobstructed, METH_NOARGS,
@@ -461,10 +468,12 @@ static PyTypeObject PyBuildableEntity_type = {
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc       = "Permafrost Engine entity buildable entity. This is a subclass of pf.Entity. "
                     "The building starts out in the 'PLACEMENT' state. It must then go through the 'MARKED', "
-                    "'FOUNDED', and 'COMPLETED' states.",
+                    "'FOUNDED', 'SUPPLIED', and 'COMPLETED' states. This type requires the 'required_resources' "
+                    "keyword argument to be passed to __init__.",
     .tp_methods   = PyBuildableEntity_methods,
     .tp_base      = &PyEntity_type,
     .tp_getset    = PyBuildableEntity_getset,
+    .tp_init      = (initproc)PyBuildableEntity_init,
 };
 
 /*****************************************************************************/
@@ -1987,6 +1996,50 @@ static int PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, Py
     return 0;
 }
 
+static int PyBuildableEntity_init(PyBuildableEntityObject *self, PyObject *args, PyObject *kwds)
+{
+    PyObject *required_resources;
+
+    if(!kwds || ((required_resources = PyDict_GetItemString(kwds, "required_resources")) == NULL)) {
+        PyErr_SetString(PyExc_TypeError, 
+            "'required_resources' keyword argument required for initializing pf.BuildableEntity types.");
+        return -1;
+    }
+
+    if(!PyDict_Check(required_resources))
+        goto fail_type;
+
+    PyObject *key, *value;
+    Py_ssize_t pos = 0;
+
+    while (PyDict_Next(required_resources, &pos, &key, &value)) {
+
+        if(!PyString_Check(key))
+            goto fail_type;
+        if(!PyInt_Check(value))
+            goto fail_type;
+
+        const char *rname = PyString_AS_STRING(key);
+        int ramount = PyInt_AS_LONG(value);
+        G_Building_SetRequired(self->super.ent->uid, rname, ramount);
+    }
+
+    /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
+     * MRO to complete in cases when this class is one of multiple base classes of another type. 
+     * This allows this type to be used as one of many mix-in bases. */
+    PyObject *ret = s_call_super_method("__init__", (PyObject*)&PyBuildableEntity_type, 
+        (PyObject*)self, args, kwds);
+    if(!ret)
+        return -1; /* Exception already set */
+    Py_DECREF(ret);
+    return 0;
+
+fail_type:
+    PyErr_SetString(PyExc_TypeError, 
+        "'required_resources' must be a dictionary mapping strings to integers.");
+    return -1;
+}
+
 static PyObject *PyBuildableEntity_del(PyBuildableEntityObject *self)
 {
     return s_super_del((PyObject*)self, &PyBuildableEntity_type);
@@ -2031,6 +2084,11 @@ static PyObject *PyBuildableEntity_found(PyBuildableEntityObject *self, PyObject
         PyErr_SetString(PyExc_RuntimeError, "Unable to found building. It must be in the MARKED state.");
         return NULL;
     }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyBuildableEntity_supply(PyBuildableEntityObject *self)
+{
     Py_RETURN_NONE;
 }
 
@@ -3120,6 +3178,7 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
     if(PyObject_IsInstance(ret, (PyObject*)&PyBuildableEntity_type)) {
         G_Building_Mark(ent);
         G_Building_Found(ent, true);
+        G_Building_Supply(ent);
         G_Building_Complete(ent);
     }
 

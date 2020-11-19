@@ -52,6 +52,7 @@ void G_Harvester_Shutdown(void);
 bool G_Harvester_AddEntity(uint32_t uid);
 void G_Harvester_RemoveEntity(uint32_t uid);
 void G_Harvester_Stop(uint32_t uid);
+bool G_Harvester_SupplyBuilding(struct entity *harvester, struct entity *building);
 bool G_Harvester_InTargetMode(void);
 int  G_Harvester_CurrContextualAction(void);
 bool G_Harvester_GetContextualCursor(char *out, size_t maxout);

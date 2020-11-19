@@ -1362,6 +1362,9 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
 
     G_Pos_Set(ent, pos);
 
+    if(ent->flags & ENTITY_FLAG_STORAGE_SITE)
+        G_StorageSite_AddEntity(ent);
+
     if(ent->flags & ENTITY_FLAG_BUILDING)
         G_Building_AddEntity(ent);
 
@@ -1376,9 +1379,6 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
 
     if(ent->flags & ENTITY_FLAG_HARVESTER)
         G_Harvester_AddEntity(ent->uid);
-
-    if(ent->flags & ENTITY_FLAG_STORAGE_SITE)
-        G_StorageSite_AddEntity(ent);
 
     if(ent->flags & ENTITY_FLAG_MOVABLE) {
     

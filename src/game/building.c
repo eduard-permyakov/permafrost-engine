@@ -35,6 +35,7 @@
 
 #include "building.h"
 #include "game_private.h"
+#include "storage_site.h"
 #include "public/game.h"
 #include "../event.h"
 #include "../collision.h"
@@ -45,10 +46,27 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/attr.h"
+#include "../lib/public/mpool.h"
+#include "../lib/public/string_intern.h"
 
 #include <assert.h>
 #include <stdint.h>
 
+
+static void *pmalloc(size_t size);
+static void *pcalloc(size_t n, size_t size);
+static void *prealloc(void *ptr, size_t size);
+static void  pfree(void *ptr);
+
+#undef kmalloc
+#undef kcalloc
+#undef krealloc
+#undef kfree
+
+#define kmalloc  pmalloc
+#define kcalloc  pcalloc
+#define krealloc prealloc
+#define kfree    pfree
 
 #define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
 #define MARKER_DIR          "assets/models/build_site_marker"
@@ -64,6 +82,8 @@
             return false;               \
     }while(0)
 
+KHASH_MAP_INIT_STR(int, int)
+
 VEC_TYPE(uid, uint32_t)
 VEC_IMPL(static inline, uid, uint32_t)
 
@@ -72,6 +92,7 @@ struct buildstate{
         BUILDING_STATE_PLACEMENT,
         BUILDING_STATE_MARKED,
         BUILDING_STATE_FOUNDED,
+        BUILDING_STATE_SUPPLIED,
         BUILDING_STATE_COMPLETED,
     }state;
     float      frac_done;
@@ -79,8 +100,26 @@ struct buildstate{
     uint32_t   progress_model;
     float      vision_range;
     bool       blocking;
+    bool       is_storage_site;
     struct obb obb;
+    kh_int_t  *required;
 };
+
+typedef char buff_t[512];
+
+MPOOL_TYPE(buff, buff_t)
+MPOOL_PROTOTYPES(static, buff, buff_t)
+MPOOL_IMPL(static, buff, buff_t)
+
+#undef kmalloc
+#undef kcalloc
+#undef krealloc
+#undef kfree
+
+#define kmalloc  malloc
+#define kcalloc  calloc
+#define krealloc realloc
+#define kfree    free
 
 KHASH_MAP_INIT_INT(state, struct buildstate)
 KHASH_SET_INIT_INT64(td)
@@ -92,9 +131,47 @@ KHASH_SET_INIT_INT64(td)
 static const struct map     *s_map;
 static khash_t(state)       *s_entity_state_table;
 
+static mp_buff_t             s_mpool;
+static khash_t(stridx)      *s_stridx;
+static mp_strbuff_t          s_stringpool;
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static void *pmalloc(size_t size)
+{
+    mp_ref_t ref = mp_buff_alloc(&s_mpool);
+    if(ref == 0)
+        return NULL;
+    return mp_buff_entry(&s_mpool, ref);
+}
+
+static void *pcalloc(size_t n, size_t size)
+{
+    void *ret = pmalloc(n * size);
+    if(!ret)
+        return NULL;
+    memset(ret, 0, n * size);
+    return ret;
+}
+
+static void *prealloc(void *ptr, size_t size)
+{
+    if(!ptr)
+        return pmalloc(size);
+    if(size <= sizeof(buff_t))
+        return ptr;
+    return NULL;
+}
+
+static void pfree(void *ptr)
+{
+    if(!ptr)
+        return;
+    mp_ref_t ref = mp_buff_ref(&s_mpool, ptr);
+    mp_buff_free(&s_mpool, ref);
+}
 
 static struct buildstate *buildstate_get(uint32_t uid)
 {
@@ -123,6 +200,7 @@ static void buildstate_remove(const struct entity *ent)
     if(k != kh_end(s_entity_state_table)) {
 
         struct buildstate *bs = &kh_value(s_entity_state_table, k);
+        kh_destroy(int, bs->required);
         vec_uid_destroy(&bs->markers);
         kh_del(state, s_entity_state_table, k);
     }
@@ -268,18 +346,80 @@ static void building_clear_markers(struct buildstate *bs)
     }
 }
 
+static bool bstate_set_key(khash_t(int) *table, const char *name, int val)
+{
+    const char *key = si_intern(name, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
+
+    khiter_t k = kh_get(int, table, key);
+    if(k != kh_end(table)) {
+        kh_value(table, k) = val;
+        return true;
+    }
+
+    int status;
+    k = kh_put(int, table, key, &status);
+    if(status == -1)
+        return false;
+
+    assert(status == 1);
+    kh_value(table, k) = val;
+    return true;
+}
+
+static bool bstate_get_key(khash_t(int) *table, const char *name, int *out)
+{
+    const char *key = si_intern(name, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
+
+    khiter_t k = kh_get(int, table, key);
+    if(k == kh_end(table))
+        return false;
+    *out = kh_value(table, k);
+    return true;
+}
+
+static void on_amount_changed(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)user;
+    struct entity *ent = G_EntityForUID(uid);
+    assert(ent);
+
+    if(!G_StorageSite_IsSaturated(uid))
+        return;
+
+    G_Building_Supply(ent);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
 bool G_Building_Init(const struct map *map)
 {
+    mp_buff_init(&s_mpool);
+
+    if(!mp_buff_reserve(&s_mpool, 2048))
+        goto fail_mpool; 
     if(NULL == (s_entity_state_table = kh_init(state)))
-        return false;
+        goto fail_table;
+    if(0 != kh_resize(state, s_entity_state_table, 2048))
+        goto fail_res;
+    if(!si_init(&s_stringpool, &s_stridx, 512))
+        goto fail_res;
 
     E_Global_Register(EVENT_RENDER_3D_PRE, on_render_3d, NULL, G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     s_map = map;
     return true;
+
+fail_res:
+    kh_destroy(state, s_entity_state_table);
+fail_table:
+    mp_buff_destroy(&s_mpool);
+fail_mpool:
+    return false;
 }
 
 void G_Building_Shutdown(void)
@@ -295,10 +435,12 @@ void G_Building_Shutdown(void)
         vec_uid_destroy(&curr.markers);
     });
 
+    si_shutdown(&s_stringpool, s_stridx);
     kh_destroy(state, s_entity_state_table);
+    mp_buff_destroy(&s_mpool);
 }
 
-void G_Building_AddEntity(struct entity *ent)
+bool G_Building_AddEntity(struct entity *ent)
 {
     assert(buildstate_get(ent->uid) == NULL);
     assert(ent->flags & ENTITY_FLAG_BUILDING);
@@ -309,13 +451,27 @@ void G_Building_AddEntity(struct entity *ent)
         .frac_done = 0.0,
         .markers = {0},
         .progress_model = UID_NONE,
-        .obb = {0}
+        .obb = {0},
+        .is_storage_site = !!(ent->flags & ENTITY_FLAG_STORAGE_SITE)
     };
+
+    new_bs.required = kh_init(int);
+    if(!new_bs.required)
+        return false;
+
     vec_uid_init(&new_bs.markers);
     buildstate_set(ent, new_bs);
 
     ent->flags |= ENTITY_FLAG_TRANSLUCENT;
     ent->flags &= ~ENTITY_FLAG_SELECTABLE;
+
+    if(!new_bs.is_storage_site) {
+        ent->flags |= ENTITY_FLAG_STORAGE_SITE;
+        G_StorageSite_AddEntity(ent);
+    }
+    G_StorageSite_SetUseAlt(ent, true);
+
+    return true;
 }
 
 void G_Building_RemoveEntity(const struct entity *ent)
@@ -335,6 +491,8 @@ void G_Building_RemoveEntity(const struct entity *ent)
         G_RemoveEntity(progress);
         G_SafeFree(progress);
     }
+
+    E_Entity_Unregister(EVENT_STORAGE_SITE_AMOUNT_CHANGED, ent->uid, on_amount_changed);
     building_clear_markers(bs);
     buildstate_remove(ent);
 }
@@ -390,6 +548,31 @@ bool G_Building_Found(struct entity *ent, bool blocking)
         M_NavBlockersIncrefOBB(s_map, &obb);
         bs->obb = obb;
     }
+
+    const char *key;
+    int amount;
+    kh_foreach(bs->required, key, amount, {
+        G_StorageSite_SetAltCapacity(ent, key, amount);
+        G_StorageSite_SetAltDesired(ent->uid, key, amount);
+    });
+
+    E_Entity_Register(EVENT_STORAGE_SITE_AMOUNT_CHANGED, ent->uid, on_amount_changed, 
+        (void*)((uintptr_t)ent->uid), G_RUNNING);
+    return true;
+}
+
+bool G_Building_Supply(struct entity *ent)
+{
+    struct buildstate *bs = buildstate_get(ent->uid);
+    assert(bs);
+
+    if(bs->state != BUILDING_STATE_FOUNDED)
+        return false;
+
+    bs->state = BUILDING_STATE_SUPPLIED;
+    E_Entity_Unregister(EVENT_STORAGE_SITE_AMOUNT_CHANGED, ent->uid, on_amount_changed);
+    G_StorageSite_ClearAlt(ent->uid);
+    G_StorageSite_ClearCurr(ent->uid);
     return true;
 }
 
@@ -398,8 +581,14 @@ bool G_Building_Complete(struct entity *ent)
     struct buildstate *bs = buildstate_get(ent->uid);
     assert(bs);
 
-    if(bs->state != BUILDING_STATE_FOUNDED)
+    if(bs->state != BUILDING_STATE_SUPPLIED)
         return false;
+
+    G_StorageSite_SetUseAlt(ent, false);
+    if(!bs->is_storage_site) {
+        G_StorageSite_RemoveEntity(ent);
+        ent->flags &= ~ENTITY_FLAG_STORAGE_SITE;
+    }
 
     struct entity *progress = G_EntityForUID(bs->progress_model);
     if(progress) {
@@ -434,6 +623,13 @@ bool G_Building_IsFounded(const struct entity *ent)
     struct buildstate *bs = buildstate_get(ent->uid);
     assert(bs);
     return (bs->state >= BUILDING_STATE_FOUNDED);
+}
+
+bool G_Building_IsSupplied(const struct entity *ent)
+{
+    struct buildstate *bs = buildstate_get(ent->uid);
+    assert(bs);
+    return (bs->state >= BUILDING_STATE_SUPPLIED);
 }
 
 bool G_Building_IsCompleted(const struct entity *ent)
@@ -521,6 +717,23 @@ bool G_Building_NeedsRepair(const struct entity *ent)
 
     int hp = G_Combat_GetCurrentHP(ent);
     return (hp < ent->max_hp);
+}
+
+int G_Building_GetRequired(uint32_t uid, const char *rname)
+{
+    struct buildstate *bs = buildstate_get(uid);
+    assert(bs);
+
+    int ret = 0;
+    bstate_get_key(bs->required, rname, &ret);
+    return ret;
+}
+
+bool G_Building_SetRequired(uint32_t uid, const char *rname, int req)
+{
+    struct buildstate *bs = buildstate_get(uid);
+    assert(bs);
+    return bstate_set_key(bs->required, rname, req);
 }
 
 bool G_Building_SaveState(struct SDL_RWops *stream)
@@ -634,12 +847,17 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         case BUILDING_STATE_FOUNDED:
             G_Building_Mark(ent);
             G_Building_Found(ent, blocking);
+            break;
+        case BUILDING_STATE_SUPPLIED:
+            G_Building_Mark(ent);
+            G_Building_Found(ent, blocking);
+            G_Building_Supply(ent);
             G_Building_UpdateProgress(ent, frac_done);
             break;
         case BUILDING_STATE_COMPLETED:
             G_Building_Mark(ent);
             G_Building_Found(ent, blocking);
-            G_Building_UpdateProgress(ent, frac_done);
+            G_Building_Supply(ent);
             G_Building_Complete(ent);
             break;
         default:

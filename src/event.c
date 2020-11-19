@@ -218,6 +218,22 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
     return true;
 }
 
+static void invoke(const struct handler_desc *hd, struct event event)
+{
+    if(hd->type == HANDLER_TYPE_ENGINE) {
+        hd->handler.as_function(hd->user_arg, event.arg);
+    }else if(hd->type == HANDLER_TYPE_SCRIPT) {
+
+        script_opaque_t script_arg = (event.source == ES_SCRIPT) 
+            ? S_UnwrapIfWeakref(event.arg)
+            : S_WrapEngineEventArg(event.type, event.arg);
+        assert(script_arg);
+
+        S_RunEventHandler(hd->handler.as_script_callable, S_UnwrapIfWeakref(hd->user_arg), script_arg);
+        S_Release(script_arg);
+    }
+}
+
 static void e_handle_event(struct event event, bool immediate)
 {
     Sched_HandleEvent(event.type, event.arg, event.source, immediate);
@@ -255,19 +271,7 @@ static void e_handle_event(struct event event, bool immediate)
             if((elem->simmask & ss) == 0)
                 continue;
 
-            if(elem->type == HANDLER_TYPE_ENGINE) {
-                elem->handler.as_function(elem->user_arg, event.arg);
-            }else if(elem->type == HANDLER_TYPE_SCRIPT) {
-
-                script_opaque_t script_arg = (event.source == ES_SCRIPT) 
-                    ? S_UnwrapIfWeakref(event.arg)
-                    : S_WrapEngineEventArg(event.type, event.arg);
-                assert(script_arg);
-
-                S_RunEventHandler(elem->handler.as_script_callable, S_UnwrapIfWeakref(elem->user_arg), script_arg);
-                S_Release(script_arg);
-            }
-
+            invoke(elem, event);
             ran = true;
             break;
         }
@@ -278,6 +282,22 @@ static void e_handle_event(struct event event, bool immediate)
 
     if(event.source == ES_SCRIPT)
         S_Release(event.arg);
+}
+
+static void notify_entities_update_start(void)
+{
+    uint64_t key;
+    vec_hd_t curr;
+    (void)curr;
+
+    kh_foreach(s_event_handler_table, key, curr, {
+
+        if((key & 0xffffffff) != EVENT_UPDATE_START)
+            continue;
+
+        uint32_t uid = key >> 32;
+        e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, uid}, false);
+    });
 }
 
 /*****************************************************************************/
@@ -330,6 +350,7 @@ void E_ServiceQueue(void)
     s_front_queue_idx = (s_front_queue_idx + 1) % 2;
 
     e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID}, false);
+    notify_entities_update_start();
 
     struct event event;
     while(queue_event_pop(queue, &event)) {

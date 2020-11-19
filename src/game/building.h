@@ -45,7 +45,7 @@ struct SDL_RWops;
 bool G_Building_Init(const struct map *map);
 void G_Building_Shutdown(void);
 
-void G_Building_AddEntity(struct entity *ent);
+bool G_Building_AddEntity(struct entity *ent);
 void G_Building_RemoveEntity(const struct entity *ent);
 void G_Building_UpdateProgress(struct entity *ent, float frac_done);
 void G_Building_UpdateBounds(const struct entity *ent);

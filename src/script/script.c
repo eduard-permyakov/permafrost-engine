@@ -2437,6 +2437,9 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_BUILDING_COMPLETED: 
     case EVENT_ENTITY_DIED: {
         PyObject *ent = S_Entity_ObjForUID(((struct entity*)arg)->uid);
+        if(!ent) {
+            printf("couldn't find arg for event: %s\n", E_EngineEventString(eventnum));
+        }
         assert(ent);
         Py_INCREF(ent);
         return ent;
