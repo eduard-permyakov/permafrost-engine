@@ -571,8 +571,8 @@ bool G_Building_Supply(struct entity *ent)
 
     bs->state = BUILDING_STATE_SUPPLIED;
     E_Entity_Unregister(EVENT_STORAGE_SITE_AMOUNT_CHANGED, ent->uid, on_amount_changed);
-    G_StorageSite_ClearAlt(ent->uid);
-    G_StorageSite_ClearCurr(ent->uid);
+    G_StorageSite_ClearAlt(ent);
+    G_StorageSite_ClearCurr(ent);
     return true;
 }
 

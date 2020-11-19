@@ -34,7 +34,7 @@
  */
 
 #ifndef STORAGE_SITE_H
-#define STORAGE_STIE_H
+#define STORAGE_SITE_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -56,8 +56,8 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream);
 
 void G_StorageSite_SetUseAlt(const struct entity *ent, bool use);
 bool G_StorageSite_GetUseAlt(uint32_t uid);
-void G_StorageSite_ClearAlt(uint32_t uid);
-void G_StorageSite_ClearCurr(uint32_t uid);
+void G_StorageSite_ClearAlt(const struct entity *ent);
+void G_StorageSite_ClearCurr(const struct entity *ent);
 
 bool G_StorageSite_SetAltCapacity(const struct entity *ent, const char *rname, int max);
 int  G_StorageSite_GetAltCapacity(uint32_t uid, const char *rname);

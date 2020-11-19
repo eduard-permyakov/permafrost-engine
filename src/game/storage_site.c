@@ -860,19 +860,35 @@ bool G_StorageSite_GetUseAlt(uint32_t uid)
     return ss->use_alt;
 }
 
-void G_StorageSite_ClearAlt(uint32_t uid)
+void G_StorageSite_ClearAlt(const struct entity *ent)
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_state_get(ent->uid);
     assert(ss);
+
+    if(ss->use_alt) {
+        const char *key;
+        int amount;
+
+        kh_foreach(ss->alt_capacity, key, amount, {
+            update_cap_delta(key, -amount, ent->faction_id);
+        });
+    }
 
     kh_clear(int, ss->alt_capacity);
     kh_clear(int, ss->alt_desired);
 }
 
-void G_StorageSite_ClearCurr(uint32_t uid)
+void G_StorageSite_ClearCurr(const struct entity *ent)
 {
-    struct ss_state *ss = ss_state_get(uid);
+    struct ss_state *ss = ss_state_get(ent->uid);
     assert(ss);
+
+    const char *key;
+    int amount;
+
+    kh_foreach(ss->alt_capacity, key, amount, {
+        update_cap_delta(key, -amount, ent->faction_id);
+    });
 
     kh_clear(int, ss->curr);
 }

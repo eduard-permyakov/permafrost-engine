@@ -400,6 +400,7 @@ static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure);
 static int       PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyBuildableEntity_get_completed(PyBuildableEntityObject *self, void *closure);
 static PyObject *PyBuildableEntity_get_vision_range(PyBuildableEntityObject *self, void *closure);
 static int       PyBuildableEntity_set_vision_range(PyBuildableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
@@ -453,6 +454,10 @@ static PyGetSetDef PyBuildableEntity_getset[] = {
     {"vision_range",
     (getter)PyBuildableEntity_get_vision_range, (setter)PyBuildableEntity_set_vision_range,
     "The radius (in OpenGL coordinates) that the entity sees around itself.",
+    NULL},
+    {"completed",
+    (getter)PyBuildableEntity_get_completed, NULL,
+    "Boolean indicating if the building is at or past the 'COMPLETED' state.",
     NULL},
     {"selectable",
     (getter)PyEntity_get_selectable, NULL,
@@ -2153,6 +2158,14 @@ static int PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *va
 
     G_Pos_Set(self->super.ent, newpos);
     return 0;
+}
+
+static PyObject *PyBuildableEntity_get_completed(PyBuildableEntityObject *self, void *closure)
+{
+    if(G_Building_IsCompleted(self->super.ent)) {
+        Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
 }
 
 static PyObject *PyBuildableEntity_get_vision_range(PyBuildableEntityObject *self, void *closure)
