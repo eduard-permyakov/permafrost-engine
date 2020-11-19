@@ -48,6 +48,7 @@
 #include "../lib/public/attr.h"
 #include "../lib/public/mpool.h"
 #include "../lib/public/string_intern.h"
+#include "../lib/public/pf_string.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -788,6 +789,33 @@ bool G_Building_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &building_blocking, "building_blocking"));
 
+        struct attr building_ss = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.is_storage_site
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &building_ss, "building_ss"));
+
+        struct attr num_required = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = kh_size(curr.required)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_required, "num_required"));
+
+        const char *required_key;
+        int required_amount;
+        kh_foreach(curr.required, required_key, required_amount, {
+        
+            struct attr required_key_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_strlcpy(required_key_attr.val.as_string, required_key, sizeof(required_key_attr.val.as_string));
+            CHK_TRUE_RET(Attr_Write(stream, &required_key_attr, "required_key"));
+
+            struct attr required_amount_attr = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = required_amount
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &required_amount_attr, "required_amount"));
+        });
+
         CHK_TRUE_RET(AL_SaveOBB(stream, &curr.obb));
     });
 
@@ -828,6 +856,10 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
         bool blocking = attr.val.as_bool;
 
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        bool is_storage_site = attr.val.as_bool;
+
         struct entity *ent = G_EntityForUID(uid);
         CHK_TRUE_RET(ent);
         CHK_TRUE_RET(ent->flags & ENTITY_FLAG_BUILDING);
@@ -835,6 +867,25 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         struct buildstate *bs = buildstate_get(ent->uid);
         assert(bs);
         bs->vision_range = vis_range;
+        bs->is_storage_site = is_storage_site;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int num_required  = attr.val.as_int;
+
+        for(int j = 0; j < num_required; j++) {
+        
+            struct attr keyattr;
+            CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
+            CHK_TRUE_RET(keyattr.type == TYPE_STRING);
+            const char *key = keyattr.val.as_string;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            int val = attr.val.as_int;
+
+            G_Building_SetRequired(uid, key, val);
+        }
 
         CHK_TRUE_RET(AL_LoadOBB(stream, &bs->obb));
 
