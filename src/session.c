@@ -38,6 +38,7 @@
 #include "main.h"
 #include "ui.h"
 #include "sched.h"
+#include "cursor.h"
 #include "lib/public/attr.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/vec.h"
@@ -94,6 +95,7 @@ static void subsession_clear(void)
     S_ClearState();
     G_ClearState();
     G_ClearRenderWork();
+    Cursor_ClearState();
     UI_SetActiveFont("__default__");
 }
 
@@ -117,6 +119,9 @@ static bool subsession_save(SDL_RWops *stream)
      * some event-driven state machines to enter a bad state. 
      */
     E_FlushEventQueue();
+
+    if(!Cursor_SaveState(stream))
+        return false;
 
     /* First save the state of the map, lighting, camera, etc. (everything that 
      * isn't entities). Loading this state initalizes the session. */
@@ -150,6 +155,12 @@ static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
 {
     struct attr attr;
     subsession_clear();
+
+    if(!Cursor_LoadState(stream)) {
+        pf_snprintf(errstr, errlen, 
+            "Could not de-serialize cursor state from session file");
+        goto fail;
+    }
 
     if(!G_LoadGlobalState(stream)) {
         pf_snprintf(errstr, errlen, 

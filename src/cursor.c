@@ -46,6 +46,12 @@
 #include <string.h>
 #include <assert.h>
 
+#define CHK_TRUE_RET(_pred)   \
+    do{                       \
+        if(!(_pred))          \
+            return false;     \
+    }while(0)
+
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
 struct cursor_resource{
@@ -235,6 +241,7 @@ void Cursor_FreeAll(void)
 
     kh_foreach(s_named_cursors, key, curr, {
         free((void*)key);
+        free((void*)curr.path);
         SDL_FreeSurface(curr.surface);
         SDL_FreeCursor(curr.cursor);
     });
@@ -244,6 +251,8 @@ void Cursor_FreeAll(void)
         struct cursor_resource *curr = &s_cursors[i];
         SDL_FreeSurface(curr->surface);
         SDL_FreeCursor(curr->cursor);
+        curr->surface = NULL;
+        curr->cursor = NULL;
     }
 }
 
@@ -304,7 +313,7 @@ bool Cursor_NamedLoadBMP(const char *name, const char *path, int hotx, int hoty)
     struct cursor_resource entry = (struct cursor_resource) {
         .cursor  = cursor,
         .surface = surface,
-        .path    = NULL,
+        .path    = pf_strdup(path),
         .hot_x   = hotx,
         .hot_y   = hoty
     };
@@ -358,6 +367,105 @@ bool Cursor_NamedSetRTSPointer(const char *name)
     int x, y;
     SDL_GetMouseState(&x, &y);
     cursor_rts_set_active(x, y);
+    return true;
+}
+
+void Cursor_ClearState(void)
+{
+    Cursor_FreeAll();
+    Cursor_InitDefault(g_basepath);
+}
+
+bool Cursor_SaveState(struct SDL_RWops *stream)
+{
+    struct attr ncursors = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = kh_size(s_named_cursors)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &ncursors, "ncursors"));
+
+    const char *key;
+    struct cursor_resource curr;
+
+    kh_foreach(s_named_cursors, key, curr, {
+    
+        struct attr cursor_name = (struct attr){
+            .type = TYPE_STRING, 
+        };
+        pf_strlcpy(cursor_name.val.as_string, key, sizeof(cursor_name.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &cursor_name, "cursor_name"));
+
+        struct attr cursor_path = (struct attr){
+            .type = TYPE_STRING, 
+        };
+        pf_strlcpy(cursor_path.val.as_string, curr.path, sizeof(cursor_path.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &cursor_path, "cursor_path"));
+
+        struct attr hotx = (struct attr){
+            .type = TYPE_INT, 
+            .val.as_int = curr.hot_x
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &hotx, "hotx"));
+
+        struct attr hoty = (struct attr){
+            .type = TYPE_INT, 
+            .val.as_int = curr.hot_y
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &hoty, "hoty"));
+    });
+
+    enum cursortype type = CURSOR_POINTER;
+    for(int i = 0; i < ARR_SIZE(s_cursors); i++) {
+        if(s_cursors[i].cursor == s_rts_pointer) {
+            type = i;
+            break;
+        }
+    }
+
+    struct attr cursortype = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = type
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &cursortype, "cursortype"));
+
+    return true;
+}
+
+bool Cursor_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    size_t ncursors = attr.val.as_int;
+
+    for(int i = 0; i < ncursors; i++) {
+
+        struct attr name;
+        CHK_TRUE_RET(Attr_Parse(stream, &name, true));
+        CHK_TRUE_RET(name.type == TYPE_STRING);
+
+        struct attr path;
+        CHK_TRUE_RET(Attr_Parse(stream, &path, true));
+        CHK_TRUE_RET(path.type == TYPE_STRING);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int hotx = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int hoty = attr.val.as_int;
+
+        Cursor_NamedLoadBMP(name.val.as_string, path.val.as_string, hotx, hoty);
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    enum cursortype type = attr.val.as_int;
+    CHK_TRUE_RET(type >= 0 && type < _CURSOR_MAX);
+
+    Cursor_SetRTSPointer(type);
     return true;
 }
 

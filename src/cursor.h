@@ -38,6 +38,8 @@
 
 #include <stdbool.h>
 
+struct SDL_RWops;
+
 enum cursortype{
     CURSOR_POINTER = 0,
     CURSOR_SCROLL_TOP,
@@ -72,6 +74,10 @@ void Cursor_SetRTSPointer(enum cursortype type);
 bool Cursor_NamedLoadBMP(const char *name, const char *path, int hotx, int hoty);
 bool Cursor_NamedSetActive(const char *name);
 bool Cursor_NamedSetRTSPointer(const char *name);
+
+void Cursor_ClearState(void);
+bool Cursor_SaveState(struct SDL_RWops *stream);
+bool Cursor_LoadState(struct SDL_RWops *stream);
 
 #endif
 
