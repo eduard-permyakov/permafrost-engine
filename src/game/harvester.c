@@ -529,7 +529,7 @@ static void entity_try_retarget(struct entity *ent)
     entity_try_gather_nearest(ent, rname);
 }
 
-static struct entity *target_resource(struct hstate *hs)
+static struct entity *target_resource(struct hstate *hs, const char *rname)
 {
     struct entity *resource = (hs->res_uid != UID_NONE) ? G_EntityForUID(hs->res_uid) : NULL;
     if(resource && (resource->flags & ENTITY_FLAG_ZOMBIE)) {
@@ -537,7 +537,7 @@ static struct entity *target_resource(struct hstate *hs)
     }
     if(!resource) {
         resource = G_Pos_NearestWithPred(hs->res_last_pos, valid_resource, 
-            (void*)hs->res_name, REACQUIRE_RADIUS);
+            (void*)rname, REACQUIRE_RADIUS);
     }
     return resource;
 }
@@ -770,7 +770,7 @@ static void on_arrive_at_storage(void *user, void *event)
         G_Harvester_SetCurrCarry(uid, rname, 0);
         G_StorageSite_SetCurr(target, rname, curr + carry);
 
-        struct entity *resource = target_resource(hs);
+        struct entity *resource = target_resource(hs, rname);
         if(resource && !hs->drop_off_only) {
             G_Harvester_Gather(ent, resource);
         }else{
@@ -1138,6 +1138,7 @@ static void entity_try_gather_nearest_source(struct entity *harvester,
     assert(hs);
     hs->res_uid = newtarget->uid;
     hs->res_last_pos = G_Pos_GetXZ(newtarget->uid);
+    hs->res_name = rname;
 
     if(M_NavObjAdjacent(s_map, harvester, newtarget)) {
         on_arrive_at_resource_source((void*)((uintptr_t)harvester->uid), NULL);
@@ -1228,8 +1229,9 @@ static void on_harvest_anim_finished_source(void *user, void *event)
     if(!target || (target->flags & ENTITY_FLAG_ZOMBIE)) {
         /* If the resource was exhausted, switch targets to the nearest 
          * resource of the same type */
+        const char *rname = hs->res_name;
         finish_harvesting(hs, ent->uid);
-        entity_try_gather_nearest_source(ent, hs->res_name, dest);
+        entity_try_gather_nearest_source(ent, rname, dest);
         return;
     }
 
@@ -1252,8 +1254,9 @@ static void on_harvest_anim_finished_source(void *user, void *event)
         G_Zombiefy(target);
 
         if(new_carry < max_carry) {
+            const char *rname = hs->res_name;
             finish_harvesting(hs, ent->uid);
-            entity_try_gather_nearest_source(ent, hs->res_name, dest);
+            entity_try_gather_nearest_source(ent, rname, dest);
             return;
         }
     }

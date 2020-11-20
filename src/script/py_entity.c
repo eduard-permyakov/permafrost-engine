@@ -68,6 +68,7 @@ static PyObject *PyEntity_del(PyEntityObject *self);
 static PyObject *PyEntity_get_uid(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_name(PyEntityObject *self, void *closure);
 static int       PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyEntity_get_zombie(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure);
 static int       PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_scale(PyEntityObject *self, void *closure);
@@ -161,6 +162,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"name",
     (getter)PyEntity_get_name, (setter)PyEntity_set_name,
     "Custom name given to this enity.",
+    NULL},
+    {"zombie",
+    (getter)PyEntity_get_zombie, NULL,
+    "Returns True if the entity is a zombie (destroyed in the game simulation, but retained via a scripting reference).",
     NULL},
     {"pos",
     (getter)PyEntity_get_pos, (setter)PyEntity_set_pos,
@@ -993,6 +998,14 @@ static PyObject *PyEntity_get_uid(PyEntityObject *self, void *closure)
 static PyObject *PyEntity_get_name(PyEntityObject *self, void *closure)
 {
     return Py_BuildValue("s", self->ent->name);
+}
+
+static PyObject *PyEntity_get_zombie(PyEntityObject *self, void *closure)
+{
+    if(self->ent->flags & ENTITY_FLAG_ZOMBIE) {
+        Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
 }
 
 static int PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closure)
