@@ -322,26 +322,26 @@ enum tstrategy{
     TRANSPORT_STRATEGY_GATHERING,
 };
 
-void G_Harvester_SetGatherOnLeftClick(void);
-void G_Harvester_SetDropOffOnLeftClick(void);
-void G_Harvester_SetTransportOnLeftClick(void);
+void  G_Harvester_SetGatherOnLeftClick(void);
+void  G_Harvester_SetDropOffOnLeftClick(void);
+void  G_Harvester_SetTransportOnLeftClick(void);
 
-bool G_Harvester_Gather(struct entity *harvester, struct entity *resource);
-bool G_Harvester_DropOff(struct entity *harvester, struct entity *storage);
-bool G_Harvester_Transport(struct entity *harvester, struct entity *storage);
+bool  G_Harvester_Gather(struct entity *harvester, struct entity *resource);
+bool  G_Harvester_DropOff(struct entity *harvester, struct entity *storage);
+bool  G_Harvester_Transport(struct entity *harvester, struct entity *storage);
 
-bool G_Harvester_SetGatherSpeed(uint32_t uid, const char *rname, int speed);
-int  G_Harvester_GetGatherSpeed(uint32_t uid, const char *rname);
-bool G_Harvester_SetMaxCarry(uint32_t uid, const char *rname, int max);
-int  G_Harvester_GetMaxCarry(uint32_t uid, const char *rname);
-bool G_Harvester_SetCurrCarry(uint32_t uid, const char *rname, int curr);
-int  G_Harvester_GetCurrCarry(uint32_t uid, const char *rname);
-void G_Harvester_SetStrategy(uint32_t uid, enum tstrategy strat);
-int  G_Harvester_GetStrategy(uint32_t uid);
-bool G_Harvester_IncreaseTransportPrio(uint32_t uid, const char *rname);
-bool G_Harvester_DecreaseTransportPrio(uint32_t uid, const char *rname);
-int  G_Harvester_GetTransportPrio(uint32_t uid, size_t maxout, const char *out[static maxout]);
-int  G_Harvester_GetCurrTotalCarry(uint32_t uid);
+bool  G_Harvester_SetGatherSpeed(uint32_t uid, const char *rname, float speed);
+float G_Harvester_GetGatherSpeed(uint32_t uid, const char *rname);
+bool  G_Harvester_SetMaxCarry(uint32_t uid, const char *rname, int max);
+int   G_Harvester_GetMaxCarry(uint32_t uid, const char *rname);
+bool  G_Harvester_SetCurrCarry(uint32_t uid, const char *rname, int curr);
+int   G_Harvester_GetCurrCarry(uint32_t uid, const char *rname);
+void  G_Harvester_SetStrategy(uint32_t uid, enum tstrategy strat);
+int   G_Harvester_GetStrategy(uint32_t uid);
+bool  G_Harvester_IncreaseTransportPrio(uint32_t uid, const char *rname);
+bool  G_Harvester_DecreaseTransportPrio(uint32_t uid, const char *rname);
+int   G_Harvester_GetTransportPrio(uint32_t uid, size_t maxout, const char *out[static maxout]);
+int   G_Harvester_GetCurrTotalCarry(uint32_t uid);
 
 /*###########################################################################*/
 /* GAME STORAGE SITE                                                         */

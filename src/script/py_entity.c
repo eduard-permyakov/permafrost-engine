@@ -2627,10 +2627,10 @@ static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *sel
     }
 
     const char *name;
-    int amount;
+    float amount;
 
-    if(!PyArg_ParseTuple(args, "si", &name, &amount)) {
-        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and amount (integer).");
+    if(!PyArg_ParseTuple(args, "sf", &name, &amount)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two arguments: name (string) and amount (float).");
         return NULL;
     }
 

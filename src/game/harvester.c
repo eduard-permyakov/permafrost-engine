@@ -80,6 +80,7 @@ static void  pfree(void *ptr);
 #define kfree    pfree
 
 KHASH_MAP_INIT_STR(int, int)
+KHASH_MAP_INIT_STR(float, float)
 
 VEC_TYPE(name, const char*)
 VEC_IMPL(static, name, const char*)
@@ -102,11 +103,12 @@ struct hstate{
     uint32_t    res_uid;
     vec2_t      res_last_pos;
     const char *res_name;         /* borrowed */
-    kh_int_t   *gather_speeds;    /* How much of each resource the entity gets each cycle */
+    kh_float_t *gather_speeds;    /* How much of each resource the entity gets each cycle */
     kh_int_t   *max_carry;        /* The maximum amount of each resource the entity can carry */
     kh_int_t   *curr_carry;       /* The amount of each resource the entity currently holds */
     vec_name_t  priority;         /* The order in which the harvester will transport resources */
     bool        drop_off_only;
+    float       accum;            /* How much we gathered - only integer amounts are taken */ 
     struct{
         enum{
             CMD_NONE,
@@ -254,7 +256,7 @@ static void hstate_remove(uint32_t uid)
 static void hstate_destroy(struct hstate *hs)
 {
     vec_name_destroy(&hs->priority);
-    kh_destroy(int, hs->gather_speeds);
+    kh_destroy(float, hs->gather_speeds);
     kh_destroy(int, hs->max_carry);
     kh_destroy(int, hs->curr_carry);
 }
@@ -265,7 +267,7 @@ static bool hstate_init(struct hstate *hs)
     if(!vec_name_resize(&hs->priority, sizeof(buff_t) / sizeof(char*)))
         return false;
 
-    hs->gather_speeds = kh_init(int);
+    hs->gather_speeds = kh_init(float);
     hs->max_carry = kh_init(int);
     hs->curr_carry = kh_init(int);
 
@@ -281,6 +283,7 @@ static bool hstate_init(struct hstate *hs)
     hs->res_name = NULL;
     hs->state = STATE_NOT_HARVESTING;
     hs->drop_off_only = false;
+    hs->accum = 0.0f;
     hs->strategy = TRANSPORT_STRATEGY_NEAREST;
     hs->queued.cmd = CMD_NONE;
     hs->transport_src_uid = UID_NONE;
@@ -288,7 +291,7 @@ static bool hstate_init(struct hstate *hs)
     return true;
 }
 
-static bool hstate_set_key(khash_t(int) *table, const char *name, int val)
+static bool hstate_set_key_int(khash_t(int) *table, const char *name, int val)
 {
     const char *key = si_intern(name, &s_stringpool, s_stridx);
     if(!key)
@@ -311,13 +314,49 @@ static bool hstate_set_key(khash_t(int) *table, const char *name, int val)
     return true;
 }
 
-static bool hstate_get_key(khash_t(int) *table, const char *name, int *out)
+static bool hstate_get_key_int(khash_t(int) *table, const char *name, int *out)
 {
     const char *key = si_intern(name, &s_stringpool, s_stridx);
     if(!key)
         return false;
 
     khiter_t k = kh_get(int, table, key);
+    if(k == kh_end(table))
+        return false;
+    *out = kh_value(table, k);
+    return true;
+}
+
+static bool hstate_set_key_float(khash_t(float) *table, const char *name, float val)
+{
+    const char *key = si_intern(name, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
+
+    khiter_t k = kh_get(float, table, key);
+    if(k != kh_end(table)) {
+        kh_value(table, k) = val;
+        return true;
+    }
+
+    int status;
+    k = kh_put(float, table, key, &status);
+    if(status == -1) {
+        return false;
+    }
+
+    assert(status == 1);
+    kh_value(table, k) = val;
+    return true;
+}
+
+static bool hstate_get_key_float(khash_t(float) *table, const char *name, float *out)
+{
+    const char *key = si_intern(name, &s_stringpool, s_stridx);
+    if(!key)
+        return false;
+
+    khiter_t k = kh_get(float, table, key);
     if(k == kh_end(table))
         return false;
     *out = kh_value(table, k);
@@ -401,7 +440,7 @@ static bool valid_storage_site_source(const struct entity *curr, void *arg)
     int cap = ss_capacity(curr->uid, sarg->rname);
     int desired = ss_desired(curr->uid, sarg->rname);
 
-    if(sarg->strat == TRANSPORT_STRATEGY_EXCESS && (stored >= desired))
+    if(sarg->strat == TRANSPORT_STRATEGY_EXCESS && (desired >= stored))
         return false;
     if(cap == 0)
         return false;
@@ -421,7 +460,7 @@ static bool valid_resource(const struct entity *curr, void *arg)
     return true;
 }
 
-struct entity *nearest_storage_site_dropff(const struct entity *ent, const char *rname)
+struct entity *nearest_storage_site_dropoff(const struct entity *ent, const char *rname)
 {
     vec2_t pos = G_Pos_GetXZ(ent->uid);
     struct searcharg arg = (struct searcharg){ent, rname};
@@ -434,7 +473,7 @@ struct entity *nearest_storage_site_source(const struct entity *ent, const char 
     struct searcharg arg = (struct searcharg){ent, rname, strat};
     struct entity *ret = G_Pos_NearestWithPred(pos, valid_storage_site_source, (void*)&arg, 0.0f);
 
-    if(!ret && strat == TRANSPORT_STRATEGY_EXCESS) {
+    if(!ret && (strat == TRANSPORT_STRATEGY_EXCESS)) {
         arg = (struct searcharg){ent, rname, TRANSPORT_STRATEGY_NEAREST};
         ret = G_Pos_NearestWithPred(pos, valid_storage_site_source, (void*)&arg, 0.0f);
     }
@@ -459,6 +498,7 @@ static void finish_harvesting(struct hstate *hs, uint32_t uid)
     hs->res_uid = UID_NONE;
     hs->res_last_pos = (vec2_t){0};
     hs->res_name = NULL;
+    hs->accum = 0.0f;
 
     E_Entity_Notify(EVENT_HARVEST_END, uid, NULL, ES_ENGINE);
 }
@@ -502,7 +542,7 @@ static void entity_try_drop_off(struct entity *ent)
         return;
     }
 
-    struct entity *ss = nearest_storage_site_dropff(ent, carried_resource_name(hs));
+    struct entity *ss = nearest_storage_site_dropoff(ent, carried_resource_name(hs));
     if(!ss) {
         hs->state = STATE_NOT_HARVESTING;
     }else{
@@ -620,11 +660,19 @@ static void on_harvest_anim_finished(void *user, void *event)
     const char *rname = G_Resource_GetName(target->uid);
     int resource_left = G_Resource_GetAmount(target->uid);
 
-    int gather_speed = G_Harvester_GetGatherSpeed(uid, rname);
+    float gather_speed = G_Harvester_GetGatherSpeed(uid, rname);
+    int gathered = hs->accum + gather_speed;
+    hs->accum += gather_speed;
+
+    if(gathered == 0) {
+        return;
+    }
+    hs->accum = 0;
+
     int old_carry = G_Harvester_GetCurrCarry(uid, rname);
     int max_carry = G_Harvester_GetMaxCarry(uid, rname);
 
-    int new_carry = MIN(max_carry, old_carry + MIN(gather_speed, resource_left));
+    int new_carry = MIN(max_carry, old_carry + MIN(gathered, resource_left));
     resource_left = MAX(0, resource_left - (new_carry - old_carry));
 
     G_Resource_SetAmount(target->uid, resource_left);
@@ -834,7 +882,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
     int take = 0;
     switch(hs->strategy) {
     case TRANSPORT_STRATEGY_EXCESS: {
-        take = MIN(carry_cap, excess);
+        take = MAX(MIN(carry_cap, excess), 0);
         break;
     }
     case TRANSPORT_STRATEGY_GATHERING: /* fallthrough */
@@ -975,7 +1023,7 @@ static void selection_try_order_gather(void)
             continue;
 
         if(G_Harvester_GetMaxCarry(curr->uid, rname) == 0
-        || G_Harvester_GetGatherSpeed(curr->uid, rname) == 0)
+        || G_Harvester_GetGatherSpeed(curr->uid, rname) == 0.0f)
             continue;
 
         struct hstate *hs = hstate_get(curr->uid);
@@ -1118,9 +1166,9 @@ static const char *transport_resource(struct hstate *hs, struct entity *target)
 
 static bool harvester_can_gather(struct hstate *hs, const char *rname)
 {
-    int speed = 0;
-    hstate_get_key(hs->gather_speeds, rname, &speed);
-    return (speed > 0);
+    float speed = 0.0f;
+    hstate_get_key_float(hs->gather_speeds, rname, &speed);
+    return (speed > 0.0f);
 }
 
 static void entity_try_gather_nearest_source(struct entity *harvester, 
@@ -1238,11 +1286,19 @@ static void on_harvest_anim_finished_source(void *user, void *event)
     const char *rname = G_Resource_GetName(target->uid);
     int resource_left = G_Resource_GetAmount(target->uid);
 
-    int gather_speed = G_Harvester_GetGatherSpeed(uid, rname);
+    float gather_speed = G_Harvester_GetGatherSpeed(uid, rname);
+    int gathered = hs->accum + gather_speed;
+    hs->accum += gather_speed;
+
+    if(gathered == 0) {
+        return;
+    }
+    hs->accum = 0;
+
     int old_carry = G_Harvester_GetCurrCarry(uid, rname);
     int max_carry = G_Harvester_GetMaxCarry(uid, rname);
 
-    int new_carry = MIN(max_carry, old_carry + MIN(gather_speed, resource_left));
+    int new_carry = MIN(max_carry, old_carry + MIN(gathered, resource_left));
     resource_left = MAX(0, resource_left - (new_carry - old_carry));
 
     G_Resource_SetAmount(target->uid, resource_left);
@@ -1383,20 +1439,20 @@ void G_Harvester_RemoveEntity(uint32_t uid)
     hstate_remove(uid);
 }
 
-bool G_Harvester_SetGatherSpeed(uint32_t uid, const char *rname, int speed)
+bool G_Harvester_SetGatherSpeed(uint32_t uid, const char *rname, float speed)
 {
     struct hstate *hs = hstate_get(uid);
     assert(hs);
-    return hstate_set_key(hs->gather_speeds, rname, speed);
+    return hstate_set_key_float(hs->gather_speeds, rname, speed);
 }
 
-int G_Harvester_GetGatherSpeed(uint32_t uid, const char *rname)
+float G_Harvester_GetGatherSpeed(uint32_t uid, const char *rname)
 {
-    int ret = DEFAULT_GATHER_SPEED;
+    float ret = DEFAULT_GATHER_SPEED;
     struct hstate *hs = hstate_get(uid);
     assert(hs);
 
-    hstate_get_key(hs->gather_speeds, rname, &ret);
+    hstate_get_key_float(hs->gather_speeds, rname, &ret);
     return ret;
 }
 
@@ -1414,7 +1470,7 @@ bool G_Harvester_SetMaxCarry(uint32_t uid, const char *rname, int max)
     }else{
         hstate_insert_prio(hs, key);
     }
-    return hstate_set_key(hs->max_carry, rname, max);
+    return hstate_set_key_int(hs->max_carry, rname, max);
 }
 
 int G_Harvester_GetMaxCarry(uint32_t uid, const char *rname)
@@ -1423,7 +1479,7 @@ int G_Harvester_GetMaxCarry(uint32_t uid, const char *rname)
     struct hstate *hs = hstate_get(uid);
     assert(hs);
 
-    hstate_get_key(hs->max_carry, rname, &ret);
+    hstate_get_key_int(hs->max_carry, rname, &ret);
     return ret;
 }
 
@@ -1431,7 +1487,7 @@ bool G_Harvester_SetCurrCarry(uint32_t uid, const char *rname, int curr)
 {
     struct hstate *hs = hstate_get(uid);
     assert(hs);
-    return hstate_set_key(hs->curr_carry, rname, curr);
+    return hstate_set_key_int(hs->curr_carry, rname, curr);
 }
 
 int G_Harvester_GetCurrCarry(uint32_t uid, const char *rname)
@@ -1440,7 +1496,7 @@ int G_Harvester_GetCurrCarry(uint32_t uid, const char *rname)
     struct hstate *hs = hstate_get(uid);
     assert(hs);
 
-    hstate_get_key(hs->curr_carry, rname, &ret);
+    hstate_get_key_int(hs->curr_carry, rname, &ret);
     return ret;
 }
 
@@ -1563,7 +1619,7 @@ bool G_Harvester_Gather(struct entity *harvester, struct entity *resource)
         const char *carryname = carried_resource_name(hs);
         if(strcmp(carryname, G_Resource_GetName(resource->uid))) {
         
-            struct entity *target = nearest_storage_site_dropff(harvester, carryname);
+            struct entity *target = nearest_storage_site_dropoff(harvester, carryname);
             hs->queued.cmd = CMD_GATHER;
             hs->queued.uid_arg = resource->uid;
 
@@ -1623,7 +1679,7 @@ bool G_Harvester_Transport(struct entity *harvester, struct entity *storage)
     if(G_Harvester_GetCurrTotalCarry(harvester->uid)) {
 
         const char *carryname = carried_resource_name(hs);
-        struct entity *nearest = nearest_storage_site_dropff(harvester, carryname);
+        struct entity *nearest = nearest_storage_site_dropoff(harvester, carryname);
 
         hs->queued.cmd = CMD_TRANSPORT;
         hs->queued.uid_arg = storage->uid;
@@ -1672,7 +1728,7 @@ bool G_Harvester_SupplyBuilding(struct entity *harvester, struct entity *buildin
     if(G_Harvester_GetCurrTotalCarry(harvester->uid)) {
 
         const char *carryname = carried_resource_name(hs);
-        struct entity *nearest = nearest_storage_site_dropff(harvester, carryname);
+        struct entity *nearest = nearest_storage_site_dropoff(harvester, carryname);
 
         hs->queued.cmd = CMD_SUPPLY;
         hs->queued.uid_arg = building->uid;
@@ -1864,7 +1920,7 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Write(stream, &num_speeds, "num_speeds"));
 
         const char *speed_key;
-        int speed_amount;
+        float speed_amount;
         kh_foreach(curr.gather_speeds, speed_key, speed_amount, {
         
             struct attr speed_key_attr = (struct attr){ .type = TYPE_STRING, };
@@ -1872,8 +1928,8 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
             CHK_TRUE_RET(Attr_Write(stream, &speed_key_attr, "speed_key"));
 
             struct attr speed_amount_attr = (struct attr){
-                .type = TYPE_INT,
-                .val.as_int = speed_amount
+                .type = TYPE_FLOAT,
+                .val.as_float = speed_amount
             };
             CHK_TRUE_RET(Attr_Write(stream, &speed_amount_attr, "speed_amount"));
         });
@@ -1938,6 +1994,12 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
             .val.as_bool  = curr.drop_off_only
         };
         CHK_TRUE_RET(Attr_Write(stream, &drop_off_only, "drop_off_only"));
+
+        struct attr accum = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float  = curr.accum
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &accum, "accum"));
 
         struct attr cmd_type = (struct attr){
             .type = TYPE_INT,
@@ -2081,8 +2143,8 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
             const char *key = keyattr.val.as_string;
 
             CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-            CHK_TRUE_RET(attr.type == TYPE_INT);
-            int val = attr.val.as_int;
+            CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+            float val = attr.val.as_float;
 
             G_Harvester_SetGatherSpeed(uid, key, val);
         }
@@ -2141,6 +2203,10 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
         hs->drop_off_only = attr.val.as_bool;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        hs->accum = attr.val.as_float;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
