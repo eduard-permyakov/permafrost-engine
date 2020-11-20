@@ -747,7 +747,7 @@ static void on_arrive_at_storage(void *user, void *event)
     struct entity *target = G_EntityForUID(hs->ss_uid);
 
     if(!target 
-    || (target->flags & ENTITY_FLAG_ZOMBIE)
+    || !(target->flags & ENTITY_FLAG_STORAGE_SITE)
     || !M_NavObjAdjacent(s_map, ent, target)) {
         /* harvester could not reach the storage site */
         entity_try_drop_off(ent);
@@ -806,7 +806,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
     struct entity *src = G_EntityForUID(hs->transport_src_uid);
 
     if(!src
-    || (src->flags & ENTITY_FLAG_ZOMBIE)
+    || !(src->flags & ENTITY_FLAG_STORAGE_SITE)
     || !M_NavObjAdjacent(s_map, ent, src)) {
 
         /* harvester could not reach the storage site */
@@ -919,7 +919,7 @@ static void on_arrive_at_transport_dest(void *user, void *event)
     struct entity *dest = G_EntityForUID(hs->transport_dest_uid);
 
     if(!dest 
-    || (dest->flags & ENTITY_FLAG_ZOMBIE)
+    || !(dest->flags & ENTITY_FLAG_STORAGE_SITE)
     || !M_NavObjAdjacent(s_map, ent, dest)) {
         /* harvester could not reach the destination storage site */
         finish_transporing(hs);
