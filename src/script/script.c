@@ -102,6 +102,7 @@ static PyObject *PyPf_set_active_font(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_enable_fog_of_war(PyObject *self);
 static PyObject *PyPf_disable_fog_of_war(PyObject *self);
+static PyObject *PyPf_explore_map(PyObject *self, PyObject *args);
 static PyObject *PyPf_enable_unit_selection(PyObject *self);
 static PyObject *PyPf_disable_unit_selection(PyObject *self);
 static PyObject *PyPf_clear_unit_selection(PyObject *self);
@@ -291,6 +292,10 @@ static PyMethodDef pf_module_methods[] = {
     {"disable_fog_of_war", 
     (PyCFunction)PyPf_disable_fog_of_war, METH_NOARGS,
     "Disable the fog of war."},
+
+    {"explore_map", 
+    (PyCFunction)PyPf_explore_map, METH_VARARGS,
+    "Set the entire map as having being 'explored' for a particular faction."},
 
     {"enable_unit_selection", 
     (PyCFunction)PyPf_enable_unit_selection, METH_NOARGS,
@@ -1039,6 +1044,19 @@ static PyObject *PyPf_enable_fog_of_war(PyObject *self)
 static PyObject *PyPf_disable_fog_of_war(PyObject *self)
 {
     G_Fog_Disable();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_explore_map(PyObject *self, PyObject *args)
+{
+    int faction_id;
+    if(!PyArg_ParseTuple(args, "i", &faction_id)
+    || (faction_id < 0 || faction_id >= MAX_FACTIONS)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a valid faction ID (integer).");
+        return NULL;
+    }
+
+    G_Fog_ExploreMap(faction_id);
     Py_RETURN_NONE;
 }
 

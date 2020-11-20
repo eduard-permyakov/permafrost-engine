@@ -622,7 +622,9 @@ static bool g_ent_visible(uint16_t playermask, const struct entity *ent, const s
     if(ent->flags & ENTITY_FLAG_MARKER)
         return true;
 
-    if(!(ent->flags & ENTITY_FLAG_MOVABLE)) {
+    if(!(ent->flags & ENTITY_FLAG_MOVABLE)
+    ||  (ent->flags & ENTITY_FLAG_RESOURCE)
+    ||  (ent->flags & ENTITY_FLAG_BUILDING)) {
         return G_Fog_ObjExplored(playermask, ent->uid, obb);
     }
 

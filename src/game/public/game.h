@@ -261,6 +261,7 @@ bool G_Fog_PlayerVisible(vec2_t xz_pos);
 bool G_Fog_Explored(int faction_id, vec2_t xz_pos);
 bool G_Fog_PlayerExplored(vec2_t xz_pos);
 void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x4_t *model);
+void G_Fog_ExploreMap(int faction_id);
 void G_Fog_Enable(void);
 void G_Fog_Disable(void);
 

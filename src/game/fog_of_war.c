@@ -733,6 +733,31 @@ bool G_Fog_LoadState(struct SDL_RWops *stream)
     return true;
 }
 
+void G_Fog_ExploreMap(int faction_id)
+{
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    for(int chunk_c = 0; chunk_c < res.chunk_w; chunk_c++) {
+    for(int chunk_r = 0; chunk_r < res.chunk_h; chunk_r++) {
+
+        for(int tile_c = 0; tile_c < res.tile_w; tile_c++) {
+        for(int tile_r = 0; tile_r < res.tile_h; tile_r++) {
+
+            struct tile_desc td = (struct tile_desc) {
+                chunk_r, chunk_c,
+                tile_r, tile_c
+            };
+            uint32_t ts = s_fog_state[td_index(td)];
+            if(((ts >> (faction_id * 2)) & 0x3) == STATE_UNEXPLORED) {
+                ts &= ~(0x3 << (faction_id * 2));
+                ts |= (STATE_IN_FOG << (faction_id * 2));
+            }
+            s_fog_state[td_index(td)] = ts;
+        }}
+    }}
+}
+
 void G_Fog_Enable(void)
 {
     s_enabled = true;
