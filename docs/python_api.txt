@@ -10,6 +10,15 @@ Use this script as the engine argument to generate up-to-date API documentation.
 BUILT-IN FUNCTIONS
 ********************************************************************************
 
+    [activate_named_cursor]
+    ----------------------------------------------------------------------------
+    Make a cursor (specified by name) the currently displayed cursor.
+
+    [activate_system_cursor]
+    ----------------------------------------------------------------------------
+    Make a cursor (specified by CURSOR enum type) the currently displayed
+    cursor.
+
     [add_faction]
     ----------------------------------------------------------------------------
     Add a new faction with the specified name and color. By default, this
@@ -68,6 +77,10 @@ BUILT-IN FUNCTIONS
     saving the current subsession onto a stack. This is performed
     asynchronously. Failure is notified via an EVENT_SESSION_FAIL_LOAD event.
 
+    [explore_map]
+    ----------------------------------------------------------------------------
+    Set the entire map as having being 'explored' for a particular faction.
+
     [get_active_camera]
     ----------------------------------------------------------------------------
     Get a pf.Camera object describing the active camera from whose point of
@@ -122,6 +135,21 @@ BUILT-IN FUNCTIONS
     [get_resolution]
     ----------------------------------------------------------------------------
     Get the currently set resolution of the game window.
+
+    [get_resource_capacity]
+    ----------------------------------------------------------------------------
+    Returns the total capacity for storing a particular resource between all
+    player-controlled storage sites.
+
+    [get_resource_list]
+    ----------------------------------------------------------------------------
+    Returns a list of the names of all the resources that are present (or have
+    ever been present) in the current session.
+
+    [get_resource_stored]
+    ----------------------------------------------------------------------------
+    Returns the total amount of a particular resource between all
+    player-controlled storage sites.
 
     [get_simstate]
     ----------------------------------------------------------------------------
@@ -254,6 +282,11 @@ BUILT-IN FUNCTIONS
     Symmetrically sets the diplomacy state between two distinct factions
     (passed in as IDs).
 
+    [set_drop_off_on_left_click]
+    ----------------------------------------------------------------------------
+    Set the cursor to target mode. The next left click will issue a 'drop off'
+    command to the storage site under the cursor.
+
     [set_emit_light_color]
     ----------------------------------------------------------------------------
     Sets the color (specified as an RGB multiplier) for the global light source.
@@ -265,6 +298,11 @@ BUILT-IN FUNCTIONS
     [set_faction_controllable]
     ----------------------------------------------------------------------------
     Sets whether units of this faction can be controlled by the player or not.
+
+    [set_gather_on_left_click]
+    ----------------------------------------------------------------------------
+    Set the cursor to target mode. The next left click will issue a gather
+    command to the resource under the cursor.
 
     [set_map_highlight_size]
     ----------------------------------------------------------------------------
@@ -291,9 +329,35 @@ BUILT-IN FUNCTIONS
     Set the cursor to target mode. The next left click will issue a move
     command to the location under the cursor.
 
+    [set_named_cursor]
+    ----------------------------------------------------------------------------
+    Load a BMP cursor and associate it with a particular name.
+
     [set_simstate]
     ----------------------------------------------------------------------------
     Set the current simulation state.
+
+    [set_storage_site_ui_border_color]
+    ----------------------------------------------------------------------------
+    Set the storage site UI border color to the specified color (R, G, B, A).
+
+    [set_storage_site_ui_font_color]
+    ----------------------------------------------------------------------------
+    Set the storage site UI text color to the specified color (R, G, B, A).
+
+    [set_storage_site_ui_style]
+    ----------------------------------------------------------------------------
+    Set the storage site UI background to the specified color (R, G, B, A) or
+    image (string).
+
+    [set_system_cursor]
+    ----------------------------------------------------------------------------
+    Set a BMP for one of the cursors used by the engine core.
+
+    [set_transport_on_left_click]
+    ----------------------------------------------------------------------------
+    Set the cursor to target mode. The next left click will issue a 'transport'
+    command to the storage site under the cursor.
 
     [settings_create]
     ----------------------------------------------------------------------------
@@ -388,8 +452,19 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
         [vision_range]
         The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
 
         ************************************************************************
         METHODS
@@ -409,14 +484,13 @@ BUILT-IN CLASSES
         [get_anim]
         Get the name of the currently playing animation clip.
 
-        [move]
-        Issues a 'move' order to the entity at the XZ position specified by the
-        argument.
-
         [notify]
         Send a specific event to an entity in order to invoke the entity's
         event handlers. Weakref arguments are automatically unpacked before
         being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
 
         [play_anim]
         Play the animation clip with the specified name. Set kwarg 'mode=%d' to
@@ -446,11 +520,15 @@ BUILT-IN CLASSES
     ----------------------------------------------------------------------------
     Permafrost Engine entity buildable entity. This is a subclass of pf.Entity.
     The building starts out in the 'PLACEMENT' state. It must then go through
-    the 'MARKED', 'FOUNDED', and 'COMPLETED' states.
+    the 'MARKED', 'FOUNDED', 'SUPPLIED', and 'COMPLETED' states. This type
+    requires the 'required_resources' keyword argument to be passed to __init__.
 
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [completed]
+        Boolean indicating if the building is at or past the 'COMPLETED' state.
+
         [faction_id]
         Index of the faction that the entity belongs to.
 
@@ -480,8 +558,19 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
         [vision_range]
         The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
 
         ************************************************************************
         METHODS
@@ -493,7 +582,7 @@ BUILT-IN CLASSES
         Serialize a Permafrost Engine buildable entity to a string.
 
         [complete]
-        Advance a building to the 'COMPLETED' state from the 'FOUNDED' state.
+        Advance a building to the 'COMPLETED' state from the 'SUPPLIED' state.
 
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
@@ -503,21 +592,19 @@ BUILT-IN CLASSES
 
         [found]
         Advance a building to the 'FOUNDED' state from the 'MARKED' state,
-        where it becomes a build site and wait for workes to finish
-        constructing it.
+        where it becomes a build site and wait for workers to supply it.
 
         [mark]
         Advance a building to the 'MARKED' state from the initial 'PLACEMENT'
         state, where it will wait for a worker to found it.
 
-        [move]
-        Issues a 'move' order to the entity at the XZ position specified by the
-        argument.
-
         [notify]
         Send a specific event to an entity in order to invoke the entity's
         event handlers. Weakref arguments are automatically unpacked before
         being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
 
         [register]
         Registers the specified callable to be invoked when an event of the
@@ -534,6 +621,11 @@ BUILT-IN CLASSES
         [stop]
         Issues a 'stop' command to the entity, stopping its' movement and
         attack. Cancels 'hold position' order.
+
+        [supply]
+        Advance a building to the 'SUPPLIED' state from the 'FOUNDED' state,
+        where it meets the construction resource requirements and wait for
+        workers to finish constructing it.
 
         [unobstructed]
         Returns True if there is no obstruction under any of the building's
@@ -582,8 +674,19 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
         [vision_range]
         The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
 
         ************************************************************************
         METHODS
@@ -603,14 +706,13 @@ BUILT-IN CLASSES
         [face_towards]
         Make the entity face towards the specified point.
 
-        [move]
-        Issues a 'move' order to the entity at the XZ position specified by the
-        argument.
-
         [notify]
         Send a specific event to an entity in order to invoke the entity's
         event handlers. Weakref arguments are automatically unpacked before
         being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
 
         [register]
         Registers the specified callable to be invoked when an event of the
@@ -698,6 +800,9 @@ BUILT-IN CLASSES
         [faction_id]
         Index of the faction that the entity belongs to.
 
+        [hp]
+        The current number of hitpoints that the entity has.
+
         [max_hp]
         The maximum number of hitpoints that the entity starts out with.
 
@@ -727,8 +832,19 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
         [vision_range]
         The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
 
         ************************************************************************
         METHODS
@@ -753,14 +869,13 @@ BUILT-IN CLASSES
         Issues a 'hold position' order to the entity, stopping it and
         preventing it from moving to attack.
 
-        [move]
-        Issues a 'move' order to the entity at the XZ position specified by the
-        argument.
-
         [notify]
         Send a specific event to an entity in order to invoke the entity's
         event handlers. Weakref arguments are automatically unpacked before
         being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
 
         [register]
         Registers the specified callable to be invoked when an event of the
@@ -818,8 +933,19 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
         [vision_range]
         The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
 
         ************************************************************************
         METHODS
@@ -836,6 +962,234 @@ BUILT-IN CLASSES
         [face_towards]
         Make the entity face towards the specified point.
 
+        [notify]
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
+
+        [register]
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
+
+        [select]
+        Adds the entity to the current unit selection, if it is not present
+        there already.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
+
+        [unregister]
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
+
+    [HarvesterEntity]
+    ----------------------------------------------------------------------------
+    Permafrost Engine resource entity. This is a subclass of pf.Entity. This
+    kind of entity is able to gather and transport resources (from
+    pf.ResourceEntity types).
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
+        [name]
+        Custom name given to this enity.
+
+        [pfobj_path]
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
+
+        [pos]
+        The XYZ position in worldspace coordinates.
+
+        [rotation]
+        XYZW quaternion for rotaion about local origin.
+
+        [scale]
+        The XYZ scaling factors.
+
+        [selectable]
+        Flag indicating whether this entity can be selected with the mouse.
+
+        [selection_radius]
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
+
+        [speed]
+        Entity's movement speed (in OpenGL coordinates per second).
+
+        [strategy]
+        The approach used by the harvester to pick the next storage site to get
+        resources from. Must be a pf.TRANSPORT_ enum value.
+
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [total_carry]
+        Get the total amount of resources currently carried by the entity.
+
+        [transport_priority]
+        Get the ordered list of the resource names that the harvester will
+        prioritize transporting.
+
+        [uid]
+        The unique integer ID of this entity
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__del__]
+        Calls the next __del__ in the MRO if there is one, otherwise do nothing.
+
+        [__pickle__]
+        Serialize a Permafrost Engine combatable entity to a string.
+
+        [decrease_transport_priority]
+        Move the specified resource down in the priority list the peasant uses
+        for selecting which resource to bring next to the target storage site.
+
+        [deselect]
+        Removes the entity from the current unit selection, if it is selected.
+
+        [drop_off]
+        Instruct an entity to bring the resources it is currently holding to
+        the specified storage site.
+
+        [face_towards]
+        Make the entity face towards the specified point.
+
+        [gather]
+        Instruct an entity to harvest a particular resource.
+
+        [increase_transport_priority]
+        Move the specified resource up in the priority list the peasant uses
+        for selecting which resource to bring next to the target storage site.
+
+        [notify]
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
+
+        [register]
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
+
+        [select]
+        Adds the entity to the current unit selection, if it is not present
+        there already.
+
+        [set_gather_speed]
+        Set how much of the specified resource the entity gathers in a single
+        animation.
+
+        [set_max_carry]
+        Set how much of the specified resource the entity is able to carry at a
+        time.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
+
+        [transport]
+        Instruct an entity to bring resources to the target storage site, using
+        its' strategy and priority list to select the appropriate source
+        storage sites.
+
+        [unregister]
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
+
+    [MovableEntity]
+    ----------------------------------------------------------------------------
+    Permafrost Engine movable entity. This is a subclass of pf.Entity. This
+    kind of entity is able to receive move orders and travel around the map.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
+        [name]
+        Custom name given to this enity.
+
+        [pfobj_path]
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
+
+        [pos]
+        The XYZ position in worldspace coordinates.
+
+        [rotation]
+        XYZW quaternion for rotaion about local origin.
+
+        [scale]
+        The XYZ scaling factors.
+
+        [selectable]
+        Flag indicating whether this entity can be selected with the mouse.
+
+        [selection_radius]
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
+
+        [speed]
+        Entity's movement speed (in OpenGL coordinates per second).
+
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__del__]
+        Calls the next __del__ in the MRO if there is one, otherwise do nothing.
+
+        [__pickle__]
+        Serialize a Permafrost Engine combatable entity to a string.
+
+        [deselect]
+        Removes the entity from the current unit selection, if it is selected.
+
+        [face_towards]
+        Make the entity face towards the specified point.
+
         [move]
         Issues a 'move' order to the entity at the XZ position specified by the
         argument.
@@ -845,6 +1199,9 @@ BUILT-IN CLASSES
         event handlers. Weakref arguments are automatically unpacked before
         being passed to the handler.
 
+        [ping]
+        Temporarily blink the enitity's selection circle.
+
         [register]
         Registers the specified callable to be invoked when an event of the
         specified type is sent to this entity.
@@ -852,6 +1209,230 @@ BUILT-IN CLASSES
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
+
+        [unregister]
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
+
+    [ResourceEntity]
+    ----------------------------------------------------------------------------
+    Permafrost Engine resource entity. This is a subclass of pf.Entity. This
+    type requires the 'resource_name' and 'resource_amount' keyword arguments
+    to be passed to '__init__'.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [cursor]
+        The name of the cursor to display as a contextual gather command
+        indicator when hovering over the resource.
+
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
+        [name]
+        Custom name given to this enity.
+
+        [pfobj_path]
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
+
+        [pos]
+        The XYZ position in worldspace coordinates.
+
+        [resource_amount]
+        The amount of resources that this entity currently holds
+
+        [resource_name]
+        The name of resource that can be harvested from this entity
+
+        [rotation]
+        XYZW quaternion for rotaion about local origin.
+
+        [scale]
+        The XYZ scaling factors.
+
+        [selectable]
+        Flag indicating whether this entity can be selected with the mouse.
+
+        [selection_radius]
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
+
+        [speed]
+        Entity's movement speed (in OpenGL coordinates per second).
+
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__del__]
+        Calls the next __del__ in the MRO if there is one, otherwise do nothing.
+
+        [__pickle__]
+        Serialize a Permafrost Engine combatable entity to a string.
+
+        [deselect]
+        Removes the entity from the current unit selection, if it is selected.
+
+        [face_towards]
+        Make the entity face towards the specified point.
+
+        [notify]
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
+
+        [register]
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
+
+        [select]
+        Adds the entity to the current unit selection, if it is not present
+        there already.
+
+        [set_model]
+        Replace the current entity's current model and animation data with the
+        specified PFOBJ data.
+
+        [stop]
+        Issues a 'stop' command to the entity, stopping its' movement and
+        attack. Cancels 'hold position' order.
+
+        [unregister]
+        Unregisters a callable previously registered to be invoked on the
+        specified event.
+
+    [StorageSiteEntity]
+    ----------------------------------------------------------------------------
+    Permafrost Engine storage site entity. This is a subclass of pf.Entity.
+    This kind of entity is able to hold resources that can be dropped off by
+    pf.HarvesterEntity types.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [faction_id]
+        Index of the faction that the entity belongs to.
+
+        [name]
+        Custom name given to this enity.
+
+        [pfobj_path]
+        The relative path of the PFOBJ file used to instantiate the entity.
+        Readonly.
+
+        [pos]
+        The XYZ position in worldspace coordinates.
+
+        [rotation]
+        XYZW quaternion for rotaion about local origin.
+
+        [scale]
+        The XYZ scaling factors.
+
+        [selectable]
+        Flag indicating whether this entity can be selected with the mouse.
+
+        [selection_radius]
+        Radius (in OpenGL coordinates) of the unit selection circle for this
+        entity.
+
+        [speed]
+        Entity's movement speed (in OpenGL coordinates per second).
+
+        [storable]
+        The list of resources that are currently able to be held at this
+        storage site.
+
+        [top_screen_pos]
+        Get the location of the top center point of the entity, in screenspace
+        coordinates.
+
+        [uid]
+        The unique integer ID of this entity
+
+        [vision_range]
+        The radius (in OpenGL coordinates) that the entity sees around itself.
+
+        [zombie]
+        Returns True if the entity is a zombie (destroyed in the game
+        simulation, but retained via a scripting reference).
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__del__]
+        Calls the next __del__ in the MRO if there is one, otherwise do nothing.
+
+        [__pickle__]
+        Serialize a Permafrost Engine combatable entity to a string.
+
+        [deselect]
+        Removes the entity from the current unit selection, if it is selected.
+
+        [face_towards]
+        Make the entity face towards the specified point.
+
+        [get_capacity]
+        Gets the maximum amount of the specified resource that can be stored in
+        the storage site.
+
+        [get_curr_amount]
+        Gets the amount of the specified resource currently stored in the
+        storage site.
+
+        [get_desired]
+        Gets the target amount of the specified resource that harvesters will
+        aim to store there.
+
+        [notify]
+        Send a specific event to an entity in order to invoke the entity's
+        event handlers. Weakref arguments are automatically unpacked before
+        being passed to the handler.
+
+        [ping]
+        Temporarily blink the enitity's selection circle.
+
+        [register]
+        Registers the specified callable to be invoked when an event of the
+        specified type is sent to this entity.
+
+        [select]
+        Adds the entity to the current unit selection, if it is not present
+        there already.
+
+        [set_capacity]
+        Sets the maximum amount of the specified resource that can be stored in
+        the storage site.
+
+        [set_desired]
+        Sets the target amount of the specified resource that harvesters will
+        aim to store there.
 
         [set_model]
         Replace the current entity's current model and animation data with the
@@ -1558,40 +2139,66 @@ BUILT-IN CONSTANTS
     CAM_MODE_FPS 0
     CAM_MODE_FREE 2
     CAM_MODE_RTS 1
+    CURSOR_ATTACK 10
+    CURSOR_BUILD 12
+    CURSOR_DROP_OFF 13
+    CURSOR_NO_ATTACK 11
+    CURSOR_POINTER 0
+    CURSOR_SCROLL_BOT 5
+    CURSOR_SCROLL_BOT_LEFT 6
+    CURSOR_SCROLL_BOT_RIGHT 4
+    CURSOR_SCROLL_LEFT 7
+    CURSOR_SCROLL_RIGHT 3
+    CURSOR_SCROLL_TOP 1
+    CURSOR_SCROLL_TOP_LEFT 8
+    CURSOR_SCROLL_TOP_RIGHT 2
+    CURSOR_TARGET 9
+    CURSOR_TRANSPORT 14
     DIPLOMACY_STATE_PEACE 0
     DIPLOMACY_STATE_WAR 1
-    EVENT_10HZ_TICK 65549
-    EVENT_1HZ_TICK 65550
-    EVENT_30HZ_TICK 65546
-    EVENT_60HZ_TICK 65545
-    EVENT_ANIM_CYCLE_FINISHED 65552
-    EVENT_ANIM_FINISHED 65551
-    EVENT_ATTACK_END 65558
-    EVENT_ATTACK_START 65556
-    EVENT_BUILDING_COMPLETED 65569
-    EVENT_BUILD_BEGIN 65565
-    EVENT_BUILD_END 65566
-    EVENT_BUILD_FAIL_FOUND 65567
-    EVENT_BUILD_TARGET_ACQUIRED 65568
+    EVENT_10HZ_TICK 65550
+    EVENT_1HZ_TICK 65551
+    EVENT_30HZ_TICK 65547
+    EVENT_60HZ_TICK 65546
+    EVENT_ANIM_CYCLE_FINISHED 65553
+    EVENT_ANIM_FINISHED 65552
+    EVENT_ATTACK_END 65559
+    EVENT_ATTACK_START 65557
+    EVENT_BUILDING_COMPLETED 65571
+    EVENT_BUILDING_FOUNDED 65570
+    EVENT_BUILD_BEGIN 65566
+    EVENT_BUILD_END 65567
+    EVENT_BUILD_FAIL_FOUND 65568
+    EVENT_BUILD_TARGET_ACQUIRED 65569
     EVENT_ENGINE_LAST 131071
-    EVENT_ENTITY_DEATH 65557
-    EVENT_ENTITY_DIED 65570
-    EVENT_ENTITY_STOP 65571
-    EVENT_GAME_SIMSTATE_CHANGED 65559
-    EVENT_MOTION_END 65555
-    EVENT_MOTION_START 65554
-    EVENT_MOVE_ISSUED 65553
-    EVENT_NEW_GAME 65543
+    EVENT_ENTITY_DEATH 65558
+    EVENT_ENTITY_DIED 65572
+    EVENT_ENTITY_STOP 65573
+    EVENT_GAME_SIMSTATE_CHANGED 65560
+    EVENT_HARVEST_BEGIN 65574
+    EVENT_HARVEST_END 65575
+    EVENT_HARVEST_TARGET_ACQUIRED 65576
+    EVENT_MOTION_END 65556
+    EVENT_MOTION_START 65555
+    EVENT_MOVE_ISSUED 65554
+    EVENT_NEW_GAME 65544
     EVENT_RENDER_3D_POST 65540
     EVENT_RENDER_3D_PRE 65539
+    EVENT_RENDER_FINISH 65542
     EVENT_RENDER_UI 65541
-    EVENT_SCRIPT_TASK_EXCEPTION 65563
-    EVENT_SCRIPT_TASK_FINISHED 65564
-    EVENT_SELECTED_TILE_CHANGED 65542
-    EVENT_SESSION_FAIL_LOAD 65562
-    EVENT_SESSION_LOADED 65560
-    EVENT_SESSION_POPPED 65561
-    EVENT_UNIT_SELECTION_CHANGED 65544
+    EVENT_RESOURCE_DROPPED_OFF 65580
+    EVENT_RESOURCE_EXHAUSTED 65582
+    EVENT_RESOURCE_PICKED_UP 65581
+    EVENT_SCRIPT_TASK_EXCEPTION 65564
+    EVENT_SCRIPT_TASK_FINISHED 65565
+    EVENT_SELECTED_TILE_CHANGED 65543
+    EVENT_SESSION_FAIL_LOAD 65563
+    EVENT_SESSION_LOADED 65561
+    EVENT_SESSION_POPPED 65562
+    EVENT_STORAGE_SITE_AMOUNT_CHANGED 65579
+    EVENT_STORAGE_TARGET_ACQUIRED 65578
+    EVENT_TRANSPORT_TARGET_ACQUIRED 65577
+    EVENT_UNIT_SELECTION_CHANGED 65545
     EVENT_UPDATE_END 65537
     EVENT_UPDATE_START 65536
     EVENT_UPDATE_UI 65538
@@ -1982,7 +2589,11 @@ BUILT-IN CONSTANTS
     TILETYPE_RAMP_NS 2
     TILETYPE_RAMP_SN 1
     TILETYPE_RAMP_WE 4
+    TRANSPORT_STRATEGY_EXCESS 1
+    TRANSPORT_STRATEGY_GATHERING 2
+    TRANSPORT_STRATEGY_NEAREST 0
     X_COORDS_PER_TILE 8
     Y_COORDS_PER_TILE 4
     Z_COORDS_PER_TILE 8
+    _CURSOR_MAX 15
     trace_pickling False

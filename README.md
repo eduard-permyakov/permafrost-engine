@@ -13,6 +13,8 @@ EVERGLORY is the flagship game developed using Permafrost Engine.
 
 ![village](docs/images/village.png)
 ![lone-warrior](docs/images/lone-warrior.png)
+![gather-1](docs/images/gather-1.png)
+![gather-2](docs/images/gather-2.png)
 ![army](docs/images/army.png)
 ![building](docs/images/building.png)
 ![battle](docs/images/battle.png)
@@ -51,6 +53,7 @@ EVERGLORY is the flagship game developed using Permafrost Engine.
 * RTS unit combat system
 * RTS fog-of-war system
 * RTS base-building mechanics
+* RTS resource gathering (and transporting) mechanics
 * Support for different resolutions and aspect ratios
 * Configurable graphics settings
 * Serialization and deserialization of the entire Python interpreter state

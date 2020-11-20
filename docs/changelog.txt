@@ -3,6 +3,14 @@
 ********************************************************************************
 
 ================================================================================
+[Version 0.53.0] - 20.11.2020
+================================================================================
+    * Implement resource gathering and transporting mechanics
+    * Add (optional) resource requirements for buildings
+    * Add contextual right-click actions with custom cursors
+    * Miscellaneous enhancements/polishing and bug fixes
+
+================================================================================
 [Version 0.52.0] - 08.10.2020
 ================================================================================
     * Numerous bug fixes and general enhancements
