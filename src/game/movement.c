@@ -1722,6 +1722,10 @@ void G_Move_SetSurroundEntity(const struct entity *ent, const struct entity *tar
     vec2_t pos = G_Pos_GetXZ(target->uid);
     G_Move_SetDest(ent, pos);
 
+    if(ent_still(ms))
+        return;
+
+    assert(!ms->blocking);
     ms->state = STATE_SURROUND_ENTITY;
     ms->surround_target_uid = target->uid;
 }
