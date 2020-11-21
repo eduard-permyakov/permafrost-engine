@@ -58,5 +58,6 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
 bool G_Sel_SaveState(struct SDL_RWops *stream);
 bool G_Sel_LoadState(struct SDL_RWops *stream);
 void G_Sel_MarkHoveredDirty(void);
+bool G_Sel_IsSelected(const struct entity *ent);
 
 #endif

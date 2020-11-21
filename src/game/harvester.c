@@ -1827,6 +1827,9 @@ int G_Harvester_CurrContextualAction(void)
     && G_Harvester_GetGatherSpeed(first->uid, G_Resource_GetName(hovered->uid)) > 0)
         return CTX_ACTION_GATHER;
 
+    if(hovered->faction_id != first->faction_id)
+        return false;
+
     if(hovered->flags & ENTITY_FLAG_STORAGE_SITE
     && G_Harvester_GetCurrTotalCarry(first->uid) > 0)
         return CTX_ACTION_DROP_OFF;

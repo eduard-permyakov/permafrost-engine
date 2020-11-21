@@ -615,3 +615,9 @@ void G_Sel_MarkHoveredDirty(void)
     s_hovered_dirty = true;
 }
 
+bool G_Sel_IsSelected(const struct entity *ent)
+{
+    int idx = vec_pentity_indexof(&s_selected, (struct entity*)ent, pentities_equal);
+    return (idx != -1);
+}
+
