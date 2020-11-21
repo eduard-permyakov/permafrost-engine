@@ -51,9 +51,8 @@
 #include <string.h>
 #include <assert.h>
 
-#define MAX_VERTEX_MEMORY   (512 * 1024)
-#define MAX_ELEMENT_MEMORY  (128 * 1024)
-#define DEFAULT_CMD_BUFF_SZ   (4 * 1024)
+#define MAX_VERTEX_MEMORY   (2 * 1024* 1024)
+#define MAX_ELEMENT_MEMORY      (512 * 1024)
 
 struct text_desc{
     char        text[256];
