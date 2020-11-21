@@ -132,7 +132,7 @@ struct task{
     SDL_Event      earg;
 };
 
-#define MAX_TASKS               (512)
+#define MAX_TASKS               (4096)
 #define MAX_WORKER_THREADS      (64)
 #define STACK_SZ                (64 * 1024)
 #define BIG_STACK_SZ            (8 * 1024 * 1024)

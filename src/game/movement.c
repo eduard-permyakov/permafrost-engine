@@ -1442,8 +1442,10 @@ static void clearpath_submit_work(void)
         arg->end_idx = MIN(nitems * (i + 1) - 1, s_cp_work.nwork-1);
 
         SDL_AtomicSet(&s_cp_work.futures[i].status, FUTURE_INCOMPLETE);
-        s_cp_work.tids[s_cp_work.ntasks++] = Sched_Create(4, clearpath_task, arg, 
+        s_cp_work.tids[s_cp_work.ntasks] = Sched_Create(4, clearpath_task, arg, 
             &s_cp_work.futures[i], TASK_BIG_STACK);
+        assert(s_cp_work.tids[s_cp_work.ntasks]);
+        s_cp_work.ntasks++;
     }
     s_cp_work.ntasks = ntasks;
 }

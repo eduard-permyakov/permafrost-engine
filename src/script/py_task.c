@@ -97,6 +97,7 @@ typedef struct {
     PyThreadState *ts;
     const char *regname;
     uint32_t sleep_elapsed;
+    bool small_stack;
 }PyTaskObject;
 
 KHASH_MAP_INIT_INT(task, PyTaskObject*)
@@ -535,6 +536,13 @@ static PyObject *PyTask_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         goto fail_run;
     }
 
+    if(kwds) {
+        PyObject *smallstack = PyDict_GetItemString(kwds, "small_stack");
+        self->small_stack = (smallstack && PyObject_IsTrue(smallstack));
+    }else{
+        self->small_stack = false;
+    }
+
     Py_INCREF(func);
     self->runfunc = func;
     self->state = PYTASK_STATE_NOT_STARTED;
@@ -653,6 +661,10 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
     status = ctx->pickle_obj(ctx->private_ctx, sleep_elapsed, ctx->stream);
     CHK_TRUE(status, fail_pickle);
 
+    PyObject *small_stack = PyInt_FromLong(self->small_stack);
+    status = ctx->pickle_obj(ctx->private_ctx, small_stack, ctx->stream);
+    CHK_TRUE(status, fail_pickle);
+
     ret = PyString_FromString("");
 fail_pickle:
     assert(self->ob_refcnt == og_refcount);
@@ -682,11 +694,12 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     }
     assert(len == sizeof(struct py_unpickle_ctx));
 
-    if(vec_size(ctx->stack) < 7) {
+    if(vec_size(ctx->stack) < 8) {
         PyErr_SetString(PyExc_RuntimeError, "Stack underflow");
         goto fail_args;
     }
 
+    PyObject *small_stack = vec_pobj_pop(ctx->stack);
     PyObject *sleep_elapsed = vec_pobj_pop(ctx->stack);
     PyObject *stack_depth = vec_pobj_pop(ctx->stack);
     PyObject *regname = vec_pobj_pop(ctx->stack);
@@ -695,6 +708,7 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     PyObject *ts = vec_pobj_pop(ctx->stack);
     PyObject *state = vec_pobj_pop(ctx->stack);
 
+    CHK_TRUE(PyInt_Check(small_stack), fail_unpickle);
     CHK_TRUE(PyInt_Check(sleep_elapsed), fail_unpickle);
     CHK_TRUE(PyInt_Check(stack_depth), fail_unpickle);
     CHK_TRUE(regname == Py_None || PyString_Check(regname), fail_unpickle);
@@ -772,12 +786,17 @@ static PyObject *PyTask_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs
     ret->state = PyInt_AS_LONG(state);
     ret->runfunc = func == Py_None ? NULL : (Py_INCREF(func), func);
     ret->sleep_elapsed = PyInt_AS_LONG(sleep_elapsed);
+    ret->small_stack = PyInt_AS_LONG(small_stack);
     ret->stack_depth = PyInt_AS_LONG(stack_depth);
 
     if(ret->state == PYTASK_STATE_RUNNING) {
+
+        int flags = TASK_MAIN_THREAD_PINNED;
+        if(!ret->small_stack)
+            flags |= TASK_BIG_STACK;
     
         assert(ret->ts->frame->f_stacktop);
-        ret->tid = Sched_Create(16, py_task, ret, NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+        ret->tid = Sched_Create(16, py_task, ret, NULL, flags);
 
         if(ret->tid == NULL_TID) {
             PyErr_SetString(PyExc_RuntimeError, "Unable to start fiber for task.");
@@ -809,6 +828,7 @@ fail_unpickle:
     if(!ret && !PyErr_Occurred()) {
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle pf.Task instance");
     }
+    Py_XDECREF(small_stack);
     Py_XDECREF(sleep_elapsed);
     Py_XDECREF(stack_depth);
     Py_XDECREF(regname);
@@ -830,7 +850,12 @@ fail_args:
 static PyObject *PyTask_run(PyTaskObject *self)
 {
     ASSERT_IN_MAIN_THREAD();
-    self->tid = Sched_Create(16, py_task, self, NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+
+    int flags = TASK_MAIN_THREAD_PINNED;
+    if(!self->small_stack)
+        flags |= TASK_BIG_STACK;
+
+    self->tid = Sched_Create(16, py_task, self, NULL, flags);
 
     if(self->tid == NULL_TID) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to start fiber for task.");
