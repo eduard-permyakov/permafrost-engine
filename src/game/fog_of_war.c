@@ -281,8 +281,8 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
     M_TileForDesc(s_map, origin, &tile);
     int origin_height = M_Tile_BaseHeight(tile);
 
-    const int tile_x_radius = ceil(radius / X_COORDS_PER_TILE);
-    const int tile_z_radius = ceil(radius / Z_COORDS_PER_TILE);
+    const int tile_x_radius = ceil(radius / X_COORDS_PER_TILE) + 1;
+    const int tile_z_radius = ceil(radius / Z_COORDS_PER_TILE) + 1;
     assert(tile_x_radius && tile_z_radius);
 
     /* Declare a byte for every tile within a box having a half-length of 'radius' 
