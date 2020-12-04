@@ -48,6 +48,7 @@
 #include "harvester.h"
 #include "storage_site.h"
 #include "resource.h"
+#include "region.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../anim/public/anim.h"
@@ -144,6 +145,7 @@ static void g_init_map(void)
     G_Building_Init(s_gs.map);
     G_Builder_Init(s_gs.map);
     G_Resource_Init(s_gs.map);
+    G_Region_Init(s_gs.map);
     G_Harvester_Init(s_gs.map);
     G_ClearPath_Init(s_gs.map);
     G_Pos_Init(s_gs.map);
@@ -643,6 +645,7 @@ static void g_clear_map_state(void)
         G_Building_Shutdown();
         G_Builder_Shutdown();
         G_Resource_Shutdown();
+        G_Region_Shutdown();
         G_Harvester_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
