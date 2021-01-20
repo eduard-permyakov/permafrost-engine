@@ -90,5 +90,11 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
                                      const khash_t(attr) *attr_table, 
                                      const vec_attr_t *construct_args);
 
+/*###########################################################################*/
+/* SCRIPT REGION                                                             */
+/*###########################################################################*/
+
+void            S_Region_NotifyContentsChanged(const char *name);
+
 #endif
 

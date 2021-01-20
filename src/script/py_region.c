@@ -36,12 +36,15 @@
 #include "py_region.h"
 #include "py_entity.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/khash.h"
 #include "../game/public/game.h"
 
 #include <assert.h>
 
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+
+KHASH_MAP_INIT_STR(PyObject, PyObject*)
 
 typedef struct {
     PyObject_HEAD
@@ -148,6 +151,8 @@ static PyTypeObject PyRegion_type = {
     PyRegion_new,              /* tp_new */
 };
 
+static khash_t(PyObject) *s_name_pyobj_table;
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -224,11 +229,20 @@ static PyObject *PyRegion_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         return NULL;
     }
 
+    int ret;
+    khiter_t k = kh_put(PyObject, s_name_pyobj_table, self->name, &ret);
+    assert(ret != -1 && ret != 0);
+    kh_value(s_name_pyobj_table, k) = (PyObject*)self;
+
     return (PyObject*)self;
 }
 
 static void PyRegion_dealloc(PyRegionObject *self)
 {
+    khiter_t k = kh_get(PyObject, s_name_pyobj_table, self->name);
+    assert(k != kh_end(s_name_pyobj_table));
+    kh_del(PyObject, s_name_pyobj_table, k);
+
     G_Region_Remove(self->name);
     free((void*)self->name);
     Py_DECREF(self);
@@ -318,5 +332,30 @@ void S_Region_PyRegister(PyObject *module)
         return;
     Py_INCREF(&PyRegion_type);
     PyModule_AddObject(module, "Region", (PyObject*)&PyRegion_type);
+}
+
+bool S_Region_Init(void)
+{
+    s_name_pyobj_table = kh_init(PyObject);
+    return (s_name_pyobj_table != NULL);
+}
+
+void S_Region_Shutdown(void)
+{
+    kh_destroy(PyObject, s_name_pyobj_table);
+}
+
+void S_Region_NotifyContentsChanged(const char *name)
+{
+    khiter_t k = kh_get(PyObject, s_name_pyobj_table, name);
+    if(k == kh_end(s_name_pyobj_table))
+        return;
+
+    PyObject *reg = kh_value(s_name_pyobj_table, k);
+    PyObject *ret = PyObject_CallMethod(reg, "on_contents_changed", NULL);
+    if(!ret) {
+        PyErr_Clear();
+    }
+    Py_XDECREF(ret);
 }
 

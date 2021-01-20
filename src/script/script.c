@@ -2288,6 +2288,8 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
         return false;
     if(!S_Task_Init())
         return false;
+    if(!S_Region_Init())
+        return false;
 
     if(0 != PyList_Append(PySys_GetObject("path"), Py_BuildValue("s", script_dir)))
         return false;
@@ -2317,6 +2319,7 @@ void S_Shutdown(void)
     Py_Finalize();
     S_Pickle_Shutdown();
     S_Camera_Shutdown();
+    S_Region_Shutdown();
     S_Task_Shutdown();
     S_Entity_Shutdown();
     S_UI_Shutdown();

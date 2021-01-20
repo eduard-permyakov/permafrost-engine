@@ -39,6 +39,8 @@
 #include <Python.h> /* must be first */
 #include <stdbool.h>
 
+bool S_Region_Init(void);
+void S_Region_Shutdown(void);
 void S_Region_PyRegister(PyObject *module);
 
 #endif

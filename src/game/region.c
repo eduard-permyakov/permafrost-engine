@@ -363,6 +363,7 @@ static void region_notify_changed(const char *name, struct region *reg)
 
     /* use the algorithm for finding the symmetric difference 
      * of two sorted arrays: */
+    size_t nchanged = 0;
     int i = 0, j = 0;
     while(i < n && j < m) {
 
@@ -375,6 +376,7 @@ static void region_notify_changed(const char *name, struct region *reg)
             E_Entity_Notify(EVENT_ENTERED_REGION, uid, (void*)arg, ES_ENGINE);
 
             i++;
+            nchanged++;
 
         }else if(reg->prev_ents.array[j] < reg->curr_ents.array[i]) {
 
@@ -385,6 +387,7 @@ static void region_notify_changed(const char *name, struct region *reg)
             E_Entity_Notify(EVENT_EXITED_REGION, uid, (void*)arg, ES_ENGINE);
 
             j++;
+            nchanged++;
 
         }else{
 
@@ -402,6 +405,7 @@ static void region_notify_changed(const char *name, struct region *reg)
         E_Entity_Notify(EVENT_ENTERED_REGION, uid, (void*)arg, ES_ENGINE);
 
         i++;
+        nchanged++;
     }
 
     while(j < m) {
@@ -413,6 +417,11 @@ static void region_notify_changed(const char *name, struct region *reg)
         E_Entity_Notify(EVENT_EXITED_REGION, uid, (void*)arg, ES_ENGINE);
 
         j++;
+        nchanged++;
+    }
+
+    if(nchanged) {
+        S_Region_NotifyContentsChanged(name);
     }
 
     vec_uid_reset(&reg->prev_ents);
