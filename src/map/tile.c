@@ -364,6 +364,21 @@ struct box M_Tile_Bounds(struct map_resolution res, vec3_t map_pos, struct tile_
     };
 }
 
+struct box M_Tile_ChunkBounds(struct map_resolution res, vec3_t map_pos, int chunk_r, int chunk_c)
+{
+    size_t width  = res.chunk_w * CHUNK_WIDTH;
+    size_t height = res.chunk_h * CHUNK_HEIGHT;
+
+    struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
+
+    return (struct box){
+        map_box.x - chunk_c * CHUNK_WIDTH,
+        map_box.z + chunk_r * CHUNK_HEIGHT,
+        CHUNK_WIDTH,
+        CHUNK_HEIGHT
+    };
+}
+
 bool M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inout, 
                          int tile_dc, int tile_dr)
 {

@@ -404,7 +404,7 @@ bool UI_Init(const char *basedir, SDL_Window *win)
 
     vec_td_init(&s_curr_frame_labels);
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING);
-    E_Global_Register(EVENT_RENDER_FINISH, ui_render, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
+    E_Global_Register(EVENT_RENDER_UI, ui_render, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
 
     return true;
 }
@@ -412,7 +412,7 @@ bool UI_Init(const char *basedir, SDL_Window *win)
 void UI_Shutdown(void)
 {
     E_Global_Unregister(EVENT_UPDATE_UI, on_update_ui);
-    E_Global_Unregister(EVENT_RENDER_FINISH, ui_render);
+    E_Global_Unregister(EVENT_RENDER_UI, ui_render);
     vec_td_destroy(&s_curr_frame_labels);
 
     nk_font_atlas_clear(&s_atlas);

@@ -2585,24 +2585,7 @@ int N_TilesUnderCircle(const struct nav_private *priv, vec2_t xz_center, float r
             continue;
 
         struct box bounds = M_Tile_Bounds(res, map_pos, curr);
-        vec2_t coords[] = {
-            (vec2_t){bounds.x,                bounds.z                },
-            (vec2_t){bounds.x - bounds.width, bounds.z                },
-            (vec2_t){bounds.x,                bounds.z + bounds.height},
-            (vec2_t){bounds.x - bounds.width, bounds.z + bounds.height},
-            (vec2_t){bounds.x - bounds.width/2.0f, bounds.z + bounds.height/2.0f}
-        };
-
-        bool inside = false;
-        for(int i = 0; i < ARR_SIZE(coords); i++) {
-
-            if(C_PointInsideCircle2D(coords[i], xz_center, radius)) {
-                inside = true;
-                break;
-            }
-        }
-
-        if(!inside)
+        if(!C_CircleRectIntersection(xz_center, radius, bounds))
             continue;
 
         out[ret++] = curr;

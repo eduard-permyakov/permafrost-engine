@@ -143,6 +143,7 @@ bool  M_Tile_RightFaceVisible(const struct tile *tiles, int r, int c);
 float      M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_height);
 
 struct box M_Tile_Bounds(struct map_resolution res, vec3_t map_pos, struct tile_desc desc);
+struct box M_Tile_ChunkBounds(struct map_resolution res, vec3_t map_pos, int chunk_r, int chunk_c);
 bool       M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inout, 
                                int tile_dc, int tile_dr);
 

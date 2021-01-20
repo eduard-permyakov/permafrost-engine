@@ -43,6 +43,7 @@
 #include "py_pickle.h"
 #include "py_camera.h"
 #include "py_task.h"
+#include "py_region.h"
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
@@ -100,6 +101,8 @@ static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_active_font(PyObject *self);
 static PyObject *PyPf_set_active_font(PyObject *self, PyObject *args);
 
+static PyObject *PyPf_show_regions(PyObject *self);
+static PyObject *PyPf_hide_regions(PyObject *self);
 static PyObject *PyPf_enable_fog_of_war(PyObject *self);
 static PyObject *PyPf_disable_fog_of_war(PyObject *self);
 static PyObject *PyPf_explore_map(PyObject *self, PyObject *args);
@@ -284,6 +287,14 @@ static PyMethodDef pf_module_methods[] = {
     {"set_active_font", 
     (PyCFunction)PyPf_set_active_font, METH_VARARGS,
     "Set the current active font to that of the specified name."},
+
+    {"show_regions", 
+    (PyCFunction)PyPf_show_regions, METH_NOARGS,
+    "Show region outlines and names over the map surface."},
+
+    {"hide_regions", 
+    (PyCFunction)PyPf_hide_regions, METH_NOARGS,
+    "Hide region outlines and names."},
 
     {"enable_fog_of_war", 
     (PyCFunction)PyPf_enable_fog_of_war, METH_NOARGS,
@@ -1033,6 +1044,18 @@ static PyObject *PyPf_set_active_font(PyObject *self, PyObject *args)
     }else{
         Py_RETURN_TRUE;
     }
+}
+
+static PyObject *PyPf_show_regions(PyObject *self)
+{
+    G_Region_SetRender(true);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_hide_regions(PyObject *self)
+{
+    G_Region_SetRender(false);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_enable_fog_of_war(PyObject *self)
@@ -2243,6 +2266,7 @@ PyMODINIT_FUNC initpf(void)
     S_Tile_PyRegister(module);
     S_Camera_PyRegister(module);
     S_Task_PyRegister(module);
+    S_Region_PyRegister(module);
     S_Constants_Expose(module); 
 }
 

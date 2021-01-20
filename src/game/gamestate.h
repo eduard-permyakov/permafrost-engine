@@ -37,10 +37,10 @@
 #define GAMESTATE_H
 
 #include "public/game.h"
-#include "../lib/public/vec.h"
-#include "../render/public/render_ctrl.h"
 #include "faction.h"
 #include "selection.h"
+#include "../lib/public/vec.h"
+#include "../render/public/render_ctrl.h"
 
 #include <stdint.h>
 

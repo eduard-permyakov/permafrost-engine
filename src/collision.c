@@ -892,3 +892,37 @@ bool C_LineCircleIntersection(struct line_seg_2d line, vec2_t center_xz, float r
     return true;
 }
 
+bool C_CircleRectIntersection(vec2_t center, float radius, struct box rect)
+{
+    vec2_t corners[4] = {
+        rect.x - rect.width, rect.z,
+        rect.x,              rect.z,
+        rect.x,              rect.z + rect.height,
+        rect.x - rect.width, rect.z + rect.height,
+    };
+    if(C_PointInsideRect2D(center, corners[0], corners[1], corners[2], corners[3]))
+        return true;
+
+    struct line_seg_2d edges[4] = {
+        (struct line_seg_2d){corners[0].x, corners[0].z, corners[1].x, corners[1].z},
+        (struct line_seg_2d){corners[1].x, corners[1].z, corners[2].x, corners[2].z},
+        (struct line_seg_2d){corners[2].x, corners[2].z, corners[3].x, corners[3].z},
+        (struct line_seg_2d){corners[3].x, corners[3].z, corners[0].x, corners[0].z},
+    };
+    for(int i = 0; i < ARR_SIZE(edges); i++) {
+        if(C_LineCircleIntersection(edges[i], center, radius, &(float){0}))
+            return true;
+    }
+    return false;
+}
+
+bool C_RectRectIntersection(struct box a, struct box b)
+{
+    struct range ax = (struct range){a.x - a.width, a.x};
+    struct range az = (struct range){a.z, a.z + a.height};
+    struct range bx = (struct range){b.x - b.width, b.x};
+    struct range bz = (struct range){b.z, b.z + b.height};
+
+    return (ranges_overlap(&ax, &bx) && ranges_overlap(&az, &bz));
+}
+

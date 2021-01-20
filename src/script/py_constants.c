@@ -562,6 +562,9 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, TRANSPORT_STRATEGY_EXCESS);
     PY_EXPOSE_ENUM(module, TRANSPORT_STRATEGY_NEAREST);
     PY_EXPOSE_ENUM(module, TRANSPORT_STRATEGY_GATHERING);
+
+    PY_EXPOSE_ENUM(module, REGION_RECTANGLE);
+    PY_EXPOSE_ENUM(module, REGION_CIRCLE);
 }
 
 static void s_expose_anim_constants(PyObject *module)

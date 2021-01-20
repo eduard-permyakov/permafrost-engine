@@ -125,5 +125,8 @@ bool  C_LineCircleIntersection(struct line_seg_2d line, vec2_t center_xz, float 
 bool  C_InfiniteLineIntersection(struct line_2d l1, struct line_2d l2, vec2_t *out_xz);
 bool  C_RayRayIntersection2D(struct line_2d l1, struct line_2d l2, vec2_t *out_xz);
 
+bool  C_CircleRectIntersection(vec2_t center, float radius, struct box rect);
+bool  C_RectRectIntersection(struct box a, struct box b);
+
 #endif
 

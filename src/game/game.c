@@ -639,7 +639,6 @@ static void g_clear_map_state(void)
 
         M_Raycast_Uninstall();
         M_FreeMinimap(s_gs.map);
-        AL_MapFree(s_gs.map);
         G_Combat_Shutdown();
         G_Move_Shutdown();
         G_Building_Shutdown();
@@ -650,6 +649,8 @@ static void g_clear_map_state(void)
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
         G_Fog_Shutdown();
+
+        AL_MapFree(s_gs.map);
         s_gs.map = NULL;
     }
 
@@ -1239,6 +1240,7 @@ void G_Update(void)
         }
     });
 
+    G_Region_Update();
     G_Sel_Update(s_gs.active_cam, &s_gs.visible, &s_gs.visible_obbs);
     g_set_contextual_cursor();
 
@@ -1420,6 +1422,7 @@ bool G_RemoveEntity(struct entity *ent)
     G_Harvester_RemoveEntity(ent->uid);
     G_Resource_RemoveEntity(ent);
     G_StorageSite_RemoveEntity(ent);
+    G_Region_RemoveEnt(ent->uid);
     G_Pos_Delete(ent->uid);
     return true;
 }
@@ -1735,6 +1738,7 @@ void G_Zombiefy(struct entity *ent)
 
     vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
     G_Fog_RemoveVision(xz_pos, ent->faction_id, ent->vision_range);
+    G_Region_RemoveEnt(ent->uid);
 
     ent->flags &= ~ENTITY_FLAG_SELECTABLE;
     ent->flags &= ~ENTITY_FLAG_COLLISION;

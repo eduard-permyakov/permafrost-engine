@@ -366,5 +366,26 @@ void G_StorageSite_SetFontColor(const struct nk_color *clr);
 void G_StorageSite_SetBorderColor(const struct nk_color *clr);
 void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style);
 
+/*###########################################################################*/
+/* GAME REGION                                                               */
+/*###########################################################################*/
+
+enum region_type{
+    REGION_RECTANGLE,
+    REGION_CIRCLE,
+};
+
+bool   G_Region_AddCircle(const char *name, vec2_t pos, float radius);
+bool   G_Region_AddRectangle(const char *name, vec2_t pos, float xlen, float zlen);
+void   G_Region_Remove(const char *name);
+
+bool   G_Region_SetPos(const char *name, vec2_t pos);
+bool   G_Region_GetPos(const char *name, vec2_t *out);
+void   G_Region_SetRender(bool on);
+bool   G_Region_GetRender(void);
+
+int    G_Region_GetEnts(const char *name, size_t maxout, struct entity *ents[static maxout]);
+bool   G_Region_ContainsEnt(const char *name, uint32_t uid);
+
 #endif
 

@@ -35,15 +35,31 @@
 
 #include "region.h"
 #include "game_private.h"
+#include "position.h"
 #include "../ui.h"
 #include "../main.h"
 #include "../camera.h"
+#include "../event.h"
+#include "../collision.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/vec.h"
 
 #include <assert.h>
+#include <math.h>
+
+
+#define MAX(a, b)    ((a) > (b) ? (a) : (b))
+#define ARR_SIZE(a)  (sizeof(a)/sizeof(a[0]))
+#define EPSILON      (1.0f/1024)
+
+VEC_TYPE(str, const char*)
+VEC_IMPL(static inline, str, const char*)
+
+VEC_TYPE(uid, uint32_t)
+VEC_IMPL(static inline, uid, uint32_t)
 
 struct region{
     enum region_type type;
@@ -55,9 +71,16 @@ struct region{
         };
     };
     vec2_t pos;
+    vec_uid_t curr_ents;
+    vec_uid_t prev_ents;
+};
+
+enum op{
+    ADD, REMOVE
 };
 
 KHASH_MAP_INIT_STR(region, struct region)
+KHASH_SET_INIT_STR(name)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -66,10 +89,106 @@ KHASH_MAP_INIT_STR(region, struct region)
 static const struct map *s_map;
 static khash_t(region)  *s_regions;
 static bool              s_render = false;
+/* Keep track of which regions intersect every chunk, 
+ * making a poor man's 2-level tree */
+static vec_str_t        *s_intersecting;
+static khash_t(name)    *s_dirty;
+/* Keep the event argument strings around for one tick, so that 
+ * they can be used by the event handlers safely */
+static vec_str_t         s_eventargs;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static bool region_intersects_chunk(const struct region *reg, struct map_resolution res, struct tile_desc td)
+{
+    struct box chunk = M_Tile_ChunkBounds(res, M_GetPos(s_map), td.chunk_r, td.chunk_c);
+
+    switch(reg->type) {
+    case REGION_CIRCLE: {
+        return C_CircleRectIntersection(reg->pos, reg->radius, chunk);
+    }
+    case REGION_RECTANGLE: {
+        struct box bounds = (struct box) {
+            reg->pos.x + reg->xlen/2.0,
+            reg->pos.z - reg->zlen/2.0,
+            reg->xlen,
+            reg->zlen
+        };
+        return C_RectRectIntersection(bounds, chunk);
+    }
+    default: return (assert(0), false);
+    }
+}
+
+static bool compare_keys(const char **a, const char **b)
+{
+    return *a == *b;
+}
+
+static bool compare_uids(uint32_t *a, uint32_t *b)
+{
+    return *a == *b;
+}
+
+static int compare_uint32s(const void* a, const void* b)
+{
+    uint32_t uida = *(uint32_t*)a;
+    uint32_t uidb = *(uint32_t*)b;
+    return (uida - uidb);
+}
+
+static void region_update_intersecting(const char *name, const struct region *reg, int op)
+{
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    int delta;
+    int chunklen = MAX(X_COORDS_PER_TILE * res.chunk_w * res.tile_w, Z_COORDS_PER_TILE * res.chunk_h * res.tile_h);
+
+    switch(reg->type) {
+    case REGION_CIRCLE:
+        delta = ceil(reg->radius / chunklen);
+        break;
+    case REGION_RECTANGLE:
+        delta = MAX(ceil(reg->xlen/2.0f / chunklen), ceil(reg->zlen/2.0f / chunklen));
+        break;
+    default: assert(0);
+    }
+
+    struct tile_desc td;
+    if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), reg->pos, &td))
+        return;
+
+    for(int dr = -delta; dr <= delta; dr++) {
+    for(int dc = -delta; dc <= delta; dc++) {
+
+        struct tile_desc curr = td;
+        if(!M_Tile_RelativeDesc(res, &curr, dc * res.tile_h, dr * res.tile_w))
+            continue;
+
+        if(!region_intersects_chunk(reg, res, curr))
+            continue;
+
+        vec_str_t *chunk = &s_intersecting[curr.chunk_r * res.chunk_w + curr.chunk_c];
+
+        switch(op) {
+        case REMOVE: {
+            int idx = vec_str_indexof(chunk, name, compare_keys);
+            if(idx != -1) {
+                vec_str_del(chunk, idx);
+            }
+            break;
+        }
+        case ADD: {
+            vec_str_push(chunk, name);
+            break;
+        }
+        default: assert(0);
+        }
+    }}
+}
 
 static bool region_add(const char *name, struct region reg)
 {
@@ -86,7 +205,129 @@ static bool region_add(const char *name, struct region reg)
         return false;
 
     kh_value(s_regions, k) = reg;
+    region_update_intersecting(key, &reg, ADD);
     return true;
+}
+
+static bool region_contains(const struct region *reg, vec2_t point)
+{
+    switch(reg->type) {
+    case REGION_CIRCLE: {
+        return C_PointInsideCircle2D(point, reg->pos, reg->radius);
+    }
+    case REGION_RECTANGLE: {
+        vec2_t corners[4] = {
+            (vec2_t){reg->pos.x + reg->xlen/2.0f, reg->pos.z - reg->zlen/2.0f},
+            (vec2_t){reg->pos.x - reg->xlen/2.0f, reg->pos.z - reg->zlen/2.0f},
+            (vec2_t){reg->pos.x - reg->xlen/2.0f, reg->pos.z + reg->zlen/2.0f},
+            (vec2_t){reg->pos.x + reg->xlen/2.0f, reg->pos.z + reg->zlen/2.0f},
+        };
+        return C_PointInsideRect2D(point, corners[0], corners[2], corners[1], corners[3]);
+    }
+    default: 
+        return (assert(0), false);
+    }
+}
+
+static size_t regions_at_point(vec2_t point, size_t maxout, struct region *out[static maxout], 
+                               const char *out_names[static maxout])
+{
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    struct tile_desc td;
+    if(!M_Tile_DescForPoint2D(res, M_GetPos(s_map), point, &td))
+        return 0;
+
+    size_t ret = 0;
+    vec_str_t *chunk = &s_intersecting[td.chunk_r * res.chunk_w + td.chunk_c];
+    for(int i = 0; i < vec_size(chunk); i++) {
+
+        if(ret == maxout)
+            break;
+
+        const char *name = vec_AT(chunk, i);
+        khiter_t k = kh_get(region, s_regions, name);
+        assert(k != kh_end(s_regions));
+
+        struct region *reg = &kh_value(s_regions, k);
+        if(!region_contains(reg, point))
+            continue;
+
+        out[ret] = reg;
+        out_names[ret] = name;
+        ret++;
+    }
+    return ret;
+}
+
+static void regions_remove_ent(uint32_t uid, vec2_t pos)
+{
+    const char *names[512];
+    struct region *regs[512];
+    size_t nregs = regions_at_point(pos, ARR_SIZE(regs), regs, names);
+
+    for(int i = 0; i < nregs; i++) {
+        int idx = vec_uid_indexof(&regs[i]->curr_ents, uid, compare_uids);
+        if(idx == -1)
+            continue;
+        vec_uid_del(&regs[i]->curr_ents, idx);
+        kh_put(name, s_dirty, names[i], &(int){0});
+    }
+}
+
+static void regions_add_ent(uint32_t uid, vec2_t pos)
+{
+    const struct entity *ent = G_EntityForUID(uid);
+    if(!ent || (ent->flags & (ENTITY_FLAG_ZOMBIE | ENTITY_FLAG_MARKER)))
+        return;
+
+    const char *names[512];
+    struct region *regs[512];
+    size_t nregs = regions_at_point(pos, ARR_SIZE(regs), regs, names);
+
+    for(int i = 0; i < nregs; i++) {
+
+        int idx = vec_uid_indexof(&regs[i]->curr_ents, uid, compare_uids);
+        if(idx != -1)
+            continue;
+
+        vec_uid_push(&regs[i]->curr_ents, uid);
+        kh_put(name, s_dirty, names[i], &(int){0});
+    }
+}
+
+static void region_update_ents(const char *name, struct region *reg)
+{
+    struct entity *ents[1024];
+    size_t nents;
+
+    switch(reg->type) {
+    case REGION_CIRCLE: {
+        nents = G_Pos_EntsInCircle(reg->pos, reg->radius, ents, ARR_SIZE(ents));
+        break;
+    }
+    case REGION_RECTANGLE: {
+        vec2_t xz_min = (vec2_t){reg->pos.x - reg->xlen/2.0f, reg->pos.z - reg->zlen/2.0f};
+        vec2_t xz_max = (vec2_t){reg->pos.x + reg->xlen/2.0f, reg->pos.z + reg->zlen/2.0f};
+        nents = G_Pos_EntsInRect(xz_min, xz_max, ents, ARR_SIZE(ents));
+        break;
+    }
+    default: assert(0);
+    }
+
+    vec_uid_reset(&reg->curr_ents);
+    for(int i = 0; i < nents; i++) {
+        if(ents[i]->flags & ENTITY_FLAG_MARKER)
+            continue;
+        if(ents[i]->flags & ENTITY_FLAG_ZOMBIE)
+            continue;
+        vec_uid_push(&reg->curr_ents, ents[i]->uid);
+    }
+
+    khiter_t k = kh_get(region, s_regions, name);
+    assert(k != kh_end(s_regions));
+    kh_put(name, s_dirty, kh_key(s_regions, k), &(int){0});
 }
 
 static vec2_t region_ss_pos(vec2_t pos)
@@ -112,12 +353,78 @@ static vec2_t region_ss_pos(vec2_t pos)
     return (vec2_t){screen_x, screen_y};
 }
 
+static void region_notify_changed(const char *name, struct region *reg)
+{
+    size_t n = reg->curr_ents.size;
+    size_t m = reg->prev_ents.size;
+
+    qsort(reg->curr_ents.array, n, sizeof(uint32_t), compare_uint32s);
+    qsort(reg->prev_ents.array, m, sizeof(uint32_t), compare_uint32s);
+
+    /* use the algorithm for finding the symmetric difference 
+     * of two sorted arrays: */
+    int i = 0, j = 0;
+    while(i < n && j < m) {
+
+        if(reg->curr_ents.array[i] < reg->prev_ents.array[j]) {
+
+            const char *arg = pf_strdup(name);
+            vec_str_push(&s_eventargs, arg);
+
+            uint32_t uid = reg->curr_ents.array[i];
+            E_Entity_Notify(EVENT_ENTERED_REGION, uid, (void*)arg, ES_ENGINE);
+
+            i++;
+
+        }else if(reg->prev_ents.array[j] < reg->curr_ents.array[i]) {
+
+            const char *arg = pf_strdup(name);
+            vec_str_push(&s_eventargs, arg);
+
+            uint32_t uid = reg->prev_ents.array[j];
+            E_Entity_Notify(EVENT_EXITED_REGION, uid, (void*)arg, ES_ENGINE);
+
+            j++;
+
+        }else{
+
+            i++;
+            j++;
+        }
+    }
+
+    while(i < n) {
+    
+        const char *arg = pf_strdup(name);
+        vec_str_push(&s_eventargs, arg);
+
+        uint32_t uid = reg->curr_ents.array[i];
+        E_Entity_Notify(EVENT_ENTERED_REGION, uid, (void*)arg, ES_ENGINE);
+
+        i++;
+    }
+
+    while(j < m) {
+    
+        const char *arg = pf_strdup(name);
+        vec_str_push(&s_eventargs, arg);
+
+        uint32_t uid = reg->prev_ents.array[j];
+        E_Entity_Notify(EVENT_EXITED_REGION, uid, (void*)arg, ES_ENGINE);
+
+        j++;
+    }
+
+    vec_uid_reset(&reg->prev_ents);
+    vec_uid_copy(&reg->prev_ents, &reg->curr_ents);
+}
+
 static void on_render_3d(void *user, void *event)
 {
     if(!s_render)
         return;
 
-    const float width = 0.25f;
+    const float width = 0.5f;
     const vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
 
     const char *key;
@@ -144,10 +451,10 @@ static void on_render_3d(void *user, void *event)
         case REGION_RECTANGLE: {
 
             vec2_t corners[4] = {
-                (vec2_t){reg.pos.x + reg.xlen, reg.pos.z - reg.zlen},
-                (vec2_t){reg.pos.x - reg.xlen, reg.pos.z - reg.zlen},
-                (vec2_t){reg.pos.x - reg.xlen, reg.pos.z + reg.zlen},
-                (vec2_t){reg.pos.x + reg.xlen, reg.pos.z + reg.zlen},
+                (vec2_t){reg.pos.x + reg.xlen/2.0f, reg.pos.z - reg.zlen/2.0f},
+                (vec2_t){reg.pos.x - reg.xlen/2.0f, reg.pos.z - reg.zlen/2.0f},
+                (vec2_t){reg.pos.x - reg.xlen/2.0f, reg.pos.z + reg.zlen/2.0f},
+                (vec2_t){reg.pos.x + reg.xlen/2.0f, reg.pos.z + reg.zlen/2.0f},
             };
             R_PushCmd((struct rcmd){
                 .func = R_GL_DrawQuad,
@@ -164,8 +471,9 @@ static void on_render_3d(void *user, void *event)
         default: assert(0);
         }
 
+        float len = strlen(key) * 7.5f;
         vec2_t ss_pos = region_ss_pos(reg.pos);
-        struct rect bounds = (struct rect){ss_pos.x - 75, ss_pos.y, 150, 16};
+        struct rect bounds = (struct rect){ss_pos.x - len/2.0, ss_pos.y, len, 16};
         struct rgba color = (struct rgba){255, 0, 0, 255};
         UI_DrawText(key, bounds, color);
     });
@@ -181,16 +489,63 @@ bool G_Region_Init(const struct map *map)
     if(!s_regions)
         goto fail_regions;
 
+    s_dirty = kh_init(name);
+    if(!s_dirty)
+        goto fail_dirty;
+
+    struct map_resolution res;
+    M_GetResolution(map, &res);
+
+    s_intersecting = calloc(res.chunk_w * res.chunk_h, sizeof(vec_str_t));
+    if(!s_intersecting)
+        goto fail_intersecting;
+
+    for(int i = 0; i < res.chunk_w * res.chunk_h; i++) {
+        vec_str_t *vec = ((vec_str_t*)s_intersecting) + i;
+        vec_str_init(vec);
+    }
+
+    vec_str_init(&s_eventargs);
+    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     s_map = map;
     return true;
 
+fail_intersecting:
+    kh_destroy(name, s_dirty);
+fail_dirty:
+    kh_destroy(region, s_regions);
 fail_regions:
     return false;
 }
 
 void G_Region_Shutdown(void)
 {
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    for(int i = 0; i < res.chunk_w * res.chunk_h; i++) {
+        vec_str_t *vec = ((vec_str_t*)s_intersecting) + i;
+        vec_str_destroy(vec);
+    }
+    free(s_intersecting);
+
+    const char *key;
+    struct region reg;
+
+    kh_foreach(s_regions, key, reg, {
+        free((void*)key);
+        vec_uid_destroy(&reg.curr_ents);
+        vec_uid_destroy(&reg.prev_ents);
+    });
+
+    for(int i = 0; i < vec_size(&s_eventargs); i++) {
+        free((void*)vec_AT(&s_eventargs, i));
+    }
+    vec_str_destroy(&s_eventargs);
+
+    kh_destroy(name, s_dirty);
     kh_destroy(region, s_regions);
+    E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     s_map = NULL;
 }
 
@@ -201,18 +556,32 @@ bool G_Region_AddCircle(const char *name, vec2_t pos, float radius)
         .radius = radius,
         .pos = pos
     };
-    return region_add(name, newreg);
+    vec_uid_init(&newreg.curr_ents);
+    vec_uid_init(&newreg.prev_ents);
+
+    if(!region_add(name, newreg))
+        return false;
+
+    region_update_ents(name, &newreg);
+    return true;
 }
 
 bool G_Region_AddRectangle(const char *name, vec2_t pos, float xlen, float zlen)
 {
     struct region newreg = (struct region) {
-        .type = REGION_CIRCLE,
+        .type = REGION_RECTANGLE,
         .xlen = xlen,
         .zlen = zlen,
         .pos = pos
     };
-    return region_add(name, newreg);
+    vec_uid_init(&newreg.curr_ents);
+    vec_uid_init(&newreg.prev_ents);
+
+    if(!region_add(name, newreg))
+        return false;
+
+    region_update_ents(name, &newreg);
+    return true;
 }
 
 void G_Region_Remove(const char *name)
@@ -220,16 +589,61 @@ void G_Region_Remove(const char *name)
     khiter_t k = kh_get(region, s_regions, name);
     if(k == kh_end(s_regions))
         return;
+
+    const char *key = kh_key(s_regions, k);
+    struct region *reg = &kh_value(s_regions, k);
+
+    for(int i = 0; i < vec_size(&reg->curr_ents); i++) {
+
+        const char *arg = pf_strdup(name);
+        vec_str_push(&s_eventargs, arg);
+
+        uint32_t uid = vec_AT(&reg->curr_ents, i);
+        E_Entity_Notify(EVENT_EXITED_REGION, uid, (void*)arg, ES_ENGINE);
+    }
+
+    region_update_intersecting(key, &kh_value(s_regions, k), REMOVE);
+    vec_uid_destroy(&kh_val(s_regions, k).curr_ents);
+    vec_uid_destroy(&kh_val(s_regions, k).prev_ents);
     kh_del(region, s_regions, k);
+
+    k = kh_get(name, s_dirty, name);
+    if(k != kh_end(s_dirty)) {
+        kh_del(name, s_dirty, k);
+    }
+
+    free((void*)key);
 }
 
-bool G_Region_Move(const char *name, vec2_t pos)
+bool G_Region_SetPos(const char *name, vec2_t pos)
 {
     khiter_t k = kh_get(region, s_regions, name);
     if(k == kh_end(s_regions))
         return false;
 
-    kh_value(s_regions, k).pos = pos;
+    const char *key = kh_key(s_regions, k);
+    struct region *reg = &kh_value(s_regions, k);
+
+    vec2_t delta;
+    PFM_Vec2_Sub(&reg->pos, &pos, &delta);
+    if(PFM_Vec2_Len(&delta) <= EPSILON)
+        return true;
+
+    region_update_intersecting(key, reg, REMOVE);
+    reg->pos = pos;
+    region_update_intersecting(key, reg, ADD);
+
+    region_update_ents(key, reg);
+    return true;
+}
+
+bool G_Region_GetPos(const char *name, vec2_t *out)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
+
+    *out = kh_value(s_regions, k).pos;
     return true;
 }
 
@@ -243,9 +657,20 @@ bool G_Region_ContainsEnt(const char *name, uint32_t uid)
     return true;
 }
 
+void G_Region_RemoveRef(uint32_t uid, vec2_t oldpos)
+{
+    regions_remove_ent(uid, oldpos);
+}
+
+void G_Region_AddRef(uint32_t uid, vec2_t newpos)
+{
+    regions_add_ent(uid, newpos);
+}
+
 void G_Region_RemoveEnt(uint32_t uid)
 {
-
+    vec2_t pos = G_Pos_GetXZ(uid);
+    regions_remove_ent(uid, pos);
 }
 
 void G_Region_SetRender(bool on)
@@ -256,5 +681,26 @@ void G_Region_SetRender(bool on)
 bool G_Region_GetRender(void)
 {
     return s_render;
+}
+
+void G_Region_Update(void)
+{
+    for(int i = 0; i < vec_size(&s_eventargs); i++) {
+        free((void*)vec_AT(&s_eventargs, i));
+    }
+    vec_str_reset(&s_eventargs);
+
+    for(khiter_t k = kh_begin(s_dirty); k != kh_end(s_dirty); k++) {
+        if(!kh_exist(s_dirty, k))
+            continue;
+
+        const char *key = kh_key(s_dirty, k);
+        khiter_t l = kh_get(region, s_regions, key);
+        assert(l != kh_end(s_regions));
+
+        struct region *reg = &kh_value(s_regions, l);
+        region_notify_changed(key, reg);
+    }
+    kh_clear(name, s_dirty);
 }
 
