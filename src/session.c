@@ -118,6 +118,7 @@ static bool subsession_save(SDL_RWops *stream)
      * when moving from sessin to session. A 'lost' event can cause
      * some event-driven state machines to enter a bad state. 
      */
+    E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
     E_FlushEventQueue();
 
     if(!Cursor_SaveState(stream))

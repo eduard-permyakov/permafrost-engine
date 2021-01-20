@@ -519,22 +519,10 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam,
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    int width, height;
-    Engine_WinDrawableSize(&width, &height);
-
-    mat4x4_t res_scale;
-    vec2_t mm_vres;
-    M_GetMinimapAdjVres(map, &mm_vres);
-    PFM_Mat4x4_MakeScale(width / mm_vres.x, height / mm_vres.y, 1.0f, &res_scale);
-
-    center_pos->x *= (width / mm_vres.x);
-    center_pos->y *= (height / mm_vres.y);
-
     mat4x4_t tmp;
     mat4x4_t tilt, trans, scale, model;
     PFM_Mat4x4_MakeRotZ(DEG_TO_RAD(-45.0f), &tilt);
-    PFM_Mat4x4_MakeScale((*side_len_px)/2.0f, (*side_len_px)/2.0f, 1.0f, &tmp);
-    PFM_Mat4x4_Mult4x4(&tmp, &res_scale, &scale);
+    PFM_Mat4x4_MakeScale((*side_len_px)/2.0f, (*side_len_px)/2.0f, 1.0f, &scale);
     PFM_Mat4x4_MakeTrans(center_pos->x, center_pos->y, 0.0f, &trans);
     PFM_Mat4x4_Mult4x4(&scale, &tilt, &tmp);
     PFM_Mat4x4_Mult4x4(&trans, &tmp, &model);
@@ -543,8 +531,7 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam,
      * the minimap to create the minimap border */
     float scale_fac = ((*side_len_px) + 2*MINIMAP_BORDER_WIDTH)/2.0f;
     mat4x4_t border_scale, border_model;
-    PFM_Mat4x4_MakeScale(scale_fac, scale_fac, scale_fac, &tmp);
-    PFM_Mat4x4_Mult4x4(&tmp, &res_scale, &border_scale);
+    PFM_Mat4x4_MakeScale(scale_fac, scale_fac, scale_fac, &border_scale);
     PFM_Mat4x4_Mult4x4(&border_scale, &tilt, &tmp);
     PFM_Mat4x4_Mult4x4(&trans, &tmp, &border_model);
 

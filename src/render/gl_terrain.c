@@ -131,10 +131,10 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos)
     R_GL_Texture_BindArray(&s_map_textures, shader_prog);
     R_GL_RingbufferBindLast(s_fog_ring, GL_TEXTURE1, shader_prog, "visbuff");
 
-	R_GL_StateSet(GL_U_MAP_POS, (struct uval){
+    R_GL_StateSet(GL_U_MAP_POS, (struct uval){
         .type = UTYPE_VEC2,
         .val.as_vec2 = *pos
-	});
+    });
 
     s_map_ctx_active = true;
     GL_PERF_RETURN_VOID();

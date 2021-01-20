@@ -359,7 +359,6 @@ void E_ServiceQueue(void)
         /* event arg already released */
     }
 
-    e_handle_event( (struct event){EVENT_UPDATE_UI,  NULL, ES_ENGINE, GLOBAL_ID}, false);
     e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID}, false);
 
     PERF_RETURN_VOID();
@@ -386,7 +385,6 @@ void E_FlushEventQueue(void)
         while(queue_event_pop(queue, &event)) {
             e_handle_event(event, true);
         }
-        e_handle_event( (struct event){EVENT_UPDATE_UI,  NULL, ES_ENGINE, GLOBAL_ID}, true);
         e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID}, true);
         e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID}, true);
     }

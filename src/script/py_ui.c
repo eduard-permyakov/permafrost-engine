@@ -107,6 +107,8 @@ static PyObject *PyWindow_checkbox(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_color_picker(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_image(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_spacer(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_property_float(PyObject *self, PyObject *args);
+static PyObject *PyWindow_property_int(PyObject *self, PyObject *args);
 static PyObject *PyWindow_file_browser(PyWindowObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
@@ -290,6 +292,14 @@ static PyMethodDef PyWindow_methods[] = {
     {"spacer", 
     (PyCFunction)PyWindow_spacer, METH_VARARGS,
     "Empty widget to consume slots in a row."},
+
+    {"property_float", 
+    (PyCFunction)PyWindow_property_float, METH_VARARGS,
+    "Editable input field for floating-point properties."},
+
+    {"property_int", 
+    (PyCFunction)PyWindow_property_int, METH_VARARGS,
+    "Editable input field for integer properties."},
 
     {"file_browser", 
     (PyCFunction)PyWindow_file_browser, METH_VARARGS | METH_KEYWORDS,
@@ -1129,6 +1139,37 @@ static PyObject *PyWindow_spacer(PyWindowObject *self, PyObject *args)
 
     nk_spacing(s_nk_ctx, ncols);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_property_float(PyObject *self, PyObject *args)
+{
+    const char *name;
+    float min, max, val, step, drag_step;
+
+    if(!PyArg_ParseTuple(args, "sfffff", &name, &min, &max, &val, &step, &drag_step)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting 6 arguments: name (string), min (float), max (float), "
+            "val (float), step (float), drag_step (float).");
+        return NULL;
+    }
+
+    nk_property_float(s_nk_ctx, name, min, &val, max, step, drag_step);
+    return PyFloat_FromDouble(val);
+}
+
+static PyObject *PyWindow_property_int(PyObject *self, PyObject *args)
+{
+    const char *name;
+    int min, max, val, step;
+    float drag_step;
+
+    if(!PyArg_ParseTuple(args, "siiiif", &name, &min, &max, &val, &step, &drag_step)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting 6 arguments: name (string), min (int), max (int), "
+            "val (int), step (int), drag_step (float).");
+        return NULL;
+    }
+
+    nk_property_int(s_nk_ctx, name, min, &val, max, step, drag_step);
+    return PyInt_FromLong(val);
 }
 
 static PyObject *PyWindow_file_browser(PyWindowObject *self, PyObject *args, PyObject *kwargs)

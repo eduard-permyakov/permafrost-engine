@@ -1244,6 +1244,8 @@ void G_Update(void)
     G_Sel_Update(s_gs.active_cam, &s_gs.visible, &s_gs.visible_obbs);
     g_set_contextual_cursor();
 
+    E_Global_NotifyImmediate(EVENT_UPDATE_UI, NULL, ES_ENGINE);
+
     PERF_RETURN_VOID();
 }
 
