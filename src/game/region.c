@@ -649,12 +649,38 @@ bool G_Region_GetPos(const char *name, vec2_t *out)
 
 int G_Region_GetEnts(const char *name, size_t maxout, struct entity *ents[static maxout])
 {
-    return 0;
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return 0;
+
+    const struct region *reg = &kh_value(s_regions, k);
+    size_t ret = 0;
+
+    for(int i = 0; i < vec_size(&reg->curr_ents); i++) {
+
+        struct entity *ent = G_EntityForUID(vec_AT(&reg->curr_ents, i));
+        assert(ent);
+
+        if(ret == maxout)
+            return ret;
+        ents[ret++] = ent;
+    }
+    return ret;
 }
 
 bool G_Region_ContainsEnt(const char *name, uint32_t uid)
 {
-    return true;
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
+
+    const struct region *reg = &kh_value(s_regions, k);
+    for(int i = 0; i < vec_size(&reg->curr_ents); i++) {
+        uint32_t curr = vec_AT(&reg->curr_ents, i);
+        if(curr == uid)
+            return true;
+    }
+    return false;
 }
 
 void G_Region_RemoveRef(uint32_t uid, vec2_t oldpos)

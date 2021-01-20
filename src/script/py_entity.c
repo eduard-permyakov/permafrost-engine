@@ -3157,6 +3157,20 @@ void S_Entity_Shutdown(void)
     kh_destroy(PyObject, s_uid_pyobj_table);
 }
 
+bool S_Entity_Check(PyObject *obj)
+{
+    return PyObject_IsInstance(obj, (PyObject*)&PyEntity_type);
+}
+
+bool S_Entity_UIDForObj(PyObject *obj, uint32_t *out)
+{
+    if(!PyObject_IsInstance(obj, (PyObject*)&PyEntity_type))
+        return false;
+
+    *out = ((PyEntityObject*)obj)->ent->uid;
+    return true;
+}
+
 PyObject *S_Entity_ObjForUID(uint32_t uid)
 {
     khiter_t k = kh_get(PyObject, s_uid_pyobj_table, uid);

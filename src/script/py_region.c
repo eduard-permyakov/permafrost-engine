@@ -34,10 +34,14 @@
  */
 
 #include "py_region.h"
+#include "py_entity.h"
 #include "../lib/public/pf_string.h"
 #include "../game/public/game.h"
 
 #include <assert.h>
+
+
+#define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
 typedef struct {
     PyObject_HEAD
@@ -48,6 +52,8 @@ typedef struct {
 static PyObject *PyRegion_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static void      PyRegion_dealloc(PyRegionObject *self);
 
+static PyObject *PyRegion_curr_ents(PyRegionObject *self);
+static PyObject *PyRegion_contains(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_pickle(PyRegionObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyRegion_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -59,6 +65,14 @@ static int       PyRegion_set_pos(PyRegionObject *self, PyObject *value, void *c
 /*****************************************************************************/
 
 static PyMethodDef PyRegion_methods[] = {
+    {"curr_ents", 
+    (PyCFunction)PyRegion_curr_ents, METH_NOARGS,
+    "Get a list of all the entities currently within the region."},
+
+    {"contains", 
+    (PyCFunction)PyRegion_contains, METH_VARARGS,
+    "Returns True if the specified entity is currently within the region."},
+
     {"__pickle__", 
     (PyCFunction)PyRegion_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine region object to a string."},
@@ -218,6 +232,47 @@ static void PyRegion_dealloc(PyRegionObject *self)
     G_Region_Remove(self->name);
     free((void*)self->name);
     Py_DECREF(self);
+}
+
+static PyObject *PyRegion_curr_ents(PyRegionObject *self)
+{
+    struct entity *ents[512];
+    size_t nents = G_Region_GetEnts(self->name, ARR_SIZE(ents), ents);
+
+    PyObject *ret = PyList_New(0);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < nents; i++) {
+        PyObject *ent = S_Entity_ObjForUID(ents[i]->uid);
+        if(!ent)
+            continue;
+
+        if(0 != PyList_Append(ret, ent)) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+    }
+    return ret;
+}
+
+static PyObject *PyRegion_contains(PyRegionObject *self, PyObject *args)
+{
+    PyObject *obj;
+
+    if(!PyArg_ParseTuple(args, "O", &obj)
+    || !S_Entity_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single pf.Entity instance.");
+        return NULL;
+    }
+
+    uint32_t uid = 0;
+    S_Entity_UIDForObj(obj, &uid);
+
+    if(G_Region_ContainsEnt(self->name, uid))
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
 }
 
 static PyObject *PyRegion_pickle(PyRegionObject *self, PyObject *args, PyObject *kwargs)
