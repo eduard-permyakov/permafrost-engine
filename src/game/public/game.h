@@ -384,6 +384,10 @@ bool   G_Region_GetPos(const char *name, vec2_t *out);
 void   G_Region_SetRender(bool on);
 bool   G_Region_GetRender(void);
 
+bool   G_Region_GetRadius(const char *name, float *out);
+bool   G_Region_GetXLen(const char *name, float *out);
+bool   G_Region_GetZLen(const char *name, float *out);
+
 int    G_Region_GetEnts(const char *name, size_t maxout, struct entity *ents[static maxout]);
 bool   G_Region_ContainsEnt(const char *name, uint32_t uid);
 

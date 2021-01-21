@@ -62,6 +62,9 @@ static PyObject *PyRegion_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
 
 static PyObject *PyRegion_get_pos(PyRegionObject *self, void *closure);
 static int       PyRegion_set_pos(PyRegionObject *self, PyObject *value, void *closure);
+static PyObject *PyRegion_get_name(PyRegionObject *self, void *closure);
+static PyObject *PyRegion_get_type(PyRegionObject *self, void *closure);
+static PyObject *PyRegion_get_parameters(PyRegionObject *self, void *closure);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -92,6 +95,18 @@ static PyGetSetDef PyRegion_getset[] = {
     {"position",
     (getter)PyRegion_get_pos, (setter)PyRegion_set_pos,
     "The current worldspace position of the region", 
+    NULL},
+    {"name",
+    (getter)PyRegion_get_name, NULL,
+    "The name of the region.", 
+    NULL},
+    {"type",
+    (getter)PyRegion_get_type, NULL,
+    "The type (pf.REGION_CIRCLE or pf.REGION_RECTANGLE) of the region.", 
+    NULL},
+    {"parameters",
+    (getter)PyRegion_get_parameters, NULL,
+    "Get a dictionary with the size parameters of the region, which vary depending on the region type", 
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -171,6 +186,7 @@ static PyObject *PyRegion_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     if(!PyArg_ParseTupleAndKeywords(args, kwds, "is(ff)|f(ff)", kwlist, &regtype, &name, 
         &position.x, &position.z, &radius, &dims.x, &dims.z)) {
         assert(PyErr_Occurred());
+        printf("we failed here\n");
         return NULL;
     }
 
@@ -197,10 +213,10 @@ static PyObject *PyRegion_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         assert(PyErr_Occurred());
         return NULL;
     }
-
     const char *copy = pf_strdup(name);
     if(!name) {
         Py_DECREF(self);
+        type->tp_free(self);
         return PyErr_NoMemory();
     }
 
@@ -225,7 +241,7 @@ static PyObject *PyRegion_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         PyErr_SetString(PyExc_RuntimeError, errbuff);
 
         free((void*)copy);
-        Py_DECREF(self);
+        type->tp_free(self);
         return NULL;
     }
 
@@ -320,6 +336,58 @@ static int PyRegion_set_pos(PyRegionObject *self, PyObject *value, void *closure
 
     G_Region_SetPos(self->name, newpos);
     return 0;
+}
+
+static PyObject *PyRegion_get_name(PyRegionObject *self, void *closure)
+{
+    return PyString_FromString(self->name);
+}
+
+static PyObject *PyRegion_get_type(PyRegionObject *self, void *closure)
+{
+    return PyInt_FromLong(self->type);
+}
+
+static PyObject *PyRegion_get_parameters(PyRegionObject *self, void *closure)
+{
+    PyObject *dict = PyDict_New();
+    if(!dict)
+        return NULL;
+
+    switch(self->type) {
+    case REGION_CIRCLE: {
+        float raw = 0.0f;
+        G_Region_GetRadius(self->name, &raw);
+        PyObject *radius = PyFloat_FromDouble(raw);
+        if(!radius)
+            goto fail_params;
+        int status = PyDict_SetItemString(dict, "radius", radius);
+        Py_DECREF(radius);
+        if(status != 0)
+            goto fail_params;
+        break;
+    }
+    case REGION_RECTANGLE: {
+        float rawx = 0.0f, rawz = 0.0f;
+        G_Region_GetXLen(self->name, &rawx);
+        G_Region_GetZLen(self->name, &rawz);
+        PyObject *dims = Py_BuildValue("ff", rawx, rawz);
+        if(!dims)
+            goto fail_params;
+        int status = PyDict_SetItemString(dict, "dimensions", dims);
+        Py_DECREF(dims);
+        if(status != 0)
+            goto fail_params;
+        break;
+    }
+    default: assert(0);
+    }
+
+    return dict;
+
+fail_params:
+    Py_DECREF(dict);
+    return NULL;
 }
 
 /*****************************************************************************/

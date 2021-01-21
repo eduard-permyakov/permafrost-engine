@@ -738,4 +738,43 @@ void G_Region_Update(void)
     }
     kh_clear(name, s_dirty);
 }
+   
+bool G_Region_GetRadius(const char *name, float *out)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
 
+    if(kh_value(s_regions, k).type != REGION_CIRCLE)
+        return false;
+
+    *out = kh_value(s_regions, k).radius;
+    return true;
+}
+
+bool G_Region_GetXLen(const char *name, float *out)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
+
+    if(kh_value(s_regions, k).type != REGION_RECTANGLE)
+        return false;
+
+    *out = kh_value(s_regions, k).xlen;
+    return true;
+}
+
+bool G_Region_GetZLen(const char *name, float *out)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
+
+    if(kh_value(s_regions, k).type != REGION_RECTANGLE)
+        return false;
+
+    *out = kh_value(s_regions, k).zlen;
+    return true;
+}
+   
