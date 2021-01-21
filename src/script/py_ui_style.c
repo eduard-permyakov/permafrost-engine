@@ -287,6 +287,46 @@ static int       PyUIToggleStyle_set_border(PyUIToggleStyleObject *self, PyObjec
 static PyObject *PyUIToggleStyle_pickle(PyUIToggleStyleObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyUIToggleStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
+typedef struct {
+    PyObject_HEAD
+    struct nk_style_scrollbar *style;
+}PyUIScrollbarStyleObject;
+
+/* background */
+static PyObject *PyUIScrollbarStyle_get_normal(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_normal(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIScrollbarStyle_get_hover(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_hover(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIScrollbarStyle_get_active(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_active(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIScrollbarStyle_get_border_color(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_border_color(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+
+/* cursor */
+static PyObject *PyUIScrollbarStyle_get_cursor_normal(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_cursor_normal(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIScrollbarStyle_get_cursor_hover(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_cursor_hover(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIScrollbarStyle_get_cursor_active(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_cursor_active(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIScrollbarStyle_get_cursor_border_color(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_cursor_border_color(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+
+/* properties */
+static PyObject *PyUIScrollbarStyle_get_border(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_border(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIScrollbarStyle_get_rounding(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_rounding(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIScrollbarStyle_get_border_cursor(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_border_cursor(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIScrollbarStyle_get_rounding_cursor(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_rounding_cursor(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIScrollbarStyle_get_padding(PyUIScrollbarStyleObject *self, void *);
+static int       PyUIScrollbarStyle_set_padding(PyUIScrollbarStyleObject *self, PyObject *value, void *);
+
+static PyObject *PyUIScrollbarStyle_pickle(PyUIScrollbarStyleObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyUIScrollbarStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -1026,6 +1066,149 @@ static PyTypeObject PyUIToggleStyle_type = {
     PyUIToggleStyle_methods,   /* tp_methods */
     0,                         /* tp_members */
     PyUIToggleStyle_getset,    /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    0,                         /* tp_init */
+    0,                         /* tp_alloc */
+    0,                         /* tp_new */
+};
+
+static PyMethodDef PyUIScrollbarStyle_methods[] = {
+    {"__pickle__", 
+    (PyCFunction)PyUIScrollbarStyle_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine UIScrollbarStyle object to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyUIScrollbarStyle_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.UIScrollbarStyle instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyGetSetDef PyUIScrollbarStyle_getset[] = {
+    {"normal",
+    (getter)PyUIScrollbarStyle_get_normal, 
+    (setter)PyUIScrollbarStyle_set_normal,
+    "The look of the scrollbar in the normal state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"hover",
+    (getter)PyUIScrollbarStyle_get_hover, 
+    (setter)PyUIScrollbarStyle_set_hover,
+    "The look of the scrollbar in the hovered state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"active",
+    (getter)PyUIScrollbarStyle_get_active, 
+    (setter)PyUIScrollbarStyle_set_active,
+    "The look of the scrollbar in the active state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"border_color",
+    (getter)PyUIScrollbarStyle_get_border_color, 
+    (setter)PyUIScrollbarStyle_set_border_color,
+    "The color of the scrollbar border - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"cursor_normal",
+    (getter)PyUIScrollbarStyle_get_cursor_normal, 
+    (setter)PyUIScrollbarStyle_set_cursor_normal,
+    "The look of the scrollbar cursor (selection indicator) in the normal state - "
+    "either an (R, G, B, A) tuple or a string representing a path to an image.",
+    NULL},
+
+    {"cursor_hover",
+    (getter)PyUIScrollbarStyle_get_cursor_hover, 
+    (setter)PyUIScrollbarStyle_set_cursor_hover,
+    "The look of the scrollbar cursor (selection indicator) in the hover state - "
+    "either an (R, G, B, A) tuple or a string representing a path to an image.",
+    NULL},
+
+    {"cursor_active",
+    (getter)PyUIScrollbarStyle_get_cursor_active, 
+    (setter)PyUIScrollbarStyle_set_cursor_active,
+    "The look of the scrollbar cursor (selection indicator) in the active state - "
+    "either an (R, G, B, A) tuple or a string representing a path to an image.",
+    NULL},
+
+    {"cursor_border_color",
+    (getter)PyUIScrollbarStyle_get_cursor_border_color, 
+    (setter)PyUIScrollbarStyle_set_cursor_border_color,
+    "The look of the scrollbar cursor (selection indicator) in the active state - "
+    "an (R, G, B, A) tuple.",
+    NULL},
+
+    {"border",
+    (getter)PyUIScrollbarStyle_get_border, 
+    (setter)PyUIScrollbarStyle_set_border,
+    "The width of the scrollbar borders.", 
+    NULL},
+
+    {"rounding",
+    (getter)PyUIScrollbarStyle_get_rounding, 
+    (setter)PyUIScrollbarStyle_set_rounding,
+    "An (X, Y) tuple of floats to control the rounding of the scrollbars.", 
+    NULL},
+
+    {"border_cursor",
+    (getter)PyUIScrollbarStyle_get_border_cursor, 
+    (setter)PyUIScrollbarStyle_set_border_cursor,
+    "A float to control the border of the cursor.", 
+    NULL},
+
+    {"rounding_cursor",
+    (getter)PyUIScrollbarStyle_get_rounding_cursor, 
+    (setter)PyUIScrollbarStyle_set_rounding_cursor,
+    "A float to control the rounding of the cursor.", 
+    NULL},
+
+    {"padding",
+    (getter)PyUIScrollbarStyle_get_padding, 
+    (setter)PyUIScrollbarStyle_set_padding,
+    "A float to control the padding within a scrollbar.", 
+    NULL},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyUIScrollbarStyle_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "pf.UIScrollbarStyle",        /* tp_name */
+    sizeof(PyUIScrollbarStyleObject), /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    0,                         /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_reserved */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash  */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT, /* tp_flags */
+    "Style configuration for Permafrost Engine UI toggle-able options.", /* tp_doc */
+    0,                         /* tp_traverse */
+    0,                         /* tp_clear */
+    0,                         /* tp_richcompare */
+    0,                         /* tp_weaklistoffset */
+    0,                         /* tp_iter */
+    0,                         /* tp_iternext */
+    PyUIScrollbarStyle_methods,   /* tp_methods */
+    0,                         /* tp_members */
+    PyUIScrollbarStyle_getset,    /* tp_getset */
     0,                         /* tp_base */
     0,                         /* tp_dict */
     0,                         /* tp_descr_get */
@@ -1779,6 +1962,48 @@ static bool load_toggle(struct SDL_RWops *stream, struct nk_style_toggle *out)
     CHK_TRUE_RET(load_vec2(stream, &out->touch_padding));
     CHK_TRUE_RET(load_float(stream, &out->spacing));
     CHK_TRUE_RET(load_float(stream, &out->border));
+
+    return true;
+}
+
+static bool save_scrollbar(struct SDL_RWops *stream, const struct nk_style_scrollbar *scroll)
+{
+    CHK_TRUE_RET(save_item(stream, &scroll->normal));
+    CHK_TRUE_RET(save_item(stream, &scroll->hover));
+    CHK_TRUE_RET(save_item(stream, &scroll->active));
+    CHK_TRUE_RET(save_color(stream, scroll->border_color));
+
+    CHK_TRUE_RET(save_item(stream, &scroll->cursor_normal));
+    CHK_TRUE_RET(save_item(stream, &scroll->cursor_hover));
+    CHK_TRUE_RET(save_item(stream, &scroll->cursor_active));
+    CHK_TRUE_RET(save_color(stream, scroll->cursor_border_color));
+
+    CHK_TRUE_RET(save_float(stream, scroll->border));
+    CHK_TRUE_RET(save_float(stream, scroll->rounding));
+    CHK_TRUE_RET(save_float(stream, scroll->border_cursor));
+    CHK_TRUE_RET(save_float(stream, scroll->rounding_cursor));
+    CHK_TRUE_RET(save_vec2(stream, scroll->padding));
+
+    return true;
+}
+
+static bool load_scrollbar(struct SDL_RWops *stream, struct nk_style_scrollbar *out)
+{
+    CHK_TRUE_RET(load_item(stream, &out->normal));
+    CHK_TRUE_RET(load_item(stream, &out->hover));
+    CHK_TRUE_RET(load_item(stream, &out->active));
+    CHK_TRUE_RET(load_color(stream, &out->border_color));
+
+    CHK_TRUE_RET(load_item(stream, &out->cursor_normal));
+    CHK_TRUE_RET(load_item(stream, &out->cursor_hover));
+    CHK_TRUE_RET(load_item(stream, &out->cursor_active));
+    CHK_TRUE_RET(load_color(stream, &out->cursor_border_color));
+
+    CHK_TRUE_RET(load_float(stream, &out->border));
+    CHK_TRUE_RET(load_float(stream, &out->rounding));
+    CHK_TRUE_RET(load_float(stream, &out->border_cursor));
+    CHK_TRUE_RET(load_float(stream, &out->rounding_cursor));
+    CHK_TRUE_RET(load_vec2(stream, &out->padding));
 
     return true;
 }
@@ -3124,6 +3349,248 @@ fail_args:
     return ret;
 }
 
+static PyObject *PyUIScrollbarStyle_get_normal(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->normal);
+}
+
+static int PyUIScrollbarStyle_set_normal(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->normal);
+}
+
+static PyObject *PyUIScrollbarStyle_get_hover(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->hover);
+}
+
+static int PyUIScrollbarStyle_set_hover(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->hover);
+}
+
+static PyObject *PyUIScrollbarStyle_get_active(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->active);
+}
+
+static int PyUIScrollbarStyle_set_active(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->active);
+}
+
+static PyObject *PyUIScrollbarStyle_get_border_color(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->border_color.r,
+        self->style->border_color.g,
+        self->style->border_color.b,
+        self->style->border_color.a);
+}
+
+static int PyUIScrollbarStyle_set_border_color(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->border_color = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIScrollbarStyle_get_cursor_normal(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->cursor_normal);
+}
+
+static int PyUIScrollbarStyle_set_cursor_normal(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->cursor_normal);
+}
+
+static PyObject *PyUIScrollbarStyle_get_cursor_hover(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->cursor_hover);
+}
+
+static int PyUIScrollbarStyle_set_cursor_hover(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->cursor_hover);
+}
+
+static PyObject *PyUIScrollbarStyle_get_cursor_active(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->cursor_active);
+}
+
+static int PyUIScrollbarStyle_set_cursor_active(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->cursor_active);
+}
+
+static PyObject *PyUIScrollbarStyle_get_cursor_border_color(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->cursor_border_color.r,
+        self->style->cursor_border_color.g,
+        self->style->cursor_border_color.b,
+        self->style->cursor_border_color.a);
+}
+
+static int PyUIScrollbarStyle_set_cursor_border_color(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->cursor_border_color = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+
+static PyObject *PyUIScrollbarStyle_get_border(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->border);
+}
+
+static int PyUIScrollbarStyle_set_border(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->border = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIScrollbarStyle_get_rounding(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->rounding);
+}
+
+static int PyUIScrollbarStyle_set_rounding(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->rounding = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIScrollbarStyle_get_border_cursor(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->border_cursor);
+}
+
+static int PyUIScrollbarStyle_set_border_cursor(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->border_cursor = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIScrollbarStyle_get_rounding_cursor(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->rounding_cursor);
+}
+
+static int PyUIScrollbarStyle_set_rounding_cursor(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->rounding_cursor = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIScrollbarStyle_get_padding(PyUIScrollbarStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->padding.x,
+        self->style->padding.y);
+}
+
+static int PyUIScrollbarStyle_set_padding(PyUIScrollbarStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->padding = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUIScrollbarStyle_pickle(PyUIScrollbarStyleObject *self, PyObject *args, PyObject *kwargs)
+{
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+    CHK_TRUE(save_scrollbar(stream, self->style), fail_pickle);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error pickling pf.UIScrollbarStyle object");
+    }
+    return ret;
+}
+
+static PyObject *PyUIScrollbarStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    int status;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyObject *styleobj = PyObject_New(PyObject, &PyUIScrollbarStyle_type);
+    assert(styleobj || PyErr_Occurred());
+    CHK_TRUE(styleobj, fail_unpickle);
+
+    CHK_TRUE(load_scrollbar(stream, ((PyUIScrollbarStyleObject*)styleobj)->style), fail_unpickle);
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", styleobj, (int)nread);
+    Py_DECREF(styleobj);
+
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_args:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error unpickling pf.UIScrollbarStyle object");
+    }
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -3159,6 +3626,12 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
         return;
     Py_INCREF(&PyUIToggleStyle_type);
     PyModule_AddObject(module, "UIToggleStyle", (PyObject*)&PyUIToggleStyle_type);
+
+    /* Scrollbar style */
+    if(PyType_Ready(&PyUIScrollbarStyle_type) < 0)
+        return;
+    Py_INCREF(&PyUIScrollbarStyle_type);
+    PyModule_AddObject(module, "UIScrollbarStyle", (PyObject*)&PyUIScrollbarStyle_type);
 
     /* Global style objects */
     PyUIButtonStyleObject *button_style = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
@@ -3202,6 +3675,16 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     checkbox_style->style = &ctx->style.checkbox;
     checkbox_style->type = TOGGLE_CHECKBOX;
     PyModule_AddObject(module, "checkbox_style", (PyObject*)checkbox_style);
+
+    PyUIScrollbarStyleObject *scrollbar_hori_style = PyObject_New(PyUIScrollbarStyleObject, &PyUIScrollbarStyle_type);
+    assert(scrollbar_hori_style);
+    scrollbar_hori_style->style = &ctx->style.scrollh;
+    PyModule_AddObject(module, "scrollbar_horizontal_style", (PyObject*)scrollbar_hori_style);
+
+    PyUIScrollbarStyleObject *scrollbar_vert_style = PyObject_New(PyUIScrollbarStyleObject, &PyUIScrollbarStyle_type);
+    assert(scrollbar_vert_style);
+    scrollbar_vert_style->style = &ctx->style.scrollv;
+    PyModule_AddObject(module, "scrollbar_vertical_style", (PyObject*)scrollbar_vert_style);
 }
 
 bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_window *window)

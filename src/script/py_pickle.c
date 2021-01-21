@@ -665,6 +665,7 @@ static struct pickle_entry s_pf_dispatch_table[] = {
     {.type = NULL, /* PyUISelectableStyle_type */         .picklefunc = custom_pickle   },
     {.type = NULL, /* PyUIComboStyle_type */              .picklefunc = custom_pickle   },
     {.type = NULL, /* PyUIToggleStyle_type */             .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyUIScrollbarStyle_type*/           .picklefunc = custom_pickle   },
     {.type = NULL, /* PyTask_type */                      .picklefunc = custom_pickle   },
     {.type = NULL, /* PyBuildableEntity_type */           .picklefunc = custom_pickle   },
     {.type = NULL, /* PyBuilderEntity_type */             .picklefunc = custom_pickle   },
@@ -1303,24 +1304,26 @@ static void load_engine_builtin_types(void)
 {
     PyObject *pfmod = PyDict_GetItemString(PySys_GetObject("modules"), "pf");
     assert(pfmod); /* borrowed ref */
-    s_pf_dispatch_table[ 0].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Entity");
-    s_pf_dispatch_table[ 1].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "AnimEntity");
-    s_pf_dispatch_table[ 2].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "CombatableEntity");
-    s_pf_dispatch_table[ 3].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Tile");
-    s_pf_dispatch_table[ 4].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Window");
-    s_pf_dispatch_table[ 5].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Camera");
-    s_pf_dispatch_table[ 6].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIButtonStyle");
-    s_pf_dispatch_table[ 7].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIHeaderStyle");
-    s_pf_dispatch_table[ 8].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UISelectableStyle");
-    s_pf_dispatch_table[ 9].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIComboStyle");
-    s_pf_dispatch_table[10].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIToggleStyle");
-    s_pf_dispatch_table[11].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Task");
-    s_pf_dispatch_table[12].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "BuildableEntity");
-    s_pf_dispatch_table[13].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "BuilderEntity");
-    s_pf_dispatch_table[14].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "ResourceEntity");
-    s_pf_dispatch_table[15].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "HarvesterEntity");
-    s_pf_dispatch_table[16].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "StorageSiteEntity");
-    s_pf_dispatch_table[17].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "MovableEntity");
+    int idx = 0;
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Entity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "AnimEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "CombatableEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Tile");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Window");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Camera");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIButtonStyle");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIHeaderStyle");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UISelectableStyle");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIComboStyle");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIToggleStyle");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIScrollbarStyle");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Task");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "BuildableEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "BuilderEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "ResourceEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "HarvesterEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "StorageSiteEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "MovableEntity");
 
     for(int i = 0; i < ARR_SIZE(s_pf_dispatch_table); i++) {
         assert(s_pf_dispatch_table[i].type);
