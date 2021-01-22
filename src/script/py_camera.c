@@ -324,6 +324,7 @@ fail_alloc:
 static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
+    PyObject *cam_obj = NULL;
     const char *str;
     Py_ssize_t len;
     char tmp;
@@ -373,7 +374,6 @@ static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
         goto fail_unpickle;
     }
 
-    PyObject *cam_obj;
     if(PyInt_AS_LONG(active)) {
         cam_obj = s_active_cam;
         Py_INCREF(cam_obj);
@@ -398,7 +398,6 @@ static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
         cam_obj = PyObject_Call((PyObject*)&PyCamera_type, cam_args, cam_kwargs);
         Py_DECREF(cam_args);
         Py_DECREF(cam_kwargs);
-        PyErr_Print();
     }
 
     if(!cam_obj)
@@ -414,9 +413,9 @@ fail_unpickle:
     Py_XDECREF(pitch);
     Py_XDECREF(yaw);
     Py_XDECREF(sensitivity);
+    Py_XDECREF(cam_obj);
     SDL_RWclose(stream);
 fail_args:
-    assert(ret);
     return ret;
 }
 

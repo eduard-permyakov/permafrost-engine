@@ -35,14 +35,17 @@
 
 #include "py_region.h"
 #include "py_entity.h"
+#include "py_pickle.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/SDL_vec_rwops.h"
 #include "../game/public/game.h"
 
 #include <assert.h>
 
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+#define CHK_TRUE(_pred, _label) do{ if(!(_pred)) goto _label; }while(0)
 
 KHASH_MAP_INIT_STR(PyObject, PyObject*)
 
@@ -186,7 +189,6 @@ static PyObject *PyRegion_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     if(!PyArg_ParseTupleAndKeywords(args, kwds, "is(ff)|f(ff)", kwlist, &regtype, &name, 
         &position.x, &position.z, &radius, &dims.x, &dims.z)) {
         assert(PyErr_Occurred());
-        printf("we failed here\n");
         return NULL;
     }
 
@@ -307,12 +309,103 @@ static PyObject *PyRegion_contains(PyRegionObject *self, PyObject *args)
 
 static PyObject *PyRegion_pickle(PyRegionObject *self, PyObject *args, PyObject *kwargs)
 {
-    return NULL;
+    bool status;
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+
+    PyObject *type = PyInt_FromLong(self->type);
+    CHK_TRUE(type, fail_pickle);
+    status = S_PickleObjgraph(type, stream);
+    Py_DECREF(type);
+    CHK_TRUE(status, fail_pickle);
+
+    PyObject *name = PyString_FromString(self->name);
+    CHK_TRUE(name, fail_pickle);
+    status = S_PickleObjgraph(name, stream);
+    Py_DECREF(name);
+    CHK_TRUE(status, fail_pickle);
+
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    return ret;
 }
 
 static PyObject *PyRegion_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
-    return NULL;
+    PyObject *ret = NULL;
+    PyRegionObject *reg = NULL;
+    const char *str;
+    Py_ssize_t len;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyObject *type = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    PyObject *name = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    if(!type || !name) {
+        PyErr_SetString(PyExc_RuntimeError, "Could not unpickle internal state of pf.Region instance");
+        goto fail_unpickle;
+    }
+
+    if(!PyInt_Check(type)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unpickled 'type' field must be an integer type");
+        goto fail_unpickle;
+    }
+
+    if(!PyString_Check(name)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unpickled 'name' field must be a string");
+        goto fail_unpickle;
+    }
+
+    reg = (PyRegionObject*)((PyTypeObject*)cls)->tp_alloc((PyTypeObject*)cls, 0);
+    if(!reg) {
+        assert(PyErr_Occurred());
+        goto fail_unpickle;
+    }
+
+    reg->type = PyInt_AS_LONG(type);
+    reg->name = pf_strdup(PyString_AS_STRING(name));
+
+    if(!reg->name) {
+
+        PyErr_SetString(PyExc_MemoryError, "Unable to allocate string buffer");
+        ((PyTypeObject*)cls)->tp_free(reg);
+        goto fail_unpickle;
+    }
+
+    int status;
+    khiter_t k = kh_put(PyObject, s_name_pyobj_table, reg->name, &status);
+    if(status == -1 || status == 0) {
+
+        PyErr_SetString(PyExc_RuntimeError, "Unable to allocate table storage");
+        ((PyTypeObject*)cls)->tp_free(reg);
+        goto fail_unpickle;
+    }
+    kh_value(s_name_pyobj_table, k) = (PyObject*)reg;
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", reg, (int)nread);
+    Py_DECREF(reg);
+
+fail_unpickle:
+    Py_XDECREF(type);
+    Py_XDECREF(name);
+fail_args:
+    return ret;
 }
 
 static PyObject *PyRegion_get_pos(PyRegionObject *self, void *closure)

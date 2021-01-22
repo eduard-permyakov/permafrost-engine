@@ -47,6 +47,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
 
+#include <SDL.h>
 #include <assert.h>
 #include <math.h>
 
@@ -54,6 +55,12 @@
 #define MAX(a, b)    ((a) > (b) ? (a) : (b))
 #define ARR_SIZE(a)  (sizeof(a)/sizeof(a[0]))
 #define EPSILON      (1.0f/1024)
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 VEC_TYPE(str, const char*)
 VEC_IMPL(static inline, str, const char*)
@@ -778,3 +785,211 @@ bool G_Region_GetZLen(const char *name, float *out)
     return true;
 }
    
+bool G_Region_SaveState(struct SDL_RWops *stream)
+{
+    struct attr render = (struct attr){
+        .type = TYPE_BOOL,
+        .val.as_bool = s_render
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &render, "render"));
+
+    struct attr num_regions = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_regions)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_regions, "num_regions"));
+
+    const char *name;
+    struct region curr;
+
+    kh_foreach(s_regions, name, curr, {
+    
+        struct attr reg_name = (struct attr){ .type = TYPE_STRING, };
+        pf_strlcpy(reg_name.val.as_string, name, sizeof(reg_name.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &reg_name, "reg_name"));
+
+        struct attr pos = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr.pos
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &pos, "pos"));
+
+        struct attr type = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr.type
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &type, "type"));
+
+        switch(curr.type) {
+        case REGION_CIRCLE: {
+
+            struct attr radius = (struct attr){
+                .type = TYPE_FLOAT,
+                .val.as_float = curr.radius
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &radius, "radius"));
+            break;
+        }
+        case REGION_RECTANGLE: {
+
+            struct attr dims = (struct attr){
+                .type = TYPE_VEC2,
+                .val.as_vec2 = (vec2_t){curr.xlen, curr.zlen}
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &dims, "dims"));
+            break;
+        }
+        default: assert(0);
+        }
+
+        struct attr num_curr = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = vec_size(&curr.curr_ents)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_curr, "num_curr"));
+
+        for(int i = 0; i < vec_size(&curr.curr_ents); i++) {
+
+            struct attr ent = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = vec_AT(&curr.curr_ents, i)
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &ent, "curr_ent"));
+        }
+
+        struct attr num_prev = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = vec_size(&curr.curr_ents)
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &num_prev, "num_prev"));
+
+        for(int i = 0; i < vec_size(&curr.prev_ents); i++) {
+
+            struct attr ent = (struct attr){
+                .type = TYPE_INT,
+                .val.as_int = vec_AT(&curr.prev_ents, i)
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &ent, "prev_ent"));
+        }
+    });
+
+    struct attr num_dirty = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = kh_size(s_dirty)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_dirty, "num_dirty"));
+
+    for(khiter_t k = kh_begin(s_dirty); k != kh_end(s_dirty); k++) {
+
+        if(!kh_exist(s_dirty, k))
+            continue;
+
+        struct attr reg_name = (struct attr){ .type = TYPE_STRING, };
+        const char *name = kh_key(s_regions, k);
+
+        pf_strlcpy(reg_name.val.as_string, name, sizeof(reg_name.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &reg_name, "reg_name"));
+    }
+
+    return true;
+}
+
+bool G_Region_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    s_render = attr.val.as_bool;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_regions = attr.val.as_int;
+
+    for(int i = 0; i < num_regions; i++) {
+
+        struct attr name;
+        CHK_TRUE_RET(Attr_Parse(stream, &name, true));
+        CHK_TRUE_RET(name.type == TYPE_STRING);
+
+        struct attr pos;
+        CHK_TRUE_RET(Attr_Parse(stream, &pos, true));
+        CHK_TRUE_RET(pos.type == TYPE_VEC2);
+
+        struct attr type;
+        CHK_TRUE_RET(Attr_Parse(stream, &type, true));
+        CHK_TRUE_RET(type.type == TYPE_INT);
+        CHK_TRUE_RET(type.val.as_int == REGION_CIRCLE || type.val.as_int == REGION_RECTANGLE);
+
+        switch(type.val.as_int) {
+        case REGION_CIRCLE: {
+
+            struct attr radius;
+            CHK_TRUE_RET(Attr_Parse(stream, &radius, true));
+            CHK_TRUE_RET(radius.type == TYPE_FLOAT);
+
+            CHK_TRUE_RET(G_Region_AddCircle(name.val.as_string, pos.val.as_vec2, radius.val.as_float));
+            break;
+        }
+        case REGION_RECTANGLE: {
+
+            struct attr dims;
+            CHK_TRUE_RET(Attr_Parse(stream, &dims, true));
+            CHK_TRUE_RET(dims.type == TYPE_VEC2);
+
+            CHK_TRUE_RET(G_Region_AddRectangle(name.val.as_string, pos.val.as_vec2, 
+                dims.val.as_vec2.x, dims.val.as_vec2.z));
+            break;
+        }
+        default: assert(0);
+        }
+
+        khiter_t k = kh_get(region, s_regions, name.val.as_string);
+        assert(k != kh_end(s_regions));
+        struct region *reg = &kh_value(s_regions, k);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t num_curr = attr.val.as_int;
+
+        for(int j = 0; j < num_curr; j++) {
+
+            struct attr curr;
+            CHK_TRUE_RET(Attr_Parse(stream, &curr, true));
+            CHK_TRUE_RET(curr.type == TYPE_INT);
+            vec_uid_push(&reg->curr_ents, curr.val.as_int);
+        }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        const size_t num_prev = attr.val.as_int;
+
+        for(int j = 0; j < num_prev; j++) {
+
+            struct attr curr;
+            CHK_TRUE_RET(Attr_Parse(stream, &curr, true));
+            CHK_TRUE_RET(curr.type == TYPE_INT);
+            vec_uid_push(&reg->prev_ents, curr.val.as_int);
+        }
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const size_t num_dirty = attr.val.as_int;
+
+    for(int i = 0; i < num_dirty; i++) {
+
+        struct attr name;
+        CHK_TRUE_RET(Attr_Parse(stream, &name, true));
+        CHK_TRUE_RET(name.type == TYPE_INT);
+
+        khiter_t k = kh_get(region, s_regions, name.val.as_string);
+        CHK_TRUE_RET(k != kh_end(s_regions));
+
+        const char *key = kh_key(s_regions, k);
+        kh_put(name, s_dirty, key, &(int){0});
+    }
+
+    return true;
+}
+

@@ -669,10 +669,11 @@ static struct pickle_entry s_pf_dispatch_table[] = {
     {.type = NULL, /* PyTask_type */                      .picklefunc = custom_pickle   },
     {.type = NULL, /* PyBuildableEntity_type */           .picklefunc = custom_pickle   },
     {.type = NULL, /* PyBuilderEntity_type */             .picklefunc = custom_pickle   },
-    {.type = NULL, /* ResourceEntity_type */              .picklefunc = custom_pickle   },
-    {.type = NULL, /* HarvesterEntity_type */             .picklefunc = custom_pickle   },
-    {.type = NULL, /* StorageSiteEntity_type */           .picklefunc = custom_pickle   },
-    {.type = NULL, /* MovableEntity_type */               .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyResourceEntity_type */            .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyHarvesterEntity_type */           .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyStorageSiteEntity_type */         .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyMovableEntity_type */             .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyRegion_type*/                     .picklefunc = custom_pickle   },
 };
 
 static unpickle_func_t s_op_dispatch_table[256] = {
@@ -829,10 +830,11 @@ struct sc_map_entry{
     { NULL, /*&PyTask_type*/                NULL },
     { NULL, /*&PyBuildableEntity_type*/     NULL },
     { NULL, /*&PyBuilderEntity_type*/       NULL },
-    { NULL, /*&ResourceEntity_type*/        NULL },
-    { NULL, /*&HarvesterEntity_type*/       NULL },
-    { NULL, /*&StorageSiteEntity_type*/     NULL },
-    { NULL, /*&MovableEntity_type*/         NULL },
+    { NULL, /*&PyResourceEntity_type*/      NULL },
+    { NULL, /*&PyHarvesterEntity_type*/     NULL },
+    { NULL, /*&PyStorageSiteEntity_type*/   NULL },
+    { NULL, /*&PyMovableEntity_type*/       NULL },
+    { NULL, /*&PyRegion_type*/              NULL },
 };
 
 /*****************************************************************************/
@@ -1224,6 +1226,7 @@ static void load_subclassable_builtin_refs(void)
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "HarvesterEntity");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "StorageSiteEntity");
     s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "MovableEntity");
+    s_subclassable_builtin_map[base_idx++].builtin =  (PyTypeObject*)PyObject_GetAttrString(pfmod, "Region");
 
 	assert(base_idx == ARR_SIZE(s_subclassable_builtin_map));
 }
@@ -1324,6 +1327,7 @@ static void load_engine_builtin_types(void)
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "HarvesterEntity");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "StorageSiteEntity");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "MovableEntity");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Region");
 
     for(int i = 0; i < ARR_SIZE(s_pf_dispatch_table); i++) {
         assert(s_pf_dispatch_table[i].type);

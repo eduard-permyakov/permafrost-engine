@@ -289,6 +289,10 @@ static PyObject *PyUIToggleStyle_unpickle(PyObject *cls, PyObject *args, PyObjec
 
 typedef struct {
     PyObject_HEAD
+    enum scrollbar_type{
+        SCROLLBAR_HORIZONTAL,
+        SCROLLBAR_VERTICAL
+    }type;
     struct nk_style_scrollbar *style;
 }PyUIScrollbarStyleObject;
 
@@ -3544,6 +3548,7 @@ static PyObject *PyUIScrollbarStyle_pickle(PyUIScrollbarStyleObject *self, PyObj
 
     SDL_RWops *stream = PFSDL_VectorRWOps();
     CHK_TRUE(stream, fail_alloc);
+    CHK_TRUE(save_int(stream, self->type), fail_pickle);
     CHK_TRUE(save_scrollbar(stream, self->style), fail_pickle);
     ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
 
@@ -3576,13 +3581,27 @@ static PyObject *PyUIScrollbarStyle_unpickle(PyObject *cls, PyObject *args, PyOb
     assert(styleobj || PyErr_Occurred());
     CHK_TRUE(styleobj, fail_unpickle);
 
+    CHK_TRUE(load_int(stream, (int*)&((PyUIScrollbarStyleObject*)styleobj)->type), fail_unpickle);
+    struct nk_context *ctx = UI_GetContext();
+
+    switch(((PyUIScrollbarStyleObject*)styleobj)->type) {
+        case SCROLLBAR_HORIZONTAL:
+            ((PyUIScrollbarStyleObject*)styleobj)->style = &ctx->style.scrollh;
+            break;
+        case SCROLLBAR_VERTICAL:
+            ((PyUIScrollbarStyleObject*)styleobj)->style = &ctx->style.scrollv;
+            break;
+        default:
+            goto fail_unpickle;
+    }
+
     CHK_TRUE(load_scrollbar(stream, ((PyUIScrollbarStyleObject*)styleobj)->style), fail_unpickle);
 
     Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
     ret = Py_BuildValue("(Oi)", styleobj, (int)nread);
-    Py_DECREF(styleobj);
 
 fail_unpickle:
+    Py_XDECREF(styleobj);
     SDL_RWclose(stream);
 fail_args:
     if(!ret) {
@@ -3679,11 +3698,13 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     PyUIScrollbarStyleObject *scrollbar_hori_style = PyObject_New(PyUIScrollbarStyleObject, &PyUIScrollbarStyle_type);
     assert(scrollbar_hori_style);
     scrollbar_hori_style->style = &ctx->style.scrollh;
+    scrollbar_hori_style->type = SCROLLBAR_HORIZONTAL;
     PyModule_AddObject(module, "scrollbar_horizontal_style", (PyObject*)scrollbar_hori_style);
 
     PyUIScrollbarStyleObject *scrollbar_vert_style = PyObject_New(PyUIScrollbarStyleObject, &PyUIScrollbarStyle_type);
     assert(scrollbar_vert_style);
     scrollbar_vert_style->style = &ctx->style.scrollv;
+    scrollbar_vert_style->type = SCROLLBAR_VERTICAL;
     PyModule_AddObject(module, "scrollbar_vertical_style", (PyObject*)scrollbar_vert_style);
 }
 
