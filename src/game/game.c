@@ -1240,7 +1240,10 @@ void G_Update(void)
         }
     });
 
-    G_Region_Update();
+    if(s_gs.map) {
+        G_Region_Update();
+    }
+
     G_Sel_Update(s_gs.active_cam, &s_gs.visible, &s_gs.visible_obbs);
     g_set_contextual_cursor();
 
@@ -1325,9 +1328,7 @@ void G_Render(void)
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_3D_POST, NULL, ES_ENGINE);
-
     R_PushCmd((struct rcmd) { R_GL_SetScreenspaceDrawMode, 0 });
-    E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
 
     struct sval hb_setting;
     status = Settings_Get("pf.game.healthbar_mode", &hb_setting);
@@ -1336,6 +1337,8 @@ void G_Render(void)
     if(hb_setting.as_bool && !s_gs.hide_healthbars) {
         g_render_healthbars();
     }
+
+    E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
 
     if(s_gs.map) {
         M_RenderMinimap(s_gs.map, s_gs.active_cam);

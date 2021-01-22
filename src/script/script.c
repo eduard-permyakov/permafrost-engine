@@ -2531,8 +2531,11 @@ bool S_SaveState(SDL_RWops *stream)
     assert(modules_dict);
     bool ret = false;
 
-    struct script_handler handlers[8192];
-    size_t nhandlers = E_GetScriptHandlers(ARR_SIZE(handlers), handlers);
+    const size_t max_handlers = 65536;
+    struct script_handler *handlers = malloc(max_handlers * sizeof(struct script_handler));
+    if(!handlers)
+        return false;
+    size_t nhandlers = E_GetScriptHandlers(max_handlers, handlers);
 
     PyObject *saved_handlers = PyTuple_New(nhandlers);
     if(!saved_handlers)
@@ -2577,6 +2580,7 @@ fail_tasks:
 fail_handlers:
     Py_DECREF(saved_handlers);
 fail_tuple:
+    free(handlers);
     return ret;
 }
 
