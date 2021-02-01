@@ -45,6 +45,12 @@
 #include <assert.h>
 
 
+#define PFSCENE_VERSION (1.0)
+
+#define STR2(val) #val
+#define STR(val) STR2(val)
+#define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+
 VEC_IMPL(extern, attr, struct attr)
 __KHASH_IMPL(attr, extern, kh_cstr_t, struct attr, 1, kh_str_hash_func, kh_str_hash_equal)
 
@@ -67,7 +73,7 @@ static bool scene_load_entity(SDL_RWops *stream)
     vec_attr_init(&constructor_args);
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "entity %s %s %u", name, path, &num_atts))
+    if(!sscanf(line, "entity %127s %255s %u", name, path, &num_atts))
         goto fail_parse;
 
     for(int i = 0; i < num_atts; i++) {
@@ -117,6 +123,24 @@ fail_alloc:
     return false;
 }
 
+static bool scene_load_entities(SDL_RWops *stream)
+{
+    char line[MAX_LINE_LEN];
+    unsigned num_ents;
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, "num_entities %u", &num_ents))
+        goto fail_parse;
+
+    for(int i = 0; i < num_ents; i++) {
+        if(!scene_load_entity(stream))
+            goto fail_parse;
+    }
+    return true;
+
+fail_parse:
+    return false;
+}
 
 static bool scene_load_faction(SDL_RWops *stream)
 {
@@ -141,6 +165,114 @@ fail_parse:
     return false;
 }
 
+static bool scene_load_factions(SDL_RWops *stream)
+{
+    char line[MAX_LINE_LEN];
+    unsigned num_factions;
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, "num_factions %u", &num_factions))
+        goto fail_parse;
+
+    for(int i = 0; i < num_factions; i++) {
+        if(!scene_load_faction(stream))
+            goto fail_parse;
+    }
+    return true;
+
+fail_parse:
+    return false;
+}
+
+static bool scene_load_region(SDL_RWops *stream)
+{
+    char line[MAX_LINE_LEN];
+    char name[128];
+    unsigned type, num_atts;
+    float radius = 0.0f, xlen = 0.0f, zlen = 0.0f;
+    vec2_t pos = {0};
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, "region %127s %u %u", name, &type, &num_atts))
+        goto fail_parse;
+
+    for(int i = 0; i < num_atts; i++) {
+        struct attr attr;
+        if(!Attr_Parse(stream, &attr, true))
+            goto fail_parse;
+
+        if(0 == strcmp(attr.key, "radius")) {
+            if(attr.type != TYPE_FLOAT)
+                goto fail_parse;
+            radius = attr.val.as_float;
+        }else if(0 == strcmp(attr.key, "dimensions")) {
+            if(attr.type != TYPE_VEC2)
+                goto fail_parse;
+            xlen = attr.val.as_vec2.x;
+            zlen = attr.val.as_vec2.z;
+        }else if(0 == strcmp(attr.key, "pos")) {
+            if(attr.type != TYPE_VEC2)
+                goto fail_parse;
+            pos = attr.val.as_vec2;
+        }else
+            goto fail_parse;
+    }
+
+    if(!S_Region_ObjFromAtts(name, type, pos, radius, xlen, zlen))
+        goto fail_parse;
+
+    return true;
+
+fail_parse:
+    return false;
+}
+
+static bool scene_load_regions(SDL_RWops *stream)
+{
+    char line[MAX_LINE_LEN];
+    unsigned num_regions;
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, "num_regions %u", &num_regions))
+        goto fail_parse;
+
+    for(int i = 0; i < num_regions; i++) {
+        if(!scene_load_region(stream))
+            goto fail_parse;
+    }
+    return true;
+
+fail_parse:
+    return false;
+}
+
+static bool scene_load_section(SDL_RWops *stream)
+{
+    char line[MAX_LINE_LEN];
+    char name[MAX_LINE_LEN + 1];
+
+    struct{
+        const char *name;
+        bool (*func)(SDL_RWops*);
+    }map[] = {
+        {"factions",     scene_load_factions},
+        {"entities",     scene_load_entities},
+        {"regions",      scene_load_regions }
+    };
+
+    READ_LINE(stream, line, fail_parse);
+    if(!sscanf(line, "section \"%" STR(MAX_LINE_LEN) "[^\"]", name))
+        goto fail_parse;
+
+    for(int i = 0; i < ARR_SIZE(map); i++) {
+        if(0 == strcmp(map[i].name, name))
+            return map[i].func(stream);
+    }
+
+fail_parse:
+    return false;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -149,27 +281,26 @@ bool Scene_Load(const char *path)
 {
     SDL_RWops *stream;
     char line[MAX_LINE_LEN];
-    unsigned num_factions, num_ents;
+    unsigned num_sections;
+    float version;
 
     stream = SDL_RWFromFile(path, "r");
     if(!stream)
         goto fail_stream;
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "num_factions %u", &num_factions))
+    if(!sscanf(line, "version %f", &version))
         goto fail_parse;
 
-    for(int i = 0; i < num_factions; i++) {
-        if(!scene_load_faction(stream))    
-            goto fail_parse;
-    }
-    
+    if(version > PFSCENE_VERSION)
+        goto fail_parse;
+
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "num_entities %u", &num_ents))
+    if(!sscanf(line, "num_sections %u", &num_sections))
         goto fail_parse;
 
-    for(int i = 0; i < num_ents; i++) {
-        if(!scene_load_entity(stream))
+    for(int i = 0; i < num_sections; i++) {
+        if(!scene_load_section(stream))
             goto fail_parse;
     }
 

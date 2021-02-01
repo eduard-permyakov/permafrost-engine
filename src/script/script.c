@@ -204,7 +204,7 @@ static PyMethodDef pf_module_methods[] = {
     {"load_scene", 
     (PyCFunction)PyPf_load_scene, METH_VARARGS | METH_KEYWORDS,
     "Import list of entities from a PFSCENE file (specified as a path string). "
-    "Returns a list of the loaded entities."},
+    "Returns a tuple of the following items: list of loaded entities, list of loaded regions."},
 
     {"register_event_handler", 
     (PyCFunction)PyPf_register_event_handler, METH_VARARGS,
@@ -702,7 +702,13 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwarg
         G_BakeNavDataForScene();
     }
 
-    return S_Entity_GetLoaded();
+    PyObject *ret = PyTuple_New(2);
+    if(!ret)
+        return NULL;
+
+    PyTuple_SET_ITEM(ret, 0, S_Entity_GetLoaded());
+    PyTuple_SET_ITEM(ret, 1, S_Region_GetLoaded());
+    return ret;
 }
 
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)

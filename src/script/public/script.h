@@ -37,6 +37,7 @@
 #define SCRIPT_H
 
 #include "../../scene.h"
+#include "../../pf_math.h"
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -95,6 +96,8 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
 /*###########################################################################*/
 
 void            S_Region_NotifyContentsChanged(const char *name);
+script_opaque_t S_Region_ObjFromAtts(const char *name, int type, vec2_t pos, 
+                                     float radius, float xlen, float zlen);
 
 #endif
 

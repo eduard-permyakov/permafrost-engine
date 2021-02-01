@@ -36,6 +36,7 @@
 #include "py_region.h"
 #include "py_entity.h"
 #include "py_pickle.h"
+#include "public/script.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
@@ -170,6 +171,7 @@ static PyTypeObject PyRegion_type = {
 };
 
 static khash_t(PyObject) *s_name_pyobj_table;
+static PyObject          *s_loaded;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -497,12 +499,21 @@ void S_Region_PyRegister(PyObject *module)
 
 bool S_Region_Init(void)
 {
+    s_loaded = PyList_New(0);
+    if(!s_loaded)
+        return false;
+
     s_name_pyobj_table = kh_init(PyObject);
-    return (s_name_pyobj_table != NULL);
+    if(!s_name_pyobj_table) {
+        Py_DECREF(s_loaded);
+        return false;
+    }
+    return true;
 }
 
 void S_Region_Shutdown(void)
 {
+    Py_DECREF(s_loaded);
     kh_destroy(PyObject, s_name_pyobj_table);
 }
 
@@ -518,5 +529,61 @@ void S_Region_NotifyContentsChanged(const char *name)
         PyErr_Clear();
     }
     Py_XDECREF(ret);
+}
+
+PyObject *S_Region_GetLoaded(void)
+{
+    PyObject *ret = s_loaded;
+    if(!ret)
+        NULL;
+
+    s_loaded = PyList_New(0);
+    assert(s_loaded);
+    
+    return ret;
+}
+
+script_opaque_t S_Region_ObjFromAtts(const char *name, int type, vec2_t pos, 
+                                     float radius, float xlen, float zlen)
+{
+    if(type != REGION_CIRCLE && type != REGION_RECTANGLE)
+        return NULL;
+
+    PyObject *args = PyTuple_New(0), *kwargs = NULL;
+    if(!args)
+        return NULL;
+
+    switch(type) {
+    case REGION_CIRCLE:
+        kwargs = Py_BuildValue("{s:i, s:s, s:(ff), s:f}",
+            "type",         type,
+            "name",         name,
+            "position",     pos.x, pos.z,
+            "radius",       radius);
+        break;
+    case REGION_RECTANGLE:
+        kwargs = Py_BuildValue("{s:i, s:s, s:(ff), s:(ff)}",
+            "type",         type,
+            "name",         name,
+            "position",     pos.x, pos.z,
+            "dimensions",   xlen, zlen);
+        break;
+    default: assert(0);
+    }
+
+    if(!kwargs) {
+        Py_DECREF(args);
+        return NULL;
+    }
+
+    PyObject *ret = PyObject_Call((PyObject*)&PyRegion_type, args, kwargs);
+    Py_DECREF(args);
+    Py_DECREF(kwargs);
+
+    if(ret) {
+        PyList_Append(s_loaded, ret);
+        Py_DECREF(ret);
+    }
+    return ret;
 }
 
