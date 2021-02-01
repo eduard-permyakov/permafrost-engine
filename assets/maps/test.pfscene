@@ -1,0 +1,127 @@
+version 1.0
+num_sections 2
+section "factions"
+num_factions 1
+faction "Mother Nature"
+    color vec3 255.000000 255.000000 255.000000
+section "entities"
+num_entities 7
+entity deer assets/models/deer/deer.pfobj 13
+   position vec3 -68.751884 0.000000 -119.765442
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   faction_id int 0
+   idle_clip string Idle
+   selection_radius float 3.25
+   class string Deer
+   constructor_arguments int 3
+       string assets/models/deer
+       string deer.pfobj
+       string Deer
+   vision_range float 35.0
+entity deer assets/models/deer/deer.pfobj 13
+   position vec3 -96.726242 0.000000 -117.785156
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   faction_id int 0
+   idle_clip string Idle
+   selection_radius float 3.25
+   class string Deer
+   constructor_arguments int 3
+       string assets/models/deer
+       string deer.pfobj
+       string Deer
+   vision_range float 35.0
+entity deer assets/models/deer/deer.pfobj 13
+   position vec3 -63.291344 -0.000015 -96.259758
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   faction_id int 0
+   idle_clip string Idle
+   selection_radius float 3.25
+   class string Deer
+   constructor_arguments int 3
+       string assets/models/deer
+       string deer.pfobj
+       string Deer
+   vision_range float 35.0
+entity deer assets/models/deer/deer.pfobj 13
+   position vec3 -40.861961 0.000000 -92.279984
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   faction_id int 0
+   idle_clip string Idle
+   selection_radius float 3.25
+   class string Deer
+   constructor_arguments int 3
+       string assets/models/deer
+       string deer.pfobj
+       string Deer
+   vision_range float 35.0
+entity deer assets/models/deer/deer.pfobj 13
+   position vec3 -39.853859 0.000000 -142.979935
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   faction_id int 0
+   idle_clip string Idle
+   selection_radius float 3.25
+   class string Deer
+   constructor_arguments int 3
+       string assets/models/deer
+       string deer.pfobj
+       string Deer
+   vision_range float 35.0
+entity deer assets/models/deer/deer.pfobj 13
+   position vec3 -86.172577 0.000000 -153.236389
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   faction_id int 0
+   idle_clip string Idle
+   selection_radius float 3.25
+   class string Deer
+   constructor_arguments int 3
+       string assets/models/deer
+       string deer.pfobj
+       string Deer
+   vision_range float 35.0
+entity deer assets/models/deer/deer.pfobj 13
+   position vec3 -138.623917 -0.000015 -136.408737
+   scale vec3 2.000000 2.000000 2.000000
+   rotation quat 0.000000 0.000000 0.000000 1.000000
+   animated bool 1
+   selectable bool 1
+   static bool 0
+   collision bool 1
+   faction_id int 0
+   idle_clip string Idle
+   selection_radius float 3.25
+   class string Deer
+   constructor_arguments int 3
+       string assets/models/deer
+       string deer.pfobj
+       string Deer
+   vision_range float 35.0

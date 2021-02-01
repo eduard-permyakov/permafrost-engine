@@ -1,0 +1,4 @@
+num_factions 1
+faction "Mother Nature"
+    color vec3 255.000000 255.000000 255.000000
+num_entities 0

@@ -1,3 +1,6 @@
+version 1.0
+num_sections 2
+section "factions"
 num_factions 4
 faction "Mother Nature"
     color vec3 255.000000 255.000000 255.000000
@@ -7,6 +10,7 @@ faction "Goblin Confederacy"
     color vec3 42.000000 94.000000 17.000000
 faction "Wild Barbarians"
     color vec3 220.000000 27.000000 27.000000
+section "entities"
 num_entities 388
 entity rock_1 assets/models/varied_rocks/rock_1.pfobj 9
    position vec3 52.475933 28.000000 -8.552010
