@@ -33,4 +33,5 @@
 #
 
 scene_objs = []
+scene_regions = []
 
