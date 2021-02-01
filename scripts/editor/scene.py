@@ -36,6 +36,7 @@ import globals
 from constants import *
 
 
+PFSCENE_VERSION = 1.0
 OBJECTS_LIST = [
 
     ########################################################################
@@ -645,12 +646,17 @@ def __meta_dict_for_path(path):
 def save_scene(filename):
     with open(pf.get_basedir() + "/" + filename, "w") as scenefile:
 
+        scenefile.write("version %.01f\n" % (PFSCENE_VERSION,))
+        scenefile.write("num_sections 2\n")
+
+        scenefile.write("section \"factions\"\n")
         factions_list = pf.get_factions_list()
         scenefile.write("num_factions {0}\n".format(len(factions_list)))
         for fac in factions_list:
             scenefile.write("faction \"{0}\"\n".format(fac["name"]))
             scenefile.write("    color vec3 {0:.6f} {1:.6f} {2:.6f}\n".format(fac["color"][0], fac["color"][1], fac["color"][2]))
 
+        scenefile.write("section \"entities\"\n")
         scenefile.write("num_entities {0}\n".format(len(globals.active_objects_list)))
         for obj in globals.active_objects_list:
             num_atts = 8
