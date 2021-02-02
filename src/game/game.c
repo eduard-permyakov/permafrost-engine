@@ -2003,6 +2003,9 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &hide_healthbars, "hide_healthbars"));
 
+    if(!G_Region_SaveState(stream))
+        return false;
+
     return true;
 }
 
@@ -2115,6 +2118,9 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     CHK_TRUE_RET(attr.type == TYPE_INT);
     s_gs.hide_healthbars = attr.val.as_int;
 
+    if(!G_Region_LoadState(stream))
+        return false;
+
     return true;
 }
 
@@ -2151,9 +2157,6 @@ bool G_SaveEntityState(SDL_RWops *stream)
         return false;
 
     if(!G_Harvester_SaveState(stream))
-        return false;
-
-    if(!G_Region_SaveState(stream))
         return false;
 
     return true;
@@ -2195,9 +2198,6 @@ bool G_LoadEntityState(SDL_RWops *stream)
         return false;
 
     if(!G_Harvester_LoadState(stream))
-        return false;
-
-    if(!G_Region_LoadState(stream))
         return false;
 
     return true;

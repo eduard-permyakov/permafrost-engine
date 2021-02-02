@@ -148,6 +148,7 @@ static PyObject *PyPf_set_build_on_left_click(PyObject *self);
 static PyObject *PyPf_set_gather_on_left_click(PyObject *self);
 static PyObject *PyPf_set_drop_off_on_left_click(PyObject *self);
 static PyObject *PyPf_set_transport_on_left_click(PyObject *self);
+static PyObject *PyPf_set_click_move_enabled(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_settings_get(PyObject *self, PyObject *args);
 static PyObject *PyPf_settings_set(PyObject *self, PyObject *args, PyObject *kwargs);
@@ -457,6 +458,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_transport_on_left_click, METH_NOARGS,
     "Set the cursor to target mode. The next left click will issue a 'transport' command to the storage site "
     "under the cursor."},
+
+    {"set_click_move_enabled",
+    (PyCFunction)PyPf_set_click_move_enabled, METH_VARARGS,
+    "Enable or disable issuing move orders by right-clicking."},
 
     {"draw_text",
     (PyCFunction)PyPf_draw_text, METH_VARARGS,
@@ -1574,6 +1579,19 @@ static PyObject *PyPf_set_drop_off_on_left_click(PyObject *self)
 static PyObject *PyPf_set_transport_on_left_click(PyObject *self)
 {
     G_Harvester_SetTransportOnLeftClick();
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_click_move_enabled(PyObject *self, PyObject *args)
+{
+    PyObject *arg;
+    if(!PyArg_ParseTuple(args, "O", &arg)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a single boolean expression.");
+        return NULL;
+    }
+
+    printf("setting click move: %hhd\n", PyObject_IsTrue(arg));
+    G_Move_SetClickEnabled(PyObject_IsTrue(arg));
     Py_RETURN_NONE;
 }
 

@@ -88,6 +88,7 @@ static int       PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, 
 static PyObject *PyEntity_get_vision_range(PyEntityObject *self, void *closure);
 static int       PyEntity_set_vision_range(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_tags(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_bounds(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args);
@@ -221,6 +222,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"tags",
     (getter)PyEntity_get_tags, NULL,
     "Return a tuple with all the entity's tags.",
+    NULL},
+    {"bounds",
+    (getter)PyEntity_get_bounds, NULL,
+    "Return an (X, Y, Z) tuple of the dimensions of the entity's bounding box (in OpenGL coordinates).",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -1241,6 +1246,16 @@ static PyObject *PyEntity_get_tags(PyEntityObject *self, void *closure)
     }
 
     return ret;
+}
+
+static PyObject *PyEntity_get_bounds(PyEntityObject *self, void *closure)
+{
+    struct obb obb;
+    Entity_CurrentOBB(self->ent, &obb, true);
+    return Py_BuildValue("(fff)", 
+        obb.half_lengths[0] * 2, 
+        obb.half_lengths[1] * 2,
+        obb.half_lengths[2] * 2);
 }
 
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args)

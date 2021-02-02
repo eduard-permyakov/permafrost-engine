@@ -66,6 +66,8 @@ static PyObject *PyRegion_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
 
 static PyObject *PyRegion_get_pos(PyRegionObject *self, void *closure);
 static int       PyRegion_set_pos(PyRegionObject *self, PyObject *value, void *closure);
+static PyObject *PyRegion_get_shown(PyRegionObject *self, void *closure);
+static int       PyRegion_set_shown(PyRegionObject *self, PyObject *value, void *closure);
 static PyObject *PyRegion_get_name(PyRegionObject *self, void *closure);
 static PyObject *PyRegion_get_type(PyRegionObject *self, void *closure);
 static PyObject *PyRegion_get_parameters(PyRegionObject *self, void *closure);
@@ -99,6 +101,10 @@ static PyGetSetDef PyRegion_getset[] = {
     {"position",
     (getter)PyRegion_get_pos, (setter)PyRegion_set_pos,
     "The current worldspace position of the region", 
+    NULL},
+    {"shown",
+    (getter)PyRegion_get_shown, (setter)PyRegion_set_shown,
+    "Boolean to control whether the region is rendered on the map surface", 
     NULL},
     {"name",
     (getter)PyRegion_get_name, NULL,
@@ -430,6 +436,25 @@ static int PyRegion_set_pos(PyRegionObject *self, PyObject *value, void *closure
     }
 
     G_Region_SetPos(self->name, newpos);
+    return 0;
+}
+
+static PyObject *PyRegion_get_shown(PyRegionObject *self, void *closure)
+{
+    bool on = false;
+    G_Region_GetShown(self->name, &on);
+    if(on) {
+        Py_RETURN_TRUE;
+    }else {
+        Py_RETURN_FALSE;
+    }
+}
+
+static int PyRegion_set_shown(PyRegionObject *self, PyObject *value, void *closure)
+{
+    bool on = PyObject_IsTrue(value);
+    bool status = G_Region_SetShown(self->name, on);
+    assert(status);
     return 0;
 }
 

@@ -221,16 +221,21 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
 static void invoke(const struct handler_desc *hd, struct event event)
 {
     if(hd->type == HANDLER_TYPE_ENGINE) {
+
         hd->handler.as_function(hd->user_arg, event.arg);
+
     }else if(hd->type == HANDLER_TYPE_SCRIPT) {
 
         script_opaque_t script_arg = (event.source == ES_SCRIPT) 
             ? S_UnwrapIfWeakref(event.arg)
             : S_WrapEngineEventArg(event.type, event.arg);
         assert(script_arg);
+        script_opaque_t user_arg = S_UnwrapIfWeakref(hd->user_arg);
 
-        S_RunEventHandler(hd->handler.as_script_callable, S_UnwrapIfWeakref(hd->user_arg), script_arg);
+        S_RunEventHandler(hd->handler.as_script_callable, user_arg, script_arg);
+
         S_Release(script_arg);
+        S_Release(user_arg);
     }
 }
 

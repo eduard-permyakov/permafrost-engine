@@ -1539,7 +1539,7 @@ static int setattr_nondestructive(PyObject *obj, PyObject *name, PyObject *val)
     if(readback != val) {
 
         PyObject *repr = PyObject_Repr(obj);
-        SET_RUNTIME_EXC("Unexpected attribute desctriction: [%s] of [%s]",
+        SET_RUNTIME_EXC("Unexpected attribute desctruction: [%s] of [%s]",
             PyString_AS_STRING(name), PyString_AS_STRING(repr));
         Py_DECREF(repr);
         ret = -1;

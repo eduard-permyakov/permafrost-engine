@@ -199,6 +199,8 @@ void G_Move_SetAttackOnLeftClick(void);
 void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz);
 void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius);
 bool G_Move_Still(const struct entity *ent);
+void G_Move_SetClickEnabled(bool on);
+bool G_Move_GetClickEnabled(void);
 
 
 /*###########################################################################*/
@@ -378,6 +380,8 @@ enum region_type{
 bool   G_Region_AddCircle(const char *name, vec2_t pos, float radius);
 bool   G_Region_AddRectangle(const char *name, vec2_t pos, float xlen, float zlen);
 void   G_Region_Remove(const char *name);
+bool   G_Region_SetShown(const char *name, bool on);
+bool   G_Region_GetShown(const char *name, bool *out);
 
 bool   G_Region_SetPos(const char *name, vec2_t pos);
 bool   G_Region_GetPos(const char *name, vec2_t *out);

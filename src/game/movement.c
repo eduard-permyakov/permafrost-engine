@@ -191,6 +191,7 @@ VEC_IMPL(static inline, flock, struct flock)
 static const struct map       *s_map;
 static bool                    s_attack_on_lclick = false;
 static bool                    s_move_on_lclick = false;
+static bool                    s_click_move_enabled = true;
 
 static vec_pentity_t           s_move_markers;
 static vec_flock_t             s_flocks;
@@ -544,6 +545,9 @@ static void on_mousedown(void *user, void *event)
 
     s_attack_on_lclick = false;
     s_move_on_lclick = false;
+
+    if(!s_click_move_enabled)
+        return;
 
     if(G_MouseOverMinimap())
         return;
@@ -1766,8 +1770,24 @@ bool G_Move_InTargetMode(void)
     return (s_move_on_lclick || s_attack_on_lclick);
 }
 
+void G_Move_SetClickEnabled(bool on)
+{
+    s_click_move_enabled = on;
+}
+
+bool G_Move_GetClickEnabled(void)
+{
+    return s_click_move_enabled;
+}
+
 bool G_Move_SaveState(struct SDL_RWops *stream)
 {
+    struct attr click_move_enabled = (struct attr){
+        .type = TYPE_BOOL,
+        .val.as_bool = s_click_move_enabled
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &click_move_enabled, "click_move_enabled"));
+
     /* save flock info */
     struct attr num_flocks = (struct attr){
         .type = TYPE_INT,
@@ -1897,6 +1917,10 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
 bool G_Move_LoadState(struct SDL_RWops *stream)
 {
     struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    s_click_move_enabled = attr.val.as_bool;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);

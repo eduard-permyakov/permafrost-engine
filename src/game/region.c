@@ -77,6 +77,7 @@ struct region{
             float zlen;
         };
     };
+    bool shown;
     vec2_t pos;
     vec_uid_t curr_ents;
     vec_uid_t prev_ents;
@@ -437,9 +438,6 @@ static void region_notify_changed(const char *name, struct region *reg)
 
 static void on_render_3d(void *user, void *event)
 {
-    if(!s_render)
-        return;
-
     const float width = 0.5f;
     const vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
 
@@ -447,6 +445,9 @@ static void on_render_3d(void *user, void *event)
     struct region reg;
 
     kh_foreach(s_regions, key, reg, {
+
+        if(!s_render && !reg.shown)
+            continue;
 
         switch(reg.type) {
         case REGION_CIRCLE: {
@@ -486,6 +487,9 @@ static void on_render_3d(void *user, void *event)
         }
         default: assert(0);
         }
+
+        if(!s_render)
+            continue;
 
         float len = strlen(key) * 7.5f;
         vec2_t ss_pos = region_ss_pos(reg.pos);
@@ -570,6 +574,7 @@ bool G_Region_AddCircle(const char *name, vec2_t pos, float radius)
     struct region newreg = (struct region) {
         .type = REGION_CIRCLE,
         .radius = radius,
+        .shown = false,
         .pos = pos
     };
     vec_uid_init(&newreg.curr_ents);
@@ -588,6 +593,7 @@ bool G_Region_AddRectangle(const char *name, vec2_t pos, float xlen, float zlen)
         .type = REGION_RECTANGLE,
         .xlen = xlen,
         .zlen = zlen,
+        .shown = false,
         .pos = pos
     };
     vec_uid_init(&newreg.curr_ents);
@@ -660,6 +666,26 @@ bool G_Region_GetPos(const char *name, vec2_t *out)
         return false;
 
     *out = kh_value(s_regions, k).pos;
+    return true;
+}
+
+bool G_Region_SetShown(const char *name, bool on)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
+
+    kh_value(s_regions, k).shown = on;
+    return true;
+}
+
+bool G_Region_GetShown(const char *name, bool *out)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
+
+    *out = kh_value(s_regions, k).shown;
     return true;
 }
 
@@ -808,6 +834,12 @@ bool G_Region_SaveState(struct SDL_RWops *stream)
         pf_strlcpy(reg_name.val.as_string, name, sizeof(reg_name.val.as_string));
         CHK_TRUE_RET(Attr_Write(stream, &reg_name, "reg_name"));
 
+        struct attr shown = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.shown
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &shown, "shown"));
+
         struct attr pos = (struct attr){
             .type = TYPE_VEC2,
             .val.as_vec2 = curr.pos
@@ -912,6 +944,10 @@ bool G_Region_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &name, true));
         CHK_TRUE_RET(name.type == TYPE_STRING);
 
+        struct attr shown;
+        CHK_TRUE_RET(Attr_Parse(stream, &shown, true));
+        CHK_TRUE_RET(shown.type == TYPE_BOOL);
+
         struct attr pos;
         CHK_TRUE_RET(Attr_Parse(stream, &pos, true));
         CHK_TRUE_RET(pos.type == TYPE_VEC2);
@@ -947,6 +983,7 @@ bool G_Region_LoadState(struct SDL_RWops *stream)
         khiter_t k = kh_get(region, s_regions, name.val.as_string);
         assert(k != kh_end(s_regions));
         struct region *reg = &kh_value(s_regions, k);
+        reg->shown = shown.val.as_bool;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
