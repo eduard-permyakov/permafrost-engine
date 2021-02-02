@@ -111,6 +111,7 @@ static PyObject *PyPf_disable_unit_selection(PyObject *self);
 static PyObject *PyPf_clear_unit_selection(PyObject *self);
 static PyObject *PyPf_get_unit_selection(PyObject *self);
 static PyObject *PyPf_get_hovered_unit(PyObject *self);
+static PyObject *PyPf_entities_for_tag(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_hide_healthbars(PyObject *self);
 static PyObject *PyPf_show_healthbars(PyObject *self);
@@ -327,6 +328,10 @@ static PyMethodDef pf_module_methods[] = {
     {"get_hovered_unit", 
     (PyCFunction)PyPf_get_hovered_unit, METH_NOARGS,
     "Get the closest unit under the mouse cursor, or None."},
+
+    {"entities_for_tag", 
+    (PyCFunction)PyPf_entities_for_tag, METH_VARARGS,
+    "Get a tuple of entities that have the specific tag."},
 
     {"hide_healthbars", 
     (PyCFunction)PyPf_hide_healthbars, METH_NOARGS,
@@ -1135,6 +1140,30 @@ static PyObject *PyPf_get_hovered_unit(PyObject *self)
         return obj;
     }
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_entities_for_tag(PyObject *self, PyObject *args)
+{
+    const char *tag;
+    if(!PyArg_ParseTuple(args, "s", &tag)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a string (tag).");
+        return NULL;
+    }
+
+    uint32_t uids[16384];
+    size_t nents = Entity_EntsForTag(tag, ARR_SIZE(uids), uids);
+
+    PyObject *ret = PyTuple_New(nents);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < nents; i++) {
+        PyObject *ent = S_Entity_ObjForUID(uids[i]);
+        assert(ent);
+        Py_INCREF(ent);
+        PyTuple_SET_ITEM(ret, i, ent);
+    }
+    return ret;
 }
 
 static PyObject *PyPf_hide_healthbars(PyObject *self)

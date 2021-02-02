@@ -43,6 +43,9 @@
 #include "render/public/render_ctrl.h"
 #include "game/public/game.h"
 #include "anim/public/anim.h"
+#include "lib/public/mpool.h"
+#include "lib/public/khash.h"
+#include "lib/public/string_intern.h"
 
 #include <assert.h>
 
@@ -51,15 +54,81 @@
 #define MIN(a, b)   ((a) < (b) ? (a) : (b))
 #define MAX(a, b)   ((a) > (b) ? (a) : (b))
 
+KHASH_SET_INIT_INT(uid)
+KHASH_MAP_INIT_STR(ents, kh_uid_t)
+
+struct taglist{
+    uint64_t ntags;
+    const char *tags[MAX_TAGS];
+};
+
+MPOOL_TYPE(taglist, struct taglist)
+MPOOL_PROTOTYPES(static, taglist, struct taglist)
+MPOOL_IMPL(static, taglist, struct taglist)
+KHASH_MAP_INIT_INT(tags, struct taglist)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static uint32_t s_next_uid = 0;
+static uint32_t          s_next_uid = 0;
+static khash_t(stridx)  *s_stridx;
+static mp_strbuff_t      s_stringpool;
+
+static kh_ents_t        *s_tag_ent_map;
+static kh_tags_t        *s_ent_tag_map;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static struct taglist *entity_taglist(uint32_t uid)
+{
+    khiter_t k = kh_get(tags, s_ent_tag_map, uid);
+    if(k == kh_end(s_ent_tag_map)) {
+        int status;
+        k = kh_put(tags, s_ent_tag_map, uid, &status);
+        if(status == -1)
+            return NULL;
+        kh_value(s_ent_tag_map, k).ntags = 0;
+    }
+    return &kh_value(s_ent_tag_map, k);
+}
+
+static bool tag_add_entity(const char *tag, uint32_t uid)
+{
+    const char *str = si_intern(tag, &s_stringpool, s_stridx);
+    if(!str)
+        return false;
+
+    khiter_t k = kh_get(ents, s_tag_ent_map, str);
+    if(k == kh_end(s_tag_ent_map)) {
+        int status;
+        k = kh_put(ents, s_tag_ent_map, str, &status);
+        if(status == -1)
+            return false;
+        memset(&kh_value(s_tag_ent_map, k), 0, sizeof(kh_uid_t));
+    }
+
+    int status;
+    kh_uid_t *set = &kh_value(s_tag_ent_map, k);
+    kh_put(uid, set, uid, &status);
+    return (status != -1);
+}
+
+static void tag_remove_entity(const char *tag, uint32_t uid)
+{
+    const char *str = si_intern(tag, &s_stringpool, s_stridx);
+    if(!str)
+        return;
+
+    khiter_t k = kh_get(ents, s_tag_ent_map, str);
+    if(k == kh_end(s_tag_ent_map))
+        return;
+
+    kh_uid_t *set = &kh_value(s_tag_ent_map, k);
+    kh_del(uid, set, uid);
+}
 
 static struct result ping_task(void *arg)
 {
@@ -291,5 +360,124 @@ bool Entity_MaybeAdjacentFast(const struct entity *a, const struct entity *b, fl
     vec2_t diff;
     PFM_Vec2_Sub(&apos, &bpos, &diff);
     return (PFM_Vec2_Len(&diff) < len + buffer);
+}
+
+bool Entity_AddTag(uint32_t uid, const char *tag)
+{
+    struct taglist *tl = entity_taglist(uid);
+    if(!tl || tl->ntags == MAX_TAGS)
+        return false;
+    if(Entity_HasTag(uid, tag))
+        return true;
+    const char *str = si_intern(tag, &s_stringpool, s_stridx);
+    if(!str)
+        return false;
+    if(!tag_add_entity(str, uid))
+        return false;
+    tl->tags[tl->ntags++] = str;
+    return true;
+}
+
+void Entity_RemoveTag(uint32_t uid, const char *tag)
+{
+    struct taglist *tl = entity_taglist(uid);
+    if(!tl)
+        return;
+    if(!Entity_HasTag(uid, tag))
+        return;
+    for(int i = 0; i < tl->ntags; i++) {
+        if(0 == strcmp(tl->tags[i], tag)) {
+            tl->tags[i] = tl->tags[--tl->ntags];
+            break;
+        }
+    }
+    tag_remove_entity(tag, uid);
+}
+
+bool Entity_HasTag(uint32_t uid, const char *tag)
+{
+    khiter_t k = kh_get(ents, s_tag_ent_map, tag);
+    if(k == kh_end(s_tag_ent_map))
+        return false;
+
+    kh_uid_t *set = &kh_value(s_tag_ent_map, k);
+    khiter_t l = kh_get(uid, set, uid);
+    return (l != kh_end(set));
+}
+
+void Entity_ClearTags(uint32_t uid)
+{
+    struct taglist *tl = entity_taglist(uid);
+    if(!tl)
+        return;
+    for(int i = 0; i < tl->ntags; i++) {
+        tag_remove_entity(tl->tags[i], uid);
+    }
+    tl->ntags = 0;
+}
+
+size_t Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[static maxout])
+{
+    khiter_t k = kh_get(ents, s_tag_ent_map, tag);
+    if(k == kh_end(s_tag_ent_map))
+        return 0;
+
+    size_t ret = 0;
+    kh_uid_t *set = &kh_value(s_tag_ent_map, k);
+    for(khiter_t l = kh_begin(set); l != kh_end(set); l++) {
+        if(!kh_exist(set, l))
+            continue;
+        if(ret == maxout)
+            return ret;
+        out[ret++] = kh_key(set, l);
+    }
+    return ret;
+}
+
+size_t Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[static maxout])
+{
+    struct taglist *tl = entity_taglist(uid);
+    if(!tl)
+        return 0;
+    size_t ret = MIN(tl->ntags, maxout);
+    memcpy(out, tl->tags, ret * sizeof(char*));
+    return ret;
+}
+
+bool Entity_Init(void)
+{
+    if(!si_init(&s_stringpool, &s_stridx, 2048))
+        goto fail_strintern;
+
+    s_tag_ent_map = kh_init(ents);
+    if(!s_tag_ent_map)
+        goto fail_tag_ent_map;
+
+    s_ent_tag_map = kh_init(tags);
+    if(!s_ent_tag_map)
+        goto fail_ent_tag_map;
+
+    return true;
+
+fail_ent_tag_map:
+    kh_destroy(ents, s_tag_ent_map);
+fail_tag_ent_map:
+    si_shutdown(&s_stringpool, s_stridx);
+fail_strintern:
+    return false;
+}
+
+void Entity_Shutdown(void)
+{
+    kh_destroy(tags, s_ent_tag_map);
+    kh_destroy(ents, s_tag_ent_map);
+    si_shutdown(&s_stringpool, s_stridx);
+}
+
+void Entity_ClearState(void)
+{
+    kh_clear(tags, s_ent_tag_map);
+    kh_clear(ents, s_tag_ent_map);
+    si_clear(&s_stringpool, s_stridx);
 }
 

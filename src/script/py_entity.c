@@ -87,6 +87,7 @@ static PyObject *PyEntity_get_faction_id(PyEntityObject *self, void *closure);
 static int       PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_vision_range(PyEntityObject *self, void *closure);
 static int       PyEntity_set_vision_range(PyEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyEntity_get_tags(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_unregister(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args);
@@ -96,6 +97,8 @@ static PyObject *PyEntity_stop(PyEntityObject *self);
 static PyObject *PyEntity_face_towards(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_set_model(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_ping(PyEntityObject *self);
+static PyObject *PyEntity_add_tag(PyEntityObject *self, PyObject *args);
+static PyObject *PyEntity_remove_tag(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -141,6 +144,14 @@ static PyMethodDef PyEntity_methods[] = {
     {"ping", 
     (PyCFunction)PyEntity_ping, METH_NOARGS,
     "Temporarily blink the enitity's selection circle."},
+
+    {"add_tag", 
+    (PyCFunction)PyEntity_add_tag, METH_VARARGS,
+    "Add a string tag to this entity's list of tags."},
+
+    {"remove_tag", 
+    (PyCFunction)PyEntity_remove_tag, METH_VARARGS,
+    "Remove a string tag from this entity's list of tags."},
 
     {"__pickle__", 
     (PyCFunction)PyEntity_pickle, METH_KEYWORDS,
@@ -206,6 +217,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"vision_range",
     (getter)PyEntity_get_vision_range, (setter)PyEntity_set_vision_range,
     "The radius (in OpenGL coordinates) that the entity sees around itself.",
+    NULL},
+    {"tags",
+    (getter)PyEntity_get_tags, NULL,
+    "Return a tuple with all the entity's tags.",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -1207,6 +1222,27 @@ static int PyEntity_set_vision_range(PyEntityObject *self, PyObject *value, void
     return 0;
 }
 
+static PyObject *PyEntity_get_tags(PyEntityObject *self, void *closure)
+{
+    const char *tags[MAX_TAGS];
+    size_t ntags = Entity_TagsForEnt(self->ent->uid, ARR_SIZE(tags), tags);
+
+    PyObject *ret = PyTuple_New(ntags);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < ntags; i++) {
+        PyObject *str = PyString_FromString(tags[i]);
+        if(!str) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+        PyTuple_SET_ITEM(ret, i, str);
+    }
+
+    return ret;
+}
+
 static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args)
 {
     enum eventtype event;
@@ -1321,6 +1357,34 @@ static PyObject *PyEntity_set_model(PyEntityObject *self, PyObject *args)
 static PyObject *PyEntity_ping(PyEntityObject *self)
 {
     Entity_Ping(self->ent);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_add_tag(PyEntityObject *self, PyObject *args)
+{
+    const char *tag;
+    if(!PyArg_ParseTuple(args, "s", &tag)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a string (tag) argument.");
+        return NULL;
+    }
+
+    if(!Entity_AddTag(self->ent->uid, tag)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to set tag for entity.");
+        return NULL;
+    }
+
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_remove_tag(PyEntityObject *self, PyObject *args)
+{
+    const char *tag;
+    if(!PyArg_ParseTuple(args, "s", &tag)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a string (tag) argument.");
+        return NULL;
+    }
+
+    Entity_RemoveTag(self->ent->uid, tag);
     Py_RETURN_NONE;
 }
 
@@ -3162,7 +3226,7 @@ bool S_Entity_Check(PyObject *obj)
     return PyObject_IsInstance(obj, (PyObject*)&PyEntity_type);
 }
 
-bool S_Entity_UIDForObj(PyObject *obj, uint32_t *out)
+bool S_Entity_UIDForObj(script_opaque_t obj, uint32_t *out)
 {
     if(!PyObject_IsInstance(obj, (PyObject*)&PyEntity_type))
         return false;
@@ -3171,7 +3235,7 @@ bool S_Entity_UIDForObj(PyObject *obj, uint32_t *out)
     return true;
 }
 
-PyObject *S_Entity_ObjForUID(uint32_t uid)
+script_opaque_t S_Entity_ObjForUID(uint32_t uid)
 {
     khiter_t k = kh_get(PyObject, s_uid_pyobj_table, uid);
     if(k == kh_end(s_uid_pyobj_table))
@@ -3243,7 +3307,7 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
     };
 
     for(int i = 0; i < ARR_SIZE(attrs); i++) {
-    
+
         const char *ent_attr = attrs[i][0];
         const char *scene_attr = attrs[i][1];
 

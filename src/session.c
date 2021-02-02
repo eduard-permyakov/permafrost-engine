@@ -96,6 +96,7 @@ static void subsession_clear(void)
     G_ClearState();
     G_ClearRenderWork();
     Cursor_ClearState();
+    Entity_ClearState();
     UI_SetActiveFont("__default__");
 }
 

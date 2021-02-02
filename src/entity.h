@@ -44,6 +44,7 @@
 #include <stdbool.h>
 
 #define MAX_JOINTS  (96)
+#define MAX_TAGS    (127)
 
 enum{
     ENTITY_FLAG_ANIMATED            = (1 << 0),
@@ -108,6 +109,7 @@ struct ent_vis_state{
     float  vis_range;
 };
 
+
 VEC_TYPE(rstat, struct ent_stat_rstate)
 VEC_IMPL(static inline, rstat, struct ent_stat_rstate)
 
@@ -115,6 +117,9 @@ VEC_TYPE(ranim, struct ent_anim_rstate)
 VEC_IMPL(static inline, ranim, struct ent_anim_rstate)
 
 
+bool     Entity_Init(void);
+void     Entity_Shutdown(void);
+void     Entity_ClearState(void);
 void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
 uint32_t Entity_NewUID(void);
 void     Entity_SetNextUID(uint32_t uid);
@@ -126,5 +131,11 @@ vec2_t   Entity_TopScreenPos(const struct entity *ent);
 /* Coarse-grained test that can give false positives. Use the check to get
  * positives, but confirm positive results with a more precise check */
 bool     Entity_MaybeAdjacentFast(const struct entity *a, const struct entity *b, float buffer);
+bool     Entity_AddTag(uint32_t uid, const char *tag);
+void     Entity_RemoveTag(uint32_t uid, const char *tag);
+bool     Entity_HasTag(uint32_t uid, const char *tag);
+void     Entity_ClearTags(uint32_t uid);
+size_t   Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[static maxout]);
+size_t   Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[static maxout]);
 
 #endif

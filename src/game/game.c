@@ -1454,6 +1454,7 @@ void G_SafeFree(struct entity *ent)
 {
     ASSERT_IN_MAIN_THREAD();
     G_Sel_MarkHoveredDirty();
+    Entity_ClearTags(ent->uid);
     vec_pentity_push(&s_gs.deleted, ent);
 }
 
@@ -1744,6 +1745,7 @@ void G_Zombiefy(struct entity *ent)
     vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
     G_Fog_RemoveVision(xz_pos, ent->faction_id, ent->vision_range);
     G_Region_RemoveEnt(ent->uid);
+    Entity_ClearTags(ent->uid);
 
     ent->flags &= ~ENTITY_FLAG_SELECTABLE;
     ent->flags &= ~ENTITY_FLAG_COLLISION;

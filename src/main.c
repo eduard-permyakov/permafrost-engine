@@ -422,6 +422,11 @@ static bool engine_init(char **argv)
         goto fail_event;
     }
 
+    if(!Entity_Init()) {
+        fprintf(stderr, "Failed to initialize event subsystem\n");
+        goto fail_entity;
+    }
+
     if(!G_Init()) {
         fprintf(stderr, "Failed to initialize game subsystem\n");
         goto fail_game;
@@ -461,6 +466,8 @@ fail_script:
 fail_nuklear:
     G_Shutdown();
 fail_game:
+    Entity_Shutdown();
+fail_entity:
     E_Shutdown();
 fail_event:
 fail_render:
@@ -508,6 +515,7 @@ static void engine_shutdown(void)
      * 'G_' API to remove them from the world.
      */
     G_Shutdown(); 
+    Entity_Shutdown();
     N_Shutdown();
 
     Cursor_FreeAll();

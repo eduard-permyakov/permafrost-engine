@@ -63,7 +63,8 @@ static bool scene_load_entity(SDL_RWops *stream)
     char line[MAX_LINE_LEN];
     char name[128];
     char path[256];
-    unsigned num_atts;
+    unsigned num_atts, ntags = 0;
+    char tags[128][MAX_TAGS];
 
     khash_t(attr) *attr_table = kh_init(attr);
     if(!attr_table)
@@ -73,7 +74,7 @@ static bool scene_load_entity(SDL_RWops *stream)
     vec_attr_init(&constructor_args);
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "entity %127s %255s %u", name, path, &num_atts))
+    if(!sscanf(line, " entity %127s %255s %u", name, path, &num_atts))
         goto fail_parse;
 
     for(int i = 0; i < num_atts; i++) {
@@ -88,6 +89,9 @@ static bool scene_load_entity(SDL_RWops *stream)
 
         if(!strcmp(attr.key, "constructor_arguments")) {
 
+            if(attr.type != TYPE_INT)
+                goto fail_parse;
+
             size_t num_args = attr.val.as_int;
             struct attr const_arg;
             
@@ -99,10 +103,32 @@ static bool scene_load_entity(SDL_RWops *stream)
                 vec_attr_push(&constructor_args, const_arg);
             }
         }
+
+        if(!strcmp(attr.key, "tags")) {
+
+            if(attr.type != TYPE_INT)
+                goto fail_parse;
+
+            ntags = attr.val.as_int;
+            for(int j = 0; j < ntags; j++) {
+
+                READ_LINE(stream, line, fail_parse);
+                if(!sscanf(line, " tag \"%127[^\"]", tags[j]))
+                    goto fail_parse;
+            }
+        }
     }
 
-    if(!S_Entity_ObjFromAtts(path, name, attr_table, &constructor_args))
+    script_opaque_t obj;
+    if(!(obj = S_Entity_ObjFromAtts(path, name, attr_table, &constructor_args)))
         goto fail_init;
+
+    uint32_t uid;
+    S_Entity_UIDForObj(obj, &uid);
+
+    for(int i = 0; i < ntags; i++) {
+        Entity_AddTag(uid, tags[i]);
+    }
 
     const char *key;
     struct attr val;
@@ -129,7 +155,7 @@ static bool scene_load_entities(SDL_RWops *stream)
     unsigned num_ents;
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "num_entities %u", &num_ents))
+    if(!sscanf(line, " num_entities %u", &num_ents))
         goto fail_parse;
 
     for(int i = 0; i < num_ents; i++) {
@@ -149,7 +175,7 @@ static bool scene_load_faction(SDL_RWops *stream)
     struct attr color;
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "faction \"%31[^\"]", name))
+    if(!sscanf(line, " faction \"%31[^\"]", name))
         goto fail_parse;
 
     if(!Attr_Parse(stream, &color, true))
@@ -171,7 +197,7 @@ static bool scene_load_factions(SDL_RWops *stream)
     unsigned num_factions;
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "num_factions %u", &num_factions))
+    if(!sscanf(line, " num_factions %u", &num_factions))
         goto fail_parse;
 
     for(int i = 0; i < num_factions; i++) {
@@ -193,7 +219,7 @@ static bool scene_load_region(SDL_RWops *stream)
     vec2_t pos = {0};
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "region %127s %u %u", name, &type, &num_atts))
+    if(!sscanf(line, " region %127s %u %u", name, &type, &num_atts))
         goto fail_parse;
 
     for(int i = 0; i < num_atts; i++) {
@@ -233,7 +259,7 @@ static bool scene_load_regions(SDL_RWops *stream)
     unsigned num_regions;
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "num_regions %u", &num_regions))
+    if(!sscanf(line, " num_regions %u", &num_regions))
         goto fail_parse;
 
     for(int i = 0; i < num_regions; i++) {
@@ -261,7 +287,7 @@ static bool scene_load_section(SDL_RWops *stream)
     };
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "section \"%" STR(MAX_LINE_LEN) "[^\"]", name))
+    if(!sscanf(line, " section \"%" STR(MAX_LINE_LEN) "[^\"]", name))
         goto fail_parse;
 
     for(int i = 0; i < ARR_SIZE(map); i++) {
@@ -289,14 +315,14 @@ bool Scene_Load(const char *path)
         goto fail_stream;
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "version %f", &version))
+    if(!sscanf(line, " version %f", &version))
         goto fail_parse;
 
     if(version > PFSCENE_VERSION)
         goto fail_parse;
 
     READ_LINE(stream, line, fail_parse);
-    if(!sscanf(line, "num_sections %u", &num_sections))
+    if(!sscanf(line, " num_sections %u", &num_sections))
         goto fail_parse;
 
     for(int i = 0; i < num_sections; i++) {

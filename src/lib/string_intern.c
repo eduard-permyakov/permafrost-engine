@@ -108,3 +108,9 @@ void si_shutdown(mp_strbuff_t *pool, khash_t(stridx) *index)
     mp_strbuff_destroy(pool);
 }
 
+void si_clear(mp_strbuff_t *pool, khash_t(stridx) *index)
+{
+    kh_clear(stridx, index);
+    mp_strbuff_clear(pool);
+}
+
