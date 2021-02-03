@@ -725,6 +725,14 @@ bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr
     struct ss_state *ss = ss_state_get(ent->uid);
     assert(ss);
 
+    int cap = 0;
+    ss_state_get_key(ss->capacity, rname, &cap);
+
+    if(curr > cap)
+        return false;
+    if(curr < 0)
+        return false;
+
     int prev = 0;
     ss_state_get_key(ss->curr, rname, &prev);
     int delta = curr - prev;

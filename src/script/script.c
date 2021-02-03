@@ -1590,7 +1590,6 @@ static PyObject *PyPf_set_click_move_enabled(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    printf("setting click move: %hhd\n", PyObject_IsTrue(arg));
     G_Move_SetClickEnabled(PyObject_IsTrue(arg));
     Py_RETURN_NONE;
 }
@@ -2535,9 +2534,6 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_BUILDING_COMPLETED: 
     case EVENT_ENTITY_DIED: {
         PyObject *ent = S_Entity_ObjForUID(((struct entity*)arg)->uid);
-        if(!ent) {
-            printf("couldn't find arg for event: %s\n", E_EngineEventString(eventnum));
-        }
         assert(ent);
         Py_INCREF(ent);
         return ent;

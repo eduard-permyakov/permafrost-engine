@@ -98,6 +98,7 @@ static PyObject *PyEntity_stop(PyEntityObject *self);
 static PyObject *PyEntity_face_towards(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_set_model(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_ping(PyEntityObject *self);
+static PyObject *PyEntity_zombiefy(PyEntityObject *self);
 static PyObject *PyEntity_add_tag(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_remove_tag(PyEntityObject *self, PyObject *args);
 static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject *kwargs);
@@ -145,6 +146,11 @@ static PyMethodDef PyEntity_methods[] = {
     {"ping", 
     (PyCFunction)PyEntity_ping, METH_NOARGS,
     "Temporarily blink the enitity's selection circle."},
+
+    {"zombiefy", 
+    (PyCFunction)PyEntity_zombiefy, METH_NOARGS,
+    "Make the entity a 'zombie', effectively removing it from the game simulation but allowing "
+    "the scripting object to persist."},
 
     {"add_tag", 
     (PyCFunction)PyEntity_add_tag, METH_VARARGS,
@@ -729,6 +735,7 @@ typedef struct {
 
 static PyObject *PyStorageSiteEntity_del(PyStorageSiteEntityObject *self);
 static PyObject *PyStorageSiteEntity_get_curr_amount(PyStorageSiteEntityObject *self, PyObject *args);
+static PyObject *PyStorageSiteEntity_set_curr_amount(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_set_capacity(PyStorageSiteEntityObject *self, PyObject *args);
 static PyObject *PyStorageSiteEntity_get_storable(PyStorageSiteEntityObject *self, void *closure);
@@ -746,6 +753,10 @@ static PyMethodDef PyStorageSiteEntity_methods[] = {
     {"get_curr_amount", 
     (PyCFunction)PyStorageSiteEntity_get_curr_amount, METH_VARARGS,
     "Gets the amount of the specified resource currently stored in the storage site."},
+
+    {"set_curr_amount", 
+    (PyCFunction)PyStorageSiteEntity_set_curr_amount, METH_VARARGS,
+    "Sets the amount of the specified resource currently stored in the storage site."},
 
     {"get_capacity", 
     (PyCFunction)PyStorageSiteEntity_get_capacity, METH_VARARGS,
@@ -1372,6 +1383,12 @@ static PyObject *PyEntity_set_model(PyEntityObject *self, PyObject *args)
 static PyObject *PyEntity_ping(PyEntityObject *self)
 {
     Entity_Ping(self->ent);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyEntity_zombiefy(PyEntityObject *self)
+{
+    G_Zombiefy(self->ent);
     Py_RETURN_NONE;
 }
 
@@ -2855,6 +2872,30 @@ static PyObject *PyStorageSiteEntity_get_curr_amount(PyStorageSiteEntityObject *
 
     int curr = G_StorageSite_GetCurr(self->super.ent->uid, name);
     return PyInt_FromLong(curr);
+}
+
+static PyObject *PyStorageSiteEntity_set_curr_amount(PyStorageSiteEntityObject *self, PyObject *args)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    const char *name;
+    int amount;
+    if(!PyArg_ParseTuple(args, "si", &name, &amount)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting two argument: name (string) and amount (int).");
+        return NULL;
+    }
+
+    if(!G_StorageSite_SetCurr(self->super.ent, name, amount)) {
+        char buff[256];
+        pf_snprintf(buff, sizeof(buff), "Unable to set amount (%d) for resource (%s).", amount, name);
+        PyErr_SetString(PyExc_RuntimeError, buff);
+        return NULL;
+    }
+
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyStorageSiteEntity_get_capacity(PyStorageSiteEntityObject *self, PyObject *args)

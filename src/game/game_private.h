@@ -53,7 +53,6 @@ enum ctx_action{
 
 const khash_t(entity) *G_GetDynamicEntsSet(void);
 const khash_t(entity) *G_GetAllEntsSet(void);
-void                   G_Zombiefy(struct entity *ent);
 struct entity         *G_EntityForUID(uint32_t uid);
 bool                   G_MouseInTargetMode(void);
 enum ctx_action        G_CurrContextualAction(void);

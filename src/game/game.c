@@ -633,6 +633,11 @@ static bool g_ent_visible(uint16_t playermask, const struct entity *ent, const s
     return G_Fog_ObjVisible(playermask, obb);
 }
 
+static bool g_pentities_equal(struct entity *const *a, struct entity *const *b)
+{
+    return ((*a) == (*b));
+}
+
 static void g_clear_map_state(void)
 {
     if(s_gs.map) {
@@ -726,47 +731,8 @@ static void g_change_simstate(void)
     s_gs.ss = s_gs.requested_ss;
 }
 
-/*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
-/*****************************************************************************/
-
-bool G_Init(void)
+static void g_create_settings(void)
 {
-    ASSERT_IN_MAIN_THREAD();
-
-    vec_pentity_init(&s_gs.visible);
-    vec_pentity_init(&s_gs.light_visible);
-    vec_obb_init(&s_gs.visible_obbs);
-    vec_pentity_init(&s_gs.deleted);
-
-    s_gs.active = kh_init(entity);
-    if(!s_gs.active)
-        goto fail_active;
-
-    s_gs.dynamic = kh_init(entity);
-    if(!s_gs.dynamic)
-        goto fail_dynamic;
-
-    if(!g_init_camera())
-        goto fail_cam; 
-
-    if(!R_InitWS(&s_gs.ws[0]))
-        goto fail_ws;
-
-    if(!R_InitWS(&s_gs.ws[1])) {
-        R_DestroyWS(&s_gs.ws[0]);
-        goto fail_ws;
-    }
-
-    G_ClearState();
-
-    G_Sel_Init();
-    G_Sel_Enable();
-    G_Timer_Init();
-    G_StorageSite_Init();
-
-    R_PushCmd((struct rcmd){ R_GL_WaterInit, 0 });
-
     ss_e status;
     (void)status;
 
@@ -929,6 +895,49 @@ bool G_Init(void)
         .validate = bool_val_validate,
         .commit = NULL,
     });
+}
+
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
+bool G_Init(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    vec_pentity_init(&s_gs.visible);
+    vec_pentity_init(&s_gs.light_visible);
+    vec_obb_init(&s_gs.visible_obbs);
+    vec_pentity_init(&s_gs.deleted);
+
+    s_gs.active = kh_init(entity);
+    if(!s_gs.active)
+        goto fail_active;
+
+    s_gs.dynamic = kh_init(entity);
+    if(!s_gs.dynamic)
+        goto fail_dynamic;
+
+    if(!g_init_camera())
+        goto fail_cam; 
+
+    if(!R_InitWS(&s_gs.ws[0]))
+        goto fail_ws;
+
+    if(!R_InitWS(&s_gs.ws[1])) {
+        R_DestroyWS(&s_gs.ws[0]);
+        goto fail_ws;
+    }
+
+    G_ClearState();
+
+    G_Sel_Init();
+    G_Sel_Enable();
+    G_Timer_Init();
+    G_StorageSite_Init();
+    g_create_settings();
+
+    R_PushCmd((struct rcmd){ R_GL_WaterInit, 0 });
 
     s_gs.prev_tick_map = NULL;
     s_gs.curr_ws_idx = 0;
@@ -1419,6 +1428,17 @@ bool G_RemoveEntity(struct entity *ent)
         kh_del(entity, s_gs.dynamic, k);
     }
 
+    int idx = vec_pentity_indexof(&s_gs.visible, ent, g_pentities_equal);
+    if(idx != -1) {
+        vec_pentity_del(&s_gs.visible, idx);
+        vec_obb_del(&s_gs.visible_obbs, idx);
+    }
+
+    idx = vec_pentity_indexof(&s_gs.light_visible, ent, g_pentities_equal);
+    if(idx != -1) {
+        vec_pentity_del(&s_gs.light_visible, idx);
+    }
+
     G_Sel_Remove(ent);
     G_Move_RemoveEntity(ent);
     G_Combat_RemoveEntity(ent);
@@ -1429,6 +1449,7 @@ bool G_RemoveEntity(struct entity *ent)
     G_StorageSite_RemoveEntity(ent);
     G_Region_RemoveEnt(ent->uid);
     G_Pos_Delete(ent->uid);
+    Entity_ClearTags(ent->uid);
     return true;
 }
 
@@ -1454,7 +1475,6 @@ void G_SafeFree(struct entity *ent)
 {
     ASSERT_IN_MAIN_THREAD();
     G_Sel_MarkHoveredDirty();
-    Entity_ClearTags(ent->uid);
     vec_pentity_push(&s_gs.deleted, ent);
 }
 

@@ -133,6 +133,7 @@ bool            G_AddEntity(struct entity *ent, vec3_t pos);
 bool            G_RemoveEntity(struct entity *ent);
 void            G_StopEntity(const struct entity *ent);
 void            G_UpdateBounds(const struct entity *ent);
+void            G_Zombiefy(struct entity *ent);
 
 /* Wrapper around AL_EntityFree to defer the call until the render thread 
  * (which owns some part of entity resources) finishes its' work. */
@@ -359,6 +360,7 @@ bool G_StorageSite_SetCapacity(const struct entity *ent, const char *rname, int 
 int  G_StorageSite_GetCapacity(uint32_t uid, const char *rname);
 bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr);
 int  G_StorageSite_GetCurr(uint32_t uid, const char *rname);
+bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr);
 int  G_StorageSite_GetDesired(uint32_t uid, const char *rname);
 bool G_StorageSite_SetDesired(uint32_t uid, const char *rname, int des);
 int  G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char *out[static maxout]);
