@@ -355,7 +355,8 @@ bool Entity_MaybeAdjacentFast(const struct entity *a, const struct entity *b, fl
 
     float alen = MAX(obb_a.half_lengths[0], obb_a.half_lengths[2]);
     float blen = MAX(obb_b.half_lengths[0], obb_b.half_lengths[2]);
-    float len = alen + blen;
+    /* Take the longest possible (diagonal) distance to the edge */
+    float len = (alen + blen) * sqrt(2);
 
     vec2_t diff;
     PFM_Vec2_Sub(&apos, &bpos, &diff);
