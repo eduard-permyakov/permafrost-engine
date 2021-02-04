@@ -726,7 +726,8 @@ bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr
     assert(ss);
 
     int cap = 0;
-    ss_state_get_key(ss->capacity, rname, &cap);
+    khash_t(int) *table = (ss->use_alt) ? ss->alt_capacity : ss->capacity;
+    ss_state_get_key(table, rname, &cap);
 
     if(curr > cap)
         return false;
