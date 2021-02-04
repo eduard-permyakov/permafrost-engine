@@ -41,10 +41,11 @@
 
 struct nk_context;
 
-bool S_UI_Init(struct nk_context *ctx);
-void S_UI_Shutdown(void);
-void S_UI_Update(void);
-void S_UI_PyRegister(PyObject *module);
+bool      S_UI_Init(struct nk_context *ctx);
+void      S_UI_Shutdown(void);
+void      S_UI_Update(void);
+void      S_UI_PyRegister(PyObject *module);
+PyObject *S_UI_ActiveWindow(void);
 
 #endif
 

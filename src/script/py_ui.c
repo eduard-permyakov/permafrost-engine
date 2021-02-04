@@ -96,6 +96,7 @@ static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_selectable_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_option_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_edit_string(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_edit_focus(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_popup(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_popup_close(PyWindowObject *self);
@@ -246,6 +247,10 @@ static PyMethodDef PyWindow_methods[] = {
     {"edit_string", 
     (PyCFunction)PyWindow_edit_string, METH_VARARGS,
     "Text field for getting string input from the user. Returns the current text."},
+
+    {"edit_focus", 
+    (PyCFunction)PyWindow_edit_focus, METH_VARARGS,
+    "Give focus to the next active text edit widget."},
 
     {"group", 
     (PyCFunction)PyWindow_group, METH_VARARGS,
@@ -845,6 +850,18 @@ static PyObject *PyWindow_edit_string(PyWindowObject *self, PyObject *args)
     nk_edit_string(s_nk_ctx, flags, textbuff, &len, sizeof(textbuff), nk_filter_default);
     textbuff[len] = '\0';
     return Py_BuildValue("s", textbuff);
+}
+
+static PyObject *PyWindow_edit_focus(PyWindowObject *self, PyObject *args)
+{
+    int flags;
+    if(!PyArg_ParseTuple(args, "i", &flags)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer (flags).");
+        return NULL;
+    }
+
+    nk_edit_focus(s_nk_ctx, flags);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyWindow_group(PyWindowObject *self, PyObject *args)
@@ -2195,5 +2212,28 @@ bool S_UI_TextEditHasFocus(void)
     }
 
     return false;
+}
+
+PyObject *S_UI_ActiveWindow(void)
+{
+    for(int i = 0; i < vec_size(&s_active_windows); i++) {
+
+        PyWindowObject *win = vec_AT(&s_active_windows, i);
+
+        if(win->flags & NK_WINDOW_HIDDEN
+        || win->flags & NK_WINDOW_CLOSED) {
+            continue; 
+        }
+
+        struct nk_window *nkwin = nk_window_find(s_nk_ctx, win->name);
+        if(!nkwin)
+            continue;
+
+        if(nkwin->edit.active == nk_true) {
+            Py_INCREF(win);
+            return (PyObject*)win;
+        }
+    }
+    return NULL;
 }
 
