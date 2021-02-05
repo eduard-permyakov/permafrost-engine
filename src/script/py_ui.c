@@ -1374,8 +1374,14 @@ static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
         goto fail_unpickle;
     }
 
+    /* Use the 'plain' (i.e. direct successor with no extra overrides) as the arugment
+     * to avoid calling any magic that might be risiding in the user-implemented __new__ 
+     */
+    PyTypeObject *heap_subtype = (PyTypeObject*)S_Pickle_PlainHeapSubtype((PyTypeObject*)cls);
+    assert(heap_subtype->tp_new);
+
     PyObject *win_args = Py_BuildValue("(OOOOOO)", name, rect, flags, virt_res, resize_mask, sop);
-    PyWindowObject *winobj = (PyWindowObject*)((PyTypeObject*)cls)->tp_new((struct _typeobject*)cls, win_args, NULL);
+    PyWindowObject *winobj = (PyWindowObject*)heap_subtype->tp_new((struct _typeobject*)cls, win_args, NULL);
     assert(winobj || PyErr_Occurred());
     CHK_TRUE(winobj, fail_window);
 

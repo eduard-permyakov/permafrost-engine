@@ -1539,7 +1539,7 @@ static int setattr_nondestructive(PyObject *obj, PyObject *name, PyObject *val)
     if(readback != val) {
 
         PyObject *repr = PyObject_Repr(obj);
-        SET_RUNTIME_EXC("Unexpected attribute desctruction: [%s] of [%s]",
+        SET_RUNTIME_EXC("Unexpected attribute destruction: [%s] of [%s]",
             PyString_AS_STRING(name), PyString_AS_STRING(repr));
         Py_DECREF(repr);
         ret = -1;
@@ -7580,6 +7580,11 @@ void S_Pickle_Shutdown(void)
         s_subclassable_builtin_map[i].heap_subtype = NULL;
     }
     memset(s_subclassable_builtin_map, 0, sizeof(s_subclassable_builtin_map)); 
+}
+
+PyObject *S_Pickle_PlainHeapSubtype(PyTypeObject *type)
+{
+    return constructor_type(type);
 }
 
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream)

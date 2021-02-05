@@ -48,12 +48,13 @@ struct SDL_RWops;
 VEC_TYPE(pobj, PyObject*)
 VEC_PROTOTYPES(extern, pobj, PyObject*)
 
-bool S_Pickle_Init(PyObject *module);
-void S_Pickle_Shutdown(void);
+bool      S_Pickle_Init(PyObject *module);
+void      S_Pickle_Shutdown(void);
 
-bool S_PickleObjgraph(PyObject *obj, struct SDL_RWops *stream);
+bool      S_PickleObjgraph(PyObject *obj, struct SDL_RWops *stream);
 /* Returns a new reference */
 PyObject *S_UnpickleObjgraph(struct SDL_RWops *stream);
+PyObject *S_Pickle_PlainHeapSubtype(PyTypeObject *type);
 
 /* Expose some methods of the pickling module for use types implementing 
  * their own pickling and unpickling routines and needing to deal with

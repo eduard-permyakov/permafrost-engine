@@ -431,6 +431,7 @@ static PyObject *PyBuildableEntity_complete(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure);
 static int       PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyBuildableEntity_get_founded(PyBuildableEntityObject *self, void *closure);
 static PyObject *PyBuildableEntity_get_completed(PyBuildableEntityObject *self, void *closure);
 static PyObject *PyBuildableEntity_get_vision_range(PyBuildableEntityObject *self, void *closure);
 static int       PyBuildableEntity_set_vision_range(PyBuildableEntityObject *self, PyObject *value, void *closure);
@@ -485,6 +486,10 @@ static PyGetSetDef PyBuildableEntity_getset[] = {
     {"vision_range",
     (getter)PyBuildableEntity_get_vision_range, (setter)PyBuildableEntity_set_vision_range,
     "The radius (in OpenGL coordinates) that the entity sees around itself.",
+    NULL},
+    {"founded",
+    (getter)PyBuildableEntity_get_founded, NULL,
+    "Boolean indicating if the building is at or past the 'FOUNDED' state.",
     NULL},
     {"completed",
     (getter)PyBuildableEntity_get_completed, NULL,
@@ -1583,8 +1588,13 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     PyObject *ent_args = Py_BuildValue("(OOO)", basedir, filename, name);
     PyObject *ent_kwargs = Py_BuildValue("{s:O, s:O}", "__uid__", uid, "__extra_flags__", flags);
 
-    assert(((PyTypeObject*)cls)->tp_new);
-    PyObject *entobj = ((PyTypeObject*)cls)->tp_new((struct _typeobject*)cls, ent_args, ent_kwargs);
+    /* Use the 'plain' (i.e. direct successor with no extra overrides) as the arugment
+     * to avoid calling any magic that might be risiding in the user-implemented __new__ 
+     */
+    PyTypeObject *heap_subtype = (PyTypeObject*)S_Pickle_PlainHeapSubtype((PyTypeObject*)cls);
+    assert(heap_subtype->tp_new);
+
+    PyObject *entobj = heap_subtype->tp_new((struct _typeobject*)cls, ent_args, ent_kwargs);
     assert(entobj || PyErr_Occurred());
 
     Py_DECREF(ent_args);
@@ -2269,8 +2279,24 @@ static int PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *va
     return 0;
 }
 
+static PyObject *PyBuildableEntity_get_founded(PyBuildableEntityObject *self, void *closure)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
+    if(G_Building_IsFounded(self->super.ent)) {
+        Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
+}
+
 static PyObject *PyBuildableEntity_get_completed(PyBuildableEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        return NULL;
+    }
     if(G_Building_IsCompleted(self->super.ent)) {
         Py_RETURN_TRUE;
     }
