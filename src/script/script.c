@@ -178,6 +178,10 @@ static PyObject *PyPf_exec_push(PyObject *self, PyObject *args);
 static PyObject *PyPf_exec_pop(PyObject *self, PyObject *args);
 static PyObject *PyPf_exec_pop_to_root(PyObject *self, PyObject *args);
 
+static PyObject *PyPf_nearest_ent(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_ents_in_circle(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_ents_in_rect(PyObject *self, PyObject *args, PyObject *kwargs);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -575,6 +579,22 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_exec_pop_to_root, METH_VARARGS,
     "Pop the root subsession, using it to replace the current subsession. "
     "This is performed asynchronously. Failure is notified via an EVENT_SESSION_FAIL_LOAD event."},
+
+    {"nearest_ent",
+    (PyCFunction)PyPf_nearest_ent, METH_VARARGS | METH_KEYWORDS,
+    "Returns the nearest entity to the specified 'position' - (X, Z) point or None. Takes an optional 'predicate' callable "
+    "argument to filter the results and an optional 'max_range' (Float) argument."},
+
+    {"ents_in_circle",
+    (PyCFunction)PyPf_ents_in_circle, METH_VARARGS | METH_KEYWORDS,
+    "Returns a list of entities in the specified circle (defined by (X, Z) 'position' and 'radius'). "
+    "Takes an optional 'predicate' callable argument to filter the results."},
+
+    {"ents_in_rect",
+    (PyCFunction)PyPf_ents_in_rect, METH_VARARGS | METH_KEYWORDS,
+    "Returns a list of entities in the specified rectangle (defined by two (X, Z) points - "
+    "the 'minimum' and 'maximum' corners. Takes an optional 'predicate' callable argument to "
+    "filter the results."},
 
     {NULL}  /* Sentinel */
 };
@@ -2315,6 +2335,160 @@ static PyObject *PyPf_exec_pop_to_root(PyObject *self, PyObject *args)
 
     Session_RequestPopToRoot(argc, argv);
     Py_RETURN_NONE;
+}
+
+static bool s_pred_callable(const struct entity *ent, void *arg)
+{
+    PyObject *func = arg;
+    PyObject *obj = S_Entity_ObjForUID(ent->uid);
+    if(!obj)
+        return false;
+
+    PyObject *result = PyObject_CallFunctionObjArgs(func, obj, NULL);
+    bool ret = PyObject_IsTrue(result);
+    Py_DECREF(result);
+    return ret;
+}
+
+static bool s_pred_any(const struct entity *ent, void *arg)
+{
+    return true;
+}
+
+static PyObject *PyPf_nearest_ent(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *kwlist[] = {"position", "predicate", "max_range", NULL};
+    float max_range = 0.0f;
+    vec2_t xz_pos;
+    PyObject *predicate = NULL;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)|Of", kwlist, &xz_pos.x, &xz_pos.z, &predicate, &max_range)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an (X, Z) float tuple and "
+            "an optional callable object.");
+        return NULL;
+    }
+
+    if(predicate && !PyCallable_Check(predicate)) {
+        PyErr_SetString(PyExc_TypeError, "'predicate' argument must be callable.");
+        return NULL;
+    }
+
+    struct entity *nearest = NULL;
+    if(predicate) {
+        nearest = G_Pos_NearestWithPred(xz_pos, s_pred_callable, predicate, max_range);
+    }else{
+        nearest = G_Pos_NearestWithPred(xz_pos, s_pred_any, NULL, max_range);
+    }
+
+    if(nearest) {
+        PyObject *ret = S_Entity_ObjForUID(nearest->uid);
+        if(!ret) {
+            Py_RETURN_NONE;
+        }
+        Py_INCREF(ret);
+        return ret;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_ents_in_circle(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *kwlist[] = {"position", "radius", "predicate", NULL};
+    float radius;
+    vec2_t xz_pos;
+    PyObject *predicate = NULL;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)f|O", kwlist, &xz_pos.x, &xz_pos.z, &radius, &predicate)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be an (X, Z) float tuple, a float and "
+            "an optional callable object.");
+        return NULL;
+    }
+
+    if(predicate && !PyCallable_Check(predicate)) {
+        PyErr_SetString(PyExc_TypeError, "'predicate' argument must be callable.");
+        return NULL;
+    }
+
+    struct entity *inside[16384];
+    size_t ninside;
+
+    if(predicate) {
+        ninside = G_Pos_EntsInCircleWithPred(xz_pos, radius, inside, ARR_SIZE(inside),
+            s_pred_callable, predicate);
+    }else{
+        ninside = G_Pos_EntsInCircleWithPred(xz_pos, radius, inside, ARR_SIZE(inside),
+            s_pred_any, NULL);
+    }
+
+    PyObject *list = PyList_New(ninside);
+    if(!list)
+        return NULL;
+
+    size_t ninserted = 0;
+    for(int i = 0; i < ninside; i++) {
+        PyObject *obj = S_Entity_ObjForUID(inside[i]->uid);
+        if(!obj)
+            continue;
+        Py_INCREF(obj);
+        PyList_SET_ITEM(list, ninserted++, obj);
+    }
+
+    if(ninserted == ninside || ninserted == 0)
+        return list;
+
+    PyObject *ret = PyList_GetSlice(list, 0, ninserted-1);
+    Py_DECREF(list);
+    return ret;
+}
+
+static PyObject *PyPf_ents_in_rect(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *kwlist[] = {"minimum", "maximum", "predicate", NULL};
+    vec2_t xz_min, xz_max;
+    PyObject *predicate = NULL;
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "(ff)(ff)|O", kwlist, &xz_min.x, &xz_min.z, 
+        &xz_max.x, &xz_max.z, &predicate)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two (X, Z) float tuples, and an "
+            "optional callable object.");
+        return NULL;
+    }
+
+    if(predicate && !PyCallable_Check(predicate)) {
+        PyErr_SetString(PyExc_TypeError, "'predicate' argument must be callable.");
+        return NULL;
+    }
+
+    struct entity *inside[16384];
+    size_t ninside;
+
+    if(predicate) {
+        ninside = G_Pos_EntsInRectWithPred(xz_min, xz_max, inside, ARR_SIZE(inside),
+            s_pred_callable, predicate);
+    }else{
+        ninside = G_Pos_EntsInRectWithPred(xz_min, xz_max, inside, ARR_SIZE(inside),
+            s_pred_any, NULL);
+    }
+
+    PyObject *list = PyList_New(ninside);
+    if(!list)
+        return NULL;
+
+    size_t ninserted = 0;
+    for(int i = 0; i < ninside; i++) {
+        PyObject *obj = S_Entity_ObjForUID(inside[i]->uid);
+        if(!obj)
+            continue;
+        Py_INCREF(obj);
+        PyList_SET_ITEM(list, ninserted++, obj);
+    }
+
+    if(ninserted == ninside || ninserted == 0)
+        return list;
+
+    PyObject *ret = PyList_GetSlice(list, 0, ninserted-1);
+    Py_DECREF(list);
+    return ret;
 }
 
 /*****************************************************************************/
