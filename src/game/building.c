@@ -76,6 +76,7 @@ static void  pfree(void *ptr);
 #define CENTER_MARKER_OBJ   "build-site.pfobj"
 #define EPSILON             (1.0 / 1024)
 #define UID_NONE            (~((uint32_t)0))
+#define MAX_BUILDINGS       (8192)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -142,6 +143,8 @@ static mp_strbuff_t          s_stringpool;
 
 static void *pmalloc(size_t size)
 {
+    if(size > sizeof(buff_t))
+        return NULL;
     mp_ref_t ref = mp_buff_alloc(&s_mpool);
     if(ref == 0)
         return NULL;
@@ -402,7 +405,7 @@ bool G_Building_Init(const struct map *map)
 {
     mp_buff_init(&s_mpool);
 
-    if(!mp_buff_reserve(&s_mpool, 2048))
+    if(!mp_buff_reserve(&s_mpool, MAX_BUILDINGS * 3))
         goto fail_mpool; 
     if(NULL == (s_entity_state_table = kh_init(state)))
         goto fail_table;
@@ -443,6 +446,9 @@ void G_Building_Shutdown(void)
 
 bool G_Building_AddEntity(struct entity *ent)
 {
+    if(kh_size(s_entity_state_table) == MAX_BUILDINGS)
+        return false;
+
     assert(buildstate_get(ent->uid) == NULL);
     assert(ent->flags & ENTITY_FLAG_BUILDING);
     assert(!(ent->flags & ENTITY_FLAG_MOVABLE));

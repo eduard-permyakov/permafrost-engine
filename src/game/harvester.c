@@ -57,6 +57,7 @@
 #define REACQUIRE_RADIUS    (50.0)
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define MAX_HARVESTERS      (4096)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -177,6 +178,8 @@ static bool              s_transport_on_lclick = false;
 
 static void *pmalloc(size_t size)
 {
+    if(size > sizeof(buff_t))
+        return NULL;
     mp_ref_t ref = mp_buff_alloc(&s_mpool);
     if(ref == 0)
         return NULL;
@@ -1389,7 +1392,7 @@ bool G_Harvester_Init(const struct map *map)
 {
     mp_buff_init(&s_mpool);
 
-    if(!mp_buff_reserve(&s_mpool, 4096 * 3))
+    if(!mp_buff_reserve(&s_mpool, MAX_HARVESTERS * 3 * 3))
         goto fail_mpool; 
     if(!(s_entity_state_table = kh_init(state)))
         goto fail_table;
@@ -1420,6 +1423,8 @@ void G_Harvester_Shutdown(void)
 
 bool G_Harvester_AddEntity(uint32_t uid)
 {
+    if(kh_size(s_entity_state_table) == MAX_HARVESTERS)
+        return false;
     struct hstate hs;
     if(!hstate_init(&hs))
         return false;

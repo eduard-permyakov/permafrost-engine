@@ -99,6 +99,7 @@ void     Sched_HandleEvent(int event, void *arg, int event_source, bool immediat
 void     Sched_StartBackgroundTasks(void);
 void     Sched_Tick(void);
 uint32_t Sched_Create(int prio, task_func_t code, void *arg, struct future *result, int flags);
+uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, struct future *result, int flags);
 bool     Sched_RunSync(uint32_t tid);
 void     Sched_ClearState(void);
 

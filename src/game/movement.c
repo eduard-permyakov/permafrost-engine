@@ -1325,6 +1325,7 @@ static void *cp_vec_realloc(void *ptr, size_t size)
     if(!ret)
         return NULL;
 
+    assert(size % 2 == 0);
     memcpy(ret, ptr, size / 2);
     return ret;
 }
@@ -1332,6 +1333,20 @@ static void *cp_vec_realloc(void *ptr, size_t size)
 static void cp_vec_free(void *ptr)
 {
     /* no-op */
+}
+
+static void clearpath_work(int begin_idx, int end_idx)
+{
+    for(int i = begin_idx; i <= end_idx; i++) {
+    
+        struct cp_work_in *in = &s_cp_work.in[i];
+        struct cp_work_out *out = &s_cp_work.out[i];
+
+        vec2_t new_vel = G_ClearPath_NewVelocity(in->ent, in->ent_uid, 
+            in->ent_des_v, in->dyn_neighbs, in->stat_neighbs, in->save_debug);
+        out->ent_uid = in->ent_uid;
+        out->ent_vel = new_vel;
+    }
 }
 
 static struct result clearpath_task(void *arg)
@@ -1367,7 +1382,7 @@ static void clearpath_finish_work(void)
 {
     PERF_ENTER();
 
-    if(s_cp_work.ntasks == 0)
+    if(s_cp_work.nwork == 0)
         PERF_RETURN_VOID();
 
     for(int i = 0; i < s_cp_work.ntasks; i++) {
@@ -1445,13 +1460,16 @@ static void clearpath_submit_work(void)
         arg->begin_idx = nitems * i;
         arg->end_idx = MIN(nitems * (i + 1) - 1, s_cp_work.nwork-1);
 
-        SDL_AtomicSet(&s_cp_work.futures[i].status, FUTURE_INCOMPLETE);
+        SDL_AtomicSet(&s_cp_work.futures[s_cp_work.ntasks].status, FUTURE_INCOMPLETE);
         s_cp_work.tids[s_cp_work.ntasks] = Sched_Create(4, clearpath_task, arg, 
-            &s_cp_work.futures[i], TASK_BIG_STACK);
-        assert(s_cp_work.tids[s_cp_work.ntasks]);
-        s_cp_work.ntasks++;
+            &s_cp_work.futures[s_cp_work.ntasks], TASK_BIG_STACK);
+
+        if(s_cp_work.tids[s_cp_work.ntasks] == NULL_TID) {
+          clearpath_work(arg->begin_idx, arg->end_idx);
+        }else{
+            s_cp_work.ntasks++;
+        }
     }
-    s_cp_work.ntasks = ntasks;
 }
 
 static void on_20hz_tick(void *user, void *event)

@@ -132,7 +132,7 @@ struct task{
     SDL_Event      earg;
 };
 
-#define MAX_TASKS               (4096)
+#define MAX_TASKS               (8192)
 #define MAX_WORKER_THREADS      (64)
 #define STACK_SZ                (64 * 1024)
 #define BIG_STACK_SZ            (8 * 1024 * 1024)
@@ -165,6 +165,7 @@ static khash_t(tid)    *s_thread_worker_id_map;
 
 static struct context   s_main_ctx;
 static struct task     *s_freehead;
+static unsigned         s_nfree = MAX_TASKS;
 
 static struct task      s_tasks[MAX_TASKS];
 static char             s_stacks[MAX_TASKS][STACK_SZ];
@@ -505,6 +506,7 @@ static struct task *sched_task_alloc(void)
         ret->next->prev = ret->prev;
 
     s_freehead = s_freehead->next;
+    s_nfree--;
     return ret;
 }
 
@@ -515,6 +517,7 @@ static void sched_task_free(struct task *task)
     if(s_freehead)
         s_freehead->prev = task;
     s_freehead = task;
+    s_nfree++;
 }
 
 static void sched_reactivate(struct task *task)
@@ -1361,5 +1364,38 @@ uint32_t Sched_ActiveTID(void)
 bool Sched_FutureIsReady(const struct future *future)
 {
     return (SDL_AtomicGet((SDL_atomic_t*)&future->status) == FUTURE_COMPLETE);
+}
+
+/* Like Sched_Create, but attempts to run a task to completion 
+ * when it's not able to allocate a TID 
+ */
+uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, struct future *result, int flags)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    bool status;
+    struct task *task;
+    uint32_t ret;
+
+    do{
+        ret = Sched_Create(prio, code, arg, result, flags);
+
+        if(ret == NULL_TID) {
+
+            SDL_LockMutex(s_ready_lock); 
+            status = pq_task_pop(&s_ready_queue_main, &task) || pq_task_pop(&s_ready_queue, &task);
+            SDL_UnlockMutex(s_ready_lock);
+
+            if(status) {
+                sched_task_run(task);
+                sched_task_service_request(task);
+            }else{
+                /* All the tasks are blocked. Nothing more we can do until the next event pump */
+                break;
+            }
+        }
+    }while(ret == NULL_TID);
+
+    return ret;
 }
 

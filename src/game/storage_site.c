@@ -64,6 +64,7 @@ static void  pfree(void *ptr);
 #define ARR_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 #define MAX(a, b)   ((a) > (b) ? (a) : (b))
 #define MIN(a, b)   ((a) < (b) ? (a) : (b))
+#define MAX_STORAGE_SITES   (2048)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -125,6 +126,8 @@ static struct nk_color      s_font_clr = {0};
 
 static void *pmalloc(size_t size)
 {
+    if(size > sizeof(buff_t))
+        return NULL;
     mp_ref_t ref = mp_buff_alloc(&s_mpool);
     if(ref == 0)
         return NULL;
@@ -579,11 +582,11 @@ bool G_StorageSite_Init(void)
 {
     mp_buff_init(&s_mpool);
 
-    if(!mp_buff_reserve(&s_mpool, 4096 * 3))
+    if(!mp_buff_reserve(&s_mpool, MAX_STORAGE_SITES * 5 * 3))
         goto fail_mpool; 
     if(!(s_entity_state_table = kh_init(state)))
         goto fail_table;
-    if(0 != kh_resize(state, s_entity_state_table, 4096))
+    if(0 != kh_resize(state, s_entity_state_table, MAX_STORAGE_SITES))
         goto fail_res;
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
@@ -645,6 +648,8 @@ void G_StorageSite_Shutdown(void)
 
 bool G_StorageSite_AddEntity(const struct entity *ent)
 {
+    if(kh_size(s_entity_state_table) == MAX_STORAGE_SITES)
+        return false;
     struct ss_state ss;
     if(!ss_state_init(&ss))
         return false;
