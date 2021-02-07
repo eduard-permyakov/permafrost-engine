@@ -291,7 +291,8 @@ typedef struct {
     PyObject_HEAD
     enum scrollbar_type{
         SCROLLBAR_HORIZONTAL,
-        SCROLLBAR_VERTICAL
+        SCROLLBAR_VERTICAL,
+        SCROLLBAR_EDIT
     }type;
     struct nk_style_scrollbar *style;
 }PyUIScrollbarStyleObject;
@@ -330,6 +331,71 @@ static int       PyUIScrollbarStyle_set_padding(PyUIScrollbarStyleObject *self, 
 
 static PyObject *PyUIScrollbarStyle_pickle(PyUIScrollbarStyleObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyUIScrollbarStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+typedef struct {
+    PyObject_HEAD
+    struct nk_style_edit *style;
+    PyUIScrollbarStyleObject *scrollbar;
+}PyUIEditStyleObject;
+
+static PyObject *PyUIEditStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+static void      PyUIEditStyle_dealloc(PyUIEditStyleObject *self);
+
+/* background */
+static PyObject *PyUIEditStyle_get_normal(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_normal(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_hover(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_hover(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_active(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_active(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_border_color(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_border_color(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_scrollbar(PyUIEditStyleObject *self, void *);
+
+/* cursor */
+static PyObject *PyUIEditStyle_get_cursor_normal(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_cursor_normal(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_cursor_hover(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_cursor_hover(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_cursor_text_normal(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_cursor_text_normal(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_cursor_text_hover(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_cursor_text_hover(PyUIEditStyleObject *self, PyObject *value, void *);
+
+/* text (unselected) */
+static PyObject *PyUIEditStyle_get_text_normal(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_text_normal(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_text_hover(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_text_hover(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_text_active(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_text_active(PyUIEditStyleObject *self, PyObject *value, void *);
+
+/* text (selected) */
+static PyObject *PyUIEditStyle_get_selected_normal(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_selected_normal(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_selected_hover(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_selected_hover(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_selected_text_normal(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_selected_text_normal(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_selected_text_hover(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_selected_text_hover(PyUIEditStyleObject *self, PyObject *value, void *);
+
+/* properties */
+static PyObject *PyUIEditStyle_get_border(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_border(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_rounding(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_rounding(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_cursor_size(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_cursor_size(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_scrollbar_size(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_scrollbar_size(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_padding(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_padding(PyUIEditStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIEditStyle_get_row_padding(PyUIEditStyleObject *self, void *);
+static int       PyUIEditStyle_set_row_padding(PyUIEditStyleObject *self, PyObject *value, void *);
+
+static PyObject *PyUIEditStyle_pickle(PyUIEditStyleObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyUIEditStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -1223,6 +1289,199 @@ static PyTypeObject PyUIScrollbarStyle_type = {
     0,                         /* tp_new */
 };
 
+static PyMethodDef PyUIEditStyle_methods[] = {
+    {"__pickle__", 
+    (PyCFunction)PyUIEditStyle_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine UIEditStyle object to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyUIEditStyle_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.UIEditStyle instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyGetSetDef PyUIEditStyle_getset[] = {
+    {"normal",
+    (getter)PyUIEditStyle_get_normal, 
+    (setter)PyUIEditStyle_set_normal,
+    "The look of the editable field in the normal state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"hover",
+    (getter)PyUIEditStyle_get_hover, 
+    (setter)PyUIEditStyle_set_hover,
+    "The look of the editable field in the hovered state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"active",
+    (getter)PyUIEditStyle_get_active, 
+    (setter)PyUIEditStyle_set_active,
+    "The look of the editable field in the active state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"border_color",
+    (getter)PyUIEditStyle_get_border_color, 
+    (setter)PyUIEditStyle_set_border_color,
+    "The color of the editable field border - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"scrollbar",
+    (getter)PyUIEditStyle_get_scrollbar, 
+    NULL,
+    "The style of the scrollbar of editable fields - a UIStyleObject instance",
+    NULL},
+
+    {"cursor_normal",
+    (getter)PyUIEditStyle_get_cursor_normal, 
+    (setter)PyUIEditStyle_set_cursor_normal,
+    "The color of the cursor in the normal state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"cursor_hover",
+    (getter)PyUIEditStyle_get_cursor_hover, 
+    (setter)PyUIEditStyle_set_cursor_hover,
+    "The color of the cursor in the hover state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"cursor_text_normal",
+    (getter)PyUIEditStyle_get_cursor_text_normal, 
+    (setter)PyUIEditStyle_set_cursor_text_normal,
+    "The color of the text cursor in normal mode - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"cursor_text_hover",
+    (getter)PyUIEditStyle_get_cursor_text_hover, 
+    (setter)PyUIEditStyle_set_cursor_text_hover,
+    "The color of the text cursor in hover mode - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"text_normal",
+    (getter)PyUIEditStyle_get_text_normal, 
+    (setter)PyUIEditStyle_set_text_normal,
+    "The color of the (unselected) text in normal mode - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"text_hover",
+    (getter)PyUIEditStyle_get_text_hover, 
+    (setter)PyUIEditStyle_set_text_hover,
+    "The color of the (unselected) text in hover mode - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"text_active",
+    (getter)PyUIEditStyle_get_text_active, 
+    (setter)PyUIEditStyle_set_text_active,
+    "The color of the (unselected) text in active mode - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"selected_normal",
+    (getter)PyUIEditStyle_get_selected_normal, 
+    (setter)PyUIEditStyle_set_selected_normal,
+    "The color of the selection box in normal mode - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"selected_hover",
+    (getter)PyUIEditStyle_get_selected_hover, 
+    (setter)PyUIEditStyle_set_selected_hover,
+    "The color of the selection box in hover mode - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"selected_text_normal",
+    (getter)PyUIEditStyle_get_selected_text_normal, 
+    (setter)PyUIEditStyle_set_selected_text_normal,
+    "The color of the (selected) text in normal mode - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"selected_text_hover",
+    (getter)PyUIEditStyle_get_selected_text_hover, 
+    (setter)PyUIEditStyle_set_selected_text_hover,
+    "The color of the (selected) text in hover mode - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"border",
+    (getter)PyUIEditStyle_get_border, 
+    (setter)PyUIEditStyle_set_border,
+    "The width of the editable field borders.", 
+    NULL},
+
+    {"rounding",
+    (getter)PyUIEditStyle_get_rounding, 
+    (setter)PyUIEditStyle_set_rounding,
+    "An (X, Y) tuple of floats to control the rounding of the editable fields.", 
+    NULL},
+
+    {"cursor_size",
+    (getter)PyUIEditStyle_get_cursor_size, 
+    (setter)PyUIEditStyle_set_cursor_size,
+    "A float to control the size of the cursor.", 
+    NULL},
+
+    {"scrollbar_size",
+    (getter)PyUIEditStyle_get_scrollbar_size, 
+    (setter)PyUIEditStyle_set_scrollbar_size,
+    "An (X, Y) tuple to control the size of the editable field scrollbar.", 
+    NULL},
+
+    {"padding",
+    (getter)PyUIEditStyle_get_padding, 
+    (setter)PyUIEditStyle_set_padding,
+    "An (X, Y) tuple to control the padding within an editable field.", 
+    NULL},
+
+    {"row_padding",
+    (getter)PyUIEditStyle_get_row_padding, 
+    (setter)PyUIEditStyle_set_row_padding,
+    "An float to control the row padding within an editable field.", 
+    NULL},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyUIEditStyle_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "pf.UIEditStyle",        /* tp_name */
+    sizeof(PyUIEditStyleObject), /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    (destructor)PyUIEditStyle_dealloc, /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_reserved */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash  */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT,        /* tp_flags */
+    "Style configuration for Permafrost Engine UI toggle-able options.", /* tp_doc */
+    0,                         /* tp_traverse */
+    0,                         /* tp_clear */
+    0,                         /* tp_richcompare */
+    0,                         /* tp_weaklistoffset */
+    0,                         /* tp_iter */
+    0,                         /* tp_iternext */
+    PyUIEditStyle_methods,     /* tp_methods */
+    0,                         /* tp_members */
+    PyUIEditStyle_getset,      /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    0,                         /* tp_init */
+    0,                         /* tp_alloc */
+    PyUIEditStyle_new,         /* tp_new */
+};
+
 static struct nk_style_window_header s_saved_header_style;
 
 /*****************************************************************************/
@@ -2012,6 +2271,68 @@ static bool load_scrollbar(struct SDL_RWops *stream, struct nk_style_scrollbar *
     return true;
 }
 
+bool save_edit(struct SDL_RWops *stream, const struct nk_style_edit *edit)
+{
+    CHK_TRUE_RET(save_item(stream, &edit->normal));
+    CHK_TRUE_RET(save_item(stream, &edit->hover));
+    CHK_TRUE_RET(save_item(stream, &edit->active));
+    CHK_TRUE_RET(save_scrollbar(stream, &edit->scrollbar));
+
+    CHK_TRUE_RET(save_color(stream, edit->cursor_normal));
+    CHK_TRUE_RET(save_color(stream, edit->cursor_hover));
+    CHK_TRUE_RET(save_color(stream, edit->cursor_text_normal));
+    CHK_TRUE_RET(save_color(stream, edit->cursor_text_hover));
+
+    CHK_TRUE_RET(save_color(stream, edit->text_normal));
+    CHK_TRUE_RET(save_color(stream, edit->text_hover));
+    CHK_TRUE_RET(save_color(stream, edit->text_active));
+
+    CHK_TRUE_RET(save_color(stream, edit->selected_normal));
+    CHK_TRUE_RET(save_color(stream, edit->selected_hover));
+    CHK_TRUE_RET(save_color(stream, edit->selected_text_normal));
+    CHK_TRUE_RET(save_color(stream, edit->selected_text_hover));
+
+    CHK_TRUE_RET(save_float(stream, edit->border));
+    CHK_TRUE_RET(save_float(stream, edit->rounding));
+    CHK_TRUE_RET(save_float(stream, edit->cursor_size));
+    CHK_TRUE_RET(save_vec2(stream, edit->scrollbar_size));
+    CHK_TRUE_RET(save_vec2(stream, edit->padding));
+    CHK_TRUE_RET(save_float(stream, edit->row_padding));
+
+    return true;
+}
+
+static bool load_edit(struct SDL_RWops *stream, struct nk_style_edit *out)
+{
+    CHK_TRUE_RET(load_item(stream, &out->normal));
+    CHK_TRUE_RET(load_item(stream, &out->hover));
+    CHK_TRUE_RET(load_item(stream, &out->active));
+    CHK_TRUE_RET(load_scrollbar(stream, &out->scrollbar));
+
+    CHK_TRUE_RET(load_color(stream, &out->cursor_normal));
+    CHK_TRUE_RET(load_color(stream, &out->cursor_hover));
+    CHK_TRUE_RET(load_color(stream, &out->cursor_text_normal));
+    CHK_TRUE_RET(load_color(stream, &out->cursor_text_hover));
+
+    CHK_TRUE_RET(load_color(stream, &out->text_normal));
+    CHK_TRUE_RET(load_color(stream, &out->text_hover));
+    CHK_TRUE_RET(load_color(stream, &out->text_active));
+
+    CHK_TRUE_RET(load_color(stream, &out->selected_normal));
+    CHK_TRUE_RET(load_color(stream, &out->selected_hover));
+    CHK_TRUE_RET(load_color(stream, &out->selected_text_normal));
+    CHK_TRUE_RET(load_color(stream, &out->selected_text_hover));
+
+    CHK_TRUE_RET(load_float(stream, &out->border));
+    CHK_TRUE_RET(load_float(stream, &out->rounding));
+    CHK_TRUE_RET(load_float(stream, &out->cursor_size));
+    CHK_TRUE_RET(load_vec2(stream, &out->scrollbar_size));
+    CHK_TRUE_RET(load_vec2(stream, &out->padding));
+    CHK_TRUE_RET(load_float(stream, &out->row_padding));
+
+    return true;
+}
+
 static PyObject *PyUIButtonStyle_pickle(PyUIButtonStyleObject *self, PyObject *args, PyObject *kwargs)
 {
     PyObject *ret = NULL;
@@ -2627,7 +2948,6 @@ fail_args:
 static PyObject *PyUIComboStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     PyUIComboStyleObject *self = (PyUIComboStyleObject*)type->tp_alloc(type, 0);
-    struct nk_style_button *button;
     if(!self)
         return NULL;
 
@@ -3591,6 +3911,9 @@ static PyObject *PyUIScrollbarStyle_unpickle(PyObject *cls, PyObject *args, PyOb
         case SCROLLBAR_VERTICAL:
             ((PyUIScrollbarStyleObject*)styleobj)->style = &ctx->style.scrollv;
             break;
+        case SCROLLBAR_EDIT:
+            ((PyUIScrollbarStyleObject*)styleobj)->style = &ctx->style.edit.scrollbar;
+            break;
         default:
             goto fail_unpickle;
     }
@@ -3606,6 +3929,493 @@ fail_unpickle:
 fail_args:
     if(!ret) {
         PyErr_SetString(PyExc_RuntimeError, "Error unpickling pf.UIScrollbarStyle object");
+    }
+    return ret;
+}
+
+static PyObject *PyUIEditStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    PyUIEditStyleObject *self = (PyUIEditStyleObject*)type->tp_alloc(type, 0);
+    if(!self)
+        return NULL;
+
+    self->scrollbar = PyObject_New(PyUIScrollbarStyleObject, &PyUIScrollbarStyle_type);
+    if(!self->scrollbar) {
+        goto fail_scrollbar;
+    }
+
+    struct nk_context *ctx = UI_GetContext();
+    self->style = &ctx->style.edit;
+    self->scrollbar->style = &ctx->style.edit.scrollbar;
+    self->scrollbar->type = SCROLLBAR_EDIT;
+
+    return (PyObject*)self;
+
+fail_scrollbar:
+    Py_DECREF(self);
+    return NULL;
+}
+
+static void PyUIEditStyle_dealloc(PyUIEditStyleObject *self)
+{
+    Py_DECREF(self->scrollbar);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyObject *PyUIEditStyle_get_normal(PyUIEditStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->normal);
+}
+
+static int PyUIEditStyle_set_normal(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->normal);
+}
+
+static PyObject *PyUIEditStyle_get_hover(PyUIEditStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->hover);
+}
+
+static int PyUIEditStyle_set_hover(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->hover);
+}
+
+static PyObject *PyUIEditStyle_get_active(PyUIEditStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->active);
+}
+
+static int PyUIEditStyle_set_active(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->active);
+}
+
+static PyObject *PyUIEditStyle_get_border_color(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->border_color.r,
+        self->style->border_color.g,
+        self->style->border_color.b,
+        self->style->border_color.a);
+}
+
+static int PyUIEditStyle_set_border_color(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->border_color = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_scrollbar(PyUIEditStyleObject *self, void *closure)
+{
+    Py_INCREF(self->scrollbar);
+    return (PyObject*)self->scrollbar;
+}
+
+static PyObject *PyUIEditStyle_get_cursor_normal(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->cursor_normal.r,
+        self->style->cursor_normal.g,
+        self->style->cursor_normal.b,
+        self->style->cursor_normal.a);
+}
+
+static int PyUIEditStyle_set_cursor_normal(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->cursor_normal = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_cursor_hover(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->cursor_hover.r,
+        self->style->cursor_hover.g,
+        self->style->cursor_hover.b,
+        self->style->cursor_hover.a);
+}
+
+static int PyUIEditStyle_set_cursor_hover(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->cursor_hover = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_cursor_text_normal(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->cursor_text_normal.r,
+        self->style->cursor_text_normal.g,
+        self->style->cursor_text_normal.b,
+        self->style->cursor_text_normal.a);
+}
+
+static int PyUIEditStyle_set_cursor_text_normal(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->cursor_text_normal = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_cursor_text_hover(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->cursor_text_hover.r,
+        self->style->cursor_text_hover.g,
+        self->style->cursor_text_hover.b,
+        self->style->cursor_text_hover.a);
+}
+
+static int PyUIEditStyle_set_cursor_text_hover(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->cursor_text_hover = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_text_normal(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_normal.r,
+        self->style->text_normal.g,
+        self->style->text_normal.b,
+        self->style->text_normal.a);
+}
+
+static int PyUIEditStyle_set_text_normal(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_normal = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_text_hover(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_hover.r,
+        self->style->text_hover.g,
+        self->style->text_hover.b,
+        self->style->text_hover.a);
+}
+
+static int PyUIEditStyle_set_text_hover(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_hover = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_text_active(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->text_active.r,
+        self->style->text_active.g,
+        self->style->text_active.b,
+        self->style->text_active.a);
+}
+
+static int PyUIEditStyle_set_text_active(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->text_active = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_selected_normal(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->selected_normal.r,
+        self->style->selected_normal.g,
+        self->style->selected_normal.b,
+        self->style->selected_normal.a);
+}
+
+static int PyUIEditStyle_set_selected_normal(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->selected_normal = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_selected_hover(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->selected_hover.r,
+        self->style->selected_hover.g,
+        self->style->selected_hover.b,
+        self->style->selected_hover.a);
+}
+
+static int PyUIEditStyle_set_selected_hover(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->selected_hover = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_selected_text_normal(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->selected_text_normal.r,
+        self->style->selected_text_normal.g,
+        self->style->selected_text_normal.b,
+        self->style->selected_text_normal.a);
+}
+
+static int PyUIEditStyle_set_selected_text_normal(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->selected_text_normal = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_selected_text_hover(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->selected_text_hover.r,
+        self->style->selected_text_hover.g,
+        self->style->selected_text_hover.b,
+        self->style->selected_text_hover.a);
+}
+
+static int PyUIEditStyle_set_selected_text_hover(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->selected_text_hover = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_border(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->border);
+}
+
+static int PyUIEditStyle_set_border(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->border = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_rounding(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->rounding);
+}
+
+static int PyUIEditStyle_set_rounding(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->rounding = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_cursor_size(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->cursor_size);
+}
+
+static int PyUIEditStyle_set_cursor_size(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->cursor_size = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_scrollbar_size(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->scrollbar_size.x,
+        self->style->scrollbar_size.y);
+}
+
+static int PyUIEditStyle_set_scrollbar_size(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->scrollbar_size = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_padding(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->padding.x,
+        self->style->padding.y);
+}
+
+static int PyUIEditStyle_set_padding(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->padding = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_get_row_padding(PyUIEditStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->row_padding);
+}
+
+static int PyUIEditStyle_set_row_padding(PyUIEditStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->row_padding = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIEditStyle_pickle(PyUIEditStyleObject *self, PyObject *args, PyObject *kwargs)
+{
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+    CHK_TRUE(save_edit(stream, self->style), fail_pickle);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error pickling pf.UIEditStyle object");
+    }
+    return ret;
+}
+
+static PyObject *PyUIEditStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    int status;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyUIEditStyleObject *styleobj = 
+        (PyUIEditStyleObject*)PyObject_CallFunctionObjArgs((PyObject*)&PyUIEditStyle_type, NULL);
+    assert(styleobj || PyErr_Occurred());
+    CHK_TRUE(styleobj, fail_unpickle);
+
+    CHK_TRUE(load_edit(stream, ((PyUIEditStyleObject*)styleobj)->style), fail_unpickle);
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", styleobj, (int)nread);
+    Py_DECREF(styleobj);
+
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_args:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error unpickling pf.UIEditStyle object");
     }
     return ret;
 }
@@ -3652,6 +4462,12 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     Py_INCREF(&PyUIScrollbarStyle_type);
     PyModule_AddObject(module, "UIScrollbarStyle", (PyObject*)&PyUIScrollbarStyle_type);
 
+    /* Edit style */
+    if(PyType_Ready(&PyUIEditStyle_type) < 0)
+        return;
+    Py_INCREF(&PyUIScrollbarStyle_type);
+    PyModule_AddObject(module, "UIEditStyle", (PyObject*)&PyUIEditStyle_type);
+
     /* Global style objects */
     PyUIButtonStyleObject *button_style = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
     assert(button_style);
@@ -3680,7 +4496,6 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     PyUIComboStyleObject *combo_style = 
         (PyUIComboStyleObject*)PyObject_CallFunctionObjArgs((PyObject*)&PyUIComboStyle_type, NULL);
     assert(combo_style);
-    combo_style->style = &ctx->style.combo;
     PyModule_AddObject(module, "combo_style", (PyObject*)combo_style);
 
     PyUIToggleStyleObject *option_style = PyObject_New(PyUIToggleStyleObject, &PyUIToggleStyle_type);
@@ -3706,6 +4521,11 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     scrollbar_vert_style->style = &ctx->style.scrollv;
     scrollbar_vert_style->type = SCROLLBAR_VERTICAL;
     PyModule_AddObject(module, "scrollbar_vertical_style", (PyObject*)scrollbar_vert_style);
+
+    PyUIComboStyleObject *edit_style = 
+        (PyUIComboStyleObject*)PyObject_CallFunctionObjArgs((PyObject*)&PyUIEditStyle_type, NULL);
+    assert(edit_style);
+    PyModule_AddObject(module, "edit_style", (PyObject*)edit_style);
 }
 
 bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_window *window)
