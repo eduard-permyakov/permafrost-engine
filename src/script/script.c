@@ -64,6 +64,7 @@
 #include "../session.h"
 #include "../perf.h"
 #include "../cursor.h"
+#include "../sched.h"
 
 #include <SDL.h>
 #include <stdio.h>
@@ -1184,6 +1185,8 @@ static PyObject *PyPf_get_hovered_unit(PyObject *self)
 
 static PyObject *PyPf_entities_for_tag(PyObject *self, PyObject *args)
 {
+    assert(Sched_UsingBigStack());
+
     const char *tag;
     if(!PyArg_ParseTuple(args, "s", &tag)) {
         PyErr_SetString(PyExc_TypeError, "Argument must a string (tag).");
@@ -2393,6 +2396,8 @@ static PyObject *PyPf_nearest_ent(PyObject *self, PyObject *args, PyObject *kwar
 
 static PyObject *PyPf_ents_in_circle(PyObject *self, PyObject *args, PyObject *kwargs)
 {
+    assert(Sched_UsingBigStack());
+
     static char *kwlist[] = {"position", "radius", "predicate", NULL};
     float radius;
     vec2_t xz_pos;
@@ -2443,6 +2448,8 @@ static PyObject *PyPf_ents_in_circle(PyObject *self, PyObject *args, PyObject *k
 
 static PyObject *PyPf_ents_in_rect(PyObject *self, PyObject *args, PyObject *kwargs)
 {
+    assert(Sched_UsingBigStack());
+
     static char *kwlist[] = {"minimum", "maximum", "predicate", NULL};
     vec2_t xz_min, xz_max;
     PyObject *predicate = NULL;

@@ -44,6 +44,7 @@
 #include "../main.h"
 #include "../pf_math.h"
 #include "../perf.h"
+#include "../sched.h"
 #include "../lib/public/quadtree.h"
 #include "../lib/public/khash.h"
 #include "../map/public/map.h"
@@ -279,6 +280,7 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
 {
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
+    assert(Sched_UsingBigStack());
 
     uint32_t ent_ids[MAX_SEARCH_ENTS];
     const khash_t(entity) *ents = G_GetAllEntsSet();

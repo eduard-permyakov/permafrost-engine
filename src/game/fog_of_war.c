@@ -39,6 +39,7 @@
 #include "game_private.h"
 #include "../event.h"
 #include "../settings.h"
+#include "../sched.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../lib/public/pqueue.h"
@@ -349,6 +350,8 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
 
 static bool fog_obj_matches(uint16_t fac_mask, const struct obb *obj, enum fog_state *states, size_t nstates)
 {
+    assert(Sched_UsingBigStack());
+
     vec3_t pos = M_GetPos(s_map);
     struct map_resolution res;
     M_GetResolution(s_map, &res);

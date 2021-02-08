@@ -134,8 +134,8 @@ struct task{
 
 #define MAX_TASKS               (8192)
 #define MAX_WORKER_THREADS      (64)
-#define STACK_SZ                (64 * 1024)
-#define BIG_STACK_SZ            (8 * 1024 * 1024)
+#define STACK_SZ                (16 * 1024)
+#define BIG_STACK_SZ            (4 * 1024 * 1024)
 #define SCHED_TICK_MS           (1.0f / CONFIG_SCHED_TARGET_FPS * 1000.0f)
 #define ALIGNED(val, align)     (((val) + ((align) - 1)) & ~((align) - 1))
 
@@ -355,10 +355,11 @@ __asm__(
 
 static void sched_init_ctx(struct task *task, void *code)
 {
+    const size_t stack_size = (task->flags & TASK_BIG_STACK) ? BIG_STACK_SZ : STACK_SZ;
     char *stack_end = task->stackmem;
-    char *stack_base = stack_end + STACK_SZ;
+    char *stack_base = stack_end + stack_size;
     stack_base = (char*)ALIGNED((uintptr_t)stack_base, 32);
-    if(stack_base >= stack_end + STACK_SZ)
+    if(stack_base >= stack_end + stack_size)
         stack_base -= 32;
 
     /* This is the address where we will jump to upon 
@@ -459,6 +460,22 @@ __attribute__((always_inline)) static inline void sched_print_backtrace(void)
 }
 
 #endif
+
+static bool stack_pointer_valid(const struct task *task)
+{
+    uintptr_t sp = task->ctx.rsp;
+    if(((uint64_t)sp) & 0x7)
+        return false; /* violated alignment */
+
+    size_t size = (task->flags & TASK_BIG_STACK) ? BIG_STACK_SZ : STACK_SZ;
+    if(sp < (uintptr_t)task->stackmem)
+        return false; /* overflow */
+
+    if(sp >= ((uintptr_t)task->stackmem) + size)
+        return false; /* underflow */
+
+    return true;
+}
 
 static uint64_t thread_id_to_key(SDL_threadID tid)
 {
@@ -800,6 +817,7 @@ static void sched_task_run(struct task *task)
 {
     sched_set_thread_tid(SDL_ThreadID(), task->tid);
     task->state = TASK_STATE_ACTIVE;
+    assert(stack_pointer_valid(task));
 
     char name[64];
     pf_snprintf(name, sizeof(name), "Task %03u", task->tid);
@@ -813,6 +831,7 @@ static void sched_task_run(struct task *task)
     }
 
     Perf_Pop();
+    assert(stack_pointer_valid(task));
     sched_set_thread_tid(SDL_ThreadID(), NULL_TID);
 }
 
@@ -826,17 +845,20 @@ static void sched_signal_worker_quit(int id)
 
 static void sched_init_thread_tid_map(void)
 {
+    khiter_t k;
     int status;
     uint64_t main_key = thread_id_to_key(g_main_thread_id);
 
-    kh_put(tid, s_thread_tid_map, g_main_thread_id, &status);
+    k = kh_put(tid, s_thread_tid_map, g_main_thread_id, &status);
     assert(status != -1 && status != 0);
+    kh_value(s_thread_tid_map, k) = NULL_TID;
 
     for(int i = 0; i < s_nworkers; i++) {
 
         uint64_t key = thread_id_to_key(SDL_GetThreadID(s_worker_threads[i]));
-        kh_put(tid, s_thread_tid_map, key, &status);
+        k = kh_put(tid, s_thread_tid_map, key, &status);
         assert(status != -1 && status != 0);
+        kh_value(s_thread_tid_map, k) = NULL_TID;
     }
 }
 
@@ -1397,5 +1419,14 @@ uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, struct futu
     }while(ret == NULL_TID);
 
     return ret;
+}
+
+bool Sched_UsingBigStack(void)
+{
+    uint32_t tid = Sched_ActiveTID();
+    if(tid == NULL_TID)
+        return true;
+    struct task *task = &s_tasks[tid - 1];
+    return (task->flags & TASK_BIG_STACK);
 }
 

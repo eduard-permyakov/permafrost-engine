@@ -37,6 +37,7 @@
 #include "py_entity.h"
 #include "py_pickle.h"
 #include "public/script.h"
+#include "../sched.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
@@ -276,6 +277,8 @@ static void PyRegion_dealloc(PyRegionObject *self)
 
 static PyObject *PyRegion_curr_ents(PyRegionObject *self)
 {
+    assert(Sched_UsingBigStack());
+
     struct entity *ents[512];
     size_t nents = G_Region_GetEnts(self->name, ARR_SIZE(ents), ents);
 

@@ -41,6 +41,7 @@
 #include "../collision.h"
 #include "../entity.h"
 #include "../asset_load.h"
+#include "../sched.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../lib/public/khash.h"
@@ -298,6 +299,8 @@ static void building_mark_center(struct buildstate *bs, const struct entity *ent
 
 static void building_place_markers(struct buildstate *bs, const struct entity *ent)
 {
+    assert(Sched_UsingBigStack());
+
     struct obb obb;
     Entity_CurrentOBB(ent, &obb, true);
 

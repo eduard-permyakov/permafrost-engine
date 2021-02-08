@@ -2670,6 +2670,7 @@ static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObjec
         return NULL;
     }
 
+    G_StopEntity(self->super.ent);
     if(!G_Harvester_Gather(self->super.ent, resource->super.ent)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to gather the specified resource.");
         return NULL;
@@ -2691,6 +2692,7 @@ static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObj
         return NULL;
     }
 
+    G_StopEntity(self->super.ent);
     if(!G_Harvester_DropOff(self->super.ent, storage->super.ent)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to drop off resource at the specified storage site.");
         return NULL;
@@ -2712,6 +2714,7 @@ static PyObject *PyHarvesterEntity_transport(PyHarvesterEntityObject *self, PyOb
         return NULL;
     }
 
+    G_StopEntity(self->super.ent);
     if(!G_Harvester_Transport(self->super.ent, storage->super.ent)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to transport resources to the specified storage site.");
         return NULL;

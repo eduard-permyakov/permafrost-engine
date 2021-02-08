@@ -127,6 +127,7 @@ struct request{
 
 uint64_t Sched_Request(struct request req);
 uint32_t Sched_ActiveTID(void);
+bool     Sched_UsingBigStack(void);
 
 #endif
 

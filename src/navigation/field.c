@@ -36,6 +36,7 @@
 #include "field.h"
 #include "nav_private.h"
 #include "../entity.h"
+#include "../sched.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
 #include "../lib/public/pqueue.h"
@@ -651,6 +652,8 @@ static size_t portal_initial_frontier(const struct portal *port, const struct na
 static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struct nav_chunk *chunk, 
                                        const struct nav_private *priv, struct coord *out, size_t maxout)
 {
+    assert(Sched_UsingBigStack());
+
     struct box_xz bounds;
     chunk_bounds(enemies->map_pos, enemies->chunk, &bounds);
 

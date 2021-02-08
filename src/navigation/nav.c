@@ -42,13 +42,14 @@
 #include "../game/public/game.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
+#include "../lib/public/queue.h"
 #include "../pf_math.h"
 #include "../collision.h"
 #include "../entity.h"
 #include "../event.h"
 #include "../main.h"
 #include "../perf.h"
-#include "../lib/public/queue.h"
+#include "../sched.h"
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -1123,6 +1124,8 @@ static bool n_moving_entity(const struct entity *ent, void *arg)
 
 static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t map_pos, const struct obb *area)
 {
+    assert(Sched_UsingBigStack());
+
     struct map_resolution res = {
         priv->width, priv->height,
         FIELD_RES_C, FIELD_RES_R
@@ -1216,6 +1219,8 @@ bool n_closest_adjacent_pos(void *nav_private, vec3_t map_pos, vec2_t xz_src,
 bool n_objects_adjacent(void *nav_private, vec3_t map_pos, const struct entity *ent, 
                         size_t ntiles, const struct tile_desc tds[static ntiles])
 {
+    assert(Sched_UsingBigStack());
+
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
         priv->width, priv->height,
@@ -1647,6 +1652,8 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
                             mat4x4_t *chunk_model, int chunk_r, int chunk_c,
                             const struct obb *obb)
 {
+    assert(Sched_UsingBigStack());
+
     struct nav_private *priv = nav_private;
     const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_r, priv->width, chunk_c)];
 
@@ -1765,6 +1772,8 @@ void N_RenderNavigationPortals(void *nav_private, const struct map *map,
 
 void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *obb)
 {
+    assert(Sched_UsingBigStack());
+
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
         priv->width, priv->height,
@@ -2404,6 +2413,8 @@ vec2_t N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
 bool N_ClosestReachableAdjacentPosStatic(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
                                          const struct obb *target, vec2_t *out)
 {
+    assert(Sched_UsingBigStack());
+
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
         priv->width, priv->height,
@@ -2419,6 +2430,8 @@ bool N_ClosestReachableAdjacentPosStatic(void *nav_private, vec3_t map_pos, vec2
 bool N_ClosestReachableAdjacentPosDynamic(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
                                           vec2_t xz_pos, float radius, vec2_t *out)
 {
+    assert(Sched_UsingBigStack());
+
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
         priv->width, priv->height,
@@ -2598,6 +2611,8 @@ int N_TilesUnderCircle(const struct nav_private *priv, vec2_t xz_center, float r
 
 bool N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, const struct entity *ent, const struct obb *stat)
 {
+    assert(Sched_UsingBigStack());
+
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
         priv->width, priv->height,
@@ -2612,13 +2627,15 @@ bool N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, const struct entit
 
 bool N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, const struct entity *ent, vec2_t xz_pos, float radius)
 {
+    assert(Sched_UsingBigStack());
+
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
         priv->width, priv->height,
         FIELD_RES_C, FIELD_RES_R
     };
 
-    struct tile_desc tds_dyn[512];
+    struct tile_desc tds_dyn[2048];
     size_t ntiles_dyn = N_TilesUnderCircle(priv, xz_pos, radius, map_pos, tds_dyn, ARR_SIZE(tds_dyn));
 
     return n_objects_adjacent(nav_private, map_pos, ent, ntiles_dyn, tds_dyn);
@@ -2636,6 +2653,8 @@ void N_GetResolution(void *nav_private, struct map_resolution *out)
 
 bool N_ObjectBuildable(void *nav_private, vec3_t map_pos, const struct obb *obb)
 {
+    assert(Sched_UsingBigStack());
+
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
         priv->width, priv->height,

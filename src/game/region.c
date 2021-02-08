@@ -40,6 +40,7 @@
 #include "../main.h"
 #include "../camera.h"
 #include "../event.h"
+#include "../sched.h"
 #include "../collision.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
@@ -286,6 +287,8 @@ static void regions_remove_ent(uint32_t uid, vec2_t pos)
 
 static void regions_add_ent(uint32_t uid, vec2_t pos)
 {
+    assert(Sched_UsingBigStack());
+
     const struct entity *ent = G_EntityForUID(uid);
     if(!ent || (ent->flags & (ENTITY_FLAG_ZOMBIE | ENTITY_FLAG_MARKER)))
         return;
