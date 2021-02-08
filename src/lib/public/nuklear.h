@@ -23963,7 +23963,7 @@ nk_draw_property(struct nk_command_buffer *out, const struct nk_style_property *
     } else {
         text.background = background->data.color;
         nk_fill_rect(out, *bounds, style->rounding, background->data.color);
-        nk_stroke_rect(out, *bounds, style->rounding, style->border, background->data.color);
+        nk_stroke_rect(out, *bounds, style->rounding, style->border, style->border_color);
     }
 
     /* draw label */

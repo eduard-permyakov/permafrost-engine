@@ -292,7 +292,8 @@ typedef struct {
     enum scrollbar_type{
         SCROLLBAR_HORIZONTAL,
         SCROLLBAR_VERTICAL,
-        SCROLLBAR_EDIT
+        SCROLLBAR_EDIT,
+        SCROLLBAR_PROPERTY
     }type;
     struct nk_style_scrollbar *style;
 }PyUIScrollbarStyleObject;
@@ -334,6 +335,10 @@ static PyObject *PyUIScrollbarStyle_unpickle(PyObject *cls, PyObject *args, PyOb
 
 typedef struct {
     PyObject_HEAD
+    enum edit_type{
+        EDIT_REGULAR,
+        EDIT_PROPERTY,
+    }type;
     struct nk_style_edit *style;
     PyUIScrollbarStyleObject *scrollbar;
 }PyUIEditStyleObject;
@@ -396,6 +401,55 @@ static int       PyUIEditStyle_set_row_padding(PyUIEditStyleObject *self, PyObje
 
 static PyObject *PyUIEditStyle_pickle(PyUIEditStyleObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyUIEditStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
+typedef struct {
+    PyObject_HEAD
+    struct nk_style_property *style;
+    PyUIEditStyleObject *edit;
+    PyUIButtonStyleObject *inc_button;
+    PyUIButtonStyleObject *dec_button;
+}PyUIPropertyStyleObject;
+
+static PyObject *PyUIPropertyStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+static void      PyUIPropertyStyle_dealloc(PyUIPropertyStyleObject *self);
+
+/* background */
+static PyObject *PyUIPropertyStyle_get_normal(PyUIPropertyStyleObject *self, void *);
+static int       PyUIPropertyStyle_set_normal(PyUIPropertyStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIPropertyStyle_get_hover(PyUIPropertyStyleObject *self, void *);
+static int       PyUIPropertyStyle_set_hover(PyUIPropertyStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIPropertyStyle_get_active(PyUIPropertyStyleObject *self, void *);
+static int       PyUIPropertyStyle_set_active(PyUIPropertyStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIPropertyStyle_get_border_color(PyUIPropertyStyleObject *self, void *);
+static int       PyUIPropertyStyle_set_border_color(PyUIPropertyStyleObject *self, PyObject *value, void *);
+
+/* text */
+static PyObject *PyUIPropertyStyle_get_label_normal(PyUIPropertyStyleObject *self, void *);
+static int       PyUIPropertyStyle_set_label_normal(PyUIPropertyStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIPropertyStyle_get_label_hover(PyUIPropertyStyleObject *self, void *);
+static int       PyUIPropertyStyle_set_label_hover(PyUIPropertyStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIPropertyStyle_get_label_active(PyUIPropertyStyleObject *self, void *);
+static int       PyUIPropertyStyle_set_label_active(PyUIPropertyStyleObject *self, PyObject *value, void *);
+
+/* symbols */
+static PyObject *PyUIPropertyStyle_get_sym_left(PyUIPropertyStyleObject *self, void *);
+static int       PyUIPropertyStyle_set_sym_left(PyUIPropertyStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIPropertyStyle_get_sym_right(PyUIPropertyStyleObject *self, void *);
+static int       PyUIPropertyStyle_set_sym_right(PyUIPropertyStyleObject *self, PyObject *value, void *);
+
+/* properties */
+static PyObject *PyUIPropertyStyle_get_border(PyUIPropertyStyleObject *self, void *);
+static int       PyUIPropertyStyle_set_border(PyUIPropertyStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIPropertyStyle_get_rounding(PyUIPropertyStyleObject *self, void *);
+static int       PyUIPropertyStyle_set_rounding(PyUIPropertyStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIPropertyStyle_get_padding(PyUIPropertyStyleObject *self, void *);
+static int       PyUIPropertyStyle_set_padding(PyUIPropertyStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIPropertyStyle_get_edit(PyUIPropertyStyleObject *self, void *);
+static PyObject *PyUIPropertyStyle_get_inc_button(PyUIPropertyStyleObject *self, void *);
+static PyObject *PyUIPropertyStyle_get_dec_button(PyUIPropertyStyleObject *self, void *);
+
+static PyObject *PyUIPropertyStyle_pickle(PyUIPropertyStyleObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyUIPropertyStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -1482,6 +1536,157 @@ static PyTypeObject PyUIEditStyle_type = {
     PyUIEditStyle_new,         /* tp_new */
 };
 
+static PyMethodDef PyUIPropertyStyle_methods[] = {
+    {"__pickle__", 
+    (PyCFunction)PyUIPropertyStyle_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine UIPropertyStyle object to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyUIPropertyStyle_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.UIPropertyStyle instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyGetSetDef PyUIPropertyStyle_getset[] = {
+    {"normal",
+    (getter)PyUIPropertyStyle_get_normal, 
+    (setter)PyUIPropertyStyle_set_normal,
+    "The look of the property field in the normal state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"hover",
+    (getter)PyUIPropertyStyle_get_hover, 
+    (setter)PyUIPropertyStyle_set_hover,
+    "The look of the property field in the hovered state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"active",
+    (getter)PyUIPropertyStyle_get_active, 
+    (setter)PyUIPropertyStyle_set_active,
+    "The look of the property field in the active state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"border_color",
+    (getter)PyUIPropertyStyle_get_border_color, 
+    (setter)PyUIPropertyStyle_set_border_color,
+    "The color of the property field border - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"label_normal",
+    (getter)PyUIPropertyStyle_get_label_normal, 
+    (setter)PyUIPropertyStyle_set_label_normal,
+    "The color of the label in the normal state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"label_hover",
+    (getter)PyUIPropertyStyle_get_label_hover, 
+    (setter)PyUIPropertyStyle_set_label_hover,
+    "The color of the label in the hover state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"label_active",
+    (getter)PyUIPropertyStyle_get_label_active, 
+    (setter)PyUIPropertyStyle_set_label_active,
+    "The color of the label in the active state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"sym_left",
+    (getter)PyUIPropertyStyle_get_sym_left, 
+    (setter)PyUIPropertyStyle_set_sym_left,
+    "The style of the left button symbol - an NK_SYMBOL enum value.",
+    NULL},
+
+    {"sym_right",
+    (getter)PyUIPropertyStyle_get_sym_right, 
+    (setter)PyUIPropertyStyle_set_sym_right,
+    "The style of the left button symbol - an NK_SYMBOL enum value.",
+    NULL},
+
+    {"border",
+    (getter)PyUIPropertyStyle_get_border, 
+    (setter)PyUIPropertyStyle_set_border,
+    "The width of the property field borders.", 
+    NULL},
+
+    {"rounding",
+    (getter)PyUIPropertyStyle_get_rounding, 
+    (setter)PyUIPropertyStyle_set_rounding,
+    "An (X, Y) tuple of floats to control the rounding of the property fields.", 
+    NULL},
+
+    {"padding",
+    (getter)PyUIPropertyStyle_get_padding, 
+    (setter)PyUIPropertyStyle_set_padding,
+    "An (X, Y) tuple to control the padding within a property field.", 
+    NULL},
+
+    {"edit",
+    (getter)PyUIPropertyStyle_get_edit, 
+    NULL,
+    "The style of the property editable region a pf.UIEditStyleObject instance.", 
+    NULL},
+
+    {"inc_button",
+    (getter)PyUIPropertyStyle_get_inc_button, 
+    NULL,
+    "The style of the property increment value button - a pf.UIButtonStyleObject instance.", 
+    NULL},
+
+    {"dec_button",
+    (getter)PyUIPropertyStyle_get_dec_button, 
+    NULL,
+    "The style of the property decrement value button - a pf.UIButtonStyleObject instance.", 
+    NULL},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyUIPropertyStyle_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "pf.UIPropertyStyle",        /* tp_name */
+    sizeof(PyUIPropertyStyleObject), /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    (destructor)PyUIPropertyStyle_dealloc, /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_reserved */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash  */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT,        /* tp_flags */
+    "Style configuration for Permafrost Engine UI toggle-able options.", /* tp_doc */
+    0,                         /* tp_traverse */
+    0,                         /* tp_clear */
+    0,                         /* tp_richcompare */
+    0,                         /* tp_weaklistoffset */
+    0,                         /* tp_iter */
+    0,                         /* tp_iternext */
+    PyUIPropertyStyle_methods,     /* tp_methods */
+    0,                         /* tp_members */
+    PyUIPropertyStyle_getset,      /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    0,                         /* tp_init */
+    0,                         /* tp_alloc */
+    PyUIPropertyStyle_new,         /* tp_new */
+};
+
 static struct nk_style_window_header s_saved_header_style;
 
 /*****************************************************************************/
@@ -2329,6 +2534,56 @@ static bool load_edit(struct SDL_RWops *stream, struct nk_style_edit *out)
     CHK_TRUE_RET(load_vec2(stream, &out->scrollbar_size));
     CHK_TRUE_RET(load_vec2(stream, &out->padding));
     CHK_TRUE_RET(load_float(stream, &out->row_padding));
+
+    return true;
+}
+
+bool save_property(struct SDL_RWops *stream, const struct nk_style_property *property)
+{
+    CHK_TRUE_RET(save_item(stream, &property->normal));
+    CHK_TRUE_RET(save_item(stream, &property->hover));
+    CHK_TRUE_RET(save_item(stream, &property->active));
+    CHK_TRUE_RET(save_color(stream, property->border_color));
+
+    CHK_TRUE_RET(save_color(stream, property->label_normal));
+    CHK_TRUE_RET(save_color(stream, property->label_hover));
+    CHK_TRUE_RET(save_color(stream, property->label_active));
+
+    CHK_TRUE_RET(save_int(stream, property->sym_left));
+    CHK_TRUE_RET(save_int(stream, property->sym_right));
+
+    CHK_TRUE_RET(save_float(stream, property->border));
+    CHK_TRUE_RET(save_float(stream, property->rounding));
+    CHK_TRUE_RET(save_vec2(stream, property->padding));
+
+    CHK_TRUE_RET(save_edit(stream, &property->edit));
+    CHK_TRUE_RET(save_button(stream, &property->inc_button));
+    CHK_TRUE_RET(save_button(stream, &property->dec_button));
+
+    return true;
+}
+
+static bool load_property(struct SDL_RWops *stream, struct nk_style_property *out)
+{
+    CHK_TRUE_RET(load_item(stream, &out->normal));
+    CHK_TRUE_RET(load_item(stream, &out->hover));
+    CHK_TRUE_RET(load_item(stream, &out->active));
+    CHK_TRUE_RET(load_color(stream, &out->border_color));
+
+    CHK_TRUE_RET(load_color(stream, &out->label_normal));
+    CHK_TRUE_RET(load_color(stream, &out->label_hover));
+    CHK_TRUE_RET(load_color(stream, &out->label_active));
+
+    CHK_TRUE_RET(load_int(stream, (int*)&out->sym_left));
+    CHK_TRUE_RET(load_int(stream, (int*)&out->sym_right));
+
+    CHK_TRUE_RET(load_float(stream, &out->border));
+    CHK_TRUE_RET(load_float(stream, &out->rounding));
+    CHK_TRUE_RET(load_vec2(stream, &out->padding));
+
+    CHK_TRUE_RET(load_edit(stream, &out->edit));
+    CHK_TRUE_RET(load_button(stream, &out->inc_button));
+    CHK_TRUE_RET(load_button(stream, &out->dec_button));
 
     return true;
 }
@@ -3914,6 +4169,9 @@ static PyObject *PyUIScrollbarStyle_unpickle(PyObject *cls, PyObject *args, PyOb
         case SCROLLBAR_EDIT:
             ((PyUIScrollbarStyleObject*)styleobj)->style = &ctx->style.edit.scrollbar;
             break;
+        case SCROLLBAR_PROPERTY:
+            ((PyUIScrollbarStyleObject*)styleobj)->style = &ctx->style.property.edit.scrollbar;
+            break;
         default:
             goto fail_unpickle;
     }
@@ -3935,6 +4193,13 @@ fail_args:
 
 static PyObject *PyUIEditStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
+    int kind;
+    if(!PyArg_ParseTuple(args, "i", &kind)
+    || (kind < 0 || kind > EDIT_PROPERTY)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer (type).");
+        return NULL;
+    }
+
     PyUIEditStyleObject *self = (PyUIEditStyleObject*)type->tp_alloc(type, 0);
     if(!self)
         return NULL;
@@ -3945,9 +4210,21 @@ static PyObject *PyUIEditStyle_new(PyTypeObject *type, PyObject *args, PyObject 
     }
 
     struct nk_context *ctx = UI_GetContext();
-    self->style = &ctx->style.edit;
-    self->scrollbar->style = &ctx->style.edit.scrollbar;
-    self->scrollbar->type = SCROLLBAR_EDIT;
+    self->type = kind;
+
+    switch(self->type) {
+    case EDIT_REGULAR:
+        self->style = &ctx->style.edit;
+        self->scrollbar->style = &ctx->style.edit.scrollbar;
+        self->scrollbar->type = SCROLLBAR_EDIT;
+        break;
+    case EDIT_PROPERTY:
+        self->style = &ctx->style.property.edit;
+        self->scrollbar->style = &ctx->style.property.edit.scrollbar;
+        self->scrollbar->type = SCROLLBAR_PROPERTY;
+        break;
+    default: assert(0);
+    }
 
     return (PyObject*)self;
 
@@ -4372,6 +4649,7 @@ static PyObject *PyUIEditStyle_pickle(PyUIEditStyleObject *self, PyObject *args,
 
     SDL_RWops *stream = PFSDL_VectorRWOps();
     CHK_TRUE(stream, fail_alloc);
+    CHK_TRUE(save_int(stream, self->type), fail_pickle);
     CHK_TRUE(save_edit(stream, self->style), fail_pickle);
     ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
 
@@ -4400,8 +4678,11 @@ static PyObject *PyUIEditStyle_unpickle(PyObject *cls, PyObject *args, PyObject 
     SDL_RWops *stream = SDL_RWFromConstMem(str, len);
     CHK_TRUE(stream, fail_args);
 
+    int kind;
+    CHK_TRUE(load_int(stream, &kind), fail_unpickle);
+
     PyUIEditStyleObject *styleobj = 
-        (PyUIEditStyleObject*)PyObject_CallFunctionObjArgs((PyObject*)&PyUIEditStyle_type, NULL);
+        (PyUIEditStyleObject*)PyObject_CallFunction((PyObject*)&PyUIEditStyle_type, "i", kind);
     assert(styleobj || PyErr_Occurred());
     CHK_TRUE(styleobj, fail_unpickle);
 
@@ -4416,6 +4697,325 @@ fail_unpickle:
 fail_args:
     if(!ret) {
         PyErr_SetString(PyExc_RuntimeError, "Error unpickling pf.UIEditStyle object");
+    }
+    return ret;
+}
+
+static PyObject *PyUIPropertyStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    PyUIPropertyStyleObject *self = (PyUIPropertyStyleObject*)type->tp_alloc(type, 0);
+    if(!self)
+        return NULL;
+
+    self->edit = (PyUIEditStyleObject*)PyObject_CallFunction(
+        (PyObject*)&PyUIEditStyle_type, 
+        "i", EDIT_PROPERTY
+    );
+    if(!self->edit)
+        goto fail_edit;
+
+    struct nk_context *ctx = UI_GetContext();
+    self->style = &ctx->style.property;
+
+    self->inc_button = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
+    if(!self->inc_button)
+        goto fail_inc_button;
+    self->inc_button->style = &ctx->style.property.inc_button;
+
+    self->dec_button = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
+    if(!self->dec_button)
+        goto fail_dec_button;
+    self->dec_button->style = &ctx->style.property.dec_button;
+
+    return (PyObject*)self;
+
+fail_dec_button:
+    Py_DECREF(self->inc_button);
+fail_inc_button:
+    Py_DECREF(self->edit);
+fail_edit:
+    Py_DECREF(self);
+    return NULL;
+}
+
+static void PyUIPropertyStyle_dealloc(PyUIPropertyStyleObject *self)
+{
+    Py_DECREF(self->dec_button);
+    Py_DECREF(self->inc_button);
+    Py_DECREF(self->edit);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyObject *PyUIPropertyStyle_get_normal(PyUIPropertyStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->normal);
+}
+
+static int PyUIPropertyStyle_set_normal(PyUIPropertyStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->normal);
+}
+
+static PyObject *PyUIPropertyStyle_get_hover(PyUIPropertyStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->hover);
+}
+
+static int PyUIPropertyStyle_set_hover(PyUIPropertyStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->hover);
+}
+
+static PyObject *PyUIPropertyStyle_get_active(PyUIPropertyStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->active);
+}
+
+static int PyUIPropertyStyle_set_active(PyUIPropertyStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->active);
+}
+
+static PyObject *PyUIPropertyStyle_get_border_color(PyUIPropertyStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->border_color.r,
+        self->style->border_color.g,
+        self->style->border_color.b,
+        self->style->border_color.a);
+}
+
+static int PyUIPropertyStyle_set_border_color(PyUIPropertyStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->border_color = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIPropertyStyle_get_label_normal(PyUIPropertyStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->label_normal.r,
+        self->style->label_normal.g,
+        self->style->label_normal.b,
+        self->style->label_normal.a);
+}
+
+static int PyUIPropertyStyle_set_label_normal(PyUIPropertyStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->label_normal = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIPropertyStyle_get_label_hover(PyUIPropertyStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->label_hover.r,
+        self->style->label_hover.g,
+        self->style->label_hover.b,
+        self->style->label_hover.a);
+}
+
+static int PyUIPropertyStyle_set_label_hover(PyUIPropertyStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->label_hover = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIPropertyStyle_get_label_active(PyUIPropertyStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->label_active.r,
+        self->style->label_active.g,
+        self->style->label_active.b,
+        self->style->label_active.a);
+}
+
+static int PyUIPropertyStyle_set_label_active(PyUIPropertyStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->label_active = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIPropertyStyle_get_sym_left(PyUIPropertyStyleObject *self, void *closure)
+{
+    return Py_BuildValue("i", self->style->sym_left);
+}
+
+static int PyUIPropertyStyle_set_sym_left(PyUIPropertyStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an int.");
+        return -1; 
+    }
+
+    self->style->sym_left = PyInt_AS_LONG(value);
+    return 0;
+}
+
+static PyObject *PyUIPropertyStyle_get_sym_right(PyUIPropertyStyleObject *self, void *closure)
+{
+    return Py_BuildValue("i", self->style->sym_right);
+}
+
+static int PyUIPropertyStyle_set_sym_right(PyUIPropertyStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an int.");
+        return -1; 
+    }
+
+    self->style->sym_right = PyInt_AS_LONG(value);
+    return 0;
+}
+
+static PyObject *PyUIPropertyStyle_get_border(PyUIPropertyStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->border);
+}
+
+static int PyUIPropertyStyle_set_border(PyUIPropertyStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->border = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIPropertyStyle_get_rounding(PyUIPropertyStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->rounding);
+}
+
+static int PyUIPropertyStyle_set_rounding(PyUIPropertyStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->rounding = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIPropertyStyle_get_padding(PyUIPropertyStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->padding.x,
+        self->style->padding.y);
+}
+
+static int PyUIPropertyStyle_set_padding(PyUIPropertyStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->padding = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUIPropertyStyle_get_edit(PyUIPropertyStyleObject *self, void *closure)
+{
+    Py_INCREF(self->edit);
+    return (PyObject*)self->edit;
+}
+
+static PyObject *PyUIPropertyStyle_get_inc_button(PyUIPropertyStyleObject *self, void *closure)
+{
+    Py_INCREF(self->inc_button);
+    return (PyObject*)self->inc_button;
+}
+
+static PyObject *PyUIPropertyStyle_get_dec_button(PyUIPropertyStyleObject *self, void *closure)
+{
+    Py_INCREF(self->dec_button);
+    return (PyObject*)self->dec_button;
+}
+
+static PyObject *PyUIPropertyStyle_pickle(PyUIPropertyStyleObject *self, PyObject *args, PyObject *kwargs)
+{
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+    CHK_TRUE(save_property(stream, self->style), fail_pickle);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error pickling pf.UIPropertyStyle object");
+    }
+    return ret;
+}
+
+static PyObject *PyUIPropertyStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    int status;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyUIPropertyStyleObject *styleobj = 
+        (PyUIPropertyStyleObject*)PyObject_CallFunctionObjArgs((PyObject*)&PyUIPropertyStyle_type, NULL);
+    assert(styleobj || PyErr_Occurred());
+    CHK_TRUE(styleobj, fail_unpickle);
+
+    CHK_TRUE(load_property(stream, ((PyUIPropertyStyleObject*)styleobj)->style), fail_unpickle);
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", styleobj, (int)nread);
+    Py_DECREF(styleobj);
+
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_args:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error unpickling pf.UIPropertyStyle object");
     }
     return ret;
 }
@@ -4467,6 +5067,12 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
         return;
     Py_INCREF(&PyUIScrollbarStyle_type);
     PyModule_AddObject(module, "UIEditStyle", (PyObject*)&PyUIEditStyle_type);
+
+    /* Property style */
+    if(PyType_Ready(&PyUIPropertyStyle_type) < 0)
+        return;
+    Py_INCREF(&PyUIScrollbarStyle_type);
+    PyModule_AddObject(module, "UIPropertyStyle", (PyObject*)&PyUIPropertyStyle_type);
 
     /* Global style objects */
     PyUIButtonStyleObject *button_style = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
@@ -4522,10 +5128,17 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     scrollbar_vert_style->type = SCROLLBAR_VERTICAL;
     PyModule_AddObject(module, "scrollbar_vertical_style", (PyObject*)scrollbar_vert_style);
 
-    PyUIComboStyleObject *edit_style = 
-        (PyUIComboStyleObject*)PyObject_CallFunctionObjArgs((PyObject*)&PyUIEditStyle_type, NULL);
+    PyUIEditStyleObject *edit_style = (PyUIEditStyleObject*)PyObject_CallFunction(
+        (PyObject*)&PyUIEditStyle_type, 
+        "i", EDIT_REGULAR
+    );
     assert(edit_style);
     PyModule_AddObject(module, "edit_style", (PyObject*)edit_style);
+
+    PyUIPropertyStyleObject *property_style = (PyUIPropertyStyleObject*)PyObject_CallFunctionObjArgs(
+        (PyObject*)&PyUIPropertyStyle_type, NULL);
+    assert(property_style);
+    PyModule_AddObject(module, "property_style", (PyObject*)property_style);
 }
 
 bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_window *window)
