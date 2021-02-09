@@ -57,7 +57,7 @@
 struct cursor_resource{
     SDL_Cursor  *cursor;     
     SDL_Surface *surface;
-    const char  *path;
+    char         path[512];
     size_t       hot_x, hot_y;
 };
 
@@ -67,7 +67,7 @@ KHASH_MAP_INIT_STR(cursor, struct cursor_resource)
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static struct cursor_resource s_cursors[_CURSOR_MAX] = {
+static const struct cursor_resource s_default[_CURSOR_MAX] = {
     [CURSOR_POINTER] = {
         .cursor  = NULL,
         .surface = NULL,
@@ -140,9 +140,10 @@ static struct cursor_resource s_cursors[_CURSOR_MAX] = {
     },
 };
 
-static bool             s_moved = false;
-static SDL_Cursor      *s_rts_pointer;
-static khash_t(cursor) *s_named_cursors;
+static bool                    s_moved = false;
+static SDL_Cursor             *s_rts_pointer;
+static khash_t(cursor)        *s_named_cursors;
+static struct cursor_resource  s_cursors[_CURSOR_MAX];
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -213,6 +214,8 @@ bool Cursor_InitDefault(const char *basedir)
     if(!s_named_cursors)
         return false;
 
+    memcpy(s_cursors, s_default, sizeof(s_cursors));
+
     for(int i = 0; i < ARR_SIZE(s_cursors); i++) {
     
         struct cursor_resource *curr = &s_cursors[i];
@@ -241,7 +244,6 @@ void Cursor_FreeAll(void)
 
     kh_foreach(s_named_cursors, key, curr, {
         free((void*)key);
-        free((void*)curr.path);
         SDL_FreeSurface(curr.surface);
         SDL_FreeCursor(curr.cursor);
     });
@@ -287,6 +289,7 @@ bool Cursor_LoadBMP(enum cursortype type, const char *path, int hotx, int hoty)
     curr->surface = surface;
     curr->hot_x = hotx;
     curr->hot_y = hoty;
+    pf_snprintf(curr->path, sizeof(curr->path), path);
 
     return true;
 
@@ -313,10 +316,10 @@ bool Cursor_NamedLoadBMP(const char *name, const char *path, int hotx, int hoty)
     struct cursor_resource entry = (struct cursor_resource) {
         .cursor  = cursor,
         .surface = surface,
-        .path    = pf_strdup(path),
         .hot_x   = hotx,
         .hot_y   = hoty
     };
+    pf_snprintf(entry.path, sizeof(entry.path), path);
 
     int status;
     khiter_t k = kh_put(cursor, s_named_cursors, pf_strdup(name), &status);
@@ -428,6 +431,49 @@ bool Cursor_SaveState(struct SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &cursortype, "cursortype"));
 
+    size_t nsystem = 0;
+    for(int i = 0; i < ARR_SIZE(s_cursors); i++) {
+        if(!strlen(s_cursors[i].path))
+            continue;
+        nsystem++;
+    }
+    struct attr nsystem_attr = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = nsystem
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &nsystem_attr, "nsystem"));
+
+    for(int i = 0; i < ARR_SIZE(s_cursors); i++) {
+
+        struct cursor_resource *curr = &s_cursors[i];
+        if(!strlen(curr->path))
+            continue;
+
+        struct attr type = (struct attr){
+            .type = TYPE_INT, 
+            .val.as_int = i
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &type, "type"));
+
+        struct attr path = (struct attr){
+            .type = TYPE_STRING, 
+        };
+        pf_snprintf(path.val.as_string, sizeof(path.val.as_string), curr->path);
+        CHK_TRUE_RET(Attr_Write(stream, &path, "path"));
+
+        struct attr hotx = (struct attr){
+            .type = TYPE_INT, 
+            .val.as_int = curr->hot_x
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &hotx, "hotx"));
+
+        struct attr hoty = (struct attr){
+            .type = TYPE_INT, 
+            .val.as_int = curr->hot_y
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &hoty, "hoty"));
+    }
+
     return true;
 }
 
@@ -466,6 +512,32 @@ bool Cursor_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(type >= 0 && type < _CURSOR_MAX);
 
     Cursor_SetRTSPointer(type);
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    size_t nsystem = attr.val.as_int;
+
+    for(int i = 0; i < nsystem; i++) {
+
+        struct attr type;
+        CHK_TRUE_RET(Attr_Parse(stream, &type, true));
+        CHK_TRUE_RET(type.type == TYPE_INT);
+
+        struct attr path;
+        CHK_TRUE_RET(Attr_Parse(stream, &path, true));
+        CHK_TRUE_RET(path.type == TYPE_STRING);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int hotx = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        int hoty = attr.val.as_int;
+
+        Cursor_LoadBMP(type.val.as_int, path.val.as_string, hotx, hoty);
+    }
+
     return true;
 }
 
