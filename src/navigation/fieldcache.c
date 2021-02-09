@@ -38,6 +38,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
 #include "../event.h"
+#include "../sched.h"
 #include "../config.h"
 
 #include <assert.h>
@@ -187,7 +188,7 @@ bool N_FC_Init(void)
     if(!lru_los_init(&s_los_cache, CONFIG_LOS_CACHE_SZ, NULL))
         goto fail_los;
 
-    if(!lru_flow_init(&s_flow_cache, CONFIG_FLOW_CAHCE_SZ, NULL))
+    if(!lru_flow_init(&s_flow_cache, CONFIG_FLOW_CACHE_SZ, NULL))
         goto fail_flow;
 
     if(!lru_ffid_init(&s_ffid_cache, CONFIG_MAPPING_CACHE_SZ, NULL))
@@ -392,7 +393,9 @@ void N_FC_InvalidateAllAtChunk(struct coord chunk)
 
 void N_FC_InvalidateAllThroughChunk(struct coord chunk)
 {
-    dest_id_t paths[CONFIG_FLOW_CAHCE_SZ];
+    assert(Sched_UsingBigStack());
+
+    dest_id_t paths[CONFIG_FLOW_CACHE_SZ];
     size_t npaths = 0;
 
     uint64_t key;

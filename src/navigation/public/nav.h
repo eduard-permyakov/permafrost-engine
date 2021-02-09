@@ -90,6 +90,12 @@ void      N_Update(void *nav_private);
 void      N_Shutdown(void);
 
 /* ------------------------------------------------------------------------
+ * Reset all internal navigation subsystem state.
+ * ------------------------------------------------------------------------
+ */
+void      N_ClearState(void);
+
+/* ------------------------------------------------------------------------
  * Return a new navigation context for a map, containing pathability
  * information. 'w' and 'h' are the number of chunk columns/rows per map.
  * 'chunk_tiles' holds pointers to tile arrays for every chunk, in 

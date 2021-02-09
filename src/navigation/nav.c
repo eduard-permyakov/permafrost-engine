@@ -1300,6 +1300,14 @@ void N_Shutdown(void)
     N_FC_Shutdown();
 }
 
+void N_ClearState(void)
+{
+    s_local_islands_dirty = false;
+    kh_clear(coord, s_dirty_chunks);
+    N_FC_ClearAll();
+    N_FC_ClearStats();
+}
+
 void *N_BuildForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
                         const struct tile **chunk_tiles, bool update)
 {

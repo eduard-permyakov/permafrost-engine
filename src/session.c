@@ -43,6 +43,7 @@
 #include "lib/public/pf_string.h"
 #include "lib/public/vec.h"
 #include "lib/public/SDL_vec_rwops.h"
+#include "navigation/public/nav.h"
 #include "game/public/game.h"
 #include "script/public/script.h"
 
@@ -92,6 +93,7 @@ static void subsession_clear(void)
     E_ClearPendingEvents();
     Sched_ClearState();
     E_DeleteScriptHandlers();
+    N_ClearState();
     S_ClearState();
     G_ClearState();
     G_ClearRenderWork();

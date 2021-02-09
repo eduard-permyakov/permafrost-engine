@@ -150,8 +150,7 @@ static void g_init_map(void)
     G_ClearPath_Init(s_gs.map);
     G_Pos_Init(s_gs.map);
     G_Fog_Init(s_gs.map);
-    N_FC_ClearAll();
-    N_FC_ClearStats();
+    N_ClearState();
 }
 
 static void g_shadow_pass(struct render_input *in)
