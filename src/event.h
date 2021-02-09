@@ -137,6 +137,7 @@ size_t      E_GetScriptHandlers(size_t max_out, struct script_handler *out);
 void        E_ClearPendingEvents(void);
 void        E_FlushEventQueue(void);
 const char *E_EngineEventString(enum eventtype event);
+bool        E_EventsQueued(void);
 
 /*###########################################################################*/
 /* EVENT GLOBAL                                                              */

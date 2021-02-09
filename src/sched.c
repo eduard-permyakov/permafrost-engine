@@ -1031,6 +1031,7 @@ bool Sched_Init(void)
     for(int i = 0; i < MAX_TASKS; i++) {
 
         s_tasks[i].tid = i + 1;
+        s_tasks[i].state = TASK_STATE_ACTIVE;
         if(!queue_tid_init(&s_msg_queues[i], MAX_TASKS))
             goto fail_msg_queue;
     }
@@ -1229,7 +1230,7 @@ void Sched_Tick(void)
         PERF_RETURN_VOID();
 
     /* Use a do-while to ensure we're always making at least _some_ forward progress */
-     do{
+    do{
         int nwaiters = 0;
         struct task *curr = NULL;
 
@@ -1358,6 +1359,7 @@ void Sched_ClearState(void)
     for(int i = 0; i < MAX_TASKS; i++) {
         queue_tid_clear(&s_msg_queues[i]);
         s_parent_waiting[i] = false;
+        s_tasks[i].state = TASK_STATE_ACTIVE;
     }
 
     Task_CreateServices();
@@ -1428,5 +1430,35 @@ bool Sched_UsingBigStack(void)
         return true;
     struct task *task = &s_tasks[tid - 1];
     return (task->flags & TASK_BIG_STACK);
+}
+
+void Sched_Flush(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    sched_quiesce_workers();
+    struct task *curr;
+
+    while(pq_task_pop(&s_ready_queue_main, &curr)) {
+        assert(curr);
+        sched_task_run(curr);
+        sched_task_service_request(curr);
+    }
+    while(pq_task_pop(&s_ready_queue, &curr)) {
+        assert(curr);
+        sched_task_run(curr);
+        sched_task_service_request(curr);
+    }
+}
+
+bool Sched_HasBlocked(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    SDL_LockMutex(s_ready_lock); 
+    bool ret = (pq_size(&s_ready_queue) > 0)
+            || (pq_size(&s_ready_queue_main) > 0);
+    SDL_UnlockMutex(s_ready_lock);
+    return ret;
 }
 

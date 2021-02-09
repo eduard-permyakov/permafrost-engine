@@ -1021,7 +1021,7 @@ bool G_Region_LoadState(struct SDL_RWops *stream)
 
         struct attr name;
         CHK_TRUE_RET(Attr_Parse(stream, &name, true));
-        CHK_TRUE_RET(name.type == TYPE_INT);
+        CHK_TRUE_RET(name.type == TYPE_STRING);
 
         khiter_t k = kh_get(region, s_regions, name.val.as_string);
         CHK_TRUE_RET(k != kh_end(s_regions));

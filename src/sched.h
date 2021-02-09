@@ -102,6 +102,8 @@ uint32_t Sched_Create(int prio, task_func_t code, void *arg, struct future *resu
 uint32_t Sched_CreateBlocking(int prio, task_func_t code, void *arg, struct future *result, int flags);
 bool     Sched_RunSync(uint32_t tid);
 void     Sched_ClearState(void);
+void     Sched_Flush(void);
+bool     Sched_HasBlocked(void);
 
 /* The following may only be called from task context 
  * (i.e. from the body of a task function) */

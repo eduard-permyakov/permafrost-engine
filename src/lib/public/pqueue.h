@@ -69,6 +69,12 @@
 #define pq_size(pqueue)                                                                         \
     ((pqueue)->size)
 
+#define pq_foreach(_pqueue, _entry, ...)                                                        \
+    for(int i = 1; i <= (_pqueue)->size; i++) {                                                 \
+        _entry = (_pqueue)->nodes[i].data;                                                      \
+        __VA_ARGS__                                                                             \
+    }                                                                                           \
+
 /***********************************************************************************************/
 
 #define PQUEUE_PROTOTYPES(scope, name, type)                                                    \
@@ -85,6 +91,8 @@
     scope  bool  pq_##name##_contains(pq(name) *pqueue, int compare(void *a, void *b), type t); \
     scope  bool  pq_##name##_reserve (pq(name) *pqueue, size_t cap);                            \
     scope  bool  pq_##name##_top_prio(pq(name) *pqueue, float *out);                            \
+    scope  bool  pq_##name##_copy    (pq(name) *dst, pq(name) *src);                            \
+    scope  void  pq_##name##_clear   (pq(name) *pqueue);                                        \
 
 /***********************************************************************************************/
 
@@ -225,6 +233,21 @@
         if(pqueue->size == 0)                                                                   \
             return false;                                                                       \
         *out = pqueue->nodes[1].priority;                                                       \
+        return true;                                                                            \
+    }                                                                                           \
+                                                                                                \
+    scope void pq_##name##_clear(pq(name) *pqueue)                                              \
+    {                                                                                           \
+        pqueue->size = 0;                                                                       \
+    }                                                                                           \
+                                                                                                \
+    scope bool pq_##name##_copy(pq(name) *dst, pq(name) *src)                                   \
+    {                                                                                           \
+        if(!pq_##name##_reserve(dst, src->size))                                                \
+            return false;                                                                       \
+        pq_##name##_clear(dst);                                                                 \
+        memcpy(dst->nodes + 1, src->nodes + 1, src->size * sizeof(pq_##name##_node_t));         \
+        dst->size = src->size;                                                                  \
         return true;                                                                            \
     }                                                                                           \
 

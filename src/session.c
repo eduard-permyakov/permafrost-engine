@@ -116,11 +116,23 @@ static void subsession_save_args(void)
 static bool subsession_save(SDL_RWops *stream)
 {
     /* Drain the event queue to make sure we don't lose any events 
-     * when moving from sessin to session. A 'lost' event can cause
+     * when moving from session to session. A 'lost' event can cause
      * some event-driven state machines to enter a bad state. 
+     * 
+     * In addition, some tasks may have been put in the ready queue
+     * but not yet run. To ensure that the reactivation of the tasks 
+     * also does not become 'lost', we drain the ready queues such that
+     * all tasks have either completed or are blocked. This is a nice
+     * boundary to capture the state on.
+     *
+     * As task execution can generate events and event handling can 
+     * unblock tasks, we keep doing it until the entire event chain is 
+     * completed.
      */
-    E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
-    E_FlushEventQueue();
+    while(E_EventsQueued() || Sched_HasBlocked()) {
+        E_FlushEventQueue();
+        Sched_Flush();
+    }
 
     if(!Cursor_SaveState(stream))
         return false;
@@ -189,6 +201,7 @@ static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
         goto fail;
     }
 
+    E_ClearPendingEvents();
     return true;
 
 fail:
@@ -432,8 +445,10 @@ void Session_ServiceRequests(void)
     if(s_request == SESH_REQ_NONE)
         return;
 
-    bool result = false;
+    E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
     Engine_LoadingScreen();
+
+    bool result = false;
 
     switch(s_request) {
     case SESH_REQ_LOAD:

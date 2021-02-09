@@ -134,6 +134,8 @@ static const char *s_event_str_table[] = {
     STR(EVENT_RESOURCE_DROPPED_OFF),
     STR(EVENT_RESOURCE_PICKED_UP),
     STR(EVENT_RESOURCE_EXHAUSTED),
+    STR(EVENT_ENTERED_REGION),
+    STR(EVENT_EXITED_REGION),
 };
 
 static khash_t(handler_desc) *s_event_handler_table;
@@ -273,7 +275,7 @@ static void e_handle_event(struct event event, bool immediate)
             /* memoize any handlers that we've already ran */
             vec_hd_push(&execd_handlers, *elem);
 
-            if((elem->simmask & ss) == 0)
+            if(!immediate && ((elem->simmask & ss) == 0))
                 continue;
 
             invoke(elem, event);
@@ -378,8 +380,7 @@ void E_FlushEventQueue(void)
 {
     e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID}, true);
 
-    while(queue_size(s_event_queues[0]) > 0 
-       || queue_size(s_event_queues[1]) > 0) {
+    while(E_EventsQueued()) {
 
         queue_event_t *queue = &s_event_queues[s_front_queue_idx];
         s_front_queue_idx = (s_front_queue_idx + 1) % 2;
@@ -393,6 +394,12 @@ void E_FlushEventQueue(void)
         e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID}, true);
         e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID}, true);
     }
+}
+
+bool E_EventsQueued(void)
+{
+    return (queue_size(s_event_queues[0]) > 0) 
+        || (queue_size(s_event_queues[1]) > 0);
 }
 
 void E_DeleteScriptHandlers(void)
@@ -589,7 +596,7 @@ const char *E_EngineEventString(enum eventtype event)
 {
     if(event <= (int)SDL_LASTEVENT)
         return NULL;
-    if(event - EVENT_UPDATE_START > sizeof(s_event_str_table)/sizeof(const char *))
+    if(event - EVENT_UPDATE_START >= sizeof(s_event_str_table)/sizeof(const char *))
         return NULL;
     return s_event_str_table[event - EVENT_UPDATE_START];
 }
