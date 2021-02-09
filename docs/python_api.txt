@@ -53,6 +53,22 @@ BUILT-IN FUNCTIONS
     Make it possible to select units with the mouse. Enable drawing of a
     selection box when dragging the mouse.
 
+    [entities_for_tag]
+    ----------------------------------------------------------------------------
+    Get a tuple of entities that have the specific tag.
+
+    [ents_in_circle]
+    ----------------------------------------------------------------------------
+    Returns a list of entities in the specified circle (defined by (X, Z)
+    'position' and 'radius'). Takes an optional 'predicate' callable argument
+    to filter the results.
+
+    [ents_in_rect]
+    ----------------------------------------------------------------------------
+    Returns a list of entities in the specified rectangle (defined by two (X,
+    Z) points - the 'minimum' and 'maximum' corners. Takes an optional
+    'predicate' callable argument to filter the results.
+
     [exec_]
     ----------------------------------------------------------------------------
     Replace the current subsession with one set up by the provided script. This
@@ -89,6 +105,10 @@ BUILT-IN FUNCTIONS
     [get_active_font]
     ----------------------------------------------------------------------------
     Get the name of the current active font.
+
+    [get_active_window]
+    ----------------------------------------------------------------------------
+    Get the currently active (having focus) window, or None.
 
     [get_basedir]
     ----------------------------------------------------------------------------
@@ -173,6 +193,10 @@ BUILT-IN FUNCTIONS
     Disable rendering of healthbars. Overrides the user-configurable dynamic
     setting.
 
+    [hide_regions]
+    ----------------------------------------------------------------------------
+    Hide region outlines and names.
+
     [load_map]
     ----------------------------------------------------------------------------
     Loads the map from the specified file.
@@ -184,7 +208,8 @@ BUILT-IN FUNCTIONS
     [load_scene]
     ----------------------------------------------------------------------------
     Import list of entities from a PFSCENE file (specified as a path string).
-    Returns a list of the loaded entities.
+    Returns a tuple of the following items: list of loaded entities, list of
+    loaded regions.
 
     [load_session]
     ----------------------------------------------------------------------------
@@ -212,6 +237,12 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Returns the normalized result of multiplying 2 quaternions (specified as a
     list of 4 floats - XYZW order).
+
+    [nearest_ent]
+    ----------------------------------------------------------------------------
+    Returns the nearest entity to the specified 'position' - (X, Z) point or
+    None. Takes an optional 'predicate' callable argument to filter the results
+    and an optional 'max_range' (Float) argument.
 
     [pickle_object]
     ----------------------------------------------------------------------------
@@ -276,6 +307,10 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Set the cursor to target mode. The next left click will issue a build
     command to the building under the cursor.
+
+    [set_click_move_enabled]
+    ----------------------------------------------------------------------------
+    Enable or disable issuing move orders by right-clicking.
 
     [set_diplomacy_state]
     ----------------------------------------------------------------------------
@@ -388,6 +423,10 @@ BUILT-IN FUNCTIONS
     the healthbars will only be rendered if the corresponding user-configurable
     setting is set.
 
+    [show_regions]
+    ----------------------------------------------------------------------------
+    Show region outlines and names over the map surface.
+
     [ui_text_edit_has_focus]
     ----------------------------------------------------------------------------
     Returns True if the mouse cursor is currently in an editable text field of
@@ -423,6 +462,10 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
         [faction_id]
         Index of the faction that the entity belongs to.
 
@@ -452,6 +495,9 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [tags]
+        Return a tuple with all the entity's tags.
+
         [top_screen_pos]
         Get the location of the top center point of the entity, in screenspace
         coordinates.
@@ -474,6 +520,9 @@ BUILT-IN CLASSES
 
         [__pickle__]
         Serialize a Permafrost Engine animated entity to a string.
+
+        [add_tag]
+        Add a string tag to this entity's list of tags.
 
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
@@ -500,6 +549,9 @@ BUILT-IN CLASSES
         Registers the specified callable to be invoked when an event of the
         specified type is sent to this entity.
 
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
@@ -516,6 +568,10 @@ BUILT-IN CLASSES
         Unregisters a callable previously registered to be invoked on the
         specified event.
 
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
     [BuildableEntity]
     ----------------------------------------------------------------------------
     Permafrost Engine entity buildable entity. This is a subclass of pf.Entity.
@@ -526,11 +582,18 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
         [completed]
         Boolean indicating if the building is at or past the 'COMPLETED' state.
 
         [faction_id]
         Index of the faction that the entity belongs to.
+
+        [founded]
+        Boolean indicating if the building is at or past the 'FOUNDED' state.
 
         [name]
         Custom name given to this enity.
@@ -558,6 +621,9 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [tags]
+        Return a tuple with all the entity's tags.
+
         [top_screen_pos]
         Get the location of the top center point of the entity, in screenspace
         coordinates.
@@ -580,6 +646,9 @@ BUILT-IN CLASSES
 
         [__pickle__]
         Serialize a Permafrost Engine buildable entity to a string.
+
+        [add_tag]
+        Add a string tag to this entity's list of tags.
 
         [complete]
         Advance a building to the 'COMPLETED' state from the 'SUPPLIED' state.
@@ -610,6 +679,9 @@ BUILT-IN CLASSES
         Registers the specified callable to be invoked when an event of the
         specified type is sent to this entity.
 
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
@@ -635,6 +707,10 @@ BUILT-IN CLASSES
         Unregisters a callable previously registered to be invoked on the
         specified event.
 
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
     [BuilderEntity]
     ----------------------------------------------------------------------------
     Permafrost Engine builder entity. This is a subclass of pf.Entity. This
@@ -645,6 +721,10 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
         [faction_id]
         Index of the faction that the entity belongs to.
 
@@ -674,6 +754,9 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [tags]
+        Return a tuple with all the entity's tags.
+
         [top_screen_pos]
         Get the location of the top center point of the entity, in screenspace
         coordinates.
@@ -697,6 +780,9 @@ BUILT-IN CLASSES
         [__pickle__]
         Serialize a Permafrost Engine builder entity to a string.
 
+        [add_tag]
+        Add a string tag to this entity's list of tags.
+
         [build]
         Issue an order to build a specific buildable entity.
 
@@ -718,6 +804,9 @@ BUILT-IN CLASSES
         Registers the specified callable to be invoked when an event of the
         specified type is sent to this entity.
 
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
@@ -733,6 +822,10 @@ BUILT-IN CLASSES
         [unregister]
         Unregisters a callable previously registered to be invoked on the
         specified event.
+
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
 
     [Camera]
     ----------------------------------------------------------------------------
@@ -797,6 +890,10 @@ BUILT-IN CLASSES
         [base_dmg]
         The base damage for which this entity's attacks hit.
 
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
         [faction_id]
         Index of the faction that the entity belongs to.
 
@@ -832,6 +929,9 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [tags]
+        Return a tuple with all the entity's tags.
+
         [top_screen_pos]
         Get the location of the top center point of the entity, in screenspace
         coordinates.
@@ -854,6 +954,9 @@ BUILT-IN CLASSES
 
         [__pickle__]
         Serialize a Permafrost Engine combatable entity to a string.
+
+        [add_tag]
+        Add a string tag to this entity's list of tags.
 
         [attack]
         Issues an 'attack move' order to the entity at the XZ position
@@ -881,6 +984,9 @@ BUILT-IN CLASSES
         Registers the specified callable to be invoked when an event of the
         specified type is sent to this entity.
 
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
@@ -897,6 +1003,10 @@ BUILT-IN CLASSES
         Unregisters a callable previously registered to be invoked on the
         specified event.
 
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
     [Entity]
     ----------------------------------------------------------------------------
     Permafrost Engine generic game entity.
@@ -904,6 +1014,10 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
         [faction_id]
         Index of the faction that the entity belongs to.
 
@@ -933,6 +1047,9 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [tags]
+        Return a tuple with all the entity's tags.
+
         [top_screen_pos]
         Get the location of the top center point of the entity, in screenspace
         coordinates.
@@ -956,6 +1073,9 @@ BUILT-IN CLASSES
         [__pickle__]
         Serialize a Permafrost Engine entity to a string.
 
+        [add_tag]
+        Add a string tag to this entity's list of tags.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
@@ -974,6 +1094,9 @@ BUILT-IN CLASSES
         Registers the specified callable to be invoked when an event of the
         specified type is sent to this entity.
 
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
@@ -990,6 +1113,10 @@ BUILT-IN CLASSES
         Unregisters a callable previously registered to be invoked on the
         specified event.
 
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
     [HarvesterEntity]
     ----------------------------------------------------------------------------
     Permafrost Engine resource entity. This is a subclass of pf.Entity. This
@@ -999,6 +1126,10 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
         [faction_id]
         Index of the faction that the entity belongs to.
 
@@ -1032,6 +1163,9 @@ BUILT-IN CLASSES
         The approach used by the harvester to pick the next storage site to get
         resources from. Must be a pf.TRANSPORT_ enum value.
 
+        [tags]
+        Return a tuple with all the entity's tags.
+
         [top_screen_pos]
         Get the location of the top center point of the entity, in screenspace
         coordinates.
@@ -1061,6 +1195,9 @@ BUILT-IN CLASSES
 
         [__pickle__]
         Serialize a Permafrost Engine combatable entity to a string.
+
+        [add_tag]
+        Add a string tag to this entity's list of tags.
 
         [decrease_transport_priority]
         Move the specified resource down in the priority list the peasant uses
@@ -1095,6 +1232,9 @@ BUILT-IN CLASSES
         Registers the specified callable to be invoked when an event of the
         specified type is sent to this entity.
 
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
@@ -1124,6 +1264,10 @@ BUILT-IN CLASSES
         Unregisters a callable previously registered to be invoked on the
         specified event.
 
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
     [MovableEntity]
     ----------------------------------------------------------------------------
     Permafrost Engine movable entity. This is a subclass of pf.Entity. This
@@ -1132,6 +1276,10 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
         [faction_id]
         Index of the faction that the entity belongs to.
 
@@ -1161,6 +1309,9 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [tags]
+        Return a tuple with all the entity's tags.
+
         [top_screen_pos]
         Get the location of the top center point of the entity, in screenspace
         coordinates.
@@ -1184,6 +1335,9 @@ BUILT-IN CLASSES
         [__pickle__]
         Serialize a Permafrost Engine combatable entity to a string.
 
+        [add_tag]
+        Add a string tag to this entity's list of tags.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
@@ -1206,6 +1360,9 @@ BUILT-IN CLASSES
         Registers the specified callable to be invoked when an event of the
         specified type is sent to this entity.
 
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
@@ -1222,6 +1379,59 @@ BUILT-IN CLASSES
         Unregisters a callable previously registered to be invoked on the
         specified event.
 
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
+    [Region]
+    ----------------------------------------------------------------------------
+    Permafrost Engine region object.                               
+                                                                   
+    The regions takes the following (mandatory) keyword arguments  
+    in its' constructor:                                           
+                                                                   
+      - type {pf.REGION_CIRCLE, pf.REGION_RECTANGLE}               
+      - name (string)                                              
+      - position (tuple of 2 floats)                               
+                                                                   
+    In addition, it takes the following arguments depending on the 
+    type:                                                          
+                                                                   
+      - radius (float) [circle regions only]                       
+      - dimensions (tuple of 2 floats) [rectangular regions only]  
+
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [name]
+        The name of the region.
+
+        [parameters]
+        Get a dictionary with the size parameters of the region, which vary
+        depending on the region type
+
+        [position]
+        The current worldspace position of the region
+
+        [shown]
+        Boolean to control whether the region is rendered on the map surface
+
+        [type]
+        The type (pf.REGION_CIRCLE or pf.REGION_RECTANGLE) of the region.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__pickle__]
+        Serialize a Permafrost Engine region object to a string.
+
+        [contains]
+        Returns True if the specified entity is currently within the region.
+
+        [curr_ents]
+        Get a list of all the entities currently within the region.
+
     [ResourceEntity]
     ----------------------------------------------------------------------------
     Permafrost Engine resource entity. This is a subclass of pf.Entity. This
@@ -1231,6 +1441,10 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
         [cursor]
         The name of the cursor to display as a contextual gather command
         indicator when hovering over the resource.
@@ -1270,6 +1484,9 @@ BUILT-IN CLASSES
         [speed]
         Entity's movement speed (in OpenGL coordinates per second).
 
+        [tags]
+        Return a tuple with all the entity's tags.
+
         [top_screen_pos]
         Get the location of the top center point of the entity, in screenspace
         coordinates.
@@ -1293,6 +1510,9 @@ BUILT-IN CLASSES
         [__pickle__]
         Serialize a Permafrost Engine combatable entity to a string.
 
+        [add_tag]
+        Add a string tag to this entity's list of tags.
+
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
 
@@ -1311,6 +1531,9 @@ BUILT-IN CLASSES
         Registers the specified callable to be invoked when an event of the
         specified type is sent to this entity.
 
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
@@ -1327,6 +1550,10 @@ BUILT-IN CLASSES
         Unregisters a callable previously registered to be invoked on the
         specified event.
 
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
+
     [StorageSiteEntity]
     ----------------------------------------------------------------------------
     Permafrost Engine storage site entity. This is a subclass of pf.Entity.
@@ -1336,6 +1563,10 @@ BUILT-IN CLASSES
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [bounds]
+        Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
+        box (in OpenGL coordinates).
+
         [faction_id]
         Index of the faction that the entity belongs to.
 
@@ -1369,6 +1600,9 @@ BUILT-IN CLASSES
         The list of resources that are currently able to be held at this
         storage site.
 
+        [tags]
+        Return a tuple with all the entity's tags.
+
         [top_screen_pos]
         Get the location of the top center point of the entity, in screenspace
         coordinates.
@@ -1391,6 +1625,9 @@ BUILT-IN CLASSES
 
         [__pickle__]
         Serialize a Permafrost Engine combatable entity to a string.
+
+        [add_tag]
+        Add a string tag to this entity's list of tags.
 
         [deselect]
         Removes the entity from the current unit selection, if it is selected.
@@ -1422,6 +1659,9 @@ BUILT-IN CLASSES
         Registers the specified callable to be invoked when an event of the
         specified type is sent to this entity.
 
+        [remove_tag]
+        Remove a string tag from this entity's list of tags.
+
         [select]
         Adds the entity to the current unit selection, if it is not present
         there already.
@@ -1429,6 +1669,10 @@ BUILT-IN CLASSES
         [set_capacity]
         Sets the maximum amount of the specified resource that can be stored in
         the storage site.
+
+        [set_curr_amount]
+        Sets the amount of the specified resource currently stored in the
+        storage site.
 
         [set_desired]
         Sets the target amount of the specified resource that harvesters will
@@ -1445,6 +1689,10 @@ BUILT-IN CLASSES
         [unregister]
         Unregisters a callable previously registered to be invoked on the
         specified event.
+
+        [zombiefy]
+        Make the entity a 'zombie', effectively removing it from the game
+        simulation but allowing the scripting object to persist.
 
     [Task]
     ----------------------------------------------------------------------------
@@ -1700,6 +1948,92 @@ BUILT-IN CLASSES
         [__pickle__]
         Serialize a Permafrost Engine UIComboStyle object to a string.
 
+    [UIEditStyle]
+    ----------------------------------------------------------------------------
+    Style configuration for Permafrost Engine UI toggle-able options.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [active]
+        The look of the editable field in the active state - either an (R, G,
+        B, A) tuple or a string representing a path to an image.
+
+        [border]
+        The width of the editable field borders.
+
+        [border_color]
+        The color of the editable field border - an (R, G, B, A) tuple.
+
+        [cursor_hover]
+        The color of the cursor in the hover state - an (R, G, B, A) tuple.
+
+        [cursor_normal]
+        The color of the cursor in the normal state - an (R, G, B, A) tuple.
+
+        [cursor_size]
+        A float to control the size of the cursor.
+
+        [cursor_text_hover]
+        The color of the text cursor in hover mode - an (R, G, B, A) tuple.
+
+        [cursor_text_normal]
+        The color of the text cursor in normal mode - an (R, G, B, A) tuple.
+
+        [hover]
+        The look of the editable field in the hovered state - either an (R, G,
+        B, A) tuple or a string representing a path to an image.
+
+        [normal]
+        The look of the editable field in the normal state - either an (R, G,
+        B, A) tuple or a string representing a path to an image.
+
+        [padding]
+        An (X, Y) tuple to control the padding within an editable field.
+
+        [rounding]
+        An (X, Y) tuple of floats to control the rounding of the editable
+        fields.
+
+        [row_padding]
+        An float to control the row padding within an editable field.
+
+        [scrollbar]
+        The style of the scrollbar of editable fields - a UIStyleObject instance
+
+        [scrollbar_size]
+        An (X, Y) tuple to control the size of the editable field scrollbar.
+
+        [selected_hover]
+        The color of the selection box in hover mode - an (R, G, B, A) tuple.
+
+        [selected_normal]
+        The color of the selection box in normal mode - an (R, G, B, A) tuple.
+
+        [selected_text_hover]
+        The color of the (selected) text in hover mode - an (R, G, B, A) tuple.
+
+        [selected_text_normal]
+        The color of the (selected) text in normal mode - an (R, G, B, A) tuple.
+
+        [text_active]
+        The color of the (unselected) text in active mode - an (R, G, B, A)
+        tuple.
+
+        [text_hover]
+        The color of the (unselected) text in hover mode - an (R, G, B, A)
+        tuple.
+
+        [text_normal]
+        The color of the (unselected) text in normal mode - an (R, G, B, A)
+        tuple.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__pickle__]
+        Serialize a Permafrost Engine UIEditStyle object to a string.
+
     [UIHeaderStyle]
     ----------------------------------------------------------------------------
     Style configuration for Permafrost Engine UI window headers.
@@ -1742,6 +2076,133 @@ BUILT-IN CLASSES
         ************************************************************************
         [__pickle__]
         Serialize a Permafrost Engine UIButtonStyle object to a string.
+
+    [UIPropertyStyle]
+    ----------------------------------------------------------------------------
+    Style configuration for Permafrost Engine UI toggle-able options.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [active]
+        The look of the property field in the active state - either an (R, G,
+        B, A) tuple or a string representing a path to an image.
+
+        [border]
+        The width of the property field borders.
+
+        [border_color]
+        The color of the property field border - an (R, G, B, A) tuple.
+
+        [dec_button]
+        The style of the property decrement value button - a
+        pf.UIButtonStyleObject instance.
+
+        [edit]
+        The style of the property editable region a pf.UIEditStyleObject
+        instance.
+
+        [hover]
+        The look of the property field in the hovered state - either an (R, G,
+        B, A) tuple or a string representing a path to an image.
+
+        [inc_button]
+        The style of the property increment value button - a
+        pf.UIButtonStyleObject instance.
+
+        [label_active]
+        The color of the label in the active state - an (R, G, B, A) tuple.
+
+        [label_hover]
+        The color of the label in the hover state - an (R, G, B, A) tuple.
+
+        [label_normal]
+        The color of the label in the normal state - an (R, G, B, A) tuple.
+
+        [normal]
+        The look of the property field in the normal state - either an (R, G,
+        B, A) tuple or a string representing a path to an image.
+
+        [padding]
+        An (X, Y) tuple to control the padding within a property field.
+
+        [rounding]
+        An (X, Y) tuple of floats to control the rounding of the property
+        fields.
+
+        [sym_left]
+        The style of the left button symbol - an NK_SYMBOL enum value.
+
+        [sym_right]
+        The style of the left button symbol - an NK_SYMBOL enum value.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__pickle__]
+        Serialize a Permafrost Engine UIPropertyStyle object to a string.
+
+    [UIScrollbarStyle]
+    ----------------------------------------------------------------------------
+    Style configuration for Permafrost Engine UI toggle-able options.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [active]
+        The look of the scrollbar in the active state - either an (R, G, B, A)
+        tuple or a string representing a path to an image.
+
+        [border]
+        The width of the scrollbar borders.
+
+        [border_color]
+        The color of the scrollbar border - an (R, G, B, A) tuple.
+
+        [border_cursor]
+        A float to control the border of the cursor.
+
+        [cursor_active]
+        The look of the scrollbar cursor (selection indicator) in the active
+        state - either an (R, G, B, A) tuple or a string representing a path to
+        an image.
+
+        [cursor_border_color]
+        The look of the scrollbar cursor (selection indicator) in the active
+        state - an (R, G, B, A) tuple.
+
+        [cursor_hover]
+        The look of the scrollbar cursor (selection indicator) in the hover
+        state - either an (R, G, B, A) tuple or a string representing a path to
+        an image.
+
+        [cursor_normal]
+        The look of the scrollbar cursor (selection indicator) in the normal
+        state - either an (R, G, B, A) tuple or a string representing a path to
+        an image.
+
+        [hover]
+        The look of the scrollbar in the hovered state - either an (R, G, B, A)
+        tuple or a string representing a path to an image.
+
+        [normal]
+        The look of the scrollbar in the normal state - either an (R, G, B, A)
+        tuple or a string representing a path to an image.
+
+        [padding]
+        A float to control the padding within a scrollbar.
+
+        [rounding]
+        An (X, Y) tuple of floats to control the rounding of the scrollbars.
+
+        [rounding_cursor]
+        A float to control the rounding of the cursor.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__pickle__]
+        Serialize a Permafrost Engine UIScrollbarStyle object to a string.
 
     [UISelectableStyle]
     ----------------------------------------------------------------------------
@@ -2034,6 +2495,9 @@ BUILT-IN CLASSES
         [combo_box]
         Present a combo box with a list of selectable options.
 
+        [edit_focus]
+        Give focus to the next active text edit widget.
+
         [edit_string]
         Text field for getting string input from the user. Returns the current
         text.
@@ -2088,6 +2552,12 @@ BUILT-IN CLASSES
         [popup_close]
         Close the currently active popup window. Must only be called from poup
         context.
+
+        [property_float]
+        Editable input field for floating-point properties.
+
+        [property_int]
+        Editable input field for integer properties.
 
         [selectable_label]
         Adds a label that can be toggled to be selected with a mouse click.
@@ -2282,6 +2752,8 @@ BUILT-IN CONSTANTS
     PF_WF_BORDERLESS_WIN 272
     PF_WF_FULLSCREEN 257
     PF_WF_WINDOW 256
+    REGION_CIRCLE 1
+    REGION_RECTANGLE 0
     SDL_APP_DIDENTERBACKGROUND 260
     SDL_APP_DIDENTERFOREGROUND 262
     SDL_APP_LOWMEMORY 258

@@ -48,6 +48,7 @@ EVERGLORY is the flagship game developed using Permafrost Engine.
 * Handling of dynamic obstacles in pathfinding
 * Dynamic collision avoidance of multiple entities using Hybrid Reciprocal Velocity Obstacles and the ClearPath algorithm
 * Efficient spatial indexing using a quadtree
+* Efficient real-time tracking of entity membership to dynamic spatial regions
 * RTS minimap
 * RTS-style unit selection
 * RTS unit combat system
@@ -109,7 +110,7 @@ Permafrost Engine is licensed under the GPLv3, with a special linking exception.
 
 ## Devlog ##
 
-Follow the development of Permafrost Engine and EVERGLORY on YouTube: [Channel Link](https://www.youtube.com/channel/UCNklkpsPnNpRhC9oVkpIpLA)
+Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://www.youtube.com/channel/UCNklkpsPnNpRhC9oVkpIpLA).
 
 [Indie RTS Devlog #1: Introducing Permafrost Engine](https://youtu.be/0dEttWferm8)
 
@@ -138,7 +139,7 @@ Follow the development of Permafrost Engine and EVERGLORY on YouTube: [Channel L
 ## Comments/Questions ##
 
 Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
-Discuss EVERGLORY and its' development on Discord here: https://discord.gg/jSQ8M6C. Pull requests
+Discuss EVERGLORY and its' development on [Discord](https://discord.gg/jSQ8M6C). Pull requests
 are not accepted until the release of EVERGLORY, which will coincide with the 1.0 milestone of the 
 engine.
 

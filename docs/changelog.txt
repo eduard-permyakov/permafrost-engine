@@ -3,6 +3,16 @@
 ********************************************************************************
 
 ================================================================================
+[Version 0.54.0] - 10.02.2021
+================================================================================
+    * Implement system for keeping track of entity membership to spatial regions  
+    * Add 'tags' to entities - to associate strings with entities and make
+      allow making efficient queries for entities with a particular 'tag'
+    * Update PFSCENE format to have sections; add 'regions' section
+        --> makes it easier to extend the format going forward
+    * Numerous bug fixes - improvements to stability, robustness
+
+================================================================================
 [Version 0.53.0] - 20.11.2020
 ================================================================================
     * Implement resource gathering and transporting mechanics
