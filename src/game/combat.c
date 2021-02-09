@@ -340,7 +340,7 @@ static void on_death_anim_finish(void *user, void *event)
 
 static void on_attack_anim_finish(void *user, void *event)
 {
-    const struct entity *self = user;
+    struct entity *self = user;
     assert(self);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, self->uid, on_attack_anim_finish);
 
@@ -361,6 +361,7 @@ static void on_attack_anim_finish(void *user, void *event)
 
     if(melee_can_attack(self, target)) {
 
+        entity_turn_to_target(self, target);
         float dmg = G_Combat_GetBaseDamage(self) * (1.0f - G_Combat_GetBaseArmour(target));
         target_cs->current_hp = MAX(0, target_cs->current_hp - dmg);
 
@@ -404,19 +405,17 @@ static void on_20hz_tick(void *user, void *event)
     PERF_ENTER();
 
     uint32_t key;
-    struct combatstate curr;
-    struct entity *ent;
+    kh_foreach(s_entity_state_table, key, (struct combatstate){0}, {
 
-    kh_foreach(s_entity_state_table, key, curr, {
+        struct combatstate *curr = combatstate_get(key);
+        struct entity *ent = G_EntityForUID(key);
 
-        ent = G_EntityForUID(key);
-        if(!(ent->flags & ENTITY_FLAG_COMBATABLE))
-            continue;
+        assert(ent->flags & ENTITY_FLAG_COMBATABLE);
 
-        switch(curr.state) {
+        switch(curr->state) {
         case STATE_NOT_IN_COMBAT: 
         {
-            if(curr.stance == COMBAT_STANCE_NO_ENGAGEMENT)
+            if(curr->stance == COMBAT_STANCE_NO_ENGAGEMENT)
                 break;
 
             if(G_Combat_GetBaseDamage(ent) == 0)
@@ -431,24 +430,25 @@ static void on_20hz_tick(void *user, void *event)
 
                 if(melee_can_attack(ent, enemy)) {
 
-                    assert(curr.stance == COMBAT_STANCE_AGGRESSIVE 
-                        || curr.stance == COMBAT_STANCE_HOLD_POSITION);
+                    assert(curr->stance == COMBAT_STANCE_AGGRESSIVE 
+                        || curr->stance == COMBAT_STANCE_HOLD_POSITION);
 
-                    curr.target_uid = enemy->uid;
-                    curr.state = STATE_CAN_ATTACK;
+                    G_Move_Stop(ent);
+                    curr->target_uid = enemy->uid;
+                    curr->state = STATE_CAN_ATTACK;
 
                     entity_turn_to_target(ent, enemy);
                     E_Entity_Notify(EVENT_ATTACK_START, ent->uid, NULL, ES_ENGINE);
                 
-                }else if(curr.stance == COMBAT_STANCE_AGGRESSIVE) {
+                }else if(curr->stance == COMBAT_STANCE_AGGRESSIVE) {
 
-                    curr.target_uid = enemy->uid;
-                    curr.state = STATE_MOVING_TO_TARGET;
+                    curr->target_uid = enemy->uid;
+                    curr->state = STATE_MOVING_TO_TARGET;
 
                     vec2_t move_dest_xz;
-                    if(!curr.move_cmd_interrupted && G_Move_GetDest(ent, &move_dest_xz)) {
-                        curr.move_cmd_interrupted = true; 
-                        curr.move_cmd_xz = move_dest_xz;
+                    if(!curr->move_cmd_interrupted && G_Move_GetDest(ent, &move_dest_xz)) {
+                        curr->move_cmd_interrupted = true; 
+                        curr->move_cmd_xz = move_dest_xz;
                     }
                     G_Move_SetSeekEnemies(ent);
                 }
@@ -461,25 +461,25 @@ static void on_20hz_tick(void *user, void *event)
             struct entity *enemy = G_Combat_ClosestEligibleEnemy(ent);
             if(!enemy) {
 
-                curr.state = STATE_NOT_IN_COMBAT; 
+                curr->state = STATE_NOT_IN_COMBAT; 
 
-                if(curr.move_cmd_interrupted) {
-                    G_Move_SetDest(ent, curr.move_cmd_xz);
-                    curr.move_cmd_interrupted = false;
+                if(curr->move_cmd_interrupted) {
+                    G_Move_SetDest(ent, curr->move_cmd_xz);
+                    curr->move_cmd_interrupted = false;
                 }else {
                     G_Move_Stop(ent);
                 }
                 break;
 
             /* And the case where a different target becomes even closer */
-            }else if(enemy->uid != curr.target_uid) {
-                curr.target_uid = enemy->uid;
+            }else if(enemy->uid != curr->target_uid) {
+                curr->target_uid = enemy->uid;
             }
 
             /* Check if we're within attacking range of our target */
             if(melee_can_attack(ent, enemy)) {
 
-                curr.state = STATE_CAN_ATTACK;
+                curr->state = STATE_CAN_ATTACK;
                 G_Move_Stop(ent);
                 entity_turn_to_target(ent, enemy);
                 E_Entity_Notify(EVENT_ATTACK_START, ent->uid, NULL, ES_ENGINE);
@@ -488,11 +488,11 @@ static void on_20hz_tick(void *user, void *event)
         }
         case STATE_MOVING_TO_TARGET_LOCKED:
         {
-            struct entity *target = G_EntityForUID(curr.target_uid);
+            struct entity *target = G_EntityForUID(curr->target_uid);
             if(!target || !(target->flags & ENTITY_FLAG_COMBATABLE)) {
 
-                curr.state = STATE_NOT_IN_COMBAT;
-                curr.sticky = false;
+                curr->state = STATE_NOT_IN_COMBAT;
+                curr->sticky = false;
                 G_Move_Stop(ent);
                 break;
             }
@@ -504,8 +504,8 @@ static void on_20hz_tick(void *user, void *event)
             uint16_t pmask = G_GetPlayerControlledFactions();
             if(!G_Fog_ObjVisible(pmask, &obb)) {
             
-                curr.state = STATE_NOT_IN_COMBAT;
-                curr.sticky = false;
+                curr->state = STATE_NOT_IN_COMBAT;
+                curr->sticky = false;
                 G_Move_Stop(ent);
                 break;
             }
@@ -513,7 +513,7 @@ static void on_20hz_tick(void *user, void *event)
             /* Check if we're within attacking range of our target */
             if(melee_can_attack(ent, target)) {
 
-                curr.state = STATE_CAN_ATTACK;
+                curr->state = STATE_CAN_ATTACK;
                 G_Move_Stop(ent);
                 entity_turn_to_target(ent, target);
                 E_Entity_Notify(EVENT_ATTACK_START, ent->uid, NULL, ES_ENGINE);
@@ -529,20 +529,20 @@ static void on_20hz_tick(void *user, void *event)
         case STATE_CAN_ATTACK:
         {
             /* Our target could have 'died' or gotten out of combat range - check this first. */
-            const struct entity *target = G_EntityForUID(curr.target_uid);
+            const struct entity *target = G_EntityForUID(curr->target_uid);
 
             if(entity_dead(target)
             || !melee_can_attack(ent, target)) {
 
-                if(curr.sticky) {
+                if(curr->sticky) {
                     if(!entity_dead(target)) {
 
                         E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
-                        curr.state = STATE_MOVING_TO_TARGET_LOCKED;
+                        curr->state = STATE_MOVING_TO_TARGET_LOCKED;
                         G_Move_SetSurroundEntity(ent, target);
                         break;
                     }else{
-                        curr.sticky = false;
+                        curr->sticky = false;
                     }
                 }
 
@@ -550,22 +550,22 @@ static void on_20hz_tick(void *user, void *event)
                 struct entity *enemy = G_Combat_ClosestEligibleEnemy(ent);
                 if(enemy && melee_can_attack(ent, enemy)) {
 
-                    curr.target_uid = enemy->uid;
+                    curr->target_uid = enemy->uid;
                     entity_turn_to_target(ent, enemy);
                     break;
                 }
 
-                curr.state = STATE_NOT_IN_COMBAT; 
+                curr->state = STATE_NOT_IN_COMBAT; 
                 E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
 
-                if(curr.move_cmd_interrupted) {
-                    G_Move_SetDest(ent, curr.move_cmd_xz); 
-                    curr.move_cmd_interrupted = false;
+                if(curr->move_cmd_interrupted) {
+                    G_Move_SetDest(ent, curr->move_cmd_xz); 
+                    curr->move_cmd_interrupted = false;
                 }
 
             }else{
                 /* Perform combat simulation between entities with targets within range */
-                curr.state = STATE_ATTACK_ANIM_PLAYING;
+                curr->state = STATE_ATTACK_ANIM_PLAYING;
                 E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish, ent, G_RUNNING);
             }
 

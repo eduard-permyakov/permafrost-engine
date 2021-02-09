@@ -585,7 +585,7 @@ static void on_mousedown(void *user, void *event)
         nmoved++;
 
         if(curr->flags & ENTITY_FLAG_COMBATABLE) {
-            G_Combat_ClearSavedMoveCmd(curr);
+            G_Combat_StopAttack(curr);
             G_Combat_SetStance(curr, attack ? COMBAT_STANCE_AGGRESSIVE : COMBAT_STANCE_NO_ENGAGEMENT);
         }
     }
