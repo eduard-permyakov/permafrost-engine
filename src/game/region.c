@@ -153,7 +153,7 @@ static void region_update_intersecting(const char *name, const struct region *re
     struct map_resolution res;
     M_GetResolution(s_map, &res);
 
-    int delta;
+    int delta = 0;
     int chunklen = MAX(X_COORDS_PER_TILE * res.chunk_w * res.tile_w, Z_COORDS_PER_TILE * res.chunk_h * res.tile_h);
 
     switch(reg->type) {
@@ -311,7 +311,7 @@ static void regions_add_ent(uint32_t uid, vec2_t pos)
 static void region_update_ents(const char *name, struct region *reg)
 {
     struct entity *ents[1024];
-    size_t nents;
+    size_t nents = 0;
 
     switch(reg->type) {
     case REGION_CIRCLE: {
