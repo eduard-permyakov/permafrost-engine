@@ -136,6 +136,8 @@ Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://w
 
 [Indie RTS Devlog #11: Resource Gathering, Game Design](https://www.youtube.com/watch?v=e3jsymx97LE)
 
+[Indie RTS Devlog #12: Crafting Units](https://youtu.be/JqGh_XJstk8)
+
 ## Comments/Questions ##
 
 Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
