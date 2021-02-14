@@ -106,6 +106,8 @@ struct render_workspace{
 
 bool        R_Init(const char *base_path);
 SDL_Thread *R_Run(struct render_sync_state *rstate);
+/* Must be set up before creating the window */
+void 		R_InitAttributes(void);
 
 void       *R_PushArg(const void *src, size_t size);
 void        R_PushCmd(struct rcmd cmd);
