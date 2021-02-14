@@ -9,7 +9,7 @@ TYPE ?= DEBUG
 # Sources 
 # ------------------------------------------------------------------------------
 
-PF_DIRS = $(sort $(dir $(wildcard ./src/*/)))
+PF_DIRS = $(sort $(dir $(wildcard ./src/*/), ./src/))
 PF_SRCS = $(foreach dir,$(PF_DIRS),$(wildcard $(dir)*.c))
 PF_OBJS = $(PF_SRCS:./src/%.c=./obj/%.o)
 PF_DEPS = $(PF_OBJS:%.o=%.d)
