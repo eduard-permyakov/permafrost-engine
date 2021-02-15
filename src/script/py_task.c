@@ -102,6 +102,10 @@ typedef struct {
 
 KHASH_MAP_INIT_INT(task, PyTaskObject*)
 
+typedef PyObject *(*ternaryfunc_t)(PyTaskObject*, PyObject*, PyObject*);
+typedef PyObject *(*binaryfunc_t)(PyTaskObject*, PyObject*);
+typedef PyObject *(*unaryfunc_t)(PyTaskObject*);
+
 static PyObject *PyTask_call(PyTaskObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyTask_getattro(PyTaskObject *self, PyObject *name);
 
@@ -257,14 +261,14 @@ static void pytask_ts_delete(PyThreadState *tstate)
     free(tstate);
 }
 
-static PyObject *pytask_call_method(PyObject *func(), PyTaskObject *self, PyObject *args, PyObject *kwargs)
+static PyObject *pytask_call_method(void *func, PyTaskObject *self, PyObject *args, PyObject *kwargs)
 {
     if(kwargs) {
-        return func(self, args, kwargs);
+        return ((ternaryfunc_t)func)(self, args, kwargs);
     }else if(args) {
-        return func(self, args);
+        return ((binaryfunc_t)func)(self, args);
     }else{
-        return func(self);
+        return ((unaryfunc_t)func)(self);
     }
 }
 
