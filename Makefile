@@ -110,7 +110,6 @@ CFLAGS = \
 	-I$(PYTHON_SRC)/Include \
 	-std=c99 \
 	-O2 \
-	-march=native \
 	-fno-strict-aliasing \
 	-fwrapv \
 	$(WARNING_FLAGS) \
