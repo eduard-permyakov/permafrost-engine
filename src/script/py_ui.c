@@ -111,6 +111,8 @@ static PyObject *PyWindow_spacer(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_property_float(PyObject *self, PyObject *args);
 static PyObject *PyWindow_property_int(PyObject *self, PyObject *args);
 static PyObject *PyWindow_file_browser(PyWindowObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyWindow_slider_float(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_slider_int(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -309,6 +311,14 @@ static PyMethodDef PyWindow_methods[] = {
     {"file_browser", 
     (PyCFunction)PyWindow_file_browser, METH_VARARGS | METH_KEYWORDS,
     "Present a file browser widget."},
+
+    {"slider_float", 
+    (PyCFunction)PyWindow_slider_float, METH_VARARGS,
+    "Present a slider widget with floating-point precision."},
+
+    {"slider_int", 
+    (PyCFunction)PyWindow_slider_int, METH_VARARGS,
+    "Present a slider widget with integer precision."},
 
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
@@ -1234,6 +1244,30 @@ static PyObject *PyWindow_file_browser(PyWindowObject *self, PyObject *args, PyO
 fail_args:
     PyErr_SetString(PyExc_TypeError, "4 arguments expected: name (string), directory (string), selected (string or None), flags (int).");
     return NULL;
+}
+
+static PyObject *PyWindow_slider_float(PyWindowObject *self, PyObject *args)
+{
+    float min, max, curr, step;
+    if(!PyArg_ParseTuple(args, "ffff", &min, &max, &curr, &step)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting 4 float arguments: min, max, curr, step");
+        return NULL;
+    }
+
+    nk_slider_float(s_nk_ctx, min, &curr, max, step);
+    return PyFloat_FromDouble(curr);
+}
+
+static PyObject *PyWindow_slider_int(PyWindowObject *self, PyObject *args)
+{
+    int min, max, curr, step;
+    if(!PyArg_ParseTuple(args, "iiii", &min, &max, &curr, &step)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting 4 int arguments: min, max, curr, step");
+        return NULL;
+    }
+
+    nk_slider_int(s_nk_ctx, min, &curr, max, step);
+    return PyInt_FromLong(curr);
 }
 
 static PyObject *PyWindow_show(PyWindowObject *self)

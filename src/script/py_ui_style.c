@@ -451,6 +451,71 @@ static PyObject *PyUIPropertyStyle_get_dec_button(PyUIPropertyStyleObject *self,
 static PyObject *PyUIPropertyStyle_pickle(PyUIPropertyStyleObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyUIPropertyStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
+typedef struct {
+    PyObject_HEAD
+    struct nk_style_slider *style;
+    PyUIButtonStyleObject *inc_button;
+    PyUIButtonStyleObject *dec_button;
+}PyUISliderStyleObject;
+
+static PyObject *PyUISliderStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+static void      PyUISliderStyle_dealloc(PyUISliderStyleObject *self);
+
+/* background */
+static PyObject *PyUISliderStyle_get_normal(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_normal(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_hover(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_hover(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_active(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_active(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_border_color(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_border_color(PyUISliderStyleObject *self, PyObject *value, void *);
+
+/* background bar */
+static PyObject *PyUISliderStyle_get_bar_normal(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_bar_normal(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_bar_hover(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_bar_hover(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_bar_active(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_bar_active(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_bar_filled(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_bar_filled(PyUISliderStyleObject *self, PyObject *value, void *);
+
+/* cursor */
+static PyObject *PyUISliderStyle_get_cursor_normal(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_cursor_normal(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_cursor_hover(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_cursor_hover(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_cursor_active(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_cursor_active(PyUISliderStyleObject *self, PyObject *value, void *);
+
+/* properties */
+static PyObject *PyUISliderStyle_get_border(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_border(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_rounding(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_rounding(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_bar_height(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_bar_height(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_padding(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_padding(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_spacing(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_spacing(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_cursor_size(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_cursor_size(PyUISliderStyleObject *self, PyObject *value, void *);
+
+/* optional buttons */
+static PyObject *PyUISliderStyle_get_show_buttons(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_show_buttons(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_inc_button(PyUISliderStyleObject *self, void *);
+static PyObject *PyUISliderStyle_get_dec_button(PyUISliderStyleObject *self, void *);
+static PyObject *PyUISliderStyle_get_inc_symbol(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_inc_symbol(PyUISliderStyleObject *self, PyObject *value, void *);
+static PyObject *PyUISliderStyle_get_dec_symbol(PyUISliderStyleObject *self, void *);
+static int       PyUISliderStyle_set_dec_symbol(PyUISliderStyleObject *self, PyObject *value, void *);
+
+static PyObject *PyUISliderStyle_pickle(PyUISliderStyleObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyUISliderStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -1667,7 +1732,7 @@ static PyTypeObject PyUIPropertyStyle_type = {
     0,                         /* tp_setattro */
     0,                         /* tp_as_buffer */
     Py_TPFLAGS_DEFAULT,        /* tp_flags */
-    "Style configuration for Permafrost Engine UI toggle-able options.", /* tp_doc */
+    "Style configuration for Permafrost Engine UI property fields.", /* tp_doc */
     0,                         /* tp_traverse */
     0,                         /* tp_clear */
     0,                         /* tp_richcompare */
@@ -1685,6 +1750,202 @@ static PyTypeObject PyUIPropertyStyle_type = {
     0,                         /* tp_init */
     0,                         /* tp_alloc */
     PyUIPropertyStyle_new,         /* tp_new */
+};
+
+static PyMethodDef PyUISliderStyle_methods[] = {
+    {"__pickle__", 
+    (PyCFunction)PyUISliderStyle_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine UISliderStyle object to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyUISliderStyle_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.UISliderStyle instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyGetSetDef PyUISliderStyle_getset[] = {
+    {"normal",
+    (getter)PyUISliderStyle_get_normal, 
+    (setter)PyUISliderStyle_set_normal,
+    "The look of the slider background in the normal state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"hover",
+    (getter)PyUISliderStyle_get_hover, 
+    (setter)PyUISliderStyle_set_hover,
+    "The look of the slider background in the hovered state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"active",
+    (getter)PyUISliderStyle_get_active, 
+    (setter)PyUISliderStyle_set_active,
+    "The look of the slider background in the active state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"border_color",
+    (getter)PyUISliderStyle_get_border_color, 
+    (setter)PyUISliderStyle_set_border_color,
+    "The color of the property field border - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"bar_normal",
+    (getter)PyUISliderStyle_get_bar_normal, 
+    (setter)PyUISliderStyle_set_bar_normal,
+    "The color of the slider bar in the normal state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"bar_hover",
+    (getter)PyUISliderStyle_get_bar_hover, 
+    (setter)PyUISliderStyle_set_bar_hover,
+    "The color of the slider bar in the hover state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"bar_active",
+    (getter)PyUISliderStyle_get_bar_active, 
+    (setter)PyUISliderStyle_set_bar_active,
+    "The color of the slider bar in the active state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"bar_filled",
+    (getter)PyUISliderStyle_get_bar_filled, 
+    (setter)PyUISliderStyle_set_bar_filled,
+    "The color of the slider bar in the filled state - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"cursor_normal",
+    (getter)PyUISliderStyle_get_cursor_normal, 
+    (setter)PyUISliderStyle_set_cursor_normal,
+    "The look of the slider cursor in the normal state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"cursor_hover",
+    (getter)PyUISliderStyle_get_cursor_hover, 
+    (setter)PyUISliderStyle_set_cursor_hover,
+    "The look of the slider cursor in the hovered state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"cursor_active",
+    (getter)PyUISliderStyle_get_cursor_active, 
+    (setter)PyUISliderStyle_set_cursor_active,
+    "The look of the slider cursor in the active state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"border",
+    (getter)PyUISliderStyle_get_border, 
+    (setter)PyUISliderStyle_set_border,
+    "The width of the slider widget borders.", 
+    NULL},
+
+    {"rounding",
+    (getter)PyUISliderStyle_get_rounding, 
+    (setter)PyUISliderStyle_set_rounding,
+    "An (X, Y) tuple of floats to control the rounding of the slider widget.", 
+    NULL},
+
+    {"bar_height",
+    (getter)PyUISliderStyle_get_bar_height, 
+    (setter)PyUISliderStyle_set_bar_height,
+    "The height of the slider bar.", 
+    NULL},
+
+    {"padding",
+    (getter)PyUISliderStyle_get_padding, 
+    (setter)PyUISliderStyle_set_padding,
+    "An (X, Y) tuple to control the padding within a slider widget.", 
+    NULL},
+
+    {"spacing",
+    (getter)PyUISliderStyle_get_spacing, 
+    (setter)PyUISliderStyle_set_spacing,
+    "An (X, Y) tuple to control the spacing within a slider widget.", 
+    NULL},
+
+    {"cursor_size",
+    (getter)PyUISliderStyle_get_cursor_size, 
+    (setter)PyUISliderStyle_set_cursor_size,
+    "An (X, Y) tuple to control the size of the slider cursor.", 
+    NULL},
+
+    {"show_buttons",
+    (getter)PyUISliderStyle_get_show_buttons, 
+    (setter)PyUISliderStyle_set_show_buttons,
+    "A boolean to control whether to show the increment/decrement buttons at the edges of the slider widget.", 
+    NULL},
+
+    {"inc_button",
+    (getter)PyUISliderStyle_get_inc_button, 
+    NULL,
+    "Returns a UIButtonStyleObject to control the look of the increment button.", 
+    NULL},
+
+    {"dec_button",
+    (getter)PyUISliderStyle_get_dec_button, 
+    NULL,
+    "Returns a UIButtonStyleObject to control the look of the decrement button.", 
+    NULL},
+
+    {"inc_symbol",
+    (getter)PyUISliderStyle_get_inc_symbol, 
+    (setter)PyUISliderStyle_set_inc_symbol,
+    "The style of the increment button symbol - an NK_SYMBOL enum value.",
+    NULL},
+
+    {"dec_symbol",
+    (getter)PyUISliderStyle_get_dec_symbol, 
+    (setter)PyUISliderStyle_set_dec_symbol,
+    "The style of the decrement button symbol - an NK_SYMBOL enum value.",
+    NULL},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyUISliderStyle_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "pf.UISliderStyle",        /* tp_name */
+    sizeof(PyUISliderStyleObject), /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    (destructor)PyUISliderStyle_dealloc, /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_reserved */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash  */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT,        /* tp_flags */
+    "Style configuration for Permafrost Engine UI slider options.", /* tp_doc */
+    0,                         /* tp_traverse */
+    0,                         /* tp_clear */
+    0,                         /* tp_richcompare */
+    0,                         /* tp_weaklistoffset */
+    0,                         /* tp_iter */
+    0,                         /* tp_iternext */
+    PyUISliderStyle_methods,     /* tp_methods */
+    0,                         /* tp_members */
+    PyUISliderStyle_getset,      /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    0,                         /* tp_init */
+    0,                         /* tp_alloc */
+    PyUISliderStyle_new,         /* tp_new */
 };
 
 static struct nk_style_window_header s_saved_header_style;
@@ -2584,6 +2845,70 @@ static bool load_property(struct SDL_RWops *stream, struct nk_style_property *ou
     CHK_TRUE_RET(load_edit(stream, &out->edit));
     CHK_TRUE_RET(load_button(stream, &out->inc_button));
     CHK_TRUE_RET(load_button(stream, &out->dec_button));
+
+    return true;
+}
+
+bool save_slider(struct SDL_RWops *stream, const struct nk_style_slider *slider)
+{
+    CHK_TRUE_RET(save_item(stream, &slider->normal));
+    CHK_TRUE_RET(save_item(stream, &slider->hover));
+    CHK_TRUE_RET(save_item(stream, &slider->active));
+    CHK_TRUE_RET(save_color(stream, slider->border_color));
+
+    CHK_TRUE_RET(save_color(stream, slider->bar_normal));
+    CHK_TRUE_RET(save_color(stream, slider->bar_hover));
+    CHK_TRUE_RET(save_color(stream, slider->bar_active));
+    CHK_TRUE_RET(save_color(stream, slider->bar_filled));
+
+    CHK_TRUE_RET(save_item(stream, &slider->cursor_normal));
+    CHK_TRUE_RET(save_item(stream, &slider->cursor_hover));
+    CHK_TRUE_RET(save_item(stream, &slider->cursor_active));
+
+    CHK_TRUE_RET(save_float(stream, slider->border));
+    CHK_TRUE_RET(save_float(stream, slider->rounding));
+    CHK_TRUE_RET(save_float(stream, slider->bar_height));
+    CHK_TRUE_RET(save_vec2(stream, slider->padding));
+    CHK_TRUE_RET(save_vec2(stream, slider->spacing));
+    CHK_TRUE_RET(save_vec2(stream, slider->cursor_size));
+
+    CHK_TRUE_RET(save_int(stream, slider->show_buttons));
+    CHK_TRUE_RET(save_button(stream, &slider->inc_button));
+    CHK_TRUE_RET(save_button(stream, &slider->dec_button));
+    CHK_TRUE_RET(save_int(stream, slider->inc_symbol));
+    CHK_TRUE_RET(save_int(stream, slider->dec_symbol));
+
+    return true;
+}
+
+static bool load_slider(struct SDL_RWops *stream, struct nk_style_slider *out)
+{
+    CHK_TRUE_RET(load_item(stream, &out->normal));
+    CHK_TRUE_RET(load_item(stream, &out->hover));
+    CHK_TRUE_RET(load_item(stream, &out->active));
+    CHK_TRUE_RET(load_color(stream, &out->border_color));
+
+    CHK_TRUE_RET(load_color(stream, &out->bar_normal));
+    CHK_TRUE_RET(load_color(stream, &out->bar_hover));
+    CHK_TRUE_RET(load_color(stream, &out->bar_active));
+    CHK_TRUE_RET(load_color(stream, &out->bar_filled));
+
+    CHK_TRUE_RET(load_item(stream, &out->cursor_normal));
+    CHK_TRUE_RET(load_item(stream, &out->cursor_hover));
+    CHK_TRUE_RET(load_item(stream, &out->cursor_active));
+
+    CHK_TRUE_RET(load_float(stream, &out->border));
+    CHK_TRUE_RET(load_float(stream, &out->rounding));
+    CHK_TRUE_RET(load_float(stream, &out->bar_height));
+    CHK_TRUE_RET(load_vec2(stream, &out->padding));
+    CHK_TRUE_RET(load_vec2(stream, &out->spacing));
+    CHK_TRUE_RET(load_vec2(stream, &out->cursor_size));
+
+    CHK_TRUE_RET(load_int(stream, (int*)&out->show_buttons));
+    CHK_TRUE_RET(load_button(stream, &out->inc_button));
+    CHK_TRUE_RET(load_button(stream, &out->dec_button));
+    CHK_TRUE_RET(load_int(stream, (int*)&out->inc_symbol));
+    CHK_TRUE_RET(load_int(stream, (int*)&out->dec_symbol));
 
     return true;
 }
@@ -5020,6 +5345,433 @@ fail_args:
     return ret;
 }
 
+
+static PyObject *PyUISliderStyle_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    PyUISliderStyleObject *self = (PyUISliderStyleObject*)type->tp_alloc(type, 0);
+    if(!self)
+        return NULL;
+
+    self->inc_button = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
+    if(!self->inc_button)
+        goto fail_inc_button;
+
+    self->dec_button = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
+    if(!self->dec_button)
+        goto fail_dec_button;
+
+    struct nk_context *ctx = UI_GetContext();
+    self->style = &ctx->style.slider;
+    self->inc_button->style = &ctx->style.slider.inc_button;
+    self->dec_button->style = &ctx->style.slider.dec_button;
+
+    return (PyObject*)self;
+
+fail_dec_button:
+    Py_DECREF(self->inc_button);
+fail_inc_button:
+    Py_DECREF(self);
+    return NULL;
+}
+
+static void PyUISliderStyle_dealloc(PyUISliderStyleObject *self)
+{
+    Py_DECREF(self->inc_button);
+    Py_DECREF(self->dec_button);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyObject *PyUISliderStyle_get_normal(PyUISliderStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->normal);
+}
+
+static int PyUISliderStyle_set_normal(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->normal);
+}
+
+static PyObject *PyUISliderStyle_get_hover(PyUISliderStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->hover);
+}
+
+static int PyUISliderStyle_set_hover(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->hover);
+}
+
+static PyObject *PyUISliderStyle_get_active(PyUISliderStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->active);
+}
+
+static int PyUISliderStyle_set_active(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->active);
+}
+
+static PyObject *PyUISliderStyle_get_border_color(PyUISliderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->border_color.r,
+        self->style->border_color.g,
+        self->style->border_color.b,
+        self->style->border_color.a);
+}
+
+static int PyUISliderStyle_set_border_color(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->border_color = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_bar_normal(PyUISliderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->bar_normal.r,
+        self->style->bar_normal.g,
+        self->style->bar_normal.b,
+        self->style->bar_normal.a);
+}
+
+static int PyUISliderStyle_set_bar_normal(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->bar_normal = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_bar_hover(PyUISliderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->bar_hover.r,
+        self->style->bar_hover.g,
+        self->style->bar_hover.b,
+        self->style->bar_hover.a);
+}
+
+static int PyUISliderStyle_set_bar_hover(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->bar_hover = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_bar_active(PyUISliderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->bar_active.r,
+        self->style->bar_active.g,
+        self->style->bar_active.b,
+        self->style->bar_active.a);
+}
+
+static int PyUISliderStyle_set_bar_active(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->bar_active = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_bar_filled(PyUISliderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->bar_filled.r,
+        self->style->bar_filled.g,
+        self->style->bar_filled.b,
+        self->style->bar_filled.a);
+}
+
+static int PyUISliderStyle_set_bar_filled(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->bar_filled = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_cursor_normal(PyUISliderStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->cursor_normal);
+}
+
+static int PyUISliderStyle_set_cursor_normal(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->cursor_normal);
+}
+
+static PyObject *PyUISliderStyle_get_cursor_hover(PyUISliderStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->cursor_hover);
+}
+
+static int PyUISliderStyle_set_cursor_hover(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->cursor_hover);
+}
+
+static PyObject *PyUISliderStyle_get_cursor_active(PyUISliderStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->cursor_active);
+}
+
+static int PyUISliderStyle_set_cursor_active(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->cursor_active);
+}
+
+static PyObject *PyUISliderStyle_get_border(PyUISliderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->border);
+}
+
+static int PyUISliderStyle_set_border(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->border = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_rounding(PyUISliderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->rounding);
+}
+
+static int PyUISliderStyle_set_rounding(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->rounding = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_bar_height(PyUISliderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->bar_height);
+}
+
+static int PyUISliderStyle_set_bar_height(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->bar_height = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_padding(PyUISliderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->padding.x,
+        self->style->padding.y);
+}
+
+static int PyUISliderStyle_set_padding(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->padding = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_spacing(PyUISliderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->spacing.x,
+        self->style->spacing.y);
+}
+
+static int PyUISliderStyle_set_spacing(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->spacing = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_cursor_size(PyUISliderStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->cursor_size.x,
+        self->style->cursor_size.y);
+}
+
+static int PyUISliderStyle_set_cursor_size(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->cursor_size = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_show_buttons(PyUISliderStyleObject *self, void *closure)
+{
+    if(self->style->show_buttons) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
+}
+
+static int PyUISliderStyle_set_show_buttons(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    self->style->show_buttons = PyObject_IsTrue(value);
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_inc_button(PyUISliderStyleObject *self, void *closure)
+{
+    Py_INCREF(self->inc_button);
+    return (PyObject*)self->inc_button;
+}
+
+static PyObject *PyUISliderStyle_get_dec_button(PyUISliderStyleObject *self, void *closure)
+{
+    Py_INCREF(self->dec_button);
+    return (PyObject*)self->dec_button;
+}
+
+static PyObject *PyUISliderStyle_get_inc_symbol(PyUISliderStyleObject *self, void *closure)
+{
+    return PyInt_FromLong(self->style->inc_symbol);
+}
+
+static int PyUISliderStyle_set_inc_symbol(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an integer.");
+        return -1; 
+    }
+
+    self->style->inc_symbol = PyInt_AsLong(value);
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_get_dec_symbol(PyUISliderStyleObject *self, void *closure)
+{
+    return PyInt_FromLong(self->style->dec_symbol);
+}
+
+static int PyUISliderStyle_set_dec_symbol(PyUISliderStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an integer.");
+        return -1; 
+    }
+
+    self->style->dec_symbol = PyInt_AsLong(value);
+    return 0;
+}
+
+static PyObject *PyUISliderStyle_pickle(PyUISliderStyleObject *self, PyObject *args, PyObject *kwargs)
+{
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+    CHK_TRUE(save_slider(stream, self->style), fail_pickle);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error pickling pf.UISliderStyle object");
+    }
+    return ret;
+}
+
+static PyObject *PyUISliderStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    int status;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyUISliderStyleObject *styleobj = 
+        (PyUISliderStyleObject*)PyObject_CallFunctionObjArgs((PyObject*)&PyUISliderStyle_type, NULL);
+    assert(styleobj || PyErr_Occurred());
+    CHK_TRUE(styleobj, fail_unpickle);
+
+    CHK_TRUE(load_slider(stream, ((PyUISliderStyleObject*)styleobj)->style), fail_unpickle);
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", styleobj, (int)nread);
+    Py_DECREF(styleobj);
+
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_args:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error unpickling pf.UISliderStyle object");
+    }
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -5073,6 +5825,12 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
         return;
     Py_INCREF(&PyUIScrollbarStyle_type);
     PyModule_AddObject(module, "UIPropertyStyle", (PyObject*)&PyUIPropertyStyle_type);
+
+    /* Slider style */
+    if(PyType_Ready(&PyUISliderStyle_type) < 0)
+        return;
+    Py_INCREF(&PyUIScrollbarStyle_type);
+    PyModule_AddObject(module, "UISliderStyle", (PyObject*)&PyUISliderStyle_type);
 
     /* Global style objects */
     PyUIButtonStyleObject *button_style = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
@@ -5139,6 +5897,11 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
         (PyObject*)&PyUIPropertyStyle_type, NULL);
     assert(property_style);
     PyModule_AddObject(module, "property_style", (PyObject*)property_style);
+
+    PyUISliderStyleObject *slider_style = (PyUISliderStyleObject*)PyObject_CallFunctionObjArgs(
+        (PyObject*)&PyUISliderStyle_type, NULL);
+    assert(slider_style);
+    PyModule_AddObject(module, "slider_style", (PyObject*)slider_style);
 }
 
 bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_window *window)

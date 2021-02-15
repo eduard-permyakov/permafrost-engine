@@ -668,6 +668,7 @@ static struct pickle_entry s_pf_dispatch_table[] = {
     {.type = NULL, /* PyUIScrollbarStyle_type*/           .picklefunc = custom_pickle   },
     {.type = NULL, /* PyUIEditStyle_type*/                .picklefunc = custom_pickle   },
     {.type = NULL, /* PyUIPropertyStyle_type*/            .picklefunc = custom_pickle   },
+    {.type = NULL, /* PyUISliderStyle_type*/              .picklefunc = custom_pickle   },
     {.type = NULL, /* PyTask_type */                      .picklefunc = custom_pickle   },
     {.type = NULL, /* PyBuildableEntity_type */           .picklefunc = custom_pickle   },
     {.type = NULL, /* PyBuilderEntity_type */             .picklefunc = custom_pickle   },
@@ -1324,6 +1325,7 @@ static void load_engine_builtin_types(void)
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIScrollbarStyle");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIEditStyle");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UIPropertyStyle");
+    s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "UISliderStyle");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "Task");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "BuildableEntity");
     s_pf_dispatch_table[idx++].type = (PyTypeObject*)PyObject_GetAttrString(pfmod, "BuilderEntity");
