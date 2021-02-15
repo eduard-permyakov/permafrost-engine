@@ -157,6 +157,7 @@ static PyObject *PyPf_settings_get(PyObject *self, PyObject *args);
 static PyObject *PyPf_settings_set(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_settings_create(PyObject *self, PyObject *args);
 static PyObject *PyPf_settings_delete(PyObject *self, PyObject *args);
+static PyObject *PyPf_settings_flush(PyObject *self);
 
 static PyObject *PyPf_get_simstate(PyObject *self);
 static PyObject *PyPf_set_simstate(PyObject *self, PyObject *args);
@@ -513,6 +514,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_settings_delete, METH_VARARGS,
     "Delete a setting with the specified name. Setting names beginning with 'pf' are reserved for the "
     "engine and may not be deleted."},
+
+    {"settings_flush",
+    (PyCFunction)PyPf_settings_flush, METH_VARARGS,
+    "Write the current settings to the settings file."},
 
     {"get_simstate",
     (PyCFunction)PyPf_get_simstate, METH_NOARGS,
@@ -1878,6 +1883,16 @@ static PyObject *PyPf_settings_delete(PyObject *self, PyObject *args)
         return NULL;
     }
 
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_settings_flush(PyObject *self)
+{
+    ss_e status = Settings_SaveToFile();
+    if(status != SS_OKAY) {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to save the current settings to the settings file.");
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 

@@ -35,6 +35,7 @@
 
 #include "audio.h"
 #include "main.h"
+#include "settings.h"
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/nk_file_browser.h"
@@ -100,6 +101,39 @@ static void audio_index_directory(const char *dir)
     free(files);
 }
 
+static bool audio_volume_validate(const struct sval *val)
+{
+    if(val->type != ST_TYPE_FLOAT)
+        return false;
+    if(val->as_float < 0.0f || val->as_float > 1.0f)
+        return false;
+    return true;
+}
+
+static void audio_volume_commit(const struct sval *val)
+{
+    int vol = MIX_MAX_VOLUME * val->as_float;
+    Mix_VolumeMusic(vol);
+}
+
+static void audio_create_settings(void)
+{
+    ss_e status;
+    (void)status;
+
+    status = Settings_Create((struct setting){
+        .name = "pf.audio.music_volume",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = 0.5f
+        },
+        .prio = 0,
+        .validate = audio_volume_validate,
+        .commit = audio_volume_commit,
+    });
+    assert(status == SS_OKAY);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -113,6 +147,7 @@ bool Audio_Init(void)
         goto fail_music_table;
 
     audio_index_directory("assets/music");
+    audio_create_settings();
     return true;
 
 fail_music_table:
