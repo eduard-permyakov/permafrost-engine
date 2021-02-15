@@ -35,10 +35,12 @@
 
 #include "audio.h"
 #include "main.h"
+#include "event.h"
 #include "settings.h"
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/nk_file_browser.h"
+#include "game/public/game.h"
 
 #include <stdio.h>
 #include <SDL_mixer.h>
@@ -51,6 +53,8 @@ KHASH_MAP_INIT_STR(music, Mix_Music*)
 
 static Mix_Music        *s_playing = NULL;
 static khash_t(music)   *s_music;
+static bool              s_mute_on_focus_loss = false;
+static int               s_volume = MIX_MAX_VOLUME / 2;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -112,8 +116,18 @@ static bool audio_volume_validate(const struct sval *val)
 
 static void audio_volume_commit(const struct sval *val)
 {
-    int vol = MIX_MAX_VOLUME * val->as_float;
-    Mix_VolumeMusic(vol);
+    s_volume = MIX_MAX_VOLUME * val->as_float;
+    Mix_VolumeMusic(s_volume);
+}
+
+static bool audio_bool_validate(const struct sval *val)
+{
+    return (val->type == ST_TYPE_BOOL);
+}
+
+static void audio_mute_focus_commit(const struct sval *val)
+{
+    s_mute_on_focus_loss = val->as_bool;
 }
 
 static void audio_create_settings(void)
@@ -132,6 +146,34 @@ static void audio_create_settings(void)
         .commit = audio_volume_commit,
     });
     assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.audio.mute_on_focus_loss",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = s_mute_on_focus_loss
+        },
+        .prio = 0,
+        .validate = audio_bool_validate,
+        .commit = audio_mute_focus_commit,
+    });
+    assert(status == SS_OKAY);
+}
+
+static void audio_window_event(void *user, void *arg)
+{
+    if(!s_mute_on_focus_loss)
+        return;
+
+    SDL_WindowEvent *event = arg;
+    switch(event->event) {
+    case SDL_WINDOWEVENT_FOCUS_LOST:
+        Mix_VolumeMusic(0);
+        break;
+    case SDL_WINDOWEVENT_FOCUS_GAINED:
+        Mix_VolumeMusic(s_volume);
+        break;
+    }
 }
 
 /*****************************************************************************/
@@ -148,6 +190,7 @@ bool Audio_Init(void)
 
     audio_index_directory("assets/music");
     audio_create_settings();
+    E_Global_Register(SDL_WINDOWEVENT, audio_window_event, NULL, G_ALL);
     return true;
 
 fail_music_table:
@@ -167,6 +210,7 @@ void Audio_Shutdown(void)
     });
 
     kh_destroy(music, s_music);
+    E_Global_Unregister(SDL_WINDOWEVENT, audio_window_event);
     Mix_CloseAudio();
 }
 
