@@ -51,6 +51,7 @@
 #include "session.h"
 #include "perf.h"
 #include "sched.h"
+#include "audio.h"
 
 #include <stdbool.h>
 #include <assert.h>
@@ -440,10 +441,17 @@ static bool engine_init(char **argv)
         goto fail_nav;
     }
 
+    if(!Audio_Init()) {
+        fprintf(stderr, "Failed to intialize audio subsystem\n");
+        goto fail_audio;
+    }
+
     engine_create_settings();
     s_rstate.swap_buffers = true;
     return true;
 
+fail_audio:
+    N_Shutdown();
 fail_nav:
     S_Shutdown();
 fail_script:
@@ -484,6 +492,7 @@ fail_perf:
 
 static void engine_shutdown(void)
 {
+    Audio_Shutdown();
     S_Shutdown();
     UI_Shutdown();
 

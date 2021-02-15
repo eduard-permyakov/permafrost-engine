@@ -65,6 +65,7 @@
 #include "../perf.h"
 #include "../cursor.h"
 #include "../sched.h"
+#include "../audio.h"
 
 #include <SDL.h>
 #include <stdio.h>
@@ -182,6 +183,8 @@ static PyObject *PyPf_exec_pop_to_root(PyObject *self, PyObject *args);
 static PyObject *PyPf_nearest_ent(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_ents_in_circle(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_ents_in_rect(PyObject *self, PyObject *args, PyObject *kwargs);
+
+static PyObject *PyPf_play_music(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -596,6 +599,11 @@ static PyMethodDef pf_module_methods[] = {
     "Returns a list of entities in the specified rectangle (defined by two (X, Z) points - "
     "the 'minimum' and 'maximum' corners. Takes an optional 'predicate' callable argument to "
     "filter the results."},
+
+    {"play_music",
+    (PyCFunction)PyPf_play_music, METH_VARARGS,
+    "Set the specified audio track to loop in the background. The argument must be a name of a WAV file in the "
+    "'assets/music' folder, without the file extension."},
 
     {NULL}  /* Sentinel */
 };
@@ -2496,6 +2504,21 @@ static PyObject *PyPf_ents_in_rect(PyObject *self, PyObject *args, PyObject *kwa
     PyObject *ret = PyList_GetSlice(list, 0, ninserted-1);
     Py_DECREF(list);
     return ret;
+}
+
+static PyObject *PyPf_play_music(PyObject *self, PyObject *args)
+{
+    const char *name;
+    if(!PyArg_ParseTuple(args, "z", &name)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a single argument - name of the WAV file or 'None'.");
+        return NULL;
+    }
+
+    if(!Audio_PlayMusic(name)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to play the specified music track.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
 }
 
 /*****************************************************************************/
