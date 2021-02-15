@@ -44,6 +44,7 @@
 #include <SDL.h>
 #include <string.h>
 #include <assert.h>
+#include <stdlib.h>
 
 #define STR2(x) #x
 #define STR(x)  STR2(x)
@@ -173,6 +174,13 @@ static struct setting_priv sett_get_priv(const char *name)
     khiter_t k = kh_get(settpriv, s_priv_table, name);
     assert(k != kh_end(s_priv_table));
     return kh_value(s_priv_table, k);
+}
+
+static int compare_strings(const void* a, const void* b)
+{
+    const char *stra = *(const char **)a;
+    const char *strb = *(const char **)b;
+    return strcmp(stra, strb);
 }
 
 /*****************************************************************************/
@@ -352,12 +360,24 @@ ss_e Settings_SaveToFile(void)
     SDL_RWops *stream = SDL_RWFromFile(s_settings_filepath, "w");
     if(!stream) {
         ret = SS_FILE_ACCESS;
-        goto fail_stream;
+        return false;
     }
 
+    const char *settings[kh_size(s_settings_table)];
+    size_t nsetts = 0;
+
     const char *name;
-    struct setting curr;
-    kh_foreach(s_settings_table, name, curr, {
+    kh_foreach(s_settings_table, name, (struct setting){0}, {
+        settings[nsetts++] = name;
+    });
+    qsort(settings, nsetts, sizeof(const char*), compare_strings);
+
+    for(int i = 0; i < nsetts; i++) {
+
+        const char *name = settings[i];
+        khiter_t k = kh_get(setting, s_settings_table, name);
+        assert(k != kh_end(s_settings_table));
+        struct setting curr = kh_value(s_settings_table, k);;
 
         char line[MAX_LINE_LEN];
         struct sval saveval = curr.val;
@@ -394,14 +414,13 @@ ss_e Settings_SaveToFile(void)
             ret = SS_FILE_ACCESS;
             goto fail_write;
         }
-    });
+    }
 
     stream->close(stream);
     return SS_OKAY;
 
 fail_write:
     stream->close(stream);
-fail_stream:
     return ret;
 }
 
