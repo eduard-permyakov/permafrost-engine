@@ -37,10 +37,19 @@
 #define AUDIO_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
-bool Audio_Init(void);
-void Audio_Shutdown(void);
-bool Audio_PlayMusic(const char *name);
+enum playback_mode{
+    MUSIC_MODE_LOOP,
+    MUSIC_MODE_PLAYLIST,
+    MUSIC_MODE_SHUFFLE,
+};
+
+bool        Audio_Init(void);
+void        Audio_Shutdown(void);
+bool        Audio_PlayMusic(const char *name);
+size_t      Audio_GetAllMusic(size_t maxout, const char *out[static maxout]);
+const char *Audio_CurrMusic(void);
 
 #endif
 

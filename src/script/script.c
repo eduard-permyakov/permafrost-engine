@@ -186,6 +186,8 @@ static PyObject *PyPf_ents_in_circle(PyObject *self, PyObject *args, PyObject *k
 static PyObject *PyPf_ents_in_rect(PyObject *self, PyObject *args, PyObject *kwargs);
 
 static PyObject *PyPf_play_music(PyObject *self, PyObject *args);
+static PyObject *PyPf_curr_music(PyObject *self);
+static PyObject *PyPf_get_all_music(PyObject *self);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -609,6 +611,14 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_play_music, METH_VARARGS,
     "Set the specified audio track to loop in the background. The argument must be a name of a WAV file in the "
     "'assets/music' folder, without the file extension."},
+
+    {"curr_music",
+    (PyCFunction)PyPf_curr_music, METH_VARARGS,
+    "Return the name of the currently playing music track, or None."},
+
+    {"get_all_music",
+    (PyCFunction)PyPf_get_all_music, METH_NOARGS,
+    "Get a list of all the currently loaded music track names."},
 
     {NULL}  /* Sentinel */
 };
@@ -2534,6 +2544,35 @@ static PyObject *PyPf_play_music(PyObject *self, PyObject *args)
         return NULL;
     }
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_curr_music(PyObject *self)
+{
+    const char *name = Audio_CurrMusic();
+    if(!name) {
+        Py_RETURN_NONE;
+    }
+    return PyString_FromString(name);
+}
+
+static PyObject *PyPf_get_all_music(PyObject *self)
+{
+    const char *tracks[512];
+    size_t ntracks = Audio_GetAllMusic(ARR_SIZE(tracks), tracks);
+
+    PyObject *ret = PyList_New(ntracks);
+    if(!ret)
+        return NULL;
+
+    for(int i = 0; i < ntracks; i++) {
+        PyObject *str = PyString_FromString(tracks[i]);
+        if(!str) {
+            Py_DECREF(str);
+            return NULL;
+        }
+        PyList_SET_ITEM(ret, i, str);
+    }
+    return ret;
 }
 
 /*****************************************************************************/

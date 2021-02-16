@@ -44,6 +44,7 @@
 #include "../main.h"
 #include "../ui.h"
 #include "../cursor.h"
+#include "../audio.h"
 
 #include <SDL.h>
 
@@ -614,6 +615,13 @@ static void s_expose_cursor_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, _CURSOR_MAX);
 }
 
+static void s_expose_audio_constants(PyObject *module)
+{
+    PY_EXPOSE_ENUM(module, MUSIC_MODE_LOOP);
+    PY_EXPOSE_ENUM(module, MUSIC_MODE_PLAYLIST);
+    PY_EXPOSE_ENUM(module, MUSIC_MODE_SHUFFLE);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -629,5 +637,6 @@ void S_Constants_Expose(PyObject *module)
     s_expose_engine_constants(module);
     s_expose_ui_constants(module);
     s_expose_cursor_constants(module);
+    s_expose_audio_constants(module);
 }
 
