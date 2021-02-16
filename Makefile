@@ -21,6 +21,7 @@ PF_DEPS = $(PF_OBJS:%.o=%.d)
 GLEW_SRC = ./deps/GLEW
 SDL2_SRC = ./deps/SDL2
 PYTHON_SRC = ./deps/Python
+OPENAL_SRC = ./deps/openal-soft
 
 # ------------------------------------------------------------------------------
 # Linux
@@ -30,9 +31,11 @@ LINUX_GLEW_LIB = libGLEW.so.2.2
 LINUX_SDL2_LIB = libSDL2-2.0.so.0
 LINUX_PYTHON_LIB = libpython2.7.so.1.0
 LINUX_PYTHON_TARGET = libpython2.7.so
+LINUX_OPENAL_LIB = libopenal.so.1.21.1
 
 LINUX_SDL2_CONFIG = --host=x86_64-pc-linux-gnu
 LINUX_PYTHON_CONFIG = --host=x86_64-pc-linux-gnu
+LINUX_OPENAL_OPTS = "-DALSOFT_UTILS=OFF -DALSOFT_EXAMPLES=OFF"
 
 LINUX_CC = gcc
 LINUX_BIN = ./bin/pf
@@ -40,6 +43,7 @@ LINUX_LDFLAGS = \
 	-l:$(SDL2_LIB) \
 	-l:$(GLEW_LIB) \
 	-l:$(PYTHON_LIB) \
+	-l:$(OPENAL_LIB) \
 	-lGL \
 	-ldl \
 	-lutil \
@@ -55,12 +59,14 @@ LINUX_DEFS = -D_DEFAULT_SOURCE
 WINDOWS_GLEW_LIB = glew32.dll
 WINDOWS_SDL2_LIB = SDL2.dll
 WINDOWS_PYTHON_LIB = libpython2.7.dll
+WINDOWS_OPENAL_LIB = OpenAL32.dll
 
 WINDOWS_SDL2_CONFIG = --host=x86_64-w64-mingw32
 WINDOWS_PYTHON_CONFIG = --host=x86_64-w64-mingw32
 WINDOWS_PYTHON_DEFS = -D__USE_MINGW_ANSI_STDIO=1
 WINDOWS_PYTHON_TARGET = libpython2.7.dll
 WINDOWS_GLEW_OPTS = "SYSTEM=linux-mingw64"
+WINDOWS_OPENAL_OPTS = -DCMAKE_TOOLCHAIN_FILE=XCompile.txt -DHOST=x86_64-w64-mingw32 -DALSOFT_UTILS=OFF -DALSOFT_EXAMPLES=OFF
 
 WINDOWS_CC = x86_64-w64-mingw32-gcc
 WINDOWS_BIN = ./lib/pf.exe
@@ -69,6 +75,7 @@ WINDOWS_LDFLAGS = \
 	-lSDL2 \
 	-lglew32 \
 	-llibpython2.7 \
+	-lOpenAL32 \
 	-lopengl32 \
 	-luuid
 
@@ -86,12 +93,14 @@ DEFS = $($(PLAT)_DEFS)
 GLEW_LIB = $($(PLAT)_GLEW_LIB)
 SDL2_LIB = $($(PLAT)_SDL2_LIB)
 PYTHON_LIB = $($(PLAT)_PYTHON_LIB)
+OPENAL_LIB = $($(PLAT)_OPENAL_LIB)
 
 SDL2_CONFIG = $($(PLAT)_SDL2_CONFIG)
 PYTHON_CONFIG = $($(PLAT)_PYTHON_CONFIG)
 PYTHON_DEFS = $($(PLAT)_PYTHON_DEFS)
 PYTHON_TARGET = $($(PLAT)_PYTHON_TARGET)
 GLEW_OPTS = $($(PLAT)_GLEW_OPTS)
+OPENAL_OPTS = $($(PLAT)_OPENAL_OPTS)
 
 WARNING_FLAGS = \
 	-Wall \
@@ -108,6 +117,7 @@ CFLAGS = \
 	-I$(GLEW_SRC)/include \
 	-I$(SDL2_SRC)/include \
 	-I$(PYTHON_SRC)/Include \
+	-I$(OPENAL_SRC)/include \
 	-std=c99 \
 	-O2 \
 	-fno-strict-aliasing \
@@ -124,7 +134,8 @@ LDFLAGS = \
 DEPS = \
 	./lib/$(GLEW_LIB) \
 	./lib/$(SDL2_LIB) \
-	./lib/$(PYTHON_LIB)
+	./lib/$(PYTHON_LIB) \
+	./lib/$(OPENAL_LIB)
 
 # ------------------------------------------------------------------------------
 # Targets
@@ -157,6 +168,13 @@ DEPS = \
 	&& make $(PYTHON_TARGET) CFLAGS=$(PYTHON_DEFS)
 	cp $(PYTHON_SRC)/build/$(PYTHON_TARGET) $@
 
+./lib/$(OPENAL_LIB):
+	mkdir -p $(OPENAL_SRC)/build
+	cd $(OPENAL_SRC)/build \
+		&& cmake .. $(OPENAL_OPTS) \
+		&& make 
+	cp $(OPENAL_SRC)/build/$(OPENAL_LIB) $@
+
 deps: $(DEPS)
 
 ./obj/%.o: ./src/%.c
@@ -176,9 +194,10 @@ $(BIN): $(PF_OBJS)
 pf: $(BIN)
 
 clean_deps:
-	cd deps/GLEW && make clean
+	rm -rf deps/GLEW/lib
 	rm -rf deps/SDL2/build	
 	rm -rf deps/Python/build	
+	rm -rf deps/openal-soft/build
 	rm -rf ./lib/*
 
 clean:

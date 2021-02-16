@@ -64,13 +64,14 @@ EVERGLORY is the flagship game developed using Permafrost Engine.
 * Fiber system for putting work in lightweight tasks that are scheduled in userspace
 * Fiber-backed Python tasks, allowing cooperative multitasking logic in Python
 * Cross-platform (Linux and Windows)
-* Windows launcher to automatically save a minidump and stdout + stderr logs on application error
+* Windows launcher to automatically capture a minidump and stdout, stderr logs on application error
 
 ## Dependencies ##
 
 * SDL2 2.0.10
 * GLEW 2.1.0
 * python 2.7.17
+* openal-soft 1.21.1
 * stb_image.h, stb_image_resize.h
 * khash.h
 * nuklear.h
