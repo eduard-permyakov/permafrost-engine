@@ -1827,10 +1827,15 @@ void G_SwapBuffers(void)
     g_change_simstate();
 }
 
+bool G_MapLoaded(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    return (s_gs.map != NULL);
+}
+
 const struct map *G_GetPrevTickMap(void)
 {
     ASSERT_IN_MAIN_THREAD();
-
     return s_gs.prev_tick_map;
 }
 

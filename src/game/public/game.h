@@ -169,6 +169,7 @@ bool            G_LoadEntityState(SDL_RWops *stream);
 
 struct render_workspace *G_GetSimWS(void);
 struct render_workspace *G_GetRenderWS(void);
+bool                     G_MapLoaded(void);
 const struct map        *G_GetPrevTickMap(void);
 
 /*###########################################################################*/

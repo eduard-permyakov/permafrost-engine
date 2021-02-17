@@ -41,10 +41,10 @@
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
 #include "../anim/public/anim.h"
+#include "../audio/public/audio.h"
 #include "../main.h"
 #include "../ui.h"
 #include "../cursor.h"
-#include "../audio.h"
 
 #include <SDL.h>
 

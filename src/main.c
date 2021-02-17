@@ -44,6 +44,7 @@
 #include "script/public/script.h"
 #include "game/public/game.h"
 #include "navigation/public/nav.h"
+#include "audio/public/audio.h"
 #include "event.h"
 #include "ui.h"
 #include "pf_math.h"
@@ -51,7 +52,6 @@
 #include "session.h"
 #include "perf.h"
 #include "sched.h"
-#include "audio.h"
 
 #include <stdbool.h>
 #include <assert.h>

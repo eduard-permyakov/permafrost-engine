@@ -50,6 +50,7 @@
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../navigation/public/nav.h"
+#include "../audio/public/audio.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../lib/public/SDL_vec_rwops.h"
@@ -65,7 +66,6 @@
 #include "../perf.h"
 #include "../cursor.h"
 #include "../sched.h"
-#include "../audio.h"
 
 #include <SDL.h>
 #include <stdio.h>
@@ -1601,7 +1601,7 @@ static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args)
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self)
 {
     vec3_t pos;
-    if(M_Raycast_IntersecCoordinate(&pos))
+    if(M_Raycast_MouseIntersecCoord(&pos))
         return Py_BuildValue("(fff)", pos.x, pos.y, pos.z);
     else
         Py_RETURN_NONE;

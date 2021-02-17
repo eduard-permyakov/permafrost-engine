@@ -171,7 +171,15 @@ size_t M_Raycast_GetHighlightSize(void);
  * written to 'out'. Otherwise, the mouse cursor is not over the map surface.
  * ------------------------------------------------------------------------
  */
-bool   M_Raycast_IntersecCoordinate(vec3_t *out);
+bool   M_Raycast_MouseIntersecCoord(vec3_t *out);
+
+/* ------------------------------------------------------------------------
+ * If returning true, the height of the map under the ray originating at 
+ * the camera position and facing in the same direction as the camera is 
+ * written to 'out'.
+ * ------------------------------------------------------------------------
+ */
+bool   M_Raycast_CameraIntersecCoord(vec3_t *out);
 
 /* ------------------------------------------------------------------------
  * Utility function to convert an XZ worldspace coordinate to one in the 

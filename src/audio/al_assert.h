@@ -33,23 +33,28 @@
  *
  */
 
-#ifndef AUDIO_H
-#define AUDIO_H
+#ifndef AL_ASSERT_H
+#define AL_ASSERT_H
 
-#include <stdbool.h>
-#include <stddef.h>
+#include <assert.h>
+#include <AL/al.h>
 
-enum playback_mode{
-    MUSIC_MODE_LOOP,
-    MUSIC_MODE_PLAYLIST,
-    MUSIC_MODE_SHUFFLE,
-};
+#ifndef NDEBUG
 
-bool        Audio_Init(void);
-void        Audio_Shutdown(void);
-bool        Audio_PlayMusic(const char *name);
-size_t      Audio_GetAllMusic(size_t maxout, const char *out[static maxout]);
-const char *Audio_CurrMusic(void);
+const char *Audio_ErrString(ALenum err);
+#define AL_ASSERT_OK()                                              \
+    do {                                                            \
+        ALenum error = alGetError();                                \
+        if(error != AL_NO_ERROR)                                    \
+            fprintf(stderr, "%s:%d OpenAL error: %x [%s]\n",        \
+            __FILE__, __LINE__, error, Audio_ErrString(error));     \
+        assert(error == AL_NO_ERROR);                               \
+    }while(0)
+#else
+
+#define AL_ASSERT_OK() /* no-op */
+
+#endif
 
 #endif
 

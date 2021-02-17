@@ -33,14 +33,18 @@
  *
  */
 
-#include "audio.h"
-#include "main.h"
-#include "event.h"
-#include "settings.h"
-#include "lib/public/khash.h"
-#include "lib/public/pf_string.h"
-#include "lib/public/nk_file_browser.h"
-#include "game/public/game.h"
+#include "public/audio.h"
+#include "al_assert.h"
+#include "../main.h"
+#include "../event.h"
+#include "../camera.h"
+#include "../settings.h"
+#include "../lib/public/khash.h"
+#include "../lib/public/pf_string.h"
+#include "../lib/public/nk_file_browser.h"
+#include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
+#include "../game/public/game.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -53,27 +57,15 @@
 #define MAX_CHANNELS    (16)
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
+#define HEARING_RANGE   (155.0f)
+#define EPSILON         (1.0f/1024)
 
-#ifndef NDEBUG
-static const char *audio_err_string(ALenum err);
-#define AL_ASSERT_OK()                                              \
-    do {                                                            \
-        ALenum error = alGetError();                                \
-        if(error != AL_NO_ERROR)                                    \
-            fprintf(stderr, "%s:%d OpenAL error: %x [%s]\n",        \
-            __FILE__, __LINE__, error, audio_err_string(error));    \
-        assert(error == AL_NO_ERROR);                               \
-    }while(0)
-#else
-#define AL_ASSERT_OK() /* no-op */
-#endif
-
-struct al_music{
+struct al_buffer{
     ALuint buffer;
     ALenum format;
 };
 
-KHASH_MAP_INIT_STR(music, struct al_music)
+KHASH_MAP_INIT_STR(buffer, struct al_buffer)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -82,8 +74,9 @@ KHASH_MAP_INIT_STR(music, struct al_music)
 static ALCdevice             *s_device = NULL;
 static ALCcontext            *s_context = NULL;
 
+static khash_t(buffer)       *s_music;
+static khash_t(buffer)       *s_effects;
 static ALuint                 s_music_source;
-static khash_t(music)        *s_music;
 
 static bool                   s_mute_on_focus_loss = false;
 static ALfloat                s_volume = 0.5f;
@@ -93,31 +86,7 @@ static enum playback_mode     s_music_mode = MUSIC_MODE_PLAYLIST;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static const char *audio_err_string(ALenum err)
-{
-    const char *ret = NULL;
-    switch(err) {
-    case ALC_INVALID_VALUE:
-        ret = "ALC_INVALID_VALUE";
-        break;
-    case ALC_INVALID_DEVICE:
-        ret = "ALC_INVALID_DEVICE";
-        break;
-    case ALC_INVALID_CONTEXT:
-        ret = "ALC_INVALID_CONTEXT";
-        break;
-    case ALC_INVALID_ENUM:
-        ret = "ALC_INVALID_ENUM";
-        break;
-    case ALC_OUT_OF_MEMORY:
-        ret = "ALC_OUT_OF_MEMORY";
-        break;
-    default: assert(0);
-    }
-    return ret;
-}
-
-static bool audio_load_wav(const char *path, struct al_music *out)
+static bool audio_load_wav(const char *path, struct al_buffer *out)
 {
     struct SDL_AudioSpec spec;
     Uint8 *audio_buff;
@@ -166,7 +135,7 @@ static bool audio_load_wav(const char *path, struct al_music *out)
     return true;
 }
 
-static void audio_free_buffer(struct al_music *buff)
+static void audio_free_buffer(struct al_buffer *buff)
 {
     alDeleteBuffers(1, &buff->buffer);
     AL_ASSERT_OK();
@@ -186,7 +155,7 @@ static void audio_create_music_source(ALuint *src)
     AL_ASSERT_OK();
 }
 
-static void audio_index_directory(const char *dir)
+static void audio_index_directory(const char *dir, khash_t(buffer) *table)
 {
     char absdir[NK_MAX_PATH_LEN];
     pf_snprintf(absdir, sizeof(absdir), "%s/%s", g_basepath, dir);
@@ -204,11 +173,11 @@ static void audio_index_directory(const char *dir)
         char path[NK_MAX_PATH_LEN];
         pf_snprintf(path, sizeof(path), "%s/%s", absdir, files[i].name);
 
-        struct al_music audio;
+        struct al_buffer audio;
         if(!audio_load_wav(path, &audio))
             continue;
 
-        char name[128];
+        char name[512];
         pf_strlcpy(name, files[i].name, sizeof(name));
         name[strlen(name) - strlen(".wav")] = '\0';
 
@@ -219,13 +188,13 @@ static void audio_index_directory(const char *dir)
         }
 
         int status;
-        khiter_t k = kh_put(music, s_music, key, &status);
+        khiter_t k = kh_put(buffer, table, key, &status);
         if(status == -1) {
             free((void*)key);
             audio_free_buffer(&audio);
             continue;
         }
-        kh_value(s_music, k) = audio;
+        kh_value(table, k) = audio;
     }
 
     free(files);
@@ -310,6 +279,18 @@ static void audio_create_settings(void)
         .commit = audio_music_mode_commit,
     });
     assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_hearing_range",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = audio_bool_validate,
+        .commit = NULL
+    });
+    assert(status == SS_OKAY);
 }
 
 static void audio_window_event(void *user, void *arg)
@@ -331,7 +312,7 @@ static void audio_window_event(void *user, void *arg)
 static const char *audio_music_name(ALuint buffer)
 {
     const char *name;
-    struct al_music curr;
+    struct al_buffer curr;
 
     kh_foreach(s_music, name, curr, {
         if(curr.buffer == buffer)
@@ -342,7 +323,7 @@ static const char *audio_music_name(ALuint buffer)
 
 static bool audio_name_music(const char *name, ALint *out)
 {
-    khiter_t k = kh_get(music, s_music, name);
+    khiter_t k = kh_get(buffer, s_music, name);
     if(k == kh_end(s_music))
         return false;
     *out = kh_value(s_music, k).buffer;
@@ -392,6 +373,28 @@ static void audio_next_music_track(void)
     Audio_PlayMusic(next);
 }
 
+static void audio_update_listener(void)
+{
+    vec3_t cam_pos = Camera_GetPos(G_GetActiveCamera());
+    vec3_t listener_pos = cam_pos;
+
+    if(G_MapLoaded()) {
+        bool hit = M_Raycast_CameraIntersecCoord(&listener_pos);
+        if(hit) {
+            /* nudge the hearing center point such that it's more 
+             * centered within the viewport */
+            vec3_t cam_dir = Camera_GetDir(G_GetActiveCamera());
+            cam_dir.y = 0.0f;
+            if(PFM_Vec3_Len(&cam_dir) > EPSILON)
+                PFM_Vec3_Normal(&cam_dir, &cam_dir);
+            PFM_Vec3_Scale(&cam_dir, 40.0f, &cam_dir);
+            PFM_Vec3_Add(&listener_pos, &cam_dir, &listener_pos);
+        }
+    }
+    alListener3f(AL_POSITION, listener_pos.x, listener_pos.y, listener_pos.z);
+    AL_ASSERT_OK();
+}
+
 static void audio_on_update(void *user, void *event)
 {
     ALint src_state;
@@ -400,6 +403,7 @@ static void audio_on_update(void *user, void *event)
     if(src_state == AL_STOPPED) {
         audio_next_music_track();
     }
+    audio_update_listener();
 }
 
 static int compare_strings(const void* a, const void* b)
@@ -407,6 +411,39 @@ static int compare_strings(const void* a, const void* b)
     const char *stra = *(const char **)a;
     const char *strb = *(const char **)b;
     return strcmp(stra, strb);
+}
+
+static void on_render_3d(void *user, void *event)
+{
+    struct sval setting;
+    ss_e status;
+    (void)status;
+
+    status = Settings_Get("pf.debug.show_hearing_range", &setting);
+    if(!setting.as_bool)
+        return;
+
+    if(!G_MapLoaded())
+        return;
+
+    vec2_t pos = {0};
+    alGetListener3f(AL_POSITION, &pos.x, &(ALfloat){0}, &pos.z);
+
+    const float radius = HEARING_RANGE;
+    const float width = 0.5f;
+    vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawSelectionCircle,
+        .nargs = 5,
+        .args = {
+            R_PushArg(&pos, sizeof(pos)),
+            R_PushArg(&radius, sizeof(radius)),
+            R_PushArg(&width, sizeof(width)),
+            R_PushArg(&red, sizeof(red)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
 }
 
 /*****************************************************************************/
@@ -422,18 +459,25 @@ bool Audio_Init(void)
         goto fail_context;
     alcMakeContextCurrent(s_context);
 
-    if(NULL == (s_music = kh_init(music)))
+    if(NULL == (s_music = kh_init(buffer)))
         goto fail_music_table;
 
-    audio_index_directory("assets/music");
+    if(NULL == (s_effects = kh_init(buffer)))
+        goto fail_effects_table;
+
+    audio_index_directory("assets/music", s_music);
+    audio_index_directory("assets/sounds", s_effects);
     audio_create_settings();
     audio_create_music_source(&s_music_source);
     alListenerf(AL_GAIN, s_volume);
 
     E_Global_Register(SDL_WINDOWEVENT, audio_window_event, NULL, G_ALL);
     E_Global_Register(EVENT_UPDATE_START, audio_on_update, NULL, G_ALL);
+    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     return true;
 
+fail_effects_table:
+    kh_destroy(buffer, s_music);
 fail_music_table:
     alcMakeContextCurrent(NULL);
     alcDestroyContext(s_context);
@@ -446,7 +490,7 @@ fail_open:
 void Audio_Shutdown(void)
 {
     const char *name;
-    struct al_music curr;
+    struct al_buffer curr;
 
     alSourceStop(s_music_source);
     alDeleteSources(1, &s_music_source);
@@ -455,10 +499,17 @@ void Audio_Shutdown(void)
         free((void*)name);
         audio_free_buffer(&curr);
     });
-    kh_destroy(music, s_music);
+    kh_destroy(buffer, s_music);
+
+    kh_foreach(s_effects, name, curr, {
+        free((void*)name);
+        audio_free_buffer(&curr);
+    });
+    kh_destroy(buffer, s_effects);
 
     E_Global_Unregister(SDL_WINDOWEVENT, audio_window_event);
     E_Global_Unregister(EVENT_UPDATE_START, audio_on_update);
+    E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
 
     alcMakeContextCurrent(NULL);
     alcDestroyContext(s_context);
@@ -494,7 +545,7 @@ size_t Audio_GetAllMusic(size_t maxout, const char *out[static maxout])
     size_t ntracks = 0;
 
     const char *name;
-    kh_foreach(s_music, name, (struct al_music){0}, {
+    kh_foreach(s_music, name, (struct al_buffer){0}, {
         tracks[ntracks++] = name;
     });
     qsort(tracks, ntracks, sizeof(const char*), compare_strings);
@@ -509,5 +560,29 @@ const char *Audio_CurrMusic(void)
     ALint play_buffer = 0;
     alGetSourcei(s_music_source, AL_BUFFER, &play_buffer);
     return audio_music_name(play_buffer);
+}
+
+const char *Audio_ErrString(ALenum err)
+{
+    const char *ret = NULL;
+    switch(err) {
+    case ALC_INVALID_VALUE:
+        ret = "ALC_INVALID_VALUE";
+        break;
+    case ALC_INVALID_DEVICE:
+        ret = "ALC_INVALID_DEVICE";
+        break;
+    case ALC_INVALID_CONTEXT:
+        ret = "ALC_INVALID_CONTEXT";
+        break;
+    case ALC_INVALID_ENUM:
+        ret = "ALC_INVALID_ENUM";
+        break;
+    case ALC_OUT_OF_MEMORY:
+        ret = "ALC_OUT_OF_MEMORY";
+        break;
+    default: assert(0);
+    }
+    return ret;
 }
 

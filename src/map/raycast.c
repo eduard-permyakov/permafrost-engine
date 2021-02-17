@@ -52,7 +52,8 @@
 #include <string.h>
 
 
-#define MAX_CANDIDATE_TILES 256
+#define MAX_CANDIDATE_TILES 1024
+#define EPSILON             (1.0f/1024)
 
 struct ray{
     vec3_t origin;
@@ -134,23 +135,15 @@ static vec3_t rc_unproject_mouse_coords(void)
     return (vec3_t){ret_homo.x/ret_homo.w, ret_homo.y/ret_homo.w, ret_homo.z/ret_homo.w};
 }
 
-static void rc_find_intersection(void)
+static bool rc_find_intersection(vec3_t ray_origin, vec3_t ray_dir,
+                                 struct tile_desc *out_intersec, vec3_t *out_pos)
 {
-    vec3_t ray_origin = rc_unproject_mouse_coords();
-    vec3_t ray_dir;
-
-    vec3_t cam_pos = Camera_GetPos(s_ctx.cam);
-    PFM_Vec3_Sub(&ray_origin, &cam_pos, &ray_dir);
-    PFM_Vec3_Normal(&ray_dir, &ray_dir);
-
-    s_ctx.tile_active = false;
-
     struct map_resolution res = {
         s_ctx.map->width, s_ctx.map->height,
         TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT
     };
 
-    /* Project the ray on the Y=(-TILE_DEPTH*Y_COORDS_PER_TILE) plane between the camera position and where the 
+    /* Project the ray on the Y=(-TILE_DEPTH*Y_COORDS_PER_TILE) plane between the ray origin and where the 
      * ray intersects the Y=(-TILE_DEPTH*Y_COORDS_PER_TILE) plane. */
     float t = fabs((ray_origin.y + TILE_DEPTH*Y_COORDS_PER_TILE) / ray_dir.y);
     struct line_seg_2d y_eq_0_seg = {
@@ -182,14 +175,28 @@ static void rc_find_intersection(void)
             if(C_RayIntersectsTriMesh(ray_origin, ray_dir, tile_mesh, num_verts, &t)) {
 
                 PFM_Vec3_Scale(&ray_dir, t, &ray_dir);
-                PFM_Vec3_Add(&ray_origin, &ray_dir, &s_ctx.intersec_pos);
+                PFM_Vec3_Add(&ray_origin, &ray_dir, out_pos);
 
-                s_ctx.intersec_tile = cts[i]; 
-                s_ctx.tile_active = true;
-                break;
+                *out_intersec = cts[i]; 
+                return true;
             }
         }
     }
+    return false;
+}
+
+static void rc_compute(void)
+{
+    vec3_t ray_origin = rc_unproject_mouse_coords();
+    vec3_t cam_pos = Camera_GetPos(s_ctx.cam);
+
+    vec3_t ray_dir;
+    PFM_Vec3_Sub(&ray_origin, &cam_pos, &ray_dir);
+    if(PFM_Vec3_Len(&ray_dir) > EPSILON) {
+        PFM_Vec3_Normal(&ray_dir, &ray_dir);
+    }
+    s_ctx.tile_active = rc_find_intersection(ray_origin, ray_dir, &s_ctx.intersec_tile, &s_ctx.intersec_pos);
+    s_ctx.valid = true;
 }
 
 static void on_mousemove(void *user, void *event)
@@ -198,8 +205,7 @@ static void on_mousemove(void *user, void *event)
     static bool s_initial_active;
 
     if(!s_ctx.valid) {
-        rc_find_intersection();
-        s_ctx.valid = true;
+        rc_compute();
     }
 
     if(s_ctx.tile_active != s_initial_active || memcmp(&s_ctx.intersec_tile, &s_initial_intersec_tile, sizeof(struct tile_desc)) ) {
@@ -301,11 +307,10 @@ size_t M_Raycast_GetHighlightSize(void)
     return s_ctx.highlight_size;
 }
 
-bool M_Raycast_IntersecCoordinate(vec3_t *out)
+bool M_Raycast_MouseIntersecCoord(vec3_t *out)
 {
     if(!s_ctx.valid) {
-        rc_find_intersection();
-        s_ctx.valid = true;
+        rc_compute();
     }
 
     if(!s_ctx.tile_active) 
@@ -313,5 +318,12 @@ bool M_Raycast_IntersecCoordinate(vec3_t *out)
 
     *out = s_ctx.intersec_pos;
     return true;
+}
+
+bool M_Raycast_CameraIntersecCoord(vec3_t *out)
+{
+    vec3_t ray_origin = Camera_GetPos(s_ctx.cam);
+    vec3_t ray_dir = Camera_GetDir(s_ctx.cam);
+    return rc_find_intersection(ray_origin, ray_dir, &(struct tile_desc){0}, out);
 }
 

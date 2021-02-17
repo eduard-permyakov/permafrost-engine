@@ -565,7 +565,7 @@ static void on_mousedown(void *user, void *event)
         return;
 
     vec3_t mouse_coord;
-    if(!M_Raycast_IntersecCoordinate(&mouse_coord))
+    if(!M_Raycast_MouseIntersecCoord(&mouse_coord))
         return;
 
     enum selection_type sel_type;

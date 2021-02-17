@@ -472,8 +472,8 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
     }
 
     bool result = M_Tile_DescForPoint2D(res, map_pos, (vec2_t){start_x, start_z}, &curr_tile_desc);
-    (void)result;
-    assert(result);
+    if(!result)
+        return 0;
 
     assert(curr_tile_desc.chunk_r >= 0 && curr_tile_desc.chunk_r < res.chunk_h);
     assert(curr_tile_desc.chunk_c >= 0 && curr_tile_desc.chunk_c < res.chunk_w);
