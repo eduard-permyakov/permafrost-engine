@@ -45,34 +45,146 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-#include <SDL_mixer.h>
+
+#include <AL/al.h>
+#include <AL/alc.h>
 
 
 #define MAX_CHANNELS    (16)
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 
-struct audio_chan_ctx{
-    bool music_finished;
-    bool chan_finished[MAX_CHANNELS];
+#ifndef NDEBUG
+static const char *audio_err_string(ALenum err);
+#define AL_ASSERT_OK()                                              \
+    do {                                                            \
+        ALenum error = alGetError();                                \
+        if(error != AL_NO_ERROR)                                    \
+            fprintf(stderr, "%s:%d OpenAL error: %x [%s]\n",        \
+            __FILE__, __LINE__, error, audio_err_string(error));    \
+        assert(error == AL_NO_ERROR);                               \
+    }while(0)
+#else
+#define AL_ASSERT_OK() /* no-op */
+#endif
+
+struct al_music{
+    ALuint buffer;
+    ALenum format;
 };
 
-KHASH_MAP_INIT_STR(music, Mix_Music*)
+KHASH_MAP_INIT_STR(music, struct al_music)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static Mix_Music             *s_playing = NULL;
+static ALCdevice             *s_device = NULL;
+static ALCcontext            *s_context = NULL;
+
+static ALuint                 s_music_source;
 static khash_t(music)        *s_music;
+
 static bool                   s_mute_on_focus_loss = false;
-static int                    s_volume = MIX_MAX_VOLUME / 2;
+static ALfloat                s_volume = 0.5f;
 static enum playback_mode     s_music_mode = MUSIC_MODE_PLAYLIST;
-static struct audio_chan_ctx  s_chan_ctx;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static const char *audio_err_string(ALenum err)
+{
+    const char *ret = NULL;
+    switch(err) {
+    case ALC_INVALID_VALUE:
+        ret = "ALC_INVALID_VALUE";
+        break;
+    case ALC_INVALID_DEVICE:
+        ret = "ALC_INVALID_DEVICE";
+        break;
+    case ALC_INVALID_CONTEXT:
+        ret = "ALC_INVALID_CONTEXT";
+        break;
+    case ALC_INVALID_ENUM:
+        ret = "ALC_INVALID_ENUM";
+        break;
+    case ALC_OUT_OF_MEMORY:
+        ret = "ALC_OUT_OF_MEMORY";
+        break;
+    default: assert(0);
+    }
+    return ret;
+}
+
+static bool audio_load_wav(const char *path, struct al_music *out)
+{
+    struct SDL_AudioSpec spec;
+    Uint8 *audio_buff;
+    Uint32 audio_len;
+
+    if(!SDL_LoadWAV(path, &spec, &audio_buff, &audio_len))
+        return false;
+
+    ALenum format = -1;
+    switch(spec.channels) {
+    case 1:
+        switch(spec.format) {
+        case AUDIO_U8:
+        case AUDIO_S8:
+            format = AL_FORMAT_MONO8;
+            break;
+        default:
+            format = AL_FORMAT_MONO16;
+            break;
+        }
+        break;
+    case 2:
+        switch(spec.format) {
+        case AUDIO_U8:
+        case AUDIO_S8:
+            format = AL_FORMAT_STEREO8;
+            break;
+        default:
+            format = AL_FORMAT_STEREO16;
+            break;
+        }
+        break;
+    default: assert(0);
+    }
+    assert(format >= 0);
+
+    ALuint buffer;
+    alGenBuffers(1, &buffer);
+    alBufferData(buffer, format, audio_buff, audio_len, spec.freq);
+    AL_ASSERT_OK();
+
+    SDL_FreeWAV(audio_buff);
+
+    out->buffer = buffer;
+    out->format = format;
+    return true;
+}
+
+static void audio_free_buffer(struct al_music *buff)
+{
+    alDeleteBuffers(1, &buff->buffer);
+    AL_ASSERT_OK();
+}
+
+static void audio_create_music_source(ALuint *src)
+{
+    alGenSources(1, src);
+    alSourcef(*src, AL_PITCH, 1);
+    alSourcef(*src, AL_GAIN, 1.0f);
+    alSource3f(*src, AL_POSITION, 0, 0, 0);
+    alSource3f(*src, AL_VELOCITY, 0, 0, 0);
+    alSourcei(*src, AL_LOOPING, AL_FALSE);
+    alSourcei(*src, AL_BUFFER, 0);
+    alSourcei(*src, AL_SOURCE_RELATIVE, AL_TRUE);
+    alSourcef(*src, AL_ROLLOFF_FACTOR, 0.0);
+    AL_ASSERT_OK();
+}
 
 static void audio_index_directory(const char *dir)
 {
@@ -92,8 +204,8 @@ static void audio_index_directory(const char *dir)
         char path[NK_MAX_PATH_LEN];
         pf_snprintf(path, sizeof(path), "%s/%s", absdir, files[i].name);
 
-        Mix_Music *audio = Mix_LoadMUS(path);
-        if(!audio)
+        struct al_music audio;
+        if(!audio_load_wav(path, &audio))
             continue;
 
         char name[128];
@@ -102,7 +214,7 @@ static void audio_index_directory(const char *dir)
 
         const char *key = pf_strdup(name);
         if(!key) {
-            Mix_FreeMusic(audio);
+            audio_free_buffer(&audio);
             continue;
         }
 
@@ -110,7 +222,7 @@ static void audio_index_directory(const char *dir)
         khiter_t k = kh_put(music, s_music, key, &status);
         if(status == -1) {
             free((void*)key);
-            Mix_FreeMusic(audio);
+            audio_free_buffer(&audio);
             continue;
         }
         kh_value(s_music, k) = audio;
@@ -130,8 +242,8 @@ static bool audio_volume_validate(const struct sval *val)
 
 static void audio_volume_commit(const struct sval *val)
 {
-    s_volume = MIX_MAX_VOLUME * val->as_float;
-    Mix_VolumeMusic(s_volume);
+    s_volume = val->as_float;
+    alListenerf(AL_GAIN, s_volume);
 }
 
 static bool audio_bool_validate(const struct sval *val)
@@ -167,7 +279,7 @@ static void audio_create_settings(void)
         .name = "pf.audio.music_volume",
         .val = (struct sval) {
             .type = ST_TYPE_FLOAT,
-            .as_float = 0.5f
+            .as_float = s_volume
         },
         .prio = 0,
         .validate = audio_volume_validate,
@@ -208,39 +320,45 @@ static void audio_window_event(void *user, void *arg)
     SDL_WindowEvent *event = arg;
     switch(event->event) {
     case SDL_WINDOWEVENT_FOCUS_LOST:
-        Mix_VolumeMusic(0);
+        alListenerf(AL_GAIN, 0.0f);
         break;
     case SDL_WINDOWEVENT_FOCUS_GAINED:
-        Mix_VolumeMusic(s_volume);
+        alListenerf(AL_GAIN, s_volume);
         break;
     }
 }
 
-static const char *audio_music_name(Mix_Music *track)
+static const char *audio_music_name(ALuint buffer)
 {
     const char *name;
-    Mix_Music *curr;
+    struct al_music curr;
 
     kh_foreach(s_music, name, curr, {
-        if(curr == track)
+        if(curr.buffer == buffer)
             return name;
     });
     return NULL;
 }
 
-static Mix_Music *audio_name_music(const char *name)
+static bool audio_name_music(const char *name, ALint *out)
 {
     khiter_t k = kh_get(music, s_music, name);
     if(k == kh_end(s_music))
-        return NULL;
-    return kh_value(s_music, k);
+        return false;
+    *out = kh_value(s_music, k).buffer;
+    return true;
 }
 
 static void audio_next_music_track(void)
 {
     const char *tracks[kh_size(s_music)];
     size_t ntracks = Audio_GetAllMusic(ARR_SIZE(tracks), tracks);
-    const char *curr = audio_music_name(s_playing);
+
+    ALint play_buffer = 0;
+    alGetSourcei(s_music_source, AL_BUFFER, &play_buffer);
+
+    const char *curr = audio_music_name(play_buffer);
+    const char *next = curr;
 
     int curr_idx = -1;
     for(int i = 0; i < ntracks; i++) {
@@ -257,39 +375,31 @@ static void audio_next_music_track(void)
         break;
     case MUSIC_MODE_PLAYLIST: {
         int next_idx = (curr_idx + 1) % ntracks;
-        s_playing = audio_name_music(tracks[next_idx]);
+        next = tracks[next_idx];
         break;
     }
     case MUSIC_MODE_SHUFFLE: {
         if(ntracks > 0) {
             tracks[curr_idx] = tracks[--ntracks];
             int next_idx = rand() % ntracks;
-            s_playing = audio_name_music(tracks[next_idx]);
+            next = tracks[next_idx];
         }
         break;
     }
     default: assert(0);
     }
 
-    Mix_PlayMusic(s_playing, 1);
-}
-
-static void audio_music_finished(void)
-{
-    s_chan_ctx.music_finished = true;
-}
-
-static void audio_chan_finished(int channel)
-{
-    s_chan_ctx.chan_finished[channel] = true;
+    Audio_PlayMusic(next);
 }
 
 static void audio_on_update(void *user, void *event)
 {
-    if(s_chan_ctx.music_finished) {
+    ALint src_state;
+    alGetSourcei(s_music_source, AL_SOURCE_STATE, &src_state);
+
+    if(src_state == AL_STOPPED) {
         audio_next_music_track();
     }
-    memset(&s_chan_ctx, 0, sizeof(s_chan_ctx));
 }
 
 static int compare_strings(const void* a, const void* b)
@@ -305,24 +415,30 @@ static int compare_strings(const void* a, const void* b)
 
 bool Audio_Init(void)
 {
-    if(Mix_OpenAudio(MIX_DEFAULT_FREQUENCY, MIX_DEFAULT_FORMAT, 2, 2048) < 0)
+    if(NULL == (s_device = alcOpenDevice(NULL)))
         goto fail_open;
+
+    if(NULL == (s_context = alcCreateContext(s_device, NULL)))
+        goto fail_context;
+    alcMakeContextCurrent(s_context);
 
     if(NULL == (s_music = kh_init(music)))
         goto fail_music_table;
 
     audio_index_directory("assets/music");
     audio_create_settings();
-
-    Mix_HookMusicFinished(audio_music_finished);
-    Mix_ChannelFinished(audio_chan_finished);
+    audio_create_music_source(&s_music_source);
+    alListenerf(AL_GAIN, s_volume);
 
     E_Global_Register(SDL_WINDOWEVENT, audio_window_event, NULL, G_ALL);
     E_Global_Register(EVENT_UPDATE_START, audio_on_update, NULL, G_ALL);
     return true;
 
 fail_music_table:
-    Mix_CloseAudio();
+    alcMakeContextCurrent(NULL);
+    alcDestroyContext(s_context);
+fail_context:
+    alcCloseDevice(s_device);
 fail_open:
     return false;
 }
@@ -330,47 +446,45 @@ fail_open:
 void Audio_Shutdown(void)
 {
     const char *name;
-    Mix_Music *curr;
+    struct al_music curr;
+
+    alSourceStop(s_music_source);
+    alDeleteSources(1, &s_music_source);
 
     kh_foreach(s_music, name, curr, {
         free((void*)name);
-        Mix_FreeMusic(curr);
+        audio_free_buffer(&curr);
     });
     kh_destroy(music, s_music);
 
     E_Global_Unregister(SDL_WINDOWEVENT, audio_window_event);
     E_Global_Unregister(EVENT_UPDATE_START, audio_on_update);
 
-    Mix_CloseAudio();
+    alcMakeContextCurrent(NULL);
+    alcDestroyContext(s_context);
+    alcCloseDevice(s_device);
 }
 
 bool Audio_PlayMusic(const char *name)
 {
+    ALint src_state;
+    alGetSourcei(s_music_source, AL_SOURCE_STATE, &src_state);
+
     if(name == NULL) {
-        if(s_playing) {
-            Mix_FadeOutMusic(1000);
-        }
-        s_playing = NULL;
+        alSourceStop(s_music_source);
+        alSourcei(s_music_source, AL_BUFFER, 0);
         return true;
     }
 
-    khiter_t k = kh_get(music, s_music, name);
-    if(k == kh_end(s_music))
+    ALint play_buffer = 0;
+    if(!audio_name_music(name, &play_buffer))
         return false;
 
-    Mix_HookMusicFinished(NULL);
-    Mix_ChannelFinished(NULL);
+    alSourceStop(s_music_source);
+    alSourcei(s_music_source, AL_BUFFER, play_buffer);
+    alSourcePlay(s_music_source);
 
-    if(s_playing) {
-        Mix_FadeOutMusic(1000);
-    }
-
-    s_playing = kh_value(s_music, k);
-    Mix_FadeInMusic(s_playing, 1, 1000);
-
-    Mix_HookMusicFinished(audio_music_finished);
-    Mix_ChannelFinished(audio_chan_finished);
-
+    AL_ASSERT_OK();
     return true;
 }
 
@@ -380,7 +494,7 @@ size_t Audio_GetAllMusic(size_t maxout, const char *out[static maxout])
     size_t ntracks = 0;
 
     const char *name;
-    kh_foreach(s_music, name, (Mix_Music*){NULL}, {
+    kh_foreach(s_music, name, (struct al_music){0}, {
         tracks[ntracks++] = name;
     });
     qsort(tracks, ntracks, sizeof(const char*), compare_strings);
@@ -392,8 +506,8 @@ size_t Audio_GetAllMusic(size_t maxout, const char *out[static maxout])
 
 const char *Audio_CurrMusic(void)
 {
-    if(!s_playing)
-        return NULL;
-    return audio_music_name(s_playing);
+    ALint play_buffer = 0;
+    alGetSourcei(s_music_source, AL_BUFFER, &play_buffer);
+    return audio_music_name(play_buffer);
 }
 
