@@ -975,7 +975,7 @@ bool G_LoadMap(SDL_RWops *stream, bool update_navgrid)
     g_init_map();
     M_AL_ShallowCopy((struct map*)s_gs.prev_tick_map, s_gs.map);
 
-    E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
+    E_Global_Notify(EVENT_NEW_GAME, s_gs.map, ES_ENGINE);
 
 #if CONFIG_USE_BATCH_RENDERING
     struct map_resolution res;

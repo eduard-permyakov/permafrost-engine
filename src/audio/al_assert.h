@@ -36,12 +36,13 @@
 #ifndef AL_ASSERT_H
 #define AL_ASSERT_H
 
+#include "al_private.h"
+
 #include <assert.h>
 #include <AL/al.h>
 
 #ifndef NDEBUG
 
-const char *Audio_ErrString(ALenum err);
 #define AL_ASSERT_OK()                                              \
     do {                                                            \
         ALenum error = alGetError();                                \

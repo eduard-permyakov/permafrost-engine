@@ -33,28 +33,12 @@
  *
  */
 
-#ifndef AUDIO_H
-#define AUDIO_H
+#ifndef AL_PRIVATE_H
+#define AL_PRIVATE_H
 
-#include "../../pf_math.h"
+#include <AL/al.h>
 
-#include <stdbool.h>
-#include <stddef.h>
-
-struct map;
-
-enum playback_mode{
-    MUSIC_MODE_LOOP,
-    MUSIC_MODE_PLAYLIST,
-    MUSIC_MODE_SHUFFLE,
-};
-
-bool        Audio_Init(void);
-void        Audio_Shutdown(void);
-bool        Audio_PlayMusic(const char *name);
-bool        Audio_PlayPositionalEffect(const char *name, vec3_t pos);
-size_t      Audio_GetAllMusic(size_t maxout, const char *out[static maxout]);
-const char *Audio_CurrMusic(void);
+const char *Audio_ErrString(ALenum err);
 
 #endif
 

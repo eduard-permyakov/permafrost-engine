@@ -680,8 +680,10 @@
         while(sib) {                                                                            \
             qt_node(name) *sib_node = mp_##name##_entry(&qt->node_pool, sib);                   \
             if(sib_node->depth != node->depth || sib_node->parent != node->parent) {            \
-                printf("Mismatching sibling depths/parents for node (%f, %f) [%d] and its' sibling (%f, %f) [%d]\n", \
-                    node->x, node->y, (int)node->depth, sib_node->x, sib_node->y, (int)sib_node->depth); \
+                printf("Mismatching sibling depths/parents for node (%f, %f) [%d] "             \
+                       "and its' sibling (%f, %f) [%d]\n",                                      \
+                    node->x, node->y, (int)node->depth, sib_node->x, sib_node->y,               \
+                        (int)sib_node->depth);                                                  \
                 qt_##name##_print(qt);                                                          \
                 fflush(stdout);                                                                 \
             }                                                                                   \
@@ -693,8 +695,10 @@
         if(node->parent) {                                                                      \
             qt_node(name) *parent = mp_##name##_entry(&qt->node_pool, node->parent);            \
             if(node->depth - parent->depth != 1) {                                              \
-                printf("Mismatching depths for node (%f, %f) [%d] and its' parent (%f, %f) [%d]\n", \
-                    node->x, node->y, (int)node->depth, parent->x, parent->y, (int)parent->depth); \
+                printf("Mismatching depths for node (%f, %f) [%d] and its' parent (%f, %f) "    \
+                       "[%d]\n",                                                                \
+                    node->x, node->y, (int)node->depth, parent->x, parent->y,                   \
+                        (int)parent->depth);                                                    \
                 qt_##name##_print(qt);                                                          \
                 fflush(stdout);                                                                 \
             }                                                                                   \

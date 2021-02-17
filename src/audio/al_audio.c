@@ -34,6 +34,7 @@
  */
 
 #include "public/audio.h"
+#include "al_effect.h"
 #include "al_assert.h"
 #include "../main.h"
 #include "../event.h"
@@ -57,7 +58,7 @@
 #define MAX_CHANNELS    (16)
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
-#define HEARING_RANGE   (155.0f)
+#define HEARING_RANGE   (165.0f)
 #define EPSILON         (1.0f/1024)
 
 struct al_buffer{
@@ -465,6 +466,9 @@ bool Audio_Init(void)
     if(NULL == (s_effects = kh_init(buffer)))
         goto fail_effects_table;
 
+    if(!Audio_Effect_Init())
+        goto fail_effects;
+
     audio_index_directory("assets/music", s_music);
     audio_index_directory("assets/sounds", s_effects);
     audio_create_settings();
@@ -476,6 +480,8 @@ bool Audio_Init(void)
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     return true;
 
+fail_effects:
+    kh_destroy(buffer, s_effects);
 fail_effects_table:
     kh_destroy(buffer, s_music);
 fail_music_table:
@@ -510,6 +516,8 @@ void Audio_Shutdown(void)
     E_Global_Unregister(SDL_WINDOWEVENT, audio_window_event);
     E_Global_Unregister(EVENT_UPDATE_START, audio_on_update);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
+
+    Audio_Effect_Shutdown();
 
     alcMakeContextCurrent(NULL);
     alcDestroyContext(s_context);
