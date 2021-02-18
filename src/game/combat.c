@@ -402,7 +402,7 @@ static bool entity_dead(const struct entity *ent)
 
 static void on_20hz_tick(void *user, void *event)
 {
-    PERF_ENTER();
+    Perf_Push("combat::on_20hz_tick");
 
     uint32_t key;
     kh_foreach(s_entity_state_table, key, (struct combatstate){0}, {
@@ -579,7 +579,7 @@ static void on_20hz_tick(void *user, void *event)
         };
     
     });
-    PERF_RETURN_VOID();
+    Perf_Pop();
 }
 
 static void on_mousedown(void *user, void *event)

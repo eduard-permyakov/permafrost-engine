@@ -659,7 +659,7 @@ static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struc
 
     struct entity *ents[MAX_ENTS_PER_CHUNK];
     size_t num_ents = G_Pos_EntsInRect(
-        (vec2_t){bounds.x_min - SEARCH_BUFFER, bounds.z_min + SEARCH_BUFFER},
+        (vec2_t){bounds.x_min - SEARCH_BUFFER, bounds.z_min - SEARCH_BUFFER},
         (vec2_t){bounds.x_max + SEARCH_BUFFER, bounds.z_max + SEARCH_BUFFER},
         ents, ARR_SIZE(ents)
     );

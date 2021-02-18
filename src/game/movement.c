@@ -1474,7 +1474,7 @@ static void clearpath_submit_work(void)
 
 static void on_20hz_tick(void *user, void *event)
 {
-    PERF_ENTER();
+    Perf_Push("movement::on_20hz_tick");
 
     uint32_t key;
     struct entity *curr;
@@ -1534,7 +1534,7 @@ static void on_20hz_tick(void *user, void *event)
     clearpath_submit_work();
     clearpath_finish_work();
 
-    PERF_RETURN_VOID();
+    Perf_Pop();
 }
 
 /*****************************************************************************/
