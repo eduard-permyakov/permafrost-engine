@@ -90,6 +90,13 @@ uniform material materials[MAX_MATERIALS];
 float shadow_factor(vec4 light_space_pos)
 {
     vec3 proj_coords = (light_space_pos.xyz / light_space_pos.w) * 0.5 + 0.5;
+    if(proj_coords.x < 0 || proj_coords.x >= textureSize(shadow_map, 0).x)
+        return 0.0;
+    if(proj_coords.y < 0 || proj_coords.y >= textureSize(shadow_map, 0).y)
+        return 0.0;
+    if(proj_coords.z > 0.95)
+        return 0.0;
+
     float closest_depth = texture(shadow_map, proj_coords.xy).r;
     float current_depth = proj_coords.z;
     if(current_depth - SHADOW_MAP_BIAS > closest_depth) {

@@ -255,6 +255,13 @@ vec4 bilinear_interp_vec4
 float shadow_factor(vec4 light_space_pos)
 {
     vec3 proj_coords = (light_space_pos.xyz / light_space_pos.w) * 0.5 + 0.5;
+    if(proj_coords.x < 0 || proj_coords.x >= textureSize(shadow_map, 0).x)
+        return 0.0;
+    if(proj_coords.y < 0 || proj_coords.y >= textureSize(shadow_map, 0).y)
+        return 0.0;
+    if(proj_coords.z > 0.95)
+        return 0.0;
+
     float closest_depth = texture(shadow_map, proj_coords.xy).r;
     float current_depth = proj_coords.z;
     if(current_depth - SHADOW_MAP_BIAS > closest_depth) {
@@ -266,9 +273,16 @@ float shadow_factor(vec4 light_space_pos)
 
 float shadow_factor_pcf(vec4 light_space_pos)
 {
+    vec3 proj_coords = (light_space_pos.xyz / light_space_pos.w) * 0.5 + 0.5;
+    if(proj_coords.x < 0 || proj_coords.x >= textureSize(shadow_map, 0).x)
+        return 0.0;
+    if(proj_coords.y < 0 || proj_coords.y >= textureSize(shadow_map, 0).y)
+        return 0.0;
+    if(proj_coords.z > 0.95)
+        return 0.0;
+
     float shadow = 0.0;
     vec2 texel_size = 1.0 / textureSize(shadow_map, 0);
-    vec3 proj_coords = (light_space_pos.xyz / light_space_pos.w) * 0.5 + 0.5;
     float current_depth = proj_coords.z;
 
     for(int x = -1; x <= 1; x++) {
@@ -292,6 +306,13 @@ float shadow_factor_poisson(vec4 light_space_pos)
     );
 
     vec3 proj_coords = (light_space_pos.xyz / light_space_pos.w) * 0.5 + 0.5;
+    if(proj_coords.x < 0 || proj_coords.x >= textureSize(shadow_map, 0).x)
+        return 0.0;
+    if(proj_coords.y < 0 || proj_coords.y >= textureSize(shadow_map, 0).y)
+        return 0.0;
+    if(proj_coords.z > 0.95)
+        return 0.0;
+
     float current_depth = proj_coords.z;
     float closest_depth = texture(shadow_map, proj_coords.xy).r;
     float shadow = (current_depth - SHADOW_MAP_BIAS > closest_depth) ? 1.0 : 0.0;
