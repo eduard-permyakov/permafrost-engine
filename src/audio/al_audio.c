@@ -80,7 +80,8 @@ static khash_t(buffer)       *s_effects;
 static ALuint                 s_music_source;
 
 static bool                   s_mute_on_focus_loss = false;
-static ALfloat                s_volume = 0.5f;
+static ALfloat                s_master_volume = 0.5f;
+static ALfloat                s_music_volume = 0.5f;
 static enum playback_mode     s_music_mode = MUSIC_MODE_PLAYLIST;
 
 /*****************************************************************************/
@@ -146,7 +147,7 @@ static void audio_create_music_source(ALuint *src)
 {
     alGenSources(1, src);
     alSourcef(*src, AL_PITCH, 1);
-    alSourcef(*src, AL_GAIN, 1.0f);
+    alSourcef(*src, AL_GAIN, s_music_volume);
     alSource3f(*src, AL_POSITION, 0, 0, 0);
     alSource3f(*src, AL_VELOCITY, 0, 0, 0);
     alSourcei(*src, AL_LOOPING, AL_FALSE);
@@ -210,10 +211,18 @@ static bool audio_volume_validate(const struct sval *val)
     return true;
 }
 
-static void audio_volume_commit(const struct sval *val)
+static void audio_master_volume_commit(const struct sval *val)
 {
-    s_volume = val->as_float;
-    alListenerf(AL_GAIN, s_volume);
+    s_master_volume = val->as_float;
+    alListenerf(AL_GAIN, s_master_volume);
+    AL_ASSERT_OK();
+}
+
+static void audio_music_volume_commit(const struct sval *val)
+{
+    s_music_volume = val->as_float;
+    alSourcef(s_music_source, AL_GAIN, s_music_volume);
+    AL_ASSERT_OK();
 }
 
 static bool audio_bool_validate(const struct sval *val)
@@ -246,14 +255,26 @@ static void audio_create_settings(void)
     (void)status;
 
     status = Settings_Create((struct setting){
-        .name = "pf.audio.music_volume",
+        .name = "pf.audio.master_volume",
         .val = (struct sval) {
             .type = ST_TYPE_FLOAT,
-            .as_float = s_volume
+            .as_float = s_master_volume
         },
         .prio = 0,
         .validate = audio_volume_validate,
-        .commit = audio_volume_commit,
+        .commit = audio_master_volume_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.audio.music_volume",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = s_music_volume
+        },
+        .prio = 0,
+        .validate = audio_volume_validate,
+        .commit = audio_music_volume_commit,
     });
     assert(status == SS_OKAY);
 
@@ -305,7 +326,7 @@ static void audio_window_event(void *user, void *arg)
         alListenerf(AL_GAIN, 0.0f);
         break;
     case SDL_WINDOWEVENT_FOCUS_GAINED:
-        alListenerf(AL_GAIN, s_volume);
+        alListenerf(AL_GAIN, s_master_volume);
         break;
     }
 }
@@ -467,11 +488,13 @@ bool Audio_Init(void)
     if(!Audio_Effect_Init())
         goto fail_effects;
 
+    audio_create_music_source(&s_music_source);
+    alListenerf(AL_GAIN, s_master_volume);
+
     audio_index_directory("assets/music", s_music);
     audio_index_directory("assets/sounds", s_effects);
+
     audio_create_settings();
-    audio_create_music_source(&s_music_source);
-    alListenerf(AL_GAIN, s_volume);
 
     E_Global_Register(SDL_WINDOWEVENT, audio_window_event, NULL, G_ALL);
     E_Global_Register(EVENT_UPDATE_START, audio_on_update, NULL, G_ALL);

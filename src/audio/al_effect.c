@@ -40,6 +40,7 @@
 #include "../event.h"
 #include "../entity.h"
 #include "../perf.h"
+#include "../settings.h"
 #include "../game/public/game.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
@@ -79,6 +80,7 @@ QUADTREE_IMPL(static, effect, struct al_effect)
 static vec_effect_t     s_effects;
 static qt_effect_t      s_effect_tree;
 static vec_effect_t     s_active;
+static ALfloat          s_effect_volume = 5.0f;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -214,6 +216,7 @@ static void on_update_start(void *user, void *event)
     for(int i = 0; i < vec_size(&added); i++) {
         struct al_effect *curr = &added.array[i];
         audio_advance(curr);
+        alSourcef(curr->source, AL_GAIN, s_effect_volume);
         alSourcePlay(curr->source);
         /* We couldn't play the source - possibly due to hitting 
          * the maximum source limit on our hardware. Keep huffing 
@@ -291,6 +294,43 @@ static void on_1hz_tick(void *user, void *event)
     Perf_Pop();
 }
 
+static bool audio_volume_validate(const struct sval *val)
+{
+    if(val->type != ST_TYPE_FLOAT)
+        return false;
+    if(val->as_float < 0.0f || val->as_float > 10.0f)
+        return false;
+    return true;
+}
+
+static void audio_effect_volume_commit(const struct sval *val)
+{
+    s_effect_volume = val->as_float;
+
+    for(int i = 0; i < vec_size(&s_active); i++) {
+        const struct al_effect *curr = &vec_AT(&s_active, i);
+        alSourcef(curr->source, AL_GAIN, s_effect_volume);
+    }
+}
+
+static void audio_create_settings(void)
+{
+    ss_e status;
+    (void)status;
+
+    status = Settings_Create((struct setting){
+        .name = "pf.audio.effect_volume",
+        .val = (struct sval) {
+            .type = ST_TYPE_FLOAT,
+            .as_float = s_effect_volume
+        },
+        .prio = 0,
+        .validate = audio_volume_validate,
+        .commit = audio_effect_volume_commit,
+    });
+    assert(status == SS_OKAY);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -316,6 +356,7 @@ bool Audio_Effect_Init(void)
     if(!vec_effect_resize(&s_effects, 64))
         goto fail_active;
 
+    audio_create_settings();
     E_Global_Register(EVENT_NEW_GAME, on_new_game, NULL, G_ALL);
     E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_ALL);
     E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL, G_ALL);
@@ -360,14 +401,12 @@ bool Audio_Effect_Add(vec3_t pos, const char *track)
     alGenSources(1, &source);
 
     alSourcef(source, AL_PITCH, 1);
-    alSourcef(source, AL_GAIN, 1.0f);
+    alSourcef(source, AL_GAIN, s_effect_volume);
     alSource3f(source, AL_POSITION, pos.x, pos.y, pos.z);
     alSource3f(source, AL_VELOCITY, 0, 0, 0);
     alSourcei(source, AL_LOOPING, AL_FALSE);
     alSourcei(source, AL_BUFFER, buffer);
     AL_ASSERT_OK();
-
-    //TODO: add other params here controlling the drop-off/attenuation
 
     uint32_t start_tick = SDL_GetTicks();
     float duration = Audio_BufferDuration(buffer);
