@@ -1229,22 +1229,28 @@ void G_Update(void)
         if(s_gs.ss == G_RUNNING && curr->flags & ENTITY_FLAG_ANIMATED)
             A_Update(curr);
 
-        bool vis = false;
         struct obb obb;
         Entity_CurrentOBB(curr, &obb, false);
+        bool vis_checked = false;
+        bool vis = false;
 
         /* Note that there may be some false positives due to using the fast frustum cull. */
-        if(C_FrustumOBBIntersectionFast(&cam_frust, &obb) != VOLUME_INTERSEC_OUTSIDE
-        && (vis = g_ent_visible(pm, curr, &obb))) {
-
-            vec_pentity_push(&s_gs.visible, curr);
-            vec_obb_push(&s_gs.visible_obbs, obb);
+        if(C_FrustumOBBIntersectionFast(&cam_frust, &obb) != VOLUME_INTERSEC_OUTSIDE) {
+            vis = g_ent_visible(pm, curr, &obb);
+            vis_checked = true;
+            if(vis) {
+                vec_pentity_push(&s_gs.visible, curr);
+                vec_obb_push(&s_gs.visible_obbs, obb);
+            }
         }
 
-        if(C_FrustumOBBIntersectionFast(&light_frust, &obb) != VOLUME_INTERSEC_OUTSIDE 
-        && (vis || !(curr->flags & ENTITY_FLAG_MOVABLE))) {
-
-            vec_pentity_push(&s_gs.light_visible, curr);
+        if(C_FrustumOBBIntersectionFast(&light_frust, &obb) != VOLUME_INTERSEC_OUTSIDE) {
+            if(!vis_checked) {
+                vis = g_ent_visible(pm, curr, &obb);
+            }
+            if(vis || !(curr->flags & ENTITY_FLAG_MOVABLE)) {
+                vec_pentity_push(&s_gs.light_visible, curr);
+            }
         }
     });
 
