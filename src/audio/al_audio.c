@@ -57,8 +57,8 @@
 
 #define MAX_CHANNELS    (16)
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
+#define MAX(a, b)       ((a) > (b) ? (a) : (b))
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
-#define HEARING_RANGE   (165.0f)
 #define EPSILON         (1.0f/1024)
 
 struct al_buffer{
@@ -388,7 +388,7 @@ static void audio_update_listener(void)
             cam_dir.y = 0.0f;
             if(PFM_Vec3_Len(&cam_dir) > EPSILON)
                 PFM_Vec3_Normal(&cam_dir, &cam_dir);
-            PFM_Vec3_Scale(&cam_dir, 40.0f, &cam_dir);
+            PFM_Vec3_Scale(&cam_dir, 45.0f, &cam_dir);
             PFM_Vec3_Add(&listener_pos, &cam_dir, &listener_pos);
         }
     }
@@ -427,9 +427,7 @@ static void on_render_3d(void *user, void *event)
     if(!G_MapLoaded())
         return;
 
-    vec2_t pos = {0};
-    alGetListener3f(AL_POSITION, &pos.x, &(ALfloat){0}, &pos.z);
-
+    vec2_t pos = Audio_ListenerPosXZ();
     const float radius = HEARING_RANGE;
     const float width = 0.5f;
     vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
@@ -501,6 +499,8 @@ void Audio_Shutdown(void)
     alSourceStop(s_music_source);
     alDeleteSources(1, &s_music_source);
 
+    Audio_Effect_Shutdown();
+
     kh_foreach(s_music, name, curr, {
         free((void*)name);
         audio_free_buffer(&curr);
@@ -516,8 +516,6 @@ void Audio_Shutdown(void)
     E_Global_Unregister(SDL_WINDOWEVENT, audio_window_event);
     E_Global_Unregister(EVENT_UPDATE_START, audio_on_update);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
-
-    Audio_Effect_Shutdown();
 
     alcMakeContextCurrent(NULL);
     alcDestroyContext(s_context);
@@ -592,5 +590,37 @@ const char *Audio_ErrString(ALenum err)
     default: assert(0);
     }
     return ret;
+}
+
+bool Audio_GetEffectBuffer(const char *name, ALuint *out)
+{
+    khiter_t k = kh_get(buffer, s_effects, name);
+    if(k == kh_end(s_effects))
+        return false;
+    *out = kh_value(s_effects, k).buffer;
+    return true;
+}
+
+vec2_t Audio_ListenerPosXZ(void)
+{
+    vec2_t pos = {0};
+    alGetListener3f(AL_POSITION, &pos.x, &(ALfloat){0}, &pos.z);
+    return pos;
+}
+
+float Audio_BufferDuration(ALuint buffer)
+{
+    ALint nbytes;
+    ALint channels;
+    ALint bits;
+    ALint freq;
+
+    alGetBufferi(buffer, AL_SIZE, &nbytes);
+    alGetBufferi(buffer, AL_CHANNELS, &channels);
+    alGetBufferi(buffer, AL_BITS, &bits);
+    alGetBufferi(buffer, AL_FREQUENCY, &freq);
+
+    size_t nsamples = nbytes * 8 / (channels * bits);
+    return nsamples / ((float)freq);
 }
 

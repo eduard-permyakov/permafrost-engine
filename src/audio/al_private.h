@@ -36,9 +36,16 @@
 #ifndef AL_PRIVATE_H
 #define AL_PRIVATE_H
 
+#include "../pf_math.h"
 #include <AL/al.h>
 
+#define HEARING_RANGE   (165.0f)
+
 const char *Audio_ErrString(ALenum err);
+bool        Audio_GetEffectBuffer(const char *name, ALuint *out);
+vec2_t      Audio_ListenerPosXZ(void);
+float       Audio_BufferDuration(ALuint buffer);
+
 
 #endif
 

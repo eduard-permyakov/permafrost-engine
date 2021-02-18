@@ -83,6 +83,11 @@ static bool any_ent(const struct entity *ent, void *arg)
     return true;
 }
 
+static bool uids_equal(const uint32_t *a, const uint32_t *b)
+{
+    return (*a == *b);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -183,7 +188,7 @@ bool G_Pos_Init(const struct map *map)
     float zmin = center.z - (res.tile_h * res.chunk_h * Z_COORDS_PER_TILE) / 2.0f;
     float zmax = center.z + (res.tile_h * res.chunk_h * Z_COORDS_PER_TILE) / 2.0f;
 
-    qt_ent_init(&s_postree, xmin, xmax, zmin, zmax);
+    qt_ent_init(&s_postree, xmin, xmax, zmin, zmax, uids_equal);
     if(!qt_ent_reserve(&s_postree, POSBUF_INIT_SIZE)) {
         kh_destroy(pos, s_postable);
         return false;

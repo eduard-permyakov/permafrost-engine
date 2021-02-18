@@ -188,6 +188,7 @@ static PyObject *PyPf_ents_in_rect(PyObject *self, PyObject *args, PyObject *kwa
 static PyObject *PyPf_play_music(PyObject *self, PyObject *args);
 static PyObject *PyPf_curr_music(PyObject *self);
 static PyObject *PyPf_get_all_music(PyObject *self);
+static PyObject *PyPf_play_effect(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -620,6 +621,11 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_get_all_music, METH_NOARGS,
     "Get a list of all the currently loaded music track names."},
 
+    {"play_effect",
+    (PyCFunction)PyPf_play_effect, METH_VARARGS,
+    "Play a specified audio effect at the specified (X, Y, Z) position. The name must be a name of a WAV file in the "
+    "'assets/sounds' folder, without the file extension."},
+
     {NULL}  /* Sentinel */
 };
 
@@ -697,14 +703,11 @@ static PyObject *PyPf_load_map_string(PyObject *self, PyObject *args, PyObject *
 
 static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args)
 {
-    PyObject *tuple;
     vec3_t color;
-
-    if(!PyArg_ParseTuple(args, "O!", &PyTuple_Type, &tuple))
-        return NULL; /* exception already set */
-
-    if(!PyArg_ParseTuple(tuple, "fff", &color.x, &color.y, &color.z))
-        return NULL; /* exception already set */
+    if(!PyArg_ParseTuple(args, "(fff)", &color.x, &color.y, &color.z)) {
+        PyErr_SetString(PyExc_TypeError, "Arugment must be a tuple of 3 floats.");
+        return NULL;
+    }
 
     R_PushCmd((struct rcmd){
         .func = R_GL_SetAmbientLightColor,
@@ -716,14 +719,11 @@ static PyObject *PyPf_set_ambient_light_color(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_set_emit_light_color(PyObject *self, PyObject *args)
 {
-    PyObject *tuple;
     vec3_t color;
-
-    if(!PyArg_ParseTuple(args, "O!", &PyTuple_Type, &tuple))
-        return NULL; /* exception already set */
-
-    if(!PyArg_ParseTuple(tuple, "fff", &color.x, &color.y, &color.z))
-        return NULL; /* exception already set */
+    if(!PyArg_ParseTuple(args, "(fff)", &color.x, &color.y, &color.z)) {
+        PyErr_SetString(PyExc_TypeError, "Arugment must be a tuple of 3 floats.");
+        return NULL;
+    }
 
     R_PushCmd((struct rcmd){
         .func = R_GL_SetLightEmitColor,
@@ -772,14 +772,11 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwarg
 
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)
 {
-    PyObject *tuple;
     vec3_t pos;
-
-    if(!PyArg_ParseTuple(args, "O!", &PyTuple_Type, &tuple))
-        return NULL; /* exception already set */
-
-    if(!PyArg_ParseTuple(tuple, "fff", &pos.x, &pos.y, &pos.z))
-        return NULL; /* exception already set */
+    if(!PyArg_ParseTuple(args, "(fff)", &pos.x, &pos.y, &pos.z)) {
+        PyErr_SetString(PyExc_TypeError, "Arugment must be a tuple of 3 floats.");
+        return NULL;
+    }
 
     G_SetLightPos(pos);
     Py_RETURN_NONE;
@@ -2573,6 +2570,23 @@ static PyObject *PyPf_get_all_music(PyObject *self)
         PyList_SET_ITEM(ret, i, str);
     }
     return ret;
+}
+
+static PyObject *PyPf_play_effect(PyObject *self, PyObject *args)
+{
+    vec3_t pos;
+    const char *name;
+
+    if(!PyArg_ParseTuple(args, "s(fff)", &name, &pos.x, &pos.y, &pos.z)) {
+        PyErr_SetString(PyExc_TypeError, "Arugment must be a string (name) and a tuple of 3 floats (position).");
+        return NULL;
+    }
+
+    if(!Audio_Effect_Add(pos, name)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to play the specified effect at the specified position.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
 }
 
 /*****************************************************************************/

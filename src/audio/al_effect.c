@@ -33,8 +33,13 @@
  *
  */
 
+#include "al_effect.h"
+#include "al_private.h"
+#include "al_assert.h"
 #include "../pf_math.h"
 #include "../event.h"
+#include "../entity.h"
+#include "../perf.h"
 #include "../game/public/game.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
@@ -43,14 +48,21 @@
 
 #include <stdint.h>
 #include <assert.h>
+#include <stdlib.h>
 
 #include <AL/al.h>
 #include <AL/alc.h>
 
+
+#define MIN(a, b)       ((a) < (b) ? (a) : (b))
+#define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
+
 struct al_effect{
+    uint32_t uid;
     vec3_t   pos;
     uint32_t start_tick;
-    ALuint   buffer;
+    uint32_t end_tick;
+    ALuint   source;
 };
 
 VEC_TYPE(effect, struct al_effect)
@@ -71,6 +83,164 @@ static vec_effect_t     s_active;
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static bool effects_equal(const struct al_effect *a, const struct al_effect *b)
+{
+    return (a->uid == b->uid);
+}
+
+static int compare_effects(const void* a, const void* b)
+{
+    struct al_effect *effa = (struct al_effect*)a;
+    struct al_effect *effb = (struct al_effect*)b;
+    return (effa->uid - effb->uid);
+}
+
+static uint32_t ticks_delta(uint32_t a, uint32_t b)
+{
+    uint32_t ret;
+    if(b > a) {
+        ret = b - a;
+    }else{
+        ret = (UINT32_MAX - a) + b;
+    }
+    return ret;
+}
+
+static void audio_update_active_set(vec_effect_t *active)
+{
+    vec_effect_reset(active);
+
+    vec2_t center = Audio_ListenerPosXZ();
+    struct al_effect potential[512];
+    size_t npotential = qt_effect_inrange_circle(&s_effect_tree, center.x, center.z, HEARING_RANGE,
+        potential, ARR_SIZE(potential));
+
+    for(int i = 0; i < npotential; i++) {
+
+        const struct al_effect *curr = &potential[i];
+        vec2_t xz_pos = (vec2_t){curr->pos.x, curr->pos.z};
+        if(!G_Fog_PlayerVisible(xz_pos))
+            continue;
+
+        if(SDL_TICKS_PASSED(SDL_GetTicks(), curr->end_tick))
+            continue;
+
+        vec_effect_push(active, potential[i]);
+    }
+}
+
+static void audio_advance(const struct al_effect *effect)
+{
+    ALint state;
+    alGetSourcei(effect->source, AL_SOURCE_STATE, &state);
+    assert(state == AL_INITIAL);
+
+    uint32_t curr = SDL_GetTicks();
+    uint32_t elapsed = ticks_delta(effect->start_tick, curr);
+    uint32_t total = ticks_delta(effect->start_tick, effect->end_tick);
+
+    ALint buffer;
+    alGetSourcei(effect->source, AL_BUFFER, &buffer);
+
+    ALint nbytes, channels, bits;
+    alGetBufferi(buffer, AL_SIZE, &nbytes);
+    alGetBufferi(buffer, AL_CHANNELS, &channels);
+    alGetBufferi(buffer, AL_BITS, &bits);
+    const size_t nsamples = nbytes * 8 / (channels * bits);
+
+    ALint sample_offset = ((float)elapsed) / total;
+    sample_offset = MIN(sample_offset, nsamples-1);
+    alSourcei(effect->source, AL_SAMPLE_OFFSET, sample_offset);
+    AL_ASSERT_OK();
+}
+
+static void audio_active_difference(vec_effect_t *curr, vec_effect_t *prev,
+                                    vec_effect_t *added, vec_effect_t *removed)
+{
+    vec_effect_reset(added);
+    vec_effect_reset(removed);
+
+    size_t n = vec_size(curr);
+    size_t m = vec_size(prev);
+
+    qsort(curr->array, n, sizeof(struct al_effect), compare_effects);
+    qsort(prev->array, m, sizeof(struct al_effect), compare_effects);
+
+    /* use the algorithm for finding the symmetric difference 
+     * of two sorted arrays: */
+
+    size_t nchanged = 0;
+    int i = 0, j = 0;
+    while(i < n && j < m) {
+
+        if(curr->array[i].uid < prev->array[j].uid) {
+            vec_effect_push(added, curr->array[i]);
+            i++;
+        }else if(prev->array[j].uid < curr->array[i].uid) {
+            vec_effect_push(removed, prev->array[j]);
+            j++;
+        }else{
+            i++;
+            j++;
+        }
+    }
+
+    while(i < n) {
+        vec_effect_push(added, curr->array[i]);
+        i++;
+    }
+
+    while(j < m) {
+        vec_effect_push(removed, prev->array[j]);
+        j++;
+    }
+}
+
+static void on_update_start(void *user, void *event)
+{
+    Perf_Push("audio_effect::on_update_start");
+
+    vec_effect_t prev, added, removed;
+    vec_effect_init(&prev);
+    vec_effect_init(&added);
+    vec_effect_init(&removed);
+
+    vec_effect_copy(&prev, &s_active);
+
+    audio_update_active_set(&s_active);
+    audio_active_difference(&s_active, &prev, &added, &removed);
+
+    for(int i = 0; i < vec_size(&added); i++) {
+        struct al_effect *curr = &added.array[i];
+        audio_advance(curr);
+        alSourcePlay(curr->source);
+        /* We couldn't play the source - possibly due to hitting 
+         * the maximum source limit on our hardware. Keep huffing 
+         * and puffing along. There unfortunaly doesn't seem to be
+         * a foolproof, portable way to query this limit in OpenAL.
+         */
+        if(alGetError() != AL_NO_ERROR) {
+            alSourceStop(curr->source);
+            int idx = vec_effect_indexof(&s_active, *curr, effects_equal);
+            assert(idx >= 0);
+            vec_effect_del(&s_active, idx);
+        }
+    }
+
+    for(int i = 0; i < vec_size(&removed); i++) {
+        struct al_effect *curr = &removed.array[i];
+        alSourceStop(curr->source);
+        alSourceRewind(curr->source);
+    }
+
+    vec_effect_destroy(&prev);
+    vec_effect_destroy(&added);
+    vec_effect_destroy(&removed);
+
+    AL_ASSERT_OK();
+    Perf_Pop();
+}
 
 static void on_new_game(void *user, void *event)
 {
@@ -93,8 +263,32 @@ static void on_new_game(void *user, void *event)
     float zmax = center.z + (res.tile_h * res.chunk_h * Z_COORDS_PER_TILE) / 2.0f;
 
     qt_effect_destroy(&s_effect_tree);
-    qt_effect_init(&s_effect_tree, xmin, xmax, zmin, zmax);
+    qt_effect_init(&s_effect_tree, xmin, xmax, zmin, zmax, effects_equal);
     qt_effect_reserve(&s_effect_tree, 4096);
+}
+
+static void on_1hz_tick(void *user, void *event)
+{
+    Perf_Push("audio_effect::on_1hz_tick");
+    uint32_t now = SDL_GetTicks();
+
+    for(int i = vec_size(&s_effects)-1; i >= 0; i--) {
+        struct al_effect curr = s_effects.array[i];
+        if(!SDL_TICKS_PASSED(now, curr.end_tick))
+            continue;
+
+        int idx = vec_effect_indexof(&s_active, curr, effects_equal);
+        if(idx != -1)
+            continue;
+
+        alDeleteSources(1, &curr.source);
+        vec_effect_del(&s_effects, i);
+        qt_effect_delete(&s_effect_tree, curr.pos.x, curr.pos.z, curr);
+    }
+
+    assert(s_effect_tree.nrecs == vec_size(&s_effects));
+    AL_ASSERT_OK();
+    Perf_Pop();
 }
 
 /*****************************************************************************/
@@ -114,7 +308,7 @@ bool Audio_Effect_Init(void)
     const float min = -1024.0;
     const float max = 1024.0;
 
-    qt_effect_init(&s_effect_tree, min, max, min, max);
+    qt_effect_init(&s_effect_tree, min, max, min, max, effects_equal);
     if(!qt_effect_reserve(&s_effect_tree, 4096))
         goto fail_tree;
 
@@ -123,6 +317,8 @@ bool Audio_Effect_Init(void)
         goto fail_active;
 
     E_Global_Register(EVENT_NEW_GAME, on_new_game, NULL, G_ALL);
+    E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_ALL);
+    E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL, G_ALL);
     return true;
 
 fail_active:
@@ -135,9 +331,58 @@ fail_vec:
 
 void Audio_Effect_Shutdown(void)
 {
+    for(int i = 0; i < vec_size(&s_active); i++) {
+        struct al_effect *curr = &s_active.array[i];
+        alSourceStop(curr->source);
+    }
+
+    for(int i = 0; i < vec_size(&s_effects); i++) {
+        struct al_effect *curr = &s_effects.array[i];
+        alDeleteSources(1, &curr->source);
+    }
+
     E_Global_Unregister(EVENT_NEW_GAME, on_new_game);
+    E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
+    E_Global_Unregister(EVENT_1HZ_TICK, on_1hz_tick);
+
     vec_effect_destroy(&s_active);
     vec_effect_destroy(&s_effects);
     qt_effect_destroy(&s_effect_tree);
+}
+
+bool Audio_Effect_Add(vec3_t pos, const char *track)
+{
+    ALuint buffer;
+    if(!Audio_GetEffectBuffer(track, &buffer))
+        return false;
+
+    ALuint source;
+    alGenSources(1, &source);
+
+    alSourcef(source, AL_PITCH, 1);
+    alSourcef(source, AL_GAIN, 1.0f);
+    alSource3f(source, AL_POSITION, pos.x, pos.y, pos.z);
+    alSource3f(source, AL_VELOCITY, 0, 0, 0);
+    alSourcei(source, AL_LOOPING, AL_FALSE);
+    alSourcei(source, AL_BUFFER, buffer);
+    AL_ASSERT_OK();
+
+    //TODO: add other params here controlling the drop-off/attenuation
+
+    uint32_t start_tick = SDL_GetTicks();
+    float duration = Audio_BufferDuration(buffer);
+    uint32_t end_tick = start_tick + duration * 1000;
+
+    struct al_effect effect = (struct al_effect) {
+        .uid = Entity_NewUID(),
+        .pos = pos,
+        .start_tick = start_tick,
+        .end_tick = end_tick,
+        .source = source
+    };
+
+    vec_effect_push(&s_effects, effect);
+    qt_effect_insert(&s_effect_tree, pos.x, pos.z, effect);
+    return true;
 }
 

@@ -35,6 +35,7 @@
 
 #include "resource.h"
 #include "game_private.h"
+#include "../event.h"
 #include "../entity.h"
 #include "../collision.h"
 #include "../map/public/map.h"
@@ -210,6 +211,9 @@ void G_Resource_SetAmount(uint32_t uid, int amount)
 {
     struct rstate *rs = rstate_get(uid);
     assert(rs);
+    if(rs->amount != amount) {
+        E_Entity_Notify(EVENT_RESOURCE_AMOUNT_CHANGED, uid, NULL, ES_ENGINE);
+    }
     rs->amount = amount;
 }
 

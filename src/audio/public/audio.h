@@ -55,6 +55,7 @@ bool        Audio_PlayMusic(const char *name);
 bool        Audio_PlayPositionalEffect(const char *name, vec3_t pos);
 size_t      Audio_GetAllMusic(size_t maxout, const char *out[static maxout]);
 const char *Audio_CurrMusic(void);
+bool        Audio_Effect_Add(vec3_t pos, const char *track);
 
 #endif
 

@@ -70,6 +70,7 @@
         size_t   nrecs;                                                                         \
         float xmin, xmax;                                                                       \
         float ymin, ymax;                                                                       \
+        bool     (*comparator)(const type *a, const type *b);                                   \
     } qt_##name##_t;
 
 /***********************************************************************************************/
@@ -105,7 +106,8 @@
                                                                                                 \
     scope bool qt_##name##_init(qt(name) *qt,                                                   \
                                 float xmin, float xmax,                                         \
-                                float ymin, float ymax);                                        \
+                                float ymin, float ymax,                                         \
+                                bool (*comparator)(const type*, const type*));                  \
     scope void qt_##name##_destroy(qt(name) *qt);                                               \
     scope void qt_##name##_clear(qt(name) *qt);                                                 \
     scope bool qt_##name##_insert(qt(name) *qt, float x, float y, type record);                 \
@@ -434,7 +436,7 @@
             curr_node = mp_##name##_entry(&qt->node_pool, curr);                                \
             prev_node = mp_##name##_entry(&qt->node_pool, prev);                                \
                                                                                                 \
-            if(0 == memcmp(&record, &curr_node->record, sizeof(record))) {                      \
+            if(qt->comparator(&record, &curr_node->record)) {                                   \
                 prev_node->sibling_next = curr_node->sibling_next;                              \
                 mp_##name##_free(&qt->node_pool, curr);                                         \
                 --qt->nrecs;                                                                    \
@@ -723,7 +725,8 @@
                                                                                                 \
     scope bool qt_##name##_init(qt(name) *qt,                                                   \
                                 float xmin, float xmax,                                         \
-                                float ymin, float ymax)                                         \
+                                float ymin, float ymax,                                         \
+                                bool (*comparator)(const type*, const type*))                   \
     {                                                                                           \
         mp_##name##_init(&qt->node_pool);                                                       \
         qt->root = 0;                                                                           \
@@ -732,6 +735,7 @@
         qt->xmax = xmax;                                                                        \
         qt->ymin = ymin;                                                                        \
         qt->ymax = ymax;                                                                        \
+        qt->comparator = comparator;                                                            \
         return 0;                                                                               \
     }                                                                                           \
                                                                                                 \
@@ -824,7 +828,7 @@
             return false;                                                                       \
                                                                                                 \
         /* The record isn't in the head */                                                      \
-        if(0 != memcmp(&record, &curr_node->record, sizeof(record)))                            \
+        if(!qt->comparator(&record, &curr_node->record))                                        \
             return _qt_##name##_delete_sib(qt, curr_ref, x, y, record);                         \
                                                                                                 \
         --qt->nrecs;                                                                            \
