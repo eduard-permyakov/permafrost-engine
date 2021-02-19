@@ -113,6 +113,8 @@ static PyObject *PyWindow_property_int(PyObject *self, PyObject *args);
 static PyObject *PyWindow_file_browser(PyWindowObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_slider_float(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_slider_int(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_progress(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_progress_text(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -319,6 +321,14 @@ static PyMethodDef PyWindow_methods[] = {
     {"slider_int", 
     (PyCFunction)PyWindow_slider_int, METH_VARARGS,
     "Present a slider widget with integer precision."},
+
+    {"progress", 
+    (PyCFunction)PyWindow_progress, METH_VARARGS,
+    "Present a progress bar widget with the current value, the maximum value and a 'modifiable' flag."},
+
+    {"progress_text", 
+    (PyCFunction)PyWindow_progress_text, METH_VARARGS,
+    "Like 'progress', but also taking a string and (RGBA) parameters to draw a label over the progress bar."},
 
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
@@ -1267,6 +1277,42 @@ static PyObject *PyWindow_slider_int(PyWindowObject *self, PyObject *args)
     }
 
     nk_slider_int(s_nk_ctx, min, &curr, max, step);
+    return PyInt_FromLong(curr);
+}
+
+static PyObject *PyWindow_progress(PyWindowObject *self, PyObject *args)
+{
+    int curr, max;
+    PyObject *mod;
+
+    if(!PyArg_ParseTuple(args, "iiO", &curr, &max, &mod)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting 3 arguments: curr (int), max (int), "
+            "and modifiable (bool expression)");
+        return NULL;
+    }
+
+    bool modifiable = PyObject_IsTrue(mod);
+    curr = nk_prog(s_nk_ctx, curr, max, modifiable);
+    return PyInt_FromLong(curr);
+}
+
+static PyObject *PyWindow_progress_text(PyWindowObject *self, PyObject *args)
+{
+    int curr, max;
+    PyObject *mod;
+    const char *str;
+    int r, g, b, a;
+
+    if(!PyArg_ParseTuple(args, "iiOs(iiii)", &curr, &max, &mod, &str, &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting 5 arguments: curr (int), max (int), "
+            "modifiable (bool expression), text (string), color (RGBA) integer tuple.");
+        return NULL;
+    }
+
+    struct nk_color clr = (struct nk_color){r, g, b, a};
+    bool modifiable = PyObject_IsTrue(mod);
+
+    curr = nk_prog_text(s_nk_ctx, curr, max, modifiable, str, clr);
     return PyInt_FromLong(curr);
 }
 

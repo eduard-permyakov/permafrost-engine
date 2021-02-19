@@ -3148,6 +3148,10 @@ NK_API int nk_slider_int(struct nk_context*, int min, int *val, int max, int ste
  * ============================================================================= */
 NK_API int nk_progress(struct nk_context*, nk_size *cur, nk_size max, int modifyable);
 NK_API nk_size nk_prog(struct nk_context*, nk_size cur, nk_size max, int modifyable);
+NK_API int nk_progress_text(struct nk_context*, nk_size *cur, nk_size max, int modifyable, 
+                            const char *str, struct nk_color color);
+NK_API nk_size nk_prog_text(struct nk_context*, nk_size cur, nk_size max, int modifyable, 
+                            const char *str, struct nk_color color);
 
 /* =============================================================================
  *
@@ -21724,7 +21728,56 @@ nk_prog(struct nk_context *ctx, nk_size cur, nk_size max, int modifyable)
     return cur;
 }
 
+NK_API int nk_progress_text(struct nk_context *ctx, nk_size *cur, nk_size max, int modifyable, 
+                            const char *str, struct nk_color color)
+{
+    struct nk_window *win;
+    struct nk_panel *layout;
+    const struct nk_style *style;
+    struct nk_input *in;
 
+    struct nk_vec2 item_padding;
+    struct nk_text text;
+    int len = nk_strlen(str);
+
+    struct nk_rect bounds;
+    enum nk_widget_layout_states state;
+    nk_size old_value;
+
+    NK_ASSERT(ctx);
+    NK_ASSERT(cur);
+    NK_ASSERT(ctx->current);
+    NK_ASSERT(ctx->current->layout);
+    if (!ctx || !ctx->current || !ctx->current->layout || !cur)
+        return 0;
+
+    win = ctx->current;
+    style = &ctx->style;
+    layout = win->layout;
+    state = nk_widget(&bounds, ctx);
+    if (!state) return 0;
+
+    in = (state == NK_WIDGET_ROM || layout->flags & NK_WINDOW_ROM) ? 0 : &ctx->input;
+    old_value = *cur;
+    *cur = nk_do_progress(&ctx->last_widget_state, &win->buffer, bounds,
+            *cur, max, modifyable, &style->progress, in);
+
+    item_padding = style->text.padding;
+    text.padding.x = item_padding.x;
+    text.padding.y = item_padding.y;
+    text.background = style->window.background;
+    text.text = color;
+    nk_widget_text(&win->buffer, bounds, str, len, &text, NK_TEXT_CENTERED, style->font);
+
+    return (*cur != old_value);
+}
+
+NK_API nk_size nk_prog_text(struct nk_context *ctx, nk_size cur, nk_size max, int modifyable, 
+                            const char *str, struct nk_color color)
+{
+    nk_progress_text(ctx, &cur, max, modifyable, str, color);
+    return cur;
+}
 
 
 
