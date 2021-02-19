@@ -357,6 +357,12 @@ struct ss_delta_event{
     int delta;
 };
 
+enum ss_ui_mode{
+    SS_UI_SHOW_ALWAYS,
+    SS_UI_SHOW_SELECTED,
+    SS_UI_SHOW_NEVER,
+};
+
 bool G_StorageSite_SetCapacity(const struct entity *ent, const char *rname, int max);
 int  G_StorageSite_GetCapacity(uint32_t uid, const char *rname);
 bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr);
@@ -370,6 +376,7 @@ int  G_StorageSite_GetPlayerCapacity(const char *rname);
 void G_StorageSite_SetFontColor(const struct nk_color *clr);
 void G_StorageSite_SetBorderColor(const struct nk_color *clr);
 void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style);
+void G_StorageSite_SetShowUI(bool show);
 
 /*###########################################################################*/
 /* GAME REGION                                                               */

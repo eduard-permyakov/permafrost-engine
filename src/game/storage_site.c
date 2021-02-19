@@ -35,8 +35,10 @@
 
 #include "storage_site.h"
 #include "game_private.h"
+#include "selection.h"
 #include "../ui.h"
 #include "../event.h"
+#include "../settings.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/mpool.h"
@@ -119,6 +121,7 @@ static khash_t(res)    *s_global_capacity_tables[MAX_FACTIONS];
 static struct nk_style_item s_bg_style = {0};
 static struct nk_color      s_border_clr = {0};
 static struct nk_color      s_font_clr = {0};
+static bool                 s_show_ui = true;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -339,6 +342,16 @@ static void constrain_desired(struct ss_state *ss, const char *rname)
 
 static void on_update_ui(void *user, void *event)
 {
+    if(!s_show_ui)
+        return;
+
+    struct sval ui_setting;
+    ss_e status = Settings_Get("pf.game.storage_site_ui_mode", &ui_setting);
+    assert(status == SS_OKAY);
+
+    if(ui_setting.as_int == SS_UI_SHOW_NEVER)
+        return;
+
     uint32_t key;
     struct ss_state curr;
     struct nk_context *ctx = UI_GetContext();
@@ -348,20 +361,23 @@ static void on_update_ui(void *user, void *event)
 
     kh_foreach(s_entity_state_table, key, curr, {
 
+        const struct entity *ent = G_EntityForUID(key);
+        if(ui_setting.as_int == SS_UI_SHOW_SELECTED && !G_Sel_IsSelected(ent))
+            continue;
+
         char name[256];
         pf_snprintf(name, sizeof(name), "__storage_site__.%x", key);
 
-        const struct entity *ent = G_EntityForUID(key);
-        vec2_t ss_pos = Entity_TopScreenPos(ent);
+        const vec2_t vres = (vec2_t){1920, 1080};
+        const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
+
+        vec2_t ss_pos = Entity_TopScreenPos(ent, adj_vres.x, adj_vres.y);
         khash_t(int) *table = (curr.use_alt) ? curr.alt_capacity : curr.capacity;
 
         const int width = 224;
         const int height = MIN(kh_size(table), 16) * 20 + 4;
         const vec2_t pos = (vec2_t){ss_pos.x - width/2, ss_pos.y + 20};
         const int flags = NK_WINDOW_NOT_INTERACTIVE | NK_WINDOW_BORDER | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR;
-
-        const vec2_t vres = (vec2_t){1920, 1080};
-        const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
 
         struct rect adj_bounds = UI_BoundsForAspectRatio(
             (struct rect){pos.x, pos.y, width, height}, 
@@ -574,6 +590,15 @@ static bool load_global_capacities(int i, SDL_RWops *stream)
     return true;
 }
 
+static bool storage_site_ui_mode_validate(const struct sval *val)
+{
+    if(val->type != ST_TYPE_INT)
+        return false;
+    if(val->as_int < 0 || val->as_int > SS_UI_SHOW_NEVER)
+        return false;
+    return true;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -614,6 +639,20 @@ bool G_StorageSite_Init(void)
     s_bg_style = ctx.style.window.fixed_background;
     s_border_clr = ctx.style.window.border_color;
     s_font_clr = ctx.style.text.color;
+
+    ss_e status;
+    (void)status;
+    status = Settings_Create((struct setting){
+        .name = "pf.game.storage_site_ui_mode",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = SS_UI_SHOW_ALWAYS
+        },
+        .prio = 0,
+        .validate = storage_site_ui_mode_validate,
+        .commit = NULL,
+    });
+    assert(status == SS_OKAY);
 
     E_Global_Register(EVENT_UPDATE_UI, on_update_ui, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
     return true;
@@ -836,6 +875,11 @@ void G_StorageSite_SetBorderColor(const struct nk_color *clr)
 void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style)
 {
     s_bg_style = *style;
+}
+
+void G_StorageSite_SetShowUI(bool show)
+{
+    s_show_ui = show;
 }
 
 void G_StorageSite_SetUseAlt(const struct entity *ent, bool use)
@@ -1120,6 +1164,12 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
     CHK_TRUE_RET(save_color(s_border_clr, stream));
     CHK_TRUE_RET(save_color(s_font_clr, stream));
 
+    struct attr ui_shown = (struct attr){
+        .type = TYPE_BOOL,
+        .val.as_bool = s_show_ui
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &ui_shown, "ui_shown"));
+
     return true;
 }
 
@@ -1273,6 +1323,10 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
 
     CHK_TRUE_RET(load_color(&s_border_clr, stream));
     CHK_TRUE_RET(load_color(&s_font_clr, stream));
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    s_show_ui = attr.val.as_bool;
 
     return true;
 }

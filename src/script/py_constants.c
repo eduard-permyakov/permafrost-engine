@@ -569,6 +569,10 @@ static void s_expose_game_constants(PyObject *module)
 
     PY_EXPOSE_ENUM(module, REGION_RECTANGLE);
     PY_EXPOSE_ENUM(module, REGION_CIRCLE);
+
+    PY_EXPOSE_ENUM(module, SS_UI_SHOW_ALWAYS);
+    PY_EXPOSE_ENUM(module, SS_UI_SHOW_SELECTED);
+    PY_EXPOSE_ENUM(module, SS_UI_SHOW_NEVER);
 }
 
 static void s_expose_anim_constants(PyObject *module)

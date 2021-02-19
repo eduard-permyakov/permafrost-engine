@@ -321,11 +321,8 @@ void Entity_Ping(const struct entity *ent)
     Sched_RunSync(tid);
 }
 
-vec2_t Entity_TopScreenPos(const struct entity *ent)
+vec2_t Entity_TopScreenPos(const struct entity *ent, int screenw, int screenh)
 {
-    int width, height;
-    Engine_WinDrawableSize(&width, &height);
-
     vec3_t pos = Entity_TopCenterPointWS(ent);
     vec4_t pos_homo = (vec4_t) { pos.x, pos.y, pos.z, 1.0f };
 
@@ -339,8 +336,8 @@ vec2_t Entity_TopScreenPos(const struct entity *ent)
     PFM_Mat4x4_Mult4x1(&proj, &tmp, &clip);
     vec3_t ndc = (vec3_t){ clip.x / clip.w, clip.y / clip.w, clip.z / clip.w };
 
-    float screen_x = (ndc.x + 1.0f) * width/2.0f;
-    float screen_y = height - ((ndc.y + 1.0f) * height/2.0f);
+    float screen_x = (ndc.x + 1.0f) * screenw/2.0f;
+    float screen_y = screenh - ((ndc.y + 1.0f) * screenh/2.0f);
     return (vec2_t){screen_x, screen_y};
 }
 

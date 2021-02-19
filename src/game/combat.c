@@ -635,6 +635,8 @@ static void on_mousedown(void *user, void *event)
 
 static void on_render_3d(void *user, void *event)
 {
+    int winw, winh;
+    Engine_WinDrawableSize(&winw, &winh);
     const struct camera *cam = G_GetActiveCamera();
 
     struct sval setting;
@@ -709,7 +711,7 @@ static void on_render_3d(void *user, void *event)
             },
         });
 
-        vec2_t ss_pos = Entity_TopScreenPos(G_EntityForUID(key));
+        vec2_t ss_pos = Entity_TopScreenPos(G_EntityForUID(key), winw, winh);
         struct rect bounds = (struct rect){ss_pos.x - 75, ss_pos.y + 5, 150, 16};
         struct rgba color = (struct rgba){255, 0, 0, 255};
         UI_DrawText(s_name_for_state[curr.state], bounds, color);

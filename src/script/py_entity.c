@@ -36,6 +36,7 @@
 #include <Python.h> /* must be first */
 #include "py_entity.h" 
 #include "py_pickle.h"
+#include "../main.h"
 #include "../entity.h"
 #include "../event.h"
 #include "../asset_load.h"
@@ -1180,7 +1181,9 @@ static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure)
 
 static PyObject *PyEntity_get_top_screen_pos(PyEntityObject *self, void *closure)
 {
-    vec2_t coord = Entity_TopScreenPos(self->ent);
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
+    vec2_t coord = Entity_TopScreenPos(self->ent, width, height);
     return Py_BuildValue("ii", (int)coord.x, (int)coord.y);
 }
 

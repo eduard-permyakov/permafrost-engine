@@ -144,6 +144,7 @@ static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_border_color(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_font_color(PyObject *self, PyObject *args);
+static PyObject *PyPf_storage_site_show_ui(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_set_move_on_left_click(PyObject *self);
 static PyObject *PyPf_set_attack_on_left_click(PyObject *self);
@@ -496,6 +497,10 @@ static PyMethodDef pf_module_methods[] = {
     {"set_storage_site_ui_font_color",
     (PyCFunction)PyPf_set_storage_site_ui_font_color, METH_VARARGS,
     "Set the storage site UI text color to the specified color (R, G, B, A)."},
+
+    {"storage_site_show_ui",
+    (PyCFunction)PyPf_storage_site_show_ui, METH_VARARGS,
+    "Set a flag controlling whether or not the UI windows are rendered over the storage sites."},
 
     {"settings_get",
     (PyCFunction)PyPf_settings_get, METH_VARARGS,
@@ -1729,6 +1734,19 @@ static PyObject *PyPf_set_storage_site_ui_font_color(PyObject *self, PyObject *a
 
     struct nk_color clr = (struct nk_color){r, g, b, a};
     G_StorageSite_SetFontColor(&clr);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_storage_site_show_ui(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    if(!PyArg_ParseTuple(args, "O", &obj)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a single argument (True or False expression)");
+        return NULL;
+    }
+
+    bool show = PyObject_IsTrue(obj);
+    G_StorageSite_SetShowUI(show);
     Py_RETURN_NONE;
 }
 
