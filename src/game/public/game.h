@@ -97,6 +97,11 @@ struct render_input{
     vec_ranim_t         light_vis_anim;
 };
 
+enum hb_mode{
+    HB_MODE_ALWAYS,
+    HB_MODE_DAMAGED,
+    HB_MODE_NEVER
+};
 
 /*###########################################################################*/
 /* GAME GENERAL                                                              */

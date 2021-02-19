@@ -291,6 +291,15 @@ static void g_draw_pass(struct render_input *in)
 static void g_render_healthbars(void)
 {
     PERF_ENTER();
+
+    struct sval hb_setting;
+    ss_e status = Settings_Get("pf.game.healthbar_mode", &hb_setting);
+    assert(status == SS_OKAY);
+    (void)status;
+
+    if(hb_setting.as_int == HB_MODE_NEVER)
+        return;
+
     size_t max_ents = vec_size(&s_gs.visible);
     size_t num_combat_visible = 0;
 
@@ -310,6 +319,8 @@ static void g_render_healthbars(void)
         int curr_health = G_Combat_GetCurrentHP(curr);
 
         if(curr_health == 0)
+            continue;
+        if(hb_setting.as_int == HB_MODE_DAMAGED && curr_health == max_health)
             continue;
 
         ent_top_pos_ws[num_combat_visible] = Entity_TopCenterPointWS(curr);
@@ -470,6 +481,15 @@ static void *g_push_render_input(struct render_input in)
 static bool bool_val_validate(const struct sval *new_val)
 {
     return (new_val->type == ST_TYPE_BOOL);
+}
+
+static bool hb_mode_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_INT)
+        return false;
+    if(new_val->as_int < 0 || new_val->as_int > HB_MODE_NEVER)
+        return false;
+    return true;
 }
 
 static bool fac_vision_validate(const struct sval *new_val)
@@ -738,11 +758,11 @@ static void g_create_settings(void)
     status = Settings_Create((struct setting){
         .name = "pf.game.healthbar_mode",
         .val = (struct sval) {
-            .type = ST_TYPE_BOOL,
-            .as_bool = true
+            .type = ST_TYPE_INT,
+            .as_int = HB_MODE_ALWAYS
         },
         .prio = 0,
-        .validate = bool_val_validate,
+        .validate = hb_mode_validate,
         .commit = NULL,
     });
     assert(status == SS_OKAY);
@@ -1344,11 +1364,7 @@ void G_Render(void)
     E_Global_NotifyImmediate(EVENT_RENDER_3D_POST, NULL, ES_ENGINE);
     R_PushCmd((struct rcmd) { R_GL_SetScreenspaceDrawMode, 0 });
 
-    struct sval hb_setting;
-    status = Settings_Get("pf.game.healthbar_mode", &hb_setting);
-    assert(status == SS_OKAY);
-
-    if(hb_setting.as_bool && !s_gs.hide_healthbars) {
+    if(!s_gs.hide_healthbars) {
         g_render_healthbars();
     }
 

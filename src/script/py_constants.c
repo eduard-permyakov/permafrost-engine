@@ -573,6 +573,10 @@ static void s_expose_game_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, SS_UI_SHOW_ALWAYS);
     PY_EXPOSE_ENUM(module, SS_UI_SHOW_SELECTED);
     PY_EXPOSE_ENUM(module, SS_UI_SHOW_NEVER);
+
+    PY_EXPOSE_ENUM(module, HB_MODE_ALWAYS);
+    PY_EXPOSE_ENUM(module, HB_MODE_DAMAGED);
+    PY_EXPOSE_ENUM(module, HB_MODE_NEVER);
 }
 
 static void s_expose_anim_constants(PyObject *module)
