@@ -115,6 +115,7 @@ static PyObject *PyWindow_slider_float(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_slider_int(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_progress(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_progress_text(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_text_lines(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -329,6 +330,10 @@ static PyMethodDef PyWindow_methods[] = {
     {"progress_text", 
     (PyCFunction)PyWindow_progress_text, METH_VARARGS,
     "Like 'progress', but also taking a string and (RGBA) parameters to draw a label over the progress bar."},
+
+    {"text_lines", 
+    (PyCFunction)PyWindow_text_lines, METH_VARARGS,
+    "Returns the number of lines taken up by the specified text."},
 
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
@@ -1314,6 +1319,17 @@ static PyObject *PyWindow_progress_text(PyWindowObject *self, PyObject *args)
 
     curr = nk_prog_text(s_nk_ctx, curr, max, modifiable, str, clr);
     return PyInt_FromLong(curr);
+}
+
+static PyObject *PyWindow_text_lines(PyWindowObject *self, PyObject *args)
+{
+    const char *str;
+    if(!PyArg_ParseTuple(args, "s", &str)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one (string) argument.");
+        return NULL;
+    }
+    int ret = nk_text_lines(s_nk_ctx, str);
+    return PyInt_FromLong(ret);
 }
 
 static PyObject *PyWindow_show(PyWindowObject *self)
