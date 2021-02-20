@@ -516,6 +516,46 @@ static int       PyUISliderStyle_set_dec_symbol(PyUISliderStyleObject *self, PyO
 static PyObject *PyUISliderStyle_pickle(PyUISliderStyleObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyUISliderStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
+typedef struct {
+    PyObject_HEAD
+    struct nk_style_progress *style;
+}PyUIProgressStyleObject;
+
+/* background */
+static PyObject *PyUIProgressStyle_get_normal(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_normal(PyUIProgressStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIProgressStyle_get_hover(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_hover(PyUIProgressStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIProgressStyle_get_active(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_active(PyUIProgressStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIProgressStyle_get_border_color(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_border_color(PyUIProgressStyleObject *self, PyObject *value, void *);
+
+/* cursor */
+static PyObject *PyUIProgressStyle_get_cursor_normal(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_cursor_normal(PyUIProgressStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIProgressStyle_get_cursor_hover(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_cursor_hover(PyUIProgressStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIProgressStyle_get_cursor_active(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_cursor_active(PyUIProgressStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIProgressStyle_get_cursor_border_color(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_cursor_border_color(PyUIProgressStyleObject *self, PyObject *value, void *);
+
+/* properties */
+static PyObject *PyUIProgressStyle_get_rounding(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_rounding(PyUIProgressStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIProgressStyle_get_border(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_border(PyUIProgressStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIProgressStyle_get_cursor_border(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_cursor_border(PyUIProgressStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIProgressStyle_get_cursor_rounding(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_cursor_rounding(PyUIProgressStyleObject *self, PyObject *value, void *);
+static PyObject *PyUIProgressStyle_get_padding(PyUIProgressStyleObject *self, void *);
+static int       PyUIProgressStyle_set_padding(PyUIProgressStyleObject *self, PyObject *value, void *);
+
+static PyObject *PyUIProgressStyle_pickle(PyUIProgressStyleObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyUIProgressStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -1790,7 +1830,7 @@ static PyGetSetDef PyUISliderStyle_getset[] = {
     {"border_color",
     (getter)PyUISliderStyle_get_border_color, 
     (setter)PyUISliderStyle_set_border_color,
-    "The color of the property field border - an (R, G, B, A) tuple.",
+    "The color of the slider bar border - an (R, G, B, A) tuple.",
     NULL},
 
     {"bar_normal",
@@ -1946,6 +1986,148 @@ static PyTypeObject PyUISliderStyle_type = {
     0,                         /* tp_init */
     0,                         /* tp_alloc */
     PyUISliderStyle_new,         /* tp_new */
+};
+
+static PyMethodDef PyUIProgressStyle_methods[] = {
+    {"__pickle__", 
+    (PyCFunction)PyUIProgressStyle_pickle, METH_KEYWORDS,
+    "Serialize a Permafrost Engine UIProgressStyle object to a string."},
+
+    {"__unpickle__", 
+    (PyCFunction)PyUIProgressStyle_unpickle, METH_VARARGS | METH_KEYWORDS | METH_CLASS,
+    "Create a new pf.UIProgressStyle instance from a string earlier returned from a __pickle__ method."
+    "Returns a tuple of the new instance and the number of bytes consumed from the stream."},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyGetSetDef PyUIProgressStyle_getset[] = {
+    {"normal",
+    (getter)PyUIProgressStyle_get_normal, 
+    (setter)PyUIProgressStyle_set_normal,
+    "The look of the progress bar background in the normal state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"hover",
+    (getter)PyUIProgressStyle_get_hover, 
+    (setter)PyUIProgressStyle_set_hover,
+    "The look of the progress bar background in the hovered state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"active",
+    (getter)PyUIProgressStyle_get_active, 
+    (setter)PyUIProgressStyle_set_active,
+    "The look of the progress bar background in the active state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"border_color",
+    (getter)PyUIProgressStyle_get_border_color, 
+    (setter)PyUIProgressStyle_set_border_color,
+    "The color of the progress bar border - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"cursor_normal",
+    (getter)PyUIProgressStyle_get_cursor_normal, 
+    (setter)PyUIProgressStyle_set_cursor_normal,
+    "The look of the progress bar cursor in the normal state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"cursor_hover",
+    (getter)PyUIProgressStyle_get_cursor_hover, 
+    (setter)PyUIProgressStyle_set_cursor_hover,
+    "The look of the progress bar cursor in the hovered state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"cursor_active",
+    (getter)PyUIProgressStyle_get_cursor_active, 
+    (setter)PyUIProgressStyle_set_cursor_active,
+    "The look of the progress bar cursor in the active state - either an (R, G, B, A) tuple or a "
+    "string representing a path to an image.",
+    NULL},
+
+    {"cursor_border_color",
+    (getter)PyUIProgressStyle_get_cursor_border_color, 
+    (setter)PyUIProgressStyle_set_cursor_border_color,
+    "The color of the progress bar cursor border - an (R, G, B, A) tuple.",
+    NULL},
+
+    {"border",
+    (getter)PyUIProgressStyle_get_border, 
+    (setter)PyUIProgressStyle_set_border,
+    "The width of the progress bar borders.", 
+    NULL},
+
+    {"rounding",
+    (getter)PyUIProgressStyle_get_rounding, 
+    (setter)PyUIProgressStyle_set_rounding,
+    "An (X, Y) tuple of floats to control the rounding of the progress bar widget.", 
+    NULL},
+
+    {"cursor_border",
+    (getter)PyUIProgressStyle_get_cursor_border, 
+    (setter)PyUIProgressStyle_set_cursor_border,
+    "The width of the progress bar cursor borders.", 
+    NULL},
+
+    {"cursor_rounding",
+    (getter)PyUIProgressStyle_get_cursor_rounding, 
+    (setter)PyUIProgressStyle_set_cursor_rounding,
+    "An (X, Y) tuple of floats to control the rounding of the progress bar cursor.", 
+    NULL},
+
+    {"padding",
+    (getter)PyUIProgressStyle_get_padding, 
+    (setter)PyUIProgressStyle_set_padding,
+    "An (X, Y) tuple to control the padding within a progress bar widget.", 
+    NULL},
+
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject PyUIProgressStyle_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "pf.UIProgressStyle",        /* tp_name */
+    sizeof(PyUIProgressStyleObject), /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    0,                         /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_reserved */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash  */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT,        /* tp_flags */
+    "Style configuration for Permafrost Engine UI progress bar options.", /* tp_doc */
+    0,                         /* tp_traverse */
+    0,                         /* tp_clear */
+    0,                         /* tp_richcompare */
+    0,                         /* tp_weaklistoffset */
+    0,                         /* tp_iter */
+    0,                         /* tp_iternext */
+    PyUIProgressStyle_methods, /* tp_methods */
+    0,                         /* tp_members */
+    PyUIProgressStyle_getset,  /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    0,                         /* tp_init */
+    0,                         /* tp_alloc */
+    0,                         /* tp_new */
 };
 
 static struct nk_style_window_header s_saved_header_style;
@@ -2909,6 +3091,48 @@ static bool load_slider(struct SDL_RWops *stream, struct nk_style_slider *out)
     CHK_TRUE_RET(load_button(stream, &out->dec_button));
     CHK_TRUE_RET(load_int(stream, (int*)&out->inc_symbol));
     CHK_TRUE_RET(load_int(stream, (int*)&out->dec_symbol));
+
+    return true;
+}
+
+bool save_progress(struct SDL_RWops *stream, const struct nk_style_progress *progress)
+{
+    CHK_TRUE_RET(save_item(stream, &progress->normal));
+    CHK_TRUE_RET(save_item(stream, &progress->hover));
+    CHK_TRUE_RET(save_item(stream, &progress->active));
+    CHK_TRUE_RET(save_color(stream, progress->border_color));
+
+    CHK_TRUE_RET(save_item(stream, &progress->cursor_normal));
+    CHK_TRUE_RET(save_item(stream, &progress->cursor_hover));
+    CHK_TRUE_RET(save_item(stream, &progress->cursor_active));
+    CHK_TRUE_RET(save_color(stream, progress->cursor_border_color));
+
+    CHK_TRUE_RET(save_float(stream, progress->border));
+    CHK_TRUE_RET(save_float(stream, progress->rounding));
+    CHK_TRUE_RET(save_float(stream, progress->cursor_border));
+    CHK_TRUE_RET(save_float(stream, progress->cursor_rounding));
+    CHK_TRUE_RET(save_vec2(stream, progress->padding));
+
+    return true;
+}
+
+static bool load_progress(struct SDL_RWops *stream, struct nk_style_progress *out)
+{
+    CHK_TRUE_RET(load_item(stream, &out->normal));
+    CHK_TRUE_RET(load_item(stream, &out->hover));
+    CHK_TRUE_RET(load_item(stream, &out->active));
+    CHK_TRUE_RET(load_color(stream, &out->border_color));
+
+    CHK_TRUE_RET(load_item(stream, &out->cursor_normal));
+    CHK_TRUE_RET(load_item(stream, &out->cursor_hover));
+    CHK_TRUE_RET(load_item(stream, &out->cursor_active));
+    CHK_TRUE_RET(load_color(stream, &out->cursor_border_color));
+
+    CHK_TRUE_RET(load_float(stream, &out->border));
+    CHK_TRUE_RET(load_float(stream, &out->rounding));
+    CHK_TRUE_RET(load_float(stream, &out->cursor_border));
+    CHK_TRUE_RET(load_float(stream, &out->cursor_rounding));
+    CHK_TRUE_RET(load_vec2(stream, &out->padding));
 
     return true;
 }
@@ -5772,6 +5996,250 @@ fail_args:
     return ret;
 }
 
+static PyObject *PyUIProgressStyle_get_normal(PyUIProgressStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->normal);
+}
+
+static int PyUIProgressStyle_set_normal(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->normal);
+}
+
+static PyObject *PyUIProgressStyle_get_hover(PyUIProgressStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->hover);
+}
+
+static int PyUIProgressStyle_set_hover(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->hover);
+}
+
+static PyObject *PyUIProgressStyle_get_active(PyUIProgressStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->active);
+}
+
+static int PyUIProgressStyle_set_active(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->active);
+}
+
+static PyObject *PyUIProgressStyle_get_border_color(PyUIProgressStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->border_color.r,
+        self->style->border_color.g,
+        self->style->border_color.b,
+        self->style->border_color.a);
+}
+
+static int PyUIProgressStyle_set_border_color(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->border_color = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIProgressStyle_get_cursor_normal(PyUIProgressStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->cursor_normal);
+}
+
+static int PyUIProgressStyle_set_cursor_normal(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->cursor_normal);
+}
+
+static PyObject *PyUIProgressStyle_get_cursor_hover(PyUIProgressStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->cursor_hover);
+}
+
+static int PyUIProgressStyle_set_cursor_hover(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->cursor_hover);
+}
+
+static PyObject *PyUIProgressStyle_get_cursor_active(PyUIProgressStyleObject *self, void *closure)
+{
+    return style_get_item(&self->style->cursor_active);
+}
+
+static int PyUIProgressStyle_set_cursor_active(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    return style_set_item(value, &self->style->cursor_active);
+}
+
+static PyObject *PyUIProgressStyle_get_cursor_border_color(PyUIProgressStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(i,i,i,i)", 
+        self->style->cursor_border_color.r,
+        self->style->cursor_border_color.g,
+        self->style->cursor_border_color.b,
+        self->style->cursor_border_color.a);
+}
+
+static int PyUIProgressStyle_set_cursor_border_color(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    float rgba[4];
+
+    if(parse_rgba(value, rgba) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be an (R, G, B, A) tuple.");
+        return -1; 
+    }
+
+    self->style->cursor_border_color = (struct nk_color){rgba[0], rgba[1], rgba[2], rgba[3]};
+    return 0;
+}
+
+static PyObject *PyUIProgressStyle_get_rounding(PyUIProgressStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->rounding);
+}
+
+static int PyUIProgressStyle_set_rounding(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->rounding = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIProgressStyle_get_border(PyUIProgressStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->border);
+}
+
+static int PyUIProgressStyle_set_border(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->border = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIProgressStyle_get_cursor_border(PyUIProgressStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->cursor_border);
+}
+
+static int PyUIProgressStyle_set_cursor_border(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->cursor_border = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIProgressStyle_get_cursor_rounding(PyUIProgressStyleObject *self, void *closure)
+{
+    return Py_BuildValue("f", self->style->cursor_rounding);
+}
+
+static int PyUIProgressStyle_set_cursor_rounding(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a float.");
+        return -1; 
+    }
+
+    self->style->cursor_rounding = PyFloat_AsDouble(value);
+    return 0;
+}
+
+static PyObject *PyUIProgressStyle_get_padding(PyUIProgressStyleObject *self, void *closure)
+{
+    return Py_BuildValue("(f,f)", 
+        self->style->padding.x,
+        self->style->padding.y);
+}
+
+static int PyUIProgressStyle_set_padding(PyUIProgressStyleObject *self, PyObject *value, void *closure)
+{
+    float x, y;
+
+    if(parse_float_pair(value, &x, &y) != 0) {
+        PyErr_SetString(PyExc_TypeError, "Type must be a tuple of 2 floats.");
+        return -1; 
+    }
+
+    self->style->padding = (struct nk_vec2){x, y};
+    return 0;
+}
+
+static PyObject *PyUIProgressStyle_pickle(PyUIProgressStyleObject *self, PyObject *args, PyObject *kwargs)
+{
+    PyObject *ret = NULL;
+
+    SDL_RWops *stream = PFSDL_VectorRWOps();
+    CHK_TRUE(stream, fail_alloc);
+    CHK_TRUE(save_progress(stream, self->style), fail_pickle);
+    ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
+
+fail_pickle:
+    SDL_RWclose(stream);
+fail_alloc:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error pickling pf.UIProgressStyle object");
+    }
+    return ret;
+}
+
+static PyObject *PyUIProgressStyle_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
+{
+    PyObject *ret = NULL;
+    const char *str;
+    Py_ssize_t len;
+    int status;
+    char tmp;
+
+    if(!PyArg_ParseTuple(args, "s#", &str, &len)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single string.");
+        goto fail_args;
+    }
+
+    SDL_RWops *stream = SDL_RWFromConstMem(str, len);
+    CHK_TRUE(stream, fail_args);
+
+    PyObject *styleobj = PyObject_New(PyObject, &PyUIProgressStyle_type);
+    assert(styleobj || PyErr_Occurred());
+    CHK_TRUE(styleobj, fail_unpickle);
+
+    struct nk_context *ctx = UI_GetContext();
+    ((PyUIProgressStyleObject*)styleobj)->style = &ctx->style.progress;
+
+    CHK_TRUE(load_progress(stream, ((PyUIProgressStyleObject*)styleobj)->style), fail_unpickle);
+
+    Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+    ret = Py_BuildValue("(Oi)", styleobj, (int)nread);
+    Py_DECREF(styleobj);
+
+fail_unpickle:
+    SDL_RWclose(stream);
+fail_args:
+    if(!ret) {
+        PyErr_SetString(PyExc_RuntimeError, "Error unpickling pf.UIProgressStyle object");
+    }
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -5831,6 +6299,12 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
         return;
     Py_INCREF(&PyUIScrollbarStyle_type);
     PyModule_AddObject(module, "UISliderStyle", (PyObject*)&PyUISliderStyle_type);
+
+    /* Progress style */
+    if(PyType_Ready(&PyUIProgressStyle_type) < 0)
+        return;
+    Py_INCREF(&PyUIScrollbarStyle_type);
+    PyModule_AddObject(module, "UIProgressStyle", (PyObject*)&PyUIProgressStyle_type);
 
     /* Global style objects */
     PyUIButtonStyleObject *button_style = PyObject_New(PyUIButtonStyleObject, &PyUIButtonStyle_type);
@@ -5902,6 +6376,11 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
         (PyObject*)&PyUISliderStyle_type, NULL);
     assert(slider_style);
     PyModule_AddObject(module, "slider_style", (PyObject*)slider_style);
+
+    PyUIProgressStyleObject *progress_style = PyObject_New(PyUIProgressStyleObject, &PyUIProgressStyle_type);
+    assert(progress_style);
+    progress_style->style = &ctx->style.progress;
+    PyModule_AddObject(module, "progress_style", (PyObject*)progress_style);
 }
 
 bool S_UI_Style_SaveWindow(struct SDL_RWops *stream, const struct nk_style_window *window)
