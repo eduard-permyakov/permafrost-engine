@@ -642,7 +642,10 @@ static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self);
 static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_transport(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_get_curr_carry(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_get_max_carry(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_get_gather_speed(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_increase_transport_priority(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_decrease_transport_priority(PyHarvesterEntityObject *self, PyObject *args);
@@ -672,9 +675,21 @@ static PyMethodDef PyHarvesterEntity_methods[] = {
     "Instruct an entity to bring resources to the target storage site, using its' strategy and priority list "
     "to select the appropriate source storage sites."},
 
+    {"get_curr_carry", 
+    (PyCFunction)PyHarvesterEntity_get_curr_carry, METH_VARARGS,
+    "Get the amount of a particular resources that this entity is currently carrying."},
+
+    {"get_max_carry", 
+    (PyCFunction)PyHarvesterEntity_get_max_carry, METH_VARARGS,
+    "Get the maximum amount of a particular resources that this entity is able to carry."},
+
     {"set_max_carry", 
     (PyCFunction)PyHarvesterEntity_set_max_carry, METH_VARARGS,
     "Set how much of the specified resource the entity is able to carry at a time."},
+
+    {"get_gather_speed", 
+    (PyCFunction)PyHarvesterEntity_get_gather_speed, METH_VARARGS,
+    "Get how much of the specified resource the entity gathers in a single animation."},
 
     {"set_gather_speed", 
     (PyCFunction)PyHarvesterEntity_set_gather_speed, METH_VARARGS,
@@ -2725,6 +2740,40 @@ static PyObject *PyHarvesterEntity_transport(PyHarvesterEntityObject *self, PyOb
     Py_RETURN_NONE;
 }
 
+static PyObject *PyHarvesterEntity_get_curr_carry(PyHarvesterEntityObject *self, PyObject *args)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return NULL;
+    }
+
+    const char *rname;
+    if(!PyArg_ParseTuple(args, "s", &rname)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one arguments: resource name (string).");
+        return NULL;
+    }
+
+    int ret = G_Harvester_GetCurrCarry(self->super.ent->uid, rname);
+    return PyInt_FromLong(ret);
+}
+
+static PyObject *PyHarvesterEntity_get_max_carry(PyHarvesterEntityObject *self, PyObject *args)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return NULL;
+    }
+
+    const char *rname;
+    if(!PyArg_ParseTuple(args, "s", &rname)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one arguments: resource name (string).");
+        return NULL;
+    }
+
+    int ret = G_Harvester_GetMaxCarry(self->super.ent->uid, rname);
+    return PyInt_FromLong(ret);
+}
+
 static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, PyObject *args)
 {
     if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
@@ -2745,6 +2794,23 @@ static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, 
         return NULL;
     }
     Py_RETURN_NONE;
+}
+
+static PyObject *PyHarvesterEntity_get_gather_speed(PyHarvesterEntityObject *self, PyObject *args)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return NULL;
+    }
+
+    const char *rname;
+    if(!PyArg_ParseTuple(args, "s", &rname)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting one arguments: resource name (string).");
+        return NULL;
+    }
+
+    float ret = G_Harvester_GetGatherSpeed(self->super.ent->uid, rname);
+    return PyFloat_FromDouble(ret);
 }
 
 static PyObject *PyHarvesterEntity_set_gather_speed(PyHarvesterEntityObject *self, PyObject *args)
