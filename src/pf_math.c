@@ -399,120 +399,135 @@ void PFM_Mat4x4_Inverse(mat4x4_t *in, mat4x4_t *out)
     double inv[16], det;
     int i;
 
-    inv[0] = in->raw[5]  * in->raw[10] * in->raw[15] - 
-             in->raw[5]  * in->raw[11] * in->raw[14] - 
-             in->raw[9]  * in->raw[6]  * in->raw[15] + 
-             in->raw[9]  * in->raw[7]  * in->raw[14] +
-             in->raw[13] * in->raw[6]  * in->raw[11] - 
-             in->raw[13] * in->raw[7]  * in->raw[10];
+    inv[0] = 
+        in->raw[5]  * in->raw[10] * in->raw[15] - 
+        in->raw[5]  * in->raw[11] * in->raw[14] - 
+        in->raw[9]  * in->raw[6]  * in->raw[15] + 
+        in->raw[9]  * in->raw[7]  * in->raw[14] +
+        in->raw[13] * in->raw[6]  * in->raw[11] - 
+        in->raw[13] * in->raw[7]  * in->raw[10];
     
-    inv[4] = -in->raw[4]  * in->raw[10] * in->raw[15] + 
-              in->raw[4]  * in->raw[11] * in->raw[14] + 
-              in->raw[8]  * in->raw[6]  * in->raw[15] - 
-              in->raw[8]  * in->raw[7]  * in->raw[14] - 
-              in->raw[12] * in->raw[6]  * in->raw[11] + 
-              in->raw[12] * in->raw[7]  * in->raw[10];
+    inv[4] = 
+       -in->raw[4]  * in->raw[10] * in->raw[15] + 
+        in->raw[4]  * in->raw[11] * in->raw[14] + 
+        in->raw[8]  * in->raw[6]  * in->raw[15] - 
+        in->raw[8]  * in->raw[7]  * in->raw[14] - 
+        in->raw[12] * in->raw[6]  * in->raw[11] + 
+        in->raw[12] * in->raw[7]  * in->raw[10];
 
-    inv[8] = in->raw[4]  * in->raw[9] * in->raw[15] - 
-             in->raw[4]  * in->raw[11] * in->raw[13] - 
-             in->raw[8]  * in->raw[5] * in->raw[15] + 
-             in->raw[8]  * in->raw[7] * in->raw[13] + 
-             in->raw[12] * in->raw[5] * in->raw[11] - 
-             in->raw[12] * in->raw[7] * in->raw[9];
+    inv[8] = 
+        in->raw[4]  * in->raw[9] * in->raw[15] - 
+        in->raw[4]  * in->raw[11] * in->raw[13] - 
+        in->raw[8]  * in->raw[5] * in->raw[15] + 
+        in->raw[8]  * in->raw[7] * in->raw[13] + 
+        in->raw[12] * in->raw[5] * in->raw[11] - 
+        in->raw[12] * in->raw[7] * in->raw[9];
     
-    inv[12] = -in->raw[4]  * in->raw[9] * in->raw[14] + 
-               in->raw[4]  * in->raw[10] * in->raw[13] +
-               in->raw[8]  * in->raw[5] * in->raw[14] - 
-               in->raw[8]  * in->raw[6] * in->raw[13] - 
-               in->raw[12] * in->raw[5] * in->raw[10] + 
-               in->raw[12] * in->raw[6] * in->raw[9];
+    inv[12] = 
+       -in->raw[4]  * in->raw[9] * in->raw[14] + 
+        in->raw[4]  * in->raw[10] * in->raw[13] +
+        in->raw[8]  * in->raw[5] * in->raw[14] - 
+        in->raw[8]  * in->raw[6] * in->raw[13] - 
+        in->raw[12] * in->raw[5] * in->raw[10] + 
+        in->raw[12] * in->raw[6] * in->raw[9];
     
-    inv[1] = -in->raw[1]  * in->raw[10] * in->raw[15] + 
-              in->raw[1]  * in->raw[11] * in->raw[14] + 
-              in->raw[9]  * in->raw[2] * in->raw[15] - 
-              in->raw[9]  * in->raw[3] * in->raw[14] - 
-              in->raw[13] * in->raw[2] * in->raw[11] + 
-              in->raw[13] * in->raw[3] * in->raw[10];
+    inv[1] = 
+       -in->raw[1]  * in->raw[10] * in->raw[15] + 
+        in->raw[1]  * in->raw[11] * in->raw[14] + 
+        in->raw[9]  * in->raw[2] * in->raw[15] - 
+        in->raw[9]  * in->raw[3] * in->raw[14] - 
+        in->raw[13] * in->raw[2] * in->raw[11] + 
+        in->raw[13] * in->raw[3] * in->raw[10];
     
-    inv[5] = in->raw[0]  * in->raw[10] * in->raw[15] - 
-             in->raw[0]  * in->raw[11] * in->raw[14] - 
-             in->raw[8]  * in->raw[2] * in->raw[15] + 
-             in->raw[8]  * in->raw[3] * in->raw[14] + 
-             in->raw[12] * in->raw[2] * in->raw[11] - 
-             in->raw[12] * in->raw[3] * in->raw[10];
+    inv[5] = 
+        in->raw[0]  * in->raw[10] * in->raw[15] - 
+        in->raw[0]  * in->raw[11] * in->raw[14] - 
+        in->raw[8]  * in->raw[2] * in->raw[15] + 
+        in->raw[8]  * in->raw[3] * in->raw[14] + 
+        in->raw[12] * in->raw[2] * in->raw[11] - 
+        in->raw[12] * in->raw[3] * in->raw[10];
     
-    inv[9] = -in->raw[0]  * in->raw[9] * in->raw[15] + 
-              in->raw[0]  * in->raw[11] * in->raw[13] + 
-              in->raw[8]  * in->raw[1] * in->raw[15] - 
-              in->raw[8]  * in->raw[3] * in->raw[13] - 
-              in->raw[12] * in->raw[1] * in->raw[11] + 
-              in->raw[12] * in->raw[3] * in->raw[9];
+    inv[9] = 
+       -in->raw[0]  * in->raw[9] * in->raw[15] + 
+        in->raw[0]  * in->raw[11] * in->raw[13] + 
+        in->raw[8]  * in->raw[1] * in->raw[15] - 
+        in->raw[8]  * in->raw[3] * in->raw[13] - 
+        in->raw[12] * in->raw[1] * in->raw[11] + 
+        in->raw[12] * in->raw[3] * in->raw[9];
     
-    inv[13] = in->raw[0]  * in->raw[9] * in->raw[14] - 
-              in->raw[0]  * in->raw[10] * in->raw[13] - 
-              in->raw[8]  * in->raw[1] * in->raw[14] + 
-              in->raw[8]  * in->raw[2] * in->raw[13] + 
-              in->raw[12] * in->raw[1] * in->raw[10] - 
-              in->raw[12] * in->raw[2] * in->raw[9];
+    inv[13] = 
+        in->raw[0]  * in->raw[9] * in->raw[14] - 
+        in->raw[0]  * in->raw[10] * in->raw[13] - 
+        in->raw[8]  * in->raw[1] * in->raw[14] + 
+        in->raw[8]  * in->raw[2] * in->raw[13] + 
+        in->raw[12] * in->raw[1] * in->raw[10] - 
+        in->raw[12] * in->raw[2] * in->raw[9];
     
-    inv[2] = in->raw[1]  * in->raw[6] * in->raw[15] - 
-             in->raw[1]  * in->raw[7] * in->raw[14] - 
-             in->raw[5]  * in->raw[2] * in->raw[15] + 
-             in->raw[5]  * in->raw[3] * in->raw[14] + 
-             in->raw[13] * in->raw[2] * in->raw[7] - 
-             in->raw[13] * in->raw[3] * in->raw[6];
+    inv[2] = 
+        in->raw[1]  * in->raw[6] * in->raw[15] - 
+        in->raw[1]  * in->raw[7] * in->raw[14] - 
+        in->raw[5]  * in->raw[2] * in->raw[15] + 
+        in->raw[5]  * in->raw[3] * in->raw[14] + 
+        in->raw[13] * in->raw[2] * in->raw[7] - 
+        in->raw[13] * in->raw[3] * in->raw[6];
     
-    inv[6] = -in->raw[0]  * in->raw[6] * in->raw[15] + 
-              in->raw[0]  * in->raw[7] * in->raw[14] + 
-              in->raw[4]  * in->raw[2] * in->raw[15] - 
-              in->raw[4]  * in->raw[3] * in->raw[14] - 
-              in->raw[12] * in->raw[2] * in->raw[7] + 
-              in->raw[12] * in->raw[3] * in->raw[6];
+    inv[6] = 
+       -in->raw[0]  * in->raw[6] * in->raw[15] + 
+        in->raw[0]  * in->raw[7] * in->raw[14] + 
+        in->raw[4]  * in->raw[2] * in->raw[15] - 
+        in->raw[4]  * in->raw[3] * in->raw[14] - 
+        in->raw[12] * in->raw[2] * in->raw[7] + 
+        in->raw[12] * in->raw[3] * in->raw[6];
     
-    inv[10] = in->raw[0]  * in->raw[5] * in->raw[15] - 
-              in->raw[0]  * in->raw[7] * in->raw[13] - 
-              in->raw[4]  * in->raw[1] * in->raw[15] + 
-              in->raw[4]  * in->raw[3] * in->raw[13] + 
-              in->raw[12] * in->raw[1] * in->raw[7] - 
-              in->raw[12] * in->raw[3] * in->raw[5];
+    inv[10] = 
+        in->raw[0]  * in->raw[5] * in->raw[15] - 
+        in->raw[0]  * in->raw[7] * in->raw[13] - 
+        in->raw[4]  * in->raw[1] * in->raw[15] + 
+        in->raw[4]  * in->raw[3] * in->raw[13] + 
+        in->raw[12] * in->raw[1] * in->raw[7] - 
+        in->raw[12] * in->raw[3] * in->raw[5];
     
-    inv[14] = -in->raw[0]  * in->raw[5] * in->raw[14] + 
-               in->raw[0]  * in->raw[6] * in->raw[13] + 
-               in->raw[4]  * in->raw[1] * in->raw[14] - 
-               in->raw[4]  * in->raw[2] * in->raw[13] - 
-               in->raw[12] * in->raw[1] * in->raw[6] + 
-               in->raw[12] * in->raw[2] * in->raw[5];
+    inv[14] = 
+       -in->raw[0]  * in->raw[5] * in->raw[14] + 
+        in->raw[0]  * in->raw[6] * in->raw[13] + 
+        in->raw[4]  * in->raw[1] * in->raw[14] - 
+        in->raw[4]  * in->raw[2] * in->raw[13] - 
+        in->raw[12] * in->raw[1] * in->raw[6] + 
+        in->raw[12] * in->raw[2] * in->raw[5];
     
-    inv[3] = -in->raw[1] * in->raw[6] * in->raw[11] + 
-              in->raw[1] * in->raw[7] * in->raw[10] + 
-              in->raw[5] * in->raw[2] * in->raw[11] - 
-              in->raw[5] * in->raw[3] * in->raw[10] - 
-              in->raw[9] * in->raw[2] * in->raw[7] + 
-              in->raw[9] * in->raw[3] * in->raw[6];
+    inv[3] = 
+       -in->raw[1] * in->raw[6] * in->raw[11] + 
+        in->raw[1] * in->raw[7] * in->raw[10] + 
+        in->raw[5] * in->raw[2] * in->raw[11] - 
+        in->raw[5] * in->raw[3] * in->raw[10] - 
+        in->raw[9] * in->raw[2] * in->raw[7] + 
+        in->raw[9] * in->raw[3] * in->raw[6];
     
-    inv[7] = in->raw[0] * in->raw[6] * in->raw[11] - 
-             in->raw[0] * in->raw[7] * in->raw[10] - 
-             in->raw[4] * in->raw[2] * in->raw[11] + 
-             in->raw[4] * in->raw[3] * in->raw[10] + 
-             in->raw[8] * in->raw[2] * in->raw[7] - 
-             in->raw[8] * in->raw[3] * in->raw[6];
+    inv[7] = 
+        in->raw[0] * in->raw[6] * in->raw[11] - 
+        in->raw[0] * in->raw[7] * in->raw[10] - 
+        in->raw[4] * in->raw[2] * in->raw[11] + 
+        in->raw[4] * in->raw[3] * in->raw[10] + 
+        in->raw[8] * in->raw[2] * in->raw[7] - 
+        in->raw[8] * in->raw[3] * in->raw[6];
     
-    inv[11] = -in->raw[0] * in->raw[5] * in->raw[11] + 
-               in->raw[0] * in->raw[7] * in->raw[9] + 
-               in->raw[4] * in->raw[1] * in->raw[11] - 
-               in->raw[4] * in->raw[3] * in->raw[9] - 
-               in->raw[8] * in->raw[1] * in->raw[7] + 
-               in->raw[8] * in->raw[3] * in->raw[5];
+    inv[11] = 
+       -in->raw[0] * in->raw[5] * in->raw[11] + 
+        in->raw[0] * in->raw[7] * in->raw[9] + 
+        in->raw[4] * in->raw[1] * in->raw[11] - 
+        in->raw[4] * in->raw[3] * in->raw[9] - 
+        in->raw[8] * in->raw[1] * in->raw[7] + 
+        in->raw[8] * in->raw[3] * in->raw[5];
     
-    inv[15] = in->raw[0] * in->raw[5] * in->raw[10] - 
-              in->raw[0] * in->raw[6] * in->raw[9] - 
-              in->raw[4] * in->raw[1] * in->raw[10] + 
-              in->raw[4] * in->raw[2] * in->raw[9] + 
-              in->raw[8] * in->raw[1] * in->raw[6] - 
-              in->raw[8] * in->raw[2] * in->raw[5];
+    inv[15] = 
+        in->raw[0] * in->raw[5] * in->raw[10] - 
+        in->raw[0] * in->raw[6] * in->raw[9] - 
+        in->raw[4] * in->raw[1] * in->raw[10] + 
+        in->raw[4] * in->raw[2] * in->raw[9] + 
+        in->raw[8] * in->raw[1] * in->raw[6] - 
+        in->raw[8] * in->raw[2] * in->raw[5];
     
     det = in->raw[0] * inv[0] + in->raw[1] * inv[4] + in->raw[2] * inv[8] + in->raw[3] * inv[12];
-    
     assert(det != 0);
     
     det = 1.0 / det;
@@ -617,6 +632,30 @@ void PFM_Quat_Normal(quat_t *op1, quat_t *out)
     out->y = op1->y / len;
     out->z = op1->z / len;
     out->w = op1->w / len;
+}
+
+void PFM_Quat_Inverse(quat_t *op1, quat_t *out)
+{
+    out->x = -op1->x;
+    out->y = -op1->y;
+    out->z = -op1->z;
+    out->w =  op1->w;
+}
+
+GLfloat PFM_Quat_PitchDiff(quat_t *op1, quat_t *op2)
+{
+    quat_t delta, op1_inv;
+    PFM_Quat_Inverse(op1, &op1_inv);
+    PFM_Quat_MultQuat(&op1_inv, op2, &delta);
+    PFM_Quat_Normal(&delta, &delta);
+
+    GLfloat pitch;
+    double sinp = 2 * (delta.w * delta.y - delta.z * delta.x);
+    if (fabs(sinp) >= 1)
+        pitch = copysign(M_PI / 2, sinp); /* use 90 degrees if out of range */
+    else
+        pitch = asin(sinp);
+    return -pitch;
 }
 
 GLfloat PFM_BilinearInterp(GLfloat q11, GLfloat q12, GLfloat q21, GLfloat q22,

@@ -83,6 +83,11 @@
  *                 |    V              |
  *                 +->[STATE_CAN_ATTACK]<---------+
  *                      |(target alive)           |
+ *                      |                         |
+ *                      V                         |
+ *                    [STATE_TURNING_TO_TARGET]   |
+ *                      |                         |
+ *                      |(facing target)          |
  *                      V                         |(anim cycle finishes)
  *                    [STATE_ATTACK_ANIM_PLAYING]-+
  * 
@@ -107,6 +112,7 @@ struct combatstate{
         STATE_CAN_ATTACK,
         STATE_ATTACK_ANIM_PLAYING,
         STATE_DEATH_ANIM_PLAYING,
+        STATE_TURNING_TO_TARGET,
     }state;
     bool               sticky;
     uint32_t           target_uid;
@@ -128,7 +134,8 @@ static const char *s_name_for_state[] = {
     [STATE_MOVING_TO_TARGET_LOCKED] = "MOVING_TO_TARGET_LOCKED",
     [STATE_CAN_ATTACK]              = "STATE_CAN_ATTACK",
     [STATE_ATTACK_ANIM_PLAYING]     = "ATTACK_ANIM_PLAYING",
-    [STATE_DEATH_ANIM_PLAYING]      = "DEATH_ANIM_PLAYING"
+    [STATE_DEATH_ANIM_PLAYING]      = "DEATH_ANIM_PLAYING",
+    [STATE_TURNING_TO_TARGET]       = "TURNING_TO_TARGET",
 };
 
 static khash_t(state)   *s_entity_state_table;
@@ -310,7 +317,7 @@ static quat_t quat_from_vec(vec2_t dir)
 {
     assert(PFM_Vec2_Len(&dir) > EPSILON);
 
-    float angle_rad = atan2(dir.raw[1], dir.raw[0]) - M_PI/2.0f;
+    float angle_rad = atan2(dir.z, dir.x) - M_PI/2.0f;
     return (quat_t) {
         0.0f, 
         1.0f * sin(angle_rad / 2.0f),
@@ -319,7 +326,7 @@ static quat_t quat_from_vec(vec2_t dir)
     };
 }
 
-static void entity_turn_to_target(struct entity *ent, const struct entity *target)
+static quat_t entity_turn_dir(struct entity *ent, const struct entity *target)
 {
     vec2_t ent_pos_xz = G_Pos_GetXZ(ent->uid);
     vec2_t tar_pos_xz = G_Pos_GetXZ(target->uid);
@@ -327,7 +334,17 @@ static void entity_turn_to_target(struct entity *ent, const struct entity *targe
     vec2_t ent_to_target;
     PFM_Vec2_Sub(&tar_pos_xz, &ent_pos_xz, &ent_to_target);
     PFM_Vec2_Normal(&ent_to_target, &ent_to_target);
-    ent->rotation = quat_from_vec(ent_to_target);
+    return quat_from_vec(ent_to_target);
+}
+
+static void entity_turn_to_target(struct entity *ent, const struct entity *target)
+{
+    quat_t rot = entity_turn_dir(ent, target);
+    G_Move_ChangeDirection(ent, rot);
+
+    struct combatstate *cs = combatstate_get(ent->uid);
+    assert(cs);
+    cs->state = STATE_TURNING_TO_TARGET;
 }
 
 static void on_death_anim_finish(void *user, void *event)
@@ -359,9 +376,18 @@ static void on_attack_anim_finish(void *user, void *event)
     if(target_cs->state == STATE_DEATH_ANIM_PLAYING)
         return; 
 
+    quat_t target_dir = entity_turn_dir(self, target);
+    float angle_diff = PFM_Quat_PitchDiff(&self->rotation, &target_dir);
+
+    if(RAD_TO_DEG(fabs(angle_diff)) > 5.0f) {
+
+        E_Entity_Notify(EVENT_ATTACK_END, self->uid, NULL, ES_ENGINE);
+        entity_turn_to_target(self, target);
+        return;
+    }
+
     if(melee_can_attack(self, target)) {
 
-        entity_turn_to_target(self, target);
         float dmg = G_Combat_GetBaseDamage(self) * (1.0f - G_Combat_GetBaseArmour(target));
         target_cs->current_hp = MAX(0, target_cs->current_hp - dmg);
 
@@ -435,10 +461,7 @@ static void on_20hz_tick(void *user, void *event)
 
                     G_Move_Stop(ent);
                     curr->target_uid = enemy->uid;
-                    curr->state = STATE_CAN_ATTACK;
-
                     entity_turn_to_target(ent, enemy);
-                    E_Entity_Notify(EVENT_ATTACK_START, ent->uid, NULL, ES_ENGINE);
                 
                 }else if(curr->stance == COMBAT_STANCE_AGGRESSIVE) {
 
@@ -479,10 +502,8 @@ static void on_20hz_tick(void *user, void *event)
             /* Check if we're within attacking range of our target */
             if(melee_can_attack(ent, enemy)) {
 
-                curr->state = STATE_CAN_ATTACK;
                 G_Move_Stop(ent);
                 entity_turn_to_target(ent, enemy);
-                E_Entity_Notify(EVENT_ATTACK_START, ent->uid, NULL, ES_ENGINE);
             }
             break;
         }
@@ -513,10 +534,8 @@ static void on_20hz_tick(void *user, void *event)
             /* Check if we're within attacking range of our target */
             if(melee_can_attack(ent, target)) {
 
-                curr->state = STATE_CAN_ATTACK;
                 G_Move_Stop(ent);
                 entity_turn_to_target(ent, target);
-                E_Entity_Notify(EVENT_ATTACK_START, ent->uid, NULL, ES_ENGINE);
                 break;
             }
 
@@ -538,8 +557,8 @@ static void on_20hz_tick(void *user, void *event)
                     if(!entity_dead(target)) {
 
                         E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
-                        curr->state = STATE_MOVING_TO_TARGET_LOCKED;
                         G_Move_SetSurroundEntity(ent, target);
+                        curr->state = STATE_MOVING_TO_TARGET_LOCKED;
                         break;
                     }else{
                         curr->sticky = false;
@@ -551,6 +570,7 @@ static void on_20hz_tick(void *user, void *event)
                 if(enemy && melee_can_attack(ent, enemy)) {
 
                     curr->target_uid = enemy->uid;
+                    E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
                     entity_turn_to_target(ent, enemy);
                     break;
                 }
@@ -569,6 +589,24 @@ static void on_20hz_tick(void *user, void *event)
                 E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish, ent, G_RUNNING);
             }
 
+            break;
+        }
+        case STATE_TURNING_TO_TARGET: {
+
+            const struct entity *target = G_EntityForUID(curr->target_uid);
+            if(entity_dead(target) || !melee_can_attack(ent, target)) {
+                curr->state = STATE_NOT_IN_COMBAT; 
+                break;
+            }
+
+            quat_t target_dir = entity_turn_dir(ent, target);
+            float angle_diff = PFM_Quat_PitchDiff(&ent->rotation, &target_dir);
+
+            if(G_Move_Still(ent)) {
+
+                curr->state = STATE_CAN_ATTACK;
+                E_Entity_Notify(EVENT_ATTACK_START, ent->uid, NULL, ES_ENGINE);
+            }
             break;
         }
         case STATE_ATTACK_ANIM_PLAYING:

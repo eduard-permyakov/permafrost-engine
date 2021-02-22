@@ -178,6 +178,9 @@ void    PFM_Quat_FromRotMat(mat4x4_t *mat, quat_t *out);
 void    PFM_Quat_ToEuler   (quat_t *q, float *out_roll, float *out_pitch, float *out_yaw);
 void    PFM_Quat_MultQuat  (quat_t *op1, quat_t *op2, quat_t *out);
 void    PFM_Quat_Normal    (quat_t *op1, quat_t *out);
+void    PFM_Quat_Inverse   (quat_t *op1, quat_t *out);
+/* The angle of rotation from op1 to op2 around the Y axis, in radians */
+GLfloat PFM_Quat_PitchDiff (quat_t *op1, quat_t *op2);
 
 /*****************************************************************************/
 /* Other                                                                     */

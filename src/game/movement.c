@@ -104,6 +104,8 @@ enum arrival_state{
     /* Move towards the closest point touching the target entity, but 
      * stop before actually stepping on it's tiles. */
     STATE_SURROUND_ENTITY,
+    /* Entity is turning until it faces a particular direction */
+    STATE_TURNING,
 };
 
 struct movestate{
@@ -127,6 +129,8 @@ struct movestate{
     int                vel_hist_idx;
     /* Entity that we're moving towards when in the 'SURROUND_STATIC_ENTITY' state */
     uint32_t           surround_target_uid;
+    /* The target direction for 'turning' entities */
+    quat_t             target_dir;
 };
 
 struct flock{
@@ -183,6 +187,7 @@ VEC_IMPL(static inline, flock, struct flock)
 
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
 #define WAIT_TICKS                      (60)
+#define MAX_TURN_RATE                   (15.0f) /* degree/tick */
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -209,6 +214,7 @@ static const char *s_state_str[] = {
     [STATE_SEEK_ENEMIES]    = STR(STATE_SEEK_ENEMIES),
     [STATE_WAITING]         = STR(STATE_WAITING),
     [STATE_SURROUND_ENTITY] = STR(STATE_SURROUND_ENTITY),
+    [STATE_TURNING]         = STR(STATE_TURNING)
 };
 
 /*****************************************************************************/
@@ -711,6 +717,8 @@ static vec2_t ent_desired_velocity(const struct entity *ent)
     struct flock *fl = flock_for_ent(ent);
 
     switch(ms->state) {
+    case STATE_TURNING:
+        return (vec2_t){0.0f, 0.0f};
     case STATE_SEEK_ENEMIES: 
         return M_NavDesiredEnemySeekVelocity(s_map, pos_xz, ent->faction_id);
     default:
@@ -1220,6 +1228,34 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
 
         break;
     }
+    case STATE_TURNING: {
+
+        /* find the angle between the two quaternions */
+        float angle_diff = PFM_Quat_PitchDiff(&ent->rotation, &ms->target_dir);
+        float degrees = RAD_TO_DEG(angle_diff);
+
+        /* if it's within a tolerance, stop turning */
+        if(fabs(degrees) <= 5.0f) {
+            entity_finish_moving(ent, STATE_ARRIVED);
+            break;
+        }
+
+        /* If not, find the amount we should turn by around the Y axis */
+        float turn_deg = MIN(MAX_TURN_RATE, fabs(degrees)) * SIGNUM(degrees);
+        float turn_rad = DEG_TO_RAD(turn_deg);
+        mat4x4_t rotmat;
+        PFM_Mat4x4_MakeRotY(turn_rad, &rotmat);
+        quat_t rot;
+        PFM_Quat_FromRotMat(&rotmat, &rot);
+
+        /* Turn */
+        quat_t final;
+        PFM_Quat_MultQuat(&rot, &ent->rotation, &final);
+        PFM_Quat_Normal(&final, &final);
+        ent->rotation = final;
+
+        break;
+    }
     case STATE_WAITING: {
 
         assert(ms->wait_ticks_left > 0);
@@ -1495,6 +1531,9 @@ static void on_20hz_tick(void *user, void *event)
         ms->vdes = ent_desired_velocity(curr);
 
         switch(ms->state) {
+        case STATE_TURNING:
+            vpref = (vec2_t){0.0f, 0.0f};
+            break;
         case STATE_SEEK_ENEMIES: 
             assert(!flock);
             vpref = enemy_seek_vpref(curr);
@@ -1698,6 +1737,20 @@ void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz)
 
     make_flock_from_selection(&to_add, dest_xz, false);
     vec_pentity_destroy(&to_add);
+}
+
+void G_Move_ChangeDirection(const struct entity *ent, quat_t target)
+{
+    struct movestate *ms = movestate_get(ent);
+    assert(ms);
+
+    if(ent_still(ms)) {
+        entity_unblock(ent);
+        E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
+    }
+
+    ms->state = STATE_TURNING;
+    ms->target_dir = target;
 }
 
 void G_Move_SetMoveOnLeftClick(void)
@@ -1927,6 +1980,12 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.surround_target_uid
         };
         CHK_TRUE_RET(Attr_Write(stream, &surround_target_uid, "surround_target_uid"));
+
+        struct attr target_dir = (struct attr){
+            .type = TYPE_QUAT,
+            .val.as_quat = curr.target_dir
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &target_dir, "target_dir"));
     });
 
     return true;
@@ -2046,6 +2105,10 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         ms->surround_target_uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_QUAT);
+        ms->target_dir = attr.val.as_quat;
     }
 
     return true;

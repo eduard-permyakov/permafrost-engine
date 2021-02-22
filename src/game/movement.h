@@ -57,6 +57,7 @@ bool G_Move_GetSurrounding(const struct entity *ent, uint32_t *out_uid);
 void G_Move_Stop(const struct entity *ent);
 void G_Move_SetSeekEnemies(const struct entity *ent);
 void G_Move_SetSurroundEntity(const struct entity *ent, const struct entity *target);
+void G_Move_ChangeDirection(const struct entity *ent, quat_t target);
 
 void G_Move_UpdatePos(const struct entity *ent, vec2_t pos);
 bool G_Move_InTargetMode(void);
