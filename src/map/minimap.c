@@ -230,6 +230,9 @@ static void on_mouseclick(void *user, void *event)
     if(mouse_event->button.button != SDL_BUTTON_LEFT)
         return;
 
+    if(G_MouseInTargetMode())
+        return;
+
     int w, h;
     Engine_WinDrawableSize(&w, &h);
     vec2_t virt_mouse_button = (vec2_t){
@@ -246,9 +249,6 @@ static void on_mousemove(void *user, void *event)
     const struct map *map = (const struct map*)user; 
     SDL_Event *mouse_event = (SDL_Event*)event;
     assert(mouse_event->type == SDL_MOUSEMOTION);
-
-    if(!m_mouse_over_screen_rect(map, m_curr_terrain_bounds(map)))
-        return;
 
     if(!s_mouse_down_in_minimap)
         return;
@@ -443,5 +443,30 @@ bool M_MouseOverMinimap(const struct map *map)
         return false;
 
     return m_mouse_over_screen_rect(map, m_curr_bounds(map));
+}
+
+bool M_MinimapMouseMapCoords(const struct map *map, vec3_t *out)
+{
+    if(!M_MouseOverMinimap(map))
+        return false;
+
+    int x, y;
+    SDL_GetMouseState(&x, &y);
+
+    int w, h;
+    Engine_WinDrawableSize(&w, &h);
+
+    vec2_t virt_mouse_button = (vec2_t){
+        (float)x / w * UI_ArAdjustedVRes(map->minimap_vres).x,
+        (float)y / h * UI_ArAdjustedVRes(map->minimap_vres).y
+    };
+
+    vec2_t ws_coords = m_minimap_mouse_coords_to_world(map, virt_mouse_button);
+    *out = (vec3_t) {
+        ws_coords.x, 
+        M_HeightAtPoint(map, ws_coords),
+        ws_coords.z
+    };
+    return true;
 }
 

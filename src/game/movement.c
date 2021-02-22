@@ -555,9 +555,6 @@ static void on_mousedown(void *user, void *event)
     if(!s_click_move_enabled)
         return;
 
-    if(G_MouseOverMinimap())
-        return;
-
     if(S_UI_MouseOverWindow(mouse_event->x, mouse_event->y))
         return;
 
@@ -571,7 +568,8 @@ static void on_mousedown(void *user, void *event)
         return;
 
     vec3_t mouse_coord;
-    if(!M_Raycast_MouseIntersecCoord(&mouse_coord))
+    if(!M_MinimapMouseMapCoords(s_map, &mouse_coord)
+    && !M_Raycast_MouseIntersecCoord(&mouse_coord))
         return;
 
     enum selection_type sel_type;

@@ -458,6 +458,14 @@ void   M_RenderMinimapUnits(const struct map *map, size_t nunits,
  */
 bool   M_MouseOverMinimap(const struct map *map);
 
+/* ------------------------------------------------------------------------
+ * Returns true if the mouse is over a valid map location on the minimap.
+ * In this case, 'out' is set to the worldspace coordinate of the position
+ * over the map surface.
+ * ------------------------------------------------------------------------
+ */
+bool   M_MinimapMouseMapCoords(const struct map *map, vec3_t *out);
+
 /*###########################################################################*/
 /* MAP ASSET LOADING                                                         */
 /*###########################################################################*/

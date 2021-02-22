@@ -1806,6 +1806,9 @@ int G_Harvester_CurrContextualAction(void)
     if(!hovered)
         return CTX_ACTION_NONE;
 
+    if(M_MouseOverMinimap(s_map))
+        return CTX_ACTION_NONE;
+
     if((hovered->flags & ENTITY_FLAG_BUILDING)
     && !G_Building_IsFounded(hovered))
         return CTX_ACTION_NONE;

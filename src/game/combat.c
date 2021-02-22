@@ -333,6 +333,11 @@ static quat_t entity_turn_dir(struct entity *ent, const struct entity *target)
 
     vec2_t ent_to_target;
     PFM_Vec2_Sub(&tar_pos_xz, &ent_pos_xz, &ent_to_target);
+
+    if(PFM_Vec2_Len(&ent_to_target) < EPSILON) {
+        return ent->rotation;
+    }
+
     PFM_Vec2_Normal(&ent_to_target, &ent_to_target);
     return quat_from_vec(ent_to_target);
 }
@@ -874,6 +879,9 @@ int G_Combat_CurrContextualAction(void)
 {
     struct entity *hovered = G_Sel_GetHovered();
     if(!hovered)
+        return CTX_ACTION_NONE;
+
+    if(M_MouseOverMinimap(s_map))
         return CTX_ACTION_NONE;
 
     int mouse_x, mouse_y;
