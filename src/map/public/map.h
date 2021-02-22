@@ -446,6 +446,13 @@ void   M_SetMinimapResizeMask(struct map *map, int resize_mask);
 void   M_RenderMinimap   (const struct map *map, const struct camera *cam);
 
 /* ------------------------------------------------------------------------
+ * Render a coloroed box for every specified unit in the minimap region.
+ * ------------------------------------------------------------------------
+ */
+void   M_RenderMinimapUnits(const struct map *map, size_t nunits, 
+                            vec2_t *posbuff, vec3_t *colorbuff);
+
+/* ------------------------------------------------------------------------
  * Render the minimap at the location specified by 'M_SetMinimapPos'.
  * ------------------------------------------------------------------------
  */

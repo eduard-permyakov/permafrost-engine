@@ -67,6 +67,7 @@
 #include "../ui.h"
 #include "../perf.h"
 #include "../cursor.h"
+#include "../sched.h"
 
 #include <assert.h> 
 
@@ -916,6 +917,39 @@ static void g_create_settings(void)
     });
 }
 
+static void g_render_minimap_units(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    assert(Sched_UsingBigStack());
+    PERF_ENTER();
+
+    vec2_t positions[kh_size(s_gs.active)];
+    vec3_t colors[kh_size(s_gs.active)];
+    size_t nunits = 0;
+
+    vec3_t color_map[MAX_FACTIONS];
+    G_GetFactions(NULL, color_map, NULL);
+
+    uint32_t key;
+    struct entity *curr;
+    kh_foreach(s_gs.active, key, curr, {
+        if(!(curr->flags & (ENTITY_FLAG_MOVABLE | ENTITY_FLAG_BUILDING)))
+            continue;
+        vec2_t xz_pos = G_Pos_GetXZ(key);
+        if(!G_Fog_PlayerVisible(xz_pos))
+            continue;
+        vec3_t norm_color = color_map[curr->faction_id];
+        PFM_Vec3_Scale(&norm_color, 1.0f / 255, &norm_color);
+
+        positions[nunits] = M_WorldCoordsToNormMapCoords(s_gs.map, xz_pos);
+        colors[nunits] = norm_color;
+        nunits++;
+    });
+
+    M_RenderMinimapUnits(s_gs.map, nunits, positions, colors);
+    PERF_RETURN_VOID();
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1372,6 +1406,7 @@ void G_Render(void)
 
     if(s_gs.map) {
         M_RenderMinimap(s_gs.map, s_gs.active_cam);
+        g_render_minimap_units();
         R_PushCmd((struct rcmd){ R_GL_MapInvalidate, 0 });
     }
 

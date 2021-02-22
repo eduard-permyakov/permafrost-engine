@@ -399,6 +399,44 @@ void M_RenderMinimap(const struct map *map, const struct camera *cam)
     });
 }
 
+void M_RenderMinimapUnits(const struct map *map, size_t nunits, vec2_t *posbuff, vec3_t *colorbuff)
+{
+    assert(map);
+    if(map->minimap_sz == 0)
+        return;
+
+    struct quad curr_bounds = m_curr_bounds(map);
+
+    vec2_t center;
+    PFM_Vec2_Add(&curr_bounds.a, &curr_bounds.b, &center);
+    PFM_Vec2_Add(&center, &curr_bounds.c, &center);
+    PFM_Vec2_Add(&center, &curr_bounds.d, &center);
+    PFM_Vec2_Scale(&center, 0.25f, &center);
+
+    vec2_t ab;
+    PFM_Vec2_Sub(&curr_bounds.b, &curr_bounds.a, &ab);
+    int len = PFM_Vec2_Len(&ab);
+
+    void *pbuff = stalloc(&G_GetSimWS()->args, nunits * sizeof(vec2_t));
+    void *cbuff = stalloc(&G_GetSimWS()->args, nunits * sizeof(vec3_t));
+
+    memcpy(pbuff, posbuff, nunits * sizeof(vec2_t));
+    memcpy(cbuff, colorbuff, nunits * sizeof(vec3_t));
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MinimapRenderUnits,
+        .nargs = 6,
+        .args = {
+            (void*)G_GetPrevTickMap(),
+            R_PushArg(&center, sizeof(center)),
+            R_PushArg(&len, sizeof(len)),
+            R_PushArg(&nunits, sizeof(nunits)),
+            pbuff,
+            cbuff
+        },
+    });
+}
+
 bool M_MouseOverMinimap(const struct map *map)
 {
     if(map->minimap_sz == 0)

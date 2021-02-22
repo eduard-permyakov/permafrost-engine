@@ -69,6 +69,13 @@ struct coord{
     int r, c;
 };
 
+struct unit_render_ctx{
+    GLuint vert_vbo;
+    GLuint clr_vbo;
+    GLuint off_vbo;
+    GLuint vao;
+};
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -441,6 +448,54 @@ static void setup_verts(void)
     GL_PERF_RETURN_VOID();
 }
 
+static void unit_render_ctx_init(struct unit_render_ctx *in, int side_len_px, 
+                                 size_t nunits, vec2_t *offsets, vec3_t *colors)
+{
+    vec3_t verts[4] = {
+        (vec3_t) {-1.0f / side_len_px * 4, -1.0f / side_len_px * 4, 0.0f}, 
+        (vec3_t) {-1.0f / side_len_px * 4,  1.0f / side_len_px * 4, 0.0f}, 
+        (vec3_t) { 1.0f / side_len_px * 4,  1.0f / side_len_px * 4, 0.0f}, 
+        (vec3_t) { 1.0f / side_len_px * 4, -1.0f / side_len_px * 4, 0.0f}, 
+    };
+
+    glGenVertexArrays(1, &in->vao);
+    glBindVertexArray(in->vao);
+
+    glGenBuffers(1, &in->vert_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, in->vert_vbo);
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(verts) * sizeof(vec3_t), verts, GL_STREAM_DRAW);
+
+    /* Attribute 0 - position */
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    /* Attribute 1 - color */
+    glGenBuffers(1, &in->clr_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, in->clr_vbo);
+    glBufferData(GL_ARRAY_BUFFER, nunits * sizeof(vec3_t), colors, GL_STREAM_DRAW);
+
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribDivisor(1, 1);
+
+    /* Attribute 2 - offset */
+    glGenBuffers(1, &in->off_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, in->off_vbo);
+    glBufferData(GL_ARRAY_BUFFER, nunits * sizeof(vec2_t), offsets, GL_STREAM_DRAW);
+
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(vec2_t), (void*)0);
+    glEnableVertexAttribArray(2);
+    glVertexAttribDivisor(2, 1);
+}
+
+static void unit_render_ctx_destroy(struct unit_render_ctx *in)
+{
+    glDeleteBuffers(1, &in->vert_vbo);
+    glDeleteBuffers(1, &in->clr_vbo);
+    glDeleteBuffers(1, &in->off_vbo);
+    glDeleteVertexArrays(1, &in->vao);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -594,6 +649,37 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam,
     glDisable(GL_STENCIL_TEST);
 
     GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
+
+void  R_GL_MinimapRenderUnits(const struct map *map, vec2_t *center_pos, 
+                              const int *side_len_px, size_t *nunits, 
+                              vec2_t *posbuff, vec3_t *colorbuff)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+
+    mat4x4_t tmp;
+    mat4x4_t tilt, trans, scale, model;
+    PFM_Mat4x4_MakeRotZ(DEG_TO_RAD(-45.0f), &tilt);
+    PFM_Mat4x4_MakeScale((*side_len_px)/2.0f, (*side_len_px)/2.0f, 1.0f, &scale);
+    PFM_Mat4x4_MakeTrans(center_pos->x, center_pos->y, 0.0f, &trans);
+    PFM_Mat4x4_Mult4x4(&scale, &tilt, &tmp);
+    PFM_Mat4x4_Mult4x4(&trans, &tmp, &model);
+
+    struct unit_render_ctx ctx;
+    unit_render_ctx_init(&ctx, *side_len_px, *nunits, posbuff, colorbuff);
+
+    R_GL_StateSet(GL_U_MODEL, (struct uval){
+        .type = UTYPE_MAT4,
+        .val.as_mat4 = model
+    });
+    R_GL_Shader_Install("minimap-units");
+    glBindVertexArray(ctx.vao);
+    glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, *nunits);
+
+    unit_render_ctx_destroy(&ctx);
+
     GL_PERF_RETURN_VOID();
 }
 

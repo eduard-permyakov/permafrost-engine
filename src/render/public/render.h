@@ -325,6 +325,14 @@ void  R_GL_MinimapRender(const struct map *map, const struct camera *cam,
                          vec2_t *center_pos, const int *side_len_px);
 
 /* ---------------------------------------------------------------------------
+ * Render the specified unit positions in the minimap region.
+ * ---------------------------------------------------------------------------
+ */
+void  R_GL_MinimapRenderUnits(const struct map *map, vec2_t *center_pos, 
+                              const int *side_len_px, size_t *nunits, 
+                              vec2_t *posbuff, vec3_t *colorbuff);
+
+/* ---------------------------------------------------------------------------
  * Free the memory allocated by 'R_GL_MinimapBake'.
  * ---------------------------------------------------------------------------
  */

@@ -490,6 +490,19 @@ static struct shader s_shaders[] = {
             {0}
         },
     },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "minimap-units",
+        .vertex_path = "shaders/vertex/colored-instanced.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment/colored-per-vert.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_MODEL             },
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
+            {0}
+        },
+    },
 };
 
 /*****************************************************************************/
