@@ -66,7 +66,7 @@ class SettingsTabbedWindow(pf.Window):
         self.labels.append(label) 
         self.child_windows.append(window)
 
-    def on_hide(self):
+    def on_hide(self, manual):
         pf.global_event(EVENT_SETTINGS_HIDE, None)
 
     def update(self):
