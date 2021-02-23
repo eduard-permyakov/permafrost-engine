@@ -5409,6 +5409,10 @@ struct nk_window {
     nk_flags flags;
     struct nk_vec2i vres;
 
+    /* expose info about last update cycle state changes */
+    int minimized;
+    int maximized;
+
     struct nk_rect bounds;
     struct nk_scroll scrollbar;
     struct nk_command_buffer buffer;
@@ -15736,6 +15740,9 @@ nk_panel_begin(struct nk_context *ctx, const char *title, enum nk_panel_type pan
     scrollbar_size = style->window.scrollbar_size;
     panel_padding = nk_panel_get_padding(style, panel_type);
 
+    win->minimized = 0;
+    win->maximized = 0;
+
     /* window movement */
     if ((win->flags & NK_WINDOW_MOVABLE) && !(win->flags & NK_WINDOW_ROM)) {
         int left_mouse_down;
@@ -15881,12 +15888,18 @@ nk_panel_begin(struct nk_context *ctx, const char *title, enum nk_panel_type pan
                 button.x = header.x;
                 header.x += button.w + style->window.header.spacing.x + style->window.header.padding.x;
             }
+            int old_flags = layout->flags;
             if (nk_do_button_symbol(&ws, &win->buffer, button, (layout->flags & NK_WINDOW_MINIMIZED)?
                 style->window.header.maximize_symbol: style->window.header.minimize_symbol,
-                NK_BUTTON_DEFAULT, &style->window.header.minimize_button, in, style->font) && !(win->flags & NK_WINDOW_ROM))
+                NK_BUTTON_DEFAULT, &style->window.header.minimize_button, in, style->font) && !(win->flags & NK_WINDOW_ROM)) {
                 layout->flags = (layout->flags & NK_WINDOW_MINIMIZED) ?
                     layout->flags & (nk_flags)~NK_WINDOW_MINIMIZED:
                     layout->flags | NK_WINDOW_MINIMIZED;
+                if((old_flags & NK_WINDOW_MINIMIZED) && !(layout->flags & NK_WINDOW_MINIMIZED))
+                    win->maximized = 1;
+                if(!(old_flags & NK_WINDOW_MINIMIZED) && (layout->flags & NK_WINDOW_MINIMIZED))
+                    win->minimized = 1;
+            }
         }}
 
         {/* window header title */

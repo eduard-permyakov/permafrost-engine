@@ -119,7 +119,9 @@ static PyObject *PyWindow_text_lines(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
-static PyObject *PyWindow_on_hide(PyWindowObject *self);
+static PyObject *PyWindow_on_hide(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_on_minimize(PyWindowObject *self);
+static PyObject *PyWindow_on_maximize(PyWindowObject *self);
 static PyObject *PyWindow_pickle(PyWindowObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
@@ -349,8 +351,16 @@ static PyMethodDef PyWindow_methods[] = {
     "This method should be overridden by subclasses to customize the window look and behavior."},
 
     {"on_hide", 
-    (PyCFunction)PyWindow_on_hide, METH_NOARGS,
-    "Callback that gets invoked when the user hides the window with the close button."},
+    (PyCFunction)PyWindow_on_hide, METH_VARARGS,
+    "Callback that gets invoked when the user hides the window with the close button (or via an API call)."},
+
+    {"on_minimize", 
+    (PyCFunction)PyWindow_on_minimize, METH_NOARGS,
+    "Callback that gets invoked when the user minimizes the window with the minimize button."},
+
+    {"on_maximize", 
+    (PyCFunction)PyWindow_on_maximize, METH_NOARGS,
+    "Callback that gets invoked when the user maximizes the window with the maximize button."},
 
     {"__pickle__", 
     (PyCFunction)PyWindow_pickle, METH_KEYWORDS,
@@ -1351,7 +1361,17 @@ static PyObject *PyWindow_update(PyWindowObject *self)
     Py_RETURN_NONE;
 }
 
-static PyObject *PyWindow_on_hide(PyWindowObject *self)
+static PyObject *PyWindow_on_hide(PyWindowObject *self, PyObject *args)
+{
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_on_minimize(PyWindowObject *self)
+{
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyWindow_on_maximize(PyWindowObject *self)
 {
     Py_RETURN_NONE;
 }
@@ -2159,6 +2179,16 @@ static void call_critfail(PyObject *obj, char *method_name)
     }
 }
 
+static void call_critfail_arg(PyObject *obj, char *method_name, PyObject *arg)
+{
+    PyObject *ret = PyObject_CallMethod(obj, method_name, "O", arg, NULL);
+    Py_XDECREF(ret);
+    if(!ret) {
+        PyErr_Print();
+        exit(EXIT_FAILURE);
+    }
+}
+
 static void active_windows_update(void *user, void *event)
 {
     (void)user;
@@ -2191,8 +2221,19 @@ static void active_windows_update(void *user, void *event)
         }
 
         if(win->hide || (s_nk_ctx->current->flags & NK_WINDOW_HIDDEN && !(win->flags & NK_WINDOW_HIDDEN))) {
-        
-            call_critfail((PyObject*)win, "on_hide");
+
+            PyObject *manual = win->hide ? Py_False : Py_True;
+            Py_INCREF(manual);
+            call_critfail_arg((PyObject*)win, "on_hide", manual);
+            Py_DECREF(manual);
+        }
+
+        if(s_nk_ctx->current->minimized) {
+            call_critfail((PyObject*)win, "on_minimize");
+        }
+
+        if(s_nk_ctx->current->maximized) {
+            call_critfail((PyObject*)win, "on_maximize");
         }
 
         struct nk_vec2 pos = nk_window_get_position(s_nk_ctx);
