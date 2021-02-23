@@ -760,7 +760,8 @@ int G_StorageSite_GetCapacity(uint32_t uid, const char *rname)
     struct ss_state *ss = ss_state_get(uid);
     assert(ss);
 
-    ss_state_get_key(ss->capacity, rname, &ret);
+    khash_t(int) *table = (ss->use_alt) ? ss->alt_capacity : ss->capacity;
+    ss_state_get_key(table, rname, &ret);
     return ret;
 }
 
@@ -996,6 +997,26 @@ int G_StorageSite_GetAltDesired(uint32_t uid, const char *rname)
 
     ss_state_get_key(ss->alt_desired, rname, &ret);
     return ret;
+}
+
+void G_StorageSite_UpdateFaction(uint32_t uid, int oldfac, int newfac)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+
+    const char *key;
+    int amount;
+
+    khash_t(int) *cap = ss->use_alt ? ss->alt_capacity : ss->capacity;
+    kh_foreach(cap, key, amount, {
+        update_cap_delta(key, -amount, oldfac);
+        update_cap_delta(key,  amount, newfac);
+    });
+
+    kh_foreach(ss->curr, key, amount, {
+        update_res_delta(key, -amount, oldfac);
+        update_res_delta(key,  amount, newfac);
+    });
 }
 
 bool G_StorageSite_SaveState(struct SDL_RWops *stream)

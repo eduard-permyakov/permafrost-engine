@@ -384,6 +384,7 @@ void G_StorageSite_SetFontColor(const struct nk_color *clr);
 void G_StorageSite_SetBorderColor(const struct nk_color *clr);
 void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style);
 void G_StorageSite_SetShowUI(bool show);
+void G_StorageSite_UpdateFaction(uint32_t uid, int oldfac, int newfac);
 
 /*###########################################################################*/
 /* GAME REGION                                                               */

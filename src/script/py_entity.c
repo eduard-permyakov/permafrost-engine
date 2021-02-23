@@ -1238,6 +1238,10 @@ static int PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *
     G_Fog_UpdateVisionRange(xz_pos, old, self->ent->vision_range, 0.0f);
     G_Fog_UpdateVisionRange(xz_pos, self->ent->faction_id, 0.0f, self->ent->vision_range);
     G_Combat_UpdateRef(old, self->ent->faction_id, xz_pos);
+
+    if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyStorageSiteEntity_type)) {
+        G_StorageSite_UpdateFaction(self->ent->uid, old, self->ent->faction_id);
+    }
     return 0;
 }
 
