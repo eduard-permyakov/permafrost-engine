@@ -257,6 +257,18 @@ static void sel_make_frustum(struct camera *cam, vec2_t mouse_down, vec2_t mouse
     PFM_Vec3_Normal(&out->left.normal, &out->left.normal);
 }
 
+static bool sel_shift_pressed(void)
+{
+    const Uint8 *state = SDL_GetKeyboardState(NULL);
+    return (state[SDL_SCANCODE_LSHIFT] || state[SDL_SCANCODE_RSHIFT]);
+}
+
+static bool sel_ctrl_pressed(void)
+{
+    const Uint8 *state = SDL_GetKeyboardState(NULL);
+    return (state[SDL_SCANCODE_LCTRL] || state[SDL_SCANCODE_RCTRL]);
+}
+
 static void sel_compute_hovered(struct camera *cam, const vec_pentity_t *visible, const vec_obb_t *visible_obbs)
 {
     if(!s_hovered_dirty)
@@ -403,6 +415,23 @@ static void sel_filter_and_set_type(void)
     sel_filter_buildings();
 }
 
+static void sel_process_unit(struct entity *ent)
+{
+    if(sel_shift_pressed()) {
+        int idx = vec_pentity_indexof(&s_selected, ent, pentities_equal);
+        if(idx == -1) {
+            vec_pentity_push(&s_selected, ent);
+        }
+    }else if(sel_ctrl_pressed()) {
+        int idx = vec_pentity_indexof(&s_selected, ent, pentities_equal);
+        if(idx != -1) {
+            vec_pentity_del(&s_selected, idx);
+        }
+    }else{
+        vec_pentity_push(&s_selected, ent);
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -458,7 +487,8 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
     s_ctx.state = STATE_MOUSE_SEL_UP;
 
     bool sel_empty = true;
-    if(s_ctx.mouse_down_coord.x == s_ctx.mouse_up_coord.x && s_ctx.mouse_down_coord.y && s_ctx.mouse_up_coord.y) {
+    if(s_ctx.mouse_down_coord.x == s_ctx.mouse_up_coord.x 
+    && s_ctx.mouse_down_coord.y == s_ctx.mouse_up_coord.y) {
 
         /* Case 1: The mouse is pressed and released in the same spot, meaning we can use a single ray
          * to test against the OBBs 
@@ -467,9 +497,10 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
          * OBBs intersect with the mouse ray. We pick the one with the closest intersection point.
          */
         if(s_hovered && (s_hovered->flags & ENTITY_FLAG_SELECTABLE)) {
+
             sel_empty = false;
-            vec_pentity_reset(&s_selected);                
-            vec_pentity_push(&s_selected, s_hovered);
+            vec_pentity_reset(&s_selected);
+            sel_process_unit(s_hovered);
         }
 
     }else{
@@ -487,10 +518,13 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
             if(C_FrustumOBBIntersectionExact(&frust, &vec_AT(visible_obbs, i))) {
 
                 if(sel_empty) {
-                    vec_pentity_reset(&s_selected);
                     sel_empty = false;
+                    if(!sel_shift_pressed() && !sel_ctrl_pressed()) {
+                        vec_pentity_reset(&s_selected);
+                    }
                 }
-                vec_pentity_push(&s_selected, vec_AT(visible, i));
+                struct entity *curr = vec_AT(visible, i);
+                sel_process_unit(curr);
             }
         }
     }
@@ -538,6 +572,16 @@ const vec_pentity_t *G_Sel_Get(enum selection_type *out_type)
 {
     *out_type = s_ctx.type;
     return &s_selected;
+}
+
+void G_Sel_Set(uint32_t *ents, size_t nents)
+{
+    G_Sel_Clear();
+    for(int i = 0; i < nents; i++) {
+        struct entity *ent = G_EntityForUID(ents[i]);
+        vec_pentity_push(&s_selected, ent);
+    }
+    sel_filter_and_set_type();
 }
 
 bool G_Sel_SaveState(struct SDL_RWops *stream)

@@ -196,6 +196,7 @@ void                  G_Sel_Add(struct entity *ent);
 void                  G_Sel_Remove(struct entity *ent);
 const vec_pentity_t  *G_Sel_Get(enum selection_type *out_type);
 struct entity        *G_Sel_GetHovered(void);
+void                  G_Sel_Set(uint32_t *ents, size_t nents);
 
 
 /*###########################################################################*/

@@ -100,6 +100,8 @@ static PyObject *PyPf_mouse_over_ui(PyObject *self);
 static PyObject *PyPf_ui_text_edit_has_focus(PyObject *self);
 static PyObject *PyPf_get_active_window(PyObject *self);
 static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args);
+static PyObject *PyPf_shift_pressed(PyObject *self);
+static PyObject *PyPf_ctrl_pressed(PyObject *self);
 
 static PyObject *PyPf_get_active_font(PyObject *self);
 static PyObject *PyPf_set_active_font(PyObject *self, PyObject *args);
@@ -113,6 +115,7 @@ static PyObject *PyPf_enable_unit_selection(PyObject *self);
 static PyObject *PyPf_disable_unit_selection(PyObject *self);
 static PyObject *PyPf_clear_unit_selection(PyObject *self);
 static PyObject *PyPf_get_unit_selection(PyObject *self);
+static PyObject *PyPf_set_unit_selection(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_hovered_unit(PyObject *self);
 static PyObject *PyPf_entities_for_tag(PyObject *self, PyObject *args);
 
@@ -300,6 +303,14 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_get_file_size, METH_VARARGS,
     "Get the size (in bytes) of a Python file object."},
 
+    {"shift_pressed", 
+    (PyCFunction)PyPf_shift_pressed, METH_VARARGS,
+    "Returns True if either of the SHIFT keys are currently pressed."},
+
+    {"ctrl_pressed", 
+    (PyCFunction)PyPf_ctrl_pressed, METH_VARARGS,
+    "Returns True if either of the CTRL keys are currently pressed."},
+
     {"get_active_font", 
     (PyCFunction)PyPf_get_active_font, METH_NOARGS,
     "Get the name of the current active font."},
@@ -343,6 +354,10 @@ static PyMethodDef pf_module_methods[] = {
     {"get_unit_selection", 
     (PyCFunction)PyPf_get_unit_selection, METH_NOARGS,
     "Returns a list of objects currently selected by the player."},
+
+    {"set_unit_selection", 
+    (PyCFunction)PyPf_set_unit_selection, METH_VARARGS,
+    "Overwrites the list of objects currently selected by the player with the specified entity list."},
 
     {"get_hovered_unit", 
     (PyCFunction)PyPf_get_hovered_unit, METH_NOARGS,
@@ -1102,6 +1117,26 @@ static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args)
 	return ret;
 }
 
+static PyObject *PyPf_shift_pressed(PyObject *self)
+{
+    const Uint8 *state = SDL_GetKeyboardState(NULL);
+    if(state[SDL_SCANCODE_LSHIFT] || state[SDL_SCANCODE_RSHIFT]) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
+}
+
+static PyObject *PyPf_ctrl_pressed(PyObject *self)
+{
+    const Uint8 *state = SDL_GetKeyboardState(NULL);
+    if(state[SDL_SCANCODE_LCTRL] || state[SDL_SCANCODE_RCTRL]) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
+}
+
 static PyObject *PyPf_get_active_font(PyObject *self)
 {
     return PyString_FromString(UI_GetActiveFont());
@@ -1195,6 +1230,32 @@ static PyObject *PyPf_get_unit_selection(PyObject *self)
     }
 
     return ret;
+}
+
+static PyObject *PyPf_set_unit_selection(PyObject *self, PyObject *args)
+{
+    PyObject *list;
+    if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &list)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must a list object.");
+        return NULL;
+    }
+
+    uint32_t ents[PyList_GET_SIZE(list)];
+    size_t nents = 0;
+
+    for(int i = 0; i < PyList_GET_SIZE(list); i++) {
+        PyObject *obj = PyList_GET_ITEM(list, i);
+        if(!S_Entity_Check(obj)) {
+            PyErr_SetString(PyExc_TypeError, "Argument must a pf.Entity objects.");
+            return NULL;
+        }
+        uint32_t uid;
+        S_Entity_UIDForObj(obj, &uid);
+        ents[nents++] = uid;
+    }
+
+    G_Sel_Set(ents, nents);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyPf_get_hovered_unit(PyObject *self)
@@ -2790,8 +2851,8 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     switch(eventnum) {
     case SDL_KEYDOWN:
     case SDL_KEYUP:
-        return Py_BuildValue("(i)", 
-            ((SDL_Event*)arg)->key.keysym.scancode);
+        return Py_BuildValue("(ii)", 
+            ((SDL_Event*)arg)->key.keysym.scancode, ((SDL_Event*)arg)->key.keysym.mod);
 
     case SDL_MOUSEMOTION:
         return Py_BuildValue("(i,i), (i,i)",
