@@ -78,6 +78,7 @@ static ALCcontext            *s_context = NULL;
 static khash_t(buffer)       *s_music;
 static khash_t(buffer)       *s_effects;
 static ALuint                 s_music_source;
+static ALuint                 s_foreground_source;
 
 static bool                   s_mute_on_focus_loss = false;
 static ALfloat                s_master_volume = 0.5f;
@@ -143,11 +144,11 @@ static void audio_free_buffer(struct al_buffer *buff)
     AL_ASSERT_OK();
 }
 
-static void audio_create_music_source(ALuint *src)
+static void audio_create_global_source(ALuint *src, ALfloat volume)
 {
     alGenSources(1, src);
     alSourcef(*src, AL_PITCH, 1);
-    alSourcef(*src, AL_GAIN, s_music_volume);
+    alSourcef(*src, AL_GAIN, volume);
     alSource3f(*src, AL_POSITION, 0, 0, 0);
     alSource3f(*src, AL_VELOCITY, 0, 0, 0);
     alSourcei(*src, AL_LOOPING, AL_FALSE);
@@ -352,6 +353,15 @@ static bool audio_name_music(const char *name, ALint *out)
     return true;
 }
 
+static bool audio_name_effect(const char *name, ALint *out)
+{
+    khiter_t k = kh_get(buffer, s_effects, name);
+    if(k == kh_end(s_effects))
+        return false;
+    *out = kh_value(s_effects, k).buffer;
+    return true;
+}
+
 static void audio_next_music_track(void)
 {
     const char *tracks[kh_size(s_music)];
@@ -485,11 +495,12 @@ bool Audio_Init(void)
     if(NULL == (s_effects = kh_init(buffer)))
         goto fail_effects_table;
 
+    audio_create_global_source(&s_music_source, s_music_volume);
+    audio_create_global_source(&s_foreground_source, Audio_EffectVolume());
+    alListenerf(AL_GAIN, s_master_volume);
+
     if(!Audio_Effect_Init())
         goto fail_effects;
-
-    audio_create_music_source(&s_music_source);
-    alListenerf(AL_GAIN, s_master_volume);
 
     audio_index_directory("assets/music", s_music);
     audio_index_directory("assets/sounds", s_effects);
@@ -502,6 +513,8 @@ bool Audio_Init(void)
     return true;
 
 fail_effects:
+    alDeleteSources(1, &s_music_source);
+    alDeleteSources(1, &s_foreground_source);
     kh_destroy(buffer, s_effects);
 fail_effects_table:
     kh_destroy(buffer, s_music);
@@ -520,7 +533,10 @@ void Audio_Shutdown(void)
     struct al_buffer curr;
 
     alSourceStop(s_music_source);
+    alSourceStop(s_foreground_source);
+
     alDeleteSources(1, &s_music_source);
+    alDeleteSources(1, &s_foreground_source);
 
     Audio_Effect_Shutdown();
 
@@ -563,6 +579,32 @@ bool Audio_PlayMusic(const char *name)
     alSourceStop(s_music_source);
     alSourcei(s_music_source, AL_BUFFER, play_buffer);
     alSourcePlay(s_music_source);
+
+    AL_ASSERT_OK();
+    return true;
+}
+
+bool Audio_PlayForegroundEffect(const char *name, bool interrupt)
+{
+    ALint src_state;
+    alGetSourcei(s_foreground_source, AL_SOURCE_STATE, &src_state);
+
+    if(src_state == AL_PLAYING && !interrupt)
+        return true;
+
+    if(name == NULL) {
+        alSourceStop(s_foreground_source);
+        alSourcei(s_foreground_source, AL_BUFFER, 0);
+        return true;
+    }
+
+    ALint play_buffer = 0;
+    if(!audio_name_effect(name, &play_buffer))
+        return false;
+
+    alSourceStop(s_foreground_source);
+    alSourcei(s_foreground_source, AL_BUFFER, play_buffer);
+    alSourcePlay(s_foreground_source);
 
     AL_ASSERT_OK();
     return true;
@@ -645,5 +687,10 @@ float Audio_BufferDuration(ALuint buffer)
 
     size_t nsamples = nbytes * 8 / (channels * bits);
     return nsamples / ((float)freq);
+}
+
+void Audio_SetForegroundEffectVolume(float gain)
+{
+    alSourcef(s_foreground_source, AL_GAIN, gain);
 }
 

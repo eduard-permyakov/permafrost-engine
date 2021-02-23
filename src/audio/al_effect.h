@@ -38,8 +38,9 @@
 
 #include <stdbool.h>
 
-bool Audio_Effect_Init(void);
-void Audio_Effect_Shutdown(void);
+bool  Audio_Effect_Init(void);
+void  Audio_Effect_Shutdown(void);
+float Audio_EffectVolume(void);
 
 #endif
 

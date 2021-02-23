@@ -45,6 +45,7 @@ const char *Audio_ErrString(ALenum err);
 bool        Audio_GetEffectBuffer(const char *name, ALuint *out);
 vec2_t      Audio_ListenerPosXZ(void);
 float       Audio_BufferDuration(ALuint buffer);
+void        Audio_SetForegroundEffectVolume(float gain);
 
 
 #endif

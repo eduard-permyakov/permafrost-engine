@@ -193,6 +193,7 @@ static PyObject *PyPf_play_music(PyObject *self, PyObject *args);
 static PyObject *PyPf_curr_music(PyObject *self);
 static PyObject *PyPf_get_all_music(PyObject *self);
 static PyObject *PyPf_play_effect(PyObject *self, PyObject *args);
+static PyObject *PyPf_play_global_effect(PyObject *self, PyObject *args, PyObject *kwargs);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -645,6 +646,12 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_play_effect, METH_VARARGS,
     "Play a specified audio effect at the specified (X, Y, Z) position. The name must be a name of a WAV file in the "
     "'assets/sounds' folder, without the file extension."},
+
+    {"play_global_effect",
+    (PyCFunction)PyPf_play_global_effect, METH_VARARGS | METH_KEYWORDS,
+    "Play a specified audio effect with global range. The name must be a name of a WAV file in the "
+    "'assets/sounds' folder, without the file extension. If another global effect is already playing, "
+    "the effect will be ignored, unless 'interrupt' is set to True."},
 
     {NULL}  /* Sentinel */
 };
@@ -2663,6 +2670,24 @@ static PyObject *PyPf_play_effect(PyObject *self, PyObject *args)
 
     if(!Audio_Effect_Add(pos, name)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to play the specified effect at the specified position.");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_play_global_effect(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    const char *name;
+    int interrupt = 0;
+    static char *kwlist[] = {"name", "interrupt", NULL};
+
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s|i", kwlist, &name, &interrupt)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a string (effect name) and an optional boolean (interrupt) argument.");
+        return NULL;
+    }
+
+    if(!Audio_PlayForegroundEffect(name, interrupt)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to play the specified global effect.");
         return NULL;
     }
     Py_RETURN_NONE;

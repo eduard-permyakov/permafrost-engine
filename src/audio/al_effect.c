@@ -311,6 +311,7 @@ static void audio_effect_volume_commit(const struct sval *val)
         const struct al_effect *curr = &vec_AT(&s_active, i);
         alSourcef(curr->source, AL_GAIN, s_effect_volume);
     }
+    Audio_SetForegroundEffectVolume(s_effect_volume);
 }
 
 static void audio_create_settings(void)
@@ -423,5 +424,10 @@ bool Audio_Effect_Add(vec3_t pos, const char *track)
     vec_effect_push(&s_effects, effect);
     qt_effect_insert(&s_effect_tree, pos.x, pos.z, effect);
     return true;
+}
+
+float Audio_EffectVolume(void)
+{
+    return s_effect_volume;
 }
 
