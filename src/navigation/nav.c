@@ -1246,6 +1246,88 @@ bool n_objects_adjacent(void *nav_private, vec3_t map_pos, const struct entity *
     return false;
 }
 
+static size_t n_tile_countour(size_t ntds, const struct tile_desc tds[static ntds],
+                              const struct nav_private *priv, struct tile_desc *out, size_t maxout)
+{
+    if(ntds == 0)
+        return 0;
+
+    int minr = INT_MAX;
+    int minc = INT_MAX;
+    int maxr = INT_MIN;
+    int maxc = INT_MIN;
+
+    for(int i = 0; i < ntds; i++) {
+
+        const struct tile_desc *curr = &tds[i];
+        int absr = curr->chunk_r * FIELD_RES_R + curr->tile_r;
+        int absc = curr->chunk_c * FIELD_RES_C + curr->tile_c;
+
+        minr = MIN(minr, absr);
+        minc = MIN(minc, absc);
+        maxr = MAX(maxr, absr);
+        maxc = MAX(maxc, absc);
+    }
+
+    int dr = maxr - minr + 1;
+    int dc = maxc - minc + 1;
+
+    uint8_t marked[dr][dc];
+    memset(marked, 0, sizeof(marked));
+
+    for(int i = 0; i < ntds; i++) {
+
+        const struct tile_desc *curr = &tds[i];
+        int absr = curr->chunk_r * FIELD_RES_R + curr->tile_r;
+        int absc = curr->chunk_c * FIELD_RES_C + curr->tile_c;
+
+        int relr = absr - minr;
+        int relc = absc - minc;
+        marked[relr][relc] = 1;
+    }
+
+    size_t ret = 0;
+    for(int r = minr - 1; r <= maxr + 1; r++) {
+    for(int c = minc - 1; c <= maxc + 1; c++) {
+
+        int relr = r - minr;
+        int relc = c - minc;
+        bool contour = false;
+
+        if(marked[relr][relc])
+            continue;
+
+        if(ret == maxout)
+            return ret;
+
+        /* If any of the neighbours are 'marked', this tile is part of the contour  */
+        if((relr > (0)    && marked[relr - 1][relc])
+        || (relr < (dr-1) && marked[relr + 1][relc])
+        || (relc > (0)    && marked[relr][relc - 1])
+        || (relc < (dc-1) && marked[relr][relc + 1])) {
+            contour = true;
+        }
+
+        if((relr > 0      && relc > 0      && marked[relr - 1][relc - 1])
+        || (relr > 0      && relc < (dc-1) && marked[relr - 1][relc + 1])
+        || (relr < (dr-1) && relc > 0      && marked[relr + 1][relc - 1])
+        || (relr < (dr-1) && relc < (dc-1) && marked[relr + 1][relc + 1])) {
+            contour = true;
+        }
+
+        if(contour) {
+            out[ret++] = (struct tile_desc){
+                .chunk_r = r / FIELD_RES_R,
+                .chunk_c = c / FIELD_RES_C,
+                .tile_r = r % FIELD_RES_R,
+                .tile_c = c % FIELD_RES_C,
+            };
+        }
+    }}
+
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
