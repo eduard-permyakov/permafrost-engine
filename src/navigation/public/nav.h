@@ -65,6 +65,12 @@ struct fc_stats{
     float    grid_path_hit_rate;
 };
 
+enum nav_layer{
+    NAV_LAYER_GROUND_1X1,
+    NAV_LAYER_GROUND_3X3,
+    NAV_LAYER_MAX,
+};
+
 #define DEST_ID_INVALID (~((uint32_t)0))
 
 /*###########################################################################*/

@@ -36,15 +36,17 @@
 #ifndef NAV_PRIVATE_H
 #define NAV_PRIVATE_H
 
-#include "../map/public/tile.h"
+#include "public/nav.h"
 #include "nav_data.h"
+#include "../map/public/tile.h"
+
 #include <stddef.h>
 
 struct portal;
 
 struct nav_private{
-    size_t           width, height;
-    struct nav_chunk chunks[];
+    size_t            width, height;
+    struct nav_chunk *chunks[NAV_LAYER_MAX];
 };
 
 bool N_PortalReachableFromTile(const struct portal *port, struct coord tile, 

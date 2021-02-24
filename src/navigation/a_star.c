@@ -304,7 +304,8 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
     if(NULL == (running_cost = kh_init(key_float)))
         goto fail_running_cost;
 
-    const struct nav_chunk *chunk = &priv->chunks[start_tile.chunk_r * priv->width + start_tile.chunk_c];
+    const struct nav_chunk *chunk = &priv->chunks[NAV_LAYER_GROUND_1X1]
+                                                 [start_tile.chunk_r * priv->width + start_tile.chunk_c];
     vec_coord_t path;
     vec_coord_init(&path);
 

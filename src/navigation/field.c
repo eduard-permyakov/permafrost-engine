@@ -886,7 +886,8 @@ void N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct f
 void N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_private *priv,
                        struct field_target target, struct flow_field *inout_flow)
 {
-    const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_coord.r, priv->width, chunk_coord.c)];
+    const struct nav_chunk *chunk = &priv->chunks[NAV_LAYER_GROUND_1X1]
+                                                 [IDX(chunk_coord.r, priv->width, chunk_coord.c)];
     pq_coord_t frontier;
     pq_coord_init(&frontier);
 
@@ -922,7 +923,8 @@ void N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc t
 
     pq_coord_t frontier;
     pq_coord_init(&frontier);
-    const struct nav_chunk *chunk = &priv->chunks[chunk_coord.r * priv->width + chunk_coord.c];
+    const struct nav_chunk *chunk = &priv->chunks[NAV_LAYER_GROUND_1X1]
+                                                 [chunk_coord.r * priv->width + chunk_coord.c];
 
     float integration_field[FIELD_RES_R][FIELD_RES_C];
     for(int r = 0; r < FIELD_RES_R; r++)
@@ -1101,7 +1103,8 @@ void N_FlowFieldUpdateIslandToNearest(uint16_t local_iid, const struct nav_priva
                                       struct flow_field *inout_flow)
 {
     struct coord chunk_coord = inout_flow->chunk;
-    const struct nav_chunk *chunk = &priv->chunks[IDX(chunk_coord.r, priv->width, chunk_coord.c)];
+    const struct nav_chunk *chunk = &priv->chunks[NAV_LAYER_GROUND_1X1]
+                                                 [IDX(chunk_coord.r, priv->width, chunk_coord.c)];
 
     pq_coord_t frontier;
     pq_coord_init(&frontier);
