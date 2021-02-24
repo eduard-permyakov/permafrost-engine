@@ -143,6 +143,15 @@ static bool n_tile_blocked(struct nav_private *priv, const struct tile_desc td)
     return false;
 }
 
+static struct map_resolution n_res(void *nav_private)
+{
+    struct nav_private *priv = nav_private;
+    return (struct map_resolution){
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+}
+
 static void n_set_cost_for_tile(struct nav_chunk *chunk, 
                                 size_t chunk_w, size_t chunk_h,
                                 size_t tile_r,  size_t tile_c,
@@ -846,7 +855,7 @@ static void n_update_blockers_circle(struct nav_private *priv, vec2_t xz_pos, fl
                                      vec3_t map_pos, int ref_delta)
 {
     struct tile_desc tds[256];
-    int ntds = N_TilesUnderCircle(priv, xz_pos, range, map_pos, tds, ARR_SIZE(tds));
+    int ntds = M_Tile_AllUnderCircle(n_res(priv), xz_pos, range, map_pos, tds, ARR_SIZE(tds));
     n_update_blockers(priv, tds, ntds, ref_delta);
 }
 
@@ -1228,7 +1237,7 @@ bool n_objects_adjacent(void *nav_private, vec3_t map_pos, const struct entity *
     };
 
     struct tile_desc tds_ent[2048];
-    size_t ntiles_ent = N_TilesUnderCircle(priv, G_Pos_GetXZ(ent->uid), ent->selection_radius, 
+    size_t ntiles_ent = M_Tile_AllUnderCircle(n_res(priv), G_Pos_GetXZ(ent->uid), ent->selection_radius, 
         map_pos, tds_ent, ARR_SIZE(tds_ent));
 
     for(int i = 0; i < ntiles; i++) {
@@ -1244,88 +1253,6 @@ bool n_objects_adjacent(void *nav_private, vec3_t map_pos, const struct entity *
             return true;
     }}
     return false;
-}
-
-static size_t n_tile_countour(size_t ntds, const struct tile_desc tds[static ntds],
-                              const struct nav_private *priv, struct tile_desc *out, size_t maxout)
-{
-    if(ntds == 0)
-        return 0;
-
-    int minr = INT_MAX;
-    int minc = INT_MAX;
-    int maxr = INT_MIN;
-    int maxc = INT_MIN;
-
-    for(int i = 0; i < ntds; i++) {
-
-        const struct tile_desc *curr = &tds[i];
-        int absr = curr->chunk_r * FIELD_RES_R + curr->tile_r;
-        int absc = curr->chunk_c * FIELD_RES_C + curr->tile_c;
-
-        minr = MIN(minr, absr);
-        minc = MIN(minc, absc);
-        maxr = MAX(maxr, absr);
-        maxc = MAX(maxc, absc);
-    }
-
-    int dr = maxr - minr + 1;
-    int dc = maxc - minc + 1;
-
-    uint8_t marked[dr][dc];
-    memset(marked, 0, sizeof(marked));
-
-    for(int i = 0; i < ntds; i++) {
-
-        const struct tile_desc *curr = &tds[i];
-        int absr = curr->chunk_r * FIELD_RES_R + curr->tile_r;
-        int absc = curr->chunk_c * FIELD_RES_C + curr->tile_c;
-
-        int relr = absr - minr;
-        int relc = absc - minc;
-        marked[relr][relc] = 1;
-    }
-
-    size_t ret = 0;
-    for(int r = minr - 1; r <= maxr + 1; r++) {
-    for(int c = minc - 1; c <= maxc + 1; c++) {
-
-        int relr = r - minr;
-        int relc = c - minc;
-        bool contour = false;
-
-        if(marked[relr][relc])
-            continue;
-
-        if(ret == maxout)
-            return ret;
-
-        /* If any of the neighbours are 'marked', this tile is part of the contour  */
-        if((relr > (0)    && marked[relr - 1][relc])
-        || (relr < (dr-1) && marked[relr + 1][relc])
-        || (relc > (0)    && marked[relr][relc - 1])
-        || (relc < (dc-1) && marked[relr][relc + 1])) {
-            contour = true;
-        }
-
-        if((relr > 0      && relc > 0      && marked[relr - 1][relc - 1])
-        || (relr > 0      && relc < (dc-1) && marked[relr - 1][relc + 1])
-        || (relr < (dr-1) && relc > 0      && marked[relr + 1][relc - 1])
-        || (relr < (dr-1) && relc < (dc-1) && marked[relr + 1][relc + 1])) {
-            contour = true;
-        }
-
-        if(contour) {
-            out[ret++] = (struct tile_desc){
-                .chunk_r = r / FIELD_RES_R,
-                .chunk_c = c / FIELD_RES_C,
-                .tile_r = r % FIELD_RES_R,
-                .tile_c = c % FIELD_RES_C,
-            };
-        }
-    }}
-
-    return ret;
 }
 
 /*****************************************************************************/
@@ -2529,7 +2456,7 @@ bool N_ClosestReachableAdjacentPosDynamic(void *nav_private, vec3_t map_pos, vec
     };
 
     struct tile_desc tds[2048];
-    size_t ntiles = N_TilesUnderCircle(priv, xz_pos, radius, map_pos, tds, ARR_SIZE(tds));
+    size_t ntiles = M_Tile_AllUnderCircle(n_res(priv), xz_pos, radius, map_pos, tds, ARR_SIZE(tds));
 
     return n_closest_adjacent_pos(nav_private, map_pos, xz_src, ntiles, tds, out);
 }
@@ -2663,42 +2590,6 @@ int N_GridNeighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct 
     return ret;
 }
 
-int N_TilesUnderCircle(const struct nav_private *priv, vec2_t xz_center, float radius, 
-                       vec3_t map_pos, struct tile_desc *out, int maxout)
-{
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
-
-    struct tile_desc tile;
-    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_center, &tile);
-    assert(result);
-
-    int tile_len = X_COORDS_PER_TILE / (FIELD_RES_C / TILES_PER_CHUNK_WIDTH);
-    int ntiles = ceil(radius / tile_len);
-
-    int ret = 0;
-
-    for(int dr = -ntiles; dr <= ntiles; dr++) {
-    for(int dc = -ntiles; dc <= ntiles; dc++) {
-
-        struct tile_desc curr = tile;
-        if(!M_Tile_RelativeDesc(res, &curr, dc, dr))
-            continue;
-
-        struct box bounds = M_Tile_Bounds(res, map_pos, curr);
-        if(!C_CircleRectIntersection(xz_center, radius, bounds))
-            continue;
-
-        out[ret++] = curr;
-        if(ret == maxout) 
-            break;
-    }}
-
-    return ret;
-}
-
 bool N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, const struct entity *ent, const struct obb *stat)
 {
     assert(Sched_UsingBigStack());
@@ -2726,7 +2617,7 @@ bool N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, const struct enti
     };
 
     struct tile_desc tds_dyn[2048];
-    size_t ntiles_dyn = N_TilesUnderCircle(priv, xz_pos, radius, map_pos, tds_dyn, ARR_SIZE(tds_dyn));
+    size_t ntiles_dyn = M_Tile_AllUnderCircle(n_res(priv), xz_pos, radius, map_pos, tds_dyn, ARR_SIZE(tds_dyn));
 
     return n_objects_adjacent(nav_private, map_pos, ent, ntiles_dyn, tds_dyn);
 }

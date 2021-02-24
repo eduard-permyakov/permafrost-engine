@@ -685,7 +685,7 @@ static size_t enemies_initial_frontier(struct enemies_desc *enemies, const struc
             Entity_CurrentOBB(curr_enemy, &obb, true);
             ntds = M_Tile_AllUnderObj(enemies->map_pos, res, &obb, tds, ARR_SIZE(tds));
         }else{
-            ntds = N_TilesUnderCircle(priv, G_Pos_GetXZ(curr_enemy->uid), 
+            ntds = M_Tile_AllUnderCircle(res, G_Pos_GetXZ(curr_enemy->uid), 
                 curr_enemy->selection_radius, enemies->map_pos, tds, ARR_SIZE(tds));
         }
 

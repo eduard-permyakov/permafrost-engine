@@ -42,6 +42,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <limits.h>
 
 
 #define CHUNK_WIDTH  (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE)
@@ -665,6 +666,120 @@ size_t M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const struc
     }
 
 done:
+    return ret;
+}
+
+size_t M_Tile_AllUnderCircle(struct map_resolution res, vec2_t xz_center, float radius,
+                             vec3_t map_pos, struct tile_desc *out, size_t maxout)
+{
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_center, &tile);
+    assert(result);
+
+    const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
+    const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
+    int tile_len = MAX(TILE_X_DIM, TILE_Z_DIM);
+    int ntiles = ceil(radius / tile_len);
+
+    size_t ret = 0;
+
+    for(int dr = -ntiles; dr <= ntiles; dr++) {
+    for(int dc = -ntiles; dc <= ntiles; dc++) {
+
+        struct tile_desc curr = tile;
+        if(!M_Tile_RelativeDesc(res, &curr, dc, dr))
+            continue;
+
+        struct box bounds = M_Tile_Bounds(res, map_pos, curr);
+        if(!C_CircleRectIntersection(xz_center, radius, bounds))
+            continue;
+
+        out[ret++] = curr;
+        if(ret == maxout) 
+            break;
+    }}
+    return ret;
+}
+
+size_t M_Tile_Countour(size_t ntds, const struct tile_desc tds[static ntds],
+                       struct map_resolution res, struct tile_desc *out, size_t maxout)
+{
+    if(ntds == 0)
+        return 0;
+
+    int minr = INT_MAX;
+    int minc = INT_MAX;
+    int maxr = INT_MIN;
+    int maxc = INT_MIN;
+
+    for(int i = 0; i < ntds; i++) {
+
+        const struct tile_desc *curr = &tds[i];
+        int absr = curr->chunk_r * res.tile_h + curr->tile_r;
+        int absc = curr->chunk_c * res.tile_w + curr->tile_c;
+
+        minr = MIN(minr, absr);
+        minc = MIN(minc, absc);
+        maxr = MAX(maxr, absr);
+        maxc = MAX(maxc, absc);
+    }
+
+    int dr = maxr - minr + 1;
+    int dc = maxc - minc + 1;
+
+    uint8_t marked[dr][dc];
+    memset(marked, 0, sizeof(marked));
+
+    for(int i = 0; i < ntds; i++) {
+
+        const struct tile_desc *curr = &tds[i];
+        int absr = curr->chunk_r * res.tile_h + curr->tile_r;
+        int absc = curr->chunk_c * res.tile_w + curr->tile_c;
+
+        int relr = absr - minr;
+        int relc = absc - minc;
+        marked[relr][relc] = 1;
+    }
+
+    size_t ret = 0;
+    for(int r = minr - 1; r <= maxr + 1; r++) {
+    for(int c = minc - 1; c <= maxc + 1; c++) {
+
+        int relr = r - minr;
+        int relc = c - minc;
+        bool contour = false;
+
+        if(marked[relr][relc])
+            continue;
+
+        if(ret == maxout)
+            return ret;
+
+        /* If any of the neighbours are 'marked', this tile is part of the contour  */
+        if((relr > (0)    && marked[relr - 1][relc])
+        || (relr < (dr-1) && marked[relr + 1][relc])
+        || (relc > (0)    && marked[relr][relc - 1])
+        || (relc < (dc-1) && marked[relr][relc + 1])) {
+            contour = true;
+        }
+
+        if((relr > 0      && relc > 0      && marked[relr - 1][relc - 1])
+        || (relr > 0      && relc < (dc-1) && marked[relr - 1][relc + 1])
+        || (relr < (dr-1) && relc > 0      && marked[relr + 1][relc - 1])
+        || (relr < (dr-1) && relc < (dc-1) && marked[relr + 1][relc + 1])) {
+            contour = true;
+        }
+
+        if(contour) {
+            out[ret++] = (struct tile_desc){
+                .chunk_r = r / res.tile_h,
+                .chunk_c = c / res.tile_w,
+                .tile_r = r % res.tile_h,
+                .tile_c = c % res.tile_w,
+            };
+        }
+    }}
+
     return ret;
 }
 
