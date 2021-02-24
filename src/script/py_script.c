@@ -1253,7 +1253,7 @@ static PyObject *PyPf_set_unit_selection(PyObject *self, PyObject *args)
     for(int i = 0; i < PyList_GET_SIZE(list); i++) {
         PyObject *obj = PyList_GET_ITEM(list, i);
         if(!S_Entity_Check(obj)) {
-            PyErr_SetString(PyExc_TypeError, "Argument must a pf.Entity objects.");
+            PyErr_SetString(PyExc_TypeError, "Argument must a list of pf.Entity objects.");
             return NULL;
         }
         uint32_t uid;

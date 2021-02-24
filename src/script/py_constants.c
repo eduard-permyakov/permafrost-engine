@@ -517,6 +517,7 @@ static void s_expose_event_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, EVENT_RESOURCE_AMOUNT_CHANGED);
     PY_EXPOSE_ENUM(module, EVENT_ENTERED_REGION);
     PY_EXPOSE_ENUM(module, EVENT_EXITED_REGION);
+    PY_EXPOSE_ENUM(module, EVENT_UPDATE_FACTION);
     PY_EXPOSE_ENUM(module, EVENT_ENGINE_LAST);
 }
 

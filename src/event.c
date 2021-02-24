@@ -137,6 +137,7 @@ static const char *s_event_str_table[] = {
     STR(EVENT_RESOURCE_AMOUNT_CHANGED),
     STR(EVENT_ENTERED_REGION),
     STR(EVENT_EXITED_REGION),
+    STR(EVENT_UPDATE_FACTION),
 };
 
 static khash_t(handler_desc) *s_event_handler_table;

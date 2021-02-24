@@ -1593,9 +1593,10 @@ bool G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool contro
         G_Fog_ClearExploredCache();
     }
 
-    strcpy(s_gs.factions[faction_id].name, name);
+    pf_strlcpy(s_gs.factions[faction_id].name, name, sizeof(s_gs.factions[0].name));
     s_gs.factions[faction_id].color = color;
     s_gs.factions[faction_id].controllable = control;
+    E_Global_Notify(EVENT_UPDATE_FACTION, (void*)((uintptr_t)faction_id), ES_ENGINE);
     return true;
 }
 

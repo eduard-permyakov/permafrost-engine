@@ -118,7 +118,9 @@ void Camera_Free(struct camera *cam)
 void Camera_SetPos(struct camera *cam, vec3_t pos)
 {
     cam->pos = pos; 
-
+    if(cam->bounded) {
+        camera_move_within_bounds(cam);
+    }
     assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 
@@ -215,7 +217,9 @@ void Camera_MoveLeftTick(struct camera *cam)
     PFM_Vec3_Scale(&left, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Add(&cam->pos, &vdelta, &cam->pos);
 
-    if(cam->bounded) camera_move_within_bounds(cam);
+    if(cam->bounded) {
+        camera_move_within_bounds(cam);
+    }
     assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 
@@ -236,7 +240,9 @@ void Camera_MoveRightTick(struct camera *cam)
     PFM_Vec3_Scale(&left, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Sub(&cam->pos, &vdelta, &cam->pos);
 
-    if(cam->bounded) camera_move_within_bounds(cam);
+    if(cam->bounded) {
+        camera_move_within_bounds(cam);
+    }
     assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 
@@ -254,7 +260,9 @@ void Camera_MoveFrontTick(struct camera *cam)
     PFM_Vec3_Scale(&cam->front, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Add(&cam->pos, &vdelta, &cam->pos);
 
-    if(cam->bounded) camera_move_within_bounds(cam);
+    if(cam->bounded) {
+        camera_move_within_bounds(cam);
+    }
     assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 
@@ -272,7 +280,9 @@ void Camera_MoveBackTick(struct camera *cam)
     PFM_Vec3_Scale(&cam->front, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Sub(&cam->pos, &vdelta, &cam->pos);
 
-    if(cam->bounded) camera_move_within_bounds(cam);
+    if(cam->bounded) {
+        camera_move_within_bounds(cam);
+    }
     assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 
@@ -296,7 +306,9 @@ void Camera_MoveDirectionTick(struct camera *cam, vec3_t dir)
     PFM_Vec3_Scale(&dir, tdelta * cam->speed, &vdelta);
     PFM_Vec3_Add(&cam->pos, &vdelta, &cam->pos);
 
-    if(cam->bounded) camera_move_within_bounds(cam);
+    if(cam->bounded) {
+        camera_move_within_bounds(cam);
+    }
     assert(!cam->bounded || camera_pos_in_bounds(cam));
 }
 

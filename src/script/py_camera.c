@@ -37,6 +37,7 @@
 #include "py_pickle.h"
 #include "../camera.h"
 #include "../pf_math.h"
+#include "../map/public/map.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../game/public/game.h"
 
@@ -56,6 +57,7 @@ static PyObject *PyCamera_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 static void      PyCamera_dealloc(PyCameraObject *self);
 static int       PyCamera_init(PyCameraObject *self, PyObject *args, PyObject *kwds);
 
+static PyObject *PyCamera_center_over_location(PyCameraObject *self, PyObject *args);
 static PyObject *PyCamera_pickle(PyCameraObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyCamera_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -79,6 +81,10 @@ static int       PyCamera_set_sensitivity(PyCameraObject *self, PyObject *value,
 static PyObject *s_active_cam = NULL;
 
 static PyMethodDef PyCamera_methods[] = {
+    {"center_over_location", 
+    (PyCFunction)PyCamera_center_over_location, METH_VARARGS,
+    "Position the camera over the specified (X, Z) map location, by only shifting it in the XZ plane."},
+
     {"__pickle__", 
     (PyCFunction)PyCamera_pickle, METH_KEYWORDS,
     "Serialize a Permafrost Engine camera object to a string."},
@@ -261,6 +267,46 @@ static int PyCamera_init(PyCameraObject *self, PyObject *args, PyObject *kwds)
     Camera_SetSens(self->cam, sens);
 
     return 0;
+}
+
+static PyObject *PyCamera_center_over_location(PyCameraObject *self, PyObject *args)
+{
+    vec2_t target;
+    if(!PyArg_ParseTuple(args, "(ff)", &target.x, &target.z)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of two floats (XZ map position).");
+        return NULL;
+    }
+
+    vec3_t dir = Camera_GetDir(self->cam);
+    vec3_t pos = Camera_GetPos(self->cam);
+    vec3_t map_intersect;
+
+    bool hit = M_Raycast_CameraIntersecCoord(self->cam, &map_intersect);
+    if(!hit) {
+        /* in this case, find the intersection with the Y=0 plane */
+
+        if(dir.y >= 0.0f) {
+            PyErr_SetString(PyExc_RuntimeError, "The camera is facing upwards. Unable ot center over map position.");
+            return NULL;
+        }
+        float t = fabs(pos.y / dir.y);
+        map_intersect = (vec3_t) {
+            pos.x + t * dir.x,
+            0.0f,
+            pos.z + t * dir.z
+        };
+    }
+
+    vec2_t delta_xz;
+    vec2_t map_intersect_xz = (vec2_t){map_intersect.x, map_intersect.z};
+    PFM_Vec2_Sub(&target, &map_intersect_xz, &delta_xz);
+
+    vec3_t newpos;
+    vec3_t delta = (vec3_t){delta_xz.x, 0.0f, delta_xz.z};
+    PFM_Vec3_Add(&pos, &delta, &newpos);
+
+    Camera_SetPos(self->cam, newpos);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyCamera_pickle(PyCameraObject *self, PyObject *args, PyObject *kwargs)

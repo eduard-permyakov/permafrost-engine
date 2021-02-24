@@ -320,10 +320,10 @@ bool M_Raycast_MouseIntersecCoord(vec3_t *out)
     return true;
 }
 
-bool M_Raycast_CameraIntersecCoord(vec3_t *out)
+bool M_Raycast_CameraIntersecCoord(const struct camera *cam, vec3_t *out)
 {
-    vec3_t ray_origin = Camera_GetPos(s_ctx.cam);
-    vec3_t ray_dir = Camera_GetDir(s_ctx.cam);
+    vec3_t ray_origin = Camera_GetPos(cam);
+    vec3_t ray_dir = Camera_GetDir(cam);
     return rc_find_intersection(ray_origin, ray_dir, &(struct tile_desc){0}, out);
 }
 

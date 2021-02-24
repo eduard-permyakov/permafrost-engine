@@ -411,7 +411,7 @@ static void audio_update_listener(void)
     vec3_t listener_pos = cam_pos;
 
     if(G_MapLoaded()) {
-        bool hit = M_Raycast_CameraIntersecCoord(&listener_pos);
+        bool hit = M_Raycast_CameraIntersecCoord(G_GetActiveCamera(), &listener_pos);
         if(hit) {
             /* nudge the hearing center point such that it's more 
              * centered within the viewport */

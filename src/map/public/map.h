@@ -179,7 +179,7 @@ bool   M_Raycast_MouseIntersecCoord(vec3_t *out);
  * written to 'out'.
  * ------------------------------------------------------------------------
  */
-bool   M_Raycast_CameraIntersecCoord(vec3_t *out);
+bool   M_Raycast_CameraIntersecCoord(const struct camera *cam, vec3_t *out);
 
 /* ------------------------------------------------------------------------
  * Utility function to convert an XZ worldspace coordinate to one in the 
