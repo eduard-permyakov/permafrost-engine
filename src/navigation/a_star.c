@@ -289,7 +289,7 @@ fail_came_from:
 }
 
 bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *finish, 
-                           const struct nav_private *priv, 
+                           const struct nav_private *priv, enum nav_layer layer,
                            vec_portal_t *out_path, float *out_cost)
 {
     PERF_ENTER();

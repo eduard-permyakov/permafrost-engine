@@ -227,7 +227,7 @@ static void on_render_3d(void *user, void *event)
         struct obb obb;
         Entity_CurrentOBB(ent, &obb, true);
 
-        M_NavRenderBuildableTiles(s_map, cam, &obb);
+        M_NavRenderBuildableTiles(s_map, cam, &obb, NAV_LAYER_GROUND_1X1);
     });
 }
 
@@ -625,7 +625,7 @@ bool G_Building_Unobstructed(const struct entity *ent)
     struct obb obb;
     Entity_CurrentOBB(ent, &obb, true);
 
-    return M_NavObjectBuildable(s_map, &obb);
+    return M_NavObjectBuildable(s_map, NAV_LAYER_GROUND_1X1, &obb);
 }
 
 bool G_Building_IsFounded(const struct entity *ent)

@@ -397,7 +397,7 @@ static void filter_selection_pathable(const vec_pentity_t *in_sel, vec_pentity_t
         struct entity *curr = vec_AT(in_sel, i);
         vec2_t xz_pos = G_Pos_GetXZ(curr->uid);
 
-        if(!M_NavPositionPathable(s_map, xz_pos))
+        if(!M_NavPositionPathable(s_map, NAV_LAYER_GROUND_1X1, xz_pos))
             continue;
         vec_pentity_push(out_sel, curr);
     }
@@ -415,7 +415,7 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
      * 'islands'. Handling that case is not a top priority. 
      */
     vec2_t first_ent_pos_xz = G_Pos_GetXZ(vec_AT(&fsel, 0)->uid);
-    target_xz = M_NavClosestReachableDest(s_map, first_ent_pos_xz, target_xz);
+    target_xz = M_NavClosestReachableDest(s_map, NAV_LAYER_GROUND_1X1, first_ent_pos_xz, target_xz);
 
     /* First remove the entities in the selection from any active flocks */
     for(int i = 0; i < vec_size(&fsel); i++) {
@@ -455,7 +455,7 @@ static bool make_flock_from_selection(const vec_pentity_t *sel, vec2_t target_xz
 
     /* The flow fields will be computed on-demand during the next movement update tick */
     new_flock.target_xz = target_xz;
-    new_flock.dest_id = M_NavDestIDForPos(s_map, target_xz);
+    new_flock.dest_id = M_NavDestIDForPos(s_map, target_xz, NAV_LAYER_GROUND_1X1);
 
     if(kh_size(new_flock.ents) > 0) {
 
@@ -603,16 +603,22 @@ static void on_mousedown(void *user, void *event)
 static void on_render_3d(void *user, void *event)
 {
     const struct camera *cam = G_GetActiveCamera();
+    enum nav_layer layer;
 
     struct sval setting;
     ss_e status;
     (void)status;
 
+    status = Settings_Get("pf.debug.navigation_layer", &setting);
+    assert(status == SS_OKAY);
+    layer = setting.as_int;
+
     status = Settings_Get("pf.debug.show_last_cmd_flow_field", &setting);
     assert(status == SS_OKAY);
 
-    if(setting.as_bool && s_last_cmd_dest_valid)
+    if(setting.as_bool && s_last_cmd_dest_valid) {
         M_NavRenderVisiblePathFlowField(s_map, cam, s_last_cmd_dest);
+    }
 
     status = Settings_Get("pf.debug.show_first_sel_movestate", &setting);
     assert(status == SS_OKAY);
@@ -670,21 +676,21 @@ static void on_render_3d(void *user, void *event)
     assert(status == SS_OKAY);
 
     if(setting.as_bool) {
-        M_NavRenderNavigationBlockers(s_map, cam);
+        M_NavRenderNavigationBlockers(s_map, cam, layer);
     }
 
     status = Settings_Get("pf.debug.show_navigation_portals", &setting);
     assert(status == SS_OKAY);
 
     if(setting.as_bool) {
-        M_NavRenderNavigationPortals(s_map, cam);
+        M_NavRenderNavigationPortals(s_map, cam, layer);
     }
 
     status = Settings_Get("pf.debug.show_navigation_cost_base", &setting);
     assert(status == SS_OKAY);
 
     if(setting.as_bool) {
-        M_RenderVisiblePathableLayer(s_map, cam);
+        M_RenderVisiblePathableLayer(s_map, cam, layer);
     }
 
     status = Settings_Get("pf.debug.show_chunk_boundaries", &setting);
@@ -718,7 +724,7 @@ static vec2_t ent_desired_velocity(const struct entity *ent)
     case STATE_TURNING:
         return (vec2_t){0.0f, 0.0f};
     case STATE_SEEK_ENEMIES: 
-        return M_NavDesiredEnemySeekVelocity(s_map, pos_xz, ent->faction_id);
+        return M_NavDesiredEnemySeekVelocity(s_map, NAV_LAYER_GROUND_1X1, pos_xz, ent->faction_id);
     default:
         assert(fl);
         return M_NavDesiredPointSeekVelocity(s_map, fl->dest_id, pos_xz, fl->target_xz);
@@ -798,7 +804,7 @@ static vec2_t arrive_force_enemies(const struct entity *ent)
     }
 
     vec2_t enemy_pos = G_Pos_GetXZ(enemy->uid);
-    if(M_NavHasEntityLOS(s_map, pos_xz, enemy)) {
+    if(M_NavHasEntityLOS(s_map, NAV_LAYER_GROUND_1X1, pos_xz, enemy)) {
     
         PFM_Vec2_Sub(&enemy_pos, &pos_xz, &desired_velocity);
         distance = PFM_Vec2_Len(&desired_velocity);
@@ -1008,12 +1014,12 @@ static void nullify_impass_components(const struct entity *ent, vec2_t *inout_fo
     vec2_t top =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z + nt_dims.z};
     vec2_t bot =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z - nt_dims.z};
 
-    if((inout_force->x > 0 && !M_NavPositionPathable(s_map, left))
-    || (inout_force->x < 0 && !M_NavPositionPathable(s_map, right)))
+    if((inout_force->x > 0 && !M_NavPositionPathable(s_map, NAV_LAYER_GROUND_1X1, left))
+    || (inout_force->x < 0 && !M_NavPositionPathable(s_map, NAV_LAYER_GROUND_1X1, right)))
         inout_force->x = 0.0f;
 
-    if((inout_force->z > 0 && !M_NavPositionPathable(s_map, top))
-    || (inout_force->z < 0 && !M_NavPositionPathable(s_map, bot)))
+    if((inout_force->z > 0 && !M_NavPositionPathable(s_map, NAV_LAYER_GROUND_1X1, top))
+    || (inout_force->z < 0 && !M_NavPositionPathable(s_map, NAV_LAYER_GROUND_1X1, bot)))
         inout_force->z = 0.0f;
 }
 
@@ -1104,7 +1110,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
     vec2_t new_pos_xz = new_pos_for_vel(ent, new_vel);
 
     if(PFM_Vec2_Len(&new_vel) > 0
-    && M_NavPositionPathable(s_map, new_pos_xz)) {
+    && M_NavPositionPathable(s_map, NAV_LAYER_GROUND_1X1, new_pos_xz)) {
     
         vec3_t new_pos = (vec3_t){new_pos_xz.x, M_HeightAtPoint(s_map, new_pos_xz), new_pos_xz.z};
         G_Pos_Set(ent, new_pos);
@@ -1127,7 +1133,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
      * pathable terrain to non-pathable terrain, but an this violation is possible by 
      * forcefully setting the entity's position from a scripting call. 
      */
-    if(!M_NavPositionPathable(s_map, G_Pos_GetXZ(ent->uid)))
+    if(!M_NavPositionPathable(s_map, NAV_LAYER_GROUND_1X1, G_Pos_GetXZ(ent->uid)))
         return;
 
     switch(ms->state) {
@@ -1142,7 +1148,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         float arrive_thresh = ent->selection_radius * 1.5f;
 
         if(PFM_Vec2_Len(&diff_to_target) < arrive_thresh
-        || M_NavIsMaximallyClose(s_map, xz_pos, flock->target_xz, arrive_thresh)) {
+        || M_NavIsMaximallyClose(s_map, NAV_LAYER_GROUND_1X1, xz_pos, flock->target_xz, arrive_thresh)) {
 
             entity_finish_moving(ent, STATE_ARRIVED);
             break;
@@ -1199,7 +1205,8 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
 
         vec2_t dest;
         vec2_t target_pos = G_Pos_GetXZ(ms->surround_target_uid);
-        bool hasdest = M_NavClosestReachableAdjacentPos(s_map, G_Pos_GetXZ(ent->uid), target, &dest);
+        bool hasdest = M_NavClosestReachableAdjacentPos(s_map, NAV_LAYER_GROUND_1X1, 
+            G_Pos_GetXZ(ent->uid), target, &dest);
 
         if(!hasdest) {
             entity_finish_moving(ent, STATE_ARRIVED);
@@ -1697,14 +1704,14 @@ bool G_Move_Still(const struct entity *ent)
 
 void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz)
 {
-    dest_xz = M_NavClosestReachableDest(s_map, G_Pos_GetXZ(ent->uid), dest_xz);
+    dest_xz = M_NavClosestReachableDest(s_map, NAV_LAYER_GROUND_1X1, G_Pos_GetXZ(ent->uid), dest_xz);
 
     /* If a flock already exists for the entity's destination, 
      * simply add the entity to the flock. If necessary, the
      * right flow fields will be computed on-demand during the
      * next movement update. 
      */
-    dest_id_t dest_id = M_NavDestIDForPos(s_map, dest_xz);
+    dest_id_t dest_id = M_NavDestIDForPos(s_map, dest_xz, NAV_LAYER_GROUND_1X1);
     struct flock *fl = flock_for_dest(dest_id);
 
     if(fl && fl == flock_for_ent(ent))

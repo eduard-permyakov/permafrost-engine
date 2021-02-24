@@ -90,7 +90,8 @@ void   M_RenderVisibleMap(const struct map *map, const struct camera *cam,
  * pathable and which are not.
  * ------------------------------------------------------------------------
  */
-void   M_RenderVisiblePathableLayer(const struct map *map, const struct camera *cam);
+void   M_RenderVisiblePathableLayer(const struct map *map, const struct camera *cam,
+                                    enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Render lines over the map surface showing the boudnaries between different 
@@ -113,7 +114,8 @@ void   M_NavRenderVisibleEnemySeekField(const struct map *map, const struct came
  * currently blocked by stationary entities.
  * ------------------------------------------------------------------------
  */
-void   M_NavRenderNavigationBlockers(const struct map *map, const struct camera *cam);
+void   M_NavRenderNavigationBlockers(const struct map *map, const struct camera *cam,
+                                     enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing which tiles under
@@ -121,14 +123,15 @@ void   M_NavRenderNavigationBlockers(const struct map *map, const struct camera 
  * ------------------------------------------------------------------------
  */
 void   M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam, 
-                                 const struct obb *obb);
+                                 const struct obb *obb, enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing portals between chunks
  * and their status.
  * ------------------------------------------------------------------------
  */
-void   M_NavRenderNavigationPortals(const struct map *map, const struct camera *cam);
+void   M_NavRenderNavigationPortals(const struct map *map, const struct camera *cam,
+                                    enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Centers the map at the worldspace origin.
@@ -247,7 +250,7 @@ void   M_NavUpdateIslandsField(const struct map *map);
  * ------------------------------------------------------------------------
  */
 bool   M_NavRequestPath(const struct map *map, vec2_t xz_src, vec2_t xz_dest, 
-                        dest_id_t *out_dest_id);
+                        enum nav_layer layer, dest_id_t *out_dest_id);
 
 /* ------------------------------------------------------------------------
  * Render the flow field that will steer entities towards a particular 
@@ -263,7 +266,8 @@ void   M_NavRenderVisiblePathFlowField(const struct map *map, const struct camer
  * (black = unexplored, green = visible, yellow = in fog of war)
  * ------------------------------------------------------------------------
  */
-void   M_RenderChunkVisibility(const struct map *map, const struct camera *cam, int faction_id);
+void   M_RenderChunkVisibility(const struct map *map, const struct camera *cam, 
+                               int faction_id);
 
 /* ------------------------------------------------------------------------
  * Returns the desired velocity vector for moving with the flow field 
@@ -278,7 +282,8 @@ vec2_t M_NavDesiredPointSeekVelocity(const struct map *map, dest_id_t id,
  * for approaching enemies of a particular faction.
  * ------------------------------------------------------------------------
  */
-vec2_t M_NavDesiredEnemySeekVelocity(const struct map *map, vec2_t curr_pos, int faction_id);
+vec2_t M_NavDesiredEnemySeekVelocity(const struct map *map, enum nav_layer layer, 
+                                     vec2_t curr_pos, int faction_id);
 
 /* ------------------------------------------------------------------------
  * Returns true if the specified coordinate is in direct line of sight of 
@@ -292,14 +297,16 @@ bool   M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos);
  * specified position.
  * ------------------------------------------------------------------------
  */
-bool   M_NavHasEntityLOS(const struct map *map, vec2_t xz_pos, const struct entity *ent);
+bool   M_NavHasEntityLOS(const struct map *map, enum nav_layer layer, 
+                         vec2_t xz_pos, const struct entity *ent);
 
 /* ------------------------------------------------------------------------
  * Returns true if the specified positions is pathable (i.e. a unit is 
  * allowed to stand on this region of the map)
  * ------------------------------------------------------------------------
  */
-bool   M_NavPositionPathable(const struct map *map, vec2_t xz_pos);
+bool   M_NavPositionPathable(const struct map *map, enum nav_layer layer, 
+                             vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
  * Returns the closest position to the destination that is pathable to from
@@ -307,7 +314,8 @@ bool   M_NavPositionPathable(const struct map *map, vec2_t xz_pos);
  * itself.
  * ------------------------------------------------------------------------
  */
-vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz_dst);
+vec2_t M_NavClosestReachableDest(const struct map *map, enum nav_layer layer, 
+                                 vec2_t xz_src, vec2_t xz_dst);
 
 /* ------------------------------------------------------------------------
  * If true is returned, 'out' is set to the worldspace XZ position of the 
@@ -316,8 +324,9 @@ vec2_t M_NavClosestReachableDest(const struct map *map, vec2_t xz_src, vec2_t xz
  * under the selection circle are used.
  * ------------------------------------------------------------------------
  */
-bool   M_NavClosestReachableAdjacentPos(const struct map *map, vec2_t xz_src, 
-                                        const struct entity *target, vec2_t *out);
+bool   M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer layer, 
+                                        vec2_t xz_src, const struct entity *target, 
+                                        vec2_t *out);
 
 /* ------------------------------------------------------------------------
  * Change the blocker reference count for the navigation tile under the
@@ -335,11 +344,12 @@ void   M_NavBlockersDecrefOBB(const struct map *map, const struct obb *obb);
  * Wrapper around navigation APIs.
  * ------------------------------------------------------------------------
  */
-uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos);
+uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos, enum nav_layer layer);
 void     M_NavGetResolution(const struct map *map, struct map_resolution *out);
-bool     M_NavObjectBuildable(const struct map *map, const struct obb *obb);
-bool     M_NavIsMaximallyClose(const struct map *map, vec2_t xz_pos, 
-                               vec2_t xz_dest, float tolerance);
+bool     M_NavObjectBuildable(const struct map *map, enum nav_layer layer, 
+                              const struct obb *obb);
+bool     M_NavIsMaximallyClose(const struct map *map, enum nav_layer layer, 
+                               vec2_t xz_pos, vec2_t xz_dest, float tolerance);
 
 /* ------------------------------------------------------------------------
  * Returns true if the tiles under the entity selection cirlce overlap or 

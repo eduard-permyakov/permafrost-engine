@@ -484,6 +484,15 @@ static bool bool_val_validate(const struct sval *new_val)
     return (new_val->type == ST_TYPE_BOOL);
 }
 
+static bool nav_layer_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_INT)
+        return false;
+    if(new_val->as_int < 0 || new_val->as_int >= NAV_LAYER_MAX)
+        return false;
+    return true;
+}
+
 static bool hb_mode_validate(const struct sval *new_val)
 {
     if(new_val->type != ST_TYPE_INT)
@@ -789,6 +798,18 @@ static void g_create_settings(void)
         .prio = 0,
         .validate = bool_val_validate,
         .commit = shadows_en_commit,
+    });
+    assert(status == SS_OKAY);
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.navigation_layer",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = 0
+        },
+        .prio = 0,
+        .validate = nav_layer_validate,
+        .commit = NULL,
     });
     assert(status == SS_OKAY);
 

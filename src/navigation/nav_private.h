@@ -49,6 +49,8 @@ struct nav_private{
     struct nav_chunk *chunks[NAV_LAYER_MAX];
 };
 
+enum nav_layer N_DestLayer(dest_id_t id);
+
 bool N_PortalReachableFromTile(const struct portal *port, struct coord tile, 
                                const struct nav_chunk *chunk);
 

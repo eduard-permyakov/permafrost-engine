@@ -65,6 +65,12 @@ struct fc_stats{
     float    grid_path_hit_rate;
 };
 
+/* Pathfinding happens on a per-layer basis. Each layer has 
+ * its' own view of the navigation state. For example, passages
+ * that are blocked for 3x3 units may not be blocked for 1x1 
+ * units, and so forth. Thus, different 'categories' of units
+ * may take different paths to the same destination.
+ */
 enum nav_layer{
     NAV_LAYER_GROUND_1X1,
     NAV_LAYER_GROUND_3X3,
@@ -124,8 +130,8 @@ void      N_FreePrivate(void *nav_private);
  * ------------------------------------------------------------------------
  */
 void      N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
-                                const struct map *map,
-                                int chunk_r, int chunk_c);
+                                const struct map *map, int chunk_r, int chunk_c,
+                                enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Renders a flow field that will steer entities to the destination id for
@@ -161,7 +167,8 @@ void      N_RenderEnemySeekField(void *nav_private, const struct map *map,
  * ------------------------------------------------------------------------
  */
 void      N_RenderNavigationBlockers(void *nav_private, const struct map *map, 
-                                     mat4x4_t *chunk_model, int chunk_r, int chunk_c);
+                                     mat4x4_t *chunk_model, int chunk_r, int chunk_c,
+                                     enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Render the tiles under the OBB on which buildings can be placed. Buildable
@@ -171,7 +178,7 @@ void      N_RenderNavigationBlockers(void *nav_private, const struct map *map,
  */
 void      N_RenderBuildableTiles(void *nav_private, const struct map *map, 
                                  mat4x4_t *chunk_model, int chunk_r, int chunk_c,
-                                 const struct obb *obb);
+                                 const struct obb *obb, enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Debug rendering to show the portals between chunks. 'Active' portals
@@ -179,7 +186,8 @@ void      N_RenderBuildableTiles(void *nav_private, const struct map *map,
  * ------------------------------------------------------------------------
  */
 void      N_RenderNavigationPortals(void *nav_private, const struct map *map, 
-                                    mat4x4_t *chunk_model, int chunk_r, int chunk_c);
+                                    mat4x4_t *chunk_model, int chunk_r, int chunk_c,
+                                    enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Make an impassable region in the cost field, completely covering the 
@@ -208,7 +216,8 @@ void      N_UpdateIslandsField(void *nav_private);
  * to this (at tile granularity) position.
  * ------------------------------------------------------------------------
  */
-dest_id_t N_DestIDForPos(void *nav_private, vec3_t map_pos, vec2_t xz_pos);
+dest_id_t N_DestIDForPos(void *nav_private, vec3_t map_pos, vec2_t xz_pos, 
+                         enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Generate the required flowfield and LOS sectors for moving towards the 
@@ -218,7 +227,7 @@ dest_id_t N_DestIDForPos(void *nav_private, vec3_t map_pos, vec2_t xz_pos);
  * ------------------------------------------------------------------------
  */
 bool      N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest, 
-                        vec3_t map_pos, dest_id_t *out_dest_id);
+                        vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id);
 
 /* ------------------------------------------------------------------------
  * Returns the desired velocity for an entity at 'curr_pos' for it to flow
@@ -234,27 +243,32 @@ vec2_t    N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_de
  * ------------------------------------------------------------------------
  */
 vec2_t    N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, 
-                                     vec3_t map_pos, int faction_id);
+                                     enum nav_layer layer, vec3_t map_pos, 
+                                     int faction_id);
 
 /* ------------------------------------------------------------------------
  * Returns true if the particular entity is in direct line of sight of the 
  * specified position.
  * ------------------------------------------------------------------------
  */
-bool      N_HasEntityLOS(vec2_t curr_pos, const struct entity *ent, void *nav_private, vec3_t map_pos);
+bool      N_HasEntityLOS(vec2_t curr_pos, const struct entity *ent, 
+                         void *nav_private, enum nav_layer layer, 
+                         vec3_t map_pos);
 
 /* ------------------------------------------------------------------------
  * Returns true if the particular destination is in direct line of sight 
  * of the specified position.
  * ------------------------------------------------------------------------
  */
-bool      N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_pos);
+bool      N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, 
+                       vec3_t map_pos);
 
 /* ------------------------------------------------------------------------
  * Returns true if the specified XZ position is pathable.
  * ------------------------------------------------------------------------
  */
-bool      N_PositionPathable(vec2_t xz_pos, void *nav_private, vec3_t map_pos);
+bool      N_PositionPathable(vec2_t xz_pos, enum nav_layer layer, 
+                             void *nav_private, vec3_t map_pos);
 
 /* ------------------------------------------------------------------------
  * Returns the X and Z dimentions (in OpenGL coordinates) of a single 
@@ -269,18 +283,21 @@ vec2_t    N_TileDims(void);
  * returned.
  * ------------------------------------------------------------------------
  */
-vec2_t    N_ClosestReachableDest(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
-                                 vec2_t xz_dst);
+vec2_t    N_ClosestReachableDest(void *nav_private, enum nav_layer layer, 
+                                 vec3_t map_pos, vec2_t xz_src, vec2_t xz_dst);
 
 /* ------------------------------------------------------------------------
  * If true is returned, 'out' is set to the worldspace XZ position of the 
  * closest reachable point on the map that is adjacent to the specified entity.
  * ------------------------------------------------------------------------
  */
-bool N_ClosestReachableAdjacentPosStatic(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
+bool N_ClosestReachableAdjacentPosStatic(void *nav_private, enum nav_layer layer, 
+                                         vec3_t map_pos, vec2_t xz_src, 
                                          const struct obb *target, vec2_t *out);
-bool N_ClosestReachableAdjacentPosDynamic(void *nav_private, vec3_t map_pos, vec2_t xz_src, 
-                                          vec2_t xz_pos, float radius, vec2_t *out);
+
+bool N_ClosestReachableAdjacentPosDynamic(void *nav_private, enum nav_layer layer, 
+                                          vec3_t map_pos, vec2_t xz_src, vec2_t xz_pos, 
+                                          float radius, vec2_t *out);
 
 /* ------------------------------------------------------------------------
  * Changes the blocker reference count for the navigation tile under the
@@ -299,7 +316,7 @@ void      N_BlockersDecrefOBB(void *nav_private, vec3_t map_pos, const struct ob
  * destination position (xz_dest).
  * ------------------------------------------------------------------------
  */
-bool      N_IsMaximallyClose(void *nav_private, vec3_t map_pos, 
+bool      N_IsMaximallyClose(void *nav_private, enum nav_layer layer, vec3_t map_pos, 
                              vec2_t xz_pos, vec2_t xz_dest, float tolerance);
 
 /* ------------------------------------------------------------------------
@@ -316,7 +333,8 @@ bool      N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos,
  * ------------------------------------------------------------------------
  */
 bool      N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, 
-                                 const struct entity *ent, vec2_t xz_pos, float radius);
+                                 const struct entity *ent, vec2_t xz_pos, 
+                                 float radius);
 
 /* ------------------------------------------------------------------------
  * Get the resolution (chunks, tiles) of the navigation data.
@@ -330,7 +348,8 @@ void      N_GetResolution(void *nav_private, struct map_resolution *out);
  * and not currently blocked.
  * ------------------------------------------------------------------------
  */
-bool      N_ObjectBuildable(void *nav_private, vec3_t map_pos, const struct obb *obb);
+bool      N_ObjectBuildable(void *nav_private, enum nav_layer layer, 
+                            vec3_t map_pos, const struct obb *obb);
 
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */

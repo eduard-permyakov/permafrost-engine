@@ -36,9 +36,10 @@
 #ifndef A_STAR_H
 #define A_STAR_H
 
+#include "nav_data.h"
+#include "public/nav.h"
 #include "../lib/public/vec.h"
 #include "../map/public/tile.h"
-#include "nav_data.h"
 
 #include <stdbool.h>
 
@@ -68,7 +69,7 @@ bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
  * ------------------------------------------------------------------------
  */
 bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *finish, 
-                           const struct nav_private *priv, 
+                           const struct nav_private *priv, enum nav_layer layer,
                            vec_portal_t *out_path, float *out_cost);
 
 #endif

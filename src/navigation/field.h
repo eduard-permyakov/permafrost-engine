@@ -99,7 +99,7 @@ extern vec2_t g_flow_dir_lookup[];
 ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target);
 void    N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct flow_field *out);
 void    N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_private *priv,
-                          struct field_target target, struct flow_field *inout_flow);
+                          enum nav_layer layer, struct field_target target, struct flow_field *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Update all tiles with a specific local island ID from the
@@ -110,7 +110,7 @@ void    N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_private *pr
  * ------------------------------------------------------------------------
  */
 void    N_FlowFieldUpdateIslandToNearest(uint16_t local_iid, const struct nav_private *priv,
-                                         struct flow_field *inout_flow);
+                                         enum nav_layer layer, struct flow_field *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Update all tiles for for the 'impassable island' that start is a part of
