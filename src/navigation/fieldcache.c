@@ -34,6 +34,7 @@
  */
 
 #include "fieldcache.h"
+#include "nav_private.h"
 #include "../lib/public/lru_cache.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
@@ -124,14 +125,15 @@ struct coord key_chunk(uint64_t key)
 }
 
 uint64_t grid_path_key(struct coord local_start, struct coord local_dest,
-                       struct coord chunk)
+                       struct coord chunk, enum nav_layer layer)
 {
     return ((( ((uint64_t)local_start.r) & 0xff  ) <<  0)
          |  (( ((uint64_t)local_start.c) & 0xff  ) <<  8)
          |  (( ((uint64_t)local_dest.r)  & 0xff  ) << 16)
          |  (( ((uint64_t)local_dest.c)  & 0xff  ) << 24)
-         |  (( ((uint64_t)chunk.r)       & 0xffff) << 32)
-         |  (( ((uint64_t)chunk.c)       & 0xffff) << 48));
+         |  (( ((uint64_t)chunk.r)       & 0x3fff) << 32)
+         |  (( ((uint64_t)chunk.c)       & 0x3fff) << 46)
+         |  (( ((uint64_t)layer)         & 0xf   ) << 60));
 }
 
 static void on_grid_path_evict(struct grid_path_desc *victim)
@@ -339,9 +341,9 @@ void N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, ff_id_t 
 }
 
 bool N_FC_GetGridPath(struct coord local_start, struct coord local_dest,
-                      struct coord chunk, struct grid_path_desc *out)
+                      struct coord chunk, enum nav_layer layer, struct grid_path_desc *out)
 {
-    uint64_t key = grid_path_key(local_start, local_dest, chunk);
+    uint64_t key = grid_path_key(local_start, local_dest, chunk, layer);
     bool ret = lru_grid_path_get(&s_grid_path_cache, key, out);
 
     s_perfstats.grid_path_query++;
@@ -350,13 +352,13 @@ bool N_FC_GetGridPath(struct coord local_start, struct coord local_dest,
 }
 
 void N_FC_PutGridPath(struct coord local_start, struct coord local_dest,
-                      struct coord chunk, const struct grid_path_desc *in)
+                      struct coord chunk, enum nav_layer layer, const struct grid_path_desc *in)
 {
-    uint64_t key = grid_path_key(local_start, local_dest, chunk);
+    uint64_t key = grid_path_key(local_start, local_dest, chunk, layer);
     lru_grid_path_put(&s_grid_path_cache, key, in);
 }
 
-void N_FC_InvalidateAllAtChunk(struct coord chunk)
+void N_FC_InvalidateAllAtChunk(struct coord chunk, enum nav_layer layer)
 {
     /* Note that chunk:field maps simply maintain a list of cache keys for 
      * which entries were set. The entries for these keys may have already 
@@ -371,7 +373,12 @@ void N_FC_InvalidateAllAtChunk(struct coord chunk)
 
         vec_id_t *keys = &kh_val(s_chunk_lfield_map, k);
         for(int i = 0; i < vec_size(keys); i++) {
-            bool found = lru_los_remove(&s_los_cache, vec_AT(keys, i));
+
+            uint64_t key = vec_AT(keys, i);
+            if(N_DestLayer(key_dest(key)) != layer)
+                continue;
+
+            bool found = lru_los_remove(&s_los_cache, key);
             s_perfstats.los_invalidated += !!found;
         }
         vec_id_destroy(keys);
@@ -383,7 +390,12 @@ void N_FC_InvalidateAllAtChunk(struct coord chunk)
 
         vec_id_t *keys = &kh_val(s_chunk_ffield_map, k);
         for(int i = 0; i < vec_size(keys); i++) {
-            bool found = lru_flow_remove(&s_flow_cache, vec_AT(keys, i));
+
+            ff_id_t key = vec_AT(keys, i);
+            if(N_FlowField_Layer(key) != layer)
+                continue;
+
+            bool found = lru_flow_remove(&s_flow_cache, key);
             s_perfstats.flow_invalidated += !!found;
         }
         vec_id_destroy(keys);
@@ -391,7 +403,7 @@ void N_FC_InvalidateAllAtChunk(struct coord chunk)
     }
 }
 
-void N_FC_InvalidateAllThroughChunk(struct coord chunk)
+void N_FC_InvalidateAllThroughChunk(struct coord chunk, enum nav_layer layer)
 {
     assert(Sched_UsingBigStack());
 
@@ -408,6 +420,9 @@ void N_FC_InvalidateAllThroughChunk(struct coord chunk)
         (void)ffid_val;
         dest_id_t curr_dest = key_dest(key);
         struct coord curr_chunk = key_chunk(key);
+
+        if(N_DestLayer(curr_dest) != layer)
+            continue;
 
         if(0 == memcmp(&curr_chunk, &chunk, sizeof(chunk))
         && !dest_array_contains(paths, npaths, curr_dest)) {

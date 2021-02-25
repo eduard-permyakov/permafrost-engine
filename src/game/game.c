@@ -905,6 +905,28 @@ static void g_create_settings(void)
     });
 
     status = Settings_Create((struct setting){
+        .name = "pf.debug.show_navigation_island_ids",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false 
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_navigation_local_island_ids",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false 
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+
+    status = Settings_Create((struct setting){
         .name = "pf.debug.show_chunk_boundaries",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,

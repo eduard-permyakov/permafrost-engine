@@ -60,7 +60,7 @@ VEC_IMPL(static inline, portal, struct portal *)
  */
 bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
-                    vec_coord_t *out_path, float *out_cost);
+                    enum nav_layer layer, vec_coord_t *out_path, float *out_cost);
 
 /* ------------------------------------------------------------------------
  * Finds the shortest path between a tile and a node in a portal graph. Returns 

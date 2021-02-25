@@ -82,7 +82,6 @@ vec2_t g_flow_dir_lookup[9] = {
 
 static int compare_tiles(void *a, void *b)
 {
-    //return memcmp(a, b, sizeof(struct coord));
     struct coord *ac = a;
     struct coord *bc = b;
     return !((bc->r == ac->r) && (bc->c == ac->c));
@@ -840,11 +839,12 @@ static size_t passable_frontier(const struct nav_chunk *chunk, struct coord star
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target)
+ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target, enum nav_layer layer)
 {
     if(target.type == TARGET_PORTAL) {
 
-        return (((uint64_t)target.type)                 << 56)
+        return (((uint64_t)layer)                       << 60)
+             | (((uint64_t)target.type)                 << 56)
              | (((uint64_t)target.port->endpoints[0].r) << 40)
              | (((uint64_t)target.port->endpoints[0].c) << 32)
              | (((uint64_t)target.port->endpoints[1].r) << 24)
@@ -854,7 +854,8 @@ ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target)
 
     }else if(target.type == TARGET_TILE){
 
-        return (((uint64_t)target.type)                 << 56)
+        return (((uint64_t)layer)                       << 60)
+             | (((uint64_t)target.type)                 << 56)
              | (((uint64_t)target.tile.r)               << 24)
              | (((uint64_t)target.tile.c)               << 16)
              | (((uint64_t)chunk.r)                     <<  8)
@@ -862,7 +863,8 @@ ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target)
 
     }else if(target.type == TARGET_ENEMIES){
 
-        return (((uint64_t)target.type)                 << 56)
+        return (((uint64_t)layer)                       << 60)
+             | (((uint64_t)target.type)                 << 56)
              | (((uint64_t)target.enemies.faction_id)   << 24)
              | (((uint64_t)chunk.r)                     <<  8)
              | (((uint64_t)chunk.c)                     <<  0);
@@ -872,14 +874,18 @@ ff_id_t N_FlowField_ID(struct coord chunk, struct field_target target)
     }
 }
 
+enum nav_layer N_FlowField_Layer(ff_id_t id)
+{
+    return (id >> 60);
+}
+
 void N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct flow_field *out)
 {
     for(int r = 0; r < FIELD_RES_R; r++) {
-        for(int c = 0; c < FIELD_RES_C; c++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
 
-            out->field[r][c].dir_idx = FD_NONE;
-        }
-    }
+        out->field[r][c].dir_idx = FD_NONE;
+    }}
     out->chunk = chunk_coord;
 }
 

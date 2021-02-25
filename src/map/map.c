@@ -444,7 +444,7 @@ void M_NavRenderVisiblePathFlowField(const struct map *map, const struct camera 
 }
 
 void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera *cam, 
-                                     int faction_id)
+                                     enum nav_layer layer, int faction_id)
 {
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
@@ -460,7 +460,7 @@ void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera
 
         mat4x4_t chunk_model;
         M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-        N_RenderEnemySeekField(map->nav_private, map, &chunk_model, r, c, faction_id);
+        N_RenderEnemySeekField(map->nav_private, map, &chunk_model, r, c, layer, faction_id);
     }}
 }
 
@@ -522,6 +522,48 @@ void M_NavRenderNavigationPortals(const struct map *map, const struct camera *ca
         mat4x4_t chunk_model;
         M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
         N_RenderNavigationPortals(map->nav_private, map, &chunk_model, r, c, layer);
+    }}
+}
+
+void M_NavRenderNavigationIslandIDs(const struct map *map, const struct camera *cam,
+                                    enum nav_layer layer)
+{
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+    for(int c = 0; c < map->width;  c++) {
+
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
+
+        mat4x4_t chunk_model;
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        N_RenderIslandIDs(map->nav_private, map, cam, &chunk_model, r, c, layer);
+    }}
+}
+
+void M_NavRenderNavigationLocalIslandIDs(const struct map *map, const struct camera *cam,
+                                         enum nav_layer layer)
+{
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+    for(int c = 0; c < map->width;  c++) {
+
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
+
+        mat4x4_t chunk_model;
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        N_RenderLocalIslandIDs(map->nav_private, map, cam, &chunk_model, r, c, layer);
     }}
 }
 

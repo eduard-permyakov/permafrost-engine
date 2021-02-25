@@ -107,7 +107,7 @@ void   M_RenderChunkBoundaries(const struct map *map, const struct camera *cam);
  * ------------------------------------------------------------------------
  */
 void   M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera *cam, 
-                                        int faction_id);
+                                        enum nav_layer layer, int faction_id);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing which regions are 
@@ -132,6 +132,20 @@ void   M_NavRenderBuildableTiles(const struct map *map, const struct camera *cam
  */
 void   M_NavRenderNavigationPortals(const struct map *map, const struct camera *cam,
                                     enum nav_layer layer);
+
+/* ------------------------------------------------------------------------
+ * Debug rendering to show the global island ID over every navigation tile.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavRenderNavigationIslandIDs(const struct map *map, const struct camera *cam,
+                                      enum nav_layer layer);
+
+/* ------------------------------------------------------------------------
+ * Debug rendering to show the local island ID over every navigation tile.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavRenderNavigationLocalIslandIDs(const struct map *map, const struct camera *cam,
+                                           enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Centers the map at the worldspace origin.

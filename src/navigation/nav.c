@@ -43,6 +43,7 @@
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../lib/public/queue.h"
+#include "../lib/public/pf_string.h"
 #include "../pf_math.h"
 #include "../collision.h"
 #include "../entity.h"
@@ -50,6 +51,8 @@
 #include "../main.h"
 #include "../perf.h"
 #include "../sched.h"
+#include "../ui.h"
+#include "../camera.h"
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -462,7 +465,7 @@ static void n_create_portals(struct nav_private *priv, enum nav_layer layer)
     assert(n_links == (priv->height)*(priv->width-1) + (priv->width)*(priv->height-1));
 }
 
-static void n_link_chunk_portals(struct nav_chunk *chunk, struct coord chunk_coord)
+static void n_link_chunk_portals(struct nav_chunk *chunk, struct coord chunk_coord, enum nav_layer layer)
 {
     vec_coord_t path;
     vec_coord_init(&path);
@@ -486,7 +489,7 @@ static void n_link_chunk_portals(struct nav_chunk *chunk, struct coord chunk_coo
             };
 
             float cost;
-            bool has_path = AStar_GridPath(a, b, chunk_coord, chunk->cost_base, &path, &cost);
+            bool has_path = AStar_GridPath(a, b, chunk_coord, chunk->cost_base, layer, &path, &cost);
             if(has_path) {
                 port->edges[port->num_neighbours] = (struct edge){EDGE_STATE_ACTIVE, link_candidate, cost};
                 port->num_neighbours++;    
@@ -843,7 +846,6 @@ static void n_update_dirty_local_islands(void *nav_private, enum nav_layer layer
 static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, 
                               struct tile_desc *tds, size_t ntds, int ref_delta)
 {
-    khash_t(coord) *set = s_dirty_chunks[layer];
     for(int i = 0; i < ntds; i++) {
     
         struct tile_desc curr = tds[i];
@@ -858,8 +860,11 @@ static void n_update_blockers(struct nav_private *priv, enum nav_layer layer,
 
         int val = chunk->blockers[curr.tile_r][curr.tile_c] += ref_delta;
         if(!!val != !!prev_val) { /* The tile changed states between occupied/non-occupied */
+
             int ret;
-            uint64_t key = ((curr.chunk_r & 0xffff) << 16) | (curr.chunk_c & 0xffff);
+            uint32_t key = ((((uint32_t)curr.chunk_r) & 0xffff) << 16) | (((uint32_t)curr.chunk_c) & 0xffff);
+
+            khash_t(coord) *set = s_dirty_chunks[layer];
             kh_put(coord, set, key, &ret);
             assert(ret != -1);
 
@@ -874,21 +879,24 @@ static void n_update_blockers_circle(struct nav_private *priv, vec2_t xz_pos, fl
     struct tile_desc tds[256];
     int ntds = M_Tile_AllUnderCircle(n_res(priv), xz_pos, range, map_pos, tds, ARR_SIZE(tds));
     n_update_blockers(priv, NAV_LAYER_GROUND_1X1, tds, ntds, ref_delta);
-    //TODO: other layers...
+
+    struct tile_desc outline[256];
+    int noutline = M_Tile_Countour(ntds, tds, n_res(priv), outline, ARR_SIZE(outline));
+    n_update_blockers(priv, NAV_LAYER_GROUND_3X3, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_3X3, outline, noutline, ref_delta);
 }
 
 static void n_update_blockers_obb(struct nav_private *priv, const struct obb *obb, 
                                   vec3_t map_pos, int ref_delta)
 {
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
-
     struct tile_desc tds[1024];
-    int ntds = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
+    int ntds = M_Tile_AllUnderObj(map_pos, n_res(priv), obb, tds, ARR_SIZE(tds));
     n_update_blockers(priv, NAV_LAYER_GROUND_1X1, tds, ntds, ref_delta);
-    //TODO: other layers...
+
+    struct tile_desc outline[1024];
+    int noutline = M_Tile_Countour(ntds, tds, n_res(priv), outline, ARR_SIZE(outline));
+    n_update_blockers(priv, NAV_LAYER_GROUND_3X3, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_3X3, outline, noutline, ref_delta);
 }
 
 static int manhattan_dist(struct tile_desc a, struct tile_desc b)
@@ -1210,36 +1218,22 @@ bool n_closest_adjacent_pos(void *nav_private, enum nav_layer layer, vec3_t map_
 
     for(int i = 0; i < ntiles; i++) {
 
-        for(int dr = -1; dr <= +1; dr++) {
-        for(int dc = -1; dc <= +1; dc++) {
+        struct tile_desc td;
+        int ntd = n_closest_island_tiles(priv, layer, tds[i], src_iid, false, &td, 1);
+        if(!ntd)
+            continue;
 
-            struct tile_desc td = tds[i];
-            if(!M_Tile_RelativeDesc(res, &td, dc, dr))
-                continue;
+        vec2_t tile_center = (vec2_t){
+            map_pos.x - (td.chunk_c * FIELD_RES_C + td.tile_c) * tile_dims.x,
+            map_pos.z + (td.chunk_r * FIELD_RES_R + td.tile_r) * tile_dims.z,
+        };
+        vec2_t delta;
+        PFM_Vec2_Sub(&xz_src, &tile_center, &delta);
 
-            const struct nav_chunk *chunk = &priv->chunks[layer]
-                                                         [td.chunk_r * priv->width + td.chunk_c];
-            const uint16_t iid = chunk->islands[td.tile_r][td.tile_c];
-
-            if(iid != src_iid)
-                continue;
-            if(chunk->blockers[td.tile_r][td.tile_c])
-                continue;
-            if(chunk->cost_base[td.tile_r][td.tile_c] == COST_IMPASSABLE)
-                continue;
-
-            vec2_t tile_center = (vec2_t){
-                map_pos.x - (td.chunk_c * FIELD_RES_C + td.tile_c) * tile_dims.x,
-                map_pos.z + (td.chunk_r * FIELD_RES_R + td.tile_r) * tile_dims.z,
-            };
-            vec2_t delta;
-            PFM_Vec2_Sub(&xz_src, &tile_center, &delta);
-
-            if(PFM_Vec2_Len(&delta) < min_dist) {
-                min_dist = PFM_Vec2_Len(&delta);
-                min_pos = tile_center;
-            }
-        }}
+        if(PFM_Vec2_Len(&delta) < min_dist) {
+            min_dist = PFM_Vec2_Len(&delta);
+            min_pos = tile_center;
+        }
     }
 
     if(min_dist == INFINITY)
@@ -1296,7 +1290,7 @@ static void n_update_portals(struct nav_private *priv, enum nav_layer layer)
             
         struct nav_chunk *curr_chunk = &priv->chunks[layer]
                                                     [IDX(chunk_r, priv->width, chunk_c)];
-        n_link_chunk_portals(curr_chunk, (struct coord){chunk_r, chunk_c});
+        n_link_chunk_portals(curr_chunk, (struct coord){chunk_r, chunk_c}, layer);
         n_build_portal_travel_index(curr_chunk);
     }}
 }
@@ -1344,6 +1338,34 @@ static void n_update_island_field(struct nav_private *priv, enum nav_layer layer
     }}
 }
 
+static void n_render_overlay_text(const char *text, vec4_t map_pos, 
+                                  mat4x4_t *model, mat4x4_t *view, mat4x4_t *proj)
+{
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
+
+    vec4_t ws_pos_homo;
+    PFM_Mat4x4_Mult4x1(model, &map_pos, &ws_pos_homo);
+    ws_pos_homo.x /= ws_pos_homo.w;
+    ws_pos_homo.z /= ws_pos_homo.w;
+
+    vec4_t clip, tmp;
+    PFM_Mat4x4_Mult4x1(view, &ws_pos_homo, &tmp);
+    PFM_Mat4x4_Mult4x1(proj, &tmp, &clip);
+    vec3_t ndc = (vec3_t){ 
+        clip.x / clip.w, 
+        clip.y / clip.w, 
+        clip.z / clip.w
+    };
+
+    float screen_x = (ndc.x + 1.0f) * width/2.0f;
+    float screen_y = height - ((ndc.y + 1.0f) * height/2.0f);
+
+    float len = strlen(text) * 8.0f;
+    struct rect bounds = (struct rect){screen_x - len/2.0f, screen_y, len, 25};
+    UI_DrawText(text, bounds, (struct rgba){255, 0, 0, 255});
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1372,6 +1394,8 @@ void N_Update(void *nav_private)
 
     for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
     
+        n_update_dirty_local_islands(priv, layer);
+
         khash_t(coord) *set = s_dirty_chunks[layer];
         bool components_dirty = false;
 
@@ -1382,7 +1406,7 @@ void N_Update(void *nav_private)
 
             uint32_t key = kh_key(set, i);
             struct coord curr = (struct coord){ key >> 16, key & 0xffff };
-            N_FC_InvalidateAllAtChunk(curr);
+            N_FC_InvalidateAllAtChunk(curr, layer);
 
             struct nav_chunk *chunk = &priv->chunks[layer]
                                                    [IDX(curr.r, priv->width, curr.c)];
@@ -1390,13 +1414,13 @@ void N_Update(void *nav_private)
 
             if(nflipped) {
                 components_dirty = true;
-                N_FC_InvalidateAllThroughChunk(curr);
+                N_FC_InvalidateAllThroughChunk(curr, layer);
             }
         }
 
-        n_update_dirty_local_islands(priv, layer);
-        if(components_dirty)
+        if(components_dirty) {
             n_update_components(priv, layer);
+        }
 
         kh_clear(coord, set);
     }
@@ -1656,7 +1680,7 @@ void N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *chunk_
 }
 
 void N_RenderEnemySeekField(void *nav_private, const struct map *map, mat4x4_t *chunk_model, 
-                            int chunk_r, int chunk_c, int faction_id)
+                            int chunk_r, int chunk_c, enum nav_layer layer, int faction_id)
 {
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
@@ -1679,7 +1703,7 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map, mat4x4_t *
         .enemies.faction_id = faction_id,
         /* rest of the fields are unused */
     };
-    ff_id_t ffid = N_FlowField_ID((struct coord){chunk_r, chunk_c}, target);
+    ff_id_t ffid = N_FlowField_ID((struct coord){chunk_r, chunk_c}, target, layer);
     if(!N_FC_ContainsFlowField(ffid))
         return;
 
@@ -1875,6 +1899,84 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
     });
 }
 
+void N_RenderIslandIDs(void *nav_private, const struct map *map, 
+                       const struct camera *cam, mat4x4_t *chunk_model, 
+                       int chunk_r, int chunk_c, enum nav_layer layer)
+{
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    const struct nav_private *priv = nav_private;
+    assert(chunk_r < priv->height);
+    assert(chunk_c < priv->width);
+
+    mat4x4_t view, proj;
+    Camera_MakeViewMat(cam, &view); 
+    Camera_MakeProjMat(cam, &proj);
+
+    const struct nav_chunk *chunk = &priv->chunks[layer]
+                                                 [IDX(chunk_r, priv->width, chunk_c)];
+
+    for(int r = 0; r < FIELD_RES_R; r++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
+
+        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim;
+        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / FIELD_RES_C) * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP( (((float)r) / FIELD_RES_R) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
+
+        vec4_t center_homo = (vec4_t) {
+            square_x - square_x_len / 2.0,
+            0.0,
+            square_z + square_z_len / 2.0,
+            1.0
+        };
+
+        char text[8];
+        pf_snprintf(text, sizeof(text), "%d", chunk->islands[r][c]);
+        n_render_overlay_text(text, center_homo, chunk_model, &view, &proj);
+    }}
+}
+
+void N_RenderLocalIslandIDs(void *nav_private, const struct map *map, 
+                            const struct camera *cam, mat4x4_t *chunk_model, 
+                            int chunk_r, int chunk_c, enum nav_layer layer)
+{
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    const struct nav_private *priv = nav_private;
+    assert(chunk_r < priv->height);
+    assert(chunk_c < priv->width);
+
+    mat4x4_t view, proj;
+    Camera_MakeViewMat(cam, &view); 
+    Camera_MakeProjMat(cam, &proj);
+
+    const struct nav_chunk *chunk = &priv->chunks[layer]
+                                                 [IDX(chunk_r, priv->width, chunk_c)];
+
+    for(int r = 0; r < FIELD_RES_R; r++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
+
+        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim;
+        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / FIELD_RES_C) * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP( (((float)r) / FIELD_RES_R) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
+
+        vec4_t center_homo = (vec4_t) {
+            square_x - square_x_len / 2.0,
+            0.0,
+            square_z + square_z_len / 2.0,
+            1.0
+        };
+
+        char text[8];
+        pf_snprintf(text, sizeof(text), "%d", chunk->local_islands[r][c]);
+        n_render_overlay_text(text, center_homo, chunk_model, &view, &proj);
+    }}
+}
+
 void N_RenderNavigationPortals(void *nav_private, const struct map *map, 
                                mat4x4_t *chunk_model, int chunk_r, int chunk_c,
                                enum nav_layer layer)
@@ -1909,7 +2011,7 @@ void N_RenderNavigationPortals(void *nav_private, const struct map *map,
                               : (assert(0), (vec3_t){0});
 
             float cost;
-            bool has_path = AStar_GridPath(a, b, (struct coord){chunk_r, chunk_c}, chunk->cost_base, &path, &cost);
+            bool has_path = AStar_GridPath(a, b, (struct coord){chunk_r, chunk_c}, chunk->cost_base, layer, &path, &cost);
             assert(has_path);
             n_render_grid_path(chunk, chunk_model, map, &path, link_color);
         }
@@ -1931,11 +2033,14 @@ void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *o
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
 
-    for(int i = 0; i < ntiles; i++) {
+    for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
+        /* In the current implementation, we are content to block 
+         * the exact same tiles for all the existing layers */
+        for(int i = 0; i < ntiles; i++) {
 
-        priv->chunks[NAV_LAYER_GROUND_1X1][IDX(tds[i].chunk_r, priv->width, tds[i].chunk_c)]
-            .cost_base[tds[i].tile_r][tds[i].tile_c] = COST_IMPASSABLE;
-        //TODO: other layers...
+            priv->chunks[layer][IDX(tds[i].chunk_r, priv->width, tds[i].chunk_c)]
+                .cost_base[tds[i].tile_r][tds[i].tile_c] = COST_IMPASSABLE;
+        }
     }
 }
 
@@ -2019,7 +2124,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         };
 
         struct flow_field ff;
-        id = N_FlowField_ID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target);
+        id = N_FlowField_ID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target, layer);
 
         if(!N_FC_ContainsFlowField(id)) {
         
@@ -2112,7 +2217,7 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
             .port = next_hop
         };
 
-        ff_id_t new_id = N_FlowField_ID(chunk_coord, target);
+        ff_id_t new_id = N_FlowField_ID(chunk_coord, target, layer);
         ff_id_t exist_id;
         struct flow_field ff;
 
@@ -2288,7 +2393,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
         .enemies.chunk = chunk
     };
 
-    ff_id_t ffid = N_FlowField_ID(chunk, target);
+    ff_id_t ffid = N_FlowField_ID(chunk, target, layer);
     struct flow_field ff;
 
     if(!N_FC_ContainsFlowField(ffid)) {

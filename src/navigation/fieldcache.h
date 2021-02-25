@@ -53,12 +53,12 @@ void N_FC_Shutdown(void);
 
 /* Invalidate all LOS and Flow fields for a particular chunk 
  */
-void N_FC_InvalidateAllAtChunk(struct coord chunk);
+void N_FC_InvalidateAllAtChunk(struct coord chunk, enum nav_layer layer);
 
 /* Invalidate all LOS and Flow fields for paths (identified by the dest_id) which 
  * have at least one field at the specified chunk
  */
-void N_FC_InvalidateAllThroughChunk(struct coord chunk);
+void N_FC_InvalidateAllThroughChunk(struct coord chunk, enum nav_layer layer);
 
 /*###########################################################################*/
 /* LOS FIELD CACHING                                                         */
@@ -98,9 +98,9 @@ struct grid_path_desc{
 };
 
 bool N_FC_GetGridPath(struct coord local_start, struct coord local_dest,
-                      struct coord chunk, struct grid_path_desc *out);
+                      struct coord chunk, enum nav_layer layer, struct grid_path_desc *out);
 void N_FC_PutGridPath(struct coord local_start, struct coord local_dest,
-                      struct coord chunk, const struct grid_path_desc *in);
+                      struct coord chunk, enum nav_layer layer, const struct grid_path_desc *in);
 
 #endif
 

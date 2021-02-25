@@ -45,6 +45,7 @@ struct map;
 struct obb;
 struct entity;
 struct map_resolution;
+struct camera;
 
 typedef uint32_t dest_id_t;
 
@@ -159,7 +160,7 @@ void      N_RenderLOSField(void *nav_private, const struct map *map, mat4x4_t *c
  */
 void      N_RenderEnemySeekField(void *nav_private, const struct map *map, 
                                  mat4x4_t *chunk_model, int chunk_r, int chunk_c, 
-                                 int faction_id);
+                                 enum nav_layer layer, int faction_id);
 
 /* ------------------------------------------------------------------------
  * Debug rendering to show which navigation tiles are currently occupied
@@ -188,6 +189,22 @@ void      N_RenderBuildableTiles(void *nav_private, const struct map *map,
 void      N_RenderNavigationPortals(void *nav_private, const struct map *map, 
                                     mat4x4_t *chunk_model, int chunk_r, int chunk_c,
                                     enum nav_layer layer);
+
+/* ------------------------------------------------------------------------
+ * Debug rendering to show the global island ID over every navigation tile.
+ * ------------------------------------------------------------------------
+ */
+void      N_RenderIslandIDs(void *nav_private, const struct map *map, 
+                            const struct camera *cam, mat4x4_t *chunk_model, 
+                            int chunk_r, int chunk_c, enum nav_layer layer);
+
+/* ------------------------------------------------------------------------
+ * Debug rendering to show the local island ID over every navigation tile.
+ * ------------------------------------------------------------------------
+ */
+void      N_RenderLocalIslandIDs(void *nav_private, const struct map *map, 
+                                 const struct camera *cam, mat4x4_t *chunk_model, 
+                                 int chunk_r, int chunk_c, enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
  * Make an impassable region in the cost field, completely covering the 

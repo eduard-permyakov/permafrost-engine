@@ -903,6 +903,13 @@ bool C_CircleRectIntersection(vec2_t center, float radius, struct box rect)
     if(C_PointInsideRect2D(center, corners[0], corners[1], corners[2], corners[3]))
         return true;
 
+    for(int i = 0; i < ARR_SIZE(corners); i++) {
+        vec2_t delta;
+        PFM_Vec2_Sub(&corners[i], &center, &delta);
+        if(PFM_Vec2_Len(&delta) <= radius)
+            return true;
+    }
+
     struct line_seg_2d edges[4] = {
         (struct line_seg_2d){corners[0].x, corners[0].z, corners[1].x, corners[1].z},
         (struct line_seg_2d){corners[1].x, corners[1].z, corners[2].x, corners[2].z},

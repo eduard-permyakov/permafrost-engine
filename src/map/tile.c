@@ -727,7 +727,7 @@ size_t M_Tile_Countour(size_t ntds, const struct tile_desc tds[static ntds],
     int dr = maxr - minr + 1;
     int dc = maxc - minc + 1;
 
-    uint8_t marked[dr][dc];
+    uint8_t marked[dr + 2][dc + 2];
     memset(marked, 0, sizeof(marked));
 
     for(int i = 0; i < ntds; i++) {
@@ -736,8 +736,8 @@ size_t M_Tile_Countour(size_t ntds, const struct tile_desc tds[static ntds],
         int absr = curr->chunk_r * res.tile_h + curr->tile_r;
         int absc = curr->chunk_c * res.tile_w + curr->tile_c;
 
-        int relr = absr - minr;
-        int relc = absc - minc;
+        int relr = absr - minr + 1;
+        int relc = absc - minc + 1;
         marked[relr][relc] = 1;
     }
 
@@ -745,8 +745,8 @@ size_t M_Tile_Countour(size_t ntds, const struct tile_desc tds[static ntds],
     for(int r = minr - 1; r <= maxr + 1; r++) {
     for(int c = minc - 1; c <= maxc + 1; c++) {
 
-        int relr = r - minr;
-        int relc = c - minc;
+        int relr = r - minr + 1;
+        int relc = c - minc + 1;
         bool contour = false;
 
         if(marked[relr][relc])

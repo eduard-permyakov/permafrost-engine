@@ -90,31 +90,30 @@ static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], s
     int ret = 0;
 
     for(int r = -1; r <= 1; r++) {
-        for(int c = -1; c <= 1; c++) {
+    for(int c = -1; c <= 1; c++) {
 
-            int abs_r = coord.r + r;
-            int abs_c = coord.c + c;
+        int abs_r = coord.r + r;
+        int abs_c = coord.c + c;
 
-            if(abs_r < 0 || abs_r >= FIELD_RES_R)
-                continue;
-            if(abs_c < 0 || abs_c >= FIELD_RES_C)
-                continue;
-            if(r == 0 && c == 0)
-                continue;
-            if(cost_field[abs_r][abs_c] == COST_IMPASSABLE)
-                continue;
+        if(abs_r < 0 || abs_r >= FIELD_RES_R)
+            continue;
+        if(abs_c < 0 || abs_c >= FIELD_RES_C)
+            continue;
+        if(r == 0 && c == 0)
+            continue;
+        if(cost_field[abs_r][abs_c] == COST_IMPASSABLE)
+            continue;
 
-            bool diag = (r == c) || (r == -c);
-            if(diag && cost_field[abs_r][coord.c] == COST_IMPASSABLE 
-                    && cost_field[coord.r][abs_c] == COST_IMPASSABLE)
-                continue;
-            float cost_mult = diag ? sqrt(2) : 1.0f;
+        bool diag = (r == c) || (r == -c);
+        if(diag && cost_field[abs_r][coord.c] == COST_IMPASSABLE 
+                && cost_field[coord.r][abs_c] == COST_IMPASSABLE)
+            continue;
+        float cost_mult = diag ? sqrt(2) : 1.0f;
 
-            out_neighbours[ret] = (struct coord){abs_r, abs_c};
-            out_costs[ret] = cost_field[abs_r][abs_c] * cost_mult;
-            ret++;
-        }
-    }
+        out_neighbours[ret] = (struct coord){abs_r, abs_c};
+        out_costs[ret] = cost_field[abs_r][abs_c] * cost_mult;
+        ret++;
+    }}
     assert(ret < 9);
     return ret;
 }
@@ -177,14 +176,14 @@ static float portal_node_penalty(void)
 
 bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
                     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], 
-                    vec_coord_t *out_path, float *out_cost)
+                    enum nav_layer layer, vec_coord_t *out_path, float *out_cost)
 {
     PERF_ENTER();
 
     struct grid_path_desc gp = {0};
     vec_coord_init(&gp.path);
 
-    if(N_FC_GetGridPath(start, finish, chunk, &gp)) {
+    if(N_FC_GetGridPath(start, finish, chunk, layer, &gp)) {
 
         if(!gp.exists)
             PERF_RETURN(false);
@@ -273,12 +272,12 @@ bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
     gp.exists = true;
     vec_coord_copy(&gp.path, out_path);
     gp.cost = *out_cost;
-    N_FC_PutGridPath(start, finish, chunk, &gp);
+    N_FC_PutGridPath(start, finish, chunk, layer, &gp);
     PERF_RETURN(true);
 
 fail_find_path:
     gp.exists = false;
-    N_FC_PutGridPath(start, finish, chunk, &gp);
+    N_FC_PutGridPath(start, finish, chunk, layer, &gp);
 
     pq_coord_destroy(&frontier);
     kh_destroy(key_float, running_cost);
@@ -304,7 +303,7 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
     if(NULL == (running_cost = kh_init(key_float)))
         goto fail_running_cost;
 
-    const struct nav_chunk *chunk = &priv->chunks[NAV_LAYER_GROUND_1X1]
+    const struct nav_chunk *chunk = &priv->chunks[layer]
                                                  [start_tile.chunk_r * priv->width + start_tile.chunk_c];
     vec_coord_t path;
     vec_coord_init(&path);
