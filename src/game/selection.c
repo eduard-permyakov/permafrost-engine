@@ -499,7 +499,9 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
         if(s_hovered && (s_hovered->flags & ENTITY_FLAG_SELECTABLE)) {
 
             sel_empty = false;
-            vec_pentity_reset(&s_selected);
+            if(!sel_ctrl_pressed() && !sel_shift_pressed()) {
+                vec_pentity_reset(&s_selected);
+            }
             sel_process_unit(s_hovered);
         }
 
