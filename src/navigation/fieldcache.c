@@ -372,7 +372,7 @@ void N_FC_InvalidateAllAtChunk(struct coord chunk, enum nav_layer layer)
     if(k != kh_end(s_chunk_lfield_map)) {
 
         vec_id_t *keys = &kh_val(s_chunk_lfield_map, k);
-        for(int i = 0; i < vec_size(keys); i++) {
+        for(int i = vec_size(keys)-1; i >= 0; i--) {
 
             uint64_t key = vec_AT(keys, i);
             if(N_DestLayer(key_dest(key)) != layer)
@@ -380,16 +380,19 @@ void N_FC_InvalidateAllAtChunk(struct coord chunk, enum nav_layer layer)
 
             bool found = lru_los_remove(&s_los_cache, key);
             s_perfstats.los_invalidated += !!found;
+            vec_id_del(keys, i);
         }
-        vec_id_destroy(keys);
-        kh_del(idvec, s_chunk_lfield_map, k);
+        if(vec_size(keys) == 0) {
+            vec_id_destroy(keys);
+            kh_del(idvec, s_chunk_lfield_map, k);
+        }
     }
 
     k = kh_get(idvec, s_chunk_ffield_map, key);
     if(k != kh_end(s_chunk_ffield_map)) {
 
         vec_id_t *keys = &kh_val(s_chunk_ffield_map, k);
-        for(int i = 0; i < vec_size(keys); i++) {
+        for(int i = vec_size(keys)-1; i >= 0; i--) {
 
             ff_id_t key = vec_AT(keys, i);
             if(N_FlowField_Layer(key) != layer)
@@ -397,9 +400,12 @@ void N_FC_InvalidateAllAtChunk(struct coord chunk, enum nav_layer layer)
 
             bool found = lru_flow_remove(&s_flow_cache, key);
             s_perfstats.flow_invalidated += !!found;
+            vec_id_del(keys, i);
         }
-        vec_id_destroy(keys);
-        kh_del(idvec, s_chunk_ffield_map, k);
+        if(vec_size(keys) == 0) {
+            vec_id_destroy(keys);
+            kh_del(idvec, s_chunk_ffield_map, k);
+        }
     }
 }
 
