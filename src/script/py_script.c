@@ -1737,7 +1737,33 @@ static PyObject *PyPf_draw_text(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    UI_DrawText(text, rect, (struct rgba){r, g, b, a});
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
+
+    vec2_t vres = UI_GetTextVres();
+    vec2_t adj_vres = UI_ArAdjustedVRes(vres);
+
+    vec2_t center = (vec2_t){
+        rect.x + rect.w / 2.0f,
+        rect.y + rect.h / 2.0f
+    };
+    vec2_t ndc = (vec2_t) {
+        (center.x - width /2.0f) / (width /2.0f),
+        (height/2.0f - center.y) / (height/2.0f)
+    };
+    vec2_t adj_center = (vec2_t){
+        (ndc.x + 1.0f) * adj_vres.x/2.0f,
+        adj_vres.y - ((ndc.y + 1.0f) * adj_vres.y/2.0f),
+    };
+
+    struct rect adj_rect = (struct rect){
+        adj_center.x - rect.w/2.0f,
+        adj_center.y - rect.h/2.0f,
+        rect.w,
+        rect.h
+    };
+
+    UI_DrawText(text, adj_rect, (struct rgba){r, g, b, a});
     Py_RETURN_NONE;
 }
 

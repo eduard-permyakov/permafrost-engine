@@ -75,6 +75,8 @@ static struct nk_draw_null_texture  s_null;
 static vec_td_t                     s_curr_frame_labels;
 static khash_t(font)               *s_fontmap;
 static const char                  *s_active_font = NULL;
+static SDL_mutex                   *s_lock;
+static vec2_t                       s_vres = (vec2_t){1920, 1080};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -98,11 +100,18 @@ static void on_update_ui(void *user, void *event)
     nk_style_push_color(&s_ctx, &s->window.background, nk_rgba(0,0,0,0));
     nk_style_push_style_item(&s_ctx, &s->window.fixed_background, nk_style_item_color(nk_rgba(0,0,0,0)));
 
-    int width, height;
-    Engine_WinDrawableSize(&width, &height);
+    const vec2_t adj_vres = UI_ArAdjustedVRes(s_vres);
+    struct rect adj_bounds = UI_BoundsForAspectRatio(
+        (struct rect){0, 0, s_vres.x, s_vres.y}, 
+        s_vres, 
+        adj_vres, 
+        ANCHOR_DEFAULT
+    );
 
-    if(nk_begin(&s_ctx, "__labels__", nk_rect(0, 0, width, height), 
-       NK_WINDOW_NO_INPUT | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR)) {
+    if(nk_begin_with_vres(&s_ctx,"__labels__", 
+        nk_rect(adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h), 
+        NK_WINDOW_NO_INPUT | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_SCROLLBAR, 
+        (struct nk_vec2i){adj_vres.x, adj_vres.y})) {
     
        for(int i = 0; i < vec_size(&s_curr_frame_labels); i++)
             ui_draw_text(vec_AT(&s_curr_frame_labels, i)); 
@@ -391,6 +400,12 @@ bool UI_Init(const char *basedir, SDL_Window *win)
     if(!s_fontmap)
         return false;
 
+    s_lock = SDL_CreateMutex();
+    if(!s_lock) {
+        kh_destroy(font, s_fontmap);
+        return false;
+    }
+
     nk_init_default(&s_ctx, 0);
     s_ctx.clip.copy = ui_clipboard_copy;
     s_ctx.clip.paste = ui_clipboard_paste;
@@ -418,6 +433,7 @@ void UI_Shutdown(void)
     nk_font_atlas_clear(&s_atlas);
     nk_free(&s_ctx);
     memset(&s_ctx, 0, sizeof(s_ctx));
+    SDL_DestroyMutex(s_lock);
 
     const char *key;
     struct nk_font *curr;
@@ -539,9 +555,11 @@ void UI_HandleEvent(SDL_Event *evt)
 void UI_DrawText(const char *text, struct rect rect, struct rgba rgba)
 {
     struct text_desc d = (struct text_desc){.rect = rect, .rgba = rgba};
-    strncpy(d.text, text, sizeof(d.text));
-    d.text[sizeof(d.text)-1] = '\0';
+    pf_strlcpy(d.text, text, sizeof(d.text));
+
+    SDL_LockMutex(s_lock);
     vec_td_push(&s_curr_frame_labels, d);
+    SDL_UnlockMutex(s_lock);
 }
 
 vec2_t UI_ArAdjustedVRes(vec2_t vres)
@@ -566,6 +584,11 @@ vec2_t UI_ArAdjustedVRes(vec2_t vres)
             round(vres.y * (old_ar / curr_ar))
         };
     }
+}
+
+vec2_t UI_GetTextVres(void)
+{
+    return s_vres;
 }
 
 struct rect UI_BoundsForAspectRatio(struct rect from_bounds, vec2_t from_res, 

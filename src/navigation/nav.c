@@ -1341,8 +1341,8 @@ static void n_update_island_field(struct nav_private *priv, enum nav_layer layer
 static void n_render_overlay_text(const char *text, vec4_t map_pos, 
                                   mat4x4_t *model, mat4x4_t *view, mat4x4_t *proj)
 {
-    int width, height;
-    Engine_WinDrawableSize(&width, &height);
+    vec2_t vres = UI_GetTextVres();
+    vec2_t adj_vres = UI_ArAdjustedVRes(vres);
 
     vec4_t ws_pos_homo;
     PFM_Mat4x4_Mult4x1(model, &map_pos, &ws_pos_homo);
@@ -1358,8 +1358,8 @@ static void n_render_overlay_text(const char *text, vec4_t map_pos,
         clip.z / clip.w
     };
 
-    float screen_x = (ndc.x + 1.0f) * width/2.0f;
-    float screen_y = height - ((ndc.y + 1.0f) * height/2.0f);
+    float screen_x = (ndc.x + 1.0f) * adj_vres.x/2.0f;
+    float screen_y = adj_vres.y - ((ndc.y + 1.0f) * adj_vres.y/2.0f);
 
     float len = strlen(text) * 8.0f;
     struct rect bounds = (struct rect){screen_x - len/2.0f, screen_y, len, 25};
