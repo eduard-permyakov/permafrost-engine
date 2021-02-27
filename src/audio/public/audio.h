@@ -56,6 +56,7 @@ enum playback_mode{
 bool        Audio_Init(void);
 void        Audio_Shutdown(void);
 bool        Audio_PlayMusic(const char *name);
+void        Audio_PlayMusicFirst(void);
 bool        Audio_PlayPositionalEffect(const char *name, vec3_t pos);
 bool        Audio_PlayForegroundEffect(const char *name, bool interrupt, int channel);
 size_t      Audio_GetAllMusic(size_t maxout, const char *out[static maxout]);

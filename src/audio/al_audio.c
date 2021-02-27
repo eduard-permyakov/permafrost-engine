@@ -588,6 +588,15 @@ bool Audio_PlayMusic(const char *name)
     return true;
 }
 
+void Audio_PlayMusicFirst(void)
+{
+    const char *tracks[1];
+    size_t ntracks = Audio_GetAllMusic(ARR_SIZE(tracks), tracks);
+    if(ntracks > 0) {
+        Audio_PlayMusic(tracks[0]);
+    }
+}
+
 bool Audio_PlayForegroundEffect(const char *name, bool interrupt, int channel)
 {
     if(channel >= AUDIO_NUM_FG_CHANNELS)
@@ -837,7 +846,7 @@ bool Audio_LoadState(struct SDL_RWops *stream)
 
             ALint buffer;
             if(Audio_GetEffectBuffer(name, &buffer)) {
-                
+
                 alSourcei(s_foreground_sources[i], AL_BUFFER, buffer);
                 alSourcei(s_foreground_sources[i], AL_SAMPLE_OFFSET, offset);
                 if(alGetError() == AL_NO_ERROR) {

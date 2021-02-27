@@ -653,6 +653,7 @@ int main(int argc, char **argv)
         goto fail_init;
     }
 
+    Audio_PlayMusicFirst();
     S_RunFile(argv[2], 0, NULL);
 
     /* Run the first frame of the simulation, and prepare the buffers for rendering. */
