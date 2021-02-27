@@ -632,6 +632,7 @@ static void s_expose_audio_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, MUSIC_MODE_LOOP);
     PY_EXPOSE_ENUM(module, MUSIC_MODE_PLAYLIST);
     PY_EXPOSE_ENUM(module, MUSIC_MODE_SHUFFLE);
+    PY_EXPOSE_ENUM(module, AUDIO_NUM_FG_CHANNELS);
 }
 
 /*****************************************************************************/

@@ -87,7 +87,7 @@ static ALCcontext            *s_context = NULL;
 static khash_t(buffer)       *s_music;
 static khash_t(buffer)       *s_effects;
 static ALuint                 s_music_source;
-static ALuint                 s_foreground_source;
+static ALuint                 s_foreground_sources[AUDIO_NUM_FG_CHANNELS];
 
 static bool                   s_mute_on_focus_loss = false;
 static ALfloat                s_master_volume = 0.5f;
@@ -496,7 +496,9 @@ bool Audio_Init(void)
         goto fail_effects_table;
 
     audio_create_global_source(&s_music_source, s_music_volume);
-    audio_create_global_source(&s_foreground_source, Audio_EffectVolume());
+    for(int i = 0; i < AUDIO_NUM_FG_CHANNELS; i++) {
+        audio_create_global_source(&s_foreground_sources[i], Audio_EffectVolume());
+    }
     alListenerf(AL_GAIN, s_master_volume);
 
     if(!Audio_Effect_Init())
@@ -514,7 +516,7 @@ bool Audio_Init(void)
 
 fail_effects:
     alDeleteSources(1, &s_music_source);
-    alDeleteSources(1, &s_foreground_source);
+    alDeleteSources(AUDIO_NUM_FG_CHANNELS, s_foreground_sources);
     kh_destroy(buffer, s_effects);
 fail_effects_table:
     kh_destroy(buffer, s_music);
@@ -533,10 +535,12 @@ void Audio_Shutdown(void)
     struct al_buffer curr;
 
     alSourceStop(s_music_source);
-    alSourceStop(s_foreground_source);
-
     alDeleteSources(1, &s_music_source);
-    alDeleteSources(1, &s_foreground_source);
+
+    for(int i = 0; i < AUDIO_NUM_FG_CHANNELS; i++) {
+        alSourceStop(s_foreground_sources[i]);
+        alDeleteSources(1, &s_foreground_sources[i]);
+    }
 
     Audio_Effect_Shutdown();
 
@@ -584,17 +588,20 @@ bool Audio_PlayMusic(const char *name)
     return true;
 }
 
-bool Audio_PlayForegroundEffect(const char *name, bool interrupt)
+bool Audio_PlayForegroundEffect(const char *name, bool interrupt, int channel)
 {
+    if(channel >= AUDIO_NUM_FG_CHANNELS)
+        return false;
+
     ALint src_state;
-    alGetSourcei(s_foreground_source, AL_SOURCE_STATE, &src_state);
+    alGetSourcei(s_foreground_sources[channel], AL_SOURCE_STATE, &src_state);
 
     if(src_state == AL_PLAYING && !interrupt)
         return true;
 
     if(name == NULL) {
-        alSourceStop(s_foreground_source);
-        alSourcei(s_foreground_source, AL_BUFFER, 0);
+        alSourceStop(s_foreground_sources[channel]);
+        alSourcei(s_foreground_sources[channel], AL_BUFFER, 0);
         return true;
     }
 
@@ -602,9 +609,9 @@ bool Audio_PlayForegroundEffect(const char *name, bool interrupt)
     if(!Audio_GetEffectBuffer(name, &play_buffer))
         return false;
 
-    alSourceStop(s_foreground_source);
-    alSourcei(s_foreground_source, AL_BUFFER, play_buffer);
-    alSourcePlay(s_foreground_source);
+    alSourceStop(s_foreground_sources[channel]);
+    alSourcei(s_foreground_sources[channel], AL_BUFFER, play_buffer);
+    alSourcePlay(s_foreground_sources[channel]);
 
     AL_ASSERT_OK();
     return true;
@@ -703,37 +710,43 @@ float Audio_BufferDuration(ALuint buffer)
 
 void Audio_SetForegroundEffectVolume(float gain)
 {
-    alSourcef(s_foreground_source, AL_GAIN, gain);
+    for(int i = 0; i < AUDIO_NUM_FG_CHANNELS; i++) {
+        alSourcef(s_foreground_sources[i], AL_GAIN, gain);
+    }
 }
 
 void Audio_Pause(void)
 {
-    ALint fg_state;
-    alGetSourcei(s_foreground_source, AL_SOURCE_STATE, &fg_state);
+    for(int i = 0; i < AUDIO_NUM_FG_CHANNELS; i++) {
+        ALint fg_state;
+        alGetSourcei(s_foreground_sources[i], AL_SOURCE_STATE, &fg_state);
 
-    if(fg_state == AL_PLAYING) {
-        alSourcePause(s_foreground_source);
+        if(fg_state == AL_PLAYING) {
+            alSourcePause(s_foreground_sources[i]);
+        }
     }
-
     Audio_EffectPause();
 }
 
 void Audio_Resume(uint32_t dt)
 {
-    ALint fg_state;
-    alGetSourcei(s_foreground_source, AL_SOURCE_STATE, &fg_state);
+    for(int i = 0; i < AUDIO_NUM_FG_CHANNELS; i++) {
+        ALint fg_state;
+        alGetSourcei(s_foreground_sources[i], AL_SOURCE_STATE, &fg_state);
 
-    if(fg_state == AL_PAUSED) {
-        alSourcePlay(s_foreground_source);
+        if(fg_state == AL_PAUSED) {
+            alSourcePlay(s_foreground_sources[i]);
+        }
     }
-
     Audio_EffectResume(dt);
 }
 
 void Audio_ClearState(void)
 {
-    alSourceStop(s_foreground_source);
-    alSourcei(s_foreground_source, AL_BUFFER, 0);
+    for(int i = 0; i < AUDIO_NUM_FG_CHANNELS; i++) {
+        alSourceStop(s_foreground_sources[i]);
+        alSourcei(s_foreground_sources[i], AL_BUFFER, 0);
+    }
     /* The music keeps playing even accross sessions */
 
     Audio_EffectClearState();
@@ -741,38 +754,41 @@ void Audio_ClearState(void)
 
 bool Audio_SaveState(struct SDL_RWops *stream)
 {
-    ALint fg_buffer;
-    alGetSourcei(s_foreground_source, AL_BUFFER, &fg_buffer);
-    struct attr fg_has_buffer_attr = (struct attr){
-        .type = TYPE_BOOL, 
-        .val.as_bool = (fg_buffer != 0)
-    };
-    CHK_TRUE_RET(Attr_Write(stream, &fg_has_buffer_attr, "fg_has_buffer"));
-
-    if(fg_has_buffer_attr.val.as_bool) {
-
-        const char *name = Audio_GetEffectName(fg_buffer);
-        assert(name);
-
-        struct attr fg_clip_attr = (struct attr){ .type = TYPE_STRING, };
-        pf_snprintf(fg_clip_attr.val.as_string, sizeof(fg_clip_attr.val.as_string), name);
-        CHK_TRUE_RET(Attr_Write(stream, &fg_clip_attr, "fg_clip"));
-
-        ALint fg_offset;
-        alGetSourcei(s_foreground_source, AL_SAMPLE_OFFSET, &fg_offset);
-        struct attr fg_offset_attr = (struct attr){
-            .type = TYPE_INT, 
-            .val.as_int = fg_offset
+    for(int i = 0; i < AUDIO_NUM_FG_CHANNELS; i++) {
+    
+        ALint fg_buffer;
+        alGetSourcei(s_foreground_sources[i], AL_BUFFER, &fg_buffer);
+        struct attr fg_has_buffer_attr = (struct attr){
+            .type = TYPE_BOOL, 
+            .val.as_bool = (fg_buffer != 0)
         };
-        CHK_TRUE_RET(Attr_Write(stream, &fg_offset_attr, "fg_offset"));
+        CHK_TRUE_RET(Attr_Write(stream, &fg_has_buffer_attr, "fg_has_buffer"));
 
-        ALint fg_state;
-        alGetSourcei(s_foreground_source, AL_SOURCE_STATE, &fg_state);
-        struct attr fg_state_attr = (struct attr){
-            .type = TYPE_INT, 
-            .val.as_int = fg_state
-        };
-        CHK_TRUE_RET(Attr_Write(stream, &fg_state_attr, "fg_state"));
+        if(fg_has_buffer_attr.val.as_bool) {
+
+            const char *name = Audio_GetEffectName(fg_buffer);
+            assert(name);
+
+            struct attr fg_clip_attr = (struct attr){ .type = TYPE_STRING, };
+            pf_snprintf(fg_clip_attr.val.as_string, sizeof(fg_clip_attr.val.as_string), name);
+            CHK_TRUE_RET(Attr_Write(stream, &fg_clip_attr, "fg_clip"));
+
+            ALint fg_offset;
+            alGetSourcei(s_foreground_sources[i], AL_SAMPLE_OFFSET, &fg_offset);
+            struct attr fg_offset_attr = (struct attr){
+                .type = TYPE_INT, 
+                .val.as_int = fg_offset
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &fg_offset_attr, "fg_offset"));
+
+            ALint fg_state;
+            alGetSourcei(s_foreground_sources[i], AL_SOURCE_STATE, &fg_state);
+            struct attr fg_state_attr = (struct attr){
+                .type = TYPE_INT, 
+                .val.as_int = fg_state
+            };
+            CHK_TRUE_RET(Attr_Write(stream, &fg_state_attr, "fg_state"));
+        }
     }
 
     vec3_t pos = {0};
@@ -793,52 +809,55 @@ bool Audio_LoadState(struct SDL_RWops *stream)
 {
     struct attr attr;
 
-    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-    CHK_TRUE_RET(attr.type == TYPE_BOOL);
-    bool fg_has_buffer = attr.val.as_bool;
-
-    /* Take a more liberal approach with loading the audio 
-     * state, as it depens on resource files which may have 
-     * been modified, renamed, etc. In case of failing to 
-     * load something, just keep going. 
-     */
-    if(fg_has_buffer) {
+    for(int i = 0; i < AUDIO_NUM_FG_CHANNELS; i++) {
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_STRING);
-        char name[sizeof(attr.val.as_string)];
-        pf_strlcpy(name, attr.val.as_string, sizeof(name));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        bool fg_has_buffer = attr.val.as_bool;
 
-        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_INT);
-        ALint offset = attr.val.as_int;
+        /* Take a more liberal approach with loading the audio 
+         * state, as it depens on resource files which may have 
+         * been modified, renamed, etc. In case of failing to 
+         * load something, just keep going. 
+         */
+        if(fg_has_buffer) {
 
-        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-        CHK_TRUE_RET(attr.type == TYPE_INT);
-        ALint state = attr.val.as_int;
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_STRING);
+            char name[sizeof(attr.val.as_string)];
+            pf_strlcpy(name, attr.val.as_string, sizeof(name));
 
-        ALint buffer;
-        if(Audio_GetEffectBuffer(name, &buffer)) {
-            
-            alSourcei(s_foreground_source, AL_BUFFER, buffer);
-            alSourcei(s_foreground_source, AL_SAMPLE_OFFSET, offset);
-            if(alGetError() == AL_NO_ERROR) {
-                switch(state){
-                case AL_INITIAL:
-                    break;
-                case AL_PLAYING:
-                    alSourcePlay(s_foreground_source);
-                    break;
-                case AL_PAUSED:
-                    alSourcePlay(s_foreground_source);
-                    alSourcePause(s_foreground_source);
-                    break;
-                case AL_STOPPED:
-                    alSourcePlay(s_foreground_source);
-                    alSourceStop(s_foreground_source);
-                    break;
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            ALint offset = attr.val.as_int;
+
+            CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+            CHK_TRUE_RET(attr.type == TYPE_INT);
+            ALint state = attr.val.as_int;
+
+            ALint buffer;
+            if(Audio_GetEffectBuffer(name, &buffer)) {
+                
+                alSourcei(s_foreground_sources[i], AL_BUFFER, buffer);
+                alSourcei(s_foreground_sources[i], AL_SAMPLE_OFFSET, offset);
+                if(alGetError() == AL_NO_ERROR) {
+                    switch(state){
+                    case AL_INITIAL:
+                        break;
+                    case AL_PLAYING:
+                        alSourcePlay(s_foreground_sources[i]);
+                        break;
+                    case AL_PAUSED:
+                        alSourcePlay(s_foreground_sources[i]);
+                        alSourcePause(s_foreground_sources[i]);
+                        break;
+                    case AL_STOPPED:
+                        alSourcePlay(s_foreground_sources[i]);
+                        alSourceStop(s_foreground_sources[i]);
+                        break;
+                    }
+                    glGetError(); /* clear error state */
                 }
-                glGetError(); /* clear error state */
             }
         }
     }

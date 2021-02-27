@@ -2705,14 +2705,16 @@ static PyObject *PyPf_play_global_effect(PyObject *self, PyObject *args, PyObjec
 {
     const char *name;
     int interrupt = 0;
-    static char *kwlist[] = {"name", "interrupt", NULL};
+    int channel = 0;
+    static char *kwlist[] = {"name", "interrupt", "channel", NULL};
 
-    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s|i", kwlist, &name, &interrupt)) {
-        PyErr_SetString(PyExc_TypeError, "Expecting a string (effect name) and an optional boolean (interrupt) argument.");
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s|ii", kwlist, &name, &interrupt, &channel)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a string (effect name), an optional boolean (interrupt) argument, "
+            "and an optional integer (channel) argument.");
         return NULL;
     }
 
-    if(!Audio_PlayForegroundEffect(name, interrupt)) {
+    if(!Audio_PlayForegroundEffect(name, interrupt, channel)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to play the specified global effect.");
         return NULL;
     }
