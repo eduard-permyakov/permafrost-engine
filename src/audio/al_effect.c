@@ -46,6 +46,7 @@
 #include "../map/public/tile.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/quadtree.h"
+#include "../lib/public/pf_string.h"
 
 #include <stdint.h>
 #include <assert.h>
@@ -57,6 +58,12 @@
 
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 struct al_effect{
     uint32_t uid;
@@ -98,17 +105,6 @@ static int compare_effects(const void* a, const void* b)
     return (effa->uid - effb->uid);
 }
 
-static uint32_t ticks_delta(uint32_t a, uint32_t b)
-{
-    uint32_t ret;
-    if(b > a) {
-        ret = b - a;
-    }else{
-        ret = (UINT32_MAX - a) + b;
-    }
-    return ret;
-}
-
 static void audio_update_active_set(vec_effect_t *active)
 {
     vec_effect_reset(active);
@@ -132,6 +128,15 @@ static void audio_update_active_set(vec_effect_t *active)
     }
 }
 
+static size_t audio_nsamples(ALuint buffer)
+{
+    ALint nbytes, channels, bits;
+    alGetBufferi(buffer, AL_SIZE, &nbytes);
+    alGetBufferi(buffer, AL_CHANNELS, &channels);
+    alGetBufferi(buffer, AL_BITS, &bits);
+    return nbytes * 8 / (channels * bits);
+}
+
 static void audio_advance(const struct al_effect *effect)
 {
     ALint state;
@@ -139,19 +144,14 @@ static void audio_advance(const struct al_effect *effect)
     assert(state == AL_INITIAL);
 
     uint32_t curr = SDL_GetTicks();
-    uint32_t elapsed = ticks_delta(effect->start_tick, curr);
-    uint32_t total = ticks_delta(effect->start_tick, effect->end_tick);
+    uint32_t elapsed = curr - effect->start_tick;
+    uint32_t total = effect->end_tick - effect->start_tick;
 
     ALint buffer;
     alGetSourcei(effect->source, AL_BUFFER, &buffer);
+    const size_t nsamples = audio_nsamples(buffer);
 
-    ALint nbytes, channels, bits;
-    alGetBufferi(buffer, AL_SIZE, &nbytes);
-    alGetBufferi(buffer, AL_CHANNELS, &channels);
-    alGetBufferi(buffer, AL_BITS, &bits);
-    const size_t nsamples = nbytes * 8 / (channels * bits);
-
-    ALint sample_offset = ((float)elapsed) / total;
+    ALint sample_offset = (((float)elapsed) / total) * nsamples;
     sample_offset = MIN(sample_offset, nsamples-1);
     alSourcei(effect->source, AL_SAMPLE_OFFSET, sample_offset);
     AL_ASSERT_OK();
@@ -332,6 +332,149 @@ static void audio_create_settings(void)
     assert(status == SS_OKAY);
 }
 
+static void audio_make_effect_source(ALuint *out, vec3_t pos, ALint buffer)
+{
+    ALuint source;
+    alGenSources(1, &source);
+
+    alSourcef(source,  AL_PITCH, 1);
+    alSourcef(source,  AL_GAIN, s_effect_volume);
+    alSourcei(source,  AL_BUFFER, buffer);
+    alSource3f(source, AL_POSITION, pos.x, pos.y, pos.z);
+    alSource3f(source, AL_VELOCITY, 0, 0, 0);
+    alSourcei(source,  AL_LOOPING, AL_FALSE);
+    alSourcei(source,  AL_SOURCE_RELATIVE, AL_FALSE);
+    alSourcef(source,  AL_MAX_DISTANCE, HEARING_RANGE * 2.0f);
+    alSourcef(source,  AL_ROLLOFF_FACTOR, 0.5f);
+
+    *out = source;
+    AL_ASSERT_OK();
+}
+
+static bool audio_save_effect(SDL_RWops *stream, const struct al_effect *effect)
+{
+    ALint buffer;
+    alGetSourcei(effect->source, AL_BUFFER, &buffer);
+
+    const char *name = Audio_GetEffectName(buffer);
+    struct attr name_attr = (struct attr){ .type = TYPE_STRING, };
+    pf_strlcpy(name_attr.val.as_string, name, sizeof(name_attr.val.as_string));
+    CHK_TRUE_RET(Attr_Write(stream, &name_attr, "name"));
+
+    struct attr uid_attr = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = effect->uid
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &uid_attr, "uid"));
+
+    struct attr pos_attr = (struct attr){
+        .type = TYPE_VEC3, 
+        .val.as_vec3 = effect->pos
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &pos_attr, "pos"));
+
+    ALint offset;
+    alGetSourcei(effect->source, AL_SAMPLE_OFFSET, &offset);
+    struct attr offset_attr = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = offset
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &offset_attr, "offset"));
+
+    ALint state;
+    alGetSourcei(effect->source, AL_SOURCE_STATE, &state);
+    struct attr state_attr = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = state
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &state_attr, "state"));
+
+    return true;
+}
+
+static bool audio_load_effect(SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_STRING);
+    char name[sizeof(attr.val.as_string)];
+    pf_strlcpy(name, attr.val.as_string, sizeof(name));
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    uint32_t uid = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    vec3_t pos = attr.val.as_vec3;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    size_t offset = attr.val.as_int;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    ALint state = attr.val.as_int;
+
+    ALint buffer;
+    if(Audio_GetEffectBuffer(name, &buffer)) {
+
+        ALuint source;
+        audio_make_effect_source(&source, pos, buffer);
+        alSourcei(source, AL_SAMPLE_OFFSET, offset);
+
+        if(alGetError() != AL_NO_ERROR) {
+            alDeleteSources(1, &source);
+            return true;
+        }
+
+        switch(state){
+        case AL_INITIAL:
+            break;
+        case AL_PLAYING:
+            alSourcePlay(source);
+            break;
+        case AL_PAUSED:
+            alSourcePlay(source);
+            alSourcePause(source);
+            break;
+        case AL_STOPPED:
+            alSourcePlay(source);
+            alSourceStop(source);
+            break;
+        }
+
+        if(alGetError() != AL_NO_ERROR) {
+            alSourceStop(source);
+            alDeleteSources(1, &source);
+            return true;
+        }
+
+        const size_t nsamples = audio_nsamples(buffer);
+        const float duration = Audio_BufferDuration(buffer);
+        const float elapsed = (((float)offset) / nsamples) * duration;
+
+        uint32_t start_tick = SDL_GetTicks() - elapsed * 1000;
+        uint32_t end_tick = start_tick + duration * 1000;
+
+        struct al_effect effect = (struct al_effect) {
+            .uid = uid,
+            .pos = pos,
+            .start_tick = start_tick,
+            .end_tick = end_tick,
+            .source = source
+        };
+        vec_effect_push(&s_effects, effect);
+        qt_effect_insert(&s_effect_tree, pos.x, pos.z, effect);
+
+        if(state == AL_PLAYING || state == AL_PAUSED) {
+            vec_effect_push(&s_active, effect);
+        }
+    }
+    return true;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -360,7 +503,7 @@ bool Audio_Effect_Init(void)
     audio_create_settings();
     E_Global_Register(EVENT_NEW_GAME, on_new_game, NULL, G_ALL);
     E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_ALL);
-    E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL, G_ALL);
+    E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL, G_RUNNING);
     return true;
 
 fail_active:
@@ -394,20 +537,12 @@ void Audio_Effect_Shutdown(void)
 
 bool Audio_Effect_Add(vec3_t pos, const char *track)
 {
-    ALuint buffer;
+    ALint buffer;
     if(!Audio_GetEffectBuffer(track, &buffer))
         return false;
 
     ALuint source;
-    alGenSources(1, &source);
-
-    alSourcef(source, AL_PITCH, 1);
-    alSourcef(source, AL_GAIN, s_effect_volume);
-    alSource3f(source, AL_POSITION, pos.x, pos.y, pos.z);
-    alSource3f(source, AL_VELOCITY, 0, 0, 0);
-    alSourcei(source, AL_LOOPING, AL_FALSE);
-    alSourcei(source, AL_BUFFER, buffer);
-    AL_ASSERT_OK();
+    audio_make_effect_source(&source, pos, buffer);
 
     uint32_t start_tick = SDL_GetTicks();
     float duration = Audio_BufferDuration(buffer);
@@ -429,5 +564,70 @@ bool Audio_Effect_Add(vec3_t pos, const char *track)
 float Audio_EffectVolume(void)
 {
     return s_effect_volume;
+}
+
+void Audio_EffectPause(void)
+{
+    for(int i = 0; i < vec_size(&s_active); i++) {
+        struct al_effect *curr = &s_active.array[i];
+        alSourcePause(curr->source);
+    }
+}
+
+void Audio_EffectResume(uint32_t dt)
+{
+    for(int i = 0; i < vec_size(&s_active); i++) {
+        struct al_effect *curr = &s_active.array[i];
+        alSourcePlay(curr->source);
+        curr->start_tick += dt;
+        curr->end_tick += dt;
+    }
+}
+
+void Audio_EffectClearState(void)
+{
+    for(int i = 0; i < vec_size(&s_active); i++) {
+        struct al_effect *curr = &s_active.array[i];
+        alSourceStop(curr->source);
+    }
+    for(int i = 0; i < vec_size(&s_effects); i++) {
+        struct al_effect *curr = &s_effects.array[i];
+        alDeleteSources(1, &curr->source);
+    }
+    vec_effect_reset(&s_active);
+    vec_effect_reset(&s_effects);
+    qt_effect_clear(&s_effect_tree);
+}
+
+bool Audio_EffectSaveState(struct SDL_RWops *stream)
+{
+    struct attr num_effects_attr = (struct attr){
+        .type = TYPE_INT, 
+        .val.as_int = vec_size(&s_effects)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_effects_attr, "num_effects"));
+
+    for(int i = 0; i < vec_size(&s_effects); i++) {
+        const struct al_effect *curr = &vec_AT(&s_effects, i);
+        if(!audio_save_effect(stream, curr))
+            return false;
+    }
+    return true;
+}
+
+bool Audio_EffectLoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    size_t num_effects = attr.val.as_int;
+
+    for(int i = 0; i < num_effects; i++) {
+        if(!audio_load_effect(stream))
+            return false;
+    }
+
+    return true;
 }
 

@@ -46,6 +46,7 @@
 #include "navigation/public/nav.h"
 #include "game/public/game.h"
 #include "script/public/script.h"
+#include "audio/public/audio.h"
 
 #include <SDL.h> /* for SDL_RWops */
 #include <assert.h>
@@ -99,6 +100,7 @@ static void subsession_clear(void)
     G_ClearRenderWork();
     Cursor_ClearState();
     Entity_ClearState();
+    Audio_ClearState();
     UI_SetActiveFont("__default__");
 }
 
@@ -164,6 +166,9 @@ static bool subsession_save(SDL_RWops *stream)
     if(!G_SaveEntityState(stream))
         return false;
 
+    if(!Audio_SaveState(stream))
+        return false;
+
     return true;
 }
 
@@ -203,7 +208,14 @@ static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
         goto fail;
     }
 
+    if(!Audio_LoadState(stream)) {
+        pf_snprintf(errstr, errlen, 
+            "Could not de-serialize audio state from session file");
+        goto fail;
+    }
+
     E_ClearPendingEvents();
+    G_UpdateSimStateChangeTick();
     return true;
 
 fail:

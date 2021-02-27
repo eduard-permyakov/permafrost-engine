@@ -42,6 +42,7 @@
 #include <stddef.h>
 
 struct map;
+struct SDL_RWops;
 
 enum playback_mode{
     MUSIC_MODE_LOOP,
@@ -57,6 +58,11 @@ bool        Audio_PlayForegroundEffect(const char *name, bool interrupt);
 size_t      Audio_GetAllMusic(size_t maxout, const char *out[static maxout]);
 const char *Audio_CurrMusic(void);
 bool        Audio_Effect_Add(vec3_t pos, const char *track);
+void        Audio_Pause(void);
+void        Audio_Resume(uint32_t dt);
+void        Audio_ClearState(void);
+bool        Audio_SaveState(struct SDL_RWops *stream);
+bool        Audio_LoadState(struct SDL_RWops *stream);
 
 #endif
 

@@ -54,6 +54,7 @@
 #include "../anim/public/anim.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
+#include "../audio/public/audio.h"
 #include "../lib/public/pf_string.h"
 #include "../entity.h"
 #include "../camera.h"
@@ -739,18 +740,27 @@ static void g_change_simstate(void)
         return;
 
     uint32_t curr_tick = SDL_GetTicks();
-    if(s_gs.requested_ss == G_RUNNING) {
-    
-        uint32_t key;
-        struct entity *curr;
-        (void)key;
+    switch(s_gs.requested_ss) {
+    case G_RUNNING: {
 
-        kh_foreach(s_gs.active, key, curr, {
+        uint32_t delta = curr_tick - s_gs.ss_change_tick;
+        struct entity *curr;
+        kh_foreach(s_gs.active, (uint32_t){0}, curr, {
            
             if(!(curr->flags & ENTITY_FLAG_ANIMATED))
                 continue;
-            A_AddTimeDelta(curr, curr_tick - s_gs.ss_change_tick);
+            A_AddTimeDelta(curr, delta);
         });
+        Audio_Resume(delta);
+        break;
+    }
+    case G_PAUSED_FULL:
+    case G_PAUSED_UI_RUNNING:
+        if(s_gs.ss == G_RUNNING) {
+            Audio_Pause();
+        }
+        break;
+    default: assert(0);
     }
 
     E_FlushEventQueue();
@@ -1820,6 +1830,12 @@ void G_SetSimState(enum simstate ss)
      * if some handler requests a change of the simulation state state midway. 
      */
     s_gs.requested_ss = ss;
+}
+
+void G_UpdateSimStateChangeTick(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    s_gs.ss_change_tick = SDL_GetTicks();
 }
 
 void G_SetLightPos(vec3_t pos)

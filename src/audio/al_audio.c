@@ -40,6 +40,7 @@
 #include "../event.h"
 #include "../camera.h"
 #include "../settings.h"
+#include "../lib/public/attr.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/nk_file_browser.h"
@@ -53,6 +54,7 @@
 
 #include <AL/al.h>
 #include <AL/alc.h>
+#include <SDL.h>
 
 
 #define MAX_CHANNELS    (16)
@@ -60,6 +62,13 @@
 #define MAX(a, b)       ((a) > (b) ? (a) : (b))
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 #define EPSILON         (1.0f/1024)
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
+
 
 struct al_buffer{
     ALuint buffer;
@@ -353,15 +362,6 @@ static bool audio_name_music(const char *name, ALint *out)
     return true;
 }
 
-static bool audio_name_effect(const char *name, ALint *out)
-{
-    khiter_t k = kh_get(buffer, s_effects, name);
-    if(k == kh_end(s_effects))
-        return false;
-    *out = kh_value(s_effects, k).buffer;
-    return true;
-}
-
 static void audio_next_music_track(void)
 {
     const char *tracks[kh_size(s_music)];
@@ -599,7 +599,7 @@ bool Audio_PlayForegroundEffect(const char *name, bool interrupt)
     }
 
     ALint play_buffer = 0;
-    if(!audio_name_effect(name, &play_buffer))
+    if(!Audio_GetEffectBuffer(name, &play_buffer))
         return false;
 
     alSourceStop(s_foreground_source);
@@ -657,13 +657,25 @@ const char *Audio_ErrString(ALenum err)
     return ret;
 }
 
-bool Audio_GetEffectBuffer(const char *name, ALuint *out)
+bool Audio_GetEffectBuffer(const char *name, ALint *out)
 {
     khiter_t k = kh_get(buffer, s_effects, name);
     if(k == kh_end(s_effects))
         return false;
     *out = kh_value(s_effects, k).buffer;
     return true;
+}
+
+const char *Audio_GetEffectName(ALuint buffer)
+{
+    const char *name;
+    struct al_buffer curr;
+
+    kh_foreach(s_effects, name, curr, {
+        if(curr.buffer == buffer)
+            return name;
+    });
+    return NULL;
 }
 
 vec2_t Audio_ListenerPosXZ(void)
@@ -692,5 +704,153 @@ float Audio_BufferDuration(ALuint buffer)
 void Audio_SetForegroundEffectVolume(float gain)
 {
     alSourcef(s_foreground_source, AL_GAIN, gain);
+}
+
+void Audio_Pause(void)
+{
+    ALint fg_state;
+    alGetSourcei(s_foreground_source, AL_SOURCE_STATE, &fg_state);
+
+    if(fg_state == AL_PLAYING) {
+        alSourcePause(s_foreground_source);
+    }
+
+    Audio_EffectPause();
+}
+
+void Audio_Resume(uint32_t dt)
+{
+    ALint fg_state;
+    alGetSourcei(s_foreground_source, AL_SOURCE_STATE, &fg_state);
+
+    if(fg_state == AL_PAUSED) {
+        alSourcePlay(s_foreground_source);
+    }
+
+    Audio_EffectResume(dt);
+}
+
+void Audio_ClearState(void)
+{
+    alSourceStop(s_foreground_source);
+    alSourcei(s_foreground_source, AL_BUFFER, 0);
+    /* The music keeps playing even accross sessions */
+
+    Audio_EffectClearState();
+}
+
+bool Audio_SaveState(struct SDL_RWops *stream)
+{
+    ALint fg_buffer;
+    alGetSourcei(s_foreground_source, AL_BUFFER, &fg_buffer);
+    struct attr fg_has_buffer_attr = (struct attr){
+        .type = TYPE_BOOL, 
+        .val.as_bool = (fg_buffer != 0)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &fg_has_buffer_attr, "fg_has_buffer"));
+
+    if(fg_has_buffer_attr.val.as_bool) {
+
+        const char *name = Audio_GetEffectName(fg_buffer);
+        assert(name);
+
+        struct attr fg_clip_attr = (struct attr){ .type = TYPE_STRING, };
+        pf_snprintf(fg_clip_attr.val.as_string, sizeof(fg_clip_attr.val.as_string), name);
+        CHK_TRUE_RET(Attr_Write(stream, &fg_clip_attr, "fg_clip"));
+
+        ALint fg_offset;
+        alGetSourcei(s_foreground_source, AL_SAMPLE_OFFSET, &fg_offset);
+        struct attr fg_offset_attr = (struct attr){
+            .type = TYPE_INT, 
+            .val.as_int = fg_offset
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &fg_offset_attr, "fg_offset"));
+
+        ALint fg_state;
+        alGetSourcei(s_foreground_source, AL_SOURCE_STATE, &fg_state);
+        struct attr fg_state_attr = (struct attr){
+            .type = TYPE_INT, 
+            .val.as_int = fg_state
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &fg_state_attr, "fg_state"));
+    }
+
+    vec3_t pos = {0};
+    alGetListener3f(AL_POSITION, &pos.x, &pos.y, &pos.z);
+    struct attr listener_pos_attr = (struct attr){
+        .type = TYPE_VEC3, 
+        .val.as_vec3 = pos
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &listener_pos_attr, "listener_pos"));
+    
+    if(!Audio_EffectSaveState(stream))
+        return false;
+
+    return true;
+}
+
+bool Audio_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    bool fg_has_buffer = attr.val.as_bool;
+
+    /* Take a more liberal approach with loading the audio 
+     * state, as it depens on resource files which may have 
+     * been modified, renamed, etc. In case of failing to 
+     * load something, just keep going. 
+     */
+    if(fg_has_buffer) {
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        char name[sizeof(attr.val.as_string)];
+        pf_strlcpy(name, attr.val.as_string, sizeof(name));
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ALint offset = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        ALint state = attr.val.as_int;
+
+        ALint buffer;
+        if(Audio_GetEffectBuffer(name, &buffer)) {
+            
+            alSourcei(s_foreground_source, AL_BUFFER, buffer);
+            alSourcei(s_foreground_source, AL_SAMPLE_OFFSET, offset);
+            if(alGetError() == AL_NO_ERROR) {
+                switch(state){
+                case AL_INITIAL:
+                    break;
+                case AL_PLAYING:
+                    alSourcePlay(s_foreground_source);
+                    break;
+                case AL_PAUSED:
+                    alSourcePlay(s_foreground_source);
+                    alSourcePause(s_foreground_source);
+                    break;
+                case AL_STOPPED:
+                    alSourcePlay(s_foreground_source);
+                    alSourceStop(s_foreground_source);
+                    break;
+                }
+                glGetError(); /* clear error state */
+            }
+        }
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_VEC3);
+    vec3_t pos = attr.val.as_vec3;
+    alListener3f(AL_POSITION, pos.x, pos.y, pos.z);
+
+    if(!Audio_EffectLoadState(stream))
+        return false;
+
+    return true;
 }
 
