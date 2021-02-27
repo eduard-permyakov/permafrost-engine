@@ -3,6 +3,15 @@
 ********************************************************************************
 
 ================================================================================
+[Version 0.55.0] - 27.02.2021
+================================================================================
+    * Add audio system capable of playing effects at locations ("positional 
+      effects") and global effects/music
+    * Support pathfinding of "large" units (by adding multiple "navigation 
+      layers" and finding paths on a per-layer basis)
+    * Miscellaneous enhancements/polishing and bug fixes
+
+================================================================================
 [Version 0.54.0] - 10.02.2021
 ================================================================================
     * Implement system for keeping track of entity membership to spatial regions  

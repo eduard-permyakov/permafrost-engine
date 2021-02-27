@@ -47,8 +47,10 @@ EVERGLORY is the flagship game developed using Permafrost Engine.
 * Hierarchial flow field pathfinding
 * Handling of dynamic obstacles in pathfinding
 * Dynamic collision avoidance of multiple entities using Hybrid Reciprocal Velocity Obstacles and the ClearPath algorithm
+* Pathfinding of different kinds/sizes of units (using "navigation layers")
 * Efficient spatial indexing using a quadtree
 * Efficient real-time tracking of entity membership to dynamic spatial regions
+* Audio system supporting positional effects and multiple channels of global effects
 * RTS minimap
 * RTS-style unit selection
 * RTS unit combat system

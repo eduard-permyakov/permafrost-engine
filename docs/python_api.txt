@@ -29,6 +29,14 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Clear the current unit seleciton.
 
+    [ctrl_pressed]
+    ----------------------------------------------------------------------------
+    Returns True if either of the CTRL keys are currently pressed.
+
+    [curr_music]
+    ----------------------------------------------------------------------------
+    Return the name of the currently playing music track, or None.
+
     [disable_fog_of_war]
     ----------------------------------------------------------------------------
     Disable the fog of war.
@@ -109,6 +117,10 @@ BUILT-IN FUNCTIONS
     [get_active_window]
     ----------------------------------------------------------------------------
     Get the currently active (having focus) window, or None.
+
+    [get_all_music]
+    ----------------------------------------------------------------------------
+    Get a list of all the currently loaded music track names.
 
     [get_basedir]
     ----------------------------------------------------------------------------
@@ -248,6 +260,25 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Returns an ASCII string holding the serialized representation of the object
     graph.
+
+    [play_effect]
+    ----------------------------------------------------------------------------
+    Play a specified audio effect at the specified (X, Y, Z) position. The name
+    must be a name of a WAV file in the 'assets/sounds' folder, without the
+    file extension.
+
+    [play_global_effect]
+    ----------------------------------------------------------------------------
+    Play a specified audio effect with global range. The name must be a name of
+    a WAV file in the 'assets/sounds' folder, without the file extension. If
+    another global effect is already playing, the effect will be ignored,
+    unless 'interrupt' is set to True.
+
+    [play_music]
+    ----------------------------------------------------------------------------
+    Set the specified audio track to loop in the background. The argument must
+    be a name of a WAV file in the 'assets/music' folder, without the file
+    extension.
 
     [prev_frame_ms]
     ----------------------------------------------------------------------------
@@ -394,6 +425,11 @@ BUILT-IN FUNCTIONS
     Set the cursor to target mode. The next left click will issue a 'transport'
     command to the storage site under the cursor.
 
+    [set_unit_selection]
+    ----------------------------------------------------------------------------
+    Overwrites the list of objects currently selected by the player with the
+    specified entity list.
+
     [settings_create]
     ----------------------------------------------------------------------------
     Create a new setting, the value of which will be saved in the settings file
@@ -406,6 +442,10 @@ BUILT-IN FUNCTIONS
     Delete a setting with the specified name. Setting names beginning with 'pf'
     are reserved for the engine and may not be deleted.
 
+    [settings_flush]
+    ----------------------------------------------------------------------------
+    Write the current settings to the settings file.
+
     [settings_get]
     ----------------------------------------------------------------------------
     Returns the value of the setting with the specified name. Will throw an
@@ -417,6 +457,10 @@ BUILT-IN FUNCTIONS
     exception if the setting is not found or if the new value for the setting
     is invalid.
 
+    [shift_pressed]
+    ----------------------------------------------------------------------------
+    Returns True if either of the SHIFT keys are currently pressed.
+
     [show_healthbars]
     ----------------------------------------------------------------------------
     Re-enable showing the healthbars after a 'hide_healthbars' call. Note that
@@ -426,6 +470,11 @@ BUILT-IN FUNCTIONS
     [show_regions]
     ----------------------------------------------------------------------------
     Show region outlines and names over the map surface.
+
+    [storage_site_show_ui]
+    ----------------------------------------------------------------------------
+    Set a flag controlling whether or not the UI windows are rendered over the
+    storage sites.
 
     [ui_text_edit_has_focus]
     ----------------------------------------------------------------------------
@@ -874,6 +923,10 @@ BUILT-IN CLASSES
         [__pickle__]
         Serialize a Permafrost Engine camera object to a string.
 
+        [center_over_location]
+        Position the camera over the specified (X, Z) map location, by only
+        shifting it in the XZ plane.
+
     [CombatableEntity]
     ----------------------------------------------------------------------------
     Permafrost Engine entity which is able to take part in combat. This type
@@ -1215,6 +1268,18 @@ BUILT-IN CLASSES
 
         [gather]
         Instruct an entity to harvest a particular resource.
+
+        [get_curr_carry]
+        Get the amount of a particular resources that this entity is currently
+        carrying.
+
+        [get_gather_speed]
+        Get how much of the specified resource the entity gathers in a single
+        animation.
+
+        [get_max_carry]
+        Get the maximum amount of a particular resources that this entity is
+        able to carry.
 
         [increase_transport_priority]
         Move the specified resource up in the priority list the peasant uses
@@ -2077,9 +2142,69 @@ BUILT-IN CLASSES
         [__pickle__]
         Serialize a Permafrost Engine UIButtonStyle object to a string.
 
+    [UIProgressStyle]
+    ----------------------------------------------------------------------------
+    Style configuration for Permafrost Engine UI progress bar options.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [active]
+        The look of the progress bar background in the active state - either an
+        (R, G, B, A) tuple or a string representing a path to an image.
+
+        [border]
+        The width of the progress bar borders.
+
+        [border_color]
+        The color of the progress bar border - an (R, G, B, A) tuple.
+
+        [cursor_active]
+        The look of the progress bar cursor in the active state - either an (R,
+        G, B, A) tuple or a string representing a path to an image.
+
+        [cursor_border]
+        The width of the progress bar cursor borders.
+
+        [cursor_border_color]
+        The color of the progress bar cursor border - an (R, G, B, A) tuple.
+
+        [cursor_hover]
+        The look of the progress bar cursor in the hovered state - either an
+        (R, G, B, A) tuple or a string representing a path to an image.
+
+        [cursor_normal]
+        The look of the progress bar cursor in the normal state - either an (R,
+        G, B, A) tuple or a string representing a path to an image.
+
+        [cursor_rounding]
+        An (X, Y) tuple of floats to control the rounding of the progress bar
+        cursor.
+
+        [hover]
+        The look of the progress bar background in the hovered state - either
+        an (R, G, B, A) tuple or a string representing a path to an image.
+
+        [normal]
+        The look of the progress bar background in the normal state - either an
+        (R, G, B, A) tuple or a string representing a path to an image.
+
+        [padding]
+        An (X, Y) tuple to control the padding within a progress bar widget.
+
+        [rounding]
+        An (X, Y) tuple of floats to control the rounding of the progress bar
+        widget.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__pickle__]
+        Serialize a Permafrost Engine UIProgressStyle object to a string.
+
     [UIPropertyStyle]
     ----------------------------------------------------------------------------
-    Style configuration for Permafrost Engine UI toggle-able options.
+    Style configuration for Permafrost Engine UI property fields.
 
         ************************************************************************
         MEMBERS
@@ -2285,6 +2410,94 @@ BUILT-IN CLASSES
         ************************************************************************
         [__pickle__]
         Serialize a Permafrost Engine UISelectableStyle object to a string.
+
+    [UISliderStyle]
+    ----------------------------------------------------------------------------
+    Style configuration for Permafrost Engine UI slider options.
+
+        ************************************************************************
+        MEMBERS
+        ************************************************************************
+        [active]
+        The look of the slider background in the active state - either an (R,
+        G, B, A) tuple or a string representing a path to an image.
+
+        [bar_active]
+        The color of the slider bar in the active state - an (R, G, B, A) tuple.
+
+        [bar_filled]
+        The color of the slider bar in the filled state - an (R, G, B, A) tuple.
+
+        [bar_height]
+        The height of the slider bar.
+
+        [bar_hover]
+        The color of the slider bar in the hover state - an (R, G, B, A) tuple.
+
+        [bar_normal]
+        The color of the slider bar in the normal state - an (R, G, B, A) tuple.
+
+        [border]
+        The width of the slider widget borders.
+
+        [border_color]
+        The color of the slider bar border - an (R, G, B, A) tuple.
+
+        [cursor_active]
+        The look of the slider cursor in the active state - either an (R, G, B,
+        A) tuple or a string representing a path to an image.
+
+        [cursor_hover]
+        The look of the slider cursor in the hovered state - either an (R, G,
+        B, A) tuple or a string representing a path to an image.
+
+        [cursor_normal]
+        The look of the slider cursor in the normal state - either an (R, G, B,
+        A) tuple or a string representing a path to an image.
+
+        [cursor_size]
+        An (X, Y) tuple to control the size of the slider cursor.
+
+        [dec_button]
+        Returns a UIButtonStyleObject to control the look of the decrement
+        button.
+
+        [dec_symbol]
+        The style of the decrement button symbol - an NK_SYMBOL enum value.
+
+        [hover]
+        The look of the slider background in the hovered state - either an (R,
+        G, B, A) tuple or a string representing a path to an image.
+
+        [inc_button]
+        Returns a UIButtonStyleObject to control the look of the increment
+        button.
+
+        [inc_symbol]
+        The style of the increment button symbol - an NK_SYMBOL enum value.
+
+        [normal]
+        The look of the slider background in the normal state - either an (R,
+        G, B, A) tuple or a string representing a path to an image.
+
+        [padding]
+        An (X, Y) tuple to control the padding within a slider widget.
+
+        [rounding]
+        An (X, Y) tuple of floats to control the rounding of the slider widget.
+
+        [show_buttons]
+        A boolean to control whether to show the increment/decrement buttons at
+        the edges of the slider widget.
+
+        [spacing]
+        An (X, Y) tuple to control the spacing within a slider widget.
+
+        ************************************************************************
+        METHODS
+        ************************************************************************
+        [__pickle__]
+        Serialize a Permafrost Engine UISliderStyle object to a string.
 
     [UIToggleStyle]
     ----------------------------------------------------------------------------
@@ -2539,7 +2752,15 @@ BUILT-IN CLASSES
 
         [on_hide]
         Callback that gets invoked when the user hides the window with the
-        close button.
+        close button (or via an API call).
+
+        [on_maximize]
+        Callback that gets invoked when the user maximizes the window with the
+        maximize button.
+
+        [on_minimize]
+        Callback that gets invoked when the user minimizes the window with the
+        minimize button.
 
         [option_label]
         Radio button with the specified text. Returns if the radio button is
@@ -2552,6 +2773,14 @@ BUILT-IN CLASSES
         [popup_close]
         Close the currently active popup window. Must only be called from poup
         context.
+
+        [progress]
+        Present a progress bar widget with the current value, the maximum value
+        and a 'modifiable' flag.
+
+        [progress_text]
+        Like 'progress', but also taking a string and (RGBA) parameters to draw
+        a label over the progress bar.
 
         [property_float]
         Editable input field for floating-point properties.
@@ -2572,8 +2801,17 @@ BUILT-IN CLASSES
         [simple_chart]
         Add a chart with a single slot.
 
+        [slider_float]
+        Present a slider widget with floating-point precision.
+
+        [slider_int]
+        Present a slider widget with integer precision.
+
         [spacer]
         Empty widget to consume slots in a row.
+
+        [text_lines]
+        Returns the number of lines taken up by the specified text.
 
         [tree]
         The window UI components pushed in the callable argument will be nested
@@ -2604,6 +2842,7 @@ BUILT-IN CONSTANTS
     ANIM_MODE_LOOP 0
     ANIM_MODE_ONCE 1
     ANIM_MODE_ONCE_HIDE_ON_FINISH 2
+    AUDIO_NUM_FG_CHANNELS 2
     BLEND_MODE_BLUR 1
     BLEND_MODE_NOBLEND 0
     CAM_MODE_FPS 0
@@ -2641,9 +2880,11 @@ BUILT-IN CONSTANTS
     EVENT_BUILD_FAIL_FOUND 65568
     EVENT_BUILD_TARGET_ACQUIRED 65569
     EVENT_ENGINE_LAST 131071
+    EVENT_ENTERED_REGION 65584
     EVENT_ENTITY_DEATH 65558
     EVENT_ENTITY_DIED 65572
     EVENT_ENTITY_STOP 65573
+    EVENT_EXITED_REGION 65585
     EVENT_GAME_SIMSTATE_CHANGED 65560
     EVENT_HARVEST_BEGIN 65574
     EVENT_HARVEST_END 65575
@@ -2656,6 +2897,7 @@ BUILT-IN CONSTANTS
     EVENT_RENDER_3D_PRE 65539
     EVENT_RENDER_FINISH 65542
     EVENT_RENDER_UI 65541
+    EVENT_RESOURCE_AMOUNT_CHANGED 65583
     EVENT_RESOURCE_DROPPED_OFF 65580
     EVENT_RESOURCE_EXHAUSTED 65582
     EVENT_RESOURCE_PICKED_UP 65581
@@ -2670,11 +2912,18 @@ BUILT-IN CONSTANTS
     EVENT_TRANSPORT_TARGET_ACQUIRED 65577
     EVENT_UNIT_SELECTION_CHANGED 65545
     EVENT_UPDATE_END 65537
+    EVENT_UPDATE_FACTION 65586
     EVENT_UPDATE_START 65536
     EVENT_UPDATE_UI 65538
     G_PAUSED_FULL 2
     G_PAUSED_UI_RUNNING 4
     G_RUNNING 1
+    HB_MODE_ALWAYS 0
+    HB_MODE_DAMAGED 1
+    HB_MODE_NEVER 2
+    MUSIC_MODE_LOOP 0
+    MUSIC_MODE_PLAYLIST 1
+    MUSIC_MODE_SHUFFLE 2
     NK_BUTTON_DEFAULT 0
     NK_BUTTON_REPEATER 1
     NK_CHART_CLICKED 2
@@ -3046,6 +3295,9 @@ BUILT-IN CONSTANTS
     SDL_TEXTINPUT 771
     SDL_USEREVENT 32768
     SDL_WINDOWEVENT 512
+    SS_UI_SHOW_ALWAYS 0
+    SS_UI_SHOW_NEVER 2
+    SS_UI_SHOW_SELECTED 1
     TILES_PER_CHUNK_HEIGHT 32
     TILES_PER_CHUNK_WIDTH 32
     TILETYPE_CORNER_CONCAVE_NE 11
