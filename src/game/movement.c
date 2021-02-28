@@ -1526,6 +1526,7 @@ static void clearpath_submit_work(void)
     size_t ntasks = SDL_GetCPUCount();
     if(s_cp_work.nwork < 64)
         ntasks = 1;
+    ntasks = MIN(ntasks, MAX_CP_TASKS);
 
     for(int i = 0; i < ntasks; i++) {
 
@@ -1540,7 +1541,7 @@ static void clearpath_submit_work(void)
             &s_cp_work.futures[s_cp_work.ntasks], TASK_BIG_STACK);
 
         if(s_cp_work.tids[s_cp_work.ntasks] == NULL_TID) {
-          clearpath_work(arg->begin_idx, arg->end_idx);
+            clearpath_work(arg->begin_idx, arg->end_idx);
         }else{
             s_cp_work.ntasks++;
         }

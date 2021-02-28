@@ -44,6 +44,7 @@
 #include "clearpath.h"
 #include "public/game.h"
 #include "movement.h"
+#include "game_private.h"
 #include "../main.h"
 #include "../event.h"
 #include "../entity.h"
@@ -608,6 +609,11 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
     return true;
 }
 
+static bool pentities_equal(struct entity *const *a, struct entity *const *b)
+{
+    return ((*a) == (*b));
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -629,7 +635,8 @@ bool G_ClearPath_ShouldSaveDebug(uint32_t ent_uid)
     if(vec_size(sel) == 0)
         return false; 
 
-    return true;
+    struct entity *ent = G_EntityForUID(ent_uid);
+    return (0 == vec_pentity_indexof((vec_pentity_t*)sel, ent, pentities_equal));
 }
 
 void G_ClearPath_Init(const struct map *map)
