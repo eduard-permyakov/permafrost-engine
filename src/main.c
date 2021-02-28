@@ -45,6 +45,7 @@
 #include "game/public/game.h"
 #include "navigation/public/nav.h"
 #include "audio/public/audio.h"
+#include "phys/public/phys.h"
 #include "event.h"
 #include "ui.h"
 #include "pf_math.h"
@@ -446,10 +447,17 @@ static bool engine_init(char **argv)
         goto fail_audio;
     }
 
+    if(!P_Projectile_Init()) {
+        fprintf(stderr, "Failed to intialize physics subsystem\n");
+        goto fail_phys;
+    }
+
     engine_create_settings();
     s_rstate.swap_buffers = true;
     return true;
 
+fail_phys:
+    Audio_Shutdown();
 fail_audio:
     N_Shutdown();
 fail_nav:
@@ -492,6 +500,7 @@ fail_perf:
 
 static void engine_shutdown(void)
 {
+    P_Projectile_Shutdown();
     Audio_Shutdown();
     S_Shutdown();
     UI_Shutdown();

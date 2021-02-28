@@ -55,6 +55,7 @@
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../audio/public/audio.h"
+#include "../phys/public/phys.h"
 #include "../lib/public/pf_string.h"
 #include "../entity.h"
 #include "../camera.h"
@@ -1333,8 +1334,9 @@ void G_Update(void)
 
     kh_foreach(s_gs.active, key, curr, {
 
-        if(s_gs.ss == G_RUNNING && curr->flags & ENTITY_FLAG_ANIMATED)
+        if(s_gs.ss == G_RUNNING && curr->flags & ENTITY_FLAG_ANIMATED) {
             A_Update(curr);
+        }
 
         struct obb obb;
         Entity_CurrentOBB(curr, &obb, false);
@@ -1366,6 +1368,7 @@ void G_Update(void)
     }
 
     G_Sel_Update(s_gs.active_cam, &s_gs.visible, &s_gs.visible_obbs);
+    P_Projectile_Update(vec_size(&s_gs.visible_obbs), s_gs.visible_obbs.array);
     g_set_contextual_cursor();
 
     E_Global_NotifyImmediate(EVENT_UPDATE_UI, NULL, ES_ENGINE);
