@@ -280,7 +280,17 @@ static bool maybe_enemy_near(const struct entity *ent)
     PERF_RETURN(false);
 }
 
-static bool melee_can_attack(const struct entity *ent, const struct entity *target)
+static void entity_move_in_range(const struct entity *ent, const struct entity *target)
+{
+    const struct combatstate *cs = combatstate_get(ent->uid);
+    if(cs->stats.attack_range == 0.0f) {
+        G_Move_SetSurroundEntity(ent, target);
+    }else{
+        G_Move_SetEnterRange(ent, target, cs->stats.attack_range);
+    }
+}
+
+static bool entity_can_attack_melee(const struct entity *ent, const struct entity *target)
 {
     if(!Entity_MaybeAdjacentFast(ent, target, 10.0))
         return false;
@@ -291,7 +301,7 @@ static bool entity_can_attack(const struct entity *ent, const struct entity *tar
 {
     const struct combatstate *cs = combatstate_get(ent->uid);
     if(cs->stats.attack_range == 0.0f) {
-        return melee_can_attack(ent, target);
+        return entity_can_attack_melee(ent, target);
     }
 
     vec2_t xz_src = G_Pos_GetXZ(ent->uid);
@@ -362,7 +372,7 @@ static quat_t entity_turn_dir(struct entity *ent, const struct entity *target)
 static void entity_turn_to_target(struct entity *ent, const struct entity *target)
 {
     quat_t rot = entity_turn_dir(ent, target);
-    G_Move_ChangeDirection(ent, rot);
+    G_Move_SetChangeDirection(ent, rot);
 
     struct combatstate *cs = combatstate_get(ent->uid);
     assert(cs);
@@ -563,7 +573,7 @@ static void on_20hz_tick(void *user, void *event)
 
             /* We approached the target, but it slipped away from us. Re-engage. */
             if(G_Move_Still(ent)) {
-                G_Move_SetSurroundEntity(ent, target);
+                entity_move_in_range(ent, target);
             }
             break;
         }
@@ -579,7 +589,7 @@ static void on_20hz_tick(void *user, void *event)
                     if(!entity_dead(target)) {
 
                         E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
-                        G_Move_SetSurroundEntity(ent, target);
+                        entity_move_in_range(ent, target);
                         curr->state = STATE_MOVING_TO_TARGET_LOCKED;
                         break;
                     }else{
@@ -693,21 +703,11 @@ static void on_mousedown(void *user, void *event)
     }
 }
 
-static void on_render_3d(void *user, void *event)
+static void combat_render_targets(void)
 {
     int winw, winh;
     Engine_WinDrawableSize(&winw, &winh);
     const struct camera *cam = G_GetActiveCamera();
-
-    struct sval setting;
-    ss_e status;
-    (void)status;
-
-    status = Settings_Get("pf.debug.show_combat_targets", &setting);
-    assert(status == SS_OKAY);
-
-    if(!setting.as_bool)
-        return;
 
     uint32_t key;
     struct combatstate curr;
@@ -776,6 +776,59 @@ static void on_render_3d(void *user, void *event)
         struct rgba color = (struct rgba){255, 0, 0, 255};
         UI_DrawText(s_name_for_state[curr.state], bounds, color);
     });
+}
+
+static void combat_render_ranges(void)
+{
+    uint32_t key;
+    struct combatstate curr;
+
+    kh_foreach(s_entity_state_table, key, curr, {
+
+        if(curr.stats.attack_range == 0.0f)
+            continue;
+
+        vec2_t ent_pos = G_Pos_GetXZ(key);
+        mat4x4_t ident;
+        PFM_Mat4x4_Identity(&ident);
+
+        const float radius = curr.stats.attack_range;
+        const float width = 0.25f;
+        vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
+
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawSelectionCircle,
+            .nargs = 5,
+            .args = {
+                R_PushArg(&ent_pos, sizeof(ent_pos)),
+                R_PushArg(&radius, sizeof(radius)),
+                R_PushArg(&width, sizeof(width)),
+                R_PushArg(&red, sizeof(red)),
+                (void*)G_GetPrevTickMap(),
+            },
+        });
+    });
+}
+
+static void on_render_3d(void *user, void *event)
+{
+    struct sval setting;
+    ss_e status;
+    (void)status;
+
+    status = Settings_Get("pf.debug.show_combat_targets", &setting);
+    assert(status == SS_OKAY);
+
+    if(setting.as_bool) {
+        combat_render_targets();
+    }
+
+    status = Settings_Get("pf.debug.show_combat_ranges", &setting);
+    assert(status == SS_OKAY);
+
+    if(setting.as_bool) {
+        combat_render_ranges();
+    }
 }
 
 /*****************************************************************************/
@@ -951,7 +1004,7 @@ void G_Combat_AttackUnit(const struct entity *ent, const struct entity *target)
     cs->state = STATE_MOVING_TO_TARGET_LOCKED;
     cs->move_cmd_interrupted = false;
 
-    G_Move_SetSurroundEntity(ent, target);
+    entity_move_in_range(ent, target);
 }
 
 void G_Combat_StopAttack(const struct entity *ent)

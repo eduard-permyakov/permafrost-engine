@@ -104,6 +104,9 @@ enum arrival_state{
     /* Move towards the closest point touching the target entity, but 
      * stop before actually stepping on it's tiles. */
     STATE_SURROUND_ENTITY,
+    /* Move towards the closest position that will take us within the
+     * specified range of the target entity */
+    STATE_ENTER_ENTITY_RANGE,
     /* Entity is turning until it faces a particular direction */
     STATE_TURNING,
 };
@@ -129,6 +132,9 @@ struct movestate{
     int                vel_hist_idx;
     /* Entity that we're moving towards when in the 'SURROUND_STATIC_ENTITY' state */
     uint32_t           surround_target_uid;
+    /* Additional state for entities in 'ENTER_ENTITY_RANGE' state */
+    vec2_t             target_prev_pos;
+    float              target_range;
     /* The target direction for 'turning' entities */
     quat_t             target_dir;
 };
@@ -209,12 +215,13 @@ static dest_id_t               s_last_cmd_dest;
 static struct cp_work          s_cp_work;
 
 static const char *s_state_str[] = {
-    [STATE_MOVING]          = STR(STATE_MOVING),
-    [STATE_ARRIVED]         = STR(STATE_ARRIVED),
-    [STATE_SEEK_ENEMIES]    = STR(STATE_SEEK_ENEMIES),
-    [STATE_WAITING]         = STR(STATE_WAITING),
-    [STATE_SURROUND_ENTITY] = STR(STATE_SURROUND_ENTITY),
-    [STATE_TURNING]         = STR(STATE_TURNING)
+    [STATE_MOVING]              = STR(STATE_MOVING),
+    [STATE_ARRIVED]             = STR(STATE_ARRIVED),
+    [STATE_SEEK_ENEMIES]        = STR(STATE_SEEK_ENEMIES),
+    [STATE_WAITING]             = STR(STATE_WAITING),
+    [STATE_SURROUND_ENTITY]     = STR(STATE_SURROUND_ENTITY),
+    [STATE_ENTER_ENTITY_RANGE]  = STR(STATE_ENTER_ENTITY_RANGE),
+    [STATE_TURNING]             = STR(STATE_TURNING)
 };
 
 /*****************************************************************************/
@@ -1267,6 +1274,38 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
 
         break;
     }
+    case STATE_ENTER_ENTITY_RANGE: {
+
+        struct entity *target = G_EntityForUID(ms->surround_target_uid);
+        if(!target) {
+            entity_finish_moving(ent, STATE_ARRIVED);
+            break;
+        }
+
+        vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
+        vec2_t xz_target = G_Pos_GetXZ(ms->surround_target_uid);
+
+        vec2_t delta;
+        PFM_Vec2_Sub(&xz_pos, &xz_target, &delta);
+
+        if(PFM_Vec2_Len(&delta) <= ms->target_range
+        || M_NavIsMaximallyClose(s_map, layer, xz_pos, xz_target, 0.0f)) {
+        
+            entity_finish_moving(ent, STATE_ARRIVED);
+            break;
+        }
+
+        vec2_t target_delta;
+        PFM_Vec2_Sub(&xz_target, &ms->target_prev_pos, &target_delta);
+
+        if(PFM_Vec2_Len(&target_delta) > 5.0f) {
+            G_Move_SetDest(ent, xz_target);
+            ms->state = STATE_ENTER_ENTITY_RANGE;
+            ms->target_prev_pos = xz_target;
+        }
+
+        break;
+    }
     case STATE_TURNING: {
 
         /* find the angle between the two quaternions */
@@ -1780,7 +1819,7 @@ void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz)
     vec_pentity_destroy(&flock);
 }
 
-void G_Move_ChangeDirection(const struct entity *ent, quat_t target)
+void G_Move_SetChangeDirection(const struct entity *ent, quat_t target)
 {
     struct movestate *ms = movestate_get(ent);
     assert(ms);
@@ -1792,6 +1831,31 @@ void G_Move_ChangeDirection(const struct entity *ent, quat_t target)
 
     ms->state = STATE_TURNING;
     ms->target_dir = target;
+}
+
+void G_Move_SetEnterRange(const struct entity *ent, const struct entity *target, float range)
+{
+    struct movestate *ms = movestate_get(ent);
+    assert(ms);
+
+    vec2_t xz_src = G_Pos_GetXZ(ent->uid);
+    vec2_t xz_dst = G_Pos_GetXZ(target->uid);
+    range = MAX(0.0f, range - ent->selection_radius);
+
+    vec2_t delta;
+    PFM_Vec2_Sub(&xz_src, &xz_dst, &delta);
+    if(PFM_Vec2_Len(&delta) <= range) {
+        G_Move_Stop(ent);
+        return;
+    }
+
+    vec2_t xz_target = M_NavClosestReachableInRange(s_map, layer_for_ent(ent), xz_src, xz_dst, range);
+    G_Move_SetDest(ent, xz_target);
+
+    ms->state = STATE_ENTER_ENTITY_RANGE;
+    ms->surround_target_uid = target->uid;
+    ms->target_prev_pos = xz_dst;
+    ms->target_range = range;
 }
 
 void G_Move_SetMoveOnLeftClick(void)
@@ -2022,6 +2086,18 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &surround_target_uid, "surround_target_uid"));
 
+        struct attr target_prev_pos = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr.target_prev_pos
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &target_prev_pos, "target_prev_pos"));
+
+        struct attr target_range = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = curr.target_range
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &target_range, "target_range"));
+
         struct attr target_dir = (struct attr){
             .type = TYPE_QUAT,
             .val.as_quat = curr.target_dir
@@ -2146,6 +2222,14 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         ms->surround_target_uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        ms->target_prev_pos = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        ms->target_range = attr.val.as_float;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_QUAT);

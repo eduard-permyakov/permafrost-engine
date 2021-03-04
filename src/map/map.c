@@ -738,3 +738,9 @@ bool M_NavHasEntityLOS(const struct map *map, enum nav_layer layer,
     return N_HasEntityLOS(xz_pos, ent, map->nav_private, layer, map->pos);
 }
 
+vec2_t M_NavClosestReachableInRange(const struct map *map, enum nav_layer layer,
+                                    vec2_t xz_src, vec2_t xz_target, float range)
+{
+    return N_ClosestReachableInRange(map->nav_private, map->pos, xz_src, xz_target, range, layer);
+}
+

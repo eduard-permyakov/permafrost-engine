@@ -368,6 +368,16 @@ void      N_GetResolution(void *nav_private, struct map_resolution *out);
 bool      N_ObjectBuildable(void *nav_private, enum nav_layer layer, 
                             vec3_t map_pos, const struct obb *obb);
 
+/* ------------------------------------------------------------------------
+ * Will return the XZ map position that the entity at the source location
+ * should travel to in order to get in range of the target position using
+ * the shortest path.
+ * ------------------------------------------------------------------------
+ */
+vec2_t N_ClosestReachableInRange(void *nav_private, vec3_t map_pos, 
+                                 vec2_t xz_src, vec2_t xz_target, 
+                                 float range, enum nav_layer layer);
+
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */
 /*###########################################################################*/

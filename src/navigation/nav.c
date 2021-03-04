@@ -2083,13 +2083,12 @@ bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
         priv->width, priv->height,
         FIELD_RES_C, FIELD_RES_R
     };
+    bool result;
+    (void)result;
 
     n_update_dirty_local_islands(nav_private, layer);
 
     /* Convert source and destination positions to tile coordinates */
-    bool result;
-    (void)result;
-
     struct tile_desc src_desc, dst_desc;
     result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
     assert(result);
@@ -2592,21 +2591,18 @@ vec2_t N_ClosestReachableDest(void *nav_private, enum nav_layer layer, vec3_t ma
         priv->width, priv->height,
         FIELD_RES_C, FIELD_RES_R
     };
-
-    /* Convert source and destination positions to tile coordinates */
     bool result;
     (void)result;
 
+    /* Convert source and destination positions to tile coordinates */
     struct tile_desc src_desc, dst_desc;
     result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
     assert(result);
     result = M_Tile_DescForPoint2D(res, map_pos, xz_dst, &dst_desc);
     assert(result);
 
-    const struct nav_chunk *src_chunk = &priv->chunks[layer]
-                                                     [src_desc.chunk_r * priv->width + src_desc.chunk_c];
-    const struct nav_chunk *dst_chunk = &priv->chunks[layer]
-                                                     [dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
+    const struct nav_chunk *src_chunk = &priv->chunks[layer][src_desc.chunk_r * priv->width + src_desc.chunk_c];
+    const struct nav_chunk *dst_chunk = &priv->chunks[layer][dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
 
     uint16_t src_iid = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
     uint16_t dst_iid = dst_chunk->islands[dst_desc.tile_r][dst_desc.tile_c];
@@ -2878,5 +2874,68 @@ out:
 enum nav_layer N_DestLayer(dest_id_t id)
 {
     return (id & 0xf);
+}
+
+vec2_t N_ClosestReachableInRange(void *nav_private, vec3_t map_pos, 
+                                 vec2_t xz_src, vec2_t xz_target, 
+                                 float range, enum nav_layer layer)
+{
+    assert(Sched_UsingBigStack());
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+    bool result;
+    (void)result;
+
+    /* Convert source position to tile coordinates */
+    struct tile_desc src_desc;
+    result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
+    assert(result);
+
+    const struct nav_chunk *src_chunk = &priv->chunks[layer][src_desc.chunk_r * priv->width + src_desc.chunk_c];
+    uint16_t src_iid = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
+
+    /* Find the set of tiles that are within range of the target */
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderCircle(res, xz_target, range, 
+        map_pos, tds, ARR_SIZE(tds));
+
+    /* Pick out the closest one that's on the same global island (i.e. potentially reachable) */
+    const vec2_t tile_dims = N_TileDims();
+    float min_dist = INFINITY;
+    vec2_t nearest_pos;
+
+    for(int i = 0; i < ntiles; i++) {
+
+        const struct tile_desc *curr = &tds[i];
+        const struct nav_chunk *curr_chunk = &priv->chunks[layer][curr->chunk_r * priv->width + curr->chunk_c];
+        uint16_t curr_iid = curr_chunk->islands[curr->tile_r][curr->tile_c];
+
+        if(curr_iid != src_iid)
+            continue;
+
+        vec2_t tile_center = (vec2_t){
+            map_pos.x - (curr->chunk_c * FIELD_RES_C + curr->tile_c) * tile_dims.x,
+            map_pos.z + (curr->chunk_r * FIELD_RES_R + curr->tile_r) * tile_dims.z,
+        };
+        vec2_t delta;
+        PFM_Vec2_Sub(&xz_src, &tile_center, &delta);
+
+        if(PFM_Vec2_Len(&delta) < min_dist) {
+            min_dist = PFM_Vec2_Len(&delta);
+            nearest_pos = tile_center;
+        }
+    }
+
+    /* If there are absolutely no tiles that are even potentially reachable, return the 
+     * target location. The pathing request there will get the entity maximally close */
+    if(min_dist == INFINITY) {
+        return xz_target;
+    }
+
+    return nearest_pos;
 }
 
