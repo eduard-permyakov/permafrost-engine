@@ -318,7 +318,7 @@ static void g_render_healthbars(void)
         if((curr->flags & ENTITY_FLAG_BUILDING) && !G_Building_IsFounded(curr))
             continue;
 
-        int max_health = curr->max_hp;
+        int max_health = G_Combat_GetMaxHP(curr);
         int curr_health = G_Combat_GetCurrentHP(curr);
 
         if(curr_health == 0)

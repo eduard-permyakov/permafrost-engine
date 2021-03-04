@@ -350,6 +350,8 @@ static PyObject *PyCombatableEntity_get_base_dmg(PyCombatableEntityObject *self,
 static int       PyCombatableEntity_set_base_dmg(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_get_base_armour(PyCombatableEntityObject *self, void *closure);
 static int       PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyCombatableEntity_get_attack_range(PyCombatableEntityObject *self, void *closure);
+static int       PyCombatableEntity_set_attack_range(PyCombatableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self);
 static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObject *args);
 static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObject *args, PyObject *kwargs);
@@ -398,6 +400,10 @@ static PyGetSetDef PyCombatableEntity_getset[] = {
     "The base armour (as a fraction from 0.0 to 1.0) specifying which percentage of incoming "
     "damage is blocked.",
     NULL},
+    {"attack_range",
+    (getter)PyCombatableEntity_get_attack_range, (setter)PyCombatableEntity_set_attack_range,
+    "The distance from which an entity can attack. 0 for melee units.",
+    NULL},
     {NULL}  /* Sentinel */
 };
 
@@ -408,7 +414,8 @@ static PyTypeObject PyCombatableEntity_type = {
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc       = "Permafrost Engine entity which is able to take part in combat. This type "
                     "requires the 'max_hp', 'base_dmg', and 'base_armour' keyword arguments to be "
-                    "passed to __init__. This is a subclass of pf.Entity.",
+                    "passed to __init__. An optional 'attack_range' keyword argument may also be "
+                    "passed. This is a subclass of pf.Entity.",
     .tp_methods   = PyCombatableEntity_methods,
     .tp_base      = &PyEntity_type,
     .tp_getset    = PyCombatableEntity_getset,
@@ -1722,14 +1729,16 @@ static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObj
     PyObject *base_dmg = NULL;
     PyObject *base_armour = NULL;
     PyObject *curr_hp = NULL;
+    PyObject *attack_range = NULL;
 
     if(!(self->super.ent->flags & ENTITY_FLAG_ZOMBIE)) {
     
-        max_hp = PyInt_FromLong(self->super.ent->max_hp);
+        max_hp = PyInt_FromLong(G_Combat_GetMaxHP(self->super.ent));
         base_dmg = PyInt_FromLong(G_Combat_GetBaseDamage(self->super.ent));
         base_armour = PyFloat_FromDouble(G_Combat_GetBaseArmour(self->super.ent));
         curr_hp = PyInt_FromLong(G_Combat_GetCurrentHP(self->super.ent));
-        CHK_TRUE(max_hp && base_dmg && base_armour && curr_hp, fail_pickle);
+        attack_range = PyFloat_FromDouble(G_Combat_GetRange(self->super.ent));
+        CHK_TRUE(max_hp && base_dmg && base_armour && curr_hp && attack_range, fail_pickle);
 
         bool status;
         status = S_PickleObjgraph(max_hp, stream);
@@ -1740,11 +1749,14 @@ static PyObject *PyCombatableEntity_pickle(PyCombatableEntityObject *self, PyObj
         CHK_TRUE(status, fail_pickle);
         status = S_PickleObjgraph(curr_hp, stream);
         CHK_TRUE(status, fail_pickle);
+        status = S_PickleObjgraph(attack_range, stream);
+        CHK_TRUE(status, fail_pickle);
 
         Py_DECREF(max_hp);
         Py_DECREF(base_dmg);
         Py_DECREF(base_armour);
         Py_DECREF(curr_hp);
+        Py_DECREF(attack_range);
     }
 
     Py_DECREF(ret);
@@ -1757,6 +1769,7 @@ fail_pickle:
     Py_XDECREF(base_dmg);
     Py_XDECREF(base_armour);
     Py_XDECREF(curr_hp);
+    Py_XDECREF(attack_range);
     SDL_RWclose(stream);
 fail_stream:
     Py_XDECREF(ret);
@@ -1766,7 +1779,7 @@ fail_stream:
 static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     char tmp;
-    PyObject *max_hp = NULL, *base_dmg = NULL, *base_armour = NULL, *curr_hp = NULL;
+    PyObject *max_hp = NULL, *base_dmg = NULL, *base_armour = NULL, *curr_hp = NULL, *attack_range = NULL;
     PyObject *ret = NULL;
     int status;
 
@@ -1814,7 +1827,13 @@ static PyObject *PyCombatableEntity_unpickle(PyObject *cls, PyObject *args, PyOb
         SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
         CHK_TRUE(PyInt_Check(curr_hp), fail_unpickle);
-        G_Combat_SetHP(((PyEntityObject*)ent)->ent, PyInt_AS_LONG(curr_hp));
+        G_Combat_SetCurrentHP(((PyEntityObject*)ent)->ent, PyInt_AS_LONG(curr_hp));
+
+        attack_range = S_UnpickleObjgraph(stream);
+        SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+        status = PyObject_SetAttrString(ent, "attack_range", attack_range);
+        CHK_TRUE(0 == status, fail_unpickle);
     }
 
     nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
@@ -1825,6 +1844,7 @@ fail_unpickle:
     Py_XDECREF(base_dmg);
     Py_XDECREF(base_armour);
     Py_XDECREF(curr_hp);
+    Py_XDECREF(attack_range);
     SDL_RWclose(stream);
 fail_stream:
     Py_DECREF(ent);
@@ -1983,6 +2003,7 @@ fail_stream:
 static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *max_hp, *base_dmg, *base_armour;
+    assert(self->super.ent->flags & ENTITY_FLAG_COMBATABLE);
 
     if(!kwds 
     || ((max_hp = PyDict_GetItemString(kwds, "max_hp")) == NULL)
@@ -1993,13 +2014,16 @@ static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *arg
         return -1;
     }
 
-    assert(self->super.ent->flags & ENTITY_FLAG_COMBATABLE);
+    PyObject *attack_range = PyDict_GetItemString(kwds, "attack_range");
+    if(attack_range && (PyCombatableEntity_set_attack_range(self, attack_range, NULL) != 0))
+        return -1; /* Exception already set */ 
+
     if((PyCombatableEntity_set_max_hp(self, max_hp, NULL) != 0)
     || (PyCombatableEntity_set_base_dmg(self, base_dmg, NULL) != 0)
     || (PyCombatableEntity_set_base_armour(self, base_armour, NULL) != 0))
         return -1; /* Exception already set */ 
 
-    G_Combat_SetHP(self->super.ent, PyInt_AS_LONG(max_hp));
+    G_Combat_SetCurrentHP(self->super.ent, PyInt_AS_LONG(max_hp));
 
     /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
      * MRO to complete in cases when this class is one of multiple base classes of another type. 
@@ -2043,7 +2067,7 @@ static int PyCombatableEntity_set_hp(PyCombatableEntityObject *self, PyObject *v
         return -1;
     }
 
-    G_Combat_SetHP(self->super.ent, hp);
+    G_Combat_SetCurrentHP(self->super.ent, hp);
     return 0;
 }
 
@@ -2054,7 +2078,8 @@ static PyObject *PyCombatableEntity_get_max_hp(PyCombatableEntityObject *self, v
         return NULL;
     }
 
-    return Py_BuildValue("i", self->super.ent->max_hp);
+    int max_hp = G_Combat_GetMaxHP(self->super.ent);
+    return Py_BuildValue("i", max_hp);
 }
 
 static int PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObject *value, void *closure)
@@ -2075,7 +2100,7 @@ static int PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObjec
         return -1;
     }
 
-    self->super.ent->max_hp = max_hp;
+    G_Combat_SetMaxHP(self->super.ent, max_hp);
     return 0;
 }
 
@@ -2139,6 +2164,38 @@ static int PyCombatableEntity_set_base_armour(PyCombatableEntityObject *self, Py
     }
 
     G_Combat_SetBaseArmour(self->super.ent, base_armour);
+    return 0;
+}
+
+static PyObject *PyCombatableEntity_get_attack_range(PyCombatableEntityObject *self, void *closure)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    return PyFloat_FromDouble(G_Combat_GetRange(self->super.ent));
+}
+
+static int PyCombatableEntity_set_attack_range(PyCombatableEntityObject *self, PyObject *value, void *closure)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "attack_range attribute must be a float.");
+        return -1;
+    }
+
+    float range = PyFloat_AS_DOUBLE(value);
+    if(range < 0.0f) {
+        PyErr_SetString(PyExc_TypeError, "attack_range attribute must be a positive value.");
+        return -1;
+    }
+
+    G_Combat_SetRange(self->super.ent, range);
     return 0;
 }
 

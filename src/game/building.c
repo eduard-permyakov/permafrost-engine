@@ -542,7 +542,8 @@ bool G_Building_Found(struct entity *ent, bool blocking)
     }
 
     if(ent->flags & ENTITY_FLAG_COMBATABLE) {
-        G_Combat_SetHP(ent, ent->max_hp * 0.1f);
+        int max_hp = G_Combat_GetMaxHP(ent);
+        G_Combat_SetCurrentHP(ent, max_hp * 0.1f);
         G_Building_UpdateProgress(ent, 0.1f);
     }
 
@@ -722,11 +723,16 @@ bool G_Building_NeedsRepair(const struct entity *ent)
     if(bs->state < BUILDING_STATE_COMPLETED)
         return true;
 
-    if(!(ent->flags & ENTITY_FLAG_COMBATABLE) || ent->max_hp == 0)
+    if(!(ent->flags & ENTITY_FLAG_COMBATABLE))
         return false;
 
     int hp = G_Combat_GetCurrentHP(ent);
-    return (hp < ent->max_hp);
+    int max_hp = G_Combat_GetMaxHP(ent);
+
+    if(max_hp == 0)
+        return false;
+
+    return (hp < max_hp);
 }
 
 int G_Building_GetRequired(uint32_t uid, const char *rname)
@@ -925,7 +931,7 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         }
 
         if(ent->flags & ENTITY_FLAG_COMBATABLE) {
-            G_Combat_SetHP(ent, hp);
+            G_Combat_SetCurrentHP(ent, hp);
         }
     }
     return true;

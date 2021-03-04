@@ -81,11 +81,11 @@
  *                 |    |*attack begins*        |*attack ends*         |*attack ends*
  *                 |    |              +--------+----------------------+
  *                 |    V              |
- *                 +->[STATE_CAN_ATTACK]<---------+
+ *                 +->[STATE_TURNING_TO_TARGET]<--+
  *                      |(target alive)           |
  *                      |                         |
  *                      V                         |
- *                    [STATE_TURNING_TO_TARGET]   |
+ *                    [STATE_CAN_ATTACK]          |
  *                      |                         |
  *                      |(facing target)          |
  *                      V                         |(anim cycle finishes)
@@ -97,8 +97,10 @@
  */
 
 struct combatstats{
+    int   max_hp;
     int   base_dmg;         /* The base damage per hit */
     float base_armour_pc;   /* Percentage of damage blocked. Valid range: [0.0 - 1.0] */
+    float attack_range;
 };
 
 struct combatstate{
@@ -285,6 +287,21 @@ static bool melee_can_attack(const struct entity *ent, const struct entity *targ
     return M_NavObjAdjacent(s_map, ent, target);
 }
 
+static bool entity_can_attack(const struct entity *ent, const struct entity *target)
+{
+    const struct combatstate *cs = combatstate_get(ent->uid);
+    if(cs->stats.attack_range == 0.0f) {
+        return melee_can_attack(ent, target);
+    }
+
+    vec2_t xz_src = G_Pos_GetXZ(ent->uid);
+    vec2_t xz_dst = G_Pos_GetXZ(target->uid);
+
+    vec2_t delta;
+    PFM_Vec2_Sub(&xz_src, &xz_dst, &delta);
+    return (PFM_Vec2_Len(&delta) <= cs->stats.attack_range);
+}
+
 static bool valid_enemy(const struct entity *curr, void *arg)
 {
     const struct entity *ent = arg;
@@ -391,12 +408,12 @@ static void on_attack_anim_finish(void *user, void *event)
         return;
     }
 
-    if(melee_can_attack(self, target)) {
+    if(entity_can_attack(self, target)) {
 
         float dmg = G_Combat_GetBaseDamage(self) * (1.0f - G_Combat_GetBaseArmour(target));
         target_cs->current_hp = MAX(0, target_cs->current_hp - dmg);
 
-        if(target_cs->current_hp == 0 && target->max_hp > 0) {
+        if(target_cs->current_hp == 0 && target_cs->stats.max_hp > 0) {
 
             G_Move_Stop(target);
 
@@ -459,7 +476,7 @@ static void on_20hz_tick(void *user, void *event)
             struct entity *enemy;
             if((enemy = G_Combat_ClosestEligibleEnemy(ent)) != NULL) {
 
-                if(melee_can_attack(ent, enemy)) {
+                if(entity_can_attack(ent, enemy)) {
 
                     assert(curr->stance == COMBAT_STANCE_AGGRESSIVE 
                         || curr->stance == COMBAT_STANCE_HOLD_POSITION);
@@ -505,7 +522,7 @@ static void on_20hz_tick(void *user, void *event)
             }
 
             /* Check if we're within attacking range of our target */
-            if(melee_can_attack(ent, enemy)) {
+            if(entity_can_attack(ent, enemy)) {
 
                 G_Move_Stop(ent);
                 entity_turn_to_target(ent, enemy);
@@ -537,7 +554,7 @@ static void on_20hz_tick(void *user, void *event)
             }
 
             /* Check if we're within attacking range of our target */
-            if(melee_can_attack(ent, target)) {
+            if(entity_can_attack(ent, target)) {
 
                 G_Move_Stop(ent);
                 entity_turn_to_target(ent, target);
@@ -556,7 +573,7 @@ static void on_20hz_tick(void *user, void *event)
             const struct entity *target = G_EntityForUID(curr->target_uid);
 
             if(entity_dead(target)
-            || !melee_can_attack(ent, target)) {
+            || !entity_can_attack(ent, target)) {
 
                 if(curr->sticky) {
                     if(!entity_dead(target)) {
@@ -572,7 +589,7 @@ static void on_20hz_tick(void *user, void *event)
 
                 /* First check if there's another suitable target */
                 struct entity *enemy = G_Combat_ClosestEligibleEnemy(ent);
-                if(enemy && melee_can_attack(ent, enemy)) {
+                if(enemy && entity_can_attack(ent, enemy)) {
 
                     curr->target_uid = enemy->uid;
                     E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
@@ -599,7 +616,7 @@ static void on_20hz_tick(void *user, void *event)
         case STATE_TURNING_TO_TARGET: {
 
             const struct entity *target = G_EntityForUID(curr->target_uid);
-            if(entity_dead(target) || !melee_can_attack(ent, target)) {
+            if(entity_dead(target) || !entity_can_attack(ent, target)) {
                 curr->state = STATE_NOT_IN_COMBAT; 
                 break;
             }
@@ -814,7 +831,7 @@ void G_Combat_AddEntity(const struct entity *ent, enum combat_stance initial)
 
     struct combatstate new_cs = (struct combatstate) {
         .stats = {0},
-        .current_hp = ent->max_hp,
+        .current_hp = 0,
         .stance = initial,
         .state = STATE_NOT_IN_COMBAT,
         .sticky = false,
@@ -1059,11 +1076,39 @@ int G_Combat_GetBaseDamage(const struct entity *ent)
     return cs->stats.base_dmg;
 }
 
-void G_Combat_SetHP(const struct entity *ent, int hp)
+void G_Combat_SetCurrentHP(const struct entity *ent, int hp)
 {
     struct combatstate *cs = combatstate_get(ent->uid);
     assert(cs);
-    cs->current_hp = MIN(hp, ent->max_hp);
+    cs->current_hp = MIN(hp, cs->stats.max_hp);
+}
+
+void G_Combat_SetMaxHP(const struct entity *ent, int hp)
+{
+    struct combatstate *cs = combatstate_get(ent->uid);
+    assert(cs);
+    cs->stats.max_hp = hp;
+}
+
+int G_Combat_GetMaxHP(const struct entity *ent)
+{
+    struct combatstate *cs = combatstate_get(ent->uid);
+    assert(cs);
+    return cs->stats.max_hp;
+}
+
+void G_Combat_SetRange(const struct entity *ent, float range)
+{
+    struct combatstate *cs = combatstate_get(ent->uid);
+    assert(cs);
+    cs->stats.attack_range = range;
+}
+
+float G_Combat_GetRange(const struct entity *ent)
+{
+    struct combatstate *cs = combatstate_get(ent->uid);
+    assert(cs);
+    return cs->stats.attack_range;
 }
 
 bool G_Combat_SaveState(struct SDL_RWops *stream)

@@ -162,11 +162,13 @@ static void on_build_anim_finished(void *user, void *event)
         return;
     }
 
-    int hp = MIN(G_Combat_GetCurrentHP(target) + bs->build_speed, target->max_hp);
-    G_Combat_SetHP(target, hp);
-    G_Building_UpdateProgress(target, hp / (float)target->max_hp);
+    int max_hp = G_Combat_GetMaxHP(target);
+    int hp = MIN(G_Combat_GetCurrentHP(target) + bs->build_speed, max_hp);
 
-    if(hp == target->max_hp) {
+    G_Combat_SetCurrentHP(target, hp);
+    G_Building_UpdateProgress(target, hp / (float)max_hp);
+
+    if(hp == max_hp) {
         G_Building_Complete(target);
         finish_building(bs, uid);
         return;

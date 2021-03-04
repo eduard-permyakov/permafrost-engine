@@ -231,7 +231,7 @@ enum combat_stance{
 void  G_Combat_AttackUnit(const struct entity *ent, const struct entity *target);
 
 bool  G_Combat_SetStance(const struct entity *ent, enum combat_stance stance);
-void  G_Combat_SetHP(const struct entity *ent, int hp);
+void  G_Combat_SetCurrentHP(const struct entity *ent, int hp);
 int   G_Combat_GetCurrentHP(const struct entity *ent);
 void  G_Combat_UpdateRef(int oldfac, int newfac, vec2_t pos);
 
@@ -239,6 +239,10 @@ void  G_Combat_SetBaseArmour(const struct entity *ent, float armour_pc);
 float G_Combat_GetBaseArmour(const struct entity *ent);
 void  G_Combat_SetBaseDamage(const struct entity *ent, int dmg);
 int   G_Combat_GetBaseDamage(const struct entity *ent);
+void  G_Combat_SetMaxHP(const struct entity *ent, int hp);
+int   G_Combat_GetMaxHP(const struct entity *ent);
+void  G_Combat_SetRange(const struct entity *ent, float range);
+float G_Combat_GetRange(const struct entity *ent);
 
 
 /*###########################################################################*/
