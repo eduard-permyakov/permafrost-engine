@@ -48,6 +48,7 @@
 #include "../settings.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
+#include "../phys/public/phys.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
 
@@ -55,18 +56,19 @@
 #include <float.h>
 
 
-#define ENEMY_TARGET_ACQUISITION_RANGE (50.0f)
-#define EPSILON                        (1.0f/1024)
-#define MAX(a, b)                      ((a) > (b) ? (a) : (b))
-#define MIN(a, b)                      ((a) < (b) ? (a) : (b))
-#define ARR_SIZE(a)                    (sizeof(a)/sizeof(a[0]))
-#define X_BINS_PER_CHUNK               (8)
-#define Z_BINS_PER_CHUNK               (8)
+#define TARGET_ACQUISITION_RANGE    (50.0f)
+#define PROJECTILE_DEFAULT_SPEED    (5.0f)
+#define EPSILON                     (1.0f/1024)
+#define MAX(a, b)                   ((a) > (b) ? (a) : (b))
+#define MIN(a, b)                   ((a) < (b) ? (a) : (b))
+#define ARR_SIZE(a)                 (sizeof(a)/sizeof(a[0]))
+#define X_BINS_PER_CHUNK            (8)
+#define Z_BINS_PER_CHUNK            (8)
 
-#define CHK_TRUE_RET(_pred)             \
-    do{                                 \
-        if(!(_pred))                    \
-            return false;               \
+#define CHK_TRUE_RET(_pred)         \
+    do{                             \
+        if(!(_pred))                \
+            return false;           \
     }while(0)
 
 /*
@@ -125,6 +127,10 @@ struct combatstate{
 };
 
 KHASH_MAP_INIT_INT(state, struct combatstate)
+KHASH_MAP_INIT_INT(proj, uint32_t)
+
+static void on_attack_anim_finish(void *user, void *event);
+static void on_death_anim_finish(void *user, void *event);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -141,6 +147,8 @@ static const char *s_name_for_state[] = {
 };
 
 static khash_t(state)   *s_entity_state_table;
+/* Maps a projectile UID to the entity UID which fired it */
+static khash_t(proj)    *s_active_projectiles;
 /* For saving/restoring state */
 static vec_pentity_t     s_dying_ents;
 static const struct map *s_map;
@@ -251,7 +259,7 @@ static bool maybe_enemy_near(const struct entity *ent)
         (float)(X_COORDS_PER_TILE * TILES_PER_CHUNK_WIDTH)  / X_BINS_PER_CHUNK,
         (float)(Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT) / Z_BINS_PER_CHUNK
     );
-    int binrange = ceil(ENEMY_TARGET_ACQUISITION_RANGE / binlen);
+    int binrange = ceil(TARGET_ACQUISITION_RANGE / binlen);
 
     struct map_resolution mapres;
     M_GetResolution(s_map, &mapres);
@@ -379,6 +387,55 @@ static void entity_turn_to_target(struct entity *ent, const struct entity *targe
     cs->state = STATE_TURNING_TO_TARGET;
 }
 
+static void entity_melee_attack(const struct entity *self, struct entity *target)
+{
+    struct combatstate *cs = combatstate_get(self->uid);
+    struct combatstate *target_cs = combatstate_get(cs->target_uid);
+
+    float dmg = G_Combat_GetBaseDamage(self) * (1.0f - G_Combat_GetBaseArmour(target));
+    target_cs->current_hp = MAX(0, target_cs->current_hp - dmg);
+
+    if(target_cs->current_hp == 0 && target_cs->stats.max_hp > 0) {
+
+        G_Move_Stop(target);
+
+        if(target->flags & ENTITY_FLAG_SELECTABLE) {
+            G_Sel_Remove(target);
+            target->flags &= ~ENTITY_FLAG_SELECTABLE;
+        }
+
+        E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_attack_anim_finish);
+        E_Global_Notify(EVENT_ENTITY_DIED, target, ES_ENGINE);
+        E_Entity_Notify(EVENT_ENTITY_DEATH, cs->target_uid, NULL, ES_ENGINE);
+
+        if(target->flags & ENTITY_FLAG_ANIMATED) {
+            E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_death_anim_finish, 
+                target, G_RUNNING);
+        }else{
+            G_Zombiefy(target);
+        }
+
+        vec_pentity_push(&s_dying_ents, target);
+        target_cs->state = STATE_DEATH_ANIM_PLAYING;
+    }
+}
+
+static void entity_ranged_attack(const struct entity *self, struct entity *target)
+{
+    vec3_t ent_pos = Entity_CenterPos(self);
+    vec3_t target_pos = G_Pos_Get(target->uid);
+
+    //TODO: fail silently if we can't shoot?
+    vec3_t vel;
+    if(!P_Projectile_VelocityForTarget(ent_pos, target_pos, PROJECTILE_DEFAULT_SPEED, &vel))
+        return;
+
+    //TODO: need to add at some programmable offset from the entity origin/center
+    uint32_t uid = P_Projectile_Add(ent_pos, vel);
+    khiter_t k = kh_put(proj, s_active_projectiles, uid, &(int){0});
+    kh_value(s_active_projectiles, k) = self->uid;
+}
+
 static void on_death_anim_finish(void *user, void *event)
 {
     struct entity *self = user;
@@ -396,17 +453,18 @@ static void on_attack_anim_finish(void *user, void *event)
     struct combatstate *cs = combatstate_get(self->uid);
     assert(cs);
     assert(cs->state == STATE_ATTACK_ANIM_PLAYING);
-
     cs->state = STATE_CAN_ATTACK;
 
     struct entity *target = G_EntityForUID(cs->target_uid);
-    if(!target || (target->flags & ENTITY_FLAG_ZOMBIE))
+    if(!target || (target->flags & ENTITY_FLAG_ZOMBIE)) {
         return; /* Our target already got 'killed' */
+    }
 
     struct combatstate *target_cs = combatstate_get(cs->target_uid);
     assert(target_cs);
-    if(target_cs->state == STATE_DEATH_ANIM_PLAYING)
-        return; 
+    if(target_cs->state == STATE_DEATH_ANIM_PLAYING) {
+        return;  /* Our target is dying */
+    }
 
     quat_t target_dir = entity_turn_dir(self, target);
     float angle_diff = PFM_Quat_PitchDiff(&self->rotation, &target_dir);
@@ -418,33 +476,14 @@ static void on_attack_anim_finish(void *user, void *event)
         return;
     }
 
-    if(entity_can_attack(self, target)) {
+    if(!entity_can_attack(self, target)) {
+        return; /* Target slipped out of range */
+    }
 
-        float dmg = G_Combat_GetBaseDamage(self) * (1.0f - G_Combat_GetBaseArmour(target));
-        target_cs->current_hp = MAX(0, target_cs->current_hp - dmg);
-
-        if(target_cs->current_hp == 0 && target_cs->stats.max_hp > 0) {
-
-            G_Move_Stop(target);
-
-            if(target->flags & ENTITY_FLAG_SELECTABLE) {
-                G_Sel_Remove(target);
-                target->flags &= ~ENTITY_FLAG_SELECTABLE;
-            }
-
-            E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_attack_anim_finish);
-            E_Global_Notify(EVENT_ENTITY_DIED, target, ES_ENGINE);
-            E_Entity_Notify(EVENT_ENTITY_DEATH, cs->target_uid, NULL, ES_ENGINE);
-
-            if(target->flags & ENTITY_FLAG_ANIMATED) {
-                E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_death_anim_finish, target, G_RUNNING);
-            }else{
-                G_Zombiefy(target);
-            }
-
-            vec_pentity_push(&s_dying_ents, target);
-            target_cs->state = STATE_DEATH_ANIM_PLAYING;
-        }
+    if(cs->stats.attack_range == 0.0f) {
+        entity_melee_attack(self, target);
+    }else{
+        entity_ranged_attack(self, target);
     }
 }
 
@@ -718,7 +757,7 @@ static void combat_render_targets(void)
         mat4x4_t ident;
         PFM_Mat4x4_Identity(&ident);
 
-        const float radius = ENEMY_TARGET_ACQUISITION_RANGE;
+        const float radius = TARGET_ACQUISITION_RANGE;
         const float width = 0.25f;
         vec3_t red = (vec3_t){1.0f, 0.0f, 0.0f};
         vec3_t blue = (vec3_t){0.0f, 0.0f, 1.0f};
@@ -840,6 +879,9 @@ bool G_Combat_Init(const struct map *map)
     if(NULL == (s_entity_state_table = kh_init(state)))
         return false;
 
+    if(NULL == (s_active_projectiles = kh_init(proj)))
+        goto fail_proj;
+
     struct map_resolution res;
     M_GetResolution(map, &res);
 
@@ -854,13 +896,15 @@ bool G_Combat_Init(const struct map *map)
     vec_pentity_init(&s_dying_ents);
     E_Global_Register(EVENT_30HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
-    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
+    E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     s_map = map;
     return true;
 
 fail_refcnts:
     for(int i = 0; i < MAX_FACTIONS; i++)
         free(s_fac_refcnts[i]);
+    kh_destroy(proj, s_active_projectiles);
+fail_proj:
     kh_destroy(state, s_entity_state_table);
     return false;
 }
@@ -874,6 +918,7 @@ void G_Combat_Shutdown(void)
     vec_pentity_destroy(&s_dying_ents);
     for(int i = 0; i < MAX_FACTIONS; i++)
         free(s_fac_refcnts[i]);
+    kh_destroy(proj, s_active_projectiles);
     kh_destroy(state, s_entity_state_table);
 }
 
@@ -1031,7 +1076,7 @@ void G_Combat_StopAttack(const struct entity *ent)
 struct entity *G_Combat_ClosestEligibleEnemy(const struct entity *ent)
 {
     vec2_t pos = G_Pos_GetXZ(ent->uid);
-    struct entity *ret = G_Pos_NearestWithPred(pos, valid_enemy, (void*)ent, ENEMY_TARGET_ACQUISITION_RANGE);
+    struct entity *ret = G_Pos_NearestWithPred(pos, valid_enemy, (void*)ent, TARGET_ACQUISITION_RANGE);
 
     if(!ret)
         return NULL;
@@ -1039,7 +1084,7 @@ struct entity *G_Combat_ClosestEligibleEnemy(const struct entity *ent)
     vec2_t enemy_pos = G_Pos_GetXZ(ret->uid);
     vec2_t delta;
     PFM_Vec2_Sub(&pos, &enemy_pos, &delta);
-    assert(PFM_Vec2_Len(&delta) <= ENEMY_TARGET_ACQUISITION_RANGE);
+    assert(PFM_Vec2_Len(&delta) <= TARGET_ACQUISITION_RANGE);
     return ret;
 }
 

@@ -230,9 +230,10 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, 
     for(int i = 0; i < ntotal; i++) {
 
         khiter_t k = kh_get(entity, ents, ent_ids[i]);
-        assert(k != kh_end(s_postable));
-        struct entity *curr = kh_val(ents, k);
+        if(k == kh_end(ents))
+            continue;
 
+        struct entity *curr = kh_val(ents, k);
         if(!predicate(curr, arg))
             continue;
 
@@ -268,9 +269,10 @@ int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **out
     for(int i = 0; i < ntotal; i++) {
         assert(ent_ids[i] != (uint32_t)-1);
         khiter_t k = kh_get(entity, ents, ent_ids[i]);
-        assert(k != kh_end(s_postable));
-        struct entity *curr = kh_val(ents, k);
+        if(k == kh_end(ents))
+            continue;
 
+        struct entity *curr = kh_val(ents, k);
         if(!predicate(curr, arg))
             continue;
 
@@ -309,9 +311,10 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
         for(int i = 0; i < num_cands; i++) {
         
             khiter_t k = kh_get(entity, ents, ent_ids[i]);
-            assert(k != kh_end(s_postable));
-            struct entity *curr = kh_val(ents, k);
+            if(k == kh_end(ents))
+                continue;
 
+            struct entity *curr = kh_val(ents, k);
             vec2_t delta, can_pos_xz = G_Pos_GetXZ(curr->uid);
             PFM_Vec2_Sub(&xz_point, &can_pos_xz, &delta);
 

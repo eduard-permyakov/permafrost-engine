@@ -276,6 +276,13 @@ void Entity_CurrentOBB(const struct entity *ent, struct obb *out, bool identity)
     PFM_Vec3_Normal(&axis2, &out->axes[2]);
 }
 
+vec3_t Entity_CenterPos(const struct entity *ent)
+{
+    struct obb obb;
+    Entity_CurrentOBB(ent, &obb, false);
+    return obb.center;
+}
+
 vec3_t Entity_TopCenterPointWS(const struct entity *ent)
 {
     const struct aabb *aabb = &ent->identity_aabb;

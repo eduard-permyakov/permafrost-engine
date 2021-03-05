@@ -48,6 +48,7 @@ void     P_Projectile_Shutdown(void);
 
 uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity);
 void     P_Projectile_Update(size_t nobjs, const struct obb *visible);
+bool     P_Projectile_VelocityForTarget(vec3_t src, vec3_t dst, float init_speed, vec3_t *out);
 
 #endif
 
