@@ -82,6 +82,8 @@ bool C_RayIntersectsAABB(vec3_t ray_origin, vec3_t ray_dir, struct aabb aabb, fl
 bool C_RayIntersectsOBB (vec3_t ray_origin, vec3_t ray_dir, struct obb obb,   float *out_t);
 bool C_RayIntersectsTriMesh(vec3_t ray_origin, vec3_t ray_dir, vec3_t *tribuff, size_t n, float *out_t);
 bool C_RayIntersectsPlane(vec3_t ray_origin, vec3_t ray_dir, struct plane plane, float *out_t);
+bool C_PointInsideOBB(vec3_t point, struct obb obb);
+bool C_LineSegIntersectsOBB(vec3_t begin, vec3_t end, struct obb obb);
 
 /* Note that the following routines do not give precise results. They are fast checks but 
  * sometimes give false positives. Howvever, this is still suitable for view frustum culling 

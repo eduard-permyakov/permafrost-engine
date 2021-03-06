@@ -49,7 +49,7 @@
         b = tmp; \
     }while(0)
 
-#define EPSILON (1.0f / 1000000.0f)
+#define EPSILON (1.0f/1024.0f)
 
 
 struct range{
@@ -440,6 +440,46 @@ bool C_RayIntersectsPlane(vec3_t ray_origin, vec3_t ray_dir, struct plane plane,
     }
 
     return false;
+}
+
+bool C_PointInsideOBB(vec3_t point, struct obb obb)
+{
+    /* Project the point (relative to the OBB origin) onto each of the 
+     * three OBB axes and check that it is within half length range on 
+     * either side */
+    for(int i = 0; i < 3; i++) {
+
+        vec3_t axis = obb.axes[i];
+        float halflen = obb.half_lengths[i];
+
+        vec3_t relative;
+        PFM_Vec3_Sub(&point, &obb.center, &relative);
+
+        float dot = PFM_Vec3_Dot(&relative, &axis);
+        float comp = dot / PFM_Vec3_Len(&axis);
+
+        if(fabs(comp) > halflen)
+            return false;
+    }
+    return true;
+}
+
+bool C_LineSegIntersectsOBB(vec3_t begin, vec3_t end, struct obb obb)
+{
+    vec3_t delta;
+    PFM_Vec3_Sub(&begin, &end, &delta);
+
+    if(PFM_Vec3_Len(&delta) < EPSILON)
+        return C_PointInsideOBB(begin, obb);
+
+    vec3_t dir;
+    PFM_Vec3_Normal(&delta, &dir);
+    float t;
+
+    if(!C_RayIntersectsOBB(begin, dir, obb, &t))
+        return false;
+
+    return (t >= 0 && t <= PFM_Vec3_Len(&delta));
 }
 
 enum volume_intersec_type C_FrustrumPointIntersectionFast(const struct frustum *frustum, vec3_t point)
