@@ -40,6 +40,7 @@
 #include "../perf.h"
 #include "../sched.h"
 #include "../entity.h"
+#include "../collision.h"
 #include "../asset_load.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
@@ -61,6 +62,10 @@
 
 struct projectile{
     uint32_t uid;
+    uint32_t ent_parent;
+    uint32_t cookie;
+    uint32_t flags;
+    int      faction_id;
     vec3_t   pos;
     vec3_t   vel;
 };
@@ -84,12 +89,16 @@ VEC_IMPL(static inline, proj, struct projectile)
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static uint32_t      s_next_uid = 0;
-static vec_proj_t    s_front; /* the processed projectiles currently being rendered */
-static vec_proj_t    s_back;  /* the last tick projectiles currently being processed */
-static vec_proj_t    s_added;
-struct proj_work     s_work;
-static unsigned long s_last_tick = ULONG_MAX;
+static uint32_t         s_next_uid = 0;
+static vec_proj_t       s_front; /* the processed projectiles currently being rendered */
+static vec_proj_t       s_back;  /* the last tick projectiles currently being processed */
+static vec_proj_t       s_added;
+static vec_proj_t       s_deleted;
+struct proj_work        s_work;
+static struct memstack  s_eventargs;
+
+static unsigned long    s_last_tick = ULONG_MAX;
+static unsigned         s_simticks = 0;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -112,6 +121,11 @@ static quat_t phys_velocity_dir(vec3_t vel)
     quat_t rot;
     PFM_Quat_FromRotMat(&rotmat, &rot);
     return rot;
+}
+
+static bool phys_proj_equal(const struct projectile *a, const struct projectile *b)
+{
+    return (a->uid == b->uid);
 }
 
 static void phys_proj_update(struct projectile *proj)
@@ -137,14 +151,15 @@ static struct result phys_proj_task(void *arg)
     return NULL_RESULT;
 }
 
-static void phys_filter_out_of_bounds(vec_proj_t *vec)
+static void phys_filter_out_of_bounds(void)
 {
-    for(int i = vec_size(vec)-1; i >= 0; i--) {
+    for(int i = vec_size(&s_front)-1; i >= 0; i--) {
 
-        const struct projectile *curr = &vec_AT(vec, i);
+        const struct projectile *curr = &vec_AT(&s_front, i);
         if(curr->pos.y < -Z_COORDS_PER_TILE) {
             E_Global_Notify(EVENT_PROJECTILE_DISAPPEAR, (void*)((uintptr_t)curr->uid), ES_ENGINE);
-            vec_proj_del(vec, i);
+            vec_proj_del(&s_front, i);
+            vec_proj_push(&s_deleted, *curr);
         }
     }
 }
@@ -163,12 +178,75 @@ static void phys_proj_finish_work(void)
     stalloc_clear(&s_work.mem);
     s_work.ntasks = 0;
 
-    phys_filter_out_of_bounds(&s_back);
+    //phys_filter_out_of_bounds(&s_front);
+    vec_proj_subtract(&s_back, &s_deleted, phys_proj_equal);
+    vec_proj_reset(&s_deleted);
+
+    //TODO: here we are 'resurrecting' some entities 
+    // that have already been deleted back into the front buffer...
 
     /* swap front & back buffers */
     vec_proj_t tmp = s_back;
     s_back = s_front;
     s_front = tmp;
+}
+
+static bool phys_enemies(int faction_id, const struct entity *ent)
+{
+    if(faction_id == ent->faction_id)
+        return false;
+
+    enum diplomacy_state ds;
+    bool result = G_GetDiplomacyState(faction_id, ent->faction_id, &ds);
+
+    assert(result);
+    return (ds == DIPLOMACY_STATE_WAR);
+}
+
+static void phys_sweep_test(const struct entity *ent, const struct obb *obb)
+{
+    for(int i = vec_size(&s_front)-1; i >= 0; i--) {
+
+        const struct projectile *curr = &vec_AT(&s_front, i);
+
+        /* A projectile does not collide with its' 'parent' */
+        if(curr->ent_parent == ent->uid)
+            continue;
+        if((curr->flags & PROJ_ONLY_HIT_COMBATABLE) && !(ent->flags & ENTITY_FLAG_COMBATABLE))
+            continue;
+        if((curr->flags & PROJ_ONLY_HIT_ENEMIES) && !phys_enemies(curr->faction_id, ent))
+            continue;
+
+        /* The collision test gets performed every frame (variable FPS) while, 
+         * actual projectile motion is performed at fixed frequency of PHYS_HZ. 
+         * Hence, when we perform the collision check, we must account for all
+         * the motion since the last update - this is 's_simticks' worth of fixed
+         * frequency physics ticks.
+         *
+         * Though the projectile travels in the shape of a parabola, we approximate 
+         * its' motion with a straight line that is tangential to the motion parabola
+         * at the current moment. We perform the sweep test with a line segment
+         * from the current location of the projectile to the location it would
+         * have been in 's_simticks' ago had its' velocity been constant.
+         */
+        vec3_t begin = curr->pos;
+        vec3_t end, delta = curr->vel;
+        PFM_Vec3_Scale(&delta, 1.0f * s_simticks, &end);
+
+        if(C_LineSegIntersectsOBB(begin, end, *obb)) {
+
+            struct proj_hit *hit = stalloc(&s_eventargs, sizeof(struct proj_hit));
+            hit->ent_uid = ent->uid;
+            hit->proj_uid = curr->uid;
+            hit->parent_uid = curr->ent_parent;
+            hit->cookie = curr->cookie;
+            E_Global_Notify(EVENT_PROJECTILE_HIT, hit, ES_ENGINE);
+
+            vec_proj_del(&s_front, i);
+            vec_proj_push(&s_deleted, *curr);
+            printf("projectile %x just hit! [%u ticks]\n", curr->uid, s_simticks);
+        }
+    }
 }
 
 static void on_30hz_tick(void *user, void *event)
@@ -213,6 +291,7 @@ static void on_30hz_tick(void *user, void *event)
 
 done:
     s_last_tick = g_frame_idx;
+    s_simticks++;
     Perf_Pop();
 }
 
@@ -261,11 +340,16 @@ static void on_render_3d(void *user, void *arg)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity)
+uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity, uint32_t ent_parent, 
+                          int faction_id, uint32_t cookie, int flags)
 {
     uint32_t ret = s_next_uid++;
     struct projectile proj = (struct projectile){
         .uid = ret,
+        .ent_parent = ent_parent,
+        .cookie = cookie,
+        .flags = flags,
+        .faction_id = faction_id,
         .pos = origin,
         .vel = velocity,
     };
@@ -273,14 +357,26 @@ uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity)
     return ret;
 }
 
-void P_Projectile_Update(size_t nobjs, const struct obb *visible)
+void P_Projectile_Update(size_t nents, struct entity **ents, const struct obb *obbs)
 {
-    /* We process the physics result exactly one frame after the work is 
-     * enqueud */
-    if((g_frame_idx - s_last_tick) != 1)
-        return;
+    PERF_ENTER();
+
+    //TODO: should we do this at fixed HZ as well?
+
+    // TODO: we need to perform the collision testing on ALL OBBs that are currently in the scene,
+    // not just those which are currently visible - for this we're definitely going to need a 
+    // broadphase
+    stalloc_clear(&s_eventargs);
 
     /* Here we do collision testing and pump out some events if intersection takes place */
+    for(int i = 0; i < nents; i++) {
+        phys_sweep_test(ents[i], obbs + i);
+    }
+
+    phys_filter_out_of_bounds();
+    s_simticks = 0;
+
+    PERF_RETURN_VOID();
 }
 
 bool P_Projectile_Init(void)
@@ -294,14 +390,23 @@ bool P_Projectile_Init(void)
     vec_proj_init(&s_added);
     if(!vec_proj_resize(&s_added, 256))
         goto fail_added;
+    vec_proj_init(&s_deleted);
+    if(!vec_proj_resize(&s_deleted, 256))
+        goto fail_deleted;
     if(!stalloc_init(&s_work.mem))
         goto fail_mem;
+    if(!stalloc_init(&s_eventargs))
+        goto fail_eventargs;
 
     E_Global_Register(EVENT_30HZ_TICK, on_30hz_tick, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
     return true;
 
+fail_eventargs:
+    stalloc_destroy(&s_work.mem);
 fail_mem:
+    vec_proj_destroy(&s_deleted);
+fail_deleted:
     vec_proj_destroy(&s_added);
 fail_added:
     vec_proj_destroy(&s_back);
@@ -315,10 +420,12 @@ void P_Projectile_Shutdown(void)
 {
     E_Global_Unregister(EVENT_30HZ_TICK, on_30hz_tick);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
+    stalloc_destroy(&s_eventargs);
     stalloc_destroy(&s_work.mem);
     vec_proj_destroy(&s_front);
     vec_proj_destroy(&s_back);
     vec_proj_destroy(&s_added);
+    vec_proj_destroy(&s_deleted);
 }
 
 bool P_Projectile_VelocityForTarget(vec3_t src, vec3_t dst, float init_speed, vec3_t *out)

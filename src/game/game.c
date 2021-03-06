@@ -1379,7 +1379,7 @@ void G_Update(void)
     }
 
     G_Sel_Update(s_gs.active_cam, &s_gs.visible, &s_gs.visible_obbs);
-    P_Projectile_Update(vec_size(&s_gs.visible_obbs), s_gs.visible_obbs.array);
+    P_Projectile_Update(vec_size(&s_gs.visible), s_gs.visible.array, s_gs.visible_obbs.array);
     g_set_contextual_cursor();
 
     E_Global_NotifyImmediate(EVENT_UPDATE_UI, NULL, ES_ENGINE);

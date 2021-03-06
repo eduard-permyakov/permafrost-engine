@@ -139,6 +139,7 @@ static const char *s_event_str_table[] = {
     STR(EVENT_EXITED_REGION),
     STR(EVENT_UPDATE_FACTION),
     STR(EVENT_PROJECTILE_DISAPPEAR),
+    STR(EVENT_PROJECTILE_HIT),
 };
 
 static khash_t(handler_desc) *s_event_handler_table;
@@ -223,7 +224,7 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
     return true;
 }
 
-static void invoke(const struct handler_desc *hd, struct event event)
+static void e_invoke(const struct handler_desc *hd, struct event event)
 {
     if(hd->type == HANDLER_TYPE_ENGINE) {
 
@@ -281,7 +282,7 @@ static void e_handle_event(struct event event, bool immediate)
             if(!immediate && ((elem->simmask & ss) == 0))
                 continue;
 
-            invoke(elem, event);
+            e_invoke(elem, event);
             ran = true;
             break;
         }

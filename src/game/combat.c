@@ -127,7 +127,6 @@ struct combatstate{
 };
 
 KHASH_MAP_INIT_INT(state, struct combatstate)
-KHASH_MAP_INIT_INT(proj, uint32_t)
 
 static void on_attack_anim_finish(void *user, void *event);
 static void on_death_anim_finish(void *user, void *event);
@@ -147,8 +146,6 @@ static const char *s_name_for_state[] = {
 };
 
 static khash_t(state)   *s_entity_state_table;
-/* Maps a projectile UID to the entity UID which fired it */
-static khash_t(proj)    *s_active_projectiles;
 /* For saving/restoring state */
 static vec_pentity_t     s_dying_ents;
 static const struct map *s_map;
@@ -387,6 +384,31 @@ static void entity_turn_to_target(struct entity *ent, const struct entity *targe
     cs->state = STATE_TURNING_TO_TARGET;
 }
 
+static void entity_die(struct entity *ent)
+{
+    G_Move_Stop(ent);
+
+    if(ent->flags & ENTITY_FLAG_SELECTABLE) {
+        G_Sel_Remove(ent);
+        ent->flags &= ~ENTITY_FLAG_SELECTABLE;
+    }
+
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish);
+    E_Global_Notify(EVENT_ENTITY_DIED, ent, ES_ENGINE);
+    E_Entity_Notify(EVENT_ENTITY_DEATH, ent->uid, NULL, ES_ENGINE);
+
+    if(!(ent->flags & ENTITY_FLAG_ANIMATED)) {
+        G_Zombiefy(ent);
+        return;
+    }
+
+    struct combatstate *cs = combatstate_get(ent->uid);
+    cs->state = STATE_DEATH_ANIM_PLAYING;
+
+    E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_death_anim_finish, ent, G_RUNNING);
+    vec_pentity_push(&s_dying_ents, ent);
+}
+
 static void entity_melee_attack(const struct entity *self, struct entity *target)
 {
     struct combatstate *cs = combatstate_get(self->uid);
@@ -396,27 +418,7 @@ static void entity_melee_attack(const struct entity *self, struct entity *target
     target_cs->current_hp = MAX(0, target_cs->current_hp - dmg);
 
     if(target_cs->current_hp == 0 && target_cs->stats.max_hp > 0) {
-
-        G_Move_Stop(target);
-
-        if(target->flags & ENTITY_FLAG_SELECTABLE) {
-            G_Sel_Remove(target);
-            target->flags &= ~ENTITY_FLAG_SELECTABLE;
-        }
-
-        E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_attack_anim_finish);
-        E_Global_Notify(EVENT_ENTITY_DIED, target, ES_ENGINE);
-        E_Entity_Notify(EVENT_ENTITY_DEATH, cs->target_uid, NULL, ES_ENGINE);
-
-        if(target->flags & ENTITY_FLAG_ANIMATED) {
-            E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, cs->target_uid, on_death_anim_finish, 
-                target, G_RUNNING);
-        }else{
-            G_Zombiefy(target);
-        }
-
-        vec_pentity_push(&s_dying_ents, target);
-        target_cs->state = STATE_DEATH_ANIM_PLAYING;
+        entity_die(target);
     }
 }
 
@@ -424,18 +426,16 @@ static void entity_ranged_attack(const struct entity *self, struct entity *targe
 {
     vec3_t ent_pos = Entity_CenterPos(self);
     vec3_t target_pos = Entity_CenterPos(target);
+    float ent_dmg = G_Combat_GetBaseDamage(self);
 
     vec3_t vel;
     if(!P_Projectile_VelocityForTarget(ent_pos, target_pos, PROJECTILE_DEFAULT_SPEED, &vel)) {
-        /* We just fail silently without shooting anything. However, practically speaking,
-         * this case should never be hit so long as the initial velocity is high enough - 
-         * we're just being safe. */
+        /* We resort to just shooting nothing when we can't hit our target. This case 
+         * should never be hit so long as the initial velocity is high enough */
         return;
     }
-
-    uint32_t uid = P_Projectile_Add(ent_pos, vel);
-    khiter_t k = kh_put(proj, s_active_projectiles, uid, &(int){0});
-    kh_value(s_active_projectiles, k) = self->uid;
+    P_Projectile_Add(ent_pos, vel, self->uid, self->faction_id, 
+        ent_dmg, PROJ_ONLY_HIT_COMBATABLE | PROJ_ONLY_HIT_ENEMIES);
 }
 
 static void on_death_anim_finish(void *user, void *event)
@@ -872,10 +872,21 @@ static void on_render_3d(void *user, void *event)
     }
 }
 
-static void on_proj_disappear(void *user, void *event)
+static void on_proj_hit(void *user, void *event)
 {
-    uint32_t uid = (uintptr_t)event;
-    kh_del(proj, s_active_projectiles, uid);
+    struct proj_hit *hit = event;
+    struct entity *target = G_EntityForUID(hit->ent_uid);
+
+    if(entity_dead(target))
+        return;
+
+    float dmg = hit->cookie * (1.0f - G_Combat_GetBaseArmour(target));
+    struct combatstate *cs = combatstate_get(hit->ent_uid);
+    cs->current_hp = MAX(0, cs->current_hp - dmg);
+
+    if(cs->current_hp == 0 && cs->stats.max_hp > 0) {
+        entity_die(target);
+    }
 }
 
 /*****************************************************************************/
@@ -886,9 +897,6 @@ bool G_Combat_Init(const struct map *map)
 {
     if(NULL == (s_entity_state_table = kh_init(state)))
         return false;
-
-    if(NULL == (s_active_projectiles = kh_init(proj)))
-        goto fail_proj;
 
     struct map_resolution res;
     M_GetResolution(map, &res);
@@ -905,15 +913,13 @@ bool G_Combat_Init(const struct map *map)
     E_Global_Register(EVENT_30HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
-    E_Global_Register(EVENT_PROJECTILE_DISAPPEAR, on_proj_disappear, NULL, G_RUNNING);
+    E_Global_Register(EVENT_PROJECTILE_HIT, on_proj_hit, NULL, G_RUNNING);
     s_map = map;
     return true;
 
 fail_refcnts:
     for(int i = 0; i < MAX_FACTIONS; i++)
         free(s_fac_refcnts[i]);
-    kh_destroy(proj, s_active_projectiles);
-fail_proj:
     kh_destroy(state, s_entity_state_table);
     return false;
 }
@@ -924,11 +930,10 @@ void G_Combat_Shutdown(void)
     E_Global_Unregister(EVENT_30HZ_TICK, on_20hz_tick);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
-    E_Global_Unregister(EVENT_PROJECTILE_DISAPPEAR, on_proj_disappear);
+    E_Global_Unregister(EVENT_PROJECTILE_HIT, on_proj_hit);
     vec_pentity_destroy(&s_dying_ents);
     for(int i = 0; i < MAX_FACTIONS; i++)
         free(s_fac_refcnts[i]);
-    kh_destroy(proj, s_active_projectiles);
     kh_destroy(state, s_entity_state_table);
 }
 

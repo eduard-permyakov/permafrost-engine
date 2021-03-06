@@ -82,7 +82,8 @@
     scope void vec_##name##_reset   (vec(name) *vec);                                           \
     scope bool vec_##name##_copy    (vec(name) *dst, vec(name) *src);                           \
     scope type vec_##name##_pop     (vec(name) *vec);                                           \
-    scope bool vec_##name##_concat  (vec(name) *a, vec(name) *b);
+    scope bool vec_##name##_concat  (vec(name) *a, vec(name) *b);                               \
+    scope void vec_##name##_subtract(vec(name) *a, vec(name) *b, bool (*comparator)());
 
 /***********************************************************************************************/
 
@@ -189,7 +190,17 @@
         memcpy(a->array + a->size, b->array, b->size * sizeof(type));                           \
         a->size = total;                                                                        \
         return true;                                                                            \
-    }
+    }                                                                                           \
+                                                                                                \
+    scope void vec_##name##_subtract(vec(name) *a, vec(name) *b, bool (*comparator)())          \
+    {                                                                                           \
+        for(int i = 0; i < b->size; i++) {                                                      \
+            int idx = vec_##name##_indexof(a, vec_AT(b, i), comparator);                        \
+            if(idx >= 0) {                                                                      \
+                vec_##name##_del(a, idx);                                                       \
+            }                                                                                   \
+        }                                                                                       \
+    }                                                                                           \
 
 #endif
 
