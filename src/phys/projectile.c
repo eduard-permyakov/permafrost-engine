@@ -41,6 +41,7 @@
 #include "../sched.h"
 #include "../entity.h"
 #include "../asset_load.h"
+#include "../map/public/tile.h"
 #include "../game/public/game.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
@@ -51,8 +52,9 @@
 #include <assert.h>
 
 
-#define GRAVITY         (9.81f/100.0f)
-#define PHYS_HZ         (1.0f/30)
+#define PHYS_HZ         (30)
+#define UNITS_PER_METER (5.0f)
+#define GRAVITY         (9.81f * UNITS_PER_METER / (PHYS_HZ * PHYS_HZ))
 #define EPSILON         (1.0f/1024)
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
 #define MAX_PROJ_TASKS  (64)
@@ -83,8 +85,9 @@ VEC_IMPL(static inline, proj, struct projectile)
 /*****************************************************************************/
 
 static uint32_t      s_next_uid = 0;
-static vec_proj_t    s_front; /* where new projectiles are added */
+static vec_proj_t    s_front; /* the processed projectiles currently being rendered */
 static vec_proj_t    s_back;  /* the last tick projectiles currently being processed */
+static vec_proj_t    s_added;
 struct proj_work     s_work;
 static unsigned long s_last_tick = ULONG_MAX;
 
@@ -92,9 +95,30 @@ static unsigned long s_last_tick = ULONG_MAX;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static quat_t phys_velocity_dir(vec3_t vel)
+{
+    float yrot = atan2(vel.x, vel.z);
+    float zrot = atan2(vel.y, sqrt(pow(vel.x, 2) + pow(vel.z, 2)));
+
+    mat4x4_t yrotmat;
+    PFM_Mat4x4_MakeRotY(yrot, &yrotmat);
+
+    mat4x4_t zrotmat;
+    PFM_Mat4x4_MakeRotY(zrot, &zrotmat);
+
+    mat4x4_t rotmat;
+    PFM_Mat4x4_Mult4x4(&zrotmat, &yrotmat, &rotmat);
+
+    quat_t rot;
+    PFM_Quat_FromRotMat(&rotmat, &rot);
+    return rot;
+}
+
 static void phys_proj_update(struct projectile *proj)
 {
-    /* recall grade 11 physics here */
+    vec3_t accel = (vec3_t){0.0f, -GRAVITY, 0.0f};
+    PFM_Vec3_Add(&proj->vel, &accel, &proj->vel);
+    PFM_Vec3_Add(&proj->pos, &proj->vel, &proj->pos);
 }
 
 static struct result phys_proj_task(void *arg)
@@ -113,8 +137,23 @@ static struct result phys_proj_task(void *arg)
     return NULL_RESULT;
 }
 
+static void phys_filter_out_of_bounds(vec_proj_t *vec)
+{
+    for(int i = vec_size(vec)-1; i >= 0; i--) {
+
+        const struct projectile *curr = &vec_AT(vec, i);
+        if(curr->pos.y < -Z_COORDS_PER_TILE) {
+            E_Global_Notify(EVENT_PROJECTILE_DISAPPEAR, (void*)((uintptr_t)curr->uid), ES_ENGINE);
+            vec_proj_del(vec, i);
+        }
+    }
+}
+
 static void phys_proj_finish_work(void)
 {
+    if(s_work.ntasks == 0)
+        return;
+
     for(int i = 0; i < s_work.ntasks; i++) {
         /* run to completion */
         while(!Sched_FutureIsReady(&s_work.futures[i])) {
@@ -123,6 +162,8 @@ static void phys_proj_finish_work(void)
     }
     stalloc_clear(&s_work.mem);
     s_work.ntasks = 0;
+
+    phys_filter_out_of_bounds(&s_back);
 
     /* swap front & back buffers */
     vec_proj_t tmp = s_back;
@@ -134,8 +175,11 @@ static void on_30hz_tick(void *user, void *event)
 {
     Perf_Push("projectile::on_30hz_tick");
 
-    vec_proj_reset(&s_back);
+    phys_proj_finish_work();
+
     vec_proj_copy(&s_back, &s_front);
+    vec_proj_concat(&s_back, &s_added);
+    vec_proj_reset(&s_added);
 
     size_t nwork = vec_size(&s_back);
     if(nwork == 0)
@@ -190,8 +234,12 @@ static void on_render_3d(void *user, void *arg)
 
         //TODO: likely the model matrices/rotations should also 
         // be calculated by the worker tasks
-        G_Pos_Set(ent, curr->pos);
+        //TODO: we also shouldn't add the position ot the sim - not 100% safe if the projectile 
+        // goes out of map bounds. Alternatively, clamp the position to map bounds
+
+        G_AddEntity(ent, curr->pos);
         ent->scale = (vec3_t){12.0f, 12.0f, 12.0f};
+        ent->rotation = phys_velocity_dir(curr->vel);
         Entity_ModelMatrix(ent, &model);
 
         R_PushCmd((struct rcmd){
@@ -204,6 +252,7 @@ static void on_render_3d(void *user, void *arg)
             },
         });
 
+        G_RemoveEntity(ent);
         G_SafeFree(ent);
     }
 }
@@ -220,7 +269,7 @@ uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity)
         .pos = origin,
         .vel = velocity,
     };
-    vec_proj_push(&s_front, proj);
+    vec_proj_push(&s_added, proj);
     return ret;
 }
 
@@ -231,9 +280,7 @@ void P_Projectile_Update(size_t nobjs, const struct obb *visible)
     if((g_frame_idx - s_last_tick) != 1)
         return;
 
-    phys_proj_finish_work();
     /* Here we do collision testing and pump out some events if intersection takes place */
-    /* Discard 'unnecessary' projectiles from the simulation */
 }
 
 bool P_Projectile_Init(void)
@@ -244,6 +291,9 @@ bool P_Projectile_Init(void)
     vec_proj_init(&s_back);
     if(!vec_proj_resize(&s_back, 1024))
         goto fail_back;
+    vec_proj_init(&s_added);
+    if(!vec_proj_resize(&s_added, 256))
+        goto fail_added;
     if(!stalloc_init(&s_work.mem))
         goto fail_mem;
 
@@ -252,6 +302,8 @@ bool P_Projectile_Init(void)
     return true;
 
 fail_mem:
+    vec_proj_destroy(&s_added);
+fail_added:
     vec_proj_destroy(&s_back);
 fail_back:
     vec_proj_destroy(&s_front);
@@ -266,6 +318,7 @@ void P_Projectile_Shutdown(void)
     stalloc_destroy(&s_work.mem);
     vec_proj_destroy(&s_front);
     vec_proj_destroy(&s_back);
+    vec_proj_destroy(&s_added);
 }
 
 bool P_Projectile_VelocityForTarget(vec3_t src, vec3_t dst, float init_speed, vec3_t *out)
@@ -278,7 +331,7 @@ bool P_Projectile_VelocityForTarget(vec3_t src, vec3_t dst, float init_speed, ve
      */
     const float x = sqrt(pow(delta.x, 2) + pow(delta.z, 2));
     const float y = delta.y;
-    const float v = init_speed;
+    const float v = init_speed / PHYS_HZ;
     const float g = GRAVITY;
 
     /* To hit a target at range x and altitude y when fired from (0,0) 
@@ -323,7 +376,7 @@ bool P_Projectile_VelocityForTarget(vec3_t src, vec3_t dst, float init_speed, ve
     vec3_t velocity = (vec3_t){ delta.x, ylen, delta.z };
     assert(PFM_Vec3_Len(&velocity) > EPSILON); /* guaranteed by having real solutions */
     PFM_Vec3_Normal(&velocity, &velocity);
-    PFM_Vec3_Scale(&velocity, init_speed, &velocity);
+    PFM_Vec3_Scale(&velocity, v, &velocity);
 
     *out = velocity;
     return true;

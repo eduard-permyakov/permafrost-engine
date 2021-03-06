@@ -37,6 +37,10 @@
 #include <string.h>
 #include <assert.h>
 
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
 GLfloat PFM_Vec2_Dot(vec2_t *op1, vec2_t *op2)
 {
     return op1->x * op2->x + 
@@ -563,7 +567,7 @@ void PFM_Quat_FromRotMat(mat4x4_t *mat, quat_t *out)
         out->y = (mat->cols[0][2] - mat->cols[2][0]) / S; 
         out->z = (mat->cols[1][0] - mat->cols[0][1]) / S; 
 
-    } else if ((mat->cols[0][0] > mat->cols[1][1])&(mat->cols[0][0] > mat->cols[2][2])) {
+    } else if ((mat->cols[0][0] > mat->cols[1][1]) && (mat->cols[0][0] > mat->cols[2][2])) {
 
         GLfloat S = sqrt(1.0 + mat->cols[0][0] - mat->cols[1][1] - mat->cols[2][2]) * 2; // S=4*qx 
         out->w = (mat->cols[2][1] - mat->cols[1][2]) / S;

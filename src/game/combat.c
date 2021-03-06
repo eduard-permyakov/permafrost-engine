@@ -57,7 +57,7 @@
 
 
 #define TARGET_ACQUISITION_RANGE    (50.0f)
-#define PROJECTILE_DEFAULT_SPEED    (5.0f)
+#define PROJECTILE_DEFAULT_SPEED    (100.0f)
 #define EPSILON                     (1.0f/1024)
 #define MAX(a, b)                   ((a) > (b) ? (a) : (b))
 #define MIN(a, b)                   ((a) < (b) ? (a) : (b))
@@ -423,14 +423,16 @@ static void entity_melee_attack(const struct entity *self, struct entity *target
 static void entity_ranged_attack(const struct entity *self, struct entity *target)
 {
     vec3_t ent_pos = Entity_CenterPos(self);
-    vec3_t target_pos = G_Pos_Get(target->uid);
+    vec3_t target_pos = Entity_CenterPos(target);
 
-    //TODO: fail silently if we can't shoot?
     vec3_t vel;
-    if(!P_Projectile_VelocityForTarget(ent_pos, target_pos, PROJECTILE_DEFAULT_SPEED, &vel))
+    if(!P_Projectile_VelocityForTarget(ent_pos, target_pos, PROJECTILE_DEFAULT_SPEED, &vel)) {
+        /* We just fail silently without shooting anything. However, practically speaking,
+         * this case should never be hit so long as the initial velocity is high enough - 
+         * we're just being safe. */
         return;
+    }
 
-    //TODO: need to add at some programmable offset from the entity origin/center
     uint32_t uid = P_Projectile_Add(ent_pos, vel);
     khiter_t k = kh_put(proj, s_active_projectiles, uid, &(int){0});
     kh_value(s_active_projectiles, k) = self->uid;
@@ -870,6 +872,12 @@ static void on_render_3d(void *user, void *event)
     }
 }
 
+static void on_proj_disappear(void *user, void *event)
+{
+    uint32_t uid = (uintptr_t)event;
+    kh_del(proj, s_active_projectiles, uid);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -897,6 +905,7 @@ bool G_Combat_Init(const struct map *map)
     E_Global_Register(EVENT_30HZ_TICK, on_20hz_tick, NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, G_ALL);
+    E_Global_Register(EVENT_PROJECTILE_DISAPPEAR, on_proj_disappear, NULL, G_RUNNING);
     s_map = map;
     return true;
 
@@ -915,6 +924,7 @@ void G_Combat_Shutdown(void)
     E_Global_Unregister(EVENT_30HZ_TICK, on_20hz_tick);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
+    E_Global_Unregister(EVENT_PROJECTILE_DISAPPEAR, on_proj_disappear);
     vec_pentity_destroy(&s_dying_ents);
     for(int i = 0; i < MAX_FACTIONS; i++)
         free(s_fac_refcnts[i]);

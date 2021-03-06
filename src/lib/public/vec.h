@@ -78,10 +78,11 @@
     scope void vec_##name##_destroy (vec(name) *vec);                                           \
     scope bool vec_##name##_push    (vec(name) *vec, type in);                                  \
     scope bool vec_##name##_del     (vec(name) *vec, int del_idx);                              \
-    scope int  vec_##name##_indexof(vec(name) *vec, type t, bool (*comparator)());              \
+    scope int  vec_##name##_indexof (vec(name) *vec, type t, bool (*comparator)());             \
     scope void vec_##name##_reset   (vec(name) *vec);                                           \
     scope bool vec_##name##_copy    (vec(name) *dst, vec(name) *src);                           \
-    scope type vec_##name##_pop     (vec(name) *vec);
+    scope type vec_##name##_pop     (vec(name) *vec);                                           \
+    scope bool vec_##name##_concat  (vec(name) *a, vec(name) *b);
 
 /***********************************************************************************************/
 
@@ -175,8 +176,20 @@
     scope type vec_##name##_pop(vec(name) *vec)                                                 \
     {                                                                                           \
         return vec->array[--vec->size];                                                         \
+    }                                                                                           \
+                                                                                                \
+    scope bool vec_##name##_concat(vec(name) *a, vec(name) *b)                                  \
+    {                                                                                           \
+        size_t total = a->size + b->size;                                                       \
+        if(total == 0)                                                                          \
+            return true;                                                                        \
+        if(!vec_##name##_resize(a, total))                                                      \
+            return false;                                                                       \
+                                                                                                \
+        memcpy(a->array + a->size, b->array, b->size * sizeof(type));                           \
+        a->size = total;                                                                        \
+        return true;                                                                            \
     }
-
 
 #endif
 
