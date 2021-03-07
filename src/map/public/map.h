@@ -357,11 +357,11 @@ vec2_t M_NavClosestReachableInRange(const struct map *map, enum nav_layer layer,
  * count of greater than 0.
  * ------------------------------------------------------------------------
  */
-void   M_NavBlockersIncref(vec2_t xz_pos, float range, const struct map *map);
-void   M_NavBlockersDecref(vec2_t xz_pos, float range, const struct map *map);
+void   M_NavBlockersIncref(vec2_t xz_pos, float range, int faction_id, const struct map *map);
+void   M_NavBlockersDecref(vec2_t xz_pos, float range, int faction_id, const struct map *map);
 
-void   M_NavBlockersIncrefOBB(const struct map *map, const struct obb *obb);
-void   M_NavBlockersDecrefOBB(const struct map *map, const struct obb *obb);
+void   M_NavBlockersIncrefOBB(const struct map *map, int faction_id, const struct obb *obb);
+void   M_NavBlockersDecrefOBB(const struct map *map, int faction_id, const struct obb *obb);
 
 /* ------------------------------------------------------------------------
  * Wrapper around navigation APIs.

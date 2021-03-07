@@ -293,7 +293,7 @@ static enum nav_layer layer_for_ent(const struct entity *ent)
 
 static void entity_block(const struct entity *ent)
 {
-    M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), ent->selection_radius, s_map);
+    M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), ent->selection_radius, ent->faction_id, s_map);
 
     struct movestate *ms = movestate_get(ent);
     assert(!ms->blocking);
@@ -308,7 +308,7 @@ static void entity_unblock(const struct entity *ent)
     struct movestate *ms = movestate_get(ent);
     assert(ms->blocking);
 
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, s_map);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, ent->faction_id, s_map);
     ms->blocking = false;
 }
 
@@ -1921,8 +1921,8 @@ void G_Move_UpdatePos(const struct entity *ent, vec2_t pos)
     if(!ms->blocking)
         return;
 
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, s_map);
-    M_NavBlockersIncref(pos, ent->selection_radius, s_map);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, ent->faction_id, s_map);
+    M_NavBlockersIncref(pos, ent->selection_radius, ent->faction_id, s_map);
     ms->last_stop_pos = pos;
     ms->last_stop_radius = ent->selection_radius;
 }
@@ -1936,8 +1936,8 @@ void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius)
     if(!ms->blocking)
         return;
 
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, s_map);
-    M_NavBlockersIncref(ms->last_stop_pos, sel_radius, s_map);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, ent->faction_id, s_map);
+    M_NavBlockersIncref(ms->last_stop_pos, sel_radius, ent->faction_id, s_map);
     ms->last_stop_radius = sel_radius;
 }
 

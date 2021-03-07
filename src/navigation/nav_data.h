@@ -38,6 +38,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "../game/public/game.h" /* MAX_FACTIONS */
 
 #define MAX_PORTALS_PER_CHUNK 64
 #define FIELD_RES_R           64
@@ -93,6 +94,12 @@ struct nav_chunk{
      * as impassable when computing flow fields. 
      */
     uint8_t         blockers[FIELD_RES_R][FIELD_RES_C];
+    /* Keep a reference count of how many unit of every faction are 
+     * currently blocking the corresponding tile. This additional 
+     * data allows determine units belonging to which faction are 
+     * blocking specific tiles.
+     */
+    uint8_t         factions[MAX_FACTIONS][FIELD_RES_R][FIELD_RES_C];
     /* An 'island' is a collection of tiles that are all reachable 
      * from one another. Each island has a unique ID. These are
      * synchronized with the 'cost_base' field, and are not

@@ -620,24 +620,24 @@ bool M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer laye
     }
 }
 
-void M_NavBlockersIncref(vec2_t xz_pos, float range, const struct map *map)
+void M_NavBlockersIncref(vec2_t xz_pos, float range, int faction_id, const struct map *map)
 {
-    N_BlockersIncref(xz_pos, range, map->pos, map->nav_private);
+    N_BlockersIncref(xz_pos, range, faction_id, map->pos, map->nav_private);
 }
 
-void M_NavBlockersDecref(vec2_t xz_pos, float range, const struct map *map)
+void M_NavBlockersDecref(vec2_t xz_pos, float range, int faction_id, const struct map *map)
 {
-    N_BlockersDecref(xz_pos, range, map->pos, map->nav_private);
+    N_BlockersDecref(xz_pos, range, faction_id, map->pos, map->nav_private);
 }
 
-void M_NavBlockersIncrefOBB(const struct map *map, const struct obb *obb)
+void M_NavBlockersIncrefOBB(const struct map *map, int faction_id, const struct obb *obb)
 {
-    N_BlockersIncrefOBB(map->nav_private, map->pos, obb);
+    N_BlockersIncrefOBB(map->nav_private, faction_id, map->pos, obb);
 }
 
-void M_NavBlockersDecrefOBB(const struct map *map, const struct obb *obb)
+void M_NavBlockersDecrefOBB(const struct map *map, int faction_id, const struct obb *obb)
 {
-    N_BlockersDecrefOBB(map->nav_private, map->pos, obb);
+    N_BlockersDecrefOBB(map->nav_private, faction_id, map->pos, obb);
 }
 
 bool M_TileForDesc(const struct map *map, struct tile_desc desc, struct tile **out)

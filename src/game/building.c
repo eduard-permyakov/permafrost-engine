@@ -493,7 +493,7 @@ void G_Building_RemoveEntity(const struct entity *ent)
     assert(bs);
 
     if(bs->state >= BUILDING_STATE_FOUNDED && bs->blocking) {
-        M_NavBlockersDecrefOBB(s_map, &bs->obb);
+        M_NavBlockersDecrefOBB(s_map, ent->faction_id, &bs->obb);
     }
 
     struct entity *progress = G_EntityForUID(bs->progress_model);
@@ -556,7 +556,7 @@ bool G_Building_Found(struct entity *ent, bool blocking)
 
     bs->blocking = blocking;
     if(bs->blocking) {
-        M_NavBlockersIncrefOBB(s_map, &obb);
+        M_NavBlockersIncrefOBB(s_map, ent->faction_id, &obb);
         bs->obb = obb;
     }
 
@@ -708,9 +708,9 @@ void G_Building_UpdateBounds(const struct entity *ent)
     if(!bs->blocking)
         return;
 
-    M_NavBlockersDecrefOBB(s_map, &bs->obb);
+    M_NavBlockersDecrefOBB(s_map, ent->faction_id, &bs->obb);
     Entity_CurrentOBB(ent, &bs->obb, true);
-    M_NavBlockersIncrefOBB(s_map, &bs->obb);
+    M_NavBlockersIncrefOBB(s_map, ent->faction_id, &bs->obb);
 }
 
 bool G_Building_NeedsRepair(const struct entity *ent)

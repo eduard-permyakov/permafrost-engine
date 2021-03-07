@@ -319,13 +319,15 @@ bool N_ClosestReachableAdjacentPosDynamic(void *nav_private, enum nav_layer laye
 /* ------------------------------------------------------------------------
  * Changes the blocker reference count for the navigation tile under the
  * cursor position. This may cause flow field eviction from caches.
+ * The faction_id is for keeping track of which factions are currently
+ * 'occupying' which tiles.
  * ------------------------------------------------------------------------
  */
-void      N_BlockersIncref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private);
-void      N_BlockersDecref(vec2_t xz_pos, float range, vec3_t map_pos, void *nav_private);
+void      N_BlockersIncref(vec2_t xz_pos, float range, int faction_id, vec3_t map_pos, void *nav_private);
+void      N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, vec3_t map_pos, void *nav_private);
 
-void      N_BlockersIncrefOBB(void *nav_private, vec3_t map_pos, const struct obb *obb);
-void      N_BlockersDecrefOBB(void *nav_private, vec3_t map_pos, const struct obb *obb);
+void      N_BlockersIncrefOBB(void *nav_private, int faction_id, vec3_t map_pos, const struct obb *obb);
+void      N_BlockersDecrefOBB(void *nav_private, int faction_id, vec3_t map_pos, const struct obb *obb);
 
 /* ------------------------------------------------------------------------
  * Returns true if the entity position (xz_pos) is within a 'tolerance' 
