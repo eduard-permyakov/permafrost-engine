@@ -99,8 +99,19 @@ extern vec2_t g_flow_dir_lookup[];
 ff_id_t        N_FlowField_ID(struct coord chunk, struct field_target target, enum nav_layer layer);
 enum nav_layer N_FlowField_Layer(ff_id_t id);
 void           N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct flow_field *out);
-void           N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_private *priv,
-                                 enum nav_layer layer, struct field_target target, struct flow_field *inout_flow);
+
+/* ------------------------------------------------------------------------
+ * Populate the flow field with directions leading units in the field towards
+ * the target. If faction_id is not FACTION_ID_NONE, then tiles blocked by
+ * enemy factions will not be considered obstacles.
+ * ------------------------------------------------------------------------
+ */
+void    N_FlowFieldUpdate(struct coord              chunk_coord, 
+                          const struct nav_private *priv, 
+                          int                       faction_id,
+                          enum nav_layer            layer, 
+                          struct field_target       target, 
+                          struct flow_field        *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Update all tiles with a specific local island ID from the
@@ -110,8 +121,11 @@ void           N_FlowFieldUpdate(struct coord chunk_coord, const struct nav_priv
  * island (local_iid), the field will remain unchanged.
  * ------------------------------------------------------------------------
  */
-void    N_FlowFieldUpdateIslandToNearest(uint16_t local_iid, const struct nav_private *priv,
-                                         enum nav_layer layer, struct flow_field *inout_flow);
+void    N_FlowFieldUpdateIslandToNearest(uint16_t                  local_iid, 
+                                         const struct nav_private *priv,
+                                         enum nav_layer            layer, 
+                                         int                       faction_id, 
+                                         struct flow_field        *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Update all tiles for for the 'impassable island' that start is a part of
@@ -121,8 +135,10 @@ void    N_FlowFieldUpdateIslandToNearest(uint16_t local_iid, const struct nav_pr
  * somehow end up on an impassable one.
  * ------------------------------------------------------------------------
  */
-void    N_FlowFieldUpdateToNearestPathable(const struct nav_chunk *chunk, struct coord start, 
-                                           struct flow_field *inout_flow);
+void    N_FlowFieldUpdateToNearestPathable(const struct nav_chunk *chunk, 
+                                           struct coord            start, 
+                                           int                     faction_id, 
+                                           struct flow_field      *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Create a line of sight field, indicating which tiles in this chunk are 
@@ -134,9 +150,13 @@ void    N_FlowFieldUpdateToNearestPathable(const struct nav_chunk *chunk, struct
  * NULL) and and moving backwards along the path back to the 'source' chunk.
  * ------------------------------------------------------------------------
  */
-void    N_LOSFieldCreate(dest_id_t id, struct coord chunk_coord, struct tile_desc target,
-                         const struct nav_private *priv, vec3_t map_pos, 
-                         struct LOS_field *out_los, const struct LOS_field *prev_los);
+void    N_LOSFieldCreate(dest_id_t                 id, 
+                         struct coord              chunk_coord, 
+                         struct tile_desc          target,
+                         const struct nav_private *priv, 
+                         vec3_t                    map_pos, 
+                         struct LOS_field         *out_los, 
+                         const struct LOS_field   *prev_los);
 
 #endif
 

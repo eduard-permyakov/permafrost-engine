@@ -1555,7 +1555,8 @@ bool G_RemoveEntity(struct entity *ent)
     ASSERT_IN_MAIN_THREAD();
 
     khiter_t k = kh_get(entity, s_gs.active, ent->uid);
-    assert(k != kh_end(s_gs.active));
+    if(k == kh_end(s_gs.active))
+        return false;
     kh_del(entity, s_gs.active, k);
 
     if(ent->flags & ENTITY_FLAG_MOVABLE) {
@@ -1715,6 +1716,23 @@ uint16_t G_GetPlayerControlledFactions(void)
         if(!(s_gs.factions_allocd & (0x1 << i)))
             continue;
         if(!s_gs.factions[i].controllable)
+            continue;
+        ret |= (0x1 << i);
+    }
+    return ret;
+}
+
+uint16_t G_GetEnemyFactions(int faction_id)
+{
+    ASSERT_IN_MAIN_THREAD();
+    uint16_t ret = 0;
+
+    for(int i = 0; i < MAX_FACTIONS; i++) {
+
+        enum diplomacy_state ds;
+        if(!G_GetDiplomacyState(i, faction_id, &ds))
+            continue;
+        if(ds != DIPLOMACY_STATE_WAR)
             continue;
         ret |= (0x1 << i);
     }

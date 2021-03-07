@@ -680,13 +680,21 @@ static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_mode
     });
 }
 
-static dest_id_t n_dest_id(struct tile_desc dst_desc, enum nav_layer layer)
+static dest_id_t n_dest_id(struct tile_desc dst_desc, enum nav_layer layer, int faction_id)
 {
-    return (((uint32_t)dst_desc.chunk_r & 0xff) << 24)
-         | (((uint32_t)dst_desc.chunk_c & 0xff) << 16)
-         | (((uint32_t)dst_desc.tile_r  & 0x3f) << 10)
-         | (((uint32_t)dst_desc.tile_c  & 0x3f) <<  4)
-         | (((uint32_t)layer            & 0x0f) <<  0);
+    assert(dst_desc.chunk_r <= 0x3f);
+    assert(dst_desc.chunk_c <= 0x3f);
+    assert(dst_desc.tile_r <= 0x3f);
+    assert(dst_desc.tile_c <= 0x3f);
+    assert(layer <= 0xf);
+    assert(faction_id <= 0xff);
+
+    return (((uint32_t)dst_desc.chunk_r & 0x3f) << 26)
+         | (((uint32_t)dst_desc.chunk_c & 0x3f) << 20)
+         | (((uint32_t)dst_desc.tile_r  & 0x3f) << 14)
+         | (((uint32_t)dst_desc.tile_c  & 0x3f) <<  8)
+         | (((uint32_t)layer            & 0x0f) <<  4)
+         | (((uint32_t)faction_id       & 0x0f) <<  0);
 }
 
 static void n_visit_island(struct nav_private *priv, uint16_t id, struct tile_desc start, enum nav_layer layer)
@@ -1365,6 +1373,212 @@ static void n_render_overlay_text(const char *text, vec4_t map_pos,
     float len = strlen(text) * 8.0f;
     struct rect bounds = (struct rect){screen_x - len/2.0f, screen_y, len, 25};
     UI_DrawText(text, bounds, (struct rgba){255, 0, 0, 255});
+}
+
+static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int faction_id,
+                           vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id)
+{
+    PERF_ENTER();
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+    bool result;
+    (void)result;
+
+    n_update_dirty_local_islands(nav_private, layer);
+
+    /* Convert source and destination positions to tile coordinates */
+    struct tile_desc src_desc, dst_desc;
+    result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
+    assert(result);
+    result = M_Tile_DescForPoint2D(res, map_pos, xz_dest, &dst_desc);
+    assert(result);
+
+    dest_id_t ret = n_dest_id(dst_desc, layer, faction_id);
+
+    /* Handle the case where no path exists between the source and destination 
+     * (i.e. they are on different 'islands'). 
+     */
+    const struct nav_chunk *src_chunk = &priv->chunks[layer]
+                                                     [src_desc.chunk_r * priv->width + src_desc.chunk_c];
+    const struct nav_chunk *dst_chunk = &priv->chunks[layer]
+                                                     [dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
+
+    uint16_t src_iid = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
+    uint16_t dst_iid = dst_chunk->islands[dst_desc.tile_r][dst_desc.tile_c];
+
+    if(src_iid != dst_iid)
+        PERF_RETURN(false); 
+
+    /* Even if a mapping exists, the actual flow field may have been evicted from
+     * the cache, due to space constraints or invalidation. */
+    ff_id_t id;
+    if(!N_FC_GetDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)
+    || !N_FC_ContainsFlowField(id)) {
+
+        struct field_target target = (struct field_target){
+            .type = TARGET_TILE,
+            .tile = (struct coord){dst_desc.tile_r, dst_desc.tile_c}
+        };
+
+        struct flow_field ff;
+        id = N_FlowField_ID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target, layer);
+
+        if(!N_FC_ContainsFlowField(id)) {
+        
+            struct coord chunk = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
+            N_FlowFieldInit(chunk, priv, &ff);
+            N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, &ff);
+            N_FC_PutFlowField(id, &ff);
+        }
+
+        N_FC_PutDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, id);
+    }
+
+    /* Create the LOS field for the destination chunk, if necessary */
+    if(!N_FC_ContainsLOSField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c})) {
+
+        struct LOS_field lf;
+        N_LOSFieldCreate(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, dst_desc, priv, map_pos, &lf, NULL);
+        N_FC_PutLOSField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &lf);
+    }
+
+    /* Source and destination positions are in the same chunk, and a path exists
+     * between them. In this case, we only need a single flow field. .
+     */
+    if(src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c
+    && src_chunk->local_islands[src_desc.tile_r][src_desc.tile_c] == src_chunk->local_islands[dst_desc.tile_r][dst_desc.tile_c]) {
+
+        *out_dest_id = ret;
+        PERF_RETURN(true);
+    }
+
+    /* If the source and destination are on the same chunk and, in the absence of blockers,
+     * would be reachable from one another, that means that the destination is blocked in
+     * by blockers. In this case, get as close as possible. 
+     */
+    if((src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c)
+    && n_normally_reachable(src_chunk, 
+        (struct coord){src_desc.tile_r, src_desc.tile_c},
+        (struct coord){dst_desc.tile_r, dst_desc.tile_c})) {
+        
+        *out_dest_id = ret;
+        PERF_RETURN(true);
+    }
+
+    const struct portal *dst_port = n_closest_reachable_portal(dst_chunk, 
+        (struct coord){dst_desc.tile_r, dst_desc.tile_c});
+
+    if(!dst_port)
+        PERF_RETURN(false); 
+
+    float cost;
+    vec_portal_t path;
+    vec_portal_init(&path);
+
+    bool path_exists = AStar_PortalGraphPath(src_desc, dst_port, priv, layer, &path, &cost);
+    if(!path_exists) {
+        vec_portal_destroy(&path);
+        PERF_RETURN(false); 
+    }
+
+    struct coord prev_los_coord = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
+
+    /* Traverse the portal path _backwards_ and generate the required fields, if they are not already 
+     * cached. Add the results to the fieldcache. */
+    for(int i = vec_size(&path)-1; i > 0; i--) {
+
+        const struct portal *curr_node = vec_AT(&path, i - 1);
+        const struct portal *next_hop = vec_AT(&path, i);
+
+        /* If the very first hop takes us into another chunk, that means that the 'nearest portal'
+         * to the source borders the 'next' chunk already. In this case, we must remember to
+         * still generate a flow field for the current chunk steering to this portal. */
+        if(i == 1 && (next_hop->chunk.r != src_desc.chunk_r || next_hop->chunk.c != src_desc.chunk_c))
+            next_hop = vec_AT(&path, 0);
+
+        if(curr_node->connected == next_hop)
+            continue;
+
+        /* Since we are moving from 'closest portal' to 'closest portal', it 
+         * may be possible that the very last hop takes us from another portal in the 
+         * destination chunk to the destination portal. This is not needed and will
+         * overwrite the destination flow field made earlier. */
+        if(curr_node->chunk.r == dst_desc.chunk_r 
+        && curr_node->chunk.c == dst_desc.chunk_c
+        && next_hop == dst_port)
+            continue;
+
+        struct coord chunk_coord = curr_node->chunk;
+        struct field_target target = (struct field_target){
+            .type = TARGET_PORTAL,
+            .port = next_hop
+        };
+
+        ff_id_t new_id = N_FlowField_ID(chunk_coord, target, layer);
+        ff_id_t exist_id;
+        struct flow_field ff;
+
+        if(N_FC_GetDestFFMapping(ret, chunk_coord, &exist_id)
+        && N_FC_ContainsFlowField(exist_id)) {
+
+            /* The exact flow field we need has already been made */
+            if(new_id == exist_id)
+                goto ff_exists;
+
+            /* This is the edge case when a path to a particular target takes us through
+             * the same chunk more than once. This can happen if a chunk is divided into
+             * 'islands' by unpathable barriers. */
+            const struct flow_field *exist_ff  = N_FC_FlowFieldAt(exist_id);
+            memcpy(&ff, exist_ff, sizeof(struct flow_field));
+
+            N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, &ff);
+            /* We set the updated flow field for the new (least recently used) key. Since in 
+             * this case more than one flowfield ID maps to the same field but we only keep 
+             * one of the IDs, it may be possible that the same flowfield will be redundantly 
+             * updated at a later time. However, this is largely inconsequential. */
+            N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
+            N_FC_PutFlowField(new_id, &ff);
+
+            goto ff_exists;
+        }
+
+        N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
+        if(!N_FC_ContainsFlowField(new_id)) {
+        
+            N_FlowFieldInit(chunk_coord, priv, &ff);
+            N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, &ff);
+            N_FC_PutFlowField(new_id, &ff);
+        }
+
+    ff_exists:
+        assert(N_FC_ContainsFlowField(new_id));
+        /* Reference field in the cache */
+        (void)N_FC_FlowFieldAt(new_id);
+
+        if(!N_FC_ContainsLOSField(ret, chunk_coord)) {
+
+            assert((abs(prev_los_coord.r - chunk_coord.r) + abs(prev_los_coord.c - chunk_coord.c)) == 1);
+            assert(N_FC_ContainsLOSField(ret, prev_los_coord));
+
+            const struct LOS_field *prev_los = N_FC_LOSFieldAt(ret, prev_los_coord);
+            assert(prev_los);
+            assert(prev_los->chunk.r == prev_los_coord.r && prev_los->chunk.c == prev_los_coord.c);
+
+            struct LOS_field lf;
+            N_LOSFieldCreate(ret, chunk_coord, dst_desc, priv, map_pos, &lf, prev_los);
+            N_FC_PutLOSField(ret, chunk_coord, &lf);
+        }
+
+        prev_los_coord = chunk_coord;
+    }
+    vec_portal_destroy(&path);
+
+    *out_dest_id = ret; 
+    PERF_RETURN(true);
 }
 
 /*****************************************************************************/
@@ -2062,223 +2276,36 @@ void N_UpdateIslandsField(void *nav_private)
 
 dest_id_t N_DestIDForPos(void *nav_private, vec3_t map_pos, vec2_t xz_pos, enum nav_layer layer)
 {
-    struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
-
     struct tile_desc td;
-    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &td);
+    bool result = M_Tile_DescForPoint2D(n_res(nav_private), map_pos, xz_pos, &td);
     assert(result);
 
-    return n_dest_id(td, layer);
+    return n_dest_id(td, layer, 0xff);
+}
+
+dest_id_t N_DestIDForPosAttacking(void *nav_private, vec3_t map_pos, vec2_t xz_pos, 
+                                  enum nav_layer layer, int faction_id)
+{
+    struct tile_desc td;
+    bool result = M_Tile_DescForPoint2D(n_res(nav_private), map_pos, xz_pos, &td);
+    assert(result);
+
+    return n_dest_id(td, layer, faction_id);
 }
 
 bool N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest, 
                    vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id)
 {
-    PERF_ENTER();
+    return n_request_path(nav_private, xz_src, xz_dest, FACTION_ID_NONE, 
+                          map_pos, layer, out_dest_id);
+}
 
-    struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
-    bool result;
-    (void)result;
-
-    n_update_dirty_local_islands(nav_private, layer);
-
-    /* Convert source and destination positions to tile coordinates */
-    struct tile_desc src_desc, dst_desc;
-    result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
-    assert(result);
-    result = M_Tile_DescForPoint2D(res, map_pos, xz_dest, &dst_desc);
-    assert(result);
-
-    dest_id_t ret = n_dest_id(dst_desc, layer);
-
-    /* Handle the case where no path exists between the source and destination 
-     * (i.e. they are on different 'islands'). 
-     */
-    const struct nav_chunk *src_chunk = &priv->chunks[layer]
-                                                     [src_desc.chunk_r * priv->width + src_desc.chunk_c];
-    const struct nav_chunk *dst_chunk = &priv->chunks[layer]
-                                                     [dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
-
-    uint16_t src_iid = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
-    uint16_t dst_iid = dst_chunk->islands[dst_desc.tile_r][dst_desc.tile_c];
-
-    if(src_iid != dst_iid)
-        PERF_RETURN(false); 
-
-    /* Even if a mapping exists, the actual flow field may have been evicted from
-     * the cache, due to space constraints or invalidation. */
-    ff_id_t id;
-    if(!N_FC_GetDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &id)
-    || !N_FC_ContainsFlowField(id)) {
-
-        struct field_target target = (struct field_target){
-            .type = TARGET_TILE,
-            .tile = (struct coord){dst_desc.tile_r, dst_desc.tile_c}
-        };
-
-        struct flow_field ff;
-        id = N_FlowField_ID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target, layer);
-
-        if(!N_FC_ContainsFlowField(id)) {
-        
-            struct coord chunk = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
-            N_FlowFieldInit(chunk, priv, &ff);
-            N_FlowFieldUpdate(chunk, priv, layer, target, &ff);
-            N_FC_PutFlowField(id, &ff);
-        }
-
-        N_FC_PutDestFFMapping(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, id);
-    }
-
-    /* Create the LOS field for the destination chunk, if necessary */
-    if(!N_FC_ContainsLOSField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c})) {
-
-        struct LOS_field lf;
-        N_LOSFieldCreate(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, dst_desc, priv, map_pos, &lf, NULL);
-        N_FC_PutLOSField(ret, (struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, &lf);
-    }
-
-    /* Source and destination positions are in the same chunk, and a path exists
-     * between them. In this case, we only need a single flow field. .
-     */
-    if(src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c
-    && src_chunk->local_islands[src_desc.tile_r][src_desc.tile_c] == src_chunk->local_islands[dst_desc.tile_r][dst_desc.tile_c]) {
-
-        *out_dest_id = ret;
-        PERF_RETURN(true);
-    }
-
-    /* If the source and destination are on the same chunk and, in the absence of blockers,
-     * would be reachable from one another, that means that the destination is blocked in
-     * by blockers. In this case, get as close as possible. 
-     */
-    if((src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c)
-    && n_normally_reachable(src_chunk, 
-        (struct coord){src_desc.tile_r, src_desc.tile_c},
-        (struct coord){dst_desc.tile_r, dst_desc.tile_c})) {
-        
-        *out_dest_id = ret;
-        PERF_RETURN(true);
-    }
-
-    const struct portal *dst_port = n_closest_reachable_portal(dst_chunk, 
-        (struct coord){dst_desc.tile_r, dst_desc.tile_c});
-
-    if(!dst_port)
-        PERF_RETURN(false); 
-
-    float cost;
-    vec_portal_t path;
-    vec_portal_init(&path);
-
-    bool path_exists = AStar_PortalGraphPath(src_desc, dst_port, priv, layer, &path, &cost);
-    if(!path_exists) {
-        vec_portal_destroy(&path);
-        PERF_RETURN(false); 
-    }
-
-    struct coord prev_los_coord = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
-
-    /* Traverse the portal path _backwards_ and generate the required fields, if they are not already 
-     * cached. Add the results to the fieldcache. */
-    for(int i = vec_size(&path)-1; i > 0; i--) {
-
-        const struct portal *curr_node = vec_AT(&path, i - 1);
-        const struct portal *next_hop = vec_AT(&path, i);
-
-        /* If the very first hop takes us into another chunk, that means that the 'nearest portal'
-         * to the source borders the 'next' chunk already. In this case, we must remember to
-         * still generate a flow field for the current chunk steering to this portal. */
-        if(i == 1 && (next_hop->chunk.r != src_desc.chunk_r || next_hop->chunk.c != src_desc.chunk_c))
-            next_hop = vec_AT(&path, 0);
-
-        if(curr_node->connected == next_hop)
-            continue;
-
-        /* Since we are moving from 'closest portal' to 'closest portal', it 
-         * may be possible that the very last hop takes us from another portal in the 
-         * destination chunk to the destination portal. This is not needed and will
-         * overwrite the destination flow field made earlier. */
-        if(curr_node->chunk.r == dst_desc.chunk_r 
-        && curr_node->chunk.c == dst_desc.chunk_c
-        && next_hop == dst_port)
-            continue;
-
-        struct coord chunk_coord = curr_node->chunk;
-        struct field_target target = (struct field_target){
-            .type = TARGET_PORTAL,
-            .port = next_hop
-        };
-
-        ff_id_t new_id = N_FlowField_ID(chunk_coord, target, layer);
-        ff_id_t exist_id;
-        struct flow_field ff;
-
-        if(N_FC_GetDestFFMapping(ret, chunk_coord, &exist_id)
-        && N_FC_ContainsFlowField(exist_id)) {
-
-            /* The exact flow field we need has already been made */
-            if(new_id == exist_id)
-                goto ff_exists;
-
-            /* This is the edge case when a path to a particular target takes us through
-             * the same chunk more than once. This can happen if a chunk is divided into
-             * 'islands' by unpathable barriers. */
-            const struct flow_field *exist_ff  = N_FC_FlowFieldAt(exist_id);
-            memcpy(&ff, exist_ff, sizeof(struct flow_field));
-
-            N_FlowFieldUpdate(chunk_coord, priv, layer, target, &ff);
-            /* We set the updated flow field for the new (least recently used) key. Since in 
-             * this case more than one flowfield ID maps to the same field but we only keep 
-             * one of the IDs, it may be possible that the same flowfield will be redundantly 
-             * updated at a later time. However, this is largely inconsequential. */
-            N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
-            N_FC_PutFlowField(new_id, &ff);
-
-            goto ff_exists;
-        }
-
-        N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
-        if(!N_FC_ContainsFlowField(new_id)) {
-        
-            N_FlowFieldInit(chunk_coord, priv, &ff);
-            N_FlowFieldUpdate(chunk_coord, priv, layer, target, &ff);
-            N_FC_PutFlowField(new_id, &ff);
-        }
-
-    ff_exists:
-        assert(N_FC_ContainsFlowField(new_id));
-        /* Reference field in the cache */
-        (void)N_FC_FlowFieldAt(new_id);
-
-        if(!N_FC_ContainsLOSField(ret, chunk_coord)) {
-
-            assert((abs(prev_los_coord.r - chunk_coord.r) + abs(prev_los_coord.c - chunk_coord.c)) == 1);
-            assert(N_FC_ContainsLOSField(ret, prev_los_coord));
-
-            const struct LOS_field *prev_los = N_FC_LOSFieldAt(ret, prev_los_coord);
-            assert(prev_los);
-            assert(prev_los->chunk.r == prev_los_coord.r && prev_los->chunk.c == prev_los_coord.c);
-
-            struct LOS_field lf;
-            N_LOSFieldCreate(ret, chunk_coord, dst_desc, priv, map_pos, &lf, prev_los);
-            N_FC_PutLOSField(ret, chunk_coord, &lf);
-        }
-
-        prev_los_coord = chunk_coord;
-    }
-    vec_portal_destroy(&path);
-
-    *out_dest_id = ret; 
-    PERF_RETURN(true);
+bool N_RequestPathAttacking(void *nav_private, vec2_t xz_src, vec2_t xz_dest, 
+                            int faction_id, vec3_t map_pos, enum nav_layer layer, 
+                            dest_id_t *out_dest_id)
+{
+    return n_request_path(nav_private, xz_src, xz_dest, faction_id, 
+                          map_pos, layer, out_dest_id);
 }
 
 vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest, 
@@ -2287,6 +2314,7 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
     unsigned dir_idx;
     struct nav_private *priv = nav_private;
     enum nav_layer layer = N_DestLayer(id);
+    int faction_id = N_DestFactionID(id);
 
     struct map_resolution res = {
         priv->width, priv->height,
@@ -2301,7 +2329,7 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
     if(!N_FC_GetDestFFMapping(id, (struct coord){tile.chunk_r, tile.chunk_c}, &ffid)) {
 
         dest_id_t ret;
-        bool result = N_RequestPath(nav_private, curr_pos, xz_dest, map_pos, layer, &ret);
+        bool result = n_request_path(nav_private, curr_pos, xz_dest, faction_id, map_pos, layer, &ret);
         if(!result)
             return (vec2_t){0.0f};
         assert(ret == id);
@@ -2312,7 +2340,7 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
     if(!ff || ff->field[tile.tile_r][tile.tile_c].dir_idx == FD_NONE) {
 
         dest_id_t ret;
-        bool result = N_RequestPath(nav_private, curr_pos, xz_dest, map_pos, layer, &ret);
+        bool result = n_request_path(nav_private, curr_pos, xz_dest, faction_id, map_pos, layer, &ret);
         if(!result)
             return (vec2_t){0.0f};
         assert(ret == id);
@@ -2343,7 +2371,7 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
     if(local_iid == ISLAND_NONE) {
 
         struct flow_field exist_ff = *ff;
-        N_FlowFieldUpdateToNearestPathable(chunk, (struct coord){tile.tile_r, tile.tile_c}, &exist_ff);
+        N_FlowFieldUpdateToNearestPathable(chunk, (struct coord){tile.tile_r, tile.tile_c}, faction_id, &exist_ff);
         N_FC_PutFlowField(ffid, &exist_ff);
         ff = N_FC_FlowFieldAt(ffid);
         goto ff_found;
@@ -2356,7 +2384,7 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
      *      due to blockers).
      */
     struct flow_field exist_ff = *ff;
-    N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, &exist_ff);
+    N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
     N_FC_PutFlowField(ffid, &exist_ff);
 
     /*   4. If the direction is still FD_NONE, that means that the
@@ -2419,7 +2447,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
         && target_tile.chunk_c == curr_tile.chunk_c) {
         
             N_FlowFieldInit(chunk, priv, &ff);
-            N_FlowFieldUpdate(chunk, priv, layer, target, &ff);
+            N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, &ff);
             N_FC_PutFlowField(ffid, &ff);
             done = true;
         }
@@ -2436,7 +2464,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
             };
 
             N_FlowFieldInit(chunk, priv, &ff);
-            N_FlowFieldUpdate(chunk, priv, layer, pm_target, &ff);
+            N_FlowFieldUpdate(chunk, priv, faction_id, layer, pm_target, &ff);
             N_FC_PutFlowField(ffid, &ff);
             done = true;
         }
@@ -2476,7 +2504,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
             };
 
             N_FlowFieldInit(chunk, priv, &ff);
-            N_FlowFieldUpdate(chunk, priv, layer, portal_target, &ff);
+            N_FlowFieldUpdate(chunk, priv, faction_id, layer, portal_target, &ff);
             N_FC_PutFlowField(ffid, &ff);
 
             vec_portal_destroy(&path);
@@ -2496,7 +2524,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
         uint16_t local_iid = nchunk->local_islands[curr_tile.tile_r][curr_tile.tile_c];
 
         struct flow_field exist_ff = *pff;
-        N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, &exist_ff);
+        N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
         N_FC_PutFlowField(ffid, &exist_ff);
 
         dir_idx = exist_ff.field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
@@ -2874,6 +2902,11 @@ out:
 }
 
 enum nav_layer N_DestLayer(dest_id_t id)
+{
+    return ((id >> 4) & 0xf);
+}
+
+int N_DestFactionID(dest_id_t id)
 {
     return (id & 0xf);
 }

@@ -708,6 +708,12 @@ uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos, enum nav_layer 
     return N_DestIDForPos(map->nav_private, map->pos, xz_pos, layer);
 }
 
+uint32_t M_NavDestIDForPosAttacking(const struct map *map, vec2_t xz_pos, 
+                                    enum nav_layer layer, int faction_id)
+{
+    return N_DestIDForPosAttacking(map->nav_private, map->pos, xz_pos, layer, faction_id);
+}
+
 bool M_NavObjAdjacent(const struct map *map, const struct entity *ent, const struct entity *target)
 {
     if(target->flags & ENTITY_FLAG_MOVABLE) {

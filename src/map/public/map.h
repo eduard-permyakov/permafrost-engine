@@ -368,6 +368,8 @@ void   M_NavBlockersDecrefOBB(const struct map *map, int faction_id, const struc
  * ------------------------------------------------------------------------
  */
 uint32_t M_NavDestIDForPos(const struct map *map, vec2_t xz_pos, enum nav_layer layer);
+uint32_t M_NavDestIDForPosAttacking(const struct map *map, vec2_t xz_pos, 
+                                    enum nav_layer layer, int faction_id);
 void     M_NavGetResolution(const struct map *map, struct map_resolution *out);
 bool     M_NavObjectBuildable(const struct map *map, enum nav_layer layer, 
                               const struct obb *obb);

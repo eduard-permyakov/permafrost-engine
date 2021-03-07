@@ -482,7 +482,11 @@ static bool make_flock(const vec_pentity_t *units, vec2_t target_xz, enum nav_la
 
     /* The flow fields will be computed on-demand during the next movement update tick */
     new_flock.target_xz = target_xz;
-    new_flock.dest_id = M_NavDestIDForPos(s_map, target_xz, layer);
+    if(attack) {
+        new_flock.dest_id = M_NavDestIDForPosAttacking(s_map, target_xz, layer, G_GetFactionID(first->uid));
+    }else{
+        new_flock.dest_id = M_NavDestIDForPos(s_map, target_xz, layer);
+    }
 
     if(kh_size(new_flock.ents) == 0) {
         kh_destroy(entity, new_flock.ents);

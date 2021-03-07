@@ -45,6 +45,7 @@
 #define FIELD_RES_C           64
 #define COST_IMPASSABLE       0xff
 #define ISLAND_NONE           0xffff
+#define FACTION_ID_NONE       0xff
 
 struct coord{
     int r, c;

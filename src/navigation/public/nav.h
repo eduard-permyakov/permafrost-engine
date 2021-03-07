@@ -237,6 +237,15 @@ dest_id_t N_DestIDForPos(void *nav_private, vec3_t map_pos, vec2_t xz_pos,
                          enum nav_layer layer);
 
 /* ------------------------------------------------------------------------
+ * Like N_DestIDForPos, but the path for this ID will not consider combatable
+ * entities that are enemies of specified faction as blockers. (It is expected 
+ * that entities following these paths will attack any nearby entities.
+ * ------------------------------------------------------------------------
+ */
+dest_id_t N_DestIDForPosAttacking(void *nav_private, vec3_t map_pos, vec2_t xz_pos, 
+                                  enum nav_layer layer, int faction_id);
+
+/* ------------------------------------------------------------------------
  * Generate the required flowfield and LOS sectors for moving towards the 
  * specified destination.
  * Returns true, if pathing is possible. In that case, 'out_dest_id' will
@@ -245,6 +254,15 @@ dest_id_t N_DestIDForPos(void *nav_private, vec3_t map_pos, vec2_t xz_pos,
  */
 bool      N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest, 
                         vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id);
+
+/* ------------------------------------------------------------------------
+ * Like N_RequestPath, but the path for this ID will not consider combatable
+ * entities that are enemies of specified faction as blockers. (It is expected 
+ * that entities following these paths will attack any nearby entities.
+ * ------------------------------------------------------------------------
+ */
+bool      N_RequestPathAttacking(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int faction_id,
+                                 vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id);
 
 /* ------------------------------------------------------------------------
  * Returns the desired velocity for an entity at 'curr_pos' for it to flow
