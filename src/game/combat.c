@@ -203,11 +203,11 @@ static void dying_remove(const struct entity *ent)
 
 static bool enemies(const struct entity *a, const struct entity *b)
 {
-    if(a->faction_id == b->faction_id)
+    if(G_GetFactionID(a->uid) == G_GetFactionID(b->uid))
         return false;
 
     enum diplomacy_state ds;
-    bool result = G_GetDiplomacyState(a->faction_id, b->faction_id, &ds);
+    bool result = G_GetDiplomacyState(G_GetFactionID(a->uid), G_GetFactionID(b->uid), &ds);
 
     assert(result);
     return (ds == DIPLOMACY_STATE_WAR);
@@ -279,7 +279,7 @@ static bool maybe_enemy_near(const struct entity *ent)
         struct tile_desc bin = td;
         if(!M_Tile_RelativeDesc(binres, &bin, dc, dr))
             continue;
-        if(enemies_in_bin(ent->faction_id, binres, bin))
+        if(enemies_in_bin(G_GetFactionID(ent->uid), binres, bin))
             PERF_RETURN(true);
     }}
     PERF_RETURN(false);
@@ -435,7 +435,7 @@ static void entity_ranged_attack(const struct entity *self, struct entity *targe
          * should never be hit so long as the initial velocity is high enough */
         return;
     }
-    P_Projectile_Add(ent_pos, vel, self->uid, self->faction_id, 
+    P_Projectile_Add(ent_pos, vel, self->uid, G_GetFactionID(self->uid), 
         ent_dmg, PROJ_ONLY_HIT_COMBATABLE | PROJ_ONLY_HIT_ENEMIES);
 }
 
@@ -1032,7 +1032,7 @@ int G_Combat_CurrContextualAction(void)
     if(G_Combat_GetBaseDamage(first) == 0)
         return CTX_ACTION_NONE;
 
-    if(first->faction_id == hovered->faction_id)
+    if(G_GetFactionID(first->uid) == G_GetFactionID(hovered->uid))
         return CTX_ACTION_NONE;
 
     if((hovered->flags & ENTITY_FLAG_MARKER) || (hovered->flags & ENTITY_FLAG_ZOMBIE))

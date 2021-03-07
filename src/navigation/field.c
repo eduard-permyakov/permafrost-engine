@@ -489,13 +489,13 @@ static struct coord tile_for_pos(const struct box_xz *bounds, vec2_t xz_pos)
 
 static bool enemy_ent(int faction_id, const struct entity *ent)
 {
-    if(ent->faction_id == faction_id)
+    if(G_GetFactionID(ent->uid) == faction_id)
         return false;
     if(!(ent->flags & ENTITY_FLAG_COMBATABLE))
         return false;
 
     enum diplomacy_state ds;
-    bool result = G_GetDiplomacyState(faction_id, ent->faction_id, &ds);
+    bool result = G_GetDiplomacyState(faction_id, G_GetFactionID(ent->uid), &ds);
     assert(result);
 
     if(ds != DIPLOMACY_STATE_WAR)

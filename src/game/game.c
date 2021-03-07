@@ -91,7 +91,8 @@
     }while(0)
 
 VEC_IMPL(extern, obb, struct obb)
-__KHASH_IMPL(entity, extern, khint32_t, struct entity*, 1, kh_int_hash_func, kh_int_hash_equal)
+__KHASH_IMPL(entity,  extern, khint32_t, struct entity*, 1, kh_int_hash_func, kh_int_hash_equal)
+__KHASH_IMPL(faction, extern, khint32_t, int,            1, kh_int_hash_func, kh_int_hash_equal)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -1003,7 +1004,7 @@ static void g_render_minimap_units(void)
         vec2_t xz_pos = G_Pos_GetXZ(key);
         if(!G_Fog_PlayerVisible(xz_pos))
             continue;
-        vec3_t norm_color = color_map[curr->faction_id];
+        vec3_t norm_color = color_map[G_GetFactionID(curr->uid)];
         PFM_Vec3_Scale(&norm_color, 1.0f / 255, &norm_color);
 
         positions[nunits] = M_WorldCoordsToNormMapCoords(s_gs.map, xz_pos);
@@ -1031,6 +1032,10 @@ bool G_Init(void)
     s_gs.active = kh_init(entity);
     if(!s_gs.active)
         goto fail_active;
+
+    s_gs.ent_faction_map = kh_init(faction);
+    if(!s_gs.ent_faction_map)
+        goto fail_faction;
 
     s_gs.dynamic = kh_init(entity);
     if(!s_gs.dynamic)
@@ -1070,6 +1075,8 @@ fail_ws:
 fail_cam:
     kh_destroy(entity, s_gs.dynamic);
 fail_dynamic:
+    kh_destroy(faction, s_gs.ent_faction_map);
+fail_faction:
     kh_destroy(entity, s_gs.active);
 fail_active:
     return false;
@@ -1130,6 +1137,7 @@ void G_ClearState(void)
 
     kh_clear(entity, s_gs.active);
     kh_clear(entity, s_gs.dynamic);
+    kh_clear(faction, s_gs.ent_faction_map);
     vec_pentity_reset(&s_gs.visible);
     vec_pentity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
@@ -1308,6 +1316,7 @@ void G_Shutdown(void)
 
     kh_destroy(entity, s_gs.active);
     kh_destroy(entity, s_gs.dynamic);
+    kh_destroy(faction, s_gs.ent_faction_map);
     vec_pentity_destroy(&s_gs.light_visible);
     vec_pentity_destroy(&s_gs.visible);
     vec_obb_destroy(&s_gs.visible_obbs);
@@ -1504,6 +1513,11 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
         return false;
     kh_value(s_gs.active, k) = ent;
 
+    k = kh_put(faction, s_gs.ent_faction_map, ent->uid, &ret);
+    if(ret == -1 || ret == 0)
+        return false;
+    kh_value(s_gs.ent_faction_map, k) = 0;
+
     G_Pos_Set(ent, pos);
 
     if(ent->flags & ENTITY_FLAG_STORAGE_SITE)
@@ -1541,8 +1555,7 @@ bool G_RemoveEntity(struct entity *ent)
     ASSERT_IN_MAIN_THREAD();
 
     khiter_t k = kh_get(entity, s_gs.active, ent->uid);
-    if(k == kh_end(s_gs.active))
-        return false;
+    assert(k != kh_end(s_gs.active));
     kh_del(entity, s_gs.active, k);
 
     if(ent->flags & ENTITY_FLAG_MOVABLE) {
@@ -1573,6 +1586,11 @@ bool G_RemoveEntity(struct entity *ent)
     G_Region_RemoveEnt(ent->uid);
     G_Pos_Delete(ent->uid);
     Entity_ClearTags(ent->uid);
+
+    k = kh_get(faction, s_gs.ent_faction_map, ent->uid);
+    assert(k != kh_end(s_gs.ent_faction_map));
+    kh_del(faction, s_gs.ent_faction_map, k);
+
     return true;
 }
 
@@ -1636,10 +1654,9 @@ bool G_RemoveFaction(int faction_id)
 
     uint32_t key;
     struct entity *curr;
-    (void)key;
 
     kh_foreach(s_gs.active, key, curr, {
-        if(curr->faction_id == faction_id)
+        if(G_GetFactionID(key) == faction_id)
             G_Zombiefy(curr);
     });
 
@@ -1702,6 +1719,40 @@ uint16_t G_GetPlayerControlledFactions(void)
         ret |= (0x1 << i);
     }
     return ret;
+}
+
+void G_SetFactionID(uint32_t uid, int faction_id)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    int old = G_GetFactionID(uid);
+    if(old == faction_id)
+        return;
+
+    khiter_t k = kh_get(faction, s_gs.ent_faction_map, uid);
+    assert(k != kh_end(s_gs.ent_faction_map));
+    kh_value(s_gs.ent_faction_map, k) = faction_id;
+
+    vec2_t xz_pos = G_Pos_GetXZ(uid);
+    struct entity *ent = G_EntityForUID(uid);
+
+    G_Fog_UpdateVisionRange(xz_pos, old, ent->vision_range, 0.0f);
+    G_Fog_UpdateVisionRange(xz_pos, faction_id, 0.0f, ent->vision_range);
+
+    G_Combat_UpdateRef(old, faction_id, xz_pos);
+    G_Move_UpdateFactionID(ent, old, faction_id);
+    G_StorageSite_UpdateFaction(uid, old, faction_id);
+    G_Resource_UpdateFactionID(ent, old, faction_id);
+    G_Building_UpdateFactionID(ent, old, faction_id);
+}
+
+int G_GetFactionID(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(faction, s_gs.ent_faction_map, uid);
+    assert(k != kh_end(s_gs.ent_faction_map));
+    return kh_value(s_gs.ent_faction_map, k);
 }
 
 bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds)
@@ -1893,7 +1944,7 @@ void G_Zombiefy(struct entity *ent)
     G_StorageSite_RemoveEntity(ent);
 
     vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
-    G_Fog_RemoveVision(xz_pos, ent->faction_id, ent->vision_range);
+    G_Fog_RemoveVision(xz_pos, G_GetFactionID(ent->uid), ent->vision_range);
     G_Region_RemoveEnt(ent->uid);
     Entity_ClearTags(ent->uid);
 

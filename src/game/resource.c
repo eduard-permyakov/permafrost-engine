@@ -156,7 +156,7 @@ bool G_Resource_AddEntity(const struct entity *ent)
         return false;
 
     if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
-        M_NavBlockersIncref(rs.blocking_pos, rs.blocking_radius, ent->faction_id, s_map);
+        M_NavBlockersIncref(rs.blocking_pos, rs.blocking_radius, G_GetFactionID(ent->uid), s_map);
     }
     return true;
 }
@@ -168,7 +168,7 @@ void G_Resource_RemoveEntity(struct entity *ent)
         return;
 
     if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
-        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, ent->faction_id, s_map);
+        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(ent->uid), s_map);
     }
 
     rstate_remove(ent->uid);
@@ -181,9 +181,21 @@ void G_Resource_UpdateBounds(const struct entity *ent)
         return;
 
     if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
-        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, ent->faction_id, s_map);
+        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(ent->uid), s_map);
         rs->blocking_pos = G_Pos_GetXZ(ent->uid);
-        M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, ent->faction_id, s_map);
+        M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(ent->uid), s_map);
+    }
+}
+
+void G_Resource_UpdateFactionID(const struct entity *ent, int oldfac, int newfac)
+{
+    struct rstate *rs = rstate_get(ent->uid);
+    if(!rs)
+        return;
+
+    if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
+        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, oldfac, s_map);
+        M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, newfac, s_map);
     }
 }
 
@@ -194,9 +206,9 @@ void G_Resource_UpdateSelectionRadius(const struct entity *ent, float radius)
         return;
 
     if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
-        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, ent->faction_id, s_map);
+        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(ent->uid), s_map);
         rs->blocking_radius = radius;
-        M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, ent->faction_id, s_map);
+        M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(ent->uid), s_map);
     }
 }
 

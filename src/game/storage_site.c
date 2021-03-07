@@ -707,12 +707,12 @@ void G_StorageSite_RemoveEntity(const struct entity *ent)
     int amount;
 
     kh_foreach(ss->curr, key, amount, {
-        update_res_delta(key, -amount, ent->faction_id);
+        update_res_delta(key, -amount, G_GetFactionID(ent->uid));
     });
 
     khash_t(int) *cap = ss->use_alt ? ss->alt_capacity : ss->capacity;
     kh_foreach(cap, key, amount, {
-        update_cap_delta(key, -amount, ent->faction_id);
+        update_cap_delta(key, -amount, G_GetFactionID(ent->uid));
     });
 
     ss_state_destroy(ss);
@@ -746,7 +746,7 @@ bool G_StorageSite_SetCapacity(const struct entity *ent, const char *rname, int 
     int delta = max - prev;
 
     if(!ss->use_alt) {
-        update_cap_delta(rname, delta, ent->faction_id);
+        update_cap_delta(rname, delta, G_GetFactionID(ent->uid));
     }
 
     bool ret = ss_state_set_key(ss->capacity, rname, max);
@@ -782,7 +782,7 @@ bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr
     int prev = 0;
     ss_state_get_key(ss->curr, rname, &prev);
     int delta = curr - prev;
-    update_res_delta(rname, delta, ent->faction_id);
+    update_res_delta(rname, delta, G_GetFactionID(ent->uid));
 
     if(delta) {
         ss->last_change = (struct ss_delta_event){
@@ -896,17 +896,17 @@ void G_StorageSite_SetUseAlt(const struct entity *ent, bool use)
 
     if(use) {
         kh_foreach(ss->capacity, key, amount, {
-            update_cap_delta(key, -amount, ent->faction_id);
+            update_cap_delta(key, -amount, G_GetFactionID(ent->uid));
         });
         kh_foreach(ss->alt_capacity, key, amount, {
-            update_cap_delta(key, amount, ent->faction_id);
+            update_cap_delta(key, amount, G_GetFactionID(ent->uid));
         });
     }else{
         kh_foreach(ss->alt_capacity, key, amount, {
-            update_cap_delta(key, -amount, ent->faction_id);
+            update_cap_delta(key, -amount, G_GetFactionID(ent->uid));
         });
         kh_foreach(ss->capacity, key, amount, {
-            update_cap_delta(key, amount, ent->faction_id);
+            update_cap_delta(key, amount, G_GetFactionID(ent->uid));
         });
     }
     ss->use_alt = use;
@@ -929,7 +929,7 @@ void G_StorageSite_ClearAlt(const struct entity *ent)
         int amount;
 
         kh_foreach(ss->alt_capacity, key, amount, {
-            update_cap_delta(key, -amount, ent->faction_id);
+            update_cap_delta(key, -amount, G_GetFactionID(ent->uid));
         });
     }
 
@@ -946,7 +946,7 @@ void G_StorageSite_ClearCurr(const struct entity *ent)
     int amount;
 
     kh_foreach(ss->alt_capacity, key, amount, {
-        update_cap_delta(key, -amount, ent->faction_id);
+        update_cap_delta(key, -amount, G_GetFactionID(ent->uid));
     });
 
     kh_clear(int, ss->curr);
@@ -962,7 +962,7 @@ bool G_StorageSite_SetAltCapacity(const struct entity *ent, const char *rname, i
     int delta = max - prev;
 
     if(ss->use_alt) {
-        update_cap_delta(rname, delta, ent->faction_id);
+        update_cap_delta(rname, delta, G_GetFactionID(ent->uid));
     }
 
     bool ret = ss_state_set_key(ss->alt_capacity, rname, max);
@@ -1002,7 +1002,8 @@ int G_StorageSite_GetAltDesired(uint32_t uid, const char *rname)
 void G_StorageSite_UpdateFaction(uint32_t uid, int oldfac, int newfac)
 {
     struct ss_state *ss = ss_state_get(uid);
-    assert(ss);
+    if(!ss)
+        return;
 
     const char *key;
     int amount;

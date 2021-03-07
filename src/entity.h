@@ -81,7 +81,6 @@ struct entity{
     struct aabb  identity_aabb;
     float        selection_radius; /* The radius of the selection circle in OpenGL coordinates */
     float        max_speed;        /* The base movement speed in units of OpenGL coords / second */
-    int          faction_id;       /* The faction to which this entity belongs to. */
     float        vision_range;     /* in OpenGL coordinates */
 };
 

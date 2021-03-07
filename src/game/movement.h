@@ -61,6 +61,7 @@ void G_Move_SetChangeDirection(const struct entity *ent, quat_t target);
 void G_Move_SetEnterRange(const struct entity *ent, const struct entity *target, float range);
 
 void G_Move_UpdatePos(const struct entity *ent, vec2_t pos);
+void G_Move_UpdateFactionID(const struct entity *ent, int oldfac, int newfac);
 bool G_Move_InTargetMode(void);
 
 bool G_Move_SaveState(struct SDL_RWops *stream);

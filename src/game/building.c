@@ -493,7 +493,7 @@ void G_Building_RemoveEntity(const struct entity *ent)
     assert(bs);
 
     if(bs->state >= BUILDING_STATE_FOUNDED && bs->blocking) {
-        M_NavBlockersDecrefOBB(s_map, ent->faction_id, &bs->obb);
+        M_NavBlockersDecrefOBB(s_map, G_GetFactionID(ent->uid), &bs->obb);
     }
 
     struct entity *progress = G_EntityForUID(bs->progress_model);
@@ -556,7 +556,7 @@ bool G_Building_Found(struct entity *ent, bool blocking)
 
     bs->blocking = blocking;
     if(bs->blocking) {
-        M_NavBlockersIncrefOBB(s_map, ent->faction_id, &obb);
+        M_NavBlockersIncrefOBB(s_map, G_GetFactionID(ent->uid), &obb);
         bs->obb = obb;
     }
 
@@ -615,7 +615,7 @@ bool G_Building_Complete(struct entity *ent)
     float old = ent->vision_range;
     vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
     ent->vision_range = bs->vision_range;
-    G_Fog_UpdateVisionRange(xz_pos, ent->faction_id, old, ent->vision_range);
+    G_Fog_UpdateVisionRange(xz_pos, G_GetFactionID(ent->uid), old, ent->vision_range);
     E_Global_Notify(EVENT_BUILDING_COMPLETED, ent, ES_ENGINE);
 
     return true;
@@ -664,7 +664,7 @@ void G_Building_SetVisionRange(struct entity *ent, float vision_range)
     vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
 
     ent->vision_range = vision_range;
-    G_Fog_UpdateVisionRange(xz_pos, ent->faction_id, old, ent->vision_range);
+    G_Fog_UpdateVisionRange(xz_pos, G_GetFactionID(ent->uid), old, ent->vision_range);
 }
 
 float G_Building_GetVisionRange(const struct entity *ent)
@@ -708,9 +708,25 @@ void G_Building_UpdateBounds(const struct entity *ent)
     if(!bs->blocking)
         return;
 
-    M_NavBlockersDecrefOBB(s_map, ent->faction_id, &bs->obb);
+    M_NavBlockersDecrefOBB(s_map, G_GetFactionID(ent->uid), &bs->obb);
     Entity_CurrentOBB(ent, &bs->obb, true);
-    M_NavBlockersIncrefOBB(s_map, ent->faction_id, &bs->obb);
+    M_NavBlockersIncrefOBB(s_map, G_GetFactionID(ent->uid), &bs->obb);
+}
+
+void G_Building_UpdateFactionID(const struct entity *ent, int oldfac, int newfac)
+{
+    struct buildstate *bs = buildstate_get(ent->uid);
+    if(!bs)
+        return;
+
+    if(!G_Building_IsFounded(ent))
+        return;
+
+    if(!bs->blocking)
+        return;
+
+    M_NavBlockersDecrefOBB(s_map, oldfac, &bs->obb);
+    M_NavBlockersIncrefOBB(s_map, newfac, &bs->obb);
 }
 
 bool G_Building_NeedsRepair(const struct entity *ent)

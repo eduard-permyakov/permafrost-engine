@@ -795,10 +795,10 @@ static bool enemy_ent(const struct entity *ent, void *arg)
 
     if(!(ent->flags & ENTITY_FLAG_COMBATABLE))
         return false;
-    if(ent->faction_id == faction_id)
+    if(G_GetFactionID(ent->uid) == faction_id)
         return false;
 
-    bool result = G_GetDiplomacyState(ent->faction_id, faction_id, &ds);
+    bool result = G_GetDiplomacyState(G_GetFactionID(ent->uid), faction_id, &ds);
     assert(result);
     return (ds == DIPLOMACY_STATE_WAR);
 }

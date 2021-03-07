@@ -150,6 +150,8 @@ bool            G_RemoveFaction(int faction_id);
 bool            G_UpdateFaction(int faction_id, const char *name, vec3_t color, bool control);
 uint16_t        G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, bool *out_ctrl);
 uint16_t        G_GetPlayerControlledFactions(void);
+void            G_SetFactionID(uint32_t uid, int faction_id);
+int             G_GetFactionID(uint32_t uid);
 
 bool            G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds);
 bool            G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out);

@@ -376,14 +376,14 @@ static void sel_filter_and_set_type(void)
     for(int i = 0; i < vec_size(&s_selected); i++) {
         
         const struct entity *curr = vec_AT(&s_selected, i);
-        assert(fac_mask & (0x1 << curr->faction_id));
+        assert(fac_mask & (0x1 << G_GetFactionID(curr->uid)));
 
-        if(controllable[curr->faction_id]) {
+        if(controllable[G_GetFactionID(curr->uid)]) {
             has_player = true; 
             break;
         }
 
-        if(allied_to_player_controllabe(controllable, fac_mask, curr->faction_id)) {
+        if(allied_to_player_controllabe(controllable, fac_mask, G_GetFactionID(curr->uid))) {
             has_allied = true;
         }
     }
@@ -400,13 +400,13 @@ static void sel_filter_and_set_type(void)
     for(int i = vec_size(&s_selected)-1; i >= 0; i--) {
 
         const struct entity *curr = vec_AT(&s_selected, i);
-        if(has_player && !controllable[curr->faction_id]) {
+        if(has_player && !controllable[G_GetFactionID(curr->uid)]) {
 
             vec_pentity_del(&s_selected, i);
 
         }else if(!has_player 
               && has_allied
-              && !allied_to_player_controllabe(controllable, fac_mask, curr->faction_id)) {
+              && !allied_to_player_controllabe(controllable, fac_mask, G_GetFactionID(curr->uid))) {
 
             vec_pentity_del(&s_selected, i);
         }

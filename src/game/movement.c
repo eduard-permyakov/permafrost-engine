@@ -293,7 +293,7 @@ static enum nav_layer layer_for_ent(const struct entity *ent)
 
 static void entity_block(const struct entity *ent)
 {
-    M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), ent->selection_radius, ent->faction_id, s_map);
+    M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), ent->selection_radius, G_GetFactionID(ent->uid), s_map);
 
     struct movestate *ms = movestate_get(ent);
     assert(!ms->blocking);
@@ -308,7 +308,7 @@ static void entity_unblock(const struct entity *ent)
     struct movestate *ms = movestate_get(ent);
     assert(ms->blocking);
 
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, ent->faction_id, s_map);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, G_GetFactionID(ent->uid), s_map);
     ms->blocking = false;
 }
 
@@ -682,7 +682,7 @@ static void on_render_3d(void *user, void *event)
             case STATE_WAITING:
                 break;
             case STATE_SEEK_ENEMIES:
-                M_NavRenderVisibleEnemySeekField(s_map, cam, layer_for_ent(ent), ent->faction_id);
+                M_NavRenderVisibleEnemySeekField(s_map, cam, layer_for_ent(ent), G_GetFactionID(ent->uid));
                 break;
             case STATE_SURROUND_ENTITY:
                 assert(flock);
@@ -763,7 +763,7 @@ static vec2_t ent_desired_velocity(const struct entity *ent)
     case STATE_TURNING:
         return (vec2_t){0.0f, 0.0f};
     case STATE_SEEK_ENEMIES: 
-        return M_NavDesiredEnemySeekVelocity(s_map, layer_for_ent(ent), pos_xz, ent->faction_id);
+        return M_NavDesiredEnemySeekVelocity(s_map, layer_for_ent(ent), pos_xz, G_GetFactionID(ent->uid));
     default:
         assert(fl);
         return M_NavDesiredPointSeekVelocity(s_map, fl->dest_id, pos_xz, fl->target_xz);
@@ -1921,10 +1921,22 @@ void G_Move_UpdatePos(const struct entity *ent, vec2_t pos)
     if(!ms->blocking)
         return;
 
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, ent->faction_id, s_map);
-    M_NavBlockersIncref(pos, ent->selection_radius, ent->faction_id, s_map);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, G_GetFactionID(ent->uid), s_map);
+    M_NavBlockersIncref(pos, ms->last_stop_radius, G_GetFactionID(ent->uid), s_map);
     ms->last_stop_pos = pos;
-    ms->last_stop_radius = ent->selection_radius;
+}
+
+void G_Move_UpdateFactionID(const struct entity *ent, int oldfac, int newfac)
+{
+    struct movestate *ms = movestate_get(ent);
+    if(!ms)
+        return;
+
+    if(!ms->blocking)
+        return;
+
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, oldfac, s_map);
+    M_NavBlockersIncref(ms->last_stop_pos, ms->last_stop_radius, newfac, s_map);
 }
 
 void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius)
@@ -1936,8 +1948,8 @@ void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius)
     if(!ms->blocking)
         return;
 
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, ent->faction_id, s_map);
-    M_NavBlockersIncref(ms->last_stop_pos, sel_radius, ent->faction_id, s_map);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, G_GetFactionID(ent->uid), s_map);
+    M_NavBlockersIncref(ms->last_stop_pos, sel_radius, G_GetFactionID(ent->uid), s_map);
     ms->last_stop_radius = sel_radius;
 }
 

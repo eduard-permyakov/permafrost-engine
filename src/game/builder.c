@@ -431,7 +431,7 @@ int G_Builder_CurrContextualAction(void)
     if(!(first->flags & ENTITY_FLAG_BUILDER))
         return CTX_ACTION_NONE;
 
-    if(hovered->faction_id != first->faction_id)
+    if(G_GetFactionID(hovered->uid) != G_GetFactionID(first->uid))
         return false;
 
     if(hovered->flags & ENTITY_FLAG_BUILDING

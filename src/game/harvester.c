@@ -413,7 +413,7 @@ static bool valid_storage_site_dropoff(const struct entity *curr, void *arg)
 
     if(!(curr->flags & ENTITY_FLAG_STORAGE_SITE))
         return false;
-    if(sarg->ent->faction_id != curr->faction_id)
+    if(G_GetFactionID(sarg->ent->uid) != G_GetFactionID(curr->uid))
         return false;
 
     int stored = G_StorageSite_GetCurr(curr->uid, sarg->rname);
@@ -434,7 +434,7 @@ static bool valid_storage_site_source(const struct entity *curr, void *arg)
 
     if(!(curr->flags & ENTITY_FLAG_STORAGE_SITE))
         return false;
-    if(sarg->ent->faction_id != curr->faction_id)
+    if(G_GetFactionID(sarg->ent->uid) != G_GetFactionID(curr->uid))
         return false;
     if(curr == sarg->ent)
         return false;
@@ -1835,7 +1835,7 @@ int G_Harvester_CurrContextualAction(void)
     && G_Harvester_GetGatherSpeed(first->uid, G_Resource_GetName(hovered->uid)) > 0)
         return CTX_ACTION_GATHER;
 
-    if(hovered->faction_id != first->faction_id)
+    if(G_GetFactionID(hovered->uid) != G_GetFactionID(first->uid))
         return false;
 
     if(hovered->flags & ENTITY_FLAG_STORAGE_SITE

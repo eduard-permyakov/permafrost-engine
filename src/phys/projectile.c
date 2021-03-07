@@ -191,11 +191,11 @@ static void phys_proj_finish_work(void)
 
 static bool phys_enemies(int faction_id, const struct entity *ent)
 {
-    if(faction_id == ent->faction_id)
+    if(faction_id == G_GetFactionID(ent->uid))
         return false;
 
     enum diplomacy_state ds;
-    bool result = G_GetDiplomacyState(faction_id, ent->faction_id, &ds);
+    bool result = G_GetDiplomacyState(faction_id, G_GetFactionID(ent->uid), &ds);
 
     assert(result);
     return (ds == DIPLOMACY_STATE_WAR);

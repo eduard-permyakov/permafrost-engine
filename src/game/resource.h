@@ -48,6 +48,7 @@ void G_Resource_Shutdown(void);
 bool G_Resource_AddEntity(const struct entity *ent);
 void G_Resource_RemoveEntity(struct entity *ent);
 void G_Resource_UpdateBounds(const struct entity *ent);
+void G_Resource_UpdateFactionID(const struct entity *ent, int oldfac, int newfac);
 
 bool G_Resource_SaveState(struct SDL_RWops *stream);
 bool G_Resource_LoadState(struct SDL_RWops *stream);

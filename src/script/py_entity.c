@@ -1227,7 +1227,7 @@ static int PyEntity_set_speed(PyEntityObject *self, PyObject *value, void *closu
 
 static PyObject *PyEntity_get_faction_id(PyEntityObject *self, void *closure)
 {
-    return Py_BuildValue("i", self->ent->faction_id);
+    return Py_BuildValue("i", G_GetFactionID(self->ent->uid));
 }
 
 static int PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *closure)
@@ -1237,18 +1237,13 @@ static int PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *
         return -1;
     }
 
-    int old = self->ent->faction_id;
-    vec2_t xz_pos = G_Pos_GetXZ(self->ent->uid);
-
-    self->ent->faction_id = PyInt_AS_LONG(value);
-
-    G_Fog_UpdateVisionRange(xz_pos, old, self->ent->vision_range, 0.0f);
-    G_Fog_UpdateVisionRange(xz_pos, self->ent->faction_id, 0.0f, self->ent->vision_range);
-    G_Combat_UpdateRef(old, self->ent->faction_id, xz_pos);
-
-    if(PyObject_IsInstance((PyObject*)self, (PyObject*)&PyStorageSiteEntity_type)) {
-        G_StorageSite_UpdateFaction(self->ent->uid, old, self->ent->faction_id);
+    int faction_id = PyInt_AS_LONG(value);
+    if(faction_id < 0 || faction_id >= MAX_FACTIONS) {
+        PyErr_SetString(PyExc_TypeError, "Invalid faction ID.");
+        return -1;
     }
+
+    G_SetFactionID(self->ent->uid, faction_id);
     return 0;
 }
 
@@ -1268,7 +1263,7 @@ static int PyEntity_set_vision_range(PyEntityObject *self, PyObject *value, void
     vec2_t xz_pos = G_Pos_GetXZ(self->ent->uid);
 
     self->ent->vision_range = PyFloat_AS_DOUBLE(value);
-    G_Fog_UpdateVisionRange(xz_pos, self->ent->faction_id, old, self->ent->vision_range);
+    G_Fog_UpdateVisionRange(xz_pos, G_GetFactionID(self->ent->uid), old, self->ent->vision_range);
     return 0;
 }
 
@@ -1525,7 +1520,7 @@ static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject 
     Py_DECREF(max_speed);
     CHK_TRUE(status, fail_pickle);
 
-    PyObject *faction_id = Py_BuildValue("i", self->ent->faction_id);
+    PyObject *faction_id = Py_BuildValue("i", G_GetFactionID(self->ent->uid));
     CHK_TRUE(faction_id, fail_pickle);
     status = S_PickleObjgraph(faction_id, stream);
     Py_DECREF(faction_id);

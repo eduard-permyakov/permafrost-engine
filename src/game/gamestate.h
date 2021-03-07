@@ -44,6 +44,8 @@
 
 #include <stdint.h>
 
+KHASH_DECLARE(faction, khint32_t, int)
+
 
 struct gamestate{
     enum simstate           ss;
@@ -88,6 +90,12 @@ struct gamestate{
      *-------------------------------------------------------------------------
      */
     khash_t(entity)        *active;
+    /*-------------------------------------------------------------------------
+     * Table mapping an entity to its' faction ID for all active entities.
+     * Synchronized with 'active' table at function call boundaries.
+     *-------------------------------------------------------------------------
+     */
+    khash_t(faction)       *ent_faction_map;
     /*-------------------------------------------------------------------------
      * Up-to-date set of all non-static entities. (Subset of 'active' set). 
      * Used for collision avoidance force computations.

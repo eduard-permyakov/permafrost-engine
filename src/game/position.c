@@ -104,9 +104,9 @@ bool G_Pos_Set(const struct entity *ent, vec3_t pos)
         bool ret = qt_ent_delete(&s_postree, old_pos.x, old_pos.z, ent->uid);
         assert(ret);
 
-        G_Combat_RemoveRef(ent->faction_id, (vec2_t){old_pos.x, old_pos.z});
+        G_Combat_RemoveRef(G_GetFactionID(ent->uid), (vec2_t){old_pos.x, old_pos.z});
         G_Region_RemoveRef(ent->uid, (vec2_t){old_pos.x, old_pos.z});
-        G_Fog_RemoveVision((vec2_t){old_pos.x, old_pos.z}, ent->faction_id, ent->vision_range);
+        G_Fog_RemoveVision((vec2_t){old_pos.x, old_pos.z}, G_GetFactionID(ent->uid), ent->vision_range);
     }
 
     if(!qt_ent_insert(&s_postree, pos.x, pos.z, ent->uid))
@@ -126,11 +126,11 @@ bool G_Pos_Set(const struct entity *ent, vec3_t pos)
     assert(kh_size(s_postable) == s_postree.nrecs);
 
     G_Move_UpdatePos(ent, (vec2_t){pos.x, pos.z});
-    G_Combat_AddRef(ent->faction_id, (vec2_t){pos.x, pos.z});
+    G_Combat_AddRef(G_GetFactionID(ent->uid), (vec2_t){pos.x, pos.z});
     G_Region_AddRef(ent->uid, (vec2_t){pos.x, pos.z});
     G_Building_UpdateBounds(ent);
     G_Resource_UpdateBounds(ent);
-    G_Fog_AddVision((vec2_t){pos.x, pos.z}, ent->faction_id, ent->vision_range);
+    G_Fog_AddVision((vec2_t){pos.x, pos.z}, G_GetFactionID(ent->uid), ent->vision_range);
 
     return true; 
 }
