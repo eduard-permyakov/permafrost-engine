@@ -1319,7 +1319,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         }
 
         /* If not, find the amount we should turn by around the Y axis */
-        float turn_deg = MIN(MAX_TURN_RATE, fabs(degrees)) * SIGNUM(degrees);
+        float turn_deg = MIN(MAX_TURN_RATE, fabs(degrees)) * -SIGNUM(degrees);
         float turn_rad = DEG_TO_RAD(turn_deg);
         mat4x4_t rotmat;
         PFM_Mat4x4_MakeRotY(turn_rad, &rotmat);

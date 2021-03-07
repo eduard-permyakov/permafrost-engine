@@ -599,21 +599,27 @@ void PFM_Quat_FromRotMat(mat4x4_t *mat, quat_t *out)
 void PFM_Quat_ToEuler(quat_t *q, float *out_roll, float *out_pitch, float *out_yaw)
 {
     /* roll (x-axis rotation) */
-    float sinr = 2.0f * (q->w * q->x + q->y * q->z);
-    float cosr = 1.0f - 2.0f * (q->x * q->x + q->y * q->y);
-    *out_roll = RAD_TO_DEG(atan2(sinr, cosr));
+    if(out_roll) {
+        float sinr = 2.0f * (q->w * q->x + q->y * q->z);
+        float cosr = 1.0f - 2.0f * (q->x * q->x + q->y * q->y);
+        *out_roll = RAD_TO_DEG(atan2(sinr, cosr));
+    }
 
     /* pitch (y-axis rotation) */
-    float sinp = 2.0f * (q->w * q->y - q->z * q->x);
-    if (fabs(sinp) >= 1)
-        *out_pitch = RAD_TO_DEG((sinp >= 0.0f) ? (M_PI / 2) : -(M_PI / 2)); // use 90 degrees if out of range
-    else
-        *out_pitch = RAD_TO_DEG(asin(sinp));
+    if(out_pitch) {
+        float sinp = 2.0f * (q->w * q->y - q->z * q->x);
+        if (fabs(sinp) >= 1)
+            *out_pitch = RAD_TO_DEG((sinp >= 0.0f) ? (M_PI / 2) : -(M_PI / 2)); // use 90 degrees if out of range
+        else
+            *out_pitch = RAD_TO_DEG(asin(sinp));
+    }
 
     /* yaw (z-axis rotation) */
-    double siny = 2.0f * (q->w * q->z + q->x * q->y);
-    double cosy = 1.0f - 2.0f * (q->y * q->y + q->z * q->z);
-    *out_yaw = RAD_TO_DEG(atan2(siny, cosy));
+    if(out_yaw) {
+        double siny = 2.0f * (q->w * q->z + q->x * q->y);
+        double cosy = 1.0f - 2.0f * (q->y * q->y + q->z * q->z);
+        *out_yaw = RAD_TO_DEG(atan2(siny, cosy));
+    }
 }
 
 void PFM_Quat_MultQuat(quat_t *op1, quat_t *op2, quat_t *out)
@@ -648,18 +654,31 @@ void PFM_Quat_Inverse(quat_t *op1, quat_t *out)
 
 GLfloat PFM_Quat_PitchDiff(quat_t *op1, quat_t *op2)
 {
-    quat_t delta, op1_inv;
-    PFM_Quat_Inverse(op1, &op1_inv);
-    PFM_Quat_MultQuat(&op1_inv, op2, &delta);
-    PFM_Quat_Normal(&delta, &delta);
+    vec4_t front = (vec4_t){1.0f, 0.0f, 0.0f, 1.0f};
+    vec4_t dir_homo;
+    mat4x4_t mat;
 
-    GLfloat pitch;
-    double sinp = 2 * (delta.w * delta.y - delta.z * delta.x);
-    if (fabs(sinp) >= 1)
-        pitch = copysign(M_PI / 2, sinp); /* use 90 degrees if out of range */
-    else
-        pitch = asin(sinp);
-    return -pitch;
+    PFM_Mat4x4_RotFromQuat(op1, &mat);
+    PFM_Mat4x4_Mult4x1(&mat, &front, &dir_homo);
+
+    vec3_t dir1 = (vec3_t){
+        dir_homo.x / dir_homo.w,
+        dir_homo.y / dir_homo.w,
+        dir_homo.z / dir_homo.w,
+    };
+
+    PFM_Mat4x4_RotFromQuat(op2, &mat);
+    PFM_Mat4x4_Mult4x1(&mat, &front, &dir_homo);
+
+    vec3_t dir2 = (vec3_t){
+        dir_homo.x / dir_homo.w,
+        dir_homo.y / dir_homo.w,
+        dir_homo.z / dir_homo.w,
+    };
+
+    float dot = dir1.x * dir2.x + dir1.z * dir2.z;
+    float det = dir1.x * dir2.z - dir1.z * dir2.x;
+    return atan2(det, dot);
 }
 
 GLfloat PFM_BilinearInterp(GLfloat q11, GLfloat q12, GLfloat q21, GLfloat q22,

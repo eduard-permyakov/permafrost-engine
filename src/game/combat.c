@@ -371,6 +371,7 @@ static quat_t entity_turn_dir(struct entity *ent, const struct entity *target)
     }
 
     PFM_Vec2_Normal(&ent_to_target, &ent_to_target);
+    quat_t curr = ent->rotation;
     return quat_from_vec(ent_to_target);
 }
 
@@ -471,6 +472,12 @@ static void on_attack_anim_finish(void *user, void *event)
     quat_t target_dir = entity_turn_dir(self, target);
     float angle_diff = PFM_Quat_PitchDiff(&self->rotation, &target_dir);
 
+    /* Ranged units fire their shot regardless */
+    if(cs->stats.attack_range > 0.0f) {
+        entity_ranged_attack(self, target);
+        return;
+    }
+
     if(RAD_TO_DEG(fabs(angle_diff)) > 5.0f) {
 
         E_Entity_Notify(EVENT_ATTACK_END, self->uid, NULL, ES_ENGINE);
@@ -482,11 +489,7 @@ static void on_attack_anim_finish(void *user, void *event)
         return; /* Target slipped out of range */
     }
 
-    if(cs->stats.attack_range == 0.0f) {
-        entity_melee_attack(self, target);
-    }else{
-        entity_ranged_attack(self, target);
-    }
+    entity_melee_attack(self, target);
 }
 
 static bool entity_dead(const struct entity *ent)
@@ -671,9 +674,6 @@ static void on_20hz_tick(void *user, void *event)
                 curr->state = STATE_NOT_IN_COMBAT; 
                 break;
             }
-
-            quat_t target_dir = entity_turn_dir(ent, target);
-            float angle_diff = PFM_Quat_PitchDiff(&ent->rotation, &target_dir);
 
             if(G_Move_Still(ent)) {
 

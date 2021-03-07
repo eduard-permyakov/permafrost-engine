@@ -60,7 +60,7 @@ void     P_Projectile_Shutdown(void);
 
 uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity, uint32_t ent_parent, 
                           int faction_id, uint32_t cookie, int flags);
-void     P_Projectile_Update(size_t nents, struct entity **ents, const struct obb *obbs);
+void     P_Projectile_Update(void);
 bool     P_Projectile_VelocityForTarget(vec3_t src, vec3_t dst, float init_speed, vec3_t *out);
 
 #endif

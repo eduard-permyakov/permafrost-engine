@@ -58,7 +58,9 @@
 #define GRAVITY         (9.81f * UNITS_PER_METER / (PHYS_HZ * PHYS_HZ))
 #define EPSILON         (1.0f/1024)
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
+#define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 #define MAX_PROJ_TASKS  (64)
+#define NEAR_TOLERANCE  (100.0f)
 
 struct projectile{
     uint32_t uid;
@@ -178,12 +180,8 @@ static void phys_proj_finish_work(void)
     stalloc_clear(&s_work.mem);
     s_work.ntasks = 0;
 
-    //phys_filter_out_of_bounds(&s_front);
     vec_proj_subtract(&s_back, &s_deleted, phys_proj_equal);
     vec_proj_reset(&s_deleted);
-
-    //TODO: here we are 'resurrecting' some entities 
-    // that have already been deleted back into the front buffer...
 
     /* swap front & back buffers */
     vec_proj_t tmp = s_back;
@@ -203,48 +201,54 @@ static bool phys_enemies(int faction_id, const struct entity *ent)
     return (ds == DIPLOMACY_STATE_WAR);
 }
 
-static void phys_sweep_test(const struct entity *ent, const struct obb *obb)
+static void phys_sweep_test(int front_idx)
 {
-    for(int i = vec_size(&s_front)-1; i >= 0; i--) {
+    const struct projectile *proj = &vec_AT(&s_front, front_idx);
+    struct entity *near[256];
+    size_t nents = G_Pos_EntsInCircle((vec2_t){proj->pos.x, proj->pos.z}, NEAR_TOLERANCE, near, ARR_SIZE(near));
 
-        const struct projectile *curr = &vec_AT(&s_front, i);
+    /* The collision test gets performed every frame (variable FPS) while, 
+     * actual projectile motion is performed at fixed frequency of PHYS_HZ. 
+     * Hence, when we perform the collision check, we must account for all
+     * the motion since the last update - this is 's_simticks' worth of fixed
+     * frequency physics ticks.
+     *
+     * Though the projectile travels in the shape of a parabola, we approximate 
+     * its' motion with a straight line that is tangential to the motion parabola
+     * at the projent moment. We perform the sweep test with a line segment
+     * from the projent location of the projectile to the location it would
+     * have been in 's_simticks' ago had its' velocity been constant.
+     */
+    vec3_t begin = proj->pos;
+    vec3_t end, delta = proj->vel;
+    PFM_Vec3_Scale(&delta, 1.0f * s_simticks, &end);
 
+    for(int i = 0; i < nents; i++) {
+
+        struct entity *ent = near[i];
         /* A projectile does not collide with its' 'parent' */
-        if(curr->ent_parent == ent->uid)
+        if(proj->ent_parent == ent->uid)
             continue;
-        if((curr->flags & PROJ_ONLY_HIT_COMBATABLE) && !(ent->flags & ENTITY_FLAG_COMBATABLE))
+        if((proj->flags & PROJ_ONLY_HIT_COMBATABLE) && !(ent->flags & ENTITY_FLAG_COMBATABLE))
             continue;
-        if((curr->flags & PROJ_ONLY_HIT_ENEMIES) && !phys_enemies(curr->faction_id, ent))
+        if((proj->flags & PROJ_ONLY_HIT_ENEMIES) && !phys_enemies(proj->faction_id, ent))
             continue;
 
-        /* The collision test gets performed every frame (variable FPS) while, 
-         * actual projectile motion is performed at fixed frequency of PHYS_HZ. 
-         * Hence, when we perform the collision check, we must account for all
-         * the motion since the last update - this is 's_simticks' worth of fixed
-         * frequency physics ticks.
-         *
-         * Though the projectile travels in the shape of a parabola, we approximate 
-         * its' motion with a straight line that is tangential to the motion parabola
-         * at the current moment. We perform the sweep test with a line segment
-         * from the current location of the projectile to the location it would
-         * have been in 's_simticks' ago had its' velocity been constant.
-         */
-        vec3_t begin = curr->pos;
-        vec3_t end, delta = curr->vel;
-        PFM_Vec3_Scale(&delta, 1.0f * s_simticks, &end);
+        struct obb obb;
+        Entity_CurrentOBB(ent, &obb, false);
 
-        if(C_LineSegIntersectsOBB(begin, end, *obb)) {
+        if(C_LineSegIntersectsOBB(begin, end, obb)) {
 
             struct proj_hit *hit = stalloc(&s_eventargs, sizeof(struct proj_hit));
             hit->ent_uid = ent->uid;
-            hit->proj_uid = curr->uid;
-            hit->parent_uid = curr->ent_parent;
-            hit->cookie = curr->cookie;
+            hit->proj_uid = proj->uid;
+            hit->parent_uid = proj->ent_parent;
+            hit->cookie = proj->cookie;
             E_Global_Notify(EVENT_PROJECTILE_HIT, hit, ES_ENGINE);
 
-            vec_proj_del(&s_front, i);
-            vec_proj_push(&s_deleted, *curr);
-            printf("projectile %x just hit! [%u ticks]\n", curr->uid, s_simticks);
+            vec_proj_del(&s_front, front_idx);
+            vec_proj_push(&s_deleted, *proj);
+            return;
         }
     }
 }
@@ -357,22 +361,14 @@ uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity, uint32_t ent_parent,
     return ret;
 }
 
-void P_Projectile_Update(size_t nents, struct entity **ents, const struct obb *obbs)
+void P_Projectile_Update(void)
 {
     PERF_ENTER();
-
-    //TODO: should we do this at fixed HZ as well?
-
-    // TODO: we need to perform the collision testing on ALL OBBs that are currently in the scene,
-    // not just those which are currently visible - for this we're definitely going to need a 
-    // broadphase
     stalloc_clear(&s_eventargs);
 
-    /* Here we do collision testing and pump out some events if intersection takes place */
-    for(int i = 0; i < nents; i++) {
-        phys_sweep_test(ents[i], obbs + i);
+    for(int i = vec_size(&s_front)-1; i >= 0; i--) {
+        phys_sweep_test(i);
     }
-
     phys_filter_out_of_bounds();
     s_simticks = 0;
 
