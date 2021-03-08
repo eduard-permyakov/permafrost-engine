@@ -54,6 +54,7 @@
 
 #define MIN(a, b)     ((a) < (b) ? (a) : (b))
 #define MAX(a, b)     ((a) > (b) ? (a) : (b))
+#define UID_NONE      (~((uint32_t)0))
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -90,8 +91,8 @@ static struct selection_ctx{
 
 static vec_pentity_t  s_selected;
 
-static bool           s_hovered_dirty = true;
-static struct entity *s_hovered;
+static bool     s_hovered_dirty = true;
+static uint32_t s_hovered_uid = UID_NONE;
 
 /*****************************************************************************/
 /* GLOBAL VARIABLES                                                          */
@@ -285,7 +286,7 @@ static void sel_compute_hovered(struct camera *cam, const vec_pentity_t *visible
     PFM_Vec3_Normal(&ray_dir, &ray_dir);
 
     float t_min = FLT_MAX;
-    s_hovered = NULL;
+    s_hovered_uid = UID_NONE;
 
     for(int i = 0; i < vec_size(visible_obbs); i++) {
 
@@ -294,7 +295,7 @@ static void sel_compute_hovered(struct camera *cam, const vec_pentity_t *visible
 
             if(t < t_min) {
                 t_min = t;
-                s_hovered = vec_AT(visible, i);
+                s_hovered_uid = vec_AT(visible, i)->uid;
             }
         }
     }
@@ -496,13 +497,14 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
          * The behaviour is that only a single entity can be selected with a 'click' action, even if multiple
          * OBBs intersect with the mouse ray. We pick the one with the closest intersection point.
          */
-        if(s_hovered && (s_hovered->flags & ENTITY_FLAG_SELECTABLE)) {
+        struct entity *hovered = G_EntityForUID(s_hovered_uid);
+        if(hovered && (hovered->flags & ENTITY_FLAG_SELECTABLE)) {
 
             sel_empty = false;
             if(!sel_ctrl_pressed() && !sel_shift_pressed()) {
                 vec_pentity_reset(&s_selected);
             }
-            sel_process_unit(s_hovered);
+            sel_process_unit(hovered);
         }
 
     }else{
@@ -653,7 +655,7 @@ bool G_Sel_LoadState(struct SDL_RWops *stream)
 
 struct entity *G_Sel_GetHovered(void)
 {
-    return s_hovered;
+    return G_EntityForUID(s_hovered_uid);
 }
 
 void G_Sel_MarkHoveredDirty(void)

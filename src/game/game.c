@@ -1592,6 +1592,7 @@ bool G_RemoveEntity(struct entity *ent)
     assert(k != kh_end(s_gs.ent_faction_map));
     kh_del(faction, s_gs.ent_faction_map, k);
 
+    G_Sel_MarkHoveredDirty();
     return true;
 }
 
@@ -1616,7 +1617,6 @@ void G_StopEntity(const struct entity *ent)
 void G_SafeFree(struct entity *ent)
 {
     ASSERT_IN_MAIN_THREAD();
-    G_Sel_MarkHoveredDirty();
     vec_pentity_push(&s_gs.deleted, ent);
 }
 
