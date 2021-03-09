@@ -181,6 +181,55 @@ static bool dest_array_contains(dest_id_t *array, size_t size, dest_id_t item)
     return false;
 }
 
+static void clear_chunk_los_map(uint64_t key, enum nav_layer layer)
+{
+    khiter_t k = kh_get(idvec, s_chunk_lfield_map, key);
+    if(k == kh_end(s_chunk_lfield_map))
+        return;
+
+    vec_id_t *keys = &kh_val(s_chunk_lfield_map, k);
+    for(int i = vec_size(keys)-1; i >= 0; i--) {
+
+        uint64_t key = vec_AT(keys, i);
+        if(N_DestLayer(key_dest(key)) != layer)
+            continue;
+
+        bool found = lru_los_remove(&s_los_cache, key);
+        s_perfstats.los_invalidated += !!found;
+        vec_id_del(keys, i);
+    }
+    if(vec_size(keys) == 0) {
+        vec_id_destroy(keys);
+        kh_del(idvec, s_chunk_lfield_map, k);
+    }
+}
+
+static void clear_chunk_flow_map(uint64_t key, enum nav_layer layer, bool enemies_only)
+{
+    khiter_t k = kh_get(idvec, s_chunk_ffield_map, key);
+    if(k == kh_end(s_chunk_ffield_map))
+        return;
+
+    vec_id_t *keys = &kh_val(s_chunk_ffield_map, k);
+    for(int i = vec_size(keys)-1; i >= 0; i--) {
+
+        ff_id_t key = vec_AT(keys, i);
+        if(N_FlowFieldLayer(key) != layer)
+            continue;
+
+        if(enemies_only && (N_FlowFieldTargetType(key) != TARGET_ENEMIES))
+            continue;
+
+        bool found = lru_flow_remove(&s_flow_cache, key);
+        s_perfstats.flow_invalidated += !!found;
+        vec_id_del(keys, i);
+    }
+    if(vec_size(keys) == 0) {
+        vec_id_destroy(keys);
+        kh_del(idvec, s_chunk_ffield_map, k);
+    }
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -367,46 +416,8 @@ void N_FC_InvalidateAllAtChunk(struct coord chunk, enum nav_layer layer)
      * necessarily be in the caches. */
 
     uint64_t key = key_for_chunk(chunk);
-
-    khiter_t k = kh_get(idvec, s_chunk_lfield_map, key);
-    if(k != kh_end(s_chunk_lfield_map)) {
-
-        vec_id_t *keys = &kh_val(s_chunk_lfield_map, k);
-        for(int i = vec_size(keys)-1; i >= 0; i--) {
-
-            uint64_t key = vec_AT(keys, i);
-            if(N_DestLayer(key_dest(key)) != layer)
-                continue;
-
-            bool found = lru_los_remove(&s_los_cache, key);
-            s_perfstats.los_invalidated += !!found;
-            vec_id_del(keys, i);
-        }
-        if(vec_size(keys) == 0) {
-            vec_id_destroy(keys);
-            kh_del(idvec, s_chunk_lfield_map, k);
-        }
-    }
-
-    k = kh_get(idvec, s_chunk_ffield_map, key);
-    if(k != kh_end(s_chunk_ffield_map)) {
-
-        vec_id_t *keys = &kh_val(s_chunk_ffield_map, k);
-        for(int i = vec_size(keys)-1; i >= 0; i--) {
-
-            ff_id_t key = vec_AT(keys, i);
-            if(N_FlowField_Layer(key) != layer)
-                continue;
-
-            bool found = lru_flow_remove(&s_flow_cache, key);
-            s_perfstats.flow_invalidated += !!found;
-            vec_id_del(keys, i);
-        }
-        if(vec_size(keys) == 0) {
-            vec_id_destroy(keys);
-            kh_del(idvec, s_chunk_ffield_map, k);
-        }
-    }
+    clear_chunk_los_map(key, layer);
+    clear_chunk_flow_map(key, layer, false);
 }
 
 void N_FC_InvalidateAllThroughChunk(struct coord chunk, enum nav_layer layer)
@@ -465,5 +476,28 @@ void N_FC_InvalidateAllThroughChunk(struct coord chunk, enum nav_layer layer)
             s_perfstats.los_invalidated += !!found;
         }
     });
+}
+
+void N_FC_InvalidateNeighbourEnemySeekFields(int width, int height, 
+                                             struct coord chunk, enum nav_layer layer)
+{
+    for(int dr = -1; dr <= +1; dr++) {
+    for(int dc = -1; dc <= +1; dc++) {
+
+        if(dr == 0 && dc == 0)
+            continue;
+
+        int abs_r = chunk.r + dr;
+        int abs_c = chunk.c + dc;
+
+        if(abs_r < 0 || abs_r >= height)
+            continue;
+        if(abs_c < 0 || abs_c >= width)
+            continue;
+
+        struct coord curr = (struct coord){abs_r, abs_c};
+        uint64_t key = key_for_chunk(curr);
+        clear_chunk_flow_map(key, layer, true);
+    }}
 }
 

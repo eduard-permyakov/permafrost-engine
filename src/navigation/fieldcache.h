@@ -60,6 +60,13 @@ void N_FC_InvalidateAllAtChunk(struct coord chunk, enum nav_layer layer);
  */
 void N_FC_InvalidateAllThroughChunk(struct coord chunk, enum nav_layer layer);
 
+/* Invalidate 'enemy seek' fields in all chunks which are adjacent to the 
+ * current one. This is because 'enemy seek' fields are also dependent
+ * on the state of the units in adjacent chunks.
+ */
+void N_FC_InvalidateNeighbourEnemySeekFields(int width, int height, 
+                                             struct coord chunk, enum nav_layer layer);
+
 /*###########################################################################*/
 /* LOS FIELD CACHING                                                         */
 /*###########################################################################*/

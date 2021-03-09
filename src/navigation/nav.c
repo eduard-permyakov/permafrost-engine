@@ -1425,7 +1425,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         };
 
         struct flow_field ff;
-        id = N_FlowField_ID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target, layer);
+        id = N_FlowFieldID((struct coord){dst_desc.chunk_r, dst_desc.chunk_c}, target, layer);
 
         if(!N_FC_ContainsFlowField(id)) {
         
@@ -1518,7 +1518,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
             .port = next_hop
         };
 
-        ff_id_t new_id = N_FlowField_ID(chunk_coord, target, layer);
+        ff_id_t new_id = N_FlowFieldID(chunk_coord, target, layer);
         ff_id_t exist_id;
         struct flow_field ff;
 
@@ -1621,7 +1621,9 @@ void N_Update(void *nav_private)
 
             uint32_t key = kh_key(set, i);
             struct coord curr = (struct coord){ key >> 16, key & 0xffff };
+
             N_FC_InvalidateAllAtChunk(curr, layer);
+            N_FC_InvalidateNeighbourEnemySeekFields(priv->width, priv->height, curr, layer);
 
             struct nav_chunk *chunk = &priv->chunks[layer]
                                                    [IDX(curr.r, priv->width, curr.c)];
@@ -1919,7 +1921,7 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map, mat4x4_t *
         .enemies.faction_id = faction_id,
         /* rest of the fields are unused */
     };
-    ff_id_t ffid = N_FlowField_ID((struct coord){chunk_r, chunk_c}, target, layer);
+    ff_id_t ffid = N_FlowFieldID((struct coord){chunk_r, chunk_c}, target, layer);
     if(!N_FC_ContainsFlowField(ffid))
         return;
 
@@ -2409,6 +2411,8 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
         FIELD_RES_C, FIELD_RES_R
     };
 
+    n_update_dirty_local_islands(nav_private, layer);
+
     struct tile_desc curr_tile;
     bool result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &curr_tile);
     assert(result);
@@ -2422,7 +2426,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
         .enemies.chunk = chunk
     };
 
-    ff_id_t ffid = N_FlowField_ID(chunk, target, layer);
+    ff_id_t ffid = N_FlowFieldID(chunk, target, layer);
     struct flow_field ff;
 
     if(!N_FC_ContainsFlowField(ffid)) {
@@ -2436,23 +2440,47 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
 
     const struct flow_field *pff = N_FC_FlowFieldAt(ffid);
     assert(pff);
-
+    const struct nav_chunk *nchunk = &priv->chunks[layer]
+                                                  [IDX(curr_tile.chunk_r, priv->width, curr_tile.chunk_c)];
+    uint16_t local_iid = nchunk->local_islands[curr_tile.tile_r][curr_tile.tile_c];
     int dir_idx = pff->field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
 
-    //TODO: get this logic back in...
-    //if(dir_idx == FD_NONE) {
+    if(dir_idx != FD_NONE)
+        goto ff_found;
 
-    //    const struct nav_chunk *nchunk = &priv->chunks[layer]
-    //                                                  [IDX(curr_tile.chunk_r, priv->width, curr_tile.chunk_c)];
-    //    uint16_t local_iid = nchunk->local_islands[curr_tile.tile_r][curr_tile.tile_c];
+    /* The entity has somehow ended up on an impassable tile. One example
+     * where this can happen is if an adjacent entity 'stops' and occupies 
+     * the tile directly under its' neighbour. The neighbour entity can 
+     * then unexpectedly find itself positioned on a 'blocked' tile. 
+     */
+    if(local_iid == ISLAND_NONE) {
 
-    //    struct flow_field exist_ff = *pff;
-    //    N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
-    //    N_FC_PutFlowField(ffid, &exist_ff);
+        struct flow_field exist_ff = *pff;
+        struct coord curr = (struct coord){curr_tile.tile_r, curr_tile.tile_c};
 
-    //    dir_idx = exist_ff.field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
-    //}
+        N_FlowFieldUpdateToNearestPathable(nchunk, curr, faction_id, &exist_ff);
+        N_FC_PutFlowField(ffid, &exist_ff);
 
+        pff = N_FC_FlowFieldAt(ffid);
+        goto ff_found;
+    }
+
+    /* We are on an island that is cut off by blockers or impassable terrain from any 
+     * valid enemies - do our best to get as close to the 'action' as possible.
+     */
+    dir_idx = pff->field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
+    if(dir_idx == FD_NONE) {
+
+        struct flow_field exist_ff = *pff;
+        N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
+        N_FC_PutFlowField(ffid, &exist_ff);
+
+        pff = N_FC_FlowFieldAt(ffid);
+        goto ff_found;
+    }
+
+ff_found:
+    dir_idx = pff->field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
     return g_flow_dir_lookup[dir_idx];
 }
 

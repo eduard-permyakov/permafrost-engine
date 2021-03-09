@@ -102,15 +102,21 @@ extern vec2_t g_flow_dir_lookup[];
  * Get the unique flow field ID for the specified parameters.
  * ------------------------------------------------------------------------
  */
-ff_id_t        N_FlowField_ID(struct coord        chunk, 
-                              struct field_target target, 
-                              enum nav_layer      layer);
+ff_id_t        N_FlowFieldID(struct coord        chunk, 
+                             struct field_target target, 
+                             enum nav_layer      layer);
 
 /* ------------------------------------------------------------------------
  * Extract the navigation layer from the previously generated flow field ID.
  * ------------------------------------------------------------------------
  */
-enum nav_layer N_FlowField_Layer(ff_id_t id);
+enum nav_layer N_FlowFieldLayer(ff_id_t id);
+
+/* ------------------------------------------------------------------------
+ * Extract the field target type from the previously generated flow field ID.
+ * ------------------------------------------------------------------------
+ */
+int            N_FlowFieldTargetType(ff_id_t id);
 
 /* ------------------------------------------------------------------------
  * Initialize the field to have a 'FD_NONE' direction at every tile. Regions
@@ -134,17 +140,6 @@ void    N_FlowFieldUpdate(struct coord              chunk_coord,
                           enum nav_layer            layer, 
                           struct field_target       target, 
                           struct flow_field        *inout_flow);
-
-/* ------------------------------------------------------------------------
- * Update the field to guide towards the nearest possible enemy of the 
- * specified faction.
- * ------------------------------------------------------------------------
- */
-void    N_FlowFieldUpdateEnemies(struct coord              chunk_coord, 
-                                 const struct nav_private *priv, 
-                                 enum nav_layer            layer, 
-                                 struct enemies_desc       target, 
-                                 struct flow_field        *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Update all tiles with a specific local island ID from the

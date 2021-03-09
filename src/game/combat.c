@@ -1152,6 +1152,14 @@ void G_Combat_UpdateRef(int oldfac, int newfac, vec2_t pos)
     G_Combat_AddRef(newfac, pos);
 }
 
+bool G_Combat_IsDying(uint32_t uid)
+{
+    struct combatstate *cs = combatstate_get(uid);
+    if(!cs)
+        return false;
+    return (cs->state == STATE_DEATH_ANIM_PLAYING);
+}
+
 int G_Combat_GetCurrentHP(const struct entity *ent)
 {
     assert(ent->flags & ENTITY_FLAG_COMBATABLE);
