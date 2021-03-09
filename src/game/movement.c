@@ -319,7 +319,7 @@ static bool stationary(const struct entity *ent)
 
 static bool entities_equal(struct entity **a, struct entity **b)
 {
-    return (0 == memcmp(*a, *b, sizeof(struct entity)));
+    return ((*a)->uid == (*b)->uid);
 }
 
 static void vec2_truncate(vec2_t *inout, float max_len)
@@ -679,11 +679,13 @@ static void on_render_3d(void *user, void *event)
 
             switch(ms->state) {
             case STATE_MOVING:
+            case STATE_ENTER_ENTITY_RANGE:
                 assert(flock);
                 M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
                 break;
             case STATE_ARRIVED:
             case STATE_WAITING:
+            case STATE_TURNING:
                 break;
             case STATE_SEEK_ENEMIES:
                 M_NavRenderVisibleEnemySeekField(s_map, cam, layer_for_ent(ent), G_GetFactionID(ent->uid));
@@ -837,30 +839,7 @@ static vec2_t arrive_force_enemies(const struct entity *ent)
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
-    struct entity *enemy = G_Combat_ClosestEligibleEnemy(ent);
-    if(!enemy) {
-
-        PFM_Vec2_Scale(&ms->vdes, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
-        PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
-        vec2_truncate(&ret, MAX_FORCE);
-        return ret;
-    }
-
-    vec2_t enemy_pos = G_Pos_GetXZ(enemy->uid);
-    if(M_NavHasEntityLOS(s_map, layer_for_ent(ent), pos_xz, enemy)) {
-    
-        PFM_Vec2_Sub(&enemy_pos, &pos_xz, &desired_velocity);
-        distance = PFM_Vec2_Len(&desired_velocity);
-        PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
-        PFM_Vec2_Scale(&desired_velocity, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
-
-        if(distance < ARRIVE_SLOWING_RADIUS) {
-            PFM_Vec2_Scale(&desired_velocity, distance / ARRIVE_SLOWING_RADIUS, &desired_velocity);
-        }
-    }else{
-        PFM_Vec2_Scale(&ms->vdes, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
-    }
-
+    PFM_Vec2_Scale(&ms->vdes, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
     vec2_truncate(&ret, MAX_FORCE);
     return ret;
@@ -1879,18 +1858,7 @@ void G_Move_SetSeekEnemies(const struct entity *ent)
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
-    /* Remove this entity from any existing flocks */
-    for(int i = vec_size(&s_flocks)-1; i >= 0; i--) {
-
-        struct flock *curr_flock = &vec_AT(&s_flocks, i);
-        flock_try_remove(curr_flock, ent);
-
-        if(kh_size(curr_flock->ents) == 0) {
-            kh_destroy(entity, curr_flock->ents);
-            vec_flock_del(&s_flocks, i);
-        }
-    }
-    assert(NULL == flock_for_ent(ent));
+    remove_from_flocks(ent);
 
     if(ent_still(ms)) {
         entity_unblock(ent);

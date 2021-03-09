@@ -53,6 +53,12 @@ struct LOS_field{
     }field[FIELD_RES_R][FIELD_RES_C];
 };
 
+struct enemies_desc{
+    int          faction_id;
+    vec3_t       map_pos;
+    struct coord chunk;
+};
+
 struct field_target{
     enum{
         TARGET_PORTAL,
@@ -65,12 +71,8 @@ struct field_target{
     union{
         const struct portal *port;
         struct coord         tile;
-        struct enemies_desc{
-            int          faction_id;
-            vec3_t       map_pos;
-            struct coord chunk;
-        }enemies;
-        uint64_t portalmask;
+        struct enemies_desc  enemies;
+        uint64_t             portalmask;
     };
 };
 
@@ -96,9 +98,29 @@ enum flow_dir{
 
 extern vec2_t g_flow_dir_lookup[];
 
-ff_id_t        N_FlowField_ID(struct coord chunk, struct field_target target, enum nav_layer layer);
+/* ------------------------------------------------------------------------
+ * Get the unique flow field ID for the specified parameters.
+ * ------------------------------------------------------------------------
+ */
+ff_id_t        N_FlowField_ID(struct coord        chunk, 
+                              struct field_target target, 
+                              enum nav_layer      layer);
+
+/* ------------------------------------------------------------------------
+ * Extract the navigation layer from the previously generated flow field ID.
+ * ------------------------------------------------------------------------
+ */
 enum nav_layer N_FlowField_Layer(ff_id_t id);
-void           N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct flow_field *out);
+
+/* ------------------------------------------------------------------------
+ * Initialize the field to have a 'FD_NONE' direction at every tile. Regions
+ * of the field can then be made to guide towards specifid targets with 
+ * subsequent calls to the 'Update' family of functions.
+ * ------------------------------------------------------------------------
+ */
+void    N_FlowFieldInit(struct coord       chunk_coord, 
+                        const void        *nav_private, 
+                        struct flow_field *out);
 
 /* ------------------------------------------------------------------------
  * Populate the flow field with directions leading units in the field towards
@@ -112,6 +134,17 @@ void    N_FlowFieldUpdate(struct coord              chunk_coord,
                           enum nav_layer            layer, 
                           struct field_target       target, 
                           struct flow_field        *inout_flow);
+
+/* ------------------------------------------------------------------------
+ * Update the field to guide towards the nearest possible enemy of the 
+ * specified faction.
+ * ------------------------------------------------------------------------
+ */
+void    N_FlowFieldUpdateEnemies(struct coord              chunk_coord, 
+                                 const struct nav_private *priv, 
+                                 enum nav_layer            layer, 
+                                 struct enemies_desc       target, 
+                                 struct flow_field        *inout_flow);
 
 /* ------------------------------------------------------------------------
  * Update all tiles with a specific local island ID from the

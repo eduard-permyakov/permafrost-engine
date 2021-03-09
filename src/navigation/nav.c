@@ -2427,88 +2427,9 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
 
     if(!N_FC_ContainsFlowField(ffid)) {
 
-        vec2_t chunk_center = (vec2_t){
-            map_pos.x - (chunk.c + 0.5f) * X_COORDS_PER_TILE * TILES_PER_CHUNK_WIDTH,
-            map_pos.z + (chunk.r + 0.5f) * Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT,
-        };
-        struct entity *nearest_enemy = G_Pos_NearestWithPred(chunk_center, enemy_ent, 
-                                                             (void*)(uintptr_t)target.enemies.faction_id, 0.0f);
-        if(!nearest_enemy)
-            return (vec2_t){0.0f, 0.0f};
-
-        struct tile_desc target_tile;
-        bool result = M_Tile_DescForPoint2D(res, map_pos, G_Pos_GetXZ(nearest_enemy->uid), &target_tile);
-        assert(result);
-        bool done = false;
-
-        /* If there are enemies on this chunk, guide towards them. 
-         */
-        if(target_tile.chunk_r == curr_tile.chunk_r
-        && target_tile.chunk_c == curr_tile.chunk_c) {
-        
-            N_FlowFieldInit(chunk, priv, &ff);
-            N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, &ff);
-            N_FC_PutFlowField(ffid, &ff);
-            done = true;
-        }
-
-        /* Else, if there are enemies on the cardinally adjacent chunks, guide
-         * towards all portals that will lead to them. 
-         */
-        uint64_t pm = n_enemy_seek_portalmask(priv, layer, map_pos, chunk, faction_id);
-        if(!done && pm) {
-
-            struct field_target pm_target = (struct field_target){
-                .type = TARGET_PORTALMASK,
-                .portalmask = pm,
-            };
-
-            N_FlowFieldInit(chunk, priv, &ff);
-            N_FlowFieldUpdate(chunk, priv, faction_id, layer, pm_target, &ff);
-            N_FC_PutFlowField(ffid, &ff);
-            done = true;
-        }
-
-        /* Lastly, resort towards pathing towards the closest entity 
-         */
-        if(!done) {
-
-            assert(target_tile.chunk_r != curr_tile.chunk_r || target_tile.chunk_c != curr_tile.chunk_c);
-
-            /* The closest enemy is in another chunk. In this case, compute the
-             * field that will take us to the next chunk in the path and store
-             * that with the computed ID as the key. The rest of the fields will
-             * be computed on-the-fly, if necessary.
-             */
-            struct nav_chunk *target_chunk = &priv->chunks[layer]
-                                                          [IDX(target_tile.chunk_r, priv->width, target_tile.chunk_c)];
-            const struct portal *dst_port = n_closest_reachable_portal(target_chunk, 
-                (struct coord){target_tile.tile_r, target_tile.tile_c});
-
-            if(!dst_port)
-                return (vec2_t){0.0f, 0.0f};
-
-            float cost;
-            vec_portal_t path;
-            vec_portal_init(&path);
-
-            bool path_exists = AStar_PortalGraphPath(curr_tile, dst_port, priv, layer, &path, &cost);
-            if(!path_exists) {
-                vec_portal_destroy(&path);
-                return (vec2_t){0.0f, 0.0f}; 
-            }
-
-            struct field_target portal_target = (struct field_target){
-                .type = TARGET_PORTAL,
-                .port = vec_AT(&path, 0)
-            };
-
-            N_FlowFieldInit(chunk, priv, &ff);
-            N_FlowFieldUpdate(chunk, priv, faction_id, layer, portal_target, &ff);
-            N_FC_PutFlowField(ffid, &ff);
-
-            vec_portal_destroy(&path);
-        }
+        N_FlowFieldInit(chunk, priv, &ff);
+        N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, &ff);
+        N_FC_PutFlowField(ffid, &ff);
 
         assert(N_FC_ContainsFlowField(ffid));
     }
@@ -2517,18 +2438,20 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
     assert(pff);
 
     int dir_idx = pff->field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
-    if(dir_idx == FD_NONE) {
 
-        const struct nav_chunk *nchunk = &priv->chunks[layer]
-                                                      [IDX(curr_tile.chunk_r, priv->width, curr_tile.chunk_c)];
-        uint16_t local_iid = nchunk->local_islands[curr_tile.tile_r][curr_tile.tile_c];
+    //TODO: get this logic back in...
+    //if(dir_idx == FD_NONE) {
 
-        struct flow_field exist_ff = *pff;
-        N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
-        N_FC_PutFlowField(ffid, &exist_ff);
+    //    const struct nav_chunk *nchunk = &priv->chunks[layer]
+    //                                                  [IDX(curr_tile.chunk_r, priv->width, curr_tile.chunk_c)];
+    //    uint16_t local_iid = nchunk->local_islands[curr_tile.tile_r][curr_tile.tile_c];
 
-        dir_idx = exist_ff.field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
-    }
+    //    struct flow_field exist_ff = *pff;
+    //    N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
+    //    N_FC_PutFlowField(ffid, &exist_ff);
+
+    //    dir_idx = exist_ff.field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
+    //}
 
     return g_flow_dir_lookup[dir_idx];
 }

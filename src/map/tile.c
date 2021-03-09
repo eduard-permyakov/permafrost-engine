@@ -383,29 +383,36 @@ struct box M_Tile_ChunkBounds(struct map_resolution res, vec3_t map_pos, int chu
 bool M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inout, 
                          int tile_dc, int tile_dr)
 {
-    assert(abs(tile_dc) <= res.tile_w);
-    assert(abs(tile_dr) <= res.tile_h);
+    int abs_r = inout->chunk_r * res.tile_h + inout->tile_r + tile_dr;
+    int abs_c = inout->chunk_c * res.tile_w + inout->tile_c + tile_dc;
 
-    struct tile_desc ret = (struct tile_desc) {
-        inout->chunk_r + ((inout->tile_r + tile_dr < 0)           ? -1 :
-                          (inout->tile_r + tile_dr >= res.tile_h) ?  1 :
-                                                                     0),
+    int max_r = res.chunk_h * res.tile_h;
+    int max_c = res.chunk_w * res.tile_w;
 
-        inout->chunk_c + ((inout->tile_c + tile_dc < 0)            ? -1 :
-                          (inout->tile_c + tile_dc >= res.tile_w)  ?  1 :
-                                                                      0),
-        mod(inout->tile_r + tile_dr, res.tile_h),
-        mod(inout->tile_c + tile_dc, res.tile_w)
-    };
-
-    if( !(ret.chunk_r >= 0 && ret.chunk_r < res.chunk_h)
-     || !(ret.chunk_c >= 0 && ret.chunk_c < res.chunk_w)) {
-     
+    if(abs_r < 0 || abs_r >= max_r)
         return false;
-    }
+    if(abs_c < 0 || abs_c >= max_c)
+        return false;
 
-    *inout = ret;
+    *inout = (struct tile_desc) {
+        abs_r / res.tile_h,
+        abs_c / res.tile_w,
+        abs_r % res.tile_h,
+        abs_c % res.tile_w,
+    };
     return true;
+}
+
+void M_Tile_Distance(struct map_resolution res, struct tile_desc *a, struct tile_desc *b, 
+                     int *out_r, int *out_c)
+{
+    int a_abs_r = a->chunk_r * res.tile_h + a->tile_r;
+    int a_abs_c = a->chunk_c * res.tile_w + a->tile_c;
+    int b_abs_r = b->chunk_r * res.tile_h + b->tile_r;
+    int b_abs_c = b->chunk_c * res.tile_w + b->tile_c;
+
+    *out_r = b_abs_r - a_abs_r;
+    *out_c = b_abs_c - a_abs_c;
 }
 
 /* Uses a variant of the algorithm outlined here:

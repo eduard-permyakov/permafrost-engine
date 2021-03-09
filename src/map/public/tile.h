@@ -146,6 +146,8 @@ struct box M_Tile_Bounds(struct map_resolution res, vec3_t map_pos, struct tile_
 struct box M_Tile_ChunkBounds(struct map_resolution res, vec3_t map_pos, int chunk_r, int chunk_c);
 bool       M_Tile_RelativeDesc(struct map_resolution res, struct tile_desc *inout, 
                                int tile_dc, int tile_dr);
+void       M_Tile_Distance(struct map_resolution res, struct tile_desc *a, struct tile_desc *b, 
+                           int *out_r, int *out_c);
 
 /* Fills 'out' with a list of tile descriptors which are intersected by the 2D line 
  * segment. The descriptors will be in the order they are intersected by the line
