@@ -436,9 +436,11 @@ fail:
 void G_Fog_Shutdown(void)
 {
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
+
     kh_destroy(uid, s_explored_cache);
     free(s_fog_state);
     s_fog_state = NULL;
+
     for(int i = 0; i < MAX_FACTIONS; i++) {
         free(s_vision_refcnts[i]);
     }
@@ -454,12 +456,6 @@ void G_Fog_AddVision(vec2_t xz_pos, int faction_id, float radius)
 void G_Fog_RemoveVision(vec2_t xz_pos, int faction_id, float radius)
 {
     fog_update_visible(faction_id, xz_pos, radius, -1);
-}
-
-void G_Fog_UpdateVisionRange(vec2_t xz_pos, int faction_id, float old, float new)
-{
-    G_Fog_RemoveVision(xz_pos, faction_id, old);
-    G_Fog_AddVision(xz_pos, faction_id, new);
 }
 
 bool G_Fog_Visible(int faction_id, vec2_t xz_pos)
@@ -667,6 +663,12 @@ bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb)
 
     enum fog_state states[] = {STATE_VISIBLE};
     return fog_obj_matches(fac_mask, obb, states, ARR_SIZE(states));
+}
+
+void G_Fog_UpdateVisionRange(vec2_t xz_pos, int faction_id, float oldr, float newr)
+{
+    G_Fog_RemoveVision(xz_pos, faction_id, oldr);
+    G_Fog_AddVision(xz_pos, faction_id, newr);
 }
 
 void G_Fog_ClearExploredCache(void)

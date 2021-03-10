@@ -93,6 +93,7 @@
 VEC_IMPL(extern, obb, struct obb)
 __KHASH_IMPL(entity,  extern, khint32_t, struct entity*, 1, kh_int_hash_func, kh_int_hash_equal)
 __KHASH_IMPL(faction, extern, khint32_t, int,            1, kh_int_hash_func, kh_int_hash_equal)
+__KHASH_IMPL(range,   extern, khint32_t, float,          1, kh_int_hash_func, kh_int_hash_equal)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -1038,6 +1039,10 @@ bool G_Init(void)
     if(!s_gs.ent_faction_map)
         goto fail_faction;
 
+    s_gs.ent_visrange_map = kh_init(range);
+    if(!s_gs.ent_visrange_map)
+        goto fail_visrange;
+
     s_gs.dynamic = kh_init(entity);
     if(!s_gs.dynamic)
         goto fail_dynamic;
@@ -1076,6 +1081,8 @@ fail_ws:
 fail_cam:
     kh_destroy(entity, s_gs.dynamic);
 fail_dynamic:
+    kh_destroy(range, s_gs.ent_visrange_map);
+fail_visrange:
     kh_destroy(faction, s_gs.ent_faction_map);
 fail_faction:
     kh_destroy(entity, s_gs.active);
@@ -1139,6 +1146,7 @@ void G_ClearState(void)
     kh_clear(entity, s_gs.active);
     kh_clear(entity, s_gs.dynamic);
     kh_clear(faction, s_gs.ent_faction_map);
+    kh_clear(range, s_gs.ent_visrange_map);
     vec_pentity_reset(&s_gs.visible);
     vec_pentity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
@@ -1318,6 +1326,7 @@ void G_Shutdown(void)
     kh_destroy(entity, s_gs.active);
     kh_destroy(entity, s_gs.dynamic);
     kh_destroy(faction, s_gs.ent_faction_map);
+    kh_destroy(range, s_gs.ent_visrange_map);
     vec_pentity_destroy(&s_gs.light_visible);
     vec_pentity_destroy(&s_gs.visible);
     vec_obb_destroy(&s_gs.visible_obbs);
@@ -1519,6 +1528,11 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
         return false;
     kh_value(s_gs.ent_faction_map, k) = 0;
 
+    k = kh_put(range, s_gs.ent_visrange_map, ent->uid, &ret);
+    if(ret == -1 || ret == 0)
+        return false;
+    kh_value(s_gs.ent_visrange_map, k) = 0.0f;
+
     G_Pos_Set(ent, pos);
 
     if(ent->flags & ENTITY_FLAG_STORAGE_SITE)
@@ -1592,6 +1606,10 @@ bool G_RemoveEntity(struct entity *ent)
     k = kh_get(faction, s_gs.ent_faction_map, ent->uid);
     assert(k != kh_end(s_gs.ent_faction_map));
     kh_del(faction, s_gs.ent_faction_map, k);
+
+    k = kh_get(range, s_gs.ent_visrange_map, ent->uid);
+    assert(k != kh_end(s_gs.ent_visrange_map));
+    kh_del(range, s_gs.ent_visrange_map, k);
 
     G_Sel_MarkHoveredDirty();
     return true;
@@ -1754,9 +1772,10 @@ void G_SetFactionID(uint32_t uid, int faction_id)
 
     vec2_t xz_pos = G_Pos_GetXZ(uid);
     struct entity *ent = G_EntityForUID(uid);
+    float vrange = G_GetVisionRange(uid);
 
-    G_Fog_UpdateVisionRange(xz_pos, old, ent->vision_range, 0.0f);
-    G_Fog_UpdateVisionRange(xz_pos, faction_id, 0.0f, ent->vision_range);
+    G_Fog_RemoveVision(xz_pos, old, vrange);
+    G_Fog_AddVision(xz_pos, faction_id, vrange);
 
     G_Combat_UpdateRef(old, faction_id, xz_pos);
     G_Move_UpdateFactionID(ent, old, faction_id);
@@ -1772,6 +1791,29 @@ int G_GetFactionID(uint32_t uid)
     khiter_t k = kh_get(faction, s_gs.ent_faction_map, uid);
     assert(k != kh_end(s_gs.ent_faction_map));
     return kh_value(s_gs.ent_faction_map, k);
+}
+
+void G_SetVisionRange(uint32_t uid, float range)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(range, s_gs.ent_visrange_map, uid);
+    assert(k != kh_end(s_gs.ent_visrange_map));
+
+    float oldrange = kh_value(s_gs.ent_visrange_map, k);
+    vec2_t xz_pos = G_Pos_GetXZ(uid);
+
+    G_Fog_UpdateVisionRange(xz_pos, G_GetFactionID(uid), oldrange, range);
+    kh_value(s_gs.ent_visrange_map, k) = range;
+}
+
+float G_GetVisionRange(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(range, s_gs.ent_visrange_map, uid);
+    assert(k != kh_end(s_gs.ent_visrange_map));
+    return kh_value(s_gs.ent_visrange_map, k);
 }
 
 bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds)
@@ -1963,7 +2005,7 @@ void G_Zombiefy(struct entity *ent)
     G_StorageSite_RemoveEntity(ent);
 
     vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
-    G_Fog_RemoveVision(xz_pos, G_GetFactionID(ent->uid), ent->vision_range);
+    G_Fog_RemoveVision(xz_pos, G_GetFactionID(ent->uid), G_GetVisionRange(ent->uid));
     G_Region_RemoveEnt(ent->uid);
     Entity_ClearTags(ent->uid);
 

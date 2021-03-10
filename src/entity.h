@@ -67,12 +67,12 @@ enum{
 
 struct entity{
     uint32_t     uid;
+    uint32_t     flags;
     const char  *name;
     const char  *basedir;
     const char  *filename;
     vec3_t       scale;
     quat_t       rotation;
-    uint32_t     flags;
     void        *render_private;
     void        *anim_private;
     void        *anim_ctx;
@@ -80,8 +80,6 @@ struct entity{
      * animation sample also has its' own AABB. */
     struct aabb  identity_aabb;
     float        selection_radius; /* The radius of the selection circle in OpenGL coordinates */
-    float        max_speed;        /* The base movement speed in units of OpenGL coords / second */
-    float        vision_range;     /* in OpenGL coordinates */
 };
 
 /* State needed for rendering a static entity */

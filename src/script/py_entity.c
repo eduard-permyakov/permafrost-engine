@@ -82,8 +82,6 @@ static PyObject *PyEntity_get_selection_radius(PyEntityObject *self, void *closu
 static int       PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_top_screen_pos(PyEntityObject *self, void *closure);
-static PyObject *PyEntity_get_speed(PyEntityObject *self, void *closure);
-static int       PyEntity_set_speed(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_faction_id(PyEntityObject *self, void *closure);
 static int       PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_vision_range(PyEntityObject *self, void *closure);
@@ -213,10 +211,6 @@ static PyGetSetDef PyEntity_getset[] = {
     {"top_screen_pos",
     (getter)PyEntity_get_top_screen_pos, NULL,
     "Get the location of the top center point of the entity, in screenspace coordinates.",
-    NULL},
-    {"speed",
-    (getter)PyEntity_get_speed, (setter)PyEntity_set_speed,
-    "Entity's movement speed (in OpenGL coordinates per second).",
     NULL},
     {"faction_id",
     (getter)PyEntity_get_faction_id, (setter)PyEntity_set_faction_id,
@@ -847,6 +841,17 @@ static PyObject *PyMovableEntity_del(PyMovableEntityObject *self);
 static PyObject *PyMovableEntity_pickle(PyMovableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyMovableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
+static PyObject *PyMovableEntity_get_speed(PyMovableEntityObject *self, void *closure);
+static int       PyMovableEntity_set_speed(PyMovableEntityObject *self, PyObject *value, void *closure);
+
+static PyGetSetDef PyMovableEntity_getset[] = {
+    {"speed",
+    (getter)PyMovableEntity_get_speed, (setter)PyMovableEntity_set_speed,
+    "Entity's movement speed (in OpenGL coordinates per second).",
+    NULL},
+    {NULL}  /* Sentinel */
+};
+
 static PyMethodDef PyMovableEntity_methods[] = {
 
     {"move", 
@@ -877,6 +882,7 @@ static PyTypeObject PyMovableEntity_type = {
     .tp_doc       = "Permafrost Engine movable entity. This is a subclass of pf.Entity. This kind of "
                     "entity is able to receive move orders and travel around the map.",
     .tp_methods   = PyMovableEntity_methods,
+    .tp_getset    = PyMovableEntity_getset,
     .tp_base      = &PyEntity_type,
 };
 
@@ -1209,22 +1215,6 @@ static PyObject *PyEntity_get_top_screen_pos(PyEntityObject *self, void *closure
     return Py_BuildValue("ii", (int)coord.x, (int)coord.y);
 }
 
-static PyObject *PyEntity_get_speed(PyEntityObject *self, void *closure)
-{
-    return PyFloat_FromDouble(self->ent->max_speed);
-}
-
-static int PyEntity_set_speed(PyEntityObject *self, PyObject *value, void *closure)
-{
-    if(!PyFloat_Check(value)) {
-        PyErr_SetString(PyExc_TypeError, "Speed attribute must be a float.");
-        return -1;
-    }
-
-    self->ent->max_speed = PyFloat_AS_DOUBLE(value);
-    return 0;
-}
-
 static PyObject *PyEntity_get_faction_id(PyEntityObject *self, void *closure)
 {
     return Py_BuildValue("i", G_GetFactionID(self->ent->uid));
@@ -1249,21 +1239,26 @@ static int PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *
 
 static PyObject *PyEntity_get_vision_range(PyEntityObject *self, void *closure)
 {
-    return Py_BuildValue("f", self->ent->vision_range);
+    if(self->ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+    return Py_BuildValue("f", G_GetVisionRange(self->ent->uid));
 }
 
 static int PyEntity_set_vision_range(PyEntityObject *self, PyObject *value, void *closure)
 {
+    if(self->ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return -1;
+    }
+
     if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "vision_range attribute must be an float.");
         return -1;
     }
 
-    float old = self->ent->vision_range;
-    vec2_t xz_pos = G_Pos_GetXZ(self->ent->uid);
-
-    self->ent->vision_range = PyFloat_AS_DOUBLE(value);
-    G_Fog_UpdateVisionRange(xz_pos, G_GetFactionID(self->ent->uid), old, self->ent->vision_range);
+    G_SetVisionRange(self->ent->uid, PyFloat_AS_DOUBLE(value));
     return 0;
 }
 
@@ -1514,19 +1509,13 @@ static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject 
     Py_DECREF(sel_radius);
     CHK_TRUE(status, fail_pickle);
 
-    PyObject *max_speed = Py_BuildValue("f", self->ent->max_speed);
-    CHK_TRUE(max_speed, fail_pickle);
-    status = S_PickleObjgraph(max_speed, stream);
-    Py_DECREF(max_speed);
-    CHK_TRUE(status, fail_pickle);
-
     PyObject *faction_id = Py_BuildValue("i", G_GetFactionID(self->ent->uid));
     CHK_TRUE(faction_id, fail_pickle);
     status = S_PickleObjgraph(faction_id, stream);
     Py_DECREF(faction_id);
     CHK_TRUE(status, fail_pickle);
 
-    PyObject *vision_range = Py_BuildValue("f", self->ent->vision_range);
+    PyObject *vision_range = Py_BuildValue("f", G_GetVisionRange(self->ent->uid));
     CHK_TRUE(vision_range, fail_pickle);
     status = S_PickleObjgraph(vision_range, stream);
     Py_DECREF(vision_range);
@@ -1588,9 +1577,6 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     PyObject *sel_radius = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
-    PyObject *max_speed = S_UnpickleObjgraph(stream);
-    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
-
     PyObject *faction_id = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
@@ -1602,7 +1588,6 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     || !rotation
     || !flags 
     || !sel_radius 
-    || !max_speed 
     || !faction_id
     || !vision_range) {
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle attributes of pf.Entity instance");
@@ -1639,9 +1624,6 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     status = PyObject_SetAttrString(entobj, "selection_radius", sel_radius);
     CHK_TRUE(0 == status, fail_unpickle_atts);
 
-    status = PyObject_SetAttrString(entobj, "speed", max_speed);
-    CHK_TRUE(0 == status, fail_unpickle_atts);
-
     if(!(ent->flags & ENTITY_FLAG_ZOMBIE)) {
         status = PyObject_SetAttrString(entobj, "vision_range", vision_range);
         CHK_TRUE(0 == status, fail_unpickle_atts);
@@ -1657,7 +1639,6 @@ fail_unpickle_atts:
     Py_XDECREF(rotation);
     Py_XDECREF(flags);
     Py_XDECREF(sel_radius);
-    Py_XDECREF(max_speed);
     Py_XDECREF(faction_id);
     Py_XDECREF(vision_range);
 fail_unpickle:
@@ -3176,6 +3157,34 @@ static PyObject *PyStorageSiteEntity_pickle(PyStorageSiteEntityObject *self, PyO
 static PyObject *PyStorageSiteEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
     return s_call_super_method("__unpickle__", (PyObject*)&PyStorageSiteEntity_type, cls, args, kwargs);
+}
+
+static PyObject *PyMovableEntity_get_speed(PyMovableEntityObject *self, void *closure)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return NULL;
+    }
+
+    float speed = 0.0f;
+    G_Move_GetMaxSpeed(self->super.ent->uid, &speed);
+    return PyFloat_FromDouble(speed);
+}
+
+static int PyMovableEntity_set_speed(PyMovableEntityObject *self, PyObject *value, void *closure)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot get attribute of zombie entity.");
+        return -1;
+    }
+
+    if(!PyFloat_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Speed attribute must be a float.");
+        return -1;
+    }
+
+    G_Move_SetMaxSpeed(self->super.ent->uid, PyFloat_AS_DOUBLE(value));
+    return 0;
 }
 
 static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *args)

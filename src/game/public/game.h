@@ -154,6 +154,9 @@ uint16_t        G_GetEnemyFactions(int faction_id);
 void            G_SetFactionID(uint32_t uid, int faction_id);
 int             G_GetFactionID(uint32_t uid);
 
+void            G_SetVisionRange(uint32_t uid, float range);
+float           G_GetVisionRange(uint32_t uid);
+
 bool            G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds);
 bool            G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out);
 
@@ -214,6 +217,8 @@ void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius);
 bool G_Move_Still(const struct entity *ent);
 void G_Move_SetClickEnabled(bool on);
 bool G_Move_GetClickEnabled(void);
+bool G_Move_GetMaxSpeed(uint32_t uid, float *out);
+bool G_Move_SetMaxSpeed(uint32_t uid, float speed);
 
 
 /*###########################################################################*/
@@ -273,17 +278,16 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
 /* GAME FOG-OF-WAR                                                           */
 /*###########################################################################*/
 
-bool G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb);
-bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb);
-void G_Fog_UpdateVisionRange(vec2_t xz_pos, int faction_id, float old, float new);
-bool G_Fog_Visible(int faction_id, vec2_t xz_pos);
-bool G_Fog_PlayerVisible(vec2_t xz_pos);
-bool G_Fog_Explored(int faction_id, vec2_t xz_pos);
-bool G_Fog_PlayerExplored(vec2_t xz_pos);
-void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x4_t *model);
-void G_Fog_ExploreMap(int faction_id);
-void G_Fog_Enable(void);
-void G_Fog_Disable(void);
+bool  G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb);
+bool  G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb);
+bool  G_Fog_Visible(int faction_id, vec2_t xz_pos);
+bool  G_Fog_PlayerVisible(vec2_t xz_pos);
+bool  G_Fog_Explored(int faction_id, vec2_t xz_pos);
+bool  G_Fog_PlayerExplored(vec2_t xz_pos);
+void  G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x4_t *model);
+void  G_Fog_ExploreMap(int faction_id);
+void  G_Fog_Enable(void);
+void  G_Fog_Disable(void);
 
 /*###########################################################################*/
 /* GAME BUILDING                                                             */
@@ -393,7 +397,6 @@ void G_StorageSite_SetFontColor(const struct nk_color *clr);
 void G_StorageSite_SetBorderColor(const struct nk_color *clr);
 void G_StorageSite_SetBackgroundStyle(const struct nk_style_item *style);
 void G_StorageSite_SetShowUI(bool show);
-void G_StorageSite_UpdateFaction(uint32_t uid, int oldfac, int newfac);
 
 /*###########################################################################*/
 /* GAME REGION                                                               */

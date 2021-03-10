@@ -50,6 +50,7 @@ void G_StorageSite_Shutdown(void);
 bool G_StorageSite_AddEntity(const struct entity *ent);
 void G_StorageSite_RemoveEntity(const struct entity *ent);
 bool G_StorageSite_IsSaturated(uint32_t uid);
+void G_StorageSite_UpdateFaction(uint32_t uid, int oldfac, int newfac);
 
 bool G_StorageSite_SaveState(struct SDL_RWops *stream);
 bool G_StorageSite_LoadState(struct SDL_RWops *stream);

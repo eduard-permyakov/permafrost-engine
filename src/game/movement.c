@@ -113,6 +113,8 @@ enum arrival_state{
 
 struct movestate{
     enum arrival_state state;
+    /* The base movement speed in units of OpenGL coords / second */
+    float              max_speed;
     /* The desired velocity returned by the navigation system */
     vec2_t             vdes;
     /* The newly computed velocity (the desired velocity constrained by flocking forces) */
@@ -314,7 +316,14 @@ static void entity_unblock(const struct entity *ent)
 
 static bool stationary(const struct entity *ent)
 {
-    return !(ent->flags & ENTITY_FLAG_MOVABLE) || (ent->max_speed == 0.0f);
+    if(!(ent->flags & ENTITY_FLAG_MOVABLE))
+        return true;
+
+    struct movestate *ms = movestate_get(ent);
+    if(ms->max_speed == 0.0f)
+        return true;
+
+    return false;
 }
 
 static bool entities_equal(struct entity **a, struct entity **b)
@@ -782,15 +791,15 @@ static vec2_t ent_desired_velocity(const struct entity *ent)
  */
 static vec2_t seek_force(const struct entity *ent, vec2_t target_xz)
 {
+    struct movestate *ms = movestate_get(ent);
+    assert(ms);
+
     vec2_t ret, desired_velocity;
     vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
 
     PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
     PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
-    PFM_Vec2_Scale(&desired_velocity, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
-
-    struct movestate *ms = movestate_get(ent);
-    assert(ms);
+    PFM_Vec2_Scale(&desired_velocity, ms->max_speed / MOVE_TICK_RES, &desired_velocity);
 
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
     return ret;
@@ -816,7 +825,7 @@ static vec2_t arrive_force_point(const struct entity *ent, dest_id_t dest_id, ve
         PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
         distance = PFM_Vec2_Len(&desired_velocity);
         PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
-        PFM_Vec2_Scale(&desired_velocity, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
+        PFM_Vec2_Scale(&desired_velocity, ms->max_speed / MOVE_TICK_RES, &desired_velocity);
 
         if(distance < ARRIVE_SLOWING_RADIUS) {
             PFM_Vec2_Scale(&desired_velocity, distance / ARRIVE_SLOWING_RADIUS, &desired_velocity);
@@ -824,7 +833,7 @@ static vec2_t arrive_force_point(const struct entity *ent, dest_id_t dest_id, ve
 
     }else{
 
-        PFM_Vec2_Scale(&ms->vdes, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
+        PFM_Vec2_Scale(&ms->vdes, ms->max_speed / MOVE_TICK_RES, &desired_velocity);
     }
 
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
@@ -841,7 +850,7 @@ static vec2_t arrive_force_enemies(const struct entity *ent)
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
-    PFM_Vec2_Scale(&ms->vdes, ent->max_speed / MOVE_TICK_RES, &desired_velocity);
+    PFM_Vec2_Scale(&ms->vdes, ms->max_speed / MOVE_TICK_RES, &desired_velocity);
     PFM_Vec2_Sub(&desired_velocity, &ms->velocity, &ret);
     vec2_truncate(&ret, MAX_FORCE);
     return ret;
@@ -1071,7 +1080,7 @@ static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flo
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, ent->max_speed / MOVE_TICK_RES);
+    vec2_truncate(&new_vel, ms->max_speed / MOVE_TICK_RES);
 
     return new_vel;
 }
@@ -1087,7 +1096,7 @@ static vec2_t enemy_seek_vpref(const struct entity *ent)
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
 
     PFM_Vec2_Add(&ms->velocity, &accel, &new_vel);
-    vec2_truncate(&new_vel, ent->max_speed / MOVE_TICK_RES);
+    vec2_truncate(&new_vel, ms->max_speed / MOVE_TICK_RES);
 
     return new_vel;
 }
@@ -1504,7 +1513,7 @@ static void clearpath_finish_work(void)
         PFM_Vec2_Sub(&ms->vnew, &ms->velocity, &vel_diff);
 
         PFM_Vec2_Add(&ms->velocity, &vel_diff, &ms->vnew);
-        vec2_truncate(&ms->vnew, ent->max_speed / MOVE_TICK_RES);
+        vec2_truncate(&ms->vnew, ms->max_speed / MOVE_TICK_RES);
     }
     Perf_Pop();
 
@@ -1697,6 +1706,7 @@ void G_Move_AddEntity(const struct entity *ent)
         .state = STATE_ARRIVED,
         .vel_hist_idx = 0,
         .vnew = (vec2_t){0.0f, 0.0f},
+        .max_speed = 0.0f,
     };
     memset(new_ms.vel_hist, 0, sizeof(new_ms.vel_hist));
 
@@ -1943,6 +1953,26 @@ bool G_Move_GetClickEnabled(void)
     return s_click_move_enabled;
 }
 
+bool G_Move_GetMaxSpeed(uint32_t uid, float *out)
+{
+    khiter_t k = kh_get(state, s_entity_state_table, uid);
+    if(k == kh_end(s_entity_state_table))
+        return false;
+    struct movestate *ms = &kh_value(s_entity_state_table, k);
+    *out = ms->max_speed;
+    return true;
+}
+
+bool G_Move_SetMaxSpeed(uint32_t uid, float speed)
+{
+    khiter_t k = kh_get(state, s_entity_state_table, uid);
+    if(k == kh_end(s_entity_state_table))
+        return false;
+    struct movestate *ms = &kh_value(s_entity_state_table, k);
+    ms->max_speed = speed;
+    return true;
+}
+
 bool G_Move_SaveState(struct SDL_RWops *stream)
 {
     struct attr click_move_enabled = (struct attr){
@@ -2017,6 +2047,12 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.state
         };
         CHK_TRUE_RET(Attr_Write(stream, &state, "state"));
+
+        struct attr max_speed = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = curr.max_speed
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &max_speed, "max_speed"));
 
         struct attr vdes = (struct attr){
             .type = TYPE_VEC2,
@@ -2167,6 +2203,10 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         ms->state = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        ms->max_speed = attr.val.as_float;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_VEC2);
