@@ -754,6 +754,7 @@ static void g_change_simstate(void)
             A_AddTimeDelta(curr, delta);
         });
         Audio_Resume(delta);
+        G_Combat_AddTimeDelta(delta);
         break;
     }
     case G_PAUSED_FULL:

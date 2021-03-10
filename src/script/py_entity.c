@@ -1633,17 +1633,19 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     CHK_TRUE(PyArg_ParseTuple(scale, "fff", &ent->scale.x, &ent->scale.y, &ent->scale.z), fail_unpickle_atts);
     CHK_TRUE(PyArg_ParseTuple(rotation, "ffff", &ent->rotation.x, &ent->rotation.y, &ent->rotation.z, &ent->rotation.w), fail_unpickle_atts);
 
+    status = PyObject_SetAttrString(entobj, "faction_id", faction_id);
+    CHK_TRUE(0 == status, fail_unpickle_atts);
+
     status = PyObject_SetAttrString(entobj, "selection_radius", sel_radius);
     CHK_TRUE(0 == status, fail_unpickle_atts);
 
     status = PyObject_SetAttrString(entobj, "speed", max_speed);
     CHK_TRUE(0 == status, fail_unpickle_atts);
 
-    status = PyObject_SetAttrString(entobj, "faction_id", faction_id);
-    CHK_TRUE(0 == status, fail_unpickle_atts);
-
-    status = PyObject_SetAttrString(entobj, "vision_range", vision_range);
-    CHK_TRUE(0 == status, fail_unpickle_atts);
+    if(!(ent->flags & ENTITY_FLAG_ZOMBIE)) {
+        status = PyObject_SetAttrString(entobj, "vision_range", vision_range);
+        CHK_TRUE(0 == status, fail_unpickle_atts);
+    }
 
     Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
     ret = Py_BuildValue("(Oi)", entobj, (int)nread);
@@ -1704,8 +1706,9 @@ static PyObject *PyCombatableEntity_attack(PyCombatableEntityObject *self, PyObj
     assert(self->super.ent->flags & ENTITY_FLAG_COMBATABLE);
     G_Combat_SetStance(self->super.ent, COMBAT_STANCE_AGGRESSIVE);
 
-    if(self->super.ent->flags & ENTITY_FLAG_MOVABLE)
-        G_Move_SetDest(self->super.ent, xz_pos);
+    if(self->super.ent->flags & ENTITY_FLAG_MOVABLE) {
+        G_Move_SetDest(self->super.ent, xz_pos, true);
+    }
 
     Py_RETURN_NONE;
 }
@@ -2356,7 +2359,7 @@ static int PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *va
 static PyObject *PyBuildableEntity_get_founded(PyBuildableEntityObject *self, void *closure)
 {
     if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
-        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        PyErr_SetString(PyExc_RuntimeError, "Cannot access attribute of zombie entity.");
         return NULL;
     }
     if(G_Building_IsFounded(self->super.ent)) {
@@ -2368,7 +2371,7 @@ static PyObject *PyBuildableEntity_get_founded(PyBuildableEntityObject *self, vo
 static PyObject *PyBuildableEntity_get_completed(PyBuildableEntityObject *self, void *closure)
 {
     if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
-        PyErr_SetString(PyExc_RuntimeError, "Cannot call method on zombie entity.");
+        PyErr_SetString(PyExc_RuntimeError, "Cannot access attribute of zombie entity.");
         return NULL;
     }
     if(G_Building_IsCompleted(self->super.ent)) {
@@ -2379,11 +2382,20 @@ static PyObject *PyBuildableEntity_get_completed(PyBuildableEntityObject *self, 
 
 static PyObject *PyBuildableEntity_get_vision_range(PyBuildableEntityObject *self, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot access attribute of zombie entity.");
+        return NULL;
+    }
     return Py_BuildValue("f", G_Building_GetVisionRange(self->super.ent));
 }
 
 static int PyBuildableEntity_set_vision_range(PyBuildableEntityObject *self, PyObject *value, void *closure)
 {
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot access attribute of zombie entity.");
+        return -1;
+    }
+
     if(!PyFloat_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "vision_range attribute must be an float.");
         return -1;
@@ -3184,7 +3196,7 @@ static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *arg
         return NULL;
     }
 
-    G_Move_SetDest(self->super.ent, xz_pos);
+    G_Move_SetDest(self->super.ent, xz_pos, false);
     Py_RETURN_NONE;
 }
 

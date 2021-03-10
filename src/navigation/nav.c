@@ -2862,6 +2862,11 @@ int N_DestFactionID(dest_id_t id)
     return (id & 0xf);
 }
 
+bool N_DestIDIsAttacking(dest_id_t id)
+{
+    return (N_DestFactionID(id) != FACTION_ID_NONE);
+}
+
 vec2_t N_ClosestReachableInRange(void *nav_private, vec3_t map_pos, 
                                  vec2_t xz_src, vec2_t xz_target, 
                                  float range, enum nav_layer layer)

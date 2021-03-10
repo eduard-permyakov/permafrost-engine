@@ -211,7 +211,8 @@ void      N_RenderLocalIslandIDs(void *nav_private, const struct map *map,
  * specified OBB.
  * ------------------------------------------------------------------------
  */
-void      N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *obb);
+void      N_CutoutStaticObject(void *nav_private, vec3_t map_pos, 
+                               const struct obb *obb);
 
 /* ------------------------------------------------------------------------
  * Update portals and the links between them after there have been 
@@ -246,14 +247,21 @@ dest_id_t N_DestIDForPosAttacking(void *nav_private, vec3_t map_pos, vec2_t xz_p
                                   enum nav_layer layer, int faction_id);
 
 /* ------------------------------------------------------------------------
+ * Returns true if the specified path ID corresponds to an 'attacking' path.
+ * ------------------------------------------------------------------------
+ */
+bool     N_DestIDIsAttacking(dest_id_t id);
+
+/* ------------------------------------------------------------------------
  * Generate the required flowfield and LOS sectors for moving towards the 
  * specified destination.
  * Returns true, if pathing is possible. In that case, 'out_dest_id' will
  * be set to a handle that can be used to query relevant fields.
  * ------------------------------------------------------------------------
  */
-bool      N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest, 
-                        vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id);
+bool      N_RequestPath(void *nav_private, vec2_t xz_src, 
+                        vec2_t xz_dest, vec3_t map_pos, 
+                        enum nav_layer layer, dest_id_t *out_dest_id);
 
 /* ------------------------------------------------------------------------
  * Like N_RequestPath, but the path for this ID will not consider combatable
@@ -261,8 +269,10 @@ bool      N_RequestPath(void *nav_private, vec2_t xz_src, vec2_t xz_dest,
  * that entities following these paths will attack any nearby entities.
  * ------------------------------------------------------------------------
  */
-bool      N_RequestPathAttacking(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int faction_id,
-                                 vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id);
+bool      N_RequestPathAttacking(void *nav_private, vec2_t xz_src, 
+                                 vec2_t xz_dest, int faction_id,
+                                 vec3_t map_pos, enum nav_layer layer, 
+                                 dest_id_t *out_dest_id);
 
 /* ------------------------------------------------------------------------
  * Returns the desired velocity for an entity at 'curr_pos' for it to flow
@@ -341,11 +351,15 @@ bool N_ClosestReachableAdjacentPosDynamic(void *nav_private, enum nav_layer laye
  * 'occupying' which tiles.
  * ------------------------------------------------------------------------
  */
-void      N_BlockersIncref(vec2_t xz_pos, float range, int faction_id, vec3_t map_pos, void *nav_private);
-void      N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, vec3_t map_pos, void *nav_private);
+void      N_BlockersIncref(vec2_t xz_pos, float range, int faction_id, 
+                           vec3_t map_pos, void *nav_private);
+void      N_BlockersDecref(vec2_t xz_pos, float range, int faction_id, 
+                           vec3_t map_pos, void *nav_private);
 
-void      N_BlockersIncrefOBB(void *nav_private, int faction_id, vec3_t map_pos, const struct obb *obb);
-void      N_BlockersDecrefOBB(void *nav_private, int faction_id, vec3_t map_pos, const struct obb *obb);
+void      N_BlockersIncrefOBB(void *nav_private, int faction_id, 
+                              vec3_t map_pos, const struct obb *obb);
+void      N_BlockersDecrefOBB(void *nav_private, int faction_id, 
+                              vec3_t map_pos, const struct obb *obb);
 
 /* ------------------------------------------------------------------------
  * Returns true if the entity position (xz_pos) is within a 'tolerance' 
@@ -353,8 +367,9 @@ void      N_BlockersDecrefOBB(void *nav_private, int faction_id, vec3_t map_pos,
  * destination position (xz_dest).
  * ------------------------------------------------------------------------
  */
-bool      N_IsMaximallyClose(void *nav_private, enum nav_layer layer, vec3_t map_pos, 
-                             vec2_t xz_pos, vec2_t xz_dest, float tolerance);
+bool      N_IsMaximallyClose(void *nav_private, enum nav_layer layer, 
+                             vec3_t map_pos, vec2_t xz_pos, 
+                             vec2_t xz_dest, float tolerance);
 
 /* ------------------------------------------------------------------------
  * Returns true if the tiles under the entity selection cirlce overlap or 

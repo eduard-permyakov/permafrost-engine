@@ -338,12 +338,14 @@ static bool ent_still(const struct movestate *ms)
 
 static void entity_finish_moving(const struct entity *ent, enum arrival_state newstate)
 {
-    E_Entity_Notify(EVENT_MOTION_END, ent->uid, NULL, ES_ENGINE);
-    if(ent->flags & ENTITY_FLAG_COMBATABLE)
-        G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
-
     struct movestate *ms = movestate_get(ent);
     assert(!ent_still(ms));
+
+    E_Entity_Notify(EVENT_MOTION_END, ent->uid, NULL, ES_ENGINE);
+    if(ent->flags & ENTITY_FLAG_COMBATABLE
+    && (ms->state != STATE_TURNING)) {
+        G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
+    }
 
     if(newstate == STATE_WAITING) {
         ms->wait_prev = ms->state;
@@ -1242,7 +1244,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         PFM_Vec2_Sub(&flock->target_xz, &dest, &diff);
 
         if(flock && PFM_Vec2_Len(&diff) > EPSILON) {
-            G_Move_SetDest(ent, dest);
+            G_Move_SetDest(ent, dest, false);
             ms->state = STATE_SURROUND_ENTITY;
             break;
         }
@@ -1282,7 +1284,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         PFM_Vec2_Sub(&xz_target, &ms->target_prev_pos, &target_delta);
 
         if(PFM_Vec2_Len(&target_delta) > 5.0f) {
-            G_Move_SetDest(ent, xz_target);
+            G_Move_SetDest(ent, xz_target, false);
             ms->state = STATE_ENTER_ENTITY_RANGE;
             ms->target_prev_pos = xz_target;
         }
@@ -1732,12 +1734,13 @@ void G_Move_Stop(const struct entity *ent)
     ms->state = STATE_ARRIVED;
 }
 
-bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz)
+bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz, bool *out_attack)
 {
     struct flock *fl = flock_for_ent(ent);
     if(!fl)
         return false;
     *out_xz = fl->target_xz;
+    *out_attack = N_DestIDIsAttacking(fl->dest_id);
     return true;
 }
 
@@ -1759,7 +1762,7 @@ bool G_Move_Still(const struct entity *ent)
     return (ms->state == STATE_ARRIVED);
 }
 
-void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz)
+void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz, bool attack)
 {
     enum nav_layer layer = layer_for_ent(ent);
     dest_xz = M_NavClosestReachableDest(s_map, layer, G_Pos_GetXZ(ent->uid), dest_xz);
@@ -1798,7 +1801,7 @@ void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz)
     vec_pentity_init(&flock);
     vec_pentity_push(&flock, (struct entity*)ent);
 
-    make_flock(&flock, dest_xz, layer_for_ent(ent), false);
+    make_flock(&flock, dest_xz, layer_for_ent(ent), attack);
     vec_pentity_destroy(&flock);
 }
 
@@ -1833,7 +1836,7 @@ void G_Move_SetEnterRange(const struct entity *ent, const struct entity *target,
     }
 
     vec2_t xz_target = M_NavClosestReachableInRange(s_map, layer_for_ent(ent), xz_src, xz_dst, range);
-    G_Move_SetDest(ent, xz_target);
+    G_Move_SetDest(ent, xz_target, false);
 
     ms->state = STATE_ENTER_ENTITY_RANGE;
     ms->surround_target_uid = target->uid;
@@ -1874,7 +1877,7 @@ void G_Move_SetSurroundEntity(const struct entity *ent, const struct entity *tar
     assert(ms);
 
     vec2_t pos = G_Pos_GetXZ(target->uid);
-    G_Move_SetDest(ent, pos);
+    G_Move_SetDest(ent, pos, false);
 
     if(ent_still(ms))
         return;

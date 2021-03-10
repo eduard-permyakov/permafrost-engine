@@ -209,7 +209,7 @@ void                  G_Sel_Set(uint32_t *ents, size_t nents);
 
 void G_Move_SetMoveOnLeftClick(void);
 void G_Move_SetAttackOnLeftClick(void);
-void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz);
+void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz, bool attack);
 void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius);
 bool G_Move_Still(const struct entity *ent);
 void G_Move_SetClickEnabled(bool on);

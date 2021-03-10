@@ -151,7 +151,7 @@ static void on_build_anim_finished(void *user, void *event)
     assert(bs);
 
     struct entity *target = G_EntityForUID(bs->target_uid);
-    if(!target) {
+    if(!target || (target->flags & ENTITY_FLAG_ZOMBIE)) {
         finish_building(bs, uid);
         return;
     }
