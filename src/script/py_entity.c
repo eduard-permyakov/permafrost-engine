@@ -2512,15 +2512,15 @@ static PyObject *PyBuilderEntity_unpickle(PyObject *cls, PyObject *args, PyObjec
         SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
         CHK_TRUE(build_speed, fail_unpickle);
         CHK_TRUE(PyInt_Check(build_speed), fail_parse);
-    }
 
-    nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
-    G_Builder_SetBuildSpeed(((PyBuilderEntityObject*)ent)->super.ent, PyInt_AS_LONG(build_speed));
+        nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
+        G_Builder_SetBuildSpeed(((PyBuilderEntityObject*)ent)->super.ent, PyInt_AS_LONG(build_speed));
+    }
 
     ret = Py_BuildValue("Oi", ent, nread);
 
 fail_parse:
-    Py_DECREF(build_speed);
+    Py_XDECREF(build_speed);
 fail_unpickle:
     SDL_RWclose(stream);
 fail_stream:
