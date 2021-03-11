@@ -131,25 +131,18 @@ ivec4 tile_desc_at(vec3 ws_pos)
 
 ivec4 tile_relative_desc(ivec4 desc, int dr, int dc)
 {
-    ivec4 ret = desc;
+    int abs_r = desc.x * map_resolution.z + desc.z + dr;
+    int abs_c = desc.y * map_resolution.a + desc.a + dc;
 
-    if(desc.z + dr >= map_resolution.z)
-        ret.x += 1;
-    else if(desc.z + dr < 0)
-        ret.x += -1;
+    abs_r = clamp(abs_r, 0, map_resolution.x * map_resolution.z - 1);
+    abs_c = clamp(abs_c, 0, map_resolution.y * map_resolution.a - 1);
 
-    if(desc.a + dc >= map_resolution.a)
-        ret.y += 1;
-    else if(desc.a + dc < 0)
-        ret.y += -1;
-
-    ret.x = clamp(ret.x, 0, map_resolution.x-1);
-    ret.y = clamp(ret.y, 0, map_resolution.y-1);
-
-    ret.z = int(mod(ret.z + dr, map_resolution.z));
-    ret.a = int(mod(ret.a + dc, map_resolution.a));
-
-    return ret;
+    return ivec4(
+        abs_r / map_resolution.z,
+        abs_c / map_resolution.a,
+        int(mod(abs_r, map_resolution.z)),
+        int(mod(abs_c, map_resolution.a))
+    );
 }
 
 int visbuff_idx(ivec4 td)
