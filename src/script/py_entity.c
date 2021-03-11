@@ -1412,7 +1412,7 @@ static PyObject *PyEntity_ping(PyEntityObject *self)
 
 static PyObject *PyEntity_zombiefy(PyEntityObject *self)
 {
-    G_Zombiefy(self->ent);
+    G_Zombiefy(self->ent, true);
     Py_RETURN_NONE;
 }
 

@@ -41,6 +41,7 @@
 #include "camera.h"
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
+#include "navigation/public/nav.h"
 #include "game/public/game.h"
 #include "anim/public/anim.h"
 #include "lib/public/mpool.h"
@@ -60,6 +61,13 @@ KHASH_MAP_INIT_STR(ents, kh_uid_t)
 struct taglist{
     uint64_t ntags;
     const char *tags[MAX_TAGS];
+};
+
+struct dis_arg{
+    struct entity *ent;
+    const struct map *map;
+    void (*on_finish)(void*);
+    void *arg;
 };
 
 MPOOL_TYPE(taglist, struct taglist)
@@ -186,6 +194,72 @@ static struct result ping_task(void *arg)
 
     /* Ensure render thread is no longer touching our stack */
     Task_AwaitEvent(EVENT_UPDATE_START, &source);
+    return NULL_RESULT;
+}
+
+static struct result disappear_task(void *arg)
+{
+    struct dis_arg darg = *(struct dis_arg*)arg;
+    vec3_t start_pos = G_Pos_Get(darg.ent->uid);
+    uint32_t uid = darg.ent->uid;
+    int faction_id = G_GetFactionID(uid);
+
+    struct obb obb;
+    Entity_CurrentOBB(darg.ent, &obb, false);
+
+    if(darg.map) {
+        M_NavBlockersIncrefOBB(darg.map, faction_id, &obb);
+    }
+
+    int height = obb.half_lengths[1] * 2.0f;
+
+    vec2_t curr_shift = (vec2_t){0, 0};
+    vec2_t prev_shift = (vec2_t){0, 0};
+
+    darg.ent->flags |= ENTITY_FLAG_TRANSLUCENT;
+
+    const float duration = 2500.0f;
+    uint32_t elapsed = 0;
+    uint32_t start = SDL_GetTicks();
+
+    while(elapsed < duration) {
+    
+        Task_AwaitEvent(EVENT_UPDATE_START, &(int){0});
+        uint32_t curr = SDL_GetTicks();
+
+        /* The entity can theoretically be forecefully removed during the 
+         * disappearing animation. Make sure we don't crap out if this happens
+         */
+        if(!G_EntityExists(uid))
+            return NULL_RESULT;
+
+        uint32_t prev_long = elapsed / 250;
+        uint32_t curr_long =  (curr - start) / 250;
+        elapsed = curr - start;
+
+        /* Add a slight shake */
+        if(curr_long != prev_long) {
+            prev_shift = curr_shift;
+            curr_shift.x = ((float)rand()) / RAND_MAX * 2.5f;
+            curr_shift.y = ((float)rand()) / RAND_MAX * 2.5f;
+        }
+
+        float pc = (elapsed - (prev_long * 250)) / 250;
+        vec3_t curr_pos = (vec3_t){
+            start_pos.x + (curr_shift.x * pc + prev_shift.x * (1.0f - pc)) / 2.0f, 
+            start_pos.y - (elapsed / duration) * height,
+            start_pos.z + (curr_shift.y * pc + prev_shift.y * (1.0f - pc)) / 2.0f,
+        };
+        G_Pos_Set(darg.ent, curr_pos);
+    }
+
+    if(darg.map) {
+        M_NavBlockersDecrefOBB(darg.map, faction_id, &obb);
+    }
+
+    if(darg.on_finish) {
+        darg.on_finish(darg.arg);
+    }
     return NULL_RESULT;
 }
 
@@ -447,6 +521,21 @@ size_t Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[static max
     size_t ret = MIN(tl->ntags, maxout);
     memcpy(out, tl->tags, ret * sizeof(char*));
     return ret;
+}
+
+void Entity_DisappearAnimated(struct entity *ent, const struct map *map, void (*on_finish)(void*), void *arg)
+{
+    /* It's safe to pass a pointer to stack data here due to the 'Shced_RunSync' 
+     * call later - by the time we return from it, we will have copied the data.
+     */
+    struct dis_arg darg = (struct dis_arg){
+        .ent = ent,
+        .map = map,
+        .on_finish = on_finish,
+        .arg = arg,
+    };
+    uint32_t tid = Sched_Create(1, disappear_task, &darg, NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+    Sched_RunSync(tid);
 }
 
 bool Entity_Init(void)

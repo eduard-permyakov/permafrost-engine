@@ -196,8 +196,8 @@ static void combatstate_remove(const struct entity *ent)
     assert(ent->flags & ENTITY_FLAG_COMBATABLE);
 
     khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
-    if(k != kh_end(s_entity_state_table))
-        kh_del(state, s_entity_state_table, k);
+    assert(k != kh_end(s_entity_state_table));
+    kh_del(state, s_entity_state_table, k);
 }
 
 static bool pentities_equal(struct entity *const *a, struct entity *const *b)
@@ -408,6 +408,14 @@ static void entity_turn_to_target(struct entity *ent, const struct entity *targe
     }
 }
 
+static void on_disappear_finish(void *arg)
+{
+    struct entity *self = arg;
+    assert(self);
+    self->flags |= ENTITY_FLAG_INVISIBLE;
+    E_Entity_Notify(EVENT_ENTITY_DISAPPEARED, self->uid, NULL, ES_ENGINE);
+}
+
 static void entity_die(struct entity *ent)
 {
     G_Move_Stop(ent);
@@ -420,17 +428,18 @@ static void entity_die(struct entity *ent)
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_attack_anim_finish);
     E_Global_Notify(EVENT_ENTITY_DIED, ent, ES_ENGINE);
     E_Entity_Notify(EVENT_ENTITY_DEATH, ent->uid, NULL, ES_ENGINE);
-
-    if(!(ent->flags & ENTITY_FLAG_ANIMATED)) {
-        G_Zombiefy(ent);
-        return;
-    }
-
-    struct combatstate *cs = combatstate_get(ent->uid);
-    cs->state = STATE_DEATH_ANIM_PLAYING;
-
-    E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_death_anim_finish, ent, G_RUNNING);
     vec_pentity_push(&s_dying_ents, ent);
+
+    if(ent->flags & ENTITY_FLAG_ANIMATED) {
+
+        struct combatstate *cs = combatstate_get(ent->uid);
+        cs->state = STATE_DEATH_ANIM_PLAYING;
+        E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_death_anim_finish, ent, G_RUNNING);
+
+    }else{
+        G_Zombiefy(ent, false);
+        Entity_DisappearAnimated(ent, s_map, on_disappear_finish, ent);
+    }
 }
 
 static void entity_melee_attack(const struct entity *self, struct entity *target)
@@ -467,7 +476,7 @@ static void on_death_anim_finish(void *user, void *event)
     struct entity *self = user;
     assert(self);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, self->uid, on_death_anim_finish);
-    G_Zombiefy(self);
+    G_Zombiefy(self, true);
 }
 
 static void entity_combat_action(struct entity *ent)
@@ -1478,7 +1487,11 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         struct entity *ent = G_EntityForUID(uid);
         CHK_TRUE_RET(ent);
         vec_pentity_push(&s_dying_ents, ent);
-        E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_death_anim_finish, ent, G_RUNNING);
+        if(ent->flags & ENTITY_FLAG_ANIMATED) {
+            E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, uid, on_death_anim_finish, ent, G_RUNNING);
+        }else{
+            Entity_DisappearAnimated(ent, s_map, on_disappear_finish, ent);
+        }
     }
 
     return true;

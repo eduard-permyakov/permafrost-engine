@@ -140,6 +140,7 @@ static const char *s_event_str_table[] = {
     STR(EVENT_UPDATE_FACTION),
     STR(EVENT_PROJECTILE_DISAPPEAR),
     STR(EVENT_PROJECTILE_HIT),
+    STR(EVENT_ENTITY_DISAPPEARED),
 };
 
 static khash_t(handler_desc) *s_event_handler_table;

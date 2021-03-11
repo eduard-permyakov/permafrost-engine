@@ -1677,7 +1677,7 @@ bool G_RemoveFaction(int faction_id)
 
     kh_foreach(s_gs.active, key, curr, {
         if(G_GetFactionID(key) == faction_id)
-            G_Zombiefy(curr);
+            G_Zombiefy(curr, true);
     });
 
     s_gs.factions_allocd &= ~(0x1 << faction_id);
@@ -1983,7 +1983,7 @@ enum simstate G_GetSimState(void)
     return s_gs.ss;
 }
 
-void G_Zombiefy(struct entity *ent)
+void G_Zombiefy(struct entity *ent, bool invis)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -2004,8 +2004,7 @@ void G_Zombiefy(struct entity *ent)
     G_Resource_RemoveEntity(ent);
     G_StorageSite_RemoveEntity(ent);
 
-    vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
-    G_Fog_RemoveVision(xz_pos, G_GetFactionID(ent->uid), G_GetVisionRange(ent->uid));
+    G_SetVisionRange(ent->uid, 0.0f);
     G_Region_RemoveEnt(ent->uid);
     Entity_ClearTags(ent->uid);
 
@@ -2020,8 +2019,18 @@ void G_Zombiefy(struct entity *ent)
     ent->flags &= ~ENTITY_FLAG_RESOURCE;
     ent->flags &= ~ENTITY_FLAG_STORAGE_SITE;
 
-    ent->flags |= ENTITY_FLAG_INVISIBLE;
     ent->flags |= ENTITY_FLAG_ZOMBIE;
+
+    if(invis) {
+        ent->flags |= ENTITY_FLAG_INVISIBLE;
+    }
+}
+
+bool G_EntityExists(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    khiter_t k = kh_get(entity, s_gs.active, uid);
+    return (k != kh_end(s_gs.active));
 }
 
 struct entity *G_EntityForUID(uint32_t uid)

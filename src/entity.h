@@ -100,17 +100,14 @@ struct ent_anim_rstate{
     mat4x4_t        curr_pose[MAX_JOINTS];
 };
 
-struct ent_vis_state{
-    vec2_t xz_pos;
-    float  vis_range;
-};
-
 
 VEC_TYPE(rstat, struct ent_stat_rstate)
 VEC_IMPL(static inline, rstat, struct ent_stat_rstate)
 
 VEC_TYPE(ranim, struct ent_anim_rstate)
 VEC_IMPL(static inline, ranim, struct ent_anim_rstate)
+
+struct map;
 
 
 bool     Entity_Init(void);
@@ -134,5 +131,6 @@ bool     Entity_HasTag(uint32_t uid, const char *tag);
 void     Entity_ClearTags(uint32_t uid);
 size_t   Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[static maxout]);
 size_t   Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[static maxout]);
+void     Entity_DisappearAnimated(struct entity *ent, const struct map *map, void (*on_finish)(void*), void *arg);
 
 #endif

@@ -139,7 +139,8 @@ bool            G_AddEntity(struct entity *ent, vec3_t pos);
 bool            G_RemoveEntity(struct entity *ent);
 void            G_StopEntity(const struct entity *ent);
 void            G_UpdateBounds(const struct entity *ent);
-void            G_Zombiefy(struct entity *ent);
+void            G_Zombiefy(struct entity *ent, bool invis);
+bool            G_EntityExists(uint32_t uid);
 
 /* Wrapper around AL_EntityFree to defer the call until the render thread 
  * (which owns some part of entity resources) finishes its' work. */

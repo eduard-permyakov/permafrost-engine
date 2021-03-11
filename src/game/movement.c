@@ -691,6 +691,7 @@ static void on_render_3d(void *user, void *event)
             switch(ms->state) {
             case STATE_MOVING:
             case STATE_ENTER_ENTITY_RANGE:
+            case STATE_SURROUND_ENTITY:
                 assert(flock);
                 M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
                 break;
@@ -700,10 +701,6 @@ static void on_render_3d(void *user, void *event)
                 break;
             case STATE_SEEK_ENEMIES:
                 M_NavRenderVisibleEnemySeekField(s_map, cam, layer_for_ent(ent), G_GetFactionID(ent->uid));
-                break;
-            case STATE_SURROUND_ENTITY:
-                assert(flock);
-                M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
                 break;
             default: assert(0);
             }

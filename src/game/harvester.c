@@ -684,7 +684,7 @@ static void on_harvest_anim_finished(void *user, void *event)
     if(resource_left == 0) {
 
         E_Entity_Notify(EVENT_RESOURCE_EXHAUSTED, target->uid, NULL, ES_ENGINE);
-        G_Zombiefy(target);
+        G_Zombiefy(target, true);
 
         if(new_carry < max_carry) {
             entity_try_retarget(ent);
@@ -1310,7 +1310,7 @@ static void on_harvest_anim_finished_source(void *user, void *event)
     if(resource_left == 0) {
 
         E_Entity_Notify(EVENT_RESOURCE_EXHAUSTED, target->uid, NULL, ES_ENGINE);
-        G_Zombiefy(target);
+        G_Zombiefy(target, true);
 
         if(new_carry < max_carry) {
             const char *rname = hs->res_name;
