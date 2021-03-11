@@ -41,6 +41,7 @@
 #include "render/public/render_ctrl.h"
 #include "lib/public/stb_image.h"
 #include "lib/public/vec.h"
+#include "lib/public/pf_string.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
 #include "navigation/public/nav.h"
@@ -265,12 +266,15 @@ static SDL_Surface *engine_create_loading_screen(void)
     ASSERT_IN_MAIN_THREAD();
     SDL_Surface *ret = NULL;
 
+    char fullpath[512];
+    pf_snprintf(fullpath, sizeof(fullpath), "%s/%s", g_basepath, CONFIG_LOADING_SCREEN);
+
     int width, height, orig_format;
-    unsigned char *image = stbi_load(CONFIG_LOADING_SCREEN, &width, &height, 
+    unsigned char *image = stbi_load(fullpath, &width, &height, 
         &orig_format, STBI_rgb);
 
     if(!image) {
-        fprintf(stderr, "Loading Screen: Failed to load image: %s\n", CONFIG_LOADING_SCREEN);
+        fprintf(stderr, "Loading Screen: Failed to load image: %s\n", fullpath);
         goto fail_load_image;
     }
 
