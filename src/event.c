@@ -167,6 +167,12 @@ static uint64_t e_key(uint32_t ent_id, enum eventtype event)
     return (((uint64_t)ent_id) << 32) | (uint64_t)event;
 }
 
+static bool e_zombie_can_receive(enum eventtype type)
+{
+    return (type == EVENT_ENTITY_DEATH)
+        || (type == EVENT_ENTITY_DISAPPEARED);
+}
+
 static bool e_register_handler(uint64_t key, struct handler_desc *desc)
 {
     khiter_t k;
@@ -252,6 +258,11 @@ static void e_handle_event(struct event event, bool immediate)
 
     uint64_t key = e_key(event.receiver_id, event.type);
     enum simstate ss = G_GetSimState();
+
+    if(event.receiver_id != GLOBAL_ID 
+    && G_EntityIsZombie(event.receiver_id) 
+    && !e_zombie_can_receive(event.type))
+        return;
     
     /* The execution of an event handler can cause one or more event handlers 
      * to be unregistered. We want to provide a guarantee that once an event 

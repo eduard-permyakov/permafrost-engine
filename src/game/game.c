@@ -2033,6 +2033,15 @@ bool G_EntityExists(uint32_t uid)
     return (k != kh_end(s_gs.active));
 }
 
+bool G_EntityIsZombie(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    struct entity *ent = G_EntityForUID(uid);
+    if(!ent)
+        return false;
+    return (ent->flags & ENTITY_FLAG_ZOMBIE);
+}
+
 struct entity *G_EntityForUID(uint32_t uid)
 {
     khiter_t k = kh_get(entity, s_gs.active, uid);
