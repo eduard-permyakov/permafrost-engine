@@ -163,6 +163,14 @@ void      N_RenderEnemySeekField(void *nav_private, const struct map *map,
                                  enum nav_layer layer, int faction_id);
 
 /* ------------------------------------------------------------------------
+ * Debug rendering of the fields that guide enemies towards an entity.
+ * ------------------------------------------------------------------------
+ */
+void      N_RenderSurroundField(void *nav_private, const struct map *map, 
+                                mat4x4_t *chunk_model, int chunk_r, int chunk_c, 
+                                enum nav_layer layer, const struct entity *ent);
+
+/* ------------------------------------------------------------------------
  * Debug rendering to show which navigation tiles are currently occupied
  * by 'stationary' entities. Occupied tiles will be red, others will be green.
  * ------------------------------------------------------------------------
@@ -284,12 +292,22 @@ vec2_t    N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_de
 
 /* ------------------------------------------------------------------------
  * Returns the desired velocity for an entity at 'curr_pos' for it to flow
- * towards the closest enemy units within the same chunk.
+ * towards the closest enemy units.
  * ------------------------------------------------------------------------
  */
 vec2_t    N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, 
                                      enum nav_layer layer, vec3_t map_pos, 
                                      int faction_id);
+
+/* ------------------------------------------------------------------------
+ * Returns the desired velocity for an entity at 'curr_pos' for it to flow
+ * towards the the specified entity. The flow field will be NULL if this is
+ * outside a chunk-sized box centered at the enemy position. This is for
+ * fine-tuned movement when we are already close to the target.
+ * ------------------------------------------------------------------------
+ */
+vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_layer layer, 
+                                 vec3_t map_pos, const struct entity *ent, int faction_id);
 
 /* ------------------------------------------------------------------------
  * Returns true if the particular entity is in direct line of sight of the 

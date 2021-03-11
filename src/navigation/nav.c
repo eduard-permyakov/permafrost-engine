@@ -1605,7 +1605,9 @@ fail_alloc_chunks:
 void N_Update(void *nav_private)
 {
     PERF_ENTER();
+
     struct nav_private *priv = nav_private;
+    N_FC_InvalidateDynamicSurroundFields();
 
     for(int layer = 0; layer < NAV_LAYER_MAX; layer++) {
     
@@ -1973,6 +1975,58 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map, mat4x4_t *
         .args = {
             R_PushArg(corners_buff, sizeof(corners_buff)),
             R_PushArg(colors_buff, sizeof(colors_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(chunk_model, sizeof(*chunk_model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
+}
+
+void N_RenderSurroundField(void *nav_private, const struct map *map, mat4x4_t *chunk_model, 
+                           int chunk_r, int chunk_c, enum nav_layer layer, const struct entity *ent)
+{
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    const struct nav_private *priv = nav_private;
+    assert(chunk_r < priv->height);
+    assert(chunk_c < priv->width);
+
+    vec2_t positions_buff[FIELD_RES_R * FIELD_RES_C];
+    vec2_t dirs_buff[FIELD_RES_R * FIELD_RES_C];
+
+    struct field_target target = (struct field_target){
+        .type = TARGET_ENTITY,
+        .ent.target = ent,
+        /* rest of the fields are unused */
+    };
+    ff_id_t ffid = N_FlowFieldID((struct coord){chunk_r, chunk_c}, target, layer);
+    const struct flow_field *ff = N_FC_FlowFieldAt(ffid);
+    if(!ff)
+        return;
+
+    for(int r = 0; r < FIELD_RES_R; r++) {
+    for(int c = 0; c < FIELD_RES_C; c++) {
+
+        float square_x_len = (1.0f / FIELD_RES_C) * chunk_x_dim;
+        float square_z_len = (1.0f / FIELD_RES_R) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / FIELD_RES_C) * chunk_x_dim, -chunk_x_dim, chunk_x_dim);
+        float square_z = CLAMP( (((float)r) / FIELD_RES_R) * chunk_z_dim, -chunk_z_dim, chunk_z_dim);
+
+        positions_buff[r * FIELD_RES_C + c] = (vec2_t){
+            square_x - square_x_len / 2.0f,
+            square_z + square_z_len / 2.0f
+        };
+        dirs_buff[r * FIELD_RES_C + c] = g_flow_dir_lookup[ff->field[r][c].dir_idx];
+    }}
+
+    size_t count = FIELD_RES_R * FIELD_RES_C;
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawFlowField,
+        .nargs = 5,
+        .args = {
+            R_PushArg(positions_buff, sizeof(positions_buff)),
+            R_PushArg(dirs_buff, sizeof(dirs_buff)),
             R_PushArg(&count, sizeof(count)),
             R_PushArg(chunk_model, sizeof(*chunk_model)),
             (void*)G_GetPrevTickMap(),
@@ -2440,6 +2494,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
 
     const struct flow_field *pff = N_FC_FlowFieldAt(ffid);
     assert(pff);
+
     const struct nav_chunk *nchunk = &priv->chunks[layer]
                                                   [IDX(curr_tile.chunk_r, priv->width, curr_tile.chunk_c)];
     uint16_t local_iid = nchunk->local_islands[curr_tile.tile_r][curr_tile.tile_c];
@@ -2447,6 +2502,85 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
 
     if(dir_idx != FD_NONE)
         goto ff_found;
+
+    /* The entity has somehow ended up on an impassable tile. One example
+     * where this can happen is if an adjacent entity 'stops' and occupies 
+     * the tile directly under its' neighbour. The neighbour entity can 
+     * then unexpectedly find itself positioned on a 'blocked' tile. 
+     */
+    if(local_iid == ISLAND_NONE) {
+
+        struct flow_field exist_ff = *pff;
+        struct coord curr = (struct coord){curr_tile.tile_r, curr_tile.tile_c};
+
+        N_FlowFieldUpdateToNearestPathable(nchunk, curr, faction_id, &exist_ff);
+        N_FC_PutFlowField(ffid, &exist_ff);
+
+        pff = N_FC_FlowFieldAt(ffid);
+        goto ff_found;
+    }
+
+    /* We are on an island that is cut off by blockers or impassable terrain from any 
+     * valid enemies - do our best to get as close to the 'action' as possible.
+     */
+    dir_idx = pff->field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
+    if(dir_idx == FD_NONE) {
+
+        struct flow_field exist_ff = *pff;
+        N_FlowFieldUpdateIslandToNearest(local_iid, priv, layer, faction_id, &exist_ff);
+        N_FC_PutFlowField(ffid, &exist_ff);
+
+        pff = N_FC_FlowFieldAt(ffid);
+        goto ff_found;
+    }
+
+ff_found:
+    dir_idx = pff->field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
+    return g_flow_dir_lookup[dir_idx];
+}
+
+vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_layer layer, 
+                                 vec3_t map_pos, const struct entity *ent, int faction_id)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    n_update_dirty_local_islands(nav_private, layer);
+
+    struct tile_desc curr_tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &curr_tile);
+    assert(result);
+
+    struct coord chunk = (struct coord){curr_tile.chunk_r, curr_tile.chunk_c};
+
+    struct field_target target = (struct field_target){
+        .type = TARGET_ENTITY,
+        .ent.target = ent,
+        .ent.map_pos = map_pos,
+    };
+
+    ff_id_t ffid = N_FlowFieldID(chunk, target, layer);
+    struct flow_field ff;
+
+    if(!N_FC_ContainsFlowField(ffid)) {
+
+        N_FlowFieldInit(chunk, priv, &ff);
+        N_FlowFieldUpdate(chunk, priv, faction_id, layer, target, &ff);
+        N_FC_PutFlowField(ffid, &ff);
+
+        assert(N_FC_ContainsFlowField(ffid));
+    }
+
+    const struct flow_field *pff = N_FC_FlowFieldAt(ffid);
+    assert(pff);
+
+    const struct nav_chunk *nchunk = &priv->chunks[layer]
+                                                  [IDX(curr_tile.chunk_r, priv->width, curr_tile.chunk_c)];
+    uint16_t local_iid = nchunk->local_islands[curr_tile.tile_r][curr_tile.tile_c];
+    int dir_idx = pff->field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
 
     /* The entity has somehow ended up on an impassable tile. One example
      * where this can happen is if an adjacent entity 'stops' and occupies 

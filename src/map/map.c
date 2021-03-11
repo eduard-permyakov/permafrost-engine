@@ -464,6 +464,27 @@ void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera
     }}
 }
 
+void M_NavRenderVisibleSurroundField(const struct map *map, const struct camera *cam, 
+                                     enum nav_layer layer, const struct entity *ent)
+{
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+    for(int c = 0; c < map->width;  c++) {
+
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
+
+        mat4x4_t chunk_model;
+        M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
+        N_RenderSurroundField(map->nav_private, map, &chunk_model, r, c, layer, ent);
+    }}
+}
+
 void M_NavRenderNavigationBlockers(const struct map *map, const struct camera *cam, enum nav_layer layer)
 {
     struct frustum frustum;
@@ -576,6 +597,12 @@ vec2_t M_NavDesiredEnemySeekVelocity(const struct map *map, enum nav_layer layer
                                      vec2_t curr_pos, int faction_id)
 {
     return N_DesiredEnemySeekVelocity(curr_pos, map->nav_private, layer, map->pos, faction_id);
+}
+
+vec2_t M_NavDesiredSurroundVelocity(const struct map *map, enum nav_layer layer, 
+                                    vec2_t curr_pos, const struct entity *ent, int faction_id)
+{
+    return N_DesiredSurroundVelocity(curr_pos, map->nav_private, layer, map->pos, ent, faction_id);
 }
 
 bool M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos)

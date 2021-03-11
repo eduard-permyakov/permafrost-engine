@@ -74,6 +74,8 @@
 #define MAX(a, b)    ((a) > (b) ? (a) : (b))
 #define MIN(a, b)    ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)  (sizeof(a)/sizeof(a[0]))
+#define CHUNK_WIDTH  (X_COORDS_PER_TILE * TILES_PER_CHUNK_WIDTH)
+#define CHUNK_HEIGHT (Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT)
 #define STR(a)       #a
 
 #define CHK_TRUE_RET(_pred)             \
@@ -691,10 +693,26 @@ static void on_render_3d(void *user, void *event)
             switch(ms->state) {
             case STATE_MOVING:
             case STATE_ENTER_ENTITY_RANGE:
-            case STATE_SURROUND_ENTITY:
                 assert(flock);
                 M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
                 break;
+            case STATE_SURROUND_ENTITY: {
+
+                struct entity *target = G_EntityForUID(ms->surround_target_uid);
+                if(!target)
+                    break;
+
+                vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
+                vec2_t target_pos_xz = G_Pos_GetXZ(target->uid);
+                float dx = target_pos_xz.x - pos_xz.x;
+                float dz = target_pos_xz.z - pos_xz.z;
+                if(fabs(dx) < CHUNK_WIDTH/2.0f && fabs(dz) < CHUNK_HEIGHT/2.0f) {
+                    M_NavRenderVisibleSurroundField(s_map, cam, layer_for_ent(ent), target);
+                }else{
+                    M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
+                }
+                break;
+            }
             case STATE_ARRIVED:
             case STATE_WAITING:
             case STATE_TURNING:
@@ -776,8 +794,24 @@ static vec2_t ent_desired_velocity(const struct entity *ent)
     switch(ms->state) {
     case STATE_TURNING:
         return (vec2_t){0.0f, 0.0f};
+
     case STATE_SEEK_ENEMIES: 
         return M_NavDesiredEnemySeekVelocity(s_map, layer_for_ent(ent), pos_xz, G_GetFactionID(ent->uid));
+
+    case STATE_SURROUND_ENTITY: {
+
+        const struct entity *target = G_EntityForUID(ms->surround_target_uid);
+        if(target) {
+            vec2_t target_pos_xz = G_Pos_GetXZ(ms->surround_target_uid);
+            float dx = target_pos_xz.x - pos_xz.x;
+            float dz = target_pos_xz.z - pos_xz.z;
+            if(fabs(dx) < CHUNK_WIDTH/2.0f && fabs(dz) < CHUNK_HEIGHT/2.0f) {
+                return M_NavDesiredSurroundVelocity(s_map, layer_for_ent(ent), 
+                    pos_xz, target, G_GetFactionID(ent->uid));
+            }
+        }
+        return M_NavDesiredPointSeekVelocity(s_map, fl->dest_id, pos_xz, fl->target_xz);
+    }
     default:
         assert(fl);
         return M_NavDesiredPointSeekVelocity(s_map, fl->dest_id, pos_xz, fl->target_xz);
@@ -1235,6 +1269,12 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
             break;
         }
 
+        if(Entity_MaybeAdjacentFast(ent, target, 10.0f) 
+        && M_NavObjAdjacent(s_map, ent, target)) {
+            entity_finish_moving(ent, STATE_ARRIVED);
+            break;
+        }
+
         vec2_t dest;
         vec2_t target_pos = G_Pos_GetXZ(ms->surround_target_uid);
         bool hasdest = M_NavClosestReachableAdjacentPos(s_map, layer, 
@@ -1245,24 +1285,17 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
             break;
         }
 
-        vec2_t diff;
         struct flock *flock = flock_for_ent(ent);
+        assert(flock);
+
+        vec2_t diff;
         PFM_Vec2_Sub(&flock->target_xz, &dest, &diff);
 
-        if(flock && PFM_Vec2_Len(&diff) > EPSILON) {
+        if(PFM_Vec2_Len(&diff) > EPSILON) {
             G_Move_SetDest(ent, dest, false);
             ms->state = STATE_SURROUND_ENTITY;
             break;
         }
-
-        if(!Entity_MaybeAdjacentFast(ent, target, 10.0f))
-            break;
-
-        if(M_NavObjAdjacent(s_map, ent, target)) {
-            entity_finish_moving(ent, STATE_ARRIVED);
-            break;
-        }
-
         break;
     }
     case STATE_ENTER_ENTITY_RANGE: {

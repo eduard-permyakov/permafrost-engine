@@ -979,6 +979,51 @@ static size_t field_enemies_initial_frontier(
     return ret;
 }
 
+static size_t field_entity_initial_frontier(
+    struct entity_desc       *target, 
+    const struct nav_private *priv, 
+    struct tile_desc          base,
+    int                       rdim,
+    int                       cdim,
+    struct tile_desc         *out, 
+    size_t                    maxout)
+{
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    int ntds;
+    struct tile_desc tds[512];
+    const struct entity *ent = target->target;
+
+    if(ent->flags & ENTITY_FLAG_BUILDING) {
+
+        struct obb obb;
+        Entity_CurrentOBB(ent, &obb, true);
+        ntds = M_Tile_AllUnderObj(target->map_pos, res, &obb, tds, ARR_SIZE(tds));
+    }else{
+        ntds = M_Tile_AllUnderCircle(res, G_Pos_GetXZ(ent->uid), 
+            ent->selection_radius, target->map_pos, tds, ARR_SIZE(tds));
+    }
+
+    int ret = 0;
+    for(int i = 0; i < ntds; i++) {
+
+        if(ret == maxout)
+            break;
+
+        int dr, dc;
+        M_Tile_Distance(res, &base, &tds[i], &dr, &dc);
+        if(dr < 0 || dr >= rdim)
+            continue;
+        if(dc < 0 || dc >= cdim)
+            continue;
+        out[ret++] = tds[i];
+    }
+    return ret;
+}
+
 static size_t field_portalmask_initial_frontier(
     uint64_t                mask, 
     const struct nav_chunk *chunk,
@@ -1033,6 +1078,7 @@ static size_t field_initial_frontier(
         break;
 
     case TARGET_ENEMIES:
+    case TARGET_ENTITY:
         /* Requires special handling */
         assert(0);
         break;
@@ -1194,6 +1240,72 @@ static void field_update_enemies(
     pq_td_destroy(&frontier);
 }
 
+/* Update the field to guide towards the nearest possible tile which is 
+ * adjacent to one of the tiles occupied by the specified entity.
+ */
+static void field_update_entity(
+    struct coord              chunk_coord, 
+    const struct nav_private *priv, 
+    enum nav_layer            layer, 
+    struct entity_desc        target, 
+    struct flow_field        *inout_flow)
+{
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    pq_td_t frontier;
+    pq_td_init(&frontier);
+
+    const int rdim = (priv->height > 1) ? FIELD_RES_R * 2 + (FIELD_RES_R % 2) : FIELD_RES_R;
+    const int cdim = (priv->width  > 1) ? FIELD_RES_C * 2 + (FIELD_RES_C % 2) : FIELD_RES_C;
+
+    float integration_field[rdim][cdim];
+    for(int r = 0; r < rdim; r++) {
+    for(int c = 0; c < cdim; c++) {
+        integration_field[r][c] = INFINITY;
+    }}
+
+    struct tile_desc base = (struct tile_desc){
+        .chunk_r = (chunk_coord.r > 0) ? chunk_coord.r - 1 : chunk_coord.r,
+        .chunk_c = (chunk_coord.c > 0) ? chunk_coord.c - 1 : chunk_coord.c,
+        .tile_r  = (chunk_coord.r > 0) ? FIELD_RES_R / 2 + (FIELD_RES_R % 2) : 0,
+        .tile_c  = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0,
+    };
+
+    struct tile_desc init_frontier[rdim * cdim];
+    size_t ninit = field_entity_initial_frontier(&target, priv, base, rdim, cdim,
+        init_frontier, ARR_SIZE(init_frontier));
+
+    for(int i = 0; i < ninit; i++) {
+
+        struct tile_desc curr = init_frontier[i];
+
+        int dr, dc;
+        M_Tile_Distance(res, &base, &curr, &dr, &dc);
+        assert(dr >= 0 && dr < rdim);
+        assert(dc >= 0 && dc < cdim);
+
+        pq_td_push(&frontier, 0.0f, curr); 
+        integration_field[dr][dc] = 0.0f;
+    }
+
+    inout_flow->target = (struct field_target){
+        .type = TARGET_ENTITY,
+        .ent = target
+    };
+
+    const int roff = (chunk_coord.r > 0) ? FIELD_RES_R / 2 + (FIELD_RES_R % 2) : 0;
+    const int coff = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0;
+
+    field_build_integration_region(&frontier, priv, layer, FACTION_ID_NONE, 
+        base, rdim, cdim, integration_field);
+    field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
+
+    pq_td_destroy(&frontier);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1211,7 +1323,7 @@ ff_id_t N_FlowFieldID(struct coord chunk, struct field_target target, enum nav_l
              | (((uint64_t)chunk.r)                     <<  8)
              | (((uint64_t)chunk.c)                     <<  0);
 
-    }else if(target.type == TARGET_TILE){
+    }else if(target.type == TARGET_TILE) {
 
         return (((uint64_t)layer)                       << 60)
              | (((uint64_t)target.type)                 << 56)
@@ -1220,13 +1332,22 @@ ff_id_t N_FlowFieldID(struct coord chunk, struct field_target target, enum nav_l
              | (((uint64_t)chunk.r)                     <<  8)
              | (((uint64_t)chunk.c)                     <<  0);
 
-    }else if(target.type == TARGET_ENEMIES){
+    }else if(target.type == TARGET_ENEMIES) {
 
         return (((uint64_t)layer)                       << 60)
              | (((uint64_t)target.type)                 << 56)
              | (((uint64_t)target.enemies.faction_id)   << 24)
              | (((uint64_t)chunk.r)                     <<  8)
              | (((uint64_t)chunk.c)                     <<  0);
+
+    }else if(target.type == TARGET_ENTITY) {
+    
+        return (((uint64_t)layer)                       << 60)
+             | (((uint64_t)target.type)                 << 56)
+             | (((uint64_t)target.ent.target->uid)      << 24)
+             | (((uint64_t)chunk.r)                     <<  8)
+             | (((uint64_t)chunk.c)                     <<  0);
+
     }else {
         assert(0);
         return 0;
@@ -1263,6 +1384,11 @@ void N_FlowFieldUpdate(
 {
     if(target.type == TARGET_ENEMIES) {
         field_update_enemies(chunk_coord, priv, layer, target.enemies, inout_flow);
+        return;
+    }
+
+    if(target.type == TARGET_ENTITY) {
+        field_update_entity(chunk_coord, priv, layer, target.ent, inout_flow);
         return;
     }
 
@@ -1507,20 +1633,21 @@ void N_FlowFieldUpdateIslandToNearest(
     struct coord chunk_coord = inout_flow->chunk;
     const struct nav_chunk *chunk = &priv->chunks[layer][IDX(chunk_coord.r, priv->width, chunk_coord.c)];
 
+    struct tile_desc base = (struct tile_desc){
+        .chunk_r = chunk_coord.r,
+        .chunk_c = chunk_coord.c,
+        .tile_r  = 0,
+        .tile_c  = 0,
+    };
+
     pq_coord_t frontier;
     pq_coord_init(&frontier);
 
     struct coord init_frontier[FIELD_RES_R * FIELD_RES_C];
-
     size_t ninit = 0;
+
     if(inout_flow->target.type == TARGET_ENEMIES) {
 
-        struct tile_desc base = (struct tile_desc){
-            .chunk_r = chunk_coord.r,
-            .chunk_c = chunk_coord.c,
-            .tile_r  = 0,
-            .tile_c  = 0,
-        };
         struct tile_desc enemies_init_frontier[FIELD_RES_R * FIELD_RES_C];
         size_t ntds = field_enemies_initial_frontier(&inout_flow->target.enemies, priv, 
             base, FIELD_RES_R, FIELD_RES_C, enemies_init_frontier, ARR_SIZE(enemies_init_frontier));
@@ -1532,6 +1659,19 @@ void N_FlowFieldUpdateIslandToNearest(
         }
         assert(ninit == ntds);
 
+    }else if(inout_flow->target.type == TARGET_ENTITY) {
+
+        struct tile_desc entity_init_frontier[FIELD_RES_R * FIELD_RES_C];
+        size_t ntds = field_entity_initial_frontier(&inout_flow->target.ent, priv, 
+            base, FIELD_RES_R, FIELD_RES_C, entity_init_frontier, ARR_SIZE(entity_init_frontier));
+        for(int i = 0; i < ntds; i++) {
+            init_frontier[ninit++] = (struct coord){
+                entity_init_frontier[i].tile_r,
+                entity_init_frontier[i].tile_c,
+            };
+        }
+        assert(ninit == ntds);
+    
     }else{
         ninit = field_initial_frontier(inout_flow->target, chunk, priv, false, faction_id, 
             init_frontier, ARR_SIZE(init_frontier));

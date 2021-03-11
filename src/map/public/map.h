@@ -110,6 +110,13 @@ void   M_NavRenderVisibleEnemySeekField(const struct map *map, const struct came
                                         enum nav_layer layer, int faction_id);
 
 /* ------------------------------------------------------------------------
+ * Debug rendering of fields that guide units to surround a specific target.
+ * ------------------------------------------------------------------------
+ */
+void   M_NavRenderVisibleSurroundField(const struct map *map, const struct camera *cam, 
+                                       enum nav_layer layer, const struct entity *ent);
+
+/* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing which regions are 
  * currently blocked by stationary entities.
  * ------------------------------------------------------------------------
@@ -298,6 +305,15 @@ vec2_t M_NavDesiredPointSeekVelocity(const struct map *map, dest_id_t id,
  */
 vec2_t M_NavDesiredEnemySeekVelocity(const struct map *map, enum nav_layer layer, 
                                      vec2_t curr_pos, int faction_id);
+
+/* ------------------------------------------------------------------------
+ * Returns the desired velocity vector for getting as close as possible
+ * to a specific entity. This only works when we are within a chunk-sized
+ * box centered at the target entity position. Until then, use a point path.
+ * ------------------------------------------------------------------------
+ */
+vec2_t M_NavDesiredSurroundVelocity(const struct map *map, enum nav_layer layer, 
+                                    vec2_t curr_pos, const struct entity *ent, int faction_id);
 
 /* ------------------------------------------------------------------------
  * Returns true if the specified coordinate is in direct line of sight of 

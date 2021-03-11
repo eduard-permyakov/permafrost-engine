@@ -67,6 +67,8 @@ void N_FC_InvalidateAllThroughChunk(struct coord chunk, enum nav_layer layer);
 void N_FC_InvalidateNeighbourEnemySeekFields(int width, int height, 
                                              struct coord chunk, enum nav_layer layer);
 
+void N_FC_InvalidateDynamicSurroundFields(void);
+
 /*###########################################################################*/
 /* LOS FIELD CACHING                                                         */
 /*###########################################################################*/
@@ -75,9 +77,9 @@ void N_FC_InvalidateNeighbourEnemySeekFields(int width, int height,
  */
 const struct LOS_field  *N_FC_LOSFieldAt(dest_id_t id, struct coord chunk_coord);
 
-bool N_FC_ContainsLOSField(dest_id_t id, struct coord chunk_coord);
-void N_FC_PutLOSField(dest_id_t id, struct coord chunk_coord, const struct LOS_field *lf);
-
+bool                     N_FC_ContainsLOSField(dest_id_t id, struct coord chunk_coord);
+void                     N_FC_PutLOSField(dest_id_t id, struct coord chunk_coord, 
+                                          const struct LOS_field *lf);
 
 /*###########################################################################*/
 /* FLOW FIELD CACHING                                                        */
@@ -87,12 +89,13 @@ void N_FC_PutLOSField(dest_id_t id, struct coord chunk_coord, const struct LOS_f
  */
 const struct flow_field *N_FC_FlowFieldAt(ff_id_t ffid);
 
-bool N_FC_ContainsFlowField(ff_id_t ffid);
-void N_FC_PutFlowField(ff_id_t ffid, const struct flow_field *ff);
+bool                     N_FC_ContainsFlowField(ff_id_t ffid);
+void                     N_FC_PutFlowField(ff_id_t ffid, const struct flow_field *ff);
 
-bool N_FC_GetDestFFMapping(dest_id_t id, struct coord chunk_coord, ff_id_t *out_ff);
-void N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, ff_id_t ffid);
-
+bool                     N_FC_GetDestFFMapping(dest_id_t id, struct coord chunk_coord, 
+                                               ff_id_t *out_ff);
+void                     N_FC_PutDestFFMapping(dest_id_t dest_id, struct coord chunk_coord, 
+                                               ff_id_t ffid);
 
 /*###########################################################################*/
 /* GRID PATH CACHING                                                         */

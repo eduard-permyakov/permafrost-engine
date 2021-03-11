@@ -303,7 +303,7 @@ static void g_render_healthbars(void)
     (void)status;
 
     if(hb_setting.as_int == HB_MODE_NEVER)
-        return;
+        PERF_RETURN_VOID();
 
     size_t max_ents = vec_size(&s_gs.visible);
     size_t num_combat_visible = 0;

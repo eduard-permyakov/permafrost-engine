@@ -501,3 +501,22 @@ void N_FC_InvalidateNeighbourEnemySeekFields(int width, int height,
     }}
 }
 
+void N_FC_InvalidateDynamicSurroundFields(void)
+{
+    uint64_t key;
+    struct flow_field ff_val;
+
+    LRU_FOREACH_SAFE_REMOVE(flow, &s_flow_cache, key, ff_val, {
+    
+        int type = N_FlowFieldTargetType(key);
+        if(type != TARGET_ENTITY)
+            continue;
+
+        const struct entity *ent = ff_val.target.ent.target;
+        if(!(ent->flags & ENTITY_FLAG_MOVABLE))
+            continue;
+
+        lru_flow_remove(&s_flow_cache, key);
+    });
+}
+
