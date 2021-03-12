@@ -151,7 +151,7 @@ static int                    s_front_queue_idx = 0;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static inline bool handlers_equal(const struct handler_desc *a, const struct handler_desc *b)
+static inline bool e_handlers_equal(const struct handler_desc *a, const struct handler_desc *b)
 {
     if(a->type != b->type)
         return false;
@@ -193,7 +193,7 @@ static bool e_register_handler(uint64_t key, struct handler_desc *desc)
     
         vec_hd_t vec = kh_value(s_event_handler_table, k);
 
-        int idx = vec_hd_indexof(&vec, *desc, handlers_equal);
+        int idx = vec_hd_indexof(&vec, *desc, e_handlers_equal);
         if(idx != -1)
             return false; /* Don't allow registering duplicate handlers for the same event */
 
@@ -204,7 +204,7 @@ static bool e_register_handler(uint64_t key, struct handler_desc *desc)
     return true;
 }
 
-static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
+static bool e_unregister_handler(uint64_t key, const struct handler_desc *desc)
 {
     khiter_t k;
     k = kh_get(handler_desc, s_event_handler_table, key);
@@ -214,7 +214,7 @@ static bool e_unregister_handler(uint64_t key, struct handler_desc *desc)
 
     vec_hd_t vec = kh_value(s_event_handler_table, k);
 
-    int idx = vec_hd_indexof(&vec, *desc, handlers_equal);
+    int idx = vec_hd_indexof(&vec, *desc, e_handlers_equal);
     if(idx == -1)
         return false;
     struct handler_desc to_del = vec_AT(&vec, idx);
@@ -238,6 +238,16 @@ static void e_invoke(const struct handler_desc *hd, struct event event)
         hd->handler.as_function(hd->user_arg, event.arg);
 
     }else if(hd->type == HANDLER_TYPE_SCRIPT) {
+
+        /* Remove the handler if the user arg goes out of scope. Since Python
+         * doesn't actually guarantee destructors getting called, it's possible
+         * that we miss an 'unregister'. Take care of that here.
+         */
+        if(S_WeakrefDied(hd->user_arg)) {
+            uint64_t key = e_key(event.receiver_id, event.type);
+            e_unregister_handler(key, hd);
+            return;
+        }
 
         script_opaque_t script_arg = (event.source == ES_SCRIPT) 
             ? S_UnwrapIfWeakref(event.arg)
@@ -285,7 +295,7 @@ static void e_handle_event(struct event event, bool immediate)
         for(int i = 0; i < vec_size(&vec); i++) {
         
             struct handler_desc *elem = &vec_AT(&vec, i);
-            int idx = vec_hd_indexof(&execd_handlers, *elem, handlers_equal); 
+            int idx = vec_hd_indexof(&execd_handlers, *elem, e_handlers_equal); 
             if(idx != -1)
                 continue;
             /* memoize any handlers that we've already ran */
@@ -307,7 +317,7 @@ static void e_handle_event(struct event event, bool immediate)
         S_Release(event.arg);
 }
 
-static void notify_entities_update_start(void)
+static void e_notify_entities_update_start(bool immediate)
 {
     uint64_t key;
     vec_hd_t curr;
@@ -317,9 +327,10 @@ static void notify_entities_update_start(void)
 
         if((key & 0xffffffff) != EVENT_UPDATE_START)
             continue;
-
         uint32_t uid = key >> 32;
-        e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, uid}, false);
+        if(uid == GLOBAL_ID)
+            continue;
+        e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, uid}, immediate);
     });
 }
 
@@ -373,7 +384,7 @@ void E_ServiceQueue(void)
     s_front_queue_idx = (s_front_queue_idx + 1) % 2;
 
     e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID}, false);
-    notify_entities_update_start();
+    e_notify_entities_update_start(false);
 
     struct event event;
     while(queue_event_pop(queue, &event)) {
@@ -402,6 +413,7 @@ void E_FlushEventQueue(void)
         s_front_queue_idx = (s_front_queue_idx + 1) % 2;
 
         e_handle_event( (struct event){EVENT_UPDATE_START,  NULL, ES_ENGINE, GLOBAL_ID}, true);
+        e_notify_entities_update_start(true);
 
         struct event event;
         while(queue_event_pop(queue, &event)) {

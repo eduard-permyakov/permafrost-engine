@@ -2993,6 +2993,11 @@ script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg)
     return arg;
 }
 
+bool S_WeakrefDied(script_opaque_t arg)
+{
+    return (PyWeakref_Check(arg) && (PyWeakref_GetObject(arg) == Py_None));
+}
+
 bool S_ObjectsEqual(script_opaque_t a, script_opaque_t b)
 {
     return (1 == PyObject_RichCompareBool(a, b, Py_EQ));

@@ -70,6 +70,7 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg);
 /* Returns 'arg' if this is not a weakref object. Otherwise, return a borrowed
  * reference extracted from the weakref. */
 script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg);
+bool            S_WeakrefDied(script_opaque_t arg);
 bool            S_ObjectsEqual(script_opaque_t a, script_opaque_t b);
 
 void            S_ClearState(void);
