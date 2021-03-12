@@ -169,6 +169,7 @@ static khash_t(state)   *s_entity_state_table;
 static const struct map *s_map;
 
 static bool              s_gather_on_lclick = false;
+static bool              s_pick_up_on_lclick = false;
 static bool              s_drop_off_on_lclick = false;
 static bool              s_transport_on_lclick = false;
 
@@ -845,9 +846,8 @@ static void on_arrive_at_transport_source(void *user, void *event)
     uint32_t uid = (uintptr_t)user;
     struct entity *ent = G_EntityForUID(uid);
 
-    if(!G_Move_Still(ent)) {
+    if(!G_Move_Still(ent))
         return; 
-    }
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_transport_source);
     E_Entity_Unregister(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel);
@@ -958,9 +958,8 @@ static void on_arrive_at_transport_dest(void *user, void *event)
     uint32_t uid = (uintptr_t)user;
     struct entity *ent = G_EntityForUID(uid);
 
-    if(!G_Move_Still(ent)) {
+    if(!G_Move_Still(ent))
         return; 
-    }
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_transport_dest);
     E_Entity_Unregister(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel);
@@ -1032,12 +1031,50 @@ static void selection_try_order_gather(void)
         struct hstate *hs = hstate_get(curr->uid);
         assert(hs);
 
-        G_Harvester_Stop(curr->uid);
+        G_StopEntity(curr);
         G_Harvester_Gather(curr, target);
         ngather++;
     }
 
     if(ngather) {
+        Entity_Ping(target);
+    }
+}
+
+static void selection_try_order_pick_up(bool targeting)
+{
+    if(!targeting && (G_CurrContextualAction() == CTX_ACTION_TRANSPORT))
+        return;
+
+    struct entity *target = G_Sel_GetHovered();
+    if(!target || !(target->flags & ENTITY_FLAG_STORAGE_SITE))
+        return;
+
+    enum selection_type sel_type;
+    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+    size_t ncarry = 0;
+
+    if(sel_type != SELECTION_TYPE_PLAYER)
+        return;
+
+    for(int i = 0; i < vec_size(sel); i++) {
+
+        struct entity *curr = vec_AT(sel, i);
+        if(!(curr->flags & ENTITY_FLAG_HARVESTER))
+            continue;
+
+        struct hstate *hs = hstate_get(curr->uid);
+        assert(hs);
+
+        if(G_Harvester_GetCurrTotalCarry(curr->uid) > 0)
+            continue;
+
+        G_StopEntity(curr);
+        G_Harvester_PickUp(curr, target);
+        ncarry++;
+    }
+
+    if(ncarry) {
         Entity_Ping(target);
     }
 }
@@ -1052,7 +1089,7 @@ static void selection_try_order_drop_off(void)
 
     enum selection_type sel_type;
     const vec_pentity_t *sel = G_Sel_Get(&sel_type);
-    size_t ngather = 0;
+    size_t ncarry = 0;
 
     if(sel_type != SELECTION_TYPE_PLAYER)
         return;
@@ -1069,19 +1106,19 @@ static void selection_try_order_drop_off(void)
         if(G_Harvester_GetCurrTotalCarry(curr->uid) == 0)
             continue;
 
-        G_Harvester_Stop(curr->uid);
+        G_StopEntity(curr);
         G_Harvester_DropOff(curr, target);
-        ngather++;
+        ncarry++;
     }
 
-    if(ngather) {
+    if(ncarry) {
         Entity_Ping(target);
     }
 }
 
-static void selection_try_order_transport(void)
+static void selection_try_order_transport(bool targeting)
 {
-    if(G_CurrContextualAction() != CTX_ACTION_TRANSPORT)
+    if(!targeting && (G_CurrContextualAction() != CTX_ACTION_TRANSPORT))
         return;
 
     struct entity *target = G_Sel_GetHovered();
@@ -1103,7 +1140,7 @@ static void selection_try_order_transport(void)
         struct hstate *hs = hstate_get(curr->uid);
         assert(hs);
 
-        G_Harvester_Stop(curr->uid);
+        G_StopEntity(curr);
         G_Harvester_Transport(curr, target);
         ntransport++;
     }
@@ -1121,7 +1158,13 @@ static void on_mousedown(void *user, void *event)
     bool right = (mouse_event->button == SDL_BUTTON_RIGHT);
     bool left = (mouse_event->button == SDL_BUTTON_LEFT);
 
+    bool gather = s_gather_on_lclick;
+    bool pickup = s_pick_up_on_lclick;
+    bool dropoff = s_drop_off_on_lclick;
+    bool transport = s_transport_on_lclick;
+
     s_gather_on_lclick = false;
+    s_pick_up_on_lclick = false;
     s_drop_off_on_lclick = false;
     s_transport_on_lclick = false;
 
@@ -1145,9 +1188,18 @@ static void on_mousedown(void *user, void *event)
     && (action != CTX_ACTION_TRANSPORT))
         return;
 
-    selection_try_order_gather();
-    selection_try_order_drop_off();
-    selection_try_order_transport();
+    if(right || (left && gather)) {
+        selection_try_order_gather();
+    }
+    if(right || (left && pickup)) {
+        selection_try_order_pick_up(targeting);
+    }
+    if(right || (left && dropoff)) {
+        selection_try_order_drop_off();
+    }
+    if(right || (left && transport)) {
+        selection_try_order_transport(targeting);
+    }
 }
 
 static const char *transport_resource(struct hstate *hs, struct entity *target)
@@ -1160,6 +1212,22 @@ static const char *transport_resource(struct hstate *hs, struct entity *target)
         int stored = G_StorageSite_GetCurr(target->uid, rname);
 
         if(desired > stored) {
+            ret = rname;
+            break;
+        }
+    }
+    return ret;
+}
+
+static const char *pick_up_resource(struct hstate *hs, struct entity *target)
+{
+    const char *ret = NULL;
+    for(int i = 0; i < vec_size(&hs->priority); i++) {
+
+        const char *rname = vec_AT(&hs->priority, i);
+        int stored = G_StorageSite_GetCurr(target->uid, rname);
+
+        if(stored > 0) {
             ret = rname;
             break;
         }
@@ -1269,10 +1337,9 @@ static void on_harvest_anim_finished_source(void *user, void *event)
     struct entity *dest = G_EntityForUID(hs->transport_dest_uid);
     if(!dest) {
 
+        finish_harvesting(hs, uid);
         hs->transport_dest_uid = UID_NONE;
         hs->transport_src_uid = UID_NONE;
-        hs->res_name = NULL;
-        hs->state = STATE_NOT_HARVESTING;
         return;
     }
 
@@ -1322,10 +1389,9 @@ static void on_harvest_anim_finished_source(void *user, void *event)
 
     if(!carried_resource_name(hs)) {
 
+        finish_harvesting(hs, ent->uid);
         hs->transport_dest_uid = UID_NONE;
         hs->transport_src_uid = UID_NONE;
-        hs->res_name = NULL;
-        hs->state = STATE_NOT_HARVESTING;
         return;
     }
 
@@ -1593,6 +1659,7 @@ int G_Harvester_GetCurrTotalCarry(uint32_t uid)
 void G_Harvester_SetGatherOnLeftClick(void)
 {
     s_gather_on_lclick  = true;
+    s_pick_up_on_lclick = false;
     s_drop_off_on_lclick = false;
     s_transport_on_lclick = false;
 }
@@ -1600,6 +1667,7 @@ void G_Harvester_SetGatherOnLeftClick(void)
 void G_Harvester_SetDropOffOnLeftClick(void)
 {
     s_gather_on_lclick  = false;
+    s_pick_up_on_lclick = false;
     s_drop_off_on_lclick = true;
     s_transport_on_lclick = false;
 }
@@ -1607,8 +1675,17 @@ void G_Harvester_SetDropOffOnLeftClick(void)
 void G_Harvester_SetTransportOnLeftClick(void)
 {
     s_gather_on_lclick  = false;
+    s_pick_up_on_lclick = false;
     s_drop_off_on_lclick = false;
     s_transport_on_lclick = true;
+}
+
+void G_Harvester_SetPickUpOnLeftClick(void)
+{
+    s_gather_on_lclick  = false;
+    s_pick_up_on_lclick = true;
+    s_drop_off_on_lclick = false;
+    s_transport_on_lclick = false;
 }
 
 bool G_Harvester_Gather(struct entity *harvester, struct entity *resource)
@@ -1663,8 +1740,44 @@ bool G_Harvester_DropOff(struct entity *harvester, struct entity *storage)
     if(G_Harvester_GetCurrTotalCarry(harvester->uid) == 0)
         return true;
 
+    G_Harvester_Stop(harvester->uid);
     hs->drop_off_only = true;
     entity_drop_off(harvester, storage);
+    return true;
+}
+
+bool G_Harvester_PickUp(struct entity *harvester, struct entity *storage)
+{
+    struct hstate *hs = hstate_get(harvester->uid);
+    assert(hs);
+
+    if(!(storage->flags & ENTITY_FLAG_STORAGE_SITE))
+        return false;
+
+    if(G_Harvester_GetCurrTotalCarry(harvester->uid) > 0)
+        return true;
+
+    const char *rname = pick_up_resource(hs, storage);
+    if(!rname)
+        return false;
+
+    G_Harvester_Stop(harvester->uid);
+    hs->state = STATE_TRANSPORT_GETTING;
+    hs->transport_dest_uid = UID_NONE;
+    hs->transport_src_uid = storage->uid;
+    hs->res_name = rname;
+    E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, harvester->uid, storage, ES_ENGINE);
+
+    if(M_NavObjAdjacent(s_map, harvester, storage)) {
+        on_arrive_at_transport_source((void*)((uintptr_t)harvester->uid), NULL);
+    }else{
+        E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_arrive_at_transport_source, 
+            (void*)((uintptr_t)harvester->uid), G_RUNNING);
+        E_Entity_Register(EVENT_MOVE_ISSUED, harvester->uid, on_motion_begin_travel, 
+            (void*)((uintptr_t)harvester->uid), G_RUNNING);
+        G_Move_SetSurroundEntity(harvester, storage);
+    }
+
     return true;
 }
 
@@ -1706,6 +1819,7 @@ bool G_Harvester_Transport(struct entity *harvester, struct entity *storage)
     if(!src)
         return false;
 
+    G_Harvester_Stop(harvester->uid);
     hs->state = STATE_TRANSPORT_GETTING;
     hs->transport_dest_uid = storage->uid;
     hs->transport_src_uid = src->uid;
@@ -1759,9 +1873,7 @@ void G_Harvester_Stop(uint32_t uid)
     if(hs->state == STATE_HARVESTING) {
         E_Entity_Notify(EVENT_HARVEST_END, uid, NULL, ES_ENGINE);
     }
-
     hs->state = STATE_NOT_HARVESTING;
-    hs->queued.cmd = CMD_NONE;
 
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished_source);
@@ -1777,6 +1889,7 @@ void G_Harvester_Stop(uint32_t uid)
 bool G_Harvester_InTargetMode(void)
 {
     return s_gather_on_lclick 
+        || s_pick_up_on_lclick
         || s_drop_off_on_lclick 
         || s_transport_on_lclick;
 }

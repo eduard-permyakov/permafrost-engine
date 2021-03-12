@@ -350,10 +350,12 @@ enum tstrategy{
 };
 
 void  G_Harvester_SetGatherOnLeftClick(void);
+void  G_Harvester_SetPickUpOnLeftClick(void);
 void  G_Harvester_SetDropOffOnLeftClick(void);
 void  G_Harvester_SetTransportOnLeftClick(void);
 
 bool  G_Harvester_Gather(struct entity *harvester, struct entity *resource);
+bool  G_Harvester_PickUp(struct entity *harvester, struct entity *storage);
 bool  G_Harvester_DropOff(struct entity *harvester, struct entity *storage);
 bool  G_Harvester_Transport(struct entity *harvester, struct entity *storage);
 

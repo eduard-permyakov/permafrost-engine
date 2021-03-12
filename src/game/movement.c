@@ -1812,7 +1812,12 @@ void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz, bool attack)
      * right flow fields will be computed on-demand during the
      * next movement update. 
      */
-    dest_id_t dest_id = M_NavDestIDForPos(s_map, dest_xz, layer);
+    dest_id_t dest_id;
+    if(attack) {
+        dest_id = M_NavDestIDForPosAttacking(s_map, dest_xz, layer, G_GetFactionID(ent->uid));
+    }else{
+        dest_id = M_NavDestIDForPos(s_map, dest_xz, layer);
+    }
     struct flock *fl = flock_for_dest(dest_id);
 
     if(fl && fl == flock_for_ent(ent))
@@ -1916,11 +1921,10 @@ void G_Move_SetSurroundEntity(const struct entity *ent, const struct entity *tar
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
+    G_Move_Stop(ent);
+
     vec2_t pos = G_Pos_GetXZ(target->uid);
     G_Move_SetDest(ent, pos, false);
-
-    if(ent_still(ms))
-        return;
 
     assert(!ms->blocking);
     ms->state = STATE_SURROUND_ENTITY;
