@@ -704,7 +704,8 @@ int G_Region_GetEnts(const char *name, size_t maxout, struct entity *ents[static
     for(int i = 0; i < vec_size(&reg->curr_ents); i++) {
 
         struct entity *ent = G_EntityForUID(vec_AT(&reg->curr_ents, i));
-        assert(ent);
+        if(!ent)
+            continue;
 
         if(ret == maxout)
             return ret;
