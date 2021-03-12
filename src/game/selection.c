@@ -546,6 +546,9 @@ void G_Sel_Clear(void)
     memset(&s_ctx, 0, sizeof(s_ctx));
     s_ctx.installed = installed;
 
+    if(vec_size(&s_selected) > 0) {
+        E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
+    }
     vec_pentity_reset(&s_selected);
 }
 
@@ -557,6 +560,7 @@ void G_Sel_Add(struct entity *ent)
     if(idx == -1) {
         vec_pentity_push(&s_selected, ent);
         sel_filter_and_set_type();
+        E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
     }
 }
 
@@ -586,6 +590,7 @@ void G_Sel_Set(uint32_t *ents, size_t nents)
         vec_pentity_push(&s_selected, ent);
     }
     sel_filter_and_set_type();
+    E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
 }
 
 bool G_Sel_SaveState(struct SDL_RWops *stream)
