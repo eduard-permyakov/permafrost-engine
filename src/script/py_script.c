@@ -142,6 +142,7 @@ static PyObject *PyPf_get_minimap_size(PyObject *self);
 static PyObject *PyPf_set_minimap_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_mouse_over_minimap(PyObject *self);
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
+static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self);
 static PyObject *PyPf_draw_text(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_storage_site_ui_style(PyObject *self, PyObject *args);
@@ -458,6 +459,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_map_height_at_point, METH_VARARGS,
     "Returns the Y-dimension map height at the specified XZ coordinate. Returns None if the "
     "specified coordinate is outside the map bounds."},
+
+    {"map_nearest_pathable",
+    (PyCFunction)PyPf_map_nearest_pathable, METH_VARARGS,
+    "Returns the closest XZ map position that is pathable and not currently blocked."},
 
     {"map_pos_under_cursor",
     (PyCFunction)PyPf_map_pos_under_cursor, METH_NOARGS,
@@ -1672,6 +1677,24 @@ static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args)
         Py_RETURN_NONE;
     else
         return Py_BuildValue("f", height);
+}
+
+static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args)
+{
+    float x, z;
+
+    if(!PyArg_ParseTuple(args, "(ff)", &x, &z)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a tuple of two floats.");
+        return NULL;
+    }
+
+    vec2_t ret;
+    bool exists = G_MapClosestPathable((vec2_t){x, z}, &ret);
+    if(!exists) {
+        Py_RETURN_NONE;
+    }else{
+        return Py_BuildValue("ff", ret.x, ret.z);
+    }
 }
 
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self)

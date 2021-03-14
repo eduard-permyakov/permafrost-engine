@@ -131,6 +131,7 @@ bool            G_SetMinimapResizeMask(int mask);
 bool            G_MouseOverMinimap(void);
 bool            G_MouseInTargetMode(void);
 bool            G_MapHeightAtPoint(vec2_t xz, float *out_height);
+bool            G_MapClosestPathable(vec2_t xz, vec2_t *out);
 bool            G_PointInsideMap(vec2_t xz);
 
 void            G_BakeNavDataForScene(void);

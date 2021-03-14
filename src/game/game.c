@@ -1255,6 +1255,17 @@ bool G_MapHeightAtPoint(vec2_t xz, float *out_height)
     return true;
 }
 
+bool G_MapClosestPathable(vec2_t xz, vec2_t *out)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    if(!s_gs.map) {
+        *out = xz;
+        return true;
+    }
+    return M_NavClosestPathable(s_gs.map, NAV_LAYER_GROUND_1X1, xz, out);
+}
+
 bool G_PointInsideMap(vec2_t xz)
 {
     ASSERT_IN_MAIN_THREAD();

@@ -647,6 +647,11 @@ bool M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer laye
     }
 }
 
+bool M_NavClosestPathable(const struct map *map, enum nav_layer layer, vec2_t xz_src, vec2_t *out)
+{
+    return N_ClosestPathable(map->nav_private, layer, map->pos, xz_src, out);
+}
+
 void M_NavBlockersIncref(vec2_t xz_pos, float range, int faction_id, const struct map *map)
 {
     N_BlockersIncref(xz_pos, range, faction_id, map->pos, map->nav_private);

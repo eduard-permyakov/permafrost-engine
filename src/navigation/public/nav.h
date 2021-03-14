@@ -363,6 +363,14 @@ bool N_ClosestReachableAdjacentPosDynamic(void *nav_private, enum nav_layer laye
                                           float radius, vec2_t *out);
 
 /* ------------------------------------------------------------------------
+ * If true is returned, 'out' is set to the worldspace XZ position of the 
+ * closest pathable point on the map to the specified position.
+ * ------------------------------------------------------------------------
+ */
+bool N_ClosestPathable(void *nav_private, enum nav_layer layer, 
+                       vec3_t map_pos, vec2_t xz_src, vec2_t *out);
+
+/* ------------------------------------------------------------------------
  * Changes the blocker reference count for the navigation tile under the
  * cursor position. This may cause flow field eviction from caches.
  * The faction_id is for keeping track of which factions are currently

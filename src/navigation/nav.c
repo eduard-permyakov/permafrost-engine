@@ -2739,6 +2739,73 @@ vec2_t N_ClosestReachableDest(void *nav_private, enum nav_layer layer, vec3_t ma
     return ret;
 }
 
+bool N_ClosestPathable(void *nav_private, enum nav_layer layer, 
+                       vec3_t map_pos, vec2_t xz_src, vec2_t *out)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+    bool result;
+    (void)result;
+
+    /* Convert source position to tile coordinates */
+    struct tile_desc src_desc;
+    result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
+    assert(result);
+
+    if(!n_tile_blocked(priv, layer, src_desc)) {
+        *out = xz_src;
+        return true;
+    }
+
+    bool ret = false;
+    queue_td_t frontier;
+    queue_td_init(&frontier, 1024);
+    queue_td_push(&frontier, &src_desc);
+
+    khash_t(td) *visited = kh_init(td);
+
+    while(queue_size(frontier) > 0) {
+
+        struct tile_desc curr;
+        queue_td_pop(&frontier, &curr);
+
+        if(!n_tile_blocked(priv, layer, curr)) {
+            struct box bounds = M_Tile_Bounds(res, map_pos, curr);
+            *out = (vec2_t) { bounds.x, bounds.z };
+            ret = true;
+            goto done;
+        }
+
+        struct coord deltas[] = {
+            { 0, -1},
+            { 0, +1},
+            {-1,  0},
+            {+1,  0},
+        };
+
+        for(int i = 0; i < ARR_SIZE(deltas); i++) {
+        
+            struct tile_desc neighb = curr;
+            if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
+                continue;
+
+            if(kh_get(td, visited, td_key(&neighb)) != kh_end(visited))
+                continue;
+
+            kh_put(td, visited, td_key(&neighb), &(int){0});
+            queue_td_push(&frontier, &neighb);
+        }
+    }
+
+done:
+    kh_destroy(td, visited);
+    queue_td_destroy(&frontier);
+    return ret;
+}
+
 bool N_ClosestReachableAdjacentPosStatic(void *nav_private, enum nav_layer layer, vec3_t map_pos, 
                                          vec2_t xz_src, const struct obb *target, vec2_t *out)
 {

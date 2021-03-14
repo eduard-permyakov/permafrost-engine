@@ -368,6 +368,14 @@ vec2_t M_NavClosestReachableInRange(const struct map *map, enum nav_layer layer,
                                     vec2_t xz_src, vec2_t xz_target, float range);
 
 /* ------------------------------------------------------------------------
+ * Will write the XZ map position of the closest currently pathable location
+ * to the source to out, if it exists.
+ * ------------------------------------------------------------------------
+ */
+bool M_NavClosestPathable(const struct map *map, enum nav_layer layer, 
+                          vec2_t xz_src, vec2_t *out);
+
+/* ------------------------------------------------------------------------
  * Change the blocker reference count for the navigation tile under the
  * specified position. Flow fields will steer around tiles with a blocker 
  * count of greater than 0.
