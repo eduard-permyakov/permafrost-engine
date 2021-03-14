@@ -618,7 +618,8 @@ bool G_Building_Complete(struct entity *ent)
 
     G_SetVisionRange(ent->uid, bs->vision_range);
     G_Fog_UpdateVisionRange(xz_pos, G_GetFactionID(ent->uid), old, bs->vision_range);
-    E_Global_Notify(EVENT_BUILDING_COMPLETED, ent, ES_ENGINE);
+    E_Entity_Notify(EVENT_BUILDING_COMPLETED, ent->uid, NULL, ES_ENGINE);
+    E_Global_Notify(EVENT_BUILDING_CONSTRUCTED, ent, ES_ENGINE);
 
     return true;
 }
