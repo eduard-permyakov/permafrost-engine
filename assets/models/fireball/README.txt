@@ -1,0 +1,1 @@
+Fireball model by Eduard Permyakov is licensed under CC0
