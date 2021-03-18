@@ -617,7 +617,6 @@ bool G_Building_Complete(struct entity *ent)
     vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
 
     G_SetVisionRange(ent->uid, bs->vision_range);
-    G_Fog_UpdateVisionRange(xz_pos, G_GetFactionID(ent->uid), old, bs->vision_range);
     E_Entity_Notify(EVENT_BUILDING_COMPLETED, ent->uid, NULL, ES_ENGINE);
     E_Global_Notify(EVENT_BUILDING_CONSTRUCTED, ent, ES_ENGINE);
 
@@ -663,11 +662,7 @@ void G_Building_SetVisionRange(struct entity *ent, float vision_range)
     if(bs->state < BUILDING_STATE_COMPLETED)
         return;
 
-    float old = G_GetVisionRange(ent->uid);
-    vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
-
     G_SetVisionRange(ent->uid, bs->vision_range);
-    G_Fog_UpdateVisionRange(xz_pos, G_GetFactionID(ent->uid), old, bs->vision_range);
 }
 
 float G_Building_GetVisionRange(const struct entity *ent)
