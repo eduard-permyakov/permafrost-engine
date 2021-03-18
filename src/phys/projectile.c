@@ -115,10 +115,10 @@ static quat_t phys_velocity_dir(vec3_t vel)
     PFM_Mat4x4_MakeRotY(yrot, &yrotmat);
 
     mat4x4_t zrotmat;
-    PFM_Mat4x4_MakeRotY(zrot, &zrotmat);
+    PFM_Mat4x4_MakeRotZ(zrot, &zrotmat);
 
     mat4x4_t rotmat;
-    PFM_Mat4x4_Mult4x4(&zrotmat, &yrotmat, &rotmat);
+    PFM_Mat4x4_Mult4x4(&yrotmat, &zrotmat, &rotmat);
 
     quat_t rot;
     PFM_Quat_FromRotMat(&rotmat, &rot);
@@ -221,13 +221,19 @@ static void phys_sweep_test(int front_idx)
      */
     vec3_t begin = proj->pos;
     vec3_t end, delta = proj->vel;
-    PFM_Vec3_Scale(&delta, 1.0f * s_simticks, &end);
+    PFM_Vec3_Scale(&delta, 1.0f * s_simticks, &delta);
+    PFM_Vec3_Add(&begin, &delta, &end);
+
+    float min_dist = INFINITY;
+    struct entity *hit_ent = NULL;
 
     for(int i = 0; i < nents; i++) {
 
         struct entity *ent = near[i];
         /* A projectile does not collide with its' 'parent' */
         if(proj->ent_parent == ent->uid)
+            continue;
+        if(ent->flags & ENTITY_FLAG_ZOMBIE)
             continue;
         if((proj->flags & PROJ_ONLY_HIT_COMBATABLE) && !(ent->flags & ENTITY_FLAG_COMBATABLE))
             continue;
@@ -239,17 +245,29 @@ static void phys_sweep_test(int front_idx)
 
         if(C_LineSegIntersectsOBB(begin, end, obb)) {
 
-            struct proj_hit *hit = stalloc(&s_eventargs, sizeof(struct proj_hit));
-            hit->ent_uid = ent->uid;
-            hit->proj_uid = proj->uid;
-            hit->parent_uid = proj->ent_parent;
-            hit->cookie = proj->cookie;
-            E_Global_Notify(EVENT_PROJECTILE_HIT, hit, ES_ENGINE);
+            vec3_t diff;
+            vec3_t ent_pos = G_Pos_Get(ent->uid);
+            PFM_Vec3_Sub((vec3_t*)&proj->pos, &ent_pos, &diff);
 
-            vec_proj_del(&s_front, front_idx);
-            vec_proj_push(&s_deleted, *proj);
-            return;
+            if(PFM_Vec3_Len(&diff) < min_dist) {
+                min_dist = PFM_Vec3_Len(&diff);
+                hit_ent = ent;
+            }
         }
+    }
+
+    if(hit_ent) {
+
+        printf("we hit %s [%x]\n", hit_ent->name, hit_ent->uid);
+        struct proj_hit *hit = stalloc(&s_eventargs, sizeof(struct proj_hit));
+        hit->ent_uid = hit_ent->uid;
+        hit->proj_uid = proj->uid;
+        hit->parent_uid = proj->ent_parent;
+        hit->cookie = proj->cookie;
+        E_Global_Notify(EVENT_PROJECTILE_HIT, hit, ES_ENGINE);
+
+        vec_proj_del(&s_front, front_idx);
+        vec_proj_push(&s_deleted, *proj);
     }
 }
 
@@ -477,7 +495,10 @@ bool P_Projectile_VelocityForTarget(vec3_t src, vec3_t dst, float init_speed, ve
     float ylen = xlen * tan_theta;
 
     vec3_t velocity = (vec3_t){ delta.x, ylen, delta.z };
-    assert(PFM_Vec3_Len(&velocity) > EPSILON); /* guaranteed by having real solutions */
+    if(PFM_Vec3_Len(&velocity) <= EPSILON) {
+        return false;
+    }
+    assert(PFM_Vec3_Len(&velocity) > EPSILON);
     PFM_Vec3_Normal(&velocity, &velocity);
     PFM_Vec3_Scale(&velocity, v, &velocity);
 
