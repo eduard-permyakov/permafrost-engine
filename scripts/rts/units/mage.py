@@ -42,7 +42,9 @@ class Mage(am.AnimMoveable, ac.AnimCombatable):
             idle_clip=self.idle_anim(),
             max_hp = 100,
             base_dmg = 80,
-            base_armour = 0.10)
+            base_armour = 0.10,
+            attack_range = 50.0,
+            projectile_descriptor = ("assets/models/fireball", "fireball.pfobj", (1.0, 1.0, 1.0), 75.0))
         self.speed = 20.0
 
     def idle_anim(self):
