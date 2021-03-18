@@ -51,6 +51,7 @@
 #include "../phys/public/phys.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
+#include "../lib/public/pf_string.h"
 
 #include <assert.h>
 #include <float.h>
@@ -135,6 +136,8 @@ struct combatstate{
     bool               move_cmd_attacking;
     vec2_t             move_cmd_xz;
     uint32_t           attack_start_tick;
+    /* only used by ranged entities */
+    struct proj_desc   pd;
 };
 
 KHASH_MAP_INIT_INT(state, struct combatstate)
@@ -205,12 +208,22 @@ static bool pentities_equal(struct entity *const *a, struct entity *const *b)
     return ((*a) == (*b));
 }
 
-static void dying_remove(const struct entity *ent)
+static void combat_dying_remove(const struct entity *ent)
 {
     int idx = vec_pentity_indexof(&s_dying_ents, (struct entity*)ent, pentities_equal);
     if(idx == -1)
         return;
     vec_pentity_del(&s_dying_ents, idx);
+}
+
+static struct proj_desc combat_default_proj(void)
+{
+    return (struct proj_desc){
+        .basedir = pf_strdup("assets/models/bow_arrow"),
+        .pfobj = pf_strdup("arrow.pfobj"),
+        .scale = (vec3_t){12.0, 12.0, 12.0},
+        .speed = PROJECTILE_DEFAULT_SPEED,
+    };
 }
 
 static bool enemies(const struct entity *a, const struct entity *b)
@@ -467,14 +480,18 @@ static void entity_ranged_attack(const struct entity *self, struct entity *targe
     vec3_t target_pos = Entity_CenterPos(target);
     float ent_dmg = G_Combat_GetBaseDamage(self);
 
+    struct combatstate *cs = combatstate_get(self->uid);
+    assert(cs);
+
     vec3_t vel;
-    if(!P_Projectile_VelocityForTarget(ent_pos, target_pos, PROJECTILE_DEFAULT_SPEED, &vel)) {
+    if(!P_Projectile_VelocityForTarget(ent_pos, target_pos, cs->pd.speed, &vel)) {
         /* We resort to just shooting nothing when we can't hit our target. This case 
          * should never be hit so long as the initial velocity is high enough */
         return;
     }
+
     P_Projectile_Add(ent_pos, vel, self->uid, G_GetFactionID(self->uid), 
-        ent_dmg, PROJ_ONLY_HIT_COMBATABLE | PROJ_ONLY_HIT_ENEMIES);
+        ent_dmg, PROJ_ONLY_HIT_COMBATABLE | PROJ_ONLY_HIT_ENEMIES, cs->pd);
 }
 
 static void on_death_anim_finish(void *user, void *event)
@@ -1021,7 +1038,8 @@ void G_Combat_AddEntity(const struct entity *ent, enum combat_stance initial)
         .stance = initial,
         .state = STATE_NOT_IN_COMBAT,
         .sticky = false,
-        .move_cmd_interrupted = false
+        .move_cmd_interrupted = false,
+        .pd = combat_default_proj(),
     };
     combatstate_set(ent, &new_cs);
 }
@@ -1041,7 +1059,11 @@ void G_Combat_RemoveEntity(const struct entity *ent)
     || cs->state == STATE_CAN_ATTACK) {
         E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
     }
-    dying_remove(ent);
+
+    free((void*)cs->pd.basedir);
+    free((void*)cs->pd.pfobj);
+
+    combat_dying_remove(ent);
     combatstate_remove(ent);
 }
 
@@ -1320,6 +1342,22 @@ void G_Combat_SetRange(const struct entity *ent, float range)
     cs->stats.attack_range = range;
 }
 
+void G_Combat_SetProjDesc(const struct entity *ent, const struct proj_desc *pd)
+{
+    struct combatstate *cs = combatstate_get(ent->uid);
+    assert(cs);
+
+    free((void*)cs->pd.basedir);
+    free((void*)cs->pd.pfobj);
+
+    cs->pd = (struct proj_desc) {
+        pf_strdup(pd->basedir),
+        pf_strdup(pd->pfobj),
+        pd->scale,
+        pd->speed,
+    };
+}
+
 float G_Combat_GetRange(const struct entity *ent)
 {
     struct combatstate *cs = combatstate_get(ent->uid);
@@ -1396,6 +1434,30 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr_ticks - curr.attack_start_tick
         };
         CHK_TRUE_RET(Attr_Write(stream, &attack_elapsed_ticks, "attack_elapsed_ticks"));
+
+        struct attr pd_basedir = (struct attr){
+            .type = TYPE_STRING,
+        };
+        pf_strlcpy(pd_basedir.val.as_string, curr.pd.basedir, sizeof(pd_basedir.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &pd_basedir, "pd_basedir"));
+
+        struct attr pd_pfobj = (struct attr){
+            .type = TYPE_STRING,
+        };
+        pf_strlcpy(pd_pfobj.val.as_string, curr.pd.pfobj, sizeof(pd_pfobj.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &pd_pfobj, "pd_pfobj"));
+
+        struct attr pd_scale  = (struct attr){
+            .type = TYPE_VEC3,
+            .val.as_vec3 = curr.pd.scale,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &pd_scale, "pd_scale"));
+
+        struct attr pd_speed  = (struct attr){
+            .type = TYPE_FLOAT,
+            .val.as_float = curr.pd.speed,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &pd_speed, "pd_speed"));
     });
 
     struct attr num_dying = (struct attr){
@@ -1478,6 +1540,22 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         cs->attack_start_tick = curr_ticks - attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        cs->pd.basedir = pf_strdup(attr.val.as_string);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        cs->pd.pfobj = pf_strdup(attr.val.as_string);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC3);
+        cs->pd.scale = attr.val.as_vec3;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_FLOAT);
+        cs->pd.speed = attr.val.as_float;
     }
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));

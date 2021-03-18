@@ -493,6 +493,11 @@ void R_GL_UI_UploadFontAtlas(void *image, const int *w, const int *h);
 /* RENDER BATCH                                                              */
 /*###########################################################################*/
 
+enum batch_id{
+    /* ID of 0 has a special meaning */
+    BATCH_ID_PROJECTILE = 0x1,
+};
+
 /* ---------------------------------------------------------------------------
  * Draw all the camera-visible entities in the render input, making use of 
  * draw command batching to reduce driver overhead. This is equivalent to calling
@@ -501,6 +506,12 @@ void R_GL_UI_UploadFontAtlas(void *image, const int *w, const int *h);
  * ---------------------------------------------------------------------------
  */
 void R_GL_Batch_Draw(struct render_input *in);
+
+/* ---------------------------------------------------------------------------
+ * Like 'R_GL_Batch_Draw' but using the specified batch instead of per-chunk batches.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_Batch_DrawWithID(struct render_input *in, enum batch_id *id);
 
 /* ---------------------------------------------------------------------------
  * Update the depth map for every light-visible entity in the render input.

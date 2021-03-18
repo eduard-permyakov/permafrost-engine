@@ -54,8 +54,9 @@
 
 
 #define PHYS_HZ         (30)
-#define UNITS_PER_METER (5.0f)
-#define GRAVITY         (9.81f * UNITS_PER_METER / (PHYS_HZ * PHYS_HZ))
+#define UNITS_PER_METER (7.5f)
+/* Everyone knows moon physics are just more fun ;) */
+#define GRAVITY         (1.62f * UNITS_PER_METER / (PHYS_HZ * PHYS_HZ))
 #define EPSILON         (1.0f/1024)
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
@@ -68,8 +69,11 @@ struct projectile{
     uint32_t cookie;
     uint32_t flags;
     int      faction_id;
+    void    *render_private;
     vec3_t   pos;
     vec3_t   vel;
+    vec3_t   scale;
+    mat4x4_t model;
 };
 
 struct proj_task_arg{
@@ -130,11 +134,28 @@ static bool phys_proj_equal(const struct projectile *a, const struct projectile 
     return (a->uid == b->uid);
 }
 
+static void assert_no_zero(vec_proj_t *vec)
+{
+    struct projectile proj = (struct projectile){ .uid = 0 };
+    int idx = vec_proj_indexof(vec, proj, phys_proj_equal);
+    assert(idx == -1);
+}
+
 static void phys_proj_update(struct projectile *proj)
 {
     vec3_t accel = (vec3_t){0.0f, -GRAVITY, 0.0f};
     PFM_Vec3_Add(&proj->vel, &accel, &proj->vel);
     PFM_Vec3_Add(&proj->pos, &proj->vel, &proj->pos);
+
+    mat4x4_t trans, scale, rot, tmp;
+    quat_t qrot = phys_velocity_dir(proj->vel);
+
+    PFM_Mat4x4_MakeTrans(proj->pos.x, proj->pos.y, proj->pos.z, &trans);
+    PFM_Mat4x4_MakeScale(proj->scale.x, proj->scale.y, proj->scale.z, &scale);
+    PFM_Mat4x4_RotFromQuat(&qrot, &rot);
+
+    PFM_Mat4x4_Mult4x4(&scale, &rot, &tmp);
+    PFM_Mat4x4_Mult4x4(&trans, &tmp, &proj->model);
 }
 
 static struct result phys_proj_task(void *arg)
@@ -160,17 +181,14 @@ static void phys_filter_out_of_bounds(void)
         const struct projectile *curr = &vec_AT(&s_front, i);
         if(curr->pos.y < -Z_COORDS_PER_TILE) {
             E_Global_Notify(EVENT_PROJECTILE_DISAPPEAR, (void*)((uintptr_t)curr->uid), ES_ENGINE);
-            vec_proj_del(&s_front, i);
             vec_proj_push(&s_deleted, *curr);
+            vec_proj_del(&s_front, i);
         }
     }
 }
 
 static void phys_proj_finish_work(void)
 {
-    if(s_work.ntasks == 0)
-        return;
-
     for(int i = 0; i < s_work.ntasks; i++) {
         /* run to completion */
         while(!Sched_FutureIsReady(&s_work.futures[i])) {
@@ -221,7 +239,7 @@ static void phys_sweep_test(int front_idx)
      */
     vec3_t begin = proj->pos;
     vec3_t end, delta = proj->vel;
-    PFM_Vec3_Scale(&delta, 1.0f * s_simticks, &delta);
+    PFM_Vec3_Scale(&delta, -1.0f * s_simticks, &delta);
     PFM_Vec3_Add(&begin, &delta, &end);
 
     float min_dist = INFINITY;
@@ -258,7 +276,6 @@ static void phys_sweep_test(int front_idx)
 
     if(hit_ent) {
 
-        printf("we hit %s [%x]\n", hit_ent->name, hit_ent->uid);
         struct proj_hit *hit = stalloc(&s_eventargs, sizeof(struct proj_hit));
         hit->ent_uid = hit_ent->uid;
         hit->proj_uid = proj->uid;
@@ -266,8 +283,8 @@ static void phys_sweep_test(int front_idx)
         hit->cookie = proj->cookie;
         E_Global_Notify(EVENT_PROJECTILE_HIT, hit, ES_ENGINE);
 
-        vec_proj_del(&s_front, front_idx);
         vec_proj_push(&s_deleted, *proj);
+        vec_proj_del(&s_front, front_idx);
     }
 }
 
@@ -317,53 +334,97 @@ done:
     Perf_Pop();
 }
 
-static void on_render_3d(void *user, void *arg)
+static void phys_create_render_input(struct render_input *out)
 {
-    //TODO: batch the rendered projectiles 
-    //TODO: allow specifying the projectile model
+    out->cam = G_GetActiveCamera();
+    out->map = G_GetPrevTickMap();
+    out->shadows = false;
+    out->light_pos = G_GetLightPos();
+
+    vec_rstat_init(&out->cam_vis_stat);
+    vec_ranim_init(&out->cam_vis_anim);
+
+    vec_rstat_init(&out->light_vis_stat);
+    vec_ranim_init(&out->light_vis_anim);
 
     for(int i = 0; i < vec_size(&s_front); i++) {
 
-        struct projectile *curr = &vec_AT(&s_front, i);
-        const uint32_t uid = Entity_NewUID();
-        struct entity *ent = AL_EntityFromPFObj("assets/models/bow_arrow", "arrow.pfobj", "__projectile__", uid);
-        if(!ent)
+        const struct projectile *curr = &vec_AT(&s_front, i);
+        if(!curr->render_private)
             continue;
-
-        bool translucent = false;
-        mat4x4_t model;
-
-        //TODO: likely the model matrices/rotations should also 
-        // be calculated by the worker tasks
-        //TODO: we also shouldn't add the position ot the sim - not 100% safe if the projectile 
-        // goes out of map bounds. Alternatively, clamp the position to map bounds
-
-        G_AddEntity(ent, curr->pos);
-        ent->scale = (vec3_t){12.0f, 12.0f, 12.0f};
-        ent->rotation = phys_velocity_dir(curr->vel);
-        Entity_ModelMatrix(ent, &model);
-
-        R_PushCmd((struct rcmd){
-            .func = R_GL_Draw,
-            .nargs = 3,
-            .args = {
-                ent->render_private,
-                R_PushArg(&model, sizeof(model)),
-                R_PushArg(&translucent, sizeof(translucent)),
-            },
-        });
-
-        G_RemoveEntity(ent);
-        G_SafeFree(ent);
+        struct ent_stat_rstate rstate = (struct ent_stat_rstate){
+            .render_private = curr->render_private,
+            .model = curr->model,
+            .translucent = false,
+            .td = {0},
+        };
+        vec_rstat_push(&out->cam_vis_stat, rstate);
     }
+}
+
+static void phys_destroy_render_input(struct render_input *in)
+{
+    vec_rstat_destroy(&in->cam_vis_stat);
+    vec_ranim_destroy(&in->cam_vis_anim);
+
+    vec_rstat_destroy(&in->light_vis_stat);
+    vec_ranim_destroy(&in->light_vis_anim);
+}
+
+static void *phys_push_render_input(struct render_input *in)
+{
+    struct render_input *ret = R_PushArg(in, sizeof(*in));
+    if(in->cam_vis_stat.size) {
+        ret->cam_vis_stat.array = R_PushArg(
+            in->cam_vis_stat.array, 
+            in->cam_vis_stat.size * sizeof(struct ent_stat_rstate)
+        );
+    }
+    if(in->cam_vis_anim.size) {
+        ret->cam_vis_anim.array = R_PushArg(
+            in->cam_vis_anim.array, 
+            in->cam_vis_anim.size * sizeof(struct ent_stat_rstate)
+        );
+    }
+    if(in->light_vis_stat.size) {
+        ret->light_vis_stat.array = R_PushArg(
+            in->light_vis_stat.array, 
+            in->light_vis_stat.size * sizeof(struct ent_stat_rstate)
+        );
+    }
+    if(in->light_vis_anim.size) {
+        ret->light_vis_anim.array = R_PushArg(
+            in->light_vis_anim.array, 
+            in->light_vis_anim.size * sizeof(struct ent_stat_rstate)
+        );
+    }
+    return ret;
+}
+
+static void on_render_3d(void *user, void *arg)
+{
+    struct render_input rinput;
+    phys_create_render_input(&rinput);
+    enum batch_id id = BATCH_ID_PROJECTILE;
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_Batch_DrawWithID,
+        .nargs = 2,
+        .args = {
+            phys_push_render_input(&rinput),
+            R_PushArg(&id, sizeof(id)),
+        },
+    });
+
+    phys_destroy_render_input(&rinput);
 }
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity, uint32_t ent_parent, 
-                          int faction_id, uint32_t cookie, int flags)
+uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity, uint32_t ent_parent, int faction_id, 
+                          uint32_t cookie, int flags, struct proj_desc pd)
 {
     uint32_t ret = s_next_uid++;
     struct projectile proj = (struct projectile){
@@ -372,8 +433,10 @@ uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity, uint32_t ent_parent,
         .cookie = cookie,
         .flags = flags,
         .faction_id = faction_id,
+        .render_private = AL_RenderPrivateForName(pd.basedir, pd.pfobj),
         .pos = origin,
         .vel = velocity,
+        .scale = pd.scale,
     };
     vec_proj_push(&s_added, proj);
     return ret;

@@ -1987,6 +1987,12 @@ void G_SetLightPos(vec3_t pos)
     });
 }
 
+vec3_t G_GetLightPos(void)
+{
+    ASSERT_IN_MAIN_THREAD();
+    return s_gs.light_pos;
+}
+
 enum simstate G_GetSimState(void)
 {
     ASSERT_IN_MAIN_THREAD();

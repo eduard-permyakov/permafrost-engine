@@ -71,6 +71,7 @@
 
 #define CMD_RING_TUNIT      (GL_TEXTURE5)
 #define ATTR_RING_TUNIT     (GL_TEXTURE6)
+#define BATCH_ID_NULL       (0)
 
 #define GL_PERF_CALL(name, ...)     \
     do{                             \
@@ -172,6 +173,7 @@ KHASH_MAP_INIT_INT(batch, struct gl_batch*)
 
 static struct gl_batch *s_anim_batch;
 static khash_t(batch)  *s_chunk_batches;
+static khash_t(batch)  *s_id_batches;
 static GLuint           s_draw_id_vbo;
 
 /*****************************************************************************/
@@ -1116,7 +1118,8 @@ static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_p
     batch_render_anim(s_anim_batch, &vec_AT(ents, 0), nanim);
 }
 
-static void batch_render_stat_all(vec_rstat_t *ents, bool shadows, enum render_pass pass)
+static void batch_render_stat_all(vec_rstat_t *ents, bool shadows, 
+                                  enum render_pass pass, int batch_id)
 {
     struct chunk_batch_desc descs[MAX_BATCHES];
     size_t nbatches = batch_sort_by_chunk(ents, descs, ARR_SIZE(descs));
@@ -1137,17 +1140,35 @@ static void batch_render_stat_all(vec_rstat_t *ents, bool shadows, enum render_p
     for(int i = 0; i < nbatches; i++) {
     
         const struct chunk_batch_desc *curr = &descs[i];
-        uint32_t key = batch_chunk_key(curr->chunk_r, curr->chunk_c);
+        struct gl_batch *batch = NULL;
 
-        khiter_t k = kh_get(batch, s_chunk_batches, key);
-        if(k == kh_end(s_chunk_batches)) {
-            int status;
-            k = kh_put(batch, s_chunk_batches, key, &status);
-            assert(status != -1 && status != 0);
-            kh_value(s_chunk_batches, k) = batch_init(BATCH_TYPE_STAT);
+        if(batch_id == 0) {
+        
+            uint32_t key = batch_chunk_key(curr->chunk_r, curr->chunk_c);
+            khiter_t k = kh_get(batch, s_chunk_batches, key);
+
+            if(k == kh_end(s_chunk_batches)) {
+                int status;
+                k = kh_put(batch, s_chunk_batches, key, &status);
+                assert(status != -1 && status != 0);
+                kh_value(s_chunk_batches, k) = batch_init(BATCH_TYPE_STAT);
+            }
+            batch = kh_value(s_chunk_batches, k);
+        }else{
+        
+            uint32_t key = batch_id;
+            khiter_t k = kh_get(batch, s_id_batches, key);
+
+            if(k == kh_end(s_id_batches)) {
+                int status;
+                k = kh_put(batch, s_id_batches, key, &status);
+                assert(status != -1 && status != 0);
+                kh_value(s_id_batches, k) = batch_init(BATCH_TYPE_STAT);
+            }
+            batch = kh_value(s_id_batches, k);
         }
 
-        struct gl_batch *batch = kh_value(s_chunk_batches, k);
+        assert(batch);
         size_t ndraw = curr->end_idx - curr->start_idx + 1;
 
         for(int i = 0; i < ndraw; i++) {
@@ -1169,6 +1190,9 @@ bool R_GL_Batch_Init(void)
     s_chunk_batches = kh_init(batch);
     if(!s_chunk_batches)
         goto fail_chunk_batches;
+    s_id_batches = kh_init(batch);
+    if(!s_id_batches)
+        goto fail_id_batches;
 
     GLint draw_id_buff[MAX_INSTS];
     for(int i = 0; i < MAX_INSTS; i++)
@@ -1180,6 +1204,8 @@ bool R_GL_Batch_Init(void)
 
     return true;
 
+fail_id_batches:
+    kh_destroy(batch, s_chunk_batches);
 fail_chunk_batches:
     batch_destroy(s_anim_batch);
 fail_anim_batch:
@@ -1198,6 +1224,12 @@ void R_GL_Batch_Shutdown(void)
         batch_destroy(curr);
     });
     kh_destroy(batch, s_chunk_batches);
+
+    kh_foreach(s_id_batches, key, curr, {
+        batch_destroy(curr);
+    });
+    kh_destroy(batch, s_id_batches);
+
     glDeleteBuffers(1, &s_draw_id_vbo);
 }
 
@@ -1206,7 +1238,17 @@ void R_GL_Batch_Draw(struct render_input *in)
     GL_PERF_ENTER();
 
     batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
-    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR);
+    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR, BATCH_ID_NULL);
+
+    GL_PERF_RETURN_VOID();
+}
+
+void R_GL_Batch_DrawWithID(struct render_input *in, enum batch_id *id)
+{
+    GL_PERF_ENTER();
+
+    batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
+    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR, *id);
 
     GL_PERF_RETURN_VOID();
 }
@@ -1216,7 +1258,7 @@ void R_GL_Batch_RenderDepthMap(struct render_input *in)
     GL_PERF_ENTER();
 
     batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_DEPTH);
-    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_DEPTH);
+    batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_DEPTH, BATCH_ID_NULL);
 
     GL_PERF_RETURN_VOID();
 }

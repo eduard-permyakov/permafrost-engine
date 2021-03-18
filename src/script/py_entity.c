@@ -42,6 +42,7 @@
 #include "../asset_load.h"
 #include "../anim/public/anim.h"
 #include "../game/public/game.h"
+#include "../phys/public/phys.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
@@ -1996,6 +1997,28 @@ static int PyCombatableEntity_init(PyCombatableEntityObject *self, PyObject *arg
     PyObject *attack_range = PyDict_GetItemString(kwds, "attack_range");
     if(attack_range && (PyCombatableEntity_set_attack_range(self, attack_range, NULL) != 0))
         return -1; /* Exception already set */ 
+
+    PyObject *proj_desc = PyDict_GetItemString(kwds, "projectile_descriptor");
+    if(proj_desc) {
+
+        const char *dir, *pfobj;
+        vec3_t scale;
+        float speed;
+
+        if(!PyTuple_Check(proj_desc) || !PyArg_ParseTuple(proj_desc, "ss(fff)f", 
+            &dir, &pfobj, &scale.x, &scale.y, &scale.z, &speed)) {
+            PyErr_SetString(PyExc_TypeError, "Optional 'projectile_descriptor' keyword argument must be a tuple of 4 items: "
+                "pfobj directory (string), pfobj name (string), scale (tuple of 3 floats), speed (float).");
+            return -1;
+        }
+        struct proj_desc pd = (struct proj_desc) {
+            .basedir = dir,
+            .pfobj = pfobj,
+            .scale = scale,
+            .speed = speed,
+        };
+        G_Combat_SetProjDesc(self->super.ent, &pd);
+    }
 
     if((PyCombatableEntity_set_max_hp(self, max_hp, NULL) != 0)
     || (PyCombatableEntity_set_base_dmg(self, base_dmg, NULL) != 0)

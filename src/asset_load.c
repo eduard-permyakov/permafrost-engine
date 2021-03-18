@@ -281,7 +281,8 @@ fail_alloc:
 bool AL_EntitySetPFObj(struct entity *ent, const char *base_path, const char *pfobj_name)
 {
     struct shared_resource res;
-    char abs_basepath[512], pfobj_path[512];
+    char abs_basepath[512];
+    char pfobj_path[512];
 
     pf_snprintf(abs_basepath, sizeof(abs_basepath), "%s/%s", g_basepath, base_path);
     pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
@@ -322,6 +323,21 @@ void AL_EntityFree(struct entity *entity)
     free((void*)entity->filename);
     free((void*)entity->name);
     free(entity);
+}
+
+void *AL_RenderPrivateForName(const char *base_path, const char *pfobj_name)
+{
+    struct shared_resource res;
+    char abs_basepath[512];
+    char pfobj_path[512];
+
+    pf_snprintf(abs_basepath, sizeof(abs_basepath), "%s/%s", g_basepath, base_path);
+    pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
+
+    if(!al_get_resource(pfobj_path, abs_basepath, pfobj_name, &res))
+        return NULL;
+
+    return res.render_private;
 }
 
 struct map *AL_MapFromPFMapStream(SDL_RWops *stream, bool update_navgrid)

@@ -57,6 +57,7 @@ struct render_workspace;
 struct nk_context;
 struct nk_style_item;
 struct nk_color;
+struct proj_desc;
 
 
 VEC_TYPE(pentity, struct entity *)
@@ -176,6 +177,7 @@ void            G_SetSimState(enum simstate ss);
 enum simstate   G_GetSimState(void);
 void            G_UpdateSimStateChangeTick(void);
 void            G_SetLightPos(vec3_t pos);
+vec3_t          G_GetLightPos(void);
 void            G_SetHideHealthbars(bool on);
 
 bool            G_SaveGlobalState(SDL_RWops *stream);
@@ -255,6 +257,7 @@ void  G_Combat_SetMaxHP(const struct entity *ent, int hp);
 int   G_Combat_GetMaxHP(const struct entity *ent);
 void  G_Combat_SetRange(const struct entity *ent, float range);
 float G_Combat_GetRange(const struct entity *ent);
+void  G_Combat_SetProjDesc(const struct entity *ent, const struct proj_desc *pd);
 
 
 /*###########################################################################*/
