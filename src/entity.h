@@ -132,5 +132,6 @@ void     Entity_ClearTags(uint32_t uid);
 size_t   Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[static maxout]);
 size_t   Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[static maxout]);
 void     Entity_DisappearAnimated(struct entity *ent, const struct map *map, void (*on_finish)(void*), void *arg);
+int      Entity_NavLayer(const struct entity *ent);
 
 #endif

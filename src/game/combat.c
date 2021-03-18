@@ -304,7 +304,13 @@ static void entity_move_in_range(const struct entity *ent, const struct entity *
     if(cs->stats.attack_range == 0.0f) {
         G_Move_SetSurroundEntity(ent, target);
     }else{
-        G_Move_SetEnterRange(ent, target, cs->stats.attack_range);
+        if(M_NavLocationsReachable(s_map, Entity_NavLayer(ent), 
+            G_Pos_GetXZ(ent->uid), G_Pos_GetXZ(target->uid))) {
+
+            G_Move_SetSurroundEntity(ent, target);
+        }else{
+            G_Move_SetEnterRange(ent, target, cs->stats.attack_range);
+        }
     }
 }
 

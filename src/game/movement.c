@@ -288,13 +288,6 @@ static struct flock *flock_for_dest(dest_id_t id)
     return NULL;
 }
 
-static enum nav_layer layer_for_ent(const struct entity *ent)
-{
-    if(ent->selection_radius >= 5.0f)
-        return NAV_LAYER_GROUND_3X3;
-    return NAV_LAYER_GROUND_1X1;
-}
-
 static void entity_block(const struct entity *ent)
 {
     M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), ent->selection_radius, G_GetFactionID(ent->uid), s_map);
@@ -424,7 +417,7 @@ static void filter_selection_pathable(const vec_pentity_t *in_sel, vec_pentity_t
         struct entity *curr = vec_AT(in_sel, i);
         vec2_t xz_pos = G_Pos_GetXZ(curr->uid);
 
-        if(!M_NavPositionPathable(s_map, layer_for_ent(curr), xz_pos))
+        if(!M_NavPositionPathable(s_map, Entity_NavLayer(curr), xz_pos))
             continue;
         vec_pentity_push(out_sel, curr);
     }
@@ -439,7 +432,7 @@ static void split_into_layers(const vec_pentity_t *sel, vec_pentity_t layer_floc
     for(int i = 0; i < vec_size(sel); i++) {
 
         struct entity *curr = vec_AT(sel, i);
-        enum nav_layer layer = layer_for_ent(curr);
+        enum nav_layer layer = Entity_NavLayer(curr);
         vec_pentity_push(&layer_flocks[layer], curr);
     }
 }
@@ -706,8 +699,8 @@ static void on_render_3d(void *user, void *event)
                 vec2_t target_pos_xz = G_Pos_GetXZ(target->uid);
                 float dx = target_pos_xz.x - pos_xz.x;
                 float dz = target_pos_xz.z - pos_xz.z;
-                if(fabs(dx) < CHUNK_WIDTH/2.0f && fabs(dz) < CHUNK_HEIGHT/2.0f) {
-                    M_NavRenderVisibleSurroundField(s_map, cam, layer_for_ent(ent), target);
+                if(fabs(dx) < CHUNK_WIDTH/4.0f && fabs(dz) < CHUNK_HEIGHT/4.0f) {
+                    M_NavRenderVisibleSurroundField(s_map, cam, Entity_NavLayer(ent), target);
                 }else{
                     M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
                 }
@@ -718,7 +711,7 @@ static void on_render_3d(void *user, void *event)
             case STATE_TURNING:
                 break;
             case STATE_SEEK_ENEMIES:
-                M_NavRenderVisibleEnemySeekField(s_map, cam, layer_for_ent(ent), G_GetFactionID(ent->uid));
+                M_NavRenderVisibleEnemySeekField(s_map, cam, Entity_NavLayer(ent), G_GetFactionID(ent->uid));
                 break;
             default: assert(0);
             }
@@ -796,7 +789,7 @@ static vec2_t ent_desired_velocity(const struct entity *ent)
         return (vec2_t){0.0f, 0.0f};
 
     case STATE_SEEK_ENEMIES: 
-        return M_NavDesiredEnemySeekVelocity(s_map, layer_for_ent(ent), pos_xz, G_GetFactionID(ent->uid));
+        return M_NavDesiredEnemySeekVelocity(s_map, Entity_NavLayer(ent), pos_xz, G_GetFactionID(ent->uid));
 
     case STATE_SURROUND_ENTITY: {
 
@@ -805,8 +798,8 @@ static vec2_t ent_desired_velocity(const struct entity *ent)
             vec2_t target_pos_xz = G_Pos_GetXZ(ms->surround_target_uid);
             float dx = target_pos_xz.x - pos_xz.x;
             float dz = target_pos_xz.z - pos_xz.z;
-            if(fabs(dx) < CHUNK_WIDTH/2.0f && fabs(dz) < CHUNK_HEIGHT/2.0f) {
-                return M_NavDesiredSurroundVelocity(s_map, layer_for_ent(ent), 
+            if(fabs(dx) < CHUNK_WIDTH/4.0f && fabs(dz) < CHUNK_HEIGHT/4.0f) {
+                return M_NavDesiredSurroundVelocity(s_map, Entity_NavLayer(ent), 
                     pos_xz, target, G_GetFactionID(ent->uid));
             }
         }
@@ -1072,7 +1065,7 @@ static vec2_t new_pos_for_vel(const struct entity *ent, vec2_t velocity)
 static void nullify_impass_components(const struct entity *ent, vec2_t *inout_force)
 {
     vec2_t nt_dims = N_TileDims();
-    enum nav_layer layer = layer_for_ent(ent);
+    enum nav_layer layer = Entity_NavLayer(ent);
 
     vec2_t left =  (vec2_t){G_Pos_Get(ent->uid).x + nt_dims.x, G_Pos_Get(ent->uid).z};
     vec2_t right = (vec2_t){G_Pos_Get(ent->uid).x - nt_dims.x, G_Pos_Get(ent->uid).z};
@@ -1173,7 +1166,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
     assert(ms);
 
     vec2_t new_pos_xz = new_pos_for_vel(ent, new_vel);
-    enum nav_layer layer = layer_for_ent(ent);
+    enum nav_layer layer = Entity_NavLayer(ent);
 
     if(PFM_Vec2_Len(&new_vel) > 0
     && M_NavPositionPathable(s_map, layer, new_pos_xz)) {
@@ -1804,7 +1797,7 @@ bool G_Move_Still(const struct entity *ent)
 
 void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz, bool attack)
 {
-    enum nav_layer layer = layer_for_ent(ent);
+    enum nav_layer layer = Entity_NavLayer(ent);
     dest_xz = M_NavClosestReachableDest(s_map, layer, G_Pos_GetXZ(ent->uid), dest_xz);
 
     /* If a flock already exists for the entity's destination, 
@@ -1846,7 +1839,7 @@ void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz, bool attack)
     vec_pentity_init(&flock);
     vec_pentity_push(&flock, (struct entity*)ent);
 
-    make_flock(&flock, dest_xz, layer_for_ent(ent), attack);
+    make_flock(&flock, dest_xz, Entity_NavLayer(ent), attack);
     vec_pentity_destroy(&flock);
 }
 
@@ -1880,7 +1873,7 @@ void G_Move_SetEnterRange(const struct entity *ent, const struct entity *target,
         return;
     }
 
-    vec2_t xz_target = M_NavClosestReachableInRange(s_map, layer_for_ent(ent), xz_src, xz_dst, range);
+    vec2_t xz_target = M_NavClosestReachableInRange(s_map, Entity_NavLayer(ent), xz_src, xz_dst, range);
     G_Move_SetDest(ent, xz_target, false);
 
     ms->state = STATE_ENTER_ENTITY_RANGE;

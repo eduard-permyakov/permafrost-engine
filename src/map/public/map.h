@@ -376,6 +376,13 @@ bool M_NavClosestPathable(const struct map *map, enum nav_layer layer,
                           vec2_t xz_src, vec2_t *out);
 
 /* ------------------------------------------------------------------------
+ * Returns true if the two locations can currently be reached from one another.
+ * ------------------------------------------------------------------------
+ */
+bool M_NavLocationsReachable(const struct map *map, enum nav_layer layer, 
+                             vec2_t a, vec2_t b);
+
+/* ------------------------------------------------------------------------
  * Change the blocker reference count for the navigation tile under the
  * specified position. Flow fields will steer around tiles with a blocker 
  * count of greater than 0.

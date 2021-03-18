@@ -538,6 +538,13 @@ void Entity_DisappearAnimated(struct entity *ent, const struct map *map, void (*
     Sched_RunSync(tid);
 }
 
+int Entity_NavLayer(const struct entity *ent)
+{
+    if(ent->selection_radius >= 5.0f)
+        return NAV_LAYER_GROUND_3X3;
+    return NAV_LAYER_GROUND_1X1;
+}
+
 bool Entity_Init(void)
 {
     if(!si_init(&s_stringpool, &s_stridx, 2048))

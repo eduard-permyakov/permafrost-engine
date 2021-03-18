@@ -371,6 +371,13 @@ bool N_ClosestPathable(void *nav_private, enum nav_layer layer,
                        vec3_t map_pos, vec2_t xz_src, vec2_t *out);
 
 /* ------------------------------------------------------------------------
+ * Returns 'true' if the two locations are currenntly reachable from one another.
+ * ------------------------------------------------------------------------
+ */
+bool N_LocationsReachable(void *nav_private, enum nav_layer layer, 
+                          vec3_t map_pos, vec2_t a, vec2_t b);
+
+/* ------------------------------------------------------------------------
  * Changes the blocker reference count for the navigation tile under the
  * cursor position. This may cause flow field eviction from caches.
  * The faction_id is for keeping track of which factions are currently

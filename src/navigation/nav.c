@@ -2806,6 +2806,35 @@ done:
     return ret;
 }
 
+bool N_LocationsReachable(void *nav_private, enum nav_layer layer, 
+                          vec3_t map_pos, vec2_t a, vec2_t b)
+{
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+    bool result;
+    (void)result;
+
+    struct tile_desc src_desc, dst_desc;
+    result = M_Tile_DescForPoint2D(res, map_pos, a, &src_desc);
+    assert(result);
+    result = M_Tile_DescForPoint2D(res, map_pos, b, &dst_desc);
+    assert(result);
+
+    const struct nav_chunk *src_chunk = &priv->chunks[layer][src_desc.chunk_r * priv->width + src_desc.chunk_c];
+    const struct nav_chunk *dst_chunk = &priv->chunks[layer][dst_desc.chunk_r * priv->width + dst_desc.chunk_c];
+
+    uint16_t src_iid = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
+    uint16_t dst_iid = dst_chunk->islands[dst_desc.tile_r][dst_desc.tile_c];
+
+    if(src_iid != dst_iid)
+        return false;
+
+    return true;
+}
+
 bool N_ClosestReachableAdjacentPosStatic(void *nav_private, enum nav_layer layer, vec3_t map_pos, 
                                          vec2_t xz_src, const struct obb *target, vec2_t *out)
 {

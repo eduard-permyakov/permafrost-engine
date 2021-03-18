@@ -652,6 +652,12 @@ bool M_NavClosestPathable(const struct map *map, enum nav_layer layer, vec2_t xz
     return N_ClosestPathable(map->nav_private, layer, map->pos, xz_src, out);
 }
 
+bool M_NavLocationsReachable(const struct map *map, enum nav_layer layer, 
+                             vec2_t a, vec2_t b)
+{
+    return N_LocationsReachable(map->nav_private, layer, map->pos, a, b);
+}
+
 void M_NavBlockersIncref(vec2_t xz_pos, float range, int faction_id, const struct map *map)
 {
     N_BlockersIncref(xz_pos, range, faction_id, map->pos, map->nav_private);
