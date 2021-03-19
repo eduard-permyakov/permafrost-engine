@@ -34,11 +34,11 @@
  */
 
 #include "camera.h"
+#include "config.h"
+#include "main.h"
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
-#include "config.h"
-#include "collision.h"
-#include "main.h"
+#include "phys/public/collision.h"
 
 #include <SDL.h>
 

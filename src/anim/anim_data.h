@@ -38,7 +38,7 @@
 
 #include "public/skeleton.h"
 #include "../pf_math.h"
-#include "../collision.h"
+#include "../phys/public/collision.h"
 
 #include <stddef.h>
 

@@ -33,7 +33,7 @@
  *
  */
 
-#include "collision.h"
+#include "public/collision.h"
 #include <assert.h>
 #include <float.h>
 

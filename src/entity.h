@@ -37,9 +37,9 @@
 #define ENTITY_H
 
 #include "pf_math.h"
-#include "collision.h"
 #include "lib/public/vec.h"
 #include "map/public/tile.h"
+#include "phys/public/collision.h"
 
 #include <stdbool.h>
 

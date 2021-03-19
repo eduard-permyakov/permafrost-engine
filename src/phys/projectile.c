@@ -34,13 +34,13 @@
  */
 
 #include "public/phys.h"
+#include "public/collision.h"
 #include "../main.h"
 #include "../event.h"
 #include "../task.h"
 #include "../perf.h"
 #include "../sched.h"
 #include "../entity.h"
-#include "../collision.h"
 #include "../asset_load.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"

@@ -37,7 +37,7 @@
 #include "game_private.h"
 #include "../event.h"
 #include "../entity.h"
-#include "../collision.h"
+#include "../phys/public/collision.h"
 #include "../map/public/map.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/string_intern.h"

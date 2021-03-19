@@ -37,7 +37,7 @@
 #include "map_private.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
-#include "../collision.h"
+#include "../phys/public/collision.h"
 #include "../game/public/game.h"
 #include "../event.h"
 #include "../main.h"

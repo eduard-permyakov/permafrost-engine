@@ -36,9 +36,9 @@
 #include "public/tile.h"
 #include "public/map.h"
 #include "../pf_math.h"
-#include "../collision.h"
 #include "../perf.h"
 #include "../lib/public/pf_string.h"
+#include "../phys/public/collision.h"
 
 #include <assert.h>
 #include <string.h>

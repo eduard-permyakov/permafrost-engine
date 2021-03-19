@@ -45,7 +45,7 @@
 #include "public/render.h"
 #include "../map/public/tile.h"
 #include "../map/public/map.h"
-#include "../collision.h"
+#include "../phys/public/collision.h"
 #include "../camera.h"
 #include "../config.h"
 #include "../main.h"

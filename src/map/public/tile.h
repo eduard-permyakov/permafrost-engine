@@ -36,7 +36,7 @@
 #ifndef TILE_H
 #define TILE_H
 
-#include "../../collision.h"
+#include "../../phys/public/collision.h"
 #include <stdbool.h>
 
 #define X_COORDS_PER_TILE 8 

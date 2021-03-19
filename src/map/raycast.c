@@ -40,9 +40,9 @@
 #include "../pf_math.h"
 #include "../camera.h"
 #include "../config.h"
-#include "../collision.h"
 #include "../main.h"
 
+#include "../phys/public/collision.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../game/public/game.h"

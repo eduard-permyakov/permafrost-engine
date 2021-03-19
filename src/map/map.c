@@ -36,13 +36,13 @@
 #include "map_private.h"
 #include "pfchunk.h"
 #include "public/map.h"
+#include "../camera.h"
+#include "../settings.h"
+#include "../phys/public/collision.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 #include "../navigation/public/nav.h"
 #include "../game/public/game.h"
-#include "../camera.h"
-#include "../collision.h"
-#include "../settings.h"
 
 #include <string.h>
 #include <assert.h>

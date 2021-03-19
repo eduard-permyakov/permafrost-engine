@@ -36,7 +36,7 @@
 #ifndef COLLISION_H
 #define COLLISION_H
 
-#include "pf_math.h"
+#include "../../pf_math.h"
 #include <stdbool.h>
 
 struct aabb{

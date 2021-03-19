@@ -43,8 +43,8 @@
 #include "../main.h"
 #include "../pf_math.h"
 #include "../config.h"
-#include "../collision.h"
 #include "../settings.h"
+#include "../phys/public/collision.h"
 #include "../game/public/game.h"
 
 #include <GL/glew.h>
