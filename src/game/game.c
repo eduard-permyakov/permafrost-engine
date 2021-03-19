@@ -403,7 +403,7 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
                 .model = model,
                 .translucent = curr->flags & ENTITY_FLAG_TRANSLUCENT
             };
-            A_GetRenderState(curr, &rstate.njoints, rstate.curr_pose, &rstate.inv_bind_pose);
+            A_GetRenderState(curr->uid, &rstate.njoints, rstate.curr_pose, &rstate.inv_bind_pose);
             vec_ranim_push(out_anim, rstate);
         }else{
         
@@ -583,7 +583,7 @@ static bool g_save_anim_state(SDL_RWops *stream)
             .val.as_int = key
         };
         CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
-        CHK_TRUE_RET(A_SaveState(stream, curr));
+        CHK_TRUE_RET(A_SaveState(stream, curr->uid));
     });
 
     return true;
@@ -609,7 +609,7 @@ static bool g_load_anim_state(SDL_RWops *stream)
         ent = G_EntityForUID(uid);
         CHK_TRUE_RET(ent);
 
-        CHK_TRUE_RET(A_LoadState(stream, ent));
+        CHK_TRUE_RET(A_LoadState(stream, ent->uid));
     }
 
     return true;
@@ -752,7 +752,7 @@ static void g_change_simstate(void)
            
             if(!(curr->flags & ENTITY_FLAG_ANIMATED))
                 continue;
-            A_AddTimeDelta(curr, delta);
+            A_AddTimeDelta(curr->uid, delta);
         });
         Audio_Resume(delta);
         G_Combat_AddTimeDelta(delta);
@@ -1381,11 +1381,11 @@ void G_Update(void)
     struct entity *curr;
     (void)key;
 
-    kh_foreach(s_gs.active, key, curr, {
+    if(s_gs.ss == G_RUNNING) {
+        A_Update();
+    }
 
-        if(s_gs.ss == G_RUNNING && curr->flags & ENTITY_FLAG_ANIMATED) {
-            A_Update(curr);
-        }
+    kh_foreach(s_gs.active, key, curr, {
 
         struct obb obb;
         Entity_CurrentOBB(curr, &obb, false);
@@ -1560,6 +1560,9 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
 
     G_Pos_Set(ent, pos);
 
+    if(ent->flags & ENTITY_FLAG_ANIMATED)
+        A_AddEntity(ent);
+
     if(ent->flags & ENTITY_FLAG_STORAGE_SITE)
         G_StorageSite_AddEntity(ent);
 
@@ -1616,6 +1619,7 @@ bool G_RemoveEntity(struct entity *ent)
         vec_pentity_del(&s_gs.light_visible, idx);
     }
 
+    A_RemoveEntity(ent);
     G_Sel_Remove(ent);
     G_Move_RemoveEntity(ent);
     G_Combat_RemoveEntity(ent);

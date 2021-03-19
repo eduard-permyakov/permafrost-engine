@@ -75,10 +75,7 @@ struct entity{
     quat_t       rotation;
     void        *render_private;
     void        *anim_private;
-    void        *anim_ctx;
-    /* For animated entities, this is the bind pose AABB. Each
-     * animation sample also has its' own AABB. */
-    struct aabb  identity_aabb;
+    struct aabb  identity_aabb; /* Bind-pose AABB */
 };
 
 /* State needed for rendering a static entity */
@@ -86,7 +83,7 @@ struct ent_stat_rstate{
     void            *render_private;
     mat4x4_t         model;
     bool             translucent;
-    struct tile_desc td; 
+    struct tile_desc td; /* For binning to a chunk batch */
 };
 
 /* State needed for rendering an animated entity */

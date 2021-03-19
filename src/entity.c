@@ -299,7 +299,7 @@ void Entity_CurrentOBB(const struct entity *ent, struct obb *out, bool identity)
 {
     const struct aabb *aabb;
     if((ent->flags & ENTITY_FLAG_ANIMATED) && !identity) {
-        aabb = A_GetCurrPoseAABB(ent);
+        aabb = A_GetCurrPoseAABB(ent->uid);
     }else {
         aabb = &ent->identity_aabb;
     }

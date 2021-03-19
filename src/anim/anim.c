@@ -55,16 +55,31 @@
             return false;     \
     }while(0)
 
+KHASH_MAP_INIT_INT(ctx, struct anim_ctx)
+
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
+
+static khash_t(ctx) *s_anim_ctx;
+
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static const struct anim_clip *a_clip_for_name(const struct entity *ent, const char *name)
+static struct anim_ctx *a_ctx_for_uid(uint32_t uid)
 {
-    struct anim_data *priv = ent->anim_private;
-    for(int i = 0; i < priv->num_anims; i++) {
+    khiter_t k = kh_get(ctx, s_anim_ctx, uid);
+    if(k == kh_end(s_anim_ctx))
+        return NULL;
+    return &kh_value(s_anim_ctx, k);
+}
 
-        const struct anim_clip *curr = &priv->anims[i];
+static const struct anim_clip *a_clip_for_name(const struct anim_data *data, const char *name)
+{
+    for(int i = 0; i < data->num_anims; i++) {
+
+        const struct anim_clip *curr = &data->anims[i];
         if(!strcmp(curr->name, name)) 
             return curr;
     }
@@ -113,9 +128,9 @@ static void a_make_bind_mat(int joint_idx, const struct skeleton *skel, mat4x4_t
     *out = bind_trans;
 }
 
-static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struct skeleton *skel, mat4x4_t *out)
+static void a_make_pose_mat(uint32_t uid, int joint_idx, const struct skeleton *skel, mat4x4_t *out)
 {
-    struct anim_ctx *ctx = ent->anim_ctx;
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
     struct anim_sample *sample = &ctx->active->samples[ctx->curr_frame];
 
     mat4x4_t pose_trans;
@@ -141,28 +156,21 @@ static void a_make_pose_mat(const struct entity *ent, int joint_idx, const struc
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void A_InitCtx(const struct entity *ent, const char *idle_clip, unsigned key_fps)
+void A_SetIdleClip(uint32_t uid, const char *name, unsigned key_fps)
 {
-    A_SetIdleClip(ent, idle_clip, key_fps);
-}
-
-void A_SetIdleClip(const struct entity *ent, const char *name, unsigned key_fps)
-{
-    struct anim_ctx *ctx = ent->anim_ctx;
-
-    const struct anim_clip *clip = a_clip_for_name(ent, name);
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
+    const struct anim_clip *clip = a_clip_for_name(ctx->data, name);
     assert(clip);
 
     ctx->idle = clip;
-    A_SetActiveClip(ent, name, ANIM_MODE_LOOP, key_fps);
+    A_SetActiveClip(uid, name, ANIM_MODE_LOOP, key_fps);
 }
 
-void A_SetActiveClip(const struct entity *ent, const char *name, 
+void A_SetActiveClip(uint32_t uid, const char *name, 
                      enum anim_mode mode, unsigned key_fps)
 {
-    struct anim_ctx *ctx = ent->anim_ctx;
-
-    const struct anim_clip *clip = a_clip_for_name(ent, name);
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
+    const struct anim_clip *clip = a_clip_for_name(ctx->data, name);
     assert(clip);
 
     ctx->active = clip;
@@ -172,64 +180,62 @@ void A_SetActiveClip(const struct entity *ent, const char *name,
     ctx->curr_frame_start_ticks = SDL_GetTicks();
 }
 
-void A_Update(struct entity *ent)
+void A_Update(void)
 {
-    struct anim_ctx *ctx = ent->anim_ctx;
-
-    float frame_period_secs = 1.0f/ctx->key_fps;
     uint32_t curr_ticks = SDL_GetTicks();
-    float elapsed_secs = (curr_ticks - ctx->curr_frame_start_ticks)/1000.0f;
+    uint32_t uid;
 
-    if(elapsed_secs > frame_period_secs) {
+    kh_foreach(s_anim_ctx, uid, (struct anim_ctx){0}, {
 
-        ctx->curr_frame = (ctx->curr_frame + 1) % ctx->active->num_frames;
-        ctx->curr_frame_start_ticks = curr_ticks;
+        struct anim_ctx *ctx = a_ctx_for_uid(uid);
+        float frame_period_secs = 1.0f/ctx->key_fps;
+        float elapsed_secs = (curr_ticks - ctx->curr_frame_start_ticks)/1000.0f;
 
-        if(ctx->curr_frame == 0) {
-            E_Entity_Notify(EVENT_ANIM_CYCLE_FINISHED, ent->uid, NULL, ES_ENGINE);
+        if(elapsed_secs > frame_period_secs) {
 
-            switch(ctx->mode) {
-            case ANIM_MODE_ONCE_HIDE_ON_FINISH:
+            ctx->curr_frame = (ctx->curr_frame + 1) % ctx->active->num_frames;
+            ctx->curr_frame_start_ticks = curr_ticks;
 
-                ent->flags |= ENTITY_FLAG_INVISIBLE;
-                /* Intentional fallthrough */
+            if(ctx->curr_frame == ctx->active->num_frames - 1) {
 
-            case ANIM_MODE_ONCE: 
+                E_Entity_Notify(EVENT_ANIM_CYCLE_FINISHED, uid, NULL, ES_ENGINE);
+                if(ctx->mode == ANIM_MODE_ONCE) {
+                    E_Entity_Notify(EVENT_ANIM_FINISHED, uid, NULL, ES_ENGINE);
+                }
+            }
 
-                E_Entity_Notify(EVENT_ANIM_FINISHED, ent->uid, NULL, ES_ENGINE);
-                A_SetActiveClip(ent, ctx->idle->name, ANIM_MODE_LOOP, ctx->key_fps);
-                break;
-            default:
-                break;
+            if(ctx->curr_frame == 0 && ctx->mode == ANIM_MODE_ONCE) {
+                A_SetActiveClip(uid, ctx->idle->name, ANIM_MODE_LOOP, ctx->key_fps);
             }
         }
-    }
+    });
 }
 
-void A_GetRenderState(const struct entity *ent, size_t *out_njoints, 
+void A_GetRenderState(uint32_t uid, size_t *out_njoints, 
                       mat4x4_t *out_curr_pose, const mat4x4_t **out_inv_bind_pose)
 {
-    assert(ent->flags & ENTITY_FLAG_ANIMATED);
-    struct anim_data *priv = (struct anim_data*)ent->anim_private;
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
+    const struct anim_data *data = ctx->data;
 
-    for(int j = 0; j < priv->skel.num_joints; j++) {
-        a_make_pose_mat(ent, j, &priv->skel, out_curr_pose + j);
+    for(int j = 0; j < data->skel.num_joints; j++) {
+        a_make_pose_mat(uid, j, &data->skel, out_curr_pose + j);
     }
 
-    *out_njoints = priv->skel.num_joints;
-    *out_inv_bind_pose = priv->skel.inv_bind_poses;
+    *out_njoints = data->skel.num_joints;
+    *out_inv_bind_pose = data->skel.inv_bind_poses;
 }
 
-const struct skeleton *A_GetBindSkeleton(const struct entity *ent)
+const struct skeleton *A_GetBindSkeleton(uint32_t uid)
 {
-    struct anim_data *priv = ent->anim_private;
-    return &priv->skel;
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
+    return &ctx->data->skel;
 }
 
-const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent)
+const struct skeleton *A_GetCurrPoseSkeleton(uint32_t uid)
 {
-    struct anim_data *priv = ent->anim_private;
-    size_t num_joints = priv->skel.num_joints;
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
+    const struct anim_data *data = ctx->data;
+    size_t num_joints = data->skel.num_joints;
 
     /* We make a copy of the skeleton structure, the joints, and the inverse bind poses.
      * Returned buffer layout:
@@ -250,12 +256,12 @@ const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent)
     if(!ret)
         return NULL;
 
-    ret->num_joints = priv->skel.num_joints;
+    ret->num_joints = data->skel.num_joints;
     ret->joints = (void*)(ret + 1);
-    memcpy(ret->joints, priv->skel.joints, num_joints * sizeof(struct joint));
+    memcpy(ret->joints, data->skel.joints, num_joints * sizeof(struct joint));
 
     ret->bind_sqts = (void*)((char*)ret->joints + num_joints * sizeof(struct joint));
-    memcpy(ret->bind_sqts, priv->skel.bind_sqts, num_joints * sizeof(struct SQT));
+    memcpy(ret->bind_sqts, data->skel.bind_sqts, num_joints * sizeof(struct SQT));
 
     ret->inv_bind_poses = (void*)((char*)ret->bind_sqts + num_joints * sizeof(struct SQT));
 
@@ -263,7 +269,7 @@ const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent)
     
         /* Update the inverse bind matrices for the current frame */
         mat4x4_t pose_mat;
-        a_make_pose_mat(ent, i, ret, &pose_mat);
+        a_make_pose_mat(uid, i, ret, &pose_mat);
         PFM_Mat4x4_Inverse(&pose_mat, &ret->inv_bind_poses[i]);
     }
 
@@ -282,48 +288,48 @@ void A_PrepareInvBindMatrices(const struct skeleton *skel)
     }
 }
 
-const struct aabb *A_GetCurrPoseAABB(const struct entity *ent)
+const struct aabb *A_GetCurrPoseAABB(uint32_t uid)
 {
-    struct anim_ctx *ctx = ent->anim_ctx;
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
     return &ctx->active->samples[ctx->curr_frame].sample_aabb;
 }
 
-void A_AddTimeDelta(const struct entity *ent, uint32_t dt)
+void A_AddTimeDelta(uint32_t uid, uint32_t dt)
 {
-    struct anim_ctx *ctx = ent->anim_ctx;
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
     ctx->curr_frame_start_ticks += dt;
 }
 
-const char *A_GetIdleClip(const struct entity *ent)
+const char *A_GetIdleClip(uint32_t uid)
 {
-    struct anim_ctx *ctx = ent->anim_ctx;
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
     return ctx->idle->name;
 }
 
-const char *A_GetCurrClip(const struct entity *ent)
+const char *A_GetCurrClip(uint32_t uid)
 {
-    struct anim_ctx *ctx = ent->anim_ctx;
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
     return ctx->active->name;
 }
 
-const char *A_GetClip(const struct entity *ent, int idx)
+const char *A_GetClip(uint32_t uid, int idx)
 {
-    struct anim_data *priv = ent->anim_private;
-    if(idx >= priv->num_anims)
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
+    if(idx >= ctx->data->num_anims)
         return NULL;
-    return priv->anims[0].name;
+    return ctx->data->anims[0].name;
 }
 
-bool A_HasClip(const struct entity *ent, const char *name)
+bool A_HasClip(uint32_t uid, const char *name)
 {
-    struct anim_ctx *ctx = ent->anim_ctx;
-    const struct anim_clip *clip = a_clip_for_name(ent, name);
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
+    const struct anim_clip *clip = a_clip_for_name(ctx->data, name);
     return (clip != NULL);
 }
 
-bool A_SaveState(struct SDL_RWops *stream, const struct entity *ent)
+bool A_SaveState(struct SDL_RWops *stream, uint32_t uid)
 {
-    struct anim_ctx *ctx = ent->anim_ctx;
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
 
     struct attr active = (struct attr){ .type = TYPE_STRING };
     pf_snprintf(active.val.as_string, sizeof(active.val.as_string), "%s", ctx->active->name);
@@ -360,20 +366,20 @@ bool A_SaveState(struct SDL_RWops *stream, const struct entity *ent)
     return true;
 }
 
-bool A_LoadState(struct SDL_RWops *stream, const struct entity *ent)
+bool A_LoadState(struct SDL_RWops *stream, uint32_t uid)
 {
-    struct anim_ctx *ctx = ent->anim_ctx;
+    struct anim_ctx *ctx = a_ctx_for_uid(uid);
     struct attr attr;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_STRING);
-    const struct anim_clip *active_clip = a_clip_for_name(ent, attr.val.as_string);
+    const struct anim_clip *active_clip = a_clip_for_name(ctx->data, attr.val.as_string);
     CHK_TRUE_RET(active_clip);
     ctx->active = active_clip;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_STRING);
-    const struct anim_clip *idle_clip = a_clip_for_name(ent, attr.val.as_string);
+    const struct anim_clip *idle_clip = a_clip_for_name(ctx->data, attr.val.as_string);
     CHK_TRUE_RET(idle_clip);
     ctx->idle = idle_clip;
 
@@ -394,5 +400,38 @@ bool A_LoadState(struct SDL_RWops *stream, const struct entity *ent)
     ctx->curr_frame_start_ticks = SDL_GetTicks() - attr.val.as_int;
 
     return true;
+}
+
+bool A_Init(void)
+{
+    s_anim_ctx = kh_init(ctx);
+    return (s_anim_ctx != NULL);
+}
+
+void A_Shutdown(void)
+{
+    kh_destroy(ctx, s_anim_ctx);
+}
+
+bool A_AddEntity(const struct entity *ent)
+{
+    int status;
+    khiter_t k = kh_put(ctx, s_anim_ctx, ent->uid, &status);
+    if(status == -1 || status == 0)
+        return false;
+
+    struct anim_ctx *ctx = &kh_value(s_anim_ctx, k);
+    ctx->data = ent->anim_private;
+
+    A_SetIdleClip(ent->uid, A_GetClip(ent->uid, 0), 24);
+    return true;
+}
+
+void A_RemoveEntity(const struct entity *ent)
+{
+    khiter_t k = kh_get(ctx, s_anim_ctx, ent->uid);
+    if(k == kh_end(s_anim_ctx))
+        return;
+    kh_del(ctx, s_anim_ctx, k);
 }
 

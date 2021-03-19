@@ -570,22 +570,13 @@ void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawOBB(const struct entity *ent)
+void R_GL_DrawOBB(const struct aabb *aabb, const mat4x4_t *model)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
     GLuint VAO, VBO;
     vec4_t blue = (vec4_t){0.0f, 0.0f, 1.0f, 1.0f};
-
-    const struct aabb *aabb;
-    if(ent->flags & ENTITY_FLAG_ANIMATED)
-        aabb = A_GetCurrPoseAABB(ent);
-    else
-        aabb = &ent->identity_aabb;
-
-    mat4x4_t model;
-    Entity_ModelMatrix(ent, &model);
 
     vec3_t vbuff[24] = {
         [0] = {aabb->x_min, aabb->y_min, aabb->z_min},
@@ -627,7 +618,7 @@ void R_GL_DrawOBB(const struct entity *ent)
     /* Set uniforms */
     R_GL_StateSet(GL_U_MODEL, (struct uval){
         .type = UTYPE_MAT4,
-        .val.as_mat4 = model
+        .val.as_mat4 = *model
     });
 
     R_GL_StateSet(GL_U_COLOR, (struct uval){

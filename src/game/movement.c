@@ -573,9 +573,7 @@ static void move_marker_add(vec3_t pos, bool attack)
 
     ent->scale = (vec3_t){2.0f, 2.0f, 2.0f};
     E_Entity_Register(EVENT_ANIM_FINISHED, ent->uid, on_marker_anim_finish, ent, G_RUNNING);
-
-    A_InitCtx(ent, "Converge", 48);
-    A_SetActiveClip(ent, "Converge", ANIM_MODE_ONCE_HIDE_ON_FINISH, 48);
+    A_SetActiveClip(ent->uid, "Converge", ANIM_MODE_ONCE, 48);
 
     vec_pentity_push(&s_move_markers, ent);
 }

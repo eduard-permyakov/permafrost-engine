@@ -51,7 +51,6 @@ struct skeleton;
 enum anim_mode{
     ANIM_MODE_LOOP,
     ANIM_MODE_ONCE,
-    ANIM_MODE_ONCE_HIDE_ON_FINISH,
 };
 
 
@@ -60,21 +59,10 @@ enum anim_mode{
 /*###########################################################################*/
 
 /* ---------------------------------------------------------------------------
- * Perform one-time context initialization and set the animation clip that will 
- * play when no other animation clips are active.
- *
- * Note that 'key_fps' is the number of key frames to cycle through each
- * second, not the frame rendering rate.
- * ---------------------------------------------------------------------------
- */
-void                   A_InitCtx(const struct entity *ent, const char *idle_clip, 
-                                 unsigned key_fps);
-
-/* ---------------------------------------------------------------------------
  * Set the animation clip that will play when no other animation clips are active.
  * ---------------------------------------------------------------------------
  */
-void                   A_SetIdleClip(const struct entity *ent, const char *name, 
+void                   A_SetIdleClip(uint32_t uid, const char *name, 
                                      unsigned key_fps);
 
 /* ---------------------------------------------------------------------------
@@ -83,29 +71,23 @@ void                   A_SetIdleClip(const struct entity *ent, const char *name,
  * Otherwise, it will keep looping the clip.
  * ---------------------------------------------------------------------------
  */
-void                   A_SetActiveClip(const struct entity *ent, const char *name, 
+void                   A_SetActiveClip(uint32_t uid, const char *name, 
                                        enum anim_mode mode, unsigned key_fps);
-
-/* ---------------------------------------------------------------------------
- * Should be called once per render loop, prior to rendering. Will update the
- * animation context based on the current time.
- * ---------------------------------------------------------------------------
- */
-void                   A_Update(struct entity *ent);
 
 /* ---------------------------------------------------------------------------
  * Retreive a copy of the state needed to render an animated entity.
  * ---------------------------------------------------------------------------
  */
-void                   A_GetRenderState(const struct entity *ent, size_t *out_njoints, 
-                                        mat4x4_t *out_curr_pose, const mat4x4_t **out_inv_bind_pose);
+void                   A_GetRenderState(uint32_t uid, size_t *out_njoints, 
+                                        mat4x4_t *out_curr_pose, 
+                                        const mat4x4_t **out_inv_bind_pose);
 
 /* ---------------------------------------------------------------------------
  * Simple utility to get a reference to the skeleton structure in its' default
  * bind pose. The skeleton structure shoould not be modified or freed.
  * ---------------------------------------------------------------------------
  */
-const struct skeleton *A_GetBindSkeleton(const struct entity *ent);
+const struct skeleton *A_GetBindSkeleton(uint32_t uid);
 
 /* ---------------------------------------------------------------------------
  * Create a new skeleton for the current frame of the active clip.
@@ -115,59 +97,80 @@ const struct skeleton *A_GetBindSkeleton(const struct entity *ent);
  * 'free'd by the caller. It should _not_ be called outside of debugging.
  * ---------------------------------------------------------------------------
  */
-const struct skeleton *A_GetCurrPoseSkeleton(const struct entity *ent);
+const struct skeleton *A_GetCurrPoseSkeleton(uint32_t uid);
 
 /* ---------------------------------------------------------------------------
  * Returns a pointer to the AABB for the current sample. The pointer should 
  * not be freed. 
  * ---------------------------------------------------------------------------
  */
-const struct aabb     *A_GetCurrPoseAABB(const struct entity *ent);
+const struct aabb     *A_GetCurrPoseAABB(uint32_t uid);
 
 /* ---------------------------------------------------------------------------
  * Add a time delta (in SDL ticks) to the start time of the previous frame.
  * This is used to shift the timestamps after pausing and resuming the game.
  * ---------------------------------------------------------------------------
  */
-void                   A_AddTimeDelta(const struct entity *ent, uint32_t dt);
+void                   A_AddTimeDelta(uint32_t uid, uint32_t dt);
 
 /* ---------------------------------------------------------------------------
  * Get the name of the idle clip for the entity. The returned string must
  * not be freed.
  * ---------------------------------------------------------------------------
  */
-const char            *A_GetIdleClip(const struct entity *ent);
+const char            *A_GetIdleClip(uint32_t uid);
 
 /* ---------------------------------------------------------------------------
  * Get the name of the idle clip for the entity. The returned string must
  * not be freed.
  * ---------------------------------------------------------------------------
  */
-const char            *A_GetCurrClip(const struct entity *ent);
+const char            *A_GetCurrClip(uint32_t uid);
 
 /* ---------------------------------------------------------------------------
  * Get the name of the clip at a specific index.
  * ---------------------------------------------------------------------------
  */
-const char            *A_GetClip(const struct entity *ent, int idx);
+const char            *A_GetClip(uint32_t uid, int idx);
 
 /* ---------------------------------------------------------------------------
  * Returns true if the entity has the animation clip with the specified name.
  * ---------------------------------------------------------------------------
  */
-bool                   A_HasClip(const struct entity *ent, const char *name);
+bool                   A_HasClip(uint32_t uid, const char *name);
 
 /* ---------------------------------------------------------------------------
  * Serialize the animation context for the entity to the stream.
  * ---------------------------------------------------------------------------
  */
-bool                   A_SaveState(struct SDL_RWops *stream, const struct entity *ent);
+bool                   A_SaveState(struct SDL_RWops *stream, uint32_t uid);
 
 /* ---------------------------------------------------------------------------
  * Deserialize the animation context that was previously written by A_SaveState.
  * ---------------------------------------------------------------------------
  */
-bool                   A_LoadState(struct SDL_RWops *stream, const struct entity *ent);
+bool                   A_LoadState(struct SDL_RWops *stream, uint32_t uid);
+
+/* ---------------------------------------------------------------------------
+ * Initialize/teardown animation subsystem.
+ * ---------------------------------------------------------------------------
+ */
+bool                   A_Init(void);
+void                   A_Shutdown(void);
+
+/* ---------------------------------------------------------------------------
+ * Add or remove an entity to the animation simulation.
+ * ---------------------------------------------------------------------------
+ */
+bool                   A_AddEntity(const struct entity *ent);
+void                   A_RemoveEntity(const struct entity *ent);
+
+/* ---------------------------------------------------------------------------
+ * Should be called once per render loop, prior to rendering. Will update all 
+ * the animation context baseds on the current time.
+ * ---------------------------------------------------------------------------
+ */
+void                   A_Update(void);
 
 /*###########################################################################*/
 /* ANIM ASSET LOADING                                                        */

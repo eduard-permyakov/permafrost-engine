@@ -243,14 +243,12 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     struct shared_resource res;
     char pfobj_path[512];
 
-    size_t alloc_size = sizeof(struct entity) + A_AL_CtxBuffSize();
+    size_t alloc_size = sizeof(struct entity);
     struct entity *ret = malloc(alloc_size);
     if(!ret)
         goto fail_alloc;
 
     al_set_ent_defaults(ret);
-    ret->anim_ctx = (void*)(ret + 1);
-
     ret->name = pf_strdup(name);
     ret->filename = pf_strdup(pfobj_name);
     ret->basedir = pf_strdup(base_path);
@@ -268,11 +266,6 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     ret->anim_private = res.anim_private;
     ret->identity_aabb = res.aabb;
     ret->uid = uid;
-
-    if(ret->flags & ENTITY_FLAG_ANIMATED) {
-        A_InitCtx(ret, A_GetClip(ret, 0), 24);
-    }
-
     return ret;
 
 fail_init:
@@ -286,14 +279,15 @@ fail_alloc:
 
 bool AL_EntitySetPFObj(struct entity *ent, const char *base_path, const char *pfobj_name)
 {
-    struct shared_resource res;
-    char abs_basepath[512];
-    char pfobj_path[512];
+    struct shared_resource old_res, new_res;
+    char old_pfobj_path[512], new_pfobj_path[512];
 
-    pf_snprintf(abs_basepath, sizeof(abs_basepath), "%s/%s", g_basepath, base_path);
-    pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
+    pf_snprintf(old_pfobj_path, sizeof(old_pfobj_path), "%s/%s/%s", g_basepath, ent->basedir, ent->filename);
+    pf_snprintf(new_pfobj_path, sizeof(new_pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
 
-    if(!al_get_resource(pfobj_path, abs_basepath, pfobj_name, &res))
+    if(!al_get_resource(old_pfobj_path, ent->basedir, ent->filename, &old_res))
+        goto fail_init;
+    if(!al_get_resource(new_pfobj_path, base_path, pfobj_name, &new_res))
         goto fail_init;
 
     const char *newdir = pf_strdup(base_path);
@@ -302,17 +296,23 @@ bool AL_EntitySetPFObj(struct entity *ent, const char *base_path, const char *pf
     if(!newdir || !newobj)
         goto fail_alloc;
 
+    if(ent->flags & ENTITY_FLAG_ANIMATED) {
+        A_RemoveEntity(ent);
+    }
+    ent->flags &= ~old_res.ent_flags;
+
     free((void*)ent->basedir);
     free((void*)ent->filename);
     ent->basedir = newdir;
     ent->filename = newobj;
 
-    ent->render_private = res.render_private;
-    ent->anim_private = res.anim_private;
-    ent->identity_aabb = res.aabb;
+    ent->render_private = new_res.render_private;
+    ent->anim_private = new_res.anim_private;
+    ent->identity_aabb = new_res.aabb;
 
+    ent->flags |= new_res.ent_flags;
     if(ent->flags & ENTITY_FLAG_ANIMATED) {
-        A_InitCtx(ent, A_GetClip(ent, 0), 24);
+        A_AddEntity(ent);
     }
     return true;
 

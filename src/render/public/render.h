@@ -56,6 +56,7 @@ struct render_input;
 struct nk_draw_list;
 struct map_resolution;
 struct obb;
+struct aabb;
 
 enum render_pass{
     RENDER_PASS_DEPTH,
@@ -167,7 +168,7 @@ void   R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
  * Render the oriented bounding box for collidable entities.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawOBB(const struct entity *ent);
+void   R_GL_DrawOBB(const struct aabb *aabb, const mat4x4_t *model);
 
 /* ---------------------------------------------------------------------------
  * Render a 2D box on the screen. 'screen_pos' + 'signed_size' is the 'opposite'

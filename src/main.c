@@ -47,6 +47,7 @@
 #include "navigation/public/nav.h"
 #include "audio/public/audio.h"
 #include "phys/public/phys.h"
+#include "anim/public/anim.h"
 #include "event.h"
 #include "ui.h"
 #include "pf_math.h"
@@ -418,6 +419,11 @@ static bool engine_init(char **argv)
         goto fail_entity;
     }
 
+    if(!A_Init()) {
+        fprintf(stderr, "Failed to initialize animation subsystem\n");
+        goto fail_anim;
+    }
+
     if(!G_Init()) {
         fprintf(stderr, "Failed to initialize game subsystem\n");
         goto fail_game;
@@ -471,6 +477,8 @@ fail_script:
 fail_nuklear:
     G_Shutdown();
 fail_game:
+    A_Shutdown();
+fail_anim:
     Entity_Shutdown();
 fail_entity:
     E_Shutdown();
@@ -522,6 +530,7 @@ static void engine_shutdown(void)
      * 'G_' API to remove them from the world.
      */
     G_Shutdown(); 
+    A_Shutdown();
     Entity_Shutdown();
     N_Shutdown();
 

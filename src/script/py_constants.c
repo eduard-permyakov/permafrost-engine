@@ -590,7 +590,6 @@ static void s_expose_anim_constants(PyObject *module)
 {
     PY_EXPOSE_ENUM(module, ANIM_MODE_LOOP);
     PY_EXPOSE_ENUM(module, ANIM_MODE_ONCE);
-    PY_EXPOSE_ENUM(module, ANIM_MODE_ONCE_HIDE_ON_FINISH);
 }
 
 static void s_expose_engine_constants(PyObject *module)

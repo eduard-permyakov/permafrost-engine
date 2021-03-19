@@ -1843,7 +1843,7 @@ static int PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject 
         return -1; 
     }
 
-    if(!A_HasClip(self->super.ent, PyString_AS_STRING(idle_clip))) {
+    if(!A_HasClip(self->super.ent->uid, PyString_AS_STRING(idle_clip))) {
         char errbuff[256];
         pf_snprintf(errbuff, sizeof(errbuff), "%s instance has no animation clip named '%s'.", 
             self->super.ent->filename, PyString_AS_STRING(idle_clip));
@@ -1851,7 +1851,7 @@ static int PyAnimEntity_init(PyAnimEntityObject *self, PyObject *args, PyObject 
         return -1;
     }
 
-    A_SetIdleClip(self->super.ent, PyString_AS_STRING(idle_clip), 24);
+    A_SetIdleClip(self->super.ent->uid, PyString_AS_STRING(idle_clip), 24);
 
     /* Call the next __init__ method in the MRO. This is required for all __init__ calls in the 
      * MRO to complete in cases when this class is one of multiple base classes of another type. 
@@ -1882,14 +1882,14 @@ static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args
     if(kwds && (mode_obj = PyDict_GetItemString(kwds, "mode"))) {
     
         if(!PyInt_Check(mode_obj)
-        || (mode = PyInt_AS_LONG(mode_obj)) > ANIM_MODE_ONCE_HIDE_ON_FINISH) {
+        || (mode = PyInt_AS_LONG(mode_obj)) > ANIM_MODE_ONCE) {
         
             PyErr_SetString(PyExc_TypeError, "Mode kwarg must be a valid animation mode (int).");
             return NULL;
         }
     }
 
-    if(!A_HasClip(self->super.ent, clipname)) {
+    if(!A_HasClip(self->super.ent->uid, clipname)) {
         char errbuff[256];
         pf_snprintf(errbuff, sizeof(errbuff), "%s instance has no animation clip named '%s'.", 
             self->super.ent->filename, clipname);
@@ -1897,13 +1897,13 @@ static PyObject *PyAnimEntity_play_anim(PyAnimEntityObject *self, PyObject *args
         return NULL;
     }
 
-    A_SetActiveClip(self->super.ent, clipname, mode, 24);
+    A_SetActiveClip(self->super.ent->uid, clipname, mode, 24);
     Py_RETURN_NONE;
 }
 
 static PyObject *PyAnimEntity_get_anim(PyAnimEntityObject *self)
 {
-    return PyString_FromString(A_GetCurrClip(self->super.ent));
+    return PyString_FromString(A_GetCurrClip(self->super.ent->uid));
 }
 
 static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self, PyObject *args, PyObject *kwargs)
@@ -1916,7 +1916,7 @@ static PyObject *PyAnimEntity_pickle(PyAnimEntityObject *self, PyObject *args, P
     CHK_TRUE(stream, fail_stream);
     CHK_TRUE(SDL_RWwrite(stream, PyString_AS_STRING(ret), PyString_GET_SIZE(ret), 1), fail_stream);
 
-    PyObject *idle_clip = PyString_FromString(A_GetIdleClip(self->super.ent));
+    PyObject *idle_clip = PyString_FromString(A_GetIdleClip(self->super.ent->uid));
     CHK_TRUE(idle_clip, fail_pickle);
     bool status = S_PickleObjgraph(idle_clip, stream);
     Py_DECREF(idle_clip);
@@ -1965,7 +1965,7 @@ static PyObject *PyAnimEntity_unpickle(PyObject *cls, PyObject *args, PyObject *
     CHK_TRUE(PyString_Check(idle_clip), fail_parse);
 
     nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
-    A_SetIdleClip(((PyAnimEntityObject*)ent)->super.ent, PyString_AS_STRING(idle_clip), 24);
+    A_SetIdleClip(((PyAnimEntityObject*)ent)->super.ent->uid, PyString_AS_STRING(idle_clip), 24);
 
     ret = Py_BuildValue("Oi", ent, nread);
 
