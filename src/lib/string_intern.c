@@ -49,7 +49,7 @@ __KHASH_IMPL(stridx, static, khint32_t, mp_ref_t, 1, kh_int_hash_func, kh_int_ha
 
 bool si_init(mp_strbuff_t *pool, khash_t(stridx) **index, size_t size)
 {
-    mp_strbuff_init(pool);
+    mp_strbuff_init(pool, true);
 
     if(!mp_strbuff_reserve(pool, size))
         goto fail_stringpool; 

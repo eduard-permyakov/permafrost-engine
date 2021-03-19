@@ -406,7 +406,7 @@ static void on_amount_changed(void *user, void *event)
 
 bool G_Building_Init(const struct map *map)
 {
-    mp_buff_init(&s_mpool);
+    mp_buff_init(&s_mpool, false);
 
     if(!mp_buff_reserve(&s_mpool, MAX_BUILDINGS * 3))
         goto fail_mpool; 

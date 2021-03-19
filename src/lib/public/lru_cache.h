@@ -157,7 +157,7 @@
             return false;                                                                       \
         kh_resize(name, lru->key_node_table, capacity);                                         \
                                                                                                 \
-        mp_##name##_init(&lru->node_pool);                                                      \
+        mp_##name##_init(&lru->node_pool, false);                                               \
         if(!mp_##name##_reserve(&lru->node_pool, capacity)) {                                   \
             kh_destroy(name, lru->key_node_table);                                              \
             return false;                                                                       \

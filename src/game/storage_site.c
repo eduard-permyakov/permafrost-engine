@@ -605,7 +605,7 @@ static bool storage_site_ui_mode_validate(const struct sval *val)
 
 bool G_StorageSite_Init(void)
 {
-    mp_buff_init(&s_mpool);
+    mp_buff_init(&s_mpool, false);
 
     if(!mp_buff_reserve(&s_mpool, MAX_STORAGE_SITES * 5 * 3))
         goto fail_mpool; 

@@ -728,7 +728,7 @@
                                 float ymin, float ymax,                                         \
                                 bool (*comparator)(const type*, const type*))                   \
     {                                                                                           \
-        mp_##name##_init(&qt->node_pool);                                                       \
+        mp_##name##_init(&qt->node_pool, true);                                                 \
         qt->root = 0;                                                                           \
         qt->nrecs = 0;                                                                          \
         qt->xmin = xmin;                                                                        \

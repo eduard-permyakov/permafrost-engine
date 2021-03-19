@@ -41,7 +41,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
+#include <stdbool.h>
 
 /* Hold on to objects by their handles. Unlike pointers, they don't need to be */
 /* invalidated when a realloc takes place. */
@@ -61,6 +61,7 @@ typedef uint16_t mp_ref_t;
         size_t num_allocd;                                                                      \
         mp_ref_t ifree_head;                                                                    \
         mp_##name##_node_t *pool;                                                               \
+        bool can_grow;                                                                          \
     } mp_##name##_t;                                                                            \
 
 /***********************************************************************************************/
@@ -72,7 +73,7 @@ typedef uint16_t mp_ref_t;
 
 #define MPOOL_PROTOTYPES(scope, name, type)                                                     \
                                                                                                 \
-    scope void     mp_##name##_init   (mp(name) *mp);                                           \
+    scope void     mp_##name##_init   (mp(name) *mp, bool can_grow);                            \
     scope bool     mp_##name##_reserve(mp(name) *mp, size_t new_cap);                           \
     scope void     mp_##name##_destroy(mp(name) *mp);                                           \
     scope mp_ref_t mp_##name##_alloc  (mp(name) *mp);                                           \
@@ -87,9 +88,10 @@ typedef uint16_t mp_ref_t;
 
 #define MPOOL_IMPL(scope, name, type)                                                           \
                                                                                                 \
-    scope void mp_##name##_init(mp(name) *mp)                                                   \
+    scope void mp_##name##_init(mp(name) *mp, bool can_grow)                                    \
     {                                                                                           \
         memset(mp, 0, sizeof(*mp));                                                             \
+        mp->can_grow = can_grow;                                                                \
     }                                                                                           \
                                                                                                 \
     scope bool mp_##name##_reserve(mp(name) *mp, size_t new_cap)                                \
@@ -131,6 +133,8 @@ typedef uint16_t mp_ref_t;
     scope mp_ref_t mp_##name##_alloc(mp(name) *mp)                                              \
     {                                                                                           \
         if(mp->num_allocd == mp->capacity) {                                                    \
+            if(!mp->can_grow)                                                                   \
+                return 0;                                                                       \
             if(!mp_##name##_reserve(mp, mp->capacity ? mp->capacity * 2 : 32))                  \
                 return 0;                                                                       \
         }                                                                                       \

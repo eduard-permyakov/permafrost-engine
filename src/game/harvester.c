@@ -1456,7 +1456,7 @@ static bool harvester_transport_from_resources(struct entity *harvester, struct 
 
 bool G_Harvester_Init(const struct map *map)
 {
-    mp_buff_init(&s_mpool);
+    mp_buff_init(&s_mpool, false);
 
     if(!mp_buff_reserve(&s_mpool, MAX_HARVESTERS * 3 * 3))
         goto fail_mpool; 

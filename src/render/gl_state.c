@@ -303,7 +303,7 @@ bool R_GL_StateInit(void)
     s_state_table = kh_init(puval);
     if(!s_state_table)
         goto fail_table;
-    mp_buff_init(&s_buff_pool);
+    mp_buff_init(&s_buff_pool, true);
     if(!mp_buff_reserve(&s_buff_pool, 512))
         goto fail_pool;
     return true;
