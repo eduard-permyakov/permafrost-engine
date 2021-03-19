@@ -161,6 +161,9 @@ int             G_GetFactionID(uint32_t uid);
 void            G_SetVisionRange(uint32_t uid, float range);
 float           G_GetVisionRange(uint32_t uid);
 
+void            G_SetSelectionRadius(uint32_t uid, float range);
+float           G_GetSelectionRadius(uint32_t uid);
+
 bool            G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds);
 bool            G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out);
 

@@ -290,14 +290,14 @@ static struct flock *flock_for_dest(dest_id_t id)
 
 static void entity_block(const struct entity *ent)
 {
-    M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), ent->selection_radius, G_GetFactionID(ent->uid), s_map);
+    M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), G_GetSelectionRadius(ent->uid), G_GetFactionID(ent->uid), s_map);
 
     struct movestate *ms = movestate_get(ent);
     assert(!ms->blocking);
 
     ms->blocking = true;
     ms->last_stop_pos = G_Pos_GetXZ(ent->uid);
-    ms->last_stop_radius = ent->selection_radius;
+    ms->last_stop_radius = G_GetSelectionRadius(ent->uid);
 }
 
 static void entity_unblock(const struct entity *ent)
@@ -554,7 +554,7 @@ size_t adjacent_flock_members(const struct entity *ent, const struct flock *floc
         vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
         PFM_Vec2_Sub(&ent_xz_pos, &curr_xz_pos, &diff);
 
-        if(PFM_Vec2_Len(&diff) <= ent->selection_radius + curr->selection_radius + ADJACENCY_SEP_DIST)
+        if(PFM_Vec2_Len(&diff) <= G_GetSelectionRadius(ent->uid) + G_GetSelectionRadius(curr->uid) + ADJACENCY_SEP_DIST)
             out[ret++] = curr;  
     });
     return ret;
@@ -986,7 +986,7 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
         vec2_t ent_xz_pos = G_Pos_GetXZ(ent->uid);
         vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
 
-        float radius = ent->selection_radius + curr->selection_radius + buffer_dist;
+        float radius = G_GetSelectionRadius(ent->uid) + G_GetSelectionRadius(curr->uid) + buffer_dist;
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
         /* Exponential decay with y=1 when diff = radius*0.85 
@@ -1204,7 +1204,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         assert(flock);
 
         PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &xz_pos, &diff_to_target);
-        float arrive_thresh = ent->selection_radius * 1.5f;
+        float arrive_thresh = G_GetSelectionRadius(ent->uid) * 1.5f;
 
         if(PFM_Vec2_Len(&diff_to_target) < arrive_thresh
         || M_NavIsMaximallyClose(s_map, layer, xz_pos, flock->target_xz, arrive_thresh)) {
@@ -1397,7 +1397,7 @@ static void find_neighbours(const struct entity *ent,
         if(!(curr->flags & ENTITY_FLAG_MOVABLE))
             continue;
 
-        if(curr->selection_radius == 0.0f)
+        if(G_GetSelectionRadius(curr->uid) == 0.0f)
             continue;
 
         struct movestate *ms = movestate_get(curr);
@@ -1407,7 +1407,7 @@ static void find_neighbours(const struct entity *ent,
         struct cp_ent newdesc = (struct cp_ent) {
             .xz_pos = curr_xz_pos,
             .xz_vel = ms->velocity,
-            .radius = curr->selection_radius
+            .radius = G_GetSelectionRadius(curr->uid)
         };
 
         if(ent_still(ms))
@@ -1643,7 +1643,7 @@ static void on_20hz_tick(void *user, void *event)
         struct cp_ent curr_cp = (struct cp_ent) {
             .xz_pos = G_Pos_GetXZ(curr->uid),
             .xz_vel = ms->velocity,
-            .radius = curr->selection_radius,
+            .radius = G_GetSelectionRadius(curr->uid)
         };
 
         vec_cp_ent_t *dyn, *stat;
@@ -1864,7 +1864,7 @@ void G_Move_SetEnterRange(const struct entity *ent, const struct entity *target,
 
     vec2_t xz_src = G_Pos_GetXZ(ent->uid);
     vec2_t xz_dst = G_Pos_GetXZ(target->uid);
-    range = MAX(0.0f, range - ent->selection_radius);
+    range = MAX(0.0f, range - G_GetSelectionRadius(ent->uid));
 
     vec2_t delta;
     PFM_Vec2_Sub(&xz_src, &xz_dst, &delta);

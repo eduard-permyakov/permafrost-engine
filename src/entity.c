@@ -144,9 +144,10 @@ static struct result ping_task(void *arg)
 
     /* Cache all the params */
     vec2_t pos = G_Pos_GetXZ(ent->uid);
-    float radius = ent->selection_radius;
+    float radius = G_GetSelectionRadius(ent->uid);
     const float width = 0.4f;
     vec3_t color = (vec3_t){1.0f, 1.0f, 0.0f};
+    uint32_t uid = ent->uid;
 
     struct obb obb;
     Entity_CurrentOBB(ent, &obb, false);
@@ -163,6 +164,10 @@ static struct result ping_task(void *arg)
 
         if((elapsed / 400) == 1)
             continue;
+
+        if(G_EntityExists(uid)) {
+            pos = G_Pos_GetXZ(ent->uid);
+        }
 
         if(ent->flags & ENTITY_FLAG_BUILDING) {
 
@@ -293,10 +298,11 @@ void Entity_SetNextUID(uint32_t uid)
 void Entity_CurrentOBB(const struct entity *ent, struct obb *out, bool identity)
 {
     const struct aabb *aabb;
-    if((ent->flags & ENTITY_FLAG_ANIMATED) && !identity)
+    if((ent->flags & ENTITY_FLAG_ANIMATED) && !identity) {
         aabb = A_GetCurrPoseAABB(ent);
-    else
+    }else {
         aabb = &ent->identity_aabb;
+    }
 
     vec4_t identity_verts_homo[8] = {
         {aabb->x_min, aabb->y_min, aabb->z_min, 1.0f},
@@ -540,7 +546,7 @@ void Entity_DisappearAnimated(struct entity *ent, const struct map *map, void (*
 
 int Entity_NavLayer(const struct entity *ent)
 {
-    if(ent->selection_radius >= 5.0f)
+    if(G_GetSelectionRadius(ent->uid) >= 5.0f)
         return NAV_LAYER_GROUND_3X3;
     return NAV_LAYER_GROUND_1X1;
 }

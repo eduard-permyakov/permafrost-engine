@@ -637,7 +637,7 @@ bool M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer laye
     if(target->flags & ENTITY_FLAG_MOVABLE) {
 
         return N_ClosestReachableAdjacentPosDynamic(map->nav_private, layer, map->pos, 
-            xz_src, G_Pos_GetXZ(target->uid), target->selection_radius, out);
+            xz_src, G_Pos_GetXZ(target->uid), G_GetSelectionRadius(target->uid), out);
     }else{
 
         struct obb obb;
@@ -757,7 +757,7 @@ bool M_NavObjAdjacent(const struct map *map, const struct entity *ent, const str
     if(target->flags & ENTITY_FLAG_MOVABLE) {
 
         return N_ObjAdjacentToDynamic(map->nav_private, map->pos, ent, 
-            G_Pos_GetXZ(target->uid), target->selection_radius);
+            G_Pos_GetXZ(target->uid), G_GetSelectionRadius(target->uid));
     }else{
 
         struct obb obb;

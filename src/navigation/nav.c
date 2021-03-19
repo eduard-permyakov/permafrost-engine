@@ -1264,7 +1264,7 @@ bool n_objects_adjacent(void *nav_private, vec3_t map_pos, const struct entity *
     };
 
     struct tile_desc tds_ent[2048];
-    size_t ntiles_ent = M_Tile_AllUnderCircle(n_res(priv), G_Pos_GetXZ(ent->uid), ent->selection_radius, 
+    size_t ntiles_ent = M_Tile_AllUnderCircle(n_res(priv), G_Pos_GetXZ(ent->uid), G_GetSelectionRadius(ent->uid), 
         map_pos, tds_ent, ARR_SIZE(tds_ent));
 
     for(int i = 0; i < ntiles; i++) {

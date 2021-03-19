@@ -149,7 +149,7 @@ bool G_Resource_AddEntity(const struct entity *ent)
         .cursor = "",
         .amount = 0,
         .blocking_pos = G_Pos_GetXZ(ent->uid),
-        .blocking_radius = ent->selection_radius,
+        .blocking_radius = G_GetSelectionRadius(ent->uid),
     };
 
     if(!rstate_set(ent->uid, rs))

@@ -945,7 +945,7 @@ static size_t field_enemies_initial_frontier(
             ntds = M_Tile_AllUnderObj(enemies->map_pos, res, &obb, tds, ARR_SIZE(tds));
         }else{
             ntds = M_Tile_AllUnderCircle(res, G_Pos_GetXZ(curr_enemy->uid), 
-                curr_enemy->selection_radius, enemies->map_pos, tds, ARR_SIZE(tds));
+                G_GetSelectionRadius(curr_enemy->uid), enemies->map_pos, tds, ARR_SIZE(tds));
         }
 
         for(int j = 0; j < ntds; j++) {
@@ -1004,7 +1004,7 @@ static size_t field_entity_initial_frontier(
         ntds = M_Tile_AllUnderObj(target->map_pos, res, &obb, tds, ARR_SIZE(tds));
     }else{
         ntds = M_Tile_AllUnderCircle(res, G_Pos_GetXZ(ent->uid), 
-            ent->selection_radius, target->map_pos, tds, ARR_SIZE(tds));
+            G_GetSelectionRadius(ent->uid), target->map_pos, tds, ARR_SIZE(tds));
     }
 
     int ret = 0;

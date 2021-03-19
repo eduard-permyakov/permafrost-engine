@@ -79,7 +79,6 @@ struct entity{
     /* For animated entities, this is the bind pose AABB. Each
      * animation sample also has its' own AABB. */
     struct aabb  identity_aabb;
-    float        selection_radius; /* The radius of the selection circle in OpenGL coordinates */
 };
 
 /* State needed for rendering a static entity */

@@ -238,15 +238,6 @@ static bool enemies(const struct entity *a, const struct entity *b)
     return (ds == DIPLOMACY_STATE_WAR);
 }
 
-static float ents_distance(const struct entity *a, const struct entity *b)
-{
-    vec2_t dist;
-    vec2_t xz_pos_a = G_Pos_GetXZ(a->uid);
-    vec2_t xz_pos_b = G_Pos_GetXZ(b->uid);
-    PFM_Vec2_Sub(&xz_pos_a, &xz_pos_b, &dist);
-    return PFM_Vec2_Len(&dist) - a->selection_radius - b->selection_radius;
-}
-
 static bool enemies_in_bin(int faction_id, struct map_resolution binres, struct tile_desc td)
 {
     uint16_t facs = G_GetFactions(NULL, NULL, NULL);

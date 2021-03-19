@@ -1183,7 +1183,7 @@ static int PyEntity_set_selectable(PyEntityObject *self, PyObject *value, void *
 
 static PyObject *PyEntity_get_selection_radius(PyEntityObject *self, void *closure)
 {
-    return Py_BuildValue("f", self->ent->selection_radius);
+    return Py_BuildValue("f", G_GetSelectionRadius(self->ent->uid));
 }
 
 static int PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, void *closure)
@@ -1193,9 +1193,7 @@ static int PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, 
         return -1;
     }
 
-    self->ent->selection_radius = PyFloat_AsDouble(value);
-    G_Move_UpdateSelectionRadius(self->ent, self->ent->selection_radius);
-    G_Resource_UpdateSelectionRadius(self->ent, self->ent->selection_radius);
+    G_SetSelectionRadius(self->ent->uid, PyFloat_AsDouble(value));
     return 0;
 }
 
@@ -1504,7 +1502,7 @@ static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject 
     Py_DECREF(flags);
     CHK_TRUE(status, fail_pickle);
 
-    PyObject *sel_radius = Py_BuildValue("f", self->ent->selection_radius);
+    PyObject *sel_radius = Py_BuildValue("f", G_GetSelectionRadius(self->ent->uid));
     CHK_TRUE(sel_radius, fail_pickle);
     status = S_PickleObjgraph(sel_radius, stream);
     Py_DECREF(sel_radius);

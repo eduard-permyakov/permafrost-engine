@@ -170,7 +170,6 @@ static void al_set_ent_defaults(struct entity *ent)
     ent->flags = 0;
     ent->scale = (vec3_t){1.0f, 1.0f, 1.0f};
     ent->rotation = (quat_t){0.0f, 0.0f, 0.0f, 1.0f};
-    ent->selection_radius = 0.0f;
 }
 
 static bool al_get_resource(const char *path, const char *basedir, 

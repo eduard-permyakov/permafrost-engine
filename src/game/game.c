@@ -1043,6 +1043,10 @@ bool G_Init(void)
     if(!s_gs.ent_visrange_map)
         goto fail_visrange;
 
+    s_gs.selection_radiuses = kh_init(range);
+    if(!s_gs.selection_radiuses)
+        goto fail_sel_rad;
+
     s_gs.dynamic = kh_init(entity);
     if(!s_gs.dynamic)
         goto fail_dynamic;
@@ -1081,6 +1085,8 @@ fail_ws:
 fail_cam:
     kh_destroy(entity, s_gs.dynamic);
 fail_dynamic:
+    kh_destroy(range, s_gs.selection_radiuses);
+fail_sel_rad:
     kh_destroy(range, s_gs.ent_visrange_map);
 fail_visrange:
     kh_destroy(faction, s_gs.ent_faction_map);
@@ -1147,6 +1153,7 @@ void G_ClearState(void)
     kh_clear(entity, s_gs.dynamic);
     kh_clear(faction, s_gs.ent_faction_map);
     kh_clear(range, s_gs.ent_visrange_map);
+    kh_clear(range, s_gs.selection_radiuses);
     vec_pentity_reset(&s_gs.visible);
     vec_pentity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
@@ -1338,6 +1345,7 @@ void G_Shutdown(void)
     kh_destroy(entity, s_gs.dynamic);
     kh_destroy(faction, s_gs.ent_faction_map);
     kh_destroy(range, s_gs.ent_visrange_map);
+    kh_destroy(range, s_gs.selection_radiuses);
     vec_pentity_destroy(&s_gs.light_visible);
     vec_pentity_destroy(&s_gs.visible);
     vec_obb_destroy(&s_gs.visible_obbs);
@@ -1477,13 +1485,14 @@ void G_Render(void)
                 },
             });
         }else{
-        
+
+            float sel_radius = G_GetSelectionRadius(curr->uid);
             R_PushCmd((struct rcmd){
                 .func = R_GL_DrawSelectionCircle,
                 .nargs = 5,
                 .args = {
                     R_PushArg(&curr_pos, sizeof(curr_pos)),
-                    R_PushArg(&curr->selection_radius, sizeof(curr->selection_radius)),
+                    R_PushArg(&sel_radius, sizeof(sel_radius)),
                     R_PushArg(&width, sizeof(width)),
                     R_PushArg(&g_seltype_color_map[sel_type], sizeof(g_seltype_color_map[0])),
                     (void*)s_gs.prev_tick_map,
@@ -1543,6 +1552,11 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
     if(ret == -1 || ret == 0)
         return false;
     kh_value(s_gs.ent_visrange_map, k) = 0.0f;
+
+    k = kh_put(range, s_gs.selection_radiuses, ent->uid, &ret);
+    if(ret == -1 || ret == 0)
+        return false;
+    kh_value(s_gs.selection_radiuses, k) = 0.0f;
 
     G_Pos_Set(ent, pos);
 
@@ -1621,6 +1635,10 @@ bool G_RemoveEntity(struct entity *ent)
     k = kh_get(range, s_gs.ent_visrange_map, ent->uid);
     assert(k != kh_end(s_gs.ent_visrange_map));
     kh_del(range, s_gs.ent_visrange_map, k);
+
+    k = kh_get(range, s_gs.selection_radiuses, ent->uid);
+    assert(k != kh_end(s_gs.selection_radiuses));
+    kh_del(range, s_gs.selection_radiuses, k);
 
     G_Sel_MarkHoveredDirty();
     return true;
@@ -1825,6 +1843,30 @@ float G_GetVisionRange(uint32_t uid)
     khiter_t k = kh_get(range, s_gs.ent_visrange_map, uid);
     assert(k != kh_end(s_gs.ent_visrange_map));
     return kh_value(s_gs.ent_visrange_map, k);
+}
+
+void G_SetSelectionRadius(uint32_t uid, float range)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    const struct entity *ent = G_EntityForUID(uid);
+    assert(ent);
+
+    khiter_t k = kh_get(range, s_gs.selection_radiuses, uid);
+    assert(k != kh_end(s_gs.selection_radiuses));
+
+    G_Move_UpdateSelectionRadius(ent, range);
+    G_Resource_UpdateSelectionRadius(ent, range);
+    kh_value(s_gs.selection_radiuses, k) = range;
+}
+
+float G_GetSelectionRadius(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(range, s_gs.selection_radiuses, uid);
+    assert(k != kh_end(s_gs.selection_radiuses));
+    return kh_value(s_gs.selection_radiuses, k);
 }
 
 bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds)

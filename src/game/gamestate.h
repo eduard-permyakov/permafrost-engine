@@ -104,6 +104,12 @@ struct gamestate{
      */
     khash_t(range)         *ent_visrange_map;
     /*-------------------------------------------------------------------------
+     * Table mapping an entity to its' selection radius for active entities.
+     * Synchronized with 'active' table at function call boundaries.
+     *-------------------------------------------------------------------------
+     */
+    khash_t(range)         *selection_radiuses;
+    /*-------------------------------------------------------------------------
      * Up-to-date set of all non-static entities. (Subset of 'active' set). 
      * Used for collision avoidance force computations.
      *-------------------------------------------------------------------------
