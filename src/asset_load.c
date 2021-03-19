@@ -44,6 +44,7 @@
 #include "map/public/map.h"
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
+#include "lib/public/mpool_allocator.h"
 
 #include <SDL.h>
 
@@ -71,11 +72,16 @@ struct shared_resource{
 
 KHASH_MAP_INIT_STR(entity_res, struct shared_resource)
 
+MPOOL_ALLOCATOR_TYPE(ent, struct entity)
+MPOOL_ALLOCATOR_PROTOTYPES(static, ent, struct entity)
+MPOOL_ALLOCATOR_IMPL(static, ent, struct entity)
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
 static khash_t(entity_res) *s_name_resource_table;
+static mpa_ent_t            s_mpool;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -237,8 +243,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     char pfobj_path[512];
     pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
 
-    size_t alloc_size = sizeof(struct entity);
-    struct entity *ret = malloc(alloc_size);
+    struct entity *ret = mpa_ent_alloc(&s_mpool);
     if(!ret)
         goto fail_alloc;
 
@@ -323,7 +328,7 @@ void AL_EntityFree(struct entity *entity)
     free((void*)entity->basedir);
     free((void*)entity->filename);
     free((void*)entity->name);
-    free(entity);
+    mpa_ent_free(&s_mpool, entity);
 }
 
 void *AL_RenderPrivateForName(const char *base_path, const char *pfobj_name)
@@ -466,7 +471,17 @@ fail:
 bool AL_Init(void)
 {
     s_name_resource_table = kh_init(entity_res);
-    return (s_name_resource_table != NULL);
+    if(!s_name_resource_table)
+        goto fail_table;
+    mpa_ent_init(&s_mpool, 1024, 0);
+    if(!mpa_ent_reserve(&s_mpool, 1024))
+        goto fail_mpool;
+    return true;
+
+fail_mpool:
+    kh_destroy(entity_res, s_name_resource_table);
+fail_table:
+    return false;
 }
 
 void AL_Shutdown(void)
@@ -482,6 +497,7 @@ void AL_Shutdown(void)
         free((void*)curr.filename);
     });
     kh_destroy(entity_res, s_name_resource_table);
+    mpa_ent_destroy(&s_mpool);
 }
 
 bool AL_SaveOBB(SDL_RWops *stream, const struct obb *obb)
