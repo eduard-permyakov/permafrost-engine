@@ -53,6 +53,7 @@
 #include "../audio/public/audio.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
+#include "../phys/public/phys.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/pf_nuklear.h"
@@ -196,6 +197,7 @@ static PyObject *PyPf_curr_music(PyObject *self);
 static PyObject *PyPf_get_all_music(PyObject *self);
 static PyObject *PyPf_play_effect(PyObject *self, PyObject *args);
 static PyObject *PyPf_play_global_effect(PyObject *self, PyObject *args, PyObject *kwargs);
+static PyObject *PyPf_spawn_projectile(PyObject *self, PyObject *args);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -663,6 +665,12 @@ static PyMethodDef pf_module_methods[] = {
     "Play a specified audio effect with global range. The name must be a name of a WAV file in the "
     "'assets/sounds' folder, without the file extension. If another global effect is already playing, "
     "the effect will be ignored, unless 'interrupt' is set to True."},
+
+    {"spawn_projectile",
+    (PyCFunction)PyPf_spawn_projectile, METH_VARARGS,
+    "Spawn a projectile with the specified parameters at a map location. The projectile will travel "
+    "with the specified velocity until it leaves the map bounds or hits a unit. The hit event can be "
+    "handled."},
 
     {NULL}  /* Sentinel */
 };
@@ -2756,6 +2764,39 @@ static PyObject *PyPf_play_global_effect(PyObject *self, PyObject *args, PyObjec
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_spawn_projectile(PyObject *self, PyObject *args)
+{
+    vec3_t origin;
+    vec3_t velocity;
+    uint32_t ent_parent;
+    int faction_id;
+    uint32_t cookie;
+    int flags;
+    struct proj_desc pd;
+
+    if(!PyArg_ParseTuple(args, "(fff)(fff)IIII(ss(fff)f)", &origin.x, &origin.y, &origin.z,
+        &velocity.x, &velocity.y, &velocity.z, &ent_parent, &faction_id, &cookie, &flags,
+        &pd.basedir, &pd.pfobj, &pd.scale.x, &pd.scale.y, &pd.scale.z, &pd.speed)) {
+
+        PyErr_SetString(PyExc_RuntimeError, "The following arugment list is expected: "
+            "origin (tuple of 3 floats), "
+            "velocity (tuple of 3 floats) "
+            "ent_parent (int), "
+            "faction_id (int), "
+            "cookie (int), "
+            "flags (int), "
+            "a projectile descriptor (a tuple of 4 objects): "
+            "[projectile model base directory (string), "
+            "projectile model PFOBJ filename (string), "
+            "projectile model scale (tuple of 3 floats), "
+            "projectile speed (float)].");
+        return NULL;
+    }
+
+    uint32_t ret = P_Projectile_Add(origin, velocity, ent_parent, faction_id, cookie, flags, pd);
+    return PyInt_FromLong(ret);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -2998,6 +3039,20 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_STORAGE_SITE_AMOUNT_CHANGED: {
         struct ss_delta_event *event = arg;
         return Py_BuildValue("si", event->name, event->delta);
+    }
+    case EVENT_PROJECTILE_HIT: {
+        struct proj_hit *hit = arg;
+        PyObject *ent = S_Entity_ObjForUID(hit->ent_uid);
+        if(!ent) {
+            ent = Py_None;
+        }
+        Py_INCREF(ent);
+        PyObject *parent = S_Entity_ObjForUID(hit->parent_uid);
+        if(!parent) {
+            parent = Py_None;
+        }
+        Py_INCREF(parent);
+        return Py_BuildValue("OIOI", ent, hit->proj_uid, parent, hit->cookie);
     }
     default:
         Py_RETURN_NONE;

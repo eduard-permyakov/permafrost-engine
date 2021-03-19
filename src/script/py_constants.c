@@ -42,6 +42,7 @@
 #include "../game/public/game.h"
 #include "../anim/public/anim.h"
 #include "../audio/public/audio.h"
+#include "../phys/public/phys.h"
 #include "../main.h"
 #include "../ui.h"
 #include "../cursor.h"
@@ -640,6 +641,12 @@ static void s_expose_audio_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, AUDIO_NUM_FG_CHANNELS);
 }
 
+static void s_expose_phys_constants(PyObject *module)
+{
+    PY_EXPOSE_ENUM(module, PROJ_ONLY_HIT_COMBATABLE);
+    PY_EXPOSE_ENUM(module, PROJ_ONLY_HIT_ENEMIES);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -656,5 +663,6 @@ void S_Constants_Expose(PyObject *module)
     s_expose_ui_constants(module);
     s_expose_cursor_constants(module);
     s_expose_audio_constants(module);
+    s_expose_phys_constants(module);
 }
 

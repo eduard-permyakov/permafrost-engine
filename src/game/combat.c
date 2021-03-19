@@ -545,7 +545,7 @@ static void on_attack_anim_finish(void *user, void *event)
 static bool entity_dead(const struct entity *ent)
 {
     if(!ent  /* dead and gone */
-    || (ent->flags & ENTITY_FLAG_ZOMBIE) /* zombie */
+    || !(ent->flags & ENTITY_FLAG_COMBATABLE) /* zombie or stray target */
     || combatstate_get(ent->uid)->state == STATE_DEATH_ANIM_PLAYING) /* dying */
         return true;
 
