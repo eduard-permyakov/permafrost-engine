@@ -232,6 +232,11 @@ BUILT-IN FUNCTIONS
     Returns the Y-dimension map height at the specified XZ coordinate. Returns
     None if the specified coordinate is outside the map bounds.
 
+    [map_nearest_pathable]
+    ----------------------------------------------------------------------------
+    Returns the closest XZ map position that is pathable and not currently
+    blocked.
+
     [map_pos_under_cursor]
     ----------------------------------------------------------------------------
     Returns the XYZ coordinate of the point of the map underneath the cursor.
@@ -399,6 +404,11 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Load a BMP cursor and associate it with a particular name.
 
+    [set_pick_up_on_left_click]
+    ----------------------------------------------------------------------------
+    Set the cursor to target mode. The next left click will issue a 'pick up'
+    command to the storage site under the cursor.
+
     [set_simstate]
     ----------------------------------------------------------------------------
     Set the current simulation state.
@@ -471,6 +481,12 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Show region outlines and names over the map surface.
 
+    [spawn_projectile]
+    ----------------------------------------------------------------------------
+    Spawn a projectile with the specified parameters at a map location. The
+    projectile will travel with the specified velocity until it leaves the map
+    bounds or hits a unit. The hit event can be handled.
+
     [storage_site_show_ui]
     ----------------------------------------------------------------------------
     Set a flag controlling whether or not the UI windows are rendered over the
@@ -540,9 +556,6 @@ BUILT-IN CLASSES
         [selection_radius]
         Radius (in OpenGL coordinates) of the unit selection circle for this
         entity.
-
-        [speed]
-        Entity's movement speed (in OpenGL coordinates per second).
 
         [tags]
         Return a tuple with all the entity's tags.
@@ -666,9 +679,6 @@ BUILT-IN CLASSES
         [selection_radius]
         Radius (in OpenGL coordinates) of the unit selection circle for this
         entity.
-
-        [speed]
-        Entity's movement speed (in OpenGL coordinates per second).
 
         [tags]
         Return a tuple with all the entity's tags.
@@ -800,9 +810,6 @@ BUILT-IN CLASSES
         Radius (in OpenGL coordinates) of the unit selection circle for this
         entity.
 
-        [speed]
-        Entity's movement speed (in OpenGL coordinates per second).
-
         [tags]
         Return a tuple with all the entity's tags.
 
@@ -931,11 +938,15 @@ BUILT-IN CLASSES
     ----------------------------------------------------------------------------
     Permafrost Engine entity which is able to take part in combat. This type
     requires the 'max_hp', 'base_dmg', and 'base_armour' keyword arguments to
-    be passed to __init__. This is a subclass of pf.Entity.
+    be passed to __init__. An optional 'attack_range' keyword argument may also
+    be passed. This is a subclass of pf.Entity.
 
         ************************************************************************
         MEMBERS
         ************************************************************************
+        [attack_range]
+        The distance from which an entity can attack. 0 for melee units.
+
         [base_armour]
         The base armour (as a fraction from 0.0 to 1.0) specifying which
         percentage of incoming damage is blocked.
@@ -978,9 +989,6 @@ BUILT-IN CLASSES
         [selection_radius]
         Radius (in OpenGL coordinates) of the unit selection circle for this
         entity.
-
-        [speed]
-        Entity's movement speed (in OpenGL coordinates per second).
 
         [tags]
         Return a tuple with all the entity's tags.
@@ -1097,9 +1105,6 @@ BUILT-IN CLASSES
         Radius (in OpenGL coordinates) of the unit selection circle for this
         entity.
 
-        [speed]
-        Entity's movement speed (in OpenGL coordinates per second).
-
         [tags]
         Return a tuple with all the entity's tags.
 
@@ -1208,9 +1213,6 @@ BUILT-IN CLASSES
         [selection_radius]
         Radius (in OpenGL coordinates) of the unit selection circle for this
         entity.
-
-        [speed]
-        Entity's movement speed (in OpenGL coordinates per second).
 
         [strategy]
         The approach used by the harvester to pick the next storage site to get
@@ -1546,9 +1548,6 @@ BUILT-IN CLASSES
         Radius (in OpenGL coordinates) of the unit selection circle for this
         entity.
 
-        [speed]
-        Entity's movement speed (in OpenGL coordinates per second).
-
         [tags]
         Return a tuple with all the entity's tags.
 
@@ -1657,9 +1656,6 @@ BUILT-IN CLASSES
         [selection_radius]
         Radius (in OpenGL coordinates) of the unit selection circle for this
         entity.
-
-        [speed]
-        Entity's movement speed (in OpenGL coordinates per second).
 
         [storable]
         The list of resources that are currently able to be held at this
@@ -2841,7 +2837,6 @@ BUILT-IN CONSTANTS
     ANCHOR_Y_TOP 8
     ANIM_MODE_LOOP 0
     ANIM_MODE_ONCE 1
-    ANIM_MODE_ONCE_HIDE_ON_FINISH 2
     AUDIO_NUM_FG_CHANNELS 2
     BLEND_MODE_BLUR 1
     BLEND_MODE_NOBLEND 0
@@ -2874,45 +2869,49 @@ BUILT-IN CONSTANTS
     EVENT_ATTACK_END 65559
     EVENT_ATTACK_START 65557
     EVENT_BUILDING_COMPLETED 65571
+    EVENT_BUILDING_CONSTRUCTED 65572
     EVENT_BUILDING_FOUNDED 65570
     EVENT_BUILD_BEGIN 65566
     EVENT_BUILD_END 65567
     EVENT_BUILD_FAIL_FOUND 65568
     EVENT_BUILD_TARGET_ACQUIRED 65569
     EVENT_ENGINE_LAST 131071
-    EVENT_ENTERED_REGION 65584
+    EVENT_ENTERED_REGION 65585
     EVENT_ENTITY_DEATH 65558
-    EVENT_ENTITY_DIED 65572
-    EVENT_ENTITY_STOP 65573
-    EVENT_EXITED_REGION 65585
+    EVENT_ENTITY_DIED 65573
+    EVENT_ENTITY_DISAPPEARED 65590
+    EVENT_ENTITY_STOP 65574
+    EVENT_EXITED_REGION 65586
     EVENT_GAME_SIMSTATE_CHANGED 65560
-    EVENT_HARVEST_BEGIN 65574
-    EVENT_HARVEST_END 65575
-    EVENT_HARVEST_TARGET_ACQUIRED 65576
+    EVENT_HARVEST_BEGIN 65575
+    EVENT_HARVEST_END 65576
+    EVENT_HARVEST_TARGET_ACQUIRED 65577
     EVENT_MOTION_END 65556
     EVENT_MOTION_START 65555
     EVENT_MOVE_ISSUED 65554
     EVENT_NEW_GAME 65544
+    EVENT_PROJECTILE_DISAPPEAR 65588
+    EVENT_PROJECTILE_HIT 65589
     EVENT_RENDER_3D_POST 65540
     EVENT_RENDER_3D_PRE 65539
     EVENT_RENDER_FINISH 65542
     EVENT_RENDER_UI 65541
-    EVENT_RESOURCE_AMOUNT_CHANGED 65583
-    EVENT_RESOURCE_DROPPED_OFF 65580
-    EVENT_RESOURCE_EXHAUSTED 65582
-    EVENT_RESOURCE_PICKED_UP 65581
+    EVENT_RESOURCE_AMOUNT_CHANGED 65584
+    EVENT_RESOURCE_DROPPED_OFF 65581
+    EVENT_RESOURCE_EXHAUSTED 65583
+    EVENT_RESOURCE_PICKED_UP 65582
     EVENT_SCRIPT_TASK_EXCEPTION 65564
     EVENT_SCRIPT_TASK_FINISHED 65565
     EVENT_SELECTED_TILE_CHANGED 65543
     EVENT_SESSION_FAIL_LOAD 65563
     EVENT_SESSION_LOADED 65561
     EVENT_SESSION_POPPED 65562
-    EVENT_STORAGE_SITE_AMOUNT_CHANGED 65579
-    EVENT_STORAGE_TARGET_ACQUIRED 65578
-    EVENT_TRANSPORT_TARGET_ACQUIRED 65577
+    EVENT_STORAGE_SITE_AMOUNT_CHANGED 65580
+    EVENT_STORAGE_TARGET_ACQUIRED 65579
+    EVENT_TRANSPORT_TARGET_ACQUIRED 65578
     EVENT_UNIT_SELECTION_CHANGED 65545
     EVENT_UPDATE_END 65537
-    EVENT_UPDATE_FACTION 65586
+    EVENT_UPDATE_FACTION 65587
     EVENT_UPDATE_START 65536
     EVENT_UPDATE_UI 65538
     G_PAUSED_FULL 2
@@ -2921,6 +2920,7 @@ BUILT-IN CONSTANTS
     HB_MODE_ALWAYS 0
     HB_MODE_DAMAGED 1
     HB_MODE_NEVER 2
+    MAX_FACTIONS 16
     MUSIC_MODE_LOOP 0
     MUSIC_MODE_PLAYLIST 1
     MUSIC_MODE_SHUFFLE 2
@@ -3001,6 +3001,8 @@ BUILT-IN CONSTANTS
     PF_WF_BORDERLESS_WIN 272
     PF_WF_FULLSCREEN 257
     PF_WF_WINDOW 256
+    PROJ_ONLY_HIT_COMBATABLE 1
+    PROJ_ONLY_HIT_ENEMIES 2
     REGION_CIRCLE 1
     REGION_RECTANGLE 0
     SDL_APP_DIDENTERBACKGROUND 260

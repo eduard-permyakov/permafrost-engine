@@ -68,7 +68,7 @@
 
 
 #define PF_VER_MAJOR 0
-#define PF_VER_MINOR 55
+#define PF_VER_MINOR 56
 #define PF_VER_PATCH 0
 
 VEC_TYPE(event, SDL_Event)

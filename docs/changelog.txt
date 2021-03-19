@@ -3,6 +3,13 @@
 ********************************************************************************
 
 ================================================================================
+[Version 0.56.0] - 19.03.2021
+================================================================================
+    * Implement ranged combat using an accurate projectile physics simulation
+    * Improve behaviour of group movement and combat target finding
+    * Miscellaneous enhancements and bug fixes
+
+================================================================================
 [Version 0.55.0] - 27.02.2021
 ================================================================================
     * Add audio system capable of playing effects at locations ("positional 
