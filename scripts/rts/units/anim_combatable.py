@@ -83,7 +83,7 @@ class AnimCombatable(pf.AnimEntity, pf.CombatableEntity, cont.Controllable):
         self.play_anim(self.idle_anim())
 
     def on_death(self, event):
-        self.play_anim(self.death_anim(), mode=pf.ANIM_MODE_ONCE_HIDE_ON_FINISH)
+        self.play_anim(self.death_anim(), mode=pf.ANIM_MODE_ONCE)
         # retain this entity until the death event 
         self.register(pf.EVENT_ANIM_CYCLE_FINISHED, AnimCombatable.on_death_anim_finish, self)
 

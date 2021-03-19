@@ -124,7 +124,7 @@ def setup_armies():
 def fixup_anim_combatable():
 
     def on_death(self, event):
-        self.play_anim(self.death_anim(), mode=pf.ANIM_MODE_ONCE_HIDE_ON_FINISH)
+        self.play_anim(self.death_anim(), mode=pf.ANIM_MODE_ONCE)
         self.register(pf.EVENT_ANIM_CYCLE_FINISHED, am.AnimCombatable.on_death_anim_finish, self)
 
     def on_death_anim_finish(self, event):
