@@ -64,6 +64,8 @@ struct shared_resource{
     uint32_t     ent_flags;
     void        *render_private;
     void        *anim_private;
+    const char  *basedir;
+    const char  *filename;
     struct aabb  aabb;
 };
 
@@ -177,7 +179,7 @@ static bool al_get_resource(const char *path, const char *basedir,
     SDL_RWops *stream;
     struct pfobj_hdr header;
 
-    khiter_t k = kh_get(entity_res, s_name_resource_table, pfobj_name);
+    khiter_t k = kh_get(entity_res, s_name_resource_table, path);
     if(k != kh_end(s_name_resource_table)) {
 
         *out = kh_value(s_name_resource_table, k);
@@ -191,8 +193,11 @@ static bool al_get_resource(const char *path, const char *basedir,
     if(!al_parse_pfobj_header(stream, &header))
         goto fail_parse;
 
+    char abs_basedir[512];
+    pf_snprintf(abs_basedir, sizeof(abs_basedir), "%s/%s", g_basepath, basedir);
+
     out->ent_flags = 0;
-    out->render_private = R_AL_PrivFromStream(basedir, &header, stream);
+    out->render_private = R_AL_PrivFromStream(abs_basedir, &header, stream);
     if(!out->render_private)
         goto fail_parse;
 
@@ -212,8 +217,11 @@ static bool al_get_resource(const char *path, const char *basedir,
     if(!AL_ParseAABB(stream, &out->aabb))
         goto fail_parse;
 
+    out->basedir = pf_strdup(basedir);
+    out->filename = pf_strdup(pfobj_name);
+
     int put_ret;
-    k = kh_put(entity_res, s_name_resource_table, pf_strdup(pfobj_name), &put_ret);
+    k = kh_put(entity_res, s_name_resource_table, pf_strdup(path), &put_ret);
     assert(put_ret != -1 && put_ret != 0);
     kh_value(s_name_resource_table, k) = *out;
 
@@ -234,7 +242,7 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
                                   const char *name, uint32_t uid)
 {
     struct shared_resource res;
-    char abs_basepath[512], pfobj_path[512];
+    char pfobj_path[512];
 
     size_t alloc_size = sizeof(struct entity) + A_AL_CtxBuffSize();
     struct entity *ret = malloc(alloc_size);
@@ -251,10 +259,9 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     if(!ret->name || !ret->filename || !ret->basedir)
         goto fail_init;
 
-    pf_snprintf(abs_basepath, sizeof(abs_basepath), "%s/%s", g_basepath, base_path);
     pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
 
-    if(!al_get_resource(pfobj_path, abs_basepath, pfobj_name, &res))
+    if(!al_get_resource(pfobj_path, base_path, pfobj_name, &res))
         goto fail_init;
 
     ret->flags |= res.ent_flags;
@@ -328,16 +335,46 @@ void AL_EntityFree(struct entity *entity)
 void *AL_RenderPrivateForName(const char *base_path, const char *pfobj_name)
 {
     struct shared_resource res;
-    char abs_basepath[512];
     char pfobj_path[512];
-
-    pf_snprintf(abs_basepath, sizeof(abs_basepath), "%s/%s", g_basepath, base_path);
     pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
 
-    if(!al_get_resource(pfobj_path, abs_basepath, pfobj_name, &res))
+    if(!al_get_resource(pfobj_path, base_path, pfobj_name, &res))
         return NULL;
 
     return res.render_private;
+}
+
+bool AL_NameForRenderPrivate(void *render_private, char out_dir[static 512], 
+                             char out_name[static 512])
+{
+    struct shared_resource curr;
+    bool found = false;
+
+    kh_foreach(s_name_resource_table, (const char*){NULL}, curr, {
+        if(curr.render_private == render_private) {
+            found = true;
+            break;
+        }
+    });
+
+    if(!found)
+        return false;
+
+    pf_strlcpy(out_dir, curr.basedir, 512);
+    pf_strlcpy(out_name, curr.filename, 512);
+    return true;
+}
+
+bool AL_PreloadPFObj(const char *base_path, const char *pfobj_name)
+{
+    struct shared_resource res;
+    char pfobj_path[512];
+    pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
+
+    if(!al_get_resource(pfobj_path, base_path, pfobj_name, &res))
+        return false;
+
+    return true;
 }
 
 struct map *AL_MapFromPFMapStream(SDL_RWops *stream, bool update_navgrid)
@@ -447,6 +484,8 @@ void AL_Shutdown(void)
         free((void*)key);
         free(curr.render_private);
         free(curr.anim_private);
+        free((void*)curr.basedir);
+        free((void*)curr.filename);
     });
     kh_destroy(entity_res, s_name_resource_table);
 }

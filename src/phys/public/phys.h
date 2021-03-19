@@ -38,6 +38,7 @@
 
 struct obb;
 struct entity;
+struct SDL_RWops;
 
 #include "../../pf_math.h"
 
@@ -69,6 +70,10 @@ uint32_t P_Projectile_Add(vec3_t origin, vec3_t velocity, uint32_t ent_parent, i
                           uint32_t cookie, int flags, struct proj_desc pd);
 void     P_Projectile_Update(void);
 bool     P_Projectile_VelocityForTarget(vec3_t src, vec3_t dst, float init_speed, vec3_t *out);
+
+bool     P_Projectile_SaveState(struct SDL_RWops *stream);
+bool     P_Projectile_LoadState(struct SDL_RWops *stream);
+void     P_Projectile_ClearState(void);
 
 #endif
 

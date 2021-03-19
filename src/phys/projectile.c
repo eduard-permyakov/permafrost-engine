@@ -48,9 +48,12 @@
 #include "../render/public/render_ctrl.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/stalloc.h"
+#include "../lib/public/attr.h"
+#include "../lib/public/pf_string.h"
 
 #include <math.h>
 #include <assert.h>
+#include <SDL.h>
 
 
 #define PHYS_HZ         (30)
@@ -62,6 +65,12 @@
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 #define MAX_PROJ_TASKS  (64)
 #define NEAR_TOLERANCE  (100.0f)
+
+#define CHK_TRUE_RET(_pred)             \
+    do{                                 \
+        if(!(_pred))                    \
+            return false;               \
+    }while(0)
 
 struct projectile{
     uint32_t uid;
@@ -567,5 +576,186 @@ bool P_Projectile_VelocityForTarget(vec3_t src, vec3_t dst, float init_speed, ve
 
     *out = velocity;
     return true;
+}
+
+bool P_Projectile_SaveState(struct SDL_RWops *stream)
+{
+    phys_proj_finish_work();
+    vec_proj_concat(&s_front, &s_added);
+    vec_proj_reset(&s_added);
+    /* 's_front' now has the most up-to-date projectile state */
+
+    struct attr num_proj = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = vec_size(&s_front)
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &num_proj, "num_proj"));
+
+    for(int i = 0; i < vec_size(&s_front); i++) {
+   
+        const struct projectile *curr = &vec_AT(&s_front, i);
+
+        struct attr uid = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr->uid,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
+
+        struct attr ent_parent = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr->ent_parent,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &ent_parent, "ent_parent"));
+
+        struct attr cookie = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr->cookie,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &cookie, "cookie"));
+
+        struct attr flags = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr->flags,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &flags, "flags"));
+
+        struct attr faction_id = (struct attr){
+            .type = TYPE_INT,
+            .val.as_int = curr->faction_id,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &faction_id, "faction_id"));
+
+        char dir[512] = "", name[512] = "";
+        AL_NameForRenderPrivate(curr->render_private, dir, name);
+
+        struct attr basedir = (struct attr){
+            .type = TYPE_STRING,
+        };
+        pf_strlcpy(basedir.val.as_string, dir, sizeof(basedir.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &basedir, "basedir"));
+
+        struct attr filename = (struct attr){
+            .type = TYPE_STRING,
+        };
+        pf_strlcpy(filename.val.as_string, name, sizeof(filename.val.as_string));
+        CHK_TRUE_RET(Attr_Write(stream, &filename, "filename"));
+
+        struct attr pos = (struct attr){
+            .type = TYPE_VEC3,
+            .val.as_vec3 = curr->pos,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &pos, "pos"));
+
+        struct attr vel = (struct attr){
+            .type = TYPE_VEC3,
+            .val.as_vec3 = curr->vel,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &vel, "vel"));
+
+        struct attr scale = (struct attr){
+            .type = TYPE_VEC3,
+            .val.as_vec3 = curr->scale,
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &scale, "scale"));
+
+        /* No need to save the matrix - it is fully derived */
+    }
+
+    struct attr next_uid = (struct attr){
+        .type = TYPE_INT,
+        .val.as_int = s_next_uid,
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &next_uid, "next_uid"));
+
+    return true;
+}
+
+bool P_Projectile_LoadState(struct SDL_RWops *stream)
+{
+    struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    const int num_proj = attr.val.as_int;
+
+    for(int i = 0; i < num_proj; i++) {
+
+        struct projectile proj;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        proj.uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        proj.ent_parent = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        proj.cookie = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        proj.flags = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_INT);
+        proj.faction_id = attr.val.as_int;
+
+        char dir[512], name[512];
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        pf_strlcpy(dir, attr.val.as_string, ARR_SIZE(dir));
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_STRING);
+        pf_strlcpy(name, attr.val.as_string, ARR_SIZE(name));
+
+        AL_PreloadPFObj(dir, name);
+        proj.render_private = AL_RenderPrivateForName(dir, name);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC3);
+        proj.pos = attr.val.as_vec3;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC3);
+        proj.vel = attr.val.as_vec3;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC3);
+        proj.scale = attr.val.as_vec3;
+
+        /* Lastly, derive the most up-to-date model matrix */
+        mat4x4_t trans, scale, rot, tmp;
+        quat_t qrot = phys_velocity_dir(proj.vel);
+
+        PFM_Mat4x4_MakeTrans(proj.pos.x, proj.pos.y, proj.pos.z, &trans);
+        PFM_Mat4x4_MakeScale(proj.scale.x, proj.scale.y, proj.scale.z, &scale);
+        PFM_Mat4x4_RotFromQuat(&qrot, &rot);
+
+        PFM_Mat4x4_Mult4x4(&scale, &rot, &tmp);
+        PFM_Mat4x4_Mult4x4(&trans, &tmp, &proj.model);
+
+        /* Add it to the list of projectiles */
+        vec_proj_push(&s_front, proj);
+        vec_proj_push(&s_back, proj);
+    }
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_INT);
+    s_next_uid = attr.val.as_int;
+
+    return true;
+}
+
+void P_Projectile_ClearState(void)
+{
+    stalloc_clear(&s_eventargs);
+    stalloc_clear(&s_work.mem);
+    vec_proj_reset(&s_front);
+    vec_proj_reset(&s_back);
+    vec_proj_reset(&s_added);
+    vec_proj_reset(&s_deleted);
 }
 

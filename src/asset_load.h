@@ -83,6 +83,9 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 bool           AL_EntitySetPFObj(struct entity *ent, const char *base_path, const char *pfobj_name);
 void           AL_EntityFree(struct entity *entity);
 void          *AL_RenderPrivateForName(const char *base_path, const char *pfobj_name);
+bool           AL_NameForRenderPrivate(void *render_private, char out_dir[static 512], 
+                                       char out_name[static 512]);
+bool           AL_PreloadPFObj(const char *base_path, const char *pfobj_name);
 
 struct map    *AL_MapFromPFMapStream(SDL_RWops *stream, bool update_navgrid);
 void           AL_MapFree(struct map *map);
