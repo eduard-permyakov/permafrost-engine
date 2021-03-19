@@ -41,8 +41,8 @@
 #include "../settings.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/pf_string.h"
-#include "../lib/public/mpool.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/mpool_allocator.h"
 #include "../lib/public/string_intern.h"
 #include "../lib/public/attr.h"
 
@@ -66,7 +66,6 @@ static void  pfree(void *ptr);
 #define ARR_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 #define MAX(a, b)   ((a) > (b) ? (a) : (b))
 #define MIN(a, b)   ((a) < (b) ? (a) : (b))
-#define MAX_STORAGE_SITES   (2048)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -90,9 +89,9 @@ struct ss_state{
 
 typedef char buff_t[512];
 
-MPOOL_TYPE(buff, buff_t)
-MPOOL_PROTOTYPES(static, buff, buff_t)
-MPOOL_IMPL(static, buff, buff_t)
+MPOOL_ALLOCATOR_TYPE(buff, buff_t)
+MPOOL_ALLOCATOR_PROTOTYPES(static, buff, buff_t)
+MPOOL_ALLOCATOR_IMPL(static, buff, buff_t)
 
 #undef kmalloc
 #undef kcalloc
@@ -111,7 +110,7 @@ KHASH_MAP_INIT_STR(res, int)
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static mp_buff_t        s_mpool;
+static mpa_buff_t       s_mpool;
 static khash_t(stridx) *s_stridx;
 static mp_strbuff_t     s_stringpool;
 static khash_t(state)  *s_entity_state_table;
@@ -131,10 +130,7 @@ static void *pmalloc(size_t size)
 {
     if(size > sizeof(buff_t))
         return NULL;
-    mp_ref_t ref = mp_buff_alloc(&s_mpool);
-    if(ref == 0)
-        return NULL;
-    return mp_buff_entry(&s_mpool, ref);
+    return mpa_buff_alloc(&s_mpool);
 }
 
 static void *pcalloc(size_t n, size_t size)
@@ -157,10 +153,7 @@ static void *prealloc(void *ptr, size_t size)
 
 static void pfree(void *ptr)
 {
-    if(!ptr)
-        return;
-    mp_ref_t ref = mp_buff_ref(&s_mpool, ptr);
-    mp_buff_free(&s_mpool, ref);
+    mpa_buff_free(&s_mpool, ptr);
 }
 
 static struct ss_state *ss_state_get(uint32_t uid)
@@ -605,14 +598,12 @@ static bool storage_site_ui_mode_validate(const struct sval *val)
 
 bool G_StorageSite_Init(void)
 {
-    mp_buff_init(&s_mpool, false);
+    mpa_buff_init(&s_mpool, 1024, 0);
 
-    if(!mp_buff_reserve(&s_mpool, MAX_STORAGE_SITES * 5 * 3))
+    if(!mpa_buff_reserve(&s_mpool, 1024))
         goto fail_mpool; 
     if(!(s_entity_state_table = kh_init(state)))
         goto fail_table;
-    if(0 != kh_resize(state, s_entity_state_table, MAX_STORAGE_SITES))
-        goto fail_res;
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
         if(!(s_global_resource_tables[i] = kh_init(res))) {
@@ -666,7 +657,7 @@ fail_cap:
 fail_res:
     kh_destroy(state, s_entity_state_table);
 fail_table:
-    mp_buff_destroy(&s_mpool);
+    mpa_buff_destroy(&s_mpool);
 fail_mpool:
     return false;
 }
@@ -682,13 +673,11 @@ void G_StorageSite_Shutdown(void)
 
     si_shutdown(&s_stringpool, s_stridx);
     kh_destroy(state, s_entity_state_table);
-    mp_buff_destroy(&s_mpool);
+    mpa_buff_destroy(&s_mpool);
 }
 
 bool G_StorageSite_AddEntity(const struct entity *ent)
 {
-    if(kh_size(s_entity_state_table) == MAX_STORAGE_SITES)
-        return false;
     struct ss_state ss;
     if(!ss_state_init(&ss))
         return false;

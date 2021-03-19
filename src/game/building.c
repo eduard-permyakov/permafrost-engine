@@ -48,7 +48,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/attr.h"
-#include "../lib/public/mpool.h"
+#include "../lib/public/mpool_allocator.h"
 #include "../lib/public/string_intern.h"
 #include "../lib/public/pf_string.h"
 
@@ -78,7 +78,6 @@ static void  pfree(void *ptr);
 #define CENTER_MARKER_OBJ   "build-site.pfobj"
 #define EPSILON             (1.0 / 1024)
 #define UID_NONE            (~((uint32_t)0))
-#define MAX_BUILDINGS       (8192)
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -111,9 +110,9 @@ struct buildstate{
 
 typedef char buff_t[512];
 
-MPOOL_TYPE(buff, buff_t)
-MPOOL_PROTOTYPES(static, buff, buff_t)
-MPOOL_IMPL(static, buff, buff_t)
+MPOOL_ALLOCATOR_TYPE(buff, buff_t)
+MPOOL_ALLOCATOR_PROTOTYPES(static, buff, buff_t)
+MPOOL_ALLOCATOR_IMPL(static, buff, buff_t)
 
 #undef kmalloc
 #undef kcalloc
@@ -135,7 +134,7 @@ KHASH_SET_INIT_INT64(td)
 static const struct map     *s_map;
 static khash_t(state)       *s_entity_state_table;
 
-static mp_buff_t             s_mpool;
+static mpa_buff_t            s_mpool;
 static khash_t(stridx)      *s_stridx;
 static mp_strbuff_t          s_stringpool;
 
@@ -147,10 +146,7 @@ static void *pmalloc(size_t size)
 {
     if(size > sizeof(buff_t))
         return NULL;
-    mp_ref_t ref = mp_buff_alloc(&s_mpool);
-    if(ref == 0)
-        return NULL;
-    return mp_buff_entry(&s_mpool, ref);
+    return mpa_buff_alloc(&s_mpool);
 }
 
 static void *pcalloc(size_t n, size_t size)
@@ -173,10 +169,7 @@ static void *prealloc(void *ptr, size_t size)
 
 static void pfree(void *ptr)
 {
-    if(!ptr)
-        return;
-    mp_ref_t ref = mp_buff_ref(&s_mpool, ptr);
-    mp_buff_free(&s_mpool, ref);
+    mpa_buff_free(&s_mpool, ptr);
 }
 
 static struct buildstate *buildstate_get(uint32_t uid)
@@ -406,9 +399,9 @@ static void on_amount_changed(void *user, void *event)
 
 bool G_Building_Init(const struct map *map)
 {
-    mp_buff_init(&s_mpool, false);
+    mpa_buff_init(&s_mpool, 1024, 0);
 
-    if(!mp_buff_reserve(&s_mpool, MAX_BUILDINGS * 3))
+    if(!mpa_buff_reserve(&s_mpool, 1024))
         goto fail_mpool; 
     if(NULL == (s_entity_state_table = kh_init(state)))
         goto fail_table;
@@ -424,7 +417,7 @@ bool G_Building_Init(const struct map *map)
 fail_res:
     kh_destroy(state, s_entity_state_table);
 fail_table:
-    mp_buff_destroy(&s_mpool);
+    mpa_buff_destroy(&s_mpool);
 fail_mpool:
     return false;
 }
@@ -444,14 +437,11 @@ void G_Building_Shutdown(void)
 
     si_shutdown(&s_stringpool, s_stridx);
     kh_destroy(state, s_entity_state_table);
-    mp_buff_destroy(&s_mpool);
+    mpa_buff_destroy(&s_mpool);
 }
 
 bool G_Building_AddEntity(struct entity *ent)
 {
-    if(kh_size(s_entity_state_table) == MAX_BUILDINGS)
-        return false;
-
     assert(buildstate_get(ent->uid) == NULL);
     assert(ent->flags & ENTITY_FLAG_BUILDING);
     assert(!(ent->flags & ENTITY_FLAG_MOVABLE));
