@@ -1117,7 +1117,8 @@ static int PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure
 
 static PyObject *PyEntity_get_scale(PyEntityObject *self, void *closure)
 {
-    return Py_BuildValue("(f,f,f)", self->ent->scale.x, self->ent->scale.y, self->ent->scale.z);
+    vec3_t scale = Entity_GetScale(self->ent->uid);
+    return Py_BuildValue("(f,f,f)", scale.x, scale.y, scale.z);
 }
 
 static int PyEntity_set_scale(PyEntityObject *self, PyObject *value, void *closure)
@@ -1126,19 +1127,19 @@ static int PyEntity_set_scale(PyEntityObject *self, PyObject *value, void *closu
         PyErr_SetString(PyExc_TypeError, "Argument must be a tuple.");
         return -1;
     }
-    
-    if(!PyArg_ParseTuple(value, "fff", 
-        &self->ent->scale.raw[0], &self->ent->scale.raw[1], &self->ent->scale.raw[2]))
+
+    vec3_t scale;
+    if(!PyArg_ParseTuple(value, "fff", &scale.x, &scale.y, &scale.z))
         return -1;
 
-    G_UpdateBounds(self->ent);
+    Entity_SetScale(self->ent->uid, scale);
     return 0;
 }
 
 static PyObject *PyEntity_get_rotation(PyEntityObject *self, void *closure)
 {
-    return Py_BuildValue("(f,f,f,f)", self->ent->rotation.x, self->ent->rotation.y, 
-        self->ent->rotation.z, self->ent->rotation.w);
+    quat_t rot = Entity_GetRot(self->ent->uid);
+    return Py_BuildValue("(f,f,f,f)", rot.x, rot.y, rot.z, rot.w);
 }
 
 static int PyEntity_set_rotation(PyEntityObject *self, PyObject *value, void *closure)
@@ -1147,13 +1148,12 @@ static int PyEntity_set_rotation(PyEntityObject *self, PyObject *value, void *cl
         PyErr_SetString(PyExc_TypeError, "Argument must be a tuple.");
         return -1;
     }
-    
-    if(!PyArg_ParseTuple(value, "ffff", 
-        &self->ent->rotation.raw[0], &self->ent->rotation.raw[1],
-        &self->ent->rotation.raw[2], &self->ent->rotation.raw[3]))
+   
+    quat_t rot;
+    if(!PyArg_ParseTuple(value, "ffff", &rot.x, &rot.y, &rot.z, &rot.w))
         return -1;
 
-    G_UpdateBounds(self->ent);
+    Entity_SetRot(self->ent->uid, rot);
     return 0;
 }
 
@@ -1482,15 +1482,15 @@ static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject 
     Py_DECREF(pos);
     CHK_TRUE(status, fail_pickle);
 
-    PyObject *scale = Py_BuildValue("(fff)", 
-        self->ent->scale.x, self->ent->scale.y, self->ent->scale.z);
+    vec3_t vscale = Entity_GetScale(self->ent->uid);
+    PyObject *scale = Py_BuildValue("(fff)", vscale.x, vscale.y, vscale.z);
     CHK_TRUE(scale, fail_pickle);
     status = S_PickleObjgraph(scale, stream);
     Py_DECREF(scale);
     CHK_TRUE(status, fail_pickle);
 
-    PyObject *rotation = Py_BuildValue("(ffff)", 
-        self->ent->rotation.x, self->ent->rotation.y, self->ent->rotation.z, self->ent->rotation.w);
+    quat_t qrot = Entity_GetRot(self->ent->uid);
+    PyObject *rotation = Py_BuildValue("(ffff)", qrot.x, qrot.y, qrot.z, qrot.w);
     CHK_TRUE(rotation, fail_pickle);
     status = S_PickleObjgraph(rotation, stream);
     Py_DECREF(rotation);
@@ -1614,8 +1614,13 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     CHK_TRUE(PyArg_ParseTuple(pos, "fff", &rawpos.x, &rawpos.y, &rawpos.z), fail_unpickle_atts);
     G_Pos_Set(ent, rawpos);
 
-    CHK_TRUE(PyArg_ParseTuple(scale, "fff", &ent->scale.x, &ent->scale.y, &ent->scale.z), fail_unpickle_atts);
-    CHK_TRUE(PyArg_ParseTuple(rotation, "ffff", &ent->rotation.x, &ent->rotation.y, &ent->rotation.z, &ent->rotation.w), fail_unpickle_atts);
+    vec3_t vscale;
+    CHK_TRUE(PyArg_ParseTuple(scale, "fff", &vscale.x, &vscale.y, &vscale.z), fail_unpickle_atts);
+    Entity_SetScale(ent->uid, vscale);
+
+    quat_t qrot;
+    CHK_TRUE(PyArg_ParseTuple(rotation, "ffff", &qrot.x, &qrot.y, &qrot.z, &qrot.w), fail_unpickle_atts);
+    Entity_SetRot(ent->uid, qrot);
 
     status = PyObject_SetAttrString(entobj, "faction_id", faction_id);
     CHK_TRUE(0 == status, fail_unpickle_atts);

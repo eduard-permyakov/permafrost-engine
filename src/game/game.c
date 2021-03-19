@@ -1630,7 +1630,7 @@ bool G_RemoveEntity(struct entity *ent)
     G_StorageSite_RemoveEntity(ent);
     G_Region_RemoveEnt(ent->uid);
     G_Pos_Delete(ent->uid);
-    Entity_ClearTags(ent->uid);
+    Entity_Remove(ent->uid);
 
     k = kh_get(faction, s_gs.ent_faction_map, ent->uid);
     assert(k != kh_end(s_gs.ent_faction_map));
@@ -2197,9 +2197,13 @@ void G_SetHideHealthbars(bool on)
     s_gs.hide_healthbars = on;
 }
 
-void G_UpdateBounds(const struct entity *ent)
+void G_UpdateBounds(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
+
+    const struct entity *ent = G_EntityForUID(uid);
+    if(!ent)
+        return;
 
     G_Building_UpdateBounds(ent);
     G_Resource_UpdateBounds(ent);

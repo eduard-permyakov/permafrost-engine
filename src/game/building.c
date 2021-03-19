@@ -275,9 +275,9 @@ static void building_mark_border(struct buildstate *bs, struct tile_desc *a, str
         return;
 
     if(fabs(acenter.z - bcenter.z) > EPSILON) {
-        ent->rotation = (quat_t){ 0, 1.0 / sqrt(2.0), 0, 1.0 / sqrt(2.0) };
+        Entity_SetRot(ent->uid, (quat_t){ 0, 1.0 / sqrt(2.0), 0, 1.0 / sqrt(2.0) });
     }
-    ent->scale = (vec3_t){1.0, 1.5f, 1.0f};
+    Entity_SetScale(ent->uid, (vec3_t){1.0, 1.5f, 1.0f});
 
     G_AddEntity(ent, marker_pos);
     vec_uid_push(&bs->markers, ent->uid);
@@ -292,8 +292,7 @@ static void building_mark_center(struct buildstate *bs, const struct entity *ent
     if(!marker)
         return;
 
-    marker->scale = (vec3_t){2.5, 2.5f, 2.5f};
-
+    Entity_SetScale(marker->uid, (vec3_t){2.5, 2.5f, 2.5f});
     G_AddEntity(marker, pos);
     vec_uid_push(&bs->markers, marker->uid);
 }
@@ -534,9 +533,10 @@ bool G_Building_Found(struct entity *ent, bool blocking)
 
     struct entity *progress = AL_EntityFromPFObj(ent->basedir, ent->filename, ent->name, Entity_NewUID());
     if(progress) {
+
         progress->flags |= ENTITY_FLAG_TRANSLUCENT;
-        progress->scale = ent->scale;
-        progress->rotation = ent->rotation;
+        Entity_SetScale(progress->uid, Entity_GetScale(ent->uid));
+        Entity_SetRot(progress->uid, Entity_GetRot(ent->uid));
 
         G_AddEntity(progress, G_Pos_Get(ent->uid));
         bs->progress_model = progress->uid;

@@ -71,8 +71,6 @@ struct entity{
     const char  *name;
     const char  *basedir;
     const char  *filename;
-    vec3_t       scale;
-    quat_t       rotation;
     void        *render_private;
     void        *anim_private;
     struct aabb  identity_aabb; /* Bind-pose AABB */
@@ -109,6 +107,7 @@ struct map;
 bool     Entity_Init(void);
 void     Entity_Shutdown(void);
 void     Entity_ClearState(void);
+
 void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
 uint32_t Entity_NewUID(void);
 void     Entity_SetNextUID(uint32_t uid);
@@ -129,5 +128,11 @@ size_t   Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[static m
 size_t   Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[static maxout]);
 void     Entity_DisappearAnimated(struct entity *ent, const struct map *map, void (*on_finish)(void*), void *arg);
 int      Entity_NavLayer(const struct entity *ent);
+
+quat_t   Entity_GetRot(uint32_t uid);
+void     Entity_SetRot(uint32_t uid, quat_t rot);
+vec3_t   Entity_GetScale(uint32_t uid);
+void     Entity_SetScale(uint32_t uid, vec3_t scale);
+void     Entity_Remove(uint32_t uid);
 
 #endif

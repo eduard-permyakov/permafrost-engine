@@ -390,11 +390,11 @@ static quat_t entity_turn_dir(struct entity *ent, const struct entity *target)
     PFM_Vec2_Sub(&tar_pos_xz, &ent_pos_xz, &ent_to_target);
 
     if(PFM_Vec2_Len(&ent_to_target) < EPSILON) {
-        return ent->rotation;
+        return Entity_GetRot(ent->uid);
     }
 
     PFM_Vec2_Normal(&ent_to_target, &ent_to_target);
-    quat_t curr = ent->rotation;
+    quat_t curr = Entity_GetRot(ent->uid);
     return quat_from_vec(ent_to_target);
 }
 
@@ -511,7 +511,8 @@ static void entity_combat_action(struct entity *ent)
     }
 
     quat_t target_dir = entity_turn_dir(ent, target);
-    float angle_diff = PFM_Quat_PitchDiff(&ent->rotation, &target_dir);
+    quat_t ent_rot = Entity_GetRot(ent->uid);
+    float angle_diff = PFM_Quat_PitchDiff(&ent_rot, &target_dir);
 
     /* Ranged units fire their shot regardless */
     if(cs->stats.attack_range > 0.0f) {

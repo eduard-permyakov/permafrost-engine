@@ -571,7 +571,7 @@ static void move_marker_add(vec3_t pos, bool attack)
     ent->flags |= ENTITY_FLAG_MARKER;
     G_AddEntity(ent, pos);
 
-    ent->scale = (vec3_t){2.0f, 2.0f, 2.0f};
+    Entity_SetScale(ent->uid, (vec3_t){2.0f, 2.0f, 2.0f});
     E_Entity_Register(EVENT_ANIM_FINISHED, ent->uid, on_marker_anim_finish, ent, G_RUNNING);
     A_SetActiveClip(ent->uid, "Converge", ANIM_MODE_ONCE, 48);
 
@@ -1179,7 +1179,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
          */
         vec2_t wma = vel_wma(ms);
         if(PFM_Vec2_Len(&wma) > EPSILON) {
-            ent->rotation = dir_quat_from_velocity(wma);
+            Entity_SetRot(ent->uid, dir_quat_from_velocity(wma));
         }
     }else{
         ms->velocity = (vec2_t){0.0f, 0.0f}; 
@@ -1324,7 +1324,8 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
     case STATE_TURNING: {
 
         /* find the angle between the two quaternions */
-        float angle_diff = PFM_Quat_PitchDiff(&ent->rotation, &ms->target_dir);
+        quat_t ent_rot = Entity_GetRot(ent->uid);
+        float angle_diff = PFM_Quat_PitchDiff(&ent_rot, &ms->target_dir);
         float degrees = RAD_TO_DEG(angle_diff);
 
         /* if it's within a tolerance, stop turning */
@@ -1343,9 +1344,9 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
 
         /* Turn */
         quat_t final;
-        PFM_Quat_MultQuat(&rot, &ent->rotation, &final);
+        PFM_Quat_MultQuat(&rot, &ent_rot, &final);
         PFM_Quat_Normal(&final, &final);
-        ent->rotation = final;
+        Entity_SetRot(ent->uid, final);
 
         break;
     }

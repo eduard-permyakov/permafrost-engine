@@ -140,7 +140,7 @@ void            G_BakeNavDataForScene(void);
 bool            G_AddEntity(struct entity *ent, vec3_t pos);
 bool            G_RemoveEntity(struct entity *ent);
 void            G_StopEntity(const struct entity *ent);
-void            G_UpdateBounds(const struct entity *ent);
+void            G_UpdateBounds(uint32_t uid);
 void            G_Zombiefy(struct entity *ent, bool invis);
 bool            G_EntityExists(uint32_t uid);
 bool            G_EntityIsZombie(uint32_t uid);

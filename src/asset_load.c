@@ -165,13 +165,6 @@ fail:
     return false;
 }
 
-static void al_set_ent_defaults(struct entity *ent)
-{
-    ent->flags = 0;
-    ent->scale = (vec3_t){1.0f, 1.0f, 1.0f};
-    ent->rotation = (quat_t){0.0f, 0.0f, 0.0f, 1.0f};
-}
-
 static bool al_get_resource(const char *path, const char *basedir, 
                             const char *pfobj_name, struct shared_resource *out)
 {
@@ -242,21 +235,20 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
 {
     struct shared_resource res;
     char pfobj_path[512];
+    pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
 
     size_t alloc_size = sizeof(struct entity);
     struct entity *ret = malloc(alloc_size);
     if(!ret)
         goto fail_alloc;
 
-    al_set_ent_defaults(ret);
+    ret->flags = 0;
     ret->name = pf_strdup(name);
     ret->filename = pf_strdup(pfobj_name);
     ret->basedir = pf_strdup(base_path);
 
     if(!ret->name || !ret->filename || !ret->basedir)
         goto fail_init;
-
-    pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
 
     if(!al_get_resource(pfobj_path, base_path, pfobj_name, &res))
         goto fail_init;
@@ -266,6 +258,9 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     ret->anim_private = res.anim_private;
     ret->identity_aabb = res.aabb;
     ret->uid = uid;
+
+    Entity_SetRot(uid, (quat_t){0.0f, 0.0f, 0.0f, 1.0f});
+    Entity_SetScale(uid, (vec3_t){1.0f, 1.0f, 1.0f});
     return ret;
 
 fail_init:

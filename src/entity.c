@@ -70,10 +70,17 @@ struct dis_arg{
     void *arg;
 };
 
+struct transform{
+    vec3_t scale;
+    quat_t rotation;
+};
+
 MPOOL_TYPE(taglist, struct taglist)
 MPOOL_PROTOTYPES(static, taglist, struct taglist)
 MPOOL_IMPL(static, taglist, struct taglist)
+
 KHASH_MAP_INIT_INT(tags, struct taglist)
+KHASH_MAP_INIT_INT(trans, struct transform)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -85,6 +92,7 @@ static mp_strbuff_t      s_stringpool;
 
 static kh_ents_t        *s_tag_ent_map;
 static kh_tags_t        *s_ent_tag_map;
+static kh_trans_t       *s_ent_trans_map;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -274,15 +282,18 @@ static struct result disappear_task(void *arg)
 
 void Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out)
 {
-    mat4x4_t trans, scale, rot, tmp;
+    mat4x4_t mtrans, mscale, mrot, mtmp;
+
     vec3_t pos = G_Pos_Get(ent->uid);
+    vec3_t scale = Entity_GetScale(ent->uid);
+    quat_t rot = Entity_GetRot(ent->uid);
 
-    PFM_Mat4x4_MakeTrans(pos.x, pos.y, pos.z, &trans);
-    PFM_Mat4x4_MakeScale(ent->scale.x, ent->scale.y, ent->scale.z, &scale);
-    PFM_Mat4x4_RotFromQuat(&ent->rotation, &rot);
+    PFM_Mat4x4_MakeTrans(pos.x, pos.y, pos.z, &mtrans);
+    PFM_Mat4x4_MakeScale(scale.x, scale.y, scale.z, &mscale);
+    PFM_Mat4x4_RotFromQuat(&rot, &mrot);
 
-    PFM_Mat4x4_Mult4x4(&scale, &rot, &tmp);
-    PFM_Mat4x4_Mult4x4(&trans, &tmp, out);
+    PFM_Mat4x4_Mult4x4(&mscale, &mrot, &mtmp);
+    PFM_Mat4x4_Mult4x4(&mtrans, &mtmp, out);
 }
 
 uint32_t Entity_NewUID(void)
@@ -342,9 +353,11 @@ void Entity_CurrentOBB(const struct entity *ent, struct obb *out, bool identity)
         obb_center_homo.y / obb_center_homo.w,
         obb_center_homo.z / obb_center_homo.w,
     };
-    out->half_lengths[0] = (aabb->x_max - aabb->x_min) / 2.0f * ent->scale.x;
-    out->half_lengths[1] = (aabb->y_max - aabb->y_min) / 2.0f * ent->scale.y;
-    out->half_lengths[2] = (aabb->z_max - aabb->z_min) / 2.0f * ent->scale.z;
+
+    vec3_t scale = Entity_GetScale(ent->uid);
+    out->half_lengths[0] = (aabb->x_max - aabb->x_min) / 2.0f * scale.x;
+    out->half_lengths[1] = (aabb->y_max - aabb->y_min) / 2.0f * scale.y;
+    out->half_lengths[2] = (aabb->z_max - aabb->z_min) / 2.0f * scale.z;
 
     vec3_t axis0, axis1, axis2;   
     PFM_Vec3_Sub(&out->corners[4], &out->corners[0], &axis0);
@@ -399,7 +412,7 @@ void Entity_FaceTowards(struct entity *ent, vec2_t point)
 
     quat_t rot;
     PFM_Quat_FromRotMat(&rotmat, &rot);
-    ent->rotation = rot;
+    Entity_SetRot(ent->uid, rot);
 }
 
 void Entity_Ping(const struct entity *ent)
@@ -564,8 +577,14 @@ bool Entity_Init(void)
     if(!s_ent_tag_map)
         goto fail_ent_tag_map;
 
+    s_ent_trans_map = kh_init(trans);
+    if(!s_ent_trans_map)
+        goto fail_ent_trans_map;
+
     return true;
 
+fail_ent_trans_map:
+    kh_destroy(tags, s_ent_tag_map);
 fail_ent_tag_map:
     kh_destroy(ents, s_tag_ent_map);
 fail_tag_ent_map:
@@ -576,6 +595,7 @@ fail_strintern:
 
 void Entity_Shutdown(void)
 {
+    kh_destroy(trans, s_ent_trans_map);
     kh_destroy(tags, s_ent_tag_map);
     kh_destroy(ents, s_tag_ent_map);
     si_shutdown(&s_stringpool, s_stridx);
@@ -586,5 +606,57 @@ void Entity_ClearState(void)
     kh_clear(tags, s_ent_tag_map);
     kh_clear(ents, s_tag_ent_map);
     si_clear(&s_stringpool, s_stridx);
+}
+
+quat_t Entity_GetRot(uint32_t uid)
+{
+    khiter_t k = kh_get(trans, s_ent_trans_map, uid);
+    assert(k != kh_end(s_ent_trans_map));
+    return kh_value(s_ent_trans_map, k).rotation;
+}
+
+void Entity_SetRot(uint32_t uid, quat_t rot)
+{
+    khiter_t k = kh_get(trans, s_ent_trans_map, uid);
+    if(k == kh_end(s_ent_trans_map)) {
+        int status;
+        k = kh_put(trans, s_ent_trans_map, uid, &status);
+        assert(status != -1);
+    }
+    kh_value(s_ent_trans_map, k).rotation = rot;
+    G_UpdateBounds(uid);
+}
+
+vec3_t Entity_GetScale(uint32_t uid)
+{
+    khiter_t k = kh_get(trans, s_ent_trans_map, uid);
+    assert(k != kh_end(s_ent_trans_map));
+    return kh_value(s_ent_trans_map, k).scale;
+}
+
+void Entity_SetScale(uint32_t uid, vec3_t scale)
+{
+    khiter_t k = kh_get(trans, s_ent_trans_map, uid);
+    if(k == kh_end(s_ent_trans_map)) {
+        int status;
+        k = kh_put(trans, s_ent_trans_map, uid, &status);
+        assert(status != -1);
+    }
+    kh_value(s_ent_trans_map, k).scale = scale;
+    G_UpdateBounds(uid);
+}
+
+void Entity_Remove(uint32_t uid)
+{
+    khiter_t k = kh_get(trans, s_ent_trans_map, uid);
+    if(k != kh_end(s_ent_trans_map)) {
+        kh_del(trans, s_ent_trans_map, k);
+    }
+
+    Entity_ClearTags(uid);
+    k = kh_get(tags, s_ent_tag_map, uid);
+    if(k != kh_end(s_ent_tag_map)) {
+        kh_del(tags, s_ent_tag_map, k);
+    }
 }
 
