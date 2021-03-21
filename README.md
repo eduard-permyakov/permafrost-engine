@@ -145,6 +145,8 @@ Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://w
 
 [Indie RTS Devlog #13: Large Unit Pathfinding](https://youtu.be/UorUpScWLvo)
 
+[Indie RTS Devlog #14: Projectiles, Big Battles](https://youtu.be/IUolIJX6zpk)
+
 ## Comments/Questions ##
 
 Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
