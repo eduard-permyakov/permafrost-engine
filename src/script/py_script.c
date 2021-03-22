@@ -103,6 +103,7 @@ static PyObject *PyPf_get_active_window(PyObject *self);
 static PyObject *PyPf_get_file_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_shift_pressed(PyObject *self);
 static PyObject *PyPf_ctrl_pressed(PyObject *self);
+static PyObject *PyPf_get_key_name(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_get_active_font(PyObject *self);
 static PyObject *PyPf_set_active_font(PyObject *self, PyObject *args);
@@ -309,12 +310,16 @@ static PyMethodDef pf_module_methods[] = {
     "Get the size (in bytes) of a Python file object."},
 
     {"shift_pressed", 
-    (PyCFunction)PyPf_shift_pressed, METH_VARARGS,
+    (PyCFunction)PyPf_shift_pressed, METH_NOARGS,
     "Returns True if either of the SHIFT keys are currently pressed."},
 
     {"ctrl_pressed", 
-    (PyCFunction)PyPf_ctrl_pressed, METH_VARARGS,
+    (PyCFunction)PyPf_ctrl_pressed, METH_NOARGS,
     "Returns True if either of the CTRL keys are currently pressed."},
+
+    {"get_key_name", 
+    (PyCFunction)PyPf_get_key_name, METH_VARARGS,
+    "Returns the string name for an SDL_Keycode integer value."},
 
     {"get_active_font", 
     (PyCFunction)PyPf_get_active_font, METH_NOARGS,
@@ -1161,6 +1166,17 @@ static PyObject *PyPf_ctrl_pressed(PyObject *self)
     }else{
         Py_RETURN_FALSE;
     }
+}
+
+static PyObject *PyPf_get_key_name(PyObject *self, PyObject *args)
+{
+    int keysym;
+    if(!PyArg_ParseTuple(args, "i", &keysym)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must an integer value (SDL_Keysym).");
+        return NULL;
+    }
+    const char *ret = SDL_GetKeyName(keysym);
+    return PyString_FromString(ret);
 }
 
 static PyObject *PyPf_get_active_font(PyObject *self)
@@ -2980,8 +2996,8 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     switch(eventnum) {
     case SDL_KEYDOWN:
     case SDL_KEYUP:
-        return Py_BuildValue("(ii)", 
-            ((SDL_Event*)arg)->key.keysym.scancode, ((SDL_Event*)arg)->key.keysym.mod);
+        return Py_BuildValue("(iii)", 
+            ((SDL_Event*)arg)->key.keysym.scancode, ((SDL_Event*)arg)->key.keysym.sym, ((SDL_Event*)arg)->key.keysym.mod);
 
     case SDL_MOUSEMOTION:
         return Py_BuildValue("(i,i), (i,i)",

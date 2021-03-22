@@ -130,7 +130,7 @@ def intersect(ball, paddle):
 class PlayerPaddleActor(pf.Task):
     def __run__(self):
         while True:
-            scancode, _ = self.await_event(pf.SDL_KEYDOWN)
+            scancode = self.await_event(pf.SDL_KEYDOWN)[0]
             if scancode == pf.SDL_SCANCODE_UP and left_paddle.pos[0] > -FIELD_HEIGHT/2.0 + PADDLE_HEIGHT/2.0:
                 left_paddle.pos = left_paddle.pos[0] - PLAYER_SPEED, 0.0, left_paddle.pos[2]
             elif scancode == pf.SDL_SCANCODE_DOWN and left_paddle.pos[0] < FIELD_HEIGHT/2.0 - PADDLE_HEIGHT/2.0:
