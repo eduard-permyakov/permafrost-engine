@@ -91,7 +91,7 @@ static PyObject *PyWindow_layout_row_end(PyWindowObject *self);
 static PyObject *PyWindow_layout_row_push(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_label_colored(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_label_colored_wrap(PyWindowObject *self, PyObject *args);
-static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_selectable_label(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_option_label(PyWindowObject *self, PyObject *args);
@@ -235,7 +235,7 @@ static PyMethodDef PyWindow_methods[] = {
     "Add a colored label layout."},
 
     {"button_label", 
-    (PyCFunction)PyWindow_button_label, METH_VARARGS,
+    (PyCFunction)PyWindow_button_label, METH_VARARGS | METH_KEYWORDS,
     "Add a button with a label and action."},
 
     {"simple_chart", 
@@ -745,14 +745,17 @@ static PyObject *PyWindow_label_colored_wrap(PyWindowObject *self, PyObject *arg
     Py_RETURN_NONE;  
 }
 
-static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args)
+static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args, PyObject *kwargs)
 {
-    const char *str;
+    const char *str, *tooltip = NULL;
     PyObject *callable, *cargs = NULL;
+    static char *kwlist[] = { "string", "callable", "args", "tooltip", NULL };
+    struct nk_rect bounds = nk_widget_bounds(s_nk_ctx);
+    const struct nk_input *in = &s_nk_ctx->input;
 
-    if(!PyArg_ParseTuple(args, "sO|O", &str, &callable, &cargs)) {
+    if(!PyArg_ParseTupleAndKeywords(args, kwargs, "sO|Os", kwlist, &str, &callable, &cargs, &tooltip)) {
         PyErr_SetString(PyExc_TypeError, "Arguments must be a string and an object. "
-            "Optionally, an argument to the callable can be provided.");
+            "Optionally, an argument to the callable can be provided, as well as tooltip text.");
         return NULL;
     }
 
@@ -766,7 +769,16 @@ static PyObject *PyWindow_button_label(PyWindowObject *self, PyObject *args)
         Py_XDECREF(ret);
     }
 
-    Py_RETURN_NONE;
+    bool hovering = nk_input_is_mouse_hovering_rect(in, bounds);
+    if(tooltip && hovering) {
+        nk_tooltip(s_nk_ctx, tooltip);
+    }
+
+    if(hovering) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
 }
 
 static PyObject *PyWindow_simple_chart(PyWindowObject *self, PyObject *args)
