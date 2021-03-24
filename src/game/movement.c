@@ -608,6 +608,9 @@ static void on_mousedown(void *user, void *event)
     if(G_CurrContextualAction() != CTX_ACTION_NONE)
         return;
 
+    if(G_MouseInTargetMode() && !targeting)
+        return;
+
     vec3_t mouse_coord;
     if(!M_MinimapMouseMapCoords(s_map, &mouse_coord)
     && !M_Raycast_MouseIntersecCoord(&mouse_coord))

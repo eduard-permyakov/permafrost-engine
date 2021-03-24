@@ -1078,7 +1078,8 @@ static void selection_try_order_drop_off(void)
         return;
 
     struct entity *target = G_Sel_GetHovered();
-    assert(target && (target->flags & ENTITY_FLAG_STORAGE_SITE));
+    if(!target || !(target->flags & ENTITY_FLAG_STORAGE_SITE))
+        return;
 
     enum selection_type sel_type;
     const vec_pentity_t *sel = G_Sel_Get(&sel_type);
@@ -1115,7 +1116,8 @@ static void selection_try_order_transport(bool targeting)
         return;
 
     struct entity *target = G_Sel_GetHovered();
-    assert(target && (target->flags & ENTITY_FLAG_STORAGE_SITE));
+    if(!target || !(target->flags & ENTITY_FLAG_STORAGE_SITE))
+        return;
 
     enum selection_type sel_type;
     const vec_pentity_t *sel = G_Sel_Get(&sel_type);
