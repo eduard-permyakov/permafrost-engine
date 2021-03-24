@@ -129,6 +129,7 @@ static void      PyWindow_dealloc(PyWindowObject *self);
 
 static PyObject *PyWindow_get_header(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure);
+static int       PyWindow_set_pos(PyWindowObject *self, PyObject *value, void *closure);
 static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure);
 static PyObject *PyWindow_get_header_height(PyWindowObject *self, void *closure);
 
@@ -380,7 +381,7 @@ static PyGetSetDef PyWindow_getset[] = {
     "An pf.UIHeaderStyle type for controlling the style parameters of the window header.",
     NULL},
     {"position",
-    (getter)PyWindow_get_pos, NULL,
+    (getter)PyWindow_get_pos, (setter)PyWindow_set_pos,
     "A tuple of two integers specifying the X and Y position of the window.",
     NULL},
     {"size",
@@ -1590,6 +1591,18 @@ static PyObject *PyWindow_get_header(PyWindowObject *self, void *closure)
 static PyObject *PyWindow_get_pos(PyWindowObject *self, void *closure)
 {
     return Py_BuildValue("(ii)", self->rect.x, self->rect.y);
+}
+
+static int PyWindow_set_pos(PyWindowObject *self, PyObject *value, void *closure)
+{
+    int x, y;
+    if(!PyArg_ParseTuple(value, "ii", &x, &y)) {
+        PyErr_SetString(PyExc_TypeError, "Value must be a tuple of 2 integers.");
+        return -1;
+    }
+    self->rect.x = x;
+    self->rect.y = y;
+    return 0;
 }
 
 static PyObject *PyWindow_get_size(PyWindowObject *self, void *closure)
