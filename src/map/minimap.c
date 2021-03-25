@@ -51,6 +51,7 @@
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define DEFAULT_BORDER_CLR ((vec4_t){65.0f/255.0f, 65.0f/255.0f, 65.0f/255.0f, 1.0f})
 
 struct quad{
     vec2_t a, b, c, d;
@@ -60,7 +61,8 @@ struct quad{
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static bool s_mouse_down_in_minimap = false;
+static bool   s_mouse_down_in_minimap = false;
+static vec4_t s_border_clr = DEFAULT_BORDER_CLR;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -389,12 +391,13 @@ void M_RenderMinimap(const struct map *map, const struct camera *cam)
 
     R_PushCmd((struct rcmd){
         .func = R_GL_MinimapRender,
-        .nargs = 4,
+        .nargs = 5,
         .args = {
             (void*)G_GetPrevTickMap(),
             R_PushArg(cam, g_sizeof_camera),
             R_PushArg(&center, sizeof(center)),
             R_PushArg(&len, sizeof(len)),
+            R_PushArg(&s_border_clr, sizeof(s_border_clr)),
         },
     });
 }
@@ -468,5 +471,20 @@ bool M_MinimapMouseMapCoords(const struct map *map, vec3_t *out)
         ws_coords.z
     };
     return true;
+}
+
+void M_MinimapSetBorderClr(vec4_t clr)
+{
+    s_border_clr = clr;
+}
+
+vec4_t M_MinimapGetBorderClr(void)
+{
+    return s_border_clr;
+}
+
+void M_MinimapClearBorderClr(void)
+{
+    s_border_clr = DEFAULT_BORDER_CLR;
 }
 

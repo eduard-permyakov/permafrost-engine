@@ -142,6 +142,7 @@ static PyObject *PyPf_set_minimap_position(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_minimap_resize_mask(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_minimap_size(PyObject *self);
 static PyObject *PyPf_set_minimap_size(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_minimap_border_clr(PyObject *self, PyObject *args);
 static PyObject *PyPf_mouse_over_minimap(PyObject *self);
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args);
@@ -457,6 +458,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_set_minimap_size, METH_VARARGS,
     "Set the center position of the minimap in virtual screen coordinates. "
     "A size of 0 fully hides the minimap."},
+
+    {"set_minimap_border_clr", 
+    (PyCFunction)PyPf_set_minimap_border_clr, METH_VARARGS,
+    "Set the border color for the minimap."},
 
     {"mouse_over_minimap",
     (PyCFunction)PyPf_mouse_over_minimap, METH_NOARGS,
@@ -1677,13 +1682,32 @@ static PyObject *PyPf_set_minimap_size(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *PyPf_set_minimap_border_clr(PyObject *self, PyObject *args)
+{
+    int r, g, b, a;
+    if(!PyArg_ParseTuple(args, "iiii", &r, &g, &b, &a)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a tuple of 4 integers (RGBA).");
+        return NULL;
+    }
+
+    vec4_t rgba = (vec4_t){
+        r / 255.0f,
+        g / 255.0f,
+        b / 255.0f,
+        a / 255.0f,
+    };
+    M_MinimapSetBorderClr(rgba);
+    Py_RETURN_NONE;
+}
+
 static PyObject *PyPf_mouse_over_minimap(PyObject *self)
 {
     bool result = G_MouseOverMinimap();
-    if(result) 
+    if(result) {
         Py_RETURN_TRUE;
-    else
+    }else {
         Py_RETURN_FALSE;
+    }
 }
 
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args)
@@ -1697,10 +1721,11 @@ static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args)
 
     float height;
     bool result = G_MapHeightAtPoint((vec2_t){x, z}, &height);
-    if(!result)
+    if(!result) {
         Py_RETURN_NONE;
-    else
+    }else {
         return Py_BuildValue("f", height);
+    }
 }
 
 static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args)
@@ -1724,10 +1749,11 @@ static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args)
 static PyObject *PyPf_map_pos_under_cursor(PyObject *self)
 {
     vec3_t pos;
-    if(M_Raycast_MouseIntersecCoord(&pos))
+    if(M_Raycast_MouseIntersecCoord(&pos)) {
         return Py_BuildValue("(fff)", pos.x, pos.y, pos.z);
-    else
+    }else {
         Py_RETURN_NONE;
+    }
 }
 
 static PyObject *PyPf_set_move_on_left_click(PyObject *self)

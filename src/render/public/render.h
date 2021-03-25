@@ -323,7 +323,7 @@ void  R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
  * ---------------------------------------------------------------------------
  */
 void  R_GL_MinimapRender(const struct map *map, const struct camera *cam, 
-                         vec2_t *center_pos, const int *side_len_px);
+                         vec2_t *center_pos, const int *side_len_px, vec4_t *border_clr);
 
 /* ---------------------------------------------------------------------------
  * Render the specified unit positions in the minimap region.

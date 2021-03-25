@@ -1159,6 +1159,7 @@ void G_ClearState(void)
     vec_obb_reset(&s_gs.visible_obbs);
 
     g_clear_map_state();
+    M_MinimapClearBorderClr();
 
     g_reset_camera(s_gs.active_cam);
     G_SetActiveCamera(s_gs.active_cam, CAM_MODE_RTS);
@@ -2236,6 +2237,12 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &minimap_pos, "minimap_pos"));
 
+        struct attr minimap_border_clr = (struct attr){
+            .type = TYPE_QUAT, 
+            .val.as_quat = M_MinimapGetBorderClr()
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &minimap_border_clr, "minimap_border_clr"));
+
         int mm_size = 0;
         G_GetMinimapSize(&mm_size);
         struct attr minimap_size = (struct attr){
@@ -2378,6 +2385,10 @@ bool G_LoadGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_VEC2);
         G_SetMinimapPos(attr.val.as_vec2.x, attr.val.as_vec2.y);
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_QUAT);
+        M_MinimapSetBorderClr(attr.val.as_quat);
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);

@@ -532,6 +532,15 @@ bool   M_MouseOverMinimap(const struct map *map);
  */
 bool   M_MinimapMouseMapCoords(const struct map *map, vec3_t *out);
 
+/* ------------------------------------------------------------------------
+ * Access the (RGBA) color of the minimap border.
+ * ------------------------------------------------------------------------
+ */
+vec4_t M_MinimapGetBorderClr(void);
+void   M_MinimapSetBorderClr(vec4_t clr);
+void   M_MinimapClearBorderClr(void);
+
+
 /*###########################################################################*/
 /* MAP ASSET LOADING                                                         */
 /*###########################################################################*/

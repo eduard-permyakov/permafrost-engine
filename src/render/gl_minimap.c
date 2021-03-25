@@ -63,7 +63,6 @@
 #define MIN(a, b)            ((a) < (b) ? (a) : (b))
 #define ARR_SIZE(a)          (sizeof(a)/sizeof(a[0])) 
 #define MINIMAP_RES          (1024)
-#define MINIMAP_BORDER_CLR   ((vec4_t){65.0f/255.0f, 65.0f/255.0f, 65.0f/255.0f, 1.0f})
 
 struct coord{
     int r, c;
@@ -569,7 +568,7 @@ void R_GL_MinimapUpdateChunk(const struct map *map, void *chunk_rprivate,
 }
 
 void R_GL_MinimapRender(const struct map *map, const struct camera *cam, 
-                        vec2_t *center_pos, const int *side_len_px)
+                        vec2_t *center_pos, const int *side_len_px, vec4_t *border_clr)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -605,7 +604,7 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam,
 
     R_GL_StateSet(GL_U_COLOR, (struct uval){
         .type = UTYPE_VEC4,
-        .val.as_vec4 = MINIMAP_BORDER_CLR
+        .val.as_vec4 = *border_clr
     });
     R_GL_StateInstall(GL_U_COLOR, shader_prog);
 
