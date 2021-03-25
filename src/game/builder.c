@@ -75,6 +75,7 @@ struct builderstate{
 KHASH_MAP_INIT_INT(state, struct builderstate)
 
 static void on_build_anim_finished(void *user, void *event);
+static void on_motion_end(void *user, void *event);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -136,10 +137,14 @@ static void finish_building(struct builderstate *bs, uint32_t uid)
 {
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished);
     E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
+
+    if(bs->state == STATE_BUILDING) {
+        E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
+    }
 
     bs->state = STATE_NOT_BUILDING;
     bs->target_uid = UID_NONE;
-    E_Entity_Notify(EVENT_BUILD_END, uid, NULL, ES_ENGINE);
 }
 
 static void on_build_anim_finished(void *user, void *event)
@@ -183,14 +188,10 @@ static void on_motion_end(void *user, void *event)
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
 
+    if(!G_Move_Still(ent))
+        return;
+
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
-
-    if(!G_Move_Still(ent)) {
-        bs->state = STATE_NOT_BUILDING;
-        bs->target_uid = UID_NONE;
-        return; /* builder received a new destination */
-    }
-
     assert(bs->target_uid != UID_NONE);
     struct entity *target = G_EntityForUID(bs->target_uid);
 
@@ -440,6 +441,13 @@ int G_Builder_CurrContextualAction(void)
         return CTX_ACTION_BUILD;
 
     return CTX_ACTION_NONE;
+}
+
+void G_Builder_Stop(uint32_t uid)
+{
+    struct builderstate *bs = builderstate_get(uid);
+    assert(bs);
+    finish_building(bs, uid);
 }
 
 bool G_Builder_SaveState(struct SDL_RWops *stream)

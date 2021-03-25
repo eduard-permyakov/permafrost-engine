@@ -629,11 +629,11 @@ static void on_mousedown(void *user, void *event)
         if(!(curr->flags & ENTITY_FLAG_MOVABLE))
             continue;
 
+        G_StopEntity(curr);
         E_Entity_Notify(EVENT_MOVE_ISSUED, curr->uid, NULL, ES_ENGINE);
         nmoved++;
 
         if(curr->flags & ENTITY_FLAG_COMBATABLE) {
-            G_Combat_StopAttack(curr);
             G_Combat_SetStance(curr, attack ? COMBAT_STANCE_AGGRESSIVE : COMBAT_STANCE_NO_ENGAGEMENT);
         }
     }
