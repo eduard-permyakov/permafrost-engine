@@ -281,7 +281,7 @@ static void on_mousedown(void *user, void *event)
         assert(bs);
 
         finish_building(bs, curr->uid);
-        G_StopEntity(curr);
+        G_StopEntity(curr, true);
         G_Builder_Build(curr, target);
         nbuilding++;
     }

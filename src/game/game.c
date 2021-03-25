@@ -1648,7 +1648,7 @@ bool G_RemoveEntity(struct entity *ent)
     return true;
 }
 
-void G_StopEntity(const struct entity *ent)
+void G_StopEntity(const struct entity *ent, bool stop_move)
 {
     ASSERT_IN_MAIN_THREAD();
 
@@ -1659,7 +1659,7 @@ void G_StopEntity(const struct entity *ent)
     if(ent->flags & ENTITY_FLAG_HARVESTER) {
         G_Harvester_Stop(ent->uid);
     }
-    if(ent->flags & ENTITY_FLAG_MOVABLE) {
+    if(stop_move && (ent->flags & ENTITY_FLAG_MOVABLE)) {
         G_Move_Stop(ent);
     }
     if(ent->flags & ENTITY_FLAG_BUILDER) {

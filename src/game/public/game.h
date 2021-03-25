@@ -139,7 +139,7 @@ void            G_BakeNavDataForScene(void);
 
 bool            G_AddEntity(struct entity *ent, vec3_t pos);
 bool            G_RemoveEntity(struct entity *ent);
-void            G_StopEntity(const struct entity *ent);
+void            G_StopEntity(const struct entity *ent, bool stop_move);
 void            G_UpdateBounds(uint32_t uid);
 void            G_Zombiefy(struct entity *ent, bool invis);
 bool            G_EntityExists(uint32_t uid);
@@ -374,6 +374,7 @@ bool  G_Harvester_SetMaxCarry(uint32_t uid, const char *rname, int max);
 int   G_Harvester_GetMaxCarry(uint32_t uid, const char *rname);
 bool  G_Harvester_SetCurrCarry(uint32_t uid, const char *rname, int curr);
 int   G_Harvester_GetCurrCarry(uint32_t uid, const char *rname);
+void  G_Harvester_ClearCurrCarry(uint32_t uid);
 void  G_Harvester_SetStrategy(uint32_t uid, enum tstrategy strat);
 int   G_Harvester_GetStrategy(uint32_t uid);
 bool  G_Harvester_IncreaseTransportPrio(uint32_t uid, const char *rname);

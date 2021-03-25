@@ -440,13 +440,14 @@ static void entity_die(struct entity *ent)
     E_Entity_Notify(EVENT_ENTITY_DEATH, ent->uid, NULL, ES_ENGINE);
     vec_pentity_push(&s_dying_ents, ent);
 
-    if(ent->flags & ENTITY_FLAG_ANIMATED) {
+    if(ent->flags & ENTITY_FLAG_ANIMATED && !(ent->flags & ENTITY_FLAG_BUILDING)) {
 
         struct combatstate *cs = combatstate_get(ent->uid);
         cs->state = STATE_DEATH_ANIM_PLAYING;
         E_Entity_Register(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_death_anim_finish, ent, G_RUNNING);
 
     }else{
+
         G_Zombiefy(ent, false);
         Entity_DisappearAnimated(ent, s_map, on_disappear_finish, ent);
     }
@@ -1191,15 +1192,32 @@ void G_Combat_StopAttack(const struct entity *ent)
 struct entity *G_Combat_ClosestEligibleEnemy(const struct entity *ent)
 {
     vec2_t pos = G_Pos_GetXZ(ent->uid);
-    struct entity *ret = G_Pos_NearestWithPred(pos, valid_enemy, (void*)ent, TARGET_ACQUISITION_RANGE);
+    struct entity *ents[128];
+    size_t nents =  G_Pos_EntsInCircleWithPred(pos, TARGET_ACQUISITION_RANGE, ents, 
+        ARR_SIZE(ents), valid_enemy, (void*)ent);
 
-    if(!ret)
+    if(!nents)
         return NULL;
 
-    vec2_t enemy_pos = G_Pos_GetXZ(ret->uid);
-    vec2_t delta;
-    PFM_Vec2_Sub(&pos, &enemy_pos, &delta);
-    assert(PFM_Vec2_Len(&delta) <= TARGET_ACQUISITION_RANGE);
+    float min_dist = INFINITY;
+    struct entity *ret = NULL;
+
+    for(int i = 0; i < nents; i++) {
+    
+        if(M_NavObjAdjacent(s_map, ent, ents[i]))
+            return ents[i];
+
+        vec2_t enemy_pos = G_Pos_GetXZ(ents[i]->uid);
+        vec2_t delta;
+        PFM_Vec2_Sub(&pos, &enemy_pos, &delta);
+        assert(PFM_Vec2_Len(&delta) <= TARGET_ACQUISITION_RANGE);
+        float dist = PFM_Vec2_Len(&delta);
+
+        if(dist < min_dist) {
+            min_dist = dist;
+            ret = ents[i];
+        }
+    }
     return ret;
 }
 

@@ -1024,7 +1024,7 @@ static void selection_try_order_gather(void)
         struct hstate *hs = hstate_get(curr->uid);
         assert(hs);
 
-        G_StopEntity(curr);
+        G_StopEntity(curr, true);
         G_Harvester_Gather(curr, target);
         ngather++;
     }
@@ -1062,7 +1062,7 @@ static void selection_try_order_pick_up(bool targeting)
         if(G_Harvester_GetCurrTotalCarry(curr->uid) > 0)
             continue;
 
-        G_StopEntity(curr);
+        G_StopEntity(curr, true);
         G_Harvester_PickUp(curr, target);
         ncarry++;
     }
@@ -1100,7 +1100,7 @@ static void selection_try_order_drop_off(void)
         if(G_Harvester_GetCurrTotalCarry(curr->uid) == 0)
             continue;
 
-        G_StopEntity(curr);
+        G_StopEntity(curr, true);
         G_Harvester_DropOff(curr, target);
         ncarry++;
     }
@@ -1135,7 +1135,7 @@ static void selection_try_order_transport(bool targeting)
         struct hstate *hs = hstate_get(curr->uid);
         assert(hs);
 
-        G_StopEntity(curr);
+        G_StopEntity(curr, true);
         G_Harvester_Transport(curr, target);
         ntransport++;
     }
@@ -1562,6 +1562,21 @@ int G_Harvester_GetCurrCarry(uint32_t uid, const char *rname)
 
     hstate_get_key_int(hs->curr_carry, rname, &ret);
     return ret;
+}
+
+void G_Harvester_ClearCurrCarry(uint32_t uid)
+{
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+    kh_clear(int, hs->curr_carry);
+
+    if(hs->state == STATE_HARVESTING_SEEK_STORAGE 
+    || hs->state == STATE_TRANSPORT_PUTTING) {
+
+        E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_storage);
+        E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_transport_dest);
+        hs->state = STATE_NOT_HARVESTING;
+    }
 }
 
 void G_Harvester_SetStrategy(uint32_t uid, enum tstrategy strat)

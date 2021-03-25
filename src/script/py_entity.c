@@ -655,6 +655,7 @@ static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObjec
 static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_transport(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_get_curr_carry(PyHarvesterEntityObject *self, PyObject *args);
+static PyObject *PyHarvesterEntity_clear_curr_carry(PyHarvesterEntityObject *self);
 static PyObject *PyHarvesterEntity_get_max_carry(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_set_max_carry(PyHarvesterEntityObject *self, PyObject *args);
 static PyObject *PyHarvesterEntity_get_gather_speed(PyHarvesterEntityObject *self, PyObject *args);
@@ -690,6 +691,10 @@ static PyMethodDef PyHarvesterEntity_methods[] = {
     {"get_curr_carry", 
     (PyCFunction)PyHarvesterEntity_get_curr_carry, METH_VARARGS,
     "Get the amount of a particular resources that this entity is currently carrying."},
+
+    {"clear_curr_carry", 
+    (PyCFunction)PyHarvesterEntity_clear_curr_carry, METH_NOARGS,
+    "Clear any resources that the unit is currently carrying."},
 
     {"get_max_carry", 
     (PyCFunction)PyHarvesterEntity_get_max_carry, METH_VARARGS,
@@ -1377,7 +1382,7 @@ static PyObject *PyEntity_deselect(PyEntityObject *self)
 static PyObject *PyEntity_stop(PyEntityObject *self)
 {
     assert(self->ent);
-    G_StopEntity(self->ent);
+    G_StopEntity(self->ent, true);
     Py_RETURN_NONE;
 }
 
@@ -1672,8 +1677,7 @@ static PyObject *PyCombatableEntity_hold_position(PyCombatableEntityObject *self
         return NULL;
     }
 
-    if(self->super.ent->flags & ENTITY_FLAG_MOVABLE)
-        G_StopEntity(self->super.ent);
+    G_StopEntity(self->super.ent, true);
 
     assert(self->super.ent->flags & ENTITY_FLAG_COMBATABLE);
     G_Combat_SetStance(self->super.ent, COMBAT_STANCE_HOLD_POSITION);
@@ -2815,7 +2819,7 @@ static PyObject *PyHarvesterEntity_gather(PyHarvesterEntityObject *self, PyObjec
         return NULL;
     }
 
-    G_StopEntity(self->super.ent);
+    G_StopEntity(self->super.ent, true);
     if(!G_Harvester_Gather(self->super.ent, resource->super.ent)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to gather the specified resource.");
         return NULL;
@@ -2837,7 +2841,7 @@ static PyObject *PyHarvesterEntity_drop_off(PyHarvesterEntityObject *self, PyObj
         return NULL;
     }
 
-    G_StopEntity(self->super.ent);
+    G_StopEntity(self->super.ent, true);
     if(!G_Harvester_DropOff(self->super.ent, storage->super.ent)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to drop off resource at the specified storage site.");
         return NULL;
@@ -2859,7 +2863,7 @@ static PyObject *PyHarvesterEntity_transport(PyHarvesterEntityObject *self, PyOb
         return NULL;
     }
 
-    G_StopEntity(self->super.ent);
+    G_StopEntity(self->super.ent, true);
     if(!G_Harvester_Transport(self->super.ent, storage->super.ent)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to transport resources to the specified storage site.");
         return NULL;
@@ -2882,6 +2886,17 @@ static PyObject *PyHarvesterEntity_get_curr_carry(PyHarvesterEntityObject *self,
 
     int ret = G_Harvester_GetCurrCarry(self->super.ent->uid, rname);
     return PyInt_FromLong(ret);
+}
+
+static PyObject *PyHarvesterEntity_clear_curr_carry(PyHarvesterEntityObject *self)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot invoke method of zombie entity.");
+        return NULL;
+    }
+
+    G_Harvester_ClearCurrCarry(self->super.ent->uid);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyHarvesterEntity_get_max_carry(PyHarvesterEntityObject *self, PyObject *args)

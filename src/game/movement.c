@@ -629,7 +629,7 @@ static void on_mousedown(void *user, void *event)
         if(!(curr->flags & ENTITY_FLAG_MOVABLE))
             continue;
 
-        G_StopEntity(curr);
+        G_StopEntity(curr, false);
         E_Entity_Notify(EVENT_MOVE_ISSUED, curr->uid, NULL, ES_ENGINE);
         nmoved++;
 
