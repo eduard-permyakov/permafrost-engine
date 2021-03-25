@@ -615,6 +615,9 @@ static void on_20hz_tick(void *user, void *event)
             if(curr->stance == COMBAT_STANCE_NO_ENGAGEMENT)
                 break;
 
+            if(ent->flags & ENTITY_FLAG_BUILDING && !G_Building_IsCompleted(ent))
+                break;
+
             if(G_Combat_GetBaseDamage(ent) == 0)
                 break;
 
