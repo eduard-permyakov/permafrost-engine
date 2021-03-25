@@ -124,7 +124,7 @@ static void process_sdl_events(void)
         switch(event.type) {
 
         case SDL_KEYDOWN:
-            if(event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
+            if(event.key.keysym.sym == SDLK_q && (event.key.keysym.mod & KMOD_LALT)) {
                 s_quit = true; 
             }
             break;
