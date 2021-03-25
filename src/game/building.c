@@ -749,6 +749,26 @@ int G_Building_GetRequired(uint32_t uid, const char *rname)
     return ret;
 }
 
+size_t G_Building_GetAllRequired(uint32_t uid, size_t maxout, 
+                                 const char *names[static maxout], int amounts[static maxout])
+{
+    struct buildstate *bs = buildstate_get(uid);
+    assert(bs);
+
+    size_t ret = 0;
+    const char *key;
+    int amount;
+    kh_foreach(bs->required, key, amount, {
+
+        if(ret == maxout)
+            return ret;
+        names[ret] = key;
+        amounts[ret] = amount;
+        ret++;
+    });
+    return ret;
+}
+
 bool G_Building_SetRequired(uint32_t uid, const char *rname, int req)
 {
     struct buildstate *bs = buildstate_get(uid);

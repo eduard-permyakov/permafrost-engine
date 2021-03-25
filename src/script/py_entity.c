@@ -435,9 +435,11 @@ static PyObject *PyBuildableEntity_unobstructed(PyBuildableEntityObject *self);
 static PyObject *PyBuildableEntity_get_pos(PyBuildableEntityObject *self, void *closure);
 static int       PyBuildableEntity_set_pos(PyBuildableEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyBuildableEntity_get_founded(PyBuildableEntityObject *self, void *closure);
+static PyObject *PyBuildableEntity_get_supplied(PyBuildableEntityObject *self, void *closure);
 static PyObject *PyBuildableEntity_get_completed(PyBuildableEntityObject *self, void *closure);
 static PyObject *PyBuildableEntity_get_vision_range(PyBuildableEntityObject *self, void *closure);
 static int       PyBuildableEntity_set_vision_range(PyBuildableEntityObject *self, PyObject *value, void *closure);
+static PyObject *PyBuildableEntity_get_required_resources(PyBuildableEntityObject *self, void *closure);
 static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyBuildableEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -494,6 +496,10 @@ static PyGetSetDef PyBuildableEntity_getset[] = {
     (getter)PyBuildableEntity_get_founded, NULL,
     "Boolean indicating if the building is at or past the 'FOUNDED' state.",
     NULL},
+    {"supplied",
+    (getter)PyBuildableEntity_get_supplied, NULL,
+    "Boolean indicating if the building is at or past the 'SUPPLIED' state.",
+    NULL},
     {"completed",
     (getter)PyBuildableEntity_get_completed, NULL,
     "Boolean indicating if the building is at or past the 'COMPLETED' state.",
@@ -501,6 +507,10 @@ static PyGetSetDef PyBuildableEntity_getset[] = {
     {"selectable",
     (getter)PyEntity_get_selectable, NULL,
     "Flag indicating whether this entity can be selected with the mouse.",
+    NULL},
+    {"required_resources",
+    (getter)PyBuildableEntity_get_required_resources, NULL,
+    "Get a dictionary of the resources required to supply this building.",
     NULL},
     {NULL}  /* Sentinel */
 };
@@ -2375,6 +2385,18 @@ static PyObject *PyBuildableEntity_get_founded(PyBuildableEntityObject *self, vo
     Py_RETURN_FALSE;
 }
 
+static PyObject *PyBuildableEntity_get_supplied(PyBuildableEntityObject *self, void *closure)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot access attribute of zombie entity.");
+        return NULL;
+    }
+    if(G_Building_IsSupplied(self->super.ent)) {
+        Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
+}
+
 static PyObject *PyBuildableEntity_get_completed(PyBuildableEntityObject *self, void *closure)
 {
     if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
@@ -2410,6 +2432,36 @@ static int PyBuildableEntity_set_vision_range(PyBuildableEntityObject *self, PyO
 
     G_Building_SetVisionRange(self->super.ent, PyFloat_AS_DOUBLE(value));
     return 0;
+}
+
+static PyObject *PyBuildableEntity_get_required_resources(PyBuildableEntityObject *self, void *closure)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot access attribute of zombie entity.");
+        return NULL;
+    }
+
+    const size_t max = 64;
+    const char *names[max];
+    int amounts[max];
+
+    size_t nreq = G_Building_GetAllRequired(self->super.ent->uid, max, names, amounts);
+    PyObject *ret = PyDict_New();
+    if(!ret)
+        return NULL; 
+
+    for(int i = 0; i < nreq; i++) {
+        PyObject *amount = PyInt_FromLong(amounts[i]);
+        if(!amount) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+        if(!PyDict_SetItemString(ret, names[i], amount)) {
+            Py_DECREF(ret);
+            return NULL;
+        }
+    }
+    return ret;
 }
 
 static PyObject *PyBuildableEntity_pickle(PyBuildableEntityObject *self, PyObject *args, PyObject *kwargs)
