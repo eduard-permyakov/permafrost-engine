@@ -58,6 +58,7 @@ struct handler_desc{
     }handler;
     void          *user_arg;
     int            simmask;    /* Specifies during which simulation states the handler gets invoked */
+    uint32_t       register_tick;
 };
 
 struct event{
@@ -65,6 +66,7 @@ struct event{
     void              *arg;
     enum event_source  source;
     uint32_t           receiver_id;
+    uint32_t           tick;
 };
 
 /* Used in the place of the entity ID for key generation for global events,
@@ -304,6 +306,8 @@ static void e_handle_event(struct event event, bool immediate)
 
             if(!immediate && ((elem->simmask & ss) == 0))
                 continue;
+            if(SDL_TICKS_PASSED(elem->register_tick, event.tick))
+                continue;
 
             e_invoke(elem, event);
             ran = true;
@@ -318,7 +322,7 @@ static void e_handle_event(struct event event, bool immediate)
         S_Release(event.arg);
 }
 
-static void e_notify_entities_update_start(bool immediate)
+static void e_notify_entities_update_start(uint32_t ticks, bool immediate)
 {
     uint64_t key;
     vec_hd_t curr;
@@ -331,7 +335,7 @@ static void e_notify_entities_update_start(bool immediate)
         uint32_t uid = key >> 32;
         if(uid == GLOBAL_ID)
             continue;
-        e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, uid}, immediate);
+        e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, uid, ticks}, immediate);
     });
 }
 
@@ -380,12 +384,13 @@ void E_Shutdown(void)
 void E_ServiceQueue(void)
 {
     PERF_ENTER();
+    uint32_t ticks = SDL_GetTicks();
 
     queue_event_t *queue = &s_event_queues[s_front_queue_idx];
     s_front_queue_idx = (s_front_queue_idx + 1) % 2;
 
-    e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID}, false);
-    e_notify_entities_update_start(false);
+    e_handle_event( (struct event){EVENT_UPDATE_START, NULL, ES_ENGINE, GLOBAL_ID, ticks}, false);
+    e_notify_entities_update_start(ticks, false);
 
     struct event event;
     while(queue_event_pop(queue, &event)) {
@@ -394,7 +399,7 @@ void E_ServiceQueue(void)
         /* event arg already released */
     }
 
-    e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID}, false);
+    e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID, ticks}, false);
 
     PERF_RETURN_VOID();
 }
@@ -406,22 +411,23 @@ void E_ClearPendingEvents(void)
 
 void E_FlushEventQueue(void)
 {
-    e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID}, true);
+    uint32_t ticks = SDL_GetTicks();
+    e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID, ticks}, true);
 
     while(E_EventsQueued()) {
 
         queue_event_t *queue = &s_event_queues[s_front_queue_idx];
         s_front_queue_idx = (s_front_queue_idx + 1) % 2;
 
-        e_handle_event( (struct event){EVENT_UPDATE_START,  NULL, ES_ENGINE, GLOBAL_ID}, true);
-        e_notify_entities_update_start(true);
+        e_handle_event( (struct event){EVENT_UPDATE_START,  NULL, ES_ENGINE, GLOBAL_ID, ticks}, true);
+        e_notify_entities_update_start(ticks, true);
 
         struct event event;
         while(queue_event_pop(queue, &event)) {
             e_handle_event(event, true);
         }
-        e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID}, true);
-        e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID}, true);
+        e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID, ticks}, true);
+        e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID, ticks}, true);
     }
 }
 
@@ -509,7 +515,7 @@ size_t E_GetScriptHandlers(size_t max_out, struct script_handler *out)
 
 void E_Global_Notify(enum eventtype event, void *event_arg, enum event_source source)
 {
-    struct event e = (struct event){event, event_arg, source, GLOBAL_ID};
+    struct event e = (struct event){event, event_arg, source, GLOBAL_ID, SDL_GetTicks()};
     queue_event_push(&s_event_queues[s_front_queue_idx], &e);
 }
 
@@ -520,6 +526,7 @@ bool E_Global_Register(enum eventtype event, handler_t handler, void *user_arg, 
     hd.handler.as_function = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
+    hd.register_tick = SDL_GetTicks();
 
     return e_register_handler(e_key(GLOBAL_ID, event), &hd);
 }
@@ -541,6 +548,7 @@ bool E_Global_ScriptRegister(enum eventtype event, script_opaque_t handler,
     hd.handler.as_script_callable = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
+    hd.register_tick = SDL_GetTicks();
 
     return e_register_handler(e_key(GLOBAL_ID, event), &hd);
 }
@@ -556,7 +564,7 @@ bool E_Global_ScriptUnregister(enum eventtype event, script_opaque_t handler)
 
 void E_Global_NotifyImmediate(enum eventtype event, void *event_arg, enum event_source source)
 {
-    struct event e = (struct event){event, event_arg, source, GLOBAL_ID};
+    struct event e = (struct event){event, event_arg, source, GLOBAL_ID, SDL_GetTicks()};
     e_handle_event(e, true);
 }
 
@@ -572,6 +580,7 @@ bool E_Entity_Register(enum eventtype event, uint32_t ent_uid, handler_t handler
     hd.handler.as_function = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
+    hd.register_tick = SDL_GetTicks();
 
     return e_register_handler(e_key(ent_uid, event), &hd);
 }
@@ -593,6 +602,7 @@ bool E_Entity_ScriptRegister(enum eventtype event, uint32_t ent_uid,
     hd.handler.as_script_callable = handler;
     hd.user_arg = user_arg;
     hd.simmask = simmask;
+    hd.register_tick = SDL_GetTicks();
 
     return e_register_handler(e_key(ent_uid, event), &hd);
 }
@@ -610,14 +620,14 @@ bool E_Entity_ScriptUnregister(enum eventtype event, uint32_t ent_uid,
 void E_Entity_Notify(enum eventtype event, uint32_t ent_uid, void *event_arg, 
                      enum event_source source)
 {
-    struct event e = (struct event){event, event_arg, source, ent_uid};
+    struct event e = (struct event){event, event_arg, source, ent_uid, SDL_GetTicks()};
     queue_event_push(&s_event_queues[s_front_queue_idx], &e);
 }
 
 void E_Entity_NotifyImmediate(enum eventtype event, uint32_t ent_uid, void *event_arg, 
                               enum event_source source)
 {
-    struct event e = (struct event){event, event_arg, source, ent_uid};
+    struct event e = (struct event){event, event_arg, source, ent_uid, SDL_GetTicks()};
     e_handle_event(e, true);
 }
 
