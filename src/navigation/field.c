@@ -903,6 +903,7 @@ static size_t field_enemies_initial_frontier(
     struct tile_desc          base,
     int                       rdim,
     int                       cdim,
+    enum nav_layer            layer,
     struct tile_desc         *out, 
     size_t                    maxout)
 {
@@ -948,6 +949,10 @@ static size_t field_enemies_initial_frontier(
                 G_GetSelectionRadius(curr_enemy->uid), enemies->map_pos, tds, ARR_SIZE(tds));
         }
 
+        if(layer == NAV_LAYER_GROUND_3X3) {
+            ntds += M_Tile_Countour(ntds, tds, res, tds + ntds, ARR_SIZE(tds) - ntds);
+        }
+
         for(int j = 0; j < ntds; j++) {
 
             int dr, dc;
@@ -985,6 +990,7 @@ static size_t field_entity_initial_frontier(
     struct tile_desc          base,
     int                       rdim,
     int                       cdim,
+    enum nav_layer            layer,
     struct tile_desc         *out, 
     size_t                    maxout)
 {
@@ -1005,6 +1011,10 @@ static size_t field_entity_initial_frontier(
     }else{
         ntds = M_Tile_AllUnderCircle(res, G_Pos_GetXZ(ent->uid), 
             G_GetSelectionRadius(ent->uid), target->map_pos, tds, ARR_SIZE(tds));
+    }
+
+    if(layer == NAV_LAYER_GROUND_3X3) {
+        ntds += M_Tile_Countour(ntds, tds, res, tds + ntds, ARR_SIZE(tds) - ntds);
     }
 
     int ret = 0;
@@ -1210,7 +1220,7 @@ static void field_update_enemies(
 
     struct tile_desc init_frontier[rdim * cdim];
     size_t ninit = field_enemies_initial_frontier(&target, priv, base, rdim, cdim,
-        init_frontier, ARR_SIZE(init_frontier));
+        layer, init_frontier, ARR_SIZE(init_frontier));
 
     for(int i = 0; i < ninit; i++) {
 
@@ -1276,7 +1286,7 @@ static void field_update_entity(
 
     struct tile_desc init_frontier[rdim * cdim];
     size_t ninit = field_entity_initial_frontier(&target, priv, base, rdim, cdim,
-        init_frontier, ARR_SIZE(init_frontier));
+        layer, init_frontier, ARR_SIZE(init_frontier));
 
     for(int i = 0; i < ninit; i++) {
 
@@ -1649,8 +1659,8 @@ void N_FlowFieldUpdateIslandToNearest(
     if(inout_flow->target.type == TARGET_ENEMIES) {
 
         struct tile_desc enemies_init_frontier[FIELD_RES_R * FIELD_RES_C];
-        size_t ntds = field_enemies_initial_frontier(&inout_flow->target.enemies, priv, 
-            base, FIELD_RES_R, FIELD_RES_C, enemies_init_frontier, ARR_SIZE(enemies_init_frontier));
+        size_t ntds = field_enemies_initial_frontier(&inout_flow->target.enemies, priv, base, 
+            FIELD_RES_R, FIELD_RES_C, layer, enemies_init_frontier, ARR_SIZE(enemies_init_frontier));
         for(int i = 0; i < ntds; i++) {
             init_frontier[ninit++] = (struct coord){
                 enemies_init_frontier[i].tile_r,
@@ -1662,8 +1672,8 @@ void N_FlowFieldUpdateIslandToNearest(
     }else if(inout_flow->target.type == TARGET_ENTITY) {
 
         struct tile_desc entity_init_frontier[FIELD_RES_R * FIELD_RES_C];
-        size_t ntds = field_entity_initial_frontier(&inout_flow->target.ent, priv, 
-            base, FIELD_RES_R, FIELD_RES_C, entity_init_frontier, ARR_SIZE(entity_init_frontier));
+        size_t ntds = field_entity_initial_frontier(&inout_flow->target.ent, priv, base, 
+            FIELD_RES_R, FIELD_RES_C, layer, entity_init_frontier, ARR_SIZE(entity_init_frontier));
         for(int i = 0; i < ntds; i++) {
             init_frontier[ninit++] = (struct coord){
                 entity_init_frontier[i].tile_r,

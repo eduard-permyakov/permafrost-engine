@@ -702,8 +702,10 @@ static void on_render_3d(void *user, void *event)
                 float dz = target_pos_xz.z - pos_xz.z;
                 if(fabs(dx) < CHUNK_WIDTH/4.0f && fabs(dz) < CHUNK_HEIGHT/4.0f) {
                     M_NavRenderVisibleSurroundField(s_map, cam, Entity_NavLayer(ent), target);
+                    UI_DrawText("(Surround Field)", (struct rect){5,75,450,50}, text_color);
                 }else{
                     M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
+                    UI_DrawText("(Path Field)", (struct rect){5,75,450,50}, text_color);
                 }
                 break;
             }
