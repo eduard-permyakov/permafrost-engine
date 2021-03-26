@@ -115,31 +115,48 @@ enum arrival_state{
 
 struct movestate{
     enum arrival_state state;
-    /* The base movement speed in units of OpenGL coords / second */
+    /* The base movement speed in units of OpenGL coords / second 
+     */
     float              max_speed;
-    /* The desired velocity returned by the navigation system */
+    /* The desired velocity returned by the navigation system 
+     */
     vec2_t             vdes;
-    /* The newly computed velocity (the desired velocity constrained by flocking forces) */
+    /* The newly computed velocity (the desired velocity constrained by flocking forces) 
+     */
     vec2_t             vnew;
-    /* The current velocity */
+    /* The current velocity 
+     */
     vec2_t             velocity;
     /* Flag to track whether the entiy is currently acting as a 
-     * navigation blocker, and the last position where it became a blocker. */
+     * navigation blocker, and the last position where it became a blocker. 
+     */
     bool               blocking;
     vec2_t             last_stop_pos;
     float              last_stop_radius;
-    /* Information for waking up from the 'WAITING' state */
+    /* Information for waking up from the 'WAITING' state 
+     */
     enum arrival_state wait_prev;
     int                wait_ticks_left;
-    /* History of the previous ticks' velocities. Used for velocity smoothing. */
+    /* History of the previous ticks' velocities. Used for velocity smoothing. 
+     */
     vec2_t             vel_hist[VEL_HIST_LEN];
     int                vel_hist_idx;
-    /* Entity that we're moving towards when in the 'SURROUND_STATIC_ENTITY' state */
+    /* Entity that we're moving towards when in the 'SURROUND_STATIC_ENTITY' state 
+     */
     uint32_t           surround_target_uid;
-    /* Additional state for entities in 'ENTER_ENTITY_RANGE' state */
+    /* Flag indicating that we are now using the 'surround' field rather than the 
+     * 'target seek' field to get to path to our target. This kicks in once we pass
+     * the distance 'low water' threshold and is turned off if we pass the 'high water' 
+     * threshold again - this is to prevent 'toggling' at a boundary where we switch 
+     * from one field to another. 
+     */
+    bool               using_surround_field;
+    /* Additional state for entities in 'ENTER_ENTITY_RANGE' state 
+     */
     vec2_t             target_prev_pos;
     float              target_range;
-    /* The target direction for 'turning' entities */
+    /* The target direction for 'turning' entities 
+     */
     quat_t             target_dir;
 };
 
@@ -198,6 +215,11 @@ VEC_IMPL(static inline, flock, struct flock)
 #define COLLISION_MAX_SEE_AHEAD         (10.0f)
 #define WAIT_TICKS                      (60)
 #define MAX_TURN_RATE                   (15.0f) /* degree/tick */
+
+#define SURROUND_LOW_WATER_X            (CHUNK_WIDTH/4.0f)
+#define SURROUND_HIGH_WATER_X           (CHUNK_WIDTH/2.0f)
+#define SURROUND_LOW_WATER_Z            (CHUNK_HEIGHT/4.0f)
+#define SURROUND_HIGH_WATER_Z           (CHUNK_HEIGHT/2.0f)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -696,11 +718,7 @@ static void on_render_3d(void *user, void *event)
                 if(!target)
                     break;
 
-                vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
-                vec2_t target_pos_xz = G_Pos_GetXZ(target->uid);
-                float dx = target_pos_xz.x - pos_xz.x;
-                float dz = target_pos_xz.z - pos_xz.z;
-                if(fabs(dx) < CHUNK_WIDTH/4.0f && fabs(dz) < CHUNK_HEIGHT/4.0f) {
+                if(ms->using_surround_field) {
                     M_NavRenderVisibleSurroundField(s_map, cam, Entity_NavLayer(ent), target);
                     UI_DrawText("(Surround Field)", (struct rect){5,75,450,50}, text_color);
                 }else{
@@ -797,16 +815,31 @@ static vec2_t ent_desired_velocity(const struct entity *ent)
     case STATE_SURROUND_ENTITY: {
 
         const struct entity *target = G_EntityForUID(ms->surround_target_uid);
-        if(target) {
-            vec2_t target_pos_xz = G_Pos_GetXZ(ms->surround_target_uid);
-            float dx = target_pos_xz.x - pos_xz.x;
-            float dz = target_pos_xz.z - pos_xz.z;
-            if(fabs(dx) < CHUNK_WIDTH/4.0f && fabs(dz) < CHUNK_HEIGHT/4.0f) {
-                return M_NavDesiredSurroundVelocity(s_map, Entity_NavLayer(ent), 
-                    pos_xz, target, G_GetFactionID(ent->uid));
+        if(!target) {
+            return M_NavDesiredPointSeekVelocity(s_map, fl->dest_id, pos_xz, fl->target_xz);
+        }
+
+        vec2_t target_pos_xz = G_Pos_GetXZ(ms->surround_target_uid);
+        float dx = fabs(target_pos_xz.x - pos_xz.x);
+        float dz = fabs(target_pos_xz.z - pos_xz.z);
+
+        if(!ms->using_surround_field) {
+            if(dx < SURROUND_LOW_WATER_X && dz < SURROUND_LOW_WATER_Z) {
+                ms->using_surround_field = true;
+            }
+        }else{
+            if(dx >= SURROUND_HIGH_WATER_X || dz >= SURROUND_HIGH_WATER_Z) {
+                ms->using_surround_field = true;
             }
         }
-        return M_NavDesiredPointSeekVelocity(s_map, fl->dest_id, pos_xz, fl->target_xz);
+
+        if(ms->using_surround_field) {
+            return M_NavDesiredSurroundVelocity(s_map, Entity_NavLayer(ent), 
+                pos_xz, target, G_GetFactionID(ent->uid));
+        }else{
+            return M_NavDesiredPointSeekVelocity(s_map, fl->dest_id, pos_xz, fl->target_xz);
+        }
+        break;
     }
     default:
         assert(fl);
@@ -1926,6 +1959,7 @@ void G_Move_SetSurroundEntity(const struct entity *ent, const struct entity *tar
     assert(!ms->blocking);
     ms->state = STATE_SURROUND_ENTITY;
     ms->surround_target_uid = target->uid;
+    ms->using_surround_field = false;
 }
 
 void G_Move_UpdatePos(const struct entity *ent, vec2_t pos)
@@ -2140,6 +2174,12 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &surround_target_uid, "surround_target_uid"));
 
+        struct attr using_surround_field = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.using_surround_field
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &using_surround_field, "using_surround_field"));
+
         struct attr target_prev_pos = (struct attr){
             .type = TYPE_VEC2,
             .val.as_vec2 = curr.target_prev_pos
@@ -2280,6 +2320,10 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         ms->surround_target_uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        ms->using_surround_field = attr.val.as_bool;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_VEC2);
