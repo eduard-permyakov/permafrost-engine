@@ -78,11 +78,27 @@ struct cam_fps_ctx{
 };
 
 struct cam_rts_ctx{
-    bool move_up;
-    bool move_down;
-    bool move_left;
-    bool move_right;
-    bool pan_disabled;
+    bool          scroll_up;
+    bool          scroll_down;
+    bool          scroll_left;
+    bool          scroll_right;
+    bool          pan_disabled;
+
+    enum keystate front_state;
+    uint32_t      front_pressed_tick;
+    uint32_t      front_released_tick;
+
+    enum keystate back_state;
+    uint32_t      back_pressed_tick;
+    uint32_t      back_released_tick;
+
+    enum keystate left_state;
+    uint32_t      left_pressed_tick;
+    uint32_t      left_released_tick;
+
+    enum keystate right_state;
+    uint32_t      right_pressed_tick;
+    uint32_t      right_released_tick;
 };
 
 /*****************************************************************************/
@@ -223,10 +239,10 @@ static void rts_cam_on_mousemove(void *unused, void *event_arg)
     int width, height;
     Engine_WinDrawableSize(&width, &height);
     
-    ctx->move_up    = (e->y == 0);
-    ctx->move_down  = (e->y == height - 1);
-    ctx->move_left  = (e->x == 0);
-    ctx->move_right = (e->x == width - 1);
+    ctx->scroll_up    = (e->y == 0);
+    ctx->scroll_down  = (e->y == height - 1);
+    ctx->scroll_left  = (e->x == 0);
+    ctx->scroll_right = (e->x == width - 1);
 }
 
 static void rts_cam_on_mousedown(void *unused, void *event_arg)
@@ -234,7 +250,7 @@ static void rts_cam_on_mousedown(void *unused, void *event_arg)
     struct cam_rts_ctx *ctx = &s_cam_ctx.active_ctx.rts;
     SDL_Event *e = (SDL_Event*)event_arg;
 
-    if(ctx->move_up || ctx->move_down || ctx->move_left || ctx->move_right)
+    if(ctx->scroll_up || ctx->scroll_down || ctx->scroll_left || ctx->scroll_right)
         return;
 
     if(e->button.button == SDL_BUTTON_LEFT)
@@ -250,10 +266,81 @@ static void rts_cam_on_mouseup(void *unused, void *event_arg)
         ctx->pan_disabled = false;
 }
 
+static void rts_cam_on_keydown(void *unused, void *event_arg)
+{
+    struct cam_rts_ctx *ctx = &s_cam_ctx.active_ctx.rts;
+    SDL_Event *e = (SDL_Event*)event_arg;
+    uint32_t curr_tick = g_frame_idx;
+
+    switch(e->key.keysym.scancode) {
+    case SDL_SCANCODE_UP: 
+        ctx->front_pressed_tick = curr_tick;
+        ctx->front_state = KEY_PRESSED;
+        break; 
+    case SDL_SCANCODE_LEFT: 
+        ctx->left_pressed_tick = curr_tick;
+        ctx->left_state = KEY_PRESSED;
+        break;
+    case SDL_SCANCODE_DOWN: 
+        ctx->back_pressed_tick = curr_tick;
+        ctx->back_state = KEY_PRESSED;
+        break;
+    case SDL_SCANCODE_RIGHT: 
+        ctx->right_pressed_tick = curr_tick;
+        ctx->right_state = KEY_PRESSED;
+        break;
+	default: break;
+    }
+}
+
+static void rts_cam_on_keyup(void *unused, void *event_arg)
+{
+    struct cam_rts_ctx *ctx = &s_cam_ctx.active_ctx.rts;
+    SDL_Event *e = (SDL_Event*)event_arg;
+    uint32_t curr_tick = g_frame_idx;
+
+    switch(e->key.keysym.scancode) {
+    case SDL_SCANCODE_UP: 
+        ctx->front_released_tick = curr_tick;
+        ctx->front_state = KEY_RELEASED_NO_TIMEOUT;
+        break; 
+    case SDL_SCANCODE_LEFT: 
+        ctx->left_released_tick = curr_tick;
+        ctx->left_state = KEY_RELEASED_NO_TIMEOUT;
+        break;
+    case SDL_SCANCODE_DOWN: 
+        ctx->back_released_tick = curr_tick;
+        ctx->back_state = KEY_RELEASED_NO_TIMEOUT;
+        break;
+    case SDL_SCANCODE_RIGHT: 
+        ctx->right_released_tick = curr_tick;
+        ctx->right_state = KEY_RELEASED_NO_TIMEOUT;
+        break;
+	default: break;
+    }
+}
+
 static void rts_cam_on_update_end(void *unused1, void *unused2)
 {
     struct cam_rts_ctx *ctx = &s_cam_ctx.active_ctx.rts;
     struct camera *cam = s_cam_ctx.active;
+    uint32_t curr_tick = g_frame_idx;
+
+    if((ctx->front_state == KEY_RELEASED_NO_TIMEOUT)
+    && (curr_tick - ctx->front_released_tick > KEYUP_TICKS_TIMEOUT))
+        ctx->front_state = KEY_RELEASED;
+
+    if(ctx->left_state == KEY_RELEASED_NO_TIMEOUT
+    && curr_tick - ctx->left_released_tick > KEYUP_TICKS_TIMEOUT)
+        ctx->left_state = KEY_RELEASED;
+
+    if(ctx->back_state == KEY_RELEASED_NO_TIMEOUT
+    && curr_tick - ctx->back_released_tick > KEYUP_TICKS_TIMEOUT)
+        ctx->back_state = KEY_RELEASED;
+
+    if(ctx->right_state == KEY_RELEASED_NO_TIMEOUT
+    && curr_tick - ctx->right_released_tick > KEYUP_TICKS_TIMEOUT)
+        ctx->right_state = KEY_RELEASED;
 
     float yaw = Camera_GetYaw(cam);
 
@@ -291,17 +378,21 @@ static void rts_cam_on_update_end(void *unused1, void *unused2)
     vec3_t down  = (vec3_t){-up.x, up.y, -up.z};
     vec3_t right = (vec3_t){-left.x, left.y, -left.z};
 
-    assert(!(ctx->move_left && ctx->move_right));
-    assert(!(ctx->move_up && ctx->move_down));
+    assert(!(ctx->scroll_left && ctx->scroll_right));
+    assert(!(ctx->scroll_up && ctx->scroll_down));
 
     vec3_t dir = (vec3_t){0.0f, 0.0f, 0.0f};
 
     if(!ctx->pan_disabled) {
 
-        if(ctx->move_left)  PFM_Vec3_Add(&dir, &left, &dir);
-        if(ctx->move_right) PFM_Vec3_Add(&dir, &right, &dir);
-        if(ctx->move_up)    PFM_Vec3_Add(&dir, &up, &dir);
-        if(ctx->move_down)  PFM_Vec3_Add(&dir, &down, &dir);
+        if(ctx->scroll_left || ctx->left_state != KEY_RELEASED) 
+            PFM_Vec3_Add(&dir, &left, &dir);
+        if(ctx->scroll_right || ctx->right_state != KEY_RELEASED) 
+            PFM_Vec3_Add(&dir, &right, &dir);
+        if(ctx->scroll_up || ctx->front_state != KEY_RELEASED) 
+            PFM_Vec3_Add(&dir, &up, &dir);
+        if(ctx->scroll_down || ctx->back_state != KEY_RELEASED) 
+            PFM_Vec3_Add(&dir, &down, &dir);
     }
 
     Camera_MoveDirectionTick(cam, dir);
@@ -346,17 +437,26 @@ void CamControl_RTS_Install(struct camera *cam)
 {
     CamControl_UninstallActive();
 
+    E_Global_Register(SDL_KEYDOWN,         rts_cam_on_keydown,    NULL, G_RUNNING);
+    E_Global_Register(SDL_KEYUP,           rts_cam_on_keyup,      NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEMOTION,     rts_cam_on_mousemove,  NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONDOWN, rts_cam_on_mousedown,  NULL, G_RUNNING);
     E_Global_Register(SDL_MOUSEBUTTONUP,   rts_cam_on_mouseup,    NULL, G_RUNNING);
     E_Global_Register(EVENT_UPDATE_END,    rts_cam_on_update_end, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
 
+    s_cam_ctx.installed_on_keydown    = rts_cam_on_keydown;
+    s_cam_ctx.installed_on_keyup      = rts_cam_on_keyup;
     s_cam_ctx.installed_on_mousemove  = rts_cam_on_mousemove;
     s_cam_ctx.installed_on_mousedown  = rts_cam_on_mousedown;
     s_cam_ctx.installed_on_mouseup    = rts_cam_on_mouseup;
     s_cam_ctx.installed_on_update_end = rts_cam_on_update_end;
     s_cam_ctx.active = cam;
+
+    s_cam_ctx.active_ctx.rts.front_state = KEY_RELEASED;
+    s_cam_ctx.active_ctx.rts.left_state = KEY_RELEASED;
+    s_cam_ctx.active_ctx.rts.back_state = KEY_RELEASED;
+    s_cam_ctx.active_ctx.rts.right_state = KEY_RELEASED;
 
     Cursor_SetRTSMode(true);
 }
