@@ -38,6 +38,7 @@
 
 #include <SDL.h>
 #include <assert.h>
+#include <stdbool.h>
 
 extern const char    *g_basepath;      /* readonly */
 extern unsigned       g_last_frame_ms; /* readonly */
@@ -76,6 +77,7 @@ void Engine_FlushRenderWorkQueue(void);
 /* Wait for the current batch of render command to finish */
 void Engine_WaitRenderWorkDone(void);
 void Engine_ClearPendingEvents(void);
+bool Engine_GetArg(const char *name, size_t maxout, char out[static maxout]);
 
 #endif
 

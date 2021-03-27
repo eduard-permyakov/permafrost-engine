@@ -78,28 +78,31 @@ VEC_IMPL(static inline, event, SDL_Event)
 /* GLOBAL VARIABLES                                                          */
 /*****************************************************************************/
 
-const char                *g_basepath; /* write-once - path of the base directory */
-unsigned long              g_frame_idx = 0;
+const char                      *g_basepath; /* write-once - path of the base directory */
+unsigned long                    g_frame_idx = 0;
 
-SDL_threadID               g_main_thread_id;   /* write-once */
-SDL_threadID               g_render_thread_id; /* write-once */
+SDL_threadID                     g_main_thread_id;   /* write-once */
+SDL_threadID                     g_render_thread_id; /* write-once */
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
-static SDL_Window         *s_window;
-static SDL_Surface        *s_loading_screen;
+static SDL_Window               *s_window;
+static SDL_Surface              *s_loading_screen;
 
 /* Flag to perform a single step of the simulation while the game is paused. 
  * Cleared at after performing the step. 
  */
-static bool                s_step_frame = false;
-static bool                s_quit = false; 
-static vec_event_t         s_prev_tick_events;
+static bool                      s_step_frame = false;
+static bool                      s_quit = false; 
+static vec_event_t               s_prev_tick_events;
 
 static SDL_Thread               *s_render_thread;
 static struct render_sync_state  s_rstate;
+
+static int                       s_argc;
+static char                    **s_argv;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -294,7 +297,38 @@ fail_load_image:
     return ret;
 }
 
-static bool engine_init(char **argv)
+static void engine_set_icon(void)
+{
+    char iconpath[512];
+    if(!Engine_GetArg("appicon", sizeof(iconpath), iconpath))
+        return;
+
+    char fullpath[512];
+    pf_snprintf(fullpath, sizeof(fullpath), "%s/%s", g_basepath, iconpath);
+
+    int width, height, orig_format;
+    unsigned char *image = stbi_load(fullpath, &width, &height, 
+        &orig_format, STBI_rgb_alpha);
+
+    if(!image) {
+        fprintf(stderr, "Failed to load client icon image: %s\n", fullpath);
+        return;
+    }
+
+    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32, SDL_PIXELFORMAT_RGBA32);
+    if(!surface) {
+        fprintf(stderr, "Failed to create surface from client icon image: %s\n", fullpath);
+        goto fail_surface;
+    }
+
+    memcpy(surface->pixels, image, width * height * 4);
+    SDL_SetWindowIcon(s_window, surface);
+    SDL_FreeSurface(surface);
+fail_surface:
+    free(image);
+}
+
+static bool engine_init(void)
 {
     g_main_thread_id = SDL_ThreadID();
 
@@ -346,8 +380,10 @@ static bool engine_init(char **argv)
 
     R_InitAttributes();
 
+    char appname[64] = "Permafrost Engine";
+    Engine_GetArg("appname", sizeof(appname), appname);
     s_window = SDL_CreateWindow(
-        "Permafrost Engine",
+        appname,
         SDL_WINDOWPOS_UNDEFINED, 
         SDL_WINDOWPOS_UNDEFINED,
         res[0], 
@@ -355,6 +391,7 @@ static bool engine_init(char **argv)
         SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | wf | extra_flags);
 
     s_loading_screen = engine_create_loading_screen();
+    engine_set_icon();
     stbi_set_flip_vertically_on_load(true);
 
     Engine_LoadingScreen();
@@ -403,7 +440,7 @@ static bool engine_init(char **argv)
         goto fail_al;
     }
 
-    if(!Cursor_InitDefault(argv[1])) {
+    if(!Cursor_InitDefault(g_basepath)) {
         fprintf(stderr, "Failed to initialize cursor module\n");
         goto fail_cursor;
     }
@@ -429,7 +466,7 @@ static bool engine_init(char **argv)
         goto fail_game;
     }
 
-    if(!R_Init(argv[1])) {
+    if(!R_Init(g_basepath)) {
         fprintf(stderr, "Failed to intiaialize rendering subsystem\n");
         goto fail_render;
     }
@@ -437,12 +474,12 @@ static bool engine_init(char **argv)
     E_Global_Register(SDL_QUIT, on_user_quit, NULL, 
         G_RUNNING | G_PAUSED_UI_RUNNING | G_PAUSED_FULL);
 
-    if(!UI_Init(argv[1], s_window)) {
+    if(!UI_Init(g_basepath, s_window)) {
         fprintf(stderr, "Failed to initialize nuklear\n");
         goto fail_nuklear;
     }
 
-    if(!S_Init(argv[0], argv[1], UI_GetContext())) {
+    if(!S_Init(s_argv[0], g_basepath, UI_GetContext())) {
         fprintf(stderr, "Failed to initialize scripting subsystem\n");
         goto fail_script;
     }
@@ -648,6 +685,25 @@ void Engine_ClearPendingEvents(void)
     E_ClearPendingEvents();
 }
 
+bool Engine_GetArg(const char *name, size_t maxout, char out[static maxout])
+{
+    size_t namelen = strlen(name);
+    for(int i = 2; i < s_argc; i++) {
+        const char *curr = s_argv[i];
+        if(strstr(curr, "--") != curr)
+            continue;
+        curr += 2;
+        if(0 != strncmp(curr, name, namelen))
+            continue;
+        curr += namelen;
+        if(*curr != '=')
+            continue;
+        pf_strlcpy(out, curr + 1, maxout);
+        return true;
+    }
+    return false;
+}
+
 #if defined(_WIN32)
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, 
                      LPSTR lpCmdLine, int nCmdShow)
@@ -662,15 +718,17 @@ int main(int argc, char **argv)
 
     int ret = EXIT_SUCCESS;
 
-    if(argc != 3) {
+    if(argc < 3) {
         printf("Usage: %s [base directory path (containing 'assets', 'shaders' and 'scripts' folders)] [script path]\n", argv[0]);
         ret = EXIT_FAILURE;
         goto fail_args;
     }
 
     g_basepath = argv[1];
+    s_argc = argc;
+    s_argv = argv;
 
-    if(!engine_init(argv)) {
+    if(!engine_init()) {
         ret = EXIT_FAILURE; 
         goto fail_init;
     }
