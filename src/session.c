@@ -470,9 +470,7 @@ void Session_ServiceRequests(void)
     if(s_request == SESH_REQ_NONE)
         return;
 
-    E_Global_NotifyImmediate(EVENT_RENDER_UI, NULL, ES_ENGINE);
     Engine_LoadingScreen();
-
     bool result = false;
 
     switch(s_request) {

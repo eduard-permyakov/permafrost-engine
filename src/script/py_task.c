@@ -456,7 +456,7 @@ static struct result py_task(void *arg)
             self->ts->curexc_traceback ? self->ts->curexc_traceback : Py_None
         );
         E_Global_Notify(EVENT_SCRIPT_TASK_EXCEPTION, exc_info, ES_SCRIPT);
-        PyErr_Clear();
+        S_ShowLastError();
     }
 
     assert(!self->ts->frame);

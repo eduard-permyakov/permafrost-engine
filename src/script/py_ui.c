@@ -2194,24 +2194,22 @@ static int PyWindow_set_fixed_background(PyWindowObject *self, PyObject *value, 
     return 0;
 }
 
-static void call_critfail(PyObject *obj, char *method_name)
+static void call_registered(PyObject *obj, char *method_name)
 {
     PyObject *ret = PyObject_CallMethod(obj, method_name, NULL);
-    Py_XDECREF(ret);
     if(!ret) {
-        PyErr_Print();
-        exit(EXIT_FAILURE);
+        S_ShowLastError();
     }
+    Py_XDECREF(ret);
 }
 
-static void call_critfail_arg(PyObject *obj, char *method_name, PyObject *arg)
+static void call_registered_arg(PyObject *obj, char *method_name, PyObject *arg)
 {
     PyObject *ret = PyObject_CallMethod(obj, method_name, "O", arg, NULL);
-    Py_XDECREF(ret);
     if(!ret) {
-        PyErr_Print();
-        exit(EXIT_FAILURE);
+        S_ShowLastError();
     }
+    Py_XDECREF(ret);
 }
 
 static void active_windows_update(void *user, void *event)
@@ -2242,23 +2240,23 @@ static void active_windows_update(void *user, void *event)
         if(nk_begin_with_vres(s_nk_ctx, win->name, 
             nk_rect(adj_bounds.x, adj_bounds.y, adj_bounds.w, adj_bounds.h), win->flags, adj_vres)) {
 
-            call_critfail((PyObject*)win, "update");
+            call_registered((PyObject*)win, "update");
         }
 
         if(win->hide || (s_nk_ctx->current->flags & NK_WINDOW_HIDDEN && !(win->flags & NK_WINDOW_HIDDEN))) {
 
             PyObject *manual = win->hide ? Py_False : Py_True;
             Py_INCREF(manual);
-            call_critfail_arg((PyObject*)win, "on_hide", manual);
+            call_registered_arg((PyObject*)win, "on_hide", manual);
             Py_DECREF(manual);
         }
 
         if(s_nk_ctx->current->minimized) {
-            call_critfail((PyObject*)win, "on_minimize");
+            call_registered((PyObject*)win, "on_minimize");
         }
 
         if(s_nk_ctx->current->maximized) {
-            call_critfail((PyObject*)win, "on_maximize");
+            call_registered((PyObject*)win, "on_maximize");
         }
 
         struct nk_vec2 pos = nk_window_get_position(s_nk_ctx);

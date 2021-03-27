@@ -58,6 +58,7 @@ bool            S_Init(const char *progname, const char *base_path, struct nk_co
 void            S_Shutdown(void);
 bool            S_RunFile(const char *path, int argc, char **argv);
 bool            S_GetFilePath(char *out, size_t maxout);
+void            S_ShowLastError(void);
 
 void            S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, 
                                   void *event_arg);

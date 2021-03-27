@@ -44,6 +44,7 @@
 #include "py_camera.h"
 #include "py_task.h"
 #include "py_region.h"
+#include "py_error.h"
 #include "public/script.h"
 #include "../entity.h"
 #include "../game/public/game.h"
@@ -685,11 +686,25 @@ static PyMethodDef pf_module_methods[] = {
     {NULL}  /* Sentinel */
 };
 
-const char *s_progname = NULL;
+static const char        *s_progname = NULL;
+static struct py_err_ctx  s_err_ctx = {false,};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static void s_err_clear(void)
+{
+    Py_XDECREF(s_err_ctx.type);
+    Py_XDECREF(s_err_ctx.value);
+    Py_XDECREF(s_err_ctx.traceback);
+    s_err_ctx.occurred = false;
+}
+
+static void s_on_update(void *user, void *event)
+{
+    S_Error_Update(&s_err_ctx);
+}
 
 static PyObject *PyPf_load_map(PyObject *self, PyObject *args, PyObject *kwargs)
 {
@@ -2900,11 +2915,15 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
         return false;
 
     s_create_settings();
+
+    E_Global_Register(EVENT_UPDATE_START, s_on_update, NULL, G_ALL);
     return true;
 }
 
 void S_Shutdown(void)
 {
+    E_Global_Unregister(EVENT_UPDATE_START, s_on_update);
+    s_err_clear();
     Py_Finalize();
     S_Pickle_Shutdown();
     S_Camera_Shutdown();
@@ -2955,7 +2974,7 @@ bool S_RunFile(const char *path, int argc, char **argv)
     Py_XDECREF(result);
 
     if(PyErr_Occurred()) {
-        PyErr_Print();
+        S_ShowLastError();
     }
 
 done:
@@ -3000,11 +3019,10 @@ void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, scrip
     ret = PyObject_CallObject(callable, args);
     Py_DECREF(args);
 
-    Py_XDECREF(ret);
-    if(!ret) {
-        PyErr_Print();
-        exit(EXIT_FAILURE);
+    if(PyErr_Occurred()) {
+        S_ShowLastError();
     }
+    Py_XDECREF(ret);
 }
 
 void S_Retain(script_opaque_t obj)
@@ -3270,4 +3288,16 @@ fail:
     Py_DECREF(state);
     return ret;
 } 
+
+void S_ShowLastError(void)
+{
+    s_err_ctx.occurred = PyErr_Occurred();
+    PyErr_Fetch(&s_err_ctx.type, &s_err_ctx.value, &s_err_ctx.traceback);
+    PyErr_NormalizeException(&s_err_ctx.type, &s_err_ctx.value, &s_err_ctx.traceback);
+
+    if(s_err_ctx.occurred) {
+        s_err_ctx.prev_state = G_GetSimState();
+        G_SetSimState(G_PAUSED_FULL);
+    }
+}
 

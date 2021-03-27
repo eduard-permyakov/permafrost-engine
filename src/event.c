@@ -412,7 +412,6 @@ void E_ClearPendingEvents(void)
 void E_FlushEventQueue(void)
 {
     uint32_t ticks = SDL_GetTicks();
-    e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID, ticks}, true);
 
     while(E_EventsQueued()) {
 
@@ -426,8 +425,10 @@ void E_FlushEventQueue(void)
         while(queue_event_pop(queue, &event)) {
             e_handle_event(event, true);
         }
-        e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID, ticks}, true);
+
         e_handle_event( (struct event){EVENT_RENDER_FINISH, NULL, ES_ENGINE, GLOBAL_ID, ticks}, true);
+        e_handle_event( (struct event){EVENT_RENDER_UI, NULL, ES_ENGINE, GLOBAL_ID, ticks}, true);
+        e_handle_event( (struct event){EVENT_UPDATE_END, NULL, ES_ENGINE, GLOBAL_ID, ticks}, true);
     }
 }
 

@@ -554,7 +554,7 @@ void S_Region_NotifyContentsChanged(const char *name)
     PyObject *reg = kh_value(s_name_pyobj_table, k);
     PyObject *ret = PyObject_CallMethod(reg, "on_contents_changed", NULL);
     if(!ret) {
-        PyErr_Clear();
+        S_ShowLastError();
     }
     Py_XDECREF(ret);
 }
