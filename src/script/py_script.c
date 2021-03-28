@@ -86,6 +86,8 @@ static PyObject *PyPf_register_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_register_ui_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_unregister_event_handler(PyObject *self, PyObject *args);
 static PyObject *PyPf_global_event(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_ticks(PyObject *self);
+static PyObject *PyPf_ticks_delta(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_get_active_camera(PyObject *self);
 static PyObject *PyPf_set_active_camera(PyObject *self, PyObject *args);
@@ -252,6 +254,16 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_global_event, METH_VARARGS,
     "Broadcast a global event so all handlers can get invoked. Any weakref argument is "
     "automatically unpacked before being sent to the handler."},
+
+    {"get_ticks", 
+    (PyCFunction)PyPf_get_ticks, METH_NOARGS,
+    "Get the current number of game ticks (milliseconsd) - only useful in finding elapsed "
+    "times in relation to other ticks."},
+
+    {"ticks_delta", 
+    (PyCFunction)PyPf_ticks_delta, METH_VARARGS,
+    "Compute the MS delta between two tick values retried by 'get_ticks'. This handles unsigned overflow "
+    "unlike regular Python integer arithmnetic."},
 
     {"get_active_camera", 
     (PyCFunction)PyPf_get_active_camera, METH_NOARGS,
@@ -926,6 +938,24 @@ static PyObject *PyPf_global_event(PyObject *self, PyObject *args)
 
     E_Global_Notify(event, arg, ES_SCRIPT);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_ticks(PyObject *self)
+{
+    return PyInt_FromLong(SDL_GetTicks());
+}
+
+static PyObject *PyPf_ticks_delta(PyObject *self, PyObject *args)
+{
+    unsigned long a, b;
+
+    if(!PyArg_ParseTuple(args, "kk", &a, &b)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be two integers (tick values).");
+        return NULL;
+    }
+
+    uint32_t a32 = a, b32 = b;
+    return PyInt_FromLong((uint32_t)(b - a));
 }
 
 static PyObject *PyPf_get_active_camera(PyObject *self)

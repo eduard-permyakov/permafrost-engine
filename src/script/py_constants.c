@@ -539,6 +539,24 @@ static void s_expose_sdl_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, SDLK_AUDIOREWIND);
     PY_EXPOSE_ENUM(module, SDLK_AUDIOFASTFORWARD);
 
+    PY_EXPOSE_ENUM(module, KMOD_NONE);
+    PY_EXPOSE_ENUM(module, KMOD_LSHIFT);
+    PY_EXPOSE_ENUM(module, KMOD_RSHIFT);
+    PY_EXPOSE_ENUM(module, KMOD_LCTRL);
+    PY_EXPOSE_ENUM(module, KMOD_RCTRL);
+    PY_EXPOSE_ENUM(module, KMOD_LALT);
+    PY_EXPOSE_ENUM(module, KMOD_RALT);
+    PY_EXPOSE_ENUM(module, KMOD_LGUI);
+    PY_EXPOSE_ENUM(module, KMOD_RGUI);
+    PY_EXPOSE_ENUM(module, KMOD_NUM);
+    PY_EXPOSE_ENUM(module, KMOD_CAPS);
+    PY_EXPOSE_ENUM(module, KMOD_MODE);
+    PY_EXPOSE_ENUM(module, KMOD_RESERVED);
+    PY_EXPOSE_ENUM(module, KMOD_CTRL);
+    PY_EXPOSE_ENUM(module, KMOD_SHIFT);
+    PY_EXPOSE_ENUM(module, KMOD_ALT);
+    PY_EXPOSE_ENUM(module, KMOD_GUI);
+
     PY_EXPOSE_ENUM(module, SDL_BUTTON_LEFT);
     PY_EXPOSE_ENUM(module, SDL_BUTTON_MIDDLE);
     PY_EXPOSE_ENUM(module, SDL_BUTTON_RIGHT);
