@@ -86,6 +86,7 @@ static struct selection_ctx{
     }state;
     vec2_t mouse_down_coord;
     vec2_t mouse_up_coord;
+    int num_clicks;
     enum selection_type type;
 }s_ctx;
 
@@ -150,6 +151,7 @@ static void on_mouseup(void *user, void *event)
     SDL_MouseButtonEvent *mouse_event = &(((SDL_Event*)event)->button);
     s_ctx.state = STATE_MOUSE_SEL_RELEASED;
     s_ctx.mouse_up_coord = (vec2_t){mouse_event->x, mouse_event->y};
+    s_ctx.num_clicks = mouse_event->clicks;
 }
 
 static void on_render_ui(void *user, void *event)
@@ -504,7 +506,23 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
             if(!sel_ctrl_pressed() && !sel_shift_pressed()) {
                 vec_pentity_reset(&s_selected);
             }
-            sel_process_unit(hovered);
+            /* A double-click selects all units of the same 'type' as the hovered unit */
+            if(s_ctx.num_clicks > 1) {
+
+                uint64_t hovered_id = S_ScriptTypeID(s_hovered_uid);
+                for(int i = 0; i < vec_size(visible_obbs); i++) {
+
+                    struct entity *curr = vec_AT(visible, i);
+                    if(!(curr->flags & ENTITY_FLAG_SELECTABLE))
+                        continue;
+                    uint64_t curr_id = S_ScriptTypeID(curr->uid);
+                    if(curr_id != 0 && (hovered_id == curr_id)) {
+                        sel_process_unit(curr);
+                    }
+                }
+            }else{
+                sel_process_unit(hovered);
+            }
         }
 
     }else{

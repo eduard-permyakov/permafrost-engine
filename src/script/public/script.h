@@ -73,6 +73,8 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg);
 script_opaque_t S_UnwrapIfWeakref(script_opaque_t arg);
 bool            S_WeakrefDied(script_opaque_t arg);
 bool            S_ObjectsEqual(script_opaque_t a, script_opaque_t b);
+/* This value is not persistent accross sessions - careful */
+uint64_t        S_ScriptTypeID(uint32_t uid);
 
 void            S_ClearState(void);
 bool            S_SaveState(SDL_RWops *stream);
@@ -82,8 +84,8 @@ bool            S_LoadState(SDL_RWops *stream);
 /* SCRIPT UI                                                                 */
 /*###########################################################################*/
 
-bool S_UI_MouseOverWindow(int mouse_x, int mouse_y);
-bool S_UI_TextEditHasFocus(void);
+bool            S_UI_MouseOverWindow(int mouse_x, int mouse_y);
+bool            S_UI_TextEditHasFocus(void);
 
 /*###########################################################################*/
 /* SCRIPT ENTITY                                                             */

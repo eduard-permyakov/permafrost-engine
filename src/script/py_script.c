@@ -3301,3 +3301,13 @@ void S_ShowLastError(void)
     }
 }
 
+uint64_t S_ScriptTypeID(uint32_t uid)
+{
+    PyObject *ent = S_Entity_ObjForUID(uid);
+    if(!ent)
+        return 0;
+
+    uint64_t ret = (uintptr_t)(Py_TYPE(ent));
+    return ret;
+}
+
