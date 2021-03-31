@@ -1172,6 +1172,18 @@ void G_ClearState(void)
     s_gs.factions_allocd = 0;
     s_gs.hide_healthbars = false;
 
+    vec3_t white = (vec3_t){1.0f, 1.0f, 1.0f};
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetAmbientLightColor,
+        .nargs = 1,
+        .args = { R_PushArg(&white, sizeof(white)) },
+    });
+    R_PushCmd((struct rcmd){
+        .func = R_GL_SetLightEmitColor,
+        .nargs = 1,
+        .args = { R_PushArg(&white, sizeof(white)) },
+    });
+    G_SetLightPos((vec3_t){1.0f, 1.0f, 1.0f});
     R_PushCmd((struct rcmd) { R_GL_Batch_Reset, 0 });
 
     PERF_RETURN_VOID();
