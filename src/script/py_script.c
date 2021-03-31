@@ -822,6 +822,7 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwarg
     const char *relpath; 
     int update_navgrid = true;
     int absolute = false;
+    PyObject *ents, *regs;
 
     if(!PyArg_ParseTupleAndKeywords(args, kwargs, "s|ii", kwlist, &relpath, &update_navgrid, &absolute)) {
         PyErr_SetString(PyExc_TypeError, "Argument must be a string.");
@@ -837,7 +838,7 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwarg
 
     if(!Scene_Load(full_path)) {
         PyErr_SetString(PyExc_RuntimeError, "Unable to load scene from the specified file.");
-        return NULL;
+        goto fail_load;
     }
 
     if(update_navgrid) {
@@ -846,11 +847,18 @@ static PyObject *PyPf_load_scene(PyObject *self, PyObject *args, PyObject *kwarg
 
     PyObject *ret = PyTuple_New(2);
     if(!ret)
-        return NULL;
+        goto fail_load;
 
     PyTuple_SET_ITEM(ret, 0, S_Entity_GetLoaded());
     PyTuple_SET_ITEM(ret, 1, S_Region_GetLoaded());
     return ret;
+
+fail_load:
+    ents = S_Entity_GetLoaded();
+    regs = S_Region_GetLoaded();
+    Py_DECREF(ents);
+    Py_DECREF(regs);
+    return NULL;
 }
 
 static PyObject *PyPf_set_emit_light_pos(PyObject *self, PyObject *args)

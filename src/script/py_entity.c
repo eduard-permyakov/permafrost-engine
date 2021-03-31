@@ -71,6 +71,7 @@ static PyObject *PyEntity_get_uid(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_name(PyEntityObject *self, void *closure);
 static int       PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_zombie(PyEntityObject *self, void *closure);
+static PyObject *PyEntity_get_height(PyEntityObject *self, void *closure);
 static PyObject *PyEntity_get_pos(PyEntityObject *self, void *closure);
 static int       PyEntity_set_pos(PyEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyEntity_get_scale(PyEntityObject *self, void *closure);
@@ -184,6 +185,10 @@ static PyGetSetDef PyEntity_getset[] = {
     {"zombie",
     (getter)PyEntity_get_zombie, NULL,
     "Returns True if the entity is a zombie (destroyed in the game simulation, but retained via a scripting reference).",
+    NULL},
+    {"height",
+    (getter)PyEntity_get_height, NULL,
+    "Returns the scaled height of the entity, in OpenGL coordinates.",
     NULL},
     {"pos",
     (getter)PyEntity_get_pos, (setter)PyEntity_set_pos,
@@ -1089,6 +1094,14 @@ static PyObject *PyEntity_get_zombie(PyEntityObject *self, void *closure)
     Py_RETURN_FALSE;
 }
 
+static PyObject *PyEntity_get_height(PyEntityObject *self, void *closure)
+{
+    struct obb obb;
+    Entity_CurrentOBB(self->ent, &obb, true);
+    float height = obb.half_lengths[1] * 2.0f;
+    return PyFloat_FromDouble(height);
+}
+
 static int PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closure)
 {
     if(!PyObject_IsInstance(value, (PyObject*)&PyString_Type)){
@@ -1242,7 +1255,8 @@ static int PyEntity_set_faction_id(PyEntityObject *self, PyObject *value, void *
     }
 
     int faction_id = PyInt_AS_LONG(value);
-    if(faction_id < 0 || faction_id >= MAX_FACTIONS) {
+    uint16_t factions = G_GetFactions(NULL, NULL, NULL);
+    if(faction_id < 0 || faction_id >= MAX_FACTIONS || !(factions & (0x1 << faction_id))) {
         PyErr_SetString(PyExc_TypeError, "Invalid faction ID.");
         return -1;
     }
@@ -3305,7 +3319,7 @@ static PyObject *PyMovableEntity_move(PyMovableEntityObject *self, PyObject *arg
 
 static PyObject *PyMovableEntity_del(PyMovableEntityObject *self)
 {
-    return s_super_del((PyObject*)self, &PyStorageSiteEntity_type);
+    return s_super_del((PyObject*)self, &PyMovableEntity_type);
 }
 
 static PyObject *PyMovableEntity_pickle(PyMovableEntityObject *self, PyObject *args, PyObject *kwargs)
