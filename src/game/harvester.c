@@ -433,6 +433,12 @@ static bool valid_storage_site_source(const struct entity *curr, void *arg)
     if(curr == sarg->ent)
         return false;
 
+    /* Don't get resources from build sites - this prevents builders 
+     * from 'stealing' resources back-and-forth from two nearby 
+     * build sites */
+    if((curr->flags & ENTITY_FLAG_BUILDING) && !G_Building_IsSupplied(curr))
+        return false;
+
     int stored = G_StorageSite_GetCurr(curr->uid, sarg->rname);
     int cap = ss_capacity(curr->uid, sarg->rname);
     int desired = ss_desired(curr->uid, sarg->rname);
@@ -1805,12 +1811,18 @@ bool G_Harvester_Transport(struct entity *harvester, struct entity *storage)
     if(G_Harvester_GetCurrTotalCarry(harvester->uid)) {
 
         const char *carryname = carried_resource_name(hs);
-        struct entity *nearest = nearest_storage_site_dropoff(harvester, carryname);
+        struct entity *target = storage;
+        if(!G_StorageSite_Desires(target->uid, carryname)) {
+            target = nearest_storage_site_dropoff(harvester, carryname);
+        }
 
+        if(!target)
+            return false;
+
+        G_Harvester_DropOff(harvester, target);
         hs->queued.cmd = CMD_TRANSPORT;
         hs->queued.uid_arg = storage->uid;
 
-        G_Harvester_DropOff(harvester, nearest);
         return true;
     }
 
@@ -1852,7 +1864,11 @@ bool G_Harvester_SupplyBuilding(struct entity *harvester, struct entity *buildin
     struct hstate *hs = hstate_get(harvester->uid);
     assert(hs);
 
-    if(G_Harvester_GetCurrTotalCarry(harvester->uid)) {
+    hs->queued.cmd = CMD_NONE;
+    hs->queued.uid_arg = UID_NONE;
+
+    if(G_Harvester_GetCurrTotalCarry(harvester->uid)
+    && !G_StorageSite_Desires(building->uid, carried_resource_name(hs))) {
 
         const char *carryname = carried_resource_name(hs);
         struct entity *nearest = nearest_storage_site_dropoff(harvester, carryname);

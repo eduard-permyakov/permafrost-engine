@@ -1009,6 +1009,20 @@ void G_StorageSite_UpdateFaction(uint32_t uid, int oldfac, int newfac)
     });
 }
 
+bool G_StorageSite_Desires(uint32_t uid, const char *rname)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    khash_t(int) *des = ss->use_alt ? ss->alt_desired  : ss->desired;
+
+    int rdes, rcurr = 0;
+    if(!ss_state_get_key(des, rname, &rdes))
+        return false;
+
+    ss_state_get_key(ss->curr, rname, &rcurr);
+    return (rdes > rcurr);
+}
+
 bool G_StorageSite_SaveState(struct SDL_RWops *stream)
 {
     struct attr num_ents = (struct attr){
