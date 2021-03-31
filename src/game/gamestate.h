@@ -77,6 +77,11 @@ struct gamestate{
      */
     bool                    hide_healthbars;
     /*-------------------------------------------------------------------------
+     * Boolean to force rendering every single entity on the minimap.
+     *-------------------------------------------------------------------------
+     */
+    bool                    minimap_render_all;
+    /*-------------------------------------------------------------------------
      * The camera from which the scene is currently being rendered.
      *-------------------------------------------------------------------------
      */

@@ -129,6 +129,7 @@ bool            G_SetMinimapPos(float x, float y);
 bool            G_GetMinimapSize(int *out_size);
 bool            G_SetMinimapSize(int size);
 bool            G_SetMinimapResizeMask(int mask);
+void            G_SetMinimapRenderAllEntities(bool on);
 bool            G_MouseOverMinimap(void);
 bool            G_MouseInTargetMode(void);
 bool            G_MapHeightAtPoint(vec2_t xz, float *out_height);

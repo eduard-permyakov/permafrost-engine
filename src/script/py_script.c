@@ -146,6 +146,7 @@ static PyObject *PyPf_set_minimap_resize_mask(PyObject *self, PyObject *args);
 static PyObject *PyPf_get_minimap_size(PyObject *self);
 static PyObject *PyPf_set_minimap_size(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_minimap_border_clr(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_minimap_render_all_ents(PyObject *self, PyObject *args);
 static PyObject *PyPf_mouse_over_minimap(PyObject *self);
 static PyObject *PyPf_map_height_at_point(PyObject *self, PyObject *args);
 static PyObject *PyPf_map_nearest_pathable(PyObject *self, PyObject *args);
@@ -475,6 +476,11 @@ static PyMethodDef pf_module_methods[] = {
     {"set_minimap_border_clr", 
     (PyCFunction)PyPf_set_minimap_border_clr, METH_VARARGS,
     "Set the border color for the minimap."},
+
+    {"set_minimap_render_all_ents", 
+    (PyCFunction)PyPf_set_minimap_render_all_ents, METH_VARARGS,
+    "Set a boolean to control whether all entities should be shown on the minimap, or just "
+    "more relevant ones, such as movable ones and buildings."},
 
     {"mouse_over_minimap",
     (PyCFunction)PyPf_mouse_over_minimap, METH_NOARGS,
@@ -1750,6 +1756,18 @@ static PyObject *PyPf_set_minimap_border_clr(PyObject *self, PyObject *args)
         a / 255.0f,
     };
     M_MinimapSetBorderClr(rgba);
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_minimap_render_all_ents(PyObject *self, PyObject *args)
+{
+    PyObject *val;
+    if(!PyArg_ParseTuple(args, "O", &val)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single boolean expression.");
+        return NULL;
+    }
+    bool on = PyObject_IsTrue(val);
+    G_SetMinimapRenderAllEntities(on);
     Py_RETURN_NONE;
 }
 

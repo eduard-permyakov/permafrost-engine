@@ -1003,7 +1003,8 @@ static void g_render_minimap_units(void)
     uint32_t key;
     struct entity *curr;
     kh_foreach(s_gs.active, key, curr, {
-        if(!(curr->flags & (ENTITY_FLAG_MOVABLE | ENTITY_FLAG_BUILDING)))
+        if(!s_gs.minimap_render_all 
+        && !(curr->flags & (ENTITY_FLAG_MOVABLE | ENTITY_FLAG_BUILDING)))
             continue;
         vec2_t xz_pos = G_Pos_GetXZ(key);
         if(!G_Fog_PlayerVisible(xz_pos))
@@ -1171,6 +1172,7 @@ void G_ClearState(void)
 
     s_gs.factions_allocd = 0;
     s_gs.hide_healthbars = false;
+    s_gs.minimap_render_all = false;
 
     vec3_t white = (vec3_t){1.0f, 1.0f, 1.0f};
     R_PushCmd((struct rcmd){
@@ -1252,6 +1254,12 @@ bool G_SetMinimapResizeMask(int mask)
 
     M_SetMinimapResizeMask(s_gs.map, mask);
     return true;
+}
+
+void G_SetMinimapRenderAllEntities(bool on)
+{
+    ASSERT_IN_MAIN_THREAD();
+    s_gs.minimap_render_all = on;
 }
 
 bool G_MouseOverMinimap(void)
@@ -2374,10 +2382,16 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Write(stream, &active_font, "active_font"));
 
     struct attr hide_healthbars = (struct attr){
-        .type = TYPE_INT, 
-        .val.as_int = s_gs.hide_healthbars
+        .type = TYPE_BOOL, 
+        .val.as_bool = s_gs.hide_healthbars
     };
     CHK_TRUE_RET(Attr_Write(stream, &hide_healthbars, "hide_healthbars"));
+
+    struct attr minimap_render_all = (struct attr){
+        .type = TYPE_BOOL, 
+        .val.as_bool = s_gs.minimap_render_all
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &minimap_render_all, "minimap_render_all"));
 
     if(!G_Region_SaveState(stream))
         return false;
@@ -2495,8 +2509,12 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     UI_SetActiveFont(attr.val.as_string);
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
-    CHK_TRUE_RET(attr.type == TYPE_INT);
-    s_gs.hide_healthbars = attr.val.as_int;
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    s_gs.hide_healthbars = attr.val.as_bool;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    s_gs.minimap_render_all = attr.val.as_bool;
 
     if(!G_Region_LoadState(stream))
         return false;
