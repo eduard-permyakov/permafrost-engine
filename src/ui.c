@@ -631,3 +631,9 @@ bool UI_SetActiveFont(const char *name)
     return true;
 }
 
+void UI_ClearState(void)
+{
+    UI_SetActiveFont("__default__");
+    nk_clear(&s_ctx);
+}
+

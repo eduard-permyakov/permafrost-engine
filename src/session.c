@@ -103,7 +103,7 @@ static void subsession_clear(void)
     Entity_ClearState();
     Audio_ClearState();
     P_Projectile_ClearState();
-    UI_SetActiveFont("__default__");
+    UI_ClearState();
 }
 
 static void subsession_save_args(void)

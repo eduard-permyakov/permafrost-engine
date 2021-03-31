@@ -86,6 +86,7 @@ vec2_t             UI_ArAdjustedVRes(vec2_t vres);
 struct rect        UI_BoundsForAspectRatio(struct rect from_bounds, vec2_t from_res, 
                                            vec2_t to_res, int resize_mask);
 struct nk_context *UI_GetContext(void);
+void               UI_ClearState(void);
 
 const char        *UI_GetActiveFont(void);
 bool               UI_SetActiveFont(const char *name);
