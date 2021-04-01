@@ -1681,6 +1681,7 @@ void G_StopEntity(const struct entity *ent, bool stop_move)
     }
     if(ent->flags & ENTITY_FLAG_HARVESTER) {
         G_Harvester_Stop(ent->uid);
+        G_Harvester_ClearQueuedCmd(ent->uid);
     }
     if(stop_move && (ent->flags & ENTITY_FLAG_MOVABLE)) {
         G_Move_Stop(ent);
@@ -2216,10 +2217,22 @@ enum ctx_action G_CurrContextualAction(void)
     return CTX_ACTION_NONE;
 }
 
-void G_SetHideHealthbars(bool on)
+void G_NotifyOrderIssued(const struct entity *ent)
 {
     ASSERT_IN_MAIN_THREAD();
 
+    if(ent->flags & ENTITY_FLAG_HARVESTER) {
+        G_Harvester_ClearQueuedCmd(ent->uid);
+    }
+    if(ent->flags & ENTITY_FLAG_COMBATABLE) {
+        G_Combat_ClearSavedMoveCmd(ent);
+    }
+    E_Global_Notify(EVENT_ORDER_ISSUED, (void*)ent, ES_ENGINE);
+}
+
+void G_SetHideHealthbars(bool on)
+{
+    ASSERT_IN_MAIN_THREAD();
     s_gs.hide_healthbars = on;
 }
 

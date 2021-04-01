@@ -56,6 +56,7 @@ bool G_Harvester_SupplyBuilding(struct entity *harvester, struct entity *buildin
 bool G_Harvester_InTargetMode(void);
 int  G_Harvester_CurrContextualAction(void);
 bool G_Harvester_GetContextualCursor(char *out, size_t maxout);
+void G_Harvester_ClearQueuedCmd(uint32_t uid);
 
 bool G_Harvester_SaveState(struct SDL_RWops *stream);
 bool G_Harvester_LoadState(struct SDL_RWops *stream);

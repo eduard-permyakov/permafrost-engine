@@ -528,7 +528,7 @@ static void entity_drop_off(const struct entity *ent, struct entity *ss)
 
     E_Entity_Register(EVENT_MOTION_END, ent->uid, on_arrive_at_storage, 
         (void*)((uintptr_t)ent->uid), G_RUNNING);
-    E_Entity_Register(EVENT_MOVE_ISSUED, ent->uid, on_motion_begin_travel, 
+    E_Entity_Register(EVENT_ORDER_ISSUED, ent->uid, on_motion_begin_travel, 
         (void*)((uintptr_t)ent->uid), G_RUNNING);
 
     E_Entity_Notify(EVENT_STORAGE_TARGET_ACQUIRED, ent->uid, ss, ES_ENGINE);
@@ -719,7 +719,6 @@ static void on_motion_begin_harvest(void *user, void *event)
 static void on_motion_begin_travel(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
-    const struct entity *ent = G_EntityForUID(uid);
 
     struct hstate *hs = hstate_get(uid);
     assert(hs);
@@ -732,7 +731,7 @@ static void on_motion_begin_travel(void *user, void *event)
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished_source);
     E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin_harvest);
-    E_Entity_Unregister(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel);
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource);
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource_source);
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_storage);
@@ -750,7 +749,7 @@ static void on_arrive_at_resource(void *user, void *event)
     }
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource);
-    E_Entity_Unregister(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel);
 
     struct hstate *hs = hstate_get(uid);
     assert(hs);
@@ -790,7 +789,7 @@ static void on_arrive_at_storage(void *user, void *event)
     }
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_storage);
-    E_Entity_Unregister(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel);
 
     struct hstate *hs = hstate_get(uid);
     assert(hs);
@@ -849,7 +848,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
         return; 
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_transport_source);
-    E_Entity_Unregister(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel);
 
     struct hstate *hs = hstate_get(uid);
     assert(hs);
@@ -922,7 +921,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
         if(newsrc) {
             E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_transport_source, 
                 (void*)((uintptr_t)uid), G_RUNNING);
-            E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+            E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
                 (void*)((uintptr_t)uid), G_RUNNING);
 
             G_Move_SetSurroundEntity(ent, newsrc);
@@ -944,7 +943,7 @@ static void on_arrive_at_transport_source(void *user, void *event)
      */
     E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_transport_dest, 
         (void*)((uintptr_t)uid), G_RUNNING);
-    E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+    E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
         (void*)((uintptr_t)uid), G_RUNNING);
 
     G_Move_SetSurroundEntity(ent, dest);
@@ -961,7 +960,7 @@ static void on_arrive_at_transport_dest(void *user, void *event)
         return; 
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_transport_dest);
-    E_Entity_Unregister(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel);
 
     struct hstate *hs = hstate_get(uid);
     assert(hs);
@@ -1001,13 +1000,14 @@ static void on_arrive_at_transport_dest(void *user, void *event)
     G_Harvester_Transport(ent, dest);
 }
 
-static void selection_try_order_gather(void)
+static void selection_try_order_gather(bool targeting)
 {
-    if(G_CurrContextualAction() != CTX_ACTION_GATHER)
+    if(!targeting && G_CurrContextualAction() != CTX_ACTION_GATHER)
         return;
 
     struct entity *target = G_Sel_GetHovered();
-    assert(target && (target->flags & ENTITY_FLAG_RESOURCE));
+    if(!target || !(target->flags & ENTITY_FLAG_RESOURCE))
+        return;
 
     enum selection_type sel_type;
     const vec_pentity_t *sel = G_Sel_Get(&sel_type);
@@ -1032,6 +1032,7 @@ static void selection_try_order_gather(void)
 
         G_StopEntity(curr, true);
         G_Harvester_Gather(curr, target);
+        G_NotifyOrderIssued(curr);
         ngather++;
     }
 
@@ -1070,6 +1071,7 @@ static void selection_try_order_pick_up(bool targeting)
 
         G_StopEntity(curr, true);
         G_Harvester_PickUp(curr, target);
+        G_NotifyOrderIssued(curr);
         ncarry++;
     }
 
@@ -1078,9 +1080,9 @@ static void selection_try_order_pick_up(bool targeting)
     }
 }
 
-static void selection_try_order_drop_off(void)
+static void selection_try_order_drop_off(bool targeting)
 {
-    if(G_CurrContextualAction() != CTX_ACTION_DROP_OFF)
+    if(!targeting && G_CurrContextualAction() != CTX_ACTION_DROP_OFF)
         return;
 
     struct entity *target = G_Sel_GetHovered();
@@ -1108,6 +1110,7 @@ static void selection_try_order_drop_off(void)
 
         G_StopEntity(curr, true);
         G_Harvester_DropOff(curr, target);
+        G_NotifyOrderIssued(curr);
         ncarry++;
     }
 
@@ -1143,6 +1146,7 @@ static void selection_try_order_transport(bool targeting)
 
         G_StopEntity(curr, true);
         G_Harvester_Transport(curr, target);
+        G_NotifyOrderIssued(curr);
         ntransport++;
     }
 
@@ -1190,13 +1194,13 @@ static void on_mousedown(void *user, void *event)
         return;
 
     if(right || (left && gather)) {
-        selection_try_order_gather();
+        selection_try_order_gather(targeting);
     }
     if(right || (left && pickup)) {
         selection_try_order_pick_up(targeting);
     }
     if(right || (left && dropoff)) {
-        selection_try_order_drop_off();
+        selection_try_order_drop_off(targeting);
     }
     if(right || (left && transport)) {
         selection_try_order_transport(targeting);
@@ -1265,7 +1269,7 @@ static void entity_try_gather_nearest_source(struct entity *harvester,
     }else{
         E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_arrive_at_resource_source, 
             (void*)((uintptr_t)harvester->uid), G_RUNNING);
-        E_Entity_Register(EVENT_MOVE_ISSUED, harvester->uid, on_motion_begin_travel, 
+        E_Entity_Register(EVENT_ORDER_ISSUED, harvester->uid, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester->uid), G_RUNNING);
         G_Move_SetSurroundEntity(harvester, newtarget);
     }
@@ -1283,7 +1287,7 @@ static void on_arrive_at_resource_source(void *user, void *event)
     }
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource_source);
-    E_Entity_Unregister(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel);
 
     struct entity *dest = G_EntityForUID(hs->transport_dest_uid);
     if(!dest) {
@@ -1312,7 +1316,7 @@ static void on_arrive_at_resource_source(void *user, void *event)
         /* harvester cannot carry any more of the resource */
         E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_transport_dest, 
             (void*)((uintptr_t)uid), G_RUNNING);
-        E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+        E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
             (void*)((uintptr_t)uid), G_RUNNING);
 
         G_Move_SetSurroundEntity(ent, dest);
@@ -1406,7 +1410,7 @@ static void on_harvest_anim_finished_source(void *user, void *event)
     
         E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_transport_dest, 
             (void*)((uintptr_t)uid), G_RUNNING);
-        E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+        E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
             (void*)((uintptr_t)uid), G_RUNNING);
 
         G_Move_SetSurroundEntity(ent, dest);
@@ -1443,7 +1447,7 @@ static bool harvester_transport_from_resources(struct entity *harvester, struct 
     }else{
         E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_arrive_at_resource_source, 
             (void*)((uintptr_t)harvester->uid), G_RUNNING);
-        E_Entity_Register(EVENT_MOVE_ISSUED, harvester->uid, on_motion_begin_travel, 
+        E_Entity_Register(EVENT_ORDER_ISSUED, harvester->uid, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester->uid), G_RUNNING);
         G_Move_SetSurroundEntity(harvester, resource);
     }
@@ -1735,7 +1739,7 @@ bool G_Harvester_Gather(struct entity *harvester, struct entity *resource)
     }else{
         E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_arrive_at_resource, 
             (void*)((uintptr_t)harvester->uid), G_RUNNING);
-        E_Entity_Register(EVENT_MOVE_ISSUED, harvester->uid, on_motion_begin_travel, 
+        E_Entity_Register(EVENT_ORDER_ISSUED, harvester->uid, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester->uid), G_RUNNING);
         G_Move_SetSurroundEntity(harvester, resource);
     }
@@ -1787,7 +1791,7 @@ bool G_Harvester_PickUp(struct entity *harvester, struct entity *storage)
     }else{
         E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_arrive_at_transport_source, 
             (void*)((uintptr_t)harvester->uid), G_RUNNING);
-        E_Entity_Register(EVENT_MOVE_ISSUED, harvester->uid, on_motion_begin_travel, 
+        E_Entity_Register(EVENT_ORDER_ISSUED, harvester->uid, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester->uid), G_RUNNING);
         G_Move_SetSurroundEntity(harvester, storage);
     }
@@ -1851,7 +1855,7 @@ bool G_Harvester_Transport(struct entity *harvester, struct entity *storage)
     }else{
         E_Entity_Register(EVENT_MOTION_END, harvester->uid, on_arrive_at_transport_source, 
             (void*)((uintptr_t)harvester->uid), G_RUNNING);
-        E_Entity_Register(EVENT_MOVE_ISSUED, harvester->uid, on_motion_begin_travel, 
+        E_Entity_Register(EVENT_ORDER_ISSUED, harvester->uid, on_motion_begin_travel, 
             (void*)((uintptr_t)harvester->uid), G_RUNNING);
         G_Move_SetSurroundEntity(harvester, src);
     }
@@ -1863,9 +1867,6 @@ bool G_Harvester_SupplyBuilding(struct entity *harvester, struct entity *buildin
 {
     struct hstate *hs = hstate_get(harvester->uid);
     assert(hs);
-
-    hs->queued.cmd = CMD_NONE;
-    hs->queued.uid_arg = UID_NONE;
 
     if(G_Harvester_GetCurrTotalCarry(harvester->uid)
     && !G_StorageSite_Desires(building->uid, carried_resource_name(hs))) {
@@ -1902,12 +1903,21 @@ void G_Harvester_Stop(uint32_t uid)
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_harvest_anim_finished_source);
     E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin_harvest);
-    E_Entity_Unregister(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel);
+    E_Entity_Unregister(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel);
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource);
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_storage);
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_transport_source);
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_resource_source);
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_arrive_at_transport_dest);
+}
+
+void G_Harvester_ClearQueuedCmd(uint32_t uid)
+{
+    struct hstate *hs = hstate_get(uid);
+    assert(hs);
+
+    hs->queued.cmd = CMD_NONE;
+    hs->queued.uid_arg = UID_NONE;
 }
 
 bool G_Harvester_InTargetMode(void)
@@ -2208,7 +2218,7 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
         case STATE_HARVESTING_SEEK_RESOURCE:
             E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_resource, 
                 (void*)((uintptr_t)uid), G_RUNNING);
-            E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+            E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
                 (void*)((uintptr_t)uid), G_RUNNING);
             break;
         case STATE_HARVESTING:
@@ -2220,25 +2230,25 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
         case STATE_HARVESTING_SEEK_STORAGE:
             E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_storage, 
                 (void*)((uintptr_t)uid), G_RUNNING);
-            E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+            E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
                 (void*)((uintptr_t)uid), G_RUNNING);
             break;
         case STATE_TRANSPORT_GETTING:
             E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_transport_source, 
                 (void*)((uintptr_t)uid), G_RUNNING);
-            E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+            E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
                 (void*)((uintptr_t)uid), G_RUNNING);
             break;
         case STATE_TRANSPORT_PUTTING:
             E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_transport_dest, 
                 (void*)((uintptr_t)uid), G_RUNNING);
-            E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+            E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
                 (void*)((uintptr_t)uid), G_RUNNING);
             break;
         case STATE_TRANSPORT_SEEK_RESOURCE:
             E_Entity_Register(EVENT_MOTION_END, uid, on_arrive_at_resource_source, 
                 (void*)((uintptr_t)uid), G_RUNNING);
-            E_Entity_Register(EVENT_MOVE_ISSUED, uid, on_motion_begin_travel, 
+            E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
                 (void*)((uintptr_t)uid), G_RUNNING);
             break;
         case STATE_TRANSPORT_HARVESTING:

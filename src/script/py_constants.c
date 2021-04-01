@@ -782,6 +782,7 @@ static void s_expose_event_constants(PyObject *module)
     PY_EXPOSE_ENUM(module, EVENT_PROJECTILE_DISAPPEAR);
     PY_EXPOSE_ENUM(module, EVENT_PROJECTILE_HIT);
     PY_EXPOSE_ENUM(module, EVENT_ENTITY_DISAPPEARED);
+    PY_EXPOSE_ENUM(module, EVENT_ORDER_ISSUED);
     PY_EXPOSE_ENUM(module, EVENT_ENGINE_LAST);
 }
 

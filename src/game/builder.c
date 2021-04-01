@@ -283,6 +283,7 @@ static void on_mousedown(void *user, void *event)
         finish_building(bs, curr->uid);
         G_StopEntity(curr, true);
         G_Builder_Build(curr, target);
+        G_NotifyOrderIssued(curr);
         nbuilding++;
     }
 

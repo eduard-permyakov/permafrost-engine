@@ -653,6 +653,7 @@ static void on_mousedown(void *user, void *event)
 
         G_StopEntity(curr, false);
         E_Entity_Notify(EVENT_MOVE_ISSUED, curr->uid, NULL, ES_ENGINE);
+        G_NotifyOrderIssued(curr);
         nmoved++;
 
         if(curr->flags & ENTITY_FLAG_COMBATABLE) {
