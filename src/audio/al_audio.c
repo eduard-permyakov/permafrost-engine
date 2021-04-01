@@ -57,7 +57,6 @@
 #include <SDL.h>
 
 
-#define MAX_CHANNELS    (16)
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
 #define MAX(a, b)       ((a) > (b) ? (a) : (b))
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
@@ -167,7 +166,7 @@ static void audio_create_global_source(ALuint *src, ALfloat volume)
     AL_ASSERT_OK();
 }
 
-static void audio_index_directory(const char *dir, khash_t(buffer) *table)
+static void audio_index_directory(const char *prefix, const char *dir, khash_t(buffer) *table)
 {
     char absdir[NK_MAX_PATH_LEN];
     pf_snprintf(absdir, sizeof(absdir), "%s/%s", g_basepath, dir);
@@ -177,8 +176,25 @@ static void audio_index_directory(const char *dir, khash_t(buffer) *table)
 
     for(int i = 0; i < nfiles; i++) {
 
-        if(files[i].is_dir)
+        if(files[i].is_dir) {
+
+            if(!strcmp(files[i].name, ".") || !strcmp(files[i].name, ".."))
+                continue;
+
+            char dirpath[NK_MAX_PATH_LEN];
+            pf_snprintf(dirpath, sizeof(dirpath), "%s/%s", dir, files[i].name, sizeof(dirpath));
+
+            char newprefix[NK_MAX_PATH_LEN] = "";
+            if(prefix && strlen(prefix) > 0) {
+                pf_strlcat(newprefix, prefix, sizeof(newprefix));
+                pf_strlcat(newprefix, "/", sizeof(newprefix));
+            }
+            pf_strlcat(newprefix, files[i].name, sizeof(newprefix));
+
+            audio_index_directory(newprefix, dirpath, table);
             continue;
+        }
+
         if(!pf_endswith(files[i].name, ".wav"))
             continue;
 
@@ -189,8 +205,12 @@ static void audio_index_directory(const char *dir, khash_t(buffer) *table)
         if(!audio_load_wav(path, &audio))
             continue;
 
-        char name[512];
-        pf_strlcpy(name, files[i].name, sizeof(name));
+        char name[NK_MAX_PATH_LEN] = "";
+        if(prefix && strlen(prefix) > 0) {
+            pf_strlcat(name, prefix, sizeof(name));
+            pf_strlcat(name, "/", sizeof(name));
+        }
+        pf_strlcat(name, files[i].name, sizeof(name));
         name[strlen(name) - strlen(".wav")] = '\0';
 
         const char *key = pf_strdup(name);
@@ -504,8 +524,8 @@ bool Audio_Init(void)
     if(!Audio_Effect_Init())
         goto fail_effects;
 
-    audio_index_directory("assets/music", s_music);
-    audio_index_directory("assets/sounds", s_effects);
+    audio_index_directory(NULL, "assets/music", s_music);
+    audio_index_directory(NULL, "assets/sounds", s_effects);
 
     audio_create_settings();
 

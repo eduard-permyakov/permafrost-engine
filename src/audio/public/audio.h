@@ -42,7 +42,7 @@
 #include <stddef.h>
 
 
-#define AUDIO_NUM_FG_CHANNELS (2)
+#define AUDIO_NUM_FG_CHANNELS (4)
 
 struct map;
 struct SDL_RWops;
