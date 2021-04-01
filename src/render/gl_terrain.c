@@ -72,8 +72,7 @@ void R_GL_MapInit(const char map_texfiles[][256], const size_t *num_textures,
     s_fog_ring = R_GL_RingbufferInit(nchunks * TILES_PER_CHUNK_WIDTH * TILES_PER_CHUNK_HEIGHT * 3, RING_UBYTE);
     assert(s_fog_ring);
 
-    bool status = R_GL_Texture_ArrayMakeMap(map_texfiles, *num_textures, &s_map_textures, GL_TEXTURE0);
-    assert(status);
+    R_GL_Texture_ArrayMakeMap(map_texfiles, *num_textures, &s_map_textures, GL_TEXTURE0);
 
     R_GL_StateSet(GL_U_MAP_RES, (struct uval){
         .type = UTYPE_IVEC4,

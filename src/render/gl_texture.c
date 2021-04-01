@@ -413,7 +413,7 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
     GL_ASSERT_OK();
 }
 
-bool R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures, 
+void R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures, 
                                struct texture_arr *out, GLuint tunit)
 {
     ASSERT_IN_RENDER_THREAD();
@@ -436,17 +436,23 @@ bool R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures,
 
         int width, height, nr_channels;
         unsigned char *orig_data = stbi_load(path, &width, &height, &nr_channels, 0);
-        if(!orig_data)
-            goto fail_load;
+        if(orig_data) {
+        
+            GLubyte resized_data[CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3];
+            int res = stbir_resize_uint8(orig_data, width, height, 0, resized_data, CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, 0, 3);
 
-        GLubyte resized_data[CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3];
-        int res = stbir_resize_uint8(orig_data, width, height, 0, resized_data, CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, 0, 3);
+            assert(1 == res);
+            stbi_image_free(orig_data);
 
-        assert(1 == res);
-        stbi_image_free(orig_data);
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_TILE_TEX_RES, 
+                CONFIG_TILE_TEX_RES, 1, GL_RGB, GL_UNSIGNED_BYTE, resized_data);
+        }else{
 
-        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_TILE_TEX_RES, 
-            CONFIG_TILE_TEX_RES, 1, GL_RGB, GL_UNSIGNED_BYTE, resized_data);
+            GLubyte data[CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3];
+            memset(data, 0, sizeof(data));
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_TILE_TEX_RES, 
+                CONFIG_TILE_TEX_RES, 1, GL_RGB, GL_UNSIGNED_BYTE, data);
+        }
     }
 
     glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
@@ -457,11 +463,6 @@ bool R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures,
     glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
 
     GL_ASSERT_OK();
-    return true;
-
-fail_load:
-    glDeleteTextures(1, &out->id);
-    return false;
 }
 
 void R_GL_Texture_ArrayFree(struct texture_arr array)

@@ -60,7 +60,7 @@ void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx, struct tex
 
 void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats, 
                             struct texture_arr *out, GLuint tunit);
-bool R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures, 
+void R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures, 
                                struct texture_arr *out, GLuint tunit);
 
 void R_GL_Texture_Bind(const struct texture *text, GLuint shader_prog);
