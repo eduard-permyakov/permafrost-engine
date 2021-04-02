@@ -41,6 +41,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 
 /***********************************************************************************************/
 
@@ -189,6 +190,7 @@
         });                                                                                     \
                                                                                                 \
         kh_clear(name, lru->key_node_table);                                                    \
+        mp_##name##_clear(&lru->node_pool);                                                     \
         lru->ilru_head = 0;                                                                     \
         lru->ilru_tail = 0;                                                                     \
         lru->used = 0;                                                                          \
@@ -246,8 +248,9 @@
             }else if(lru->used == lru->capacity) {                                              \
                                                                                                 \
                 lru_node(name) *vict = mp_##name##_entry(&lru->node_pool, lru->ilru_tail);      \
-                if(lru->on_evict)                                                               \
+                if(lru->on_evict) {                                                             \
                     lru->on_evict(&vict->entry);                                                \
+                }                                                                               \
                                                                                                 \
                 /* Remember to delete the victim's key */                                       \
                 k = kh_get(name, lru->key_node_table, vict->key);                               \
@@ -270,6 +273,7 @@
                 ++(lru->used);                                                                  \
             }                                                                                   \
                                                                                                 \
+            assert(new_ref > 0);                                                                \
             new_node->entry = *in;                                                              \
             new_node->key = key;                                                                \
                                                                                                 \
@@ -283,8 +287,9 @@
             mp_ref_t ref = kh_val(lru->key_node_table, k);                                      \
             lru_node(name) *mpn = mp_##name##_entry(&lru->node_pool, ref);                      \
                                                                                                 \
-            if(lru->on_evict)                                                                   \
+            if(lru->on_evict) {                                                                 \
                 lru->on_evict(&mpn->entry);                                                     \
+            }                                                                                   \
                                                                                                 \
             mpn->entry = *in;                                                                   \
             _lru_##name##_reference(lru, ref);                                                  \
@@ -303,15 +308,15 @@
             mp_##name##_entry(&lru->node_pool, mpn->prev)->next = mpn->next;                    \
         if(mpn->next)                                                                           \
             mp_##name##_entry(&lru->node_pool, mpn->next)->prev = mpn->prev;                    \
-        mp_##name##_free(&lru->node_pool, ref);                                                 \
                                                                                                 \
         if(lru->ilru_head == ref)                                                               \
             lru->ilru_head = mpn->next;                                                         \
         if(lru->ilru_tail == ref)                                                               \
             lru->ilru_tail = mpn->prev;                                                         \
                                                                                                 \
-        --lru->used;                                                                            \
+        --(lru->used);                                                                          \
         kh_del(name, lru->key_node_table, k);                                                   \
+        mp_##name##_free(&lru->node_pool, ref);                                                 \
         return true;                                                                            \
     }                                                                                           \
 
