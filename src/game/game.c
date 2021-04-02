@@ -1722,6 +1722,7 @@ bool G_AddFaction(const char *name, vec3_t color)
         s_gs.diplomacy_table[new_fac_id][i] = DIPLOMACY_STATE_PEACE;
     }
 
+    E_Global_Notify(EVENT_UPDATE_FACTION, (void*)((uintptr_t)new_fac_id), ES_ENGINE);
     return true;
 }
 
@@ -1741,6 +1742,7 @@ bool G_RemoveFaction(int faction_id)
     });
 
     s_gs.factions_allocd &= ~(0x1 << faction_id);
+    E_Global_Notify(EVENT_UPDATE_FACTION, (void*)((uintptr_t)faction_id), ES_ENGINE);
     return true;
 }
 

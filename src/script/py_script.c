@@ -136,6 +136,7 @@ static PyObject *PyPf_remove_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_faction(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_faction_controllable(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_diplomacy_state(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_diplomacy_state(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_get_tile(PyObject *self, PyObject *args);
 static PyObject *PyPf_update_tile(PyObject *self, PyObject *args);
@@ -439,6 +440,10 @@ static PyMethodDef pf_module_methods[] = {
     {"set_diplomacy_state",
     (PyCFunction)PyPf_set_diplomacy_state, METH_VARARGS,
     "Symmetrically sets the diplomacy state between two distinct factions (passed in as IDs)."},
+
+    {"get_diplomacy_state",
+    (PyCFunction)PyPf_get_diplomacy_state, METH_VARARGS,
+    "Query the diplomacy state of the specified two faction IDs."},
 
     {"get_tile", 
     (PyCFunction)PyPf_get_tile, METH_VARARGS,
@@ -1374,8 +1379,10 @@ static PyObject *PyPf_get_hovered_unit(PyObject *self)
     struct entity *hovered  = G_Sel_GetHovered();
     if(hovered) {
         PyObject *obj = S_Entity_ObjForUID(hovered->uid);
-        Py_INCREF(obj);
-        return obj;
+        if(obj) {
+            Py_INCREF(obj);
+            return obj;
+        }
     }
     Py_RETURN_NONE;
 }
@@ -1617,6 +1624,28 @@ static PyObject *PyPf_set_diplomacy_state(PyObject *self, PyObject *args)
         return NULL;
     }
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_diplomacy_state(PyObject *self, PyObject *args)
+{
+    int faca, facb;
+
+    if(!PyArg_ParseTuple(args, "ii", &faca, &facb)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be a two integers.");
+        return NULL;
+    }
+
+    if(faca == facb) {
+        return PyInt_FromLong(DIPLOMACY_STATE_PEACE);
+    }
+    enum diplomacy_state state;
+    bool status = G_GetDiplomacyState(faca, facb, &state);
+    if(status) {
+        return PyInt_FromLong(state);
+    }else{
+        PyErr_SetString(PyExc_TypeError, "Invalid faction ID(s).");
+        return NULL;
+    }
 }
 
 static PyObject *PyPf_get_tile(PyObject *self, PyObject *args)
