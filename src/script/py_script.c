@@ -193,6 +193,7 @@ static PyObject *PyPf_exec(PyObject *self, PyObject *args);
 static PyObject *PyPf_exec_push(PyObject *self, PyObject *args);
 static PyObject *PyPf_exec_pop(PyObject *self, PyObject *args);
 static PyObject *PyPf_exec_pop_to_root(PyObject *self, PyObject *args);
+static PyObject *PyPf_session_stack_depth(PyObject *self, PyObject *args);
 
 static PyObject *PyPf_nearest_ent(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_ents_in_circle(PyObject *self, PyObject *args, PyObject *kwargs);
@@ -654,6 +655,10 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_exec_pop_to_root, METH_VARARGS,
     "Pop the root subsession, using it to replace the current subsession. "
     "This is performed asynchronously. Failure is notified via an EVENT_SESSION_FAIL_LOAD event."},
+
+    {"session_stack_depth",
+    (PyCFunction)PyPf_session_stack_depth, METH_VARARGS,
+    "Returns the number of sessions currently on the sessin stack."},
 
     {"nearest_ent",
     (PyCFunction)PyPf_nearest_ent, METH_VARARGS | METH_KEYWORDS,
@@ -2636,6 +2641,12 @@ static PyObject *PyPf_exec_pop_to_root(PyObject *self, PyObject *args)
 
     Session_RequestPopToRoot(argc, argv);
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_session_stack_depth(PyObject *self, PyObject *args)
+{
+    int depth = Session_StackDepth();
+    return PyInt_FromLong(depth);
 }
 
 static bool s_pred_callable(const struct entity *ent, void *arg)

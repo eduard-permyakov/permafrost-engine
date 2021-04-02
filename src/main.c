@@ -212,9 +212,13 @@ static void render_thread_start_work(void)
     s_rstate.start = true;
     SDL_CondSignal(s_rstate.sq_cond);
     SDL_UnlockMutex(s_rstate.sq_lock);
+
+    SDL_LockMutex(s_rstate.done_lock);
+    s_rstate.done = false;
+    SDL_UnlockMutex(s_rstate.done_lock);
 }
 
-void wait_render_work_done(void)
+void render_thread_wait_done(void)
 {
     PERF_ENTER();
 
@@ -225,6 +229,16 @@ void wait_render_work_done(void)
     SDL_UnlockMutex(s_rstate.done_lock);
 
     PERF_RETURN_VOID();
+}
+
+static void render_maybe_enable(void)
+{
+    /* Simulate a single frame after a session change without rendering 
+     * it - this gives us a chance to handle this event without anyone 
+     * noticing. */
+    if(g_frame_idx - Session_ChangeTick() <= 1)
+        return;
+    s_rstate.swap_buffers = true;
 }
 
 static void fs_on_key_press(void *user, void *event)
@@ -417,7 +431,7 @@ static bool engine_init(void)
     g_render_thread_id = SDL_GetThreadID(s_render_thread);
 
     render_thread_start_work();
-    wait_render_work_done();
+    render_thread_wait_done();
 
     if(!rarg.out_success)
         goto fail_render_init;
@@ -558,7 +572,7 @@ static void engine_shutdown(void)
      * shutdown routines. 
      */
     render_thread_start_work();
-    wait_render_work_done();
+    render_thread_wait_done();
     render_thread_quit();
 
     /* 'Game' must shut down after 'Scripting'. There are still 
@@ -653,13 +667,26 @@ void Engine_WinDrawableSize(int *out_w, int *out_h)
 
 void Engine_FlushRenderWorkQueue(void)
 {
-    assert(g_frame_idx == 0);
-    G_SwapBuffers();
+    ASSERT_IN_MAIN_THREAD();
 
+    /* Wait for the render thread to finish its' current batch */
     render_thread_start_work();
-    wait_render_work_done();
-
+    render_thread_wait_done();
     G_SwapBuffers();
+
+    /* Submit and run the queued batch to completion */
+    render_thread_start_work();
+    render_thread_wait_done();
+    G_SwapBuffers();
+
+    /* Kick off the empty batch such that we're in the same state that we started in */
+    render_thread_start_work();
+}
+
+void Engine_EnableRendering(bool on)
+{
+    Engine_WaitRenderWorkDone();
+    s_rstate.swap_buffers = on;
 }
 
 void Engine_WaitRenderWorkDone(void)
@@ -754,6 +781,7 @@ int main(int argc, char **argv)
             G_SetSimState(G_RUNNING);
         }
 
+        render_maybe_enable();
         render_thread_start_work();
         Sched_StartBackgroundTasks();
 
@@ -764,7 +792,7 @@ int main(int argc, char **argv)
         G_Render();
         Sched_Tick();
 
-        wait_render_work_done();
+        render_thread_wait_done();
 
         G_SwapBuffers();
         Perf_FinishTick();

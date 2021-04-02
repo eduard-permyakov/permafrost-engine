@@ -68,6 +68,7 @@ int  Engine_SetRes(int w, int h);
 void Engine_SetDispMode(enum pf_window_flags wf);
 void Engine_WinDrawableSize(int *out_w, int *out_h);
 void Engine_LoadingScreen(void);
+void Engine_EnableRendering(bool on);
 
 /* Execute all the currently queued render commands on the render thread. 
  * Block until it completes. This is used during initialization only to 

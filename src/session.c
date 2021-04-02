@@ -82,6 +82,8 @@ static int             s_argc;
 static char            s_argv[MAX_ARGC][128];
 static char            s_req_path[512];
 static char            s_errbuff[512] = {0};
+static bool            s_pushing = false;
+static uint64_t        s_change_tick = UINT64_MAX;
 
 static struct arg_desc s_saved_args;
 static char            s_saved_argv[MAX_ARGC + 1][128];
@@ -97,8 +99,8 @@ static void subsession_clear(void)
     E_DeleteScriptHandlers();
     N_ClearState();
     S_ClearState();
-    G_ClearState();
     G_ClearRenderWork();
+    G_ClearState();
     Cursor_ClearState();
     Entity_ClearState();
     Audio_ClearState();
@@ -224,6 +226,11 @@ static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
             "Could not de-serialize physics state from session file");
         goto fail;
     }
+
+    /* We may have loaded some assets during the session loading 
+     * process - make sure the appropriate initialization is performed 
+     * by the render thread */
+    Engine_FlushRenderWorkQueue();
 
     E_ClearPendingEvents();
     G_UpdateSimStateChangeTick();
@@ -470,6 +477,7 @@ void Session_ServiceRequests(void)
     if(s_request == SESH_REQ_NONE)
         return;
 
+    Engine_EnableRendering(false);
     Engine_LoadingScreen();
     bool result = false;
 
@@ -478,7 +486,9 @@ void Session_ServiceRequests(void)
         result = session_load(s_req_path, s_errbuff, sizeof(s_errbuff));
         break;
     case SESH_REQ_PUSH:
+        s_pushing = true;
         result = session_push_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
+        s_pushing = false;
         break;
     case SESH_REQ_POP:
         result = session_pop_subsession(s_errbuff, sizeof(s_errbuff));
@@ -500,6 +510,17 @@ void Session_ServiceRequests(void)
 
     s_argc = 0;
     s_request = SESH_REQ_NONE;
+    s_change_tick = g_frame_idx;
+}
+
+int Session_StackDepth(void)
+{
+    return vec_size(&s_subsession_stack) + 1 + !!s_pushing;
+}
+
+uint64_t Session_ChangeTick(void)
+{
+    return s_change_tick;
 }
 
 bool Session_Init(void)
