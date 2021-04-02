@@ -485,6 +485,9 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
 
     sel_compute_hovered(cam, visible, visible_obbs);
 
+    if(G_MouseInTargetMode())
+        PERF_RETURN_VOID();
+
     if(s_ctx.state != STATE_MOUSE_SEL_RELEASED)
         PERF_RETURN_VOID();
     s_ctx.state = STATE_MOUSE_SEL_UP;
