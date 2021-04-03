@@ -1920,10 +1920,13 @@ static PyObject *PyPf_draw_text(PyObject *self, PyObject *args)
     const char *text;
     struct rect rect;
     int r, g, b, a;
+    int tint_r = 0, tint_g = 0, tint_b = 0, tint_a = 255;
 
-    if(!PyArg_ParseTuple(args, "s(iiii)(iiii)", &text, &rect.x, &rect.y, &rect.w, &rect.h, &r, &g, &b, &a)) {
+    if(!PyArg_ParseTuple(args, "s(iiii)(iiii)|(iiii)", &text, &rect.x, &rect.y, &rect.w, &rect.h, &r, &g, &b, &a,
+        &tint_r, &tint_g, &tint_b, &tint_a)) {
         PyErr_SetString(PyExc_TypeError, 
-            "Expecting 3 arguments: A text string, a tuple of 4 ints (bounds) and a tuple of 4 ints (RGBA color).");
+            "Expecting 3 arguments: A text string, a tuple of 4 ints (bounds) and a tuple of 4 ints (RGBA color). "
+            "Optionally an extra RGBA tuple can be supplied to customize the tint RGBA color.");
         return NULL;
     }
 
@@ -1952,7 +1955,14 @@ static PyObject *PyPf_draw_text(PyObject *self, PyObject *args)
         rect.w,
         rect.h
     };
+    struct rect shifted_rect = (struct rect){
+        adj_rect.x - 1,
+        adj_rect.y - 1,
+        adj_rect.w,
+        adj_rect.h
+    };
 
+    UI_DrawText(text, shifted_rect, (struct rgba){tint_r, tint_g, tint_b, tint_a});
     UI_DrawText(text, adj_rect, (struct rgba){r, g, b, a});
     Py_RETURN_NONE;
 }
