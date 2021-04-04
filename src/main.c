@@ -208,14 +208,14 @@ static int render_thread_quit(void)
 
 static void render_thread_start_work(void)
 {
+    SDL_LockMutex(s_rstate.done_lock);
+    s_rstate.done = false;
+    SDL_UnlockMutex(s_rstate.done_lock);
+
     SDL_LockMutex(s_rstate.sq_lock);
     s_rstate.start = true;
     SDL_CondSignal(s_rstate.sq_cond);
     SDL_UnlockMutex(s_rstate.sq_lock);
-
-    SDL_LockMutex(s_rstate.done_lock);
-    s_rstate.done = false;
-    SDL_UnlockMutex(s_rstate.done_lock);
 }
 
 void render_thread_wait_done(void)
@@ -236,7 +236,7 @@ static void render_maybe_enable(void)
     /* Simulate a single frame after a session change without rendering 
      * it - this gives us a chance to handle this event without anyone 
      * noticing. */
-    if(g_frame_idx - Session_ChangeTick() <= 1)
+    if(((uint64_t)g_frame_idx) - Session_ChangeTick() <= 1)
         return;
     s_rstate.swap_buffers = true;
 }
