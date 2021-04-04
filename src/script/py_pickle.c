@@ -4615,7 +4615,7 @@ static int op_ext_function(struct unpickle_ctx *ctx, SDL_RWops *rw)
     Py_DECREF(op->func_doc);
     assert(!op->func_defaults);
     assert(!op->func_module);
-    assert(!op->func_dict);
+    Py_CLEAR(op->func_dict);
 
     /* Set the code and globals of the empty function object. This is 
      * the exact same flow as if the code and globals were passed to
