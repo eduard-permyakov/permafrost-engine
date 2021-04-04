@@ -368,7 +368,6 @@ static struct result py_task(void *arg)
 
         PyObject *req_result = pytask_resume_request(self);
         assert(self->ts->frame);
-        PyFrameObject *frame = self->ts->frame;
 
         if(req_result) {
 
@@ -415,8 +414,17 @@ static struct result py_task(void *arg)
             *(self->ts->frame->f_stacktop++) = req_result;
 
             ret = PyEval_EvalFrameEx(self->ts->frame, 0);
+        }else{
+            /* We've failed to resume the request. There are a couple of legitimate 
+             * cases when this can occur: when the task was send-blocked or reply-blocked 
+             * on another task that has subsequently finished running. Effectively this puts 
+             * the resumed task into a state where it can never be unblocked. Such a "hung"
+             * task is definitely an example of sloppy scripting but, nonetheless, shouldn't 
+             * prevent us from resuming our session.
+             */
+            PyErr_Clear();
         }
-        Py_CLEAR(frame);
+        Py_CLEAR(self->ts->frame);
         Py_XDECREF(req_result);
 
     }else{
@@ -444,7 +452,7 @@ static struct result py_task(void *arg)
         Py_DECREF(ret);
     }else{
         E_Global_Notify(EVENT_SCRIPT_TASK_FINISHED, Py_BuildValue("(OO)", 
-            (PyObject*)self, self->ts->curexc_type), ES_SCRIPT);
+            (PyObject*)self, self->ts->curexc_type ? self->ts->curexc_type : Py_None), ES_SCRIPT);
     }
 
     /* Allow catching of the task exceptions for easier debugging */
