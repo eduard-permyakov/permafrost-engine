@@ -150,12 +150,13 @@ static struct result ping_task(void *arg)
 {
     struct entity *ent = arg;
 
-    /* Cache all the params */
+    /* Cache all the params - the entity can die on us */
     vec2_t pos = G_Pos_GetXZ(ent->uid);
     float radius = G_GetSelectionRadius(ent->uid);
     const float width = 0.4f;
     vec3_t color = (vec3_t){1.0f, 1.0f, 0.0f};
     uint32_t uid = ent->uid;
+    uint32_t flags = ent->flags;
 
     struct obb obb;
     Entity_CurrentOBB(ent, &obb, false);
@@ -173,11 +174,11 @@ static struct result ping_task(void *arg)
         if((elapsed / 400) == 1)
             continue;
 
-        if(G_EntityExists(uid)) {
-            pos = G_Pos_GetXZ(ent->uid);
-        }
+        if(!G_EntityExists(uid))
+            break;
 
-        if(ent->flags & ENTITY_FLAG_BUILDING) {
+        pos = G_Pos_GetXZ(ent->uid);
+        if(flags & ENTITY_FLAG_BUILDING) {
 
             R_PushCmd((struct rcmd){
                 .func = R_GL_DrawSelectionRectangle,

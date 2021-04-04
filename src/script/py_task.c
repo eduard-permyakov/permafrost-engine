@@ -1261,3 +1261,25 @@ PyObject *S_Task_GetAll(void)
     return ret;
 }
 
+void S_Task_MaybeExit(void)
+{
+    uint32_t tid = Sched_ActiveTID();
+    khiter_t k= kh_get(task, s_tid_task_map, tid);
+    if(k == kh_end(s_tid_task_map))
+        return;
+    PyTaskObject *self = kh_value(s_tid_task_map, k);
+    pytask_req_set(self, NULL, NULL, PYREQ_YIELD);
+    pytask_pop_ctx(self);
+}
+
+void S_Task_MaybeEnter(void)
+{
+    uint32_t tid = Sched_ActiveTID();
+    khiter_t k= kh_get(task, s_tid_task_map, tid);
+    if(k == kh_end(s_tid_task_map))
+        return;
+    PyTaskObject *self = kh_value(s_tid_task_map, k);
+    pytask_push_ctx(self);
+    pytask_req_clear(self);
+}
+

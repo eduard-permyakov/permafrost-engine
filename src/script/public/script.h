@@ -80,6 +80,9 @@ void            S_ClearState(void);
 bool            S_SaveState(SDL_RWops *stream);
 bool            S_LoadState(SDL_RWops *stream);
 
+void            S_Task_MaybeExit(void);
+void            S_Task_MaybeEnter(void);
+
 /*###########################################################################*/
 /* SCRIPT UI                                                                 */
 /*###########################################################################*/

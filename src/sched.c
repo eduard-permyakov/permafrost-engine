@@ -112,6 +112,7 @@ struct context{
 
 enum{
     _SCHED_REQ_FREE = _SCHED_REQ_COUNT + 1,
+    _SCHED_REQ_RUN_SYNC,
 };
 
 struct task{
@@ -723,8 +724,32 @@ static bool sched_wait(struct task *task, uint32_t child_tid)
     return true;
 }
 
+static void sched_task_run(struct task *task)
+{
+    assert(sched_curr_thread_tid() == NULL_TID);
+    sched_set_thread_tid(SDL_ThreadID(), task->tid);
+    task->state = TASK_STATE_ACTIVE;
+    assert(stack_pointer_valid(task));
+
+    char name[64];
+    pf_snprintf(name, sizeof(name), "Task %03u", task->tid);
+    Perf_Push(name);
+
+    if(SDL_ThreadID() == g_main_thread_id) {
+        sched_switch_ctx(&s_main_ctx, &task->ctx, task->retval, task->arg);
+    }else{
+        int id = sched_curr_thread_worker_id();
+        sched_switch_ctx(&s_worker_contexts[id], &task->ctx, task->retval, task->arg);
+    }
+
+    Perf_Pop();
+    assert(stack_pointer_valid(task));
+    sched_set_thread_tid(SDL_ThreadID(), NULL_TID);
+}
+
 static void sched_task_service_request(struct task *task)
 {
+    assert(sched_curr_thread_tid() == NULL_TID);
     SDL_LockMutex(s_request_lock);
 
     switch((int)task->req.type) {
@@ -807,32 +832,18 @@ static void sched_task_service_request(struct task *task)
             task->state = TASK_STATE_ZOMBIE;
         }
         break;
+    case _SCHED_REQ_RUN_SYNC: {
+
+        struct task *requested = &s_tasks[((uint32_t)task->req.argv[0]) - 1];
+        sched_task_run(requested);
+        sched_task_service_request(requested);
+        sched_reactivate(task);
+        break;
+    }
     default: assert(0);    
     }
 
     SDL_UnlockMutex(s_request_lock);
-}
-
-static void sched_task_run(struct task *task)
-{
-    sched_set_thread_tid(SDL_ThreadID(), task->tid);
-    task->state = TASK_STATE_ACTIVE;
-    assert(stack_pointer_valid(task));
-
-    char name[64];
-    pf_snprintf(name, sizeof(name), "Task %03u", task->tid);
-    Perf_Push(name);
-
-    if(SDL_ThreadID() == g_main_thread_id) {
-        sched_switch_ctx(&s_main_ctx, &task->ctx, task->retval, task->arg);
-    }else{
-        int id = sched_curr_thread_worker_id();
-        sched_switch_ctx(&s_worker_contexts[id], &task->ctx, task->retval, task->arg);
-    }
-
-    Perf_Pop();
-    assert(stack_pointer_valid(task));
-    sched_set_thread_tid(SDL_ThreadID(), NULL_TID);
 }
 
 static void sched_signal_worker_quit(int id)
@@ -1295,8 +1306,6 @@ uint32_t Sched_Create(int prio, task_func_t code, void *arg, struct future *resu
 
 bool Sched_RunSync(uint32_t tid)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     SDL_LockMutex(s_request_lock);
     bool ret = false;
 
@@ -1313,8 +1322,21 @@ bool Sched_RunSync(uint32_t tid)
     if(!found)
         goto out;
 
-    sched_task_run(task);
-    sched_task_service_request(task);
+    if(sched_curr_thread_tid() == NULL_TID) {
+        sched_task_run(task);
+        sched_task_service_request(task);
+    }else{
+        SDL_UnlockMutex(s_request_lock);
+        S_Task_MaybeExit();
+
+        Sched_Request((struct request){
+            .type = _SCHED_REQ_RUN_SYNC,
+            .argv = {tid}
+        });
+
+        S_Task_MaybeEnter();
+        SDL_LockMutex(s_request_lock);
+    }
     ret = true;
 
 out:
