@@ -606,6 +606,8 @@ void G_Sel_Set(uint32_t *ents, size_t nents)
     G_Sel_Clear();
     for(int i = 0; i < nents; i++) {
         struct entity *ent = G_EntityForUID(ents[i]);
+        if(!(ent->flags & ENTITY_FLAG_SELECTABLE))
+            continue;
         vec_pentity_push(&s_selected, ent);
     }
     sel_filter_and_set_type();
