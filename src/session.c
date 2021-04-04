@@ -230,9 +230,9 @@ static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
     /* We may have loaded some assets during the session loading 
      * process - make sure the appropriate initialization is performed 
      * by the render thread */
+    E_ClearPendingEvents();
     Engine_FlushRenderWorkQueue();
 
-    E_ClearPendingEvents();
     G_UpdateSimStateChangeTick();
     return true;
 

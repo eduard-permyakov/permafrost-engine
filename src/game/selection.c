@@ -473,8 +473,6 @@ void G_Sel_Disable(void)
     E_Global_Unregister(EVENT_RENDER_UI,     on_render_ui);
     E_Global_Unregister(SDL_MOUSEBUTTONUP,   on_mouseup);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
-
-    G_Sel_Clear();
 }
 
 /* Note that the selection is only changed if there is at least one entity in the new selection. Otherwise

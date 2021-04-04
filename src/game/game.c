@@ -323,7 +323,7 @@ static void g_render_healthbars(void)
         int max_health = G_Combat_GetMaxHP(curr);
         int curr_health = G_Combat_GetCurrentHP(curr);
 
-        if(curr_health == 0)
+        if(curr_health == 0 || max_health == 0)
             continue;
         if(hb_setting.as_int == HB_MODE_DAMAGED && curr_health == max_health)
             continue;

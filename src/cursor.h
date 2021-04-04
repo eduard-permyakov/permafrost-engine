@@ -69,6 +69,7 @@ bool Cursor_LoadBMP(enum cursortype type, const char *path, int hotx, int hoty);
  * the correct scrolling icon for the cursor's current position on the screen 
  * Must be called after Event subsystem is initialized. */
 void Cursor_SetRTSMode(bool on);
+bool Cursor_GetRTSMode(void);
 void Cursor_SetRTSPointer(enum cursortype type);
 
 bool Cursor_NamedLoadBMP(const char *name, const char *path, int hotx, int hoty);

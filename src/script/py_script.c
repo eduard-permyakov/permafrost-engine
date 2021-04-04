@@ -180,6 +180,8 @@ static PyObject *PyPf_set_system_cursor(PyObject *self, PyObject *args);
 static PyObject *PyPf_set_named_cursor(PyObject *self, PyObject *args);
 static PyObject *PyPf_activate_system_cursor(PyObject *self, PyObject *args);
 static PyObject *PyPf_activate_named_cursor(PyObject *self, PyObject *args);
+static PyObject *PyPf_set_cursor_rts_mode(PyObject *self, PyObject *args);
+static PyObject *PyPf_get_cursor_rts_mode(PyObject *self);
 
 static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args);
 static PyObject *PyPf_rand(PyObject *self, PyObject *args);
@@ -615,6 +617,15 @@ static PyMethodDef pf_module_methods[] = {
     (PyCFunction)PyPf_activate_named_cursor, METH_VARARGS,
     "Make a cursor (specified by name) the currently displayed cursor."},
 
+    {"set_cursor_rts_mode",
+    (PyCFunction)PyPf_set_cursor_rts_mode, METH_VARARGS,
+    "Activates or deactivates the cursor RTS mode which keeps the cursor icon updated based on which edge "
+    "of the screen it is at."},
+
+    {"get_cursor_rts_mode",
+    (PyCFunction)PyPf_get_cursor_rts_mode, METH_NOARGS,
+    "Returns the current state of the RTS cursor mode enablement."},
+
     {"multiply_quaternions",
     (PyCFunction)PyPf_multiply_quaternions, METH_VARARGS,
     "Returns the normalized result of multiplying 2 quaternions (specified as a list of 4 floats - XYZW order)."},
@@ -723,9 +734,9 @@ static struct py_err_ctx  s_err_ctx = {false,};
 
 static void s_err_clear(void)
 {
-    Py_XDECREF(s_err_ctx.type);
-    Py_XDECREF(s_err_ctx.value);
-    Py_XDECREF(s_err_ctx.traceback);
+    Py_CLEAR(s_err_ctx.type);
+    Py_CLEAR(s_err_ctx.value);
+    Py_CLEAR(s_err_ctx.traceback);
     s_err_ctx.occurred = false;
 }
 
@@ -2299,6 +2310,27 @@ static PyObject *PyPf_activate_named_cursor(PyObject *self, PyObject *args)
         return NULL;
     }
     Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_set_cursor_rts_mode(PyObject *self, PyObject *args)
+{
+    PyObject *value;
+    if(!PyArg_ParseTuple(args, "O", &value)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a single argument: boolean expression");
+        return NULL;
+    }
+
+    Cursor_SetRTSMode(PyObject_IsTrue(value));
+    Py_RETURN_NONE;
+}
+
+static PyObject *PyPf_get_cursor_rts_mode(PyObject *self)
+{
+    if(Cursor_GetRTSMode()) {
+        Py_RETURN_TRUE;
+    }else{
+        Py_RETURN_FALSE;
+    }
 }
 
 static PyObject *PyPf_multiply_quaternions(PyObject *self, PyObject *args)

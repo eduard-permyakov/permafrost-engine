@@ -141,6 +141,7 @@ static const struct cursor_resource s_default[_CURSOR_MAX] = {
 };
 
 static bool                    s_moved = false;
+static bool                    s_rts_mode = false;
 static SDL_Cursor             *s_rts_pointer;
 static khash_t(cursor)        *s_named_cursors;
 static struct cursor_resource  s_cursors[_CURSOR_MAX];
@@ -151,6 +152,10 @@ static struct cursor_resource  s_cursors[_CURSOR_MAX];
 
 static void cursor_rts_set_active(int mouse_x, int mouse_y)
 {
+    if(!s_rts_mode) {
+        return;
+    }
+
     if(!s_moved) {
         SDL_SetCursor(s_rts_pointer);
         return;
@@ -201,11 +206,19 @@ static void cursor_on_mousemove(void *unused1, void *unused2)
 
 void Cursor_SetRTSMode(bool on)
 {
+    if(s_rts_mode == on)
+        return;
     if(on) {
         E_Global_Register(SDL_MOUSEMOTION, cursor_on_mousemove, NULL, G_RUNNING);
     }else {
         E_Global_Unregister(SDL_MOUSEMOTION, cursor_on_mousemove);
     }
+    s_rts_mode = on;
+}
+
+bool Cursor_GetRTSMode(void)
+{
+    return s_rts_mode;
 }
 
 bool Cursor_InitDefault(const char *basedir)
@@ -381,6 +394,12 @@ void Cursor_ClearState(void)
 
 bool Cursor_SaveState(struct SDL_RWops *stream)
 {
+    struct attr rts_mode = (struct attr){
+        .type = TYPE_BOOL, 
+        .val.as_bool = s_rts_mode
+    };
+    CHK_TRUE_RET(Attr_Write(stream, &rts_mode, "rts_mode"));
+
     struct attr ncursors = (struct attr){
         .type = TYPE_INT, 
         .val.as_int = kh_size(s_named_cursors)
@@ -480,6 +499,10 @@ bool Cursor_SaveState(struct SDL_RWops *stream)
 bool Cursor_LoadState(struct SDL_RWops *stream)
 {
     struct attr attr;
+
+    CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+    CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    Cursor_SetRTSMode(attr.val.as_bool);
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);

@@ -552,6 +552,9 @@ void S_Region_NotifyContentsChanged(const char *name)
         return;
 
     PyObject *reg = kh_value(s_name_pyobj_table, k);
+    if(!PyObject_HasAttrString(reg, "on_contents_changed"))
+        return;
+
     PyObject *ret = PyObject_CallMethod(reg, "on_contents_changed", NULL);
     if(!ret) {
         S_ShowLastError();

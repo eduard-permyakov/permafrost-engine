@@ -2128,8 +2128,8 @@ static int PyCombatableEntity_set_max_hp(PyCombatableEntityObject *self, PyObjec
     }
     
     int max_hp = PyInt_AS_LONG(value);
-    if(max_hp <= 0) {
-        PyErr_SetString(PyExc_RuntimeError, "max_hp must be greater than 0.");
+    if(max_hp < 0) {
+        PyErr_SetString(PyExc_RuntimeError, "max_hp must be greater or equal to 0 (0 = invulnerable).");
         return -1;
     }
 

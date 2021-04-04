@@ -411,9 +411,9 @@ void S_Error_Update(struct py_err_ctx *err_ctx)
         if(nk_button_label(ctx, "Continue")) {
 
             err_ctx->occurred = false;
-            Py_XDECREF(err_ctx->type);
-            Py_XDECREF(err_ctx->value);
-            Py_XDECREF(err_ctx->traceback);
+            Py_CLEAR(err_ctx->type);
+            Py_CLEAR(err_ctx->value);
+            Py_CLEAR(err_ctx->traceback);
             G_SetSimState(err_ctx->prev_state);
         }
 
