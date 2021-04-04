@@ -25862,7 +25862,7 @@ nk_tooltip(struct nk_context *ctx, const char *text)
     text_len = nk_strlen(text);
     text_width = style->font->width(style->font->userdata,
                     style->font->height, text, text_len);
-    text_width += (4 * padding.x + spacing.x);
+    text_width += (4 * padding.x + spacing.x + 4 * style->window.tooltip_padding.x);
     text_height = (style->font->height + 2 * padding.y);
 
     /* execute tooltip and fill with text */
