@@ -599,6 +599,7 @@ static PyObject *PyResourceEntity_get_cursor(PyResourceEntityObject *self, void 
 static int       PyResourceEntity_set_cursor(PyResourceEntityObject *self, PyObject *value, void *closure);
 static PyObject *PyResourceEntity_get_name(PyResourceEntityObject *self, void *closure);
 static PyObject *PyResourceEntity_get_amount(PyResourceEntityObject *self, void *closure);
+static int       PyResourceEntity_set_amount(PyResourceEntityObject *self, PyObject *value, void *closure);
 
 static PyMethodDef PyResourceEntity_methods[] = {
 
@@ -628,7 +629,7 @@ static PyGetSetDef PyResourceEntity_getset[] = {
     "The name of resource that can be harvested from this entity",
     NULL},
     {"resource_amount",
-    (getter)PyResourceEntity_get_amount, NULL,
+    (getter)PyResourceEntity_get_amount, (setter)PyResourceEntity_set_amount,
     "The amount of resources that this entity currently holds",
     NULL},
     {NULL}  /* Sentinel */
@@ -2812,6 +2813,22 @@ static PyObject *PyResourceEntity_get_amount(PyResourceEntityObject *self, void 
     }
 
     return PyInt_FromLong(G_Resource_GetAmount(self->super.ent->uid));
+}
+
+static int PyResourceEntity_set_amount(PyResourceEntityObject *self, PyObject *value, void *closure)
+{
+    if(self->super.ent->flags & ENTITY_FLAG_ZOMBIE) {
+        PyErr_SetString(PyExc_RuntimeError, "Cannot set attribute of zombie entity.");
+        return -1;
+    }
+
+    if(!PyInt_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be an integer.");
+        return -1;
+    }
+
+    G_Resource_SetAmount(self->super.ent->uid, PyInt_AS_LONG(value));
+    return 0;
 }
 
 static PyObject *PyHarvesterEntity_del(PyHarvesterEntityObject *self)
