@@ -458,6 +458,8 @@ static bool valid_resource(const struct entity *curr, void *arg)
     const char *name = arg;
     if(!(curr->flags & ENTITY_FLAG_RESOURCE))
         return false;
+    if((curr->flags & ENTITY_FLAG_BUILDING) && !G_Building_IsCompleted(curr))
+        return false;
     if(strcmp(name, G_Resource_GetName(curr->uid)))
         return false;
     return true;
@@ -1007,6 +1009,8 @@ static void selection_try_order_gather(bool targeting)
 
     struct entity *target = G_Sel_GetHovered();
     if(!target || !(target->flags & ENTITY_FLAG_RESOURCE))
+        return;
+    if((target->flags & ENTITY_FLAG_BUILDING) && !G_Building_IsCompleted(target))
         return;
 
     enum selection_type sel_type;
@@ -1712,6 +1716,8 @@ bool G_Harvester_Gather(struct entity *harvester, struct entity *resource)
     assert(hs);
 
     if(!(resource->flags & ENTITY_FLAG_RESOURCE))
+        return false;
+    if((resource->flags & ENTITY_FLAG_BUILDING) && !G_Building_IsCompleted(resource))
         return false;
 
     if(G_Harvester_GetCurrTotalCarry(harvester->uid)) {
