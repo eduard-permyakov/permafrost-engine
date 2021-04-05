@@ -129,6 +129,9 @@ static void fps_cam_on_keydown(void *unused, void *event_arg)
     SDL_Event *e = (SDL_Event*)event_arg;
     uint32_t curr_tick = g_frame_idx;
 
+    if(S_UI_TextEditHasFocus())
+        return;
+
     switch(e->key.keysym.scancode) {
     case SDL_SCANCODE_W: 
         ctx->front_pressed_tick = curr_tick;
@@ -155,6 +158,9 @@ static void fps_cam_on_keyup(void *unused, void *event_arg)
     struct cam_fps_ctx *ctx = &s_cam_ctx.active_ctx.fps;
     SDL_Event *e = (SDL_Event*)event_arg;
     uint32_t curr_tick = g_frame_idx;
+
+    if(S_UI_TextEditHasFocus())
+        return;
 
     switch(e->key.keysym.scancode) {
     case SDL_SCANCODE_W: 
@@ -272,6 +278,9 @@ static void rts_cam_on_keydown(void *unused, void *event_arg)
     SDL_Event *e = (SDL_Event*)event_arg;
     uint32_t curr_tick = g_frame_idx;
 
+    if(S_UI_TextEditHasFocus())
+        return;
+
     switch(e->key.keysym.scancode) {
     case SDL_SCANCODE_UP: 
         ctx->front_pressed_tick = curr_tick;
@@ -298,6 +307,9 @@ static void rts_cam_on_keyup(void *unused, void *event_arg)
     struct cam_rts_ctx *ctx = &s_cam_ctx.active_ctx.rts;
     SDL_Event *e = (SDL_Event*)event_arg;
     uint32_t curr_tick = g_frame_idx;
+
+    if(S_UI_TextEditHasFocus())
+        return;
 
     switch(e->key.keysym.scancode) {
     case SDL_SCANCODE_UP: 
