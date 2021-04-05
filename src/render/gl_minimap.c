@@ -303,6 +303,8 @@ static void create_minimap_texture(const struct map *map, void **chunk_rprivates
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
     R_GL_MapUpdateFogClear();
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
 
     for(int r = 0; r < res.chunk_h; r++) {
     for(int c = 0; c < res.chunk_w; c++) {
