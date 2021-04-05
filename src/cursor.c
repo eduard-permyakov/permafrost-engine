@@ -388,8 +388,10 @@ bool Cursor_NamedSetRTSPointer(const char *name)
 
 void Cursor_ClearState(void)
 {
+    Cursor_SetRTSMode(false);
     Cursor_FreeAll();
     Cursor_InitDefault(g_basepath);
+    Cursor_SetActive(CURSOR_POINTER);
 }
 
 bool Cursor_SaveState(struct SDL_RWops *stream)

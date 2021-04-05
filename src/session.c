@@ -97,11 +97,11 @@ static void subsession_clear(void)
     E_ClearPendingEvents();
     Sched_ClearState();
     E_DeleteScriptHandlers();
+    Cursor_ClearState();
     N_ClearState();
     S_ClearState();
     G_ClearRenderWork();
     G_ClearState();
-    Cursor_ClearState();
     Entity_ClearState();
     Audio_ClearState();
     P_Projectile_ClearState();
