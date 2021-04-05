@@ -182,19 +182,38 @@ float bilinear_interp_unit_square(float tl, float tr, float bl, float br, vec2 c
          + tr * (coord.x) * (coord.y);
 }
 
+uvec4 fetch_safe(usamplerBuffer buff, int idx)
+{
+    int batch_size = map_resolution[0] * map_resolution[1] * map_resolution[2] * map_resolution[3];
+    int buff_size = textureSize(buff);
+    int begin_idx = visbuff_offset;
+    int end_idx = int(mod(visbuff_offset + batch_size, buff_size));
+
+    if(end_idx > begin_idx) {
+        idx = clamp(idx, begin_idx, end_idx-1);
+    }else{
+        int dist = begin_idx - end_idx;
+        if(idx < end_idx + dist/2)
+            idx = clamp(idx, 0, end_idx-1);
+        else
+            idx = clamp(idx, begin_idx, buff_size-1);
+    }
+    return texelFetch(buff, idx);
+}
+
 /* The tint factor is in the range of [0,1]. It is a color multiplier based on 
  * the fog-of-war state of the current and adjacent tiles. */
 float tint_factor(ivec4 td, vec2 uv)
 {
-    float c  = tf_for_state(texelFetch(visbuff, visbuff_idx(td)).r);
-    float tl = tf_for_state(texelFetch(visbuff, visbuff_idx(tile_relative_desc(td, -1, -1))).r);
-    float tr = tf_for_state(texelFetch(visbuff, visbuff_idx(tile_relative_desc(td, -1, +1))).r);
-    float l  = tf_for_state(texelFetch(visbuff, visbuff_idx(tile_relative_desc(td,  0, -1))).r);
-    float r  = tf_for_state(texelFetch(visbuff, visbuff_idx(tile_relative_desc(td,  0, +1))).r);
-    float bl = tf_for_state(texelFetch(visbuff, visbuff_idx(tile_relative_desc(td, +1, -1))).r);
-    float br = tf_for_state(texelFetch(visbuff, visbuff_idx(tile_relative_desc(td, +1, +1))).r);
-    float t  = tf_for_state(texelFetch(visbuff, visbuff_idx(tile_relative_desc(td, -1,  0))).r);
-    float b  = tf_for_state(texelFetch(visbuff, visbuff_idx(tile_relative_desc(td, +1,  0))).r);
+    float c  = tf_for_state(fetch_safe(visbuff, visbuff_idx(td)).r);
+    float tl = tf_for_state(fetch_safe(visbuff, visbuff_idx(tile_relative_desc(td, -1, -1))).r);
+    float tr = tf_for_state(fetch_safe(visbuff, visbuff_idx(tile_relative_desc(td, -1, +1))).r);
+    float l  = tf_for_state(fetch_safe(visbuff, visbuff_idx(tile_relative_desc(td,  0, -1))).r);
+    float r  = tf_for_state(fetch_safe(visbuff, visbuff_idx(tile_relative_desc(td,  0, +1))).r);
+    float bl = tf_for_state(fetch_safe(visbuff, visbuff_idx(tile_relative_desc(td, +1, -1))).r);
+    float br = tf_for_state(fetch_safe(visbuff, visbuff_idx(tile_relative_desc(td, +1, +1))).r);
+    float t  = tf_for_state(fetch_safe(visbuff, visbuff_idx(tile_relative_desc(td, -1,  0))).r);
+    float b  = tf_for_state(fetch_safe(visbuff, visbuff_idx(tile_relative_desc(td, +1,  0))).r);
 
     float tl_corner = (c + t + l + tl) / 4.0;
     float tr_corner = (c + t + r + tr) / 4.0;
