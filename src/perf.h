@@ -59,11 +59,19 @@
         return;                 \
     }while(0)
 
+#define PERF_PUSH(name)         \
+    Perf_Push(name)
+
+#define PERF_POP()              \
+    Perf_Pop()
+
 #else
 
 #define PERF_ENTER()
 #define PERF_RETURN(...) do {return (__VA_ARGS__); } while(0)
 #define PERF_RETURN_VOID(...) do { return; } while(0)
+#define PERF_PUSH(name)
+#define PERF_POP()
 
 #endif
 

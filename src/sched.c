@@ -733,7 +733,7 @@ static void sched_task_run(struct task *task)
 
     char name[64];
     pf_snprintf(name, sizeof(name), "Task %03u", task->tid);
-    Perf_Push(name);
+    PERF_PUSH(name);
 
     if(SDL_ThreadID() == g_main_thread_id) {
         sched_switch_ctx(&s_main_ctx, &task->ctx, task->retval, task->arg);
@@ -742,7 +742,7 @@ static void sched_task_run(struct task *task)
         sched_switch_ctx(&s_worker_contexts[id], &task->ctx, task->retval, task->arg);
     }
 
-    Perf_Pop();
+    PERF_POP();
     assert(stack_pointer_valid(task));
     sched_set_thread_tid(SDL_ThreadID(), NULL_TID);
 }

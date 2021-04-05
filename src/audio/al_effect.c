@@ -201,7 +201,7 @@ static void audio_active_difference(vec_effect_t *curr, vec_effect_t *prev,
 
 static void on_update_start(void *user, void *event)
 {
-    Perf_Push("audio_effect::on_update_start");
+    PERF_PUSH("audio_effect::on_update_start");
 
     vec_effect_t prev, added, removed;
     vec_effect_init(&prev);
@@ -242,7 +242,7 @@ static void on_update_start(void *user, void *event)
     vec_effect_destroy(&removed);
 
     AL_ASSERT_OK();
-    Perf_Pop();
+    PERF_POP();
 }
 
 static void on_new_game(void *user, void *event)
@@ -272,7 +272,7 @@ static void on_new_game(void *user, void *event)
 
 static void on_1hz_tick(void *user, void *event)
 {
-    Perf_Push("audio_effect::on_1hz_tick");
+    PERF_PUSH("audio_effect::on_1hz_tick");
     uint32_t now = SDL_GetTicks();
 
     for(int i = vec_size(&s_effects)-1; i >= 0; i--) {
@@ -291,7 +291,7 @@ static void on_1hz_tick(void *user, void *event)
 
     assert(s_effect_tree.nrecs == vec_size(&s_effects));
     AL_ASSERT_OK();
-    Perf_Pop();
+    PERF_POP();
 }
 
 static bool audio_volume_validate(const struct sval *val)

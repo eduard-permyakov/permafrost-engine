@@ -600,7 +600,7 @@ static void entity_stop_combat(const struct entity *ent)
 
 static void on_20hz_tick(void *user, void *event)
 {
-    Perf_Push("combat::on_20hz_tick");
+    PERF_PUSH("combat::on_20hz_tick");
 
     uint32_t key;
     kh_foreach(s_entity_state_table, key, (struct combatstate){0}, {
@@ -776,7 +776,7 @@ static void on_20hz_tick(void *user, void *event)
         };
     
     });
-    Perf_Pop();
+    PERF_POP();
 }
 
 static void on_mousedown(void *user, void *event)

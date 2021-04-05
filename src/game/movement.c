@@ -1558,7 +1558,7 @@ static void clearpath_finish_work(void)
         clearpath_run_to_completion(i);    
     }
 
-    Perf_Push("velocity updates");
+    PERF_PUSH("velocity updates");
     for(int i = 0; i < s_cp_work.nwork; i++) {
 
         struct entity *ent = G_EntityForUID(s_cp_work.out[i].ent_uid);
@@ -1576,20 +1576,20 @@ static void clearpath_finish_work(void)
         PFM_Vec2_Add(&ms->velocity, &vel_diff, &ms->vnew);
         vec2_truncate(&ms->vnew, ms->max_speed / MOVE_TICK_RES);
     }
-    Perf_Pop();
+    PERF_POP();
 
     uint32_t key;
     struct entity *curr;
     (void)key;
 
-    Perf_Push("position updates");
+    PERF_PUSH("position updates");
     kh_foreach(G_GetDynamicEntsSet(), key, curr, {
 
         struct movestate *ms = movestate_get(curr);
         assert(ms);
         entity_update(curr, ms->vnew);
     });
-    Perf_Pop();
+    PERF_POP();
 
     stalloc_clear(&s_cp_work.mem);
     s_cp_work.in = NULL;
@@ -1644,7 +1644,7 @@ static void clearpath_submit_work(void)
 
 static void on_20hz_tick(void *user, void *event)
 {
-    Perf_Push("movement::on_20hz_tick");
+    PERF_PUSH("movement::on_20hz_tick");
 
     uint32_t key;
     struct entity *curr;
@@ -1707,7 +1707,7 @@ static void on_20hz_tick(void *user, void *event)
     clearpath_submit_work();
     clearpath_finish_work();
 
-    Perf_Pop();
+    PERF_POP();
 }
 
 /*****************************************************************************/

@@ -299,7 +299,7 @@ static void phys_sweep_test(int front_idx)
 
 static void on_30hz_tick(void *user, void *event)
 {
-    Perf_Push("projectile::on_30hz_tick");
+    PERF_PUSH("projectile::on_30hz_tick");
 
     phys_proj_finish_work();
 
@@ -340,7 +340,7 @@ static void on_30hz_tick(void *user, void *event)
 done:
     s_last_tick = g_frame_idx;
     s_simticks++;
-    Perf_Pop();
+    PERF_POP();
 }
 
 static void phys_create_render_input(struct render_input *out)
