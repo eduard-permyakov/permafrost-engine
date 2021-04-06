@@ -1052,8 +1052,19 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
     if(!zombie && PyType_IsSubtype(type, &PyMovableEntity_type))
         extra_flags |= ENTITY_FLAG_MOVABLE;
 
+    vec3_t pos = (vec3_t){0.0f, 0.0f, 0.0f};
+    if(kwds) {
+        PyObject *posobj = PyDict_GetItemString(kwds, "pos");
+        if(posobj) {
+            if(!PyTuple_Check(posobj) || !PyArg_ParseTuple(posobj, "fff", &pos.x, &pos.y, &pos.z)) {
+                PyErr_SetString(PyExc_TypeError, "'pos' keyword argument must be a tuple of 3 floats.");
+                return NULL; 
+            }
+        }
+    }
+
     self->ent->flags |= extra_flags;
-    G_AddEntity(self->ent, (vec3_t){0.0f, 0.0f, 0.0f});
+    G_AddEntity(self->ent, pos);
 
     int ret;
     khiter_t k = kh_put(PyObject, s_uid_pyobj_table, ent->uid, &ret);
@@ -3408,19 +3419,23 @@ static PyObject *s_entity_from_atts(const char *path, const char *name,
     PyTuple_SetItem(args, 1, PyString_FromString(filename));
     PyTuple_SetItem(args, 2, PyString_FromString(name));
 
-    PyObject *kwargs = PyDict_New();
+    PyObject *kwargs = Py_BuildValue("{s:I}", "__extra_flags__", extra_flags);
     if(!kwargs) {
         Py_DECREF(args);
         return NULL;
     }
-    PyObject *flags = PyInt_FromLong(extra_flags);
-    if(!flags) {
-        Py_DECREF(args);
-        Py_DECREF(kwargs);
-        return NULL;
+
+    if((k = kh_get(attr, attr_table, "position")) != kh_end(attr_table)) {
+        vec3_t pos = kh_value(attr_table, k).val.as_vec3;
+        PyObject *posobj = Py_BuildValue("fff", pos.x, pos.y, pos.z);
+        if(!posobj) {
+            Py_DECREF(args);
+            Py_DECREF(kwargs);
+            return NULL;
+        }
+        PyDict_SetItemString(kwargs, "pos", posobj);
+        Py_DECREF(posobj);
     }
-    PyDict_SetItemString(kwargs, "__extra_flags__", flags);
-    Py_DECREF(flags);
 
     if(anim) {
         PyObject *idle_clip;
@@ -3445,7 +3460,7 @@ static PyObject *s_entity_from_atts(const char *path, const char *name,
 }
 
 static PyObject *s_new_custom_class(const char *name, const vec_attr_t *construct_args, 
-                                    uint32_t extra_flags)
+                                    const khash_t(attr) *attr_table, uint32_t extra_flags)
 {
     PyObject *ret = NULL;
     PyObject *sys_mod_dict = PyImport_GetModuleDict();
@@ -3475,16 +3490,19 @@ static PyObject *s_new_custom_class(const char *name, const vec_attr_t *construc
     if(!args)
         goto fail_args;
 
-    PyObject *kwargs = PyDict_New();
+    PyObject *kwargs = Py_BuildValue("{s:I}", "__extra_flags__", extra_flags);
     if(!kwargs)
         goto fail_kwargs;
 
-    PyObject *flags = PyInt_FromLong(extra_flags);
-    if(!flags)
-        goto fail_kwargs;
-
-    PyDict_SetItemString(kwargs, "__extra_flags__", PyInt_FromLong(extra_flags));
-    Py_DECREF(flags);
+    khiter_t k;
+    if((k = kh_get(attr, attr_table, "position")) != kh_end(attr_table)) {
+        vec3_t pos = kh_value(attr_table, k).val.as_vec3;
+        PyObject *posobj = Py_BuildValue("fff", pos.x, pos.y, pos.z);
+        if(!posobj)
+            goto fail_pos;
+        PyDict_SetItemString(kwargs, "pos", posobj);
+        Py_DECREF(posobj);
+    }
 
     PyTypeObject *tp_class = (PyTypeObject*)class;
     ret = tp_class->tp_new(tp_class, args, kwargs);
@@ -3495,6 +3513,7 @@ static PyObject *s_new_custom_class(const char *name, const vec_attr_t *construc
         }
     }
 
+fail_pos:
     Py_DECREF(kwargs);
 fail_kwargs:
     Py_DECREF(args);
@@ -3617,7 +3636,7 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
     if((k = kh_get(attr, attr_table, "class")) != kh_end(attr_table)) {
 
         const char *cls = kh_value(attr_table, k).val.as_string;
-        ret = s_new_custom_class(cls, construct_args, extra_flags);
+        ret = s_new_custom_class(cls, construct_args, attr_table, extra_flags);
 
         if(PyErr_Occurred()) {
             PyThreadState *tstate = PyThreadState_GET();
