@@ -1313,6 +1313,9 @@ bool Sched_RunSync(uint32_t tid)
     if(!(task->flags & TASK_DETACHED)) {
         goto out;
     }
+    if(task->state != TASK_STATE_READY) {
+        goto out;
+    }
 
     SDL_LockMutex(s_ready_lock);
     bool found = pq_task_remove(&s_ready_queue, tasks_compare, task) 
@@ -1481,6 +1484,15 @@ bool Sched_HasBlocked(void)
     bool ret = (pq_size(&s_ready_queue) > 0)
             || (pq_size(&s_ready_queue_main) > 0);
     SDL_UnlockMutex(s_ready_lock);
+    return ret;
+}
+
+bool Sched_IsReady(uint32_t tid)
+{
+    bool ret = false;
+    SDL_LockMutex(s_request_lock);
+    ret = s_tasks[tid - 1].state == TASK_STATE_READY;
+    SDL_UnlockMutex(s_request_lock);
     return ret;
 }
 

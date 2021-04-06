@@ -1291,3 +1291,21 @@ void S_Task_MaybeEnter(void)
     pytask_req_clear(self);
 }
 
+void S_Task_Flush(void)
+{
+    uint32_t tid;
+    PyTaskObject *curr;
+    int nran = 0;
+
+    do{
+        nran = 0;
+        kh_foreach(s_tid_task_map, tid, curr, {
+            if(curr->state != PYTASK_STATE_FINISHED && Sched_IsReady(tid)) {
+                Sched_RunSync(tid);
+                nran++;
+            }
+        });
+    
+    }while(nran > 0);
+}
+

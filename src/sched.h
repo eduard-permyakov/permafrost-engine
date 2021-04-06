@@ -104,6 +104,7 @@ bool     Sched_RunSync(uint32_t tid);
 void     Sched_ClearState(void);
 void     Sched_Flush(void);
 bool     Sched_HasBlocked(void);
+bool     Sched_IsReady(uint32_t tid);
 
 /* The following may only be called from task context 
  * (i.e. from the body of a task function) */
