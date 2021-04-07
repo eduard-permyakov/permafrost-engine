@@ -3039,6 +3039,7 @@ NK_API void nk_text_colored(struct nk_context*, const char*, int, nk_flags, stru
 NK_API void nk_text_wrap(struct nk_context*, const char*, int);
 NK_API void nk_text_wrap_colored(struct nk_context*, const char*, int, struct nk_color);
 NK_API int  nk_text_lines(struct nk_context *, const char *);
+NK_API int  nk_text_lines_width(struct nk_context *ctx, const char *str, int widget_width);
 NK_API void nk_label(struct nk_context*, const char*, nk_flags align);
 NK_API void nk_label_colored(struct nk_context*, const char*, nk_flags align, struct nk_color);
 NK_API void nk_label_wrap(struct nk_context*, const char*);
@@ -19484,7 +19485,7 @@ NK_API int nk_text_lines(struct nk_context *ctx, const char *str)
     text.text = style->text.color;
 
     struct nk_rect bounds = nk_layout_widget_bounds(ctx);
-    bounds.w = NK_MAX(bounds.w, 2 * text.padding.x);
+    bounds.w = NK_MAX(bounds.w - 2 * ctx->style.window.padding.x, 2 * text.padding.x);
     bounds.h = NK_MAX(bounds.h, 2 * text.padding.y);
     bounds.h = 65536;
 
@@ -19511,6 +19512,47 @@ NK_API int nk_text_lines(struct nk_context *ctx, const char *str)
     }
     return ret;
 }
+NK_API int nk_text_lines_width(struct nk_context *ctx, const char *str, int widget_width)
+{
+    int ret = 0;
+    size_t len = nk_strlen(str);
+    nk_rune separator[] = {' '};
+    struct nk_style *style = &ctx->style;
+
+    struct nk_text text;
+    text.padding = nk_vec2(0, 0);
+    text.background = style->window.background;
+    text.text = style->text.color;
+
+    struct nk_rect bounds = nk_layout_widget_bounds(ctx);
+    bounds.w = NK_MAX(widget_width - 2 * ctx->style.window.padding.x, 2 * text.padding.x);
+    bounds.h = NK_MAX(bounds.h, 2 * text.padding.y);
+    bounds.h = 65536;
+
+    struct nk_rect line;
+    line.x = bounds.x + text.padding.x;
+    line.y = bounds.y + text.padding.y;
+    line.w = bounds.w - 2 * text.padding.x;
+    line.h = 2 * text.padding.y + style->font->height;
+
+    float width;
+    int glyphs = 0;
+    int fitting = 0;
+    int done = 0;
+
+    fitting = nk_text_clamp(style->font, str, len, line.w, &glyphs, &width, separator, NK_LEN(separator));
+    while(done < len) {
+        if(!fitting || line.y + line.h >= (bounds.y + bounds.h))
+            break;
+        done += fitting;
+        line.y += style->font->height + 2 * text.padding.y;
+        fitting = nk_text_clamp(style->font, &str[done], len - done, line.w, &glyphs, &width, 
+            separator,NK_LEN(separator));
+        ret++;
+    }
+    return ret;
+}
+
 #ifdef NK_INCLUDE_STANDARD_VARARGS
 NK_API void
 nk_labelf_colored(struct nk_context *ctx, nk_flags flags,

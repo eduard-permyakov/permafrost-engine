@@ -116,6 +116,7 @@ static PyObject *PyWindow_slider_int(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_progress(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_progress_text(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_text_lines(PyWindowObject *self, PyObject *args);
+static PyObject *PyWindow_text_lines_width(PyWindowObject *self, PyObject *args);
 static PyObject *PyWindow_show(PyWindowObject *self);
 static PyObject *PyWindow_hide(PyWindowObject *self);
 static PyObject *PyWindow_update(PyWindowObject *self);
@@ -337,6 +338,10 @@ static PyMethodDef PyWindow_methods[] = {
     {"text_lines", 
     (PyCFunction)PyWindow_text_lines, METH_VARARGS,
     "Returns the number of lines taken up by the specified text."},
+
+    {"text_lines_width", 
+    (PyCFunction)PyWindow_text_lines_width, METH_VARARGS,
+    "Returns the number of lines taken up by the specified text in a widget of the specified width."},
 
     {"show", 
     (PyCFunction)PyWindow_show, METH_NOARGS,
@@ -1352,6 +1357,18 @@ static PyObject *PyWindow_text_lines(PyWindowObject *self, PyObject *args)
         return NULL;
     }
     int ret = nk_text_lines(s_nk_ctx, str);
+    return PyInt_FromLong(ret);
+}
+
+static PyObject *PyWindow_text_lines_width(PyWindowObject *self, PyObject *args)
+{
+    const char *str;
+    int width;
+    if(!PyArg_ParseTuple(args, "si", &str, &width)) {
+        PyErr_SetString(PyExc_TypeError, "Expecting a string argument (text) and an integer argument (width).");
+        return NULL;
+    }
+    int ret = nk_text_lines_width(s_nk_ctx, str, width);
     return PyInt_FromLong(ret);
 }
 
