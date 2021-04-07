@@ -51,6 +51,12 @@ void G_Fog_AddVision(vec2_t xz_pos, int faction_id, float radius);
 void G_Fog_RemoveVision(vec2_t xz_pos, int faction_id, float radius);
 void G_Fog_UpdateVisionRange(vec2_t xz_pos, int faction_id, float oldr, float newr);
 
+bool G_Fog_CircleExplored(uint16_t fac_mask, vec2_t xz_pos, float radius);
+bool G_Fog_RectExplored(uint16_t fac_mask, vec2_t xz_pos, float halfx, float halfz);
+
+void G_Fog_ExploreCircle(vec2_t xz_pos, int faction_id, float radius);
+void G_Fog_ExploreRectangle(vec2_t xz_pos, int faction_id, float halfx, float halfz);
+
 void G_Fog_UpdateVisionState(void);
 void G_Fog_ClearExploredCache(void);
 

@@ -36,6 +36,7 @@
 #include "region.h"
 #include "game_private.h"
 #include "position.h"
+#include "fog_of_war.h"
 #include "../ui.h"
 #include "../main.h"
 #include "../camera.h"
@@ -452,6 +453,11 @@ static void on_render_3d(void *user, void *event)
         if(!s_render && !reg.shown)
             continue;
 
+        bool explored = false;
+        G_Region_Explored(key, G_GetPlayerControlledFactions(), &explored);
+        if(!explored)
+            continue;
+
         switch(reg.type) {
         case REGION_CIRCLE: {
 
@@ -814,7 +820,49 @@ bool G_Region_GetZLen(const char *name, float *out)
     *out = kh_value(s_regions, k).zlen;
     return true;
 }
-   
+
+bool G_Region_ExploreFog(const char *name, int faction_id)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
+
+    const struct region *reg = &kh_value(s_regions, k);
+    switch(reg->type) {
+    case REGION_RECTANGLE:
+        G_Fog_ExploreRectangle(reg->pos, faction_id, reg->xlen/2.0f, reg->zlen/2.0f);
+        break;
+    case REGION_CIRCLE:
+        G_Fog_ExploreCircle(reg->pos, faction_id, reg->radius);
+        break;
+    default:
+        assert(0);
+        break;
+    }
+    return true;
+}
+
+bool G_Region_Explored(const char *name, uint16_t player_mask, bool *out)
+{
+    khiter_t k = kh_get(region, s_regions, name);
+    if(k == kh_end(s_regions))
+        return false;
+
+    const struct region *reg = &kh_value(s_regions, k);
+    switch(reg->type) {
+    case REGION_RECTANGLE:
+        *out = G_Fog_CircleExplored(player_mask, reg->pos, reg->radius);
+        break;
+    case REGION_CIRCLE:
+        *out = G_Fog_RectExplored(player_mask, reg->pos, reg->xlen/2.0f, reg->zlen/2.0f);
+        break;
+    default:
+        assert(0);
+        break;
+    }
+    return true;
+}
+
 bool G_Region_SaveState(struct SDL_RWops *stream)
 {
     struct attr render = (struct attr){

@@ -685,7 +685,7 @@ size_t M_Tile_AllUnderCircle(struct map_resolution res, vec2_t xz_center, float 
 
     const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
     const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
-    int tile_len = MAX(TILE_X_DIM, TILE_Z_DIM);
+    int tile_len = MIN(TILE_X_DIM, TILE_Z_DIM);
     int ntiles = ceil(radius / tile_len);
 
     size_t ret = 0;
@@ -699,6 +699,45 @@ size_t M_Tile_AllUnderCircle(struct map_resolution res, vec2_t xz_center, float 
 
         struct box bounds = M_Tile_Bounds(res, map_pos, curr);
         if(!C_CircleRectIntersection(xz_center, radius, bounds))
+            continue;
+
+        out[ret++] = curr;
+        if(ret == maxout) 
+            break;
+    }}
+    return ret;
+}
+
+size_t M_Tile_AllUnderAABB(struct map_resolution res, vec2_t xz_center, float halfx, float halfz,
+                           vec3_t map_pos, struct tile_desc *out, size_t maxout)
+{
+    struct tile_desc tile;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_center, &tile);
+    assert(result);
+
+    const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
+    const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
+    int tile_len = MIN(TILE_X_DIM, TILE_Z_DIM);
+    int ntiles_x = ceil(halfx / tile_len);
+    int ntiles_z = ceil(halfz / tile_len);
+
+    size_t ret = 0;
+    struct box aabb = (struct box){
+        xz_center.x + halfx,
+        xz_center.z - halfz,
+        halfx * 2.0f,
+        halfz * 2.0f,
+    };
+
+    for(int dr = -ntiles_z; dr <= ntiles_z; dr++) {
+    for(int dc = -ntiles_x; dc <= ntiles_x; dc++) {
+
+        struct tile_desc curr = tile;
+        if(!M_Tile_RelativeDesc(res, &curr, dc, dr))
+            continue;
+
+        struct box bounds = M_Tile_Bounds(res, map_pos, curr);
+        if(!C_RectRectIntersection(aabb, bounds))
             continue;
 
         out[ret++] = curr;

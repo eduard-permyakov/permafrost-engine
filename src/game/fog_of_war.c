@@ -379,6 +379,71 @@ static bool fog_obj_matches(uint16_t fac_mask, const struct obb *obj, enum fog_s
     return false;
 }
 
+static bool fog_circle_matches(uint16_t fac_mask, vec2_t xz_center, float radius, 
+                               enum fog_state *states, size_t nstates)
+{
+    assert(Sched_UsingBigStack());
+
+    vec3_t pos = M_GetPos(s_map);
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    uint32_t facstate_mask = 0;
+    for(int i = 0; fac_mask; fac_mask >>= 1, i++) {
+        if(fac_mask & 0x1) {
+            facstate_mask |= (0x3 << (i * 2));
+        }
+    }
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderCircle(res, xz_center, radius, M_GetPos(s_map), tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntiles; i++) {
+
+        int idx = td_index(tds[i]);
+        uint32_t fac_state = s_fog_state[idx] & facstate_mask;
+
+        for(int j = 0; j < nstates; j++) {
+            if(fog_any_matches(fac_state, states[j]))
+                return true;
+        }
+    }
+    return false;
+}
+
+static bool fog_rect_matches(uint16_t fac_mask, vec2_t xz_center, float halfx, float halfz, 
+                             enum fog_state *states, size_t nstates)
+{
+    assert(Sched_UsingBigStack());
+
+    vec3_t pos = M_GetPos(s_map);
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    uint32_t facstate_mask = 0;
+    for(int i = 0; fac_mask; fac_mask >>= 1, i++) {
+        if(fac_mask & 0x1) {
+            facstate_mask |= (0x3 << (i * 2));
+        }
+    }
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderAABB(res, xz_center, halfx, halfz, 
+        M_GetPos(s_map), tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntiles; i++) {
+
+        int idx = td_index(tds[i]);
+        uint32_t fac_state = s_fog_state[idx] & facstate_mask;
+
+        for(int j = 0; j < nstates; j++) {
+            if(fog_any_matches(fac_state, states[j]))
+                return true;
+        }
+    }
+    return false;
+}
+
 static void on_render_3d(void *user, void *event)
 {
     const struct camera *cam = G_GetActiveCamera();
@@ -456,6 +521,38 @@ void G_Fog_AddVision(vec2_t xz_pos, int faction_id, float radius)
 void G_Fog_RemoveVision(vec2_t xz_pos, int faction_id, float radius)
 {
     fog_update_visible(faction_id, xz_pos, radius, -1);
+}
+
+void G_Fog_ExploreCircle(vec2_t xz_pos, int faction_id, float radius)
+{
+    assert(Sched_UsingBigStack());
+
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderCircle(res, xz_pos, radius, M_GetPos(s_map), tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntiles; i++) {
+        update_tile(faction_id, tds[i], +1);
+        update_tile(faction_id, tds[i], -1);
+    }
+}
+
+void G_Fog_ExploreRectangle(vec2_t xz_pos, int faction_id, float halfx, float halfz)
+{
+    assert(Sched_UsingBigStack());
+
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    struct tile_desc tds[2048];
+    size_t ntiles = M_Tile_AllUnderAABB(res, xz_pos, halfx, halfz, M_GetPos(s_map), tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntiles; i++) {
+        update_tile(faction_id, tds[i], +1);
+        update_tile(faction_id, tds[i], -1);
+    }
 }
 
 bool G_Fog_Visible(int faction_id, vec2_t xz_pos)
@@ -663,6 +760,24 @@ bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb)
 
     enum fog_state states[] = {STATE_VISIBLE};
     return fog_obj_matches(fac_mask, obb, states, ARR_SIZE(states));
+}
+
+bool G_Fog_CircleExplored(uint16_t fac_mask, vec2_t xz_pos, float radius)
+{
+    if(!s_enabled)
+        return true;
+
+    enum fog_state states[] = {STATE_IN_FOG, STATE_VISIBLE};
+    return fog_circle_matches(fac_mask, xz_pos, radius, states, ARR_SIZE(states));
+}
+
+bool G_Fog_RectExplored(uint16_t fac_mask, vec2_t xz_pos, float halfx, float halfz)
+{
+    if(!s_enabled)
+        return true;
+
+    enum fog_state states[] = {STATE_IN_FOG, STATE_VISIBLE};
+    return fog_rect_matches(fac_mask, xz_pos, halfx, halfz, states, ARR_SIZE(states));
 }
 
 void G_Fog_UpdateVisionRange(vec2_t xz_pos, int faction_id, float oldr, float newr)

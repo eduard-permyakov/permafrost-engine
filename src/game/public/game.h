@@ -439,6 +439,8 @@ bool   G_Region_GetZLen(const char *name, float *out);
 
 int    G_Region_GetEnts(const char *name, size_t maxout, struct entity *ents[static maxout]);
 bool   G_Region_ContainsEnt(const char *name, uint32_t uid);
+bool   G_Region_ExploreFog(const char *name, int faction_id);
+bool   G_Region_Explored(const char *name, uint16_t player_mask, bool *out);
 
 #endif
 

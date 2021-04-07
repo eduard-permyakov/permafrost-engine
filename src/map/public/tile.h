@@ -168,6 +168,9 @@ size_t     M_Tile_AllUnderObj(vec3_t map_pos, struct map_resolution res, const s
 size_t     M_Tile_AllUnderCircle(struct map_resolution res, vec2_t xz_center, float radius,
                                  vec3_t map_pos, struct tile_desc *out, size_t maxout);
 
+size_t     M_Tile_AllUnderAABB(struct map_resolution res, vec2_t xz_center, float halfx, float halfz,
+                               vec3_t map_pos, struct tile_desc *out, size_t maxout);
+
 size_t     M_Tile_Countour(size_t ntds, const struct tile_desc tds[static ntds],
                            struct map_resolution res, struct tile_desc *out, size_t maxout);
 

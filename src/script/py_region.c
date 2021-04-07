@@ -62,6 +62,7 @@ static void      PyRegion_dealloc(PyRegionObject *self);
 
 static PyObject *PyRegion_curr_ents(PyRegionObject *self);
 static PyObject *PyRegion_contains(PyRegionObject *self, PyObject *args);
+static PyObject *PyRegion_explore(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_pickle(PyRegionObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyRegion_unpickle(PyObject *cls, PyObject *args, PyObject *kwargs);
 
@@ -85,6 +86,10 @@ static PyMethodDef PyRegion_methods[] = {
     {"contains", 
     (PyCFunction)PyRegion_contains, METH_VARARGS,
     "Returns True if the specified entity is currently within the region."},
+
+    {"explore", 
+    (PyCFunction)PyRegion_explore, METH_VARARGS,
+    "Explore the Fog of War in the region for the specified faction."},
 
     {"__pickle__", 
     (PyCFunction)PyRegion_pickle, METH_KEYWORDS,
@@ -312,10 +317,29 @@ static PyObject *PyRegion_contains(PyRegionObject *self, PyObject *args)
     uint32_t uid = 0;
     S_Entity_UIDForObj(obj, &uid);
 
-    if(G_Region_ContainsEnt(self->name, uid))
+    if(G_Region_ContainsEnt(self->name, uid)) {
         Py_RETURN_TRUE;
-    else
+    }else {
         Py_RETURN_FALSE;
+    }
+}
+
+static PyObject *PyRegion_explore(PyRegionObject *self, PyObject *args)
+{
+    int faction_id;
+    if(!PyArg_ParseTuple(args, "i", &faction_id)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a single integer (faction ID).");
+        return NULL;
+    }
+
+    uint16_t factions = G_GetFactions(NULL, NULL, NULL);
+    if(faction_id < 0 || faction_id >= MAX_FACTIONS || !(factions & (0x1 << faction_id))) {
+        PyErr_SetString(PyExc_TypeError, "Invalid faction ID.");
+        return NULL;
+    }
+
+    G_Region_ExploreFog(self->name, faction_id);
+    Py_RETURN_NONE;
 }
 
 static PyObject *PyRegion_pickle(PyRegionObject *self, PyObject *args, PyObject *kwargs)
