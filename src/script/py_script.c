@@ -3265,6 +3265,10 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
         Py_INCREF(parent);
         return Py_BuildValue("OIOI", ent, hit->proj_uid, parent, hit->cookie);
     }
+    case EVENT_ENTERED_REGION:
+    case EVENT_EXITED_REGION: {
+        return PyString_FromString(arg);
+    }
     default:
         Py_RETURN_NONE;
     }

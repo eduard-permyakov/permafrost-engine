@@ -386,6 +386,7 @@ static void region_notify_changed(const char *name, struct region *reg)
 
             uint32_t uid = reg->curr_ents.array[i];
             E_Entity_Notify(EVENT_ENTERED_REGION, uid, (void*)arg, ES_ENGINE);
+            E_Global_Notify(EVENT_ENTERED_REGION, (void*)arg, ES_ENGINE);
 
             i++;
             nchanged++;
@@ -397,6 +398,7 @@ static void region_notify_changed(const char *name, struct region *reg)
 
             uint32_t uid = reg->prev_ents.array[j];
             E_Entity_Notify(EVENT_EXITED_REGION, uid, (void*)arg, ES_ENGINE);
+            E_Global_Notify(EVENT_EXITED_REGION, (void*)arg, ES_ENGINE);
 
             j++;
             nchanged++;
@@ -415,6 +417,7 @@ static void region_notify_changed(const char *name, struct region *reg)
 
         uint32_t uid = reg->curr_ents.array[i];
         E_Entity_Notify(EVENT_ENTERED_REGION, uid, (void*)arg, ES_ENGINE);
+        E_Global_Notify(EVENT_ENTERED_REGION, (void*)arg, ES_ENGINE);
 
         i++;
         nchanged++;
@@ -427,6 +430,7 @@ static void region_notify_changed(const char *name, struct region *reg)
 
         uint32_t uid = reg->prev_ents.array[j];
         E_Entity_Notify(EVENT_EXITED_REGION, uid, (void*)arg, ES_ENGINE);
+        E_Global_Notify(EVENT_EXITED_REGION, (void*)arg, ES_ENGINE);
 
         j++;
         nchanged++;
