@@ -121,9 +121,6 @@ static void process_sdl_events(void)
         UI_HandleEvent(&event);
         vec_event_push(&s_prev_tick_events, event);
 
-        E_Global_Notify(event.type, &vec_AT(&s_prev_tick_events, 
-            vec_size(&s_prev_tick_events)-1), ES_ENGINE);
-
         switch(event.type) {
 
         case SDL_KEYDOWN:
@@ -140,6 +137,11 @@ static void process_sdl_events(void)
         default: 
             break;
         }
+    }
+
+    for(int i = 0; i < vec_size(&s_prev_tick_events); i++) {
+        const SDL_Event *event = &vec_AT(&s_prev_tick_events, i);
+        E_Global_Notify(event->type, (void*)event, ES_ENGINE);
     }
 
     UI_InputEnd();
