@@ -146,9 +146,8 @@ void            G_Zombiefy(struct entity *ent, bool invis);
 bool            G_EntityExists(uint32_t uid);
 bool            G_EntityIsZombie(uint32_t uid);
 
-/* Wrapper around AL_EntityFree to defer the call until the render thread 
- * (which owns some part of entity resources) finishes its' work. */
-void            G_SafeFree(struct entity *ent);
+void            G_FreeEntity(struct entity *ent);
+void            G_DeferredRemove(struct entity *ent);
 
 bool            G_AddFaction(const char *name, vec3_t color);
 bool            G_RemoveFaction(int faction_id);

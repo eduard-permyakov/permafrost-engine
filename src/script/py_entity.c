@@ -1082,9 +1082,13 @@ static void PyEntity_dealloc(PyEntityObject *self)
     assert(k != kh_end(s_uid_pyobj_table));
     kh_del(PyObject, s_uid_pyobj_table, k);
 
-    G_RemoveEntity(self->ent);
-    G_SafeFree(self->ent);
-
+    /* Fully remove the entity from the simulation at the end of the frame 
+     * instead of immediately. This approach guarantees that an entity will 
+     * never disappear from the simulation until the whole session loading 
+     * process is completed, This is a nice property which allows us to 
+     * skip handling this edge case elsewhere. 
+     */
+    G_DeferredRemove(self->ent);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 

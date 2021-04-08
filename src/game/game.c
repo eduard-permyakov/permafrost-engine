@@ -1021,6 +1021,16 @@ static void g_render_minimap_units(void)
     PERF_RETURN_VOID();
 }
 
+static void g_remove_queued(void)
+{
+    for(int i = 0; i < vec_size(&s_gs.removed); i++) {
+        struct entity *curr = vec_AT(&s_gs.removed, i);
+        G_RemoveEntity(curr);
+        G_FreeEntity(curr);
+    }
+    vec_pentity_reset(&s_gs.removed);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1032,7 +1042,7 @@ bool G_Init(void)
     vec_pentity_init(&s_gs.visible);
     vec_pentity_init(&s_gs.light_visible);
     vec_obb_init(&s_gs.visible_obbs);
-    vec_pentity_init(&s_gs.deleted);
+    vec_pentity_init(&s_gs.removed);
 
     s_gs.active = kh_init(entity);
     if(!s_gs.active)
@@ -1139,6 +1149,7 @@ void G_ClearState(void)
 {
     PERF_ENTER();
     G_Sel_Clear();
+    g_remove_queued();
 
     uint32_t key;
     struct entity *curr;
@@ -1149,7 +1160,7 @@ void G_ClearState(void)
         if(curr->flags & ENTITY_FLAG_MARKER)
             continue;
         G_RemoveEntity(curr);
-        G_SafeFree(curr);
+        G_FreeEntity(curr);
     });
 
     kh_clear(entity, s_gs.active);
@@ -1372,7 +1383,7 @@ void G_Shutdown(void)
     vec_pentity_destroy(&s_gs.light_visible);
     vec_pentity_destroy(&s_gs.visible);
     vec_obb_destroy(&s_gs.visible_obbs);
-    vec_pentity_destroy(&s_gs.deleted);
+    vec_pentity_destroy(&s_gs.removed);
 }
 
 void G_Update(void)
@@ -1693,10 +1704,16 @@ void G_StopEntity(const struct entity *ent, bool stop_move)
     E_Entity_Notify(EVENT_ENTITY_STOP, ent->uid, NULL, ES_ENGINE);
 }
 
-void G_SafeFree(struct entity *ent)
+void G_DeferredRemove(struct entity *ent)
 {
     ASSERT_IN_MAIN_THREAD();
-    vec_pentity_push(&s_gs.deleted, ent);
+    vec_pentity_push(&s_gs.removed, ent);
+}
+
+void G_FreeEntity(struct entity *ent)
+{
+    ASSERT_IN_MAIN_THREAD();
+    AL_EntityFree(ent);
 }
 
 bool G_AddFaction(const char *name, vec3_t color)
@@ -2165,15 +2182,9 @@ void G_SwapBuffers(void)
 
     if(s_gs.map) {
         M_AL_ShallowCopy((struct map*)s_gs.prev_tick_map, s_gs.map);
-	}
-
-    for(int i = 0; i < vec_size(&s_gs.deleted); i++) {
-
-        struct entity *curr = vec_AT(&s_gs.deleted, i);
-        AL_EntityFree(curr);
     }
-    vec_pentity_reset(&s_gs.deleted);
 
+    g_remove_queued();
     assert(queue_size(s_gs.ws[render_idx].commands) == 0);
     R_ClearWS(&s_gs.ws[render_idx]);
     s_gs.curr_ws_idx = render_idx;
@@ -2541,6 +2552,7 @@ bool G_LoadGlobalState(SDL_RWops *stream)
 bool G_SaveEntityState(SDL_RWops *stream)
 {
     ASSERT_IN_MAIN_THREAD();
+    g_remove_queued();
 
     if(!g_save_anim_state(stream))
         return false;

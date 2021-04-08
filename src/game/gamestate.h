@@ -166,11 +166,11 @@ struct gamestate{
      */
     const struct map       *prev_tick_map;
     /*-------------------------------------------------------------------------
-     * Entities currently scheduled for deletion. They are safe to delete once
-     * the render thread has finished its' work.
+     * Entities currently scheduled for removal. They will be removed from the
+     * game simulation at the end of the tick.
      *-------------------------------------------------------------------------
      */
-    vec_pentity_t           deleted;
+    vec_pentity_t           removed;
 };
 
 #endif

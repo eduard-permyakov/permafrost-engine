@@ -342,7 +342,7 @@ static void building_clear_markers(struct buildstate *bs)
         if(!tofree)
             continue; /* May have already been deleted during shutdown */
         G_RemoveEntity(tofree);
-        G_SafeFree(tofree);
+        G_FreeEntity(tofree);
     }
 }
 
@@ -489,7 +489,7 @@ void G_Building_RemoveEntity(const struct entity *ent)
     struct entity *progress = G_EntityForUID(bs->progress_model);
     if(progress) {
         G_RemoveEntity(progress);
-        G_SafeFree(progress);
+        G_FreeEntity(progress);
     }
 
     E_Entity_Unregister(EVENT_STORAGE_SITE_AMOUNT_CHANGED, ent->uid, on_amount_changed);
@@ -595,7 +595,7 @@ bool G_Building_Complete(struct entity *ent)
     struct entity *progress = G_EntityForUID(bs->progress_model);
     if(progress) {
         G_RemoveEntity(progress);
-        G_SafeFree(progress);
+        G_FreeEntity(progress);
     }
     building_clear_markers(bs);
 
