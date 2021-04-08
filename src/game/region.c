@@ -947,7 +947,7 @@ bool G_Region_SaveState(struct SDL_RWops *stream)
 
         struct attr num_prev = (struct attr){
             .type = TYPE_INT,
-            .val.as_int = vec_size(&curr.curr_ents)
+            .val.as_int = vec_size(&curr.prev_ents)
         };
         CHK_TRUE_RET(Attr_Write(stream, &num_prev, "num_prev"));
 

@@ -277,7 +277,7 @@ static void PyRegion_dealloc(PyRegionObject *self)
 
     G_Region_Remove(self->name);
     free((void*)self->name);
-    Py_DECREF(self);
+    Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 static PyObject *PyRegion_curr_ents(PyRegionObject *self)

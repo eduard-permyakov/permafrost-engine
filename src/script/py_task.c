@@ -667,14 +667,17 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
 
     PyObject *stack_depth = PyInt_FromLong(self->stack_depth);
     status = ctx->pickle_obj(ctx->private_ctx, stack_depth, ctx->stream);
+    ctx->deferred_free(ctx->private_ctx, stack_depth);
     CHK_TRUE(status, fail_pickle);
 
     PyObject *sleep_elapsed = PyInt_FromLong(self->sleep_elapsed);
     status = ctx->pickle_obj(ctx->private_ctx, sleep_elapsed, ctx->stream);
+    ctx->deferred_free(ctx->private_ctx, sleep_elapsed);
     CHK_TRUE(status, fail_pickle);
 
     PyObject *small_stack = PyInt_FromLong(self->small_stack);
     status = ctx->pickle_obj(ctx->private_ctx, small_stack, ctx->stream);
+    ctx->deferred_free(ctx->private_ctx, small_stack);
     CHK_TRUE(status, fail_pickle);
 
     ret = PyString_FromString("");

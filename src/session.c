@@ -339,7 +339,6 @@ static bool session_pop_subsession_to_root(char *errstr, size_t errlen)
     }
 
     subsession_save_args();
-    subsession_clear();
 
     SDL_RWops *stream = vec_AT(&s_subsession_stack, 0);
     bool result = subsession_load(stream, errstr, errlen);
