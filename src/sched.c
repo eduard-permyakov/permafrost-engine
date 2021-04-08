@@ -1358,19 +1358,15 @@ void Sched_ClearState(void)
     while(pq_size(&s_ready_queue)) {
         struct task *curr = NULL;
         pq_task_pop(&s_ready_queue, &curr);
-        if(curr->destructor) {
+        if(curr->destructor)
             curr->destructor(curr->darg);
-        }
-        sched_task_free(curr);
     }
 
     while(pq_size(&s_ready_queue_main)) {
         struct task *curr = NULL;
         pq_task_pop(&s_ready_queue_main, &curr);
-        if(curr->destructor) {
+        if(curr->destructor)
             curr->destructor(curr->darg);
-        }
-        sched_task_free(curr);
     }
 
     SDL_UnlockMutex(s_ready_lock);
@@ -1378,14 +1374,47 @@ void Sched_ClearState(void)
     for(khiter_t k = kh_begin(s_event_queues); k != kh_end(s_event_queues); k++) {
         if(!kh_exist(s_event_queues, k))
             continue;
-        queue_tid_clear(&kh_val(s_event_queues, k));
+
+        queue_tid_t *queue = &kh_val(s_event_queues, k);
+        for(int i = 0; i < queue_size(*queue); i++) {
+            struct task *curr = &s_tasks[queue->mem[i] - 1];
+            if(curr->destructor)
+                curr->destructor(curr->darg);
+        }
+        queue_tid_clear(queue);
     }
 
     for(int i = 0; i < MAX_TASKS; i++) {
-        queue_tid_clear(&s_msg_queues[i]);
+
+        queue_tid_t *queue = &s_msg_queues[i];
+        for(int i = 0; i < queue_size(*queue); i++) {
+            struct task *curr = &s_tasks[queue->mem[i] - 1];
+            if(curr->destructor)
+                curr->destructor(curr->darg);
+        }
+        queue_tid_clear(queue);
+
+        if(s_tasks[i].state == TASK_STATE_SEND_BLOCKED) {
+            struct task *curr = &s_tasks[i];
+            if(curr->destructor)
+                curr->destructor(curr->darg);
+        }
         s_parent_waiting[i] = false;
         s_tasks[i].state = TASK_STATE_ACTIVE;
     }
+
+    /* Reset the free list */
+    s_tasks[0].prev = NULL;
+    s_tasks[0].next = &s_tasks[1];
+    s_tasks[MAX_TASKS-1].prev = &s_tasks[MAX_TASKS - 2];
+    s_tasks[MAX_TASKS-1].next = NULL;
+
+    for(int i = 1; i < MAX_TASKS-1; i++) {
+        s_tasks[i].next = &s_tasks[i + 1];
+        s_tasks[i].prev = &s_tasks[i - 1];
+    }
+    s_freehead = s_tasks;
+    s_nfree = MAX_TASKS;
 
     Task_CreateServices();
 }
