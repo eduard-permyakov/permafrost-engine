@@ -6285,25 +6285,25 @@ void S_UI_Style_PyRegister(PyObject *module, struct nk_context *ctx)
     /* Edit style */
     if(PyType_Ready(&PyUIEditStyle_type) < 0)
         return;
-    Py_INCREF(&PyUIScrollbarStyle_type);
+    Py_INCREF(&PyUIEditStyle_type);
     PyModule_AddObject(module, "UIEditStyle", (PyObject*)&PyUIEditStyle_type);
 
     /* Property style */
     if(PyType_Ready(&PyUIPropertyStyle_type) < 0)
         return;
-    Py_INCREF(&PyUIScrollbarStyle_type);
+    Py_INCREF(&PyUIPropertyStyle_type);
     PyModule_AddObject(module, "UIPropertyStyle", (PyObject*)&PyUIPropertyStyle_type);
 
     /* Slider style */
     if(PyType_Ready(&PyUISliderStyle_type) < 0)
         return;
-    Py_INCREF(&PyUIScrollbarStyle_type);
+    Py_INCREF(&PyUISliderStyle_type);
     PyModule_AddObject(module, "UISliderStyle", (PyObject*)&PyUISliderStyle_type);
 
     /* Progress style */
     if(PyType_Ready(&PyUIProgressStyle_type) < 0)
         return;
-    Py_INCREF(&PyUIScrollbarStyle_type);
+    Py_INCREF(&PyUIProgressStyle_type);
     PyModule_AddObject(module, "UIProgressStyle", (PyObject*)&PyUIProgressStyle_type);
 
     /* Global style objects */
