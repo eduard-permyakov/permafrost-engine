@@ -1180,6 +1180,7 @@ void G_ClearState(void)
 
     G_Sel_Enable();
     G_Fog_Enable();
+    G_StorageSite_ClearState();
 
     s_gs.factions_allocd = 0;
     s_gs.hide_healthbars = false;

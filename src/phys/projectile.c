@@ -751,6 +751,7 @@ bool P_Projectile_LoadState(struct SDL_RWops *stream)
 
 void P_Projectile_ClearState(void)
 {
+    s_work.ntasks = 0;
     stalloc_clear(&s_eventargs);
     stalloc_clear(&s_work.mem);
     vec_proj_reset(&s_front);

@@ -676,6 +676,12 @@ void G_StorageSite_Shutdown(void)
     mpa_buff_destroy(&s_mpool);
 }
 
+void G_StorageSite_ClearState(void)
+{
+    G_StorageSite_Shutdown();
+    G_StorageSite_Init();
+}
+
 bool G_StorageSite_AddEntity(const struct entity *ent)
 {
     struct ss_state ss;

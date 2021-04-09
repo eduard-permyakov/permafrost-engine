@@ -55,6 +55,7 @@ bool G_StorageSite_Desires(uint32_t uid, const char *rname);
 
 bool G_StorageSite_SaveState(struct SDL_RWops *stream);
 bool G_StorageSite_LoadState(struct SDL_RWops *stream);
+void G_StorageSite_ClearState(void);
 
 void G_StorageSite_SetUseAlt(const struct entity *ent, bool use);
 bool G_StorageSite_GetUseAlt(uint32_t uid);

@@ -260,6 +260,7 @@ void Cursor_FreeAll(void)
         SDL_FreeSurface(curr.surface);
         SDL_FreeCursor(curr.cursor);
     });
+    kh_destroy(cursor, s_named_cursors);
 
     for(int i = 0; i < ARR_SIZE(s_cursors); i++) {
     

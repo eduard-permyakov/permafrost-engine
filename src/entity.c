@@ -604,6 +604,7 @@ void Entity_Shutdown(void)
 
 void Entity_ClearState(void)
 {
+    kh_clear(trans, s_ent_trans_map);
     kh_clear(tags, s_ent_tag_map);
     kh_clear(ents, s_tag_ent_map);
     si_clear(&s_stringpool, s_stridx);
