@@ -973,7 +973,7 @@ bool G_Region_SaveState(struct SDL_RWops *stream)
             continue;
 
         struct attr reg_name = (struct attr){ .type = TYPE_STRING, };
-        const char *name = kh_key(s_regions, k);
+        const char *name = kh_key(s_dirty, k);
 
         pf_strlcpy(reg_name.val.as_string, name, sizeof(reg_name.val.as_string));
         CHK_TRUE_RET(Attr_Write(stream, &reg_name, "reg_name"));
