@@ -4609,10 +4609,10 @@ static int op_ext_function(struct unpickle_ctx *ctx, SDL_RWops *rw)
     PyObject_GC_UnTrack(op);
 
     /* Clear the placeholder values */
-    Py_DECREF(op->func_code); 
-    Py_DECREF(op->func_globals);
-    Py_DECREF(op->func_name);
-    Py_DECREF(op->func_doc);
+    Py_CLEAR(op->func_code); 
+    Py_CLEAR(op->func_globals);
+    Py_CLEAR(op->func_name);
+    Py_CLEAR(op->func_doc);
     assert(!op->func_defaults);
     assert(!op->func_module);
     Py_CLEAR(op->func_dict);
@@ -7570,6 +7570,16 @@ fail_id_qualname:
     return false;
 }
 
+void S_Pickle_Clear(void)
+{
+    for(int i = 0; i < ARR_SIZE(s_subclassable_builtin_map); i++) {
+        Py_DECREF(s_subclassable_builtin_map[i].heap_subtype);
+        s_subclassable_builtin_map[i].heap_subtype = NULL;
+    }
+    memset(s_subclassable_builtin_map, 0, sizeof(s_subclassable_builtin_map));
+    Py_CLEAR(s_placeholder_type);
+}
+
 void S_Pickle_Shutdown(void)
 {
     uint64_t key;
@@ -7578,16 +7588,7 @@ void S_Pickle_Shutdown(void)
         (void)key;
         free((char*)curr);
     });
-
     kh_destroy(str, s_id_qualname_map);
-    Py_DECREF(s_placeholder_type);
-    s_placeholder_type = NULL;
-
-    for(int i = 0; i < ARR_SIZE(s_subclassable_builtin_map); i++) {
-        Py_DECREF(s_subclassable_builtin_map[i].heap_subtype);
-        s_subclassable_builtin_map[i].heap_subtype = NULL;
-    }
-    memset(s_subclassable_builtin_map, 0, sizeof(s_subclassable_builtin_map)); 
 }
 
 PyObject *S_Pickle_PlainHeapSubtype(PyTypeObject *type)

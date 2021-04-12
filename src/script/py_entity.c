@@ -3593,9 +3593,13 @@ bool S_Entity_Init(void)
     return true;
 }
 
+void S_Entity_Clear(void)
+{
+    Py_CLEAR(s_loaded);
+}
+
 void S_Entity_Shutdown(void)
 {
-    Py_DECREF(s_loaded);
     kh_destroy(PyObject, s_uid_pyobj_table);
 }
 

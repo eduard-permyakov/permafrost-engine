@@ -3075,9 +3075,20 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
 void S_Shutdown(void)
 {
     E_Global_Unregister(EVENT_UPDATE_START, s_on_update);
+
+    /* Free any globaly retained Python objects before finalizing 
+     * the session */
     s_err_clear();
+    S_Pickle_Clear();
+    S_Camera_Clear();
+    S_Region_Clear();
+    S_Task_Clear();
+    S_Entity_Clear();
 
     Py_Finalize();
+
+    /* Free all memory allocated during initialization - this can only 
+     * be done now as destructors can still be called during finalization */
     S_Pickle_Shutdown();
     S_Camera_Shutdown();
     S_Region_Shutdown();

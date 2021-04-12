@@ -49,6 +49,7 @@ VEC_TYPE(pobj, PyObject*)
 VEC_PROTOTYPES(extern, pobj, PyObject*)
 
 bool      S_Pickle_Init(PyObject *module);
+void      S_Pickle_Clear(void);
 void      S_Pickle_Shutdown(void);
 
 bool      S_PickleObjgraph(PyObject *obj, struct SDL_RWops *stream);

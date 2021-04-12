@@ -41,6 +41,7 @@
 
 bool      S_Region_Init(void);
 void      S_Region_Shutdown(void);
+void      S_Region_Clear(void);
 void      S_Region_PyRegister(PyObject *module);
 PyObject *S_Region_GetLoaded(void);
 

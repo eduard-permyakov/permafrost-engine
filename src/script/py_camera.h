@@ -42,6 +42,7 @@
 void      S_Camera_PyRegister(PyObject *module);
 bool      S_Camera_Init(void);
 void      S_Camera_Shutdown(void);
+void      S_Camera_Clear(void);
 
 PyObject *S_Camera_GetActive(void);
 bool      S_Camera_SetActive(PyObject *cam);

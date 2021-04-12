@@ -609,8 +609,12 @@ bool S_Camera_Init(void)
 
 void S_Camera_Shutdown(void)
 {
-    Py_DECREF(s_active_cam);
-    s_active_cam = NULL;
+    /* No-op for now */
+}
+
+void S_Camera_Clear(void)
+{
+    Py_CLEAR(s_active_cam);
 }
 
 PyObject *S_Camera_GetActive(void)

@@ -42,6 +42,7 @@
 
 bool      S_Entity_Init(void);
 void      S_Entity_Shutdown(void);
+void      S_Entity_Clear(void);
 void      S_Entity_PyRegister(PyObject *module);
 bool      S_Entity_Check(PyObject *obj);
 /* Returned list has a stolen reference to each object */

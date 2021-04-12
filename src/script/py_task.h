@@ -41,6 +41,7 @@
 
 bool      S_Task_Init(void);
 void      S_Task_Shutdown(void);
+void      S_Task_Clear(void);
 void      S_Task_PyRegister(PyObject *module);
 PyObject *S_Task_GetAll(void);
 void      S_Task_Flush(void);

@@ -368,6 +368,7 @@ static struct result py_task(void *arg)
 
         PyObject *req_result = pytask_resume_request(self);
         assert(self->ts->frame);
+        PyObject_GC_UnTrack(self->ts->frame);
 
         if(req_result) {
 
@@ -413,6 +414,7 @@ static struct result py_task(void *arg)
             Py_INCREF(req_result);
             *(self->ts->frame->f_stacktop++) = req_result;
 
+            PyObject_GC_Track(self->ts->frame);
             ret = PyEval_EvalFrameEx(self->ts->frame, 0);
         }else{
             /* We've failed to resume the request. There are a couple of legitimate 
@@ -574,14 +576,14 @@ fail_alloc:
 static void PyTask_dealloc(PyTaskObject *self)
 {
     assert(self->state != PYTASK_STATE_RUNNING);
+    assert(self->runfunc == NULL);
 
-    Py_XDECREF(self->ts->curexc_type);
-    Py_XDECREF(self->ts->curexc_value);
-    Py_XDECREF(self->ts->curexc_traceback);
+    Py_CLEAR(self->ts->curexc_type);
+    Py_CLEAR(self->ts->curexc_value);
+    Py_CLEAR(self->ts->curexc_traceback);
 
-    pytask_ts_delete(self->ts);
     free((void*)self->regname);
-    Py_XDECREF(self->runfunc);
+    pytask_ts_delete(self->ts);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -616,6 +618,7 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
 
     PyObject **old = NULL;
     if(self->state == PYTASK_STATE_RUNNING) {
+        PyObject_GC_UnTrack(self->ts->frame);
         assert(self->ts->frame);
         old = self->ts->frame->f_stacktop;
         self->ts->frame->f_stacktop = self->ts->frame->f_valuestack + self->stack_depth;
@@ -638,6 +641,7 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
 
     if(self->state == PYTASK_STATE_RUNNING) {
         self->ts->frame->f_stacktop = old;
+        PyObject_GC_Track(self->ts->frame);
     }
     CHK_TRUE(status, fail_pickle);
 
@@ -1240,6 +1244,12 @@ bool S_Task_Init(void)
 
 void S_Task_Shutdown(void)
 {
+    kh_destroy(task, s_tid_task_map);
+    E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
+}
+
+void S_Task_Clear(void)
+{
     uint32_t key;
     PyTaskObject *curr;
     (void)key;
@@ -1248,8 +1258,7 @@ void S_Task_Shutdown(void)
         pytask_push_ctx(curr);
         Py_DECREF(curr);
     });
-    kh_destroy(task, s_tid_task_map);
-    E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
+    kh_clear(task, s_tid_task_map);
 }
 
 PyObject *S_Task_GetAll(void)

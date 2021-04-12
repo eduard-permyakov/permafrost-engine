@@ -230,7 +230,7 @@ static PyObject *PyRegion_new(PyTypeObject *type, PyObject *args, PyObject *kwds
         return NULL;
     }
     const char *copy = pf_strdup(name);
-    if(!name) {
+    if(!copy) {
         Py_DECREF(self);
         type->tp_free(self);
         return PyErr_NoMemory();
@@ -565,8 +565,12 @@ bool S_Region_Init(void)
 
 void S_Region_Shutdown(void)
 {
-    Py_DECREF(s_loaded);
     kh_destroy(PyObject, s_name_pyobj_table);
+}
+
+void S_Region_Clear(void)
+{
+    Py_CLEAR(s_loaded);
 }
 
 void S_Region_NotifyContentsChanged(const char *name)
