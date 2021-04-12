@@ -160,10 +160,23 @@ static inline bool e_handlers_equal(const struct handler_desc *a, const struct h
     if(a->type != b->type)
         return false;
 
-    if(a->type == HANDLER_TYPE_SCRIPT)
+    if(a->type == HANDLER_TYPE_SCRIPT) {
         return S_ObjectsEqual(a->handler.as_script_callable, b->handler.as_script_callable);
-    else
+    }else {
         return a->handler.as_function == b->handler.as_function;
+    }
+}
+
+static inline bool e_ptrs_equal(const struct handler_desc *a, const struct handler_desc *b)
+{
+    if(a->type != b->type)
+        return false;
+
+    if(a->type == HANDLER_TYPE_SCRIPT) {
+        return a->handler.as_script_callable == b->handler.as_script_callable;
+    }else {
+        return a->handler.as_function == b->handler.as_function;
+    }
 }
 
 static uint64_t e_key(uint32_t ent_id, enum eventtype event)
@@ -297,9 +310,14 @@ static void e_handle_event(struct event event, bool immediate)
 
         vec_hd_t vec = kh_value(s_event_handler_table, k);
         for(int i = 0; i < vec_size(&vec); i++) {
-        
+
+            /* Since any of the executed handlers may have subsequently 
+             * been deleted, the pointers to scripting objects in the 
+             * executed handlers must be treated as dangling references
+             * and must not be dereferenced 
+             */
             struct handler_desc *elem = &vec_AT(&vec, i);
-            int idx = vec_hd_indexof(&execd_handlers, *elem, e_handlers_equal); 
+            int idx = vec_hd_indexof(&execd_handlers, *elem, e_ptrs_equal); 
             if(idx != -1)
                 continue;
             /* memoize any handlers that we've already ran */
