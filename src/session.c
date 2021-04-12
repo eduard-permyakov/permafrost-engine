@@ -204,14 +204,14 @@ static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
 
     if(!Attr_Parse(stream, &attr, true) || attr.type != TYPE_INT) {
         pf_snprintf(errstr, errlen, 
-            "Could not read version next_uid attribute from session file");
+            "Could not read 'next_uid' attribute from session file");
         goto fail;
     }
     Entity_SetNextUID(attr.val.as_int);
 
     if(!G_LoadEntityState(stream)) {
         pf_snprintf(errstr, errlen, 
-            "Could not de-serialize addional entity state from session file");
+            "Could not de-serialize additional entity state from session file");
         goto fail;
     }
 

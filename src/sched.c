@@ -40,6 +40,7 @@
 #include "task.h"
 #include "event.h"
 #include "game/public/game.h"
+#include "phys/public/phys.h"
 #include "script/public/script.h"
 #include "lib/public/pqueue.h"
 #include "lib/public/queue.h"
@@ -130,12 +131,13 @@ struct task{
     void         (*destructor)(void*);
     void          *darg;
     struct task   *prev, *next;
-    SDL_Event      earg;
+    void          *earg;
+    void         (*erelease)(void*);
 };
 
 #define MAX_TASKS               (8192)
 #define MAX_WORKER_THREADS      (64)
-#define STACK_SZ                (16 * 1024)
+#define STACK_SZ                (128 * 1024)
 #define BIG_STACK_SZ            (4 * 1024 * 1024)
 #define SCHED_TICK_MS           (1.0f / CONFIG_SCHED_TARGET_FPS * 1000.0f)
 #define ALIGNED(val, align)     (((val) + ((align) - 1)) & ~((align) - 1))
@@ -567,6 +569,12 @@ __attribute__((used)) static void sched_task_exit(struct result ret)
         task->destructor(task->darg);
     }
 
+    if(task->erelease) {
+        task->erelease(task->earg);
+        task->erelease = NULL;
+        task->earg = NULL;
+    }
+
     task->req.type = _SCHED_REQ_FREE;
 
     if(SDL_ThreadID() == g_main_thread_id) {
@@ -590,6 +598,8 @@ static void sched_task_init(struct task *task, int prio, uint32_t flags,
     task->destructor = NULL;
     task->darg = NULL;
     task->future = future;
+    task->earg = NULL;
+    task->erelease = NULL;
 
     if(task->future) {
         SDL_AtomicSet(&task->future->status, FUTURE_INCOMPLETE);    
@@ -674,6 +684,50 @@ static void sched_reply(struct task *task, uint32_t tid, void *reply, size_t rep
     sched_reactivate(send_task);
     assert(task->state != TASK_STATE_EVENT_BLOCKED);
     sched_reactivate(task);
+}
+
+static uint64_t sched_retain_arg(struct task *task, int event, int event_source, void *arg)
+{
+    void *ret = NULL;
+    if(event_source == ES_SCRIPT) {
+        /* Scripting references will be released by the event consumer */
+        S_Retain(arg);
+        ret = arg;
+    }else{
+        if(event < SDL_LASTEVENT) {
+            ret = malloc(sizeof(SDL_Event));
+            if(arg) {
+                memcpy(ret, arg, sizeof(SDL_Event));
+            }
+            task->erelease = free;
+        }else if(event == EVENT_ENTERED_REGION || event == EVENT_EXITED_REGION) {
+            ret = pf_strdup(arg);
+            task->erelease = free;
+        }else if(event == EVENT_PROJECTILE_HIT) {
+            ret = malloc(sizeof(struct proj_hit));
+            if(arg) {
+                memcpy(ret, arg, sizeof(struct proj_hit));
+            }
+            task->erelease = free;
+        }else{
+            /* We'd better be sure that the pointer won't have been 'free'd or something 
+             * by the time the waiting task finally runs... */
+            ret = arg;
+            task->erelease = NULL;
+        }
+    }
+    task->earg = (void*)(uintptr_t)ret;
+    return (uint64_t)ret;
+}
+
+static void sched_task_cleanup(const struct task *task)
+{
+    if(task->destructor) {
+        task->destructor(task->darg);
+    }
+    if(task->erelease) {
+        task->erelease(task->earg);
+    }
 }
 
 static void sched_await_event(struct task *task, int event)
@@ -841,6 +895,12 @@ static void sched_task_service_request(struct task *task)
         break;
     }
     default: assert(0);    
+    }
+
+    if(task->erelease) {
+        task->erelease(task->earg);
+        task->erelease = NULL;
+        task->earg = NULL;
     }
 
     SDL_UnlockMutex(s_request_lock);
@@ -1179,15 +1239,7 @@ void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
          * doesn't become stale between now and when the task is actually
          * run. 
          */
-        if(event_source == ES_SCRIPT) {
-            S_Retain(arg);
-        }
-        if(event < SDL_LASTEVENT) {
-            task->earg = *(SDL_Event*)arg;
-            arg = &task->earg;
-        }
-
-        task->retval = (uint64_t)arg;
+        task->retval = sched_retain_arg(task, event, event_source, arg);
 
         if(immediate) {
             queue_tid_push(&torun, &tid);
@@ -1358,15 +1410,13 @@ void Sched_ClearState(void)
     while(pq_size(&s_ready_queue)) {
         struct task *curr = NULL;
         pq_task_pop(&s_ready_queue, &curr);
-        if(curr->destructor)
-            curr->destructor(curr->darg);
+        sched_task_cleanup(curr);
     }
 
     while(pq_size(&s_ready_queue_main)) {
         struct task *curr = NULL;
         pq_task_pop(&s_ready_queue_main, &curr);
-        if(curr->destructor)
-            curr->destructor(curr->darg);
+        sched_task_cleanup(curr);
     }
 
     SDL_UnlockMutex(s_ready_lock);
@@ -1378,8 +1428,7 @@ void Sched_ClearState(void)
         queue_tid_t *queue = &kh_val(s_event_queues, k);
         for(int i = 0; i < queue_size(*queue); i++) {
             struct task *curr = &s_tasks[queue->mem[i] - 1];
-            if(curr->destructor)
-                curr->destructor(curr->darg);
+            sched_task_cleanup(curr);
         }
         queue_tid_clear(queue);
     }
@@ -1389,15 +1438,13 @@ void Sched_ClearState(void)
         queue_tid_t *queue = &s_msg_queues[i];
         for(int i = 0; i < queue_size(*queue); i++) {
             struct task *curr = &s_tasks[queue->mem[i] - 1];
-            if(curr->destructor)
-                curr->destructor(curr->darg);
+            sched_task_cleanup(curr);
         }
         queue_tid_clear(queue);
 
         if(s_tasks[i].state == TASK_STATE_SEND_BLOCKED) {
             struct task *curr = &s_tasks[i];
-            if(curr->destructor)
-                curr->destructor(curr->darg);
+            sched_task_cleanup(curr);
         }
         s_parent_waiting[i] = false;
         s_tasks[i].state = TASK_STATE_ACTIVE;
