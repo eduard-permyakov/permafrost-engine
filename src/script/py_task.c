@@ -368,7 +368,6 @@ static struct result py_task(void *arg)
 
         PyObject *req_result = pytask_resume_request(self);
         assert(self->ts->frame);
-        PyObject_GC_UnTrack(self->ts->frame);
 
         if(req_result) {
 
@@ -376,6 +375,7 @@ static struct result py_task(void *arg)
              */
             const unsigned char *bytecode = (unsigned char *)PyString_AS_STRING(self->ts->frame->f_code->co_code);
             const int lasti = self->ts->frame->f_lasti;
+            PyObject_GC_UnTrack(self->ts->frame);
 
             int opcode = bytecode[lasti];
             int oparg = (bytecode[lasti + 2] << 8) + bytecode[lasti + 1];
@@ -414,7 +414,8 @@ static struct result py_task(void *arg)
             Py_INCREF(req_result);
             *(self->ts->frame->f_stacktop++) = req_result;
 
-            PyObject_GC_Track(self->ts->frame);
+            if(!_PyObject_GC_IS_TRACKED(self->ts->frame))
+                PyObject_GC_Track(self->ts->frame);
             ret = PyEval_EvalFrameEx(self->ts->frame, 0);
         }else{
             /* We've failed to resume the request. There are a couple of legitimate 
@@ -641,7 +642,8 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
 
     if(self->state == PYTASK_STATE_RUNNING) {
         self->ts->frame->f_stacktop = old;
-        PyObject_GC_Track(self->ts->frame);
+        if(!_PyObject_GC_IS_TRACKED(self->ts->frame))
+            PyObject_GC_Track(self->ts->frame);
     }
     CHK_TRUE(status, fail_pickle);
 
