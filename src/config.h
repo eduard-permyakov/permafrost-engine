@@ -69,4 +69,11 @@
 
 #define CONFIG_FRAME_STEP_HOTKEY    (SDL_SCANCODE_SPACE)
 
+/* Some debug configurations to allow overriding malloc/free and friends 
+ * on Linux builds to assist in debuggin memory problems. See debug_malloc.c
+ * for details.
+ */
+#define CONFIG_USE_DEBUG_ALLOCATOR  (false)
+#define CONFIG_DEBUG_ALLOC_MMAP     (false)
+
 #endif
