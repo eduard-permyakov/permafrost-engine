@@ -2458,6 +2458,8 @@ static PyObject *PyPf_save_session(PyObject *self, PyObject *args)
     SDL_RWops *stream = SDL_RWFromFP(file, true); /* file will be closed when stream is */
     assert(stream);
 
+    PyGC_Collect();
+
     if(!Session_Save(stream)) {
         PyErr_SetString(PyExc_RuntimeError, "Error saving the session.");
         SDL_RWclose(stream);
@@ -3030,11 +3032,11 @@ bool S_Init(const char *progname, const char *base_path, struct nk_context *ctx)
     Py_SetProgramName((char*)progname);
     s_progname = progname;
 
-    char script_dir[512];
+    static char script_dir[512];
     pf_snprintf(script_dir, sizeof(script_dir), "%s/%s", g_basepath, "scripts"); 
 
-    Py_SetPythonHome(script_dir);
-    Py_Initialize();
+    Py_SetPythonHome(script_dir); /* caches passed in pointer */
+    Py_InitializeEx(0);
 
     if(!S_UI_Init(ctx))
         return false;
@@ -3074,6 +3076,7 @@ void S_Shutdown(void)
 {
     E_Global_Unregister(EVENT_UPDATE_START, s_on_update);
     s_err_clear();
+
     Py_Finalize();
     S_Pickle_Shutdown();
     S_Camera_Shutdown();
@@ -3166,7 +3169,12 @@ void S_RunEventHandler(script_opaque_t callable, script_opaque_t user_arg, scrip
     PyTuple_SetItem(args, 0, user_arg);
     PyTuple_SetItem(args, 1, event_arg);
 
+    /* Make sure to retain the callable object - PyObject_CallObject will not do this for us.
+     * The reason is that the invoked handler may unregister itself, thus removing the last 
+     * living reference to it. */
+    Py_INCREF(callable);
     ret = PyObject_CallObject(callable, args);
+    Py_DECREF(callable);
     Py_DECREF(args);
 
     if(PyErr_Occurred()) {
