@@ -248,21 +248,21 @@ static bool e_unregister_handler(uint64_t key, const struct handler_desc *desc)
     return true;
 }
 
-static void e_invoke(const struct handler_desc *hd, struct event event)
+static void e_invoke(const struct handler_desc hd, struct event event)
 {
-    if(hd->type == HANDLER_TYPE_ENGINE) {
+    if(hd.type == HANDLER_TYPE_ENGINE) {
 
-        hd->handler.as_function(hd->user_arg, event.arg);
+        hd.handler.as_function(hd.user_arg, event.arg);
 
-    }else if(hd->type == HANDLER_TYPE_SCRIPT) {
+    }else if(hd.type == HANDLER_TYPE_SCRIPT) {
 
         /* Remove the handler if the user arg goes out of scope. Since Python
          * doesn't actually guarantee destructors getting called, it's possible
          * that we miss an 'unregister'. Take care of that here.
          */
-        if(S_WeakrefDied(hd->user_arg)) {
+        if(S_WeakrefDied(hd.user_arg)) {
             uint64_t key = e_key(event.receiver_id, event.type);
-            e_unregister_handler(key, hd);
+            e_unregister_handler(key, &hd);
             return;
         }
 
@@ -270,9 +270,9 @@ static void e_invoke(const struct handler_desc *hd, struct event event)
             ? S_UnwrapIfWeakref(event.arg)
             : S_WrapEngineEventArg(event.type, event.arg);
         assert(script_arg);
-        script_opaque_t user_arg = S_UnwrapIfWeakref(hd->user_arg);
+        script_opaque_t user_arg = S_UnwrapIfWeakref(hd.user_arg);
 
-        S_RunEventHandler(hd->handler.as_script_callable, user_arg, script_arg);
+        S_RunEventHandler(hd.handler.as_script_callable, user_arg, script_arg);
 
         S_Release(script_arg);
         S_Release(user_arg);
@@ -302,30 +302,35 @@ static void e_handle_event(struct event event, bool immediate)
     vec_hd_init(&execd_handlers);
     bool ran; 
 
+    vec_hd_t curr;
+    vec_hd_init(&curr);
+
     do{
         ran = false;
         khiter_t k = kh_get(handler_desc, s_event_handler_table, key);
         if(k == kh_end(s_event_handler_table))
             break; 
 
-        vec_hd_t vec = kh_value(s_event_handler_table, k);
-        for(int i = 0; i < vec_size(&vec); i++) {
+        vec_hd_reset(&curr);
+        vec_hd_copy(&curr, &kh_value(s_event_handler_table, k));
+
+        for(int i = 0; i < vec_size(&curr); i++) {
 
             /* Since any of the executed handlers may have subsequently 
              * been deleted, the pointers to scripting objects in the 
              * executed handlers must be treated as dangling references
              * and must not be dereferenced 
              */
-            struct handler_desc *elem = &vec_AT(&vec, i);
-            int idx = vec_hd_indexof(&execd_handlers, *elem, e_ptrs_equal); 
+            struct handler_desc elem = vec_AT(&curr, i);
+            int idx = vec_hd_indexof(&execd_handlers, elem, e_ptrs_equal); 
             if(idx != -1)
                 continue;
             /* memoize any handlers that we've already ran */
-            vec_hd_push(&execd_handlers, *elem);
+            vec_hd_push(&execd_handlers, elem);
 
-            if(!immediate && ((elem->simmask & ss) == 0))
+            if(!immediate && ((elem.simmask & ss) == 0))
                 continue;
-            if(SDL_TICKS_PASSED(elem->register_tick, event.tick))
+            if(SDL_TICKS_PASSED(elem.register_tick, event.tick))
                 continue;
 
             e_invoke(elem, event);
@@ -336,6 +341,7 @@ static void e_handle_event(struct event event, bool immediate)
     }while(ran);
 
     vec_hd_destroy(&execd_handlers);
+    vec_hd_destroy(&curr);
 
     if(event.source == ES_SCRIPT)
         S_Release(event.arg);
