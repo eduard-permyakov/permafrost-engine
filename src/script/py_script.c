@@ -58,6 +58,7 @@
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/pf_nuklear.h"
+#include "../lib/public/mem.h"
 #include "../event.h"
 #include "../config.h"
 #include "../scene.h"
@@ -1111,14 +1112,14 @@ static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
     }
 
     for(int i = 0; i < nthreads; i++) {
-        free(infos[i]);
+        PF_FREE(infos[i]);
     }
     return ret;
 
 fail:
     Py_XDECREF(ret);
     for(int i = 0; i < nthreads; i++) {
-        free(infos[i]);
+        PF_FREE(infos[i]);
     }
     return NULL;
 }
@@ -3377,7 +3378,7 @@ fail_tasks:
 fail_handlers:
     Py_DECREF(saved_handlers);
 fail_tuple:
-    free(handlers);
+    PF_FREE(handlers);
     return ret;
 }
 

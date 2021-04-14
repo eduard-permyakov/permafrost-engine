@@ -58,6 +58,7 @@
 #include "../phys/public/phys.h"
 #include "../phys/public/collision.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/mem.h"
 #include "../entity.h"
 #include "../camera.h"
 #include "../cam_control.h"
@@ -696,7 +697,7 @@ static void g_clear_map_state(void)
         /* The render thread still owns the previous tick map. Wait 
          * for it to complete before we free the buffer. */
         Engine_WaitRenderWorkDone();
-        free((void*)s_gs.prev_tick_map);
+        PF_FREE(s_gs.prev_tick_map);
         s_gs.prev_tick_map = NULL;
     }
 }

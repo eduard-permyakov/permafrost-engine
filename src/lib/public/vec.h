@@ -125,7 +125,8 @@
                                                                                                 \
     scope void vec_##name##_destroy(vec(name) *vec)                                             \
     {                                                                                           \
-        vec->vfree(vec->array);                                                                       \
+        vec->vfree(vec->array);                                                                 \
+        memset(vec, 0, sizeof(*vec));                                                           \
     }                                                                                           \
                                                                                                 \
     scope bool vec_##name##_push(vec(name) *vec, type in)                                       \

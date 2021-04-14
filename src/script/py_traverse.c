@@ -155,7 +155,7 @@ static void s_traverse_bf(PyObject *root, visitproc visit, struct visit_ctx *ctx
 
     while(queue_size(frontier) > 0) {
     
-        PyObject *curr;
+        PyObject *curr = NULL;
         struct visit_meta curr_meta = {0};
 
         queue_pobj_pop(&frontier, &curr);

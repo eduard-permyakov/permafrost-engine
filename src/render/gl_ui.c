@@ -43,6 +43,7 @@
 #include "../main.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/stb_image.h"
+#include "../lib/public/mem.h"
 
 #include <assert.h>
 
@@ -102,7 +103,7 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
                 });
                 R_GL_StateInstall(GL_U_PROJECTION, R_GL_Shader_GetCurrActive());
 
-                free(ud);
+                PF_FREE(ud);
                 continue;
             }
             case NK_COMMAND_IMAGE_TEXPATH: {
@@ -115,7 +116,7 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
             default: assert(0);
             }
 
-            free(ud);
+            PF_FREE(ud);
         }
 
         if(!cmd->elem_count) 

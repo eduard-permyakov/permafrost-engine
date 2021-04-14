@@ -39,6 +39,7 @@
 #include "py_traverse.h"
 #include "private_types.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/mem.h"
 #include "../asset_load.h"
 
 
@@ -1984,7 +1985,7 @@ static int bytearray_pickle(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *rw
     vec_pobj_push(&ctx->to_free, str);
 
     Py_DECREF(uniobj);
-    free(uni);
+    PF_FREE(uni);
     CHK_TRUE(pickle_obj(ctx, str, rw), fail);
     
     const char ops[] = {PF_EXTEND, PF_BYTEARRAY};
@@ -7582,11 +7583,9 @@ void S_Pickle_Clear(void)
 
 void S_Pickle_Shutdown(void)
 {
-    uint64_t key;
     const char *curr;
-    kh_foreach(s_id_qualname_map, key, curr, {
-        (void)key;
-        free((char*)curr);
+    kh_foreach(s_id_qualname_map, (uint64_t){0}, curr, {
+        PF_FREE(curr);
     });
     kh_destroy(str, s_id_qualname_map);
 }

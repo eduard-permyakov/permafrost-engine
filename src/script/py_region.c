@@ -40,6 +40,7 @@
 #include "../sched.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/mem.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../game/public/game.h"
 
@@ -256,7 +257,7 @@ static PyObject *PyRegion_new(PyTypeObject *type, PyObject *args, PyObject *kwds
             copy, regtype);
         PyErr_SetString(PyExc_RuntimeError, errbuff);
 
-        free((void*)copy);
+        PF_FREE(copy);
         type->tp_free(self);
         return NULL;
     }
@@ -276,7 +277,7 @@ static void PyRegion_dealloc(PyRegionObject *self)
     kh_del(PyObject, s_name_pyobj_table, k);
 
     G_Region_Remove(self->name);
-    free((void*)self->name);
+    PF_FREE(self->name);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 

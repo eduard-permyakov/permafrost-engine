@@ -48,8 +48,9 @@
 #include "../config.h"
 #include "../anim/public/skeleton.h"
 #include "../anim/public/anim.h"
-#include "../ui.h"
 #include "../map/public/map.h"
+#include "../lib/public/mem.h"
+#include "../ui.h"
 #include "../main.h"
 
 #include <GL/glew.h>
@@ -430,7 +431,7 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
     /* cleanup */
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
-    free(vbuff);
+    PF_FREE(vbuff);
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
@@ -753,7 +754,7 @@ void R_GL_DumpFBColor_PPM(const char *filename, const int *width, const int *hei
 
     FILE *file = fopen(filename, "wb");
     if(!file) {
-        free(data); 
+        PF_FREE(data); 
         return;
     }
 
@@ -771,7 +772,7 @@ void R_GL_DumpFBColor_PPM(const char *filename, const int *width, const int *hei
 
     GL_ASSERT_OK();
     fclose(file);
-    free(data);
+    PF_FREE(data);
 }
 
 void R_GL_DumpFBDepth_PPM(const char *filename, const int *width, const int *height, 
@@ -789,7 +790,7 @@ void R_GL_DumpFBDepth_PPM(const char *filename, const int *width, const int *hei
 
     FILE *file = fopen(filename, "wb");
     if(!file) {
-        free(data); 
+        PF_FREE(data); 
         return;
     }
 
@@ -818,7 +819,7 @@ void R_GL_DumpFBDepth_PPM(const char *filename, const int *width, const int *hei
 
     GL_ASSERT_OK();
     fclose(file);
-    free(data);
+    PF_FREE(data);
 }
 
 void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float *width, 

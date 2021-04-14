@@ -45,6 +45,7 @@
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/mpool_allocator.h"
+#include "lib/public/mem.h"
 
 #include <SDL.h>
 
@@ -269,10 +270,10 @@ struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name,
     return ret;
 
 fail_init:
-    free((void*)ret->basedir);
-    free((void*)ret->filename);
-    free((void*)ret->name);
-    free(ret);
+    PF_FREE(ret->basedir);
+    PF_FREE(ret->filename);
+    PF_FREE(ret->name);
+    PF_FREE(ret);
 fail_alloc:
     return NULL;
 }
@@ -301,8 +302,8 @@ bool AL_EntitySetPFObj(struct entity *ent, const char *base_path, const char *pf
     }
     ent->flags &= ~old_res.ent_flags;
 
-    free((void*)ent->basedir);
-    free((void*)ent->filename);
+    PF_FREE(ent->basedir);
+    PF_FREE(ent->filename);
     ent->basedir = newdir;
     ent->filename = newobj;
 
@@ -317,17 +318,17 @@ bool AL_EntitySetPFObj(struct entity *ent, const char *base_path, const char *pf
     return true;
 
 fail_alloc:
-    free((void*)newdir);
-    free((void*)newobj);
+    PF_FREE(newdir);
+    PF_FREE(newobj);
 fail_init:
     return false;
 }
 
 void AL_EntityFree(struct entity *entity)
 {
-    free((void*)entity->basedir);
-    free((void*)entity->filename);
-    free((void*)entity->name);
+    PF_FREE(entity->basedir);
+    PF_FREE(entity->filename);
+    PF_FREE(entity->name);
     mpa_ent_free(&s_mpool, entity);
 }
 
@@ -394,7 +395,7 @@ struct map *AL_MapFromPFMapStream(SDL_RWops *stream, bool update_navgrid)
     return ret;
 
 fail_init:
-    free(ret);
+    PF_FREE(ret);
 fail_alloc:
 fail_parse:
     return NULL;
@@ -419,7 +420,7 @@ fail_parse:
 void AL_MapFree(struct map *map)
 {
     M_AL_FreePrivate(map);
-    free(map);
+    PF_FREE(map);
 }
 
 bool AL_ReadLine(SDL_RWops *stream, char *outbuff)
@@ -490,11 +491,11 @@ void AL_Shutdown(void)
     struct shared_resource curr;
 
     kh_foreach(s_name_resource_table, key, curr, {
-        free((void*)key);
-        free(curr.render_private);
-        free(curr.anim_private);
-        free((void*)curr.basedir);
-        free((void*)curr.filename);
+        PF_FREE(key);
+        PF_FREE(curr.render_private);
+        PF_FREE(curr.anim_private);
+        PF_FREE(curr.basedir);
+        PF_FREE(curr.filename);
     });
     kh_destroy(entity_res, s_name_resource_table);
     mpa_ent_destroy(&s_mpool);

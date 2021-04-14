@@ -199,7 +199,7 @@ void *realloc(void *ptr, size_t size)
         memcpy(PTR(newheader), PTR(header), cpysize);
         munmap((void*)header[1], header[0]);
 #else
-        intmax_t *newheader = __libc_realloc(header, newsize);
+        intmax_t *newheader = __libc_realloc((void*)header[1], newsize);
         if(!newheader)
             return NULL;
 #endif
@@ -249,7 +249,7 @@ void *memalign(size_t alignment, size_t size)
         return NULL;
 #endif
 
-    char *ret = allocd + 3 * alignment;
+    char *ret = (void*)ALIGNED((uintptr_t)allocd, alignment) + 3 * alignment;
     assert(((uintptr_t)ret) == ALIGNED(((uintptr_t)ret), alignment));
 
     *((intmax_t*)(ret - 3 * sizeof(intmax_t))) = size;

@@ -49,6 +49,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/mem.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -577,14 +578,16 @@ fail_alloc:
 static void PyTask_dealloc(PyTaskObject *self)
 {
     assert(self->state != PYTASK_STATE_RUNNING);
+    assert(PyThreadState_Get() != self->ts);
     assert(self->runfunc == NULL);
 
     Py_CLEAR(self->ts->curexc_type);
     Py_CLEAR(self->ts->curexc_value);
     Py_CLEAR(self->ts->curexc_traceback);
 
-    free((void*)self->regname);
+    PF_FREE(self->regname);
     pytask_ts_delete(self->ts);
+    self->ts = NULL;
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -619,7 +622,6 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
 
     PyObject **old = NULL;
     if(self->state == PYTASK_STATE_RUNNING) {
-        PyObject_GC_UnTrack(self->ts->frame);
         assert(self->ts->frame);
         old = self->ts->frame->f_stacktop;
         self->ts->frame->f_stacktop = self->ts->frame->f_valuestack + self->stack_depth;
@@ -642,8 +644,6 @@ static PyObject *PyTask_pickle(PyTaskObject *self, PyObject *args, PyObject *kwa
 
     if(self->state == PYTASK_STATE_RUNNING) {
         self->ts->frame->f_stacktop = old;
-        if(!_PyObject_GC_IS_TRACKED(self->ts->frame))
-            PyObject_GC_Track(self->ts->frame);
     }
     CHK_TRUE(status, fail_pickle);
 
@@ -1252,12 +1252,8 @@ void S_Task_Shutdown(void)
 
 void S_Task_Clear(void)
 {
-    uint32_t key;
     PyTaskObject *curr;
-    (void)key;
-
-    kh_foreach(s_tid_task_map, key, curr, {
-        pytask_push_ctx(curr);
+    kh_foreach(s_tid_task_map, (uint32_t){0}, curr, {
         Py_DECREF(curr);
     });
     kh_clear(task, s_tid_task_map);

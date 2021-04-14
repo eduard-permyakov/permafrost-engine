@@ -45,6 +45,7 @@
 #include "../lib/public/pqueue.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
+#include "../lib/public/mem.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 
@@ -491,9 +492,9 @@ bool G_Fog_Init(const struct map *map)
 
 fail:
     kh_destroy(uid, s_explored_cache);
-    free(s_fog_state);
+    PF_FREE(s_fog_state);
     for(int i = 0; i < MAX_FACTIONS; i++) {
-        free(s_vision_refcnts[i]);
+        PF_FREE(s_vision_refcnts[i]);
     }
     return false;
 }
@@ -503,11 +504,10 @@ void G_Fog_Shutdown(void)
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
 
     kh_destroy(uid, s_explored_cache);
-    free(s_fog_state);
-    s_fog_state = NULL;
+    PF_FREE(s_fog_state);
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
-        free(s_vision_refcnts[i]);
+        PF_FREE(s_vision_refcnts[i]);
     }
     memset(s_vision_refcnts, 0, sizeof(s_vision_refcnts));
     s_map = NULL;

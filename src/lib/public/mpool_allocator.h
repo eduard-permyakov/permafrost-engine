@@ -130,6 +130,7 @@
             mp_##name##_destroy(&mpa->chunks[i]);                                               \
         }                                                                                       \
         free(mpa->chunks);                                                                      \
+        memset(mpa, 0, sizeof(*mpa));                                                           \
     }                                                                                           \
                                                                                                 \
     scope void *mpa_##name##_alloc(mpa(name) *mpa)                                              \

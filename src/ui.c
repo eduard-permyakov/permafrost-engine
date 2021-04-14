@@ -45,6 +45,7 @@
 #include "lib/public/pf_string.h"
 #include "lib/public/nk_file_browser.h"
 #include "lib/public/khash.h"
+#include "lib/public/mem.h"
 #include "game/public/game.h"
 
 #include <stdbool.h>
@@ -288,7 +289,7 @@ static void ui_init_font_stash(struct nk_context *ctx)
         kh_value(s_fontmap, k) = font;
     }
 
-    free(files);
+    PF_FREE(files);
     image = nk_font_atlas_bake(&s_atlas, &w, &h, NK_FONT_ATLAS_RGBA32);
 
     R_PushCmd((struct rcmd){
@@ -325,7 +326,7 @@ static void ui_clipboard_copy(nk_handle usr, const char *text, int len)
     memcpy(str, text, (size_t)len);
     str[len] = '\0';
     SDL_SetClipboardText(str);
-    free(str);
+    PF_FREE(str);
 }
 
 static struct nk_vec2i ui_get_drawable_size(void)

@@ -48,6 +48,7 @@
 #include "../entity.h"
 #include "../lib/public/pf_malloc.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/mem.h"
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
 
@@ -501,7 +502,7 @@ fail_vbo_desc_map:
 fail_attr_ring:
     R_GL_RingbufferDestroy(batch->cmd_ring);
 fail_cmd_ring:
-	free(batch);
+	PF_FREE(batch);
 fail_alloc:
     return NULL;
 }
@@ -521,7 +522,7 @@ static void batch_destroy(struct gl_batch *batch)
     R_GL_RingbufferDestroy(batch->attr_ring);
     R_GL_RingbufferDestroy(batch->cmd_ring);
 
-	free(batch);
+	PF_FREE(batch);
 }
 
 static struct mesh_desc batch_mdesc_for_vbo(struct gl_batch *batch, GLuint VBO)

@@ -52,6 +52,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/mem.h"
 
 #include <assert.h>
 #include <float.h>
@@ -1005,7 +1006,7 @@ bool G_Combat_Init(const struct map *map)
 
 fail_refcnts:
     for(int i = 0; i < MAX_FACTIONS; i++)
-        free(s_fac_refcnts[i]);
+        PF_FREE(s_fac_refcnts[i]);
     kh_destroy(state, s_entity_state_table);
     return false;
 }
@@ -1019,7 +1020,7 @@ void G_Combat_Shutdown(void)
     E_Global_Unregister(EVENT_PROJECTILE_HIT, on_proj_hit);
     vec_pentity_destroy(&s_dying_ents);
     for(int i = 0; i < MAX_FACTIONS; i++)
-        free(s_fac_refcnts[i]);
+        PF_FREE(s_fac_refcnts[i]);
     kh_destroy(state, s_entity_state_table);
 }
 
@@ -1056,8 +1057,8 @@ void G_Combat_RemoveEntity(const struct entity *ent)
         E_Entity_Notify(EVENT_ATTACK_END, ent->uid, NULL, ES_ENGINE);
     }
 
-    free((void*)cs->pd.basedir);
-    free((void*)cs->pd.pfobj);
+    PF_FREE(cs->pd.basedir);
+    PF_FREE(cs->pd.pfobj);
 
     combat_dying_remove(ent);
     combatstate_remove(ent);
@@ -1360,8 +1361,8 @@ void G_Combat_SetProjDesc(const struct entity *ent, const struct proj_desc *pd)
     struct combatstate *cs = combatstate_get(ent->uid);
     assert(cs);
 
-    free((void*)cs->pd.basedir);
-    free((void*)cs->pd.pfobj);
+    PF_FREE(cs->pd.basedir);
+    PF_FREE(cs->pd.pfobj);
 
     cs->pd = (struct proj_desc) {
         pf_strdup(pd->basedir),

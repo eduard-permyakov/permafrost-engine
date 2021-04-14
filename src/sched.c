@@ -46,6 +46,7 @@
 #include "lib/public/queue.h"
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
+#include "lib/public/mem.h"
 
 #include <SDL.h>
 #include <inttypes.h>
@@ -137,7 +138,7 @@ struct task{
 
 #define MAX_TASKS               (8192)
 #define MAX_WORKER_THREADS      (64)
-#define STACK_SZ                (128 * 1024)
+#define STACK_SZ                (16 * 1024)
 #define BIG_STACK_SZ            (4 * 1024 * 1024)
 #define SCHED_TICK_MS           (1.0f / CONFIG_SCHED_TARGET_FPS * 1000.0f)
 #define ALIGNED(val, align)     (((val) + ((align) - 1)) & ~((align) - 1))
@@ -871,7 +872,7 @@ static void sched_task_service_request(struct task *task)
     case _SCHED_REQ_FREE:
 
         if(task->flags & TASK_BIG_STACK) {
-            free(task->stackmem);
+            PF_FREE(task->stackmem);
         }
         if(task->flags & TASK_DETACHED) {
             sched_task_free(task);

@@ -144,6 +144,7 @@
     scope void pq_##name##_destroy(pq(name) *pqueue)                                            \
     {                                                                                           \
         free(pqueue->nodes);                                                                    \
+        memset(pqueue, 0, sizeof(*pqueue));                                                     \
     }                                                                                           \
                                                                                                 \
     scope bool pq_##name##_push(pq(name) *pqueue, float in_prio, type in)                       \

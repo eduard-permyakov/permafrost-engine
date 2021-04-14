@@ -46,6 +46,7 @@
 #include "../lib/public/khash.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/mem.h"
 
 #include <assert.h>
 
@@ -1131,7 +1132,7 @@ static int PyEntity_set_name(PyEntityObject *self, PyObject *value, void *closur
         return -1;
     }
 
-    free((void*)self->ent->name);
+    PF_FREE(self->ent->name);
     self->ent->name = s;
     return 0;
 }

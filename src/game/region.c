@@ -48,6 +48,7 @@
 #include "../lib/public/pf_string.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/vec.h"
+#include "../lib/public/mem.h"
 
 #include <SDL.h>
 #include <assert.h>
@@ -560,19 +561,19 @@ void G_Region_Shutdown(void)
         vec_str_t *vec = ((vec_str_t*)s_intersecting) + i;
         vec_str_destroy(vec);
     }
-    free(s_intersecting);
+    PF_FREE(s_intersecting);
 
     const char *key;
     struct region reg;
 
     kh_foreach(s_regions, key, reg, {
-        free((void*)key);
+        PF_FREE(key);
         vec_uid_destroy(&reg.curr_ents);
         vec_uid_destroy(&reg.prev_ents);
     });
 
     for(int i = 0; i < vec_size(&s_eventargs); i++) {
-        free((void*)vec_AT(&s_eventargs, i));
+        PF_FREE(vec_AT(&s_eventargs, i));
     }
     vec_str_destroy(&s_eventargs);
 
@@ -647,7 +648,7 @@ void G_Region_Remove(const char *name)
         kh_del(name, s_dirty, k);
     }
 
-    free((void*)key);
+    PF_FREE(key);
 }
 
 bool G_Region_SetPos(const char *name, vec2_t pos)
@@ -768,7 +769,7 @@ bool G_Region_GetRender(void)
 void G_Region_Update(void)
 {
     for(int i = 0; i < vec_size(&s_eventargs); i++) {
-        free((void*)vec_AT(&s_eventargs, i));
+        PF_FREE(vec_AT(&s_eventargs, i));
     }
     vec_str_reset(&s_eventargs);
 
