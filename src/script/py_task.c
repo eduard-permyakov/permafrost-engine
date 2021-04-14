@@ -579,8 +579,8 @@ static void PyTask_dealloc(PyTaskObject *self)
 {
     assert(self->state != PYTASK_STATE_RUNNING);
     assert(PyThreadState_Get() != self->ts);
-    assert(self->runfunc == NULL);
 
+    Py_CLEAR(self->runfunc);
     Py_CLEAR(self->ts->curexc_type);
     Py_CLEAR(self->ts->curexc_value);
     Py_CLEAR(self->ts->curexc_traceback);
