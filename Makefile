@@ -4,6 +4,7 @@
 
 PLAT ?= LINUX
 TYPE ?= DEBUG
+ASAN ?= 0
 
 # ------------------------------------------------------------------------------
 # Sources 
@@ -113,6 +114,11 @@ EXTRA_DEBUG_FLAGS = -g
 EXTRA_RELEASE_FLAGS = -DNDEBUG
 EXTRA_FLAGS = $(EXTRA_$(TYPE)_FLAGS)
 
+ifneq ($(ASAN),0)
+ASAN_CFLAGS = -fsanitize=address -static-libasan
+ASAN_LDFLAGS = -fsanitize=address -static-libasan
+endif
+
 CFLAGS = \
 	-I$(GLEW_SRC)/include \
 	-I$(SDL2_SRC)/include \
@@ -122,6 +128,7 @@ CFLAGS = \
 	-O2 \
 	-fno-strict-aliasing \
 	-fwrapv \
+	$(ASAN_CFLAGS) \
 	$(WARNING_FLAGS) \
 	$(EXTRA_FLAGS)
 
@@ -129,6 +136,7 @@ LDFLAGS = \
 	-L./lib/ \
 	-lm \
 	-lpthread \
+	$(ASAN_LDFLAGS) \
 	$(PLAT_LDFLAGS)
 
 DEPS = \
