@@ -491,7 +491,6 @@ void E_DeleteScriptHandlers(void)
 
         if(vec_size(&curr) == 0) {
             keys_to_del[ntodel++] = key;
-            vec_hd_destroy(&curr);
         }
     });
     
@@ -499,6 +498,7 @@ void E_DeleteScriptHandlers(void)
 
         khiter_t k = kh_get(handler_desc, s_event_handler_table, keys_to_del[i]);
         assert(k != kh_end(s_event_handler_table));
+        vec_hd_destroy(&kh_value(s_event_handler_table, k));
         kh_del(handler_desc, s_event_handler_table, k);
     }
 }

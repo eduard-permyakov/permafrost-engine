@@ -143,7 +143,11 @@ static void tag_remove_entity(const char *tag, uint32_t uid)
         return;
 
     kh_uid_t *set = &kh_value(s_tag_ent_map, k);
-    kh_del(uid, set, uid);
+
+    khiter_t iter = kh_get(uid, set, uid);
+    if(iter != kh_end(set)) {
+        kh_del(uid, set, iter);
+    }
 }
 
 static struct result ping_task(void *arg)
