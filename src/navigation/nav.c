@@ -1048,7 +1048,8 @@ static void n_build_portal_travel_index(struct nav_chunk *chunk)
     queue_cc_destroy(&frontier);
 }
 
-static const struct portal *n_closest_reachable_portal(const struct nav_chunk *chunk, struct coord start)
+static const struct portal *n_closest_reachable_portal(const struct nav_chunk *chunk, 
+                                                       struct coord start, bool unblocked)
 {
     const struct portal *ret = NULL;
     float min_cost = FLT_MAX;
@@ -1058,10 +1059,66 @@ static const struct portal *n_closest_reachable_portal(const struct nav_chunk *c
         const struct portal *curr = &chunk->portals[i];
         float cost = chunk->portal_travel_costs[i][start.r][start.c];
 
+        if(unblocked && !N_PortalReachableFromTile(curr, start, chunk))
+            continue;
+
         if(cost < min_cost) {
             ret = curr;
             min_cost = cost;
         }
+    }
+    return ret;
+}
+
+static bool arr_contains(uint16_t *array, size_t size, int elem)
+{
+    for(int i = 0; i < size; i++) {
+        if(array[i] == elem) 
+            return true;
+    }
+    return false;
+}
+
+static const struct portal *n_closest_reachable_from_location(struct nav_private *priv, enum nav_layer layer,
+                                                              const struct nav_chunk *chunk, struct tile_desc loc,
+                                                              struct tile_desc *out_nearest)
+{
+    float shortest_dist = FLT_MAX;
+    const struct portal *ret = NULL;
+    struct tile_desc nearest = {0};
+
+    vec_portal_t path;
+    vec_portal_init(&path);
+
+    for(int i = 0; i < chunk->num_portals; i++) {
+
+        uint16_t liids[64];
+        size_t nliids = 0;
+        const struct portal *port = &chunk->portals[i];
+
+        for(int r = port->endpoints[0].r; r <= port->endpoints[1].r; r++) {
+        for(int c = port->endpoints[0].c; c <= port->endpoints[1].c; c++) {
+
+            struct tile_desc curr = (struct tile_desc){port->chunk.r, port->chunk.c, r, c};
+            uint16_t curr_liid = chunk->local_islands[r][c];
+            float cost;
+
+            if(!arr_contains(liids, nliids, curr_liid) && nliids < ARR_SIZE(liids)) {
+                liids[nliids++] = curr_liid;
+                if(AStar_PortalGraphPath(loc, curr, port, priv, layer, &path, &cost)
+                && cost < shortest_dist) {
+
+                    nearest = curr;
+                    shortest_dist = cost;
+                    ret = port;
+                }
+            }
+        }}
+    }
+
+    vec_portal_destroy(&path);
+    if(ret) {
+        *out_nearest = nearest;
     }
     return ret;
 }
@@ -1160,6 +1217,17 @@ static bool n_normally_reachable(const struct nav_chunk *chunk, struct coord a, 
         bool areach = (chunk->portal_travel_costs[i][a.r][a.c] != FLT_MAX);
         bool breach = (chunk->portal_travel_costs[i][b.r][b.c] != FLT_MAX);
         if(areach != breach)
+            return false;
+    }
+    return true;
+}
+
+/* Returns true if the tile is blocke off from all portals by blockers */
+static bool n_blocked_off(const struct nav_chunk *chunk, struct coord tile)
+{
+    for(int i = 0; i < chunk->num_portals; i++) {
+        const struct portal *curr = &chunk->portals[i];
+        if(N_PortalReachableFromTile(curr, tile, chunk))
             return false;
     }
     return true;
@@ -1460,17 +1528,26 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
      * would be reachable from one another, that means that the destination is blocked in
      * by blockers. In this case, get as close as possible. 
      */
-    if((src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c)
-    && n_normally_reachable(src_chunk, 
-        (struct coord){src_desc.tile_r, src_desc.tile_c},
-        (struct coord){dst_desc.tile_r, dst_desc.tile_c})) {
-        
-        *out_dest_id = ret;
-        PERF_RETURN(true);
+    if(src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c) {
+
+        bool either_blocked = n_blocked_off(src_chunk, (struct coord){src_desc.tile_r, src_desc.tile_c})
+                           || n_blocked_off(src_chunk, (struct coord){dst_desc.tile_r, dst_desc.tile_c});
+
+        if(either_blocked && n_normally_reachable(src_chunk, 
+            (struct coord){src_desc.tile_r, src_desc.tile_c},
+            (struct coord){dst_desc.tile_r, dst_desc.tile_c})) {
+
+            *out_dest_id = ret;
+            PERF_RETURN(true);
+        }
     }
 
     const struct portal *dst_port = n_closest_reachable_portal(dst_chunk, 
-        (struct coord){dst_desc.tile_r, dst_desc.tile_c});
+        (struct coord){dst_desc.tile_r, dst_desc.tile_c}, true);
+    if(!dst_port) {
+        dst_port = n_closest_reachable_portal(dst_chunk, 
+            (struct coord){dst_desc.tile_r, dst_desc.tile_c}, false);
+    }
 
     if(!dst_port)
         PERF_RETURN(false); 
@@ -1479,7 +1556,17 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
     vec_portal_t path;
     vec_portal_init(&path);
 
-    bool path_exists = AStar_PortalGraphPath(src_desc, dst_port, priv, layer, &path, &cost);
+    bool path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port, priv, layer, &path, &cost);
+    if(!path_exists) {
+        /* if we didn't find a path to the 'closest portal' to the destination, that must mean 
+         * that the portal is severed by blockers. Try to find a more suitable target. 
+         */
+        dst_port = n_closest_reachable_from_location(priv, layer, dst_chunk, src_desc, &dst_desc);
+        if(dst_port) {
+            path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port, priv, layer, &path, &cost);
+        }
+    }
+
     if(!path_exists) {
         vec_portal_destroy(&path);
         PERF_RETURN(false); 
@@ -1491,31 +1578,42 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
      * cached. Add the results to the fieldcache. */
     for(int i = vec_size(&path)-1; i > 0; i--) {
 
-        const struct portal *curr_node = vec_AT(&path, i - 1);
-        const struct portal *next_hop = vec_AT(&path, i);
-
+        int next_hop_idx = i;
         /* If the very first hop takes us into another chunk, that means that the 'nearest portal'
          * to the source borders the 'next' chunk already. In this case, we must remember to
-         * still generate a flow field for the current chunk steering to this portal. */
-        if(i == 1 && (next_hop->chunk.r != src_desc.chunk_r || next_hop->chunk.c != src_desc.chunk_c))
-            next_hop = vec_AT(&path, 0);
+         * still generate a flow field for the current chunk steering to this portal. 
+         */
+        if(i == 1 && (vec_AT(&path, i).portal->chunk.r != src_desc.chunk_r 
+                   || vec_AT(&path, i).portal->chunk.c != src_desc.chunk_c)) {
+            next_hop_idx = 0;
+        }
 
-        if(curr_node->connected == next_hop)
+        struct portal_hop curr_hop = vec_AT(&path, MAX(next_hop_idx - 1, 0));
+        struct portal_hop next_hop = vec_AT(&path, next_hop_idx);
+
+        if(curr_hop.portal->connected == next_hop.portal)
             continue;
 
         /* Since we are moving from 'closest portal' to 'closest portal', it 
          * may be possible that the very last hop takes us from another portal in the 
          * destination chunk to the destination portal. This is not needed and will
-         * overwrite the destination flow field made earlier. */
-        if(curr_node->chunk.r == dst_desc.chunk_r 
-        && curr_node->chunk.c == dst_desc.chunk_c
-        && next_hop == dst_port)
+         * overwrite the destination flow field made earlier. 
+         */
+        if(curr_hop.portal->chunk.r == dst_desc.chunk_r 
+        && curr_hop.portal->chunk.c == dst_desc.chunk_c
+        && next_hop.portal == dst_port
+        && next_hop.liid == N_ClosestPathableLocalIsland(priv, src_chunk, dst_desc))
             continue;
 
-        struct coord chunk_coord = curr_node->chunk;
+        struct coord chunk_coord = curr_hop.portal->chunk;
         struct field_target target = (struct field_target){
             .type = TARGET_PORTAL,
-            .port = next_hop
+            .pd = (struct portal_desc){
+                next_hop.portal, 
+                next_hop.liid,
+                next_hop.portal->connected, 
+                (i < vec_size(&path)-1) ? vec_AT(&path, next_hop_idx + 1).liid : N_ClosestPathableLocalIsland(priv, dst_chunk, dst_desc),
+            }
         };
 
         ff_id_t new_id = N_FlowFieldID(chunk_coord, target, layer);
@@ -1531,7 +1629,8 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
 
             /* This is the edge case when a path to a particular target takes us through
              * the same chunk more than once. This can happen if a chunk is divided into
-             * 'islands' by unpathable barriers. */
+             * 'islands' by unpathable barriers. 
+             */
             const struct flow_field *exist_ff  = N_FC_FlowFieldAt(exist_id);
             memcpy(&ff, exist_ff, sizeof(struct flow_field));
 
@@ -1539,7 +1638,8 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
             /* We set the updated flow field for the new (least recently used) key. Since in 
              * this case more than one flowfield ID maps to the same field but we only keep 
              * one of the IDs, it may be possible that the same flowfield will be redundantly 
-             * updated at a later time. However, this is largely inconsequential. */
+             * updated at a later time. However, this is largely inconsequential. 
+             */
             N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
             N_FC_PutFlowField(new_id, &ff);
 
@@ -1548,7 +1648,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
 
         N_FC_PutDestFFMapping(ret, chunk_coord, new_id);
         if(!N_FC_ContainsFlowField(new_id)) {
-        
+
             N_FlowFieldInit(chunk_coord, priv, &ff);
             N_FlowFieldUpdate(chunk_coord, priv, faction_id, layer, target, &ff);
             N_FC_PutFlowField(new_id, &ff);
@@ -3158,5 +3258,65 @@ vec2_t N_ClosestReachableInRange(void *nav_private, vec3_t map_pos,
     }
 
     return nearest_pos;
+}
+
+uint16_t N_ClosestPathableLocalIsland(const struct nav_private *priv, const struct nav_chunk *chunk, 
+                                      struct tile_desc target)
+{
+    if(chunk->local_islands[target.tile_r][target.tile_c] != ISLAND_NONE)
+        return chunk->local_islands[target.tile_r][target.tile_c];
+
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    queue_td_t frontier;
+    queue_td_init(&frontier, 1024);
+    queue_td_push(&frontier, &target);
+
+    bool visited[res.tile_h][res.tile_w];
+    memset(visited, 0, sizeof(visited));
+    visited[target.tile_r][target.tile_c] = true;
+
+    uint16_t ret = ISLAND_NONE;
+    while(queue_size(frontier) > 0) {
+    
+        struct tile_desc curr;
+        queue_td_pop(&frontier, &curr);
+
+        struct coord deltas[] = {
+            { 0, -1},
+            { 0, +1},
+            {-1,  0},
+            {+1,  0},
+        };
+
+        for(int i = 0; i < ARR_SIZE(deltas); i++) {
+        
+            struct tile_desc neighb = curr;
+            if(!M_Tile_RelativeDesc(res, &neighb, deltas[i].c, deltas[i].r))
+                continue;
+
+            if(neighb.chunk_r != target.chunk_r || neighb.chunk_c != target.chunk_c)
+                continue;
+
+            if(visited[neighb.tile_r][neighb.tile_c])
+                continue;
+
+            uint16_t curr = chunk->local_islands[neighb.tile_r][neighb.tile_c];
+            if(curr != ISLAND_NONE) {
+                ret = curr;
+                goto done;
+            }
+
+            visited[neighb.tile_r][neighb.tile_c] = true;
+            queue_td_push(&frontier, &neighb);
+        }
+    }
+
+done:
+    queue_td_destroy(&frontier);
+    return ret; 
 }
 

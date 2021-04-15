@@ -52,10 +52,13 @@ struct nav_private{
 enum nav_layer N_DestLayer(dest_id_t id);
 int            N_DestFactionID(dest_id_t id);
 
-bool N_PortalReachableFromTile(const struct portal *port, struct coord tile, 
-                               const struct nav_chunk *chunk);
+bool           N_PortalReachableFromTile(const struct portal *port, struct coord tile, 
+                                         const struct nav_chunk *chunk);
 
-int  N_GridNeighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
-                      struct coord out_neighbours[static 8], float out_costs[static 8]);
+int            N_GridNeighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
+                                struct coord out_neighbours[static 8], float out_costs[static 8]);
+
+uint16_t       N_ClosestPathableLocalIsland(const struct nav_private *priv, const struct nav_chunk *chunk, 
+                                            struct tile_desc target);
 
 #endif

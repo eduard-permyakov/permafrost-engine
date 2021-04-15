@@ -1275,12 +1275,12 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
 
         line_vbuff[line_vbuff_idx] = (vec3_t){
             xz_positions[i].x,
-            M_HeightAtPoint(map, (vec2_t){base_ws_homo.x, base_ws_homo.z}) + 0.3, 
+            M_HeightAtPoint(map, M_ClampedMapCoordinate(map, (vec2_t){base_ws_homo.x, base_ws_homo.z})) + 0.3, 
             xz_positions[i].z
         };
         line_vbuff[line_vbuff_idx + 1] = (vec3_t){
             tip.x,
-            M_HeightAtPoint(map, (vec2_t){tip_ws_homo.x, tip_ws_homo.z}) + 0.3, 
+            M_HeightAtPoint(map, M_ClampedMapCoordinate(map, (vec2_t){tip_ws_homo.x, tip_ws_homo.z})) + 0.3, 
             tip.z
         };
         point_vbuff[i] = line_vbuff[line_vbuff_idx];

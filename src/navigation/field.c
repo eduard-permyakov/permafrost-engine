@@ -857,13 +857,46 @@ static size_t field_tile_initial_frontier(
     return 1;
 }
 
+static bool field_tile_adjacent_to_next_iid(
+    const struct nav_private *priv, 
+    enum nav_layer            layer, 
+    struct portal_desc        pd, 
+    int                       r, 
+    int                       c)
+{
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    const struct nav_chunk *next_chunk = &priv->chunks[layer][pd.next->chunk.r * priv->width + pd.next->chunk.c];
+    for(int r2 = pd.next->endpoints[0].r; r2 <= pd.next->endpoints[1].r; r2++) {
+    for(int c2 = pd.next->endpoints[0].c; c2 <= pd.next->endpoints[1].c; c2++) {
+
+        struct tile_desc curr_td = (struct tile_desc){pd.port->chunk.r, pd.port->chunk.c, r,  c };
+        struct tile_desc next_td = (struct tile_desc){pd.next->chunk.r, pd.next->chunk.c, r2, c2};
+        int dr, dc;
+        M_Tile_Distance(res, &curr_td, &next_td, &dr, &dc);
+
+        if(abs(dr) + abs(dc) == 1) {
+            uint16_t neighb_liid = next_chunk->local_islands[r2][c2];
+            if(neighb_liid == pd.next_iid) {
+                return true;
+            }
+        }
+    }}
+    return false;
+}
+
 static size_t field_portal_initial_frontier(
-    const struct portal    *port, 
-    const struct nav_chunk *chunk,
-    bool                    ignoreblock, 
-    int                     faction_id, 
-    struct coord           *out, 
-    size_t                  maxout)
+    const struct nav_private *priv,
+    enum nav_layer            layer,
+    struct portal_desc        pd,
+    const struct nav_chunk   *chunk,
+    bool                      ignoreblock, 
+    int                       faction_id, 
+    struct coord             *out, 
+    size_t                    maxout)
 {
     if(maxout == 0)
         return 0;
@@ -875,8 +908,8 @@ static size_t field_portal_initial_frontier(
 
     /* Set all non-blocked tiles of the portal as the frontier */
     int ret = 0;
-    for(int r = port->endpoints[0].r; r <= port->endpoints[1].r; r++) {
-    for(int c = port->endpoints[0].c; c <= port->endpoints[1].c; c++) {
+    for(int r = pd.port->endpoints[0].r; r <= pd.port->endpoints[1].r; r++) {
+    for(int c = pd.port->endpoints[0].c; c <= pd.port->endpoints[1].c; c++) {
 
         assert(chunk->cost_base[r][c] != COST_IMPASSABLE);
 
@@ -887,6 +920,12 @@ static size_t field_portal_initial_frontier(
             passable = field_tile_passable_no_enemies(chunk, (struct coord){r, c}, enemies);
         }
         if(!passable)
+            continue;
+
+        if(pd.port_iid != ISLAND_NONE && chunk->local_islands[r][c] != pd.port_iid)
+            continue;
+
+        if(!field_tile_adjacent_to_next_iid(priv, layer, pd, r, c))
             continue;
 
         out[ret++] = (struct coord){r, c};
@@ -1034,34 +1073,11 @@ static size_t field_entity_initial_frontier(
     return ret;
 }
 
-static size_t field_portalmask_initial_frontier(
-    uint64_t                mask, 
-    const struct nav_chunk *chunk,
-    bool                    ignoreblock, 
-    int                     faction_id, 
-    struct coord           *out, 
-    size_t                  maxout)
-{
-    size_t ret = 0;
-    for(int i = 0; i < chunk->num_portals; i++) {
-
-        if(!(mask & (((uint64_t)1) << i)))
-            continue;
-
-        const struct portal *curr = &chunk->portals[i];
-        size_t added = field_portal_initial_frontier(curr, chunk, ignoreblock, faction_id, out, maxout);
-
-        ret += added;
-        out += added;
-        maxout -= added;
-    }
-    return ret;
-}
-
 static size_t field_initial_frontier(
+    enum nav_layer            layer,
     struct field_target       target, 
     const struct nav_chunk   *chunk, 
-    const struct nav_private *priv, 
+    const struct nav_private *priv,
     bool                      ignoreblock, 
     int                       faction_id,
     struct coord             *init_frontier, 
@@ -1071,19 +1087,13 @@ static size_t field_initial_frontier(
     switch(target.type) {
     case TARGET_PORTAL:
         
-        ninit = field_portal_initial_frontier(target.port, chunk, ignoreblock, 
+        ninit = field_portal_initial_frontier(priv, layer, target.pd, chunk, ignoreblock, 
             faction_id, init_frontier, maxout);
         break;
 
     case TARGET_TILE:
 
         ninit = field_tile_initial_frontier(target.tile, chunk, ignoreblock, 
-            faction_id, init_frontier, maxout);
-        break;
-
-    case TARGET_PORTALMASK:
-
-        ninit = field_portalmask_initial_frontier(target.portalmask, chunk, ignoreblock, 
             faction_id, init_frontier, maxout);
         break;
 
@@ -1105,7 +1115,7 @@ static void field_fixup(
     const struct nav_chunk *chunk)
 {
     if(target.type == TARGET_PORTAL) {
-        field_fixup_portal_edges(integration_field, inout_flow, target.port); 
+        field_fixup_portal_edges(integration_field, inout_flow, target.pd.port); 
     }
 
     if(target.type == TARGET_PORTALMASK) {
@@ -1324,39 +1334,41 @@ ff_id_t N_FlowFieldID(struct coord chunk, struct field_target target, enum nav_l
 {
     if(target.type == TARGET_PORTAL) {
 
-        return (((uint64_t)layer)                       << 60)
-             | (((uint64_t)target.type)                 << 56)
-             | (((uint64_t)target.port->endpoints[0].r) << 40)
-             | (((uint64_t)target.port->endpoints[0].c) << 32)
-             | (((uint64_t)target.port->endpoints[1].r) << 24)
-             | (((uint64_t)target.port->endpoints[1].c) << 16)
-             | (((uint64_t)chunk.r)                     <<  8)
-             | (((uint64_t)chunk.c)                     <<  0);
+        return (((uint64_t)layer)                          << 60)
+             | (((uint64_t)target.type)                    << 56)
+             | (((uint64_t)target.pd.next_iid & 0xf)       << 48)
+             | (((uint64_t)target.pd.port_iid & 0xf)       << 40)
+             | (((uint64_t)target.pd.port->endpoints[0].r) << 34)
+             | (((uint64_t)target.pd.port->endpoints[0].c) << 28)
+             | (((uint64_t)target.pd.port->endpoints[1].r) << 22)
+             | (((uint64_t)target.pd.port->endpoints[1].c) << 16)
+             | (((uint64_t)chunk.r)                        <<  8)
+             | (((uint64_t)chunk.c)                        <<  0);
 
     }else if(target.type == TARGET_TILE) {
 
-        return (((uint64_t)layer)                       << 60)
-             | (((uint64_t)target.type)                 << 56)
-             | (((uint64_t)target.tile.r)               << 24)
-             | (((uint64_t)target.tile.c)               << 16)
-             | (((uint64_t)chunk.r)                     <<  8)
-             | (((uint64_t)chunk.c)                     <<  0);
+        return (((uint64_t)layer)                          << 60)
+             | (((uint64_t)target.type)                    << 56)
+             | (((uint64_t)target.tile.r)                  << 24)
+             | (((uint64_t)target.tile.c)                  << 16)
+             | (((uint64_t)chunk.r)                        <<  8)
+             | (((uint64_t)chunk.c)                        <<  0);
 
     }else if(target.type == TARGET_ENEMIES) {
 
-        return (((uint64_t)layer)                       << 60)
-             | (((uint64_t)target.type)                 << 56)
-             | (((uint64_t)target.enemies.faction_id)   << 24)
-             | (((uint64_t)chunk.r)                     <<  8)
-             | (((uint64_t)chunk.c)                     <<  0);
+        return (((uint64_t)layer)                          << 60)
+             | (((uint64_t)target.type)                    << 56)
+             | (((uint64_t)target.enemies.faction_id)      << 24)
+             | (((uint64_t)chunk.r)                        <<  8)
+             | (((uint64_t)chunk.c)                        <<  0);
 
     }else if(target.type == TARGET_ENTITY) {
     
-        return (((uint64_t)layer)                       << 60)
-             | (((uint64_t)target.type)                 << 56)
-             | (((uint64_t)target.ent.target->uid)      << 24)
-             | (((uint64_t)chunk.r)                     <<  8)
-             | (((uint64_t)chunk.c)                     <<  0);
+        return (((uint64_t)layer)                          << 60)
+             | (((uint64_t)target.type)                    << 56)
+             | (((uint64_t)target.ent.target->uid)         << 24)
+             | (((uint64_t)chunk.r)                        <<  8)
+             | (((uint64_t)chunk.c)                        <<  0);
 
     }else {
         assert(0);
@@ -1413,7 +1425,7 @@ void N_FlowFieldUpdate(
     }}
 
     struct coord init_frontier[FIELD_RES_R * FIELD_RES_C];
-    size_t ninit = field_initial_frontier(target, chunk, priv, false, faction_id, 
+    size_t ninit = field_initial_frontier(layer, target, chunk, priv, false, faction_id, 
         init_frontier, ARR_SIZE(init_frontier));
 
     for(int i = 0; i < ninit; i++) {
@@ -1683,12 +1695,12 @@ void N_FlowFieldUpdateIslandToNearest(
         assert(ninit == ntds);
     
     }else{
-        ninit = field_initial_frontier(inout_flow->target, chunk, priv, false, faction_id, 
+        ninit = field_initial_frontier(layer, inout_flow->target, chunk, priv, false, faction_id, 
             init_frontier, ARR_SIZE(init_frontier));
         /* If there were no tiles in the initial frontier, that means the target
          * was completely blocked off. */
         if(!ninit) {
-            ninit = field_initial_frontier(inout_flow->target, chunk, priv, true, faction_id, 
+            ninit = field_initial_frontier(layer, inout_flow->target, chunk, priv, true, faction_id, 
                 init_frontier, ARR_SIZE(init_frontier));
         }
     }

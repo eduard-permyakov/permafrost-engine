@@ -64,6 +64,13 @@ struct entity_desc{
     vec3_t               map_pos;
 };
 
+struct portal_desc{
+    const struct portal *port;
+    uint16_t             port_iid;
+    const struct portal *next;
+    uint16_t             next_iid;
+};
+
 struct field_target{
     enum{
         TARGET_PORTAL,
@@ -75,7 +82,7 @@ struct field_target{
         TARGET_ENTITY,
     }type;
     union{
-        const struct portal *port;
+        struct portal_desc   pd;
         struct coord         tile;
         struct enemies_desc  enemies;
         uint64_t             portalmask;

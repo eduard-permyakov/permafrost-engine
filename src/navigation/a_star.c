@@ -46,17 +46,21 @@
 #include <math.h>
 #include <float.h>
 
+
 PQUEUE_TYPE(coord, struct coord)
 PQUEUE_IMPL(static, coord, struct coord)
 
-PQUEUE_TYPE(portal, const struct portal*)
-PQUEUE_IMPL(static, portal, const struct portal*)
+PQUEUE_TYPE(portal, struct portal_hop)
+PQUEUE_IMPL(static, portal, struct portal_hop)
 
 KHASH_MAP_INIT_INT64(key_coord, struct coord)
-KHASH_MAP_INIT_INT64(key_portal, const struct portal*)
+KHASH_MAP_INIT_INT64(key_portal, struct portal_hop)
 KHASH_MAP_INIT_INT64(key_float, float)
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define ARR_SIZE(a)         (sizeof(a)/sizeof(a[0]))
+#define MAX_PORTAL_NEIGHBS  (256)
+
 #define kh_put_val(name, table, key, val)               \
     do{                                                 \
         int ret;                                        \
@@ -74,14 +78,15 @@ static uint64_t coord_to_key(struct coord c)
     return (((uint64_t)c.r) << 32) | (((uint64_t)c.c) & ~((uint32_t)0));
 }
 
-static uint64_t portal_to_key(const struct portal *p)
+static uint64_t phop_to_key(const struct portal_hop *ph)
 {
-    return (((uint64_t)p->chunk.r & 0xffff)      << 48)
-         | (((uint64_t)p->chunk.c & 0xffff)      << 32)
-         | (((uint64_t)p->endpoints[0].r & 0xff) << 24)
-         | (((uint64_t)p->endpoints[0].c & 0xff) << 16)
-         | (((uint64_t)p->endpoints[1].r & 0xff) <<  8)
-         | (((uint64_t)p->endpoints[1].c & 0xff) <<  0);
+    return (((uint64_t)ph->liid                   & 0xffff) << 48)
+         | (((uint64_t)ph->portal->chunk.r        & 0xff  ) << 40)
+         | (((uint64_t)ph->portal->chunk.c        & 0xff  ) << 32)
+         | (((uint64_t)ph->portal->endpoints[0].r & 0xff  ) << 24)
+         | (((uint64_t)ph->portal->endpoints[0].c & 0xff  ) << 16)
+         | (((uint64_t)ph->portal->endpoints[1].r & 0xff  ) <<  8)
+         | (((uint64_t)ph->portal->endpoints[1].c & 0xff  ) <<  0);
 }
 
 static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
@@ -118,28 +123,141 @@ static int neighbours_grid(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], s
     return ret;
 }
 
-static int neighbours_portal_graph(const struct portal *portal,
-                                   const struct portal **out_neighbours, float *out_costs)
+static bool portal_reachable_from_island(const struct nav_chunk *chunk, 
+                                         const struct portal *port, uint16_t liid)
+{
+    for(int r = port->endpoints[0].r; r <= port->endpoints[1].r; r++) {
+    for(int c = port->endpoints[0].c; c <= port->endpoints[1].c; c++) {
+
+        uint16_t curr_liid = chunk->local_islands[r][c];
+        if(curr_liid == liid)
+            return true;
+    }}
+    return false;
+}
+
+static size_t portal_connected_liids(const struct nav_private *priv, enum nav_layer layer,
+                                     const struct portal *port, uint16_t liid, uint16_t *out, size_t maxout)
+{
+    assert(maxout > 0);
+    uint16_t ret = 0;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    const struct portal *conn = port->connected;
+    const struct nav_chunk *pchunk = &priv->chunks[layer][port->chunk.r * priv->width + port->chunk.c];
+
+    /* Take the first tile in the current chunk with the matching liid and 
+     * return the liid of the tile directly beside the matching tile in the 
+     * adjacent chunk.
+     */
+    for(int r1 = port->endpoints[0].r; r1 <= port->endpoints[1].r; r1++) {
+    for(int c1 = port->endpoints[0].c; c1 <= port->endpoints[1].c; c1++) {
+
+        uint16_t curr_liid = pchunk->local_islands[r1][c1];
+        if(curr_liid != liid)
+            continue;
+
+        for(int r2 = conn->endpoints[0].r; r2 <= conn->endpoints[1].r; r2++) {
+        for(int c2 = conn->endpoints[0].c; c2 <= conn->endpoints[1].c; c2++) {
+
+            const struct nav_chunk *cchunk = &priv->chunks[layer][conn->chunk.r * priv->width + conn->chunk.c];
+            struct tile_desc tda = (struct tile_desc){port->chunk.r, port->chunk.c, r1, c1};
+            struct tile_desc tdb = (struct tile_desc){conn->chunk.r, conn->chunk.c, r2, c2};
+
+            if(ret == maxout)
+                return ret;
+
+            int dr, dc;
+            M_Tile_Distance(res, &tda, &tdb, &dr, &dc);
+            if(abs(dr) + abs(dc) == 1) {
+                uint16_t neighb_liid = cchunk->local_islands[r2][c2];
+                bool contains = false;
+                for(int i = 0; i < ret; i++) {
+                    if(out[i] == neighb_liid) {
+                        contains = true;
+                        break;
+                    }
+                }
+                if(!contains && neighb_liid != ISLAND_NONE) {
+                    out[ret++] = neighb_liid;
+                }
+            }
+        }}
+    }}
+    return ret;
+}
+
+/* The 'liid' is the local island ID on the chunk that 'portal' is on 
+ * from which we reached the portal. It is used for discriminating 
+ * some portals which may not be reachable from that specific local island
+ * and for computing the local IID of the 'next hop' portal. The 
+ * local IID of the island on which we reach the neighbour portal will
+ * be written to the corresponding index in the 'out_enter_liids' array.
+ */
+static int neighbours_portal_graph(const struct nav_private *priv, enum nav_layer layer,
+                                   const struct portal *portal, uint16_t liid, 
+                                   const struct portal **out_neighbours, float *out_costs, 
+                                   uint16_t *out_enter_liids, size_t maxout)
 {
     int ret = 0;
+    const struct nav_chunk *chunk = 
+        &priv->chunks[layer][portal->chunk.r * priv->width + portal->chunk.c];
 
     for(int i = 0; i < portal->num_neighbours; i++) {
+
+        if(ret == maxout)
+            return ret;
 
         const struct edge *edge = &portal->edges[i];
         if(edge->es == EDGE_STATE_BLOCKED)
             continue;
 
+        /* If the portal is not reachable from our source local island, then 
+         * we can't use it 
+         */
+        if(!portal_reachable_from_island(chunk, edge->neighbour, liid))
+            continue;
+
         out_neighbours[ret] = edge->neighbour;
         out_costs[ret] = edge->cost;
+        out_enter_liids[ret] = liid;
         ret++;
     }
 
-    out_neighbours[ret] = portal->connected;
-    out_costs[ret] = 1;
-    ret++;
+    uint16_t conn_liids[MAX_PORTAL_NEIGHBS];
+    size_t nconn = portal_connected_liids(priv, layer, portal, liid, conn_liids, ARR_SIZE(conn_liids));
 
-    assert(ret <= MAX_PORTALS_PER_CHUNK);
+    for(int i = 0; i < nconn; i++) {
+
+        if(ret == maxout)
+            return ret;
+
+        out_neighbours[ret] = portal->connected;
+        out_costs[ret] = 1;
+        out_enter_liids[ret] = conn_liids[i];
+        ret++;
+    }
+
     return ret;
+}
+
+static bool portal_path_found(const struct nav_private *priv, enum nav_layer layer,
+                              khash_t(key_portal) *came_from, const struct portal *finish,
+                              uint16_t end_liid, struct portal_hop *out_first)
+{
+    khiter_t k;
+    const struct nav_chunk *chunk = 
+        &priv->chunks[layer][finish->chunk.r * priv->width + finish->chunk.c];
+
+    struct portal_hop hop = (struct portal_hop){finish, end_liid};
+    if((k = kh_get(key_portal, came_from, phop_to_key(&hop))) != kh_end(came_from)) {
+        *out_first = hop;
+        return true;
+    }
+    return false;
 }
 
 static float heuristic(struct coord a, struct coord b)
@@ -287,9 +405,9 @@ fail_came_from:
     PERF_RETURN(false);
 }
 
-bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *finish, 
-                           const struct nav_private *priv, enum nav_layer layer,
-                           vec_portal_t *out_path, float *out_cost)
+bool AStar_PortalGraphPath(struct tile_desc start_tile, struct tile_desc end_tile, 
+                           const struct portal *finish, const struct nav_private *priv, 
+                           enum nav_layer layer, vec_portal_t *out_path, float *out_cost)
 {
     PERF_ENTER();
 
@@ -303,73 +421,84 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
     if(NULL == (running_cost = kh_init(key_float)))
         goto fail_running_cost;
 
-    const struct nav_chunk *chunk = &priv->chunks[layer]
-                                                 [start_tile.chunk_r * priv->width + start_tile.chunk_c];
-    vec_coord_t path;
-    vec_coord_init(&path);
+    const struct nav_chunk *bchunk = &priv->chunks[layer][start_tile.chunk_r * priv->width + start_tile.chunk_c];
+    uint16_t start_liid = N_ClosestPathableLocalIsland(priv, bchunk, start_tile);
+    if(start_liid == ISLAND_NONE)
+        goto fail_find_path;
+
+    const struct nav_chunk *echunk = &priv->chunks[layer][end_tile.chunk_r * priv->width + end_tile.chunk_c];
+    uint16_t end_liid = N_ClosestPathableLocalIsland(priv, echunk, end_tile);
+    if(end_liid == ISLAND_NONE)
+        goto fail_find_path;
 
     /* Intitialize the frontier with all the portals in the source chunk that are 
      * reachable from the source tile. */
-    for(int i = 0; i < chunk->num_portals; i++) {
+    for(int i = 0; i < bchunk->num_portals; i++) {
 
-        const struct portal *port = &chunk->portals[i];
+        const struct portal *port = &bchunk->portals[i];
         struct coord tile_coord = (struct coord){start_tile.tile_r, start_tile.tile_c};
 
-        if(N_PortalReachableFromTile(port, tile_coord, chunk)) {
+        if(N_PortalReachableFromTile(port, tile_coord, bchunk)) {
 
-            float cost = chunk->portal_travel_costs[i][tile_coord.r][tile_coord.c];
+            float cost = bchunk->portal_travel_costs[i][tile_coord.r][tile_coord.c];
             if(cost != FLT_MAX) {
-            
-                kh_put_val(key_float, running_cost, portal_to_key(port), cost);
-                pq_portal_push(&frontier, cost, port);
+
+                struct portal_hop hop = (struct portal_hop){port, start_liid};
+                kh_put_val(key_float, running_cost, phop_to_key(&hop), cost);
+                pq_portal_push(&frontier, cost, hop);
             }
         }
     }
-    vec_coord_destroy(&path);
 
     while(pq_size(&frontier) > 0) {
 
-        const struct portal *curr;
+        struct portal_hop curr;
         pq_portal_pop(&frontier, &curr);
 
-        if(curr == finish)
+        if(curr.portal == finish && curr.liid == end_liid)
             break;
 
-        const struct portal *neighbours[MAX_PORTALS_PER_CHUNK];
-        float neighbour_costs[MAX_PORTALS_PER_CHUNK];
-        int num_neighbours = neighbours_portal_graph(curr, neighbours, neighbour_costs);
+        const struct portal *neighbours[MAX_PORTAL_NEIGHBS];
+        float neighbour_costs[MAX_PORTAL_NEIGHBS];
+        uint16_t neighb_enter_liids[MAX_PORTAL_NEIGHBS];
+
+        int num_neighbours = neighbours_portal_graph(priv, layer, curr.portal, curr.liid, neighbours, 
+            neighbour_costs, neighb_enter_liids, ARR_SIZE(neighbours));
 
         for(int i = 0; i < num_neighbours; i++) {
 
             const struct portal *next = neighbours[i];
-            khiter_t k = kh_get(key_float, running_cost, portal_to_key(curr));
+            struct portal_hop next_hop = (struct portal_hop){next, neighb_enter_liids[i]};
+
+            khiter_t k = kh_get(key_float, running_cost, phop_to_key(&curr));
             assert(k != kh_end(running_cost));
             float new_cost = kh_value(running_cost, k) + neighbour_costs[i] + portal_node_penalty();
 
-            if((k = kh_get(key_float, running_cost, portal_to_key(next))) == kh_end(running_cost)
+            if((k = kh_get(key_float, running_cost, phop_to_key(&next_hop))) == kh_end(running_cost)
             || new_cost < kh_value(running_cost, k)) {
 
-                kh_put_val(key_float, running_cost, portal_to_key(next), new_cost);
+                kh_put_val(key_float, running_cost, phop_to_key(&next_hop), new_cost);
                 /* No heuristic used - effectively Dijkstra's algorithm */
                 float priority = new_cost;
-                pq_portal_push(&frontier, priority, next);
-                kh_put_val(key_portal, came_from, portal_to_key(next), curr);
+                pq_portal_push(&frontier, priority, next_hop);
+                kh_put_val(key_portal, came_from, phop_to_key(&next_hop), curr);
             }
         }
     }
     
-    if(kh_get(key_portal, came_from, portal_to_key(finish)) == kh_end(came_from))
+    struct portal_hop last;
+    if(!portal_path_found(priv, layer, came_from, finish, end_liid, &last))
         goto fail_find_path;
 
     vec_portal_reset(out_path);
 
     /* We have our path at this point. Walk backwards along the path to build a 
      * vector of the nodes along the path. */
-    const struct portal *curr = finish;
+    struct portal_hop curr = last;
     while(true) {
 
-        vec_portal_push(out_path, (struct portal*)curr);
-        khiter_t k = kh_get(key_portal, came_from, portal_to_key(curr));
+        vec_portal_push(out_path, curr);
+        khiter_t k = kh_get(key_portal, came_from, phop_to_key(&curr));
         if(k == kh_end(came_from))
             break;
         curr = kh_value(came_from, k);
@@ -377,12 +506,12 @@ bool AStar_PortalGraphPath(struct tile_desc start_tile, const struct portal *fin
 
     /* Reverse the path vector */
     for(int i = 0, j = vec_size(out_path) - 1; i < j; i++, j--) {
-        struct portal *tmp = vec_AT(out_path, i);
+        struct portal_hop tmp = vec_AT(out_path, i);
         vec_AT(out_path, i) = vec_AT(out_path, j);
         vec_AT(out_path, j) = tmp;
     }
 
-    khiter_t k = kh_get(key_float, running_cost, portal_to_key(finish));
+    khiter_t k = kh_get(key_float, running_cost, phop_to_key(&last));
     assert(k != kh_end(running_cost));
     *out_cost = kh_value(running_cost, k);
 
