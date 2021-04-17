@@ -1566,6 +1566,12 @@ static PyObject *PyEntity_pickle(PyEntityObject *self, PyObject *args, PyObject 
     Py_DECREF(vision_range);
     CHK_TRUE(status, fail_pickle);
 
+    PyObject *tags = PyEntity_get_tags(self, NULL);
+    CHK_TRUE(tags, fail_pickle);
+    status = S_PickleObjgraph(tags, stream);
+    Py_DECREF(tags);
+    CHK_TRUE(status, fail_pickle);
+
     ret = PyString_FromStringAndSize(PFSDL_VectorRWOpsRaw(stream), SDL_RWsize(stream));
 
 fail_pickle:
@@ -1628,13 +1634,14 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     PyObject *vision_range = S_UnpickleObjgraph(stream);
     SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
 
-    if(!pos
-    || !scale
-    || !rotation
-    || !flags 
-    || !sel_radius 
-    || !faction_id
-    || !vision_range) {
+    PyObject *tags = S_UnpickleObjgraph(stream);
+    SDL_RWread(stream, &tmp, 1, 1); /* consume NULL byte */
+
+    if(!pos || !scale
+    || !rotation || !flags 
+    || !sel_radius || !faction_id
+    || !vision_range || !tags) {
+
         PyErr_SetString(PyExc_RuntimeError, "Could not unpickle attributes of pf.Entity instance");
         goto fail_unpickle_atts;
     }
@@ -1677,6 +1684,13 @@ static PyObject *PyEntity_unpickle(PyObject *cls, PyObject *args, PyObject *kwar
     if(!(ent->flags & ENTITY_FLAG_ZOMBIE)) {
         status = PyObject_SetAttrString(entobj, "vision_range", vision_range);
         CHK_TRUE(0 == status, fail_unpickle_atts);
+
+        CHK_TRUE(PyTuple_Check(tags), fail_unpickle_atts);
+        for(int i = 0; i < PyTuple_GET_SIZE(tags); i++) {
+            PyObject *tag = PyTuple_GET_ITEM(tags, i);
+            CHK_TRUE(PyString_Check(tag), fail_unpickle_atts);
+            Entity_AddTag(ent->uid, PyString_AS_STRING(tag));
+        }
     }
 
     Py_ssize_t nread = SDL_RWseek(stream, 0, RW_SEEK_CUR);
@@ -1691,6 +1705,7 @@ fail_unpickle_atts:
     Py_XDECREF(sel_radius);
     Py_XDECREF(faction_id);
     Py_XDECREF(vision_range);
+    Py_XDECREF(tags);
 fail_unpickle:
     Py_XDECREF(basedir);
     Py_XDECREF(filename);
