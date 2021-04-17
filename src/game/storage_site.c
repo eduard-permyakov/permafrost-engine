@@ -85,6 +85,9 @@ struct ss_state{
     bool                   use_alt;
     kh_int_t              *alt_capacity;
     kh_int_t              *alt_desired;
+    /* Flag to inform harvesters not to take anything 
+     * from this site */
+    bool                   do_not_take;
 };
 
 typedef char buff_t[512];
@@ -209,6 +212,7 @@ static bool ss_state_init(struct ss_state *hs)
 
     hs->last_change = (struct ss_delta_event){0};
     hs->use_alt = false;
+    hs->do_not_take = false;
     return true;
 }
 
@@ -883,6 +887,20 @@ void G_StorageSite_SetShowUI(bool show)
     s_show_ui = show;
 }
 
+bool G_StorageSite_GetDoNotTake(uint32_t uid)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    return ss->do_not_take;
+}
+
+void G_StorageSite_SetDoNotTake(uint32_t uid, bool on)
+{
+    struct ss_state *ss = ss_state_get(uid);
+    assert(ss);
+    ss->do_not_take = on;
+}
+
 void G_StorageSite_SetUseAlt(const struct entity *ent, bool use)
 {
     struct ss_state *ss = ss_state_get(ent->uid);
@@ -1163,6 +1181,12 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
             };
             CHK_TRUE_RET(Attr_Write(stream, &alt_desired_amount_attr, "alt_desired_amount"));
         });
+
+        struct attr do_not_take = (struct attr){
+            .type = TYPE_BOOL,
+            .val.as_bool = curr.do_not_take
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &do_not_take, "do_not_take"));
     });
 
     /* save global resource/capacity tables 
@@ -1324,6 +1348,10 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
 
             G_StorageSite_SetAltDesired(uid, key, val);
         }
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_BOOL);
+        ss->do_not_take = attr.val.as_bool;
     }
 
     /* load global resource/capacity tables 

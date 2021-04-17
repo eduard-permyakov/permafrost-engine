@@ -432,6 +432,8 @@ static bool valid_storage_site_source(const struct entity *curr, void *arg)
         return false;
     if(curr == sarg->ent)
         return false;
+    if(G_StorageSite_GetDoNotTake(curr->uid))
+        return false;
 
     /* Don't get resources from build sites - this prevents builders 
      * from 'stealing' resources back-and-forth from two nearby 
@@ -858,9 +860,11 @@ static void on_arrive_at_transport_source(void *user, void *event)
 
     if(!src
     || !(src->flags & ENTITY_FLAG_STORAGE_SITE)
-    || !M_NavObjAdjacent(s_map, ent, src)) {
+    || !M_NavObjAdjacent(s_map, ent, src)
+    || G_StorageSite_GetDoNotTake(src->uid)) {
 
-        /* harvester could not reach the storage site */
+        /* harvester could not reach the storage site, 
+         * or the 'do not take' option for it was set */
         struct entity *dest = G_EntityForUID(hs->transport_dest_uid);
         finish_transporing(hs);
 
