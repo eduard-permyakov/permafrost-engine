@@ -358,6 +358,11 @@ static void on_update_ui(void *user, void *event)
         if(ui_setting.as_int == SS_UI_SHOW_SELECTED && !G_Sel_IsSelected(ent))
             continue;
 
+        struct obb obb;
+        Entity_CurrentOBB(ent, &obb, true);
+        if(!G_Fog_ObjExplored(G_GetPlayerControlledFactions(), key, &obb))
+            continue;
+
         char name[256];
         pf_snprintf(name, sizeof(name), "__storage_site__.%x", key);
 
