@@ -3260,9 +3260,12 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_ORDER_ISSUED:
     case EVENT_ENTITY_DIED: {
         PyObject *ent = S_Entity_ObjForUID(((struct entity*)arg)->uid);
-        assert(ent);
-        Py_INCREF(ent);
-        return ent;
+        if(ent) {
+            Py_INCREF(ent);
+            return ent;
+        }else{
+            Py_RETURN_NONE;
+        }
     }
     case EVENT_SESSION_POPPED:
         return s_wrap_argv(arg);
