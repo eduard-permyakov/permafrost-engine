@@ -273,7 +273,7 @@ fail_init:
     PF_FREE(ret->basedir);
     PF_FREE(ret->filename);
     PF_FREE(ret->name);
-    PF_FREE(ret);
+    mpa_ent_free(&s_mpool, ret);
 fail_alloc:
     return NULL;
 }
