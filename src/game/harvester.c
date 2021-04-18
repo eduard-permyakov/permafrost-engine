@@ -889,7 +889,14 @@ static void on_arrive_at_transport_source(void *user, void *event)
     int take = 0;
     switch(hs->strategy) {
     case TRANSPORT_STRATEGY_EXCESS: {
-        take = MAX(MIN(carry_cap, excess), 0);
+        /* If there are absolutely no valid storage sites which have excess 
+         * of our target resource, then we are allowed to overstep the 'desired' 
+         * limit */
+        if(src == nearest_storage_site_source(ent, hs->res_name, hs->strategy)) {
+            take = MIN(carry_cap, store_curr);
+        }else{
+            take = MAX(MIN(carry_cap, excess), 0);
+        }
         break;
     }
     case TRANSPORT_STRATEGY_GATHERING: /* fallthrough */
