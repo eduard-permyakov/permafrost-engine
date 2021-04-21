@@ -523,7 +523,7 @@ static bool load_global_resources(int i, SDL_RWops *stream)
         struct attr keyattr;
         CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
         CHK_TRUE_RET(keyattr.type == TYPE_STRING);
-        const char *key = keyattr.val.as_string;
+        const char *key = si_intern(keyattr.val.as_string, &s_stringpool, s_stridx);
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
@@ -577,7 +577,7 @@ static bool load_global_capacities(int i, SDL_RWops *stream)
         struct attr keyattr;
         CHK_TRUE_RET(Attr_Parse(stream, &keyattr, true));
         CHK_TRUE_RET(keyattr.type == TYPE_STRING);
-        const char *key = keyattr.val.as_string;
+        const char *key = si_intern(keyattr.val.as_string, &s_stringpool, s_stridx);
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
