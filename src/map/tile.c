@@ -747,8 +747,8 @@ size_t M_Tile_AllUnderAABB(struct map_resolution res, vec2_t xz_center, float ha
     return ret;
 }
 
-size_t M_Tile_Countour(size_t ntds, const struct tile_desc tds[static ntds],
-                       struct map_resolution res, struct tile_desc *out, size_t maxout)
+size_t M_Tile_Contour(size_t ntds, const struct tile_desc tds[static ntds],
+                      struct map_resolution res, struct tile_desc *out, size_t maxout)
 {
     if(ntds == 0)
         return 0;
@@ -800,6 +800,9 @@ size_t M_Tile_Countour(size_t ntds, const struct tile_desc tds[static ntds],
 
         if(ret == maxout)
             return ret;
+
+        if((r / res.tile_h) >= res.chunk_h || (c / res.tile_w) >= res.chunk_w)
+            continue;
 
         /* If any of the neighbours are 'marked', this tile is part of the contour  */
         if((relr > (0)    && marked[relr - 1][relc])

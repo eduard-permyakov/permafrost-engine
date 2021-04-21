@@ -861,11 +861,12 @@ static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, in
                                                [IDX(curr.chunk_r, priv->width, curr.chunk_c)];
 
         assert(ref_delta < 0 ? chunk->blockers[curr.tile_r][curr.tile_c] >= -ref_delta : true);
-        assert(ref_delta > 0 ? chunk->blockers[curr.tile_r][curr.tile_c] < 256 - ref_delta : true);
+        assert(ref_delta > 0 ? chunk->blockers[curr.tile_r][curr.tile_c] < (256 - ref_delta) : true);
 
         int prev_val = chunk->blockers[curr.tile_r][curr.tile_c];
         chunk->blockers[curr.tile_r][curr.tile_c] += ref_delta;
         chunk->factions[faction_id][curr.tile_r][curr.tile_c] += ref_delta;
+        assert(chunk->blockers[curr.tile_r][curr.tile_c] < 255);
 
         int val = chunk->blockers[curr.tile_r][curr.tile_c];
         if(!!val != !!prev_val) { /* The tile changed states between occupied/non-occupied */
@@ -890,7 +891,7 @@ static void n_update_blockers_circle(struct nav_private *priv, vec2_t xz_pos, fl
     n_update_blockers(priv, NAV_LAYER_GROUND_1X1, faction_id, tds, ntds, ref_delta);
 
     struct tile_desc outline[256];
-    int noutline = M_Tile_Countour(ntds, tds, n_res(priv), outline, ARR_SIZE(outline));
+    int noutline = M_Tile_Contour(ntds, tds, n_res(priv), outline, ARR_SIZE(outline));
     n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, tds, ntds, ref_delta);
     n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, outline, noutline, ref_delta);
 }
@@ -903,7 +904,7 @@ static void n_update_blockers_obb(struct nav_private *priv, const struct obb *ob
     n_update_blockers(priv, NAV_LAYER_GROUND_1X1, faction_id, tds, ntds, ref_delta);
 
     struct tile_desc outline[1024];
-    int noutline = M_Tile_Countour(ntds, tds, n_res(priv), outline, ARR_SIZE(outline));
+    int noutline = M_Tile_Contour(ntds, tds, n_res(priv), outline, ARR_SIZE(outline));
     n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, tds, ntds, ref_delta);
     n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, outline, noutline, ref_delta);
 }

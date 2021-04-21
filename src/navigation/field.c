@@ -989,7 +989,7 @@ static size_t field_enemies_initial_frontier(
         }
 
         if(layer == NAV_LAYER_GROUND_3X3) {
-            ntds += M_Tile_Countour(ntds, tds, res, tds + ntds, ARR_SIZE(tds) - ntds);
+            ntds += M_Tile_Contour(ntds, tds, res, tds + ntds, ARR_SIZE(tds) - ntds);
         }
 
         for(int j = 0; j < ntds; j++) {
@@ -1053,7 +1053,7 @@ static size_t field_entity_initial_frontier(
     }
 
     if(layer == NAV_LAYER_GROUND_3X3) {
-        ntds += M_Tile_Countour(ntds, tds, res, tds + ntds, ARR_SIZE(tds) - ntds);
+        ntds += M_Tile_Contour(ntds, tds, res, tds + ntds, ARR_SIZE(tds) - ntds);
     }
 
     int ret = 0;
