@@ -96,6 +96,7 @@
             goto _lbl;                                                                          \
     }while(0)
 
+#define _MIN(a, b)  ((a) < (b) ? (a) : (b))
 #define _MAX(a, b)  ((a) > (b) ? (a) : (b))
 
 /***********************************************************************************************/
@@ -253,15 +254,15 @@
                                               float xmin2, float xmax2,                         \
                                               float ymin2, float ymax2)                         \
     {                                                                                           \
-        if(xmin1 >= xmin2 && xmin1 <= xmax2)                                                    \
+        float xmin = _MAX(xmin1, xmin2);                                                        \
+        float xmax = _MIN(xmax1, xmax2);                                                        \
+        float ymin = _MAX(ymin1, ymin2);                                                        \
+        float ymax = _MIN(ymax1, ymax2);                                                        \
+        if(ymax >= ymin && xmax >= xmin) {                                                      \
             return true;                                                                        \
-        if(xmax1 >= xmin2 && xmax1 <= xmax2)                                                    \
-            return true;                                                                        \
-        if(ymin1 >= ymin2 && ymin1 <= ymax2)                                                    \
-            return true;                                                                        \
-        if(ymax1 >= ymin2 && ymax1 <= ymax2)                                                    \
-            return true;                                                                        \
-        return false;                                                                           \
+        }else{                                                                                  \
+            return false;                                                                       \
+        }                                                                                       \
     }                                                                                           \
                                                                                                 \
     static float _qt_##name##_dist(float x1, float y1, float x2, float y2)                      \
@@ -283,10 +284,7 @@
                                             type *out, int *inout_maxout)                       \
     {                                                                                           \
         float xmin, xmax, ymin, ymax;                                                           \
-                                                                                                \
-        qt_node(name) *curr = mp_##name##_entry(&qt->node_pool, ref);                       \
         _qt_##name##_node_bounds(qt, ref, &xmin, &xmax, &ymin, &ymax);                          \
-                                                                                                \
         _qt_##name##_extend_bounds(&xmin, &xmax, &ymin, &ymax, range);                          \
                                                                                                 \
         if(_qt_##name##_point_in_bounds(xmin, xmax, ymin, ymax, x, y)) {                        \
@@ -380,10 +378,14 @@
         }                                                                                       \
                                                                                                 \
         assert(!_qt_##name##_node_isleaf(root));                                                \
-        out += _qt_##name##_node_add_rect(qt, root->nw, xmin, xmax, ymin, ymax, out, inout_maxout); \
-        out += _qt_##name##_node_add_rect(qt, root->ne, xmin, xmax, ymin, ymax, out, inout_maxout); \
-        out += _qt_##name##_node_add_rect(qt, root->sw, xmin, xmax, ymin, ymax, out, inout_maxout); \
-        out += _qt_##name##_node_add_rect(qt, root->se, xmin, xmax, ymin, ymax, out, inout_maxout); \
+        out += _qt_##name##_node_add_rect(qt, root->nw,                                         \
+            xmin, xmax, ymin, ymax, out, inout_maxout);                                         \
+        out += _qt_##name##_node_add_rect(qt, root->ne,                                         \
+            xmin, xmax, ymin, ymax, out, inout_maxout);                                         \
+        out += _qt_##name##_node_add_rect(qt, root->sw,                                         \
+            xmin, xmax, ymin, ymax, out, inout_maxout);                                         \
+        out += _qt_##name##_node_add_rect(qt, root->se,                                         \
+            xmin, xmax, ymin, ymax, out, inout_maxout);                                         \
                                                                                                 \
         assert(orig_maxout >= *inout_maxout);                                                   \
         return (orig_maxout - *inout_maxout);                                                   \

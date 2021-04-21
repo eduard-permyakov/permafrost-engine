@@ -170,19 +170,13 @@ static float arr_max(float *array, size_t size)
 
 static bool ranges_overlap(struct range *a, struct range *b)
 {
-    if(b->begin >= a->begin && b->begin <= a->end)
+    float imin = MAX(a->begin, b->begin);
+    float imax = MIN(a->end, b->end);
+    if(imax < imin) {
+        return false;
+    }else{
         return true;
-
-    if(b->end >= a->begin && b->end <= a->end)
-        return true;
-
-    if(a->begin >= b->begin && a->begin <= b->end)
-        return true;
-
-    if(a->end >= b->begin && a->end <= b->end)
-        return true;
-
-    return false;
+    }
 }
 
 static bool point_in_range(float point, struct range *r)
