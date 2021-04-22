@@ -45,7 +45,7 @@
 
 /* Hold on to objects by their handles. Unlike pointers, they don't need to be */
 /* invalidated when a realloc takes place. */
-typedef uint16_t mp_ref_t;
+typedef uint32_t mp_ref_t;
 
 /***********************************************************************************************/
 
@@ -105,12 +105,12 @@ typedef uint16_t mp_ref_t;
         if(!new_entry)                                                                          \
             return false;                                                                       \
                                                                                                 \
-        for(int i = old_cap; i < new_cap; ++i) {                                                \
+        for(int i = old_cap + 1; i < new_cap; ++i) {                                            \
             new_entry[i].inext_free = i + 1;                                                    \
         }                                                                                       \
         new_entry[new_cap].inext_free = 0;                                                      \
                                                                                                 \
-        if(!mp->ifree_head) {                                                                   \
+        if(!old_cap) {                                                                          \
             /* Skip the first node - index 0 is used as NULL */                                 \
             mp->ifree_head = 1;                                                                 \
         }else {                                                                                 \
