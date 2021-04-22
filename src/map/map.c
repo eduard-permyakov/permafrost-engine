@@ -625,6 +625,21 @@ bool M_NavPositionPathable(const struct map *map, enum nav_layer layer, vec2_t x
     return N_PositionPathable(xz_pos, layer, map->nav_private, map->pos);
 }
 
+bool M_NavPositionBlocked(const struct map *map, enum nav_layer layer, vec2_t xz_pos)
+{
+    struct box map_box = (struct  box){
+        map->pos.x,
+        map->pos.z,
+        map->width * TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE,
+        map->height * TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE,
+    };
+
+    if(!C_BoxPointIntersection(xz_pos.x, xz_pos.z, map_box))
+        return false; 
+
+    return N_PositionBlocked(xz_pos, layer, map->nav_private, map->pos);
+}
+
 vec2_t M_NavClosestReachableDest(const struct map *map, enum nav_layer layer, 
                                  vec2_t xz_src, vec2_t xz_dst)
 {

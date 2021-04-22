@@ -339,6 +339,14 @@ bool   M_NavPositionPathable(const struct map *map, enum nav_layer layer,
                              vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
+ * Returns true if the specified positions is blocked (i.e. a unit or entity
+ * is currently occupying this tile, causing it to temporarily become non-traversable)
+ * ------------------------------------------------------------------------
+ */
+bool   M_NavPositionBlocked(const struct map *map, enum nav_layer layer, 
+                            vec2_t xz_pos);
+
+/* ------------------------------------------------------------------------
  * Returns the closest position to the destination that is pathable to from
  * the (valid) source position. In the best case, this is the destination
  * itself.

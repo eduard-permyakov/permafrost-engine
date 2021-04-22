@@ -1109,12 +1109,20 @@ static void nullify_impass_components(const struct entity *ent, vec2_t *inout_fo
     vec2_t top =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z + nt_dims.z};
     vec2_t bot =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z - nt_dims.z};
 
-    if((inout_force->x > 0 && !M_NavPositionPathable(s_map, layer, left))
-    || (inout_force->x < 0 && !M_NavPositionPathable(s_map, layer, right)))
+    if(inout_force->x > 0 
+    && (!M_NavPositionPathable(s_map, layer, left)  || M_NavPositionBlocked(s_map, layer, left)))
         inout_force->x = 0.0f;
 
-    if((inout_force->z > 0 && !M_NavPositionPathable(s_map, layer, top))
-    || (inout_force->z < 0 && !M_NavPositionPathable(s_map, layer, bot)))
+    if(inout_force->x < 0 
+    && (!M_NavPositionPathable(s_map, layer, right) || M_NavPositionBlocked(s_map, layer, right)))
+        inout_force->x = 0.0f;
+
+    if(inout_force->z > 0 
+    && (!M_NavPositionPathable(s_map, layer, top)   || M_NavPositionBlocked(s_map, layer, top)))
+        inout_force->z = 0.0f;
+
+    if(inout_force->z < 0 
+    && (!M_NavPositionPathable(s_map, layer, bot)   || M_NavPositionBlocked(s_map, layer, bot)))
         inout_force->z = 0.0f;
 }
 
@@ -1206,7 +1214,8 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
     enum nav_layer layer = Entity_NavLayer(ent);
 
     if(PFM_Vec2_Len(&new_vel) > 0
-    && M_NavPositionPathable(s_map, layer, new_pos_xz)) {
+    && M_NavPositionPathable(s_map, layer, new_pos_xz)
+    && !M_NavPositionBlocked(s_map, layer, new_pos_xz)) {
     
         vec3_t new_pos = (vec3_t){new_pos_xz.x, M_HeightAtPoint(s_map, new_pos_xz), new_pos_xz.z};
         G_Pos_Set(ent, new_pos);

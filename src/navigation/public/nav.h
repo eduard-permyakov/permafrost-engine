@@ -334,6 +334,13 @@ bool      N_PositionPathable(vec2_t xz_pos, enum nav_layer layer,
                              void *nav_private, vec3_t map_pos);
 
 /* ------------------------------------------------------------------------
+ * Returns true if the specified XZ position is currently blocked.
+ * ------------------------------------------------------------------------
+ */
+bool      N_PositionBlocked(vec2_t xz_pos, enum nav_layer layer, 
+                            void *nav_private, vec3_t map_pos);
+
+/* ------------------------------------------------------------------------
  * Returns the X and Z dimentions (in OpenGL coordinates) of a single 
  * navigation tile.
  * ------------------------------------------------------------------------
