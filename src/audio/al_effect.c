@@ -245,9 +245,9 @@ static void on_update_start(void *user, void *event)
     PERF_POP();
 }
 
-static void on_new_game(void *user, void *event)
+static void on_new_map(void *user, void *event)
 {
-    const struct map *map = event;
+    const struct map *map = G_GetPrevTickMap();
     if(!map)
         return;
 
@@ -501,7 +501,9 @@ bool Audio_Effect_Init(void)
         goto fail_active;
 
     audio_create_settings();
-    E_Global_Register(EVENT_NEW_GAME, on_new_game, NULL, G_ALL);
+    E_Global_Register(EVENT_NEW_GAME, on_new_map, NULL, G_ALL);
+    E_Global_Register(EVENT_SESSION_LOADED, on_new_map, NULL, G_ALL);
+    E_Global_Register(EVENT_SESSION_POPPED, on_new_map, NULL, G_ALL);
     E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_ALL);
     E_Global_Register(EVENT_1HZ_TICK, on_1hz_tick, NULL, G_RUNNING);
     return true;
@@ -526,7 +528,9 @@ void Audio_Effect_Shutdown(void)
         alDeleteSources(1, &curr->source);
     }
 
-    E_Global_Unregister(EVENT_NEW_GAME, on_new_game);
+    E_Global_Unregister(EVENT_NEW_GAME, on_new_map);
+    E_Global_Unregister(EVENT_SESSION_LOADED, on_new_map);
+    E_Global_Unregister(EVENT_SESSION_POPPED, on_new_map);
     E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
     E_Global_Unregister(EVENT_1HZ_TICK, on_1hz_tick);
 
