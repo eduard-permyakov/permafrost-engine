@@ -703,7 +703,7 @@ size_t M_Tile_AllUnderCircle(struct map_resolution res, vec2_t xz_center, float 
 
         out[ret++] = curr;
         if(ret == maxout) 
-            break;
+            return ret;
     }}
     return ret;
 }
@@ -742,7 +742,7 @@ size_t M_Tile_AllUnderAABB(struct map_resolution res, vec2_t xz_center, float ha
 
         out[ret++] = curr;
         if(ret == maxout) 
-            break;
+           return ret;
     }}
     return ret;
 }

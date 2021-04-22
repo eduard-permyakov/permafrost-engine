@@ -364,7 +364,7 @@ static bool fog_obj_matches(uint16_t fac_mask, const struct obb *obj, enum fog_s
         }
     }
 
-    struct tile_desc tds[2048];
+    struct tile_desc tds[4096];
     size_t ntiles = M_Tile_AllUnderObj(pos, res, obj, tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntiles; i++) {
@@ -396,7 +396,7 @@ static bool fog_circle_matches(uint16_t fac_mask, vec2_t xz_center, float radius
         }
     }
 
-    struct tile_desc tds[2048];
+    struct tile_desc tds[4096];
     size_t ntiles = M_Tile_AllUnderCircle(res, xz_center, radius, M_GetPos(s_map), tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntiles; i++) {
@@ -428,7 +428,7 @@ static bool fog_rect_matches(uint16_t fac_mask, vec2_t xz_center, float halfx, f
         }
     }
 
-    struct tile_desc tds[2048];
+    struct tile_desc tds[4096];
     size_t ntiles = M_Tile_AllUnderAABB(res, xz_center, halfx, halfz, 
         M_GetPos(s_map), tds, ARR_SIZE(tds));
 
@@ -530,7 +530,7 @@ void G_Fog_ExploreCircle(vec2_t xz_pos, int faction_id, float radius)
     struct map_resolution res;
     M_GetResolution(s_map, &res);
 
-    struct tile_desc tds[2048];
+    struct tile_desc tds[4096];
     size_t ntiles = M_Tile_AllUnderCircle(res, xz_pos, radius, M_GetPos(s_map), tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntiles; i++) {
@@ -546,7 +546,7 @@ void G_Fog_ExploreRectangle(vec2_t xz_pos, int faction_id, float halfx, float ha
     struct map_resolution res;
     M_GetResolution(s_map, &res);
 
-    struct tile_desc tds[2048];
+    struct tile_desc tds[4096];
     size_t ntiles = M_Tile_AllUnderAABB(res, xz_pos, halfx, halfz, M_GetPos(s_map), tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntiles; i++) {
