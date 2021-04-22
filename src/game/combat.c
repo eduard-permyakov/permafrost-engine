@@ -1211,7 +1211,6 @@ struct entity *G_Combat_ClosestEligibleEnemy(const struct entity *ent)
         vec2_t enemy_pos = G_Pos_GetXZ(ents[i]->uid);
         vec2_t delta;
         PFM_Vec2_Sub(&pos, &enemy_pos, &delta);
-        assert(PFM_Vec2_Len(&delta) <= TARGET_ACQUISITION_RANGE);
         float dist = PFM_Vec2_Len(&delta);
 
         if(dist < min_dist) {
