@@ -801,7 +801,8 @@ size_t M_Tile_Contour(size_t ntds, const struct tile_desc tds[static ntds],
         if(ret == maxout)
             return ret;
 
-        if((r / res.tile_h) >= res.chunk_h || (c / res.tile_w) >= res.chunk_w)
+        if((r / res.tile_h) >= res.chunk_h || (r / res.tile_h) < 0 
+        || (c / res.tile_w) >= res.chunk_w || (c / res.tile_w) < 0)
             continue;
 
         /* If any of the neighbours are 'marked', this tile is part of the contour  */
