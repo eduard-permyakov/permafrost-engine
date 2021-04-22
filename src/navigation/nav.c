@@ -1479,8 +1479,9 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
     uint16_t src_iid = src_chunk->islands[src_desc.tile_r][src_desc.tile_c];
     uint16_t dst_iid = dst_chunk->islands[dst_desc.tile_r][dst_desc.tile_c];
 
-    if(src_iid != dst_iid)
+    if(src_iid != dst_iid) {
         PERF_RETURN(false); 
+    }
 
     /* Even if a mapping exists, the actual flow field may have been evicted from
      * the cache, due to space constraints or invalidation. */
@@ -1519,7 +1520,7 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
      * between them. In this case, we only need a single flow field. .
      */
     if(src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c
-    && src_chunk->local_islands[src_desc.tile_r][src_desc.tile_c] == src_chunk->local_islands[dst_desc.tile_r][dst_desc.tile_c]) {
+    && N_ClosestPathableLocalIsland(priv, src_chunk, src_desc) == N_ClosestPathableLocalIsland(priv, dst_chunk, dst_desc)) {
 
         *out_dest_id = ret;
         PERF_RETURN(true);
@@ -1550,8 +1551,9 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
             (struct coord){dst_desc.tile_r, dst_desc.tile_c}, false);
     }
 
-    if(!dst_port)
+    if(!dst_port) {
         PERF_RETURN(false); 
+    }
 
     float cost;
     vec_portal_t path;
