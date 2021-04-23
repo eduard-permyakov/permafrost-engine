@@ -292,6 +292,9 @@ static void sel_compute_hovered(struct camera *cam, const vec_pentity_t *visible
 
     for(int i = 0; i < vec_size(visible_obbs); i++) {
 
+        if(G_EntityIsZombie(vec_AT(visible, i)->uid))
+            continue;
+
         float t;
         if(C_RayIntersectsOBB(ray_origin, ray_dir, vec_AT(visible_obbs, i), &t)) {
 
