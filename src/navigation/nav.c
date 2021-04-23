@@ -687,7 +687,7 @@ static dest_id_t n_dest_id(struct tile_desc dst_desc, enum nav_layer layer, int 
     assert(dst_desc.tile_r <= 0x3f);
     assert(dst_desc.tile_c <= 0x3f);
     assert(layer <= 0xf);
-    assert(faction_id <= 0xff);
+    assert(faction_id <= 0xf);
 
     return (((uint32_t)dst_desc.chunk_r & 0x3f) << 26)
          | (((uint32_t)dst_desc.chunk_c & 0x3f) << 20)
@@ -1223,7 +1223,7 @@ static bool n_normally_reachable(const struct nav_chunk *chunk, struct coord a, 
     return true;
 }
 
-/* Returns true if the tile is blocke off from all portals by blockers */
+/* Returns true if the tile is blocked off from all portals by blockers */
 static bool n_blocked_off(const struct nav_chunk *chunk, struct coord tile)
 {
     for(int i = 0; i < chunk->num_portals; i++) {
@@ -1561,10 +1561,25 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
 
     bool path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port, priv, layer, &path, &cost);
     if(!path_exists) {
+
         /* if we didn't find a path to the 'closest portal' to the destination, that must mean 
          * that the portal is severed by blockers. Try to find a more suitable target. 
          */
+        struct tile_desc orig_dst = dst_desc;
         dst_port = n_closest_reachable_from_location(priv, layer, dst_chunk, src_desc, &dst_desc);
+
+        /* When we are already on the desination chunk but the closest portal to the target is 
+         * on another island, it is not guaranteed that it will lead to to the target. Resort 
+         * to getting maximally close on this chunk.
+         */
+        if(N_ClosestPathableLocalIsland(priv, dst_chunk, dst_desc) != N_ClosestPathableLocalIsland(priv, dst_chunk, orig_dst)
+        && (src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c)) {
+
+            vec_portal_destroy(&path);
+            *out_dest_id = ret;
+            PERF_RETURN(true);
+        }
+
         if(dst_port) {
             path_exists = AStar_PortalGraphPath(src_desc, dst_desc, dst_port, priv, layer, &path, &cost);
         }
@@ -1572,7 +1587,15 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
 
     if(!path_exists) {
         vec_portal_destroy(&path);
-        PERF_RETURN(false); 
+
+        /* If the source and destination are on the same chunk, then there is nothing left for us 
+         * to do but get as close as possible */
+        if(src_desc.chunk_r == dst_desc.chunk_r && src_desc.chunk_c == dst_desc.chunk_c) {
+            *out_dest_id = ret;
+            PERF_RETURN(true);
+        }else{
+            PERF_RETURN(false); 
+        }
     }
 
     struct coord prev_los_coord = (struct coord){dst_desc.chunk_r, dst_desc.chunk_c};
@@ -2439,7 +2462,7 @@ dest_id_t N_DestIDForPos(void *nav_private, vec3_t map_pos, vec2_t xz_pos, enum 
     bool result = M_Tile_DescForPoint2D(n_res(nav_private), map_pos, xz_pos, &td);
     assert(result);
 
-    return n_dest_id(td, layer, 0xff);
+    return n_dest_id(td, layer, FACTION_ID_NONE);
 }
 
 dest_id_t N_DestIDForPosAttacking(void *nav_private, vec3_t map_pos, vec2_t xz_pos, 

@@ -45,7 +45,7 @@
 #include <SDL.h>
 
 
-#define MAX_FACTIONS     16
+#define MAX_FACTIONS     15
 #define MAX_FAC_NAME_LEN 32
 
 struct entity;
