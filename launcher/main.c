@@ -231,7 +231,15 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     si.hStdOutput = hChildStdOutWr;
     si.dwFlags |= STARTF_USESTDHANDLES;
 
-    LPTSTR cmdline = STR(BIN_PATH) " .\\ " STR(SCRIPT_PATH);
+    LPTSTR cmdline = 
+        STR(BIN_PATH) " .\\ " STR(SCRIPT_PATH)
+#ifdef APPANAME
+        " --appname=\"" STR(APPNAME) "\" "
+#endif
+#ifdef APPICON
+        " --appicon=\"" STR(APPICON) "\" "
+#endif
+        ;
     if(!CreateProcess(NULL, cmdline, NULL, NULL, TRUE, CREATE_NO_WINDOW | DEBUG_ONLY_THIS_PROCESS , NULL, NULL, &si, &pi))
         return GetLastError();
 
@@ -308,7 +316,16 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 int main(int argc, char **argv)
 {
     putenv("LD_LIBRARY_PATH=" STR(LIB_PATH));
-    return system(STR(BIN_PATH) " ./ " STR(SCRIPT_PATH));
+    const char *cmdline = 
+        STR(BIN_PATH) " ./ " STR(SCRIPT_PATH)
+#ifdef APPNAME
+        " --appname=\"" STR(APPNAME) "\" "
+#endif
+#ifdef APPICON
+        " --appicon=\"" STR(APPICON) "\" "
+#endif
+        ;
+    return system(cmdline);
 }
 #endif
 
