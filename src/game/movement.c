@@ -1335,6 +1335,10 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
             ms->state = STATE_SURROUND_ENTITY;
             break;
         }
+
+        if(PFM_Vec2_Len(&ms->vdes) < EPSILON) {
+            entity_finish_moving(ent, STATE_WAITING);
+        }
         break;
     }
     case STATE_ENTER_ENTITY_RANGE: {
@@ -1405,7 +1409,8 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         if(ms->wait_ticks_left == 0) {
 
             assert(ms->wait_prev == STATE_MOVING 
-                || ms->wait_prev == STATE_SEEK_ENEMIES);
+                || ms->wait_prev == STATE_SEEK_ENEMIES
+                || ms->wait_prev == STATE_SURROUND_ENTITY);
 
             entity_unblock(ent);
             E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
