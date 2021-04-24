@@ -988,7 +988,13 @@ static size_t field_enemies_initial_frontier(
                 G_GetSelectionRadius(curr_enemy->uid), enemies->map_pos, tds, ARR_SIZE(tds));
         }
 
-        if(layer == NAV_LAYER_GROUND_3X3) {
+        if(layer >= NAV_LAYER_GROUND_3X3) {
+            ntds += M_Tile_Contour(ntds, tds, res, tds + ntds, ARR_SIZE(tds) - ntds);
+        }
+        if(layer >= NAV_LAYER_GROUND_5X5) {
+            ntds += M_Tile_Contour(ntds, tds, res, tds + ntds, ARR_SIZE(tds) - ntds);
+        }
+        if(layer >= NAV_LAYER_GROUND_7X7) {
             ntds += M_Tile_Contour(ntds, tds, res, tds + ntds, ARR_SIZE(tds) - ntds);
         }
 
@@ -1053,6 +1059,12 @@ static size_t field_entity_initial_frontier(
     }
 
     if(layer == NAV_LAYER_GROUND_3X3) {
+        ntds += M_Tile_Contour(ntds, tds, res, tds + ntds, ARR_SIZE(tds) - ntds);
+    }
+    if(layer >= NAV_LAYER_GROUND_5X5) {
+        ntds += M_Tile_Contour(ntds, tds, res, tds + ntds, ARR_SIZE(tds) - ntds);
+    }
+    if(layer >= NAV_LAYER_GROUND_7X7) {
         ntds += M_Tile_Contour(ntds, tds, res, tds + ntds, ARR_SIZE(tds) - ntds);
     }
 

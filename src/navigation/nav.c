@@ -890,10 +890,23 @@ static void n_update_blockers_circle(struct nav_private *priv, vec2_t xz_pos, fl
     int ntds = M_Tile_AllUnderCircle(n_res(priv), xz_pos, range, map_pos, tds, ARR_SIZE(tds));
     n_update_blockers(priv, NAV_LAYER_GROUND_1X1, faction_id, tds, ntds, ref_delta);
 
-    struct tile_desc outline[256];
-    int noutline = M_Tile_Contour(ntds, tds, n_res(priv), outline, ARR_SIZE(outline));
+    struct tile_desc outline3x3[256];
+    int noutline3x3 = M_Tile_Contour(ntds, tds, n_res(priv), outline3x3, ARR_SIZE(outline3x3));
     n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, tds, ntds, ref_delta);
-    n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, outline, noutline, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, outline3x3, noutline3x3, ref_delta);
+
+    struct tile_desc outline5x5[256];
+    int noutline5x5 = M_Tile_Contour(noutline3x3, outline3x3, n_res(priv), outline5x5, ARR_SIZE(outline5x5));
+    n_update_blockers(priv, NAV_LAYER_GROUND_5X5, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_5X5, faction_id, outline3x3, noutline3x3, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_5X5, faction_id, outline5x5, noutline5x5, ref_delta);
+
+    struct tile_desc outline7x7[256];
+    int noutline7x7 = M_Tile_Contour(noutline5x5, outline5x5, n_res(priv), outline7x7, ARR_SIZE(outline7x7));
+    n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, outline3x3, noutline3x3, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, outline5x5, noutline5x5, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, outline7x7, noutline7x7, ref_delta);
 }
 
 static void n_update_blockers_obb(struct nav_private *priv, const struct obb *obb, 
@@ -903,10 +916,23 @@ static void n_update_blockers_obb(struct nav_private *priv, const struct obb *ob
     int ntds = M_Tile_AllUnderObj(map_pos, n_res(priv), obb, tds, ARR_SIZE(tds));
     n_update_blockers(priv, NAV_LAYER_GROUND_1X1, faction_id, tds, ntds, ref_delta);
 
-    struct tile_desc outline[1024];
-    int noutline = M_Tile_Contour(ntds, tds, n_res(priv), outline, ARR_SIZE(outline));
+    struct tile_desc outline3x3[1024];
+    int noutline3x3 = M_Tile_Contour(ntds, tds, n_res(priv), outline3x3, ARR_SIZE(outline3x3));
     n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, tds, ntds, ref_delta);
-    n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, outline, noutline, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, outline3x3, noutline3x3, ref_delta);
+
+    struct tile_desc outline5x5[1024];
+    int noutline5x5 = M_Tile_Contour(noutline3x3, outline3x3, n_res(priv), outline5x5, ARR_SIZE(outline5x5));
+    n_update_blockers(priv, NAV_LAYER_GROUND_5X5, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_5X5, faction_id, outline3x3, noutline3x3, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_5X5, faction_id, outline5x5, noutline5x5, ref_delta);
+
+    struct tile_desc outline7x7[1024];
+    int noutline7x7 = M_Tile_Contour(noutline5x5, outline5x5, n_res(priv), outline7x7, ARR_SIZE(outline7x7));
+    n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, tds, ntds, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, outline3x3, noutline3x3, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, outline5x5, noutline5x5, ref_delta);
+    n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, outline7x7, noutline7x7, ref_delta);
 }
 
 static int manhattan_dist(struct tile_desc a, struct tile_desc b)

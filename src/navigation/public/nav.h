@@ -75,6 +75,8 @@ struct fc_stats{
 enum nav_layer{
     NAV_LAYER_GROUND_1X1,
     NAV_LAYER_GROUND_3X3,
+    NAV_LAYER_GROUND_5X5,
+    NAV_LAYER_GROUND_7X7,
     NAV_LAYER_MAX,
 };
 
