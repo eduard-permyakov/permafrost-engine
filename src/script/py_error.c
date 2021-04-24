@@ -39,7 +39,7 @@
 
 #include "py_error.h"
 #include "../ui.h"
-#include "../lib/public/nuklear.h"
+#include "../lib/public/pf_nuklear.h"
 #include "../lib/public/pf_string.h"
 
 /*****************************************************************************/

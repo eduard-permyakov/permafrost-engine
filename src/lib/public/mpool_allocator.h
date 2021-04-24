@@ -159,6 +159,7 @@
             return;                                                                             \
                                                                                                 \
         bool found = false;                                                                     \
+        (void)found;                                                                            \
         for(int i = 0; i < mpa->num_chunks; i++) {                                              \
             mp_##name##_t *pool = &mpa->chunks[i];                                              \
             uintptr_t base = (uintptr_t)(pool->pool + 1);                                       \

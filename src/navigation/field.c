@@ -1493,9 +1493,9 @@ void N_LOSFieldCreate(
      * accross chunk borders. */
     }else{
 
-        bool horizontal;
-        int curr_edge_idx;
-        int prev_edge_idx;
+        bool horizontal = {0};
+        int curr_edge_idx = {0};
+        int prev_edge_idx = {0};
         
         assert(prev_los);
         if(prev_los->chunk.r < chunk_coord.r) {
