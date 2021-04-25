@@ -251,6 +251,7 @@ static void on_new_map(void *user, void *event)
     if(!map)
         return;
 
+    Audio_EffectClearState();
     assert(vec_size(&s_active) == 0);
     assert(vec_size(&s_effects) == 0);
     assert(s_effect_tree.nrecs == 0);
