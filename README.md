@@ -11,16 +11,12 @@ EVERGLORY is the flagship game developed using Permafrost Engine.
 
 [Support the project - Wishlist on Steam today!](https://store.steampowered.com/app/1309720/EVERGLORY/)
 
-![village](docs/images/village.png)
-![lone-warrior](docs/images/lone-warrior.png)
-![gather-1](docs/images/gather-1.png)
-![gather-2](docs/images/gather-2.png)
-![army](docs/images/army.png)
-![building](docs/images/building.png)
-![battle](docs/images/battle.png)
-![puzzle](docs/images/puzzle.png)
-![main-menu](docs/images/main-menu-skinned-ui.png)
-![editor](docs/images/editor.png)
+![screenshot-01](docs/images/screenshot-01.png)
+![screenshot-02](docs/images/screenshot-02.png)
+![screenshot-03](docs/images/screenshot-03.png)
+![screenshot-04](docs/images/screenshot-04.png)
+![screenshot-05](docs/images/screenshot-05.png)
+![screenshot-06](docs/images/screenshot-06.png)
 
 ## Engine Summary ##
 
@@ -146,6 +142,8 @@ Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://w
 [Indie RTS Devlog #13: Large Unit Pathfinding](https://youtu.be/UorUpScWLvo)
 
 [Indie RTS Devlog #14: Projectiles, Big Battles](https://youtu.be/IUolIJX6zpk)
+
+[EVERGLORY - Official Trailer (2021 Indie RTS)](https://youtu.be/xleJeiOHHh4)
 
 ## Comments/Questions ##
 

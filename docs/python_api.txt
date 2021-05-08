@@ -105,6 +105,11 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Set the entire map as having being 'explored' for a particular faction.
 
+    [flush_tasks]
+    ----------------------------------------------------------------------------
+    Run every single active scripting task until it either gets blocked or
+    completes. Useful mainly for serialization during initialization.
+
     [get_active_camera]
     ----------------------------------------------------------------------------
     Get a pf.Camera object describing the active camera from whose point of
@@ -126,6 +131,14 @@ BUILT-IN FUNCTIONS
     ----------------------------------------------------------------------------
     Get the path to the top-level game resource folder (parent of 'assets').
 
+    [get_cursor_rts_mode]
+    ----------------------------------------------------------------------------
+    Returns the current state of the RTS cursor mode enablement.
+
+    [get_diplomacy_state]
+    ----------------------------------------------------------------------------
+    Query the diplomacy state of the specified two faction IDs.
+
     [get_factions_list]
     ----------------------------------------------------------------------------
     Returns a list of descriptors (dictionaries) for each faction in the game.
@@ -137,6 +150,10 @@ BUILT-IN FUNCTIONS
     [get_hovered_unit]
     ----------------------------------------------------------------------------
     Get the closest unit under the mouse cursor, or None.
+
+    [get_key_name]
+    ----------------------------------------------------------------------------
+    Returns the string name for an SDL_Keycode integer value.
 
     [get_minimap_position]
     ----------------------------------------------------------------------------
@@ -186,6 +203,11 @@ BUILT-IN FUNCTIONS
     [get_simstate]
     ----------------------------------------------------------------------------
     Returns the current simulation state.
+
+    [get_ticks]
+    ----------------------------------------------------------------------------
+    Get the current number of game ticks (milliseconsd) - only useful in
+    finding elapsed times in relation to other ticks.
 
     [get_tile]
     ----------------------------------------------------------------------------
@@ -320,6 +342,10 @@ BUILT-IN FUNCTIONS
     Save the current state of the engine to the specified file. The session can
     then be loaded from the file with the 'load_session' call.
 
+    [session_stack_depth]
+    ----------------------------------------------------------------------------
+    Returns the number of sessions currently on the sessin stack.
+
     [set_active_camera]
     ----------------------------------------------------------------------------
     Set a pf.Camera object to be the active camera from whose point of view the
@@ -347,6 +373,11 @@ BUILT-IN FUNCTIONS
     [set_click_move_enabled]
     ----------------------------------------------------------------------------
     Enable or disable issuing move orders by right-clicking.
+
+    [set_cursor_rts_mode]
+    ----------------------------------------------------------------------------
+    Activates or deactivates the cursor RTS mode which keeps the cursor icon
+    updated based on which edge of the screen it is at.
 
     [set_diplomacy_state]
     ----------------------------------------------------------------------------
@@ -381,9 +412,18 @@ BUILT-IN FUNCTIONS
     highlighted. (0 = none, 1 = single tile highlighted, 2 = 3x3 grid
     highlighted, etc.)
 
+    [set_minimap_border_clr]
+    ----------------------------------------------------------------------------
+    Set the border color for the minimap.
+
     [set_minimap_position]
     ----------------------------------------------------------------------------
     Set the center position of the minimap in virtual screen coordinates.
+
+    [set_minimap_render_all_ents]
+    ----------------------------------------------------------------------------
+    Set a boolean to control whether all entities should be shown on the
+    minimap, or just more relevant ones, such as movable ones and buildings.
 
     [set_minimap_resize_mask]
     ----------------------------------------------------------------------------
@@ -492,6 +532,11 @@ BUILT-IN FUNCTIONS
     Set a flag controlling whether or not the UI windows are rendered over the
     storage sites.
 
+    [ticks_delta]
+    ----------------------------------------------------------------------------
+    Compute the MS delta between two tick values retried by 'get_ticks'. This
+    handles unsigned overflow unlike regular Python integer arithmnetic.
+
     [ui_text_edit_has_focus]
     ----------------------------------------------------------------------------
     Returns True if the mouse cursor is currently in an editable text field of
@@ -533,6 +578,9 @@ BUILT-IN CLASSES
 
         [faction_id]
         Index of the faction that the entity belongs to.
+
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
 
         [name]
         Custom name given to this enity.
@@ -657,6 +705,9 @@ BUILT-IN CLASSES
         [founded]
         Boolean indicating if the building is at or past the 'FOUNDED' state.
 
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
+
         [name]
         Custom name given to this enity.
 
@@ -666,6 +717,9 @@ BUILT-IN CLASSES
 
         [pos]
         The XYZ position in worldspace coordinates.
+
+        [required_resources]
+        Get a dictionary of the resources required to supply this building.
 
         [rotation]
         XYZW quaternion for rotaion about local origin.
@@ -679,6 +733,9 @@ BUILT-IN CLASSES
         [selection_radius]
         Radius (in OpenGL coordinates) of the unit selection circle for this
         entity.
+
+        [supplied]
+        Boolean indicating if the building is at or past the 'SUPPLIED' state.
 
         [tags]
         Return a tuple with all the entity's tags.
@@ -786,6 +843,9 @@ BUILT-IN CLASSES
 
         [faction_id]
         Index of the faction that the entity belongs to.
+
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
 
         [name]
         Custom name given to this enity.
@@ -961,6 +1021,9 @@ BUILT-IN CLASSES
         [faction_id]
         Index of the faction that the entity belongs to.
 
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
+
         [hp]
         The current number of hitpoints that the entity has.
 
@@ -1082,6 +1145,9 @@ BUILT-IN CLASSES
         [faction_id]
         Index of the faction that the entity belongs to.
 
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
+
         [name]
         Custom name given to this enity.
 
@@ -1191,6 +1257,9 @@ BUILT-IN CLASSES
         [faction_id]
         Index of the faction that the entity belongs to.
 
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
+
         [name]
         Custom name given to this enity.
 
@@ -1253,6 +1322,9 @@ BUILT-IN CLASSES
 
         [add_tag]
         Add a string tag to this entity's list of tags.
+
+        [clear_curr_carry]
+        Clear any resources that the unit is currently carrying.
 
         [decrease_transport_priority]
         Move the specified resource down in the priority list the peasant uses
@@ -1349,6 +1421,9 @@ BUILT-IN CLASSES
 
         [faction_id]
         Index of the faction that the entity belongs to.
+
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
 
         [name]
         Custom name given to this enity.
@@ -1499,6 +1574,9 @@ BUILT-IN CLASSES
         [curr_ents]
         Get a list of all the entities currently within the region.
 
+        [explore]
+        Explore the Fog of War in the region for the specified faction.
+
     [ResourceEntity]
     ----------------------------------------------------------------------------
     Permafrost Engine resource entity. This is a subclass of pf.Entity. This
@@ -1518,6 +1596,9 @@ BUILT-IN CLASSES
 
         [faction_id]
         Index of the faction that the entity belongs to.
+
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
 
         [name]
         Custom name given to this enity.
@@ -1631,8 +1712,15 @@ BUILT-IN CLASSES
         Return an (X, Y, Z) tuple of the dimensions of the entity's bounding
         box (in OpenGL coordinates).
 
+        [do_not_take]
+        The list of resources that are currently able to be held at this
+        storage site.
+
         [faction_id]
         Index of the faction that the entity belongs to.
+
+        [height]
+        Returns the scaled height of the entity, in OpenGL coordinates.
 
         [name]
         Custom name given to this enity.
@@ -2809,6 +2897,10 @@ BUILT-IN CLASSES
         [text_lines]
         Returns the number of lines taken up by the specified text.
 
+        [text_lines_width]
+        Returns the number of lines taken up by the specified text in a widget
+        of the specified width.
+
         [tree]
         The window UI components pushed in the callable argument will be nested
         under a collapsable tree section.
@@ -2837,7 +2929,7 @@ BUILT-IN CONSTANTS
     ANCHOR_Y_TOP 8
     ANIM_MODE_LOOP 0
     ANIM_MODE_ONCE 1
-    AUDIO_NUM_FG_CHANNELS 2
+    AUDIO_NUM_FG_CHANNELS 4
     BLEND_MODE_BLUR 1
     BLEND_MODE_NOBLEND 0
     CAM_MODE_FPS 0
@@ -2890,6 +2982,7 @@ BUILT-IN CONSTANTS
     EVENT_MOTION_START 65555
     EVENT_MOVE_ISSUED 65554
     EVENT_NEW_GAME 65544
+    EVENT_ORDER_ISSUED 65591
     EVENT_PROJECTILE_DISAPPEAR 65588
     EVENT_PROJECTILE_HIT 65589
     EVENT_RENDER_3D_POST 65540
@@ -2920,7 +3013,24 @@ BUILT-IN CONSTANTS
     HB_MODE_ALWAYS 0
     HB_MODE_DAMAGED 1
     HB_MODE_NEVER 2
-    MAX_FACTIONS 16
+    KMOD_ALT 768
+    KMOD_CAPS 8192
+    KMOD_CTRL 192
+    KMOD_GUI 3072
+    KMOD_LALT 256
+    KMOD_LCTRL 64
+    KMOD_LGUI 1024
+    KMOD_LSHIFT 1
+    KMOD_MODE 16384
+    KMOD_NONE 0
+    KMOD_NUM 4096
+    KMOD_RALT 512
+    KMOD_RCTRL 128
+    KMOD_RESERVED 32768
+    KMOD_RGUI 2048
+    KMOD_RSHIFT 2
+    KMOD_SHIFT 3
+    MAX_FACTIONS 15
     MUSIC_MODE_LOOP 0
     MUSIC_MODE_PLAYLIST 1
     MUSIC_MODE_SHUFFLE 2
@@ -3005,6 +3115,246 @@ BUILT-IN CONSTANTS
     PROJ_ONLY_HIT_ENEMIES 2
     REGION_CIRCLE 1
     REGION_RECTANGLE 0
+    SDLK_0 48
+    SDLK_1 49
+    SDLK_2 50
+    SDLK_3 51
+    SDLK_4 52
+    SDLK_5 53
+    SDLK_6 54
+    SDLK_7 55
+    SDLK_8 56
+    SDLK_9 57
+    SDLK_AC_BACK 1073742094
+    SDLK_AC_BOOKMARKS 1073742098
+    SDLK_AC_FORWARD 1073742095
+    SDLK_AC_HOME 1073742093
+    SDLK_AC_REFRESH 1073742097
+    SDLK_AC_SEARCH 1073742092
+    SDLK_AC_STOP 1073742096
+    SDLK_AGAIN 1073741945
+    SDLK_ALTERASE 1073741977
+    SDLK_AMPERSAND 38
+    SDLK_APP1 1073742107
+    SDLK_APP2 1073742108
+    SDLK_APPLICATION 1073741925
+    SDLK_ASTERISK 42
+    SDLK_AT 64
+    SDLK_AUDIOFASTFORWARD 1073742110
+    SDLK_AUDIOMUTE 1073742086
+    SDLK_AUDIONEXT 1073742082
+    SDLK_AUDIOPLAY 1073742085
+    SDLK_AUDIOPREV 1073742083
+    SDLK_AUDIOREWIND 1073742109
+    SDLK_AUDIOSTOP 1073742084
+    SDLK_BACKQUOTE 96
+    SDLK_BACKSLASH 92
+    SDLK_BACKSPACE 8
+    SDLK_BRIGHTNESSDOWN 1073742099
+    SDLK_BRIGHTNESSUP 1073742100
+    SDLK_CALCULATOR 1073742090
+    SDLK_CANCEL 1073741979
+    SDLK_CAPSLOCK 1073741881
+    SDLK_CARET 94
+    SDLK_CLEAR 1073741980
+    SDLK_CLEARAGAIN 1073741986
+    SDLK_COLON 58
+    SDLK_COMMA 44
+    SDLK_COMPUTER 1073742091
+    SDLK_COPY 1073741948
+    SDLK_CRSEL 1073741987
+    SDLK_CURRENCYSUBUNIT 1073742005
+    SDLK_CURRENCYUNIT 1073742004
+    SDLK_CUT 1073741947
+    SDLK_DECIMALSEPARATOR 1073742003
+    SDLK_DELETE 127
+    SDLK_DISPLAYSWITCH 1073742101
+    SDLK_DOLLAR 36
+    SDLK_DOWN 1073741905
+    SDLK_EJECT 1073742105
+    SDLK_END 1073741901
+    SDLK_EQUALS 61
+    SDLK_ESCAPE 27
+    SDLK_EXCLAIM 33
+    SDLK_EXECUTE 1073741940
+    SDLK_EXSEL 1073741988
+    SDLK_F1 1073741882
+    SDLK_F10 1073741891
+    SDLK_F11 1073741892
+    SDLK_F12 1073741893
+    SDLK_F13 1073741928
+    SDLK_F14 1073741929
+    SDLK_F15 1073741930
+    SDLK_F16 1073741931
+    SDLK_F17 1073741932
+    SDLK_F18 1073741933
+    SDLK_F19 1073741934
+    SDLK_F2 1073741883
+    SDLK_F20 1073741935
+    SDLK_F21 1073741936
+    SDLK_F22 1073741937
+    SDLK_F23 1073741938
+    SDLK_F24 1073741939
+    SDLK_F3 1073741884
+    SDLK_F4 1073741885
+    SDLK_F5 1073741886
+    SDLK_F6 1073741887
+    SDLK_F7 1073741888
+    SDLK_F8 1073741889
+    SDLK_F9 1073741890
+    SDLK_FIND 1073741950
+    SDLK_GREATER 62
+    SDLK_HASH 35
+    SDLK_HELP 1073741941
+    SDLK_HOME 1073741898
+    SDLK_INSERT 1073741897
+    SDLK_KBDILLUMDOWN 1073742103
+    SDLK_KBDILLUMTOGGLE 1073742102
+    SDLK_KBDILLUMUP 1073742104
+    SDLK_KP_0 1073741922
+    SDLK_KP_00 1073742000
+    SDLK_KP_000 1073742001
+    SDLK_KP_1 1073741913
+    SDLK_KP_2 1073741914
+    SDLK_KP_3 1073741915
+    SDLK_KP_4 1073741916
+    SDLK_KP_5 1073741917
+    SDLK_KP_6 1073741918
+    SDLK_KP_7 1073741919
+    SDLK_KP_8 1073741920
+    SDLK_KP_9 1073741921
+    SDLK_KP_A 1073742012
+    SDLK_KP_AMPERSAND 1073742023
+    SDLK_KP_AT 1073742030
+    SDLK_KP_B 1073742013
+    SDLK_KP_BACKSPACE 1073742011
+    SDLK_KP_BINARY 1073742042
+    SDLK_KP_C 1073742014
+    SDLK_KP_CLEAR 1073742040
+    SDLK_KP_CLEARENTRY 1073742041
+    SDLK_KP_COLON 1073742027
+    SDLK_KP_COMMA 1073741957
+    SDLK_KP_D 1073742015
+    SDLK_KP_DBLAMPERSAND 1073742024
+    SDLK_KP_DBLVERTICALBAR 1073742026
+    SDLK_KP_DECIMAL 1073742044
+    SDLK_KP_DIVIDE 1073741908
+    SDLK_KP_E 1073742016
+    SDLK_KP_ENTER 1073741912
+    SDLK_KP_EQUALS 1073741927
+    SDLK_KP_EQUALSAS400 1073741958
+    SDLK_KP_EXCLAM 1073742031
+    SDLK_KP_F 1073742017
+    SDLK_KP_GREATER 1073742022
+    SDLK_KP_HASH 1073742028
+    SDLK_KP_HEXADECIMAL 1073742045
+    SDLK_KP_LEFTBRACE 1073742008
+    SDLK_KP_LEFTPAREN 1073742006
+    SDLK_KP_LESS 1073742021
+    SDLK_KP_MEMADD 1073742035
+    SDLK_KP_MEMCLEAR 1073742034
+    SDLK_KP_MEMDIVIDE 1073742038
+    SDLK_KP_MEMMULTIPLY 1073742037
+    SDLK_KP_MEMRECALL 1073742033
+    SDLK_KP_MEMSTORE 1073742032
+    SDLK_KP_MEMSUBTRACT 1073742036
+    SDLK_KP_MINUS 1073741910
+    SDLK_KP_MULTIPLY 1073741909
+    SDLK_KP_OCTAL 1073742043
+    SDLK_KP_PERCENT 1073742020
+    SDLK_KP_PERIOD 1073741923
+    SDLK_KP_PLUS 1073741911
+    SDLK_KP_PLUSMINUS 1073742039
+    SDLK_KP_POWER 1073742019
+    SDLK_KP_RIGHTBRACE 1073742009
+    SDLK_KP_RIGHTPAREN 1073742007
+    SDLK_KP_SPACE 1073742029
+    SDLK_KP_TAB 1073742010
+    SDLK_KP_VERTICALBAR 1073742025
+    SDLK_KP_XOR 1073742018
+    SDLK_LALT 1073742050
+    SDLK_LCTRL 1073742048
+    SDLK_LEFT 1073741904
+    SDLK_LEFTBRACKET 91
+    SDLK_LEFTPAREN 40
+    SDLK_LESS 60
+    SDLK_LGUI 1073742051
+    SDLK_LSHIFT 1073742049
+    SDLK_MAIL 1073742089
+    SDLK_MEDIASELECT 1073742087
+    SDLK_MENU 1073741942
+    SDLK_MINUS 45
+    SDLK_MODE 1073742081
+    SDLK_MUTE 1073741951
+    SDLK_NUMLOCKCLEAR 1073741907
+    SDLK_OPER 1073741985
+    SDLK_OUT 1073741984
+    SDLK_PAGEDOWN 1073741902
+    SDLK_PAGEUP 1073741899
+    SDLK_PASTE 1073741949
+    SDLK_PAUSE 1073741896
+    SDLK_PERCENT 37
+    SDLK_PERIOD 46
+    SDLK_PLUS 43
+    SDLK_POWER 1073741926
+    SDLK_PRINTSCREEN 1073741894
+    SDLK_PRIOR 1073741981
+    SDLK_QUESTION 63
+    SDLK_QUOTE 39
+    SDLK_QUOTEDBL 34
+    SDLK_RALT 1073742054
+    SDLK_RCTRL 1073742052
+    SDLK_RETURN 13
+    SDLK_RETURN2 1073741982
+    SDLK_RGUI 1073742055
+    SDLK_RIGHT 1073741903
+    SDLK_RIGHTBRACKET 93
+    SDLK_RIGHTPAREN 41
+    SDLK_RSHIFT 1073742053
+    SDLK_SCROLLLOCK 1073741895
+    SDLK_SELECT 1073741943
+    SDLK_SEMICOLON 59
+    SDLK_SEPARATOR 1073741983
+    SDLK_SLASH 47
+    SDLK_SLEEP 1073742106
+    SDLK_SPACE 32
+    SDLK_STOP 1073741944
+    SDLK_SYSREQ 1073741978
+    SDLK_TAB 9
+    SDLK_THOUSANDSSEPARATOR 1073742002
+    SDLK_UNDERSCORE 95
+    SDLK_UNDO 1073741946
+    SDLK_UNKNOWN 0
+    SDLK_UP 1073741906
+    SDLK_VOLUMEDOWN 1073741953
+    SDLK_VOLUMEUP 1073741952
+    SDLK_WWW 1073742088
+    SDLK_a 97
+    SDLK_b 98
+    SDLK_c 99
+    SDLK_d 100
+    SDLK_e 101
+    SDLK_f 102
+    SDLK_g 103
+    SDLK_h 104
+    SDLK_i 105
+    SDLK_j 106
+    SDLK_k 107
+    SDLK_l 108
+    SDLK_m 109
+    SDLK_n 110
+    SDLK_o 111
+    SDLK_p 112
+    SDLK_q 113
+    SDLK_r 114
+    SDLK_s 115
+    SDLK_t 116
+    SDLK_u 117
+    SDLK_v 118
+    SDLK_w 119
+    SDLK_x 120
+    SDLK_y 121
+    SDLK_z 122
     SDL_APP_DIDENTERBACKGROUND 260
     SDL_APP_DIDENTERFOREGROUND 262
     SDL_APP_LOWMEMORY 258
