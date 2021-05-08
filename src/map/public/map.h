@@ -414,6 +414,7 @@ bool     M_NavObjectBuildable(const struct map *map, enum nav_layer layer,
                               const struct obb *obb);
 bool     M_NavIsMaximallyClose(const struct map *map, enum nav_layer layer, 
                                vec2_t xz_pos, vec2_t xz_dest, float tolerance);
+bool     M_NavIsAdjacentToImpassable(const struct map *map, enum nav_layer layer, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
  * Returns true if the tiles under the entity selection cirlce overlap or 

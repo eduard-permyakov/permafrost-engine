@@ -144,6 +144,8 @@ struct movestate{
     /* Entity that we're moving towards when in the 'SURROUND_STATIC_ENTITY' state 
      */
     uint32_t           surround_target_uid;
+    vec2_t             surround_target_prev;
+    vec2_t             surround_nearest_prev;
     /* Flag indicating that we are now using the 'surround' field rather than the 
      * 'target seek' field to get to path to our target. This kicks in once we pass
      * the distance 'low water' threshold and is turned off if we pass the 'high water' 
@@ -1253,7 +1255,8 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         float arrive_thresh = G_GetSelectionRadius(ent->uid) * 1.5f;
 
         if(PFM_Vec2_Len(&diff_to_target) < arrive_thresh
-        || M_NavIsMaximallyClose(s_map, layer, xz_pos, flock->target_xz, arrive_thresh)) {
+        || (M_NavIsAdjacentToImpassable(s_map, layer, xz_pos) 
+            && M_NavIsMaximallyClose(s_map, layer, xz_pos, flock->target_xz, arrive_thresh))) {
 
             entity_finish_moving(ent, STATE_ARRIVED);
             break;
@@ -1276,8 +1279,9 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
             }
         }
 
-        if(done)
+        if(done) {
             break;
+        }
 
         /* If we've not hit a condition to stop or give up but our desired velocity 
          * is zero, that means the navigation system is currently not able to guide
@@ -1314,14 +1318,20 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
             break;
         }
 
-        vec2_t dest;
         vec2_t target_pos = G_Pos_GetXZ(ms->surround_target_uid);
-        bool hasdest = M_NavClosestReachableAdjacentPos(s_map, layer, 
-            G_Pos_GetXZ(ent->uid), target, &dest);
+        vec2_t dest = ms->surround_nearest_prev;
 
-        if(!hasdest) {
-            entity_finish_moving(ent, STATE_ARRIVED);
-            break;
+        vec2_t delta;
+        PFM_Vec2_Sub(&target_pos, &ms->surround_target_prev, &delta);
+        if(PFM_Vec2_Len(&delta) > EPSILON || PFM_Vec2_Len(&ms->velocity) < EPSILON) {
+
+            bool hasdest = M_NavClosestReachableAdjacentPos(s_map, layer, 
+                G_Pos_GetXZ(ent->uid), target, &dest);
+
+            if(!hasdest) {
+                entity_finish_moving(ent, STATE_ARRIVED);
+                break;
+            }
         }
 
         struct flock *flock = flock_for_ent(ent);
@@ -1329,6 +1339,8 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
 
         vec2_t diff;
         PFM_Vec2_Sub(&flock->target_xz, &dest, &diff);
+        ms->surround_target_prev = target_pos;
+        ms->surround_nearest_prev = dest;
 
         if(PFM_Vec2_Len(&diff) > EPSILON) {
             G_Move_SetDest(ent, dest, false);
@@ -1356,7 +1368,8 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         PFM_Vec2_Sub(&xz_pos, &xz_target, &delta);
 
         if(PFM_Vec2_Len(&delta) <= ms->target_range
-        || M_NavIsMaximallyClose(s_map, layer, xz_pos, xz_target, 0.0f)) {
+        || (M_NavIsAdjacentToImpassable(s_map, layer, xz_pos) 
+            && M_NavIsMaximallyClose(s_map, layer, xz_pos, xz_target, 0.0f))) {
         
             entity_finish_moving(ent, STATE_ARRIVED);
             break;
@@ -1593,15 +1606,12 @@ static void clearpath_finish_work(void)
     PERF_POP();
 
     uint32_t key;
-    struct entity *curr;
-    (void)key;
+    struct movestate curr;
 
     PERF_PUSH("position updates");
-    kh_foreach(G_GetDynamicEntsSet(), key, curr, {
-
-        struct movestate *ms = movestate_get(curr);
-        assert(ms);
-        entity_update(curr, ms->vnew);
+    kh_foreach(s_entity_state_table, key, curr, {
+        struct entity *ent = G_EntityForUID(key);
+        entity_update(ent, curr.vnew);
     });
     PERF_POP();
 
@@ -1782,6 +1792,8 @@ void G_Move_AddEntity(const struct entity *ent)
         .vel_hist_idx = 0,
         .vnew = (vec2_t){0.0f, 0.0f},
         .max_speed = 0.0f,
+        .surround_target_prev = (vec2_t){0},
+        .surround_nearest_prev = (vec2_t){0},
     };
     memset(new_ms.vel_hist, 0, sizeof(new_ms.vel_hist));
 
@@ -2189,6 +2201,18 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &surround_target_uid, "surround_target_uid"));
 
+        struct attr surround_target_prev = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr.surround_target_prev
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &surround_target_prev, "surround_target_prev"));
+
+        struct attr surround_nearest_prev = (struct attr){
+            .type = TYPE_VEC2,
+            .val.as_vec2 = curr.surround_nearest_prev
+        };
+        CHK_TRUE_RET(Attr_Write(stream, &surround_nearest_prev, "surround_nearest_prev"));
+
         struct attr using_surround_field = (struct attr){
             .type = TYPE_BOOL,
             .val.as_bool = curr.using_surround_field
@@ -2335,6 +2359,14 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         ms->surround_target_uid = attr.val.as_int;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        ms->surround_target_prev = attr.val.as_vec2;
+
+        CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
+        CHK_TRUE_RET(attr.type == TYPE_VEC2);
+        ms->surround_nearest_prev = attr.val.as_vec2;
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);

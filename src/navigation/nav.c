@@ -2990,6 +2990,7 @@ bool N_LocationsReachable(void *nav_private, enum nav_layer layer,
 bool N_ClosestReachableAdjacentPosStatic(void *nav_private, enum nav_layer layer, vec3_t map_pos, 
                                          vec2_t xz_src, const struct obb *target, vec2_t *out)
 {
+    PERF_ENTER();
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
@@ -3001,12 +3002,13 @@ bool N_ClosestReachableAdjacentPosStatic(void *nav_private, enum nav_layer layer
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, target, tds, ARR_SIZE(tds));
 
-    return n_closest_adjacent_pos(nav_private, layer, map_pos, xz_src, ntiles, tds, out);
+    PERF_RETURN(n_closest_adjacent_pos(nav_private, layer, map_pos, xz_src, ntiles, tds, out));
 }
 
 bool N_ClosestReachableAdjacentPosDynamic(void *nav_private, enum nav_layer layer, vec3_t map_pos, 
                                           vec2_t xz_src, vec2_t xz_pos, float radius, vec2_t *out)
 {
+    PERF_ENTER();
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
@@ -3018,7 +3020,7 @@ bool N_ClosestReachableAdjacentPosDynamic(void *nav_private, enum nav_layer laye
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderCircle(n_res(priv), xz_pos, radius, map_pos, tds, ARR_SIZE(tds));
 
-    return n_closest_adjacent_pos(nav_private, layer, map_pos, xz_src, ntiles, tds, out);
+    PERF_RETURN(n_closest_adjacent_pos(nav_private, layer, map_pos, xz_src, ntiles, tds, out));
 }
 
 vec2_t N_TileDims(void)
@@ -3054,6 +3056,8 @@ void N_BlockersDecrefOBB(void *nav_private, int faction_id, vec3_t map_pos, cons
 bool N_IsMaximallyClose(void *nav_private, enum nav_layer layer, vec3_t map_pos, 
                         vec2_t xz_pos, vec2_t xz_dest, float tolerance)
 {
+    PERF_ENTER();
+
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
         priv->width, priv->height,
@@ -3083,10 +3087,38 @@ bool N_IsMaximallyClose(void *nav_private, enum nav_layer layer, vec3_t map_pos,
         PFM_Vec2_Sub(&tile_center, &xz_pos, &delta);
 
         if(PFM_Vec2_Len(&delta) <= tolerance)
-            return true;
+            PERF_RETURN(true);
     }
 
-    return false;
+    PERF_RETURN(false);
+}
+
+bool N_IsAdjacentToImpassable(void *nav_private, enum nav_layer layer, vec3_t map_pos, vec2_t xz_pos)
+{
+    PERF_ENTER();
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc curr_td;
+    bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &curr_td);
+    assert(result);
+
+    for(int dr = -1; dr <= 1; dr++) {
+    for(int dc = -1; dc <= 1; dc++) {
+        if((dr == dc) || (dr == -dc)) /* diag */
+            continue;
+        struct tile_desc td = curr_td;
+        if(!M_Tile_RelativeDesc(res, &td, dc, dr))
+            continue;
+        if(n_tile_blocked(priv, layer, td))
+            PERF_RETURN(true);
+    }}
+
+    PERF_RETURN(false);
 }
 
 bool N_PortalReachableFromTile(const struct portal *port, struct coord tile, const struct nav_chunk *chunk)

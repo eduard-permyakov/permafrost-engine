@@ -414,6 +414,14 @@ bool      N_IsMaximallyClose(void *nav_private, enum nav_layer layer,
                              vec2_t xz_dest, float tolerance);
 
 /* ------------------------------------------------------------------------
+ * Returns true if the tile under the position or any tile having a Manhattan
+ * distance of 1 is not currently pathable.
+ * ------------------------------------------------------------------------
+ */
+bool      N_IsAdjacentToImpassable(void *nav_private, enum nav_layer layer, 
+                                   vec3_t map_pos, vec2_t xz_pos);
+
+/* ------------------------------------------------------------------------
  * Returns true if the tiles under the entity selection cirlce overlap or 
  * share an edge with any of the tiles under the OBB.
  * ------------------------------------------------------------------------
