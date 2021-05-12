@@ -9,7 +9,7 @@ It is made in the image of old classics, but incorporating some modern ideas.
 
 EVERGLORY is the flagship game developed using Permafrost Engine. 
 
-[Support the project - Wishlist on Steam today!](https://store.steampowered.com/app/1309720/EVERGLORY/)
+Download the free (or donate what-you-want) demo on [itch.io](https://spb.itch.io/everglory) or on [Steam](https://store.steampowered.com/app/1309720/EVERGLORY/). With the demo you also get access to all the scripts and assets powering the gameplay to learn from and modify as you wish.
 
 ![screenshot-01](docs/images/screenshot-01.png)
 ![screenshot-02](docs/images/screenshot-02.png)
@@ -148,7 +148,7 @@ Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://w
 ## Comments/Questions ##
 
 Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
-Discuss EVERGLORY and its' development on [Discord](https://discord.gg/jSQ8M6C). Pull requests
-are not accepted until the release of EVERGLORY, which will coincide with the 1.0 milestone of the 
-engine.
-
+Discuss EVERGLORY and its' development on [Discord](https://discord.gg/jSQ8M6C). If you have a _useful_ fix for a 
+_non-trivial_ engine issue, feel free to make a PR. Be warned that I will scrutinize every patch to make sure it meets my 
+personal quality standards for the engine code. It you wish to evelove the engine in some way and want the changes to be 
+upstreamed, then do get in touch to discuss it.
