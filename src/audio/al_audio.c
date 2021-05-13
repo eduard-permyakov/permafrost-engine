@@ -107,30 +107,14 @@ static bool audio_load_wav(const char *path, struct al_buffer *out)
         return false;
 
     ALenum format = -1;
-    switch(spec.channels) {
-    case 1:
-        switch(spec.format) {
-        case AUDIO_U8:
-        case AUDIO_S8:
-            format = AL_FORMAT_MONO8;
-            break;
-        default:
-            format = AL_FORMAT_MONO16;
-            break;
-        }
-        break;
-    case 2:
-        switch(spec.format) {
-        case AUDIO_U8:
-        case AUDIO_S8:
-            format = AL_FORMAT_STEREO8;
-            break;
-        default:
-            format = AL_FORMAT_STEREO16;
-            break;
-        }
-        break;
-    default: assert(0);
+    switch(spec.format) {
+    case AUDIO_U8:
+    case AUDIO_S8:
+    	format = (spec.channels == 1)? AL_FORMAT_MONO8 : AL_FORMAT_STEREO8;
+    	break;
+    default:
+    	format = (spec.channels == 1)? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16;
+    	break;
     }
     assert(format >= 0);
 
