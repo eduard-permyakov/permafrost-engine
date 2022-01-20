@@ -44,6 +44,13 @@
 # endif
 #endif
 
+#ifdef _MSC_VER
+static inline int _PyVerify_fd(int fd)
+{
+    return 1;
+}
+#endif
+
 
 /*
    NOTES ON THE INTERACTION BETWEEN SIGNALS AND THREADS

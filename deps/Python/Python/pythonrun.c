@@ -36,6 +36,9 @@
 #ifdef MS_WINDOWS
 #undef BYTE
 #include "windows.h"
+#ifndef PATH_MAX
+#define PATH_MAX MAX_PATH
+#endif
 #endif
 
 #ifdef __cplusplus
