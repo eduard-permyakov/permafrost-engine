@@ -1,0 +1,662 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav</Extensions>
+    </Filter>
+    <Filter Include="Source Files\render">
+      <UniqueIdentifier>{fc8ac884-ebc4-4088-a716-e0ae2aa9f718}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\render">
+      <UniqueIdentifier>{0cd10b6a-9f06-4ed3-a0ac-6ff1f5868a25}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\render\public">
+      <UniqueIdentifier>{7e836600-ea7f-443b-bcc8-f420bf1dd53c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\anim">
+      <UniqueIdentifier>{a37e8e2a-b6ae-458a-b412-8e561a34c091}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\anim\public">
+      <UniqueIdentifier>{3a74b9d2-729e-45c4-a1d4-16e1007bd2ed}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\audio">
+      <UniqueIdentifier>{e5a9ab51-e8a9-4ccd-b20a-913ff5fdac60}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\audio\public">
+      <UniqueIdentifier>{4e4a64a6-3c45-4a7f-b45b-6c54272235eb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\game">
+      <UniqueIdentifier>{8a77f07b-7284-436a-a4bb-8c05314a9115}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\game\public">
+      <UniqueIdentifier>{11a0418d-8418-4882-bbbd-59368b46a57a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\lib">
+      <UniqueIdentifier>{6d1e167e-0043-4ca5-b71a-f90a0f0b2306}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\lib\public">
+      <UniqueIdentifier>{ee69f921-4a51-4ce5-b5f1-5f281038e399}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\map">
+      <UniqueIdentifier>{23cd6335-1b10-40f2-8f40-be97a74ad17f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\map\public">
+      <UniqueIdentifier>{4f03cfdc-1f2a-45d6-948c-c81bd4c921cd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\navigation">
+      <UniqueIdentifier>{bbb4a0cf-bf52-4558-b31c-edc4d75222d1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\navigation\public">
+      <UniqueIdentifier>{f1cee2e5-5e14-4db4-96c0-2004359733c5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\phys">
+      <UniqueIdentifier>{83aeb3f8-1874-4851-b90d-3ced53327596}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\phys\public">
+      <UniqueIdentifier>{066a9b92-40dc-4814-9ba1-997bcbf35452}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\script">
+      <UniqueIdentifier>{4227d89a-9d44-4d9d-864f-fa4ee5ede026}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\script\public">
+      <UniqueIdentifier>{059f031f-f49f-404b-864f-5e7bdb693e69}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\anim">
+      <UniqueIdentifier>{6ac80d03-669d-49cf-8c90-43fdd68ba788}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\audio">
+      <UniqueIdentifier>{de5fd267-4f23-489d-ad4a-ca57373b3696}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\game">
+      <UniqueIdentifier>{3de880a3-6a00-4846-b4c0-5c47bfaefb9d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\lib">
+      <UniqueIdentifier>{20a21bd5-de98-47b4-abe4-44075d736fce}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\map">
+      <UniqueIdentifier>{ac5b48de-78a3-437b-a08a-e8caaaae95d4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\navigation">
+      <UniqueIdentifier>{feae6e20-280a-46e9-a0dd-580cfbcf0aad}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\script">
+      <UniqueIdentifier>{9431e018-9ddd-4440-b56a-012d46f674b9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\phys">
+      <UniqueIdentifier>{16491370-e219-4415-92c9-a19f5d60fea4}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\asset_load.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\cam_control.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\camera.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\cursor.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\entity.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\event.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\main.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\perf.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\pf_math.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\scene.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\sched.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\session.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\settings.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\task.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_batch.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_minimap.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_render.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_ringbuffer.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_shader.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_shadows.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_state.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_terrain.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_texture.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_tile.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_ui.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_water.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\render.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\render_asset_load.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\anim\anim.c">
+      <Filter>Source Files\anim</Filter>
+    </ClCompile>
+    <ClCompile Include="src\anim\anim_asset_load.c">
+      <Filter>Source Files\anim</Filter>
+    </ClCompile>
+    <ClCompile Include="src\audio\al_audio.c">
+      <Filter>Source Files\audio</Filter>
+    </ClCompile>
+    <ClCompile Include="src\audio\al_effect.c">
+      <Filter>Source Files\audio</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\builder.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\building.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\clearpath.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\combat.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\fog_of_war.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\game.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\harvester.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\movement.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\position.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\region.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\resource.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\selection.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\storage_site.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\game\timer_events.c">
+      <Filter>Source Files\game</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lib\attr.c">
+      <Filter>Source Files\lib</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lib\debug_malloc.c">
+      <Filter>Source Files\lib</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lib\nk_file_browser.c">
+      <Filter>Source Files\lib</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lib\nuklear.c">
+      <Filter>Source Files\lib</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lib\pf_malloc.c">
+      <Filter>Source Files\lib</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lib\pf_string.c">
+      <Filter>Source Files\lib</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lib\SDL_vec_rwops.c">
+      <Filter>Source Files\lib</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lib\stalloc.c">
+      <Filter>Source Files\lib</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lib\stb_image.c">
+      <Filter>Source Files\lib</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lib\stb_image_resize.c">
+      <Filter>Source Files\lib</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lib\string_intern.c">
+      <Filter>Source Files\lib</Filter>
+    </ClCompile>
+    <ClCompile Include="src\map\map.c">
+      <Filter>Source Files\map</Filter>
+    </ClCompile>
+    <ClCompile Include="src\map\map_asset_load.c">
+      <Filter>Source Files\map</Filter>
+    </ClCompile>
+    <ClCompile Include="src\map\minimap.c">
+      <Filter>Source Files\map</Filter>
+    </ClCompile>
+    <ClCompile Include="src\map\raycast.c">
+      <Filter>Source Files\map</Filter>
+    </ClCompile>
+    <ClCompile Include="src\map\tile.c">
+      <Filter>Source Files\map</Filter>
+    </ClCompile>
+    <ClCompile Include="src\navigation\a_star.c">
+      <Filter>Source Files\navigation</Filter>
+    </ClCompile>
+    <ClCompile Include="src\navigation\field.c">
+      <Filter>Source Files\navigation</Filter>
+    </ClCompile>
+    <ClCompile Include="src\navigation\fieldcache.c">
+      <Filter>Source Files\navigation</Filter>
+    </ClCompile>
+    <ClCompile Include="src\navigation\nav.c">
+      <Filter>Source Files\navigation</Filter>
+    </ClCompile>
+    <ClCompile Include="src\phys\collision.c">
+      <Filter>Source Files\phys</Filter>
+    </ClCompile>
+    <ClCompile Include="src\phys\projectile.c">
+      <Filter>Source Files\phys</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_camera.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_constants.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_entity.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_error.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_pickle.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_region.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_script.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_task.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_tile.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_traverse.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_ui.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\script\py_ui_style.c">
+      <Filter>Source Files\script</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_statusbar.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\asset_load.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\cam_control.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\camera.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\cursor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\entity.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\event.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\main.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\perf.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\pf_math.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\scene.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\sched.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\session.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\settings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\task.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ui.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\gl_assert.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\gl_batch.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\gl_material.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\gl_mesh.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\gl_perf.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\gl_render.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\gl_ringbuffer.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\gl_shader.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\gl_state.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\gl_texture.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\gl_vertex.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\render_private.h">
+      <Filter>Header Files\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\public\render.h">
+      <Filter>Header Files\render\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\public\render_al.h">
+      <Filter>Header Files\render\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\public\render_ctrl.h">
+      <Filter>Header Files\render\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\anim\anim_ctx.h">
+      <Filter>Header Files\anim</Filter>
+    </ClInclude>
+    <ClInclude Include="src\anim\anim_data.h">
+      <Filter>Header Files\anim</Filter>
+    </ClInclude>
+    <ClInclude Include="src\anim\anim_private.h">
+      <Filter>Header Files\anim</Filter>
+    </ClInclude>
+    <ClInclude Include="src\anim\public\anim.h">
+      <Filter>Header Files\anim\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\anim\public\skeleton.h">
+      <Filter>Header Files\anim\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\audio\al_assert.h">
+      <Filter>Header Files\audio</Filter>
+    </ClInclude>
+    <ClInclude Include="src\audio\al_private.h">
+      <Filter>Header Files\audio</Filter>
+    </ClInclude>
+    <ClInclude Include="src\audio\public\audio.h">
+      <Filter>Header Files\audio\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\builder.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\building.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\clearpath.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\combat.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\faction.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\fog_of_war.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\game_private.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\gamestate.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\harvester.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\movement.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\position.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\region.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\resource.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\selection.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\storage_site.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\timer_events.h">
+      <Filter>Header Files\game</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game\public\game.h">
+      <Filter>Header Files\game\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\attr.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\khash.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\lru_cache.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\mem.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\mpool.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\mpool_allocator.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\nk_file_browser.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\nuklear.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\pf_malloc.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\pf_nuklear.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\pf_string.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\pqueue.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\quadtree.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\queue.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\SDL_vec_rwops.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\stalloc.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\stb_image.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\stb_image_resize.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\string_intern.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lib\public\vec.h">
+      <Filter>Header Files\lib\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\map\map_private.h">
+      <Filter>Header Files\map</Filter>
+    </ClInclude>
+    <ClInclude Include="src\map\pfchunk.h">
+      <Filter>Header Files\map</Filter>
+    </ClInclude>
+    <ClInclude Include="src\map\public\map.h">
+      <Filter>Header Files\map\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\map\public\tile.h">
+      <Filter>Header Files\map\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\navigation\a_star.h">
+      <Filter>Header Files\navigation</Filter>
+    </ClInclude>
+    <ClInclude Include="src\navigation\field.h">
+      <Filter>Header Files\navigation</Filter>
+    </ClInclude>
+    <ClInclude Include="src\navigation\fieldcache.h">
+      <Filter>Header Files\navigation</Filter>
+    </ClInclude>
+    <ClInclude Include="src\navigation\nav_data.h">
+      <Filter>Header Files\navigation</Filter>
+    </ClInclude>
+    <ClInclude Include="src\navigation\nav_private.h">
+      <Filter>Header Files\navigation</Filter>
+    </ClInclude>
+    <ClInclude Include="src\navigation\public\nav.h">
+      <Filter>Header Files\navigation\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\phys\public\collision.h">
+      <Filter>Header Files\phys\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\phys\public\phys.h">
+      <Filter>Header Files\phys\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\private_types.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\py_camera.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\py_constants.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\py_entity.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\py_error.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\py_pickle.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\py_region.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\py_task.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\py_tile.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\py_traverse.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\py_ui.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\py_ui_style.h">
+      <Filter>Header Files\script</Filter>
+    </ClInclude>
+    <ClInclude Include="src\script\public\script.h">
+      <Filter>Header Files\script\public</Filter>
+    </ClInclude>
+    <ClInclude Include="src\audio\al_effect.h">
+      <Filter>Header Files\audio</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="cpp.hint" />
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="src\context_switch.asm">
+      <Filter>Source Files</Filter>
+    </MASM>
+  </ItemGroup>
+</Project>

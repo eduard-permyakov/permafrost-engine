@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\anim\anim.c" />
+    <ClCompile Include="src\anim\anim_asset_load.c" />
+    <ClCompile Include="src\asset_load.c" />
+    <ClCompile Include="src\audio\al_audio.c" />
+    <ClCompile Include="src\audio\al_effect.c" />
+    <ClCompile Include="src\camera.c" />
+    <ClCompile Include="src\cam_control.c" />
+    <ClCompile Include="src\cursor.c" />
+    <ClCompile Include="src\entity.c" />
+    <ClCompile Include="src\event.c" />
+    <ClCompile Include="src\game\builder.c" />
+    <ClCompile Include="src\game\building.c" />
+    <ClCompile Include="src\game\clearpath.c" />
+    <ClCompile Include="src\game\combat.c" />
+    <ClCompile Include="src\game\fog_of_war.c" />
+    <ClCompile Include="src\game\game.c" />
+    <ClCompile Include="src\game\harvester.c" />
+    <ClCompile Include="src\game\movement.c" />
+    <ClCompile Include="src\game\position.c" />
+    <ClCompile Include="src\game\region.c" />
+    <ClCompile Include="src\game\resource.c" />
+    <ClCompile Include="src\game\selection.c" />
+    <ClCompile Include="src\game\storage_site.c" />
+    <ClCompile Include="src\game\timer_events.c" />
+    <ClCompile Include="src\lib\attr.c" />
+    <ClCompile Include="src\lib\debug_malloc.c" />
+    <ClCompile Include="src\lib\nk_file_browser.c" />
+    <ClCompile Include="src\lib\nuklear.c" />
+    <ClCompile Include="src\lib\pf_malloc.c" />
+    <ClCompile Include="src\lib\pf_string.c" />
+    <ClCompile Include="src\lib\SDL_vec_rwops.c" />
+    <ClCompile Include="src\lib\stalloc.c" />
+    <ClCompile Include="src\lib\stb_image.c" />
+    <ClCompile Include="src\lib\stb_image_resize.c" />
+    <ClCompile Include="src\lib\string_intern.c" />
+    <ClCompile Include="src\main.c" />
+    <ClCompile Include="src\map\map.c" />
+    <ClCompile Include="src\map\map_asset_load.c" />
+    <ClCompile Include="src\map\minimap.c" />
+    <ClCompile Include="src\map\raycast.c" />
+    <ClCompile Include="src\map\tile.c" />
+    <ClCompile Include="src\navigation\a_star.c" />
+    <ClCompile Include="src\navigation\field.c" />
+    <ClCompile Include="src\navigation\fieldcache.c" />
+    <ClCompile Include="src\navigation\nav.c" />
+    <ClCompile Include="src\perf.c" />
+    <ClCompile Include="src\pf_math.c" />
+    <ClCompile Include="src\phys\collision.c" />
+    <ClCompile Include="src\phys\projectile.c" />
+    <ClCompile Include="src\render\gl_batch.c" />
+    <ClCompile Include="src\render\gl_minimap.c" />
+    <ClCompile Include="src\render\gl_render.c" />
+    <ClCompile Include="src\render\gl_ringbuffer.c" />
+    <ClCompile Include="src\render\gl_shader.c" />
+    <ClCompile Include="src\render\gl_shadows.c" />
+    <ClCompile Include="src\render\gl_state.c" />
+    <ClCompile Include="src\render\gl_statusbar.c" />
+    <ClCompile Include="src\render\gl_terrain.c" />
+    <ClCompile Include="src\render\gl_texture.c" />
+    <ClCompile Include="src\render\gl_tile.c" />
+    <ClCompile Include="src\render\gl_ui.c" />
+    <ClCompile Include="src\render\gl_water.c" />
+    <ClCompile Include="src\render\render.c" />
+    <ClCompile Include="src\render\render_asset_load.c" />
+    <ClCompile Include="src\scene.c" />
+    <ClCompile Include="src\sched.c" />
+    <ClCompile Include="src\script\py_camera.c" />
+    <ClCompile Include="src\script\py_constants.c" />
+    <ClCompile Include="src\script\py_entity.c" />
+    <ClCompile Include="src\script\py_error.c" />
+    <ClCompile Include="src\script\py_pickle.c" />
+    <ClCompile Include="src\script\py_region.c" />
+    <ClCompile Include="src\script\py_script.c" />
+    <ClCompile Include="src\script\py_task.c" />
+    <ClCompile Include="src\script\py_tile.c" />
+    <ClCompile Include="src\script\py_traverse.c" />
+    <ClCompile Include="src\script\py_ui.c" />
+    <ClCompile Include="src\script\py_ui_style.c" />
+    <ClCompile Include="src\session.c" />
+    <ClCompile Include="src\settings.c" />
+    <ClCompile Include="src\task.c" />
+    <ClCompile Include="src\ui.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\anim\anim_ctx.h" />
+    <ClInclude Include="src\anim\anim_data.h" />
+    <ClInclude Include="src\anim\anim_private.h" />
+    <ClInclude Include="src\anim\public\anim.h" />
+    <ClInclude Include="src\anim\public\skeleton.h" />
+    <ClInclude Include="src\asset_load.h" />
+    <ClInclude Include="src\audio\al_assert.h" />
+    <ClInclude Include="src\audio\al_effect.h" />
+    <ClInclude Include="src\audio\al_private.h" />
+    <ClInclude Include="src\audio\public\audio.h" />
+    <ClInclude Include="src\camera.h" />
+    <ClInclude Include="src\cam_control.h" />
+    <ClInclude Include="src\config.h" />
+    <ClInclude Include="src\cursor.h" />
+    <ClInclude Include="src\entity.h" />
+    <ClInclude Include="src\event.h" />
+    <ClInclude Include="src\game\builder.h" />
+    <ClInclude Include="src\game\building.h" />
+    <ClInclude Include="src\game\clearpath.h" />
+    <ClInclude Include="src\game\combat.h" />
+    <ClInclude Include="src\game\faction.h" />
+    <ClInclude Include="src\game\fog_of_war.h" />
+    <ClInclude Include="src\game\gamestate.h" />
+    <ClInclude Include="src\game\game_private.h" />
+    <ClInclude Include="src\game\harvester.h" />
+    <ClInclude Include="src\game\movement.h" />
+    <ClInclude Include="src\game\position.h" />
+    <ClInclude Include="src\game\public\game.h" />
+    <ClInclude Include="src\game\region.h" />
+    <ClInclude Include="src\game\resource.h" />
+    <ClInclude Include="src\game\selection.h" />
+    <ClInclude Include="src\game\storage_site.h" />
+    <ClInclude Include="src\game\timer_events.h" />
+    <ClInclude Include="src\lib\public\attr.h" />
+    <ClInclude Include="src\lib\public\khash.h" />
+    <ClInclude Include="src\lib\public\lru_cache.h" />
+    <ClInclude Include="src\lib\public\mem.h" />
+    <ClInclude Include="src\lib\public\mpool.h" />
+    <ClInclude Include="src\lib\public\mpool_allocator.h" />
+    <ClInclude Include="src\lib\public\nk_file_browser.h" />
+    <ClInclude Include="src\lib\public\nuklear.h" />
+    <ClInclude Include="src\lib\public\pf_malloc.h" />
+    <ClInclude Include="src\lib\public\pf_nuklear.h" />
+    <ClInclude Include="src\lib\public\pf_string.h" />
+    <ClInclude Include="src\lib\public\pqueue.h" />
+    <ClInclude Include="src\lib\public\quadtree.h" />
+    <ClInclude Include="src\lib\public\queue.h" />
+    <ClInclude Include="src\lib\public\SDL_vec_rwops.h" />
+    <ClInclude Include="src\lib\public\stalloc.h" />
+    <ClInclude Include="src\lib\public\stb_image.h" />
+    <ClInclude Include="src\lib\public\stb_image_resize.h" />
+    <ClInclude Include="src\lib\public\string_intern.h" />
+    <ClInclude Include="src\lib\public\vec.h" />
+    <ClInclude Include="src\main.h" />
+    <ClInclude Include="src\map\map_private.h" />
+    <ClInclude Include="src\map\pfchunk.h" />
+    <ClInclude Include="src\map\public\map.h" />
+    <ClInclude Include="src\map\public\tile.h" />
+    <ClInclude Include="src\navigation\a_star.h" />
+    <ClInclude Include="src\navigation\field.h" />
+    <ClInclude Include="src\navigation\fieldcache.h" />
+    <ClInclude Include="src\navigation\nav_data.h" />
+    <ClInclude Include="src\navigation\nav_private.h" />
+    <ClInclude Include="src\navigation\public\nav.h" />
+    <ClInclude Include="src\perf.h" />
+    <ClInclude Include="src\pf_math.h" />
+    <ClInclude Include="src\phys\public\collision.h" />
+    <ClInclude Include="src\phys\public\phys.h" />
+    <ClInclude Include="src\render\gl_assert.h" />
+    <ClInclude Include="src\render\gl_batch.h" />
+    <ClInclude Include="src\render\gl_material.h" />
+    <ClInclude Include="src\render\gl_mesh.h" />
+    <ClInclude Include="src\render\gl_perf.h" />
+    <ClInclude Include="src\render\gl_render.h" />
+    <ClInclude Include="src\render\gl_ringbuffer.h" />
+    <ClInclude Include="src\render\gl_shader.h" />
+    <ClInclude Include="src\render\gl_state.h" />
+    <ClInclude Include="src\render\gl_texture.h" />
+    <ClInclude Include="src\render\gl_vertex.h" />
+    <ClInclude Include="src\render\public\render.h" />
+    <ClInclude Include="src\render\public\render_al.h" />
+    <ClInclude Include="src\render\public\render_ctrl.h" />
+    <ClInclude Include="src\render\render_private.h" />
+    <ClInclude Include="src\scene.h" />
+    <ClInclude Include="src\sched.h" />
+    <ClInclude Include="src\script\private_types.h" />
+    <ClInclude Include="src\script\public\script.h" />
+    <ClInclude Include="src\script\py_camera.h" />
+    <ClInclude Include="src\script\py_constants.h" />
+    <ClInclude Include="src\script\py_entity.h" />
+    <ClInclude Include="src\script\py_error.h" />
+    <ClInclude Include="src\script\py_pickle.h" />
+    <ClInclude Include="src\script\py_region.h" />
+    <ClInclude Include="src\script\py_task.h" />
+    <ClInclude Include="src\script\py_tile.h" />
+    <ClInclude Include="src\script\py_traverse.h" />
+    <ClInclude Include="src\script\py_ui.h" />
+    <ClInclude Include="src\script\py_ui_style.h" />
+    <ClInclude Include="src\session.h" />
+    <ClInclude Include="src\settings.h" />
+    <ClInclude Include="src\task.h" />
+    <ClInclude Include="src\ui.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="cpp.hint" />
+    <MASM Include="src\context_switch.asm">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ml64.exe /c /I $(Filename) /Fo context_switch.obj</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(TargetDir)/context_switch.obj</Outputs>
+    </MASM>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{FF9593C2-CDE9-4F1D-8601-575F6B43F48E}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IncludePath>$(VC_IncludePath);$(WindowsSDL_IncludePath);</IncludePath>
+    <ExternalIncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(ProjectDir)deps\GLEW\include;$(ProjectDir)deps\Python\Include;$(ProjectDir)deps/SDL2\include;$(ProjectDir)deps\openal-soft\include;</ExternalIncludePath>
+    <TargetName>pf</TargetName>
+    <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(ProjectDir)lib</LibraryPath>
+    <OutDir>$(SolutionDir)lib</OutDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;MS_WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>.\deps\GLEW\include\ .\deps\Python\Include .\deps\openal-soft\include .\deps\SDL2\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <Optimization>Disabled</Optimization>
+    </ClCompile>
+    <Link>
+      <TargetMachine>MachineX86</TargetMachine>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Windows</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;MS_WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>.\deps\GLEW\include\ .\deps\Python\Include .\deps\openal-soft\include .\deps\SDL2\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <TargetMachine>MachineX86</TargetMachine>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <LanguageStandard>stdcpp14</LanguageStandard>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <PreprocessToFile>false</PreprocessToFile>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(SolutionDir)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;SDL2.lib;glew32.lib;opengl32.lib;OpenAL32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <SubSystem>NotSet</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
+  </ImportGroup>
+</Project>
