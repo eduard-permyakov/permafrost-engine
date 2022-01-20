@@ -44,6 +44,30 @@
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseOfMfc>false</UseOfMfc>
   </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='PGUpdate|x64'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='PGUpdate|Win32'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='PGInstrument|x64'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='PGInstrument|Win32'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
@@ -66,6 +90,9 @@
   <PropertyGroup>
     <CustomBuildBeforeTargets>Link</CustomBuildBeforeTargets>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+  </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalOptions>/Zm200  %(AdditionalOptions)</AdditionalOptions>
@@ -76,6 +103,9 @@
       <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <BaseAddress>0x1e000000</BaseAddress>
     </Link>
+    <PostBuildEvent>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">xcopy "$(TargetDir)$(TargetName).dll" "$(SolutionDir)lib\$(TargetName).dll*" /d /Y &amp; xcopy "$(TargetDir)$(TargetName).lib" "$(SolutionDir)lib\$(TargetName).lib*" /d /Y</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\Include\abstract.h" />
@@ -168,30 +198,6 @@
     <ClInclude Include="..\Include\unicodeobject.h" />
     <ClInclude Include="..\Include\weakrefobject.h" />
     <ClInclude Include="..\Modules\_math.h" />
-    <ClInclude Include="..\Modules\md5.h" />
-    <ClInclude Include="..\Modules\rotatingtree.h" />
-    <ClInclude Include="..\Modules\zlib\crc32.h" />
-    <ClInclude Include="..\Modules\zlib\deflate.h" />
-    <ClInclude Include="..\Modules\zlib\inffast.h" />
-    <ClInclude Include="..\Modules\zlib\inffixed.h" />
-    <ClInclude Include="..\Modules\zlib\inflate.h" />
-    <ClInclude Include="..\Modules\zlib\inftrees.h" />
-    <ClInclude Include="..\Modules\zlib\trees.h" />
-    <ClInclude Include="..\Modules\zlib\zconf.h" />
-    <ClInclude Include="..\Modules\zlib\zconf.in.h" />
-    <ClInclude Include="..\Modules\zlib\zlib.h" />
-    <ClInclude Include="..\Modules\zlib\zutil.h" />
-    <ClInclude Include="..\Modules\cjkcodecs\alg_jisx0201.h" />
-    <ClInclude Include="..\Modules\cjkcodecs\cjkcodecs.h" />
-    <ClInclude Include="..\Modules\cjkcodecs\emu_jisx0213_2000.h" />
-    <ClInclude Include="..\Modules\cjkcodecs\mappings_cn.h" />
-    <ClInclude Include="..\Modules\cjkcodecs\mappings_hk.h" />
-    <ClInclude Include="..\Modules\cjkcodecs\mappings_jisx0213_pair.h" />
-    <ClInclude Include="..\Modules\cjkcodecs\mappings_jp.h" />
-    <ClInclude Include="..\Modules\cjkcodecs\mappings_kr.h" />
-    <ClInclude Include="..\Modules\cjkcodecs\mappings_tw.h" />
-    <ClInclude Include="..\Modules\cjkcodecs\multibytecodec.h" />
-    <ClInclude Include="..\Modules\_io\_iomodule.h" />
     <ClInclude Include="..\Objects\stringlib\count.h" />
     <ClInclude Include="..\Objects\stringlib\fastsearch.h" />
     <ClInclude Include="..\Objects\stringlib\find.h" />
@@ -206,82 +212,17 @@
     <ClInclude Include="..\Python\thread_nt.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\Modules\_bisectmodule.c" />
-    <ClCompile Include="..\Modules\_codecsmodule.c" />
-    <ClCompile Include="..\Modules\_collectionsmodule.c" />
-    <ClCompile Include="..\Modules\_csv.c" />
-    <ClCompile Include="..\Modules\_functoolsmodule.c" />
-    <ClCompile Include="..\Modules\_heapqmodule.c" />
-    <ClCompile Include="..\Modules\_hotshot.c" />
-    <ClCompile Include="..\Modules\_json.c" />
-    <ClCompile Include="..\Modules\_localemodule.c" />
-    <ClCompile Include="..\Modules\_lsprof.c" />
-    <ClCompile Include="..\Modules\_math.c" />
-    <ClCompile Include="..\Modules\_randommodule.c" />
-    <ClCompile Include="..\Modules\_sre.c" />
-    <ClCompile Include="..\Modules\_struct.c" />
-    <ClCompile Include="..\Modules\_weakref.c" />
     <ClCompile Include="..\Modules\arraymodule.c" />
-    <ClCompile Include="..\Modules\audioop.c" />
-    <ClCompile Include="..\Modules\binascii.c" />
-    <ClCompile Include="..\Modules\cmathmodule.c" />
-    <ClCompile Include="..\Modules\cPickle.c" />
-    <ClCompile Include="..\Modules\cStringIO.c" />
-    <ClCompile Include="..\Modules\datetimemodule.c" />
-    <ClCompile Include="..\Modules\errnomodule.c" />
-    <ClCompile Include="..\Modules\future_builtins.c" />
     <ClCompile Include="..\Modules\gcmodule.c" />
-    <ClCompile Include="..\Modules\imageop.c" />
     <ClCompile Include="..\Modules\itertoolsmodule.c" />
-    <ClCompile Include="..\Modules\main.c" />
     <ClCompile Include="..\Modules\mathmodule.c" />
-    <ClCompile Include="..\Modules\md5.c" />
-    <ClCompile Include="..\Modules\md5module.c" />
-    <ClCompile Include="..\Modules\mmapmodule.c" />
     <ClCompile Include="..\Modules\operator.c" />
-    <ClCompile Include="..\Modules\parsermodule.c" />
-    <ClCompile Include="..\Modules\posixmodule.c" />
-    <ClCompile Include="..\Modules\rotatingtree.c" />
-    <ClCompile Include="..\Modules\sha256module.c" />
-    <ClCompile Include="..\Modules\sha512module.c" />
-    <ClCompile Include="..\Modules\shamodule.c" />
     <ClCompile Include="..\Modules\signalmodule.c" />
-    <ClCompile Include="..\Modules\stropmodule.c" />
-    <ClCompile Include="..\Modules\symtablemodule.c" />
-    <ClCompile Include="..\Modules\threadmodule.c" />
-    <ClCompile Include="..\Modules\timemodule.c" />
-    <ClCompile Include="..\Modules\xxsubtype.c" />
     <ClCompile Include="..\Modules\zipimport.c" />
-    <ClCompile Include="..\Modules\zlibmodule.c" />
-    <ClCompile Include="..\Modules\zlib\adler32.c" />
-    <ClCompile Include="..\Modules\zlib\compress.c" />
-    <ClCompile Include="..\Modules\zlib\crc32.c" />
-    <ClCompile Include="..\Modules\zlib\deflate.c" />
-    <ClCompile Include="..\Modules\zlib\gzclose.c" />
-    <ClCompile Include="..\Modules\zlib\gzlib.c" />
-    <ClCompile Include="..\Modules\zlib\gzread.c" />
-    <ClCompile Include="..\Modules\zlib\gzwrite.c" />
-    <ClCompile Include="..\Modules\zlib\infback.c" />
-    <ClCompile Include="..\Modules\zlib\inffast.c" />
-    <ClCompile Include="..\Modules\zlib\inflate.c" />
-    <ClCompile Include="..\Modules\zlib\inftrees.c" />
-    <ClCompile Include="..\Modules\zlib\trees.c" />
-    <ClCompile Include="..\Modules\zlib\uncompr.c" />
-    <ClCompile Include="..\Modules\zlib\zutil.c" />
-    <ClCompile Include="..\Modules\cjkcodecs\_codecs_cn.c" />
-    <ClCompile Include="..\Modules\cjkcodecs\_codecs_hk.c" />
-    <ClCompile Include="..\Modules\cjkcodecs\_codecs_iso2022.c" />
-    <ClCompile Include="..\Modules\cjkcodecs\_codecs_jp.c" />
-    <ClCompile Include="..\Modules\cjkcodecs\_codecs_kr.c" />
-    <ClCompile Include="..\Modules\cjkcodecs\_codecs_tw.c" />
-    <ClCompile Include="..\Modules\cjkcodecs\multibytecodec.c" />
-    <ClCompile Include="..\Modules\_io\_iomodule.c" />
-    <ClCompile Include="..\Modules\_io\bufferedio.c" />
-    <ClCompile Include="..\Modules\_io\bytesio.c" />
-    <ClCompile Include="..\Modules\_io\fileio.c" />
-    <ClCompile Include="..\Modules\_io\iobase.c" />
-    <ClCompile Include="..\Modules\_io\stringio.c" />
-    <ClCompile Include="..\Modules\_io\textio.c" />
+    <ClCompile Include="..\Modules\_collectionsmodule.c" />
+    <ClCompile Include="..\Modules\_heapqmodule.c" />
+    <ClCompile Include="..\Modules\_math.c" />
+    <ClCompile Include="..\Modules\_weakref.c" />
     <ClCompile Include="..\Objects\abstract.c" />
     <ClCompile Include="..\Objects\boolobject.c" />
     <ClCompile Include="..\Objects\bufferobject.c" />
@@ -339,7 +280,7 @@
     <ClCompile Include="..\PC\dl_nt.c" />
     <ClCompile Include="..\PC\getpathp.c" />
     <ClCompile Include="..\PC\import_nt.c" />
-    <ClCompile Include="..\PC\msvcrtmodule.c" />
+    <ClCompile Include="..\Python\iscygpty.c" />
     <ClCompile Include="..\Python\_warnings.c" />
     <ClCompile Include="..\Python\asdl.c" />
     <ClCompile Include="..\Python\ast.c" />

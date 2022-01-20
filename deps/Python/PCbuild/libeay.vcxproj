@@ -38,17 +38,37 @@
     <ProjectGuid>{E5B04CC0-EB4C-42AB-B4DC-18EF95F864B0}</ProjectGuid>
     <RootNamespace>libeay</RootNamespace>
   </PropertyGroup>
-
   <Import Project="python.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-
   <PropertyGroup Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
   </PropertyGroup>
-
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='PGUpdate|x64'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='PGUpdate|Win32'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='PGInstrument|x64'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='PGInstrument|Win32'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
   <Import Project="openssl.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-
   <Target Name="CreateBuildinfH" Inputs="$(MSBuildProjectFullPath)" Outputs="$(IntDir)\buildinf.h" AfterTargets="PrepareForBuild">
     <PropertyGroup>
       <_DATEValue>#define DATE "$([System.DateTime]::Now.ToString(`ddd MMM dd HH':'mm':'ss yyyy`))"</_DATEValue>
@@ -56,25 +76,17 @@
       <_PLATFORMValue Condition="$(Platform)=='Win32'">#define PLATFORM "VC-WIN32"</_PLATFORMValue>
       <_PLATFORMValue Condition="$(Platform)=='x64'">#define PLATFORM "VC-WIN64A"</_PLATFORMValue>
     </PropertyGroup>
-    <WriteLinesToFile File="$(IntDir)\buildinf.h"
-                      Lines="$(_DATEValue);$(_CFLAGSValue);$(_PLATFORMValue)"
-                      Overwrite="true" />
-    <Message Text="Updating buildinf.h:
-    $(_DATEValue)
-    $(_CFLAGSValue)
-    $(_PLATFORMValue)" Importance="normal" />
+    <WriteLinesToFile File="$(IntDir)\buildinf.h" Lines="$(_DATEValue);$(_CFLAGSValue);$(_PLATFORMValue)" Overwrite="true" />
+    <Message Text="Updating buildinf.h:&#xD;&#xA;    $(_DATEValue)&#xD;&#xA;    $(_CFLAGSValue)&#xD;&#xA;    $(_PLATFORMValue)" Importance="normal" />
   </Target>
-
   <Target Name="SuppressOriginalBuildinfH" Condition="Exists('$(opensslDir)crypto\buildinf.h')" BeforeTargets="PrepareForBuild">
     <Move SourceFiles="$(opensslDir)crypto\buildinf.h" DestinationFiles="$(opensslDir)crypto\buildinf.h.orig" />
   </Target>
-
   <ItemGroup>
     <ClCompile Include="$(opensslDir)crypto\cversion.c">
       <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemGroup>
-
   <ItemGroup>
     <!--
     <ClCompile Include="$(opensslDir)apps\errstr.c" />
@@ -846,7 +858,6 @@
     <ClCompile Include="$(opensslDir)crypto\des\des_enc.c" />
     <ClCompile Include="$(opensslDir)crypto\des\fcrypt_b.c" />
   </ItemGroup>
-
   <ItemGroup Condition="$(Platform) == 'Win32'">
     <NasmCompile Include="$(opensslDir)tmp32\aes-586.asm" />
     <NasmCompile Include="$(opensslDir)tmp32\aesni-x86.asm" />
@@ -896,7 +907,6 @@
     <NasmCompile Include="$(opensslDir)tmp64\x86_64-mont.asm" />
     <NasmCompile Include="$(opensslDir)tmp64\x86_64-mont5.asm" />
   </ItemGroup>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="Clean" />
   <Target Name="CleanAll">
