@@ -309,8 +309,8 @@ static void g_render_healthbars(void)
     size_t max_ents = vec_size(&s_gs.visible);
     size_t num_combat_visible = 0;
 
-    GLfloat ent_health_pc[max_ents];
-    vec3_t ent_top_pos_ws[max_ents];
+    STALLOC(GLfloat, ent_health_pc, max_ents);
+    STALLOC(vec3_t, ent_top_pos_ws, max_ents);
 
     for(int i = 0; i < max_ents; i++) {
     
@@ -340,8 +340,8 @@ static void g_render_healthbars(void)
         .nargs = 4,
         .args = {
             R_PushArg(&num_combat_visible, sizeof(num_combat_visible)),
-            R_PushArg(ent_health_pc, sizeof(ent_health_pc)),
-            R_PushArg(ent_top_pos_ws, sizeof(ent_top_pos_ws)),
+            R_PushArg(ent_health_pc, max_ents * sizeof(GLfloat)),
+            R_PushArg(ent_top_pos_ws, max_ents * sizeof(vec3_t)),
             R_PushArg(s_gs.active_cam, g_sizeof_camera),
         },
     });
@@ -350,6 +350,7 @@ static void g_render_healthbars(void)
 
 static void g_sort_stat_list(vec_rstat_t *inout)
 {
+    PERF_ENTER();
     int i = 1;
     while(i < vec_size(inout)) {
         int j = i;
@@ -362,10 +363,12 @@ static void g_sort_stat_list(vec_rstat_t *inout)
         }
         i++;
     }
+    PERF_RETURN_VOID();
 }
 
 static void g_sort_anim_list(vec_ranim_t *inout)
 {
+    PERF_ENTER();
     int i = 1;
     while(i < vec_size(inout)) {
         int j = i;
@@ -378,10 +381,12 @@ static void g_sort_anim_list(vec_ranim_t *inout)
         }
         i++;
     }
+    PERF_RETURN_VOID();
 }
 
 static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_ranim_t *out_anim)
 {
+    PERF_ENTER();
     struct map_resolution res;
     if(s_gs.map) {
         M_GetResolution(s_gs.map, &res);
@@ -393,6 +398,8 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
 
         if(curr->flags & ENTITY_FLAG_INVISIBLE)
             continue;
+
+        PERF_PUSH("process entity");
 
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
@@ -406,6 +413,7 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
             };
             A_GetRenderState(curr->uid, &rstate.njoints, rstate.curr_pose, &rstate.inv_bind_pose);
             vec_ranim_push(out_anim, rstate);
+
         }else{
         
             struct tile_desc td = {0};
@@ -421,10 +429,12 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
             };
             vec_rstat_push(out_stat, rstate);
         }
+        PERF_POP();
     }
 
     g_sort_stat_list(out_stat);
     g_sort_anim_list(out_anim);
+    PERF_RETURN_VOID();
 }
 
 static void g_create_render_input(struct render_input *out)
@@ -445,6 +455,12 @@ static void g_create_render_input(struct render_input *out)
 
     vec_rstat_init(&out->light_vis_stat);
     vec_ranim_init(&out->light_vis_anim);
+
+    vec_rstat_resize(&out->cam_vis_stat, 256);
+    vec_ranim_resize(&out->cam_vis_anim, 256);
+
+    vec_rstat_resize(&out->light_vis_stat, 256);
+    vec_ranim_resize(&out->light_vis_anim, 256);
 
     g_make_draw_list(s_gs.visible, &out->cam_vis_stat, &out->cam_vis_anim);
     g_make_draw_list(s_gs.light_visible, &out->light_vis_stat, &out->light_vis_anim);
@@ -994,8 +1010,8 @@ static void g_render_minimap_units(void)
     assert(Sched_UsingBigStack());
     PERF_ENTER();
 
-    vec2_t positions[kh_size(s_gs.active)];
-    vec3_t colors[kh_size(s_gs.active)];
+    STALLOC(vec2_t, positions, kh_size(s_gs.active));
+    STALLOC(vec3_t, colors, kh_size(s_gs.active));
     size_t nunits = 0;
 
     vec3_t color_map[MAX_FACTIONS];

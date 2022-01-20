@@ -344,8 +344,8 @@ void *AL_RenderPrivateForName(const char *base_path, const char *pfobj_name)
     return res.render_private;
 }
 
-bool AL_NameForRenderPrivate(void *render_private, char out_dir[static 512], 
-                             char out_name[static 512])
+bool AL_NameForRenderPrivate(void *render_private, char out_dir[], 
+                             char out_name[])
 {
     struct shared_resource curr;
     bool found = false;

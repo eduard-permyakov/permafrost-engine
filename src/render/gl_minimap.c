@@ -637,7 +637,7 @@ void R_GL_MinimapRender(const struct map *map, const struct camera *cam,
     R_GL_StateInstall(GL_U_MAP_RES, shader_prog);
 
     R_GL_Texture_Bind(&s_ctx.minimap_texture, shader_prog);
-    R_GL_MapFogBindLast(GL_TEXTURE1, shader_prog, "visbuff");
+    R_GL_MapFogBindLast(GL_TEXTURE2, shader_prog, "visbuff");
 
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 

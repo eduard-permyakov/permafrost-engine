@@ -40,7 +40,7 @@
 #include <SDL.h>
 
 #define CONFIG_SCHED_TARGET_FPS     (30)
-#define CONFIG_USE_BATCH_RENDERING  (false)
+#define CONFIG_USE_BATCH_RENDERING  (true)
 
 /* The far end of the camera's clipping frustrum, in OpenGL coordinates */
 #define CONFIG_DRAWDIST             (1000)

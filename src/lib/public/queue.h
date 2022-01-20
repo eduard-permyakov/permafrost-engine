@@ -36,6 +36,8 @@
 #ifndef QUEUE_H
 #define QUEUE_H
 
+#include "mem.h"
+
 #include <stddef.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -101,10 +103,11 @@
             size_t bot = queue->capacity - queue->ihead;                                        \
             assert(top + bot == queue->size);                                                   \
                                                                                                 \
-            type tmp[top];                                                                      \
+            STALLOC(type, tmp, top);                                                            \
             memcpy(tmp, new_mem, sizeof(type) * top);                                           \
             memmove(new_mem, new_mem + queue->ihead, sizeof(type) * bot);                       \
             memcpy(new_mem + bot, tmp, sizeof(type) * top);                                     \
+            STFREE(tmp);                                                                        \
                                                                                                 \
             queue->ihead = 0;                                                                   \
             queue->itail = top + bot - 1;                                                       \

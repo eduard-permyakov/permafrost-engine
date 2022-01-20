@@ -177,7 +177,7 @@ void main()
     int base = inst_attr_base(from_vertex.draw_id);
     int size = textureSize(attrbuff);
 
-    float ambient_intensity = texelFetch(attrbuff, (base + 48 + from_vertex.mat_idx * 8) % size).r;
+    float ambient_intensity = texelFetch(attrbuff, int(mod(base + 48 + (from_vertex.mat_idx * 8), size))).r;
     vec3 diffuse_clr =  read_vec3(base + 48 + (from_vertex.mat_idx * 8) + 2);
     vec3 specular_clr = read_vec3(base + 48 + (from_vertex.mat_idx * 8) + 5);
 

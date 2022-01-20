@@ -65,7 +65,7 @@ struct attr{
 
 /* 'named' attributes start with a single token for the name */
 bool Attr_Parse(struct SDL_RWops *stream, struct attr *out, bool named);
-bool Attr_Write(struct SDL_RWops *stream, const struct attr *in, const char name[static 0]);
+bool Attr_Write(struct SDL_RWops *stream, const struct attr *in, const char name[]);
 
 #endif
 

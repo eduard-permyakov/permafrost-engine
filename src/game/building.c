@@ -750,7 +750,7 @@ int G_Building_GetRequired(uint32_t uid, const char *rname)
 }
 
 size_t G_Building_GetAllRequired(uint32_t uid, size_t maxout, 
-                                 const char *names[static maxout], int amounts[static maxout])
+                                 const char *names[], int amounts[])
 {
     struct buildstate *bs = buildstate_get(uid);
     assert(bs);

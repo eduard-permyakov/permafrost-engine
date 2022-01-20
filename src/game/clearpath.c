@@ -56,6 +56,7 @@
 #include "../render/public/render_ctrl.h"
 #include "../map/public/map.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/mem.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -409,9 +410,9 @@ static void on_render_3d(void *user, void *event)
     vec3_t blue = (vec3_t){0.0f, 0.0f, 1.0f};
     vec3_t green = (vec3_t){0.0f, 1.0f, 0.0f};
 
-    vec2_t apexes[n_vos];
-    vec2_t left_rays[n_vos];
-    vec2_t right_rays[n_vos];
+    STALLOC(vec2_t, apexes, n_vos);
+    STALLOC(vec2_t, left_rays, n_vos);
+    STALLOC(vec2_t, right_rays, n_vos);
 
     for(int i = 0; i < s_debug_saved.n_hrvos; i++, idx++) {
         apexes[idx] = s_debug_saved.hrvos[i].xz_apex;
@@ -530,8 +531,8 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
                                    bool save_debug,
                                    vec2_t *out)
 {
-    struct HRVO dyn_hrvos[vec_size(&dyn_neighbs)];
-    struct VO stat_vos[vec_size(&stat_neighbs)];
+    STALLOC(struct HRVO, dyn_hrvos, vec_size(&dyn_neighbs));
+    STALLOC(struct HRVO, stat_vos, vec_size(&stat_neighbs));
 
     size_t n_hrvos = compute_all_hrvos(cpent, dyn_neighbs, dyn_hrvos);
     size_t n_vos = compute_all_vos(cpent, stat_neighbs, stat_vos);
@@ -544,7 +545,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
      * obstacle as a union of line segments. 
      */
     const size_t n_rays = (n_hrvos + n_vos) * 2;
-    struct line_2d rays[n_rays];
+    STALLOC(struct line_2d, rays, n_rays);
     rays_repr(dyn_hrvos, n_hrvos, stat_vos, n_vos, rays);
 
     if(save_debug) {

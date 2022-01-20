@@ -315,7 +315,7 @@ float  G_Building_GetVisionRange(const struct entity *ent);
 int    G_Building_GetRequired(uint32_t uid, const char *rname);
 bool   G_Building_SetRequired(uint32_t uid, const char *rname, int req);
 size_t G_Building_GetAllRequired(uint32_t uid, size_t maxout, 
-                                 const char *names[static maxout], int amounts[static maxout]);
+                                 const char *names[], int amounts[]);
 
 /*###########################################################################*/
 /* GAME BUILDER                                                              */
@@ -336,7 +336,7 @@ bool        G_Resource_SetName(uint32_t uid, const char *name);
 const char *G_Resource_GetName(uint32_t uid);
 const char *G_Resource_GetCursor(uint32_t uid);
 bool        G_Resource_SetCursor(uint32_t uid, const char *cursor);
-int         G_Resource_GetAllNames(size_t maxout, const char *out[static maxout]);
+int         G_Resource_GetAllNames(size_t maxout, const char* out[]);
 void        G_Resource_UpdateSelectionRadius(const struct entity *ent, float radius);
 
 /*###########################################################################*/
@@ -379,7 +379,7 @@ void  G_Harvester_SetStrategy(uint32_t uid, enum tstrategy strat);
 int   G_Harvester_GetStrategy(uint32_t uid);
 bool  G_Harvester_IncreaseTransportPrio(uint32_t uid, const char *rname);
 bool  G_Harvester_DecreaseTransportPrio(uint32_t uid, const char *rname);
-int   G_Harvester_GetTransportPrio(uint32_t uid, size_t maxout, const char *out[static maxout]);
+int   G_Harvester_GetTransportPrio(uint32_t uid, size_t maxout, const char* out[]);
 int   G_Harvester_GetCurrTotalCarry(uint32_t uid);
 
 /*###########################################################################*/
@@ -404,7 +404,7 @@ int  G_StorageSite_GetCurr(uint32_t uid, const char *rname);
 bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr);
 int  G_StorageSite_GetDesired(uint32_t uid, const char *rname);
 bool G_StorageSite_SetDesired(uint32_t uid, const char *rname, int des);
-int  G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char *out[static maxout]);
+int  G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char* out[]);
 int  G_StorageSite_GetPlayerStored(const char *rname);
 int  G_StorageSite_GetPlayerCapacity(const char *rname);
 void G_StorageSite_SetFontColor(const struct nk_color *clr);
@@ -438,7 +438,7 @@ bool   G_Region_GetRadius(const char *name, float *out);
 bool   G_Region_GetXLen(const char *name, float *out);
 bool   G_Region_GetZLen(const char *name, float *out);
 
-int    G_Region_GetEnts(const char *name, size_t maxout, struct entity *ents[static maxout]);
+int    G_Region_GetEnts(const char *name, size_t maxout, struct entity *ents[]);
 bool   G_Region_ContainsEnt(const char *name, uint32_t uid);
 bool   G_Region_ExploreFog(const char *name, int faction_id);
 bool   G_Region_Explored(const char *name, uint16_t player_mask, bool *out);

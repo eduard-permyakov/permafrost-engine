@@ -714,7 +714,7 @@ void Engine_ClearPendingEvents(void)
     E_ClearPendingEvents();
 }
 
-bool Engine_GetArg(const char *name, size_t maxout, char out[static maxout])
+bool Engine_GetArg(const char *name, size_t maxout, char out[])
 {
     size_t namelen = strlen(name);
     for(int i = 2; i < s_argc; i++) {

@@ -42,6 +42,7 @@
 #include "phys/public/collision.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #define MAX_JOINTS  (96)
 #define MAX_TAGS    (127)
@@ -124,8 +125,8 @@ bool     Entity_AddTag(uint32_t uid, const char *tag);
 void     Entity_RemoveTag(uint32_t uid, const char *tag);
 bool     Entity_HasTag(uint32_t uid, const char *tag);
 void     Entity_ClearTags(uint32_t uid);
-size_t   Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[static maxout]);
-size_t   Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[static maxout]);
+size_t   Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[]);
+size_t   Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[]);
 void     Entity_DisappearAnimated(struct entity *ent, const struct map *map, void (*on_finish)(void*), void *arg);
 int      Entity_NavLayer(const struct entity *ent);
 

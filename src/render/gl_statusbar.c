@@ -43,6 +43,7 @@
 #include "../config.h"
 #include "../main.h"
 #include "../lib/public/pf_string.h"
+#include "../lib/public/mem.h"
 
 #include <GL/glew.h>
 #include <assert.h>
@@ -66,7 +67,8 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
     Engine_WinDrawableSize(&width, &height);
 
     /* Convert the worldspace positions to SDL screenspace positions */
-    vec2_t ent_top_pos_ss[*num_ents]; /* Screen-space XY positions of the entity tops. */
+    //vec2_t ent_top_pos_ss[*num_ents]; /* Screen-space XY positions of the entity tops. */
+    STALLOC(vec2_t, ent_top_pos_ss, *num_ents);
 
     mat4x4_t view, proj;
     Camera_MakeViewMat(cam, &view); 

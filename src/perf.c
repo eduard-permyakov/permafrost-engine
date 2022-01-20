@@ -43,6 +43,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdint.h>
 
 
 #define PARENT_NONE     ~((uint32_t)0)

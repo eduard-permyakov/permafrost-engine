@@ -138,7 +138,7 @@ fail:
     return false;
 }
 
-bool Attr_Write(struct SDL_RWops *stream, const struct attr *in, const char name[static 0])
+bool Attr_Write(struct SDL_RWops *stream, const struct attr *in, const char name[])
 {
     if(name) {
         CHK_TRUE(SDL_RWwrite(stream, name, strlen(name), 1), fail);

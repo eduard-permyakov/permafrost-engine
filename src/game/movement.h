@@ -38,6 +38,7 @@
 
 #include "../pf_math.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 #define MOVE_TICK_RES (20)
 

@@ -59,6 +59,7 @@
 #define CLAMP(a, min, max)      (MIN(MAX((a), (min)), (max)))
 #define ARR_SIZE(a)             (sizeof(a)/sizeof(a[0]))
 #define FAC_STATE(val, fac_id)  (((val) >> ((fac_id) * 2)) & 0x3)
+#define IDX(r, width, c)        ((r) * (width) + (c))
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -206,7 +207,7 @@ static bool td_is_los_corner(struct tile_desc td, int ref_height)
     return false;
 }
 
-static void wf_create_blocked_line(int xrad, int zrad, bool wf[][xrad * 2 + 1], 
+static void wf_create_blocked_line(int xrad, int zrad, bool wf[], 
                                    struct tile_desc origin, int delta_r, int delta_c)
 {
     struct map_resolution res;
@@ -237,7 +238,7 @@ static void wf_create_blocked_line(int xrad, int zrad, bool wf[][xrad * 2 + 1],
     do {
 
         fflush(stdout);
-        wf[zrad + curr_dr][xrad + curr_dc] = true;
+        wf[IDX(zrad + curr_dr, xrad * 2 + 1, xrad + curr_dc)] = true;
 
         e2 = 2 * err;
         if(e2 >= dy) {
@@ -291,17 +292,18 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
      * that surrounds the position. When the position is near the map edge, some
      * elements may be unused.  wf_blocked[tile_x_radius][tile_z_radius] gives the 
      * byte corresponding to the origin-most tile. */
-    bool wf_blocked[2 * tile_x_radius  + 1][2 * tile_z_radius + 1];
-    memset(wf_blocked, 0, sizeof(wf_blocked));
+    const size_t count = (2 * tile_x_radius + 1) * (2 * tile_z_radius + 1);
+    STALLOC(bool, wf_blocked, sizeof(bool) * count);
+    memset(wf_blocked, 0, sizeof(bool) * count);
 
-    bool visited[2 * tile_x_radius  + 1][2 * tile_z_radius + 1];
-    memset(visited, 0, sizeof(visited));
+    STALLOC(bool, visited, sizeof(bool) * count);
+    memset(visited, 0, sizeof(bool) * count);
 
     pq_td_t frontier;
     pq_td_init(&frontier);
 
     pq_td_push(&frontier, 0.0f, origin);
-    visited[tile_x_radius][tile_z_radius] = true;
+    visited[IDX(tile_x_radius, 2 * tile_x_radius + 1, tile_z_radius)] = true;
     update_tile(faction_id, origin, delta);
 
     while(pq_size(&frontier) > 0) {
@@ -319,11 +321,11 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
             assert(abs(dr) <= tile_z_radius);
             assert(abs(dc) <= tile_x_radius);
 
-            if(visited[tile_x_radius + dr][tile_z_radius + dc])
+            if(visited[IDX(tile_x_radius + dr, 2 * tile_x_radius + 1, tile_z_radius + dc)])
                 continue;
-            visited[tile_x_radius + dr][tile_z_radius + dc] = true;
+            visited[IDX(tile_x_radius + dr, 2 * tile_x_radius + 1, tile_z_radius + dc)] = true;
 
-            if(wf_blocked[tile_x_radius + dr][tile_z_radius + dc])
+            if(wf_blocked[IDX(tile_x_radius + dr, 2 * tile_x_radius + 1, tile_z_radius + dc)])
                 continue;
 
             vec2_t origin_pos = tile_center_pos(origin);
@@ -637,8 +639,8 @@ void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 
-    vec2_t corners_buff[4 * res.tile_w * res.tile_h];
-    vec3_t colors_buff[res.tile_w * res.tile_h];
+    STALLOC(vec2_t, corners_buff, 4 * res.tile_w * res.tile_h);
+    STALLOC(vec2_t, colors_buff, res.tile_w * res.tile_h);
 
     vec2_t *corners_base = corners_buff;
     vec3_t *colors_base = colors_buff; 

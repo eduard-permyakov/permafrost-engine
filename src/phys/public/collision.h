@@ -51,7 +51,7 @@ struct plane{
 };
 
 struct frustum{
-    struct plane near, far;
+    struct plane nearp, farp;
     struct plane top, bot;
     struct plane left, right;
     /* The 8 corners of the frustum are used for precise collision 

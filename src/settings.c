@@ -38,6 +38,7 @@
 #include "config.h"
 #include "asset_load.h"
 #include "main.h"
+#include "lib/public/mem.h"
 #include "lib/public/khash.h"
 #include "lib/public/pf_string.h"
 
@@ -363,7 +364,8 @@ ss_e Settings_SaveToFile(void)
         return false;
     }
 
-    const char *settings[kh_size(s_settings_table)];
+    //const char *settings[kh_size(s_settings_table)];
+    STALLOC(const char*, settings, kh_size(s_settings_table));
     size_t nsetts = 0;
 
     const char *name;

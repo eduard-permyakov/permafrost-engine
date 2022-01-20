@@ -40,6 +40,7 @@
 #include "../event.h"
 #include "../camera.h"
 #include "../settings.h"
+#include "../lib/public/mem.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/pf_string.h"
@@ -384,8 +385,8 @@ static bool audio_name_music(const char *name, ALint *out)
 
 static void audio_next_music_track(void)
 {
-    const char *tracks[kh_size(s_music)];
-    size_t ntracks = Audio_GetAllMusic(ARR_SIZE(tracks), tracks);
+    STALLOC(const char*, tracks, kh_size(s_music));
+    size_t ntracks = Audio_GetAllMusic(kh_size(s_music), tracks);
 
     ALint play_buffer = 0;
     alGetSourcei(s_music_source, AL_BUFFER, &play_buffer);
@@ -646,9 +647,9 @@ bool Audio_PlayForegroundEffect(const char *name, bool interrupt, int channel)
     return true;
 }
 
-size_t Audio_GetAllMusic(size_t maxout, const char *out[static maxout])
+size_t Audio_GetAllMusic(size_t maxout, const char *out[])
 {
-    const char *tracks[kh_size(s_music)];
+    STALLOC(const char*, tracks, kh_size(s_music));
     size_t ntracks = 0;
 
     const char *name;

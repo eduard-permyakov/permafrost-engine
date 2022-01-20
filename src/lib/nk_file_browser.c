@@ -35,6 +35,7 @@
 
 #include "public/nk_file_browser.h"
 #include "public/pf_string.h"
+#include "public/mem.h"
 #include "../main.h"
 
 #include <string.h>
@@ -42,6 +43,8 @@
 #include <math.h>
 
 #if defined(_WIN32)
+#define WINVER 0x0600
+#define _WIN32_WINNT 0x0600
 #define NTDDI_VERSION 0x06000000
 #define WIN32_LEAN_AND_MEAN
 #define UNICODE
@@ -130,7 +133,7 @@ static struct file *fb_get_list(const char *dir, size_t *out_size)
     return files;
 }
 
-static void fb_realpath(const char rel[static NK_MAX_PATH_LEN], char abs[static NK_MAX_PATH_LEN])
+static void fb_realpath(const char rel[], char abs[])
 {
     if(NULL == _fullpath(abs, rel, NK_MAX_PATH_LEN)) {
         abs[0] = '\0';
@@ -138,7 +141,7 @@ static void fb_realpath(const char rel[static NK_MAX_PATH_LEN], char abs[static 
     fb_path_fix_separator(abs);
 }
 
-static bool fb_homedir(char out[static NK_MAX_PATH_LEN])
+static bool fb_homedir(char out[])
 {
     PWSTR path;
     KNOWNFOLDERID id = FOLDERID_Profile;
@@ -155,8 +158,8 @@ static bool fb_homedir(char out[static NK_MAX_PATH_LEN])
     return true;
 }
 
-static size_t fb_get_places(size_t maxout, char out[static maxout][NK_MAX_PATH_LEN], 
-                            char *icons[static maxout], char names[static maxout][32])
+static size_t fb_get_places(size_t maxout, char out[][NK_MAX_PATH_LEN], 
+                            char *icons[], char names[][32])
 {
     size_t ret = 0;
     if(ret == maxout)
@@ -267,8 +270,8 @@ static bool fb_homedir(char out[static NK_MAX_PATH_LEN])
     return true;
 }
 
-static size_t fb_get_places(size_t maxout, char out[static maxout][NK_MAX_PATH_LEN], 
-                            char *icons[static maxout], char names[static maxout][32])
+static size_t fb_get_places(size_t maxout, char out[][NK_MAX_PATH_LEN], 
+                            char *icons[], char names[][32])
 {
     size_t ret = 0;
     if(ret == maxout)
@@ -429,9 +432,9 @@ static void fb_file_list(struct nk_context *ctx, struct nk_fb_state *state)
 static void fb_places_list(struct nk_context *ctx, struct nk_fb_state *state)
 {
     const size_t max_places = 16;
-    char paths[max_places][NK_MAX_PATH_LEN];
-    char *icons[max_places];
-    char names[max_places][32];
+    STALLOC(char, paths, max_places * NK_MAX_PATH_LEN);
+    STALLOC(char*, icons, max_places);
+    STALLOC(char, names, max_places * 32);
 
     size_t nplaces = fb_get_places(max_places, paths, icons, names);
 

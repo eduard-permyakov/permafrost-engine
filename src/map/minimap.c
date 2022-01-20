@@ -51,7 +51,7 @@
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
-#define DEFAULT_BORDER_CLR ((vec4_t){65.0f/255.0f, 65.0f/255.0f, 65.0f/255.0f, 1.0f})
+#define DEFAULT_BORDER_CLR {65.0f/255.0f, 65.0f/255.0f, 65.0f/255.0f, 1.0f}
 
 struct quad{
     vec2_t a, b, c, d;
@@ -278,8 +278,8 @@ bool M_InitMinimap(struct map *map, vec2_t center_pos)
     assert(map);
     map->minimap_center_pos = center_pos;
 
-    void *chunk_rprivates[map->width * map->height];
-    mat4x4_t chunk_model_mats[map->width * map->height];
+    STALLOC(void*, chunk_rprivates, map->width * map->height);
+    STALLOC(mat4x4_t, chunk_model_mats, map->width * map->height);
 
     for(int r = 0; r < map->height; r++) {
     for(int c = 0; c < map->width;  c++) {
@@ -294,8 +294,8 @@ bool M_InitMinimap(struct map *map, vec2_t center_pos)
         .nargs = 3,
         .args = {
             (void*)G_GetPrevTickMap(),
-            R_PushArg(chunk_rprivates, sizeof(chunk_rprivates)),
-            R_PushArg(chunk_model_mats, sizeof(chunk_model_mats)),
+            R_PushArg(chunk_rprivates, map->width * map->height * sizeof(void*)),
+            R_PushArg(chunk_model_mats, map->width * map->height * sizeof(mat4x4_t)),
         },
     });
 
@@ -485,6 +485,6 @@ vec4_t M_MinimapGetBorderClr(void)
 
 void M_MinimapClearBorderClr(void)
 {
-    s_border_clr = DEFAULT_BORDER_CLR;
+    s_border_clr = (vec4_t)DEFAULT_BORDER_CLR;
 }
 

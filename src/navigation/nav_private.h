@@ -56,7 +56,7 @@ bool           N_PortalReachableFromTile(const struct portal *port, struct coord
                                          const struct nav_chunk *chunk);
 
 int            N_GridNeighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
-                                struct coord out_neighbours[static 8], float out_costs[static 8]);
+                                struct coord out_neighbours[], float out_costs[]);
 
 uint16_t       N_ClosestPathableLocalIsland(const struct nav_private *priv, const struct nav_chunk *chunk, 
                                             struct tile_desc target);

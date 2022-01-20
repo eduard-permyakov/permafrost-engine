@@ -359,15 +359,15 @@ void PFM_Mat4x4_MakePerspective(GLfloat fov_radians, GLfloat aspect_ratio,
 
 void PFM_Mat4x4_MakeOrthographic(GLfloat left, GLfloat right,
                                  GLfloat bot,  GLfloat top,
-                                 GLfloat near, GLfloat far, mat4x4_t *out)
+                                 GLfloat nearp, GLfloat farp, mat4x4_t *out)
 {
     PFM_Mat4x4_Identity(out);
     out->cols[0][0] = 2.0f/(right - left);
     out->cols[1][1] = 2.0f/(top - bot);
-    out->cols[2][2] = -2.0f/(far - near);
+    out->cols[2][2] = -2.0f/(farp - nearp);
     out->cols[3][0] = -(right + left)/(right - left);
     out->cols[3][1] = -(top + bot)/(top - bot);
-    out->cols[3][2] = -(far + near)/(far - near);
+    out->cols[3][2] = -(farp + nearp)/(farp - nearp);
 }
 
 void PFM_Mat4x4_MakeLookAt(vec3_t *camera_pos, vec3_t *target_pos, 

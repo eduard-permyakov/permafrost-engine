@@ -50,6 +50,14 @@
 #define SHADER_PATH_LEN 128
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 
+#ifdef _MSC_VER && !defined(NDEBUG)
+#include <windows.h>
+#define PRINT(_text) OutputDebugString(_text)
+#else
+#define PRINT(_text) fprintf(stderr, (_text))
+#endif
+
+
 struct uniform{
     int           type;
     const char   *name;
@@ -273,12 +281,17 @@ static struct shader s_shaders[] = {
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment/passthrough.glsl",
         .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
             { UTYPE_MAT4,      GL_U_LS_TRANS          },
             { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
+            { UTYPE_INT,       GL_U_TEX_ARRAY0        },
+            { UTYPE_INT,       GL_U_TEX_ARRAY1        },
+            { UTYPE_INT,       GL_U_TEX_ARRAY2        },
+            { UTYPE_INT,       GL_U_TEX_ARRAY3        },
             { UTYPE_INT,       "attrbuff"             },
             { UTYPE_INT,       "attrbuff_offset"      },
             { UTYPE_INT,       GL_U_ATTR_STRIDE       },
-            { UTYPE_INT,       GL_U_ATTR_OFFSET       },
             { UTYPE_INT,       GL_U_ATTR_OFFSET       },
             {0}
         },
@@ -305,8 +318,14 @@ static struct shader s_shaders[] = {
         .geo_path    = NULL,
         .frag_path   = "shaders/fragment/passthrough.glsl",
         .uniforms    = (struct uniform[]){
+            { UTYPE_MAT4,      GL_U_VIEW              },
+            { UTYPE_MAT4,      GL_U_PROJECTION        },
             { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
             { UTYPE_MAT4,      GL_U_LS_TRANS          },
+            { UTYPE_INT,       GL_U_TEX_ARRAY0        },
+            { UTYPE_INT,       GL_U_TEX_ARRAY1        },
+            { UTYPE_INT,       GL_U_TEX_ARRAY2        },
+            { UTYPE_INT,       GL_U_TEX_ARRAY3        },
             { UTYPE_INT,       "attrbuff"             },
             { UTYPE_INT,       "attrbuff_offset"      },
             { UTYPE_INT,       GL_U_ATTR_STRIDE       },
@@ -561,7 +580,8 @@ static bool shader_init(const char *text, GLuint *out, GLint type)
     if(!success) {
 
         glGetShaderInfoLog(*out, sizeof(info), NULL, info);
-        fprintf(stderr, "%s\n", info);
+        pf_strlcat(info, "\n", sizeof(info));
+        PRINT(info);
         return false;
     }
 
@@ -571,15 +591,18 @@ static bool shader_init(const char *text, GLuint *out, GLint type)
 static bool shader_load_and_init(const char *path, GLuint *out, GLint type)
 {
     ASSERT_IN_RENDER_THREAD();
+    char buff[512];
 
     const char *text = shader_text_load(path);
     if(!text) {
-        fprintf(stderr, "Could not load shader at: %s\n", path);
+        pf_snprintf(buff, sizeof(buff), "Could not load shader at: %s\n", path);
+        PRINT(buff);
         goto fail;
     }
     
     if(!shader_init(text, out, type)){
-        fprintf(stderr, "Could not compile shader at: %s\n", path);
+        pf_snprintf(buff, sizeof(buff), "Could not compile shader at: %s\n", path);
+        PRINT(buff);
         goto fail;
     }
 
@@ -612,7 +635,8 @@ static bool shader_make_prog(const GLuint vertex_shader, const GLuint geo_shader
     if(!success) {
 
         glGetProgramInfoLog(*out, sizeof(info), NULL, info);
-        fprintf(stderr, "%s\n", info);
+        pf_strlcat(info, "\n", sizeof(info));
+        PRINT(info);
         return false;
     }
 
@@ -678,21 +702,21 @@ bool R_GL_Shader_InitAll(const char *base_path)
         pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->vertex_path);
 
         if(!shader_load_and_init(path, &vertex, GL_VERTEX_SHADER)) {
-            fprintf(stderr, "Failed to load and init vertex shader.\n");
+            PRINT("Failed to load and init vertex shader.\n");
             return false;
         }
 
         if(res->geo_path)
             pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->geo_path);
         if(res->geo_path && !shader_load_and_init(path, &geometry, GL_GEOMETRY_SHADER)) {
-            fprintf(stderr, "Failed to load and init geometry shader.\n");
+            PRINT("Failed to load and init geometry shader.\n");
             return false;
         }
         assert(!res->geo_path || geometry > 0);
 
         pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->frag_path);
         if(!shader_load_and_init(path, &fragment, GL_FRAGMENT_SHADER)) {
-            fprintf(stderr, "Failed to load and init fragment shader.\n");
+            PRINT("Failed to load and init fragment shader.\n");
             return false;
         }
 
@@ -702,8 +726,11 @@ bool R_GL_Shader_InitAll(const char *base_path)
             if(geometry)
                 glDeleteShader(geometry);
             glDeleteShader(fragment);
-            fprintf(stderr, "Failed to make shader program %d of %d.\n",
+
+            char buff[512];
+            pf_snprintf(buff, sizeof(buff), "Failed to make shader program %d of %d.\n",
                 i + 1, (int)ARR_SIZE(s_shaders));
+            PRINT(buff);
             return false;
         }
 

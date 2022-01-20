@@ -42,6 +42,7 @@
 #include "../game/public/game.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
+#include "../lib/public/mem.h"
 #include "../lib/public/queue.h"
 #include "../lib/public/pf_string.h"
 #include "../phys/public/collision.h"
@@ -586,8 +587,8 @@ static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 
-    vec2_t corners_buff[4 * vec_size(path)];
-    vec3_t colors_buff[vec_size(path)];
+    STALLOC(vec2_t, corners_buff, 4 * vec_size(path));
+    STALLOC(vec3_t, colors_buff, vec_size(path));
 
     vec2_t *corners_base = corners_buff;
     vec3_t *colors_base = colors_buff; 
@@ -856,17 +857,17 @@ static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, in
 {
     for(int i = 0; i < ntds; i++) {
     
-        struct tile_desc curr = tds[i];
+        volatile struct tile_desc curr = tds[i];
         struct nav_chunk *chunk = &priv->chunks[layer]
                                                [IDX(curr.chunk_r, priv->width, curr.chunk_c)];
 
         assert(ref_delta < 0 ? chunk->blockers[curr.tile_r][curr.tile_c] >= -ref_delta : true);
-        assert(ref_delta > 0 ? chunk->blockers[curr.tile_r][curr.tile_c] < (256 - ref_delta) : true);
+        assert(ref_delta > 0 ? chunk->blockers[curr.tile_r][curr.tile_c] < (16384 - ref_delta) : true);
 
         int prev_val = chunk->blockers[curr.tile_r][curr.tile_c];
         chunk->blockers[curr.tile_r][curr.tile_c] += ref_delta;
         chunk->factions[faction_id][curr.tile_r][curr.tile_c] += ref_delta;
-        assert(chunk->blockers[curr.tile_r][curr.tile_c] < 255);
+        assert(chunk->blockers[curr.tile_r][curr.tile_c] < 16383);
 
         int val = chunk->blockers[curr.tile_r][curr.tile_c];
         if(!!val != !!prev_val) { /* The tile changed states between occupied/non-occupied */
@@ -886,22 +887,22 @@ static void n_update_blockers(struct nav_private *priv, enum nav_layer layer, in
 static void n_update_blockers_circle(struct nav_private *priv, vec2_t xz_pos, float range, 
                                      int faction_id, vec3_t map_pos, int ref_delta)
 {
-    struct tile_desc tds[256];
+    struct tile_desc tds[1024];
     int ntds = M_Tile_AllUnderCircle(n_res(priv), xz_pos, range, map_pos, tds, ARR_SIZE(tds));
     n_update_blockers(priv, NAV_LAYER_GROUND_1X1, faction_id, tds, ntds, ref_delta);
 
-    struct tile_desc outline3x3[256];
+    struct tile_desc outline3x3[1024];
     int noutline3x3 = M_Tile_Contour(ntds, tds, n_res(priv), outline3x3, ARR_SIZE(outline3x3));
     n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, tds, ntds, ref_delta);
     n_update_blockers(priv, NAV_LAYER_GROUND_3X3, faction_id, outline3x3, noutline3x3, ref_delta);
 
-    struct tile_desc outline5x5[256];
+    struct tile_desc outline5x5[1024];
     int noutline5x5 = M_Tile_Contour(noutline3x3, outline3x3, n_res(priv), outline5x5, ARR_SIZE(outline5x5));
     n_update_blockers(priv, NAV_LAYER_GROUND_5X5, faction_id, tds, ntds, ref_delta);
     n_update_blockers(priv, NAV_LAYER_GROUND_5X5, faction_id, outline3x3, noutline3x3, ref_delta);
     n_update_blockers(priv, NAV_LAYER_GROUND_5X5, faction_id, outline5x5, noutline5x5, ref_delta);
 
-    struct tile_desc outline7x7[256];
+    struct tile_desc outline7x7[1024];
     int noutline7x7 = M_Tile_Contour(noutline5x5, outline5x5, n_res(priv), outline7x7, ARR_SIZE(outline7x7));
     n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, tds, ntds, ref_delta);
     n_update_blockers(priv, NAV_LAYER_GROUND_7X7, faction_id, outline3x3, noutline3x3, ref_delta);
@@ -962,9 +963,16 @@ int n_closest_island_tiles(const struct nav_private *priv,
     queue_td_init(&frontier, 1024);
     queue_td_push(&frontier, &target);
 
-    bool visited[res.chunk_h][res.chunk_w][res.tile_h][res.tile_w];
-    memset(visited, 0, sizeof(visited));
-    visited[target.chunk_r][target.chunk_c][target.tile_r][target.tile_c] = true;
+    const size_t count = res.chunk_h * res.chunk_w * res.tile_h * res.tile_w;
+    STALLOC(bool, visited, count);
+    memset(visited, 0, count);
+
+    const size_t stride_a = res.chunk_h * res.chunk_w * res.tile_h;
+    const size_t stride_b = res.chunk_h * res.chunk_w;
+    const size_t stride_c = res.chunk_h;
+
+    visited[target.chunk_r * stride_a + target.chunk_c * stride_b 
+          + target.tile_r  * stride_c + target.tile_c] = true;
 
     int ret = 0;
     int first_mh_dist = -1;
@@ -991,7 +999,8 @@ int n_closest_island_tiles(const struct nav_private *priv,
             const struct nav_chunk *chunk = &priv->chunks[layer]
                                                          [IDX(neighb.chunk_r, priv->width, neighb.chunk_c)];
 
-            if(visited[neighb.chunk_r][neighb.chunk_c][neighb.tile_r][neighb.tile_c])
+            if(visited[neighb.chunk_r * stride_a + neighb.chunk_c * stride_b
+                     + neighb.tile_r  * stride_c + neighb.tile_c])
                 continue;
 
             bool skip = (chunk->islands[neighb.tile_r][neighb.tile_c] != global_iid);
@@ -1014,7 +1023,8 @@ int n_closest_island_tiles(const struct nav_private *priv,
                     goto done;
             }
 
-            visited[neighb.chunk_r][neighb.chunk_c][neighb.tile_r][neighb.tile_c] = true;
+            visited[neighb.chunk_r * stride_a + neighb.chunk_c * stride_b
+                  + neighb.tile_r  * stride_c + neighb.tile_c];
             queue_td_push(&frontier, &neighb);
         }
     }
@@ -1300,7 +1310,7 @@ static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t m
 }
 
 bool n_closest_adjacent_pos(void *nav_private, enum nav_layer layer, vec3_t map_pos, vec2_t xz_src, 
-                            size_t ntiles, const struct tile_desc tds[static ntiles], vec2_t *out)
+                            size_t ntiles, const struct tile_desc tds[], vec2_t *out)
 {
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
@@ -1348,7 +1358,7 @@ bool n_closest_adjacent_pos(void *nav_private, enum nav_layer layer, vec3_t map_
 }
 
 bool n_objects_adjacent(void *nav_private, vec3_t map_pos, const struct entity *ent, 
-                        size_t ntiles, const struct tile_desc tds[static ntiles])
+                        size_t ntiles, const struct tile_desc tds[])
 {
     assert(Sched_UsingBigStack());
 
@@ -1977,7 +1987,7 @@ void N_RenderPathFlowField(void *nav_private, const struct map *map,
             square_x - square_x_len / 2.0f,
             square_z + square_z_len / 2.0f
         };
-        dirs_buff[r * FIELD_RES_C + c] = g_flow_dir_lookup[ff->field[r][c].dir_idx];
+        dirs_buff[r * FIELD_RES_C + c] = N_FlowDir(ff->field[r][c].dir_idx);
     }}
 
     size_t count = FIELD_RES_R * FIELD_RES_C;
@@ -2095,7 +2105,7 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map, mat4x4_t *
             square_x - square_x_len / 2.0f,
             square_z + square_z_len / 2.0f
         };
-        dirs_buff[r * FIELD_RES_C + c] = g_flow_dir_lookup[ff->field[r][c].dir_idx];
+        dirs_buff[r * FIELD_RES_C + c] = N_FlowDir(ff->field[r][c].dir_idx);
 
         *corners_base++ = (vec2_t){square_x, square_z};
         *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
@@ -2169,7 +2179,7 @@ void N_RenderSurroundField(void *nav_private, const struct map *map, mat4x4_t *c
             square_x - square_x_len / 2.0f,
             square_z + square_z_len / 2.0f
         };
-        dirs_buff[r * FIELD_RES_C + c] = g_flow_dir_lookup[ff->field[r][c].dir_idx];
+        dirs_buff[r * FIELD_RES_C + c] = N_FlowDir(ff->field[r][c].dir_idx);
     }}
 
     size_t count = FIELD_RES_R * FIELD_RES_C;
@@ -2605,7 +2615,7 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
 ff_found:
     assert(ff);
     dir_idx = ff->field[tile.tile_r][tile.tile_c].dir_idx;
-    return g_flow_dir_lookup[dir_idx];
+    return N_FlowDir(dir_idx);
 }
 
 vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_layer layer, 
@@ -2688,7 +2698,7 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
 
 ff_found:
     dir_idx = pff->field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
-    return g_flow_dir_lookup[dir_idx];
+    return N_FlowDir(dir_idx);
 }
 
 vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_layer layer, 
@@ -2767,7 +2777,7 @@ vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_la
 
 ff_found:
     dir_idx = pff->field[curr_tile.tile_r][curr_tile.tile_c].dir_idx;
-    return g_flow_dir_lookup[dir_idx];
+    return N_FlowDir(dir_idx);
 }
 
 bool N_HasEntityLOS(vec2_t curr_pos, const struct entity *ent, void *nav_private, 
@@ -2787,7 +2797,7 @@ bool N_HasEntityLOS(vec2_t curr_pos, const struct entity *ent, void *nav_private
         curr_pos.x, curr_pos.z
     };
 
-    struct tile_desc tds[(int)ceil(sqrt(pow(FIELD_RES_R, 2) + pow(FIELD_RES_C, 2)))];
+    STALLOC(struct tile_desc, tds, (int)ceil(sqrt(pow(FIELD_RES_R, 2) + pow(FIELD_RES_C, 2))));
     size_t ntds = M_Tile_LineSupercoverTilesSorted(res, map_pos, line, tds, ARR_SIZE(tds));
 
     for(int i = 0; i < ntds; i++) {
@@ -3150,7 +3160,7 @@ bool N_PortalReachableFromTile(const struct portal *port, struct coord tile, con
 }
 
 int N_GridNeighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct coord coord, 
-                     struct coord out_neighbours[static 8], float out_costs[static 8])
+                     struct coord out_neighbours[], float out_costs[])
 {
     int ret = 0;
 
@@ -3359,9 +3369,9 @@ uint16_t N_ClosestPathableLocalIsland(const struct nav_private *priv, const stru
     queue_td_init(&frontier, 1024);
     queue_td_push(&frontier, &target);
 
-    bool visited[res.tile_h][res.tile_w];
-    memset(visited, 0, sizeof(visited));
-    visited[target.tile_r][target.tile_c] = true;
+    STALLOC(bool, visited, res.tile_h * res.tile_w);
+    memset(visited, 0, res.tile_h * res.tile_w);
+    visited[target.tile_r * res.tile_h + target.tile_c] = true;
 
     uint16_t ret = ISLAND_NONE;
     while(queue_size(frontier) > 0) {
@@ -3385,7 +3395,7 @@ uint16_t N_ClosestPathableLocalIsland(const struct nav_private *priv, const stru
             if(neighb.chunk_r != target.chunk_r || neighb.chunk_c != target.chunk_c)
                 continue;
 
-            if(visited[neighb.tile_r][neighb.tile_c])
+            if(visited[neighb.tile_r * res.tile_h + neighb.tile_c])
                 continue;
 
             uint16_t curr = chunk->local_islands[neighb.tile_r][neighb.tile_c];
@@ -3394,7 +3404,7 @@ uint16_t N_ClosestPathableLocalIsland(const struct nav_private *priv, const stru
                 goto done;
             }
 
-            visited[neighb.tile_r][neighb.tile_c] = true;
+            visited[neighb.tile_r * res.tile_h + neighb.tile_c] = true;
             queue_td_push(&frontier, &neighb);
         }
     }

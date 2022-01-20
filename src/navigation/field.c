@@ -40,6 +40,7 @@
 #include "../map/public/tile.h"
 #include "../game/public/game.h"
 #include "../lib/public/pqueue.h"
+#include "../lib/public/mem.h"
 
 #include <string.h>
 #include <assert.h>
@@ -63,21 +64,6 @@ struct box_xz{
     float z_min, z_max;
 };
 
-/*****************************************************************************/
-/* GLOBAL VARIABLES                                                          */
-/*****************************************************************************/
-
-vec2_t g_flow_dir_lookup[9] = {
-    [FD_NONE] = (vec2_t){  0.0f,               0.0f              },
-    [FD_NW]   = (vec2_t){  1.0f / sqrt(2.0f), -1.0f / sqrt(2.0f) },
-    [FD_N]    = (vec2_t){  0.0f,              -1.0f              },
-    [FD_NE]   = (vec2_t){ -1.0f / sqrt(2.0f), -1.0f / sqrt(2.0f) },
-    [FD_W]    = (vec2_t){  1.0f,               0.0f              },
-    [FD_E]    = (vec2_t){ -1.0f,               0.0f              },
-    [FD_SW]   = (vec2_t){  1.0f / sqrt(2.0f),  1.0f / sqrt(2.0f) },
-    [FD_S]    = (vec2_t){  0.0f,               1.0f              },
-    [FD_SE]   = (vec2_t){ -1.0f / sqrt(2.0f),  1.0f / sqrt(2.0f) },
-};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -298,7 +284,7 @@ static int field_neighbours_grid_los(
 static enum flow_dir field_flow_dir(
     const int    rdim,
     const int    cdim,
-    const float  integration_field[rdim][cdim], 
+    const float  integration_field[], 
     struct coord coord)
 {
     float min_cost = INFINITY;
@@ -306,16 +292,16 @@ static enum flow_dir field_flow_dir(
     const int c = coord.c;
 
     if(r > 0)
-        min_cost = MIN(min_cost, integration_field[r-1][c]);
+        min_cost = MIN(min_cost, integration_field[(r-1) * rdim + c]);
 
     if(r < (rdim-1))
-        min_cost = MIN(min_cost, integration_field[r+1][c]);
+        min_cost = MIN(min_cost, integration_field[(r+1) * rdim + c]);
 
     if(c > 0)
-        min_cost = MIN(min_cost, integration_field[r][c-1]);
+        min_cost = MIN(min_cost, integration_field[r * rdim + (c-1)]);
 
     if(c < (cdim-1))
-        min_cost = MIN(min_cost, integration_field[r][c+1]);
+        min_cost = MIN(min_cost, integration_field[r * rdim + (c + 1)]);
 
     /* Diagonal directions are allowed only when _both_ the side 
      * tiles sharing an edge with the corner tile are passable. 
@@ -323,51 +309,51 @@ static enum flow_dir field_flow_dir(
      * to move from a passable region to an impassable one. */
 
     if(r > 0 && c > 0
-    && integration_field[r-1][c] < INFINITY
-    && integration_field[r][c-1] < INFINITY)
-        min_cost = MIN(min_cost, integration_field[r-1][c-1]);
+    && integration_field[(r-1) * rdim + c] < INFINITY
+    && integration_field[r * rdim + (c-1)] < INFINITY)
+        min_cost = MIN(min_cost, integration_field[(r-1) * rdim + (c-1)]);
 
     if(r > 0 && c < (cdim-1)
-    && integration_field[r-1][c] < INFINITY
-    && integration_field[r][c+1] < INFINITY)
-        min_cost = MIN(min_cost, integration_field[r-1][c+1]);
+    && integration_field[(r-1) * rdim + c] < INFINITY
+    && integration_field[r * rdim + (c + 1)] < INFINITY)
+        min_cost = MIN(min_cost, integration_field[(r-1) * rdim + (c + 1)]);
 
     if(r < (rdim-1) && c > 0
-    && integration_field[r+1][c] < INFINITY
-    && integration_field[r][c-1] < INFINITY)
-        min_cost = MIN(min_cost, integration_field[r+1][c-1]);
+    && integration_field[(r+1) * rdim + c] < INFINITY
+    && integration_field[r * rdim + (c-1)] < INFINITY)
+        min_cost = MIN(min_cost, integration_field[(r+1) * rdim + (c-1)]);
 
     if(r < (rdim-1) && c < (cdim-1)
-    && integration_field[r+1][c] < INFINITY
-    && integration_field[r][c+1] < INFINITY)
-        min_cost = MIN(min_cost, integration_field[r+1][c+1]);
+    && integration_field[(r+1) * rdim + c] < INFINITY
+    && integration_field[r * rdim + (c + 1)] < INFINITY)
+        min_cost = MIN(min_cost, integration_field[(r+1) * rdim + (c+1)]);
 
     assert(min_cost < INFINITY);
 
     /* Prioritize the cardinal directions over the diagonal ones */
     if(r > 0 
-    && integration_field[r-1][c] == min_cost)
+    && integration_field[(r-1) * rdim + c] == min_cost)
         return FD_N; 
     else if(r < (rdim-1) 
-    && integration_field[r+1][c] == min_cost)
+    && integration_field[(r+1) * rdim + c] == min_cost)
         return FD_S;
     else if(c < (cdim-1) 
-    && integration_field[r][c+1] == min_cost)
+    && integration_field[r * rdim + (c+1)] == min_cost)
         return FD_E;
     else if(c > 0 
-    && integration_field[r][c-1] == min_cost)
+    && integration_field[r * rdim + (c-1)] == min_cost)
         return FD_W;
     else if(r > 0 && c > 0 
-    && integration_field[r-1][c-1] == min_cost)
+    && integration_field[(r-1) * rdim + (c-1)] == min_cost)
         return FD_NW; 
     else if(r > 0 && c < (cdim-1) 
-    && integration_field[r-1][c+1] == min_cost)
+    && integration_field[(r-1) * rdim + (c+1)] == min_cost)
         return FD_NE;
     else if(r < (rdim-1) && c > 0 
-    && integration_field[r+1][c-1] == min_cost)
+    && integration_field[(r+1) * rdim + (c-1)] == min_cost)
         return FD_SW;
     else if(r < (rdim-1) && c < (rdim-1) 
-    && integration_field[r+1][c+1] == min_cost)
+    && integration_field[(r+1) * rdim + (c+1)] == min_cost)
         return FD_SE;
     else {
         assert(0);
@@ -521,7 +507,7 @@ static void field_build_integration_region(
     struct tile_desc          base,
     int                       rdim,
     int                       cdim,
-    float                     inout[rdim][cdim])
+    float                     inout[])
 {
     struct map_resolution res = {
         priv->width, priv->height,
@@ -545,7 +531,7 @@ static void field_build_integration_region(
             assert(dr >= 0 && dr < rdim);
             assert(dc >= 0 && dc < cdim);
 
-            float total_cost = inout[dr][dc] + neighbour_costs[i];
+            float total_cost = inout[dr * rdim + dc] + neighbour_costs[i];
 
             int neighb_dr, neighb_dc;
             M_Tile_Distance(res, &base, &neighbours[i], &neighb_dr, &neighb_dc);
@@ -556,9 +542,9 @@ static void field_build_integration_region(
 
             assert(manhattan_dist((struct coord){dr, dc}, (struct coord){neighb_dr, neighb_dc}) == 1);
 
-            if(total_cost < inout[neighb_dr][neighb_dc]) {
+            if(total_cost < inout[neighb_dr * rdim + neighb_dc]) {
 
-                inout[neighb_dr][neighb_dc] = total_cost;
+                inout[neighb_dr * rdim + neighb_dc] = total_cost;
                 if(!pq_td_contains(frontier, field_compare_tds, neighbours[i]))
                     pq_td_push(frontier, total_cost, neighbours[i]);
             }
@@ -634,7 +620,7 @@ static void field_build_flow_region(
     int                cdim, 
     int                roff,
     int                coff,
-    float              intf[rdim][cdim], 
+    float              intf[], 
     struct flow_field *inout_flow)
 {
     for(int r = 0; r < MIN(FIELD_RES_R, rdim); r++) {
@@ -643,10 +629,10 @@ static void field_build_flow_region(
         int infr = r + roff;
         int infc = c + coff;
 
-        if(intf[infr][infc] == INFINITY)
+        if(intf[infr * rdim + infc] == INFINITY)
             continue;
 
-        if(intf[infr][infc] == 0.0f) {
+        if(intf[infr * rdim + infc] == 0.0f) {
 
             inout_flow->field[r][c].dir_idx = FD_NONE;
             continue;
@@ -953,11 +939,11 @@ static size_t field_enemies_initial_frontier(
     float xlen = bounds.x_max - bounds.x_min;
     float zlen = bounds.z_max - bounds.z_min;
 
-    struct entity *ents[MAX_ENTS_PER_CHUNK];
+    STALLOC(struct entity*, ents, MAX_ENTS_PER_CHUNK);
     size_t num_ents = G_Pos_EntsInRect(
         (vec2_t){bounds.x_min - xlen/2.0f - SEARCH_BUFFER, bounds.z_min - zlen/2.0f - SEARCH_BUFFER},
         (vec2_t){bounds.x_max + xlen/2.0f + SEARCH_BUFFER, bounds.z_max + zlen/2.0f + SEARCH_BUFFER},
-        ents, ARR_SIZE(ents)
+        ents, MAX_ENTS_PER_CHUNK
     );
 
     struct map_resolution res = {
@@ -965,8 +951,8 @@ static size_t field_enemies_initial_frontier(
         FIELD_RES_C, FIELD_RES_R
     };
 
-    bool has_enemy[rdim][cdim];
-    memset(has_enemy, 0, sizeof(has_enemy));
+    STALLOC(bool, has_enemy, rdim * cdim);
+    memset(has_enemy, 0, sizeof(bool) * rdim * cdim);
 
     for(int i = 0; i < num_ents; i++) {
     
@@ -1008,7 +994,7 @@ static size_t field_enemies_initial_frontier(
                 continue;
             if(dc < 0 || dc >= cdim)
                 continue;
-            has_enemy[dr][dc] = true;
+            has_enemy[dr * rdim + dc] = true;
         }
     }
 
@@ -1018,7 +1004,7 @@ static size_t field_enemies_initial_frontier(
         
         if(ret == maxout)
             return ret;
-        if(!has_enemy[r][c])
+        if(!has_enemy[r * rdim + c])
             continue;
 
         struct tile_desc td = base;
@@ -1026,6 +1012,7 @@ static size_t field_enemies_initial_frontier(
         assert(status);
         out[ret++] = td;
     }}
+
     return ret;
 }
 
@@ -1227,10 +1214,10 @@ static void field_update_enemies(
     const int rdim = (priv->height > 1) ? FIELD_RES_R * 2 + (FIELD_RES_R % 2) : FIELD_RES_R;
     const int cdim = (priv->width  > 1) ? FIELD_RES_C * 2 + (FIELD_RES_C % 2) : FIELD_RES_C;
 
-    float integration_field[rdim][cdim];
+    STALLOC(float, integration_field, rdim * cdim);
     for(int r = 0; r < rdim; r++) {
     for(int c = 0; c < cdim; c++) {
-        integration_field[r][c] = INFINITY;
+        integration_field[r * rdim + c] = INFINITY;
     }}
 
     struct tile_desc base = (struct tile_desc){
@@ -1240,7 +1227,7 @@ static void field_update_enemies(
         .tile_c  = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0,
     };
 
-    struct tile_desc init_frontier[rdim * cdim];
+    STALLOC(struct tile_desc, init_frontier, rdim * cdim);
     size_t ninit = field_enemies_initial_frontier(&target, priv, base, rdim, cdim,
         layer, init_frontier, ARR_SIZE(init_frontier));
 
@@ -1254,7 +1241,7 @@ static void field_update_enemies(
         assert(dc >= 0 && dc < cdim);
 
         pq_td_push(&frontier, 0.0f, curr); 
-        integration_field[dr][dc] = 0.0f;
+        integration_field[dr * rdim + dc] = 0.0f;
     }
 
     inout_flow->target = (struct field_target){
@@ -1293,10 +1280,10 @@ static void field_update_entity(
     const int rdim = (priv->height > 1) ? FIELD_RES_R * 2 + (FIELD_RES_R % 2) : FIELD_RES_R;
     const int cdim = (priv->width  > 1) ? FIELD_RES_C * 2 + (FIELD_RES_C % 2) : FIELD_RES_C;
 
-    float integration_field[rdim][cdim];
+    STALLOC(float, integration_field, rdim * cdim);
     for(int r = 0; r < rdim; r++) {
     for(int c = 0; c < cdim; c++) {
-        integration_field[r][c] = INFINITY;
+        integration_field[r * rdim + c] = INFINITY;
     }}
 
     struct tile_desc base = (struct tile_desc){
@@ -1306,7 +1293,7 @@ static void field_update_entity(
         .tile_c  = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0,
     };
 
-    struct tile_desc init_frontier[rdim * cdim];
+    STALLOC(struct tile_desc, init_frontier, rdim * cdim);
     size_t ninit = field_entity_initial_frontier(&target, priv, base, rdim, cdim,
         layer, init_frontier, ARR_SIZE(init_frontier));
 
@@ -1320,7 +1307,7 @@ static void field_update_entity(
         assert(dc >= 0 && dc < cdim);
 
         pq_td_push(&frontier, 0.0f, curr); 
-        integration_field[dr][dc] = 0.0f;
+        integration_field[dr * rdim + dc] = 0.0f;
     }
 
     inout_flow->target = (struct field_target){
@@ -1776,5 +1763,21 @@ void N_FlowFieldUpdateIslandToNearest(
     field_fixup(inout_flow->target, integration_field, inout_flow, chunk);
 
     pq_coord_destroy(&frontier);
+}
+
+vec2_t N_FlowDir(enum flow_dir dir)
+{
+    static vec2_t s_flow_dir_lookup[9] = {0};
+    s_flow_dir_lookup[FD_NONE]  = (vec2_t){0.0f,               0.0f};
+    s_flow_dir_lookup[FD_NW]    = (vec2_t){1.0f / sqrt(2.0f), -1.0f / sqrt(2.0f)};
+    s_flow_dir_lookup[FD_N]     = (vec2_t){0.0f,              -1.0f};
+    s_flow_dir_lookup[FD_NE]    = (vec2_t){ -1.0f / sqrt(2.0f), -1.0f / sqrt(2.0f) };
+    s_flow_dir_lookup[FD_W]     = (vec2_t){ 1.0f,               0.0f };
+    s_flow_dir_lookup[FD_E]     = (vec2_t){ -1.0f,               0.0f };
+    s_flow_dir_lookup[FD_SW]    = (vec2_t){ 1.0f / sqrt(2.0f),  1.0f / sqrt(2.0f) };
+    s_flow_dir_lookup[FD_S]     = (vec2_t){ 0.0f,               1.0f };
+    s_flow_dir_lookup[FD_SE]    = (vec2_t){ -1.0f / sqrt(2.0f),  1.0f / sqrt(2.0f) };
+
+    return s_flow_dir_lookup[dir];
 }
 

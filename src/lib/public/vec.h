@@ -114,7 +114,7 @@
         if(vec->capacity >= new_cap)                                                            \
             return true;                                                                        \
                                                                                                 \
-        type *new_array = vec->vrealloc(vec->array, new_cap * sizeof(type));                    \
+        type *new_array = (type*)vec->vrealloc(vec->array, new_cap * sizeof(type));             \
         if(!new_array)                                                                          \
             return false;                                                                       \
                                                                                                 \

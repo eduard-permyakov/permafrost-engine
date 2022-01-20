@@ -739,7 +739,7 @@ static unpickle_func_t s_ext_op_dispatch_table[256] = {
     [PF_RANGE] = op_ext_range,
     [PF_SLICE] = op_ext_slice,
     [PF_STATMETHOD] = op_ext_staticmethod,
-    [PF_BUFFER] op_ext_buffer,
+    [PF_BUFFER] = op_ext_buffer,
     [PF_MEMVIEW] = op_ext_memview,
     [PF_PROPERTY] = op_ext_property,
     [PF_ENUMERATE] = op_ext_enumerate,
@@ -1476,7 +1476,8 @@ static void create_builtin_subclasses(void)
 
 static PyObject *qualname_new_ref(const char *qualname)
 {
-    char copy[strlen(qualname) + 1];
+    //char copy[strlen(qualname) + 1];
+    STALLOC(char, copy, strlen(qualname) + 1);
     strcpy(copy, qualname);
 
     const char *modname = copy;
@@ -4900,7 +4901,8 @@ static void del_extra_attrs(PyObject *obj, PyObject **attrs_base, size_t npairs)
     Py_ssize_t pos = 0;
 
     size_t ndel = 0;
-    PyObject *todel[PyDict_Size(ndw_attrs)];
+    //PyObject *todel[PyDict_Size(ndw_attrs)];
+    STALLOC(PyObject*, todel, PyDict_Size(ndw_attrs));
 
     while(PyDict_Next(ndw_attrs, &pos, &key, &value)) {
 

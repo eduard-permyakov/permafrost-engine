@@ -50,6 +50,9 @@
 
 #include <SDL.h>
 #include <inttypes.h>
+#ifdef _MSC_VER
+#include <windows.h>
+#endif
 
 
 enum taskstate{
@@ -62,9 +65,19 @@ enum taskstate{
     TASK_STATE_ZOMBIE,
 };
 
-#if defined(__x86_64__)
+#ifdef _MSC_VER
+#define INT128(_name) uint64_t _name[2]
+#else
+#define INT128(_name) __int128 _name
+#endif
+
+#if defined(__x86_64__) || defined(_WIN64)
 
 #if defined(_WIN32)
+
+#ifdef _MSC_VER
+__pragma(pack(push, 16))
+#endif
 
 struct context{
     uint64_t rbx;
@@ -79,17 +92,22 @@ struct context{
     uint32_t mxcsr;
     uint16_t fpucw;
     uint16_t __pad0;
-    __int128 xmm6;
-    __int128 xmm7;
-    __int128 xmm8;
-    __int128 xmm9;
-    __int128 xmm10;
-    __int128 xmm11;
-    __int128 xmm12;
-    __int128 xmm13;
-    __int128 xmm14;
-    __int128 xmm15;
-} __attribute__((packed, aligned(16)));
+    INT128(xmm6);
+    INT128(xmm7);
+    INT128(xmm8);
+    INT128(xmm9);
+    INT128(xmm10);
+    INT128(xmm11);
+    INT128(xmm12);
+    INT128(xmm13);
+    INT128(xmm14);
+    INT128(xmm15);
+} 
+#ifdef _MSC_VER
+__pragma(pack(pop));
+#else
+__attribute__((packed, aligned(16)));
+#endif
 
 #else // System V ABI
 
@@ -117,9 +135,13 @@ enum{
     _SCHED_REQ_RUN_SYNC,
 };
 
+#ifdef _MSC_VER
+__pragma(pack(push, 16))
+#endif
+
 struct task{
-    enum taskstate state;
     struct context ctx;
+    enum taskstate state;
     int            prio;
     uint32_t       tid;
     uint32_t       parent_tid;
@@ -134,7 +156,12 @@ struct task{
     struct task   *prev, *next;
     void          *earg;
     void         (*erelease)(void*);
+    char          __pad[8];
 };
+
+#ifdef _MSC_VER
+__pragma(pack(pop));
+#endif
 
 #define MAX_TASKS               (8192)
 #define MAX_WORKER_THREADS      (64)
@@ -155,7 +182,7 @@ KHASH_MAP_INIT_INT(tqueue, queue_tid_t)
 
 uint64_t    sched_switch_ctx(struct context *save, struct context *restore, uint64_t retval, void *arg);
 void        sched_task_exit_trampoline(void);
-static void sched_task_exit(struct result ret);
+void        sched_task_exit(struct result ret);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -220,9 +247,14 @@ static enum simstate    s_prev_ss;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(_WIN64)
 
 #if defined(_WIN32)
+
+#if defined(_MSC_VER)
+/* No inline assembly support for x86_64. The implementation
+ * is in a separate assembly file. */
+#else
 
 __asm__(
 ".text                                          \n"
@@ -298,6 +330,8 @@ __asm__(
 "   jmp sched_task_exit                         \n"
 );
 
+#endif // !_MSC_VER
+
 #else
 
 __asm__(
@@ -343,7 +377,7 @@ __asm__(
 
 __asm__(
 ".text                                          \n"
-"                                               \n"
+"                                                \n"
 ".type sched_task_exit_trampoline, @function    \n"
 "                                               \n"
 "# (%rax) - low 64 bits of task result          \n"
@@ -415,10 +449,20 @@ static void sched_init_ctx(struct task *task, void *code)
                     | (((uint32_t)(0x0  & 0x1 )) << 6 );
 }
 
-__attribute__((always_inline)) static inline uint64_t sched_get_sp(void)
+#ifdef _MSC_VER
+__forceinline
+#else
+__attribute__((always_inline))
+#endif
+static inline uint64_t sched_get_sp(void)
 {
     uint64_t sp;
+#ifdef _MSC_VER
+    sp = 0;
+    //__asm { mov sp, rsp }
+#else
     __asm__("mov %%rsp, %0" : "=rm" (sp));
+#endif
     return sp;
 }
 
@@ -430,10 +474,17 @@ static inline uint64_t sched_task_get_sp(const struct task *task)
 /* The return address queries are only valid when the 
  * code is compiled with -fno-omit-framepointer.
  */
-__attribute__((always_inline)) static inline uint64_t sched_get_retaddr(void)
+#ifdef _MSC_VER
+__forceinline
+#else
+__attribute__((always_inline)) 
+#endif
+static inline uint64_t sched_get_retaddr(void)
 {
     uint64_t rbp;
+#ifndef _MSC_VER
     __asm__("mov %%rbp, %0" : "=rm" (rbp));
+#endif
     return *(((uint64_t*)(rbp)) + 1);
 }
 
@@ -442,12 +493,21 @@ static inline uint64_t sched_task_get_retaddr(const struct task *task)
     return *(((uint64_t*)(task->ctx.rbp)) + 1);
 }
 
-__attribute__((always_inline)) static inline void sched_print_backtrace(void)
+#ifdef _MSC_VER
+__forceinline
+#else
+__attribute__((always_inline)) 
+#endif
+static inline void sched_print_backtrace(void)
 {
     uint64_t rip, rbp, retaddr;
 
+#ifdef _MSC_VER
+    // TODO FIXME
+#else
     __asm__("lea 0x0(%%rip), %0\n" : "=rm" (rip));
     __asm__("mov %%rbp, %0" : "=rm" (rbp));
+#endif
 
     printf("#0  0x%016" PRIx64 "\n", rip);
 
@@ -556,7 +616,10 @@ static void sched_reactivate(struct task *task)
     SDL_UnlockMutex(s_ready_lock);
 }
 
-__attribute__((used)) static void sched_task_exit(struct result ret)
+#ifndef _MSC_VER
+__attribute__((used)) 
+#endif
+void sched_task_exit(struct result ret)
 {
     uint32_t tid = sched_curr_thread_tid();
     struct task *task = &s_tasks[tid - 1];

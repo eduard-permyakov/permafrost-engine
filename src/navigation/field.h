@@ -110,7 +110,7 @@ enum flow_dir{
     FD_SE
 };
 
-extern vec2_t g_flow_dir_lookup[];
+vec2_t         N_FlowDir(enum flow_dir dir);
 
 /* ------------------------------------------------------------------------
  * Get the unique flow field ID for the specified parameters.

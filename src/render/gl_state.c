@@ -132,6 +132,8 @@ static bool uval_equal(const struct uval *a, const struct uval *b)
 static void uval_install(GLuint shader_prog, const char *uname, const struct uval *uv)
 {
     GLuint loc = glGetUniformLocation(shader_prog, uname);
+    if(loc == ((GLuint)-1))
+        return;
 
     switch(uv->type) {
     case UTYPE_FLOAT:
@@ -173,6 +175,9 @@ static void uval_array_install(GLuint shader_prog, const char *uname, const stru
 {
     GLuint loc = glGetUniformLocation(shader_prog, uname);
     void *data = mp_buff_entry(&s_buff_pool, av->data)->raw;
+
+    if(loc == ((GLuint)-1))
+        return;
 
     switch(av->itemtype) {
     case UTYPE_FLOAT:
@@ -223,6 +228,9 @@ static void uval_composite_install(GLuint shader_prog, const char *uname, const 
             char uname_full[256];
             pf_snprintf(uname_full, sizeof(uname_full), "%s[%d].%s", uname, i, curr->name);
             GLuint loc = glGetUniformLocation(shader_prog, uname_full);
+
+            if(loc == ((GLuint)-1))
+                continue;
 
             switch(curr->type) {
             case UTYPE_FLOAT:
@@ -371,12 +379,10 @@ bool R_GL_StateGet(const char *uname, struct uval *out)
 void R_GL_StateInstall(const char *uname, GLuint shader_prog)
 {
     khiter_t k = kh_get(puval, s_state_table, uname);
-    if(k == kh_end(s_state_table))
+    if (k == kh_end(s_state_table))
         return;
 
     struct puval *p = &kh_value(s_state_table, k);
-    if(uval_installed(p, shader_prog))
-        return;
 
     if(p->v.type == UTYPE_ARRAY) {
         uval_array_install(shader_prog, uname, &p->av);

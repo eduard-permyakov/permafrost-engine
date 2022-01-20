@@ -176,7 +176,7 @@ union top_face_vbuff{
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static void tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[static 2], bool *out_tri_left)
+static void tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[], bool *out_tri_left)
 {
     switch(tile->type) {
     case TILETYPE_FLAT: {
@@ -317,7 +317,7 @@ static void tile_top_normals(const struct tile *tile, vec3_t out_tri_normals[sta
     PFM_Vec3_Normal(out_tri_normals + 1, out_tri_normals + 1);
 }
 
-static void tile_smooth_normals_corner(struct tile *adj_cw[static 4], struct terrain_vert *inout)
+static void tile_smooth_normals_corner(struct tile *adj_cw[], struct terrain_vert *inout)
 {
     enum{
         ADJ_CW_IDX_TOP_LEFT  = 0,
@@ -361,7 +361,7 @@ static void tile_smooth_normals_corner(struct tile *adj_cw[static 4], struct ter
     inout->normal = norm_total;
 }
 
-static void tile_smooth_normals_edge(struct tile *adj_lrtb[static 4], struct terrain_vert *inout)
+static void tile_smooth_normals_edge(struct tile *adj_lrtb[], struct terrain_vert *inout)
 {
     vec3_t norm_total = {0};
     assert((!!adj_lrtb[0] + !!adj_lrtb[1] + !!adj_lrtb[2] + !!adj_lrtb[3]) <= 2);
@@ -465,7 +465,7 @@ static int arr_indexof(const int *array, size_t size, int elem)
     return -1;
 }
 
-static int arr_min(const int array[static 1], size_t size)
+static int arr_min(const int array[], size_t size)
 {
     int min = array[0];
     for(int i = 1; i < size; i++) {
@@ -1087,13 +1087,13 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct terrai
     struct face back = {
         .nw = (struct terrain_vert) {
             .pos    = top.ne.pos,
-            .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, back.nw.pos.y) },
+            .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, top.ne.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .ne = (struct terrain_vert) {
             .pos    = top.nw.pos,
-            .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, back.ne.pos.y) },
+            .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, top.nw.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, -1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
@@ -1114,13 +1114,13 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct terrai
     struct face front = {
         .nw = (struct terrain_vert) {
             .pos    = top.sw.pos,
-            .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, front.nw.pos.y) },
+            .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, top.sw.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .ne = (struct terrain_vert) {
             .pos    = top.se.pos,
-            .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, front.ne.pos.y) },
+            .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, top.se.pos.y) },
             .normal = (vec3_t) { 0.0f, 0.0f, 1.0f },
             .material_idx  = tile->sides_mat_idx,
         },
@@ -1141,13 +1141,13 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct terrai
     struct face left = {
         .nw = (struct terrain_vert) {
             .pos    = top.nw.pos,
-            .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, left.nw.pos.y) },
+            .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, top.nw.pos.y) },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .ne = (struct terrain_vert) {
             .pos    = top.sw.pos,
-            .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, left.ne.pos.y) },
+            .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, top.sw.pos.y) },
             .normal = (vec3_t) { 1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
@@ -1168,13 +1168,13 @@ void R_TileGetVertices(const struct map *map, struct tile_desc td, struct terrai
     struct face right = {
         .nw = (struct terrain_vert) {
             .pos    = top.se.pos,
-            .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, right.nw.pos.y) },
+            .uv     = (vec2_t) { 0.0f, V_COORD(X_COORDS_PER_TILE, top.se.pos.y) },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },
         .ne = (struct terrain_vert) {
             .pos    = top.ne.pos,
-            .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, right.ne.pos.y) },
+            .uv     = (vec2_t) { 1.0f, V_COORD(X_COORDS_PER_TILE, top.ne.pos.y) },
             .normal = (vec3_t) { -1.0f, 0.0f, 0.0f },
             .material_idx  = tile->sides_mat_idx,
         },

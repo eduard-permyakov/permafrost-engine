@@ -45,6 +45,7 @@
 #include "../pf_math.h"
 #include "../perf.h"
 #include "../sched.h"
+#include "../lib/public/mem.h"
 #include "../lib/public/quadtree.h"
 #include "../lib/public/khash.h"
 #include "../map/public/map.h"
@@ -221,7 +222,7 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, 
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
-    uint32_t ent_ids[maxout];
+    STALLOC(uint32_t, ent_ids, maxout);
     const khash_t(entity) *ents = G_GetAllEntsSet();
 
     int ntotal = qt_ent_inrange_rect(&s_postree, 
@@ -258,7 +259,7 @@ int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **out
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
-    uint32_t ent_ids[maxout];
+    STALLOC(uint32_t, ent_ids, maxout);
     const khash_t(entity) *ents = G_GetAllEntsSet();
     for(int i = 0; i < maxout; i++)
         ent_ids[i] = (uint32_t)-1;

@@ -35,6 +35,7 @@
 
 #include "public/map.h"
 #include "pfchunk.h"
+#include "map_private.h"
 #include "../asset_load.h"
 #include "../render/public/render.h"
 #include "../render/public/render_al.h"
@@ -42,7 +43,7 @@
 #include "../navigation/public/nav.h"
 #include "../game/public/game.h"
 #include "../lib/public/pf_string.h"
-#include "map_private.h"
+#include "../lib/public/mem.h"
 #include "../ui.h"
 
 #include <stdlib.h>
@@ -219,13 +220,13 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     set_minimap_defaults(map);
 
     /* Read materials */
-    char texnames[header->num_materials][256];
+    STALLOC(char, texnames, header->num_materials * 256);
     for(int i = 0; i < header->num_materials; i++) {
         if(i >= MAX_NUM_MATS)
             return false;
-        if(!m_al_read_material(stream, texnames[i]))
+        if(!m_al_read_material(stream, &texnames[i * 256]))
             return false;
-        strcpy(map->texnames[i], texnames[i]);
+        strcpy(map->texnames[i], &texnames[i * 256]);
     }
     map->num_mats = header->num_materials;
 
@@ -240,7 +241,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
         .func = R_GL_MapInit,
         .nargs = 3,
         .args = {
-            R_PushArg(texnames, sizeof(texnames)),
+            R_PushArg(texnames, header->num_materials * 256),
             R_PushArg(&header->num_materials, sizeof(header->num_materials)),
             R_PushArg(&res, sizeof(res)),
         },
@@ -274,7 +275,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
     m_al_patch_adjacency_info(map);
 
     /* Build navigation grid */
-    const struct tile *chunk_tiles[map->width * map->height];
+    STALLOC(const struct tile*, chunk_tiles, map->width * map->height);
 
     for(int r = 0; r < map->height; r++) {
     for(int c = 0; c < map->width; c++) {

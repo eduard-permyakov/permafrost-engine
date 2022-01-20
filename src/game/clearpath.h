@@ -39,6 +39,8 @@
 #include "../pf_math.h"
 #include "../lib/public/vec.h"
 
+#include <stdint.h>
+
 
 #define CLEARPATH_NEIGHBOUR_RADIUS (10.0f)
 /* This is added to the entity's radius so that it will take wider turns 

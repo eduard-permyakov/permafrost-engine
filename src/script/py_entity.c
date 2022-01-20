@@ -1250,7 +1250,8 @@ static int PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, 
 
 static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure)
 {
-    char buff[strlen(self->ent->basedir) + strlen(self->ent->filename) + 2];
+    //char buff[strlen(self->ent->basedir) + strlen(self->ent->filename) + 2];
+    STALLOC(char, buff, strlen(self->ent->basedir) + strlen(self->ent->filename) + 2);
     strcpy(buff, self->ent->basedir);
     strcat(buff, "/");
     strcat(buff, self->ent->filename);
@@ -2498,8 +2499,10 @@ static PyObject *PyBuildableEntity_get_required_resources(PyBuildableEntityObjec
     }
 
     const size_t max = 64;
-    const char *names[max];
-    int amounts[max];
+    //const char *names[max];
+    //int amounts[max];
+    STALLOC(char*, names, max);
+    STALLOC(int, amounts, max);
 
     size_t nreq = G_Building_GetAllRequired(self->super.ent->uid, max, names, amounts);
     PyObject *ret = PyDict_New();

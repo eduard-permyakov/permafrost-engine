@@ -54,6 +54,7 @@
 
 #include <inttypes.h>
 #include <assert.h>
+#include <windows.h>
 
 
 #define MESH_BUFF_SZ        (4*1024*1024)
@@ -267,7 +268,7 @@ static void batch_init_vao(enum batch_type type, GLuint *out, GLuint src_vbo)
             (void*)offsetof(struct anim_vert, joint_indices));
         glEnableVertexAttribArray(4);  
         glVertexAttribIPointer(5, 3, GL_UNSIGNED_BYTE, stride,
-            (void*)offsetof(struct anim_vert, joint_indices) + 3*sizeof(GLubyte));
+            (void*)(offsetof(struct anim_vert, joint_indices) + 3*sizeof(GLubyte)));
         glEnableVertexAttribArray(5);
 
         /* Attribute 6/7 - joint weights */
@@ -275,7 +276,7 @@ static void batch_init_vao(enum batch_type type, GLuint *out, GLuint src_vbo)
             (void*)offsetof(struct anim_vert, weights));
         glEnableVertexAttribArray(6);  
         glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, stride,
-            (void*)offsetof(struct anim_vert, weights) + 3*sizeof(GLfloat));
+            (void*)(offsetof(struct anim_vert, weights) + 3*sizeof(GLfloat)));
         glEnableVertexAttribArray(7);  
 
         /* Attribute 8 - draw ID 
@@ -288,6 +289,7 @@ static void batch_init_vao(enum batch_type type, GLuint *out, GLuint src_vbo)
     }
 
     *out = VAO;
+    glBindVertexArray(0);
 }
 
 static bool batch_alloc_vbo(struct gl_batch *batch)
@@ -360,6 +362,8 @@ static bool batch_append_mesh(struct gl_batch *batch, GLuint VBO)
     }
 
     kh_value(batch->vbo_desc_map, k) = (struct mesh_desc){curr_vbo_idx, vbo_offset};
+
+    GL_ASSERT_OK();
     return true;
 }
 
@@ -401,6 +405,8 @@ static bool batch_append_tex(struct gl_batch *batch, GLuint tid, int idx, struct
     assert(slice_idx >= 0 && slice_idx < 32);
 
     R_GL_Texture_BindArray(&batch->textures[curr_arr_idx].arr, R_GL_Shader_GetCurrActive());
+    assert(glIsTexture(batch->textures[curr_arr_idx].arr.id));
+    assert(glIsTexture(arr->id));
     R_GL_Texture_ArrayCopyElem(&batch->textures[curr_arr_idx].arr, slice_idx, arr, idx);
 
     int status;
@@ -411,6 +417,8 @@ static bool batch_append_tex(struct gl_batch *batch, GLuint tid, int idx, struct
 
     kh_value(batch->tid_desc_map, k) = (struct tex_desc){curr_arr_idx, slice_idx};
     batch->textures[curr_arr_idx].free &= ~(((uint32_t)0x1) << slice_idx);
+
+    GL_ASSERT_OK();
     return true;
 }
 
@@ -436,6 +444,7 @@ static bool batch_append(struct gl_batch *batch, struct render_private *priv)
             goto fail_append_tex;
     }
 
+    GL_ASSERT_OK();
     return true;
 
 fail_append_tex:
@@ -445,6 +454,7 @@ fail_append_tex:
     }while(tex_idx > 0);
     batch_free_mesh(batch, priv->mesh.VBO);
 fail_append_mesh:
+    GL_ASSERT_OK();
     return false;
 }
 
@@ -801,6 +811,7 @@ static void batch_push_stat_attrs(struct gl_batch *batch, const struct ent_stat_
         }
         ninsts += curr->end_idx - curr->start_idx + 1;
     }
+
     size_t begin, end;
     R_GL_RingbufferGetLastRange(batch->attr_ring, &begin, &end);
     assert(end > begin ? (end - begin == 704 * ninsts)
@@ -816,7 +827,7 @@ static void batch_push_stat_attrs(struct gl_batch *batch, const struct ent_stat_
 static void batch_push_stat_attrs_depth(struct gl_batch *batch, const struct ent_stat_rstate *ents,
                                         struct draw_call_desc dcall, struct inst_group_desc *descs)
 {
-    /* The per-instance static attributes have the follwing layout in the buffer:
+    /* The per-instance static attributes have the following layout in the buffer:
      *
      *  +--------------------------------------------------+ <-- base
      *  | mat4x4_t (16 floats)                             | (model matrix)
@@ -831,13 +842,14 @@ static void batch_push_stat_attrs_depth(struct gl_batch *batch, const struct ent
         struct render_private *priv = curr->render_private;
 
         for(int j = curr->start_idx; j <= curr->end_idx; j++) {
-        
+     
             if(i == dcall.start_idx && j == curr->start_idx) {
                 R_GL_RingbufferPush(batch->attr_ring, &ents[j].model, sizeof(mat4x4_t));
             }else{
                 R_GL_RingbufferAppendLast(batch->attr_ring, &ents[j].model, sizeof(mat4x4_t));
             }
         }
+
         ninsts += curr->end_idx - curr->start_idx + 1;
     }
     size_t begin, end;
@@ -1007,6 +1019,7 @@ static void batch_multidraw(struct gl_batch *batch, struct draw_call_desc dcall,
     }
 
     R_GL_RingbufferSyncLast(batch->cmd_ring);
+    GL_ASSERT_OK();
 }
 
 static void batch_do_drawcall_stat(struct gl_batch *batch, const struct ent_stat_rstate *ents,
@@ -1022,6 +1035,7 @@ static void batch_do_drawcall_stat(struct gl_batch *batch, const struct ent_stat
         break;
     default: assert(0);
     }
+
     R_GL_RingbufferBindLast(batch->attr_ring, ATTR_RING_TUNIT, R_GL_Shader_GetCurrActive(), "attrbuff");
 
     GLuint VAO = batch->vbos[dcall.vbo_idx].VAO;
@@ -1033,6 +1047,7 @@ static void batch_do_drawcall_stat(struct gl_batch *batch, const struct ent_stat
         batch_multidraw(batch, dcall, descs);
     }
 
+    glBindVertexArray(0);
     R_GL_RingbufferSyncLast(batch->attr_ring);
 }
 
@@ -1051,7 +1066,9 @@ static void batch_do_drawcall_anim(struct gl_batch *batch, const struct ent_anim
         batch_multidraw(batch, dcall, descs);
     }
 
+    glBindVertexArray(0);
     R_GL_RingbufferSyncLast(batch->attr_ring);
+    GL_ASSERT_OK();
 }
 
 static void batch_render_stat(struct gl_batch *batch, struct ent_stat_rstate *ents, 
@@ -1117,13 +1134,20 @@ static void batch_render_anim_all(vec_ranim_t *ents, bool shadows, enum render_p
         batch_append(s_anim_batch, vec_AT(ents, i).render_private);
     }
     batch_render_anim(s_anim_batch, &vec_AT(ents, 0), nanim);
+    GL_ASSERT_OK();
 }
 
 static void batch_render_stat_all(vec_rstat_t *ents, bool shadows, 
                                   enum render_pass pass, int batch_id)
 {
     struct chunk_batch_desc descs[MAX_BATCHES];
-    size_t nbatches = batch_sort_by_chunk(ents, descs, ARR_SIZE(descs));
+    size_t nbatches = vec_size(ents) > 0 ? 1 : 0;
+    descs[0].start_idx = 0;
+    descs[0].end_idx = vec_size(ents) - 1;
+
+    if(batch_id == 0) {
+        nbatches = batch_sort_by_chunk(ents, descs, ARR_SIZE(descs));
+    }
 
     if(nbatches == 0)
         return;

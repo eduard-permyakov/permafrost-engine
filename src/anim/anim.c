@@ -39,6 +39,7 @@
 #include "anim_ctx.h"
 #include "../entity.h"
 #include "../event.h"
+#include "../perf.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"
 #include "../render/public/render.h"
@@ -214,6 +215,8 @@ void A_Update(void)
 void A_GetRenderState(uint32_t uid, size_t *out_njoints, 
                       mat4x4_t *out_curr_pose, const mat4x4_t **out_inv_bind_pose)
 {
+    PERF_ENTER();
+
     struct anim_ctx *ctx = a_ctx_for_uid(uid);
     const struct anim_data *data = ctx->data;
 
@@ -223,6 +226,8 @@ void A_GetRenderState(uint32_t uid, size_t *out_njoints,
 
     *out_njoints = data->skel.num_joints;
     *out_inv_bind_pose = data->skel.inv_bind_poses;
+
+    PERF_RETURN_VOID();
 }
 
 const struct skeleton *A_GetBindSkeleton(uint32_t uid)

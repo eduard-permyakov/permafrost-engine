@@ -270,7 +270,7 @@ bool G_Resource_SetCursor(uint32_t uid, const char *cursor)
     return true;
 }
 
-int G_Resource_GetAllNames(size_t maxout, const char *out[static maxout])
+int G_Resource_GetAllNames(size_t maxout, const char *out[])
 {
     size_t ret = 0;
 

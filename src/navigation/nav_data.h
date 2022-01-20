@@ -94,7 +94,7 @@ struct nav_chunk{
      * tile by being positioned on it. 'Blocked' tiles are treated 
      * as impassable when computing flow fields. 
      */
-    uint8_t         blockers[FIELD_RES_R][FIELD_RES_C];
+    uint16_t        blockers[FIELD_RES_R][FIELD_RES_C];
     /* Keep a reference count of how many unit of every faction are 
      * currently blocking the corresponding tile. This additional 
      * data allows determine units belonging to which faction are 

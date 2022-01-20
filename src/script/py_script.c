@@ -1044,7 +1044,8 @@ static PyObject *PyPf_prev_frame_perfstats(PyObject *self)
     for(int i = 0; i < nthreads; i++) {
 
         struct perf_info *curr_info = infos[i];
-        PyObject *parents[curr_info->nentries + 1];
+        //PyObject *parents[curr_info->nentries + 1];
+        STALLOC(PyObject*, parents, curr_info->nentries + 1);
 
         PyObject *thread_dict = PyDict_New();
         if(!thread_dict)
@@ -1380,7 +1381,8 @@ static PyObject *PyPf_set_unit_selection(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    uint32_t ents[PyList_GET_SIZE(list)];
+    //uint32_t ents[PyList_GET_SIZE(list)];
+    STALLOC(uint32_t, ents, PyList_GET_SIZE(list));
     size_t nents = 0;
 
     for(int i = 0; i < PyList_GET_SIZE(list); i++) {
@@ -2447,17 +2449,14 @@ static PyObject *PyPf_save_session(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    FILE *file = fopen(str, "w");
-    if(!file) {
+    SDL_RWops *stream = SDL_RWFromFile(str, "w"); /* file will be closed when stream is */
+    if(!stream) {
         char buff[256];
         pf_snprintf(buff, sizeof(buff), "Unable to open file (%s) for writing.\n", str);
 
         PyErr_SetString(PyExc_RuntimeError, buff);
         return NULL;
     }
-
-    SDL_RWops *stream = SDL_RWFromFP(file, true); /* file will be closed when stream is */
-    assert(stream);
 
     PyGC_Collect();
 
@@ -2483,6 +2482,8 @@ static PyObject *PyPf_load_session(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+// TODO: FIXME:
+// this is super not robust
 static bool s_sys_path_add_dir(const char *filename)
 {
     if(strlen(filename) >= 512)
@@ -3105,7 +3106,7 @@ bool S_RunFile(const char *path, int argc, char **argv)
     if(!script)
         return false;
 
-    char *cargv[argc + 1];
+    STALLOC(char*, cargv, argc + 1);
     cargv[0] = (char*)path;
     if(argc) {
         memcpy(cargv + 1, argv, sizeof(*argv) * argc);
@@ -3113,11 +3114,11 @@ bool S_RunFile(const char *path, int argc, char **argv)
 
     /* The directory of the script file won't be automatically added by 'PyRun_SimpleFile'.
      * We add it manually to sys.path ourselves. */
-    if(!s_sys_path_add_dir(path))
+    if (!s_sys_path_add_dir(path))
         goto done;
 
     PyObject *main_module = PyImport_AddModule("__main__"); /* borrowed */
-    if(!main_module)
+    if (!main_module)
         goto done;
     
     PyObject *global_dict = PyModule_GetDict(main_module); /* borrowed */

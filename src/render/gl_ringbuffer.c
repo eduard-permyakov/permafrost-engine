@@ -45,7 +45,7 @@
 #include <assert.h>
 
 /* How many discrete sets of data (guarded by fences) the buffer can hold */
-#define NMAXMARKERS     (16)
+#define NMAXMARKERS     (256)
 #define TIMEOUT_NSEC    (((uint64_t)10) * 1000 * 1000 * 1000)
 
 /* On some hardware persistent mapped buffers are faster. However, they
@@ -140,6 +140,7 @@ static void pmb_init(struct gl_ring *ring)
     glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
     glBufferStorage(GL_TEXTURE_BUFFER, ring->size, NULL, flags);
     ring->user = glMapBufferRange(GL_TEXTURE_BUFFER, 0, ring->size, flags);
+    glBindBuffer(GL_TEXTURE_BUFFER, 0);
 }
 
 static void *pmb_map(struct gl_ring *ring, size_t offset, size_t size)
@@ -156,6 +157,7 @@ static void unsynch_vbo_init(struct gl_ring *ring)
 {
     glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
     glBufferData(GL_TEXTURE_BUFFER, ring->size, NULL, GL_STREAM_DRAW);
+    glBindBuffer(GL_TEXTURE_BUFFER, 0);
 }
 
 static void *unsynch_vbo_map(struct gl_ring *ring, size_t offset, size_t size)
@@ -163,11 +165,14 @@ static void *unsynch_vbo_map(struct gl_ring *ring, size_t offset, size_t size)
     glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
     return glMapBufferRange(GL_TEXTURE_BUFFER, offset, size,
         GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+    glBindBuffer(GL_TEXTURE_BUFFER, 0);
 }
 
 static void unsynch_vbo_unmap(struct gl_ring *ring)
 {
+    glBindBuffer(GL_TEXTURE_BUFFER, ring->VBO);
     glUnmapBuffer(GL_TEXTURE_BUFFER);
+    glBindBuffer(GL_TEXTURE_BUFFER, 0);
 }
 
 /*****************************************************************************/
@@ -214,6 +219,7 @@ struct gl_ring *R_GL_RingbufferInit(size_t size, enum ring_format fmt)
     }else if(fmt == RING_FLOAT) {
         glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, ret->VBO);
     }
+    glBindTexture(GL_TEXTURE_BUFFER, 0);
 
     GL_ASSERT_OK();
     return ret;

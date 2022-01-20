@@ -84,17 +84,17 @@ int inst_attr_base(int draw_id)
     int size = textureSize(attrbuff);
     int inst_offset = (attr_offset > 0) ? (attr_offset + gl_InstanceID) * attr_stride 
                                         : draw_id * attr_stride;
-    return int(mod(attrbuff_offset / 4 + inst_offset, size));
+    return (attrbuff_offset / 4 + inst_offset) % size;
 }
 
 vec4 read_vec4(int base)
 {
     int size = textureSize(attrbuff);
     return vec4(
-        texelFetch(attrbuff, int(mod(base + 0, size))).r,
-        texelFetch(attrbuff, int(mod(base + 1, size))).r,
-        texelFetch(attrbuff, int(mod(base + 2, size))).r,
-        texelFetch(attrbuff, int(mod(base + 3, size))).r
+        texelFetch(attrbuff, (base + 0) % size).r,
+        texelFetch(attrbuff, (base + 1) % size).r,
+        texelFetch(attrbuff, (base + 2) % size).r,
+        texelFetch(attrbuff, (base + 3) % size).r
     );
 }
 

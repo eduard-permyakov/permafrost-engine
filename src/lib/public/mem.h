@@ -39,11 +39,23 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#ifdef _MSC_VER
+#include <malloc.h>
+#endif
+
 #define PF_FREE(...)                                    \
     do{                                                 \
         free((void*)__VA_ARGS__);                       \
         __VA_ARGS__ = (void*)((uintptr_t)0xDEADBEEF);   \
     }while(0)
 
+#endif
+
+#ifdef _MSC_VER
+#define STALLOC(_type, _name, _size)                    \
+    _type *_name = _malloca(sizeof(_type) * (_size))
+#else
+#define STALLOC(_type, _name, _size)                    \
+    _type _name[_size]
 #endif
 

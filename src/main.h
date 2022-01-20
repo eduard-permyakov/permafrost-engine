@@ -78,7 +78,7 @@ void Engine_FlushRenderWorkQueue(void);
 /* Wait for the current batch of render command to finish */
 void Engine_WaitRenderWorkDone(void);
 void Engine_ClearPendingEvents(void);
-bool Engine_GetArg(const char *name, size_t maxout, char out[static maxout]);
+bool Engine_GetArg(const char *name, size_t maxout, char out[]);
 
 #endif
 

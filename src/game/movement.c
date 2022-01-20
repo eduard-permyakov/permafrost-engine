@@ -447,7 +447,7 @@ static void filter_selection_pathable(const vec_pentity_t *in_sel, vec_pentity_t
     }
 }
 
-static void split_into_layers(const vec_pentity_t *sel, vec_pentity_t layer_flocks[static NAV_LAYER_MAX])
+static void split_into_layers(const vec_pentity_t *sel, vec_pentity_t layer_flocks[])
 {
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         vec_pentity_init(layer_flocks + i);
@@ -1262,7 +1262,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
             break;
         }
 
-        struct entity *adjacent[kh_size(flock->ents)];
+        STALLOC(struct entity*, adjacent, kh_size(flock->ents));
         size_t num_adj = adjacent_flock_members(ent, flock, adjacent);
 
         bool done = false;

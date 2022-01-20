@@ -64,7 +64,7 @@
 /*****************************************************************************/
 
 static bool al_read_vertex(SDL_RWops *stream, struct vertex *out, 
-                           char out_weights_line[static MAX_LINE_LEN])
+                           char out_weights_line[])
 {
     char line[MAX_LINE_LEN];
 

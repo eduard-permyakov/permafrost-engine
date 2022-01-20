@@ -42,6 +42,7 @@
 #include "lib/public/attr.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/vec.h"
+#include "lib/public/mem.h"
 #include "lib/public/SDL_vec_rwops.h"
 #include "navigation/public/nav.h"
 #include "game/public/game.h"
@@ -367,7 +368,8 @@ static bool session_push_subsession(const char *script, char *errstr, size_t err
 
     subsession_clear();
 
-    char *argv[s_argc];
+    //char *argv[s_argc];
+    STALLOC(char*, argv, s_argc);
     for(int i = 0; i < s_argc; i++)
         argv[i] = s_argv[i];
 

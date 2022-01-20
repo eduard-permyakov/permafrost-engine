@@ -54,6 +54,7 @@
 #include <math.h>
 #include <assert.h>
 #include <SDL.h>
+#include <windows.h>
 
 
 #define PHYS_HZ         (30)
@@ -231,8 +232,8 @@ static bool phys_enemies(int faction_id, const struct entity *ent)
 static void phys_sweep_test(int front_idx)
 {
     const struct projectile *proj = &vec_AT(&s_front, front_idx);
-    struct entity *near[256];
-    size_t nents = G_Pos_EntsInCircle((vec2_t){proj->pos.x, proj->pos.z}, NEAR_TOLERANCE, near, ARR_SIZE(near));
+    struct entity *nearp[256];
+    size_t nents = G_Pos_EntsInCircle((vec2_t){proj->pos.x, proj->pos.z}, NEAR_TOLERANCE, nearp, ARR_SIZE(nearp));
 
     /* The collision test gets performed every frame (variable FPS) while, 
      * actual projectile motion is performed at fixed frequency of PHYS_HZ. 
@@ -256,7 +257,7 @@ static void phys_sweep_test(int front_idx)
 
     for(int i = 0; i < nents; i++) {
 
-        struct entity *ent = near[i];
+        struct entity *ent = nearp[i];
         /* A projectile does not collide with its' 'parent' */
         if(proj->ent_parent == ent->uid)
             continue;
@@ -383,6 +384,7 @@ static void phys_destroy_render_input(struct render_input *in)
 static void *phys_push_render_input(struct render_input *in)
 {
     struct render_input *ret = R_PushArg(in, sizeof(*in));
+
     if(in->cam_vis_stat.size) {
         ret->cam_vis_stat.array = R_PushArg(
             in->cam_vis_stat.array, 
@@ -392,7 +394,7 @@ static void *phys_push_render_input(struct render_input *in)
     if(in->cam_vis_anim.size) {
         ret->cam_vis_anim.array = R_PushArg(
             in->cam_vis_anim.array, 
-            in->cam_vis_anim.size * sizeof(struct ent_stat_rstate)
+            in->cam_vis_anim.size * sizeof(struct ent_anim_rstate)
         );
     }
     if(in->light_vis_stat.size) {
@@ -404,7 +406,7 @@ static void *phys_push_render_input(struct render_input *in)
     if(in->light_vis_anim.size) {
         ret->light_vis_anim.array = R_PushArg(
             in->light_vis_anim.array, 
-            in->light_vis_anim.size * sizeof(struct ent_stat_rstate)
+            in->light_vis_anim.size * sizeof(struct ent_anim_rstate)
         );
     }
     return ret;
@@ -414,13 +416,15 @@ static void on_render_3d(void *user, void *arg)
 {
     struct render_input rinput;
     phys_create_render_input(&rinput);
+
     enum batch_id id = BATCH_ID_PROJECTILE;
+    struct render_input *pushed = phys_push_render_input(&rinput);
 
     R_PushCmd((struct rcmd){
         .func = R_GL_Batch_DrawWithID,
         .nargs = 2,
         .args = {
-            phys_push_render_input(&rinput),
+            pushed,
             R_PushArg(&id, sizeof(id)),
         },
     });

@@ -313,9 +313,16 @@ static const char *severity_str(GLenum severity)
 void debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
                     GLsizei length, const GLchar *message, const void *user)
 {
+#ifdef _MSC_VER
+    char buff[512];
+    pf_snprintf(buff, sizeof(buff), " *** [%s][%s][%s] %s\n", source_str(source), type_str(type),
+        severity_str(severity), message);
+    OutputDebugString(buff);
+#else
     fprintf(stderr, " *** [%s][%s][%s] %s\n", source_str(source), type_str(type), 
         severity_str(severity), message);
     fflush(stderr);
+#endif
 }
 
 static void render_init_ctx(struct render_init_arg *arg)

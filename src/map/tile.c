@@ -37,6 +37,7 @@
 #include "public/map.h"
 #include "../pf_math.h"
 #include "../perf.h"
+#include "../lib/public/mem.h"
 #include "../lib/public/pf_string.h"
 #include "../phys/public/collision.h"
 
@@ -747,7 +748,7 @@ size_t M_Tile_AllUnderAABB(struct map_resolution res, vec2_t xz_center, float ha
     return ret;
 }
 
-size_t M_Tile_Contour(size_t ntds, const struct tile_desc tds[static ntds],
+size_t M_Tile_Contour(size_t ntds, const struct tile_desc tds[],
                       struct map_resolution res, struct tile_desc *out, size_t maxout)
 {
     if(ntds == 0)
@@ -773,8 +774,10 @@ size_t M_Tile_Contour(size_t ntds, const struct tile_desc tds[static ntds],
     int dr = maxr - minr + 1;
     int dc = maxc - minc + 1;
 
-    uint8_t marked[dr + 2][dc + 2];
-    memset(marked, 0, sizeof(marked));
+    const size_t width = dc + 2;
+    const size_t height = dr + 2;
+    STALLOC(uint8_t, marked, width * height);
+    memset(marked, 0, width * height);
 
     for(int i = 0; i < ntds; i++) {
 
@@ -784,7 +787,7 @@ size_t M_Tile_Contour(size_t ntds, const struct tile_desc tds[static ntds],
 
         int relr = absr - minr + 1;
         int relc = absc - minc + 1;
-        marked[relr][relc] = 1;
+        marked[relr * width + relc] = 1;
     }
 
     size_t ret = 0;
@@ -795,7 +798,7 @@ size_t M_Tile_Contour(size_t ntds, const struct tile_desc tds[static ntds],
         int relc = c - minc + 1;
         bool contour = false;
 
-        if(marked[relr][relc])
+        if(marked[relr * (dc + 2) + relc])
             continue;
 
         if(ret == maxout)
@@ -806,17 +809,17 @@ size_t M_Tile_Contour(size_t ntds, const struct tile_desc tds[static ntds],
             continue;
 
         /* If any of the neighbours are 'marked', this tile is part of the contour  */
-        if((relr > (0)    && marked[relr - 1][relc])
-        || (relr < (dr-1) && marked[relr + 1][relc])
-        || (relc > (0)    && marked[relr][relc - 1])
-        || (relc < (dc-1) && marked[relr][relc + 1])) {
+        if((relr > (0)    && marked[(relr - 1) * (dc + 2) + relc])
+        || (relr < (dr-1) && marked[(relr + 1) * (dc + 2) + relc])
+        || (relc > (0)    && marked[relr * (dc + 2) + (relc - 1)])
+        || (relc < (dc-1) && marked[relr * (dc + 2) + (relc + 1)])) {
             contour = true;
         }
 
-        if((relr > 0      && relc > 0      && marked[relr - 1][relc - 1])
-        || (relr > 0      && relc < (dc-1) && marked[relr - 1][relc + 1])
-        || (relr < (dr-1) && relc > 0      && marked[relr + 1][relc - 1])
-        || (relr < (dr-1) && relc < (dc-1) && marked[relr + 1][relc + 1])) {
+        if((relr > 0      && relc > 0      && marked[(relr - 1) * (dc + 2) + (relc - 1)])
+        || (relr > 0      && relc < (dc-1) && marked[(relr - 1) * (dc + 2) + (relc + 1)])
+        || (relr < (dr-1) && relc > 0      && marked[(relr + 1) * (dc + 2) + (relc - 1)])
+        || (relr < (dr-1) && relc < (dc-1) && marked[(relr + 1) * (dc + 2) + (relc + 1)])) {
             contour = true;
         }
 

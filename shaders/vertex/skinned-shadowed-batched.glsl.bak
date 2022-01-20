@@ -141,7 +141,13 @@ mat4 anim_inv_bind_mats(int joint_idx)
 void main()
 {
     int base = inst_attr_base(in_draw_id);
-    mat4 model = read_mat4(base);
+    //mat4 model = read_mat4(base);
+	mat4 model = mat4(
+		25.0, 0.0, 0.0, 0.0,
+		0.0, 25.0, 0.0, 0.0,
+		0.0, 0.0, 25.0, 0.0,
+		0.0, 0.0, 0.0, 1.0
+	);
 
     to_fragment.uv = in_uv;
     to_fragment.mat_idx = in_material_idx;

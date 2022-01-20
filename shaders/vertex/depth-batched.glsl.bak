@@ -36,30 +36,11 @@
 #version 330 core
 
 layout (location = 0) in vec3 in_pos;
-layout (location = 1) in vec2 in_uv;
-layout (location = 2) in vec3 in_normal;
-layout (location = 3) in int  in_material_idx;
 layout (location = 4) in int  in_draw_id;
-
-/*****************************************************************************/
-/* OUTPUTS                                                                   */
-/*****************************************************************************/
-
-out VertexToFrag {
-         vec2 uv;
-    flat int  mat_idx;
-         vec3 world_pos;
-         vec3 normal;
-         vec4 light_space_pos;
-    flat int  draw_id;
-}to_fragment;
 
 /*****************************************************************************/
 /* UNIFORMS                                                                  */
 /*****************************************************************************/
-
-uniform mat4 view;
-uniform mat4 projection;
 
 uniform mat4 light_space_transform;
 uniform vec4 clip_plane0;
@@ -67,10 +48,6 @@ uniform vec4 clip_plane0;
 /* Per-instance buffer contents:
  *  +--------------------------------------------------+ <-- base
  *  | mat4x4_t (16 floats)                             | (model matrix)
- *  +--------------------------------------------------+
- *  | vec2_t[16] (32 floats)                           | (material:texture mapping)
- *  +--------------------------------------------------+
- *  | {float, float, vec3_t, vec3_t}[16] (128 floats)  | (material properties)
  *  +--------------------------------------------------+
  */
 
@@ -95,16 +72,15 @@ vec4 read_vec4(int base)
 {
     int size = textureSize(attrbuff);
     return vec4(
-        texelFetch(attrbuff, (base + 0) % size).r,
-        texelFetch(attrbuff, (base + 1) % size).r,
-        texelFetch(attrbuff, (base + 2) % size).r,
-        texelFetch(attrbuff, (base + 3) % size).r
+        texelFetch(attrbuff, (base + 0) % size)).r,
+        texelFetch(attrbuff, (base + 1) % size)).r,
+        texelFetch(attrbuff, (base + 2) % size)).r,
+        texelFetch(attrbuff, (base + 3) % size)).r
     );
 }
 
-mat4 model_from_attrbuff(int draw_id)
+mat4 read_mat4(int base)
 {
-    int base = inst_attr_base(draw_id);
     return mat4(
         read_vec4(base +  0),
         read_vec4(base +  4),
@@ -115,21 +91,10 @@ mat4 model_from_attrbuff(int draw_id)
 
 void main()
 {
-    mat4 model = model_from_attrbuff(in_draw_id);
+    int base = inst_attr_base(in_draw_id);
+    mat4 model = read_mat4(base);
 
-    to_fragment.uv = in_uv;
-    to_fragment.mat_idx = in_material_idx;
-    to_fragment.world_pos = (model * vec4(in_pos, 1.0)).xyz;
-    to_fragment.normal = normalize(mat3(model) * in_normal);
-    to_fragment.light_space_pos = light_space_transform * vec4(to_fragment.world_pos, 1.0);
-
-    if(attr_offset > 0) {
-        to_fragment.draw_id = attr_offset + gl_InstanceID;
-    }else{
-        to_fragment.draw_id = in_draw_id;
-    }
-
-    gl_Position = projection * view * model * vec4(in_pos, 1.0);
-    gl_ClipDistance[0] = dot(model * vec4(in_pos, 1.0), clip_plane0);
+    gl_Position = light_space_transform * model * vec4(in_pos, 1.0);
+    gl_ClipDistance[0] = dot(model * gl_Position, clip_plane0);
 }
 

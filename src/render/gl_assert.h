@@ -41,12 +41,23 @@
 
 #ifndef NDEBUG
 
+#ifdef _MSC_VER
+#include <windows.h>
+#define PRINT(_text) OutputDebugString(_text)
+#else
+#define PRINT(_text) fprintf(stderr, (_text))
+#endif
+
 #define GL_ASSERT_OK()                                  \
     do {                                                \
         GLenum error = glGetError();                    \
-        if(error != GL_NO_ERROR)                        \
-            fprintf(stderr, "%s:%d OpenGL error: %x\n", \
-            __FILE__, __LINE__, error);                 \
+        if(error != GL_NO_ERROR) {                      \
+            char buff[512];                             \
+            snprintf(buff, sizeof(buff),                \
+                "%s:%d OpenGL error: %x\n",             \
+                __FILE__, __LINE__, error);             \
+            PRINT(buff);                                \
+        }                                               \
         assert(error == GL_NO_ERROR);                   \
     }while(0)
 

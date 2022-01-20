@@ -99,11 +99,13 @@ static bool texture_gl_init(const char *path, GLuint *out)
 
     stbi_image_free(data);
     *out = ret;
+    glBindTexture(GL_TEXTURE_2D, 0);
     return true;
 
 fail_format:
     stbi_image_free(data);
 fail_load:
+    glBindTexture(GL_TEXTURE_2D, 0);
     return false;
 }
 
@@ -125,6 +127,7 @@ static void texture_make_null(GLuint *out)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
 
+    glBindTexture(GL_TEXTURE_2D, 0);
     GL_ASSERT_OK();
 }
 
@@ -135,13 +138,36 @@ static size_t texture_arr_num_mip_levels(GLuint tex)
     glGetTexParameteriv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_LEVEL, &max_lvl);
 
     int w, h, d;
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_DEPTH, &d);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_WIDTH, &w);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_HEIGHT, &h);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_DEPTH, &d);
 
     size_t nmips = 1 + floor(log2(MAX3(w, h, d)));
 
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     return MIN(max_lvl + 1, nmips);
+}
+
+static bool texture_write_ppm(const char* filename, const unsigned char *data, int width, int height)
+{
+    FILE* file = fopen(filename, "wb");
+    if (!file)
+        return false;
+
+    fprintf(file, "P6\n%d %d\n%d\n", width, height, 255);
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+
+            unsigned char color[3];
+            color[0] = data[3 * i * width + 3 * j + 0];
+            color[1] = data[3 * i * width + 3 * j + 1];
+            color[2] = data[3 * i * width + 3 * j + 2];
+            fwrite(color, 1, 3, file);
+        }
+    }
+
+    fclose(file);
+    return true;
 }
 
 /*****************************************************************************/
@@ -302,6 +328,52 @@ void R_GL_Texture_Bind(const struct texture *text, GLuint shader_prog)
     GL_ASSERT_OK();
 }
 
+void R_GL_Texture_Dump(const struct texture *text, const char *filename)
+{
+    glBindTexture(GL_TEXTURE_2D, text->id);
+
+    GLint width, height, level = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, level, GL_TEXTURE_WIDTH, &width);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, level, GL_TEXTURE_HEIGHT, &height);
+
+    unsigned char* data = malloc(width * height * 3);
+    if(!data)
+        return;
+
+    glGetTexImage(GL_TEXTURE_2D, level, GL_RGB, GL_UNSIGNED_BYTE, data);
+    texture_write_ppm(filename, data, width, height);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    free(data);
+}
+
+void R_GL_Texture_DumpArray(const struct texture_arr *arr, const char *base)
+{
+    glBindTexture(GL_TEXTURE_2D_ARRAY, arr->id);
+
+    GLint width, height, depth;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_WIDTH, &width);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_HEIGHT, &height);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_DEPTH, &depth);
+
+    unsigned char *data = malloc(width * height * 3);
+    if (!data)
+        return;
+
+    for(int i = 0; i < depth; i++) {
+    
+        glGetTextureSubImage(arr->id, 0, 0, 0, i, width, height, 1, 
+            GL_RGB, GL_UNSIGNED_BYTE, width * height * 3, data);
+
+        char filename[512];
+        pf_snprintf(filename, sizeof(filename), "%s-%d.ppm", base, i);
+        texture_write_ppm(filename, data, width, height);
+    }
+
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    free(data);
+}
+
 void R_GL_Texture_ArrayAlloc(size_t num_elems, struct texture_arr *out, GLuint tunit)
 {
     ASSERT_IN_RENDER_THREAD();
@@ -323,6 +395,8 @@ void R_GL_Texture_ArrayAlloc(size_t num_elems, struct texture_arr *out, GLuint t
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
+
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 }
 
 void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx, struct texture_arr *src, int src_idx)
@@ -331,6 +405,7 @@ void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx, struct tex
     if(!GLEW_ARB_copy_image) {
         glGenFramebuffers(1, &fbo);    
     }
+    GL_ASSERT_OK();
 
     for(int i = 0; i < texture_arr_num_mip_levels(dst->id); i++) {
 
@@ -340,6 +415,7 @@ void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx, struct tex
             glCopyImageSubData(src->id, GL_TEXTURE_2D_ARRAY, i, 0, 0, src_idx,
                                dst->id, GL_TEXTURE_2D_ARRAY, i, 0, 0, dst_idx,
                                mip_res, mip_res, 1);
+            GL_ASSERT_OK();
         }else{
 
             glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -347,9 +423,12 @@ void R_GL_Texture_ArrayCopyElem(struct texture_arr *dst, int dst_idx, struct tex
             glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, dst->id, i, dst_idx);
             glReadBuffer(GL_COLOR_ATTACHMENT0);
             glDrawBuffer(GL_COLOR_ATTACHMENT1);
+
             assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
             glBlitFramebuffer(0, 0, mip_res, mip_res, 0, 0, mip_res, mip_res, 
                               GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            GL_ASSERT_OK();
         }
     }
 
@@ -391,16 +470,22 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
         }
         glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, orig_data);
 
-        GLubyte resized_data[CONFIG_ARR_TEX_RES * CONFIG_ARR_TEX_RES * 4];
-        int res = stbir_resize_uint8(orig_data, w, h, 0, resized_data, CONFIG_ARR_TEX_RES, CONFIG_ARR_TEX_RES, 0, 4);
-        if(res != 1) {
+        GLubyte *resized_data = malloc(CONFIG_ARR_TEX_RES * CONFIG_ARR_TEX_RES * 4);
+        if(!resized_data) {
             free(orig_data);
             continue;
         }
+        int res = stbir_resize_uint8(orig_data, w, h, 0, resized_data, CONFIG_ARR_TEX_RES, CONFIG_ARR_TEX_RES, 0, 4);
+        if(res != 1) {
+            free(orig_data);
+            free(resized_data);
+            continue;
+        }
 
-        free(orig_data);
         glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_ARR_TEX_RES, 
             CONFIG_ARR_TEX_RES, 1, GL_RGBA, GL_UNSIGNED_BYTE, resized_data);
+        free(orig_data);
+        free(resized_data);
     }
 
     glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
@@ -410,6 +495,7 @@ void R_GL_Texture_ArrayMake(const struct material *mats, size_t num_mats,
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
 
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     GL_ASSERT_OK();
 }
 
@@ -438,20 +524,27 @@ void R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures,
         unsigned char *orig_data = stbi_load(path, &width, &height, &nr_channels, 0);
         if(orig_data) {
         
-            GLubyte resized_data[CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3];
-            int res = stbir_resize_uint8(orig_data, width, height, 0, resized_data, CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, 0, 3);
+            GLubyte *resized_data = malloc(CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3);
+            if(!resized_data)
+                continue;
 
+            int res = stbir_resize_uint8(orig_data, width, height, 0, resized_data, CONFIG_TILE_TEX_RES, CONFIG_TILE_TEX_RES, 0, 3);
             assert(1 == res);
-            stbi_image_free(orig_data);
 
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_TILE_TEX_RES, 
                 CONFIG_TILE_TEX_RES, 1, GL_RGB, GL_UNSIGNED_BYTE, resized_data);
+            stbi_image_free(orig_data);
+            free(resized_data);
         }else{
 
-            GLubyte data[CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3];
-            memset(data, 0, sizeof(data));
+            GLubyte *data = malloc(CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3);
+            if(!data)
+                continue;
+
+            memset(data, 0, CONFIG_TILE_TEX_RES * CONFIG_TILE_TEX_RES * 3);
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, CONFIG_TILE_TEX_RES, 
                 CONFIG_TILE_TEX_RES, 1, GL_RGB, GL_UNSIGNED_BYTE, data);
+            free(data);
         }
     }
 
@@ -462,6 +555,7 @@ void R_GL_Texture_ArrayMakeMap(const char texnames[][256], size_t num_textures,
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, LOD_BIAS);
 
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     GL_ASSERT_OK();
 }
 
@@ -473,6 +567,7 @@ void R_GL_Texture_ArrayFree(struct texture_arr array)
 void R_GL_Texture_BindArray(const struct texture_arr *arr, GLuint shader_prog)
 {
     ASSERT_IN_RENDER_THREAD();
+
     int idx = (arr->tunit - GL_TEXTURE0);
     const char *unit_name[] = {
         GL_U_TEX_ARRAY0,
@@ -501,6 +596,8 @@ void R_GL_Texture_GetSize(GLuint texid, int *out_w, int *out_h, int *out_d)
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, out_w);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, out_h);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_DEPTH, out_d);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
     GL_ASSERT_OK();
 }
 

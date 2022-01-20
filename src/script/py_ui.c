@@ -40,6 +40,7 @@
 #include "py_pickle.h"
 #include "../lib/public/pf_nuklear.h"
 #include "../lib/public/vec.h"
+#include "../lib/public/mem.h"
 #include "../lib/public/SDL_vec_rwops.h"
 #include "../lib/public/pf_string.h"
 #include "../lib/public/nk_file_browser.h"
@@ -1133,7 +1134,8 @@ static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args)
     }
 
     size_t num_items = PyList_Size(items_list);
-    const char *labels[num_items];
+    //const char *labels[num_items];
+    STALLOC(const char*, labels, num_items);
 
     for(int i = 0; i < num_items; i++) {
 

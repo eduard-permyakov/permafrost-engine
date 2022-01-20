@@ -240,8 +240,8 @@ static bool region_contains(const struct region *reg, vec2_t point)
     }
 }
 
-static size_t regions_at_point(vec2_t point, size_t maxout, struct region *out[static maxout], 
-                               const char *out_names[static maxout])
+static size_t regions_at_point(vec2_t point, size_t maxout, struct region *out[], 
+                               const char *out_names[])
 {
     struct map_resolution res;
     M_GetResolution(s_map, &res);
@@ -703,7 +703,7 @@ bool G_Region_GetShown(const char *name, bool *out)
     return true;
 }
 
-int G_Region_GetEnts(const char *name, size_t maxout, struct entity *ents[static maxout])
+int G_Region_GetEnts(const char *name, size_t maxout, struct entity *ents[])
 {
     khiter_t k = kh_get(region, s_regions, name);
     if(k == kh_end(s_regions))

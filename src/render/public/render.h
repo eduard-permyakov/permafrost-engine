@@ -193,7 +193,7 @@ void   R_GL_DumpFBColor_PPM(const char *filename, const int *width, const int *h
  * ---------------------------------------------------------------------------
  */
 void   R_GL_DumpFBDepth_PPM(const char *filename, const int *width, const int *height, 
-                            const bool *linearize, const GLfloat *near, const GLfloat *far);
+                            const bool *linearize, const GLfloat *nearp, const GLfloat *farp);
 
 /* ---------------------------------------------------------------------------
  * Render a selection circle over the map surface.
@@ -213,14 +213,14 @@ void   R_GL_DrawSelectionRectangle(const struct obb *box, const float *width,
  * Render a line over the map surface.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t *color, 
+void   R_GL_DrawLine(vec2_t endpoints[], const float *width, const vec3_t *color, 
                      const struct map *map);
 
 /* ---------------------------------------------------------------------------
  * Render a quadrilateral over the map surface.
  * ---------------------------------------------------------------------------
  */
-void   R_GL_DrawQuad(vec2_t corners[static 4], const float *width, const vec3_t *color, 
+void   R_GL_DrawQuad(vec2_t corners[], const float *width, const vec3_t *color, 
                      const struct map *map);
 
 /* ---------------------------------------------------------------------------

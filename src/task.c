@@ -45,6 +45,10 @@
 #include <SDL.h>
 #include <assert.h>
 
+#ifdef _MSC_VER
+#include <windows.h>
+#endif
+
 struct delay_desc{
     uint32_t tid;
     uint32_t wake_tick;

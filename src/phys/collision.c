@@ -285,15 +285,15 @@ void C_MakeFrustum(vec3_t pos, vec3_t up, vec3_t front,
 
 
     /* Near plane */
-    out->near.point = nc;
-    out->near.normal = front;
+    out->nearp.point = nc;
+    out->nearp.normal = front;
 
     /* Far plane */
     vec3_t negative_dir;
     PFM_Vec3_Scale(&front, -1.0f, &negative_dir);
 
-    out->far.point = fc;
-    out->far.normal = negative_dir;
+    out->farp.point = fc;
+    out->farp.normal = negative_dir;
 
     /* Right plane */
     vec3_t p_to_near_right_edge;
@@ -479,7 +479,7 @@ bool C_LineSegIntersectsOBB(vec3_t begin, vec3_t end, struct obb obb)
 enum volume_intersec_type C_FrustrumPointIntersectionFast(const struct frustum *frustum, vec3_t point)
 {
     const struct plane *planes[] = {&frustum->top, &frustum->bot, &frustum->left, 
-                                    &frustum->right, &frustum->near, &frustum->far};
+                                    &frustum->right, &frustum->nearp, &frustum->farp};
 
     for(int i = 0; i < ARR_SIZE(planes); i++) {
    
@@ -496,7 +496,7 @@ enum volume_intersec_type C_FrustrumPointIntersectionFast(const struct frustum *
 enum volume_intersec_type C_FrustumAABBIntersectionFast(const struct frustum *frustum, const struct aabb *aabb)
 {
     const struct plane *planes[] = {&frustum->top, &frustum->bot, &frustum->left, 
-                                    &frustum->right, &frustum->near, &frustum->far};
+                                    &frustum->right, &frustum->nearp, &frustum->farp};
 
     const vec3_t corners[8] = {
         (vec3_t){aabb->x_min, aabb->y_min, aabb->z_min},
@@ -536,7 +536,7 @@ enum volume_intersec_type C_FrustumAABBIntersectionFast(const struct frustum *fr
 enum volume_intersec_type C_FrustumOBBIntersectionFast(const struct frustum *frustum, const struct obb *obb)
 {
     const struct plane *planes[] = {&frustum->top, &frustum->bot, &frustum->left, 
-                                    &frustum->right, &frustum->near, &frustum->far};
+                                    &frustum->right, &frustum->nearp, &frustum->farp};
 
     for(int i = 0; i < ARR_SIZE(planes); i++) {
 
@@ -588,8 +588,8 @@ bool C_FrustumAABBIntersectionExact(const struct frustum *frustum, const struct 
     }
 
     vec3_t frust_axes[6] = {
-        frustum->near.normal,
-        frustum->far.normal,
+        frustum->nearp.normal,
+        frustum->farp.normal,
         frustum->top.normal,
         frustum->bot.normal,
         frustum->left.normal,
@@ -645,7 +645,7 @@ bool C_FrustumOBBIntersectionExact(const struct frustum *frustum, const struct o
 
     /* Near and far planes assumed to be parallel */
     vec3_t frust_normals[5] = {
-        frustum->far.normal,
+        frustum->farp.normal,
         frustum->top.normal,
         frustum->bot.normal,
         frustum->left.normal,

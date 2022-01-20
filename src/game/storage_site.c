@@ -860,7 +860,7 @@ int G_StorageSite_GetPlayerCapacity(const char *rname)
     return ret;
 }
 
-int G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char *out[static maxout])
+int G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char *out[])
 {
     struct ss_state *ss = ss_state_get(uid);
     assert(ss);

@@ -100,9 +100,9 @@ static uint32_t s_hovered_uid = UID_NONE;
 /*****************************************************************************/
 
 const vec3_t g_seltype_color_map[] = {
-    [SELECTION_TYPE_PLAYER] = (vec3_t){0.95f, 0.95f, 0.95f},
-    [SELECTION_TYPE_ALLIED] = (vec3_t){ 0.0f,  1.0f,  0.0f},
-    [SELECTION_TYPE_ENEMY]  = (vec3_t){ 1.0f,  0.0f,  0.0f}
+    [SELECTION_TYPE_PLAYER] = {0.95f, 0.95f, 0.95f},
+    [SELECTION_TYPE_ALLIED] = { 0.0f,  1.0f,  0.0f},
+    [SELECTION_TYPE_ENEMY]  = { 1.0f,  0.0f,  0.0f}
 };
 
 /*****************************************************************************/
@@ -206,8 +206,8 @@ static void sel_make_frustum(struct camera *cam, vec2_t mouse_down, vec2_t mouse
     struct frustum cam_frust;
     Camera_MakeFrustum(cam, &cam_frust);
 
-    out->near = cam_frust.near;
-    out->far = cam_frust.far;
+    out->nearp = cam_frust.nearp;
+    out->farp = cam_frust.farp;
 
     vec2_t corners[4] = {
         (vec2_t){MIN(mouse_down.x, mouse_up.x), MIN(mouse_down.y, mouse_up.y)},

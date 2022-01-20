@@ -267,7 +267,7 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
 
     /* Flip camera over the water's surface */
     DECL_CAMERA_STACK(cam);
-    memset(cam, 0, sizeof(cam));
+    memset(cam, 0, g_sizeof_camera);
     vec3_t cam_pos = Camera_GetPos(in.cam);
     vec3_t cam_dir = Camera_GetDir(in.cam);
     cam_pos.y -= (cam_pos.y - WATER_LVL) * 2.0f;

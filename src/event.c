@@ -37,6 +37,7 @@
 #include "main.h"
 #include "perf.h"
 #include "sched.h"
+#include "lib/public/mem.h"
 #include "lib/public/khash.h"
 #include "lib/public/vec.h"
 #include "lib/public/queue.h"
@@ -465,7 +466,7 @@ bool E_EventsQueued(void)
 
 void E_DeleteScriptHandlers(void)
 {
-    uint64_t keys_to_del[kh_size(s_event_handler_table)];
+    STALLOC(uint64_t, keys_to_del, kh_size(s_event_handler_table));
     size_t ntodel = 0;
 
     uint64_t key;

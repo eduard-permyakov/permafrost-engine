@@ -77,7 +77,7 @@ static vec_td_t                     s_curr_frame_labels;
 static khash_t(font)               *s_fontmap;
 static const char                  *s_active_font = NULL;
 static SDL_mutex                   *s_lock;
-static vec2_t                       s_vres = (vec2_t){1920, 1080};
+static vec2_t                       s_vres = {1920, 1080};
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */

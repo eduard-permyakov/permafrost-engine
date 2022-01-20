@@ -37,6 +37,7 @@
 #define CAMERA_H
 
 #include "pf_math.h"
+#include "lib/public/mem.h"
 #include <stdbool.h>
 
 struct camera;
@@ -48,8 +49,8 @@ struct bound_box{
     GLfloat w, h;
 };
 
-#define DECL_CAMERA_STACK(_name)        \
-    char _name[g_sizeof_camera]         \
+#define DECL_CAMERA_STACK(_name) \
+    STALLOC(char, _name, g_sizeof_camera);
 
 
 #define CAM_Z_NEAR_DIST     (5.0f)

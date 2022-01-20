@@ -38,6 +38,7 @@
 
 #include <GL/glew.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 struct material;
 

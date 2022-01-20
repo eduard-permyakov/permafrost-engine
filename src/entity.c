@@ -519,7 +519,7 @@ void Entity_ClearTags(uint32_t uid)
     tl->ntags = 0;
 }
 
-size_t Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[static maxout])
+size_t Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[])
 {
     khiter_t k = kh_get(ents, s_tag_ent_map, tag);
     if(k == kh_end(s_tag_ent_map))
@@ -537,7 +537,7 @@ size_t Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[static max
     return ret;
 }
 
-size_t Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[static maxout])
+size_t Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[])
 {
     struct taglist *tl = entity_taglist(uid);
     if(!tl)

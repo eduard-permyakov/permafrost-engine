@@ -59,12 +59,24 @@
 #include <stddef.h>
 #include <assert.h>
 #include <string.h>
+#include <windows.h>
 
 
 #define EPSILON                     (1.0f/1024)
 #define ARR_SIZE(a)                 (sizeof(a)/sizeof(a[0]))
 #define MAX(a, b)                   ((a) > (b) ? (a) : (b))
 #define MIN(a, b)                   ((a) < (b) ? (a) : (b))
+
+#ifdef _MSC_VER && !defined(NDEBUG)
+#include <windows.h>
+#define PRINT(_text) OutputDebugString(_text)
+#else
+#define PRINT(_text)                            \
+    do {                                        \
+        fprintf(stderr, _text);                 \
+        fflush(stderr);                         \
+    }while(0)
+#endif
 
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
@@ -112,7 +124,7 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
             (void*)offsetof(struct anim_vert, joint_indices));
         glEnableVertexAttribArray(4);  
         glVertexAttribIPointer(5, 3, GL_UNSIGNED_BYTE, priv->vertex_stride,
-            (void*)offsetof(struct anim_vert, joint_indices) + 3*sizeof(GLubyte));
+            (void*)(offsetof(struct anim_vert, joint_indices) + 3*sizeof(GLubyte)));
         glEnableVertexAttribArray(5);
 
         /* Attribute 6/7 - joint weights */
@@ -120,7 +132,7 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
             (void*)offsetof(struct anim_vert, weights));
         glEnableVertexAttribArray(6);  
         glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, priv->vertex_stride,
-            (void*)offsetof(struct anim_vert, weights) + 3*sizeof(GLfloat));
+            (void*)(offsetof(struct anim_vert, weights) + 3*sizeof(GLfloat)));
         glEnableVertexAttribArray(7);  
 
     }else if(strstr(shader, "terrain")) {
@@ -776,7 +788,7 @@ void R_GL_DumpFBColor_PPM(const char *filename, const int *width, const int *hei
 }
 
 void R_GL_DumpFBDepth_PPM(const char *filename, const int *width, const int *height, 
-                          const bool *linearize, const GLfloat *near, const GLfloat *far)
+                          const bool *linearize, const GLfloat *nearp, const GLfloat *farp)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -803,7 +815,7 @@ void R_GL_DumpFBDepth_PPM(const char *filename, const int *width, const int *hei
 
             GLfloat z;
             if(*linearize) {
-                z = (2 * (*near)) / ((*far) + (*near) - norm_depth * ((*far) - (*near)));
+                z = (2 * (*nearp)) / ((*farp) + (*nearp) - norm_depth * ((*farp) - (*nearp)));
             }else{
                 z = norm_depth; 
             }
@@ -831,7 +843,8 @@ void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float
     GLuint VAO, VBO;
 
     const int NUM_SAMPLES = 48;
-    vec3_t vbuff[NUM_SAMPLES * 2 + 2];
+    const int nverts = NUM_SAMPLES * 2 + 2;
+    STALLOC(vec3_t, vbuff, nverts);
 
     for(int i = 0; i < NUM_SAMPLES * 2; i += 2) {
 
@@ -880,8 +893,8 @@ void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float
     R_GL_Shader_Install("mesh.static.colored");
 
     /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, ARR_SIZE(vbuff));
+    glBufferData(GL_ARRAY_BUFFER, nverts * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, nverts);
 
     /* cleanup */
     glDeleteVertexArrays(1, &VAO);
@@ -928,7 +941,8 @@ void R_GL_DrawSelectionRectangle(const struct obb *box, const float *width,
         nsamples += ceil(lens[i] / sample_dist) + 1;
     }
 
-    vec3_t vbuff[nsamples * 2 + 2];
+    //vec3_t vbuff[nsamples * 2 + 2];
+    STALLOC(vec3_t, vbuff, nsamples * 2 + 2);
     int vbuff_idx = 0;
 
     for(int i = 0; i < 4; i++) {
@@ -1002,7 +1016,7 @@ void R_GL_DrawSelectionRectangle(const struct obb *box, const float *width,
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t *color, const struct map *map)
+void R_GL_DrawLine(vec2_t endpoints[], const float *width, const vec3_t *color, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -1017,7 +1031,8 @@ void R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t 
     PFM_Vec2_Scale(&perp, *width/2.0f, &perp);
 
     const int NUM_SAMPLES = ceil(len / 4.0f);
-    vec3_t vbuff[NUM_SAMPLES * 2 + 2];
+    //vec3_t vbuff[NUM_SAMPLES * 2 + 2];
+    STALLOC(vec3_t, vbuff, NUM_SAMPLES * 2 + 2);
     float t = 0.0f;
 
     for(int i = 0; i <= NUM_SAMPLES * 2; i += 2) {
@@ -1090,7 +1105,7 @@ void R_GL_DrawLine(vec2_t endpoints[static 2], const float *width, const vec3_t 
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawQuad(vec2_t corners[static 4], const float *width, const vec3_t *color, const struct map *map)
+void R_GL_DrawQuad(vec2_t corners[], const float *width, const vec3_t *color, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -1114,9 +1129,11 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    struct colored_vert surf_vbuff[*count * 4 * 3];
-    struct colored_vert line_vbuff[*count * 4 * 2];
+    //struct colored_vert surf_vbuff[*count * 4 * 3];
+    //struct colored_vert line_vbuff[*count * 4 * 2];
     GLuint VAO, VBO;
+    STALLOC(struct colored_vert, surf_vbuff, *count * 4 * 3);
+    STALLOC(struct colored_vert, line_vbuff, *count * 4 * 2);
 
     struct colored_vert *surf_vbuff_base = surf_vbuff;
     struct colored_vert *line_vbuff_base = line_vbuff;
@@ -1249,8 +1266,8 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
     ASSERT_IN_RENDER_THREAD();
 
     GLuint VAO, VBO;
-    vec3_t line_vbuff[*count * 2];
-    vec3_t point_vbuff[*count];
+    STALLOC(vec3_t, line_vbuff, *count * 2);
+    STALLOC(vec3_t, point_vbuff, *count);
 
     /* Setup line_vbuff */
     for(size_t i = 0, line_vbuff_idx = 0; i < *count; i++, line_vbuff_idx += 2) {
@@ -1345,7 +1362,7 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
     mat4x4_t model;
     PFM_Mat4x4_Identity(&model); /* points are already in world space */
 
-    vec3_t ray_vbuff[*num_vos * (NUM_SAMPLES - 1) * 4];
+    STALLOC(vec3_t, ray_vbuff, *num_vos * (NUM_SAMPLES - 1) * 4);
     int vbuff_idx = 0;
 
     for(int i = 0; i < *num_vos; i++) {
@@ -1452,8 +1469,7 @@ void R_GL_TimestampForCookie(uint32_t *cookie, uint64_t *out)
     glGetQueryObjectiv(timer_query, GL_QUERY_RESULT_AVAILABLE, &avail);
 
     if(!avail) {
-        fprintf(stderr, "WARNING: Timestamp query result not yet available. This may negatively impact performance.\n");
-        fflush(stderr);
+        PRINT("WARNING: Timestamp query result not yet available. This may negatively impact performance.\n");
     }
 
     glGetQueryObjectui64v(timer_query, GL_QUERY_RESULT, out);

@@ -1662,7 +1662,7 @@ bool G_Harvester_DecreaseTransportPrio(uint32_t uid, const char *rname)
     return true;
 }
 
-int G_Harvester_GetTransportPrio(uint32_t uid, size_t maxout, const char *out[static maxout])
+int G_Harvester_GetTransportPrio(uint32_t uid, size_t maxout, const char *out[])
 {
     struct hstate *hs = hstate_get(uid);
     assert(hs);
