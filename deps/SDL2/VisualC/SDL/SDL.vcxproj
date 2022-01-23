@@ -220,6 +220,9 @@
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy "$(TargetDir)$(TargetName).dll" "$(SolutionDir)lib\SDL2.dll*" /d /Y &amp; xcopy "$(TargetDir)$(TargetName).lib" "$(SolutionDir)lib\$(TargetName).lib*" /d /Y</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\begin_code.h" />

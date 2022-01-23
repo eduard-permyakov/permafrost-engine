@@ -164,6 +164,9 @@
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
       <NoEntryPoint>true</NoEntryPoint>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy "$(TargetDir)$(TargetName).dll" "$(SolutionDir)lib\$(TargetName).dll*" /d /Y &amp; xcopy "$(SolutionDir)deps\GLEW\lib\$(Configuration)\$(PlatformShortName)\$(TargetName).lib" "$(SolutionDir)lib\$(TargetName).lib*" /d /Y</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

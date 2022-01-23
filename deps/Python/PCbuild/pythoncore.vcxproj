@@ -106,6 +106,9 @@
     <PostBuildEvent>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">xcopy "$(TargetDir)$(TargetName).dll" "$(SolutionDir)lib\$(TargetName).dll*" /d /Y &amp; xcopy "$(TargetDir)$(TargetName).lib" "$(SolutionDir)lib\$(TargetName).lib*" /d /Y</Command>
     </PostBuildEvent>
+    <PostBuildEvent>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">xcopy "$(TargetDir)$(TargetName).dll" "$(SolutionDir)lib\$(TargetName).dll*" /d /Y &amp; xcopy "$(TargetDir)$(TargetName).lib" "$(SolutionDir)lib\$(TargetName).lib*" /d /Y</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\Include\abstract.h" />
