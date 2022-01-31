@@ -93,7 +93,7 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
 
     glGenBuffers(1, &mesh->VBO);
     glBindBuffer(GL_ARRAY_BUFFER, mesh->VBO);
-    glBufferData(GL_ARRAY_BUFFER, mesh->num_verts * priv->vertex_stride, vbuff, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, mesh->num_verts * priv->vertex_stride, vbuff, GL_STREAM_DRAW);
 
     /* Attribute 0 - position */
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, priv->vertex_stride, (void*)0);
@@ -416,7 +416,7 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
 
     glGenBuffers(1, &VBO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, skel->num_joints * sizeof(vec3_t) * 2, vbuff, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, skel->num_joints * sizeof(vec3_t) * 2, vbuff, GL_STREAM_DRAW);
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);  
@@ -514,7 +514,7 @@ void R_GL_DrawOrigin(const void *render_private, mat4x4_t *model)
         }
     
         R_GL_StateInstall(GL_U_COLOR, R_GL_Shader_GetCurrActive());
-        glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STREAM_DRAW);
         glDrawArrays(GL_LINES, 0, 2);
     }
     glLineWidth(old_width);
@@ -571,7 +571,7 @@ void R_GL_DrawRay(const vec3_t *origin, const vec3_t *dir, mat4x4_t *model,
     glLineWidth(5.0f);
 
     /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(vec3_t), vbuff, GL_STREAM_DRAW);
     glDrawArrays(GL_LINES, 0, 2);
 
     /* cleanup */
@@ -642,7 +642,7 @@ void R_GL_DrawOBB(const struct aabb *aabb, const mat4x4_t *model)
     R_GL_Shader_Install("mesh.static.colored");
 
     /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STREAM_DRAW);
     glDrawArrays(GL_LINES, 0, ARR_SIZE(vbuff));
 
     /* cleanup */
@@ -710,7 +710,7 @@ void R_GL_DrawBox2D(const vec2_t *screen_pos, const vec2_t *signed_size,
     glLineWidth(*width);
 
     /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STREAM_DRAW);
     glDrawArrays(GL_LINE_LOOP, 0, ARR_SIZE(vbuff));
 
     glLineWidth(old_width);
@@ -893,7 +893,7 @@ void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float
     R_GL_Shader_Install("mesh.static.colored");
 
     /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, nverts * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, nverts * sizeof(vec3_t), vbuff, GL_STREAM_DRAW);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, nverts);
 
     /* cleanup */
@@ -941,8 +941,8 @@ void R_GL_DrawSelectionRectangle(const struct obb *box, const float *width,
         nsamples += ceil(lens[i] / sample_dist) + 1;
     }
 
-    //vec3_t vbuff[nsamples * 2 + 2];
-    STALLOC(vec3_t, vbuff, nsamples * 2 + 2);
+    const int nverts = nsamples * 2 + 2;
+    STALLOC(vec3_t, vbuff, nverts);
     int vbuff_idx = 0;
 
     for(int i = 0; i < 4; i++) {
@@ -1005,8 +1005,8 @@ void R_GL_DrawSelectionRectangle(const struct obb *box, const float *width,
     R_GL_Shader_Install("mesh.static.colored");
 
     /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, ARR_SIZE(vbuff));
+    glBufferData(GL_ARRAY_BUFFER, nverts * sizeof(vec3_t), vbuff, GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, nverts);
 
     /* cleanup */
     glDeleteVertexArrays(1, &VAO);
@@ -1031,8 +1031,8 @@ void R_GL_DrawLine(vec2_t endpoints[], const float *width, const vec3_t *color, 
     PFM_Vec2_Scale(&perp, *width/2.0f, &perp);
 
     const int NUM_SAMPLES = ceil(len / 4.0f);
-    //vec3_t vbuff[NUM_SAMPLES * 2 + 2];
-    STALLOC(vec3_t, vbuff, NUM_SAMPLES * 2 + 2);
+    const int nverts = NUM_SAMPLES * 2 + 2;
+    STALLOC(vec3_t, vbuff, nverts);
     float t = 0.0f;
 
     for(int i = 0; i <= NUM_SAMPLES * 2; i += 2) {
@@ -1092,8 +1092,8 @@ void R_GL_DrawLine(vec2_t endpoints[], const float *width, const vec3_t *color, 
     glLineWidth(*width);
 
     /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(vbuff) * sizeof(vec3_t), vbuff, GL_STATIC_DRAW);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, ARR_SIZE(vbuff));
+    glBufferData(GL_ARRAY_BUFFER, nverts * sizeof(vec3_t), vbuff, GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, nverts);
 
     glLineWidth(old_width);
 
@@ -1129,11 +1129,11 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
 
-    //struct colored_vert surf_vbuff[*count * 4 * 3];
-    //struct colored_vert line_vbuff[*count * 4 * 2];
     GLuint VAO, VBO;
-    STALLOC(struct colored_vert, surf_vbuff, *count * 4 * 3);
-    STALLOC(struct colored_vert, line_vbuff, *count * 4 * 2);
+    const size_t surf_verts = *count * 4 * 3;
+    const size_t line_verts = *count * 4 * 2;
+    STALLOC(struct colored_vert, surf_vbuff, surf_verts);
+    STALLOC(struct colored_vert, line_vbuff, line_verts);
 
     struct colored_vert *surf_vbuff_base = surf_vbuff;
     struct colored_vert *line_vbuff_base = line_vbuff;
@@ -1200,8 +1200,8 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
         *line_vbuff_base++ = (struct colored_vert){verts_3d[1], line_color};
     }
     
-    assert(surf_vbuff_base == surf_vbuff + ARR_SIZE(surf_vbuff));
-    assert(line_vbuff_base == line_vbuff + ARR_SIZE(line_vbuff));
+    assert(surf_vbuff_base == surf_vbuff + *count * 4 * 3);
+    assert(line_vbuff_base == line_vbuff + *count * 4 * 2);
 
     /* OpenGL setup */
     glGenVertexArrays(1, &VAO);
@@ -1237,16 +1237,16 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
     R_GL_Shader_Install("mesh.static.colored-per-vert");
 
     /* Render surface */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(surf_vbuff) * sizeof(struct colored_vert), surf_vbuff, GL_STATIC_DRAW);
-    glDrawArrays(GL_TRIANGLES, 0, ARR_SIZE(surf_vbuff));
+    glBufferData(GL_ARRAY_BUFFER, surf_verts * sizeof(struct colored_vert), surf_vbuff, GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, surf_verts);
 
     /* Render outline */
     GLfloat old_width;
     glGetFloatv(GL_LINE_WIDTH, &old_width);
     glLineWidth(3.0f);
 
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(line_vbuff) * sizeof(struct colored_vert), line_vbuff, GL_STATIC_DRAW);
-    glDrawArrays(GL_LINES, 0, ARR_SIZE(line_vbuff));
+    glBufferData(GL_ARRAY_BUFFER, line_verts * sizeof(struct colored_vert), line_vbuff, GL_STREAM_DRAW);
+    glDrawArrays(GL_LINES, 0, line_verts);
     glLineWidth(old_width);
 
     /* cleanup */
@@ -1333,10 +1333,10 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
     glPointSize(10.0f);
 
     /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(line_vbuff) * sizeof(vec3_t), line_vbuff, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(line_vbuff) * sizeof(vec3_t), line_vbuff, GL_STREAM_DRAW);
     glDrawArrays(GL_LINES, 0, ARR_SIZE(line_vbuff));
 
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(point_vbuff) * sizeof(vec3_t), point_vbuff, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(point_vbuff) * sizeof(vec3_t), point_vbuff, GL_STREAM_DRAW);
     glDrawArrays(GL_POINTS, 0, ARR_SIZE(line_vbuff));
 
     /* cleanup */
@@ -1431,7 +1431,7 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
     glLineWidth(2.0f);
 
     /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(ray_vbuff) * sizeof(vec3_t), ray_vbuff, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(ray_vbuff) * sizeof(vec3_t), ray_vbuff, GL_STREAM_DRAW);
     glDrawArrays(GL_LINES, 0, ARR_SIZE(ray_vbuff));
 
     /* cleanup */
