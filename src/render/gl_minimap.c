@@ -368,11 +368,12 @@ static void create_water_texture(const struct map *map)
     R_GL_MapInvalidate();
 
     glDeleteFramebuffers(1, &fb);
-    GL_ASSERT_OK();
 
     s_ctx.water_texture.tunit = GL_TEXTURE1;
     R_GL_Texture_AddExisting("__minimap_water__", s_ctx.water_texture.id);
 
+    STFREE(map_cam);
+    GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
 
@@ -404,6 +405,7 @@ static void setup_ortho_view_uniforms(const struct map *map)
     vec2_t top_right = (vec2_t){  (map_dim/2), -(map_dim/2) };
     Camera_TickFinishOrthographic((struct camera*)map_cam, bot_left, top_right);
 
+    STFREE(map_cam);
     GL_PERF_RETURN_VOID();
 }
 

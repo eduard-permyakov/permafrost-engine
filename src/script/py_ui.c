@@ -1134,7 +1134,6 @@ static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args)
     }
 
     size_t num_items = PyList_Size(items_list);
-    //const char *labels[num_items];
     STALLOC(const char*, labels, num_items);
 
     for(int i = 0; i < num_items; i++) {
@@ -1148,6 +1147,7 @@ static PyObject *PyWindow_combo_box(PyWindowObject *self, PyObject *args)
     }
 
     int ret = nk_combo(s_nk_ctx, labels, num_items, selected_idx, item_height, size);
+    STFREE(labels);
     return Py_BuildValue("i", ret);
 }
 

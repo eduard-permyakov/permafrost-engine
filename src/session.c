@@ -357,7 +357,7 @@ static bool session_pop_subsession_to_root(char *errstr, size_t errlen)
 static bool session_push_subsession(const char *script, char *errstr, size_t errlen)
 {
     SDL_RWops *stream = PFSDL_VectorRWOps();
-    bool result;
+    bool result, ret = false;
     (void)result;
 
     if(!subsession_save(stream)) {
@@ -368,7 +368,6 @@ static bool session_push_subsession(const char *script, char *errstr, size_t err
 
     subsession_clear();
 
-    //char *argv[s_argc];
     STALLOC(char*, argv, s_argc);
     for(int i = 0; i < s_argc; i++)
         argv[i] = s_argv[i];
@@ -377,11 +376,15 @@ static bool session_push_subsession(const char *script, char *errstr, size_t err
         result = subsession_load(stream, errstr, errlen);
         assert(result);
         SDL_RWclose(stream);
-        return false;
+        goto out;
     }
 
     vec_stream_push(&s_subsession_stack, stream);
-    return true;
+    ret = true;
+
+out:
+    STFREE(argv);
+    return ret;
 }
 
 static bool session_exec_subsession(const char *script, char *errstr, size_t errlen)

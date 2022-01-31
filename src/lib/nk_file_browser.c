@@ -447,6 +447,10 @@ static void fb_places_list(struct nk_context *ctx, struct nk_fb_state *state)
             state->selected[0] = '\0';
         }
     }
+
+    STFREE(paths);
+    STFREE(icons);
+    STFREE(names);
 }
 
 /*****************************************************************************/

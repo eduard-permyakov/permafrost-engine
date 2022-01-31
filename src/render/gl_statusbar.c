@@ -67,8 +67,7 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
     Engine_WinDrawableSize(&width, &height);
 
     /* Convert the worldspace positions to SDL screenspace positions */
-    //vec2_t ent_top_pos_ss[*num_ents]; /* Screen-space XY positions of the entity tops. */
-    STALLOC(vec2_t, ent_top_pos_ss, *num_ents);
+    STALLOC(vec2_t, ent_top_pos_ss, *num_ents); /* Screen-space XY positions of the entity tops. */
 
     mat4x4_t view, proj;
     Camera_MakeViewMat(cam, &view); 
@@ -152,12 +151,13 @@ void R_GL_DrawHealthbars(const size_t *num_ents, GLfloat *ent_health_pc,
 
     /* Draw instances */
     glDrawArraysInstanced(GL_TRIANGLES, 0, ARR_SIZE(vbuff), *num_ents);
-    GL_ASSERT_OK();
 
     /* cleanup */
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 
+    STFREE(ent_top_pos_ss);
+    GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
 

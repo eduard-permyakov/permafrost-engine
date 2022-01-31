@@ -900,6 +900,7 @@ void R_GL_DrawSelectionCircle(const vec2_t *xz, const float *radius, const float
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 
+    STFREE(vbuff);
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
@@ -1012,6 +1013,7 @@ void R_GL_DrawSelectionRectangle(const struct obb *box, const float *width,
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 
+    STFREE(vbuff);
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
@@ -1101,6 +1103,7 @@ void R_GL_DrawLine(vec2_t endpoints[], const float *width, const vec3_t *color, 
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 
+    STFREE(vbuff);
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
@@ -1255,6 +1258,9 @@ void R_GL_DrawMapOverlayQuads(vec2_t *xz_corners, vec3_t *colors, const size_t *
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 
+    STFREE(surf_vbuff);
+    STFREE(line_vbuff);
+
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
@@ -1343,6 +1349,9 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
     glLineWidth(old_width);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
+
+    STFREE(line_vbuff);
+    STFREE(point_vbuff);
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
@@ -1439,6 +1448,7 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
 
+    STFREE(ray_vbuff);
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }

@@ -349,6 +349,9 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
     }
 
     pq_td_destroy(&frontier);
+
+    STFREE(wf_blocked);
+    STFREE(visited);
 }
 
 static bool fog_obj_matches(uint16_t fac_mask, const struct obb *obj, enum fog_state *states, size_t nstates)
@@ -681,6 +684,9 @@ void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x
             (void*)G_GetPrevTickMap(),
         },
     });
+
+    STFREE(corners_buff);
+    STFREE(colors_buff);
 }
 
 void G_Fog_UpdateVisionState(void)

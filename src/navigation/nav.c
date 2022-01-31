@@ -610,21 +610,24 @@ static void n_render_grid_path(struct nav_chunk *chunk, mat4x4_t *chunk_model,
         *colors_base++ = color;
     }
 
-    assert(colors_base == colors_buff + ARR_SIZE(colors_buff));
-    assert(corners_base == corners_buff + ARR_SIZE(corners_buff));
+    assert(colors_base == colors_buff + vec_size(path));
+    assert(corners_base == corners_buff + 4 * vec_size(path));
 
     size_t count = vec_size(path);
     R_PushCmd((struct rcmd){
         .func = R_GL_DrawMapOverlayQuads,
         .nargs = 5,
         .args = {
-            R_PushArg(corners_buff, sizeof(corners_buff)),
-            R_PushArg(colors_buff, sizeof(colors_buff)),
+            R_PushArg(corners_buff, sizeof(vec2_t) * 4 * vec_size(path)),
+            R_PushArg(colors_buff, sizeof(vec3_t) * vec_size(path)),
             R_PushArg(&count, sizeof(count)),
             R_PushArg(chunk_model, sizeof(*chunk_model)),
             (void*)G_GetPrevTickMap(),
         },
     });
+
+    STFREE(corners_buff);
+    STFREE(colors_buff);
 }
 
 static void n_render_portals(const struct nav_chunk *chunk, mat4x4_t *chunk_model,
@@ -1030,6 +1033,7 @@ int n_closest_island_tiles(const struct nav_private *priv,
     }
 
 done:
+    STFREE(visited);
     queue_td_destroy(&frontier);
     return ret; 
 }
@@ -2784,7 +2788,7 @@ bool N_HasEntityLOS(vec2_t curr_pos, const struct entity *ent, void *nav_private
                     enum nav_layer layer, vec3_t map_pos)
 {
     vec2_t ent_pos = G_Pos_GetXZ(ent->uid);
-    bool result;
+    bool result = false;
 
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
@@ -2797,14 +2801,19 @@ bool N_HasEntityLOS(vec2_t curr_pos, const struct entity *ent, void *nav_private
         curr_pos.x, curr_pos.z
     };
 
-    STALLOC(struct tile_desc, tds, (int)ceil(sqrt(pow(FIELD_RES_R, 2) + pow(FIELD_RES_C, 2))));
-    size_t ntds = M_Tile_LineSupercoverTilesSorted(res, map_pos, line, tds, ARR_SIZE(tds));
+    const size_t count = ceil(sqrt(pow(FIELD_RES_R, 2) + pow(FIELD_RES_C, 2)));
+    STALLOC(struct tile_desc, tds, count);
+    size_t ntds = M_Tile_LineSupercoverTilesSorted(res, map_pos, line, tds, count);
 
     for(int i = 0; i < ntds; i++) {
         if(n_tile_blocked(priv, layer, tds[i]))
-            return false;
+            goto out;
     }
-    return true;
+    result = true;
+
+out:
+    STFREE(tds);
+    return result;
 }
 
 bool N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_pos)
@@ -3410,7 +3419,7 @@ uint16_t N_ClosestPathableLocalIsland(const struct nav_private *priv, const stru
     }
 
 done:
+    STFREE(visited);
     queue_td_destroy(&frontier);
     return ret; 
 }
-

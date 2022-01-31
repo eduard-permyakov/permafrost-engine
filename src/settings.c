@@ -364,7 +364,6 @@ ss_e Settings_SaveToFile(void)
         return false;
     }
 
-    //const char *settings[kh_size(s_settings_table)];
     STALLOC(const char*, settings, kh_size(s_settings_table));
     size_t nsetts = 0;
 
@@ -418,11 +417,11 @@ ss_e Settings_SaveToFile(void)
         }
     }
 
-    stream->close(stream);
-    return SS_OKAY;
+    ret = SS_OKAY;
 
 fail_write:
     stream->close(stream);
+    STFREE(settings);
     return ret;
 }
 

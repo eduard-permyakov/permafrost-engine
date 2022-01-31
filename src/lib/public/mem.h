@@ -59,3 +59,9 @@
     _type _name[_size]
 #endif
 
+#ifdef _MSC_VER
+#define STFREE(_ptr) _freea(_ptr)
+#else
+#define STFREE(_ptr) /* no-op */
+#endif
+

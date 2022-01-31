@@ -424,6 +424,7 @@ static void audio_next_music_track(void)
     }
 
     Audio_PlayMusic(next);
+    STFREE(tracks);
 }
 
 static void audio_update_listener(void)
@@ -660,6 +661,8 @@ size_t Audio_GetAllMusic(size_t maxout, const char *out[])
 
     size_t ret = MIN(ntracks, maxout);
     memcpy(out, tracks, ret * sizeof(const char *));
+
+    STFREE(tracks);
     return ret;
 }
 

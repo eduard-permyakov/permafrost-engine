@@ -1476,7 +1476,7 @@ static void create_builtin_subclasses(void)
 
 static PyObject *qualname_new_ref(const char *qualname)
 {
-    //char copy[strlen(qualname) + 1];
+    PyObject *ret = NULL;
     STALLOC(char, copy, strlen(qualname) + 1);
     strcpy(copy, qualname);
 
@@ -1496,7 +1496,7 @@ static PyObject *qualname_new_ref(const char *qualname)
 
     if(!mod) {
         SET_RUNTIME_EXC("Could not find module %s for qualified name %s", modname, qualname);
-        return NULL;
+        goto out;
     }
 
     PyObject *parent = mod;
@@ -1508,7 +1508,7 @@ static PyObject *qualname_new_ref(const char *qualname)
         if(!PyObject_HasAttrString(parent, curr)) {
             Py_DECREF(parent);
             SET_RUNTIME_EXC("Could not look up attribute %s in qualified name %s", curr, qualname);
-            return NULL;
+            goto out;
         }
 
         PyObject *attr = PyObject_GetAttrString(parent, curr);
@@ -1516,8 +1516,11 @@ static PyObject *qualname_new_ref(const char *qualname)
         parent = attr;
         curr = end;
     }
+    ret = parent;
 
-    return parent;
+out:
+    STFREE(copy);
+    return ret;
 }
 
 /* Due to some attributes implementing the descriptor protocol, it is possible
@@ -4901,7 +4904,6 @@ static void del_extra_attrs(PyObject *obj, PyObject **attrs_base, size_t npairs)
     Py_ssize_t pos = 0;
 
     size_t ndel = 0;
-    //PyObject *todel[PyDict_Size(ndw_attrs)];
     STALLOC(PyObject*, todel, PyDict_Size(ndw_attrs));
 
     while(PyDict_Next(ndw_attrs, &pos, &key, &value)) {
@@ -4935,6 +4937,7 @@ static void del_extra_attrs(PyObject *obj, PyObject **attrs_base, size_t npairs)
         }
     }
 
+    STFREE(todel);
     Py_DECREF(ndw_attrs);
 }
 

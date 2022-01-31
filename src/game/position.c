@@ -241,6 +241,8 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, 
 
         out[ret++] = curr;
     }
+
+    STFREE(ent_ids);
     PERF_RETURN(ret);
 }
 
@@ -280,6 +282,8 @@ int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **out
 
         out[ret++] = curr;
     }
+
+    STFREE(ent_ids);
     PERF_RETURN(ret);
 }
 

@@ -1003,7 +1003,7 @@ static size_t field_enemies_initial_frontier(
     for(int c = 0; c < cdim; c++) {
         
         if(ret == maxout)
-            return ret;
+            goto out;
         if(!has_enemy[r * rdim + c])
             continue;
 
@@ -1013,6 +1013,9 @@ static size_t field_enemies_initial_frontier(
         out[ret++] = td;
     }}
 
+out:
+    STFREE(ents);
+    STFREE(has_enemy);
     return ret;
 }
 
@@ -1229,7 +1232,7 @@ static void field_update_enemies(
 
     STALLOC(struct tile_desc, init_frontier, rdim * cdim);
     size_t ninit = field_enemies_initial_frontier(&target, priv, base, rdim, cdim,
-        layer, init_frontier, ARR_SIZE(init_frontier));
+        layer, init_frontier, rdim * cdim);
 
     for(int i = 0; i < ninit; i++) {
 
@@ -1256,6 +1259,8 @@ static void field_update_enemies(
         base, rdim, cdim, integration_field);
     field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
 
+    STFREE(integration_field);
+    STFREE(init_frontier);
     pq_td_destroy(&frontier);
 }
 
@@ -1295,7 +1300,7 @@ static void field_update_entity(
 
     STALLOC(struct tile_desc, init_frontier, rdim * cdim);
     size_t ninit = field_entity_initial_frontier(&target, priv, base, rdim, cdim,
-        layer, init_frontier, ARR_SIZE(init_frontier));
+        layer, init_frontier, rdim * cdim);
 
     for(int i = 0; i < ninit; i++) {
 
@@ -1322,6 +1327,8 @@ static void field_update_entity(
         base, rdim, cdim, integration_field);
     field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
 
+    STFREE(integration_field);
+    STFREE(init_frontier);
     pq_td_destroy(&frontier);
 }
 

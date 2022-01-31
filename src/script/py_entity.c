@@ -1250,12 +1250,13 @@ static int PyEntity_set_selection_radius(PyEntityObject *self, PyObject *value, 
 
 static PyObject *PyEntity_get_pfobj_path(PyEntityObject *self, void *closure)
 {
-    //char buff[strlen(self->ent->basedir) + strlen(self->ent->filename) + 2];
     STALLOC(char, buff, strlen(self->ent->basedir) + strlen(self->ent->filename) + 2);
     strcpy(buff, self->ent->basedir);
     strcat(buff, "/");
     strcat(buff, self->ent->filename);
-    return PyString_FromString(buff); 
+    PyObject *ret = PyString_FromString(buff);
+    STFREE(buff);
+    return ret;
 }
 
 static PyObject *PyEntity_get_top_screen_pos(PyEntityObject *self, void *closure)
@@ -2499,8 +2500,6 @@ static PyObject *PyBuildableEntity_get_required_resources(PyBuildableEntityObjec
     }
 
     const size_t max = 64;
-    //const char *names[max];
-    //int amounts[max];
     STALLOC(char*, names, max);
     STALLOC(int, amounts, max);
 
@@ -2512,14 +2511,17 @@ static PyObject *PyBuildableEntity_get_required_resources(PyBuildableEntityObjec
     for(int i = 0; i < nreq; i++) {
         PyObject *amount = PyInt_FromLong(amounts[i]);
         if(!amount) {
-            Py_DECREF(ret);
-            return NULL;
+            Py_CLEAR(ret);
+            goto out;
         }
         if(!PyDict_SetItemString(ret, names[i], amount)) {
-            Py_DECREF(ret);
-            return NULL;
+            Py_CLEAR(ret);
+            goto out;
         }
     }
+out:
+    STFREE(names);
+    STFREE(amounts);
     return ret;
 }
 

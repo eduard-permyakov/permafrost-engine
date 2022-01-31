@@ -294,6 +294,7 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     glDisable(GL_CLIP_DISTANCE0);
     glEnable(GL_CULL_FACE);
 
+    STFREE(cam);
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }

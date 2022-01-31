@@ -1279,6 +1279,8 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
             }
         }
 
+        STFREE(adjacent);
+
         if(done) {
             break;
         }

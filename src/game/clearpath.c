@@ -521,6 +521,10 @@ static void on_render_3d(void *user, void *event)
     struct rgba text_color = s_debug_saved.des_v_in_pcr ? (struct rgba){255, 0, 0, 255}
                                                         : (struct rgba){0, 255, 0, 255};
     UI_DrawText(strbuff, (struct rect){5,50,200,50}, text_color);
+
+    STFREE(apexes);
+    STFREE(left_rays);
+    STFREE(right_rays);
 }
 
 static bool clearpath_new_velocity(struct cp_ent cpent,
@@ -531,6 +535,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
                                    bool save_debug,
                                    vec2_t *out)
 {
+    bool status = false;
     STALLOC(struct HRVO, dyn_hrvos, vec_size(&dyn_neighbs));
     STALLOC(struct HRVO, stat_vos, vec_size(&stat_neighbs));
 
@@ -572,7 +577,8 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
 
         s_debug_saved.des_v_in_pcr = false;
         *out = ent_des_v;
-        return true;
+        status = true;
+        goto out;
     }
 
     vec_vec2_t xpoints;
@@ -593,7 +599,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
     compute_vdes_proj_points(rays, n_rays, ent_des_v, &xpoints);
 
     if(vec_size(&xpoints) == 0) {
-        return false;    
+        goto out;    
     }
 
     vec2_t ret = compute_vnew(&xpoints, ent_des_v, cpent.xz_pos);
@@ -607,7 +613,13 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
 
     vec_vec2_destroy(&xpoints);
     *out = ret;
-    return true;
+    status = true;
+
+out:
+    STFREE(dyn_hrvos);
+    STFREE(stat_vos);
+    STFREE(rays);
+    return status;
 }
 
 static bool pentities_equal(struct entity *const *a, struct entity *const *b)

@@ -345,6 +345,10 @@ static void g_render_healthbars(void)
             R_PushArg(s_gs.active_cam, g_sizeof_camera),
         },
     });
+
+    STFREE(ent_health_pc);
+    STFREE(ent_top_pos_ws);
+
     PERF_RETURN_VOID();
 }
 
@@ -1035,6 +1039,10 @@ static void g_render_minimap_units(void)
     });
 
     M_RenderMinimapUnits(s_gs.map, nunits, positions, colors);
+
+    STFREE(positions);
+    STFREE(colors);
+
     PERF_RETURN_VOID();
 }
 

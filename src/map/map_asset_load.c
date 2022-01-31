@@ -246,6 +246,7 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
             R_PushArg(&res, sizeof(res)),
         },
     });
+    STFREE(texnames);
 
     /* Read chunks */
     size_t num_chunks = header->num_rows * header->num_cols;
@@ -284,6 +285,8 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
 
     map->nav_private = N_BuildForMapData(map->width, map->height, 
         TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT, chunk_tiles, update_navgrid);
+    STFREE(chunk_tiles);
+
     if(!map->nav_private)
         return false;
 

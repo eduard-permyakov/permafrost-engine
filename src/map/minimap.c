@@ -301,6 +301,10 @@ bool M_InitMinimap(struct map *map, vec2_t center_pos)
 
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mouseclick, map, G_RUNNING);
     E_Global_Register(SDL_MOUSEMOTION,     on_mousemove,  map, G_RUNNING);
+
+    STFREE(chunk_rprivates);
+    STFREE(chunk_model_mats);
+
     return true;
 }
 
