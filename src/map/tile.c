@@ -794,6 +794,11 @@ size_t M_Tile_Contour(size_t ntds, const struct tile_desc tds[],
     for(int r = minr - 1; r <= maxr + 1; r++) {
     for(int c = minc - 1; c <= maxc + 1; c++) {
 
+        if(r < 0 || r >= res.chunk_h * res.chunk_h - 1)
+            continue;
+        if(c < 0 || c >= res.chunk_w * res.chunk_w - 1)
+            continue;
+
         int relr = r - minr + 1;
         int relc = c - minc + 1;
         bool contour = false;
