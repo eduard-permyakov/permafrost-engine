@@ -300,6 +300,7 @@ bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
 
     struct grid_path_desc gp = {0};
     vec_coord_init(&gp.path);
+    vec_coord_resize(&gp.path, 512);
 
     if(N_FC_GetGridPath(start, finish, chunk, layer, &gp)) {
 
@@ -320,6 +321,9 @@ bool AStar_GridPath(struct coord start, struct coord finish, struct coord chunk,
         goto fail_came_from;
     if(NULL == (running_cost = kh_init(key_float)))
         goto fail_running_cost;
+
+    kh_resize(key_coord, came_from, 1024);
+    kh_resize(key_float, running_cost, 1024);
 
     kh_put_val(key_float, running_cost, coord_to_key(start), 0.0f);
     pq_coord_push(&frontier, 0.0f, start);

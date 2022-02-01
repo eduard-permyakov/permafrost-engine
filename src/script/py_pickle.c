@@ -7327,6 +7327,7 @@ static bool pickle_ctx_init(struct pickle_ctx *ctx)
     }
 
     vec_pobj_init(&ctx->to_free);
+    vec_pobj_resize(&ctx->to_free, 16 * 1024);
     return true;
 
 fail_memo:
@@ -7349,6 +7350,12 @@ static bool unpickle_ctx_init(struct unpickle_ctx *ctx)
     vec_pobj_init(&ctx->memo);
     vec_int_init(&ctx->mark_stack);
     vec_pobj_init(&ctx->to_free);
+
+    vec_pobj_resize(&ctx->stack, 4 * 1024);
+    vec_pobj_resize(&ctx->memo, 16 * 1024);
+    vec_int_resize(&ctx->mark_stack, 1024);
+    vec_pobj_resize(&ctx->to_free, 16 * 1024);
+
     ctx->stop = false;
     return true;
 }
@@ -7603,6 +7610,7 @@ PyObject *S_Pickle_PlainHeapSubtype(PyTypeObject *type)
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream)
 {
     struct pickle_ctx ctx;
+    PFSDL_VectorRWOpsReserve(stream, 64 * 1024 * 1024);
 
     int ret = pickle_ctx_init(&ctx);
     if(!ret) 

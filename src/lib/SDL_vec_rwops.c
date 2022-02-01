@@ -146,3 +146,7 @@ const char *PFSDL_VectorRWOpsRaw(SDL_RWops *ctx)
     return (const char*)VEC(ctx)->array;
 }
 
+bool PFSDL_VectorRWOpsReserve(SDL_RWops* ctx, size_t size)
+{
+    vec_uchar_resize(VEC(ctx), size);
+}

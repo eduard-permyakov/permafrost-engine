@@ -36,10 +36,12 @@
 #ifndef SDL_VEC_RWOPS_H
 #define SDL_VEC_RWOPS_H
 
+#include <stdbool.h>
 #include <SDL.h>
 
 SDL_RWops  *PFSDL_VectorRWOps(void);
 const char *PFSDL_VectorRWOpsRaw(SDL_RWops *ctx);
+bool        PFSDL_VectorRWOpsReserve(SDL_RWops* ctx, size_t size);
 
 #endif
 
