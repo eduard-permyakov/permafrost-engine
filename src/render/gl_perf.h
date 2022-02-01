@@ -87,6 +87,22 @@ extern bool g_trace_gpu;
         return;                                 \
     }while(0)
 
+#define GL_PERF_PUSH_GROUP(id, message)                     \
+    do{                                                     \
+        if(GLEW_KHR_debug) {                                \
+            glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION,   \
+                id, strlen(message), message);              \
+        }                                                   \
+    }while(0)
+
+#define GL_PERF_POP_GROUP()                                 \
+    do{                                                     \
+        if(GLEW_KHR_debug) {                                \
+            glPopDebugGroup();                              \
+        }                                                   \
+    }while(0)
+    
+
 #else
 
 #define GL_GPU_PERF_PUSH(name)
@@ -95,6 +111,9 @@ extern bool g_trace_gpu;
 #define GL_PERF_ENTER()
 #define GL_PERF_RETURN(...) do {return (__VA_ARGS__); } while(0)
 #define GL_PERF_RETURN_VOID(...) do { return; } while(0)
+
+#define GL_PERF_PUSH_GROUP(id, message) /* No-op */
+#define GL_PERF_POP_GROUP() /* No-op */
 
 #endif //NDEBUG
 

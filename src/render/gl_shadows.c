@@ -146,6 +146,7 @@ void R_GL_DepthPassBegin(const vec3_t *light_pos, const vec3_t *cam_pos, const v
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+    GL_PERF_PUSH_GROUP(0, "depth pass");
 
     assert(!s_depth_pass_active);
     s_depth_pass_active = true;
@@ -190,6 +191,7 @@ void R_GL_DepthPassEnd(void)
     glBindFramebuffer(GL_FRAMEBUFFER, s_saved.fb);
     glCullFace(GL_BACK);
 
+    GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }

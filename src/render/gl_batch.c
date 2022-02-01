@@ -1261,30 +1261,36 @@ void R_GL_Batch_Shutdown(void)
 void R_GL_Batch_Draw(struct render_input *in)
 {
     GL_PERF_ENTER();
+    GL_PERF_PUSH_GROUP(0, "batch::Draw");
 
     batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
     batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR, BATCH_ID_NULL);
 
+    GL_PERF_POP_GROUP();
     GL_PERF_RETURN_VOID();
 }
 
 void R_GL_Batch_DrawWithID(struct render_input *in, enum batch_id *id)
 {
     GL_PERF_ENTER();
+    GL_PERF_PUSH_GROUP(0, "batch::DrawWithID");
 
     batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_REGULAR);
     batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_REGULAR, *id);
 
+    GL_PERF_POP_GROUP();
     GL_PERF_RETURN_VOID();
 }
 
 void R_GL_Batch_RenderDepthMap(struct render_input *in)
 {
     GL_PERF_ENTER();
+    GL_PERF_PUSH_GROUP(0, "batch::RenderDepthMap");
 
     batch_render_anim_all(&in->cam_vis_anim, true, RENDER_PASS_DEPTH);
     batch_render_stat_all(&in->cam_vis_stat, true, RENDER_PASS_DEPTH, BATCH_ID_NULL);
 
+    GL_PERF_POP_GROUP();
     GL_PERF_RETURN_VOID();
 }
 

@@ -187,6 +187,7 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex, bool on, str
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+    GL_PERF_PUSH_GROUP(0, "water::render_refraction_tex");
 
     GLint texw, texh;
     glBindTexture(GL_TEXTURE_2D, clr_tex);
@@ -215,13 +216,16 @@ static void render_refraction_tex(GLuint clr_tex, GLuint depth_tex, bool on, str
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if(on) {
+        GL_PERF_PUSH_GROUP(0, "water::RenderMapAndEntities");
         G_RenderMapAndEntities(&in);
+        GL_PERF_POP_GROUP();
     }
 
     /* Clean up framebuffer */
     glDeleteFramebuffers(1, &fb);
     glDisable(GL_CLIP_DISTANCE0);
 
+    GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
@@ -230,6 +234,7 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+    GL_PERF_PUSH_GROUP(0, "water::render_reflection_tex");
 
     GLint texw, texh;
     glBindTexture(GL_TEXTURE_2D, tex);
@@ -286,7 +291,9 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     R_GL_SetClipPlane(plane_eq);
 
     /* Render to the texture */
+    GL_PERF_PUSH_GROUP(0, "water::RenderMapAndEntities");
     G_RenderMapAndEntities(&in);
+    GL_PERF_POP_GROUP();
 
     /* Clean up framebuffer */
     glDeleteRenderbuffers(1, &depth_rb);
@@ -295,6 +302,7 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
     glEnable(GL_CULL_FACE);
 
     STFREE(cam);
+    GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }
@@ -556,6 +564,7 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+    GL_PERF_PUSH_GROUP(0, "water");
 
     struct water_gl_state state;
     save_gl_state(&state);
@@ -602,6 +611,7 @@ void R_GL_DrawWater(const struct render_input *in, const bool *refraction, const
     glDeleteTextures(1, &refract_depth);
     glDeleteTextures(1, &reflect_tex);
 
+    GL_PERF_POP_GROUP();
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();
 }

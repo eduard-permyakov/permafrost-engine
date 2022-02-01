@@ -116,6 +116,7 @@ void R_GL_MapBegin(const bool *shadows, const vec2_t *pos)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
+    GL_PERF_PUSH_GROUP(0, "map");
     assert(!s_map_ctx_active);
 
     GLuint shader_prog;
@@ -147,6 +148,7 @@ void R_GL_MapEnd(void)
     assert(s_map_ctx_active);
     s_map_ctx_active = false;
 
+    GL_PERF_POP_GROUP();
     GL_PERF_RETURN_VOID();
 }
 
