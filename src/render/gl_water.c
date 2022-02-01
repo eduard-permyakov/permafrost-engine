@@ -292,6 +292,7 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
 
     /* Render to the texture */
     GL_PERF_PUSH_GROUP(0, "water::RenderMapAndEntities");
+    in.shadows = false;
     G_RenderMapAndEntities(&in);
     GL_PERF_POP_GROUP();
 
