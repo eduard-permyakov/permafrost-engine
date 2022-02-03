@@ -71,6 +71,17 @@
 #define PF_VER_MINOR 0
 #define PF_VER_PATCH 0
 
+/* In the WAITING state the engine only pumps events and re-draws the window,
+ * giving all the remaining cycles to the scheduler. The purpose of this state 
+ * is to allow the engine to remain responsive (i.e. the latency of handling 
+ * window events or redrawing the window is bounded) while performing some 
+ * long-running work within a task context.
+ */
+enum engine_state{
+    ENGINE_STATE_RUNNING,
+    ENGINE_STATE_WAITING
+};
+
 VEC_TYPE(event, SDL_Event)
 VEC_IMPL(static inline, event, SDL_Event)
 
@@ -90,6 +101,9 @@ SDL_threadID                     g_render_thread_id; /* write-once */
 
 static SDL_Window               *s_window;
 static SDL_Surface              *s_loading_screen;
+
+static enum engine_state         s_state = ENGINE_STATE_RUNNING;
+static struct future             s_request_done;
 
 /* Flag to perform a single step of the simulation while the game is paused. 
  * Cleared at after performing the step. 
@@ -786,13 +800,33 @@ int main(int argc, char **argv)
         render_maybe_enable();
         render_thread_start_work();
         Sched_StartBackgroundTasks();
-
         process_sdl_events();
-        E_ServiceQueue();
-        Session_ServiceRequests();
-        G_Update();
-        G_Render();
-        Sched_Tick();
+
+        bool request = Session_ServiceRequests(&s_request_done);
+        if(request) {
+            s_state = ENGINE_STATE_WAITING;
+        }
+
+        switch(s_state) {
+        case ENGINE_STATE_RUNNING:
+
+            E_ServiceQueue();
+            G_Update();
+            G_Render();
+            Sched_Tick();
+
+            break;
+
+        case ENGINE_STATE_WAITING:
+
+            Sched_Tick();
+            if(Sched_FutureIsReady(&s_request_done)) {
+                s_state = ENGINE_STATE_RUNNING;
+            }
+            break;
+
+        default: assert(0); break;
+        }
 
         render_thread_wait_done();
 

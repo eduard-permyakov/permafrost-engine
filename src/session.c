@@ -79,6 +79,7 @@ enum srequest{
 
 static vec_stream_t    s_subsession_stack;
 static enum srequest   s_request = SESH_REQ_NONE;
+static enum srequest   s_current = SESH_REQ_NONE;
 static int             s_argc;
 static char            s_argv[MAX_ARGC][128];
 static char            s_req_path[512];
@@ -252,6 +253,8 @@ static bool session_load(const char *file, char *errstr, size_t errlen)
 
     /* First save the current subsession to memory. If things go sour, we will roll back to it */
     SDL_RWops *current = PFSDL_VectorRWOps();
+    PFSDL_VectorRWOpsReserve(current, 64 * 1024 * 1024);
+
     bool result = subsession_save(current);
     assert(result);
     SDL_RWseek(current, 0, RW_SEEK_SET);
@@ -288,6 +291,8 @@ static bool session_load(const char *file, char *errstr, size_t errlen)
         }
 
         SDL_RWops *sub = PFSDL_VectorRWOps();
+        PFSDL_VectorRWOpsReserve(sub, 64 * 1024 * 1024);
+
         bool result = subsession_save(sub);
         assert(result);
         SDL_RWseek(sub, 0, RW_SEEK_SET);
@@ -357,6 +362,8 @@ static bool session_pop_subsession_to_root(char *errstr, size_t errlen)
 static bool session_push_subsession(const char *script, char *errstr, size_t errlen)
 {
     SDL_RWops *stream = PFSDL_VectorRWOps();
+    PFSDL_VectorRWOpsReserve(stream, 64 * 1024 * 1024);
+
     bool result, ret = false;
     (void)result;
 
@@ -396,6 +403,52 @@ static bool session_exec_subsession(const char *script, char *errstr, size_t err
     SDL_RWops *stream = vec_stream_pop(&s_subsession_stack);
     SDL_RWclose(stream);
     return true;
+}
+
+static struct result session_task(void* arg)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    Engine_EnableRendering(false);
+    Engine_LoadingScreen();
+    bool result = false;
+
+    switch (s_current) {
+    case SESH_REQ_LOAD:
+        result = session_load(s_req_path, s_errbuff, sizeof(s_errbuff));
+        break;
+    case SESH_REQ_PUSH:
+        s_pushing = true;
+        result = session_push_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
+        s_pushing = false;
+        break;
+    case SESH_REQ_POP:
+        result = session_pop_subsession(s_errbuff, sizeof(s_errbuff));
+        break;
+    case SESH_REQ_POP_TO_ROOT:
+        result = session_pop_subsession_to_root(s_errbuff, sizeof(s_errbuff));
+        break;
+    case SESH_REQ_EXEC:
+        result = session_exec_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
+        break;
+    default: assert(0);
+    }
+
+    if (!result) {
+        E_Global_Notify(EVENT_SESSION_FAIL_LOAD, s_errbuff, ES_ENGINE);
+    }
+    else {
+        E_Global_Notify(EVENT_SESSION_LOADED, NULL, ES_ENGINE);
+    }
+
+    s_argc = 0;
+    s_request = SESH_REQ_NONE;
+    s_change_tick = g_frame_idx;
+
+    return (struct result) {
+        .type = RESULT_BOOL,
+        .val.as_bool = result
+    };
 }
 
 /*****************************************************************************/
@@ -476,45 +529,21 @@ void Session_RequestPopToRoot(int argc, char **argv)
     s_request = SESH_REQ_POP_TO_ROOT;
 }
 
-void Session_ServiceRequests(void)
+bool Session_ServiceRequests(struct future *result)
 {
     if(s_request == SESH_REQ_NONE)
-        return;
+        return false;
 
-    Engine_EnableRendering(false);
-    Engine_LoadingScreen();
-    bool result = false;
-
-    switch(s_request) {
-    case SESH_REQ_LOAD:
-        result = session_load(s_req_path, s_errbuff, sizeof(s_errbuff));
-        break;
-    case SESH_REQ_PUSH:
-        s_pushing = true;
-        result = session_push_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
-        s_pushing = false;
-        break;
-    case SESH_REQ_POP:
-        result = session_pop_subsession(s_errbuff, sizeof(s_errbuff));
-        break;
-    case SESH_REQ_POP_TO_ROOT:
-        result = session_pop_subsession_to_root(s_errbuff, sizeof(s_errbuff));
-        break;
-    case SESH_REQ_EXEC:
-        result = session_exec_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
-        break;
-    default: assert(0);
-    }
-
-    if(!result) {
-        E_Global_Notify(EVENT_SESSION_FAIL_LOAD, s_errbuff, ES_ENGINE);
-    }else{
-        E_Global_Notify(EVENT_SESSION_LOADED, NULL, ES_ENGINE);
-    }
-
-    s_argc = 0;
+    s_current = s_request;
     s_request = SESH_REQ_NONE;
-    s_change_tick = g_frame_idx;
+
+    /* Let all the session-loading logic into an async task,
+     * so that the main thread can handle window events and 
+     * re-draw things when the session task yields.
+     */
+    uint32_t tid = Sched_Create(1, session_task, NULL, result, 
+        TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+    return true;
 }
 
 int Session_StackDepth(void)

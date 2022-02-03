@@ -7610,7 +7610,6 @@ PyObject *S_Pickle_PlainHeapSubtype(PyTypeObject *type)
 bool S_PickleObjgraph(PyObject *obj, SDL_RWops *stream)
 {
     struct pickle_ctx ctx;
-    PFSDL_VectorRWOpsReserve(stream, 64 * 1024 * 1024);
 
     int ret = pickle_ctx_init(&ctx);
     if(!ret) 

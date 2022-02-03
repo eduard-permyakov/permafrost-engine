@@ -1,6 +1,8 @@
 ; PUBLIC sched_switch_ctx
 ; PUBLIC sched_task_exit_trampoline
 
+extern sched_task_exit: PROC
+
 _TEXT SEGMENT
 
 sched_switch_ctx PROC
@@ -56,8 +58,6 @@ Lload_ctx LABEL DWORD
 Lback LABEL DWORD
     ret
 sched_switch_ctx ENDP
-
-extern sched_task_exit: PROC
 
 sched_task_exit_trampoline PROC
     mov rcx, rax

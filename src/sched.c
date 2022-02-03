@@ -459,7 +459,6 @@ static inline uint64_t sched_get_sp(void)
     uint64_t sp;
 #ifdef _MSC_VER
     sp = 0;
-    //__asm { mov sp, rsp }
 #else
     __asm__("mov %%rsp, %0" : "=rm" (sp));
 #endif
@@ -503,7 +502,8 @@ static inline void sched_print_backtrace(void)
     uint64_t rip, rbp, retaddr;
 
 #ifdef _MSC_VER
-    // TODO FIXME
+    rip = 0xdeadbeef;
+    rbp = ((uint64_t*)_AddressOfReturnAddress()) - 1;
 #else
     __asm__("lea 0x0(%%rip), %0\n" : "=rm" (rip));
     __asm__("mov %%rbp, %0" : "=rm" (rbp));
@@ -1317,9 +1317,8 @@ void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
         uint32_t tid;
         queue_tid_pop(&torun, &tid);
 
-        struct task *task = &s_tasks[tid - 1];
-        sched_task_run(task);
-        sched_task_service_request(task);
+        assert(tid != sched_curr_thread_tid());
+        Sched_RunSync(tid);
     }
 
 out:
@@ -1606,13 +1605,13 @@ void Sched_Flush(void)
 
     while(pq_task_pop(&s_ready_queue_main, &curr)) {
         assert(curr);
-        sched_task_run(curr);
-        sched_task_service_request(curr);
+        assert(curr->tid != sched_curr_thread_tid());
+        Sched_RunSync(curr->tid);
     }
     while(pq_task_pop(&s_ready_queue, &curr)) {
         assert(curr);
-        sched_task_run(curr);
-        sched_task_service_request(curr);
+        assert(curr->tid != sched_curr_thread_tid());
+        Sched_RunSync(curr->tid);
     }
 }
 
