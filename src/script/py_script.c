@@ -2449,24 +2449,7 @@ static PyObject *PyPf_save_session(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    SDL_RWops *stream = SDL_RWFromFile(str, "w"); /* file will be closed when stream is */
-    if(!stream) {
-        char buff[256];
-        pf_snprintf(buff, sizeof(buff), "Unable to open file (%s) for writing.\n", str);
-
-        PyErr_SetString(PyExc_RuntimeError, buff);
-        return NULL;
-    }
-
-    PyGC_Collect();
-
-    if(!Session_Save(stream)) {
-        PyErr_SetString(PyExc_RuntimeError, "Error saving the session.");
-        SDL_RWclose(stream);
-        return NULL;
-    }
-
-    SDL_RWclose(stream);
+    Session_RequestSave(str);
     Py_RETURN_NONE;
 }
 
@@ -3329,6 +3312,8 @@ void S_ClearState(void)
 
 bool S_SaveState(SDL_RWops *stream)
 {
+    PyGC_Collect();
+
     PyObject *modules_dict = PySys_GetObject("modules"); /* borrowed */
     assert(modules_dict);
     bool ret = false;

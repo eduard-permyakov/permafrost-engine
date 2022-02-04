@@ -153,9 +153,11 @@ static void process_sdl_events(void)
         }
     }
 
-    for(int i = 0; i < vec_size(&s_prev_tick_events); i++) {
-        const SDL_Event *event = &vec_AT(&s_prev_tick_events, i);
-        E_Global_Notify(event->type, (void*)event, ES_ENGINE);
+    if(s_state != ENGINE_STATE_WAITING) {
+        for(int i = 0; i < vec_size(&s_prev_tick_events); i++) {
+            const SDL_Event *event = &vec_AT(&s_prev_tick_events, i);
+            E_Global_Notify(event->type, (void*)event, ES_ENGINE);
+        }
     }
 
     UI_InputEnd();

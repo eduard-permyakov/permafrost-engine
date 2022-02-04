@@ -62,6 +62,7 @@ VEC_IMPL(static, stream, SDL_RWops*)
 
 enum srequest{
     SESH_REQ_NONE,
+    SESH_REQ_SAVE,
     SESH_REQ_LOAD,
     SESH_REQ_PUSH,
     SESH_REQ_POP,
@@ -405,58 +406,14 @@ static bool session_exec_subsession(const char *script, char *errstr, size_t err
     return true;
 }
 
-static struct result session_task(void* arg)
+static bool session_save(const char *file, char* errstr, size_t errlen)
 {
-    ASSERT_IN_MAIN_THREAD();
-
-    Engine_EnableRendering(false);
-    Engine_LoadingScreen();
-    bool result = false;
-
-    switch (s_current) {
-    case SESH_REQ_LOAD:
-        result = session_load(s_req_path, s_errbuff, sizeof(s_errbuff));
-        break;
-    case SESH_REQ_PUSH:
-        s_pushing = true;
-        result = session_push_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
-        s_pushing = false;
-        break;
-    case SESH_REQ_POP:
-        result = session_pop_subsession(s_errbuff, sizeof(s_errbuff));
-        break;
-    case SESH_REQ_POP_TO_ROOT:
-        result = session_pop_subsession_to_root(s_errbuff, sizeof(s_errbuff));
-        break;
-    case SESH_REQ_EXEC:
-        result = session_exec_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
-        break;
-    default: assert(0);
+    SDL_RWops *stream = SDL_RWFromFile(file, "w");
+    if(!stream) {
+        pf_snprintf(errstr, errlen, "Could not open session file: %s", file);
+        goto fail_stream;
     }
 
-    if (!result) {
-        E_Global_Notify(EVENT_SESSION_FAIL_LOAD, s_errbuff, ES_ENGINE);
-    }
-    else {
-        E_Global_Notify(EVENT_SESSION_LOADED, NULL, ES_ENGINE);
-    }
-
-    s_argc = 0;
-    s_request = SESH_REQ_NONE;
-    s_change_tick = g_frame_idx;
-
-    return (struct result) {
-        .type = RESULT_BOOL,
-        .val.as_bool = result
-    };
-}
-
-/*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
-/*****************************************************************************/
-
-bool Session_Save(struct SDL_RWops *stream)
-{
     struct attr version = (struct attr){
         .type = TYPE_FLOAT,
         .val.as_float = PFSAVE_VERSION
@@ -480,9 +437,76 @@ bool Session_Save(struct SDL_RWops *stream)
     }
 
     if(!subsession_save(stream))
-        return false;
+        goto fail_save;
 
+    SDL_RWclose(stream);
     return true;
+
+fail_save:
+    SDL_RWclose(stream);
+fail_stream:
+    return false;
+}
+
+static struct result session_task(void* arg)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    Engine_EnableRendering(false);
+    Engine_LoadingScreen();
+    bool result = false;
+
+    switch(s_current) {
+    case SESH_REQ_SAVE:
+        result = session_save(s_req_path, s_errbuff, sizeof(s_errbuff));
+        break;
+    case SESH_REQ_LOAD:
+        result = session_load(s_req_path, s_errbuff, sizeof(s_errbuff));
+        break;
+    case SESH_REQ_PUSH:
+        s_pushing = true;
+        result = session_push_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
+        s_pushing = false;
+        break;
+    case SESH_REQ_POP:
+        result = session_pop_subsession(s_errbuff, sizeof(s_errbuff));
+        break;
+    case SESH_REQ_POP_TO_ROOT:
+        result = session_pop_subsession_to_root(s_errbuff, sizeof(s_errbuff));
+        break;
+    case SESH_REQ_EXEC:
+        result = session_exec_subsession(s_req_path, s_errbuff, sizeof(s_errbuff));
+        break;
+    default: assert(0);
+    }
+
+    int success_event = (s_current == SESH_REQ_SAVE) ? EVENT_SESSION_SAVED     : EVENT_SESSION_LOADED;
+    int failure_event = (s_current == SESH_REQ_SAVE) ? EVENT_SESSION_FAIL_SAVE : EVENT_SESSION_FAIL_LOAD;
+
+    if(!result) {
+        E_Global_Notify(success_event, s_errbuff, ES_ENGINE);
+    }else {
+        E_Global_Notify(failure_event, NULL, ES_ENGINE);
+    }
+
+    s_argc = 0;
+    s_request = SESH_REQ_NONE;
+    s_change_tick = g_frame_idx;
+
+    return (struct result) {
+        .type = RESULT_BOOL,
+        .val.as_bool = result
+    };
+}
+
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
+
+bool Session_RequestSave(const char *path)
+{
+    s_request = SESH_REQ_SAVE;
+    pf_snprintf(s_req_path, sizeof(s_req_path), "%s", path);
 }
 
 void Session_RequestLoad(const char *path)

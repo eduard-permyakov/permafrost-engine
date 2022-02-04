@@ -54,7 +54,7 @@ bool     Session_Init(void);
 void     Session_Shutdown(void);
 bool     Session_ServiceRequests(struct future *result);
 
-bool     Session_Save(struct SDL_RWops *stream);
+bool     Session_RequestSave(const char *path);
 void     Session_RequestLoad(const char *path);
 
 void     Session_RequestPush(const char *script, int argc, char **argv);
