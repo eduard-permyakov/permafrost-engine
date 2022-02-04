@@ -117,9 +117,9 @@ static struct file *fb_get_list(const char *dir, size_t *out_size)
             }
         }
 
-        size_t len;
         char cname[MAX_PATH];
-        wcstombs_s(&len, cname, sizeof(cname), entry.cFileName, MAX_PATH);
+        size_t len = WideCharToMultiByte(CP_UTF8, WC_NO_BEST_FIT_CHARS | WC_COMPOSITECHECK | WC_DEFAULTCHAR,
+            entry.cFileName, -1, cname, sizeof(cname), NULL, NULL);
 
         files[nfiles].is_dir = (entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
         pf_strlcpy(files[nfiles].name, cname, NK_MAX_PATH_LEN);
@@ -149,9 +149,9 @@ static bool fb_homedir(char out[])
     if(result != S_OK)
         return false;
 
-    size_t len;
     char cpath[NK_MAX_PATH_LEN];
-    wcstombs_s(&len, cpath, sizeof(cpath), path, MAX_PATH);
+    size_t len = WideCharToMultiByte(CP_UTF8, WC_NO_BEST_FIT_CHARS | WC_COMPOSITECHECK | WC_DEFAULTCHAR,
+        path, -1, cpath, sizeof(cpath), NULL, NULL);
 
     pf_strlcpy(out, cpath, NK_MAX_PATH_LEN);
     fb_path_fix_separator(out);
@@ -190,9 +190,9 @@ static size_t fb_get_places(size_t maxout, char out[][NK_MAX_PATH_LEN],
         if(ret == maxout)
             return ret;
 
-        size_t len;
         char cpath[MAX_PATH];
-        wcstombs_s(&len, cpath, sizeof(cpath), drives + cursor, MAX_PATH);
+        size_t len = WideCharToMultiByte(CP_UTF8, WC_NO_BEST_FIT_CHARS | WC_COMPOSITECHECK | WC_DEFAULTCHAR,
+            drives + cursor, -1, cpath, sizeof(cpath), NULL, NULL);
 
         icons[ret] = DEFAULT_DISK_ICON;
         pf_strlcpy(out[ret], cpath, NK_MAX_PATH_LEN);
@@ -441,9 +441,9 @@ static void fb_places_list(struct nk_context *ctx, struct nk_fb_state *state)
     for(int i = 0; i < nplaces; i++) {
 
         nk_layout_row_dynamic(ctx, 25, 1);
-        if(nk_button_texpath_label(ctx, icons[i], names[i], NK_TEXT_ALIGN_RIGHT)) {
+        if(nk_button_texpath_label(ctx, icons[i], names + (i * 32), NK_TEXT_ALIGN_RIGHT)) {
 
-            pf_strlcpy(state->directory, paths[i], sizeof(state->directory));
+            pf_strlcpy(state->directory, paths + (i * NK_MAX_PATH_LEN), sizeof(state->directory));
             state->selected[0] = '\0';
         }
     }

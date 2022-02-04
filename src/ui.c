@@ -279,7 +279,27 @@ static void ui_init_font_stash(struct nk_context *ctx)
         char path[NK_MAX_PATH_LEN];
         pf_snprintf(path, sizeof(path), "%s/%s", fontdir, files[i].name);
 
-        struct nk_font *font = nk_font_atlas_add_from_file(&s_atlas, path, 16, NULL);
+        static const nk_rune glyph_ranges[] = {
+            /* English */
+            0x0020, 0x00FF,
+            /* Chinese */
+            0x3000, 0x30FF,
+            0x31F0, 0x31FF,
+            0xFF00, 0xFFEF,
+            0x4e00, 0x9FAF,
+            /* Cyrillic */
+            0x0400, 0x052F,
+            0x2DE0, 0x2DFF,
+            0xA640, 0xA69F,
+            /* Terminator */
+            0
+        };
+        struct nk_font_config config = nk_font_config(16);
+        config.oversample_h = 1;
+        config.oversample_v = 1;
+        config.range = glyph_ranges;
+
+        struct nk_font *font = nk_font_atlas_add_from_file(&s_atlas, path, 16, &config);
         if(!font)
             continue;
 
