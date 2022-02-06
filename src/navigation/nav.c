@@ -495,6 +495,7 @@ static void n_link_chunk_portals(struct nav_chunk *chunk, struct coord chunk_coo
                 port->edges[port->num_neighbours] = (struct edge){EDGE_STATE_ACTIVE, link_candidate, cost};
                 port->num_neighbours++;    
             }
+            Sched_TryYield();
         }
     }
 

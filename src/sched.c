@@ -1554,6 +1554,24 @@ bool Sched_FutureIsReady(const struct future *future)
     return (SDL_AtomicGet((SDL_atomic_t*)&future->status) == FUTURE_COMPLETE);
 }
 
+void Sched_TryYield(void)
+{
+    uint32_t tid = Sched_ActiveTID();
+    if(tid == NULL_TID)
+        return;
+
+    const char *name = NULL;
+    if(!Perf_IsRoot()) {
+        PERF_POP_NAME(&name);
+    }
+
+    Sched_Request((struct request) { .type = SCHED_REQ_YIELD });
+
+    if(name) {
+        PERF_PUSH(name);
+    }
+}
+
 /* Like Sched_Create, but attempts to run a task to completion 
  * when it's not able to allocate a TID 
  */

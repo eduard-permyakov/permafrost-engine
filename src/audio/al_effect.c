@@ -611,11 +611,13 @@ bool Audio_EffectSaveState(struct SDL_RWops *stream)
         .val.as_int = vec_size(&s_effects)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_effects_attr, "num_effects"));
+    Sched_TryYield();
 
     for(int i = 0; i < vec_size(&s_effects); i++) {
         const struct al_effect *curr = &vec_AT(&s_effects, i);
         if(!audio_save_effect(stream, curr))
             return false;
+        Sched_TryYield();
     }
     return true;
 }
@@ -631,6 +633,7 @@ bool Audio_EffectLoadState(struct SDL_RWops *stream)
     for(int i = 0; i < num_effects; i++) {
         if(!audio_load_effect(stream))
             return false;
+        Sched_TryYield();
     }
 
     return true;

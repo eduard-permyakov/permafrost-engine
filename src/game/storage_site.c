@@ -1059,6 +1059,7 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
         .val.as_int = kh_size(s_entity_state_table)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_ents, "num_ents"));
+    Sched_TryYield();
 
     uint32_t key;
     struct ss_state curr;
@@ -1187,6 +1188,7 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
             .val.as_bool = curr.do_not_take
         };
         CHK_TRUE_RET(Attr_Write(stream, &do_not_take, "do_not_take"));
+        Sched_TryYield();
     });
 
     /* save global resource/capacity tables 
@@ -1195,6 +1197,7 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
     
         CHK_TRUE_RET(save_global_resources(i, stream));
         CHK_TRUE_RET(save_global_capacities(i, stream));
+        Sched_TryYield();
     }
 
     /* save UI style 
@@ -1204,6 +1207,7 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
         .val.as_int = s_bg_style.type
     };
     CHK_TRUE_RET(Attr_Write(stream, &bg_style_type, "bg_style_type"));
+    Sched_TryYield();
 
     switch(s_bg_style.type) {
     case NK_STYLE_ITEM_COLOR: {
@@ -1223,12 +1227,14 @@ bool G_StorageSite_SaveState(struct SDL_RWops *stream)
 
     CHK_TRUE_RET(save_color(s_border_clr, stream));
     CHK_TRUE_RET(save_color(s_font_clr, stream));
+    Sched_TryYield();
 
     struct attr ui_shown = (struct attr){
         .type = TYPE_BOOL,
         .val.as_bool = s_show_ui
     };
     CHK_TRUE_RET(Attr_Write(stream, &ui_shown, "ui_shown"));
+    Sched_TryYield();
 
     return true;
 }
@@ -1240,6 +1246,7 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const size_t num_ents = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < num_ents; i++) {
 
@@ -1352,6 +1359,7 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
         ss->do_not_take = attr.val.as_bool;
+        Sched_TryYield();
     }
 
     /* load global resource/capacity tables 
@@ -1360,6 +1368,7 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
 
         CHK_TRUE_RET(load_global_resources(i, stream));
         CHK_TRUE_RET(load_global_capacities(i, stream));
+        Sched_TryYield();
     }
 
     /* load UI style 
@@ -1391,6 +1400,7 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_BOOL);
     s_show_ui = attr.val.as_bool;
+    Sched_TryYield();
 
     return true;
 }

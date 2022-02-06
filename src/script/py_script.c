@@ -2504,7 +2504,7 @@ static int s_tracefunc(PyObject *obj, struct _frame *frame, int what, PyObject *
     }
     case PyTrace_EXCEPTION: /* fallthrough */
     case PyTrace_RETURN: {
-        Perf_Pop();
+        Perf_Pop(NULL);
         break;
     }
     case PyTrace_C_CALL: {
@@ -2517,7 +2517,7 @@ static int s_tracefunc(PyObject *obj, struct _frame *frame, int what, PyObject *
     }
     case PyTrace_C_EXCEPTION: /* fallthrough */
     case PyTrace_C_RETURN: {
-        Perf_Pop();
+        Perf_Pop(NULL);
     }
     case PyTrace_LINE:
         break; /* no-op */

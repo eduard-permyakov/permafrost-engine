@@ -796,6 +796,7 @@ bool Audio_SaveState(struct SDL_RWops *stream)
             .val.as_bool = (fg_buffer != 0)
         };
         CHK_TRUE_RET(Attr_Write(stream, &fg_has_buffer_attr, "fg_has_buffer"));
+        Sched_TryYield();
 
         if(fg_has_buffer_attr.val.as_bool) {
 
@@ -822,6 +823,7 @@ bool Audio_SaveState(struct SDL_RWops *stream)
             };
             CHK_TRUE_RET(Attr_Write(stream, &fg_state_attr, "fg_state"));
         }
+        Sched_TryYield();
     }
 
     vec3_t pos = {0};
@@ -831,6 +833,7 @@ bool Audio_SaveState(struct SDL_RWops *stream)
         .val.as_vec3 = pos
     };
     CHK_TRUE_RET(Attr_Write(stream, &listener_pos_attr, "listener_pos"));
+    Sched_TryYield();
     
     if(!Audio_EffectSaveState(stream))
         return false;
@@ -893,6 +896,7 @@ bool Audio_LoadState(struct SDL_RWops *stream)
                 }
             }
         }
+        Sched_TryYield();
     }
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));

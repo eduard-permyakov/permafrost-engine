@@ -882,6 +882,8 @@ bool G_Region_SaveState(struct SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_regions, "num_regions"));
 
+    Sched_TryYield();
+
     const char *name;
     struct region curr;
 
@@ -960,6 +962,8 @@ bool G_Region_SaveState(struct SDL_RWops *stream)
             };
             CHK_TRUE_RET(Attr_Write(stream, &ent, "prev_ent"));
         }
+
+        Sched_TryYield();
     });
 
     struct attr num_dirty = (struct attr){
@@ -967,6 +971,8 @@ bool G_Region_SaveState(struct SDL_RWops *stream)
         .val.as_int = kh_size(s_dirty)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_dirty, "num_dirty"));
+
+    Sched_TryYield();
 
     for(khiter_t k = kh_begin(s_dirty); k != kh_end(s_dirty); k++) {
 
@@ -978,6 +984,8 @@ bool G_Region_SaveState(struct SDL_RWops *stream)
 
         pf_strlcpy(reg_name.val.as_string, name, sizeof(reg_name.val.as_string));
         CHK_TRUE_RET(Attr_Write(stream, &reg_name, "reg_name"));
+
+        Sched_TryYield();
     }
 
     return true;
@@ -994,6 +1002,7 @@ bool G_Region_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const size_t num_regions = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < num_regions; i++) {
 
@@ -1065,6 +1074,7 @@ bool G_Region_LoadState(struct SDL_RWops *stream)
             CHK_TRUE_RET(curr.type == TYPE_INT);
             vec_uid_push(&reg->prev_ents, curr.val.as_int);
         }
+        Sched_TryYield();
     }
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
@@ -1082,6 +1092,7 @@ bool G_Region_LoadState(struct SDL_RWops *stream)
 
         const char *key = kh_key(s_regions, k);
         kh_put(name, s_dirty, key, &(int){0});
+        Sched_TryYield();
     }
 
     return true;

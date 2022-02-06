@@ -90,6 +90,7 @@ typedef struct result (*task_func_t)(void *);
 /* The following may only be called from any context */
 
 bool     Sched_FutureIsReady(const struct future *future);
+void     Sched_TryYield(void);
 
 /* The following may only be called from main thread context */
 

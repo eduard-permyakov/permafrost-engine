@@ -458,6 +458,7 @@ bool G_Builder_SaveState(struct SDL_RWops *stream)
         .val.as_int = kh_size(s_entity_state_table)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_builders, "num_builders"));
+    Sched_TryYield();
 
     uint32_t uid;
     struct builderstate curr;
@@ -487,6 +488,7 @@ bool G_Builder_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.target_uid
         };
         CHK_TRUE_RET(Attr_Write(stream, &target, "builder_target"));
+        Sched_TryYield();
     });
 
     return true;
@@ -499,6 +501,7 @@ bool G_Builder_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const int num_builders = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < num_builders; i++) {
     
@@ -541,6 +544,7 @@ bool G_Builder_LoadState(struct SDL_RWops *stream)
         default:
             return false;
         }
+        Sched_TryYield();
     }
     return true;
 }

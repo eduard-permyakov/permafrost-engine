@@ -44,6 +44,7 @@
 #include "../camera.h"
 #include "../main.h"
 #include "../perf.h"
+#include "../sched.h"
 
 #include <string.h>
 #include <stdbool.h>
@@ -637,6 +638,8 @@ bool G_Sel_SaveState(struct SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_selected, "num_selected"));
 
+    Sched_TryYield();
+
     for(int i = 0; i < vec_size(&s_selected); i++) {
     
         struct attr selected_ent = (struct attr){
@@ -644,6 +647,7 @@ bool G_Sel_SaveState(struct SDL_RWops *stream)
             .val.as_int = vec_AT(&s_selected, i)->uid
         };
         CHK_TRUE_RET(Attr_Write(stream, &selected_ent, "selected_ent"));
+        Sched_TryYield();
     }
 
     return true;
@@ -668,6 +672,7 @@ bool G_Sel_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const size_t num_selected = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < num_selected; i++) {
     
@@ -676,6 +681,7 @@ bool G_Sel_LoadState(struct SDL_RWops *stream)
         struct entity *ent = G_EntityForUID(attr.val.as_int);
         CHK_TRUE_RET(ent);
         vec_pentity_push(&s_selected, ent);
+        Sched_TryYield();
     }
 
     s_hovered_dirty = true;

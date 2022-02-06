@@ -605,6 +605,7 @@ static bool g_save_anim_state(SDL_RWops *stream)
         };
         CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
         CHK_TRUE_RET(A_SaveState(stream, curr->uid));
+        Sched_TryYield();
     });
 
     return true;
@@ -631,6 +632,7 @@ static bool g_load_anim_state(SDL_RWops *stream)
         CHK_TRUE_RET(ent);
 
         CHK_TRUE_RET(A_LoadState(stream, ent->uid));
+        Sched_TryYield();
     }
 
     return true;
@@ -1365,10 +1367,15 @@ void G_BakeNavDataForScene(void)
         struct obb obb;
         Entity_CurrentOBB(curr, &obb, false);
         M_NavCutoutStaticObject(s_gs.map, &obb);
+        Sched_TryYield();
     });
 
     M_NavUpdatePortals(s_gs.map);
+    Sched_TryYield();
+
     M_NavUpdateIslandsField(s_gs.map);
+    Sched_TryYield();
+
     PERF_RETURN_VOID();
 }
 
@@ -2335,6 +2342,8 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(G_Fog_SaveState(stream));
     }
 
+    Sched_TryYield();
+
     struct attr ss = (struct attr){
         .type = TYPE_INT, 
         .val.as_int = s_gs.ss
@@ -2352,6 +2361,8 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         .val.as_int = g_num_factions()
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_factions, "num_factions"));
+
+    Sched_TryYield();
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
 
@@ -2380,6 +2391,7 @@ bool G_SaveGlobalState(SDL_RWops *stream)
             .val.as_bool = fac.controllable
         };
         CHK_TRUE_RET(Attr_Write(stream, &fac_controllable, "fac_controllable"));
+        Sched_TryYield();
     }
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
@@ -2390,6 +2402,7 @@ bool G_SaveGlobalState(SDL_RWops *stream)
             .val.as_int = s_gs.diplomacy_table[i][j]
         };
         CHK_TRUE_RET(Attr_Write(stream, &dstate, "diplomacy_state"));
+        Sched_TryYield();
     }}
 
     struct attr cam_speed = (struct attr){
@@ -2410,6 +2423,8 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &cam_pitch, "cam_pitch"));
 
+    Sched_TryYield();
+
     struct attr cam_yaw = (struct attr){
         .type = TYPE_FLOAT,
         .val.as_float = Camera_GetYaw(s_gs.active_cam)
@@ -2427,6 +2442,8 @@ bool G_SaveGlobalState(SDL_RWops *stream)
         .val.as_int = s_gs.active_cam_mode
     };
     CHK_TRUE_RET(Attr_Write(stream, &active_cam_mode, "active_cam_mode"));
+
+    Sched_TryYield();
 
     struct attr active_font = (struct attr){
         .type = TYPE_STRING, 
@@ -2446,6 +2463,8 @@ bool G_SaveGlobalState(SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &minimap_render_all, "minimap_render_all"));
 
+    Sched_TryYield();
+
     if(!G_Region_SaveState(stream))
         return false;
 
@@ -2459,9 +2478,11 @@ bool G_LoadGlobalState(SDL_RWops *stream)
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_BOOL);
+    Sched_TryYield();
 
     if(attr.val.as_bool) {
         CHK_TRUE_RET(G_LoadMap(stream, true));
+        Sched_TryYield();
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_VEC2);
@@ -2480,6 +2501,7 @@ bool G_LoadGlobalState(SDL_RWops *stream)
         M_Raycast_SetHighlightSize(attr.val.as_int);
 
         CHK_TRUE_RET(G_Fog_LoadState(stream));
+        Sched_TryYield();
     }else{
         G_ClearState();
         E_Global_Notify(EVENT_NEW_GAME, NULL, ES_ENGINE);
@@ -2496,6 +2518,7 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     int num_factions = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < num_factions; i++) {
 
@@ -2520,6 +2543,7 @@ bool G_LoadGlobalState(SDL_RWops *stream)
 
         s_gs.factions_allocd |= (0x1 << fac_id);
         s_gs.factions[fac_id] = fac;
+        Sched_TryYield();
     }
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
@@ -2528,6 +2552,7 @@ bool G_LoadGlobalState(SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         s_gs.diplomacy_table[i][j] = attr.val.as_int;
+        Sched_TryYield();
     }}
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
@@ -2556,6 +2581,7 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     int active_cam_mode = attr.val.as_int;
 
     G_SetActiveCamera(s_gs.active_cam, active_cam_mode);
+    Sched_TryYield();
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_STRING);
@@ -2568,6 +2594,7 @@ bool G_LoadGlobalState(SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_BOOL);
     s_gs.minimap_render_all = attr.val.as_bool;
+    Sched_TryYield();
 
     if(!G_Region_LoadState(stream))
         return false;

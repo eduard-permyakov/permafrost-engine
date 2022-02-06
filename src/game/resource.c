@@ -293,6 +293,7 @@ bool G_Resource_SaveState(struct SDL_RWops *stream)
         .val.as_int = kh_size(s_entity_state_table)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_ents, "num_ents"));
+    Sched_TryYield();
 
     uint32_t key;
     struct rstate curr;
@@ -318,6 +319,7 @@ bool G_Resource_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.amount
         };
         CHK_TRUE_RET(Attr_Write(stream, &amount, "amount"));
+        Sched_TryYield();
     });
 
     struct attr num_names = (struct attr){
@@ -325,6 +327,7 @@ bool G_Resource_SaveState(struct SDL_RWops *stream)
         .val.as_int = kh_size(s_all_names)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_names, "num_names"));
+    Sched_TryYield();
 
     for(khiter_t k = kh_begin(s_all_names); k != kh_end(s_all_names); k++) {
 
@@ -335,6 +338,7 @@ bool G_Resource_SaveState(struct SDL_RWops *stream)
         struct attr name = (struct attr){ .type = TYPE_STRING };
         pf_strlcpy(name.val.as_string, key, sizeof(name.val.as_string));
         CHK_TRUE_RET(Attr_Write(stream, &name, "name"));
+        Sched_TryYield();
     }
 
     return true;
@@ -347,6 +351,7 @@ bool G_Resource_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const size_t num_ents = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < num_ents; i++) {
 
@@ -367,11 +372,13 @@ bool G_Resource_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         G_Resource_SetAmount(uid, attr.val.as_int);
+        Sched_TryYield();
     }
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const size_t num_names = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < num_names; i++) {
     
@@ -380,6 +387,7 @@ bool G_Resource_LoadState(struct SDL_RWops *stream)
 
         const char *key = si_intern(attr.val.as_string, &s_stringpool, s_stridx);
         kh_put(name, s_all_names, key, &(int){0});
+        Sched_TryYield();
     }
 
     return true;

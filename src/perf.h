@@ -49,13 +49,13 @@
 
 #define PERF_RETURN(...)        \
     do{                         \
-        Perf_Pop();             \
+        Perf_Pop(NULL);         \
         return (__VA_ARGS__);   \
     }while(0)
 
 #define PERF_RETURN_VOID()      \
     do{                         \
-        Perf_Pop();             \
+        Perf_Pop(NULL);         \
         return;                 \
     }while(0)
 
@@ -63,7 +63,10 @@
     Perf_Push(name)
 
 #define PERF_POP()              \
-    Perf_Pop()
+    Perf_Pop(NULL)
+
+#define PERF_POP_NAME(_ptr)     \
+    Perf_Pop(_ptr)
 
 #else
 
@@ -72,6 +75,7 @@
 #define PERF_RETURN_VOID(...) do { return; } while(0)
 #define PERF_PUSH(name)
 #define PERF_POP()
+#define PERF_POP_NAME(_ptr)
 
 #endif
 
@@ -91,10 +95,12 @@ struct perf_info{
 };
 
 void     Perf_Push(const char *name);
-void     Perf_Pop(void);
+void     Perf_Pop(const char **out);
 
 void     Perf_PushGPU(const char *name, uint32_t cookie);
 void     Perf_PopGPU(uint32_t cookie);
+
+bool     Perf_IsRoot(void);
 
 /* Note that due to buffering of the frame timing data, the statistics
  * reported will be from NFRAMES_LOGGED ago. The reason for this is that

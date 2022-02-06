@@ -783,6 +783,7 @@ bool G_Building_SaveState(struct SDL_RWops *stream)
         .val.as_int = kh_size(s_entity_state_table)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_buildings, "num_buildings"));
+    Sched_TryYield();
 
     uint32_t uid;
     struct buildstate curr;
@@ -856,6 +857,7 @@ bool G_Building_SaveState(struct SDL_RWops *stream)
         });
 
         CHK_TRUE_RET(AL_SaveOBB(stream, &curr.obb));
+        Sched_TryYield();
     });
 
     return true;
@@ -868,6 +870,7 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const int num_buildings = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < num_buildings; i++) {
 
@@ -957,6 +960,7 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         if(ent->flags & ENTITY_FLAG_COMBATABLE) {
             G_Combat_SetCurrentHP(ent, hp);
         }
+        Sched_TryYield();
     }
     return true;
 }

@@ -37,6 +37,7 @@
 #include "config.h"
 #include "event.h"
 #include "main.h"
+#include "sched.h"
 #include "game/public/game.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/khash.h"
@@ -409,6 +410,8 @@ bool Cursor_SaveState(struct SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &ncursors, "ncursors"));
 
+    Sched_TryYield();
+
     const char *key;
     struct cursor_resource curr;
 
@@ -437,6 +440,8 @@ bool Cursor_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.hot_y
         };
         CHK_TRUE_RET(Attr_Write(stream, &hoty, "hoty"));
+
+        Sched_TryYield();
     });
 
     enum cursortype type = CURSOR_POINTER;
@@ -494,6 +499,8 @@ bool Cursor_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr->hot_y
         };
         CHK_TRUE_RET(Attr_Write(stream, &hoty, "hoty"));
+
+        Sched_TryYield();
     }
 
     return true;
@@ -510,6 +517,7 @@ bool Cursor_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     size_t ncursors = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < ncursors; i++) {
 
@@ -530,6 +538,7 @@ bool Cursor_LoadState(struct SDL_RWops *stream)
         int hoty = attr.val.as_int;
 
         Cursor_NamedLoadBMP(name.val.as_string, path.val.as_string, hotx, hoty);
+        Sched_TryYield();
     }
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
@@ -542,6 +551,7 @@ bool Cursor_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     size_t nsystem = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < nsystem; i++) {
 
@@ -562,6 +572,7 @@ bool Cursor_LoadState(struct SDL_RWops *stream)
         int hoty = attr.val.as_int;
 
         Cursor_LoadBMP(type.val.as_int, path.val.as_string, hotx, hoty);
+        Sched_TryYield();
     }
 
     return true;

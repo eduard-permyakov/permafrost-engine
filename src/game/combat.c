@@ -1471,6 +1471,7 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
             .val.as_float = curr.pd.speed,
         };
         CHK_TRUE_RET(Attr_Write(stream, &pd_speed, "pd_speed"));
+        Sched_TryYield();
     });
 
     struct attr num_dying = (struct attr){
@@ -1478,6 +1479,7 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
         .val.as_int = vec_size(&s_dying_ents)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_dying, "num_dying"));
+    Sched_TryYield();
 
     for(int i = 0; i < vec_size(&s_dying_ents); i++) {
     
@@ -1487,6 +1489,7 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr_ent->uid
         };
         CHK_TRUE_RET(Attr_Write(stream, &uid, "dying_ent_uid"));
+        Sched_TryYield();
     }
 
     return true;
@@ -1498,6 +1501,7 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
+    Sched_TryYield();
 
     const size_t num_ents = attr.val.as_int;
     uint32_t curr_ticks = SDL_GetTicks();
@@ -1569,11 +1573,13 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_FLOAT);
         cs->pd.speed = attr.val.as_float;
+        Sched_TryYield();
     }
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const size_t num_dying = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < num_dying; i++) {
     
@@ -1589,6 +1595,7 @@ bool G_Combat_LoadState(struct SDL_RWops *stream)
         }else{
             Entity_DisappearAnimated(ent, s_map, on_disappear_finish, ent);
         }
+        Sched_TryYield();
     }
 
     return true;

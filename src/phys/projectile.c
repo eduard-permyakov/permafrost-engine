@@ -594,6 +594,7 @@ bool P_Projectile_SaveState(struct SDL_RWops *stream)
         .val.as_int = vec_size(&s_front)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_proj, "num_proj"));
+    Sched_TryYield();
 
     for(int i = 0; i < vec_size(&s_front); i++) {
    
@@ -661,6 +662,7 @@ bool P_Projectile_SaveState(struct SDL_RWops *stream)
             .val.as_vec3 = curr->scale,
         };
         CHK_TRUE_RET(Attr_Write(stream, &scale, "scale"));
+        Sched_TryYield();
 
         /* No need to save the matrix - it is fully derived */
     }
@@ -681,6 +683,7 @@ bool P_Projectile_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const int num_proj = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < num_proj; i++) {
 
@@ -744,6 +747,7 @@ bool P_Projectile_LoadState(struct SDL_RWops *stream)
         /* Add it to the list of projectiles */
         vec_proj_push(&s_front, proj);
         vec_proj_push(&s_back, proj);
+        Sched_TryYield();
     }
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));

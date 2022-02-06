@@ -41,6 +41,7 @@
 #include "../lib/public/pf_string.h"
 #include "../lib/public/mem.h"
 #include "../asset_load.h"
+#include "../sched.h"
 
 
 /* Additional Python headers */
@@ -7480,6 +7481,7 @@ fail:
 
 static bool pickle_obj(struct pickle_ctx *ctx, PyObject *obj, SDL_RWops *stream)
 {
+    Sched_TryYield();
     pickle_func_t pf;
 
     if(0 != Py_EnterRecursiveCall("pickle_obj")) {
@@ -7636,6 +7638,7 @@ PyObject *S_UnpickleObjgraph(SDL_RWops *stream)
 {
     struct unpickle_ctx ctx;
     unpickle_ctx_init(&ctx);
+    unsigned long opcount = 0;
 
     while(!ctx.stop) {
     
@@ -7657,6 +7660,10 @@ PyObject *S_UnpickleObjgraph(SDL_RWops *stream)
             goto err;
         }
         CHK_TRUE(upf(&ctx, stream) == 0, err);
+
+        opcount++;
+        if(opcount % 10)
+            Sched_TryYield();
     }
 
     if(vec_size(&ctx.stack) != 1) {

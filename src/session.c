@@ -211,6 +211,7 @@ static bool subsession_load(SDL_RWops *stream, char *errstr, size_t errlen)
         goto fail;
     }
     Entity_SetNextUID(attr.val.as_int);
+    Sched_TryYield();
 
     if(!G_LoadEntityState(stream)) {
         pf_snprintf(errstr, errlen, 
@@ -436,6 +437,8 @@ static bool session_save(const char *file, char* errstr, size_t errlen)
         SDL_RWwrite(stream, data, size, 1);
     }
 
+    Sched_TryYield();
+
     if(!subsession_save(stream))
         goto fail_save;
 
@@ -561,8 +564,8 @@ bool Session_ServiceRequests(struct future *result)
     s_current = s_request;
     s_request = SESH_REQ_NONE;
 
-    /* Let all the session-loading logic into an async task,
-     * so that the main thread can handle window events and 
+    /* Put all the session saving or loading logic into an async 
+     * task, so that the main thread can handle window events and 
      * re-draw things when the session task yields.
      */
     uint32_t tid = Sched_Create(1, session_task, NULL, result, 

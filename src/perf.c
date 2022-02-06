@@ -43,6 +43,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdint.h>
 
 
@@ -295,8 +296,11 @@ void Perf_Push(const char *name)
     vec_idx_push(&ps->perf_stack, new_idx);
 }
 
-void Perf_Pop(void)
+void Perf_Pop(const char **out)
 {
+    if(out)
+        *out = NULL;
+
     SDL_threadID tid = SDL_ThreadID();
     khiter_t k = kh_get(pstate, s_thread_state_table, tid_to_key(tid));
     if(k == kh_end(s_thread_state_table))
@@ -309,6 +313,41 @@ void Perf_Pop(void)
     assert(idx < vec_size(&ps->perf_trees[ps->perf_tree_idx]));
     struct perf_entry *pe = &vec_AT(&ps->perf_trees[ps->perf_tree_idx], idx);
     pe->pc_delta = abs(SDL_GetPerformanceCounter() - pe->pc_delta);
+
+    if(out)
+        *out = name_for_id(ps, pe->name_id);
+}
+
+int Perf_StackSize(void)
+{
+    SDL_threadID tid = SDL_ThreadID();
+    khiter_t k = kh_get(pstate, s_thread_state_table, tid_to_key(tid));
+    if(k == kh_end(s_thread_state_table))
+        return -1;
+
+    struct perf_state *ps = &kh_val(s_thread_state_table, k);
+    return vec_size(&ps->perf_stack);
+}
+
+bool Perf_IsRoot(void)
+{
+    SDL_threadID tid = SDL_ThreadID();
+    khiter_t k = kh_get(pstate, s_thread_state_table, tid_to_key(tid));
+    if(k == kh_end(s_thread_state_table))
+        return false;
+
+    struct perf_state *ps = &kh_val(s_thread_state_table, k);
+    const size_t ssize = vec_size(&ps->perf_stack);
+
+    if(ssize == 0)
+        return true;
+
+    uint32_t idx = vec_AT(&ps->perf_stack, vec_size(&ps->perf_stack) - 1);
+    struct perf_entry *pe = &vec_AT(&ps->perf_trees[ps->perf_tree_idx], idx);
+    const char *name = name_for_id(ps, pe->name_id);
+    if(0 == strncmp(name, "Task ", 5))
+        return true;
+    return false;
 }
 
 void Perf_PushGPU(const char *name, uint32_t cookie)

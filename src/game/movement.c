@@ -2082,6 +2082,8 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_flocks, "num_flocks"));
 
+    Sched_TryYield();
+
     for(int i = 0; i < vec_size(&s_flocks); i++) {
 
         const struct flock *curr_flock = &vec_AT(&s_flocks, i);
@@ -2104,6 +2106,7 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
             };
             CHK_TRUE_RET(Attr_Write(stream, &flock_ent, "flock_ent"));
         });
+        Sched_TryYield();
 
         struct attr flock_target = (struct attr){
             .type = TYPE_VEC2,
@@ -2116,6 +2119,7 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr_flock->dest_id
         };
         CHK_TRUE_RET(Attr_Write(stream, &flock_dest, "flock_dest"));
+        Sched_TryYield();
     }
 
     /* save the movement state */
@@ -2124,6 +2128,7 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
         .val.as_int = kh_size(s_entity_state_table)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_ents, "num_ents"));
+    Sched_TryYield();
 
     uint32_t key;
     struct movestate curr;
@@ -2238,6 +2243,7 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
             .val.as_quat = curr.target_dir
         };
         CHK_TRUE_RET(Attr_Write(stream, &target_dir, "target_dir"));
+        Sched_TryYield();
     });
 
     return true;
@@ -2254,6 +2260,7 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const int num_flocks = attr.val.as_int;
+    Sched_TryYield();
 
     assert(vec_size(&s_flocks) == 0);
     for(int i = 0; i < num_flocks; i++) {
@@ -2287,6 +2294,7 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         new_flock.dest_id = attr.val.as_int;
 
         vec_flock_push(&s_flocks, new_flock);
+        Sched_TryYield();
         continue;
 
     fail_flock:
@@ -2297,6 +2305,7 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const int num_ents = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < num_ents; i++) {
 
@@ -2385,6 +2394,8 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_QUAT);
         ms->target_dir = attr.val.as_quat;
+
+        Sched_TryYield();
     }
 
     return true;

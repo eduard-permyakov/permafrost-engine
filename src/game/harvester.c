@@ -2033,6 +2033,7 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
         .val.as_int = kh_size(s_entity_state_table)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_ents, "num_ents"));
+    Sched_TryYield();
 
     uint32_t key;
     struct hstate curr;
@@ -2062,6 +2063,7 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.ss_uid
         };
         CHK_TRUE_RET(Attr_Write(stream, &ss_uid, "ss_uid"));
+        Sched_TryYield();
 
         struct attr res_uid = (struct attr){
             .type = TYPE_INT,
@@ -2108,6 +2110,7 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
             };
             CHK_TRUE_RET(Attr_Write(stream, &speed_amount_attr, "speed_amount"));
         });
+        Sched_TryYield();
 
         struct attr num_max = (struct attr){
             .type = TYPE_INT,
@@ -2129,6 +2132,7 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
             };
             CHK_TRUE_RET(Attr_Write(stream, &max_amount_attr, "max_amount"));
         });
+        Sched_TryYield();
 
         struct attr num_carry = (struct attr){
             .type = TYPE_INT,
@@ -2150,6 +2154,7 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
             };
             CHK_TRUE_RET(Attr_Write(stream, &curr_amount_attr, "curr_amount"));
         });
+        Sched_TryYield();
 
         struct attr num_priorities = (struct attr){
             .type = TYPE_INT,
@@ -2163,6 +2168,7 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
             pf_strlcpy(prio_attr.val.as_string, vec_AT(&curr.priority, i), sizeof(prio_attr.val.as_string));
             CHK_TRUE_RET(Attr_Write(stream, &prio_attr, "prio"));
         }
+        Sched_TryYield();
 
         struct attr drop_off_only = (struct attr){
             .type = TYPE_BOOL,
@@ -2199,6 +2205,7 @@ bool G_Harvester_SaveState(struct SDL_RWops *stream)
             .val.as_int = curr.transport_dest_uid
         };
         CHK_TRUE_RET(Attr_Write(stream, &transport_dest_uid, "transport_dest_uid"));
+        Sched_TryYield();
     });
     return true;
 }
@@ -2210,6 +2217,7 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
     CHK_TRUE_RET(attr.type == TYPE_INT);
     const size_t num_ents = attr.val.as_int;
+    Sched_TryYield();
 
     for(int i = 0; i < num_ents; i++) {
 
@@ -2277,6 +2285,7 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
         default: 
             return false;
         }
+        Sched_TryYield();
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
@@ -2323,6 +2332,7 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
 
             G_Harvester_SetGatherSpeed(uid, key, val);
         }
+        Sched_TryYield();
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
@@ -2341,6 +2351,7 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
 
             G_Harvester_SetMaxCarry(uid, key, val);
         }
+        Sched_TryYield();
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
@@ -2359,6 +2370,7 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
 
             G_Harvester_SetCurrCarry(uid, key, val);
         }
+        Sched_TryYield();
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
@@ -2374,6 +2386,7 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
             const char *key = si_intern(keyattr.val.as_string, &s_stringpool, s_stridx);
             vec_name_push(&hs->priority, key);
         }
+        Sched_TryYield();
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
@@ -2398,6 +2411,7 @@ bool G_Harvester_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         hs->transport_dest_uid = attr.val.as_int;
+        Sched_TryYield();
     };
 
     return true;

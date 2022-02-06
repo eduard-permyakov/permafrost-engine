@@ -816,6 +816,8 @@ int main(int argc, char **argv)
             G_Update();
             G_Render();
             Sched_Tick();
+            render_thread_wait_done();
+            G_SwapBuffers();
 
             break;
 
@@ -825,14 +827,12 @@ int main(int argc, char **argv)
             if(Sched_FutureIsReady(&s_request_done)) {
                 s_state = ENGINE_STATE_RUNNING;
             }
+            render_thread_wait_done();
             break;
 
         default: assert(0); break;
         }
 
-        render_thread_wait_done();
-
-        G_SwapBuffers();
         Perf_FinishTick();
 
         if(prev_step_frame) {

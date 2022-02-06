@@ -75,14 +75,14 @@ extern bool g_trace_gpu;
 
 #define GL_PERF_RETURN(...)                     \
     do{                                         \
-        Perf_Pop();                             \
+        Perf_Pop(NULL);                         \
         GL_GPU_PERF_POP();                      \
         return (__VA_ARGS__);                   \
     }while(0)
 
 #define GL_PERF_RETURN_VOID()                   \
     do{                                         \
-        Perf_Pop();                             \
+        Perf_Pop(NULL);                         \
         GL_GPU_PERF_POP();                      \
         return;                                 \
     }while(0)
