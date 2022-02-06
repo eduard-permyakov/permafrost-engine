@@ -59,7 +59,6 @@
 #include <stddef.h>
 #include <assert.h>
 #include <string.h>
-#include <windows.h>
 
 
 #define EPSILON                     (1.0f/1024)
@@ -346,6 +345,67 @@ void R_GL_SetScreenspaceDrawMode(void)
 
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
+
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
+
+void R_GL_DrawLoadingScreen(void)
+{
+    GL_PERF_ENTER();
+    ASSERT_IN_RENDER_THREAD();
+
+    R_GL_SetScreenspaceDrawMode();
+
+    int width, height;
+    Engine_WinDrawableSize(&width, &height);
+    struct ui_vert vbuff[] = {
+        { .screen_pos = { 0, 0 },           .uv = { 0.0f, 1.0f } },
+        { .screen_pos = { width, 0 },       .uv = { 1.0f, 1.0f } },
+        { .screen_pos = { width, height },  .uv = { 1.0f, 0.0f } },
+        { .screen_pos = { 0, height },      .uv = { 0.0f, 0.0f } }
+    };
+    for(int i = 0; i < ARR_SIZE(vbuff); i++) {
+        vbuff[i].color[0] = 0xff;
+        vbuff[i].color[1] = 0xff;
+        vbuff[i].color[2] = 0xff;
+        vbuff[i].color[3] = 0xff;
+    }
+    GLuint VAO, VBO;
+
+    /* OpenGL setup */
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vert), (void*)0);
+    glEnableVertexAttribArray(0);  
+
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vert), 
+        (void*)offsetof(struct ui_vert, uv));
+    glEnableVertexAttribArray(1);
+
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(struct ui_vert), 
+        (void*)offsetof(struct ui_vert, color));
+    glEnableVertexAttribArray(2);
+
+    /* set state */
+    struct texture tex = { .tunit = GL_TEXTURE0, };
+    GLuint prog = R_GL_Shader_GetProgForName("ui");
+    R_GL_Shader_InstallProg(prog);
+
+    R_GL_Texture_GetOrLoad(g_basepath, CONFIG_LOADING_SCREEN, &tex.id);
+    R_GL_Texture_Bind(&tex, prog);
+
+    /* buffer & render */
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vbuff), vbuff, GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLE_FAN, 0, ARR_SIZE(vbuff));
+
+    /* cleanup */
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();

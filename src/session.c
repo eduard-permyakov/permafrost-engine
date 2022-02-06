@@ -454,9 +454,6 @@ fail_stream:
 static struct result session_task(void* arg)
 {
     ASSERT_IN_MAIN_THREAD();
-
-    Engine_EnableRendering(false);
-    Engine_LoadingScreen();
     bool result = false;
 
     switch(s_current) {
@@ -495,6 +492,8 @@ static struct result session_task(void* arg)
     s_argc = 0;
     s_request = SESH_REQ_NONE;
     s_change_tick = g_frame_idx;
+
+    Engine_EnableRendering(false);
 
     return (struct result) {
         .type = RESULT_BOOL,

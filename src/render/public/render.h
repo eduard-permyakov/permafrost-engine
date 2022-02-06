@@ -250,6 +250,13 @@ void   R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const siz
 void   R_GL_SetScreenspaceDrawMode(void);
 
 /* ---------------------------------------------------------------------------
+ * Render the loading screen image over the entire viewport. This will configure
+ * the OpenGL state for screenspace rendering.
+ * ---------------------------------------------------------------------------
+ */
+void   R_GL_DrawLoadingScreen(void);
+
+/* ---------------------------------------------------------------------------
  * Draws the healthbars for the following 'num_ents'. 'ent_health_pc' must be
  * initialized to a buffer of 'num_ents' floats (health percentages) and 
  * 'ent_top_pos_ws' must be initialized to a buffer of 'num_ents' worldspace

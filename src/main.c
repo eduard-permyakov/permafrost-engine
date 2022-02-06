@@ -799,6 +799,13 @@ int main(int argc, char **argv)
             G_SetSimState(G_RUNNING);
         }
 
+        if(s_state == ENGINE_STATE_WAITING) {
+            R_PushCmdImmediate((struct rcmd){
+                .func = R_GL_DrawLoadingScreen,
+                .nargs = 0
+            });
+        }
+
         render_maybe_enable();
         render_thread_start_work();
         Sched_StartBackgroundTasks();

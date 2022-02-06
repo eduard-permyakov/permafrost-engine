@@ -2201,8 +2201,6 @@ struct render_workspace *G_GetSimWS(void)
 
 struct render_workspace *G_GetRenderWS(void)
 {
-    ASSERT_IN_RENDER_THREAD();
-
     return &s_gs.ws[(s_gs.curr_ws_idx + 1) % 2];
 }
 

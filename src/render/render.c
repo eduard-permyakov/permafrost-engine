@@ -688,6 +688,18 @@ void R_PushCmd(struct rcmd cmd)
     queue_rcmd_push(&ws->commands, &cmd);
 }
 
+void R_PushCmdImmediate(struct rcmd cmd)
+{
+    if(SDL_ThreadID() == g_render_thread_id) {
+
+        render_dispatch_cmd(cmd);
+        return;
+    }
+
+    struct render_workspace *ws = G_GetRenderWS();
+    queue_rcmd_push(&ws->commands, &cmd);
+}
+
 bool R_InitWS(struct render_workspace *ws)
 {
     if(!stalloc_init(&ws->args)) 
