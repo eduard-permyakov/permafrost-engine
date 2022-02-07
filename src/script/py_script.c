@@ -68,6 +68,7 @@
 #include "../session.h"
 #include "../perf.h"
 #include "../cursor.h"
+#include "../task.h"
 #include "../sched.h"
 
 #include <SDL.h>
@@ -75,6 +76,12 @@
 
 
 #define ARR_SIZE(a) (sizeof(a)/sizeof(a[0]))
+
+struct script_arg{
+    const char *path;
+    int argc;
+    const char **argv;
+};
 
 static PyObject *PyPf_load_map(PyObject *self, PyObject *args, PyObject *kwargs);
 static PyObject *PyPf_load_map_string(PyObject *self, PyObject *args, PyObject *kwargs);
@@ -2991,6 +2998,25 @@ static PyObject *PyPf_spawn_projectile(PyObject *self, PyObject *args)
     return PyInt_FromLong(ret);
 }
 
+static void script_task_destructor(void *arg)
+{
+    free(arg);
+}
+
+static struct result script_task(void *arg)
+{
+    ASSERT_IN_MAIN_THREAD();
+    Task_SetDestructor(script_task_destructor, arg);
+
+    struct script_arg *sarg = arg;
+    bool result = S_RunFile(sarg->path, sarg->argc, sarg->argv);
+
+    return (struct result) {
+        .type = RESULT_BOOL,
+        .val.as_bool = result
+    };
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -3117,6 +3143,8 @@ bool S_RunFile(const char *path, int argc, char **argv)
         Py_DECREF(f);
     }
 
+    Sched_TryYield();
+
     PySys_SetArgvEx(argc + 1, cargv, 0);
     PyObject *result = PyRun_File(script, path, Py_file_input, global_dict, global_dict);
     ret = (result != NULL);
@@ -3129,6 +3157,20 @@ bool S_RunFile(const char *path, int argc, char **argv)
 done:
     fclose(script);
     return ret;
+}
+
+void S_RunFileAsync(const char *path, int argc, char **argv, struct future *result)
+{
+    struct script_arg *arg = malloc(sizeof(struct script_arg));
+    if(!arg)
+        return;
+
+    arg->path = path;
+    arg->argc = argc;
+    arg->argv = argv;
+
+    uint32_t tid = Sched_Create(31, script_task, arg, result, 
+        TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
 }
 
 bool S_GetFilePath(char *out, size_t maxout)

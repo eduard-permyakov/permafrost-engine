@@ -34,7 +34,9 @@
  */
 
 #include "scene.h"
+#include "sched.h"
 #include "asset_load.h"
+#include "main.h"
 #include "script/public/script.h"
 #include "game/public/game.h"
 #include "lib/public/pf_string.h"
@@ -161,6 +163,7 @@ static bool scene_load_entities(SDL_RWops *stream)
     for(int i = 0; i < num_ents; i++) {
         if(!scene_load_entity(stream))
             goto fail_parse;
+        Sched_TryYield();
     }
     return true;
 

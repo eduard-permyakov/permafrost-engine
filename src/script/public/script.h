@@ -49,6 +49,7 @@ typedef void *script_opaque_t;
 
 enum eventtype;
 struct nk_context;
+struct future;
 
 /*###########################################################################*/
 /* SCRIPT GENERAL                                                            */
@@ -57,6 +58,7 @@ struct nk_context;
 bool            S_Init(const char *progname, const char *base_path, struct nk_context *ctx);
 void            S_Shutdown(void);
 bool            S_RunFile(const char *path, int argc, char **argv);
+void            S_RunFileAsync(const char *path, int argc, char **argv, struct future *result);
 bool            S_GetFilePath(char *out, size_t maxout);
 void            S_ShowLastError(void);
 

@@ -779,7 +779,8 @@ int main(int argc, char **argv)
     }
 
     Audio_PlayMusicFirst();
-    S_RunFile(argv[2], 0, NULL);
+    S_RunFileAsync(argv[2], 0, NULL, &s_request_done);
+    s_state = ENGINE_STATE_WAITING;
 
     /* Run the first frame of the simulation, and prepare the buffers for rendering. */
     E_ServiceQueue();
