@@ -1516,7 +1516,7 @@ void G_Render(void)
     status = Settings_Get("pf.video.water_reflection", &reflect_setting);
     assert(status == SS_OKAY);
 
-    if(s_gs.map) {
+    if(s_gs.map && M_WaterMaybeVisible(s_gs.map, s_gs.active_cam)) {
         R_PushCmd((struct rcmd){
             .func = R_GL_DrawWater,
             .nargs = 3,

@@ -534,6 +534,13 @@ void   M_RenderMinimapUnits(const struct map *map, size_t nunits,
 bool   M_MouseOverMinimap(const struct map *map);
 
 /* ------------------------------------------------------------------------
+ * Returns false if none of the chunks visible by the camera have water tiles.
+ * This can allow us to skip rendering the water altogether in some cases.
+ * ------------------------------------------------------------------------
+ */
+bool   M_WaterMaybeVisible(const struct map *map, const struct camera *cam);
+
+/* ------------------------------------------------------------------------
  * Returns true if the mouse is over a valid map location on the minimap.
  * In this case, 'out' is set to the worldspace coordinate of the position
  * over the map surface.

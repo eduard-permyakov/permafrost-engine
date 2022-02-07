@@ -36,6 +36,7 @@
 #include "map_private.h"
 #include "pfchunk.h"
 #include "public/map.h"
+#include "../perf.h"
 #include "../camera.h"
 #include "../settings.h"
 #include "../phys/public/collision.h"
@@ -79,6 +80,15 @@ static void m_aabb_for_chunk(const struct map *map, struct chunkpos p, struct aa
     assert(out->x_max >= out->x_min);
     assert(out->y_max >= out->y_min);
     assert(out->z_max >= out->z_min);
+}
+
+static bool m_chunk_has_water(const struct pfchunk *chunk)
+{
+    for(int i = 0; i < TILES_PER_CHUNK_HEIGHT * TILES_PER_CHUNK_WIDTH; i++) {
+        if(chunk->tiles[i].base_height < 0)
+            return true;
+    }
+    return false;
 }
 
 /*****************************************************************************/
@@ -748,6 +758,29 @@ vec3_t M_GetCenterPos(const struct map *map)
 vec3_t M_GetPos(const struct map *map)
 {
     return map->pos;
+}
+
+bool M_WaterMaybeVisible(const struct map *map, const struct camera *cam)
+{
+    PERF_ENTER();
+
+    struct frustum frustum;
+    Camera_MakeFrustum(cam, &frustum);
+
+    for(int r = 0; r < map->height; r++) {
+    for(int c = 0; c < map->width;  c++) {
+
+        struct aabb chunk_aabb;
+        m_aabb_for_chunk(map, (struct chunkpos) {r, c}, &chunk_aabb);
+
+        if(!C_FrustumAABBIntersectionExact(&frustum, &chunk_aabb))
+            continue;
+
+        const struct pfchunk *chunk = &map->chunks[r * map->width + c];
+        if(m_chunk_has_water(chunk))
+            PERF_RETURN(true);
+    }}
+    PERF_RETURN(false);
 }
 
 bool M_NavIsMaximallyClose(const struct map *map, enum nav_layer layer, vec2_t xz_pos, 
