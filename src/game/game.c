@@ -80,6 +80,7 @@
 #define CAM_SPEED           0.20f
 #define CAM_SENS            0.05f
 #define MAX_VIS_RANGE       150.0f
+#define WATER_ADJ_DISTANCE  25.0f
 
 #define MIN(a, b)           ((a) < (b) ? (a) : (b))
 #define MAX(a, b)           ((a) > (b) ? (a) : (b))
@@ -411,6 +412,7 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
         if(curr->flags & ENTITY_FLAG_ANIMATED) {
         
             struct ent_anim_rstate rstate = (struct ent_anim_rstate){
+                .uid = curr->uid,
                 .render_private = curr->render_private, 
                 .model = model,
                 .translucent = curr->flags & ENTITY_FLAG_TRANSLUCENT
@@ -426,6 +428,7 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
             }
 
             struct ent_stat_rstate rstate = (struct ent_stat_rstate){
+                .uid = curr->uid,
                 .render_private = curr->render_private, 
                 .model = model,
                 .translucent = curr->flags & ENTITY_FLAG_TRANSLUCENT,
@@ -460,11 +463,11 @@ static void g_create_render_input(struct render_input *out)
     vec_rstat_init(&out->light_vis_stat);
     vec_ranim_init(&out->light_vis_anim);
 
-    vec_rstat_resize(&out->cam_vis_stat, 256);
-    vec_ranim_resize(&out->cam_vis_anim, 256);
+    vec_rstat_resize(&out->cam_vis_stat, 2048);
+    vec_ranim_resize(&out->cam_vis_anim, 2048);
 
-    vec_rstat_resize(&out->light_vis_stat, 256);
-    vec_ranim_resize(&out->light_vis_anim, 256);
+    vec_rstat_resize(&out->light_vis_stat, 2048);
+    vec_ranim_resize(&out->light_vis_anim, 2048);
 
     g_make_draw_list(s_gs.visible, &out->cam_vis_stat, &out->cam_vis_anim);
     g_make_draw_list(s_gs.light_visible, &out->light_vis_stat, &out->light_vis_anim);
@@ -1058,6 +1061,56 @@ static void g_remove_queued(void)
     vec_pentity_reset(&s_gs.removed);
 }
 
+static void g_prune_water_input(const struct render_input *in)
+{
+    PERF_ENTER();
+
+    assert(s_gs.map);
+    uint16_t pm = g_player_mask();
+
+    for(int i = vec_size(&in->cam_vis_stat) - 1; i >= 0; i--) {
+
+        const struct ent_stat_rstate *rstate = &vec_AT(&in->cam_vis_stat, i);
+        vec2_t xz_pos = G_Pos_GetXZ(rstate->uid);
+
+        if(!G_Fog_NearVisibleWater(pm, xz_pos, WATER_ADJ_DISTANCE)) {
+            vec_rstat_del(&in->cam_vis_stat, i);
+        }
+    }
+
+    for(int i = vec_size(&in->light_vis_stat) - 1; i >= 0; i--) {
+
+        const struct ent_stat_rstate *rstate = &vec_AT(&in->light_vis_stat, i);
+        vec2_t xz_pos = G_Pos_GetXZ(rstate->uid);
+
+        if(!G_Fog_NearVisibleWater(pm, xz_pos, WATER_ADJ_DISTANCE)) {
+            vec_rstat_del(&in->light_vis_stat, i);
+        }
+    }
+
+    for(int i = vec_size(&in->cam_vis_anim) - 1; i >= 0; i--) {
+
+        const struct ent_anim_rstate *rstate = &vec_AT(&in->cam_vis_anim, i);
+        vec2_t xz_pos = G_Pos_GetXZ(rstate->uid);
+
+        if(!G_Fog_NearVisibleWater(pm, xz_pos, WATER_ADJ_DISTANCE)) {
+            vec_ranim_del(&in->cam_vis_anim, i);
+        }
+    }
+
+    for(int i = vec_size(&in->light_vis_anim) - 1; i >= 0; i--) {
+
+        const struct ent_anim_rstate *rstate = &vec_AT(&in->light_vis_anim, i);
+        vec2_t xz_pos = G_Pos_GetXZ(rstate->uid);
+
+        if(!G_Fog_NearVisibleWater(pm, xz_pos, WATER_ADJ_DISTANCE)) {
+            vec_rstat_del(&in->light_vis_anim, i);
+        }
+    }
+
+    PERF_RETURN_VOID();
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1504,8 +1557,8 @@ void G_Render(void)
 
     struct render_input in;
     g_create_render_input(&in);
-    struct render_input *rcopy = g_push_render_input(in);
 
+    struct render_input *rcopy = g_push_render_input(in);
     G_RenderMapAndEntities(rcopy);
 
     struct sval refract_setting;
@@ -1517,11 +1570,15 @@ void G_Render(void)
     assert(status == SS_OKAY);
 
     if(s_gs.map && M_WaterMaybeVisible(s_gs.map, s_gs.active_cam)) {
+
+        g_prune_water_input(&in);
+        const struct render_input *water_rcopy = g_push_render_input(in);
+
         R_PushCmd((struct rcmd){
             .func = R_GL_DrawWater,
             .nargs = 3,
             .args = { 
-                rcopy,
+                water_rcopy,
                 R_PushArg(&refract_setting.as_bool, sizeof(bool)),
                 R_PushArg(&reflect_setting.as_bool, sizeof(bool)),
             },

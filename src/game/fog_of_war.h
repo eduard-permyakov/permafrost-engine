@@ -54,6 +54,7 @@ void G_Fog_UpdateVisionRange(vec2_t xz_pos, int faction_id, float oldr, float ne
 
 bool G_Fog_CircleExplored(uint16_t fac_mask, vec2_t xz_pos, float radius);
 bool G_Fog_RectExplored(uint16_t fac_mask, vec2_t xz_pos, float halfx, float halfz);
+bool G_Fog_NearVisibleWater(uint16_t fac_mask, vec2_t xz_pos, float radius);
 
 void G_Fog_ExploreCircle(vec2_t xz_pos, int faction_id, float radius);
 void G_Fog_ExploreRectangle(vec2_t xz_pos, int faction_id, float halfx, float halfz);

@@ -788,6 +788,46 @@ bool G_Fog_RectExplored(uint16_t fac_mask, vec2_t xz_pos, float halfx, float hal
     return fog_rect_matches(fac_mask, xz_pos, halfx, halfz, states, ARR_SIZE(states));
 }
 
+bool G_Fog_NearVisibleWater(uint16_t fac_mask, vec2_t xz_pos, float radius)
+{
+    vec3_t pos = M_GetPos(s_map);
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+
+    uint32_t facstate_mask = 0;
+    for(int i = 0; fac_mask; fac_mask >>= 1, i++) {
+        if(fac_mask & 0x1) {
+            facstate_mask |= (0x3 << (i * 2));
+        }
+    }
+
+    struct tile_desc tds[4096];
+    size_t ntiles = M_Tile_AllUnderCircle(res, xz_pos, radius, M_GetPos(s_map), tds, ARR_SIZE(tds));
+
+    for(int i = 0; i < ntiles; i++) {
+
+        const struct tile *tile = NULL;
+        M_TileForDesc(s_map, tds[i], &tile);
+        assert(tile);
+
+        if(M_Tile_BaseHeight(tile) >= 0)
+            continue;
+
+        int idx = td_index(tds[i]);
+        uint32_t fac_state = s_fog_state[idx] & facstate_mask;
+
+        enum fog_state states[] = {
+            STATE_IN_FOG,
+            STATE_VISIBLE
+        };
+        for(int j = 0; j < ARR_SIZE(states); j++) {
+            if(fog_any_matches(fac_state, states[j]))
+                return true;
+        }
+    }
+    return false;
+}
+
 void G_Fog_UpdateVisionRange(vec2_t xz_pos, int faction_id, float oldr, float newr)
 {
     G_Fog_RemoveVision(xz_pos, faction_id, oldr);

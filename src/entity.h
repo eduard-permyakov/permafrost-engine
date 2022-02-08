@@ -79,6 +79,7 @@ struct entity{
 
 /* State needed for rendering a static entity */
 struct ent_stat_rstate{
+    uint32_t         uid;
     void            *render_private;
     mat4x4_t         model;
     bool             translucent;
@@ -87,6 +88,7 @@ struct ent_stat_rstate{
 
 /* State needed for rendering an animated entity */
 struct ent_anim_rstate{
+    uint32_t        uid;
     void           *render_private;
     mat4x4_t        model;
     bool            translucent;
