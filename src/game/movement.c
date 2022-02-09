@@ -49,6 +49,7 @@
 #include "../perf.h"
 #include "../sched.h"
 #include "../task.h"
+#include "../main.h"
 #include "../phys/public/collision.h"
 #include "../script/public/script.h"
 #include "../render/public/render.h"
@@ -92,6 +93,7 @@
 
 #define VEL_HIST_LEN (14)
 #define MAX_CP_TASKS (64)
+#define MAX_MOVE_TASKS (64)
 
 enum arrival_state{
     /* Entity is moving towards the flock's destination point */
@@ -168,33 +170,38 @@ struct flock{
     dest_id_t        dest_id;
 };
 
-struct cp_work_in{
-    struct       cp_ent ent;
-    uint32_t     ent_uid;
-    vec2_t       ent_des_v;
-    vec_cp_ent_t dyn_neighbs;
-    vec_cp_ent_t stat_neighbs;
-    bool         save_debug;
+struct move_work_in{
+    uint32_t      ent_uid;
+    vec2_t        ent_des_v;
+    bool          save_debug;
+    vec_cp_ent_t *stat;
+    vec_cp_ent_t *dyn;
+    bool          has_dest_los;
 };
 
-struct cp_work_out{
-    uint32_t ent_uid;
-    vec2_t   ent_vel;
+struct move_work_out{
+    uint32_t            ent_uid;
+    vec2_t              ent_vel;
+    vec3_t              ent_pos;
+    quat_t              ent_rot;
+    enum arrival_state  ent_state;
+    vec2_t              ent_state_arg;
+    bool                ent_unblock;
 };
 
-struct cp_task_arg{
+struct move_task_arg{
     size_t begin_idx;
     size_t end_idx;
 };
 
-struct cp_work{
-    struct memstack     mem;
-    struct cp_work_in  *in;
-    struct cp_work_out *out;
-    size_t              nwork;
-    size_t              ntasks;
-    uint32_t            tids[MAX_CP_TASKS];
-    struct future       futures[MAX_CP_TASKS];
+struct move_work{
+    struct memstack       mem;
+    struct move_work_in  *in;
+    struct move_work_out *out;
+    size_t                nwork;
+    size_t                ntasks;
+    uint32_t              tids[MAX_MOVE_TASKS];
+    struct future         futures[MAX_MOVE_TASKS];
 };
 
 KHASH_MAP_INIT_INT(state, struct movestate)
@@ -240,7 +247,7 @@ static khash_t(state)         *s_entity_state_table;
 static bool                    s_last_cmd_dest_valid = false;
 static dest_id_t               s_last_cmd_dest;
 
-static struct cp_work          s_cp_work;
+static struct move_work        s_move_work;
 
 static const char *s_state_str[] = {
     [STATE_MOVING]              = STR(STATE_MOVING),
@@ -874,7 +881,8 @@ static vec2_t seek_force(const struct entity *ent, vec2_t target_xz)
  * When not within line of sight of the destination, this will steer the entity along the 
  * flow field.
  */
-static vec2_t arrive_force_point(const struct entity *ent, dest_id_t dest_id, vec2_t target_xz)
+static vec2_t arrive_force_point(const struct entity *ent, dest_id_t dest_id, 
+                                 vec2_t target_xz, bool has_dest_los)
 {
     vec2_t ret, desired_velocity;
     vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
@@ -883,7 +891,7 @@ static vec2_t arrive_force_point(const struct entity *ent, dest_id_t dest_id, ve
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
-    if(M_NavHasDestLOS(s_map, dest_id, pos_xz)) {
+    if(has_dest_los) {
 
         PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
         distance = PFM_Vec2_Len(&desired_velocity);
@@ -1047,12 +1055,13 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
     return ret;
 }
 
-static vec2_t point_seek_total_force(const struct entity *ent, const struct flock *flock)
+static vec2_t point_seek_total_force(const struct entity *ent, const struct flock *flock, 
+                                     bool has_dest_los)
 {
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
-    vec2_t arrive = arrive_force_point(ent, flock->dest_id, flock->target_xz);
+    vec2_t arrive = arrive_force_point(ent, flock->dest_id, flock->target_xz, has_dest_los);
     vec2_t cohesion = cohesion_force(ent, flock);
     vec2_t separation = separation_force(ent, SEPARATION_BUFFER_DIST);
 
@@ -1128,7 +1137,7 @@ static void nullify_impass_components(const struct entity *ent, vec2_t *inout_fo
         inout_force->z = 0.0f;
 }
 
-static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flock)
+static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flock, bool has_dest_los)
 {
     struct movestate *ms = movestate_get(ent);
     assert(ms);
@@ -1137,9 +1146,15 @@ static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flo
     for(int prio = 0; prio < 3; prio++) {
 
         switch(prio) {
-        case 0: steer_force = point_seek_total_force(ent, flock); break;
-        case 1: steer_force = separation_force(ent, SEPARATION_BUFFER_DIST); break;
-        case 2: steer_force = arrive_force_point(ent, flock->dest_id, flock->target_xz); break;
+        case 0: 
+            steer_force = point_seek_total_force(ent, flock, has_dest_los); 
+            break;
+        case 1: 
+            steer_force = separation_force(ent, SEPARATION_BUFFER_DIST); 
+            break;
+        case 2: 
+            steer_force = arrive_force_point(ent, flock->dest_id, flock->target_xz, has_dest_los); 
+            break;
         }
 
         nullify_impass_components(ent, &steer_force);
@@ -1207,10 +1222,17 @@ static vec2_t vel_wma(const struct movestate *ms)
     return ret;
 }
 
-static void entity_update(struct entity *ent, vec2_t new_vel)
+static void entity_compute_update(const struct entity *ent, vec2_t new_vel,
+                                  struct move_work_out *out)
 {
     struct movestate *ms = movestate_get(ent);
     assert(ms);
+
+    out->ent_uid = ent->uid;
+    out->ent_vel = new_vel;
+    out->ent_rot = Entity_GetRot(ent->uid);
+    out->ent_unblock = false;
+    out->ent_state = ms->state;
 
     vec2_t new_pos_xz = new_pos_for_vel(ent, new_vel);
     enum nav_layer layer = Entity_NavLayer(ent);
@@ -1220,19 +1242,20 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
     && !M_NavPositionBlocked(s_map, layer, new_pos_xz)) {
     
         vec3_t new_pos = (vec3_t){new_pos_xz.x, M_HeightAtPoint(s_map, new_pos_xz), new_pos_xz.z};
-        G_Pos_Set(ent, new_pos);
-        ms->velocity = new_vel;
+        out->ent_pos = new_pos;
+        out->ent_vel = new_vel;
 
-        /* Use a weighted average of past velocities ot set the entity's orientation. This means that 
+        /* Use a weighted average of past velocities to set the entity's orientation. This means that 
          * the entity's visible orientation lags behind its' true orientation slightly. However, this 
          * greatly smooths the turning of the entity, giving a more natural look to the movemment. 
          */
         vec2_t wma = vel_wma(ms);
         if(PFM_Vec2_Len(&wma) > EPSILON) {
-            Entity_SetRot(ent->uid, dir_quat_from_velocity(wma));
+            out->ent_rot = dir_quat_from_velocity(wma);
         }
     }else{
-        ms->velocity = (vec2_t){0.0f, 0.0f}; 
+        out->ent_pos = G_Pos_Get(ent->uid);
+        out->ent_vel = (vec2_t){0.0f, 0.0f};
     }
 
     /* If the entity's current position isn't pathable, simply keep it 'stuck' there in
@@ -1240,14 +1263,15 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
      * pathable terrain to non-pathable terrain, but an this violation is possible by 
      * forcefully setting the entity's position from a scripting call. 
      */
-    if(!M_NavPositionPathable(s_map, layer, G_Pos_GetXZ(ent->uid)))
+    vec2_t out_pos_xz = (vec2_t){out->ent_pos.x, out->ent_pos.z};
+    if(!M_NavPositionPathable(s_map, layer, out_pos_xz))
         return;
 
     switch(ms->state) {
     case STATE_MOVING: {
 
         vec2_t diff_to_target;
-        vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
+        vec2_t xz_pos = out_pos_xz;
         struct flock *flock = flock_for_ent(ent);
         assert(flock);
 
@@ -1258,7 +1282,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         || (M_NavIsAdjacentToImpassable(s_map, layer, xz_pos) 
             && M_NavIsMaximallyClose(s_map, layer, xz_pos, flock->target_xz, arrive_thresh))) {
 
-            entity_finish_moving(ent, STATE_ARRIVED);
+            out->ent_state = STATE_ARRIVED;
             break;
         }
 
@@ -1273,7 +1297,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
 
             if(adj_ms->state == STATE_ARRIVED) {
 
-                entity_finish_moving(ent, STATE_ARRIVED);
+                out->ent_state = STATE_ARRIVED;
                 done = true;
                 break;
             }
@@ -1291,9 +1315,8 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
          * after some time. 
          */
         if(PFM_Vec2_Len(&ms->vdes) < EPSILON) {
-
             assert(flock_for_ent(ent));
-            entity_finish_moving(ent, STATE_WAITING);
+            out->ent_state = STATE_WAITING;
             break;
         }
         break;
@@ -1301,8 +1324,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
     case STATE_SEEK_ENEMIES: {
 
         if(PFM_Vec2_Len(&ms->vdes) < EPSILON) {
-
-            entity_finish_moving(ent, STATE_WAITING);
+            out->ent_state = STATE_WAITING;
         }
         break;
     }
@@ -1310,13 +1332,13 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
 
         struct entity *target = G_EntityForUID(ms->surround_target_uid);
         if(!target) {
-            entity_finish_moving(ent, STATE_ARRIVED);
+            out->ent_state = STATE_WAITING;
             break;
         }
 
         if(Entity_MaybeAdjacentFast(ent, target, 10.0f) 
         && M_NavObjAdjacent(s_map, ent, target)) {
-            entity_finish_moving(ent, STATE_ARRIVED);
+            out->ent_state = STATE_WAITING;
             break;
         }
 
@@ -1328,10 +1350,10 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         if(PFM_Vec2_Len(&delta) > EPSILON || PFM_Vec2_Len(&ms->velocity) < EPSILON) {
 
             bool hasdest = M_NavClosestReachableAdjacentPos(s_map, layer, 
-                G_Pos_GetXZ(ent->uid), target, &dest);
+                out_pos_xz, target, &dest);
 
             if(!hasdest) {
-                entity_finish_moving(ent, STATE_ARRIVED);
+                out->ent_state = STATE_ARRIVED;
                 break;
             }
         }
@@ -1345,13 +1367,13 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         ms->surround_nearest_prev = dest;
 
         if(PFM_Vec2_Len(&diff) > EPSILON) {
-            G_Move_SetDest(ent, dest, false);
-            ms->state = STATE_SURROUND_ENTITY;
+            out->ent_state = STATE_SURROUND_ENTITY;
+            out->ent_state_arg = dest;
             break;
         }
 
         if(PFM_Vec2_Len(&ms->vdes) < EPSILON) {
-            entity_finish_moving(ent, STATE_WAITING);
+            out->ent_state = STATE_WAITING;
         }
         break;
     }
@@ -1359,11 +1381,11 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
 
         struct entity *target = G_EntityForUID(ms->surround_target_uid);
         if(!target) {
-            entity_finish_moving(ent, STATE_ARRIVED);
+            out->ent_state = STATE_ARRIVED;
             break;
         }
 
-        vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
+        vec2_t xz_pos = out_pos_xz;
         vec2_t xz_target = G_Pos_GetXZ(ms->surround_target_uid);
 
         vec2_t delta;
@@ -1373,7 +1395,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         || (M_NavIsAdjacentToImpassable(s_map, layer, xz_pos) 
             && M_NavIsMaximallyClose(s_map, layer, xz_pos, xz_target, 0.0f))) {
         
-            entity_finish_moving(ent, STATE_ARRIVED);
+            out->ent_state = STATE_ARRIVED;
             break;
         }
 
@@ -1381,8 +1403,8 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         PFM_Vec2_Sub(&xz_target, &ms->target_prev_pos, &target_delta);
 
         if(PFM_Vec2_Len(&target_delta) > 5.0f) {
-            G_Move_SetDest(ent, xz_target, false);
-            ms->state = STATE_ENTER_ENTITY_RANGE;
+            out->ent_state = STATE_ENTER_ENTITY_RANGE;
+            out->ent_state_arg = xz_target;
             ms->target_prev_pos = xz_target;
         }
 
@@ -1397,7 +1419,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
 
         /* if it's within a tolerance, stop turning */
         if(fabs(degrees) <= 5.0f) {
-            entity_finish_moving(ent, STATE_ARRIVED);
+            out->ent_state = STATE_ARRIVED;
             break;
         }
 
@@ -1413,7 +1435,7 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
         quat_t final;
         PFM_Quat_MultQuat(&rot, &ent_rot, &final);
         PFM_Quat_Normal(&final, &final);
-        Entity_SetRot(ent->uid, final);
+        out->ent_rot = final;
 
         break;
     }
@@ -1427,9 +1449,8 @@ static void entity_update(struct entity *ent, vec2_t new_vel)
                 || ms->wait_prev == STATE_SEEK_ENEMIES
                 || ms->wait_prev == STATE_SURROUND_ENTITY);
 
-            entity_unblock(ent);
-            E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
-            ms->state = ms->wait_prev;
+            out->ent_unblock = true;
+            out->ent_state = ms->wait_prev;
         }
         break;
     }
@@ -1486,6 +1507,8 @@ static void find_neighbours(const struct entity *ent,
 
 static void disband_empty_flocks(void)
 {
+    PERF_ENTER();
+
     uint32_t key;
     struct entity *curr;
     (void)key;
@@ -1512,14 +1535,15 @@ static void disband_empty_flocks(void)
             vec_flock_del(&s_flocks, i);
         }
     }
+    PERF_RETURN_VOID();
 }
 
 static void *cp_vec_realloc(void *ptr, size_t size)
 {
     if(!ptr)
-        return stalloc(&s_cp_work.mem, size);
+        return stalloc(&s_move_work.mem, size);
 
-    void *ret = stalloc(&s_cp_work.mem, size);
+    void *ret = stalloc(&s_move_work.mem, size);
     if(!ret)
         return NULL;
 
@@ -1533,162 +1557,64 @@ static void cp_vec_free(void *ptr)
     /* no-op */
 }
 
-static void clearpath_work(int begin_idx, int end_idx)
+static void entity_update(const struct entity *ent, struct move_work_out *state)
 {
-    for(int i = begin_idx; i <= end_idx; i++) {
-    
-        struct cp_work_in *in = &s_cp_work.in[i];
-        struct cp_work_out *out = &s_cp_work.out[i];
+    ASSERT_IN_MAIN_THREAD();
+    struct movestate *ms = movestate_get(ent);
 
-        vec2_t new_vel = G_ClearPath_NewVelocity(in->ent, in->ent_uid, 
-            in->ent_des_v, in->dyn_neighbs, in->stat_neighbs, in->save_debug);
-        out->ent_uid = in->ent_uid;
-        out->ent_vel = new_vel;
+    G_Pos_Set(ent, state->ent_pos);
+    Entity_SetRot(ent->uid, state->ent_rot);
+
+    switch(state->ent_state) {
+    case STATE_SURROUND_ENTITY:
+    case STATE_ENTER_ENTITY_RANGE:
+        G_Move_SetDest(ent, state->ent_state_arg, false);
+        break;
+    case STATE_ARRIVED:
+    case STATE_WAITING:
+        entity_finish_moving(ent, state->ent_state);
+        break;
+    default:
+        break;
     }
+
+    if(state->ent_unblock) {
+        entity_unblock(ent);
+        E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
+    }
+
+    ms->state = state->ent_state;
+    ms->velocity = state->ent_vel;
 }
 
-static struct result clearpath_task(void *arg)
-{
-    struct cp_task_arg *cp_arg = arg;
-    size_t ncomputed = 0;
-
-    for(int i = cp_arg->begin_idx; i <= cp_arg->end_idx; i++) {
-
-        struct cp_work_in *in = &s_cp_work.in[i];
-        struct cp_work_out *out = &s_cp_work.out[i];
-
-        vec2_t new_vel = G_ClearPath_NewVelocity(in->ent, in->ent_uid, 
-            in->ent_des_v, in->dyn_neighbs, in->stat_neighbs, in->save_debug);
-        out->ent_uid = in->ent_uid;
-        out->ent_vel = new_vel;
-
-        ncomputed++;
-        if(ncomputed % 64 == 0)
-            Task_Yield();
-    }
-    return NULL_RESULT;
-}
-
-static void clearpath_run_to_completion(int idx)
-{
-    while(!Sched_FutureIsReady(&s_cp_work.futures[idx])) {
-        Sched_RunSync(s_cp_work.tids[idx]);
-    }
-}
-
-static void clearpath_finish_work(void)
+static void move_prepare_work(void)
 {
     PERF_ENTER();
-
-    if(s_cp_work.nwork == 0)
-        PERF_RETURN_VOID();
-
-    for(int i = 0; i < s_cp_work.ntasks; i++) {
-        clearpath_run_to_completion(i);    
-    }
-
-    PERF_PUSH("velocity updates");
-    for(int i = 0; i < s_cp_work.nwork; i++) {
-
-        struct entity *ent = G_EntityForUID(s_cp_work.out[i].ent_uid);
-        assert(ent);
-
-        struct movestate *ms = movestate_get(ent);
-        assert(ms);
-
-        ms->vnew = s_cp_work.out[i].ent_vel;
-        update_vel_hist(ms, ms->vnew);
-
-        vec2_t vel_diff;
-        PFM_Vec2_Sub(&ms->vnew, &ms->velocity, &vel_diff);
-
-        PFM_Vec2_Add(&ms->velocity, &vel_diff, &ms->vnew);
-        vec2_truncate(&ms->vnew, ms->max_speed / MOVE_TICK_RES);
-    }
-    PERF_POP();
-
-    uint32_t key;
-    struct movestate curr;
-
-    PERF_PUSH("position updates");
-    kh_foreach(s_entity_state_table, key, curr, {
-        struct entity *ent = G_EntityForUID(key);
-        entity_update(ent, curr.vnew);
-    });
-    PERF_POP();
-
-    stalloc_clear(&s_cp_work.mem);
-    s_cp_work.in = NULL;
-    s_cp_work.out = NULL;
-    s_cp_work.nwork = 0;
-    s_cp_work.ntasks = 0;
-
+    size_t ndynamic = kh_size(G_GetDynamicEntsSet());
+    s_move_work.in = stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_work_in));
+    s_move_work.out = stalloc(&s_move_work.mem, ndynamic * sizeof(struct move_work_out));
     PERF_RETURN_VOID();
 }
 
-static void clearpath_prepare_work(void)
+static void move_push_work(struct move_work_in in)
 {
-    size_t ndynamic = kh_size(G_GetDynamicEntsSet());
-    s_cp_work.in = stalloc(&s_cp_work.mem, ndynamic * sizeof(struct cp_work_in));
-    s_cp_work.out = stalloc(&s_cp_work.mem, ndynamic * sizeof(struct cp_work_out));
+    s_move_work.in[s_move_work.nwork++] = in;
 }
 
-static void clearpath_push_work(struct cp_work_in in)
+static void move_work(int begin_idx, int end_idx)
 {
-    s_cp_work.in[s_cp_work.nwork++] = in;
-}
+    PERF_ENTER();
+    for(int i = begin_idx; i <= end_idx; i++) {
+    
+        struct move_work_in *in = &s_move_work.in[i];
+        struct move_work_out *out = &s_move_work.out[i];
 
-static void clearpath_submit_work(void)
-{
-    if(s_cp_work.nwork == 0)
-        return;
-
-    size_t ntasks = SDL_GetCPUCount();
-    if(s_cp_work.nwork < 64)
-        ntasks = 1;
-    ntasks = MIN(ntasks, MAX_CP_TASKS);
-
-    for(int i = 0; i < ntasks; i++) {
-
-        struct cp_task_arg *arg = stalloc(&s_cp_work.mem, sizeof(struct cp_task_arg));
-        size_t nitems = ceil((float)s_cp_work.nwork / ntasks);
-
-        arg->begin_idx = nitems * i;
-        arg->end_idx = MIN(nitems * (i + 1) - 1, s_cp_work.nwork-1);
-
-        SDL_AtomicSet(&s_cp_work.futures[s_cp_work.ntasks].status, FUTURE_INCOMPLETE);
-        s_cp_work.tids[s_cp_work.ntasks] = Sched_Create(4, clearpath_task, arg, 
-            &s_cp_work.futures[s_cp_work.ntasks], TASK_BIG_STACK);
-
-        if(s_cp_work.tids[s_cp_work.ntasks] == NULL_TID) {
-            clearpath_work(arg->begin_idx, arg->end_idx);
-        }else{
-            s_cp_work.ntasks++;
-        }
-    }
-}
-
-static void on_20hz_tick(void *user, void *event)
-{
-    PERF_PUSH("movement::on_20hz_tick");
-
-    uint32_t key;
-    struct entity *curr;
-
-    disband_empty_flocks();
-    clearpath_prepare_work();
-
-    kh_foreach(G_GetDynamicEntsSet(), key, curr, {
-
+        const struct entity *curr = G_EntityForUID(in->ent_uid);
         struct movestate *ms = movestate_get(curr);
-        assert(ms);
 
-        if(ent_still(ms))
-            continue;
-
-        struct flock *flock = flock_for_ent(curr);
+        /* 1. Compute vpref */
         vec2_t vpref = (vec2_t){-1,-1};
-        ms->vdes = ent_desired_velocity(curr);
+        struct flock *flock = flock_for_ent(curr);
 
         switch(ms->state) {
         case STATE_TURNING:
@@ -1700,9 +1626,12 @@ static void on_20hz_tick(void *user, void *event)
             break;
         default:
             assert(flock);
-            vpref = point_seek_vpref(curr, flock);
+            vpref = point_seek_vpref(curr, flock, in->has_dest_los);
         }
         assert(vpref.x != -1 || vpref.z != -1);
+
+        /* 2. Compute the static and dynamic neighbors */
+        find_neighbours(curr, in->dyn, in->stat);
 
         struct cp_ent curr_cp = (struct cp_ent) {
             .xz_pos = G_Pos_GetXZ(curr->uid),
@@ -1710,28 +1639,164 @@ static void on_20hz_tick(void *user, void *event)
             .radius = G_GetSelectionRadius(curr->uid)
         };
 
+        vec2_t new_vel = G_ClearPath_NewVelocity(curr_cp, in->ent_uid, 
+            vpref, *in->dyn, *in->stat, in->save_debug);
+
+        /* 3. Velocity Updates */
+        ms->vnew = new_vel;
+        update_vel_hist(ms, ms->vnew);
+
+        vec2_t vel_diff;
+        PFM_Vec2_Sub(&ms->vnew, &ms->velocity, &vel_diff);
+
+        PFM_Vec2_Add(&ms->velocity, &vel_diff, &ms->vnew);
+        vec2_truncate(&ms->vnew, ms->max_speed / MOVE_TICK_RES);
+
+        /* Compute the next tick state */
+        entity_compute_update(curr, new_vel, out);
+    }
+    PERF_RETURN_VOID();
+}
+
+static struct result move_task(void *arg)
+{
+    struct move_task_arg *move_arg = arg;
+    size_t ncomputed = 0;
+
+    for(int i = move_arg->begin_idx; i <= move_arg->end_idx; i++) {
+
+        move_work(i, i);
+
+        ncomputed++;
+        if(ncomputed % 64 == 0)
+            Task_Yield();
+    }
+    return NULL_RESULT;
+}
+
+static void move_submit_work(void)
+{
+    PERF_ENTER();
+
+    if(s_move_work.nwork == 0)
+        PERF_RETURN_VOID();
+
+    size_t ntasks = SDL_GetCPUCount();
+    if(s_move_work.nwork < 64)
+        ntasks = 1;
+    ntasks = MIN(ntasks, MAX_MOVE_TASKS);
+
+    for(int i = 0; i < ntasks; i++) {
+
+        PERF_PUSH("run move task");
+
+        struct move_task_arg *arg = stalloc(&s_move_work.mem, sizeof(struct move_task_arg));
+        size_t nitems = ceil((float)s_move_work.nwork / ntasks);
+
+        arg->begin_idx = nitems * i;
+        arg->end_idx = MIN(nitems * (i + 1) - 1, s_move_work.nwork-1);
+
+        SDL_AtomicSet(&s_move_work.futures[s_move_work.ntasks].status, FUTURE_INCOMPLETE);
+        s_move_work.tids[s_move_work.ntasks] = Sched_Create(4, move_task, arg, 
+            &s_move_work.futures[s_move_work.ntasks], 0);
+
+        if(s_move_work.tids[s_move_work.ntasks] == NULL_TID) {
+            move_work(arg->begin_idx, arg->end_idx);
+        }else{
+            s_move_work.ntasks++;
+        }
+        PERF_POP();
+    }
+    PERF_RETURN_VOID();
+}
+
+static void move_run_to_completion(int idx)
+{
+    while(!Sched_FutureIsReady(&s_move_work.futures[idx])) {
+        Sched_RunSync(s_move_work.tids[idx]);
+    }
+}
+
+static void move_finish_work(void)
+{
+    PERF_ENTER();
+
+    if(s_move_work.nwork == 0)
+        PERF_RETURN_VOID();
+
+    for(int i = 0; i < s_move_work.ntasks; i++) {
+        move_run_to_completion(i);    
+    }
+
+    PERF_PUSH("entity updates");
+    for(int i = 0; i < s_move_work.nwork; i++) {
+
+        const struct move_work_out *out = &s_move_work.out[i];
+        struct entity *ent = G_EntityForUID(out->ent_uid);
+        entity_update(ent, out);
+    }
+    PERF_POP();
+
+    stalloc_clear(&s_move_work.mem);
+    s_move_work.in = NULL;
+    s_move_work.out = NULL;
+    s_move_work.nwork = 0;
+    s_move_work.ntasks = 0;
+
+    PERF_RETURN_VOID();
+}
+
+static void on_20hz_tick(void *user, void *event)
+{
+    PERF_PUSH("movement::on_20hz_tick");
+
+    uint32_t key;
+    struct entity *curr;
+
+    disband_empty_flocks();
+    move_prepare_work();
+
+    PERF_PUSH("desired velocity computations");
+    kh_foreach(G_GetDynamicEntsSet(), key, curr, {
+
+        struct movestate *ms = movestate_get(curr);
+        assert(ms);
+
+        if(ent_still(ms))
+            continue;
+
+        PERF_PUSH("compute desired velocity");
+
+        struct flock *flock = flock_for_ent(curr);
+        ms->vdes = ent_desired_velocity(curr);
+
         vec_cp_ent_t *dyn, *stat;
-        dyn = stalloc(&s_cp_work.mem, sizeof(vec_cp_ent_t));
-        stat = stalloc(&s_cp_work.mem, sizeof(vec_cp_ent_t));
+        dyn = stalloc(&s_move_work.mem, sizeof(vec_cp_ent_t));
+        stat = stalloc(&s_move_work.mem, sizeof(vec_cp_ent_t));
 
         vec_cp_ent_init_alloc(dyn, cp_vec_realloc, cp_vec_free);
         vec_cp_ent_init_alloc(stat, cp_vec_realloc, cp_vec_free);
 
-        find_neighbours(curr, dyn, stat);
+        vec_cp_ent_resize(dyn, 128);
+        vec_cp_ent_resize(stat, 128);
 
-        assert(vpref.x != NAN && vpref.z != NAN);
-        clearpath_push_work((struct cp_work_in){
-            .ent = curr_cp,
+        move_push_work((struct move_work_in){
             .ent_uid = key,
-            .ent_des_v = vpref,
-            .dyn_neighbs = *dyn,
-            .stat_neighbs = *stat,
-            .save_debug = G_ClearPath_ShouldSaveDebug(key)
+            .ent_des_v = ms->vdes,
+            .save_debug = G_ClearPath_ShouldSaveDebug(key),
+            .stat = stat,
+            .dyn = dyn,
+            .has_dest_los = flock 
+                ? M_NavHasDestLOS(s_map, flock->dest_id, G_Pos_GetXZ(key)) 
+                : false
         });
-    });
 
-    clearpath_submit_work();
-    clearpath_finish_work();
+        PERF_POP();
+    });
+    PERF_POP();
+
+    move_submit_work();
+    move_finish_work();
 
     PERF_POP();
 }
@@ -1747,7 +1812,7 @@ bool G_Move_Init(const struct map *map)
         return false;
     }
 
-    if(!stalloc_init(&s_cp_work.mem)) {
+    if(!stalloc_init(&s_move_work.mem)) {
         kh_destroy(state, s_entity_state_table);
         return NULL;
     }
@@ -1781,7 +1846,7 @@ void G_Move_Shutdown(void)
 
     vec_flock_destroy(&s_flocks);
     vec_pentity_destroy(&s_move_markers);
-    stalloc_destroy(&s_cp_work.mem);
+    stalloc_destroy(&s_move_work.mem);
     kh_destroy(state, s_entity_state_table);
 }
 

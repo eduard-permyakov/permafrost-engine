@@ -139,8 +139,6 @@ bool G_Pos_Set(const struct entity *ent, vec3_t pos)
 
 vec3_t G_Pos_Get(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     khiter_t k = kh_get(pos, s_postable, uid);
     assert(k != kh_end(s_postable));
     return kh_val(s_postable, k);
@@ -148,8 +146,6 @@ vec3_t G_Pos_Get(uint32_t uid)
 
 vec2_t G_Pos_GetXZ(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     khiter_t k = kh_get(pos, s_postable, uid);
     assert(k != kh_end(s_postable));
     vec3_t pos = kh_val(s_postable, k);
@@ -249,7 +245,6 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, 
 int G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t maxout)
 {
     PERF_ENTER();
-    ASSERT_IN_MAIN_THREAD();
 
     int ret = G_Pos_EntsInCircleWithPred(xz_point, range, out, maxout, any_ent, NULL);
     PERF_RETURN(ret);
@@ -259,7 +254,6 @@ int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **out
                                bool (*predicate)(const struct entity *ent, void *arg), void *arg)
 {
     PERF_ENTER();
-    ASSERT_IN_MAIN_THREAD();
 
     STALLOC(uint32_t, ent_ids, maxout);
     const khash_t(entity) *ents = G_GetAllEntsSet();

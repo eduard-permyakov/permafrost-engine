@@ -172,6 +172,7 @@ static struct HRVO compute_hrvo(struct cp_ent ent, struct cp_ent neighb)
 
         l1 = (struct line_2d){rvo.xz_apex, rvo.xz_left_side};
         l2 = (struct line_2d){vo_apex, rvo.xz_right_side};
+
         bool collide = C_InfiniteLineIntersection(l1, l2, &intersec_point);
         assert(collide);
         ret.xz_apex = intersec_point;
@@ -180,6 +181,7 @@ static struct HRVO compute_hrvo(struct cp_ent ent, struct cp_ent neighb)
 
         l1 = (struct line_2d){rvo.xz_apex, rvo.xz_right_side};
         l2 = (struct line_2d){vo_apex, rvo.xz_left_side};
+
         bool collide = C_InfiniteLineIntersection(l1, l2, &intersec_point);
         assert(collide);
         ret.xz_apex = intersec_point;
@@ -213,9 +215,9 @@ static size_t compute_all_hrvos(struct cp_ent ent, vec_cp_ent_t dyn_neighbs,
 {
     size_t ret = 0; 
 
-    for(struct cp_ent *nb = dyn_neighbs.array; 
-        nb < dyn_neighbs.array + vec_size(&dyn_neighbs); nb++) {
+    for(int i = 0; i < vec_size(&dyn_neighbs); i++) {
         
+        struct cp_ent *nb = &vec_AT(&dyn_neighbs, i);
         out[ret++] = compute_hrvo(ent, *nb);
     }
 
@@ -292,9 +294,10 @@ static void rays_repr(const struct HRVO *hrvos, size_t n_hrvos,
 }
 
 static size_t compute_vo_xpoints(struct line_2d *rays, size_t n_rays,
-                                 vec_vec2_t *inout)
+                                 vec_vec2_t *inout, uint32_t ent_uid)
 {
     size_t ret = 0;
+    vec2_t pos_xz = G_Pos_GetXZ(ent_uid);
 
     for(int i = 0; i < n_rays; i++) {
         for(int j = 0; j < n_rays; j++) {
@@ -431,9 +434,9 @@ static void on_render_3d(void *user, void *event)
         .func = R_GL_DrawCombinedHRVO,
         .nargs = 5,
         .args = {
-            R_PushArg(apexes, sizeof(apexes)),
-            R_PushArg(left_rays, sizeof(left_rays)),
-            R_PushArg(right_rays, sizeof(right_rays)),
+            R_PushArg(apexes, n_vos * sizeof(vec2_t)),
+            R_PushArg(left_rays, n_vos * sizeof(vec2_t)),
+            R_PushArg(right_rays, n_vos * sizeof(vec2_t)),
             R_PushArg(&n_vos, sizeof(n_vos)),
             (void*)G_GetPrevTickMap(),
         },
@@ -589,7 +592,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
      * The remaining intersection points are permissible new velocities on the 
      * boundary of the combined hybrid reciprocal velocity obstacle.
      */
-    compute_vo_xpoints(rays, n_rays, &xpoints); 
+    compute_vo_xpoints(rays, n_rays, &xpoints, ent_uid); 
 
     /* In addition we project the preferred velocity (des_v) on to the line 
      * segments (xz_left_side and xz_right_side of each hrvo) and also retain 

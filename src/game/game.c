@@ -2002,8 +2002,6 @@ void G_SetSelectionRadius(uint32_t uid, float range)
 
 float G_GetSelectionRadius(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     khiter_t k = kh_get(range, s_gs.selection_radiuses, uid);
     assert(k != kh_end(s_gs.selection_radiuses));
     return kh_value(s_gs.selection_radiuses, k);
@@ -2135,8 +2133,6 @@ const khash_t(entity) *G_GetDynamicEntsSet(void)
 
 const khash_t(entity) *G_GetAllEntsSet(void)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     return s_gs.active;
 }
 
