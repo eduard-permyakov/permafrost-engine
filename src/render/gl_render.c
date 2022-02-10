@@ -1332,6 +1332,8 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
     ASSERT_IN_RENDER_THREAD();
 
     GLuint VAO, VBO;
+    const size_t line_vbuff_size = *count * 2;
+    const size_t point_vbuff_size = *count;
     STALLOC(vec3_t, line_vbuff, *count * 2);
     STALLOC(vec3_t, point_vbuff, *count);
 
@@ -1399,11 +1401,11 @@ void R_GL_DrawFlowField(vec2_t *xz_positions, vec2_t *xz_directions, const size_
     glPointSize(10.0f);
 
     /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(line_vbuff) * sizeof(vec3_t), line_vbuff, GL_STREAM_DRAW);
-    glDrawArrays(GL_LINES, 0, ARR_SIZE(line_vbuff));
+    glBufferData(GL_ARRAY_BUFFER, line_vbuff_size * sizeof(vec3_t), line_vbuff, GL_STREAM_DRAW);
+    glDrawArrays(GL_LINES, 0, line_vbuff_size);
 
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(point_vbuff) * sizeof(vec3_t), point_vbuff, GL_STREAM_DRAW);
-    glDrawArrays(GL_POINTS, 0, ARR_SIZE(line_vbuff));
+    glBufferData(GL_ARRAY_BUFFER, point_vbuff_size * sizeof(vec3_t), point_vbuff, GL_STREAM_DRAW);
+    glDrawArrays(GL_POINTS, 0, point_vbuff_size);
 
     /* cleanup */
     glLineWidth(old_width);
@@ -1431,7 +1433,8 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
     mat4x4_t model;
     PFM_Mat4x4_Identity(&model); /* points are already in world space */
 
-    STALLOC(vec3_t, ray_vbuff, *num_vos * (NUM_SAMPLES - 1) * 4);
+    size_t vbuff_size = *num_vos * (NUM_SAMPLES - 1) * 4;
+    STALLOC(vec3_t, ray_vbuff, vbuff_size);
     int vbuff_idx = 0;
 
     for(int i = 0; i < *num_vos; i++) {
@@ -1446,6 +1449,7 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
             vec2_t xz_pos_a, xz_pos_b;
             PFM_Vec2_Add(&apexes[i], &xz_off_a, &xz_pos_a);
             PFM_Vec2_Add(&apexes[i], &xz_off_b, &xz_pos_b);
+
             xz_pos_a = M_ClampedMapCoordinate(map, xz_pos_a);
             xz_pos_b = M_ClampedMapCoordinate(map, xz_pos_b);
 
@@ -1469,7 +1473,7 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
             vbuff_idx += 4;
         }
     }
-    assert(vbuff_idx == ARR_SIZE(ray_vbuff));
+    assert(vbuff_idx == vbuff_size);
 
     /* OpenGL setup */
     glGenVertexArrays(1, &VAO);
@@ -1500,8 +1504,8 @@ void R_GL_DrawCombinedHRVO(vec2_t *apexes, vec2_t *left_rays, vec2_t *right_rays
     glLineWidth(2.0f);
 
     /* buffer & render */
-    glBufferData(GL_ARRAY_BUFFER, ARR_SIZE(ray_vbuff) * sizeof(vec3_t), ray_vbuff, GL_STREAM_DRAW);
-    glDrawArrays(GL_LINES, 0, ARR_SIZE(ray_vbuff));
+    glBufferData(GL_ARRAY_BUFFER, vbuff_size * sizeof(vec3_t), ray_vbuff, GL_STREAM_DRAW);
+    glDrawArrays(GL_LINES, 0, vbuff_size);
 
     /* cleanup */
     glLineWidth(old_width);
