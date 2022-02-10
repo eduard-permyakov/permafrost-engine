@@ -763,12 +763,12 @@ bool C_InfiniteLineIntersection(struct line_2d l1, struct line_2d l2, vec2_t *ou
     if(fabs(l1_slope - l2_slope) < EPSILON)
         return false;
 
-    if(l1_slope == NAN && l2_slope != NAN) {
+    if(isnan(l1_slope) && !isnan(l2_slope)) {
     
         out_xz->raw[0] = l1.point.raw[0];
         out_xz->raw[1] = (l1.point.raw[0] - l2.point.raw[0]) * l2_slope + l2.point.raw[1];
 
-    }else if(l1_slope != NAN && l2_slope == NAN) {
+    }else if(!isnan(l1_slope) && isnan(l2_slope)) {
 
         out_xz->raw[0] = l2.point.raw[0];
         out_xz->raw[1] = (l2.point.raw[0] - l1.point.raw[0]) * l1_slope + l2.point.raw[1];
