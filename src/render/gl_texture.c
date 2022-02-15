@@ -332,15 +332,34 @@ void R_GL_Texture_Dump(const struct texture *text, const char *filename)
 {
     glBindTexture(GL_TEXTURE_2D, text->id);
 
-    GLint width, height, level = 0;
+    GLint width, height, iformat, level = 0;
     glGetTexLevelParameteriv(GL_TEXTURE_2D, level, GL_TEXTURE_WIDTH, &width);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, level, GL_TEXTURE_HEIGHT, &height);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, level, GL_TEXTURE_INTERNAL_FORMAT, &iformat);
 
     unsigned char* data = malloc(width * height * 3);
     if(!data)
         return;
 
-    glGetTexImage(GL_TEXTURE_2D, level, GL_RGB, GL_UNSIGNED_BYTE, data);
+    bool integer = false;
+    switch(iformat) {
+    case GL_RGB8I:
+    case GL_RGB8UI:
+    case GL_RGB16I:
+    case GL_RGB16UI:
+    case GL_RGB32I:
+    case GL_RGB32UI:
+    case GL_RGBA8I:
+    case GL_RGBA8UI:
+    case GL_RGBA16I:
+    case GL_RGBA16UI:
+    case GL_RGBA32I:
+    case GL_RGBA32UI:
+        integer = true;
+    }
+
+    GLuint format = integer ? GL_RGB_INTEGER : GL_RGB;
+    glGetTexImage(GL_TEXTURE_2D, level, format, GL_UNSIGNED_BYTE, data);
     texture_write_ppm(filename, data, width, height);
 
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -351,19 +370,38 @@ void R_GL_Texture_DumpArray(const struct texture_arr *arr, const char *base)
 {
     glBindTexture(GL_TEXTURE_2D_ARRAY, arr->id);
 
-    GLint width, height, depth;
+    GLint width, height, depth, iformat;
     glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_WIDTH, &width);
     glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_HEIGHT, &height);
     glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_DEPTH, &depth);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_INTERNAL_FORMAT, &iformat);
 
     unsigned char *data = malloc(width * height * 3);
     if (!data)
         return;
 
+    bool integer = false;
+    switch(iformat) {
+    case GL_RGB8I:
+    case GL_RGB8UI:
+    case GL_RGB16I:
+    case GL_RGB16UI:
+    case GL_RGB32I:
+    case GL_RGB32UI:
+    case GL_RGBA8I:
+    case GL_RGBA8UI:
+    case GL_RGBA16I:
+    case GL_RGBA16UI:
+    case GL_RGBA32I:
+    case GL_RGBA32UI:
+        integer = true;
+    }
+    GLuint format = integer ? GL_RGB_INTEGER : GL_RGB;
+
     for(int i = 0; i < depth; i++) {
     
         glGetTextureSubImage(arr->id, 0, 0, 0, i, width, height, 1, 
-            GL_RGB, GL_UNSIGNED_BYTE, width * height * 3, data);
+            format, GL_UNSIGNED_BYTE, width * height * 3, data);
 
         char filename[512];
         pf_snprintf(filename, sizeof(filename), "%s-%d.ppm", base, i);
