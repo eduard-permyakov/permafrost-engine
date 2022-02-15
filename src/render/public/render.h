@@ -544,5 +544,30 @@ void R_GL_Batch_Reset(void);
 void R_GL_Batch_AllocChunks(struct map_resolution *res);
 
 
+/*###########################################################################*/
+/* RENDER POSITION                                                           */
+/*###########################################################################*/
+
+/* ---------------------------------------------------------------------------
+ * Render the entity positions (and associated attributes) to a texture. The
+ * resulting texture can be queried with R_GL_PositionsGet and used for further
+ * computations on the GPU.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_PositionsUpload(vec3_t *posbuff, const size_t *nents, const struct map *map);
+
+/* ---------------------------------------------------------------------------
+ * Get the ID of the texture rendered to by R_GL_PositionsRender.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_PositionsGet(GLuint *out_tex_id);
+
+/* ---------------------------------------------------------------------------
+ * Free resources previously allocated by R_GL_PositionsRender.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_PositionsInvalidate(void);
+
+
 #endif
 

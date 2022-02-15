@@ -522,6 +522,18 @@ static struct shader s_shaders[] = {
             {0}
         },
     },
+    {
+        .prog_id     = (intptr_t)NULL,
+        .name        = "posbuff",
+        .vertex_path = "shaders/vertex/posbuff.glsl",
+        .geo_path    = NULL,
+        .frag_path   = "shaders/fragment/posbuff.glsl",
+        .uniforms    = (struct uniform[]){
+            { UTYPE_IVEC4,     GL_U_MAP_RES,          },
+            { UTYPE_VEC2,      GL_U_MAP_POS           },
+            {0}
+        },
+    },
 };
 
 /*****************************************************************************/

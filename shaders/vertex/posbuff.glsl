@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019-2020 Eduard Permyakov 
+ *  Copyright (C) 2022 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,15 +33,23 @@
  *
  */
 
-#ifndef POSITION_H
-#define POSITION_H
+#version 330 core
 
-struct map;
 
-bool G_Pos_Init(const struct map *map);
-void G_Pos_Shutdown(void);
-void G_Pos_Delete(uint32_t uid);
-void G_Pos_Upload(void);
+#define X_COORDS_PER_TILE (8)
+#define Z_COORDS_PER_TILE (8)
 
-#endif
+layout (location = 0) in vec3 in_pos;
+
+uniform ivec4 map_resolution;
+uniform vec2 map_pos;
+
+void main()
+{
+    int resx = map_resolution.x * map_resolution.z * X_COORDS_PER_TILE;
+    int resz = map_resolution.y * map_resolution.w * Z_COORDS_PER_TILE;
+    float clip_x = (in_pos.x + map_pos.x) / (resx / 2) * -1 + 1;
+    float clip_z = (in_pos.z - map_pos.y) / (resz / 2) * +1 - 1;
+    gl_Position = vec4(clip_x, clip_z, 0, 1);
+}
 

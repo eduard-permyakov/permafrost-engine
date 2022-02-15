@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2019-2020 Eduard Permyakov 
+ *  Copyright (C) 2022 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,15 +33,12 @@
  *
  */
 
-#ifndef POSITION_H
-#define POSITION_H
+#version 330 core
 
-struct map;
+out uvec4 o_frag_color;
 
-bool G_Pos_Init(const struct map *map);
-void G_Pos_Shutdown(void);
-void G_Pos_Delete(uint32_t uid);
-void G_Pos_Upload(void);
-
-#endif
+void main()
+{
+    o_frag_color = uvec4(0xffffffff, 0, 0, 0xffffffff);
+}
 

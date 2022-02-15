@@ -50,6 +50,8 @@
 #include "../lib/public/khash.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
+#include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 
 #include <assert.h>
 #include <float.h>
@@ -341,5 +343,34 @@ struct entity *G_Pos_Nearest(vec2_t xz_point)
     ASSERT_IN_MAIN_THREAD();
 
     return G_Pos_NearestWithPred(xz_point, any_ent, NULL, 0.0);
+}
+
+void G_Pos_Upload(void)
+{
+    PERF_ENTER();
+
+    const size_t nents = kh_size(s_postable);
+    struct render_workspace *ws = G_GetSimWS();
+    vec3_t *buff = stalloc(&ws->args, nents * sizeof(vec3_t));
+
+    vec3_t curr;
+    int i = 0;
+
+    kh_foreach(s_postable, (uint32_t){0}, curr, {
+        buff[i++] = curr;
+    });
+    assert(i == kh_size(s_postable));
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_PositionsUpload,
+        .nargs = 3,
+        .args = {
+            buff,
+            R_PushArg(&nents, sizeof(nents)),
+            G_GetPrevTickMap()
+        },
+    });
+
+    PERF_RETURN_VOID();
 }
 
