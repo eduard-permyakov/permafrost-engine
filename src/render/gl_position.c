@@ -75,7 +75,7 @@ void R_GL_PositionsUpload(vec3_t *posbuff, uint32_t *idbuff,
 
     glGenTextures(1, &s_posbuff_tex);
     glBindTexture(GL_TEXTURE_2D, s_posbuff_tex);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32UI, resx, resy);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32UI, resx, resy);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 

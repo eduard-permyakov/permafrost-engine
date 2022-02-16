@@ -564,10 +564,27 @@ void R_GL_PositionsUpload(vec3_t *posbuff, uint32_t *idbuff,
 void R_GL_PositionsGet(GLuint *out_tex_id);
 
 /* ---------------------------------------------------------------------------
- * Free resources previously allocated by R_GL_PositionsRender.
+ * Free resources previously allocated by R_GL_PositionsUpload.
  * ---------------------------------------------------------------------------
  */
 void R_GL_PositionsInvalidate(void);
+
+
+/*###########################################################################*/
+/* RENDER MOVEMENT                                                           */
+/*###########################################################################*/
+
+/* ---------------------------------------------------------------------------
+ * Upload the movement input state to a shader storage buffer object.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_MoveUpload(void *buff, size_t *buffsize);
+
+/* ---------------------------------------------------------------------------
+ * Free resources previously allocated by R_GL_MoveUpload.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_MoveInvalidate(void);
 
 
 #endif

@@ -1,6 +1,6 @@
 /*
  *  This file is part of Permafrost Engine. 
- *  Copyright (C) 2018-2020 Eduard Permyakov 
+ *  Copyright (C) 2022 Eduard Permyakov 
  *
  *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,41 +33,36 @@
  *
  */
 
-#ifndef MOVEMENT_H
-#define MOVEMENT_H
+#include "public/render.h"
+#include "gl_perf.h"
+#include "gl_assert.h"
+#include "gl_shader.h"
 
-#include "../pf_math.h"
-#include <stdbool.h>
-#include <stdint.h>
+/*****************************************************************************/
+/* STATIC VARIABLES                                                          */
+/*****************************************************************************/
 
-#define MOVE_TICK_RES (20)
+static GLuint s_move_ssbo;
 
-struct map;
-struct entity;
-struct SDL_RWops;
+/*****************************************************************************/
+/* EXTERN FUNCTIONS                                                          */
+/*****************************************************************************/
 
-bool G_Move_Init(const struct map *map);
-void G_Move_Shutdown(void);
+void R_GL_MoveUpload(void *buff, size_t *buffsize)
+{
+    GL_PERF_ENTER();
 
-void G_Move_AddEntity(const struct entity *ent);
-void G_Move_RemoveEntity(const struct entity *ent);
+    glGenBuffers(1, &s_move_ssbo);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, s_move_ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, *buffsize, buff, GL_STREAM_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz, bool *out_attack);
-bool G_Move_GetSurrounding(const struct entity *ent, uint32_t *out_uid);
+    GL_ASSERT_OK();
+    GL_PERF_RETURN_VOID();
+}
 
-void G_Move_Stop(const struct entity *ent);
-void G_Move_SetSeekEnemies(const struct entity *ent);
-void G_Move_SetSurroundEntity(const struct entity *ent, const struct entity *target);
-void G_Move_SetChangeDirection(const struct entity *ent, quat_t target);
-void G_Move_SetEnterRange(const struct entity *ent, const struct entity *target, float range);
-
-void G_Move_UpdatePos(const struct entity *ent, vec2_t pos);
-void G_Move_UpdateFactionID(const struct entity *ent, int oldfac, int newfac);
-bool G_Move_InTargetMode(void);
-
-bool G_Move_SaveState(struct SDL_RWops *stream);
-bool G_Move_LoadState(struct SDL_RWops *stream);
-void G_Move_Upload(void);
-
-#endif
-
+void R_GL_MoveInvalidate(void)
+{
+    glDeleteBuffers(1, &s_move_ssbo);
+    s_move_ssbo = 0;
+}

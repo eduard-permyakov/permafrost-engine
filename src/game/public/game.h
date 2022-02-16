@@ -193,6 +193,9 @@ struct render_workspace *G_GetRenderWS(void);
 bool                     G_MapLoaded(void);
 const struct map        *G_GetPrevTickMap(void);
 
+uint32_t        G_GPUIDForEnt(uint32_t uid);
+uint32_t        G_EntForGPUID(uint32_t gpuid);
+
 /*###########################################################################*/
 /* GAME SELECTION                                                            */
 /*###########################################################################*/

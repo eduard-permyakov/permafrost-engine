@@ -308,6 +308,21 @@ static struct flock *flock_for_ent(const struct entity *ent)
     return NULL;
 }
 
+uint32_t flock_id_for_ent(uint32_t uid, const struct flock **out)
+{
+    for(int i = 0; i < vec_size(&s_flocks); i++) {
+
+        struct flock *curr_flock = &vec_AT(&s_flocks, i);            
+        khiter_t k = kh_get(entity, curr_flock->ents, uid);
+        if(k != kh_end(curr_flock->ents)) {
+            *out = curr_flock;
+            return (i + 1);
+        }
+    }
+    *out = NULL;
+    return 0;
+}
+
 static struct flock *flock_for_dest(dest_id_t id)
 {
     for(int i = 0; i < vec_size(&s_flocks); i++) {
@@ -881,8 +896,7 @@ static vec2_t seek_force(const struct entity *ent, vec2_t target_xz)
  * When not within line of sight of the destination, this will steer the entity along the 
  * flow field.
  */
-static vec2_t arrive_force_point(const struct entity *ent, dest_id_t dest_id, 
-                                 vec2_t target_xz, bool has_dest_los)
+static vec2_t arrive_force_point(const struct entity *ent, vec2_t target_xz, bool has_dest_los)
 {
     vec2_t ret, desired_velocity;
     vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
@@ -1061,7 +1075,7 @@ static vec2_t point_seek_total_force(const struct entity *ent, const struct floc
     struct movestate *ms = movestate_get(ent);
     assert(ms);
 
-    vec2_t arrive = arrive_force_point(ent, flock->dest_id, flock->target_xz, has_dest_los);
+    vec2_t arrive = arrive_force_point(ent, flock->target_xz, has_dest_los);
     vec2_t cohesion = cohesion_force(ent, flock);
     vec2_t separation = separation_force(ent, SEPARATION_BUFFER_DIST);
 
@@ -1153,7 +1167,7 @@ static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flo
             steer_force = separation_force(ent, SEPARATION_BUFFER_DIST); 
             break;
         case 2: 
-            steer_force = arrive_force_point(ent, flock->dest_id, flock->target_xz, has_dest_los); 
+            steer_force = arrive_force_point(ent, flock->target_xz, has_dest_los); 
             break;
         }
 
@@ -2130,6 +2144,50 @@ bool G_Move_SetMaxSpeed(uint32_t uid, float speed)
     struct movestate *ms = &kh_value(s_entity_state_table, k);
     ms->max_speed = speed;
     return true;
+}
+
+void G_Move_Upload(void)
+{
+    PERF_ENTER();
+
+    const size_t nents = kh_size(G_GetDynamicEntsSet());
+    const size_t buffsize = nents * (sizeof(uint32_t) * 3 + sizeof(vec2_t));
+    struct render_workspace *ws = G_GetSimWS();
+    void *buff = stalloc(&ws->args, buffsize);
+    unsigned char *cursor = buff;
+
+    for(int gpu_id = 1; gpu_id <= nents; gpu_id++) {
+
+        uint32_t uid = G_EntForGPUID(gpu_id);
+        khiter_t k = kh_get(state, s_entity_state_table, uid);
+        assert(k != kh_end(s_entity_state_table));
+        const struct movestate *curr = &kh_value(s_entity_state_table, k);
+
+        const struct flock *flock;
+        uint32_t flock_id = flock_id_for_ent(uid, &flock);
+        uint32_t movestate = curr->state;
+        uint32_t has_dest_los = flock
+                ? M_NavHasDestLOS(s_map, flock->dest_id, G_Pos_GetXZ(uid)) 
+                : false;
+        vec2_t dest_xz = flock ? flock->target_xz : (vec2_t){0.0f, 0.0f};
+
+        *((uint32_t*)cursor)++ = flock_id;
+        *((uint32_t*)cursor)++ = movestate;
+        *((uint32_t*)cursor)++ = has_dest_los;
+        *((vec2_t*)cursor)++ = dest_xz;
+    }
+    assert(cursor == ((unsigned char*)buff) + buffsize);
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_MoveUpload,
+        .nargs = 2,
+        .args = {
+            buff,
+            R_PushArg(&buffsize, sizeof(buffsize)),
+        },
+    });
+
+    PERF_RETURN_VOID();
 }
 
 bool G_Move_SaveState(struct SDL_RWops *stream)

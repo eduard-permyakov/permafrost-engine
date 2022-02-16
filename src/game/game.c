@@ -94,7 +94,7 @@
 
 VEC_IMPL(extern, obb, struct obb)
 __KHASH_IMPL(entity,  extern, khint32_t, struct entity*, 1, kh_int_hash_func, kh_int_hash_equal)
-__KHASH_IMPL(faction, extern, khint32_t, int,            1, kh_int_hash_func, kh_int_hash_equal)
+__KHASH_IMPL(id,      extern, khint32_t, int,            1, kh_int_hash_func, kh_int_hash_equal)
 __KHASH_IMPL(range,   extern, khint32_t, float,          1, kh_int_hash_func, kh_int_hash_equal)
 
 /*****************************************************************************/
@@ -1128,7 +1128,7 @@ bool G_Init(void)
     if(!s_gs.active)
         goto fail_active;
 
-    s_gs.ent_faction_map = kh_init(faction);
+    s_gs.ent_faction_map = kh_init(id);
     if(!s_gs.ent_faction_map)
         goto fail_faction;
 
@@ -1143,6 +1143,14 @@ bool G_Init(void)
     s_gs.dynamic = kh_init(entity);
     if(!s_gs.dynamic)
         goto fail_dynamic;
+
+    s_gs.ent_gpu_id_map = kh_init(id);
+    if(!s_gs.ent_gpu_id_map)
+        goto fail_ent_gpu_id_map;
+
+    s_gs.gpu_id_ent_map = kh_init(id);
+    if(!s_gs.ent_gpu_id_map)
+        goto fail_gpu_id_ent_map;
 
     if(!g_init_camera())
         goto fail_cam; 
@@ -1176,13 +1184,17 @@ bool G_Init(void)
 fail_ws:
     Camera_Free(s_gs.active_cam);
 fail_cam:
+    kh_destroy(id, s_gs.gpu_id_ent_map);
+fail_gpu_id_ent_map:
+    kh_destroy(id, s_gs.ent_gpu_id_map);
+fail_ent_gpu_id_map:
     kh_destroy(entity, s_gs.dynamic);
 fail_dynamic:
     kh_destroy(range, s_gs.selection_radiuses);
 fail_sel_rad:
     kh_destroy(range, s_gs.ent_visrange_map);
 fail_visrange:
-    kh_destroy(faction, s_gs.ent_faction_map);
+    kh_destroy(id, s_gs.ent_faction_map);
 fail_faction:
     kh_destroy(entity, s_gs.active);
 fail_active:
@@ -1245,7 +1257,9 @@ void G_ClearState(void)
 
     kh_clear(entity, s_gs.active);
     kh_clear(entity, s_gs.dynamic);
-    kh_clear(faction, s_gs.ent_faction_map);
+    kh_clear(id, s_gs.ent_gpu_id_map);
+    kh_clear(id, s_gs.gpu_id_ent_map);
+    kh_clear(id, s_gs.ent_faction_map);
     kh_clear(range, s_gs.ent_visrange_map);
     kh_clear(range, s_gs.selection_radiuses);
     vec_pentity_reset(&s_gs.visible);
@@ -1463,7 +1477,9 @@ void G_Shutdown(void)
 
     kh_destroy(entity, s_gs.active);
     kh_destroy(entity, s_gs.dynamic);
-    kh_destroy(faction, s_gs.ent_faction_map);
+    kh_destroy(id, s_gs.ent_gpu_id_map);
+    kh_destroy(id, s_gs.gpu_id_ent_map);
+    kh_destroy(id, s_gs.ent_faction_map);
     kh_destroy(range, s_gs.ent_visrange_map);
     kh_destroy(range, s_gs.selection_radiuses);
     vec_pentity_destroy(&s_gs.light_visible);
@@ -1557,6 +1573,7 @@ void G_Render(void)
 
     if(s_gs.map) {
         G_Pos_Upload();
+        G_Move_Upload();
     }
 
     struct render_input in;
@@ -1643,6 +1660,7 @@ void G_Render(void)
         g_render_minimap_units();
         R_PushCmd((struct rcmd){ R_GL_MapInvalidate, 0 });
         R_PushCmd((struct rcmd){ R_GL_PositionsInvalidate, 0 });
+        R_PushCmd((struct rcmd){ R_GL_MoveInvalidate, 0 });
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_FINISH, NULL, ES_ENGINE);
@@ -1672,7 +1690,7 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
         return false;
     kh_value(s_gs.active, k) = ent;
 
-    k = kh_put(faction, s_gs.ent_faction_map, ent->uid, &ret);
+    k = kh_put(id, s_gs.ent_faction_map, ent->uid, &ret);
     if(ret == -1 || ret == 0)
         return false;
     kh_value(s_gs.ent_faction_map, k) = 0;
@@ -1717,6 +1735,18 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
         kh_value(s_gs.dynamic, k) = ent;
 
         G_Move_AddEntity(ent);
+
+        uint32_t gpu_id = kh_size(s_gs.ent_gpu_id_map) + 1;
+        k = kh_put(id, s_gs.ent_gpu_id_map, ent->uid, &ret);
+        assert(ret != -1 && ret != 0);
+        kh_value(s_gs.ent_gpu_id_map, k) = gpu_id;
+
+        k = kh_put(id, s_gs.gpu_id_ent_map, gpu_id, &ret);
+        assert(ret != -1 && ret != 0);
+        kh_value(s_gs.gpu_id_ent_map, k) = ent->uid;
+
+        assert(kh_size(s_gs.dynamic) == kh_size(s_gs.ent_gpu_id_map));
+        assert(kh_size(s_gs.ent_gpu_id_map) == kh_size(s_gs.gpu_id_ent_map));
     }
 
     return true;
@@ -1735,6 +1765,37 @@ bool G_RemoveEntity(struct entity *ent)
         k = kh_get(entity, s_gs.dynamic, ent->uid);
         assert(k != kh_end(s_gs.dynamic));
         kh_del(entity, s_gs.dynamic, k);
+
+        k = kh_get(id, s_gs.ent_gpu_id_map, ent->uid);
+        assert(k != kh_end(s_gs.ent_gpu_id_map));
+        uint32_t old_id = kh_value(s_gs.ent_gpu_id_map, k);
+        uint32_t old_size = kh_size(s_gs.ent_gpu_id_map);
+        kh_del(id, s_gs.ent_gpu_id_map, k);
+
+        k = kh_get(id, s_gs.gpu_id_ent_map, old_id);
+        assert(k != kh_end(s_gs.gpu_id_ent_map));
+        kh_del(id, s_gs.gpu_id_ent_map, k);
+
+        /* Make sure all existing values in the GPU ID table 
+         * are in the range of [1:table_size] */
+        k = kh_get(id, s_gs.gpu_id_ent_map, old_size + 1);
+        if(k != kh_end(s_gs.gpu_id_ent_map)) {
+
+            uint32_t uid = kh_value(s_gs.gpu_id_ent_map, k);
+            kh_del(id, s_gs.gpu_id_ent_map, k);
+
+            k = kh_get(id, s_gs.ent_gpu_id_map, uid);
+            assert(k != kh_end(s_gs.ent_gpu_id_map));
+            kh_value(s_gs.ent_gpu_id_map, k) = old_id;
+
+            int ret;
+            k = kh_put(id, s_gs.gpu_id_ent_map, old_id, &ret);
+            assert(ret != -1);
+            kh_value(s_gs.gpu_id_ent_map, k) = ent->uid;
+        }
+
+        assert(kh_size(s_gs.dynamic) == kh_size(s_gs.ent_gpu_id_map));
+        assert(kh_size(s_gs.ent_gpu_id_map) == kh_size(s_gs.gpu_id_ent_map));
     }
 
     int idx = vec_pentity_indexof(&s_gs.visible, ent, g_pentities_equal);
@@ -1761,9 +1822,9 @@ bool G_RemoveEntity(struct entity *ent)
     G_Pos_Delete(ent->uid);
     Entity_Remove(ent->uid);
 
-    k = kh_get(faction, s_gs.ent_faction_map, ent->uid);
+    k = kh_get(id, s_gs.ent_faction_map, ent->uid);
     assert(k != kh_end(s_gs.ent_faction_map));
-    kh_del(faction, s_gs.ent_faction_map, k);
+    kh_del(id, s_gs.ent_faction_map, k);
 
     k = kh_get(range, s_gs.ent_visrange_map, ent->uid);
     assert(k != kh_end(s_gs.ent_visrange_map));
@@ -1809,6 +1870,24 @@ void G_FreeEntity(struct entity *ent)
 {
     ASSERT_IN_MAIN_THREAD();
     AL_EntityFree(ent);
+}
+
+uint32_t G_GPUIDForEnt(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    khiter_t k = kh_get(id, s_gs.ent_gpu_id_map, uid);
+    if(k == kh_end(s_gs.ent_gpu_id_map))
+        return 0;
+    return kh_value(s_gs.ent_gpu_id_map, k);
+}
+
+uint32_t G_EntForGPUID(uint32_t gpuid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    assert(gpuid >= 1 && gpuid <= kh_size(G_GetDynamicEntsSet()));
+    khiter_t k = kh_get(id, s_gs.gpu_id_ent_map, gpuid);
+    assert(k != kh_end(s_gs.gpu_id_ent_map));
+    return kh_value(s_gs.gpu_id_ent_map, k);
 }
 
 bool G_AddFaction(const char *name, vec3_t color)
@@ -1940,7 +2019,7 @@ void G_SetFactionID(uint32_t uid, int faction_id)
     if(old == faction_id)
         return;
 
-    khiter_t k = kh_get(faction, s_gs.ent_faction_map, uid);
+    khiter_t k = kh_get(id, s_gs.ent_faction_map, uid);
     assert(k != kh_end(s_gs.ent_faction_map));
     kh_value(s_gs.ent_faction_map, k) = faction_id;
 
@@ -1962,7 +2041,7 @@ int G_GetFactionID(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    khiter_t k = kh_get(faction, s_gs.ent_faction_map, uid);
+    khiter_t k = kh_get(id, s_gs.ent_faction_map, uid);
     assert(k != kh_end(s_gs.ent_faction_map));
     return kh_value(s_gs.ent_faction_map, k);
 }
@@ -2194,6 +2273,15 @@ void G_Zombiefy(struct entity *ent, bool invis)
         khiter_t k = kh_get(entity, s_gs.dynamic, ent->uid);
         assert(k != kh_end(s_gs.dynamic));
         kh_del(entity, s_gs.dynamic, k);
+
+        k = kh_get(entity, s_gs.ent_gpu_id_map, ent->uid);
+        assert(k != kh_end(s_gs.ent_gpu_id_map));
+        uint32_t gpu_id = kh_value(s_gs.ent_gpu_id_map, k);
+        kh_del(entity, s_gs.ent_gpu_id_map, k);
+
+        k = kh_get(entity, s_gs.gpu_id_ent_map, gpu_id);
+        assert(k != kh_end(s_gs.gpu_id_ent_map));
+        kh_del(entity, s_gs.gpu_id_ent_map, k);
     }
 
     G_Move_RemoveEntity(ent);

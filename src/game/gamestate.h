@@ -44,7 +44,7 @@
 
 #include <stdint.h>
 
-KHASH_DECLARE(faction, khint32_t, int)
+KHASH_DECLARE(id, khint32_t, int)
 KHASH_DECLARE(range, khint32_t, float)
 
 
@@ -101,7 +101,7 @@ struct gamestate{
      * Synchronized with 'active' table at function call boundaries.
      *-------------------------------------------------------------------------
      */
-    khash_t(faction)       *ent_faction_map;
+    khash_t(id)           *ent_faction_map;
     /*-------------------------------------------------------------------------
      * Table mapping an entity to its' vision range for active entities.
      * Synchronized with 'active' table at function call boundaries.
@@ -120,6 +120,14 @@ struct gamestate{
      *-------------------------------------------------------------------------
      */
     khash_t(entity)        *dynamic;
+    /*-------------------------------------------------------------------------
+     * A bidirectional mapping of entity IDs to GPU IDs for every dynamic entity.
+     * The GPU IDs are in the range of [1:kh_size(dynamic)] and thus are 
+     * better suited to be used as indices. An ID of 0 represents a NULL ID.
+     *-------------------------------------------------------------------------
+     */
+    khash_t(id)            *ent_gpu_id_map;
+    khash_t(id)            *gpu_id_ent_map;
     /*-------------------------------------------------------------------------
      * The set of entities potentially visible by the active camera. Updated
      * every frame.
