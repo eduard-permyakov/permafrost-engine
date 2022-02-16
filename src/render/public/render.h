@@ -549,12 +549,13 @@ void R_GL_Batch_AllocChunks(struct map_resolution *res);
 /*###########################################################################*/
 
 /* ---------------------------------------------------------------------------
- * Render the entity positions (and associated attributes) to a texture. The
- * resulting texture can be queried with R_GL_PositionsGet and used for further
- * computations on the GPU.
+ * Render the entity attributes to a texture based on the entity's map-space 
+ * position. The resulting texture can be queried with R_GL_PositionsGet and 
+ * used for further computations on the GPU.
  * ---------------------------------------------------------------------------
  */
-void R_GL_PositionsUpload(vec3_t *posbuff, const size_t *nents, const struct map *map);
+void R_GL_PositionsUpload(vec3_t *posbuff, uint32_t *idbuff, 
+                          const size_t *nents, const struct map *map);
 
 /* ---------------------------------------------------------------------------
  * Get the ID of the texture rendered to by R_GL_PositionsRender.

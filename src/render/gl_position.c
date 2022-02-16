@@ -58,7 +58,8 @@ static GLuint s_posbuff_tex;
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void R_GL_PositionsUpload(vec3_t *posbuff, const size_t *nents, const struct map *map)
+void R_GL_PositionsUpload(vec3_t *posbuff, uint32_t *idbuff, 
+                          const size_t *nents, const struct map *map)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -88,17 +89,23 @@ void R_GL_PositionsUpload(vec3_t *posbuff, const size_t *nents, const struct map
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
     /* Upload the vertex attributes */
-    GLuint VAO, VBO;
+    GLuint VAO, pos_VBO, id_VBO;
     glGenVertexArrays(1, &VAO);
     glBindVertexArray(VAO);
 
-    glGenBuffers(1, &VBO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glGenBuffers(1, &pos_VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, pos_VBO);
+    glBufferData(GL_ARRAY_BUFFER, *nents * sizeof(vec3_t), posbuff, GL_STREAM_DRAW);
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
     glEnableVertexAttribArray(0);
 
-    glBufferData(GL_ARRAY_BUFFER, *nents * sizeof(vec3_t), posbuff, GL_STREAM_DRAW);
+    glGenBuffers(1, &id_VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, id_VBO);
+    glBufferData(GL_ARRAY_BUFFER, *nents * sizeof(uint32_t), idbuff, GL_STREAM_DRAW);
+
+    glVertexAttribIPointer(1, 1, GL_UNSIGNED_INT, sizeof(uint32_t), (void*)0);
+    glEnableVertexAttribArray(1);
 
     /* Render the position vertex from a bird's eye view to the texture. 
      * The entity's attributes will be encoded in the output texture and can be 
@@ -140,7 +147,8 @@ void R_GL_PositionsUpload(vec3_t *posbuff, const size_t *nents, const struct map
 
     glDeleteFramebuffers(1, &fbo);
     glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
+    glDeleteBuffers(1, &pos_VBO);
+    glDeleteBuffers(1, &id_VBO);
 
     GL_ASSERT_OK();
     GL_PERF_RETURN_VOID();

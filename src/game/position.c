@@ -91,6 +91,24 @@ static bool uids_equal(const uint32_t *a, const uint32_t *b)
     return (*a == *b);
 }
 
+static void pos_sort(vec3_t *posbuff, uint32_t *uidbuff, size_t size)
+{
+    PERF_ENTER();
+    int i = 1;
+    while(i < size) {
+        int j = i;
+        while(j > 0 && uidbuff[j - 1] > uidbuff[j]) {
+
+            vec3_t tmp = posbuff[j - 1];
+            posbuff[j - 1] = posbuff[j];
+            posbuff[j] = tmp;
+            j--;
+        }
+        i++;
+    }
+    PERF_RETURN_VOID();
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -352,20 +370,28 @@ void G_Pos_Upload(void)
     const size_t nents = kh_size(s_postable);
     struct render_workspace *ws = G_GetSimWS();
     vec3_t *buff = stalloc(&ws->args, nents * sizeof(vec3_t));
+    uint32_t *uidbuff = stalloc(&ws->args, nents * sizeof(uint32_t));
+    uint32_t *gpu_idbuff = stalloc(&ws->args, nents * sizeof(uint32_t));
 
+    uint32_t uid;
     vec3_t curr;
     int i = 0;
 
-    kh_foreach(s_postable, (uint32_t){0}, curr, {
-        buff[i++] = curr;
+    kh_foreach(s_postable, uid, curr, {
+        uidbuff[i] = uid;
+        buff[i] = curr;
+        gpu_idbuff[i] = i + 1;
+        i++;
     });
     assert(i == kh_size(s_postable));
+    pos_sort(buff, uidbuff, kh_size(s_postable));
 
     R_PushCmd((struct rcmd){
         .func = R_GL_PositionsUpload,
-        .nargs = 3,
+        .nargs = 4,
         .args = {
             buff,
+            gpu_idbuff,
             R_PushArg(&nents, sizeof(nents)),
             G_GetPrevTickMap()
         },
