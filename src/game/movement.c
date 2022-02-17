@@ -2179,10 +2179,11 @@ void G_Move_Upload(void)
     assert(cursor == ((unsigned char*)buff) + buffsize);
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_MoveUpload,
-        .nargs = 2,
+        .func = R_GL_MoveUploadData,
+        .nargs = 3,
         .args = {
             buff,
+            R_PushArg(&nents, sizeof(nents)),
             R_PushArg(&buffsize, sizeof(buffsize)),
         },
     });

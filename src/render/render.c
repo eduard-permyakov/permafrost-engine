@@ -761,6 +761,7 @@ void R_InitAttributes(void)
 
 bool R_ComputeShaderSupported(void)
 {
-    return (GLEW_VERSION_4_3 || GLEW_ARB_compute_shader);
+    return (GLEW_VERSION_4_3 
+        || (GLEW_ARB_compute_shader && GLEW_ARB_shader_storage_buffer_object));
 }
 

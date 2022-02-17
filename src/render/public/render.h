@@ -554,20 +554,20 @@ void R_GL_Batch_AllocChunks(struct map_resolution *res);
  * used for further computations on the GPU.
  * ---------------------------------------------------------------------------
  */
-void R_GL_PositionsUpload(vec3_t *posbuff, uint32_t *idbuff, 
-                          const size_t *nents, const struct map *map);
+void R_GL_PositionsUploadData(vec3_t *posbuff, uint32_t *idbuff, 
+                              const size_t *nents, const struct map *map);
 
 /* ---------------------------------------------------------------------------
  * Get the ID of the texture rendered to by R_GL_PositionsRender.
  * ---------------------------------------------------------------------------
  */
-void R_GL_PositionsGet(GLuint *out_tex_id);
+void R_GL_PositionsGetTexture(GLuint *out_tex_id);
 
 /* ---------------------------------------------------------------------------
- * Free resources previously allocated by R_GL_PositionsUpload.
+ * Free resources previously allocated by R_GL_PositionsUploadData.
  * ---------------------------------------------------------------------------
  */
-void R_GL_PositionsInvalidate(void);
+void R_GL_PositionsInvalidateData(void);
 
 
 /*###########################################################################*/
@@ -578,13 +578,28 @@ void R_GL_PositionsInvalidate(void);
  * Upload the movement input state to a shader storage buffer object.
  * ---------------------------------------------------------------------------
  */
-void R_GL_MoveUpload(void *buff, size_t *buffsize);
+void R_GL_MoveUploadData(void *buff, size_t *nents, size_t *buffsize);
 
 /* ---------------------------------------------------------------------------
- * Free resources previously allocated by R_GL_MoveUpload.
+ * Free resources previously allocated by R_GL_MoveUploadData. This must be 
+ * done after the compute work has finished running and the results have been
+ * read back by the CPU.
  * ---------------------------------------------------------------------------
  */
-void R_GL_MoveInvalidate(void);
+void R_GL_MoveInvalidateData(void);
+
+/* ---------------------------------------------------------------------------
+ * Dispatch the compute work for deriving the new velocities of the entities.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_MoveDispatchWork(const size_t *nents);
+
+/* ---------------------------------------------------------------------------
+ * Read back the results of the previously dispatched compute work. This will
+ * block until the work is finished and the results are read back.
+ * ---------------------------------------------------------------------------
+ */
+void R_GL_MoveReadNewVelocities(void *out, const size_t *nents, const size_t *maxout);
 
 
 #endif

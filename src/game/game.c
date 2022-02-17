@@ -1571,7 +1571,7 @@ void G_Render(void)
     R_PushCmd((struct rcmd){ R_GL_BeginFrame, 0 });
     E_Global_NotifyImmediate(EVENT_RENDER_3D_PRE, NULL, ES_ENGINE);
 
-    if(s_gs.map) {
+    if(s_gs.map && R_ComputeShaderSupported()) {
         G_Pos_Upload();
         G_Move_Upload();
     }
@@ -1659,8 +1659,10 @@ void G_Render(void)
         M_RenderMinimap(s_gs.map, s_gs.active_cam);
         g_render_minimap_units();
         R_PushCmd((struct rcmd){ R_GL_MapInvalidate, 0 });
-        R_PushCmd((struct rcmd){ R_GL_PositionsInvalidate, 0 });
-        R_PushCmd((struct rcmd){ R_GL_MoveInvalidate, 0 });
+        if(R_ComputeShaderSupported()) {
+            R_PushCmd((struct rcmd){ R_GL_PositionsInvalidateData, 0 });
+            R_PushCmd((struct rcmd){ R_GL_MoveInvalidateData, 0 });
+        }
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_FINISH, NULL, ES_ENGINE);

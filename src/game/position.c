@@ -91,24 +91,6 @@ static bool uids_equal(const uint32_t *a, const uint32_t *b)
     return (*a == *b);
 }
 
-static void pos_sort(vec3_t *posbuff, uint32_t *uidbuff, size_t size)
-{
-    PERF_ENTER();
-    int i = 1;
-    while(i < size) {
-        int j = i;
-        while(j > 0 && uidbuff[j - 1] > uidbuff[j]) {
-
-            vec3_t tmp = posbuff[j - 1];
-            posbuff[j - 1] = posbuff[j];
-            posbuff[j] = tmp;
-            j--;
-        }
-        i++;
-    }
-    PERF_RETURN_VOID();
-}
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -367,27 +349,29 @@ void G_Pos_Upload(void)
 {
     PERF_ENTER();
 
-    const size_t nents = kh_size(s_postable);
+    const size_t max_ents = kh_size(s_postable);
     struct render_workspace *ws = G_GetSimWS();
-    vec3_t *buff = stalloc(&ws->args, nents * sizeof(vec3_t));
-    uint32_t *uidbuff = stalloc(&ws->args, nents * sizeof(uint32_t));
-    uint32_t *gpu_idbuff = stalloc(&ws->args, nents * sizeof(uint32_t));
+    vec3_t *buff = stalloc(&ws->args, max_ents * sizeof(vec3_t));
+    uint32_t *gpu_idbuff = stalloc(&ws->args, max_ents * sizeof(uint32_t));
 
     uint32_t uid;
     vec3_t curr;
-    int i = 0;
+    size_t nents = 0;
 
     kh_foreach(s_postable, uid, curr, {
-        uidbuff[i] = uid;
-        buff[i] = curr;
-        gpu_idbuff[i] = i + 1;
-        i++;
+
+        uint32_t gpu_id = G_GPUIDForEnt(uid);
+        if(gpu_id == 0)
+            continue;
+
+        buff[nents] = curr;
+        gpu_idbuff[nents] = gpu_id;
+        nents++;
     });
-    assert(i == kh_size(s_postable));
-    pos_sort(buff, uidbuff, kh_size(s_postable));
+    assert(nents == kh_size(G_GetDynamicEntsSet()));
 
     R_PushCmd((struct rcmd){
-        .func = R_GL_PositionsUpload,
+        .func = R_GL_PositionsUploadData,
         .nargs = 4,
         .args = {
             buff,

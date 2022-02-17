@@ -44,14 +44,19 @@ struct move_input{
 };
 
 layout(local_size_x = 1) in;
-layout(std430, binding = 0) readonly buffer in_moveattrs
+layout(std430, binding = 0) readonly buffer in_data
 {
-    move_input data[];
+    move_input moveattrs[];
 };
-layout (r32ui, binding = 1) uniform readonly uimage2D in_pos_id_map;
-layout (rgba32f, binding = 2) uniform writeonly image1D o_vpref;
+layout(r32ui, binding = 1) uniform readonly uimage2D in_pos_id_map;
+layout(std430, binding = 2) writeonly buffer o_data
+{
+    float vpref[];
+};
 
 void main()
 {
+    uint idx = gl_GlobalInvocationID.x;
+    vpref[idx] = 0.0f;
 }
 
