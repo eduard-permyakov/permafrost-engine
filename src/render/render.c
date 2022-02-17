@@ -759,3 +759,8 @@ void R_InitAttributes(void)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, ctx_flags);
 }
 
+bool R_ComputeShaderSupported(void)
+{
+    return (GLEW_VERSION_4_3 || GLEW_ARB_compute_shader);
+}
+

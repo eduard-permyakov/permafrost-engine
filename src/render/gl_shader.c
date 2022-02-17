@@ -33,6 +33,7 @@
  *
  */
 
+#include "public/render_ctrl.h"
 #include "gl_shader.h"
 #include "gl_assert.h"
 #include "gl_state.h"
@@ -69,6 +70,7 @@ struct shader{
     const char     *vertex_path;
     const char     *geo_path;
     const char     *frag_path;
+    const char     *compute_path;
     struct uniform *uniforms;
 };
 
@@ -81,12 +83,13 @@ static GLuint s_curr_prog = 0;
 /* Shader 'prog_id' will be initialized by R_GL_Shader_InitAll */
 static struct shader s_shaders[] = {
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.static.colored",
-        .vertex_path = "shaders/vertex/basic.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/colored.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "mesh.static.colored",
+        .vertex_path    = "shaders/vertex/basic.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/colored.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -95,12 +98,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.static.textured",
-        .vertex_path = "shaders/vertex/static.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/textured.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "mesh.static.textured",
+        .vertex_path    = "shaders/vertex/static.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/textured.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -111,12 +115,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.static.textured-phong",
-        .vertex_path = "shaders/vertex/static.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/textured-phong.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "mesh.static.textured-phong",
+        .vertex_path    = "shaders/vertex/static.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/textured-phong.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -131,12 +136,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.static.tile-outline",
-        .vertex_path = "shaders/vertex/static.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/tile-outline.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "mesh.static.tile-outline",
+        .vertex_path    = "shaders/vertex/static.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/tile-outline.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -145,12 +151,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.animated.textured-phong",
-        .vertex_path = "shaders/vertex/skinned.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/textured-phong.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "mesh.animated.textured-phong",
+        .vertex_path    = "shaders/vertex/skinned.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/textured-phong.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -168,12 +175,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.static.normals.colored",
-        .vertex_path = "shaders/vertex/static.glsl",
-        .geo_path    = "shaders/geometry/normals.glsl",
-        .frag_path   = "shaders/fragment/colored.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "mesh.static.normals.colored",
+        .vertex_path    = "shaders/vertex/static.glsl",
+        .geo_path       = "shaders/geometry/normals.glsl",
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/colored.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -183,12 +191,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.animated.normals.colored",
-        .vertex_path = "shaders/vertex/skinned.glsl",
-        .geo_path    = "shaders/geometry/normals.glsl",
-        .frag_path   = "shaders/fragment/colored.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "mesh.animated.normals.colored",
+        .vertex_path    = "shaders/vertex/skinned.glsl",
+        .geo_path       = "shaders/geometry/normals.glsl",
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/colored.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -201,12 +210,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.static.colored-per-vert",
-        .vertex_path = "shaders/vertex/colored.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/colored-per-vert.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "mesh.static.colored-per-vert",
+        .vertex_path    = "shaders/vertex/colored.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/colored-per-vert.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -214,12 +224,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "terrain",
-        .vertex_path = "shaders/vertex/terrain.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/terrain.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "terrain",
+        .vertex_path    = "shaders/vertex/terrain.glsl",
+        .compute_path   = NULL,
+        .geo_path       = NULL,
+        .frag_path      = "shaders/fragment/terrain.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -237,12 +248,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "terrain-shadowed",
-        .vertex_path = "shaders/vertex/terrain-shadowed.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/terrain-shadowed.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "terrain-shadowed",
+        .vertex_path    = "shaders/vertex/terrain-shadowed.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/terrain-shadowed.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -262,12 +274,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.static.depth",
-        .vertex_path = "shaders/vertex/depth.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/passthrough.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "mesh.static.depth",
+        .vertex_path    = "shaders/vertex/depth.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/passthrough.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_LS_TRANS          },
             { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
@@ -275,12 +288,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "batched.mesh.static.depth",
-        .vertex_path = "shaders/vertex/depth-batched.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/passthrough.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "batched.mesh.static.depth",
+        .vertex_path    = "shaders/vertex/depth-batched.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/passthrough.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
             { UTYPE_MAT4,      GL_U_LS_TRANS          },
@@ -297,12 +311,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.animated.depth",
-        .vertex_path = "shaders/vertex/skinned-depth.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/passthrough.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "mesh.animated.depth",
+        .vertex_path    = "shaders/vertex/skinned-depth.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/passthrough.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
             { UTYPE_MAT4,      GL_U_LS_TRANS          },
@@ -312,12 +327,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "batched.mesh.animated.depth",
-        .vertex_path = "shaders/vertex/skinned-depth-batched.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/passthrough.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "batched.mesh.animated.depth",
+        .vertex_path    = "shaders/vertex/skinned-depth-batched.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/passthrough.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
             { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
@@ -334,12 +350,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.static.textured-phong-shadowed",
-        .vertex_path = "shaders/vertex/static-shadowed.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/textured-phong-shadowed.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "mesh.static.textured-phong-shadowed",
+        .vertex_path    = "shaders/vertex/static-shadowed.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/textured-phong-shadowed.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
@@ -355,12 +372,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "batched.mesh.static.textured-phong-shadowed",
-        .vertex_path = "shaders/vertex/static-shadowed-batched.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/textured-phong-shadowed-batched.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "batched.mesh.static.textured-phong-shadowed",
+        .vertex_path    = "shaders/vertex/static-shadowed-batched.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/textured-phong-shadowed-batched.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
             { UTYPE_MAT4,      GL_U_LS_TRANS          },
@@ -382,12 +400,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "mesh.animated.textured-phong-shadowed",
-        .vertex_path = "shaders/vertex/skinned-shadowed.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/textured-phong-shadowed.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "mesh.animated.textured-phong-shadowed",
+        .vertex_path    = "shaders/vertex/skinned-shadowed.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/textured-phong-shadowed.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -407,12 +426,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "batched.mesh.animated.textured-phong-shadowed",
-        .vertex_path = "shaders/vertex/skinned-shadowed-batched.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/textured-phong-shadowed-batched.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "batched.mesh.animated.textured-phong-shadowed",
+        .vertex_path    = "shaders/vertex/skinned-shadowed-batched.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/textured-phong-shadowed-batched.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
             { UTYPE_VEC4,      GL_U_CLIP_PLANE0       },
@@ -434,12 +454,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "statusbar",
-        .vertex_path = "shaders/vertex/statusbar.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/statusbar.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "statusbar",
+        .vertex_path    = "shaders/vertex/statusbar.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/statusbar.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
             { UTYPE_IVEC2,     GL_U_CURR_RES          },
@@ -449,12 +470,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "water",
-        .vertex_path = "shaders/vertex/water.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/water.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "water",
+        .vertex_path    = "shaders/vertex/water.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/water.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -477,24 +499,26 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "ui",
-        .vertex_path = "shaders/vertex/ui.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/ui.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "ui",
+        .vertex_path    = "shaders/vertex/ui.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/ui.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_PROJECTION        },
             { UTYPE_INT,       GL_U_TEXTURE0          },
             {0}
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "minimap",
-        .vertex_path = "shaders/vertex/static.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/minimap.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "minimap",
+        .vertex_path    = "shaders/vertex/static.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/minimap.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -510,12 +534,13 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "minimap-units",
-        .vertex_path = "shaders/vertex/colored-instanced.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/colored-per-vert.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "minimap-units",
+        .vertex_path    = "shaders/vertex/colored-instanced.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/colored-per-vert.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_MAT4,      GL_U_MODEL             },
             { UTYPE_MAT4,      GL_U_VIEW              },
             { UTYPE_MAT4,      GL_U_PROJECTION        },
@@ -523,14 +548,26 @@ static struct shader s_shaders[] = {
         },
     },
     {
-        .prog_id     = (intptr_t)NULL,
-        .name        = "posbuff",
-        .vertex_path = "shaders/vertex/posbuff.glsl",
-        .geo_path    = NULL,
-        .frag_path   = "shaders/fragment/posbuff.glsl",
-        .uniforms    = (struct uniform[]){
+        .prog_id        = (intptr_t)NULL,
+        .name           = "posbuff",
+        .vertex_path    = "shaders/vertex/posbuff.glsl",
+        .geo_path       = NULL,
+        .compute_path   = NULL,
+        .frag_path      = "shaders/fragment/posbuff.glsl",
+        .uniforms       = (struct uniform[]){
             { UTYPE_IVEC4,     GL_U_MAP_RES,          },
             { UTYPE_VEC2,      GL_U_MAP_POS           },
+            {0}
+        },
+    },
+    {
+        .prog_id        = (intptr_t)NULL,
+        .name           = "movement",
+        .vertex_path    = NULL,
+        .geo_path       = NULL,
+        .compute_path   = "shaders/compute/movement.glsl",
+        .frag_path      = NULL,
+        .uniforms       = (struct uniform[]){
             {0}
         },
     },
@@ -626,7 +663,8 @@ fail:
     return false;
 }
 
-static bool shader_make_prog(const GLuint vertex_shader, const GLuint geo_shader, const GLuint frag_shader, GLint *out)
+static bool shader_make_prog(const GLuint vertex_shader, const GLuint geo_shader, 
+                             const GLuint compute_shader, const GLuint frag_shader, GLint *out)
 {
     ASSERT_IN_RENDER_THREAD();
 
@@ -634,13 +672,18 @@ static bool shader_make_prog(const GLuint vertex_shader, const GLuint geo_shader
     GLint success;
 
     *out = glCreateProgram();
-    glAttachShader(*out, vertex_shader);
-
+    if(vertex_shader) {
+        glAttachShader(*out, vertex_shader);
+    }
     if(geo_shader) {
         glAttachShader(*out, geo_shader); 
     }
-
-    glAttachShader(*out, frag_shader);
+    if(compute_shader) {
+        glAttachShader(*out, compute_shader);
+    }
+    if(frag_shader) {
+        glAttachShader(*out, frag_shader);
+    }
     glLinkProgram(*out);
 
     glGetProgramiv(*out, GL_LINK_STATUS, &success);
@@ -707,49 +750,75 @@ bool R_GL_Shader_InitAll(const char *base_path)
 
     for(int i = 0; i < ARR_SIZE(s_shaders); i++){
 
-        struct shader *res = &s_shaders[i];
-        GLuint vertex, geometry = 0, fragment;
-
         char path[512];
-        pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->vertex_path);
+        struct shader *res = &s_shaders[i];
+        GLuint vertex = 0, geometry = 0, fragment = 0, compute = 0;
 
-        if(!shader_load_and_init(path, &vertex, GL_VERTEX_SHADER)) {
-            PRINT("Failed to load and init vertex shader.\n");
-            return false;
+        if(res->vertex_path) {
+            pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->vertex_path);
+            if(!shader_load_and_init(path, &vertex, GL_VERTEX_SHADER)) {
+                PRINT("Failed to load and init vertex shader.\n");
+                goto fail;
+            }
         }
+        assert(!res->vertex_path || vertex > 0);
 
-        if(res->geo_path)
+        if(res->geo_path) {
             pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->geo_path);
-        if(res->geo_path && !shader_load_and_init(path, &geometry, GL_GEOMETRY_SHADER)) {
-            PRINT("Failed to load and init geometry shader.\n");
-            return false;
+            if(!shader_load_and_init(path, &geometry, GL_GEOMETRY_SHADER)) {
+                PRINT("Failed to load and init geometry shader.\n");
+                goto fail;
+            }
         }
         assert(!res->geo_path || geometry > 0);
 
-        pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->frag_path);
-        if(!shader_load_and_init(path, &fragment, GL_FRAGMENT_SHADER)) {
-            PRINT("Failed to load and init fragment shader.\n");
-            return false;
+        if(res->frag_path) {
+            pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->frag_path);
+            if(!shader_load_and_init(path, &fragment, GL_FRAGMENT_SHADER)) {
+                PRINT("Failed to load and init fragment shader.\n");
+                goto fail;
+            }
         }
+        assert(!res->frag_path || fragment > 0);
 
-        if(!shader_make_prog(vertex, geometry, fragment, &res->prog_id)) {
+        if(res->compute_path) {
 
-            glDeleteShader(vertex);
-            if(geometry)
-                glDeleteShader(geometry);
-            glDeleteShader(fragment);
+            if(!R_ComputeShaderSupported()) {
+                char buff[512];
+                pf_snprintf(buff, sizeof(buff), "No compute shader support on the current platform. "
+                    "Skipping shader '%s'.\n", res->name);
+                PRINT(buff);
+                continue;
+            }
 
+            pf_snprintf(path, sizeof(path), "%s/%s", base_path, res->compute_path);
+            if(!shader_load_and_init(path, &compute, GL_COMPUTE_SHADER)) {
+                PRINT("Failed to load and init compute shader.\n");
+                goto fail;
+            }
+        }
+        assert(!res->compute_path || compute > 0);
+
+        if(!shader_make_prog(vertex, geometry, compute, fragment, &res->prog_id)) {
             char buff[512];
             pf_snprintf(buff, sizeof(buff), "Failed to make shader program %d of %d.\n",
                 i + 1, (int)ARR_SIZE(s_shaders));
             PRINT(buff);
-            return false;
+            goto fail;
         }
 
-        glDeleteShader(vertex);
-        if(geometry)
-            glDeleteShader(geometry);
-        glDeleteShader(fragment);
+        if(vertex)      glDeleteShader(vertex);
+        if(geometry)    glDeleteShader(geometry);
+        if(fragment)    glDeleteShader(fragment);
+        if(compute)     glDeleteShader(compute);
+        continue;
+
+    fail:
+        if(vertex)      glDeleteShader(vertex);
+        if(geometry)    glDeleteShader(geometry);
+        if(fragment)    glDeleteShader(fragment);
+        if(compute)     glDeleteShader(compute);
+        return false;
     }
 
     return true;

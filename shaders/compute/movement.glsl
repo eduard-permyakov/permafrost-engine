@@ -33,38 +33,25 @@
  *
  */
 
-#include "public/render.h"
-#include "public/render_ctrl.h"
-#include "gl_perf.h"
-#include "gl_assert.h"
-#include "gl_shader.h"
+#version 430 core
 
-/*****************************************************************************/
-/* STATIC VARIABLES                                                          */
-/*****************************************************************************/
+struct move_input{
+    uint  flock_id;
+    uint  movestate;
+    uint  has_dest_los;
+    float dest_x;
+    float dest_z;
+};
 
-static GLuint s_move_ssbo;
-
-/*****************************************************************************/
-/* EXTERN FUNCTIONS                                                          */
-/*****************************************************************************/
-
-void R_GL_MoveUpload(void *buff, size_t *buffsize)
+layout(local_size_x = 1) in;
+layout(std430, binding = 0) readonly buffer in_moveattrs
 {
-    GL_PERF_ENTER();
-    assert(R_ComputeShaderSupported());
+    move_input data[];
+};
+layout (r32ui, binding = 1) uniform readonly uimage2D in_pos_id_map;
+layout (rgba32f, binding = 2) uniform writeonly image1D o_vpref;
 
-    glGenBuffers(1, &s_move_ssbo);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, s_move_ssbo);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, *buffsize, buff, GL_STREAM_DRAW);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-    GL_ASSERT_OK();
-    GL_PERF_RETURN_VOID();
+void main()
+{
 }
 
-void R_GL_MoveInvalidate(void)
-{
-    glDeleteBuffers(1, &s_move_ssbo);
-    s_move_ssbo = 0;
-}

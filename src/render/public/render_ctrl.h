@@ -38,9 +38,11 @@
 
 #include "../../lib/public/queue.h"
 #include "../../lib/public/stalloc.h"
+#include "../../pf_math.h"
 
 #include <stddef.h>
 
+#include <SDL_video.h>
 #include <SDL_mutex.h>
 #include <SDL_thread.h>
 
@@ -108,6 +110,7 @@ bool        R_Init(const char *base_path);
 SDL_Thread *R_Run(struct render_sync_state *rstate);
 /* Must be set up before creating the window */
 void 		R_InitAttributes(void);
+bool        R_ComputeShaderSupported(void);
 
 void       *R_PushArg(const void *src, size_t size);
 void        R_PushCmd(struct rcmd cmd);
