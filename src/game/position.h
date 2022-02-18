@@ -36,7 +36,14 @@
 #ifndef POSITION_H
 #define POSITION_H
 
+#include "../pf_math.h"
+#include "../lib/public/khash.h"
+#include "../lib/public/quadtree.h"
+
 struct map;
+
+QUADTREE_TYPE(ent, uint32_t)
+KHASH_DECLARE(pos, khint32_t, vec3_t)
 
 bool G_Pos_Init(const struct map *map);
 void G_Pos_Shutdown(void);

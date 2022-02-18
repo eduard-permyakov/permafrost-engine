@@ -33,6 +33,7 @@
  *
  */
 
+#include "position.h"
 #include "game_private.h"
 #include "movement.h"
 #include "building.h"
@@ -42,12 +43,9 @@
 #include "region.h"
 #include "public/game.h"
 #include "../main.h"
-#include "../pf_math.h"
 #include "../perf.h"
 #include "../sched.h"
 #include "../lib/public/mem.h"
-#include "../lib/public/quadtree.h"
-#include "../lib/public/khash.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../render/public/render.h"
@@ -57,7 +55,6 @@
 #include <float.h>
 
 
-QUADTREE_TYPE(ent, uint32_t)
 QUADTREE_PROTOTYPES(static, ent, uint32_t)
 QUADTREE_IMPL(static, ent, uint32_t)
 

@@ -37,6 +37,7 @@
 #include "game_private.h"
 #include "combat.h"
 #include "clearpath.h"
+#include "position.h"
 #include "public/game.h"
 #include "../config.h"
 #include "../camera.h"
@@ -192,6 +193,22 @@ struct move_work_out{
 struct move_task_arg{
     size_t begin_idx;
     size_t end_idx;
+};
+
+/* The subset of the gamestate that is necessary 
+ * to derive the new entity velocities and positions. 
+ * We make a copy of this state so that movement 
+ * computations can safely be done asynchronously,
+ * or even be spread over multiple frames. 
+ */
+struct move_gamestate{
+    khash_t(entity) *ents;
+    khash_t(pos)    *positions;
+    qt_ent_t         postree;
+    khash_t(range)  *sel_radiuses;
+    /* We will also need a copy of the
+     * flow fields and navigation information. 
+     */
 };
 
 struct move_work{
