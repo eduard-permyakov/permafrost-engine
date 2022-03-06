@@ -342,6 +342,12 @@
     <ClCompile Include="src\render\gl_statusbar.c">
       <Filter>Source Files\render</Filter>
     </ClCompile>
+    <ClCompile Include="src\render\gl_position.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\gl_movement.c">
+      <Filter>Source Files\render</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\asset_load.h">
@@ -650,9 +656,6 @@
     <ClInclude Include="src\audio\al_effect.h">
       <Filter>Header Files\audio</Filter>
     </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="cpp.hint" />
   </ItemGroup>
   <ItemGroup>
     <MASM Include="src\context_switch.asm">
