@@ -675,6 +675,17 @@ typedef void ( * PFNGLXRELEASETEXIMAGEATIPROC) (Display *dpy, GLXPbuffer pbuf, i
 
 #endif /* GLX_EXT_framebuffer_sRGB */
 
+/* ----------------------- GLX_EXT_get_drawable_type ----------------------- */
+
+#ifndef GLX_EXT_get_drawable_type
+#define GLX_EXT_get_drawable_type 1
+
+#define GLX_DRAWABLE_TYPE 0x8010
+
+#define GLXEW_EXT_get_drawable_type GLXEW_GET_VAR(__GLXEW_EXT_get_drawable_type)
+
+#endif /* GLX_EXT_get_drawable_type */
+
 /* ------------------------- GLX_EXT_import_context ------------------------ */
 
 #ifndef GLX_EXT_import_context
@@ -1760,6 +1771,7 @@ GLXEW_VAR_EXPORT GLboolean __GLXEW_EXT_create_context_es2_profile;
 GLXEW_VAR_EXPORT GLboolean __GLXEW_EXT_create_context_es_profile;
 GLXEW_VAR_EXPORT GLboolean __GLXEW_EXT_fbconfig_packed_float;
 GLXEW_VAR_EXPORT GLboolean __GLXEW_EXT_framebuffer_sRGB;
+GLXEW_VAR_EXPORT GLboolean __GLXEW_EXT_get_drawable_type;
 GLXEW_VAR_EXPORT GLboolean __GLXEW_EXT_import_context;
 GLXEW_VAR_EXPORT GLboolean __GLXEW_EXT_libglvnd;
 GLXEW_VAR_EXPORT GLboolean __GLXEW_EXT_no_config_context;
