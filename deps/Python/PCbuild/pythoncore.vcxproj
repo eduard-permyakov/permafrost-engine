@@ -37,6 +37,7 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{CF7AC3D1-E2DF-41D2-BEA6-1E2556CDEA26}</ProjectGuid>
     <RootNamespace>pythoncore</RootNamespace>
+    <ProjectName>Python</ProjectName>
   </PropertyGroup>
   <Import Project="python.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -92,6 +93,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <CustomBuildAfterTargets />
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -109,6 +111,9 @@
     <PostBuildEvent>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">xcopy "$(TargetDir)$(TargetName).dll" "$(SolutionDir)lib\$(TargetName).dll*" /d /Y &amp; xcopy "$(TargetDir)$(TargetName).lib" "$(SolutionDir)lib\$(TargetName).lib*" /d /Y</Command>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">copy $(ProjectDir)..\Include\pyconfig-vs.h $(ProjectDir)..\Include\pyconfig.h</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\Include\abstract.h" />
