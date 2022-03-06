@@ -12,6 +12,10 @@
 #include "importdl.h"
 #include "malloc.h" /* for alloca */
 
+#ifdef __MINGW32__
+#define strnicmp strncasecmp
+#endif
+
 /* a string loaded from the DLL at startup */
 extern const char *PyWin_DLLVersionString;
 
