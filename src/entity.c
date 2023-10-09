@@ -39,6 +39,7 @@
 #include "event.h"
 #include "main.h"
 #include "camera.h"
+#include "asset_load.h"
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"
 #include "navigation/public/nav.h"
@@ -64,7 +65,7 @@ struct taglist{
 };
 
 struct dis_arg{
-    struct entity *ent;
+    uint32_t uid;
     const struct map *map;
     void (*on_finish)(void*);
     void *arg;
@@ -152,18 +153,17 @@ static void tag_remove_entity(const char *tag, uint32_t uid)
 
 static struct result ping_task(void *arg)
 {
-    struct entity *ent = arg;
+    uint32_t uid = (uintptr_t)arg;
 
     /* Cache all the params - the entity can die on us */
-    vec2_t pos = G_Pos_GetXZ(ent->uid);
-    float radius = G_GetSelectionRadius(ent->uid);
+    vec2_t pos = G_Pos_GetXZ(uid);
+    float radius = G_GetSelectionRadius(uid);
     const float width = 0.4f;
     vec3_t color = (vec3_t){1.0f, 1.0f, 0.0f};
-    uint32_t uid = ent->uid;
-    uint32_t flags = ent->flags;
+    uint32_t flags = G_FlagsGet(uid);
 
     struct obb obb;
-    Entity_CurrentOBB(ent, &obb, false);
+    Entity_CurrentOBB(uid, &obb, false);
 
     uint32_t elapsed = 0;
     uint32_t start = SDL_GetTicks();
@@ -181,7 +181,7 @@ static struct result ping_task(void *arg)
         if(!G_EntityExists(uid))
             break;
 
-        pos = G_Pos_GetXZ(ent->uid);
+        pos = G_Pos_GetXZ(uid);
         if(flags & ENTITY_FLAG_BUILDING) {
 
             R_PushCmd((struct rcmd){
@@ -218,12 +218,11 @@ static struct result ping_task(void *arg)
 static struct result disappear_task(void *arg)
 {
     struct dis_arg darg = *(struct dis_arg*)arg;
-    vec3_t start_pos = G_Pos_Get(darg.ent->uid);
-    uint32_t uid = darg.ent->uid;
-    int faction_id = G_GetFactionID(uid);
+    vec3_t start_pos = G_Pos_Get(darg.uid);
+    int faction_id = G_GetFactionID(darg.uid);
 
     struct obb obb;
-    Entity_CurrentOBB(darg.ent, &obb, false);
+    Entity_CurrentOBB(darg.uid, &obb, false);
 
     if(darg.map) {
         M_NavBlockersIncrefOBB(darg.map, faction_id, &obb);
@@ -234,7 +233,9 @@ static struct result disappear_task(void *arg)
     vec2_t curr_shift = (vec2_t){0, 0};
     vec2_t prev_shift = (vec2_t){0, 0};
 
-    darg.ent->flags |= ENTITY_FLAG_TRANSLUCENT;
+    uint32_t newflags = G_FlagsGet(darg.uid);
+    newflags |= ENTITY_FLAG_TRANSLUCENT;
+    G_FlagsSet(darg.uid, newflags);
 
     const float duration = 2500.0f;
     uint32_t elapsed = 0;
@@ -248,7 +249,7 @@ static struct result disappear_task(void *arg)
         /* The entity can theoretically be forecefully removed during the 
          * disappearing animation. Make sure we don't crap out if this happens
          */
-        if(!G_EntityExists(uid))
+        if(!G_EntityExists(darg.uid))
             return NULL_RESULT;
 
         uint32_t prev_long = elapsed / 250;
@@ -268,7 +269,7 @@ static struct result disappear_task(void *arg)
             start_pos.y - (elapsed / duration) * height,
             start_pos.z + (curr_shift.y * pc + prev_shift.y * (1.0f - pc)) / 2.0f,
         };
-        G_Pos_Set(darg.ent, curr_pos);
+        G_Pos_Set(darg.uid, curr_pos);
     }
 
     if(darg.map) {
@@ -285,13 +286,13 @@ static struct result disappear_task(void *arg)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-void Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out)
+void Entity_ModelMatrix(uint32_t uid, mat4x4_t *out)
 {
     mat4x4_t mtrans, mscale, mrot, mtmp;
 
-    vec3_t pos = G_Pos_Get(ent->uid);
-    vec3_t scale = Entity_GetScale(ent->uid);
-    quat_t rot = Entity_GetRot(ent->uid);
+    vec3_t pos = G_Pos_Get(uid);
+    vec3_t scale = Entity_GetScale(uid);
+    quat_t rot = Entity_GetRot(uid);
 
     PFM_Mat4x4_MakeTrans(pos.x, pos.y, pos.z, &mtrans);
     PFM_Mat4x4_MakeScale(scale.x, scale.y, scale.z, &mscale);
@@ -311,12 +312,15 @@ void Entity_SetNextUID(uint32_t uid)
     s_next_uid = uid;
 }
 
-void Entity_CurrentOBB(const struct entity *ent, struct obb *out, bool identity)
+void Entity_CurrentOBB(uint32_t uid, struct obb *out, bool identity)
 {
     const struct aabb *aabb;
-    if((ent->flags & ENTITY_FLAG_ANIMATED) && !identity) {
-        aabb = A_GetCurrPoseAABB(ent->uid);
+    uint32_t flags = G_FlagsGet(uid);
+
+    if((flags & ENTITY_FLAG_ANIMATED) && !identity) {
+        aabb = A_GetCurrPoseAABB(uid);
     }else {
+        struct entity *ent = AL_EntityGet(uid);
         aabb = &ent->identity_aabb;
     }
 
@@ -339,7 +343,7 @@ void Entity_CurrentOBB(const struct entity *ent, struct obb *out, bool identity)
     };
 
     mat4x4_t model;
-    Entity_ModelMatrix(ent, &model);
+    Entity_ModelMatrix(uid, &model);
 
     vec4_t obb_verts_homo[8];
     for(int i = 0; i < 8; i++) {
@@ -359,7 +363,7 @@ void Entity_CurrentOBB(const struct entity *ent, struct obb *out, bool identity)
         obb_center_homo.z / obb_center_homo.w,
     };
 
-    vec3_t scale = Entity_GetScale(ent->uid);
+    vec3_t scale = Entity_GetScale(uid);
     out->half_lengths[0] = (aabb->x_max - aabb->x_min) / 2.0f * scale.x;
     out->half_lengths[1] = (aabb->y_max - aabb->y_min) / 2.0f * scale.y;
     out->half_lengths[2] = (aabb->z_max - aabb->z_min) / 2.0f * scale.z;
@@ -374,15 +378,21 @@ void Entity_CurrentOBB(const struct entity *ent, struct obb *out, bool identity)
     PFM_Vec3_Normal(&axis2, &out->axes[2]);
 }
 
-vec3_t Entity_CenterPos(const struct entity *ent)
+vec3_t Entity_CenterPos(uint32_t uid)
 {
     struct obb obb;
-    Entity_CurrentOBB(ent, &obb, false);
+    Entity_CurrentOBB(uid, &obb, false);
     return obb.center;
 }
-
-vec3_t Entity_TopCenterPointWS(const struct entity *ent)
+#include <windows.h>
+vec3_t Entity_TopCenterPointWS(uint32_t uid)
 {
+    const struct entity *ent = AL_EntityGet(uid);
+
+    char buff[512];
+    sprintf(buff, "ent: %p\n", ent);
+    OutputDebugString(buff);
+
     const struct aabb *aabb = &ent->identity_aabb;
     vec4_t top_center_homo = (vec4_t) {
         (aabb->x_min + aabb->x_max) / 2.0f,
@@ -394,7 +404,7 @@ vec3_t Entity_TopCenterPointWS(const struct entity *ent)
     mat4x4_t model; 
     vec4_t out_ws_homo;
 
-    Entity_ModelMatrix(ent, &model);
+    Entity_ModelMatrix(uid, &model);
     PFM_Mat4x4_Mult4x1(&model, &top_center_homo, &out_ws_homo);
 
     return (vec3_t) {
@@ -404,10 +414,10 @@ vec3_t Entity_TopCenterPointWS(const struct entity *ent)
     };
 }
 
-void Entity_FaceTowards(struct entity *ent, vec2_t point)
+void Entity_FaceTowards(uint32_t uid, vec2_t point)
 {
     vec2_t delta;
-    vec2_t pos = G_Pos_GetXZ(ent->uid);
+    vec2_t pos = G_Pos_GetXZ(uid);
     PFM_Vec2_Sub(&point, &pos, &delta);
 
     float radians = atan2(delta.x, delta.z);
@@ -417,18 +427,18 @@ void Entity_FaceTowards(struct entity *ent, vec2_t point)
 
     quat_t rot;
     PFM_Quat_FromRotMat(&rotmat, &rot);
-    Entity_SetRot(ent->uid, rot);
+    Entity_SetRot(uid, rot);
 }
 
-void Entity_Ping(const struct entity *ent)
+void Entity_Ping(uint32_t uid)
 {
-    uint32_t tid = Sched_Create(1, ping_task, (void*)ent, NULL, TASK_MAIN_THREAD_PINNED);
+    uint32_t tid = Sched_Create(1, ping_task, (void*)(uintptr_t)uid, NULL, TASK_MAIN_THREAD_PINNED);
     Sched_RunSync(tid);
 }
 
-vec2_t Entity_TopScreenPos(const struct entity *ent, int screenw, int screenh)
+vec2_t Entity_TopScreenPos(uint32_t uid, int screenw, int screenh)
 {
-    vec3_t pos = Entity_TopCenterPointWS(ent);
+    vec3_t pos = Entity_TopCenterPointWS(uid);
     vec4_t pos_homo = (vec4_t) { pos.x, pos.y, pos.z, 1.0f };
 
     const struct camera *cam = G_GetActiveCamera();
@@ -446,14 +456,14 @@ vec2_t Entity_TopScreenPos(const struct entity *ent, int screenw, int screenh)
     return (vec2_t){screen_x, screen_y};
 }
 
-bool Entity_MaybeAdjacentFast(const struct entity *a, const struct entity *b, float buffer)
+bool Entity_MaybeAdjacentFast(uint32_t a, uint32_t b, float buffer)
 {
     struct obb obb_a, obb_b;
     Entity_CurrentOBB(a, &obb_a, false);
     Entity_CurrentOBB(b, &obb_b, false);
 
-    vec2_t apos = G_Pos_GetXZ(a->uid);
-    vec2_t bpos = G_Pos_GetXZ(b->uid);
+    vec2_t apos = G_Pos_GetXZ(a);
+    vec2_t bpos = G_Pos_GetXZ(b);
 
     float alen = MAX(obb_a.half_lengths[0], obb_a.half_lengths[2]);
     float blen = MAX(obb_b.half_lengths[0], obb_b.half_lengths[2]);
@@ -547,13 +557,13 @@ size_t Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[])
     return ret;
 }
 
-void Entity_DisappearAnimated(struct entity *ent, const struct map *map, void (*on_finish)(void*), void *arg)
+void Entity_DisappearAnimated(uint32_t uid, const struct map *map, void (*on_finish)(void*), void *arg)
 {
     /* It's safe to pass a pointer to stack data here due to the 'Shced_RunSync' 
      * call later - by the time we return from it, we will have copied the data.
      */
     struct dis_arg darg = (struct dis_arg){
-        .ent = ent,
+        .uid = uid,
         .map = map,
         .on_finish = on_finish,
         .arg = arg,
@@ -562,9 +572,10 @@ void Entity_DisappearAnimated(struct entity *ent, const struct map *map, void (*
     Sched_RunSync(tid);
 }
 
-int Entity_NavLayer(const struct entity *ent)
+int Entity_NavLayer(uint32_t uid)
 {
-    float radius = G_GetSelectionRadius(ent->uid);
+    ASSERT_IN_MAIN_THREAD();
+    float radius = G_GetSelectionRadius(uid);
     if(radius >= 15.0f) {
         return NAV_LAYER_GROUND_7X7;
     }else if(radius >= 10.0f) {

@@ -93,9 +93,9 @@
     }while(0)
 
 VEC_IMPL(extern, obb, struct obb)
-__KHASH_IMPL(entity,  extern, khint32_t, struct entity*, 1, kh_int_hash_func, kh_int_hash_equal)
-__KHASH_IMPL(id,      extern, khint32_t, int,            1, kh_int_hash_func, kh_int_hash_equal)
-__KHASH_IMPL(range,   extern, khint32_t, float,          1, kh_int_hash_func, kh_int_hash_equal)
+__KHASH_IMPL(entity,  extern, khint32_t, uint32_t, 0, kh_int_hash_func, kh_int_hash_equal)
+__KHASH_IMPL(id,      extern, khint32_t, int,      1, kh_int_hash_func, kh_int_hash_equal)
+__KHASH_IMPL(range,   extern, khint32_t, float,    1, kh_int_hash_func, kh_int_hash_equal)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -315,11 +315,12 @@ static void g_render_healthbars(void)
 
     for(int i = 0; i < max_ents; i++) {
     
-        struct entity *curr = vec_AT(&s_gs.visible, i);
+        uint32_t curr = vec_AT(&s_gs.visible, i);
+        uint32_t flags = G_FlagsGet(curr);
 
-        if(!(curr->flags & ENTITY_FLAG_COMBATABLE))
+        if(!(flags & ENTITY_FLAG_COMBATABLE))
             continue;
-        if((curr->flags & ENTITY_FLAG_BUILDING) && !G_Building_IsFounded(curr))
+        if((flags & ENTITY_FLAG_BUILDING) && !G_Building_IsFounded(curr))
             continue;
 
         int max_health = G_Combat_GetMaxHP(curr);
@@ -389,7 +390,7 @@ static void g_sort_anim_list(vec_ranim_t *inout)
     PERF_RETURN_VOID();
 }
 
-static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_ranim_t *out_anim)
+static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim_t *out_anim)
 {
     PERF_ENTER();
     struct map_resolution res;
@@ -399,9 +400,11 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
 
     for(int i = 0; i < vec_size(&ents); i++) {
 
-        const struct entity *curr = vec_AT(&ents, i);
+        uint32_t curr = vec_AT(&ents, i);
+        uint32_t flags = G_FlagsGet(curr);
+        const struct entity *ent = AL_EntityGet(curr);
 
-        if(curr->flags & ENTITY_FLAG_INVISIBLE)
+        if(flags & ENTITY_FLAG_INVISIBLE)
             continue;
 
         PERF_PUSH("process entity");
@@ -409,29 +412,29 @@ static void g_make_draw_list(vec_pentity_t ents, vec_rstat_t *out_stat, vec_rani
         mat4x4_t model;
         Entity_ModelMatrix(curr, &model);
 
-        if(curr->flags & ENTITY_FLAG_ANIMATED) {
+        if(flags & ENTITY_FLAG_ANIMATED) {
         
             struct ent_anim_rstate rstate = (struct ent_anim_rstate){
-                .uid = curr->uid,
-                .render_private = curr->render_private, 
+                .uid = curr,
+                .render_private = ent->render_private, 
                 .model = model,
-                .translucent = curr->flags & ENTITY_FLAG_TRANSLUCENT
+                .translucent = flags & ENTITY_FLAG_TRANSLUCENT
             };
-            A_GetRenderState(curr->uid, &rstate.njoints, rstate.curr_pose, &rstate.inv_bind_pose);
+            A_GetRenderState(curr, &rstate.njoints, rstate.curr_pose, &rstate.inv_bind_pose);
             vec_ranim_push(out_anim, rstate);
 
         }else{
         
             struct tile_desc td = {0};
             if(s_gs.map) {
-                M_Tile_DescForPoint2D(res, M_GetPos(s_gs.map), G_Pos_GetXZ(curr->uid), &td);
+                M_Tile_DescForPoint2D(res, M_GetPos(s_gs.map), G_Pos_GetXZ(curr), &td);
             }
 
             struct ent_stat_rstate rstate = (struct ent_stat_rstate){
-                .uid = curr->uid,
-                .render_private = curr->render_private, 
+                .uid = curr,
+                .render_private = ent->render_private, 
                 .model = model,
-                .translucent = curr->flags & ENTITY_FLAG_TRANSLUCENT,
+                .translucent = flags & ENTITY_FLAG_TRANSLUCENT,
                 .td = td
             };
             vec_rstat_push(out_stat, rstate);
@@ -556,8 +559,7 @@ static void shadows_en_commit(const struct sval *new_val)
     if(!s_gs.active)
         return;
 
-    uint32_t key;
-    struct entity *curr;
+    uint32_t key, curr;
     (void)key;
 
     kh_foreach(s_gs.active, key, curr, {
@@ -566,7 +568,7 @@ static void shadows_en_commit(const struct sval *new_val)
             .func = R_GL_SetShadowsEnabled,
             .nargs = 2,
             .args = {
-                curr->render_private,
+                AL_EntityGet(curr)->render_private,
                 R_PushArg(&on, sizeof(on)),
             },
         });
@@ -577,14 +579,13 @@ static bool g_save_anim_state(SDL_RWops *stream)
 {
     size_t nanim = 0;
 
-    uint32_t key;
-    struct entity *curr;
+    uint32_t curr;
+    kh_foreach_key(s_gs.active, curr, {
 
-    kh_foreach(s_gs.active, key, curr, {
-
-        if(!(curr->flags & ENTITY_FLAG_ANIMATED))
+        uint32_t flags = G_FlagsGet(curr);
+        if(!(flags & ENTITY_FLAG_ANIMATED))
             continue;
-        if(curr->flags & ENTITY_FLAG_MARKER)
+        if(flags & ENTITY_FLAG_MARKER)
             continue;
         nanim++;
     });
@@ -595,19 +596,20 @@ static bool g_save_anim_state(SDL_RWops *stream)
     };
     CHK_TRUE_RET(Attr_Write(stream, &num_anim, "num_anim"));
 
-    kh_foreach(s_gs.active, key, curr, {
+    kh_foreach_key(s_gs.active, curr, {
 
-        if(!(curr->flags & ENTITY_FLAG_ANIMATED))
+        uint32_t flags = G_FlagsGet(curr);
+        if(!(flags & ENTITY_FLAG_ANIMATED))
             continue;
-        if(curr->flags & ENTITY_FLAG_MARKER)
+        if(flags & ENTITY_FLAG_MARKER)
             continue;
 
         struct attr uid = (struct attr){
             .type = TYPE_INT,
-            .val.as_int = key
+            .val.as_int = curr
         };
         CHK_TRUE_RET(Attr_Write(stream, &uid, "uid"));
-        CHK_TRUE_RET(A_SaveState(stream, curr->uid));
+        CHK_TRUE_RET(A_SaveState(stream, curr));
         Sched_TryYield();
     });
 
@@ -625,16 +627,12 @@ static bool g_load_anim_state(SDL_RWops *stream)
     for(int i = 0; i < nanim; i++) {
 
         uint32_t uid;
-        const struct entity *ent;
-    
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         uid = attr.val.as_int;
 
-        ent = G_EntityForUID(uid);
-        CHK_TRUE_RET(ent);
-
-        CHK_TRUE_RET(A_LoadState(stream, ent->uid));
+        CHK_TRUE_RET(G_EntityExists(uid));
+        CHK_TRUE_RET(A_LoadState(stream, uid));
         Sched_TryYield();
     }
 
@@ -675,24 +673,25 @@ static uint16_t g_player_mask(void)
     return ret;
 }
 
-static bool g_ent_visible(uint16_t playermask, const struct entity *ent, const struct obb *obb)
+static bool g_ent_visible(uint16_t playermask, uint32_t uid, const struct obb *obb)
 {
     if(!s_gs.map)
         return true;
 
-    if(ent->flags & ENTITY_FLAG_MARKER)
+    uint32_t flags = G_FlagsGet(uid);
+    if(flags & ENTITY_FLAG_MARKER)
         return true;
 
-    if(!(ent->flags & ENTITY_FLAG_MOVABLE)
-    ||  (ent->flags & ENTITY_FLAG_RESOURCE)
-    ||  (ent->flags & ENTITY_FLAG_BUILDING)) {
-        return G_Fog_ObjExplored(playermask, ent->uid, obb);
+    if(!(flags & ENTITY_FLAG_MOVABLE)
+    ||  (flags & ENTITY_FLAG_RESOURCE)
+    ||  (flags & ENTITY_FLAG_BUILDING)) {
+        return G_Fog_ObjExplored(playermask, uid, obb);
     }
 
     return G_Fog_ObjVisible(playermask, obb);
 }
 
-static bool g_pentities_equal(struct entity *const *a, struct entity *const *b)
+static bool g_entities_equal(uint32_t *a, uint32_t *b)
 {
     return ((*a) == (*b));
 }
@@ -773,12 +772,13 @@ static void g_change_simstate(void)
     case G_RUNNING: {
 
         uint32_t delta = curr_tick - s_gs.ss_change_tick;
-        struct entity *curr;
-        kh_foreach(s_gs.active, (uint32_t){0}, curr, {
+        uint32_t curr;
+        kh_foreach_key(s_gs.active, curr, {
            
-            if(!(curr->flags & ENTITY_FLAG_ANIMATED))
+            uint32_t flags = G_FlagsGet(curr);
+            if(!(flags & ENTITY_FLAG_ANIMATED))
                 continue;
-            A_AddTimeDelta(curr->uid, delta);
+            A_AddTimeDelta(curr, delta);
         });
         Audio_Resume(delta);
         if(s_gs.map) {
@@ -1026,16 +1026,17 @@ static void g_render_minimap_units(void)
     vec3_t color_map[MAX_FACTIONS];
     G_GetFactions(NULL, color_map, NULL);
 
-    uint32_t key;
-    struct entity *curr;
-    kh_foreach(s_gs.active, key, curr, {
+    uint32_t curr;
+    kh_foreach_key(s_gs.active, curr, {
+
+        uint32_t flags = G_FlagsGet(curr);
         if(!s_gs.minimap_render_all 
-        && !(curr->flags & (ENTITY_FLAG_MOVABLE | ENTITY_FLAG_BUILDING)))
+        && !(flags & (ENTITY_FLAG_MOVABLE | ENTITY_FLAG_BUILDING)))
             continue;
-        vec2_t xz_pos = G_Pos_GetXZ(key);
+        vec2_t xz_pos = G_Pos_GetXZ(curr);
         if(!G_Fog_PlayerVisible(xz_pos))
             continue;
-        vec3_t norm_color = color_map[G_GetFactionID(curr->uid)];
+        vec3_t norm_color = color_map[G_GetFactionID(curr)];
         PFM_Vec3_Scale(&norm_color, 1.0f / 255, &norm_color);
 
         positions[nunits] = M_WorldCoordsToNormMapCoords(s_gs.map, xz_pos);
@@ -1054,14 +1055,14 @@ static void g_render_minimap_units(void)
 static void g_remove_queued(void)
 {
     for(int i = 0; i < vec_size(&s_gs.removed); i++) {
-        struct entity *curr = vec_AT(&s_gs.removed, i);
+        uint32_t curr = vec_AT(&s_gs.removed, i);
         G_RemoveEntity(curr);
         G_FreeEntity(curr);
     }
-    vec_pentity_reset(&s_gs.removed);
+    vec_entity_reset(&s_gs.removed);
 }
 
-static void g_prune_water_input(const struct render_input *in)
+static void g_prune_water_input(struct render_input *in)
 {
     PERF_ENTER();
 
@@ -1104,7 +1105,7 @@ static void g_prune_water_input(const struct render_input *in)
         vec2_t xz_pos = G_Pos_GetXZ(rstate->uid);
 
         if(!G_Fog_NearVisibleWater(pm, xz_pos, WATER_ADJ_DISTANCE)) {
-            vec_rstat_del(&in->light_vis_anim, i);
+            vec_ranim_del(&in->light_vis_anim, i);
         }
     }
 
@@ -1119,10 +1120,10 @@ bool G_Init(void)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    vec_pentity_init(&s_gs.visible);
-    vec_pentity_init(&s_gs.light_visible);
+    vec_entity_init(&s_gs.visible);
+    vec_entity_init(&s_gs.light_visible);
     vec_obb_init(&s_gs.visible_obbs);
-    vec_pentity_init(&s_gs.removed);
+    vec_entity_init(&s_gs.removed);
 
     s_gs.active = kh_init(entity);
     if(!s_gs.active)
@@ -1151,6 +1152,10 @@ bool G_Init(void)
     s_gs.gpu_id_ent_map = kh_init(id);
     if(!s_gs.ent_gpu_id_map)
         goto fail_gpu_id_ent_map;
+
+    s_gs.ent_flag_map = kh_init(id);
+    if(!s_gs.ent_flag_map)
+        goto fail_ent_flag_map;
 
     if(!g_init_camera())
         goto fail_cam; 
@@ -1184,6 +1189,8 @@ bool G_Init(void)
 fail_ws:
     Camera_Free(s_gs.active_cam);
 fail_cam:
+    kh_destroy(id, s_gs.ent_flag_map);
+fail_ent_flag_map:
     kh_destroy(id, s_gs.gpu_id_ent_map);
 fail_gpu_id_ent_map:
     kh_destroy(id, s_gs.ent_gpu_id_map);
@@ -1243,13 +1250,11 @@ void G_ClearState(void)
     G_Sel_Clear();
     g_remove_queued();
 
-    uint32_t key;
-    struct entity *curr;
-    (void)key;
-
-    kh_foreach(s_gs.active, key, curr, {
+    uint32_t curr;
+    kh_foreach_key(s_gs.active, curr, {
         /* The move markers are removed in G_Move_Shutdown */
-        if(curr->flags & ENTITY_FLAG_MARKER)
+        uint32_t flags = G_FlagsGet(curr);
+        if(flags & ENTITY_FLAG_MARKER)
             continue;
         G_RemoveEntity(curr);
         G_FreeEntity(curr);
@@ -1260,10 +1265,11 @@ void G_ClearState(void)
     kh_clear(id, s_gs.ent_gpu_id_map);
     kh_clear(id, s_gs.gpu_id_ent_map);
     kh_clear(id, s_gs.ent_faction_map);
+    kh_clear(id, s_gs.ent_flag_map);
     kh_clear(range, s_gs.ent_visrange_map);
     kh_clear(range, s_gs.selection_radiuses);
-    vec_pentity_reset(&s_gs.visible);
-    vec_pentity_reset(&s_gs.light_visible);
+    vec_entity_reset(&s_gs.visible);
+    vec_entity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
 
     g_clear_map_state();
@@ -1416,19 +1422,17 @@ void G_BakeNavDataForScene(void)
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
-    uint32_t key;
-    struct entity *curr;
-    (void)key;
+    uint32_t curr;
+    kh_foreach_key(s_gs.active, curr, {
 
-    kh_foreach(s_gs.active, key, curr, {
-
-        if(!(curr->flags & ENTITY_FLAG_COLLISION))
+        uint32_t flags = G_FlagsGet(curr);
+        if(!(flags & ENTITY_FLAG_COLLISION))
             continue;
-        if(curr->flags & ENTITY_FLAG_MOVABLE)
+        if(flags & ENTITY_FLAG_MOVABLE)
             continue;
-        if(curr->flags & ENTITY_FLAG_BUILDING)
+        if(flags & ENTITY_FLAG_BUILDING)
             continue;
-        if(curr->flags & ENTITY_FLAG_RESOURCE)
+        if(flags & ENTITY_FLAG_RESOURCE)
             continue;
 
         struct obb obb;
@@ -1480,12 +1484,13 @@ void G_Shutdown(void)
     kh_destroy(id, s_gs.ent_gpu_id_map);
     kh_destroy(id, s_gs.gpu_id_ent_map);
     kh_destroy(id, s_gs.ent_faction_map);
+    kh_destroy(id, s_gs.ent_flag_map);
     kh_destroy(range, s_gs.ent_visrange_map);
     kh_destroy(range, s_gs.selection_radiuses);
-    vec_pentity_destroy(&s_gs.light_visible);
-    vec_pentity_destroy(&s_gs.visible);
+    vec_entity_destroy(&s_gs.light_visible);
+    vec_entity_destroy(&s_gs.visible);
     vec_obb_destroy(&s_gs.visible_obbs);
-    vec_pentity_destroy(&s_gs.removed);
+    vec_entity_destroy(&s_gs.removed);
 }
 
 void G_Update(void)
@@ -1498,8 +1503,8 @@ void G_Update(void)
         G_Fog_UpdateVisionState();
     }
 
-    vec_pentity_reset(&s_gs.visible);
-    vec_pentity_reset(&s_gs.light_visible);
+    vec_entity_reset(&s_gs.visible);
+    vec_entity_reset(&s_gs.light_visible);
     vec_obb_reset(&s_gs.visible_obbs);
 
     vec3_t pos = Camera_GetPos(s_gs.active_cam);
@@ -1512,16 +1517,13 @@ void G_Update(void)
     R_LightFrustum(s_gs.light_pos, pos, dir, &light_frust);
 
     uint16_t pm = g_player_mask();
-
-    uint32_t key;
-    struct entity *curr;
-    (void)key;
+    uint32_t curr;
 
     if(s_gs.ss == G_RUNNING) {
         A_Update();
     }
 
-    kh_foreach(s_gs.active, key, curr, {
+    kh_foreach_key(s_gs.active, curr, {
 
         struct obb obb;
         Entity_CurrentOBB(curr, &obb, false);
@@ -1533,7 +1535,7 @@ void G_Update(void)
             vis = g_ent_visible(pm, curr, &obb);
             vis_checked = true;
             if(vis) {
-                vec_pentity_push(&s_gs.visible, curr);
+                vec_entity_push(&s_gs.visible, curr);
                 vec_obb_push(&s_gs.visible_obbs, obb);
             }
         }
@@ -1542,8 +1544,9 @@ void G_Update(void)
             if(!vis_checked) {
                 vis = g_ent_visible(pm, curr, &obb);
             }
-            if(vis || !(curr->flags & ENTITY_FLAG_MOVABLE)) {
-                vec_pentity_push(&s_gs.light_visible, curr);
+            uint32_t flags = G_FlagsGet(curr);
+            if(vis || !(flags & ENTITY_FLAG_MOVABLE)) {
+                vec_entity_push(&s_gs.light_visible, curr);
             }
         }
     });
@@ -1593,7 +1596,7 @@ void G_Render(void)
     if(s_gs.map && M_WaterMaybeVisible(s_gs.map, s_gs.active_cam)) {
 
         g_prune_water_input(&in);
-        const struct render_input *water_rcopy = g_push_render_input(in);
+        struct render_input *water_rcopy = g_push_render_input(in);
 
         R_PushCmd((struct rcmd){
             .func = R_GL_DrawWater,
@@ -1608,14 +1611,15 @@ void G_Render(void)
     g_destroy_render_input(&in);
 
     enum selection_type sel_type;
-    const vec_pentity_t *selected = G_Sel_Get(&sel_type);
+    const vec_entity_t *selected = G_Sel_Get(&sel_type);
     for(int i = 0; i < vec_size(selected); i++) {
 
-        struct entity *curr = vec_AT(selected, i);
-        vec2_t curr_pos = G_Pos_GetXZ(curr->uid);
+        uint32_t curr = vec_AT(selected, i);
+        vec2_t curr_pos = G_Pos_GetXZ(curr);
         const float width = 0.4f;
+        uint32_t flags = G_FlagsGet(curr);
 
-        if(curr->flags & ENTITY_FLAG_BUILDING) {
+        if(flags & ENTITY_FLAG_BUILDING) {
 
             struct obb obb;
             Entity_CurrentOBB(curr, &obb, false);
@@ -1631,7 +1635,7 @@ void G_Render(void)
             });
         }else{
 
-            float sel_radius = G_GetSelectionRadius(curr->uid);
+            float sel_radius = G_GetSelectionRadius(curr);
             R_PushCmd((struct rcmd){
                 .func = R_GL_DrawSelectionCircle,
                 .nargs = 5,
@@ -1679,73 +1683,94 @@ void G_RenderMapAndEntities(struct render_input *in)
     PERF_RETURN_VOID();
 }
 
-bool G_AddEntity(struct entity *ent, vec3_t pos)
+void G_FlagsSet(uint32_t uid, uint32_t flags)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(!(ent->flags & ENTITY_FLAG_BUILDING) || !(ent->flags & ENTITY_FLAG_BUILDER));
+
+    khiter_t k = kh_get(id, s_gs.ent_flag_map, uid);
+    if(k == kh_end(s_gs.ent_flag_map)) {
+        int status;
+        k = kh_put(id, s_gs.ent_flag_map, uid, &status);
+        assert(status != -1);
+    }
+    kh_value(s_gs.ent_flag_map, k) = flags;
+}
+
+uint32_t G_FlagsGet(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(id, s_gs.ent_flag_map, uid);
+    assert(k != kh_end(s_gs.ent_flag_map));
+    return kh_value(s_gs.ent_flag_map, k);
+}
+
+bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
+{
+    ASSERT_IN_MAIN_THREAD();
+    assert(!(flags & ENTITY_FLAG_BUILDING) || !(flags & ENTITY_FLAG_BUILDER));
 
     int ret;
     khiter_t k;
 
-    k = kh_put(entity, s_gs.active, ent->uid, &ret);
+    k = kh_put(entity, s_gs.active, uid, &ret);
     if(ret == -1 || ret == 0)
         return false;
-    kh_value(s_gs.active, k) = ent;
 
-    k = kh_put(id, s_gs.ent_faction_map, ent->uid, &ret);
+    k = kh_put(id, s_gs.ent_faction_map, uid, &ret);
     if(ret == -1 || ret == 0)
         return false;
     kh_value(s_gs.ent_faction_map, k) = 0;
 
-    k = kh_put(range, s_gs.ent_visrange_map, ent->uid, &ret);
+    k = kh_put(range, s_gs.ent_visrange_map, uid, &ret);
     if(ret == -1 || ret == 0)
         return false;
     kh_value(s_gs.ent_visrange_map, k) = 0.0f;
 
-    k = kh_put(range, s_gs.selection_radiuses, ent->uid, &ret);
+    k = kh_put(range, s_gs.selection_radiuses, uid, &ret);
     if(ret == -1 || ret == 0)
         return false;
     kh_value(s_gs.selection_radiuses, k) = 0.0f;
 
-    G_Pos_Set(ent, pos);
+    G_FlagsSet(uid, flags);
+    G_Pos_Set(uid, pos);
 
-    if(ent->flags & ENTITY_FLAG_ANIMATED)
-        A_AddEntity(ent);
+    if(flags & ENTITY_FLAG_ANIMATED)
+        A_AddEntity(uid);
 
-    if(ent->flags & ENTITY_FLAG_STORAGE_SITE)
-        G_StorageSite_AddEntity(ent);
+    if(flags & ENTITY_FLAG_STORAGE_SITE)
+        G_StorageSite_AddEntity(uid);
 
-    if(ent->flags & ENTITY_FLAG_BUILDING)
-        G_Building_AddEntity(ent);
+    if(flags & ENTITY_FLAG_BUILDING)
+        G_Building_AddEntity(uid);
 
-    if(ent->flags & ENTITY_FLAG_BUILDER)
-        G_Builder_AddEntity(ent);
+    if(flags & ENTITY_FLAG_BUILDER)
+        G_Builder_AddEntity(uid);
 
-    if(ent->flags & ENTITY_FLAG_COMBATABLE)
-        G_Combat_AddEntity(ent, COMBAT_STANCE_AGGRESSIVE);
+    if(flags & ENTITY_FLAG_COMBATABLE)
+        G_Combat_AddEntity(uid, COMBAT_STANCE_AGGRESSIVE);
 
-    if(ent->flags & ENTITY_FLAG_RESOURCE)
-        G_Resource_AddEntity(ent);
+    if(flags & ENTITY_FLAG_RESOURCE)
+        G_Resource_AddEntity(uid);
 
-    if(ent->flags & ENTITY_FLAG_HARVESTER)
-        G_Harvester_AddEntity(ent->uid);
+    if(flags & ENTITY_FLAG_HARVESTER)
+        G_Harvester_AddEntity(uid);
 
-    if(ent->flags & ENTITY_FLAG_MOVABLE) {
+    if(flags & ENTITY_FLAG_MOVABLE) {
     
-        k = kh_put(entity, s_gs.dynamic, ent->uid, &ret);
+        k = kh_put(entity, s_gs.dynamic, uid, &ret);
         assert(ret != -1 && ret != 0);
-        kh_value(s_gs.dynamic, k) = ent;
 
-        G_Move_AddEntity(ent);
+        G_Move_AddEntity(uid);
 
         uint32_t gpu_id = kh_size(s_gs.ent_gpu_id_map) + 1;
-        k = kh_put(id, s_gs.ent_gpu_id_map, ent->uid, &ret);
+        k = kh_put(id, s_gs.ent_gpu_id_map, uid, &ret);
         assert(ret != -1 && ret != 0);
         kh_value(s_gs.ent_gpu_id_map, k) = gpu_id;
 
         k = kh_put(id, s_gs.gpu_id_ent_map, gpu_id, &ret);
         assert(ret != -1 && ret != 0);
-        kh_value(s_gs.gpu_id_ent_map, k) = ent->uid;
+        kh_value(s_gs.gpu_id_ent_map, k) = uid;
 
         assert(kh_size(s_gs.dynamic) == kh_size(s_gs.ent_gpu_id_map));
         assert(kh_size(s_gs.ent_gpu_id_map) == kh_size(s_gs.gpu_id_ent_map));
@@ -1754,21 +1779,22 @@ bool G_AddEntity(struct entity *ent, vec3_t pos)
     return true;
 }
 
-bool G_RemoveEntity(struct entity *ent)
+bool G_RemoveEntity(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    khiter_t k = kh_get(entity, s_gs.active, ent->uid);
+    khiter_t k = kh_get(entity, s_gs.active, uid);
     if(k == kh_end(s_gs.active))
         return false;
     kh_del(entity, s_gs.active, k);
 
-    if(ent->flags & ENTITY_FLAG_MOVABLE) {
-        k = kh_get(entity, s_gs.dynamic, ent->uid);
+    uint32_t flags = G_FlagsGet(uid);
+    if(flags & ENTITY_FLAG_MOVABLE) {
+        k = kh_get(entity, s_gs.dynamic, uid);
         assert(k != kh_end(s_gs.dynamic));
         kh_del(entity, s_gs.dynamic, k);
 
-        k = kh_get(id, s_gs.ent_gpu_id_map, ent->uid);
+        k = kh_get(id, s_gs.ent_gpu_id_map, uid);
         assert(k != kh_end(s_gs.ent_gpu_id_map));
         uint32_t old_id = kh_value(s_gs.ent_gpu_id_map, k);
         uint32_t old_size = kh_size(s_gs.ent_gpu_id_map);
@@ -1793,46 +1819,46 @@ bool G_RemoveEntity(struct entity *ent)
             int ret;
             k = kh_put(id, s_gs.gpu_id_ent_map, old_id, &ret);
             assert(ret != -1);
-            kh_value(s_gs.gpu_id_ent_map, k) = ent->uid;
+            kh_value(s_gs.gpu_id_ent_map, k) = uid;
         }
 
         assert(kh_size(s_gs.dynamic) == kh_size(s_gs.ent_gpu_id_map));
         assert(kh_size(s_gs.ent_gpu_id_map) == kh_size(s_gs.gpu_id_ent_map));
     }
 
-    int idx = vec_pentity_indexof(&s_gs.visible, ent, g_pentities_equal);
+    int idx = vec_entity_indexof(&s_gs.visible, uid, g_entities_equal);
     if(idx != -1) {
-        vec_pentity_del(&s_gs.visible, idx);
+        vec_entity_del(&s_gs.visible, idx);
         vec_obb_del(&s_gs.visible_obbs, idx);
     }
 
-    idx = vec_pentity_indexof(&s_gs.light_visible, ent, g_pentities_equal);
+    idx = vec_entity_indexof(&s_gs.light_visible, uid, g_entities_equal);
     if(idx != -1) {
-        vec_pentity_del(&s_gs.light_visible, idx);
+        vec_entity_del(&s_gs.light_visible, idx);
     }
 
-    A_RemoveEntity(ent);
-    G_Sel_Remove(ent);
-    G_Move_RemoveEntity(ent);
-    G_Combat_RemoveEntity(ent);
-    G_Building_RemoveEntity(ent);
-    G_Builder_RemoveEntity(ent);
-    G_Harvester_RemoveEntity(ent->uid);
-    G_Resource_RemoveEntity(ent);
-    G_StorageSite_RemoveEntity(ent);
-    G_Region_RemoveEnt(ent->uid);
-    G_Pos_Delete(ent->uid);
-    Entity_Remove(ent->uid);
+    A_RemoveEntity(uid);
+    G_Sel_Remove(uid);
+    G_Move_RemoveEntity(uid);
+    G_Combat_RemoveEntity(uid);
+    G_Building_RemoveEntity(uid);
+    G_Builder_RemoveEntity(uid);
+    G_Harvester_RemoveEntity(uid);
+    G_Resource_RemoveEntity(uid);
+    G_StorageSite_RemoveEntity(uid);
+    G_Region_RemoveEnt(uid);
+    G_Pos_Delete(uid);
+    Entity_Remove(uid);
 
-    k = kh_get(id, s_gs.ent_faction_map, ent->uid);
+    k = kh_get(id, s_gs.ent_faction_map, uid);
     assert(k != kh_end(s_gs.ent_faction_map));
     kh_del(id, s_gs.ent_faction_map, k);
 
-    k = kh_get(range, s_gs.ent_visrange_map, ent->uid);
+    k = kh_get(range, s_gs.ent_visrange_map, uid);
     assert(k != kh_end(s_gs.ent_visrange_map));
     kh_del(range, s_gs.ent_visrange_map, k);
 
-    k = kh_get(range, s_gs.selection_radiuses, ent->uid);
+    k = kh_get(range, s_gs.selection_radiuses, uid);
     assert(k != kh_end(s_gs.selection_radiuses));
     kh_del(range, s_gs.selection_radiuses, k);
 
@@ -1840,38 +1866,39 @@ bool G_RemoveEntity(struct entity *ent)
     return true;
 }
 
-void G_StopEntity(const struct entity *ent, bool stop_move)
+void G_StopEntity(uint32_t uid, bool stop_move)
 {
     ASSERT_IN_MAIN_THREAD();
+    uint32_t flags = G_FlagsGet(uid);
 
-    if(ent->flags & ENTITY_FLAG_COMBATABLE) {
-        G_Combat_StopAttack(ent);
-        G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
+    if(flags & ENTITY_FLAG_COMBATABLE) {
+        G_Combat_StopAttack(uid);
+        G_Combat_SetStance(uid, COMBAT_STANCE_AGGRESSIVE);
     }
-    if(ent->flags & ENTITY_FLAG_HARVESTER) {
-        G_Harvester_Stop(ent->uid);
-        G_Harvester_ClearQueuedCmd(ent->uid);
+    if(flags & ENTITY_FLAG_HARVESTER) {
+        G_Harvester_Stop(uid);
+        G_Harvester_ClearQueuedCmd(uid);
     }
-    if(stop_move && (ent->flags & ENTITY_FLAG_MOVABLE)) {
-        G_Move_Stop(ent);
+    if(stop_move && (flags & ENTITY_FLAG_MOVABLE)) {
+        G_Move_Stop(uid);
     }
-    if(ent->flags & ENTITY_FLAG_BUILDER) {
-        G_Builder_Stop(ent->uid);
+    if(flags & ENTITY_FLAG_BUILDER) {
+        G_Builder_Stop(uid);
     }
 
-    E_Entity_Notify(EVENT_ENTITY_STOP, ent->uid, NULL, ES_ENGINE);
+    E_Entity_Notify(EVENT_ENTITY_STOP, uid, NULL, ES_ENGINE);
 }
 
-void G_DeferredRemove(struct entity *ent)
+void G_DeferredRemove(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
-    vec_pentity_push(&s_gs.removed, ent);
+    vec_entity_push(&s_gs.removed, uid);
 }
 
-void G_FreeEntity(struct entity *ent)
+void G_FreeEntity(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
-    AL_EntityFree(ent);
+    AL_EntityFree(uid);
 }
 
 uint32_t G_GPUIDForEnt(uint32_t uid)
@@ -1926,8 +1953,7 @@ bool G_RemoveFaction(int faction_id)
     if(!(s_gs.factions_allocd & (0x1 << faction_id)))
         return false;
 
-    uint32_t key;
-    struct entity *curr;
+    uint32_t key, curr;
 
     kh_foreach(s_gs.active, key, curr, {
         if(G_GetFactionID(key) == faction_id)
@@ -2026,17 +2052,16 @@ void G_SetFactionID(uint32_t uid, int faction_id)
     kh_value(s_gs.ent_faction_map, k) = faction_id;
 
     vec2_t xz_pos = G_Pos_GetXZ(uid);
-    struct entity *ent = G_EntityForUID(uid);
     float vrange = G_GetVisionRange(uid);
 
     G_Fog_RemoveVision(xz_pos, old, vrange);
     G_Fog_AddVision(xz_pos, faction_id, vrange);
 
     G_Combat_UpdateRef(old, faction_id, xz_pos);
-    G_Move_UpdateFactionID(ent, old, faction_id);
+    G_Move_UpdateFactionID(uid, old, faction_id);
     G_StorageSite_UpdateFaction(uid, old, faction_id);
-    G_Resource_UpdateFactionID(ent, old, faction_id);
-    G_Building_UpdateFactionID(ent, old, faction_id);
+    G_Resource_UpdateFactionID(uid, old, faction_id);
+    G_Building_UpdateFactionID(uid, old, faction_id);
 }
 
 int G_GetFactionID(uint32_t uid)
@@ -2075,14 +2100,11 @@ void G_SetSelectionRadius(uint32_t uid, float range)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    const struct entity *ent = G_EntityForUID(uid);
-    assert(ent);
-
     khiter_t k = kh_get(range, s_gs.selection_radiuses, uid);
     assert(k != kh_end(s_gs.selection_radiuses));
 
-    G_Move_UpdateSelectionRadius(ent, range);
-    G_Resource_UpdateSelectionRadius(ent, range);
+    G_Move_UpdateSelectionRadius(uid, range);
+    G_Resource_UpdateSelectionRadius(uid, range);
     kh_value(s_gs.selection_radiuses, k) = range;
 }
 
@@ -2264,19 +2286,20 @@ enum simstate G_GetSimState(void)
     return s_gs.ss;
 }
 
-void G_Zombiefy(struct entity *ent, bool invis)
+void G_Zombiefy(uint32_t uid, bool invis)
 {
     ASSERT_IN_MAIN_THREAD();
+    uint32_t flags = G_FlagsGet(uid);
 
-    if(ent->flags & ENTITY_FLAG_SELECTABLE)
-        G_Sel_Remove(ent);
+    if(flags & ENTITY_FLAG_SELECTABLE)
+        G_Sel_Remove(uid);
 
-    if(ent->flags & ENTITY_FLAG_MOVABLE) {
-        khiter_t k = kh_get(entity, s_gs.dynamic, ent->uid);
+    if(flags & ENTITY_FLAG_MOVABLE) {
+        khiter_t k = kh_get(entity, s_gs.dynamic, uid);
         assert(k != kh_end(s_gs.dynamic));
         kh_del(entity, s_gs.dynamic, k);
 
-        k = kh_get(entity, s_gs.ent_gpu_id_map, ent->uid);
+        k = kh_get(entity, s_gs.ent_gpu_id_map, uid);
         assert(k != kh_end(s_gs.ent_gpu_id_map));
         uint32_t gpu_id = kh_value(s_gs.ent_gpu_id_map, k);
         kh_del(entity, s_gs.ent_gpu_id_map, k);
@@ -2286,34 +2309,35 @@ void G_Zombiefy(struct entity *ent, bool invis)
         kh_del(entity, s_gs.gpu_id_ent_map, k);
     }
 
-    G_Move_RemoveEntity(ent);
-    G_Combat_RemoveEntity(ent);
-    G_Building_RemoveEntity(ent);
-    G_Builder_RemoveEntity(ent);
-    G_Harvester_RemoveEntity(ent->uid);
-    G_Resource_RemoveEntity(ent);
-    G_StorageSite_RemoveEntity(ent);
+    G_Move_RemoveEntity(uid);
+    G_Combat_RemoveEntity(uid);
+    G_Building_RemoveEntity(uid);
+    G_Builder_RemoveEntity(uid);
+    G_Harvester_RemoveEntity(uid);
+    G_Resource_RemoveEntity(uid);
+    G_StorageSite_RemoveEntity(uid);
 
-    G_SetVisionRange(ent->uid, 0.0f);
-    G_Region_RemoveEnt(ent->uid);
-    Entity_ClearTags(ent->uid);
+    G_SetVisionRange(uid, 0.0f);
+    G_Region_RemoveEnt(uid);
+    Entity_ClearTags(uid);
 
-    ent->flags &= ~ENTITY_FLAG_SELECTABLE;
-    ent->flags &= ~ENTITY_FLAG_COLLISION;
-    ent->flags &= ~ENTITY_FLAG_ANIMATED;
-    ent->flags &= ~ENTITY_FLAG_COMBATABLE;
-    ent->flags &= ~ENTITY_FLAG_BUILDING;
-    ent->flags &= ~ENTITY_FLAG_MOVABLE;
-    ent->flags &= ~ENTITY_FLAG_BUILDER;
-    ent->flags &= ~ENTITY_FLAG_HARVESTER;
-    ent->flags &= ~ENTITY_FLAG_RESOURCE;
-    ent->flags &= ~ENTITY_FLAG_STORAGE_SITE;
+    flags &= ~ENTITY_FLAG_SELECTABLE;
+    flags &= ~ENTITY_FLAG_COLLISION;
+    flags &= ~ENTITY_FLAG_ANIMATED;
+    flags &= ~ENTITY_FLAG_COMBATABLE;
+    flags &= ~ENTITY_FLAG_BUILDING;
+    flags &= ~ENTITY_FLAG_MOVABLE;
+    flags &= ~ENTITY_FLAG_BUILDER;
+    flags &= ~ENTITY_FLAG_HARVESTER;
+    flags &= ~ENTITY_FLAG_RESOURCE;
+    flags &= ~ENTITY_FLAG_STORAGE_SITE;
 
-    ent->flags |= ENTITY_FLAG_ZOMBIE;
+    flags |= ENTITY_FLAG_ZOMBIE;
 
     if(invis) {
-        ent->flags |= ENTITY_FLAG_INVISIBLE;
+        flags |= ENTITY_FLAG_INVISIBLE;
     }
+    G_FlagsSet(uid, flags);
 }
 
 bool G_EntityExists(uint32_t uid)
@@ -2326,18 +2350,9 @@ bool G_EntityExists(uint32_t uid)
 bool G_EntityIsZombie(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
-    struct entity *ent = G_EntityForUID(uid);
-    if(!ent)
+    if(!G_EntityExists(uid))
         return false;
-    return (ent->flags & ENTITY_FLAG_ZOMBIE);
-}
-
-struct entity *G_EntityForUID(uint32_t uid)
-{
-    khiter_t k = kh_get(entity, s_gs.active, uid);
-    if(k == kh_end(s_gs.active))
-        return NULL;
-    return kh_value(s_gs.active, k);
+    return (G_FlagsGet(uid) & ENTITY_FLAG_ZOMBIE);
 }
 
 struct render_workspace *G_GetSimWS(void)
@@ -2410,17 +2425,18 @@ enum ctx_action G_CurrContextualAction(void)
     return CTX_ACTION_NONE;
 }
 
-void G_NotifyOrderIssued(const struct entity *ent)
+void G_NotifyOrderIssued(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if(ent->flags & ENTITY_FLAG_HARVESTER) {
-        G_Harvester_ClearQueuedCmd(ent->uid);
+    uint32_t flags = G_FlagsGet(uid);
+    if(flags & ENTITY_FLAG_HARVESTER) {
+        G_Harvester_ClearQueuedCmd(uid);
     }
-    if(ent->flags & ENTITY_FLAG_COMBATABLE) {
-        G_Combat_ClearSavedMoveCmd(ent);
+    if(flags & ENTITY_FLAG_COMBATABLE) {
+        G_Combat_ClearSavedMoveCmd(uid);
     }
-    E_Global_Notify(EVENT_ORDER_ISSUED, (void*)ent, ES_ENGINE);
+    E_Global_Notify(EVENT_ORDER_ISSUED, (uintptr_t)uid, ES_ENGINE);
 }
 
 void G_SetHideHealthbars(bool on)
@@ -2433,12 +2449,11 @@ void G_UpdateBounds(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    const struct entity *ent = G_EntityForUID(uid);
-    if(!ent)
+    if(!G_EntityExists(uid))
         return;
 
-    G_Building_UpdateBounds(ent);
-    G_Resource_UpdateBounds(ent);
+    G_Building_UpdateBounds(uid);
+    G_Resource_UpdateBounds(uid);
 }
 
 bool G_SaveGlobalState(SDL_RWops *stream)

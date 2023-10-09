@@ -291,8 +291,7 @@ static void regions_add_ent(uint32_t uid, vec2_t pos)
 {
     assert(Sched_UsingBigStack());
 
-    const struct entity *ent = G_EntityForUID(uid);
-    if(!ent || (ent->flags & (ENTITY_FLAG_ZOMBIE | ENTITY_FLAG_MARKER)))
+    if(!G_EntityExists(uid) || (G_FlagsGet(uid) & (ENTITY_FLAG_ZOMBIE | ENTITY_FLAG_MARKER)))
         return;
 
     const char *names[512];
@@ -312,7 +311,7 @@ static void regions_add_ent(uint32_t uid, vec2_t pos)
 
 static void region_update_ents(const char *name, struct region *reg)
 {
-    struct entity *ents[1024];
+    uint32_t ents[1024];
     size_t nents = 0;
 
     switch(reg->type) {
@@ -331,11 +330,12 @@ static void region_update_ents(const char *name, struct region *reg)
 
     vec_uid_reset(&reg->curr_ents);
     for(int i = 0; i < nents; i++) {
-        if(ents[i]->flags & ENTITY_FLAG_MARKER)
+        uint32_t flags = G_FlagsGet(ents[i]);
+        if(flags & ENTITY_FLAG_MARKER)
             continue;
-        if(ents[i]->flags & ENTITY_FLAG_ZOMBIE)
+        if(flags & ENTITY_FLAG_ZOMBIE)
             continue;
-        vec_uid_push(&reg->curr_ents, ents[i]->uid);
+        vec_uid_push(&reg->curr_ents, ents[i]);
     }
 
     khiter_t k = kh_get(region, s_regions, name);
@@ -703,7 +703,7 @@ bool G_Region_GetShown(const char *name, bool *out)
     return true;
 }
 
-int G_Region_GetEnts(const char *name, size_t maxout, struct entity *ents[])
+int G_Region_GetEnts(const char *name, size_t maxout, uint32_t ents[])
 {
     khiter_t k = kh_get(region, s_regions, name);
     if(k == kh_end(s_regions))
@@ -714,8 +714,8 @@ int G_Region_GetEnts(const char *name, size_t maxout, struct entity *ents[])
 
     for(int i = 0; i < vec_size(&reg->curr_ents); i++) {
 
-        struct entity *ent = G_EntityForUID(vec_AT(&reg->curr_ents, i));
-        if(!ent)
+        uint32_t ent = vec_AT(&reg->curr_ents, i);
+        if(!G_EntityExists(ent))
             continue;
 
         if(ret == maxout)

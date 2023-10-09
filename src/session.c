@@ -505,7 +505,7 @@ static struct result session_task(void* arg)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool Session_RequestSave(const char *path)
+void Session_RequestSave(const char *path)
 {
     s_request = SESH_REQ_SAVE;
     pf_snprintf(s_req_path, sizeof(s_req_path), "%s", path);

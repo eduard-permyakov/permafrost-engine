@@ -285,7 +285,7 @@ static PyObject *PyRegion_curr_ents(PyRegionObject *self)
 {
     assert(Sched_UsingBigStack());
 
-    struct entity *ents[512];
+    uint32_t ents[512];
     size_t nents = G_Region_GetEnts(self->name, ARR_SIZE(ents), ents);
 
     PyObject *ret = PyList_New(0);
@@ -293,7 +293,7 @@ static PyObject *PyRegion_curr_ents(PyRegionObject *self)
         return NULL;
 
     for(int i = 0; i < nents; i++) {
-        PyObject *ent = S_Entity_ObjForUID(ents[i]->uid);
+        PyObject *ent = S_Entity_ObjForUID(ents[i]);
         if(!ent)
             continue;
 

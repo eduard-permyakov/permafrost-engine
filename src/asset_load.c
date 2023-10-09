@@ -48,6 +48,7 @@
 #include "lib/public/mem.h"
 
 #include <SDL.h>
+#include <windows.h>
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -72,6 +73,7 @@ struct shared_resource{
 };
 
 KHASH_MAP_INIT_STR(entity_res, struct shared_resource)
+KHASH_MAP_INIT_INT(uid_ent, struct entity*)
 
 MPOOL_ALLOCATOR_TYPE(ent, struct entity)
 MPOOL_ALLOCATOR_PROTOTYPES(static, ent, struct entity)
@@ -82,6 +84,7 @@ MPOOL_ALLOCATOR_IMPL(static, ent, struct entity)
 /*****************************************************************************/
 
 static khash_t(entity_res) *s_name_resource_table;
+static khash_t(uid_ent)    *s_uid_ent_table;
 static mpa_ent_t            s_mpool;
 
 /*****************************************************************************/
@@ -233,55 +236,87 @@ fail_init:
     return false;
 }
 
+static void al_save_mapping(uint32_t uid, struct entity *ent)
+{
+    int ret;
+    khiter_t k = kh_put(uid_ent, s_uid_ent_table, uid, &ret);
+    assert(ret != -1);
+    kh_value(s_uid_ent_table, k) = ent;
+
+    char buff[512];
+    sprintf(buff, "setting mapping: %x : %p\n", uid, ent);
+    OutputDebugString(buff);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, 
-                                  const char *name, uint32_t uid)
+
+bool AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, 
+                        const char *name, uint32_t uid, uint32_t *out_flags)
 {
     struct shared_resource res;
     char pfobj_path[512];
     pf_snprintf(pfobj_path, sizeof(pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
 
-    struct entity *ret = mpa_ent_alloc(&s_mpool);
-    if(!ret)
+    struct entity *newent = mpa_ent_alloc(&s_mpool);
+    if(!newent)
         goto fail_alloc;
 
-    ret->flags = 0;
-    ret->name = pf_strdup(name);
-    ret->filename = pf_strdup(pfobj_name);
-    ret->basedir = pf_strdup(base_path);
+    newent->name = pf_strdup(name);
+    newent->filename = pf_strdup(pfobj_name);
+    newent->basedir = pf_strdup(base_path);
 
-    if(!ret->name || !ret->filename || !ret->basedir)
+    if(!newent->name || !newent->filename || !newent->basedir)
         goto fail_init;
 
     if(!al_get_resource(pfobj_path, base_path, pfobj_name, &res))
         goto fail_init;
 
-    ret->flags |= res.ent_flags;
-    ret->render_private = res.render_private;
-    ret->anim_private = res.anim_private;
-    ret->identity_aabb = res.aabb;
-    ret->uid = uid;
+    newent->render_private = res.render_private;
+    newent->anim_private = res.anim_private;
+    newent->identity_aabb = res.aabb;
 
     Entity_SetRot(uid, (quat_t){0.0f, 0.0f, 0.0f, 1.0f});
     Entity_SetScale(uid, (vec3_t){1.0f, 1.0f, 1.0f});
-    return ret;
+    *out_flags = res.ent_flags;
+
+    al_save_mapping(uid, newent);
+    return true;
 
 fail_init:
-    PF_FREE(ret->basedir);
-    PF_FREE(ret->filename);
-    PF_FREE(ret->name);
-    mpa_ent_free(&s_mpool, ret);
+    PF_FREE(newent->basedir);
+    PF_FREE(newent->filename);
+    PF_FREE(newent->name);
+    mpa_ent_free(&s_mpool, newent);
 fail_alloc:
-    return NULL;
+    return false;
 }
 
-bool AL_EntitySetPFObj(struct entity *ent, const char *base_path, const char *pfobj_name)
+struct entity *AL_EntityGet(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    khiter_t k = kh_get(uid_ent, s_uid_ent_table, uid);
+    if(k == kh_end(s_uid_ent_table))
+        return NULL;
+
+    char buff[512];
+    sprintf(buff, " >> GETTING mapping: %x : %p\n", uid, kh_value(s_uid_ent_table, k));
+    OutputDebugString(buff);
+
+    return kh_value(s_uid_ent_table, k);
+}
+
+bool AL_EntitySetPFObj(uint32_t uid, const char *base_path, const char *pfobj_name)
 {
     struct shared_resource old_res, new_res;
     char old_pfobj_path[512], new_pfobj_path[512];
+
+    struct entity *ent = AL_EntityGet(uid);
+    if(!ent)
+        return false;
 
     pf_snprintf(old_pfobj_path, sizeof(old_pfobj_path), "%s/%s/%s", g_basepath, ent->basedir, ent->filename);
     pf_snprintf(new_pfobj_path, sizeof(new_pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
@@ -297,10 +332,11 @@ bool AL_EntitySetPFObj(struct entity *ent, const char *base_path, const char *pf
     if(!newdir || !newobj)
         goto fail_alloc;
 
-    if(ent->flags & ENTITY_FLAG_ANIMATED) {
-        A_RemoveEntity(ent);
+    if(G_FlagsGet(uid) & ENTITY_FLAG_ANIMATED) {
+        A_RemoveEntity(uid);
     }
-    ent->flags &= ~old_res.ent_flags;
+    uint32_t flags = G_FlagsGet(uid);
+    flags &= ~old_res.ent_flags;
 
     PF_FREE(ent->basedir);
     PF_FREE(ent->filename);
@@ -311,10 +347,11 @@ bool AL_EntitySetPFObj(struct entity *ent, const char *base_path, const char *pf
     ent->anim_private = new_res.anim_private;
     ent->identity_aabb = new_res.aabb;
 
-    ent->flags |= new_res.ent_flags;
-    if(ent->flags & ENTITY_FLAG_ANIMATED) {
-        A_AddEntity(ent);
+    flags |= new_res.ent_flags;
+    if(flags & ENTITY_FLAG_ANIMATED) {
+        A_AddEntity(uid);
     }
+    G_FlagsSet(uid, flags);
     return true;
 
 fail_alloc:
@@ -324,11 +361,15 @@ fail_init:
     return false;
 }
 
-void AL_EntityFree(struct entity *entity)
+void AL_EntityFree(uint32_t uid)
 {
+    struct entity *entity = AL_EntityGet(uid);
+
     PF_FREE(entity->basedir);
     PF_FREE(entity->filename);
     PF_FREE(entity->name);
+
+    kh_del(uid_ent, s_uid_ent_table, uid);
     mpa_ent_free(&s_mpool, entity);
 }
 
@@ -473,15 +514,23 @@ bool AL_Init(void)
 {
     s_name_resource_table = kh_init(entity_res);
     if(!s_name_resource_table)
-        goto fail_table;
+        goto fail_name_res_table;
+
+    s_uid_ent_table = kh_init(uid_ent);
+    if(!s_uid_ent_table)
+        goto fail_uid_ent_table;
+
     mpa_ent_init(&s_mpool, 1024, 0);
     if(!mpa_ent_reserve(&s_mpool, 1024))
         goto fail_mpool;
+
     return true;
 
 fail_mpool:
+    kh_destroy(uid_ent, s_uid_ent_table);
+fail_uid_ent_table:
     kh_destroy(entity_res, s_name_resource_table);
-fail_table:
+fail_name_res_table:
     return false;
 }
 
@@ -497,6 +546,7 @@ void AL_Shutdown(void)
         PF_FREE(curr.basedir);
         PF_FREE(curr.filename);
     });
+    kh_destroy(uid_ent, s_uid_ent_table);
     kh_destroy(entity_res, s_name_resource_table);
     mpa_ent_destroy(&s_mpool);
 }

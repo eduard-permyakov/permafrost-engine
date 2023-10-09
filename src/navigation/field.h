@@ -60,8 +60,8 @@ struct enemies_desc{
 };
 
 struct entity_desc{
-    const struct entity *target;
-    vec3_t               map_pos;
+    uint32_t     target;
+    vec3_t       map_pos;
 };
 
 struct portal_desc{

@@ -39,7 +39,6 @@
 #include "gamestate.h"
 
 struct camera;
-struct entity;
 
 enum ctx_action{
     CTX_ACTION_NONE,
@@ -53,9 +52,8 @@ enum ctx_action{
 
 const khash_t(entity) *G_GetDynamicEntsSet(void);
 const khash_t(entity) *G_GetAllEntsSet(void);
-struct entity         *G_EntityForUID(uint32_t uid);
 enum ctx_action        G_CurrContextualAction(void);
-void                   G_NotifyOrderIssued(const struct entity *ent);
+void                   G_NotifyOrderIssued(uint32_t uid);
 
 #endif
 

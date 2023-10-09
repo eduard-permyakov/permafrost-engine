@@ -37,7 +37,6 @@
 #define PHYS_H
 
 struct obb;
-struct entity;
 struct SDL_RWops;
 
 #include "../../pf_math.h"

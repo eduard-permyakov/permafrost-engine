@@ -45,7 +45,6 @@
 #include <SDL.h> /* for SDL_RWops */
 
 struct pfobj_hdr;
-struct entity;
 struct skeleton;
 
 enum anim_mode{
@@ -162,8 +161,8 @@ void                   A_Shutdown(void);
  * Add or remove an entity to the animation simulation.
  * ---------------------------------------------------------------------------
  */
-bool                   A_AddEntity(const struct entity *ent);
-void                   A_RemoveEntity(const struct entity *ent);
+bool                   A_AddEntity(uint32_t uid);
+void                   A_RemoveEntity(uint32_t uid);
 
 /* ---------------------------------------------------------------------------
  * Should be called once per render loop, prior to rendering. Will update all 

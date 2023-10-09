@@ -142,73 +142,78 @@ void G_Resource_Shutdown(void)
     kh_destroy(state, s_entity_state_table);
 }
 
-bool G_Resource_AddEntity(const struct entity *ent)
+bool G_Resource_AddEntity(uint32_t uid)
 {
     struct rstate rs = (struct rstate) {
         .name = "",
         .cursor = "",
         .amount = 0,
-        .blocking_pos = G_Pos_GetXZ(ent->uid),
-        .blocking_radius = G_GetSelectionRadius(ent->uid),
+        .blocking_pos = G_Pos_GetXZ(uid),
+        .blocking_radius = G_GetSelectionRadius(uid),
     };
 
-    if(!rstate_set(ent->uid, rs))
+    if(!rstate_set(uid, rs))
         return false;
 
-    if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
-        M_NavBlockersIncref(rs.blocking_pos, rs.blocking_radius, G_GetFactionID(ent->uid), s_map);
+    uint32_t flags = G_FlagsGet(uid);
+    if(!(flags & ENTITY_FLAG_BUILDING)) {
+        M_NavBlockersIncref(rs.blocking_pos, rs.blocking_radius, G_GetFactionID(uid), s_map);
     }
     return true;
 }
 
-void G_Resource_RemoveEntity(struct entity *ent)
+void G_Resource_RemoveEntity(uint32_t uid)
 {
-    struct rstate *rs = rstate_get(ent->uid);
+    struct rstate *rs = rstate_get(uid);
     if(!rs)
         return;
 
-    if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
-        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(ent->uid), s_map);
+    uint32_t flags = G_FlagsGet(uid);
+    if(!(flags & ENTITY_FLAG_BUILDING)) {
+        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), s_map);
     }
 
-    rstate_remove(ent->uid);
+    rstate_remove(uid);
 }
 
-void G_Resource_UpdateBounds(const struct entity *ent)
+void G_Resource_UpdateBounds(uint32_t uid)
 {
-    struct rstate *rs = rstate_get(ent->uid);
+    struct rstate *rs = rstate_get(uid);
     if(!rs)
         return;
 
-    if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
-        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(ent->uid), s_map);
-        rs->blocking_pos = G_Pos_GetXZ(ent->uid);
-        M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(ent->uid), s_map);
+    uint32_t flags = G_FlagsGet(uid);
+    if(!(flags & ENTITY_FLAG_BUILDING)) {
+        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), s_map);
+        rs->blocking_pos = G_Pos_GetXZ(uid);
+        M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), s_map);
     }
 }
 
-void G_Resource_UpdateFactionID(const struct entity *ent, int oldfac, int newfac)
+void G_Resource_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
 {
-    struct rstate *rs = rstate_get(ent->uid);
+    struct rstate *rs = rstate_get(uid);
     if(!rs)
         return;
 
-    if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
+    uint32_t flags = G_FlagsGet(uid);
+    if(!(flags & ENTITY_FLAG_BUILDING)) {
         M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, oldfac, s_map);
         M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, newfac, s_map);
     }
 }
 
-void G_Resource_UpdateSelectionRadius(const struct entity *ent, float radius)
+void G_Resource_UpdateSelectionRadius(uint32_t uid, float radius)
 {
-    struct rstate *rs = rstate_get(ent->uid);
+    struct rstate *rs = rstate_get(uid);
     if(!rs)
         return;
 
-    if(!(ent->flags & ENTITY_FLAG_BUILDING)) {
-        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(ent->uid), s_map);
+    uint32_t flags = G_FlagsGet(uid);
+    if(!(flags & ENTITY_FLAG_BUILDING)) {
+        M_NavBlockersDecref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), s_map);
         rs->blocking_radius = radius;
-        M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(ent->uid), s_map);
+        M_NavBlockersIncref(rs->blocking_pos, rs->blocking_radius, G_GetFactionID(uid), s_map);
     }
 }
 

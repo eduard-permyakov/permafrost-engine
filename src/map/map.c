@@ -475,7 +475,7 @@ void M_NavRenderVisibleEnemySeekField(const struct map *map, const struct camera
 }
 
 void M_NavRenderVisibleSurroundField(const struct map *map, const struct camera *cam, 
-                                     enum nav_layer layer, const struct entity *ent)
+                                     enum nav_layer layer, const uint32_t uid)
 {
     struct frustum frustum;
     Camera_MakeFrustum(cam, &frustum);
@@ -491,7 +491,7 @@ void M_NavRenderVisibleSurroundField(const struct map *map, const struct camera 
 
         mat4x4_t chunk_model;
         M_ModelMatrixForChunk(map, (struct chunkpos) {r, c}, &chunk_model);
-        N_RenderSurroundField(map->nav_private, map, &chunk_model, r, c, layer, ent);
+        N_RenderSurroundField(map->nav_private, map, &chunk_model, r, c, layer, uid);
     }}
 }
 
@@ -610,9 +610,9 @@ vec2_t M_NavDesiredEnemySeekVelocity(const struct map *map, enum nav_layer layer
 }
 
 vec2_t M_NavDesiredSurroundVelocity(const struct map *map, enum nav_layer layer, 
-                                    vec2_t curr_pos, const struct entity *ent, int faction_id)
+                                    vec2_t curr_pos, const uint32_t uid, int faction_id)
 {
-    return N_DesiredSurroundVelocity(curr_pos, map->nav_private, layer, map->pos, ent, faction_id);
+    return N_DesiredSurroundVelocity(curr_pos, map->nav_private, layer, map->pos, uid, faction_id);
 }
 
 bool M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos)
@@ -657,16 +657,17 @@ vec2_t M_NavClosestReachableDest(const struct map *map, enum nav_layer layer,
 }
 
 bool M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer layer, 
-                                      vec2_t xz_src, const struct entity *target, vec2_t *out)
+                                      vec2_t xz_src, const uint32_t target_uid, vec2_t *out)
 {
-    if(target->flags & ENTITY_FLAG_MOVABLE) {
+    uint32_t flags = G_FlagsGet(target_uid);
+    if(flags & ENTITY_FLAG_MOVABLE) {
 
         return N_ClosestReachableAdjacentPosDynamic(map->nav_private, layer, map->pos, 
-            xz_src, G_Pos_GetXZ(target->uid), G_GetSelectionRadius(target->uid), out);
+            xz_src, G_Pos_GetXZ(target_uid), G_GetSelectionRadius(target_uid), out);
     }else{
 
         struct obb obb;
-        Entity_CurrentOBB(target, &obb, false);
+        Entity_CurrentOBB(target_uid, &obb, false);
         return N_ClosestReachableAdjacentPosStatic(map->nav_private, layer,
             map->pos, xz_src, &obb, out);
     }
@@ -805,17 +806,17 @@ uint32_t M_NavDestIDForPosAttacking(const struct map *map, vec2_t xz_pos,
     return N_DestIDForPosAttacking(map->nav_private, map->pos, xz_pos, layer, faction_id);
 }
 
-bool M_NavObjAdjacent(const struct map *map, const struct entity *ent, const struct entity *target)
+bool M_NavObjAdjacent(const struct map *map, uint32_t uid, uint32_t target_uid)
 {
-    if(target->flags & ENTITY_FLAG_MOVABLE) {
+    if(G_FlagsGet(target_uid) & ENTITY_FLAG_MOVABLE) {
 
-        return N_ObjAdjacentToDynamic(map->nav_private, map->pos, ent, 
-            G_Pos_GetXZ(target->uid), G_GetSelectionRadius(target->uid));
+        return N_ObjAdjacentToDynamic(map->nav_private, map->pos, uid, 
+            G_Pos_GetXZ(target_uid), G_GetSelectionRadius(target_uid));
     }else{
 
         struct obb obb;
-        Entity_CurrentOBB(target, &obb, false);
-        return N_ObjAdjacentToStatic(map->nav_private, map->pos, ent, &obb);
+        Entity_CurrentOBB(target_uid, &obb, false);
+        return N_ObjAdjacentToStatic(map->nav_private, map->pos, uid, &obb);
     }
 }
 
@@ -830,9 +831,9 @@ bool M_NavObjectBuildable(const struct map *map, enum nav_layer layer, const str
 }
 
 bool M_NavHasEntityLOS(const struct map *map, enum nav_layer layer, 
-                       vec2_t xz_pos, const struct entity *ent)
+                       vec2_t xz_pos, uint32_t uid)
 {
-    return N_HasEntityLOS(xz_pos, ent, map->nav_private, layer, map->pos);
+    return N_HasEntityLOS(xz_pos, uid, map->nav_private, layer, map->pos);
 }
 
 vec2_t M_NavClosestReachableInRange(const struct map *map, enum nav_layer layer,

@@ -40,6 +40,7 @@
 #include "../entity.h"
 #include "../event.h"
 #include "../perf.h"
+#include "../asset_load.h"
 #include "../lib/public/attr.h"
 #include "../lib/public/pf_string.h"
 #include "../render/public/render.h"
@@ -418,23 +419,24 @@ void A_Shutdown(void)
     kh_destroy(ctx, s_anim_ctx);
 }
 
-bool A_AddEntity(const struct entity *ent)
+bool A_AddEntity(uint32_t uid)
 {
     int status;
-    khiter_t k = kh_put(ctx, s_anim_ctx, ent->uid, &status);
+    khiter_t k = kh_put(ctx, s_anim_ctx, uid, &status);
     if(status == -1 || status == 0)
         return false;
 
     struct anim_ctx *ctx = &kh_value(s_anim_ctx, k);
+    const struct entity *ent = AL_EntityGet(uid);
     ctx->data = ent->anim_private;
 
-    A_SetIdleClip(ent->uid, A_GetClip(ent->uid, 0), 24);
+    A_SetIdleClip(uid, A_GetClip(uid, 0), 24);
     return true;
 }
 
-void A_RemoveEntity(const struct entity *ent)
+void A_RemoveEntity(uint32_t uid)
 {
-    khiter_t k = kh_get(ctx, s_anim_ctx, ent->uid);
+    khiter_t k = kh_get(ctx, s_anim_ctx, uid);
     if(k == kh_end(s_anim_ctx))
         return;
     kh_del(ctx, s_anim_ctx, k);

@@ -48,7 +48,6 @@
 #define MAX_FACTIONS     15
 #define MAX_FAC_NAME_LEN 32
 
-struct entity;
 struct map;
 struct tile_desc;
 struct tile;
@@ -60,10 +59,10 @@ struct nk_color;
 struct proj_desc;
 
 
-VEC_TYPE(pentity, struct entity *)
-VEC_IMPL(static inline, pentity, struct entity *)
+VEC_TYPE(entity, uint32_t)
+VEC_IMPL(static inline, entity, uint32_t)
 
-KHASH_DECLARE(entity, khint32_t, struct entity*)
+KHASH_DECLARE(entity, khint32_t, uint32_t)
 
 
 enum cam_mode{
@@ -138,16 +137,16 @@ bool            G_PointInsideMap(vec2_t xz);
 
 void            G_BakeNavDataForScene(void);
 
-bool            G_AddEntity(struct entity *ent, vec3_t pos);
-bool            G_RemoveEntity(struct entity *ent);
-void            G_StopEntity(const struct entity *ent, bool stop_move);
+bool            G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos);
+bool            G_RemoveEntity(uint32_t uid);
+void            G_StopEntity(uint32_t uid, bool stop_move);
 void            G_UpdateBounds(uint32_t uid);
-void            G_Zombiefy(struct entity *ent, bool invis);
+void            G_Zombiefy(uint32_t uid, bool invis);
 bool            G_EntityExists(uint32_t uid);
 bool            G_EntityIsZombie(uint32_t uid);
 
-void            G_FreeEntity(struct entity *ent);
-void            G_DeferredRemove(struct entity *ent);
+void            G_FreeEntity(uint32_t uid);
+void            G_DeferredRemove(uint32_t uid);
 
 bool            G_AddFaction(const char *name, vec3_t color);
 bool            G_RemoveFaction(int faction_id);
@@ -196,6 +195,9 @@ const struct map        *G_GetPrevTickMap(void);
 uint32_t        G_GPUIDForEnt(uint32_t uid);
 uint32_t        G_EntForGPUID(uint32_t gpuid);
 
+void            G_FlagsSet(uint32_t uid, uint32_t flags);
+uint32_t        G_FlagsGet(uint32_t uid);
+
 /*###########################################################################*/
 /* GAME SELECTION                                                            */
 /*###########################################################################*/
@@ -210,10 +212,10 @@ void                  G_Sel_Enable(void);
 void                  G_Sel_Disable(void);
 
 void                  G_Sel_Clear(void);
-void                  G_Sel_Add(struct entity *ent);
-void                  G_Sel_Remove(struct entity *ent);
-const vec_pentity_t  *G_Sel_Get(enum selection_type *out_type);
-struct entity        *G_Sel_GetHovered(void);
+void                  G_Sel_Add(uint32_t uid);
+void                  G_Sel_Remove(uint32_t uid);
+const vec_entity_t   *G_Sel_Get(enum selection_type *out_type);
+uint32_t              G_Sel_GetHovered(void);
 void                  G_Sel_Set(uint32_t *ents, size_t nents);
 
 
@@ -223,9 +225,9 @@ void                  G_Sel_Set(uint32_t *ents, size_t nents);
 
 void G_Move_SetMoveOnLeftClick(void);
 void G_Move_SetAttackOnLeftClick(void);
-void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz, bool attack);
-void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius);
-bool G_Move_Still(const struct entity *ent);
+void G_Move_SetDest(uint32_t uid, vec2_t dest_xz, bool attack);
+void G_Move_UpdateSelectionRadius(uint32_t uid, float sel_radius);
+bool G_Move_Still(uint32_t uid);
 void G_Move_SetClickEnabled(bool on);
 bool G_Move_GetClickEnabled(void);
 bool G_Move_GetMaxSpeed(uint32_t uid, float *out);
@@ -247,43 +249,43 @@ enum combat_stance{
     COMBAT_STANCE_NO_ENGAGEMENT,
 };
 
-void  G_Combat_AttackUnit(const struct entity *ent, const struct entity *target);
+void  G_Combat_AttackUnit(uint32_t uid, uint32_t target);
 
-bool  G_Combat_SetStance(const struct entity *ent, enum combat_stance stance);
-void  G_Combat_SetCurrentHP(const struct entity *ent, int hp);
-int   G_Combat_GetCurrentHP(const struct entity *ent);
+bool  G_Combat_SetStance(uint32_t uid, enum combat_stance stance);
+void  G_Combat_SetCurrentHP(uint32_t uid, int hp);
+int   G_Combat_GetCurrentHP(uint32_t uid);
 void  G_Combat_UpdateRef(int oldfac, int newfac, vec2_t pos);
 bool  G_Combat_IsDying(uint32_t uid);
 
-void  G_Combat_SetBaseArmour(const struct entity *ent, float armour_pc);
-float G_Combat_GetBaseArmour(const struct entity *ent);
-void  G_Combat_SetBaseDamage(const struct entity *ent, int dmg);
-int   G_Combat_GetBaseDamage(const struct entity *ent);
-void  G_Combat_SetMaxHP(const struct entity *ent, int hp);
-int   G_Combat_GetMaxHP(const struct entity *ent);
-void  G_Combat_SetRange(const struct entity *ent, float range);
-float G_Combat_GetRange(const struct entity *ent);
-void  G_Combat_SetProjDesc(const struct entity *ent, const struct proj_desc *pd);
+void  G_Combat_SetBaseArmour(uint32_t uid, float armour_pc);
+float G_Combat_GetBaseArmour(uint32_t uid);
+void  G_Combat_SetBaseDamage(uint32_t uid, int dmg);
+int   G_Combat_GetBaseDamage(uint32_t uid);
+void  G_Combat_SetMaxHP(uint32_t uid, int hp);
+int   G_Combat_GetMaxHP(uint32_t uid);
+void  G_Combat_SetRange(uint32_t uid, float range);
+float G_Combat_GetRange(uint32_t uid);
+void  G_Combat_SetProjDesc(uint32_t uid, const struct proj_desc *pd);
 
 
 /*###########################################################################*/
 /* GAME POSITION                                                             */
 /*###########################################################################*/
 
-bool           G_Pos_Set(const struct entity *ent, vec3_t pos);
+bool           G_Pos_Set(uint32_t uid, vec3_t pos);
 vec3_t         G_Pos_Get(uint32_t uid);
 vec2_t         G_Pos_GetXZ(uint32_t uid);
 
-int            G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout);
-int            G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout,
-                                        bool (*predicate)(const struct entity *ent, void *arg), void *arg);
-int            G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t maxout);
-int            G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **out, size_t maxout,
-                                  bool (*predicate)(const struct entity *ent, void *arg), void *arg);
+int            G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout);
+int            G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout,
+                                        bool (*predicate)(uint32_t ent, void *arg), void *arg);
+int            G_Pos_EntsInCircle(vec2_t xz_point, float range, uint32_t *out, size_t maxout);
+int            G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, uint32_t *out, size_t maxout,
+                                  bool (*predicate)(uint32_t ent, void *arg), void *arg);
 
-struct entity *G_Pos_Nearest(vec2_t xz_point);
-struct entity *G_Pos_NearestWithPred(vec2_t xz_point, 
-                                     bool (*predicate)(const struct entity *ent, void *arg), 
+uint32_t       G_Pos_Nearest(vec2_t xz_point);
+uint32_t       G_Pos_NearestWithPred(vec2_t xz_point, 
+                                     bool (*predicate)(uint32_t ent, void *arg), 
                                      void *arg, float max_range);
 
 /*###########################################################################*/
@@ -305,16 +307,16 @@ void  G_Fog_Disable(void);
 /* GAME BUILDING                                                             */
 /*###########################################################################*/
 
-bool   G_Building_Mark(const struct entity *ent);
-bool   G_Building_Found(struct entity *ent, bool blocking);
-bool   G_Building_Supply(struct entity *ent);
-bool   G_Building_Complete(struct entity *ent);
-bool   G_Building_Unobstructed(const struct entity *ent);
-bool   G_Building_IsFounded(const struct entity *ent);
-bool   G_Building_IsSupplied(const struct entity *ent);
-bool   G_Building_IsCompleted(const struct entity *ent);
-void   G_Building_SetVisionRange(struct entity *ent, float vision_range);
-float  G_Building_GetVisionRange(const struct entity *ent);
+bool   G_Building_Mark(uint32_t uid);
+bool   G_Building_Found(uint32_t uid, bool blocking);
+bool   G_Building_Supply(uint32_t uid);
+bool   G_Building_Complete(uint32_t uid);
+bool   G_Building_Unobstructed(uint32_t uid);
+bool   G_Building_IsFounded(uint32_t uid);
+bool   G_Building_IsSupplied(uint32_t uid);
+bool   G_Building_IsCompleted(uint32_t uid);
+void   G_Building_SetVisionRange(uint32_t uid, float vision_range);
+float  G_Building_GetVisionRange(uint32_t uid);
 int    G_Building_GetRequired(uint32_t uid, const char *rname);
 bool   G_Building_SetRequired(uint32_t uid, const char *rname, int req);
 size_t G_Building_GetAllRequired(uint32_t uid, size_t maxout, 
@@ -324,9 +326,9 @@ size_t G_Building_GetAllRequired(uint32_t uid, size_t maxout,
 /* GAME BUILDER                                                              */
 /*###########################################################################*/
 
-bool G_Builder_Build(struct entity *builder, struct entity *building);
-void G_Builder_SetBuildSpeed(const struct entity *ent, int speed);
-int  G_Builder_GetBuildSpeed(const struct entity *ent);
+bool G_Builder_Build(uint32_t uid, uint32_t building);
+void G_Builder_SetBuildSpeed(uint32_t uid, int speed);
+int  G_Builder_GetBuildSpeed(uint32_t uid);
 void G_Builder_SetBuildOnLeftClick(void);
 
 /*###########################################################################*/
@@ -340,7 +342,7 @@ const char *G_Resource_GetName(uint32_t uid);
 const char *G_Resource_GetCursor(uint32_t uid);
 bool        G_Resource_SetCursor(uint32_t uid, const char *cursor);
 int         G_Resource_GetAllNames(size_t maxout, const char* out[]);
-void        G_Resource_UpdateSelectionRadius(const struct entity *ent, float radius);
+void        G_Resource_UpdateSelectionRadius(uint32_t uid, float radius);
 
 /*###########################################################################*/
 /* GAME HARVESTER                                                            */
@@ -366,10 +368,10 @@ void  G_Harvester_SetPickUpOnLeftClick(void);
 void  G_Harvester_SetDropOffOnLeftClick(void);
 void  G_Harvester_SetTransportOnLeftClick(void);
 
-bool  G_Harvester_Gather(struct entity *harvester, struct entity *resource);
-bool  G_Harvester_PickUp(struct entity *harvester, struct entity *storage);
-bool  G_Harvester_DropOff(struct entity *harvester, struct entity *storage);
-bool  G_Harvester_Transport(struct entity *harvester, struct entity *storage);
+bool  G_Harvester_Gather(uint32_t uid, uint32_t storage);
+bool  G_Harvester_PickUp(uint32_t uid, uint32_t storage);
+bool  G_Harvester_DropOff(uint32_t uid, uint32_t storage);
+bool  G_Harvester_Transport(uint32_t uid, uint32_t storage);
 
 bool  G_Harvester_SetGatherSpeed(uint32_t uid, const char *rname, float speed);
 float G_Harvester_GetGatherSpeed(uint32_t uid, const char *rname);
@@ -400,11 +402,11 @@ enum ss_ui_mode{
     SS_UI_SHOW_NEVER,
 };
 
-bool G_StorageSite_SetCapacity(const struct entity *ent, const char *rname, int max);
+bool G_StorageSite_SetCapacity(uint32_t uid, const char *rname, int max);
 int  G_StorageSite_GetCapacity(uint32_t uid, const char *rname);
-bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr);
+bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr);
 int  G_StorageSite_GetCurr(uint32_t uid, const char *rname);
-bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr);
+bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr);
 int  G_StorageSite_GetDesired(uint32_t uid, const char *rname);
 bool G_StorageSite_SetDesired(uint32_t uid, const char *rname, int des);
 int  G_StorageSite_GetStorableResources(uint32_t uid, size_t maxout, const char* out[]);
@@ -441,7 +443,7 @@ bool   G_Region_GetRadius(const char *name, float *out);
 bool   G_Region_GetXLen(const char *name, float *out);
 bool   G_Region_GetZLen(const char *name, float *out);
 
-int    G_Region_GetEnts(const char *name, size_t maxout, struct entity *ents[]);
+int    G_Region_GetEnts(const char *name, size_t maxout, uint32_t ents[]);
 bool   G_Region_ContainsEnt(const char *name, uint32_t uid);
 bool   G_Region_ExploreFog(const char *name, int faction_id);
 bool   G_Region_Explored(const char *name, uint16_t player_mask, bool *out);

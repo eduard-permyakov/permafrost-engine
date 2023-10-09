@@ -55,7 +55,6 @@
 
 #define MIN(a, b)     ((a) < (b) ? (a) : (b))
 #define MAX(a, b)     ((a) > (b) ? (a) : (b))
-#define UID_NONE      (~((uint32_t)0))
 
 #define CHK_TRUE_RET(_pred)             \
     do{                                 \
@@ -91,10 +90,10 @@ static struct selection_ctx{
     enum selection_type type;
 }s_ctx;
 
-static vec_pentity_t  s_selected;
+static vec_entity_t  s_selected;
 
 static bool     s_hovered_dirty = true;
-static uint32_t s_hovered_uid = UID_NONE;
+static uint32_t s_hovered_uid = NULL_UID;
 
 /*****************************************************************************/
 /* GLOBAL VARIABLES                                                          */
@@ -273,7 +272,7 @@ static bool sel_ctrl_pressed(void)
     return (state[SDL_SCANCODE_LCTRL] || state[SDL_SCANCODE_RCTRL]);
 }
 
-static void sel_compute_hovered(struct camera *cam, const vec_pentity_t *visible, const vec_obb_t *visible_obbs)
+static void sel_compute_hovered(struct camera *cam, const vec_entity_t *visible, const vec_obb_t *visible_obbs)
 {
     if(!s_hovered_dirty)
         return;
@@ -289,11 +288,11 @@ static void sel_compute_hovered(struct camera *cam, const vec_pentity_t *visible
     PFM_Vec3_Normal(&ray_dir, &ray_dir);
 
     float t_min = FLT_MAX;
-    s_hovered_uid = UID_NONE;
+    s_hovered_uid = NULL_UID;
 
     for(int i = 0; i < vec_size(visible_obbs); i++) {
 
-        if(G_EntityIsZombie(vec_AT(visible, i)->uid))
+        if(G_EntityIsZombie(vec_AT(visible, i)))
             continue;
 
         float t;
@@ -301,14 +300,14 @@ static void sel_compute_hovered(struct camera *cam, const vec_pentity_t *visible
 
             if(t < t_min) {
                 t_min = t;
-                s_hovered_uid = vec_AT(visible, i)->uid;
+                s_hovered_uid = vec_AT(visible, i);
             }
         }
     }
     s_hovered_dirty = false;
 }
 
-static bool pentities_equal(struct entity *const *a, struct entity *const *b)
+static bool entities_equal(uint32_t *a, uint32_t *b)
 {
     return ((*a) == (*b));
 }
@@ -343,8 +342,10 @@ static void sel_filter_buildings(void)
     bool has_units = false;
     for(int i = 0; i < vec_size(&s_selected); i++) {
 
-        const struct entity *curr = vec_AT(&s_selected, i);
-        if(!(curr->flags & ENTITY_FLAG_BUILDING)) {
+        uint32_t curr = vec_AT(&s_selected, i);
+        uint32_t flags = G_FlagsGet(curr);
+
+        if(!(flags & ENTITY_FLAG_BUILDING)) {
             has_units = true;
             break;
         }
@@ -356,9 +357,11 @@ static void sel_filter_buildings(void)
     /* Iterate the vector backwards so we can delete while iterating. */
     for(int i = vec_size(&s_selected)-1; i >= 0; i--) {
 
-        const struct entity *curr = vec_AT(&s_selected, i);
-        if(curr->flags & ENTITY_FLAG_BUILDING) {
-            vec_pentity_del(&s_selected, i);
+        uint32_t curr = vec_AT(&s_selected, i);
+        uint32_t flags = G_FlagsGet(curr);
+
+        if(curr & ENTITY_FLAG_BUILDING) {
+            vec_entity_del(&s_selected, i);
         }
     }
 }
@@ -382,15 +385,15 @@ static void sel_filter_and_set_type(void)
     bool has_player = false, has_allied = false;
     for(int i = 0; i < vec_size(&s_selected); i++) {
         
-        const struct entity *curr = vec_AT(&s_selected, i);
-        assert(fac_mask & (0x1 << G_GetFactionID(curr->uid)));
+        uint32_t curr = vec_AT(&s_selected, i);
+        assert(fac_mask & (0x1 << G_GetFactionID(curr)));
 
-        if(controllable[G_GetFactionID(curr->uid)]) {
+        if(controllable[G_GetFactionID(curr)]) {
             has_player = true; 
             break;
         }
 
-        if(allied_to_player_controllabe(controllable, fac_mask, G_GetFactionID(curr->uid))) {
+        if(allied_to_player_controllabe(controllable, fac_mask, G_GetFactionID(curr))) {
             has_allied = true;
         }
     }
@@ -406,36 +409,36 @@ static void sel_filter_and_set_type(void)
     /* Iterate the vector backwards so we can delete while iterating. */
     for(int i = vec_size(&s_selected)-1; i >= 0; i--) {
 
-        const struct entity *curr = vec_AT(&s_selected, i);
-        if(has_player && !controllable[G_GetFactionID(curr->uid)]) {
+        uint32_t curr = vec_AT(&s_selected, i);
+        if(has_player && !controllable[G_GetFactionID(curr)]) {
 
-            vec_pentity_del(&s_selected, i);
+            vec_entity_del(&s_selected, i);
 
         }else if(!has_player 
               && has_allied
-              && !allied_to_player_controllabe(controllable, fac_mask, G_GetFactionID(curr->uid))) {
+              && !allied_to_player_controllabe(controllable, fac_mask, G_GetFactionID(curr))) {
 
-            vec_pentity_del(&s_selected, i);
+            vec_entity_del(&s_selected, i);
         }
     }
 
     sel_filter_buildings();
 }
 
-static void sel_process_unit(struct entity *ent)
+static void sel_process_unit(uint32_t uid)
 {
     if(sel_shift_pressed()) {
-        int idx = vec_pentity_indexof(&s_selected, ent, pentities_equal);
+        int idx = vec_entity_indexof(&s_selected, uid, entities_equal);
         if(idx == -1) {
-            vec_pentity_push(&s_selected, ent);
+            vec_entity_push(&s_selected, uid);
         }
     }else if(sel_ctrl_pressed()) {
-        int idx = vec_pentity_indexof(&s_selected, ent, pentities_equal);
+        int idx = vec_entity_indexof(&s_selected, uid, entities_equal);
         if(idx != -1) {
-            vec_pentity_del(&s_selected, idx);
+            vec_entity_del(&s_selected, idx);
         }
     }else{
-        vec_pentity_push(&s_selected, ent);
+        vec_entity_push(&s_selected, uid);
     }
 }
 
@@ -445,7 +448,7 @@ static void sel_process_unit(struct entity *ent)
 
 bool G_Sel_Init(void)
 {
-    vec_pentity_init(&s_selected);
+    vec_entity_init(&s_selected);
     E_Global_Register(SDL_MOUSEMOTION, on_mousemove, NULL, G_RUNNING);
     return true;
 }
@@ -454,7 +457,7 @@ void G_Sel_Shutdown(void)
 {
     G_Sel_Disable();
     E_Global_Unregister(SDL_MOUSEMOTION, on_mousemove);
-    vec_pentity_destroy(&s_selected);
+    vec_entity_destroy(&s_selected);
 }
 
 void G_Sel_Enable(void)
@@ -481,7 +484,7 @@ void G_Sel_Disable(void)
 
 /* Note that the selection is only changed if there is at least one entity in the new selection. Otherwise
  * (ex. if the player is left-clicking on an empty part of the map), the previous selection is kept. */
-void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_obb_t *visible_obbs)
+void G_Sel_Update(struct camera *cam, const vec_entity_t *visible, const vec_obb_t *visible_obbs)
 {
     PERF_ENTER();
 
@@ -504,12 +507,11 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
          * The behaviour is that only a single entity can be selected with a 'click' action, even if multiple
          * OBBs intersect with the mouse ray. We pick the one with the closest intersection point.
          */
-        struct entity *hovered = G_EntityForUID(s_hovered_uid);
-        if(hovered && (hovered->flags & ENTITY_FLAG_SELECTABLE)) {
+        if(G_EntityExists(s_hovered_uid) && (G_FlagsGet(s_hovered_uid) & ENTITY_FLAG_SELECTABLE)) {
 
             sel_empty = false;
             if(!sel_ctrl_pressed() && !sel_shift_pressed()) {
-                vec_pentity_reset(&s_selected);
+                vec_entity_reset(&s_selected);
             }
             /* A double-click selects all units of the same 'type' as the hovered unit */
             if(s_ctx.num_clicks > 1) {
@@ -517,16 +519,18 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
                 uint64_t hovered_id = S_ScriptTypeID(s_hovered_uid);
                 for(int i = 0; i < vec_size(visible_obbs); i++) {
 
-                    struct entity *curr = vec_AT(visible, i);
-                    if(!(curr->flags & ENTITY_FLAG_SELECTABLE))
+                    uint32_t curr = vec_AT(visible, i);
+                    uint32_t flags = G_FlagsGet(curr);
+
+                    if(!(flags & ENTITY_FLAG_SELECTABLE))
                         continue;
-                    uint64_t curr_id = S_ScriptTypeID(curr->uid);
+                    uint64_t curr_id = S_ScriptTypeID(curr);
                     if(curr_id != 0 && (hovered_id == curr_id)) {
                         sel_process_unit(curr);
                     }
                 }
             }else{
-                sel_process_unit(hovered);
+                sel_process_unit(s_hovered_uid);
             }
         }
 
@@ -539,7 +543,8 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
 
         for(int i = 0; i < vec_size(visible_obbs); i++) {
 
-            if(!(vec_AT(visible, i)->flags & ENTITY_FLAG_SELECTABLE))
+            uint32_t flags = G_FlagsGet(vec_AT(visible, i));
+            if(!(flags & ENTITY_FLAG_SELECTABLE))
                 continue;
 
             if(C_FrustumOBBIntersectionExact(&frust, &vec_AT(visible_obbs, i))) {
@@ -547,10 +552,10 @@ void G_Sel_Update(struct camera *cam, const vec_pentity_t *visible, const vec_ob
                 if(sel_empty) {
                     sel_empty = false;
                     if(!sel_shift_pressed() && !sel_ctrl_pressed()) {
-                        vec_pentity_reset(&s_selected);
+                        vec_entity_reset(&s_selected);
                     }
                 }
-                struct entity *curr = vec_AT(visible, i);
+                uint32_t curr = vec_AT(visible, i);
                 sel_process_unit(curr);
             }
         }
@@ -572,34 +577,33 @@ void G_Sel_Clear(void)
     if(vec_size(&s_selected) > 0) {
         E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
     }
-    vec_pentity_reset(&s_selected);
+    vec_entity_reset(&s_selected);
 }
 
-void G_Sel_Add(struct entity *ent)
+void G_Sel_Add(uint32_t uid)
 {
-    assert(ent->flags & ENTITY_FLAG_SELECTABLE);
-
-    int idx = vec_pentity_indexof(&s_selected, ent, pentities_equal);
+    int idx = vec_entity_indexof(&s_selected, uid, entities_equal);
     if(idx == -1) {
-        vec_pentity_push(&s_selected, ent);
+        vec_entity_push(&s_selected, uid);
         sel_filter_and_set_type();
         E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
     }
 }
 
-void G_Sel_Remove(struct entity *ent)
+void G_Sel_Remove(uint32_t uid)
 {
-    if(!(ent->flags & ENTITY_FLAG_SELECTABLE))
+    uint32_t flags = G_FlagsGet(uid);
+    if(!(flags & ENTITY_FLAG_SELECTABLE))
         return;
 
-    int idx = vec_pentity_indexof(&s_selected, ent, pentities_equal);
+    int idx = vec_entity_indexof(&s_selected, uid, entities_equal);
     if(idx != -1) {
-        vec_pentity_del(&s_selected, idx);
+        vec_entity_del(&s_selected, idx);
         E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
     }
 }
 
-const vec_pentity_t *G_Sel_Get(enum selection_type *out_type)
+const vec_entity_t *G_Sel_Get(enum selection_type *out_type)
 {
     *out_type = s_ctx.type;
     return &s_selected;
@@ -609,10 +613,10 @@ void G_Sel_Set(uint32_t *ents, size_t nents)
 {
     G_Sel_Clear();
     for(int i = 0; i < nents; i++) {
-        struct entity *ent = G_EntityForUID(ents[i]);
-        if(!(ent->flags & ENTITY_FLAG_SELECTABLE))
+        uint32_t flags = G_FlagsGet(ents[i]);
+        if(!(flags & ENTITY_FLAG_SELECTABLE))
             continue;
-        vec_pentity_push(&s_selected, ent);
+        vec_entity_push(&s_selected, ents[i]);
     }
     sel_filter_and_set_type();
     E_Global_Notify(EVENT_UNIT_SELECTION_CHANGED, NULL, ES_ENGINE);
@@ -644,7 +648,7 @@ bool G_Sel_SaveState(struct SDL_RWops *stream)
     
         struct attr selected_ent = (struct attr){
             .type = TYPE_INT,
-            .val.as_int = vec_AT(&s_selected, i)->uid
+            .val.as_int = vec_AT(&s_selected, i)
         };
         CHK_TRUE_RET(Attr_Write(stream, &selected_ent, "selected_ent"));
         Sched_TryYield();
@@ -678,9 +682,8 @@ bool G_Sel_LoadState(struct SDL_RWops *stream)
     
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
-        struct entity *ent = G_EntityForUID(attr.val.as_int);
-        CHK_TRUE_RET(ent);
-        vec_pentity_push(&s_selected, ent);
+        CHK_TRUE_RET(G_EntityExists(attr.val.as_int));
+        vec_entity_push(&s_selected, attr.val.as_int);
         Sched_TryYield();
     }
 
@@ -688,9 +691,9 @@ bool G_Sel_LoadState(struct SDL_RWops *stream)
     return true;
 }
 
-struct entity *G_Sel_GetHovered(void)
+uint32_t G_Sel_GetHovered(void)
 {
-    return G_EntityForUID(s_hovered_uid);
+    return s_hovered_uid;
 }
 
 void G_Sel_MarkHoveredDirty(void)
@@ -698,9 +701,9 @@ void G_Sel_MarkHoveredDirty(void)
     s_hovered_dirty = true;
 }
 
-bool G_Sel_IsSelected(const struct entity *ent)
+bool G_Sel_IsSelected(uint32_t uid)
 {
-    int idx = vec_pentity_indexof(&s_selected, (struct entity*)ent, pentities_equal);
+    int idx = vec_entity_indexof(&s_selected, uid, entities_equal);
     return (idx != -1);
 }
 

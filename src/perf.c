@@ -36,7 +36,7 @@
 #include "perf.h"
 #include "main.h"
 #include "lib/public/khash.h"
-#include "lib/public/vec.h"
+#include "lib/public/vec2.h"
 #include "lib/public/pf_string.h"
 #include "render/public/render.h"
 #include "render/public/render_ctrl.h"

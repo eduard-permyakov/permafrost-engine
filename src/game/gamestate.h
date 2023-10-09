@@ -129,17 +129,22 @@ struct gamestate{
     khash_t(id)            *ent_gpu_id_map;
     khash_t(id)            *gpu_id_ent_map;
     /*-------------------------------------------------------------------------
+     * A table mapping the entity's ID to its' flags.
+     *-------------------------------------------------------------------------
+     */
+    khash_t(id)            *ent_flag_map;
+    /*-------------------------------------------------------------------------
      * The set of entities potentially visible by the active camera. Updated
      * every frame.
      *-------------------------------------------------------------------------
      */
-    vec_pentity_t           visible;
+    vec_entity_t            visible;
     /*-------------------------------------------------------------------------
      * The set of entities that should be rendered from the light's point of 
      * view (for creating the shadow depth map).
      *-------------------------------------------------------------------------
      */
-    vec_pentity_t           light_visible;
+    vec_entity_t            light_visible;
     /*-------------------------------------------------------------------------
      * Cache of current-frame OBBs for visible entities.
      *-------------------------------------------------------------------------
@@ -178,7 +183,7 @@ struct gamestate{
      * game simulation at the end of the tick.
      *-------------------------------------------------------------------------
      */
-    vec_pentity_t           removed;
+    vec_entity_t            removed;
 };
 
 #endif

@@ -46,6 +46,7 @@
 
 #define MAX_JOINTS  (96)
 #define MAX_TAGS    (127)
+#define NULL_UID    (~((uint32_t)0))
 
 enum{
     ENTITY_FLAG_ANIMATED            = (1 << 0),
@@ -67,8 +68,6 @@ enum{
 };
 
 struct entity{
-    uint32_t     uid;
-    uint32_t     flags;
     const char  *name;
     const char  *basedir;
     const char  *filename;
@@ -111,26 +110,26 @@ bool     Entity_Init(void);
 void     Entity_Shutdown(void);
 void     Entity_ClearState(void);
 
-void     Entity_ModelMatrix(const struct entity *ent, mat4x4_t *out);
+void     Entity_ModelMatrix(uint32_t uid, mat4x4_t *out);
 uint32_t Entity_NewUID(void);
 void     Entity_SetNextUID(uint32_t uid);
-void     Entity_CurrentOBB(const struct entity *ent, struct obb *out, bool identity);
-vec3_t   Entity_CenterPos(const struct entity *ent);
-vec3_t   Entity_TopCenterPointWS(const struct entity *ent);
-void     Entity_FaceTowards(struct entity *ent, vec2_t point);
-void     Entity_Ping(const struct entity *ent);
-vec2_t   Entity_TopScreenPos(const struct entity *ent, int screenw, int screenh);
+void     Entity_CurrentOBB(uint32_t uid, struct obb *out, bool identity);
+vec3_t   Entity_CenterPos(uint32_t uid);
+vec3_t   Entity_TopCenterPointWS(uint32_t uid);
+void     Entity_FaceTowards(uint32_t uid, vec2_t point);
+void     Entity_Ping(uint32_t uid);
+vec2_t   Entity_TopScreenPos(uint32_t uid, int screenw, int screenh);
 /* Coarse-grained test that can give false positives. Use the check to get
  * positives, but confirm positive results with a more precise check */
-bool     Entity_MaybeAdjacentFast(const struct entity *a, const struct entity *b, float buffer);
+bool     Entity_MaybeAdjacentFast(uint32_t a, uint32_t b, float buffer);
 bool     Entity_AddTag(uint32_t uid, const char *tag);
 void     Entity_RemoveTag(uint32_t uid, const char *tag);
 bool     Entity_HasTag(uint32_t uid, const char *tag);
 void     Entity_ClearTags(uint32_t uid);
 size_t   Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[]);
 size_t   Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[]);
-void     Entity_DisappearAnimated(struct entity *ent, const struct map *map, void (*on_finish)(void*), void *arg);
-int      Entity_NavLayer(const struct entity *ent);
+void     Entity_DisappearAnimated(uint32_t uid, const struct map *map, void (*on_finish)(void*), void *arg);
+int      Entity_NavLayer(uint32_t uid);
 
 quat_t   Entity_GetRot(uint32_t uid);
 void     Entity_SetRot(uint32_t uid, quat_t rot);

@@ -801,17 +801,17 @@ static void n_visit_island_local(struct nav_chunk *chunk, uint16_t id, struct co
     queue_td_destroy(&frontier);
 }
 
-static bool enemy_ent(const struct entity *ent, void *arg)
+static bool enemy_ent(uint32_t ent, void *arg)
 {
     int faction_id = (uintptr_t)arg;
     enum diplomacy_state ds;
 
-    if(!(ent->flags & ENTITY_FLAG_COMBATABLE))
+    if(!(G_FlagsGet(ent) & ENTITY_FLAG_COMBATABLE))
         return false;
-    if(G_GetFactionID(ent->uid) == faction_id)
+    if(G_GetFactionID(ent) == faction_id)
         return false;
 
-    bool result = G_GetDiplomacyState(G_GetFactionID(ent->uid), faction_id, &ds);
+    bool result = G_GetDiplomacyState(G_GetFactionID(ent), faction_id, &ds);
     assert(result);
     return (ds == DIPLOMACY_STATE_WAR);
 }
@@ -1183,7 +1183,7 @@ static uint64_t n_enemy_seek_portalmask(const struct nav_private *priv, enum nav
 {
     bool top = false, bot = false, left = false, right = false;
 
-    struct entity *ents[1];
+    uint32_t ents[1];
     vec2_t xz_min, xz_max;
     struct coord curr;
 
@@ -1275,7 +1275,7 @@ static bool n_blocked_off(const struct nav_chunk *chunk, struct coord tile)
     return true;
 }
 
-static bool n_moving_entity(const struct entity *ent, void *arg)
+static bool n_moving_entity(uint32_t ent, void *arg)
 {
     return !G_Move_Still(ent);
 }
@@ -1292,7 +1292,7 @@ static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t m
     vec2_t center_xz = (vec2_t){area->center.x, area->center.z};
     float radius = MAX(area->half_lengths[0], area->half_lengths[2]);
 
-    struct entity *ents[1024];
+    uint32_t ents[1024];
     size_t nents = G_Pos_EntsInCircleWithPred(center_xz, radius, ents, ARR_SIZE(ents), n_moving_entity, NULL);
 
     khash_t(td) *ret = kh_init(td);
@@ -1301,7 +1301,7 @@ static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t m
 
     for(int i = 0; i < nents; i++) {
 
-        vec2_t xz_pos = G_Pos_GetXZ(ents[i]->uid);
+        vec2_t xz_pos = G_Pos_GetXZ(ents[i]);
         struct tile_desc tile;
 
         bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile);
@@ -1362,7 +1362,7 @@ bool n_closest_adjacent_pos(void *nav_private, enum nav_layer layer, vec3_t map_
     return true;
 }
 
-bool n_objects_adjacent(void *nav_private, vec3_t map_pos, const struct entity *ent, 
+bool n_objects_adjacent(void *nav_private, vec3_t map_pos, uint32_t ent, 
                         size_t ntiles, const struct tile_desc tds[])
 {
     assert(Sched_UsingBigStack());
@@ -1374,8 +1374,8 @@ bool n_objects_adjacent(void *nav_private, vec3_t map_pos, const struct entity *
     };
 
     struct tile_desc tds_ent[2048];
-    size_t ntiles_ent = M_Tile_AllUnderCircle(n_res(priv), G_Pos_GetXZ(ent->uid), G_GetSelectionRadius(ent->uid), 
-        map_pos, tds_ent, ARR_SIZE(tds_ent));
+    size_t ntiles_ent = M_Tile_AllUnderCircle(n_res(priv), G_Pos_GetXZ(ent), 
+        G_GetSelectionRadius(ent), map_pos, tds_ent, ARR_SIZE(tds_ent));
 
     for(int i = 0; i < ntiles; i++) {
     for(int j = 0; j < ntiles_ent; j++) {
@@ -2150,7 +2150,7 @@ void N_RenderEnemySeekField(void *nav_private, const struct map *map, mat4x4_t *
 }
 
 void N_RenderSurroundField(void *nav_private, const struct map *map, mat4x4_t *chunk_model, 
-                           int chunk_r, int chunk_c, enum nav_layer layer, const struct entity *ent)
+                           int chunk_r, int chunk_c, enum nav_layer layer, uint32_t ent)
 {
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
@@ -2707,7 +2707,7 @@ ff_found:
 }
 
 vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_layer layer, 
-                                 vec3_t map_pos, const struct entity *ent, int faction_id)
+                                 vec3_t map_pos, uint32_t ent, int faction_id)
 {
     struct nav_private *priv = nav_private;
     struct map_resolution res = {
@@ -2785,10 +2785,10 @@ ff_found:
     return N_FlowDir(dir_idx);
 }
 
-bool N_HasEntityLOS(vec2_t curr_pos, const struct entity *ent, void *nav_private, 
+bool N_HasEntityLOS(vec2_t curr_pos, uint32_t ent, void *nav_private, 
                     enum nav_layer layer, vec3_t map_pos)
 {
-    vec2_t ent_pos = G_Pos_GetXZ(ent->uid);
+    vec2_t ent_pos = G_Pos_GetXZ(ent);
     bool result = false;
 
     struct nav_private *priv = nav_private;
@@ -3203,7 +3203,7 @@ int N_GridNeighbours(const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C], struct 
     return ret;
 }
 
-bool N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, const struct entity *ent, const struct obb *stat)
+bool N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, uint32_t ent, const struct obb *stat)
 {
     assert(Sched_UsingBigStack());
 
@@ -3219,7 +3219,8 @@ bool N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, const struct entit
     return n_objects_adjacent(nav_private, map_pos, ent, ntiles_stat, tds_stat);
 }
 
-bool N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, const struct entity *ent, vec2_t xz_pos, float radius)
+bool N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, uint32_t ent, 
+                            vec2_t xz_pos, float radius)
 {
     assert(Sched_UsingBigStack());
 
@@ -3230,7 +3231,8 @@ bool N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, const struct enti
     };
 
     struct tile_desc tds_dyn[2048];
-    size_t ntiles_dyn = M_Tile_AllUnderCircle(n_res(priv), xz_pos, radius, map_pos, tds_dyn, ARR_SIZE(tds_dyn));
+    size_t ntiles_dyn = M_Tile_AllUnderCircle(n_res(priv), xz_pos, radius, 
+        map_pos, tds_dyn, ARR_SIZE(tds_dyn));
 
     return n_objects_adjacent(nav_private, map_pos, ent, ntiles_dyn, tds_dyn);
 }

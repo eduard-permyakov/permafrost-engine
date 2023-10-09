@@ -643,7 +643,7 @@ void G_Fog_RenderChunkVisibility(int faction_id, int chunk_r, int chunk_c, mat4x
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 
     STALLOC(vec2_t, corners_buff, 4 * res.tile_w * res.tile_h);
-    STALLOC(vec2_t, colors_buff, res.tile_w * res.tile_h);
+    STALLOC(vec3_t, colors_buff, res.tile_w * res.tile_h);
 
     vec2_t *corners_base = corners_buff;
     vec3_t *colors_base = colors_buff; 
@@ -806,7 +806,7 @@ bool G_Fog_NearVisibleWater(uint16_t fac_mask, vec2_t xz_pos, float radius)
 
     for(int i = 0; i < ntiles; i++) {
 
-        const struct tile *tile = NULL;
+        struct tile *tile = NULL;
         M_TileForDesc(s_map, tds[i], &tile);
         assert(tile);
 

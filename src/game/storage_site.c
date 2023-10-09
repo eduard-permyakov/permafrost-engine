@@ -358,12 +358,11 @@ static void on_update_ui(void *user, void *event)
 
     kh_foreach(s_entity_state_table, key, curr, {
 
-        const struct entity *ent = G_EntityForUID(key);
-        if(ui_setting.as_int == SS_UI_SHOW_SELECTED && !G_Sel_IsSelected(ent))
+        if(ui_setting.as_int == SS_UI_SHOW_SELECTED && !G_Sel_IsSelected(key))
             continue;
 
         struct obb obb;
-        Entity_CurrentOBB(ent, &obb, true);
+        Entity_CurrentOBB(key, &obb, true);
         if(!G_Fog_ObjExplored(G_GetPlayerControlledFactions(), key, &obb))
             continue;
 
@@ -373,7 +372,7 @@ static void on_update_ui(void *user, void *event)
         const vec2_t vres = (vec2_t){1920, 1080};
         const vec2_t adj_vres = UI_ArAdjustedVRes(vres);
 
-        vec2_t ss_pos = Entity_TopScreenPos(ent, adj_vres.x, adj_vres.y);
+        vec2_t ss_pos = Entity_TopScreenPos(key, adj_vres.x, adj_vres.y);
         khash_t(int) *table = (curr.use_alt) ? curr.alt_capacity : curr.capacity;
 
         const int width = 224;
@@ -691,19 +690,19 @@ void G_StorageSite_ClearState(void)
     G_StorageSite_Init();
 }
 
-bool G_StorageSite_AddEntity(const struct entity *ent)
+bool G_StorageSite_AddEntity(uint32_t uid)
 {
     struct ss_state ss;
     if(!ss_state_init(&ss))
         return false;
-    if(!ss_state_set(ent->uid, ss))
+    if(!ss_state_set(uid, ss))
         return false;
     return true;
 }
 
-void G_StorageSite_RemoveEntity(const struct entity *ent)
+void G_StorageSite_RemoveEntity(uint32_t uid)
 {
-    struct ss_state *ss = ss_state_get(ent->uid);
+    struct ss_state *ss = ss_state_get(uid);
     if(!ss)
         return;
 
@@ -711,16 +710,16 @@ void G_StorageSite_RemoveEntity(const struct entity *ent)
     int amount;
 
     kh_foreach(ss->curr, key, amount, {
-        update_res_delta(key, -amount, G_GetFactionID(ent->uid));
+        update_res_delta(key, -amount, G_GetFactionID(uid));
     });
 
     khash_t(int) *cap = ss->use_alt ? ss->alt_capacity : ss->capacity;
     kh_foreach(cap, key, amount, {
-        update_cap_delta(key, -amount, G_GetFactionID(ent->uid));
+        update_cap_delta(key, -amount, G_GetFactionID(uid));
     });
 
     ss_state_destroy(ss);
-    ss_state_remove(ent->uid);
+    ss_state_remove(uid);
 }
 
 bool G_StorageSite_IsSaturated(uint32_t uid)
@@ -740,9 +739,9 @@ bool G_StorageSite_IsSaturated(uint32_t uid)
     return true;
 }
 
-bool G_StorageSite_SetCapacity(const struct entity *ent, const char *rname, int max)
+bool G_StorageSite_SetCapacity(uint32_t uid, const char *rname, int max)
 {
-    struct ss_state *ss = ss_state_get(ent->uid);
+    struct ss_state *ss = ss_state_get(uid);
     assert(ss);
 
     int prev = 0;
@@ -750,7 +749,7 @@ bool G_StorageSite_SetCapacity(const struct entity *ent, const char *rname, int 
     int delta = max - prev;
 
     if(!ss->use_alt) {
-        update_cap_delta(rname, delta, G_GetFactionID(ent->uid));
+        update_cap_delta(rname, delta, G_GetFactionID(uid));
     }
 
     bool ret = ss_state_set_key(ss->capacity, rname, max);
@@ -769,9 +768,9 @@ int G_StorageSite_GetCapacity(uint32_t uid, const char *rname)
     return ret;
 }
 
-bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr)
+bool G_StorageSite_SetCurr(uint32_t uid, const char *rname, int curr)
 {
-    struct ss_state *ss = ss_state_get(ent->uid);
+    struct ss_state *ss = ss_state_get(uid);
     assert(ss);
 
     int cap = 0;
@@ -786,14 +785,14 @@ bool G_StorageSite_SetCurr(const struct entity *ent, const char *rname, int curr
     int prev = 0;
     ss_state_get_key(ss->curr, rname, &prev);
     int delta = curr - prev;
-    update_res_delta(rname, delta, G_GetFactionID(ent->uid));
+    update_res_delta(rname, delta, G_GetFactionID(uid));
 
     if(delta) {
         ss->last_change = (struct ss_delta_event){
             .name = si_intern(rname, &s_stringpool, s_stridx),
             .delta = delta
         };
-        E_Entity_Notify(EVENT_STORAGE_SITE_AMOUNT_CHANGED, ent->uid, &ss->last_change, ES_ENGINE);
+        E_Entity_Notify(EVENT_STORAGE_SITE_AMOUNT_CHANGED, uid, &ss->last_change, ES_ENGINE);
     }
 
     return ss_state_set_key(ss->curr, rname, curr);
@@ -901,9 +900,9 @@ void G_StorageSite_SetDoNotTake(uint32_t uid, bool on)
     ss->do_not_take = on;
 }
 
-void G_StorageSite_SetUseAlt(const struct entity *ent, bool use)
+void G_StorageSite_SetUseAlt(uint32_t uid, bool use)
 {
-    struct ss_state *ss = ss_state_get(ent->uid);
+    struct ss_state *ss = ss_state_get(uid);
     assert(ss);
 
     if(use == ss->use_alt)
@@ -914,17 +913,17 @@ void G_StorageSite_SetUseAlt(const struct entity *ent, bool use)
 
     if(use) {
         kh_foreach(ss->capacity, key, amount, {
-            update_cap_delta(key, -amount, G_GetFactionID(ent->uid));
+            update_cap_delta(key, -amount, G_GetFactionID(uid));
         });
         kh_foreach(ss->alt_capacity, key, amount, {
-            update_cap_delta(key, amount, G_GetFactionID(ent->uid));
+            update_cap_delta(key, amount, G_GetFactionID(uid));
         });
     }else{
         kh_foreach(ss->alt_capacity, key, amount, {
-            update_cap_delta(key, -amount, G_GetFactionID(ent->uid));
+            update_cap_delta(key, -amount, G_GetFactionID(uid));
         });
         kh_foreach(ss->capacity, key, amount, {
-            update_cap_delta(key, amount, G_GetFactionID(ent->uid));
+            update_cap_delta(key, amount, G_GetFactionID(uid));
         });
     }
     ss->use_alt = use;
@@ -937,9 +936,9 @@ bool G_StorageSite_GetUseAlt(uint32_t uid)
     return ss->use_alt;
 }
 
-void G_StorageSite_ClearAlt(const struct entity *ent)
+void G_StorageSite_ClearAlt(uint32_t uid)
 {
-    struct ss_state *ss = ss_state_get(ent->uid);
+    struct ss_state *ss = ss_state_get(uid);
     assert(ss);
 
     if(ss->use_alt) {
@@ -947,7 +946,7 @@ void G_StorageSite_ClearAlt(const struct entity *ent)
         int amount;
 
         kh_foreach(ss->alt_capacity, key, amount, {
-            update_cap_delta(key, -amount, G_GetFactionID(ent->uid));
+            update_cap_delta(key, -amount, G_GetFactionID(uid));
         });
     }
 
@@ -955,24 +954,24 @@ void G_StorageSite_ClearAlt(const struct entity *ent)
     kh_clear(int, ss->alt_desired);
 }
 
-void G_StorageSite_ClearCurr(const struct entity *ent)
+void G_StorageSite_ClearCurr(uint32_t uid)
 {
-    struct ss_state *ss = ss_state_get(ent->uid);
+    struct ss_state *ss = ss_state_get(uid);
     assert(ss);
 
     const char *key;
     int amount;
 
     kh_foreach(ss->alt_capacity, key, amount, {
-        update_cap_delta(key, -amount, G_GetFactionID(ent->uid));
+        update_cap_delta(key, -amount, G_GetFactionID(uid));
     });
 
     kh_clear(int, ss->curr);
 }
 
-bool G_StorageSite_SetAltCapacity(const struct entity *ent, const char *rname, int max)
+bool G_StorageSite_SetAltCapacity(uint32_t uid, const char *rname, int max)
 {
-    struct ss_state *ss = ss_state_get(ent->uid);
+    struct ss_state *ss = ss_state_get(uid);
     assert(ss);
 
     int prev = 0;
@@ -980,7 +979,7 @@ bool G_StorageSite_SetAltCapacity(const struct entity *ent, const char *rname, i
     int delta = max - prev;
 
     if(ss->use_alt) {
-        update_cap_delta(rname, delta, G_GetFactionID(ent->uid));
+        update_cap_delta(rname, delta, G_GetFactionID(uid));
     }
 
     bool ret = ss_state_set_key(ss->alt_capacity, rname, max);
@@ -1255,9 +1254,7 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
         CHK_TRUE_RET(attr.type == TYPE_INT);
         uid = attr.val.as_int;
-
-        struct entity *ent = G_EntityForUID(uid);
-        CHK_TRUE_RET(ent);
+        CHK_TRUE_RET(G_EntityExists(attr.val.as_int));
 
         struct ss_state *ss = ss_state_get(uid);
         CHK_TRUE_RET(ss);
@@ -1281,7 +1278,7 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
             CHK_TRUE_RET(attr.type == TYPE_INT);
             int val = attr.val.as_int;
 
-            G_StorageSite_SetCapacity(ent, key, val);
+            G_StorageSite_SetCapacity(uid, key, val);
         }
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
@@ -1299,7 +1296,7 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
             CHK_TRUE_RET(attr.type == TYPE_INT);
             int val = attr.val.as_int;
 
-            G_StorageSite_SetCurr(ent, key, val);
+            G_StorageSite_SetCurr(uid, key, val);
         }
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));
@@ -1335,7 +1332,7 @@ bool G_StorageSite_LoadState(struct SDL_RWops *stream)
             CHK_TRUE_RET(attr.type == TYPE_INT);
             int val = attr.val.as_int;
 
-            G_StorageSite_SetAltCapacity(ent, key, val);
+            G_StorageSite_SetAltCapacity(uid, key, val);
         }
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));

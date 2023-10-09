@@ -36,6 +36,7 @@
 #include "public/audio.h"
 #include "al_effect.h"
 #include "al_assert.h"
+#include "../sched.h"
 #include "../main.h"
 #include "../event.h"
 #include "../camera.h"

@@ -41,6 +41,7 @@
 #include "movement.h"
 #include "position.h"
 #include "public/game.h"
+#include "../sched.h"
 #include "../entity.h"
 #include "../perf.h"
 #include "../event.h"
@@ -98,21 +99,17 @@ static struct builderstate *builderstate_get(uint32_t uid)
     return &kh_value(s_entity_state_table, k);
 }
 
-static void builderstate_set(const struct entity *ent, struct builderstate bs)
+static void builderstate_set(uint32_t uid, struct builderstate bs)
 {
     int ret;
-    assert(ent->flags & ENTITY_FLAG_BUILDER);
-
-    khiter_t k = kh_put(state, s_entity_state_table, ent->uid, &ret);
+    khiter_t k = kh_put(state, s_entity_state_table, uid, &ret);
     assert(ret != -1 && ret != 0);
     kh_value(s_entity_state_table, k) = bs;
 }
 
-static void builderstate_remove(const struct entity *ent)
+static void builderstate_remove(uint32_t uid)
 {
-    assert(ent->flags & ENTITY_FLAG_BUILDER);
-
-    khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
+    khiter_t k = kh_get(state, s_entity_state_table, uid);
     if(k != kh_end(s_entity_state_table))
         kh_del(state, s_entity_state_table, k);
 }
@@ -120,8 +117,6 @@ static void builderstate_remove(const struct entity *ent)
 static void on_motion_begin(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
-    struct entity *ent = G_EntityForUID(uid);
-
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
     assert(bs->state == STATE_BUILDING);
@@ -150,31 +145,28 @@ static void finish_building(struct builderstate *bs, uint32_t uid)
 static void on_build_anim_finished(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
-    const struct entity *ent = G_EntityForUID(uid);
-
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
 
-    struct entity *target = G_EntityForUID(bs->target_uid);
-    if(!target || (target->flags & ENTITY_FLAG_ZOMBIE)) {
+    if(!G_EntityExists(bs->target_uid)|| (G_FlagsGet(bs->target_uid) & ENTITY_FLAG_ZOMBIE)) {
         finish_building(bs, uid);
         return;
     }
 
-    if(!(target->flags & ENTITY_FLAG_COMBATABLE)) {
-        G_Building_Complete(target);
+    if(!(G_FlagsGet(bs->target_uid) & ENTITY_FLAG_COMBATABLE)) {
+        G_Building_Complete(bs->target_uid);
         finish_building(bs, uid);
         return;
     }
 
-    int max_hp = G_Combat_GetMaxHP(target);
-    int hp = MIN(G_Combat_GetCurrentHP(target) + bs->build_speed, max_hp);
+    int max_hp = G_Combat_GetMaxHP(bs->target_uid);
+    int hp = MIN(G_Combat_GetCurrentHP(bs->target_uid) + bs->build_speed, max_hp);
 
-    G_Combat_SetCurrentHP(target, hp);
-    G_Building_UpdateProgress(target, hp / (float)max_hp);
+    G_Combat_SetCurrentHP(bs->target_uid, hp);
+    G_Building_UpdateProgress(bs->target_uid, hp / (float)max_hp);
 
     if(hp == max_hp) {
-        G_Building_Complete(target);
+        G_Building_Complete(bs->target_uid);
         finish_building(bs, uid);
         return;
     }
@@ -183,29 +175,26 @@ static void on_build_anim_finished(void *user, void *event)
 static void on_motion_end(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
-    struct entity *ent = G_EntityForUID(uid);
-
     struct builderstate *bs = builderstate_get(uid);
     assert(bs);
 
-    if(!G_Move_Still(ent))
+    if(!G_Move_Still(uid))
         return;
 
     E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
     assert(bs->target_uid != UID_NONE);
-    struct entity *target = G_EntityForUID(bs->target_uid);
 
-    if(!target
-    || !M_NavObjAdjacent(s_map, ent, target)) {
+    if(!G_EntityExists(bs->target_uid)
+    || !M_NavObjAdjacent(s_map, uid, bs->target_uid)) {
         bs->state = STATE_NOT_BUILDING;
         bs->target_uid = UID_NONE;
         return; /* builder could not reach the building */
     }
 
-    if(!G_Building_IsFounded(target)) {
+    if(!G_Building_IsFounded(bs->target_uid)) {
 
-        if(G_Building_Unobstructed(target) && G_Building_Found(target, true)) {
-            E_Entity_Notify(EVENT_BUILDING_FOUNDED, target->uid, NULL, ES_ENGINE);
+        if(G_Building_Unobstructed(bs->target_uid) && G_Building_Found(bs->target_uid, true)) {
+            E_Entity_Notify(EVENT_BUILDING_FOUNDED, bs->target_uid, NULL, ES_ENGINE);
         }else{
             bs->state = STATE_NOT_BUILDING;
             bs->target_uid = UID_NONE;
@@ -214,15 +203,16 @@ static void on_motion_end(void *user, void *event)
         }
     }
 
-    if(!G_Building_IsSupplied(target)
-    && G_StorageSite_IsSaturated(target->uid)) {
-        G_Building_Supply(target);
+    if(!G_Building_IsSupplied(bs->target_uid)
+    && G_StorageSite_IsSaturated(bs->target_uid)) {
+        G_Building_Supply(bs->target_uid);
     }
 
-    if(!G_Building_IsSupplied(target)) {
-        if(ent->flags & ENTITY_FLAG_HARVESTER) {
-            G_Harvester_Stop(ent->uid);
-            G_Harvester_SupplyBuilding(ent, target);
+    if(!G_Building_IsSupplied(bs->target_uid)) {
+        uint32_t flags = G_FlagsGet(uid);
+        if(flags & ENTITY_FLAG_HARVESTER) {
+            G_Harvester_Stop(uid);
+            G_Harvester_SupplyBuilding(uid, bs->target_uid);
         }
         bs->state = STATE_NOT_BUILDING;
         return;
@@ -260,12 +250,12 @@ static void on_mousedown(void *user, void *event)
     if(right && G_CurrContextualAction() != CTX_ACTION_BUILD)
         return;
 
-    struct entity *target = G_Sel_GetHovered();
-    if(!target || !(target->flags & ENTITY_FLAG_BUILDING) || !G_Building_NeedsRepair(target))
+    uint32_t target = G_Sel_GetHovered();
+    if(!G_EntityExists(target)|| !(G_FlagsGet(target) & ENTITY_FLAG_BUILDING) || !G_Building_NeedsRepair(target))
         return;
 
     enum selection_type sel_type;
-    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+    const vec_entity_t *sel = G_Sel_Get(&sel_type);
     size_t nbuilding = 0;
 
     if(sel_type != SELECTION_TYPE_PLAYER)
@@ -273,14 +263,16 @@ static void on_mousedown(void *user, void *event)
 
     for(int i = 0; i < vec_size(sel); i++) {
 
-        struct entity *curr = vec_AT(sel, i);
-        if(!(curr->flags & ENTITY_FLAG_BUILDER))
+        uint32_t curr = vec_AT(sel, i);
+        uint32_t flags = G_FlagsGet(curr);
+
+        if(!(flags & ENTITY_FLAG_BUILDER))
             continue;
 
-        struct builderstate *bs = builderstate_get(curr->uid);
+        struct builderstate *bs = builderstate_get(curr);
         assert(bs);
 
-        finish_building(bs, curr->uid);
+        finish_building(bs, curr);
         G_StopEntity(curr, true);
         G_Builder_Build(curr, target);
         G_NotifyOrderIssued(curr);
@@ -314,64 +306,64 @@ void G_Builder_Shutdown(void)
     kh_destroy(state, s_entity_state_table);
 }
 
-bool G_Builder_Build(struct entity *builder, struct entity *building)
+bool G_Builder_Build(uint32_t uid, uint32_t building)
 {
-    struct builderstate *bs = builderstate_get(builder->uid);
+    struct builderstate *bs = builderstate_get(uid);
     assert(bs);
 
-    if(!(building->flags & ENTITY_FLAG_BUILDING))
+    if(!(G_FlagsGet(building) & ENTITY_FLAG_BUILDING))
         return false;
 
-    E_Entity_Unregister(EVENT_MOTION_END, builder->uid, on_motion_end);
-    E_Entity_Unregister(EVENT_MOTION_START, builder->uid, on_motion_begin);
-    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, builder->uid, on_build_anim_finished);
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
+    E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished);
 
     bs->state = STATE_MOVING_TO_TARGET;
-    bs->target_uid = building->uid;
-    E_Entity_Notify(EVENT_BUILD_TARGET_ACQUIRED, builder->uid, building, ES_ENGINE);
+    bs->target_uid = building;
+    E_Entity_Notify(EVENT_BUILD_TARGET_ACQUIRED, uid, (void*)((uintptr_t)building), ES_ENGINE);
 
-    if(M_NavObjAdjacent(s_map, builder, building)) {
-        on_motion_end((void*)((uintptr_t)builder->uid), NULL);
+    if(M_NavObjAdjacent(s_map, uid, building)) {
+        on_motion_end((void*)((uintptr_t)uid), NULL);
     }else{
-        G_Move_SetSurroundEntity(builder, building);
-        E_Entity_Register(EVENT_MOTION_END, builder->uid, on_motion_end, (void*)((uintptr_t)builder->uid), G_RUNNING);
+        G_Move_SetSurroundEntity(uid, building);
+        E_Entity_Register(EVENT_MOTION_END, uid, on_motion_end, (void*)((uintptr_t)uid), G_RUNNING);
     }
 
     return true;
 }
 
-void G_Builder_AddEntity(struct entity *ent)
+void G_Builder_AddEntity(uint32_t uid)
 {
-    assert(builderstate_get(ent->uid) == NULL);
-    assert(ent->flags & ENTITY_FLAG_BUILDER);
+    assert(builderstate_get(uid) == NULL);
 
-    builderstate_set(ent, (struct builderstate){
+    builderstate_set(uid, (struct builderstate){
         .state = STATE_NOT_BUILDING,
         .build_speed = 0.0,
         .target_uid = UID_NONE,
     });
 }
 
-void G_Builder_RemoveEntity(const struct entity *ent)
+void G_Builder_RemoveEntity(uint32_t uid)
 {
-    if(!(ent->flags & ENTITY_FLAG_BUILDER))
+    uint32_t flags = G_FlagsGet(uid);
+    if(!(flags & ENTITY_FLAG_BUILDER))
         return;
-    E_Entity_Unregister(EVENT_MOTION_END, ent->uid, on_motion_end);
-    E_Entity_Unregister(EVENT_MOTION_START, ent->uid, on_motion_begin);
-    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, ent->uid, on_build_anim_finished);
-    builderstate_remove(ent);
+    E_Entity_Unregister(EVENT_MOTION_END, uid, on_motion_end);
+    E_Entity_Unregister(EVENT_MOTION_START, uid, on_motion_begin);
+    E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_build_anim_finished);
+    builderstate_remove(uid);
 }
 
-void G_Builder_SetBuildSpeed(const struct entity *ent, int speed)
+void G_Builder_SetBuildSpeed(uint32_t uid, int speed)
 {
-    struct builderstate *bs = builderstate_get(ent->uid);
+    struct builderstate *bs = builderstate_get(uid);
     assert(bs);
     bs->build_speed = speed;
 }
 
-int G_Builder_GetBuildSpeed(const struct entity *ent)
+int G_Builder_GetBuildSpeed(uint32_t uid)
 {
-    struct builderstate *bs = builderstate_get(ent->uid);
+    struct builderstate *bs = builderstate_get(uid);
     assert(bs);
     return bs->build_speed;
 }
@@ -388,19 +380,21 @@ bool G_Builder_InTargetMode(void)
 
 bool G_Builder_HasRightClickAction(void)
 {
-    struct entity *hovered = G_Sel_GetHovered();
-    if(!hovered)
+    uint32_t hovered = G_Sel_GetHovered();
+    if(!G_EntityExists(hovered))
         return false;
 
     enum selection_type sel_type;
-    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+    const vec_entity_t *sel = G_Sel_Get(&sel_type);
 
     if(vec_size(sel) == 0)
         return false;
 
-    const struct entity *first = vec_AT(sel, 0);
-    if(first->flags & ENTITY_FLAG_BUILDER 
-    && hovered->flags & ENTITY_FLAG_BUILDING
+    uint32_t first = vec_AT(sel, 0);
+    uint32_t flags = G_FlagsGet(first);
+
+    if(flags & ENTITY_FLAG_BUILDER 
+    && G_FlagsGet(hovered) & ENTITY_FLAG_BUILDING
     && G_Building_IsFounded(hovered))
         return true;
 
@@ -409,8 +403,8 @@ bool G_Builder_HasRightClickAction(void)
 
 int G_Builder_CurrContextualAction(void)
 {
-    struct entity *hovered = G_Sel_GetHovered();
-    if(!hovered)
+    uint32_t hovered = G_Sel_GetHovered();
+    if(!G_EntityExists(hovered))
         return CTX_ACTION_NONE;
 
     if(M_MouseOverMinimap(s_map))
@@ -425,19 +419,19 @@ int G_Builder_CurrContextualAction(void)
         return CTX_ACTION_NONE;
 
     enum selection_type sel_type;
-    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+    const vec_entity_t *sel = G_Sel_Get(&sel_type);
 
     if(vec_size(sel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
         return CTX_ACTION_NONE;
 
-    const struct entity *first = vec_AT(sel, 0);
-    if(!(first->flags & ENTITY_FLAG_BUILDER))
+    uint32_t first = vec_AT(sel, 0);
+    if(!(G_FlagsGet(first) & ENTITY_FLAG_BUILDER))
         return CTX_ACTION_NONE;
 
-    if(G_GetFactionID(hovered->uid) != G_GetFactionID(first->uid))
+    if(G_GetFactionID(hovered) != G_GetFactionID(first))
         return false;
 
-    if(hovered->flags & ENTITY_FLAG_BUILDING
+    if(G_FlagsGet(hovered) & ENTITY_FLAG_BUILDING
     && G_Building_NeedsRepair(hovered))
         return CTX_ACTION_BUILD;
 

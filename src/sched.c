@@ -669,11 +669,13 @@ static void sched_task_init(struct task *task, int prio, uint32_t flags,
         SDL_AtomicSet(&task->future->status, FUTURE_INCOMPLETE);    
     }
 
+    PERF_PUSH("stack alloc");
     if(flags & TASK_BIG_STACK) {
         task->stackmem = malloc(BIG_STACK_SZ);
     }else{
         task->stackmem = s_stacks[task->tid - 1];
     }
+    PERF_POP();
 
     sched_init_ctx(task, code);
     sched_reactivate(task);

@@ -364,14 +364,14 @@ static bool engine_init(void)
 {
     g_main_thread_id = SDL_ThreadID();
 
-    vec_event_init(&s_prev_tick_events);
-    if(!vec_event_resize(&s_prev_tick_events, 8192))
-        return false;
-
     if(!Perf_Init()) {
         fprintf(stderr, "Failed to initialize performance module.\n");
-        goto fail_perf;
+        return false;;
     }
+
+    vec_event_init(&s_prev_tick_events);
+    if(!vec_event_resize(&s_prev_tick_events, 8192))
+        goto fail_resize;
 
     /* Initialize 'Settings' before any subsystem to allow all of them 
      * to register settings. */
@@ -575,7 +575,8 @@ fail_sdl:
     Settings_Shutdown();
 fail_settings:
     Perf_Shutdown();
-fail_perf:
+fail_resize:
+    vec_event_destroy(&s_prev_tick_events);
     return false; 
 }
 

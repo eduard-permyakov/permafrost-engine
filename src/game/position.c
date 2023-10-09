@@ -58,7 +58,7 @@
 QUADTREE_PROTOTYPES(static, ent, uint32_t)
 QUADTREE_IMPL(static, ent, uint32_t)
 
-KHASH_MAP_INIT_INT(pos, vec3_t)
+__KHASH_IMPL(pos,  extern, khint32_t, vec3_t, 1, kh_int_hash_func, kh_int_hash_equal)
 
 #define POSBUF_INIT_SIZE (16384)
 #define MAX_SEARCH_ENTS  (8192)
@@ -78,7 +78,7 @@ static qt_ent_t      s_postree;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
-static bool any_ent(const struct entity *ent, void *arg)
+static bool any_ent(uint32_t uid, void *arg)
 {
     return true;
 }
@@ -92,46 +92,46 @@ static bool uids_equal(const uint32_t *a, const uint32_t *b)
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
-bool G_Pos_Set(const struct entity *ent, vec3_t pos)
+bool G_Pos_Set(uint32_t uid, vec3_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    khiter_t k = kh_get(pos, s_postable, ent->uid);
+    khiter_t k = kh_get(pos, s_postable, uid);
     bool overwrite = (k != kh_end(s_postable));
-    float vrange = G_GetVisionRange(ent->uid);
+    float vrange = G_GetVisionRange(uid);
 
     if(overwrite) {
         vec3_t old_pos = kh_val(s_postable, k);
-        bool ret = qt_ent_delete(&s_postree, old_pos.x, old_pos.z, ent->uid);
+        bool ret = qt_ent_delete(&s_postree, old_pos.x, old_pos.z, uid);
         assert(ret);
 
-        G_Combat_RemoveRef(G_GetFactionID(ent->uid), (vec2_t){old_pos.x, old_pos.z});
-        G_Region_RemoveRef(ent->uid, (vec2_t){old_pos.x, old_pos.z});
-        G_Fog_RemoveVision((vec2_t){old_pos.x, old_pos.z}, G_GetFactionID(ent->uid), vrange);
+        G_Combat_RemoveRef(G_GetFactionID(uid), (vec2_t){old_pos.x, old_pos.z});
+        G_Region_RemoveRef(uid, (vec2_t){old_pos.x, old_pos.z});
+        G_Fog_RemoveVision((vec2_t){old_pos.x, old_pos.z}, G_GetFactionID(uid), vrange);
     }
 
-    if(!qt_ent_insert(&s_postree, pos.x, pos.z, ent->uid))
+    if(!qt_ent_insert(&s_postree, pos.x, pos.z, uid))
         return false;
 
     if(!overwrite) {
         int ret;
-        kh_put(pos, s_postable, ent->uid, &ret); 
+        kh_put(pos, s_postable, uid, &ret); 
         if(ret == -1) {
-            qt_ent_delete(&s_postree, pos.x, pos.z, ent->uid);
+            qt_ent_delete(&s_postree, pos.x, pos.z, uid);
             return false;
         }
-        k = kh_get(pos, s_postable, ent->uid);
+        k = kh_get(pos, s_postable, uid);
     }
 
     kh_val(s_postable, k) = pos;
     assert(kh_size(s_postable) == s_postree.nrecs);
 
-    G_Move_UpdatePos(ent, (vec2_t){pos.x, pos.z});
-    G_Combat_AddRef(G_GetFactionID(ent->uid), (vec2_t){pos.x, pos.z});
-    G_Region_AddRef(ent->uid, (vec2_t){pos.x, pos.z});
-    G_Building_UpdateBounds(ent);
-    G_Resource_UpdateBounds(ent);
-    G_Fog_AddVision((vec2_t){pos.x, pos.z}, G_GetFactionID(ent->uid), vrange);
+    G_Move_UpdatePos(uid, (vec2_t){pos.x, pos.z});
+    G_Combat_AddRef(G_GetFactionID(uid), (vec2_t){pos.x, pos.z});
+    G_Region_AddRef(uid, (vec2_t){pos.x, pos.z});
+    G_Building_UpdateBounds(uid);
+    G_Resource_UpdateBounds(uid);
+    G_Fog_AddVision((vec2_t){pos.x, pos.z}, G_GetFactionID(uid), vrange);
 
     return true; 
 }
@@ -202,7 +202,7 @@ void G_Pos_Shutdown(void)
     qt_ent_destroy(&s_postree);
 }
 
-int G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout)
+int G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout)
 {
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
@@ -211,14 +211,13 @@ int G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t m
     PERF_RETURN(ret);
 }
 
-int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, size_t maxout,
-                             bool (*predicate)(const struct entity *ent, void *arg), void *arg)
+int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout,
+                             bool (*predicate)(uint32_t ent, void *arg), void *arg)
 {
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
 
     STALLOC(uint32_t, ent_ids, maxout);
-    const khash_t(entity) *ents = G_GetAllEntsSet();
 
     int ntotal = qt_ent_inrange_rect(&s_postree, 
         xz_min.x, xz_max.x, xz_min.z, xz_max.z, ent_ids, maxout);
@@ -226,11 +225,7 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, 
 
     for(int i = 0; i < ntotal; i++) {
 
-        khiter_t k = kh_get(entity, ents, ent_ids[i]);
-        if(k == kh_end(ents))
-            continue;
-
-        struct entity *curr = kh_val(ents, k);
+        uint32_t curr = ent_ids[i];
         if(!predicate(curr, arg))
             continue;
 
@@ -241,7 +236,7 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, struct entity **out, 
     PERF_RETURN(ret);
 }
 
-int G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t maxout)
+int G_Pos_EntsInCircle(vec2_t xz_point, float range, uint32_t *out, size_t maxout)
 {
     PERF_ENTER();
 
@@ -249,27 +244,20 @@ int G_Pos_EntsInCircle(vec2_t xz_point, float range, struct entity **out, size_t
     PERF_RETURN(ret);
 }
 
-int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **out, size_t maxout,
-                               bool (*predicate)(const struct entity *ent, void *arg), void *arg)
+int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, uint32_t *out, size_t maxout,
+                               bool (*predicate)(uint32_t ent, void *arg), void *arg)
 {
     PERF_ENTER();
 
     STALLOC(uint32_t, ent_ids, maxout);
-    const khash_t(entity) *ents = G_GetAllEntsSet();
-    for(int i = 0; i < maxout; i++)
-        ent_ids[i] = (uint32_t)-1;
 
     int ntotal = qt_ent_inrange_circle(&s_postree, 
         xz_point.x, xz_point.z, range, ent_ids, maxout);
     int ret = 0;
 
     for(int i = 0; i < ntotal; i++) {
-        assert(ent_ids[i] != (uint32_t)-1);
-        khiter_t k = kh_get(entity, ents, ent_ids[i]);
-        if(k == kh_end(ents))
-            continue;
 
-        struct entity *curr = kh_val(ents, k);
+        uint32_t curr = ent_ids[i];
         if(!predicate(curr, arg))
             continue;
 
@@ -280,17 +268,15 @@ int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, struct entity **out
     PERF_RETURN(ret);
 }
 
-struct entity *G_Pos_NearestWithPred(vec2_t xz_point, 
-                                     bool (*predicate)(const struct entity *ent, void *arg), 
-                                     void *arg, float max_range)
+uint32_t G_Pos_NearestWithPred(vec2_t xz_point, 
+                               bool (*predicate)(uint32_t ent, void *arg), 
+                               void *arg, float max_range)
 {
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
     assert(Sched_UsingBigStack());
 
     uint32_t ent_ids[MAX_SEARCH_ENTS];
-    const khash_t(entity) *ents = G_GetAllEntsSet();
-
     const float qt_len = MAX(s_postree.xmax - s_postree.xmin, s_postree.ymax - s_postree.ymin);
     float len = (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE) / 8.0f;
 
@@ -302,19 +288,15 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
     while(len <= max_range) {
 
         float min_dist = FLT_MAX;
-        struct entity *ret = NULL;
+        uint32_t ret = NULL_UID;
 
         int num_cands = qt_ent_inrange_circle(&s_postree, xz_point.x, xz_point.z,
             len, ent_ids, ARR_SIZE(ent_ids));
 
         for(int i = 0; i < num_cands; i++) {
         
-            khiter_t k = kh_get(entity, ents, ent_ids[i]);
-            if(k == kh_end(ents))
-                continue;
-
-            struct entity *curr = kh_val(ents, k);
-            vec2_t delta, can_pos_xz = G_Pos_GetXZ(curr->uid);
+            uint32_t curr = ent_ids[i];
+            vec2_t delta, can_pos_xz = G_Pos_GetXZ(curr);
             PFM_Vec2_Sub(&xz_point, &can_pos_xz, &delta);
 
             if(PFM_Vec2_Len(&delta) < min_dist && predicate(curr, arg)) {
@@ -332,10 +314,10 @@ struct entity *G_Pos_NearestWithPred(vec2_t xz_point,
         len *= 2.0f; 
         len = MIN(max_range, len);
     }
-    PERF_RETURN(NULL);
+    PERF_RETURN(NULL_UID);
 }
 
-struct entity *G_Pos_Nearest(vec2_t xz_point)
+uint32_t G_Pos_Nearest(vec2_t xz_point)
 {
     ASSERT_IN_MAIN_THREAD();
 

@@ -543,7 +543,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
     STALLOC(struct HRVO, stat_vos, vec_size(&stat_neighbs));
 
     size_t n_hrvos = compute_all_hrvos(cpent, dyn_neighbs, dyn_hrvos);
-    size_t n_vos = compute_all_vos(cpent, stat_neighbs, stat_vos);
+    size_t n_vos = compute_all_vos(cpent, stat_neighbs, (struct VO*)stat_vos);
 
     assert(n_hrvos == vec_size(&dyn_neighbs));
     assert(n_vos == vec_size(&stat_neighbs));
@@ -554,7 +554,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
      */
     const size_t n_rays = (n_hrvos + n_vos) * 2;
     STALLOC(struct line_2d, rays, n_rays);
-    rays_repr(dyn_hrvos, n_hrvos, stat_vos, n_vos, rays);
+    rays_repr(dyn_hrvos, n_hrvos, (struct VO*)stat_vos, n_vos, rays);
 
     if(save_debug) {
 
@@ -625,7 +625,7 @@ out:
     return status;
 }
 
-static bool pentities_equal(struct entity *const *a, struct entity *const *b)
+static bool entities_equal(uint32_t *a, uint32_t *b)
 {
     return ((*a) == (*b));
 }
@@ -646,13 +646,12 @@ bool G_ClearPath_ShouldSaveDebug(uint32_t ent_uid)
         return false;
 
     enum selection_type seltype;
-    const vec_pentity_t *sel = G_Sel_Get(&seltype);
+    const vec_entity_t *sel = G_Sel_Get(&seltype);
 
     if(vec_size(sel) == 0)
         return false; 
 
-    struct entity *ent = G_EntityForUID(ent_uid);
-    return (0 == vec_pentity_indexof((vec_pentity_t*)sel, ent, pentities_equal));
+    return (0 == vec_entity_indexof((vec_entity_t*)sel, ent_uid, entities_equal));
 }
 
 void G_ClearPath_Init(const struct map *map)

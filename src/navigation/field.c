@@ -688,15 +688,15 @@ static void field_chunk_bounds(vec3_t map_pos, struct coord chunk_coord, struct 
     out->z_max = out->z_min + chunk_z_dim;
 }
 
-static bool field_enemy_ent(int faction_id, const struct entity *ent)
+static bool field_enemy_ent(int faction_id, uint32_t ent)
 {
-    if(G_GetFactionID(ent->uid) == faction_id)
+    if(G_GetFactionID(ent) == faction_id)
         return false;
-    if(!(ent->flags & ENTITY_FLAG_COMBATABLE))
+    if(!(G_FlagsGet(ent) & ENTITY_FLAG_COMBATABLE))
         return false;
 
     enum diplomacy_state ds;
-    bool result = G_GetDiplomacyState(faction_id, G_GetFactionID(ent->uid), &ds);
+    bool result = G_GetDiplomacyState(faction_id, G_GetFactionID(ent), &ds);
     assert(result);
 
     if(ds != DIPLOMACY_STATE_WAR)
@@ -939,7 +939,7 @@ static size_t field_enemies_initial_frontier(
     float xlen = bounds.x_max - bounds.x_min;
     float zlen = bounds.z_max - bounds.z_min;
 
-    STALLOC(struct entity*, ents, MAX_ENTS_PER_CHUNK);
+    STALLOC(uint32_t, ents, MAX_ENTS_PER_CHUNK);
     size_t num_ents = G_Pos_EntsInRect(
         (vec2_t){bounds.x_min - xlen/2.0f - SEARCH_BUFFER, bounds.z_min - zlen/2.0f - SEARCH_BUFFER},
         (vec2_t){bounds.x_max + xlen/2.0f + SEARCH_BUFFER, bounds.z_max + zlen/2.0f + SEARCH_BUFFER},
@@ -956,22 +956,22 @@ static size_t field_enemies_initial_frontier(
 
     for(int i = 0; i < num_ents; i++) {
     
-        struct entity *curr_enemy = ents[i];
+        uint32_t curr_enemy = ents[i];
         if(!field_enemy_ent(enemies->faction_id, curr_enemy))
             continue;
-        if(G_Combat_IsDying(curr_enemy->uid))
+        if(G_Combat_IsDying(curr_enemy))
             continue;
 
         struct tile_desc tds[512];
         int ntds;
-        if(curr_enemy->flags & ENTITY_FLAG_BUILDING) {
+        if(G_FlagsGet(curr_enemy) & ENTITY_FLAG_BUILDING) {
 
             struct obb obb;
             Entity_CurrentOBB(curr_enemy, &obb, true);
             ntds = M_Tile_AllUnderObj(enemies->map_pos, res, &obb, tds, ARR_SIZE(tds));
         }else{
-            ntds = M_Tile_AllUnderCircle(res, G_Pos_GetXZ(curr_enemy->uid), 
-                G_GetSelectionRadius(curr_enemy->uid), enemies->map_pos, tds, ARR_SIZE(tds));
+            ntds = M_Tile_AllUnderCircle(res, G_Pos_GetXZ(curr_enemy), 
+                G_GetSelectionRadius(curr_enemy), enemies->map_pos, tds, ARR_SIZE(tds));
         }
 
         if(layer >= NAV_LAYER_GROUND_3X3) {
@@ -1036,16 +1036,16 @@ static size_t field_entity_initial_frontier(
 
     int ntds;
     struct tile_desc tds[512];
-    const struct entity *ent = target->target;
+    uint32_t ent = target->target;
 
-    if(ent->flags & ENTITY_FLAG_BUILDING) {
+    if(G_FlagsGet(ent) & ENTITY_FLAG_BUILDING) {
 
         struct obb obb;
         Entity_CurrentOBB(ent, &obb, true);
         ntds = M_Tile_AllUnderObj(target->map_pos, res, &obb, tds, ARR_SIZE(tds));
     }else{
-        ntds = M_Tile_AllUnderCircle(res, G_Pos_GetXZ(ent->uid), 
-            G_GetSelectionRadius(ent->uid), target->map_pos, tds, ARR_SIZE(tds));
+        ntds = M_Tile_AllUnderCircle(res, G_Pos_GetXZ(ent), 
+            G_GetSelectionRadius(ent), target->map_pos, tds, ARR_SIZE(tds));
     }
 
     if(layer == NAV_LAYER_GROUND_3X3) {
@@ -1372,7 +1372,7 @@ ff_id_t N_FlowFieldID(struct coord chunk, struct field_target target, enum nav_l
     
         return (((uint64_t)layer)                          << 60)
              | (((uint64_t)target.type)                    << 56)
-             | (((uint64_t)target.ent.target->uid)         << 24)
+             | (((uint64_t)target.ent.target)              << 24)
              | (((uint64_t)chunk.r)                        <<  8)
              | (((uint64_t)chunk.c)                        <<  0);
 

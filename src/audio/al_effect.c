@@ -36,6 +36,7 @@
 #include "al_effect.h"
 #include "al_private.h"
 #include "al_assert.h"
+#include "../sched.h"
 #include "../pf_math.h"
 #include "../event.h"
 #include "../entity.h"

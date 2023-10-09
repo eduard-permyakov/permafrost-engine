@@ -44,7 +44,6 @@
 struct tile;
 struct map;
 struct obb;
-struct entity;
 struct map_resolution;
 struct camera;
 
@@ -171,7 +170,7 @@ void      N_RenderEnemySeekField(void *nav_private, const struct map *map,
  */
 void      N_RenderSurroundField(void *nav_private, const struct map *map, 
                                 mat4x4_t *chunk_model, int chunk_r, int chunk_c, 
-                                enum nav_layer layer, const struct entity *ent);
+                                enum nav_layer layer, uint32_t ent);
 
 /* ------------------------------------------------------------------------
  * Debug rendering to show which navigation tiles are currently occupied
@@ -310,14 +309,14 @@ vec2_t    N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private,
  * ------------------------------------------------------------------------
  */
 vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_layer layer, 
-                                 vec3_t map_pos, const struct entity *ent, int faction_id);
+                                 vec3_t map_pos, const uint32_t ent, int faction_id);
 
 /* ------------------------------------------------------------------------
  * Returns true if the particular entity is in direct line of sight of the 
  * specified position.
  * ------------------------------------------------------------------------
  */
-bool      N_HasEntityLOS(vec2_t curr_pos, const struct entity *ent, 
+bool      N_HasEntityLOS(vec2_t curr_pos, const uint32_t ent, 
                          void *nav_private, enum nav_layer layer, 
                          vec3_t map_pos);
 
@@ -428,7 +427,7 @@ bool      N_IsAdjacentToImpassable(void *nav_private, enum nav_layer layer,
  * ------------------------------------------------------------------------
  */
 bool      N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, 
-                                const struct entity *ent, const struct obb *stat);
+                                uint32_t ent, const struct obb *stat);
 
 /* ------------------------------------------------------------------------
  * Returns true if the tiles under the entity selection cirlce overlap or 
@@ -436,7 +435,7 @@ bool      N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos,
  * ------------------------------------------------------------------------
  */
 bool      N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, 
-                                 const struct entity *ent, vec2_t xz_pos, 
+                                 const uint32_t ent, vec2_t xz_pos, 
                                  float radius);
 
 /* ------------------------------------------------------------------------

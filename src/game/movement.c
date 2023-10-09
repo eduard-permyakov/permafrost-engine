@@ -256,7 +256,7 @@ static bool                    s_attack_on_lclick = false;
 static bool                    s_move_on_lclick = false;
 static bool                    s_click_move_enabled = true;
 
-static vec_pentity_t           s_move_markers;
+static vec_entity_t            s_move_markers;
 static vec_flock_t             s_flocks;
 static khash_t(state)         *s_entity_state_table;
 
@@ -283,43 +283,42 @@ static const char *s_state_str[] = {
 /* The returned pointer is guaranteed to be valid to write to for
  * so long as we don't add anything to the table. At that point, there
  * is a case that a 'realloc' might take place. */
-static struct movestate *movestate_get(const struct entity *ent)
+static struct movestate *movestate_get(uint32_t uid)
 {
-    khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
+    khiter_t k = kh_get(state, s_entity_state_table, uid);
     if(k == kh_end(s_entity_state_table))
         return NULL;
     return &kh_value(s_entity_state_table, k);
 }
 
-static void flock_try_remove(struct flock *flock, const struct entity *ent)
+static void flock_try_remove(struct flock *flock, uint32_t uid)
 {
     khiter_t k;
-    if((k = kh_get(entity, flock->ents, ent->uid)) != kh_end(flock->ents))
+    if((k = kh_get(entity, flock->ents, uid)) != kh_end(flock->ents))
         kh_del(entity, flock->ents, k);
 }
 
-static void flock_add(struct flock *flock, const struct entity *ent)
+static void flock_add(struct flock *flock, uint32_t uid)
 {
     int ret;
-    khiter_t k = kh_put(entity, flock->ents, ent->uid, &ret);
+    khiter_t k = kh_put(entity, flock->ents, uid, &ret);
     assert(ret != -1 && ret != 0);
-    kh_value(flock->ents, k) = (struct entity*)ent;
 }
 
-static bool flock_contains(const struct flock *flock, const struct entity *ent)
+static bool flock_contains(const struct flock *flock, uint32_t uid)
 {
-    khiter_t k = kh_get(entity, flock->ents, ent->uid);
+    khiter_t k = kh_get(entity, flock->ents, uid);
     if(k != kh_end(flock->ents))
         return true;
     return false;
 }
 
-static struct flock *flock_for_ent(const struct entity *ent)
+static struct flock *flock_for_ent(uint32_t uid)
 {
     for(int i = 0; i < vec_size(&s_flocks); i++) {
 
         struct flock *curr_flock = &vec_AT(&s_flocks, i);            
-        if(flock_contains(curr_flock, ent))
+        if(flock_contains(curr_flock, uid))
             return curr_flock;
     }
     return NULL;
@@ -351,42 +350,42 @@ static struct flock *flock_for_dest(dest_id_t id)
     return NULL;
 }
 
-static void entity_block(const struct entity *ent)
+static void entity_block(uint32_t uid)
 {
-    M_NavBlockersIncref(G_Pos_GetXZ(ent->uid), G_GetSelectionRadius(ent->uid), G_GetFactionID(ent->uid), s_map);
+    M_NavBlockersIncref(G_Pos_GetXZ(uid), G_GetSelectionRadius(uid), G_GetFactionID(uid), s_map);
 
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(!ms->blocking);
 
     ms->blocking = true;
-    ms->last_stop_pos = G_Pos_GetXZ(ent->uid);
-    ms->last_stop_radius = G_GetSelectionRadius(ent->uid);
+    ms->last_stop_pos = G_Pos_GetXZ(uid);
+    ms->last_stop_radius = G_GetSelectionRadius(uid);
 }
 
-static void entity_unblock(const struct entity *ent)
+static void entity_unblock(uint32_t uid)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms->blocking);
 
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, G_GetFactionID(ent->uid), s_map);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, G_GetFactionID(uid), s_map);
     ms->blocking = false;
 }
 
-static bool stationary(const struct entity *ent)
+static bool stationary(uint32_t uid)
 {
-    if(!(ent->flags & ENTITY_FLAG_MOVABLE))
-        return true;
+    struct movestate *ms = movestate_get(uid);
+    if(!ms)
+        return false;
 
-    struct movestate *ms = movestate_get(ent);
     if(ms->max_speed == 0.0f)
         return true;
 
     return false;
 }
 
-static bool entities_equal(struct entity **a, struct entity **b)
+static bool entities_equal(uint32_t *a, uint32_t *b)
 {
-    return ((*a)->uid == (*b)->uid);
+    return (*a == *b);
 }
 
 static void vec2_truncate(vec2_t *inout, float max_len)
@@ -403,15 +402,16 @@ static bool ent_still(const struct movestate *ms)
     return (ms->state == STATE_ARRIVED || ms->state == STATE_WAITING);
 }
 
-static void entity_finish_moving(const struct entity *ent, enum arrival_state newstate)
+static void entity_finish_moving(uint32_t uid, enum arrival_state newstate)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(!ent_still(ms));
+    uint32_t flags = G_FlagsGet(uid);
 
-    E_Entity_Notify(EVENT_MOTION_END, ent->uid, NULL, ES_ENGINE);
-    if(ent->flags & ENTITY_FLAG_COMBATABLE
+    E_Entity_Notify(EVENT_MOTION_END, uid, NULL, ES_ENGINE);
+    if(flags & ENTITY_FLAG_COMBATABLE
     && (ms->state != STATE_TURNING)) {
-        G_Combat_SetStance(ent, COMBAT_STANCE_AGGRESSIVE);
+        G_Combat_SetStance(uid, COMBAT_STANCE_AGGRESSIVE);
     }
 
     if(newstate == STATE_WAITING) {
@@ -423,20 +423,19 @@ static void entity_finish_moving(const struct entity *ent, enum arrival_state ne
     ms->velocity = (vec2_t){0.0f, 0.0f};
     ms->vnew = (vec2_t){0.0f, 0.0f};
 
-    entity_block(ent);
+    entity_block(uid);
     assert(ent_still(ms));
 }
 
 static void on_marker_anim_finish(void *user, void *event)
 {
-    struct entity *ent = user;
-    assert(ent);
+    uint32_t ent = (uintptr_t)user;
 
-    int idx = vec_pentity_indexof(&s_move_markers, ent, entities_equal);
+    int idx = vec_entity_indexof(&s_move_markers, ent, entities_equal);
     assert(idx != -1);
-    vec_pentity_del(&s_move_markers, idx);
+    vec_entity_del(&s_move_markers, idx);
 
-    E_Entity_Unregister(EVENT_ANIM_FINISHED, ent->uid, on_marker_anim_finish);
+    E_Entity_Unregister(EVENT_ANIM_FINISHED, ent, on_marker_anim_finish);
     G_RemoveEntity(ent);
     G_FreeEntity(ent);
 }
@@ -453,7 +452,7 @@ static bool same_chunk_as_any_in_set(struct tile_desc desc, const struct tile_de
     return false;
 }
 
-static void remove_from_flocks(const struct entity *ent)
+static void remove_from_flocks(uint32_t uid)
 {
     /* Remove any flocks which may have become empty. Iterate vector in backwards order 
      * so that we can delete while iterating, since the last element in the vector takes
@@ -462,62 +461,62 @@ static void remove_from_flocks(const struct entity *ent)
     for(int i = vec_size(&s_flocks)-1; i >= 0; i--) {
 
         struct flock *curr_flock = &vec_AT(&s_flocks, i);
-        flock_try_remove(curr_flock, ent);
+        flock_try_remove(curr_flock, uid);
 
         if(kh_size(curr_flock->ents) == 0) {
             kh_destroy(entity, curr_flock->ents);
             vec_flock_del(&s_flocks, i);
         }
     }
-    assert(NULL == flock_for_ent(ent));
+    assert(NULL == flock_for_ent(uid));
 }
 
-static void filter_selection_pathable(const vec_pentity_t *in_sel, vec_pentity_t *out_sel)
+static void filter_selection_pathable(const vec_entity_t *in_sel, vec_entity_t *out_sel)
 {
-    vec_pentity_init(out_sel);
+    vec_entity_init(out_sel);
     for(int i = 0; i < vec_size(in_sel); i++) {
 
-        struct entity *curr = vec_AT(in_sel, i);
-        vec2_t xz_pos = G_Pos_GetXZ(curr->uid);
+        uint32_t curr = vec_AT(in_sel, i);
+        vec2_t xz_pos = G_Pos_GetXZ(curr);
 
         if(!M_NavPositionPathable(s_map, Entity_NavLayer(curr), xz_pos))
             continue;
-        vec_pentity_push(out_sel, curr);
+        vec_entity_push(out_sel, curr);
     }
 }
 
-static void split_into_layers(const vec_pentity_t *sel, vec_pentity_t layer_flocks[])
+static void split_into_layers(const vec_entity_t *sel, vec_entity_t layer_flocks[])
 {
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
-        vec_pentity_init(layer_flocks + i);
+        vec_entity_init(layer_flocks + i);
     }
 
     for(int i = 0; i < vec_size(sel); i++) {
 
-        struct entity *curr = vec_AT(sel, i);
+        uint32_t curr = vec_AT(sel, i);
         enum nav_layer layer = Entity_NavLayer(curr);
-        vec_pentity_push(&layer_flocks[layer], curr);
+        vec_entity_push(&layer_flocks[layer], curr);
     }
 }
 
-static bool make_flock(const vec_pentity_t *units, vec2_t target_xz, enum nav_layer layer, bool attack)
+static bool make_flock(const vec_entity_t *units, vec2_t target_xz, enum nav_layer layer, bool attack)
 {
     if(vec_size(units) == 0)
         return true;
 
     bool ret;
-    const struct entity *first = vec_AT(units, 0);
+    uint32_t first = vec_AT(units, 0);
 
     /* The following won't be optimal when the entities in the unitsection are on different 
      * 'islands'. Handling that case is not a top priority. 
      */
-    vec2_t first_ent_pos_xz = G_Pos_GetXZ(first->uid);
+    vec2_t first_ent_pos_xz = G_Pos_GetXZ(first);
     target_xz = M_NavClosestReachableDest(s_map, layer, first_ent_pos_xz, target_xz);
 
     /* First remove the entities in the unitsection from any active flocks */
     for(int i = 0; i < vec_size(units); i++) {
 
-        const struct entity *curr_ent = vec_AT(units, i);
+        uint32_t curr_ent = vec_AT(units, i);
         if(stationary(curr_ent))
             continue;
         remove_from_flocks(curr_ent);
@@ -533,7 +532,7 @@ static bool make_flock(const vec_pentity_t *units, vec2_t target_xz, enum nav_la
 
     for(int i = 0; i < vec_size(units); i++) {
 
-        const struct entity *curr_ent = vec_AT(units, i);
+        uint32_t curr_ent = vec_AT(units, i);
         if(stationary(curr_ent))
             continue;
 
@@ -542,7 +541,7 @@ static bool make_flock(const vec_pentity_t *units, vec2_t target_xz, enum nav_la
 
         if(ent_still(ms)) {
             entity_unblock(curr_ent); 
-            E_Entity_Notify(EVENT_MOTION_START, curr_ent->uid, NULL, ES_ENGINE);
+            E_Entity_Notify(EVENT_MOTION_START, curr_ent, NULL, ES_ENGINE);
         }
 
         flock_add(&new_flock, curr_ent);
@@ -552,7 +551,7 @@ static bool make_flock(const vec_pentity_t *units, vec2_t target_xz, enum nav_la
     /* The flow fields will be computed on-demand during the next movement update tick */
     new_flock.target_xz = target_xz;
     if(attack) {
-        new_flock.dest_id = M_NavDestIDForPosAttacking(s_map, target_xz, layer, G_GetFactionID(first->uid));
+        new_flock.dest_id = M_NavDestIDForPosAttacking(s_map, target_xz, layer, G_GetFactionID(first));
     }else{
         new_flock.dest_id = M_NavDestIDForPos(s_map, target_xz, layer);
     }
@@ -566,8 +565,8 @@ static bool make_flock(const vec_pentity_t *units, vec2_t target_xz, enum nav_la
     struct flock *merge_flock = flock_for_dest(new_flock.dest_id);
     if(merge_flock) {
 
-        struct entity *curr;
-        kh_foreach(new_flock.ents, (uint32_t){0}, curr, { flock_add(merge_flock, curr); });
+        uint32_t curr;
+        kh_foreach_key(new_flock.ents, curr, { flock_add(merge_flock, curr); });
         kh_destroy(entity, new_flock.ents);
     
     }else{
@@ -579,45 +578,41 @@ static bool make_flock(const vec_pentity_t *units, vec2_t target_xz, enum nav_la
     return true;
 }
 
-static void make_flocks(const vec_pentity_t *sel, vec2_t target_xz, bool attack)
+static void make_flocks(const vec_entity_t *sel, vec2_t target_xz, bool attack)
 {
-    vec_pentity_t fsel;
+    vec_entity_t fsel;
     filter_selection_pathable(sel, &fsel);
 
     if(vec_size(&fsel) == 0)
         return;
 
-    vec_pentity_t layer_flocks[NAV_LAYER_MAX];
+    vec_entity_t layer_flocks[NAV_LAYER_MAX];
     split_into_layers(&fsel, layer_flocks);
-    vec_pentity_destroy(&fsel);
+    vec_entity_destroy(&fsel);
 
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         make_flock(layer_flocks + i, target_xz, i, attack);
-        vec_pentity_destroy(layer_flocks + i);
+        vec_entity_destroy(layer_flocks + i);
     }
 }
 
-size_t adjacent_flock_members(const struct entity *ent, const struct flock *flock, 
-                              struct entity *out[])
+size_t adjacent_flock_members(uint32_t uid, const struct flock *flock, 
+                              uint32_t out[])
 {
-    vec2_t ent_xz_pos = G_Pos_GetXZ(ent->uid);
+    vec2_t ent_xz_pos = G_Pos_GetXZ(uid);
     size_t ret = 0;
+    uint32_t curr;
 
-    uint32_t key;
-    struct entity *curr;
-    (void)key;
+    kh_foreach_key(flock->ents, curr, {
 
-    kh_foreach(flock->ents, key, curr, {
-
-        if(curr == ent)
+        if(curr == uid)
             continue;
 
         vec2_t diff;
-
-        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
+        vec2_t curr_xz_pos = G_Pos_GetXZ(curr);
         PFM_Vec2_Sub(&ent_xz_pos, &curr_xz_pos, &diff);
 
-        if(PFM_Vec2_Len(&diff) <= G_GetSelectionRadius(ent->uid) + G_GetSelectionRadius(curr->uid) + ADJACENCY_SEP_DIST)
+        if(PFM_Vec2_Len(&diff) <= G_GetSelectionRadius(uid) + G_GetSelectionRadius(curr) + ADJACENCY_SEP_DIST)
             out[ret++] = curr;  
     });
     return ret;
@@ -625,20 +620,21 @@ size_t adjacent_flock_members(const struct entity *ent, const struct flock *floc
 
 static void move_marker_add(vec3_t pos, bool attack)
 {
+    uint32_t flags;
     const uint32_t uid = Entity_NewUID();
-    struct entity *ent = attack ? AL_EntityFromPFObj("assets/models/arrow", "arrow-red.pfobj", "__move_marker__", uid) 
-                                : AL_EntityFromPFObj("assets/models/arrow", "arrow-green.pfobj", "__move_marker__", uid);
-    if(!ent)
+    bool loaded = attack ? AL_EntityFromPFObj("assets/models/arrow", "arrow-red.pfobj", "__move_marker__", uid, &flags) 
+                         : AL_EntityFromPFObj("assets/models/arrow", "arrow-green.pfobj", "__move_marker__", uid, &flags);
+    if(!loaded)
         return;
 
-    ent->flags |= ENTITY_FLAG_MARKER;
-    G_AddEntity(ent, pos);
+    flags |= ENTITY_FLAG_MARKER;
+    G_AddEntity(uid, flags, pos);
 
-    Entity_SetScale(ent->uid, (vec3_t){2.0f, 2.0f, 2.0f});
-    E_Entity_Register(EVENT_ANIM_FINISHED, ent->uid, on_marker_anim_finish, ent, G_RUNNING);
-    A_SetActiveClip(ent->uid, "Converge", ANIM_MODE_ONCE, 48);
+    Entity_SetScale(uid, (vec3_t){2.0f, 2.0f, 2.0f});
+    E_Entity_Register(EVENT_ANIM_FINISHED, uid, on_marker_anim_finish, (uintptr_t)uid, G_RUNNING);
+    A_SetActiveClip(uid, "Converge", ANIM_MODE_ONCE, 48);
 
-    vec_pentity_push(&s_move_markers, ent);
+    vec_entity_push(&s_move_markers, uid);
 }
 
 static void on_mousedown(void *user, void *event)
@@ -680,7 +676,7 @@ static void on_mousedown(void *user, void *event)
         return;
 
     enum selection_type sel_type;
-    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+    const vec_entity_t *sel = G_Sel_Get(&sel_type);
     size_t nmoved = 0;
 
     if(vec_size(sel) == 0 || sel_type != SELECTION_TYPE_PLAYER)
@@ -688,16 +684,17 @@ static void on_mousedown(void *user, void *event)
 
     for(int i = 0; i < vec_size(sel); i++) {
 
-        const struct entity *curr = vec_AT(sel, i);
-        if(!(curr->flags & ENTITY_FLAG_MOVABLE))
+        uint32_t curr = vec_AT(sel, i);
+        uint32_t flags = G_FlagsGet(curr);
+        if(!(flags & ENTITY_FLAG_MOVABLE))
             continue;
 
         G_StopEntity(curr, false);
-        E_Entity_Notify(EVENT_MOVE_ISSUED, curr->uid, NULL, ES_ENGINE);
+        E_Entity_Notify(EVENT_MOVE_ISSUED, curr, NULL, ES_ENGINE);
         G_NotifyOrderIssued(curr);
         nmoved++;
 
-        if(curr->flags & ENTITY_FLAG_COMBATABLE) {
+        if(flags & ENTITY_FLAG_COMBATABLE) {
             G_Combat_SetStance(curr, attack ? COMBAT_STANCE_AGGRESSIVE : COMBAT_STANCE_NO_ENGAGEMENT);
         }
     }
@@ -731,11 +728,11 @@ static void on_render_3d(void *user, void *event)
     assert(status == SS_OKAY);
 
     enum selection_type seltype;
-    const vec_pentity_t *sel = G_Sel_Get(&seltype);
+    const vec_entity_t *sel = G_Sel_Get(&seltype);
 
     if(setting.as_bool && vec_size(sel) > 0) {
     
-        const struct entity *ent = vec_AT(sel, 0);
+        uint32_t ent = vec_AT(sel, 0);
         struct movestate *ms = movestate_get(ent);
         if(ms) {
 
@@ -756,12 +753,11 @@ static void on_render_3d(void *user, void *event)
                 break;
             case STATE_SURROUND_ENTITY: {
 
-                struct entity *target = G_EntityForUID(ms->surround_target_uid);
-                if(!target)
+                if(!G_EntityExists(ms->surround_target_uid))
                     break;
 
                 if(ms->using_surround_field) {
-                    M_NavRenderVisibleSurroundField(s_map, cam, Entity_NavLayer(ent), target);
+                    M_NavRenderVisibleSurroundField(s_map, cam, Entity_NavLayer(ent), ms->surround_target_uid);
                     UI_DrawText("(Surround Field)", (struct rect){5,75,450,50}, text_color);
                 }else{
                     M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
@@ -774,7 +770,7 @@ static void on_render_3d(void *user, void *event)
             case STATE_TURNING:
                 break;
             case STATE_SEEK_ENEMIES:
-                M_NavRenderVisibleEnemySeekField(s_map, cam, Entity_NavLayer(ent), G_GetFactionID(ent->uid));
+                M_NavRenderVisibleEnemySeekField(s_map, cam, Entity_NavLayer(ent), G_GetFactionID(ent));
                 break;
             default: assert(0);
             }
@@ -841,23 +837,22 @@ static quat_t dir_quat_from_velocity(vec2_t velocity)
     };
 }
 
-static vec2_t ent_desired_velocity(const struct entity *ent)
+static vec2_t ent_desired_velocity(uint32_t uid)
 {
-    struct movestate *ms = movestate_get(ent);
-    vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
-    struct flock *fl = flock_for_ent(ent);
+    struct movestate *ms = movestate_get(uid);
+    vec2_t pos_xz = G_Pos_GetXZ(uid);
+    struct flock *fl = flock_for_ent(uid);
 
     switch(ms->state) {
     case STATE_TURNING:
         return (vec2_t){0.0f, 0.0f};
 
     case STATE_SEEK_ENEMIES: 
-        return M_NavDesiredEnemySeekVelocity(s_map, Entity_NavLayer(ent), pos_xz, G_GetFactionID(ent->uid));
+        return M_NavDesiredEnemySeekVelocity(s_map, Entity_NavLayer(uid), pos_xz, G_GetFactionID(uid));
 
     case STATE_SURROUND_ENTITY: {
 
-        const struct entity *target = G_EntityForUID(ms->surround_target_uid);
-        if(!target) {
+        if(!G_EntityExists(ms->surround_target_uid)) {
             return M_NavDesiredPointSeekVelocity(s_map, fl->dest_id, pos_xz, fl->target_xz);
         }
 
@@ -876,8 +871,8 @@ static vec2_t ent_desired_velocity(const struct entity *ent)
         }
 
         if(ms->using_surround_field) {
-            return M_NavDesiredSurroundVelocity(s_map, Entity_NavLayer(ent), 
-                pos_xz, target, G_GetFactionID(ent->uid));
+            return M_NavDesiredSurroundVelocity(s_map, Entity_NavLayer(uid), 
+                pos_xz, ms->surround_target_uid, G_GetFactionID(uid));
         }else{
             return M_NavDesiredPointSeekVelocity(s_map, fl->dest_id, pos_xz, fl->target_xz);
         }
@@ -891,13 +886,13 @@ static vec2_t ent_desired_velocity(const struct entity *ent)
 
 /* Seek behaviour makes the entity target and approach a particular destination point.
  */
-static vec2_t seek_force(const struct entity *ent, vec2_t target_xz)
+static vec2_t seek_force(uint32_t uid, vec2_t target_xz)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
     vec2_t ret, desired_velocity;
-    vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
+    vec2_t pos_xz = G_Pos_GetXZ(uid);
 
     PFM_Vec2_Sub(&target_xz, &pos_xz, &desired_velocity);
     PFM_Vec2_Normal(&desired_velocity, &desired_velocity);
@@ -913,13 +908,13 @@ static vec2_t seek_force(const struct entity *ent, vec2_t target_xz)
  * When not within line of sight of the destination, this will steer the entity along the 
  * flow field.
  */
-static vec2_t arrive_force_point(const struct entity *ent, vec2_t target_xz, bool has_dest_los)
+static vec2_t arrive_force_point(uint32_t uid, vec2_t target_xz, bool has_dest_los)
 {
     vec2_t ret, desired_velocity;
-    vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
+    vec2_t pos_xz = G_Pos_GetXZ(uid);
     float distance;
 
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
     if(has_dest_los) {
@@ -943,13 +938,13 @@ static vec2_t arrive_force_point(const struct entity *ent, vec2_t target_xz, boo
     return ret;
 }
 
-static vec2_t arrive_force_enemies(const struct entity *ent)
+static vec2_t arrive_force_enemies(uint32_t uid)
 {
     vec2_t ret, desired_velocity;
-    vec2_t pos_xz = G_Pos_GetXZ(ent->uid);
+    vec2_t pos_xz = G_Pos_GetXZ(uid);
     float distance;
 
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
     PFM_Vec2_Scale(&ms->vdes, ms->max_speed / MOVE_TICK_RES, &desired_velocity);
@@ -960,28 +955,25 @@ static vec2_t arrive_force_enemies(const struct entity *ent)
 
 /* Alignment is a behaviour that causes a particular agent to line up with agents close by.
  */
-static vec2_t alignment_force(const struct entity *ent, const struct flock *flock)
+static vec2_t alignment_force(uint32_t uid, const struct flock *flock)
 {
     vec2_t ret = (vec2_t){0.0f};
     size_t neighbour_count = 0;
 
-    uint32_t key;
-    struct entity *curr;
-    (void)key;
+    uint32_t curr;
+    kh_foreach_key(flock->ents, curr, {
 
-    kh_foreach(flock->ents, key, curr, {
-
-        if(curr == ent)
+        if(curr == uid)
             continue;
 
         vec2_t diff;
-        vec2_t ent_xz_pos = G_Pos_GetXZ(ent->uid);
-        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
+        vec2_t ent_xz_pos = G_Pos_GetXZ(uid);
+        vec2_t curr_xz_pos = G_Pos_GetXZ(curr);
 
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
         if(PFM_Vec2_Len(&diff) < ALIGN_NEIGHBOUR_RADIUS) {
 
-            struct movestate *ms = movestate_get(ent);
+            struct movestate *ms = movestate_get(uid);
             assert(ms);
 
             if(PFM_Vec2_Len(&ms->velocity) < EPSILON)
@@ -995,7 +987,7 @@ static vec2_t alignment_force(const struct entity *ent, const struct flock *floc
     if(0 == neighbour_count)
         return (vec2_t){0.0f};
 
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
     PFM_Vec2_Scale(&ret, 1.0f / neighbour_count, &ret);
@@ -1006,23 +998,20 @@ static vec2_t alignment_force(const struct entity *ent, const struct flock *floc
 
 /* Cohesion is a behaviour that causes agents to steer towards the center of mass of nearby agents.
  */
-static vec2_t cohesion_force(const struct entity *ent, const struct flock *flock)
+static vec2_t cohesion_force(uint32_t uid, const struct flock *flock)
 {
     vec2_t COM = (vec2_t){0.0f};
     size_t neighbour_count = 0;
-    vec2_t ent_xz_pos = G_Pos_GetXZ(ent->uid);
+    vec2_t ent_xz_pos = G_Pos_GetXZ(uid);
 
-    uint32_t key;
-    struct entity *curr;
-    (void)key;
+    uint32_t curr;
+    kh_foreach_key(flock->ents, curr, {
 
-    kh_foreach(flock->ents, key, curr, {
-
-        if(curr == ent)
+        if(curr == uid)
             continue;
 
         vec2_t diff;
-        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
+        vec2_t curr_xz_pos = G_Pos_GetXZ(curr);
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
         float t = (PFM_Vec2_Len(&diff) - COHESION_NEIGHBOUR_RADIUS*0.75) / COHESION_NEIGHBOUR_RADIUS;
@@ -1045,26 +1034,27 @@ static vec2_t cohesion_force(const struct entity *ent, const struct flock *flock
 
 /* Separation is a behaviour that causes agents to steer away from nearby agents.
  */
-static vec2_t separation_force(const struct entity *ent, float buffer_dist)
+static vec2_t separation_force(uint32_t uid, float buffer_dist)
 {
     vec2_t ret = (vec2_t){0.0f};
-    struct entity *near_ents[128];
-    int num_near = G_Pos_EntsInCircle(G_Pos_GetXZ(ent->uid), 
+    uint32_t near_ents[128];
+    int num_near = G_Pos_EntsInCircle(G_Pos_GetXZ(uid), 
         SEPARATION_NEIGHB_RADIUS, near_ents, ARR_SIZE(near_ents));
 
     for(int i = 0; i < num_near; i++) {
 
-        struct entity *curr = near_ents[i];
-        if(curr == ent)
+        uint32_t curr = near_ents[i];
+        uint32_t flags = G_FlagsGet(curr);
+        if(curr == uid)
             continue;
-        if(!(curr->flags & ENTITY_FLAG_MOVABLE))
+        if(!(flags & ENTITY_FLAG_MOVABLE))
             continue;
 
         vec2_t diff;
-        vec2_t ent_xz_pos = G_Pos_GetXZ(ent->uid);
-        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
+        vec2_t ent_xz_pos = G_Pos_GetXZ(uid);
+        vec2_t curr_xz_pos = G_Pos_GetXZ(curr);
 
-        float radius = G_GetSelectionRadius(ent->uid) + G_GetSelectionRadius(curr->uid) + buffer_dist;
+        float radius = G_GetSelectionRadius(uid) + G_GetSelectionRadius(curr) + buffer_dist;
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
         /* Exponential decay with y=1 when diff = radius*0.85 
@@ -1086,15 +1076,15 @@ static vec2_t separation_force(const struct entity *ent, float buffer_dist)
     return ret;
 }
 
-static vec2_t point_seek_total_force(const struct entity *ent, const struct flock *flock, 
+static vec2_t point_seek_total_force(uint32_t uid, const struct flock *flock, 
                                      bool has_dest_los)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    vec2_t arrive = arrive_force_point(ent, flock->target_xz, has_dest_los);
-    vec2_t cohesion = cohesion_force(ent, flock);
-    vec2_t separation = separation_force(ent, SEPARATION_BUFFER_DIST);
+    vec2_t arrive = arrive_force_point(uid, flock->target_xz, has_dest_los);
+    vec2_t cohesion = cohesion_force(uid, flock);
+    vec2_t separation = separation_force(uid, SEPARATION_BUFFER_DIST);
 
     PFM_Vec2_Scale(&arrive,     MOVE_ARRIVE_FORCE_SCALE,   &arrive);
     PFM_Vec2_Scale(&cohesion,   MOVE_COHESION_FORCE_SCALE, &cohesion);
@@ -1111,13 +1101,13 @@ static vec2_t point_seek_total_force(const struct entity *ent, const struct floc
     return ret;
 }
 
-static vec2_t enemy_seek_total_force(const struct entity *ent)
+static vec2_t enemy_seek_total_force(uint32_t uid)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    vec2_t arrive = arrive_force_enemies(ent);
-    vec2_t separation = separation_force(ent, SEPARATION_BUFFER_DIST);
+    vec2_t arrive = arrive_force_enemies(uid);
+    vec2_t separation = separation_force(uid, SEPARATION_BUFFER_DIST);
 
     PFM_Vec2_Scale(&arrive,     MOVE_ARRIVE_FORCE_SCALE,   &arrive);
     PFM_Vec2_Scale(&separation, SEPARATION_FORCE_SCALE,    &separation);
@@ -1130,9 +1120,9 @@ static vec2_t enemy_seek_total_force(const struct entity *ent)
     return ret;
 }
 
-static vec2_t new_pos_for_vel(const struct entity *ent, vec2_t velocity)
+static vec2_t new_pos_for_vel(uint32_t uid, vec2_t velocity)
 {
-    vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
+    vec2_t xz_pos = G_Pos_GetXZ(uid);
     vec2_t new_pos;
 
     PFM_Vec2_Add(&xz_pos, &velocity, &new_pos);
@@ -1141,15 +1131,15 @@ static vec2_t new_pos_for_vel(const struct entity *ent, vec2_t velocity)
 
 /* Nullify the components of the force which would guide
  * the entity towards an impassable tile. */
-static void nullify_impass_components(const struct entity *ent, vec2_t *inout_force)
+static void nullify_impass_components(uint32_t uid, vec2_t *inout_force)
 {
     vec2_t nt_dims = N_TileDims();
-    enum nav_layer layer = Entity_NavLayer(ent);
+    enum nav_layer layer = Entity_NavLayer(uid);
 
-    vec2_t left =  (vec2_t){G_Pos_Get(ent->uid).x + nt_dims.x, G_Pos_Get(ent->uid).z};
-    vec2_t right = (vec2_t){G_Pos_Get(ent->uid).x - nt_dims.x, G_Pos_Get(ent->uid).z};
-    vec2_t top =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z + nt_dims.z};
-    vec2_t bot =   (vec2_t){G_Pos_Get(ent->uid).x, G_Pos_Get(ent->uid).z - nt_dims.z};
+    vec2_t left =  (vec2_t){G_Pos_Get(uid).x + nt_dims.x, G_Pos_Get(uid).z};
+    vec2_t right = (vec2_t){G_Pos_Get(uid).x - nt_dims.x, G_Pos_Get(uid).z};
+    vec2_t top =   (vec2_t){G_Pos_Get(uid).x, G_Pos_Get(uid).z + nt_dims.z};
+    vec2_t bot =   (vec2_t){G_Pos_Get(uid).x, G_Pos_Get(uid).z - nt_dims.z};
 
     if(inout_force->x > 0 
     && (!M_NavPositionPathable(s_map, layer, left)  || M_NavPositionBlocked(s_map, layer, left)))
@@ -1168,9 +1158,9 @@ static void nullify_impass_components(const struct entity *ent, vec2_t *inout_fo
         inout_force->z = 0.0f;
 }
 
-static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flock, bool has_dest_los)
+static vec2_t point_seek_vpref(uint32_t uid, const struct flock *flock, bool has_dest_los)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
     vec2_t steer_force;
@@ -1178,17 +1168,17 @@ static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flo
 
         switch(prio) {
         case 0: 
-            steer_force = point_seek_total_force(ent, flock, has_dest_los); 
+            steer_force = point_seek_total_force(uid, flock, has_dest_los); 
             break;
         case 1: 
-            steer_force = separation_force(ent, SEPARATION_BUFFER_DIST); 
+            steer_force = separation_force(uid, SEPARATION_BUFFER_DIST); 
             break;
         case 2: 
-            steer_force = arrive_force_point(ent, flock->target_xz, has_dest_los); 
+            steer_force = arrive_force_point(uid, flock->target_xz, has_dest_los); 
             break;
         }
 
-        nullify_impass_components(ent, &steer_force);
+        nullify_impass_components(uid, &steer_force);
         if(PFM_Vec2_Len(&steer_force) > MAX_FORCE * 0.01)
             break;
     }
@@ -1202,12 +1192,12 @@ static vec2_t point_seek_vpref(const struct entity *ent, const struct flock *flo
     return new_vel;
 }
 
-static vec2_t enemy_seek_vpref(const struct entity *ent)
+static vec2_t enemy_seek_vpref(uint32_t uid)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    vec2_t steer_force = enemy_seek_total_force(ent);
+    vec2_t steer_force = enemy_seek_total_force(uid);
 
     vec2_t accel, new_vel; 
     PFM_Vec2_Scale(&steer_force, 1.0f / ENTITY_MASS, &accel);
@@ -1253,20 +1243,20 @@ static vec2_t vel_wma(const struct movestate *ms)
     return ret;
 }
 
-static void entity_compute_update(const struct entity *ent, vec2_t new_vel,
+static void entity_compute_update(uint32_t uid, vec2_t new_vel,
                                   struct move_work_out *out)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    out->ent_uid = ent->uid;
+    out->ent_uid = uid;
     out->ent_vel = new_vel;
-    out->ent_rot = Entity_GetRot(ent->uid);
+    out->ent_rot = Entity_GetRot(uid);
     out->ent_unblock = false;
     out->ent_state = ms->state;
 
-    vec2_t new_pos_xz = new_pos_for_vel(ent, new_vel);
-    enum nav_layer layer = Entity_NavLayer(ent);
+    vec2_t new_pos_xz = new_pos_for_vel(uid, new_vel);
+    enum nav_layer layer = Entity_NavLayer(uid);
 
     if(PFM_Vec2_Len(&new_vel) > 0
     && M_NavPositionPathable(s_map, layer, new_pos_xz)
@@ -1285,7 +1275,7 @@ static void entity_compute_update(const struct entity *ent, vec2_t new_vel,
             out->ent_rot = dir_quat_from_velocity(wma);
         }
     }else{
-        out->ent_pos = G_Pos_Get(ent->uid);
+        out->ent_pos = G_Pos_Get(uid);
         out->ent_vel = (vec2_t){0.0f, 0.0f};
     }
 
@@ -1303,11 +1293,11 @@ static void entity_compute_update(const struct entity *ent, vec2_t new_vel,
 
         vec2_t diff_to_target;
         vec2_t xz_pos = out_pos_xz;
-        struct flock *flock = flock_for_ent(ent);
+        struct flock *flock = flock_for_ent(uid);
         assert(flock);
 
         PFM_Vec2_Sub((vec2_t*)&flock->target_xz, &xz_pos, &diff_to_target);
-        float arrive_thresh = G_GetSelectionRadius(ent->uid) * 1.5f;
+        float arrive_thresh = G_GetSelectionRadius(uid) * 1.5f;
 
         if(PFM_Vec2_Len(&diff_to_target) < arrive_thresh
         || (M_NavIsAdjacentToImpassable(s_map, layer, xz_pos) 
@@ -1317,8 +1307,8 @@ static void entity_compute_update(const struct entity *ent, vec2_t new_vel,
             break;
         }
 
-        STALLOC(struct entity*, adjacent, kh_size(flock->ents));
-        size_t num_adj = adjacent_flock_members(ent, flock, adjacent);
+        STALLOC(uint32_t, adjacent, kh_size(flock->ents));
+        size_t num_adj = adjacent_flock_members(uid, flock, adjacent);
 
         bool done = false;
         for(int j = 0; j < num_adj; j++) {
@@ -1346,7 +1336,7 @@ static void entity_compute_update(const struct entity *ent, vec2_t new_vel,
          * after some time. 
          */
         if(PFM_Vec2_Len(&ms->vdes) < EPSILON) {
-            assert(flock_for_ent(ent));
+            assert(flock_for_ent(uid));
             out->ent_state = STATE_WAITING;
             break;
         }
@@ -1361,14 +1351,13 @@ static void entity_compute_update(const struct entity *ent, vec2_t new_vel,
     }
     case STATE_SURROUND_ENTITY: {
 
-        struct entity *target = G_EntityForUID(ms->surround_target_uid);
-        if(!target) {
+        if(!G_EntityExists(ms->surround_target_uid)) {
             out->ent_state = STATE_WAITING;
             break;
         }
 
-        if(Entity_MaybeAdjacentFast(ent, target, 10.0f) 
-        && M_NavObjAdjacent(s_map, ent, target)) {
+        if(Entity_MaybeAdjacentFast(uid, ms->surround_target_uid, 10.0f) 
+        && M_NavObjAdjacent(s_map, uid, ms->surround_target_uid)) {
             out->ent_state = STATE_WAITING;
             break;
         }
@@ -1381,7 +1370,7 @@ static void entity_compute_update(const struct entity *ent, vec2_t new_vel,
         if(PFM_Vec2_Len(&delta) > EPSILON || PFM_Vec2_Len(&ms->velocity) < EPSILON) {
 
             bool hasdest = M_NavClosestReachableAdjacentPos(s_map, layer, 
-                out_pos_xz, target, &dest);
+                out_pos_xz, ms->surround_target_uid, &dest);
 
             if(!hasdest) {
                 out->ent_state = STATE_ARRIVED;
@@ -1389,7 +1378,7 @@ static void entity_compute_update(const struct entity *ent, vec2_t new_vel,
             }
         }
 
-        struct flock *flock = flock_for_ent(ent);
+        struct flock *flock = flock_for_ent(uid);
         assert(flock);
 
         vec2_t diff;
@@ -1410,8 +1399,7 @@ static void entity_compute_update(const struct entity *ent, vec2_t new_vel,
     }
     case STATE_ENTER_ENTITY_RANGE: {
 
-        struct entity *target = G_EntityForUID(ms->surround_target_uid);
-        if(!target) {
+        if(!G_EntityExists(ms->surround_target_uid)) {
             out->ent_state = STATE_ARRIVED;
             break;
         }
@@ -1444,7 +1432,7 @@ static void entity_compute_update(const struct entity *ent, vec2_t new_vel,
     case STATE_TURNING: {
 
         /* find the angle between the two quaternions */
-        quat_t ent_rot = Entity_GetRot(ent->uid);
+        quat_t ent_rot = Entity_GetRot(uid);
         float angle_diff = PFM_Quat_PitchDiff(&ent_rot, &ms->target_dir);
         float degrees = RAD_TO_DEG(angle_diff);
 
@@ -1492,7 +1480,7 @@ static void entity_compute_update(const struct entity *ent, vec2_t new_vel,
     }
 }
 
-static void find_neighbours(const struct entity *ent,
+static void find_neighbours(uint32_t uid,
                             vec_cp_ent_t *out_dyn,
                             vec_cp_ent_t *out_stat)
 {
@@ -1503,30 +1491,32 @@ static void find_neighbours(const struct entity *ent,
      * meaning they will not perform collision avoidance maneuvers of
      * their own. */
 
-    struct entity *near_ents[512];
-    int num_near = G_Pos_EntsInCircle(G_Pos_GetXZ(ent->uid), 
+    uint32_t near_ents[512];
+    int num_near = G_Pos_EntsInCircle(G_Pos_GetXZ(uid), 
         CLEARPATH_NEIGHBOUR_RADIUS, near_ents, ARR_SIZE(near_ents));
 
     for(int i = 0; i < num_near; i++) {
-        struct entity *curr = near_ents[i];
 
-        if(curr->uid == ent->uid)
+        uint32_t curr = near_ents[i];
+        uint32_t flags = G_FlagsGet(curr);
+
+        if(curr == uid)
             continue;
 
-        if(!(curr->flags & ENTITY_FLAG_MOVABLE))
+        if(!(flags & ENTITY_FLAG_MOVABLE))
             continue;
 
-        if(G_GetSelectionRadius(curr->uid) == 0.0f)
+        if(G_GetSelectionRadius(curr) == 0.0f)
             continue;
 
         struct movestate *ms = movestate_get(curr);
         assert(ms);
 
-        vec2_t curr_xz_pos = G_Pos_GetXZ(curr->uid);
+        vec2_t curr_xz_pos = G_Pos_GetXZ(curr);
         struct cp_ent newdesc = (struct cp_ent) {
             .xz_pos = curr_xz_pos,
             .xz_vel = ms->velocity,
-            .radius = G_GetSelectionRadius(curr->uid)
+            .radius = G_GetSelectionRadius(curr)
         };
 
         if(ent_still(ms))
@@ -1540,16 +1530,13 @@ static void disband_empty_flocks(void)
 {
     PERF_ENTER();
 
-    uint32_t key;
-    struct entity *curr;
-    (void)key;
-
+    uint32_t curr;
     /* Iterate vector backwards so we can delete entries while iterating. */
     for(int i = vec_size(&s_flocks)-1; i >= 0; i--) {
 
         /* First, decide if we can disband this flock */
         bool disband = true;
-        kh_foreach(vec_AT(&s_flocks, i).ents, key, curr, {
+        kh_foreach_key(vec_AT(&s_flocks, i).ents, curr, {
 
             struct movestate *ms = movestate_get(curr);
             assert(ms);
@@ -1588,30 +1575,30 @@ static void cp_vec_free(void *ptr)
     /* no-op */
 }
 
-static void entity_update(const struct entity *ent, struct move_work_out *state)
+static void entity_update(uint32_t uid, struct move_work_out *state)
 {
     ASSERT_IN_MAIN_THREAD();
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
 
-    G_Pos_Set(ent, state->ent_pos);
-    Entity_SetRot(ent->uid, state->ent_rot);
+    G_Pos_Set(uid, state->ent_pos);
+    Entity_SetRot(uid, state->ent_rot);
 
     switch(state->ent_state) {
     case STATE_SURROUND_ENTITY:
     case STATE_ENTER_ENTITY_RANGE:
-        G_Move_SetDest(ent, state->ent_state_arg, false);
+        G_Move_SetDest(uid, state->ent_state_arg, false);
         break;
     case STATE_ARRIVED:
     case STATE_WAITING:
-        entity_finish_moving(ent, state->ent_state);
+        entity_finish_moving(uid, state->ent_state);
         break;
     default:
         break;
     }
 
     if(state->ent_unblock) {
-        entity_unblock(ent);
-        E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
+        entity_unblock(uid);
+        E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
     }
 
     ms->state = state->ent_state;
@@ -1639,13 +1626,11 @@ static void move_work(int begin_idx, int end_idx)
     
         struct move_work_in *in = &s_move_work.in[i];
         struct move_work_out *out = &s_move_work.out[i];
-
-        const struct entity *curr = G_EntityForUID(in->ent_uid);
-        struct movestate *ms = movestate_get(curr);
+        struct movestate *ms = movestate_get(in->ent_uid);
 
         /* 1. Compute vpref */
         vec2_t vpref = (vec2_t){-1,-1};
-        struct flock *flock = flock_for_ent(curr);
+        struct flock *flock = flock_for_ent(in->ent_uid);
 
         switch(ms->state) {
         case STATE_TURNING:
@@ -1653,21 +1638,21 @@ static void move_work(int begin_idx, int end_idx)
             break;
         case STATE_SEEK_ENEMIES: 
             assert(!flock);
-            vpref = enemy_seek_vpref(curr);
+            vpref = enemy_seek_vpref(in->ent_uid);
             break;
         default:
             assert(flock);
-            vpref = point_seek_vpref(curr, flock, in->has_dest_los);
+            vpref = point_seek_vpref(in->ent_uid, flock, in->has_dest_los);
         }
         assert(vpref.x != -1 || vpref.z != -1);
 
         /* 2. Compute the static and dynamic neighbors */
-        find_neighbours(curr, in->dyn, in->stat);
+        find_neighbours(in->ent_uid, in->dyn, in->stat);
 
         struct cp_ent curr_cp = (struct cp_ent) {
-            .xz_pos = G_Pos_GetXZ(curr->uid),
+            .xz_pos = G_Pos_GetXZ(in->ent_uid),
             .xz_vel = ms->velocity,
-            .radius = G_GetSelectionRadius(curr->uid)
+            .radius = G_GetSelectionRadius(in->ent_uid)
         };
 
         vec2_t new_vel = G_ClearPath_NewVelocity(curr_cp, in->ent_uid, 
@@ -1684,7 +1669,7 @@ static void move_work(int begin_idx, int end_idx)
         vec2_truncate(&ms->vnew, ms->max_speed / MOVE_TICK_RES);
 
         /* Compute the next tick state */
-        entity_compute_update(curr, new_vel, out);
+        entity_compute_update(in->ent_uid, new_vel, out);
     }
     PERF_RETURN_VOID();
 }
@@ -1763,8 +1748,7 @@ static void move_finish_work(void)
     for(int i = 0; i < s_move_work.nwork; i++) {
 
         const struct move_work_out *out = &s_move_work.out[i];
-        struct entity *ent = G_EntityForUID(out->ent_uid);
-        entity_update(ent, out);
+        entity_update(out->ent_uid, out);
     }
     PERF_POP();
 
@@ -1781,14 +1765,13 @@ static void on_20hz_tick(void *user, void *event)
 {
     PERF_PUSH("movement::on_20hz_tick");
 
-    uint32_t key;
-    struct entity *curr;
+    uint32_t curr;
 
     disband_empty_flocks();
     move_prepare_work();
 
     PERF_PUSH("desired velocity computations");
-    kh_foreach(G_GetDynamicEntsSet(), key, curr, {
+    kh_foreach_key(G_GetDynamicEntsSet(), curr, {
 
         struct movestate *ms = movestate_get(curr);
         assert(ms);
@@ -1812,13 +1795,13 @@ static void on_20hz_tick(void *user, void *event)
         vec_cp_ent_resize(stat, 128);
 
         move_push_work((struct move_work_in){
-            .ent_uid = key,
+            .ent_uid = curr,
             .ent_des_v = ms->vdes,
-            .save_debug = G_ClearPath_ShouldSaveDebug(key),
+            .save_debug = G_ClearPath_ShouldSaveDebug(curr),
             .stat = stat,
             .dyn = dyn,
             .has_dest_los = flock 
-                ? M_NavHasDestLOS(s_map, flock->dest_id, G_Pos_GetXZ(key)) 
+                ? M_NavHasDestLOS(s_map, flock->dest_id, G_Pos_GetXZ(curr)) 
                 : false
         });
 
@@ -1848,7 +1831,7 @@ bool G_Move_Init(const struct map *map)
         return NULL;
     }
 
-    vec_pentity_init(&s_move_markers);
+    vec_entity_init(&s_move_markers);
     vec_flock_init(&s_flocks);
 
     E_Global_Register(SDL_MOUSEBUTTONDOWN, on_mousedown, NULL, G_RUNNING);
@@ -1870,18 +1853,18 @@ void G_Move_Shutdown(void)
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
 
     for(int i = 0; i < vec_size(&s_move_markers); i++) {
-        E_Entity_Unregister(EVENT_ANIM_FINISHED, vec_AT(&s_move_markers, i)->uid, on_marker_anim_finish);
+        E_Entity_Unregister(EVENT_ANIM_FINISHED, vec_AT(&s_move_markers, i), on_marker_anim_finish);
         G_RemoveEntity(vec_AT(&s_move_markers, i));
         G_FreeEntity(vec_AT(&s_move_markers, i));
     }
 
     vec_flock_destroy(&s_flocks);
-    vec_pentity_destroy(&s_move_markers);
+    vec_entity_destroy(&s_move_markers);
     stalloc_destroy(&s_move_work.mem);
     kh_destroy(state, s_entity_state_table);
 }
 
-void G_Move_AddEntity(const struct entity *ent)
+void G_Move_AddEntity(uint32_t uid)
 {
     struct movestate new_ms = (struct movestate) {
         .velocity = {0.0f}, 
@@ -1896,42 +1879,42 @@ void G_Move_AddEntity(const struct entity *ent)
     memset(new_ms.vel_hist, 0, sizeof(new_ms.vel_hist));
 
     int ret;
-    khiter_t k = kh_put(state, s_entity_state_table, ent->uid, &ret);
+    khiter_t k = kh_put(state, s_entity_state_table, uid, &ret);
     assert(ret != -1 && ret != 0);
     kh_value(s_entity_state_table, k) = new_ms;
 
-    entity_block(ent);
+    entity_block(uid);
 }
 
-void G_Move_RemoveEntity(const struct entity *ent)
+void G_Move_RemoveEntity(uint32_t uid)
 {
-    khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
+    khiter_t k = kh_get(state, s_entity_state_table, uid);
     if(k == kh_end(s_entity_state_table))
         return;
 
-    G_Move_Stop(ent);
-    entity_unblock(ent);
+    G_Move_Stop(uid);
+    entity_unblock(uid);
 
     kh_del(state, s_entity_state_table, k);
 }
 
-void G_Move_Stop(const struct entity *ent)
+void G_Move_Stop(uint32_t uid)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     if(!ms)
         return;
 
     if(!ent_still(ms)) {
-        entity_finish_moving(ent, STATE_ARRIVED);
+        entity_finish_moving(uid, STATE_ARRIVED);
     }
 
-    remove_from_flocks(ent);
+    remove_from_flocks(uid);
     ms->state = STATE_ARRIVED;
 }
 
-bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz, bool *out_attack)
+bool G_Move_GetDest(uint32_t uid, vec2_t *out_xz, bool *out_attack)
 {
-    struct flock *fl = flock_for_ent(ent);
+    struct flock *fl = flock_for_ent(uid);
     if(!fl)
         return false;
     *out_xz = fl->target_xz;
@@ -1939,9 +1922,9 @@ bool G_Move_GetDest(const struct entity *ent, vec2_t *out_xz, bool *out_attack)
     return true;
 }
 
-bool G_Move_GetSurrounding(const struct entity *ent, uint32_t *out_uid)
+bool G_Move_GetSurrounding(uint32_t uid, uint32_t *out_uid)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
     if(ms->state != STATE_SURROUND_ENTITY)
         return false;
@@ -1949,18 +1932,18 @@ bool G_Move_GetSurrounding(const struct entity *ent, uint32_t *out_uid)
     return true;
 }
 
-bool G_Move_Still(const struct entity *ent)
+bool G_Move_Still(uint32_t uid)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     if(!ms)
         return true;
     return (ms->state == STATE_ARRIVED);
 }
 
-void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz, bool attack)
+void G_Move_SetDest(uint32_t uid, vec2_t dest_xz, bool attack)
 {
-    enum nav_layer layer = Entity_NavLayer(ent);
-    dest_xz = M_NavClosestReachableDest(s_map, layer, G_Pos_GetXZ(ent->uid), dest_xz);
+    enum nav_layer layer = Entity_NavLayer(uid);
+    dest_xz = M_NavClosestReachableDest(s_map, layer, G_Pos_GetXZ(uid), dest_xz);
 
     /* If a flock already exists for the entity's destination, 
      * simply add the entity to the flock. If necessary, the
@@ -1969,77 +1952,77 @@ void G_Move_SetDest(const struct entity *ent, vec2_t dest_xz, bool attack)
      */
     dest_id_t dest_id;
     if(attack) {
-        dest_id = M_NavDestIDForPosAttacking(s_map, dest_xz, layer, G_GetFactionID(ent->uid));
+        dest_id = M_NavDestIDForPosAttacking(s_map, dest_xz, layer, G_GetFactionID(uid));
     }else{
         dest_id = M_NavDestIDForPos(s_map, dest_xz, layer);
     }
     struct flock *fl = flock_for_dest(dest_id);
 
-    if(fl && fl == flock_for_ent(ent))
+    if(fl && fl == flock_for_ent(uid))
         return;
 
     if(fl) {
 
-        assert(fl != flock_for_ent(ent));
-        remove_from_flocks(ent);
-        flock_add(fl, ent);
+        assert(fl != flock_for_ent(uid));
+        remove_from_flocks(uid);
+        flock_add(fl, uid);
 
-        struct movestate *ms = movestate_get(ent);
+        struct movestate *ms = movestate_get(uid);
         assert(ms);
         if(ent_still(ms)) {
-            entity_unblock(ent);
-            E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
+            entity_unblock(uid);
+            E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
         }
         ms->state = STATE_MOVING;
-        assert(flock_for_ent(ent));
+        assert(flock_for_ent(uid));
         return;
     }
 
     /* Else, create a new flock and request a path for it.
      */
-    vec_pentity_t flock;
-    vec_pentity_init(&flock);
-    vec_pentity_push(&flock, (struct entity*)ent);
+    vec_entity_t flock;
+    vec_entity_init(&flock);
+    vec_entity_push(&flock, &uid);
 
-    make_flock(&flock, dest_xz, Entity_NavLayer(ent), attack);
-    vec_pentity_destroy(&flock);
+    make_flock(&flock, dest_xz, Entity_NavLayer(uid), attack);
+    vec_entity_destroy(&flock);
 }
 
-void G_Move_SetChangeDirection(const struct entity *ent, quat_t target)
+void G_Move_SetChangeDirection(uint32_t uid, quat_t target)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
     if(ent_still(ms)) {
-        entity_unblock(ent);
-        E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
+        entity_unblock(uid);
+        E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
     }
 
     ms->state = STATE_TURNING;
     ms->target_dir = target;
 }
 
-void G_Move_SetEnterRange(const struct entity *ent, const struct entity *target, float range)
+void G_Move_SetEnterRange(uint32_t uid, uint32_t target, float range)
 {
-    struct movestate *ms = movestate_get(ent);
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    vec2_t xz_src = G_Pos_GetXZ(ent->uid);
-    vec2_t xz_dst = G_Pos_GetXZ(target->uid);
-    range = MAX(0.0f, range - G_GetSelectionRadius(ent->uid));
+    vec2_t xz_src = G_Pos_GetXZ(uid);
+    vec2_t xz_dst = G_Pos_GetXZ(target);
+    range = MAX(0.0f, range - G_GetSelectionRadius(uid));
 
     vec2_t delta;
     PFM_Vec2_Sub(&xz_src, &xz_dst, &delta);
     if(PFM_Vec2_Len(&delta) <= range) {
-        G_Move_Stop(ent);
+        G_Move_Stop(uid);
         return;
     }
 
-    vec2_t xz_target = M_NavClosestReachableInRange(s_map, Entity_NavLayer(ent), xz_src, xz_dst, range);
-    G_Move_SetDest(ent, xz_target, false);
+    vec2_t xz_target = M_NavClosestReachableInRange(s_map, Entity_NavLayer(uid), xz_src, xz_dst, range);
+    G_Move_SetDest(uid, xz_target, false);
 
     ms->state = STATE_ENTER_ENTITY_RANGE;
-    ms->surround_target_uid = target->uid;
+    ms->surround_target_uid = target;
     ms->target_prev_pos = xz_dst;
     ms->target_range = range;
 }
@@ -2056,54 +2039,62 @@ void G_Move_SetAttackOnLeftClick(void)
     s_move_on_lclick = false;
 }
 
-void G_Move_SetSeekEnemies(const struct entity *ent)
+void G_Move_SetSeekEnemies(uint32_t uid)
 {
-    struct movestate *ms = movestate_get(ent);
+    ASSERT_IN_MAIN_THREAD();
+
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    remove_from_flocks(ent);
+    remove_from_flocks(uid);
 
     if(ent_still(ms)) {
-        entity_unblock(ent);
-        E_Entity_Notify(EVENT_MOTION_START, ent->uid, NULL, ES_ENGINE);
+        entity_unblock(uid);
+        E_Entity_Notify(EVENT_MOTION_START, uid, NULL, ES_ENGINE);
     }
 
     ms->state = STATE_SEEK_ENEMIES;
 }
 
-void G_Move_SetSurroundEntity(const struct entity *ent, const struct entity *target)
+void G_Move_SetSurroundEntity(uint32_t uid, uint32_t target)
 {
-    struct movestate *ms = movestate_get(ent);
+    ASSERT_IN_MAIN_THREAD();
+
+    struct movestate *ms = movestate_get(uid);
     assert(ms);
 
-    G_Move_Stop(ent);
+    G_Move_Stop(uid);
 
-    vec2_t pos = G_Pos_GetXZ(target->uid);
-    G_Move_SetDest(ent, pos, false);
+    vec2_t pos = G_Pos_GetXZ(target);
+    G_Move_SetDest(uid, pos, false);
 
     assert(!ms->blocking);
     ms->state = STATE_SURROUND_ENTITY;
-    ms->surround_target_uid = target->uid;
+    ms->surround_target_uid = target;
     ms->using_surround_field = false;
 }
 
-void G_Move_UpdatePos(const struct entity *ent, vec2_t pos)
+void G_Move_UpdatePos(uint32_t uid, vec2_t pos)
 {
-    struct movestate *ms = movestate_get(ent);
+    ASSERT_IN_MAIN_THREAD();
+
+    struct movestate *ms = movestate_get(uid);
     if(!ms)
         return;
 
     if(!ms->blocking)
         return;
 
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, G_GetFactionID(ent->uid), s_map);
-    M_NavBlockersIncref(pos, ms->last_stop_radius, G_GetFactionID(ent->uid), s_map);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, G_GetFactionID(uid), s_map);
+    M_NavBlockersIncref(pos, ms->last_stop_radius, G_GetFactionID(uid), s_map);
     ms->last_stop_pos = pos;
 }
 
-void G_Move_UpdateFactionID(const struct entity *ent, int oldfac, int newfac)
+void G_Move_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
 {
-    struct movestate *ms = movestate_get(ent);
+    ASSERT_IN_MAIN_THREAD();
+
+    struct movestate *ms = movestate_get(uid);
     if(!ms)
         return;
 
@@ -2114,17 +2105,18 @@ void G_Move_UpdateFactionID(const struct entity *ent, int oldfac, int newfac)
     M_NavBlockersIncref(ms->last_stop_pos, ms->last_stop_radius, newfac, s_map);
 }
 
-void G_Move_UpdateSelectionRadius(const struct entity *ent, float sel_radius)
+void G_Move_UpdateSelectionRadius(uint32_t uid, float sel_radius)
 {
-    struct movestate *ms = movestate_get(ent);
+    ASSERT_IN_MAIN_THREAD();
+    struct movestate *ms = movestate_get(uid);
     if(!ms)
         return;
 
     if(!ms->blocking)
         return;
 
-    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, G_GetFactionID(ent->uid), s_map);
-    M_NavBlockersIncref(ms->last_stop_pos, sel_radius, G_GetFactionID(ent->uid), s_map);
+    M_NavBlockersDecref(ms->last_stop_pos, ms->last_stop_radius, G_GetFactionID(uid), s_map);
+    M_NavBlockersIncref(ms->last_stop_pos, sel_radius, G_GetFactionID(uid), s_map);
     ms->last_stop_radius = sel_radius;
 }
 
@@ -2236,10 +2228,7 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
         CHK_TRUE_RET(Attr_Write(stream, &num_flock_ents, "num_flock_ents"));
 
         uint32_t uid;
-        struct entity *curr_ent;
-        (void)curr_ent;
-
-        kh_foreach(curr_flock->ents, uid, curr_ent, {
+        kh_foreach_key(curr_flock->ents, uid, {
         
             struct attr flock_ent = (struct attr){
                 .type = TYPE_INT,
@@ -2419,11 +2408,8 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
             CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_flock);
             CHK_TRUE_JMP(attr.type == TYPE_INT, fail_flock);
 
-            uint32_t flock_end_uid = attr.val.as_int;
-            const struct entity *ent = G_EntityForUID(flock_end_uid);
-
-            CHK_TRUE_JMP(ent, fail_flock);
-            flock_add(&new_flock, ent);
+            uint32_t flock_ent_uid = attr.val.as_int;
+            flock_add(&new_flock, flock_ent_uid);
         }
 
         CHK_TRUE_JMP(Attr_Parse(stream, &attr, true), fail_flock);
@@ -2484,9 +2470,7 @@ bool G_Move_LoadState(struct SDL_RWops *stream)
         const bool blocking = attr.val.as_bool;
         assert(ms->blocking);
         if(!blocking) {
-            const struct entity *ent = G_EntityForUID(uid);
-            assert(ent);
-            entity_unblock(ent);
+            entity_unblock(uid);
         }
 
         CHK_TRUE_RET(Attr_Parse(stream, &attr, true));

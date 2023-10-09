@@ -1364,14 +1364,14 @@ static PyObject *PyPf_clear_unit_selection(PyObject *self)
 static PyObject *PyPf_get_unit_selection(PyObject *self)
 {
     enum selection_type sel_type;
-    const vec_pentity_t *sel = G_Sel_Get(&sel_type);
+    const vec_entity_t *sel = G_Sel_Get(&sel_type);
 
     PyObject *ret = PyList_New(0);
     if(!ret)
         return NULL;
 
     for(int i = 0; i < vec_size(sel); i++) {
-        PyObject *ent = S_Entity_ObjForUID(vec_AT(sel, i)->uid);
+        PyObject *ent = S_Entity_ObjForUID(vec_AT(sel, i));
         if(ent) {
             PyList_Append(ret, ent);
         }
@@ -1409,9 +1409,9 @@ static PyObject *PyPf_set_unit_selection(PyObject *self, PyObject *args)
 
 static PyObject *PyPf_get_hovered_unit(PyObject *self)
 {
-    struct entity *hovered  = G_Sel_GetHovered();
-    if(hovered) {
-        PyObject *obj = S_Entity_ObjForUID(hovered->uid);
+    uint32_t hovered  = G_Sel_GetHovered();
+    if(G_EntityExists(hovered)) {
+        PyObject *obj = S_Entity_ObjForUID(hovered);
         if(obj) {
             Py_INCREF(obj);
             return obj;
@@ -2726,10 +2726,10 @@ static PyObject *PyPf_session_stack_depth(PyObject *self, PyObject *args)
     return PyInt_FromLong(depth);
 }
 
-static bool s_pred_callable(const struct entity *ent, void *arg)
+static bool s_pred_callable(uint32_t ent, void *arg)
 {
     PyObject *func = arg;
-    PyObject *obj = S_Entity_ObjForUID(ent->uid);
+    PyObject *obj = S_Entity_ObjForUID(ent);
     if(!obj)
         return false;
 
@@ -2739,7 +2739,7 @@ static bool s_pred_callable(const struct entity *ent, void *arg)
     return ret;
 }
 
-static bool s_pred_any(const struct entity *ent, void *arg)
+static bool s_pred_any(uint32_t ent, void *arg)
 {
     return true;
 }
@@ -2762,15 +2762,15 @@ static PyObject *PyPf_nearest_ent(PyObject *self, PyObject *args, PyObject *kwar
         return NULL;
     }
 
-    struct entity *nearest = NULL;
+    uint32_t nearest = NULL_UID;
     if(predicate) {
         nearest = G_Pos_NearestWithPred(xz_pos, s_pred_callable, predicate, max_range);
     }else{
         nearest = G_Pos_NearestWithPred(xz_pos, s_pred_any, NULL, max_range);
     }
 
-    if(nearest) {
-        PyObject *ret = S_Entity_ObjForUID(nearest->uid);
+    if(G_EntityExists(nearest)) {
+        PyObject *ret = S_Entity_ObjForUID(nearest);
         if(!ret) {
             Py_RETURN_NONE;
         }
@@ -2800,7 +2800,7 @@ static PyObject *PyPf_ents_in_circle(PyObject *self, PyObject *args, PyObject *k
         return NULL;
     }
 
-    struct entity *inside[16384];
+    uint32_t inside[16384];
     size_t ninside;
 
     if(predicate) {
@@ -2817,7 +2817,7 @@ static PyObject *PyPf_ents_in_circle(PyObject *self, PyObject *args, PyObject *k
 
     size_t ninserted = 0;
     for(int i = 0; i < ninside; i++) {
-        PyObject *obj = S_Entity_ObjForUID(inside[i]->uid);
+        PyObject *obj = S_Entity_ObjForUID(inside[i]);
         if(!obj)
             continue;
         Py_INCREF(obj);
@@ -2852,7 +2852,7 @@ static PyObject *PyPf_ents_in_rect(PyObject *self, PyObject *args, PyObject *kwa
         return NULL;
     }
 
-    struct entity *inside[16384];
+    uint32_t inside[16384];
     size_t ninside;
 
     if(predicate) {
@@ -2869,7 +2869,7 @@ static PyObject *PyPf_ents_in_rect(PyObject *self, PyObject *args, PyObject *kwa
 
     size_t ninserted = 0;
     for(int i = 0; i < ninside; i++) {
-        PyObject *obj = S_Entity_ObjForUID(inside[i]->uid);
+        PyObject *obj = S_Entity_ObjForUID(inside[i]);
         if(!obj)
             continue;
         Py_INCREF(obj);
@@ -3285,7 +3285,7 @@ script_opaque_t S_WrapEngineEventArg(int eventnum, void *arg)
     case EVENT_BUILDING_CONSTRUCTED: 
     case EVENT_ORDER_ISSUED:
     case EVENT_ENTITY_DIED: {
-        PyObject *ent = S_Entity_ObjForUID(((struct entity*)arg)->uid);
+        PyObject *ent = S_Entity_ObjForUID((uintptr_t)arg);
         if(ent) {
             Py_INCREF(ent);
             return ent;

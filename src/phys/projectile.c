@@ -217,13 +217,13 @@ static void phys_proj_finish_work(void)
     s_front = tmp;
 }
 
-static bool phys_enemies(int faction_id, const struct entity *ent)
+static bool phys_enemies(int faction_id, uint32_t ent)
 {
-    if(faction_id == G_GetFactionID(ent->uid))
+    if(faction_id == G_GetFactionID(ent))
         return false;
 
     enum diplomacy_state ds;
-    bool result = G_GetDiplomacyState(faction_id, G_GetFactionID(ent->uid), &ds);
+    bool result = G_GetDiplomacyState(faction_id, G_GetFactionID(ent), &ds);
 
     assert(result);
     return (ds == DIPLOMACY_STATE_WAR);
@@ -232,7 +232,7 @@ static bool phys_enemies(int faction_id, const struct entity *ent)
 static void phys_sweep_test(int front_idx)
 {
     const struct projectile *proj = &vec_AT(&s_front, front_idx);
-    struct entity *nearp[256];
+    uint32_t nearp[256];
     size_t nents = G_Pos_EntsInCircle((vec2_t){proj->pos.x, proj->pos.z}, NEAR_TOLERANCE, nearp, ARR_SIZE(nearp));
 
     /* The collision test gets performed every frame (variable FPS) while, 
@@ -253,17 +253,17 @@ static void phys_sweep_test(int front_idx)
     PFM_Vec3_Add(&begin, &delta, &end);
 
     float min_dist = INFINITY;
-    struct entity *hit_ent = NULL;
+    uint32_t hit_ent = NULL_UID;
 
     for(int i = 0; i < nents; i++) {
 
-        struct entity *ent = nearp[i];
+        uint32_t ent = nearp[i];
         /* A projectile does not collide with its' 'parent' */
-        if(proj->ent_parent == ent->uid)
+        if(proj->ent_parent == ent)
             continue;
-        if(ent->flags & ENTITY_FLAG_ZOMBIE)
+        if(G_FlagsGet(ent) & ENTITY_FLAG_ZOMBIE)
             continue;
-        if((proj->flags & PROJ_ONLY_HIT_COMBATABLE) && !(ent->flags & ENTITY_FLAG_COMBATABLE))
+        if((proj->flags & PROJ_ONLY_HIT_COMBATABLE) && !(G_FlagsGet(ent) & ENTITY_FLAG_COMBATABLE))
             continue;
         if((proj->flags & PROJ_ONLY_HIT_ENEMIES) && !phys_enemies(proj->faction_id, ent))
             continue;
@@ -274,7 +274,7 @@ static void phys_sweep_test(int front_idx)
         if(C_LineSegIntersectsOBB(begin, end, obb)) {
 
             vec3_t diff;
-            vec3_t ent_pos = G_Pos_Get(ent->uid);
+            vec3_t ent_pos = G_Pos_Get(ent);
             PFM_Vec3_Sub((vec3_t*)&proj->pos, &ent_pos, &diff);
 
             if(PFM_Vec3_Len(&diff) < min_dist) {
@@ -287,7 +287,7 @@ static void phys_sweep_test(int front_idx)
     if(hit_ent) {
 
         struct proj_hit *hit = stalloc(&s_eventargs, sizeof(struct proj_hit));
-        hit->ent_uid = hit_ent->uid;
+        hit->ent_uid = hit_ent;
         hit->proj_uid = proj->uid;
         hit->parent_uid = proj->ent_parent;
         hit->cookie = proj->cookie;

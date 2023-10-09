@@ -114,7 +114,7 @@ void   M_NavRenderVisibleEnemySeekField(const struct map *map, const struct came
  * ------------------------------------------------------------------------
  */
 void   M_NavRenderVisibleSurroundField(const struct map *map, const struct camera *cam, 
-                                       enum nav_layer layer, const struct entity *ent);
+                                       enum nav_layer layer, uint32_t uid);
 
 /* ------------------------------------------------------------------------
  * Render a layer over the visible map surface showing which regions are 
@@ -313,7 +313,7 @@ vec2_t M_NavDesiredEnemySeekVelocity(const struct map *map, enum nav_layer layer
  * ------------------------------------------------------------------------
  */
 vec2_t M_NavDesiredSurroundVelocity(const struct map *map, enum nav_layer layer, 
-                                    vec2_t curr_pos, const struct entity *ent, int faction_id);
+                                    vec2_t curr_pos, const uint32_t uid, int faction_id);
 
 /* ------------------------------------------------------------------------
  * Returns true if the specified coordinate is in direct line of sight of 
@@ -328,7 +328,7 @@ bool   M_NavHasDestLOS(const struct map *map, dest_id_t id, vec2_t curr_pos);
  * ------------------------------------------------------------------------
  */
 bool   M_NavHasEntityLOS(const struct map *map, enum nav_layer layer, 
-                         vec2_t xz_pos, const struct entity *ent);
+                         vec2_t xz_pos, const uint32_t uid);
 
 /* ------------------------------------------------------------------------
  * Returns true if the specified positions is pathable (i.e. a unit is 
@@ -363,7 +363,7 @@ vec2_t M_NavClosestReachableDest(const struct map *map, enum nav_layer layer,
  * ------------------------------------------------------------------------
  */
 bool   M_NavClosestReachableAdjacentPos(const struct map *map, enum nav_layer layer, 
-                                        vec2_t xz_src, const struct entity *target, 
+                                        vec2_t xz_src, const uint32_t target_uid, 
                                         vec2_t *out);
 
 /* ------------------------------------------------------------------------
@@ -422,8 +422,8 @@ bool     M_NavIsAdjacentToImpassable(const struct map *map, enum nav_layer layer
  * For 'static' enties, the OBB is used. Else, the selection circle is used.
  * ------------------------------------------------------------------------
  */
-bool     M_NavObjAdjacent(const struct map *map, const struct entity *ent, 
-                         const struct entity *target);
+bool     M_NavObjAdjacent(const struct map *map, const uint32_t uid, 
+                         const uint32_t target_uid);
 
 /* ------------------------------------------------------------------------
  * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 

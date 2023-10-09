@@ -181,21 +181,21 @@ static struct buildstate *buildstate_get(uint32_t uid)
     return &kh_value(s_entity_state_table, k);
 }
 
-static void buildstate_set(const struct entity *ent, struct buildstate bs)
+static void buildstate_set(uint32_t uid, struct buildstate bs)
 {
     int ret;
-    assert(ent->flags & ENTITY_FLAG_BUILDING);
+    assert(G_FlagsGet(uid) & ENTITY_FLAG_BUILDING);
 
-    khiter_t k = kh_put(state, s_entity_state_table, ent->uid, &ret);
+    khiter_t k = kh_put(state, s_entity_state_table, uid, &ret);
     assert(ret != -1 && ret != 0);
     kh_value(s_entity_state_table, k) = bs;
 }
 
-static void buildstate_remove(const struct entity *ent)
+static void buildstate_remove(uint32_t uid)
 {
-    assert(ent->flags & ENTITY_FLAG_BUILDING);
+    assert(G_FlagsGet(uid) & ENTITY_FLAG_BUILDING);
 
-    khiter_t k = kh_get(state, s_entity_state_table, ent->uid);
+    khiter_t k = kh_get(state, s_entity_state_table, uid);
     if(k != kh_end(s_entity_state_table)) {
 
         struct buildstate *bs = &kh_value(s_entity_state_table, k);
@@ -208,7 +208,6 @@ static void buildstate_remove(const struct entity *ent)
 static void on_render_3d(void *user, void *event)
 {
     const struct camera *cam = G_GetActiveCamera();
-
     uint32_t key;
     struct buildstate curr;
 
@@ -217,9 +216,8 @@ static void on_render_3d(void *user, void *event)
         if(curr.state != BUILDING_STATE_PLACEMENT)
             continue;
 
-        const struct entity *ent = G_EntityForUID(key);
         struct obb obb;
-        Entity_CurrentOBB(ent, &obb, true);
+        Entity_CurrentOBB(key, &obb, true);
 
         M_NavRenderBuildableTiles(s_map, cam, &obb, NAV_LAYER_GROUND_1X1);
     });
@@ -262,40 +260,44 @@ static void building_mark_border(struct buildstate *bs, struct tile_desc *a, str
         center.z
     };
 
-    struct entity *ent = AL_EntityFromPFObj(MARKER_DIR, MARKER_OBJ, 
-        "__build_site_marker__", Entity_NewUID());
-    if(!ent)
+    uint32_t flags;
+    uint32_t uid = Entity_NewUID();
+    bool result = AL_EntityFromPFObj(MARKER_DIR, MARKER_OBJ, 
+        "__build_site_marker__", uid, &flags);
+    if(!result)
         return;
 
     if(fabs(acenter.z - bcenter.z) > EPSILON) {
-        Entity_SetRot(ent->uid, (quat_t){ 0, 1.0 / sqrt(2.0), 0, 1.0 / sqrt(2.0) });
+        Entity_SetRot(uid, (quat_t){ 0, 1.0 / sqrt(2.0), 0, 1.0 / sqrt(2.0) });
     }
-    Entity_SetScale(ent->uid, (vec3_t){1.0, 1.5f, 1.0f});
+    Entity_SetScale(uid, (vec3_t){1.0, 1.5f, 1.0f});
 
-    G_AddEntity(ent, marker_pos);
-    vec_uid_push(&bs->markers, ent->uid);
+    G_AddEntity(uid, flags, marker_pos);
+    vec_uid_push(&bs->markers, uid);
 }
 
-static void building_mark_center(struct buildstate *bs, const struct entity *ent)
+static void building_mark_center(struct buildstate *bs, uint32_t uid)
 {
-    vec3_t pos = G_Pos_Get(ent->uid);
+    vec3_t pos = G_Pos_Get(uid);
+    uint32_t marker_uid = Entity_NewUID();
+    uint32_t flags;
 
-    struct entity *marker = AL_EntityFromPFObj(CENTER_MARKER_DIR, CENTER_MARKER_OBJ, 
-        "__build_site_marker__", Entity_NewUID());
-    if(!marker)
+    bool result = AL_EntityFromPFObj(CENTER_MARKER_DIR, CENTER_MARKER_OBJ, 
+        "__build_site_marker__", marker_uid, &flags);
+    if(!result)
         return;
 
-    Entity_SetScale(marker->uid, (vec3_t){2.5, 2.5f, 2.5f});
-    G_AddEntity(marker, pos);
-    vec_uid_push(&bs->markers, marker->uid);
+    Entity_SetScale(marker_uid, (vec3_t){2.5, 2.5f, 2.5f});
+    G_AddEntity(marker_uid, flags, pos);
+    vec_uid_push(&bs->markers, marker_uid);
 }
 
-static void building_place_markers(struct buildstate *bs, const struct entity *ent)
+static void building_place_markers(struct buildstate *bs, uint32_t uid)
 {
     assert(Sched_UsingBigStack());
 
     struct obb obb;
-    Entity_CurrentOBB(ent, &obb, true);
+    Entity_CurrentOBB(uid, &obb, true);
 
     struct map_resolution res;
     M_NavGetResolution(s_map, &res);
@@ -332,14 +334,14 @@ static void building_place_markers(struct buildstate *bs, const struct entity *e
         }
     }
     kh_destroy(td, set);
-    building_mark_center(bs, ent);
+    building_mark_center(bs, uid);
 }
 
 static void building_clear_markers(struct buildstate *bs)
 {
     for(int i = 0; i < vec_size(&bs->markers); i++) {
-        struct entity *tofree = G_EntityForUID(vec_AT(&bs->markers, i));
-        if(!tofree)
+        uint32_t tofree = vec_AT(&bs->markers, i);
+        if(!G_EntityExists(tofree))
             continue; /* May have already been deleted during shutdown */
         G_RemoveEntity(tofree);
         G_FreeEntity(tofree);
@@ -384,13 +386,11 @@ static bool bstate_get_key(khash_t(int) *table, const char *name, int *out)
 static void on_amount_changed(void *user, void *event)
 {
     uint32_t uid = (uintptr_t)user;
-    struct entity *ent = G_EntityForUID(uid);
-    assert(ent);
 
     if(!G_StorageSite_IsSaturated(uid))
         return;
 
-    G_Building_Supply(ent);
+    G_Building_Supply(uid);
 }
 
 /*****************************************************************************/
@@ -440,11 +440,11 @@ void G_Building_Shutdown(void)
     mpa_buff_destroy(&s_mpool);
 }
 
-bool G_Building_AddEntity(struct entity *ent)
+bool G_Building_AddEntity(uint32_t uid)
 {
-    assert(buildstate_get(ent->uid) == NULL);
-    assert(ent->flags & ENTITY_FLAG_BUILDING);
-    assert(!(ent->flags & ENTITY_FLAG_MOVABLE));
+    assert(buildstate_get(uid) == NULL);
+    assert(G_FlagsGet(uid) & ENTITY_FLAG_BUILDING);
+    assert(!(G_FlagsGet(uid) & ENTITY_FLAG_MOVABLE));
 
     struct buildstate new_bs = (struct buildstate) {
         .state = BUILDING_STATE_PLACEMENT,
@@ -452,7 +452,7 @@ bool G_Building_AddEntity(struct entity *ent)
         .markers = {0},
         .progress_model = UID_NONE,
         .obb = {0},
-        .is_storage_site = !!(ent->flags & ENTITY_FLAG_STORAGE_SITE)
+        .is_storage_site = !!(G_FlagsGet(uid) & ENTITY_FLAG_STORAGE_SITE)
     };
 
     new_bs.required = kh_init(int);
@@ -460,46 +460,47 @@ bool G_Building_AddEntity(struct entity *ent)
         return false;
 
     vec_uid_init(&new_bs.markers);
-    buildstate_set(ent, new_bs);
+    buildstate_set(uid, new_bs);
 
-    ent->flags |= ENTITY_FLAG_TRANSLUCENT;
-    ent->flags &= ~ENTITY_FLAG_SELECTABLE;
+    uint32_t newflags = G_FlagsGet(uid);
+    newflags |= ENTITY_FLAG_TRANSLUCENT;
+    newflags &= ~ENTITY_FLAG_SELECTABLE;
 
     if(!new_bs.is_storage_site) {
-        ent->flags |= ENTITY_FLAG_STORAGE_SITE;
-        G_StorageSite_AddEntity(ent);
+        newflags |= ENTITY_FLAG_STORAGE_SITE;
+        G_StorageSite_AddEntity(uid);
     }
-    G_StorageSite_SetUseAlt(ent, true);
+    G_FlagsSet(uid, newflags);
+    G_StorageSite_SetUseAlt(uid, true);
 
     return true;
 }
 
-void G_Building_RemoveEntity(const struct entity *ent)
+void G_Building_RemoveEntity(uint32_t uid)
 {
-    if(!(ent->flags & ENTITY_FLAG_BUILDING))
+    if(!(G_FlagsGet(uid) & ENTITY_FLAG_BUILDING))
         return;
 
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     assert(bs);
 
     if(bs->state >= BUILDING_STATE_FOUNDED && bs->blocking) {
-        M_NavBlockersDecrefOBB(s_map, G_GetFactionID(ent->uid), &bs->obb);
+        M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), &bs->obb);
     }
 
-    struct entity *progress = G_EntityForUID(bs->progress_model);
-    if(progress) {
-        G_RemoveEntity(progress);
-        G_FreeEntity(progress);
+    if(G_EntityExists(bs->progress_model)) {
+        G_RemoveEntity(bs->progress_model);
+        G_FreeEntity(bs->progress_model);
     }
 
-    E_Entity_Unregister(EVENT_STORAGE_SITE_AMOUNT_CHANGED, ent->uid, on_amount_changed);
+    E_Entity_Unregister(EVENT_STORAGE_SITE_AMOUNT_CHANGED, uid, on_amount_changed);
     building_clear_markers(bs);
-    buildstate_remove(ent);
+    buildstate_remove(uid);
 }
 
-bool G_Building_Mark(const struct entity *ent)
+bool G_Building_Mark(uint32_t uid)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     assert(bs);
 
     if(bs->state != BUILDING_STATE_PLACEMENT)
@@ -509,142 +510,156 @@ bool G_Building_Mark(const struct entity *ent)
     return true;
 }
 
-bool G_Building_Found(struct entity *ent, bool blocking)
+bool G_Building_Found(uint32_t uid, bool blocking)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     assert(bs);
 
     if(bs->state != BUILDING_STATE_MARKED)
         return false;
 
     struct obb obb;
-    Entity_CurrentOBB(ent, &obb, true);
+    Entity_CurrentOBB(uid, &obb, true);
     float height = obb.half_lengths[1] * 2;
 
-    struct entity *progress = AL_EntityFromPFObj(ent->basedir, ent->filename, ent->name, Entity_NewUID());
-    if(progress) {
+    const struct entity *ent = AL_EntityGet(uid);
+    if(!ent)
+        return false;
 
-        progress->flags |= ENTITY_FLAG_TRANSLUCENT;
-        Entity_SetScale(progress->uid, Entity_GetScale(ent->uid));
-        Entity_SetRot(progress->uid, Entity_GetRot(ent->uid));
+    uint32_t progress_flags;
+    uint32_t progress_uid = Entity_NewUID();
+    bool result = AL_EntityFromPFObj(ent->basedir, ent->filename, ent->name, 
+        progress_uid, &progress_flags);
 
-        G_AddEntity(progress, G_Pos_Get(ent->uid));
-        bs->progress_model = progress->uid;
+    if(result) {
+
+        progress_flags |= ENTITY_FLAG_TRANSLUCENT;
+        Entity_SetScale(progress_uid, Entity_GetScale(uid));
+        Entity_SetRot(progress_uid, Entity_GetRot(uid));
+
+        G_AddEntity(progress_uid, progress_flags, G_Pos_Get(uid));
+        bs->progress_model = progress_uid;
     }
 
-    if(ent->flags & ENTITY_FLAG_COMBATABLE) {
-        int max_hp = G_Combat_GetMaxHP(ent);
-        G_Combat_SetCurrentHP(ent, max_hp * 0.1f);
-        G_Building_UpdateProgress(ent, 0.1f);
+    uint32_t ent_flags = G_FlagsGet(uid);
+    if(ent_flags & ENTITY_FLAG_COMBATABLE) {
+        int max_hp = G_Combat_GetMaxHP(uid);
+        G_Combat_SetCurrentHP(uid, max_hp * 0.1f);
+        G_Building_UpdateProgress(uid, 0.1f);
     }
 
-    ent->flags &= ~ENTITY_FLAG_TRANSLUCENT;
-    ent->flags |= ENTITY_FLAG_SELECTABLE;
-    ent->flags |= ENTITY_FLAG_INVISIBLE;
+    ent_flags &= ~ENTITY_FLAG_TRANSLUCENT;
+    ent_flags |= ENTITY_FLAG_SELECTABLE;
+    ent_flags |= ENTITY_FLAG_INVISIBLE;
+    G_FlagsSet(uid, ent_flags);
 
-    building_place_markers(bs, ent);
+    building_place_markers(bs, uid);
     bs->state = BUILDING_STATE_FOUNDED;
 
     bs->blocking = blocking;
     if(bs->blocking) {
-        M_NavBlockersIncrefOBB(s_map, G_GetFactionID(ent->uid), &obb);
+        M_NavBlockersIncrefOBB(s_map, G_GetFactionID(uid), &obb);
         bs->obb = obb;
     }
 
     const char *key;
     int amount;
     kh_foreach(bs->required, key, amount, {
-        G_StorageSite_SetAltCapacity(ent, key, amount);
-        G_StorageSite_SetAltDesired(ent->uid, key, amount);
+        G_StorageSite_SetAltCapacity(uid, key, amount);
+        G_StorageSite_SetAltDesired(uid, key, amount);
     });
 
-    E_Entity_Register(EVENT_STORAGE_SITE_AMOUNT_CHANGED, ent->uid, on_amount_changed, 
-        (void*)((uintptr_t)ent->uid), G_RUNNING);
+    E_Entity_Register(EVENT_STORAGE_SITE_AMOUNT_CHANGED, uid, on_amount_changed, 
+        (void*)((uintptr_t)uid), G_RUNNING);
     return true;
 }
 
-bool G_Building_Supply(struct entity *ent)
+bool G_Building_Supply(uint32_t uid)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     assert(bs);
 
     if(bs->state != BUILDING_STATE_FOUNDED)
         return false;
 
     bs->state = BUILDING_STATE_SUPPLIED;
-    E_Entity_Unregister(EVENT_STORAGE_SITE_AMOUNT_CHANGED, ent->uid, on_amount_changed);
-    G_StorageSite_ClearAlt(ent);
-    G_StorageSite_ClearCurr(ent);
+    E_Entity_Unregister(EVENT_STORAGE_SITE_AMOUNT_CHANGED, uid, on_amount_changed);
+    G_StorageSite_ClearAlt(uid);
+    G_StorageSite_ClearCurr(uid);
     return true;
 }
 
-bool G_Building_Complete(struct entity *ent)
+bool G_Building_Complete(uint32_t uid)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     assert(bs);
 
     if(bs->state != BUILDING_STATE_SUPPLIED)
         return false;
 
-    G_StorageSite_SetUseAlt(ent, false);
+    G_StorageSite_SetUseAlt(uid, false);
     if(!bs->is_storage_site) {
-        G_StorageSite_RemoveEntity(ent);
-        ent->flags &= ~ENTITY_FLAG_STORAGE_SITE;
+        G_StorageSite_RemoveEntity(uid);
+        uint32_t flags = G_FlagsGet(uid);
+        flags &= ~ENTITY_FLAG_STORAGE_SITE;
+        G_FlagsSet(uid, flags);
     }
 
-    struct entity *progress = G_EntityForUID(bs->progress_model);
-    if(progress) {
-        G_RemoveEntity(progress);
-        G_FreeEntity(progress);
+    if(G_EntityExists(bs->progress_model)) {
+        G_RemoveEntity(bs->progress_model);
+        G_FreeEntity(bs->progress_model);
     }
     building_clear_markers(bs);
 
     bs->state = BUILDING_STATE_COMPLETED;
     bs->progress_model = UID_NONE;
-    ent->flags &= ~ENTITY_FLAG_INVISIBLE;
 
-    float old = G_GetVisionRange(ent->uid);
-    vec2_t xz_pos = G_Pos_GetXZ(ent->uid);
+    uint32_t flags = G_FlagsGet(uid);
+    flags &= ~ENTITY_FLAG_INVISIBLE;
+    G_FlagsSet(uid, flags);
 
-    G_SetVisionRange(ent->uid, bs->vision_range);
-    E_Entity_Notify(EVENT_BUILDING_COMPLETED, ent->uid, NULL, ES_ENGINE);
-    E_Global_Notify(EVENT_BUILDING_CONSTRUCTED, ent, ES_ENGINE);
+    float old = G_GetVisionRange(uid);
+    vec2_t xz_pos = G_Pos_GetXZ(uid);
+
+    G_SetVisionRange(uid, bs->vision_range);
+    E_Entity_Notify(EVENT_BUILDING_COMPLETED, uid, NULL, ES_ENGINE);
+    E_Global_Notify(EVENT_BUILDING_CONSTRUCTED, (void*)((uintptr_t)uid), ES_ENGINE);
 
     return true;
 }
 
-bool G_Building_Unobstructed(const struct entity *ent)
+bool G_Building_Unobstructed(uint32_t uid)
 {
     struct obb obb;
-    Entity_CurrentOBB(ent, &obb, true);
+    Entity_CurrentOBB(uid, &obb, true);
 
     return M_NavObjectBuildable(s_map, NAV_LAYER_GROUND_1X1, &obb);
 }
 
-bool G_Building_IsFounded(const struct entity *ent)
+bool G_Building_IsFounded(uint32_t uid)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     assert(bs);
     return (bs->state >= BUILDING_STATE_FOUNDED);
 }
 
-bool G_Building_IsSupplied(const struct entity *ent)
+bool G_Building_IsSupplied(uint32_t uid)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     assert(bs);
     return (bs->state >= BUILDING_STATE_SUPPLIED);
 }
 
-bool G_Building_IsCompleted(const struct entity *ent)
+bool G_Building_IsCompleted(uint32_t uid)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     assert(bs);
     return (bs->state >= BUILDING_STATE_COMPLETED);
 }
 
-void G_Building_SetVisionRange(struct entity *ent, float vision_range)
+void G_Building_SetVisionRange(uint32_t uid, float vision_range)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     assert(bs);
     bs->vision_range = vision_range;
 
@@ -652,62 +667,61 @@ void G_Building_SetVisionRange(struct entity *ent, float vision_range)
     if(bs->state < BUILDING_STATE_COMPLETED)
         return;
 
-    G_SetVisionRange(ent->uid, bs->vision_range);
+    G_SetVisionRange(uid, bs->vision_range);
 }
 
-float G_Building_GetVisionRange(const struct entity *ent)
+float G_Building_GetVisionRange(uint32_t uid)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     assert(bs);
     return bs->vision_range;
 }
 
-void G_Building_UpdateProgress(struct entity *ent, float frac_done)
+void G_Building_UpdateProgress(uint32_t uid, float frac_done)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     if(!bs)
         return;
 
-    struct entity *pent = G_EntityForUID(bs->progress_model);
-    if(!pent)
+    if(!G_EntityExists(bs->progress_model))
         return;
 
     struct obb obb;
-    Entity_CurrentOBB(pent, &obb, true);
+    Entity_CurrentOBB(bs->progress_model, &obb, true);
     float height = obb.half_lengths[1] * 2;
 
-    vec3_t pos = G_Pos_Get(pent->uid);
+    vec3_t pos = G_Pos_Get(bs->progress_model);
     float map_height = M_HeightAtPoint(s_map, (vec2_t){pos.x, pos.z});
 
     pos.y = map_height - (height * (1.0f - frac_done));
-    G_Pos_Set(pent, pos);
+    G_Pos_Set(bs->progress_model, pos);
     bs->frac_done = frac_done;
 }
 
-void G_Building_UpdateBounds(const struct entity *ent)
+void G_Building_UpdateBounds(uint32_t uid)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     if(!bs)
         return;
 
-    if(!G_Building_IsFounded(ent))
+    if(!G_Building_IsFounded(uid))
         return;
 
     if(!bs->blocking)
         return;
 
-    M_NavBlockersDecrefOBB(s_map, G_GetFactionID(ent->uid), &bs->obb);
-    Entity_CurrentOBB(ent, &bs->obb, true);
-    M_NavBlockersIncrefOBB(s_map, G_GetFactionID(ent->uid), &bs->obb);
+    M_NavBlockersDecrefOBB(s_map, G_GetFactionID(uid), &bs->obb);
+    Entity_CurrentOBB(uid, &bs->obb, true);
+    M_NavBlockersIncrefOBB(s_map, G_GetFactionID(uid), &bs->obb);
 }
 
-void G_Building_UpdateFactionID(const struct entity *ent, int oldfac, int newfac)
+void G_Building_UpdateFactionID(uint32_t uid, int oldfac, int newfac)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     if(!bs)
         return;
 
-    if(!G_Building_IsFounded(ent))
+    if(!G_Building_IsFounded(uid))
         return;
 
     if(!bs->blocking)
@@ -717,9 +731,9 @@ void G_Building_UpdateFactionID(const struct entity *ent, int oldfac, int newfac
     M_NavBlockersIncrefOBB(s_map, newfac, &bs->obb);
 }
 
-bool G_Building_NeedsRepair(const struct entity *ent)
+bool G_Building_NeedsRepair(uint32_t uid)
 {
-    struct buildstate *bs = buildstate_get(ent->uid);
+    struct buildstate *bs = buildstate_get(uid);
     assert(bs);
 
     if(bs->state < BUILDING_STATE_FOUNDED)
@@ -727,11 +741,12 @@ bool G_Building_NeedsRepair(const struct entity *ent)
     if(bs->state < BUILDING_STATE_COMPLETED)
         return true;
 
-    if(!(ent->flags & ENTITY_FLAG_COMBATABLE))
+    uint32_t flags = G_FlagsGet(uid);
+    if(!(flags & ENTITY_FLAG_COMBATABLE))
         return false;
 
-    int hp = G_Combat_GetCurrentHP(ent);
-    int max_hp = G_Combat_GetMaxHP(ent);
+    int hp = G_Combat_GetCurrentHP(uid);
+    int max_hp = G_Combat_GetMaxHP(uid);
 
     if(max_hp == 0)
         return false;
@@ -790,8 +805,7 @@ bool G_Building_SaveState(struct SDL_RWops *stream)
 
     kh_foreach(s_entity_state_table, uid, curr, {
 
-        struct entity *ent = G_EntityForUID(uid);
-        assert(ent);
+        uint32_t flags = G_FlagsGet(uid);
 
         struct attr buid = (struct attr){
             .type = TYPE_INT,
@@ -813,7 +827,7 @@ bool G_Building_SaveState(struct SDL_RWops *stream)
 
         struct attr building_hp = (struct attr){
             .type = TYPE_INT,
-            .val.as_int = (ent->flags & ENTITY_FLAG_COMBATABLE) ? G_Combat_GetCurrentHP(ent) : 0
+            .val.as_int = (flags & ENTITY_FLAG_COMBATABLE) ? G_Combat_GetCurrentHP(uid) : 0
         };
         CHK_TRUE_RET(Attr_Write(stream, &building_hp, "building_hp"));
 
@@ -902,11 +916,10 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         CHK_TRUE_RET(attr.type == TYPE_BOOL);
         bool is_storage_site = attr.val.as_bool;
 
-        struct entity *ent = G_EntityForUID(uid);
-        CHK_TRUE_RET(ent);
-        CHK_TRUE_RET(ent->flags & ENTITY_FLAG_BUILDING);
+        CHK_TRUE_RET(G_EntityExists(uid));
+        CHK_TRUE_RET(G_FlagsGet(uid) & ENTITY_FLAG_BUILDING);
 
-        struct buildstate *bs = buildstate_get(ent->uid);
+        struct buildstate *bs = buildstate_get(uid);
         assert(bs);
         bs->vision_range = vis_range;
         bs->is_storage_site = is_storage_site;
@@ -935,30 +948,30 @@ bool G_Building_LoadState(struct SDL_RWops *stream)
         case BUILDING_STATE_PLACEMENT:
             break;
         case BUILDING_STATE_MARKED:
-            G_Building_Mark(ent);
+            G_Building_Mark(uid);
             break;
         case BUILDING_STATE_FOUNDED:
-            G_Building_Mark(ent);
-            G_Building_Found(ent, blocking);
+            G_Building_Mark(uid);
+            G_Building_Found(uid, blocking);
             break;
         case BUILDING_STATE_SUPPLIED:
-            G_Building_Mark(ent);
-            G_Building_Found(ent, blocking);
-            G_Building_Supply(ent);
-            G_Building_UpdateProgress(ent, frac_done);
+            G_Building_Mark(uid);
+            G_Building_Found(uid, blocking);
+            G_Building_Supply(uid);
+            G_Building_UpdateProgress(uid, frac_done);
             break;
         case BUILDING_STATE_COMPLETED:
-            G_Building_Mark(ent);
-            G_Building_Found(ent, blocking);
-            G_Building_Supply(ent);
-            G_Building_Complete(ent);
+            G_Building_Mark(uid);
+            G_Building_Found(uid, blocking);
+            G_Building_Supply(uid);
+            G_Building_Complete(uid);
             break;
         default:
             return false;
         }
 
-        if(ent->flags & ENTITY_FLAG_COMBATABLE) {
-            G_Combat_SetCurrentHP(ent, hp);
+        if(G_FlagsGet(uid) & ENTITY_FLAG_COMBATABLE) {
+            G_Combat_SetCurrentHP(uid, hp);
         }
         Sched_TryYield();
     }

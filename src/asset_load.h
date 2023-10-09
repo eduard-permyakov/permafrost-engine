@@ -78,10 +78,11 @@ struct pfmap_hdr{
 bool           AL_Init(void);
 void           AL_Shutdown(void);
 
-struct entity *AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, 
-                                  const char *name, uint32_t uid);
-bool           AL_EntitySetPFObj(struct entity *ent, const char *base_path, const char *pfobj_name);
-void           AL_EntityFree(struct entity *entity);
+bool           AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, 
+                                  const char *name, uint32_t uid, uint32_t *out_flags);
+struct entity *AL_EntityGet(uint32_t uid);
+bool           AL_EntitySetPFObj(uint32_t uid, const char *base_path, const char *pfobj_name);
+void           AL_EntityFree(uint32_t uid);
 void          *AL_RenderPrivateForName(const char *base_path, const char *pfobj_name);
 bool           AL_NameForRenderPrivate(void *render_private, char out_dir[], 
                                        char out_name[]);

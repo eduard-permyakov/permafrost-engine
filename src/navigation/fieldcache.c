@@ -512,8 +512,8 @@ void N_FC_InvalidateDynamicSurroundFields(void)
         if(type != TARGET_ENTITY)
             continue;
 
-        const struct entity *ent = ff_val.target.ent.target;
-        if(!(ent->flags & ENTITY_FLAG_MOVABLE))
+        uint32_t ent = ff_val.target.ent.target;
+        if(!(G_FlagsGet(ent) & ENTITY_FLAG_MOVABLE))
             continue;
 
         lru_flow_remove(&s_flow_cache, key);
