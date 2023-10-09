@@ -13,7 +13,11 @@ ifeq ($(PLAT),WINDOWS)
 
 obj/res.o: pf.rc
 	mkdir -p obj
+ifeq ($(OS),Windows_NT)
+	$(shell which windres) $^ -o $@
+else
 	$(CROSS_COMPILE)windres $^ -o $@
+endif
 
 launcher: obj/res.o
 	mkdir -p obj
