@@ -356,7 +356,7 @@ void G_Pos_Upload(void)
             buff,
             gpu_idbuff,
             R_PushArg(&nents, sizeof(nents)),
-            G_GetPrevTickMap()
+            (void*)G_GetPrevTickMap()
         },
     });
 

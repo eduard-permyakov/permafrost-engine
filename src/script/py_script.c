@@ -3009,7 +3009,7 @@ static struct result script_task(void *arg)
     Task_SetDestructor(script_task_destructor, arg);
 
     struct script_arg *sarg = arg;
-    bool result = S_RunFile(sarg->path, sarg->argc, sarg->argv);
+    bool result = S_RunFile(sarg->path, sarg->argc, (char**)sarg->argv);
 
     return (struct result) {
         .type = RESULT_BOOL,
@@ -3167,7 +3167,7 @@ void S_RunFileAsync(const char *path, int argc, char **argv, struct future *resu
 
     arg->path = path;
     arg->argc = argc;
-    arg->argv = argv;
+    arg->argv = (const char**)argv;
 
     uint32_t tid = Sched_Create(31, script_task, arg, result, 
         TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);

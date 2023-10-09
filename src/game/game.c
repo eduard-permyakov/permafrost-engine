@@ -2299,14 +2299,14 @@ void G_Zombiefy(uint32_t uid, bool invis)
         assert(k != kh_end(s_gs.dynamic));
         kh_del(entity, s_gs.dynamic, k);
 
-        k = kh_get(entity, s_gs.ent_gpu_id_map, uid);
+        k = kh_get(id, s_gs.ent_gpu_id_map, uid);
         assert(k != kh_end(s_gs.ent_gpu_id_map));
         uint32_t gpu_id = kh_value(s_gs.ent_gpu_id_map, k);
-        kh_del(entity, s_gs.ent_gpu_id_map, k);
+        kh_del(id, s_gs.ent_gpu_id_map, k);
 
-        k = kh_get(entity, s_gs.gpu_id_ent_map, gpu_id);
+        k = kh_get(id, s_gs.gpu_id_ent_map, gpu_id);
         assert(k != kh_end(s_gs.gpu_id_ent_map));
-        kh_del(entity, s_gs.gpu_id_ent_map, k);
+        kh_del(id, s_gs.gpu_id_ent_map, k);
     }
 
     G_Move_RemoveEntity(uid);
@@ -2436,7 +2436,7 @@ void G_NotifyOrderIssued(uint32_t uid)
     if(flags & ENTITY_FLAG_COMBATABLE) {
         G_Combat_ClearSavedMoveCmd(uid);
     }
-    E_Global_Notify(EVENT_ORDER_ISSUED, (uintptr_t)uid, ES_ENGINE);
+    E_Global_Notify(EVENT_ORDER_ISSUED, (void*)(uintptr_t)uid, ES_ENGINE);
 }
 
 void G_SetHideHealthbars(bool on)

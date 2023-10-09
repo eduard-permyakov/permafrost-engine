@@ -39,6 +39,7 @@
 #include "storage_site.h"
 #include "game_private.h"
 #include "public/game.h"
+#include "../sched.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../cursor.h"
@@ -538,7 +539,7 @@ static void entity_drop_off(uint32_t uid, uint32_t ss)
     E_Entity_Register(EVENT_ORDER_ISSUED, uid, on_motion_begin_travel, 
         (void*)((uintptr_t)uid), G_RUNNING);
 
-    E_Entity_Notify(EVENT_STORAGE_TARGET_ACQUIRED, uid, ss, ES_ENGINE);
+    E_Entity_Notify(EVENT_STORAGE_TARGET_ACQUIRED, uid, (void*)(uintptr_t)ss, ES_ENGINE);
     G_Move_SetSurroundEntity(uid, ss);
 }
 
@@ -948,7 +949,8 @@ static void on_arrive_at_transport_source(void *user, void *event)
 
     G_Move_SetSurroundEntity(uid, hs->transport_dest_uid);
     hs->state = STATE_TRANSPORT_PUTTING;
-    E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, hs->transport_dest_uid, ES_ENGINE);
+    E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, 
+        (void*)(uintptr_t)hs->transport_dest_uid, ES_ENGINE);
 }
 
 static void on_arrive_at_transport_dest(void *user, void *event)
@@ -1326,7 +1328,8 @@ static void on_arrive_at_resource_source(void *user, void *event)
 
         G_Move_SetSurroundEntity(uid, hs->res_uid);
         hs->state = STATE_TRANSPORT_PUTTING;
-        E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, hs->transport_dest_uid, ES_ENGINE);
+        E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, 
+            (void*)(uintptr_t)hs->transport_dest_uid, ES_ENGINE);
         return;
     }
 
@@ -1417,7 +1420,8 @@ static void on_harvest_anim_finished_source(void *user, void *event)
 
         G_Move_SetSurroundEntity(uid, hs->res_uid);
         hs->state = STATE_TRANSPORT_PUTTING;
-        E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, hs->transport_dest_uid, ES_ENGINE);
+        E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, uid, 
+            (void*)(uintptr_t)hs->transport_dest_uid, ES_ENGINE);
     }
 }
 
@@ -1442,7 +1446,8 @@ static bool harvester_transport_from_resources(uint32_t harvester, uint32_t stor
     hs->res_uid = resource;
     hs->res_last_pos = G_Pos_GetXZ(resource);
     hs->res_name = G_Resource_GetName(resource);
-    E_Entity_Notify(EVENT_HARVEST_TARGET_ACQUIRED, harvester, resource, ES_ENGINE);
+    E_Entity_Notify(EVENT_HARVEST_TARGET_ACQUIRED, harvester, 
+        (void*)(uintptr_t)resource, ES_ENGINE);
 
     if(M_NavObjAdjacent(s_map, harvester, resource)) {
         on_arrive_at_resource_source((void*)((uintptr_t)harvester), NULL);
@@ -1740,7 +1745,8 @@ bool G_Harvester_Gather(uint32_t harvester, uint32_t resource)
     hs->res_uid = resource;
     hs->res_last_pos = G_Pos_GetXZ(resource);
     hs->res_name = G_Resource_GetName(resource);
-    E_Entity_Notify(EVENT_HARVEST_TARGET_ACQUIRED, harvester, resource, ES_ENGINE);
+    E_Entity_Notify(EVENT_HARVEST_TARGET_ACQUIRED, harvester, 
+        (void*)(uintptr_t)resource, ES_ENGINE);
 
     if(M_NavObjAdjacent(s_map, harvester, resource)) {
         on_arrive_at_resource((void*)((uintptr_t)harvester), NULL);
@@ -1794,7 +1800,8 @@ bool G_Harvester_PickUp(uint32_t harvester, uint32_t storage)
     hs->transport_dest_uid = NULL_UID;
     hs->transport_src_uid = storage;
     hs->res_name = rname;
-    E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, harvester, storage, ES_ENGINE);
+    E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, harvester, 
+        (void*)(uintptr_t)storage, ES_ENGINE);
 
     if(M_NavObjAdjacent(s_map, harvester, storage)) {
         on_arrive_at_transport_source((void*)((uintptr_t)harvester), NULL);
@@ -1858,7 +1865,8 @@ bool G_Harvester_Transport(uint32_t harvester, uint32_t storage)
     hs->transport_dest_uid = storage;
     hs->transport_src_uid = src;
     hs->res_name = rname;
-    E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, harvester, storage, ES_ENGINE);
+    E_Entity_Notify(EVENT_TRANSPORT_TARGET_ACQUIRED, harvester, 
+        (void*)(uintptr_t)storage, ES_ENGINE);
 
     if(M_NavObjAdjacent(s_map, harvester, src)) {
         on_arrive_at_transport_source((void*)((uintptr_t)harvester), NULL);

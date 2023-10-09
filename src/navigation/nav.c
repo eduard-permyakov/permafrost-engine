@@ -1028,7 +1028,7 @@ int n_closest_island_tiles(const struct nav_private *priv,
             }
 
             visited[neighb.chunk_r * stride_a + neighb.chunk_c * stride_b
-                  + neighb.tile_r  * stride_c + neighb.tile_c];
+                  + neighb.tile_r  * stride_c + neighb.tile_c] = true;
             queue_td_push(&frontier, &neighb);
         }
     }

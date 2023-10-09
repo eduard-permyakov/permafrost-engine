@@ -1084,8 +1084,6 @@ static PyObject *PyEntity_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 
 static void PyEntity_dealloc(PyEntityObject *self)
 {
-    assert(self->ent);
-
     khiter_t k = kh_get(PyObject, s_uid_pyobj_table, self->ent);
     assert(k != kh_end(s_uid_pyobj_table));
     kh_del(PyObject, s_uid_pyobj_table, k);
@@ -2527,7 +2525,7 @@ static PyObject *PyBuildableEntity_get_required_resources(PyBuildableEntityObjec
     STALLOC(char*, names, max);
     STALLOC(int, amounts, max);
 
-    size_t nreq = G_Building_GetAllRequired(self->super.ent, max, names, amounts);
+    size_t nreq = G_Building_GetAllRequired(self->super.ent, max, (const char**)names, amounts);
     PyObject *ret = PyDict_New();
     if(!ret)
         return NULL; 

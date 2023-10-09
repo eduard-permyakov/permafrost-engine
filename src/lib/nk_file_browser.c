@@ -44,7 +44,11 @@
 
 #if defined(_WIN32)
 #define WINVER 0x0600
+
+#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0600
+#endif
+
 #define NTDDI_VERSION 0x06000000
 #define WIN32_LEAN_AND_MEAN
 #define UNICODE
@@ -436,7 +440,9 @@ static void fb_places_list(struct nk_context *ctx, struct nk_fb_state *state)
     STALLOC(char*, icons, max_places);
     STALLOC(char, names, max_places * 32);
 
-    size_t nplaces = fb_get_places(max_places, paths, icons, names);
+    size_t nplaces = fb_get_places(max_places, 
+        (char(*)[NK_MAX_PATH_LEN])paths, icons, 
+        (char(*)[32])names);
 
     for(int i = 0; i < nplaces; i++) {
 

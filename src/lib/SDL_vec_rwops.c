@@ -87,7 +87,8 @@ static size_t rw_vec_write(SDL_RWops *ctx, const void *ptr, size_t size, size_t 
     }
 
     for(int i = 0; i < size * num; i++) {
-        vec_uchar_push(VEC(ctx), *(((unsigned char*)ptr)++));
+        vec_uchar_push(VEC(ctx), *((unsigned char*)ptr));
+        ptr = ((unsigned char*)ptr) + 1;
     }
 
     ctx->hidden.unknown.data2 = (void*)(SEEK_IDX(ctx) + size * num);
@@ -148,5 +149,5 @@ const char *PFSDL_VectorRWOpsRaw(SDL_RWops *ctx)
 
 bool PFSDL_VectorRWOpsReserve(SDL_RWops* ctx, size_t size)
 {
-    vec_uchar_resize(VEC(ctx), size);
+    return vec_uchar_resize(VEC(ctx), size);
 }

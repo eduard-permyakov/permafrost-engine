@@ -242,10 +242,6 @@ static void al_save_mapping(uint32_t uid, struct entity *ent)
     khiter_t k = kh_put(uid_ent, s_uid_ent_table, uid, &ret);
     assert(ret != -1);
     kh_value(s_uid_ent_table, k) = ent;
-
-    char buff[512];
-    sprintf(buff, "setting mapping: %x : %p\n", uid, ent);
-    OutputDebugString(buff);
 }
 
 /*****************************************************************************/
@@ -301,10 +297,6 @@ struct entity *AL_EntityGet(uint32_t uid)
     khiter_t k = kh_get(uid_ent, s_uid_ent_table, uid);
     if(k == kh_end(s_uid_ent_table))
         return NULL;
-
-    char buff[512];
-    sprintf(buff, " >> GETTING mapping: %x : %p\n", uid, kh_value(s_uid_ent_table, k));
-    OutputDebugString(buff);
 
     return kh_value(s_uid_ent_table, k);
 }

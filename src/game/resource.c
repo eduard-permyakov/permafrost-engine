@@ -35,6 +35,7 @@
 
 #include "resource.h"
 #include "game_private.h"
+#include "../sched.h"
 #include "../event.h"
 #include "../entity.h"
 #include "../phys/public/collision.h"

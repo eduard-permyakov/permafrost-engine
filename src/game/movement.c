@@ -631,7 +631,8 @@ static void move_marker_add(vec3_t pos, bool attack)
     G_AddEntity(uid, flags, pos);
 
     Entity_SetScale(uid, (vec3_t){2.0f, 2.0f, 2.0f});
-    E_Entity_Register(EVENT_ANIM_FINISHED, uid, on_marker_anim_finish, (uintptr_t)uid, G_RUNNING);
+    E_Entity_Register(EVENT_ANIM_FINISHED, uid, on_marker_anim_finish, 
+        (void*)(uintptr_t)uid, G_RUNNING);
     A_SetActiveClip(uid, "Converge", ANIM_MODE_ONCE, 48);
 
     vec_entity_push(&s_move_markers, uid);
@@ -1747,7 +1748,7 @@ static void move_finish_work(void)
     PERF_PUSH("entity updates");
     for(int i = 0; i < s_move_work.nwork; i++) {
 
-        const struct move_work_out *out = &s_move_work.out[i];
+        struct move_work_out *out = &s_move_work.out[i];
         entity_update(out->ent_uid, out);
     }
     PERF_POP();
@@ -1982,7 +1983,7 @@ void G_Move_SetDest(uint32_t uid, vec2_t dest_xz, bool attack)
      */
     vec_entity_t flock;
     vec_entity_init(&flock);
-    vec_entity_push(&flock, &uid);
+    vec_entity_push(&flock, uid);
 
     make_flock(&flock, dest_xz, Entity_NavLayer(uid), attack);
     vec_entity_destroy(&flock);
@@ -2180,10 +2181,10 @@ void G_Move_Upload(void)
                 : false;
         vec2_t dest_xz = flock ? flock->target_xz : (vec2_t){0.0f, 0.0f};
 
-        *((uint32_t*)cursor)++ = flock_id;
-        *((uint32_t*)cursor)++ = movestate;
-        *((uint32_t*)cursor)++ = has_dest_los;
-        *((vec2_t*)cursor)++ = dest_xz;
+        *((uint32_t*)cursor) = flock_id;        cursor += sizeof(uint32_t);
+        *((uint32_t*)cursor) = movestate;       cursor += sizeof(uint32_t);
+        *((uint32_t*)cursor) = has_dest_los;    cursor += sizeof(uint32_t);
+        *((vec2_t*)cursor) = dest_xz;           cursor += sizeof(vec2_t);
     }
     assert(cursor == ((unsigned char*)buff) + buffsize);
 

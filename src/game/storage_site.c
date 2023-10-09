@@ -36,6 +36,7 @@
 #include "storage_site.h"
 #include "game_private.h"
 #include "selection.h"
+#include "../sched.h"
 #include "../ui.h"
 #include "../event.h"
 #include "../settings.h"

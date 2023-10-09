@@ -51,14 +51,6 @@
 #define SHADER_PATH_LEN 128
 #define ARR_SIZE(a)     (sizeof(a)/sizeof(a[0]))
 
-#ifdef _MSC_VER && !defined(NDEBUG)
-#include <windows.h>
-#define PRINT(_text) OutputDebugString(_text)
-#else
-#define PRINT(_text) fprintf(stderr, (_text))
-#endif
-
-
 struct uniform{
     int           type;
     const char   *name;

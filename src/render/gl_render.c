@@ -66,17 +66,6 @@
 #define MAX(a, b)                   ((a) > (b) ? (a) : (b))
 #define MIN(a, b)                   ((a) < (b) ? (a) : (b))
 
-#ifdef _MSC_VER && !defined(NDEBUG)
-#include <windows.h>
-#define PRINT(_text) OutputDebugString(_text)
-#else
-#define PRINT(_text)                            \
-    do {                                        \
-        fprintf(stderr, _text);                 \
-        fflush(stderr);                         \
-    }while(0)
-#endif
-
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -411,7 +400,7 @@ void R_GL_DrawLoadingScreen(void)
     GL_PERF_RETURN_VOID();
 }
 
-void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, const struct camera *cam)
+void R_GL_DrawSkeleton(uint32_t uid, const struct skeleton *skel, const struct camera *cam)
 {
     GL_PERF_ENTER();
     ASSERT_IN_RENDER_THREAD();
@@ -423,7 +412,7 @@ void R_GL_DrawSkeleton(const struct entity *ent, const struct skeleton *skel, co
     Engine_WinDrawableSize(&width, &height);
 
     mat4x4_t model;
-    Entity_ModelMatrix(ent, &model);
+    Entity_ModelMatrix(uid, &model);
 
     /* Our vbuff looks like this:
      * +----------------+-------------+--------------+-----
@@ -1543,7 +1532,8 @@ void R_GL_TimestampForCookie(uint32_t *cookie, uint64_t *out)
     glGetQueryObjectiv(timer_query, GL_QUERY_RESULT_AVAILABLE, &avail);
 
     if(!avail) {
-        PRINT("WARNING: Timestamp query result not yet available. This may negatively impact performance.\n");
+        PRINT("WARNING: Timestamp query result not yet available. "
+              "This may negatively impact performance.\n");
     }
 
     glGetQueryObjectui64v(timer_query, GL_QUERY_RESULT, out);

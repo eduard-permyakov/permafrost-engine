@@ -364,7 +364,7 @@ static enum flow_dir field_flow_dir(
 static bool field_is_los_corner(
     struct coord  cell, 
     const uint8_t cost_field[FIELD_RES_R][FIELD_RES_C],
-    const uint8_t blockers_field[FIELD_RES_R][FIELD_RES_C])
+    const uint16_t blockers_field[FIELD_RES_R][FIELD_RES_C])
 {
     if(cell.r > 0 && cell.r < FIELD_RES_R-1) {
 
@@ -607,7 +607,7 @@ static void field_build_flow(float intf[FIELD_RES_R][FIELD_RES_C], struct flow_f
         }
 
         inout_flow->field[r][c].dir_idx = field_flow_dir(FIELD_RES_R, FIELD_RES_C, 
-            intf, (struct coord){r, c});
+            (const float*)intf, (struct coord){r, c});
     }}
 }
 
@@ -1645,7 +1645,7 @@ void N_FlowFieldUpdateToNearestPathable(
         if(integration_field[r][c] == 0.0f)
             continue;
         inout_flow->field[r][c].dir_idx = field_flow_dir(FIELD_RES_R, FIELD_RES_C, 
-            integration_field, (struct coord){r, c});
+            (const float*)integration_field, (struct coord){r, c});
     }}
 
     pq_coord_destroy(&frontier);
