@@ -62,11 +62,15 @@ WINDOWS_SDL2_LIB = SDL2.dll
 WINDOWS_PYTHON_LIB = libpython2.7.dll
 WINDOWS_OPENAL_LIB = OpenAL32.dll
 
+
+ifneq ($(OS),Windows_NT)
+WINDOWS_GLEW_OPTS = "SYSTEM=linux-mingw64"
+endif
+
 WINDOWS_SDL2_CONFIG = --host=x86_64-w64-mingw32
 WINDOWS_PYTHON_CONFIG = --host=x86_64-w64-mingw32
-WINDOWS_PYTHON_DEFS = -D__USE_MINGW_ANSI_STDIO=1
+WINDOWS_PYTHON_DEFS = "-D__USE_MINGW_ANSI_STDIO=1 -D__MINGW32__"
 WINDOWS_PYTHON_TARGET = libpython2.7.dll
-WINDOWS_GLEW_OPTS = "SYSTEM=linux-mingw64"
 WINDOWS_OPENAL_OPTS = -DCMAKE_TOOLCHAIN_FILE=XCompile.txt -DHOST=x86_64-w64-mingw32 -DALSOFT_UTILS=OFF -DALSOFT_EXAMPLES=OFF
 
 WINDOWS_CC = x86_64-w64-mingw32-gcc
@@ -170,6 +174,7 @@ DEPS = \
 		$(PYTHON_CONFIG) \
 		--build=x86_64-pc-linux-gnu \
 		--enable-shared \
+		--disable-ipv6 \
 		--without-threads \
 		--without-signal-module \
 	&& cp ./pyconfig.h ../Include/. \
@@ -178,8 +183,14 @@ DEPS = \
 
 ./lib/$(OPENAL_LIB):
 	mkdir -p $(OPENAL_SRC)/build
+ifeq ($(OS),Windows_NT)
+	ln -sf $(shell which windres) $(OPENAL_SRC)/build/x86_64-w64-mingw32-windres
+endif
 	cd $(OPENAL_SRC)/build \
+		&& export PATH="$(shell pwd)/$(OPENAL_SRC)/build:$$PATH" \
+		&& echo $$PATH \
 		&& cmake .. $(OPENAL_OPTS) \
+		-DCMAKE_CXX_FLAGS="-I. -I.. -I../include -I../alc -I../common" \
 		&& make 
 	cp $(OPENAL_SRC)/build/$(OPENAL_LIB) $@
 
@@ -202,10 +213,10 @@ $(BIN): $(PF_OBJS)
 pf: $(BIN)
 
 clean_deps:
-	rm -rf deps/GLEW/lib
-	rm -rf deps/SDL2/build	
-	rm -rf deps/Python/build	
-	rm -rf deps/openal-soft/build
+	cd deps/GLEW && git clean -f -d
+	cd deps/SDL2 && git clean -f -d
+	cd deps/Python && git clean -f -d
+	cd deps/openal-soft && git clean -f -d
 	rm -rf ./lib/*
 
 clean:
