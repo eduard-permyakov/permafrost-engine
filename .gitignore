@@ -1,6 +1,7 @@
 /bin/
 /lib/
 /obj/
+/launcher/obj/
 
 /assets/*
 
@@ -18,10 +19,42 @@
 
 pf.conf
 
+demo.exe
+editor.exe
+
+.vs
+x64
+
 deps/GLEW/auto/EGL-Registry/
 deps/GLEW/auto/OpenGL-Registry/
 deps/GLEW/auto/glfixes/
 deps/GLEW/lib/
 deps/GLEW/tmp/
+
 deps/SDL2/build/
+deps/SDL2/VisualC/SDL/SDL.vcxproj.user
+deps/SDL2/VisualC/SDL/x64/
+deps/SDL2/out/
+
+deps/Python/PCbuild/.vs/
+
+deps/openal-soft/CMakeCache.txt
+deps/openal-soft/CMakeFiles/
+deps/openal-soft/Debug/
+deps/openal-soft/OpenAL.dir/
+deps/openal-soft/OpenALConfig.cmake
+deps/openal-soft/Release/
+deps/openal-soft/cmake_install.cmake
+deps/openal-soft/common.dir/
+deps/openal-soft/config.h
+deps/openal-soft/hrtf_default.h
+deps/openal-soft/openal.pc
+deps/openal-soft/utils/alsoft-config/ALL_BUILD.vcxproj
+deps/openal-soft/utils/alsoft-config/ALL_BUILD.vcxproj.filters
+deps/openal-soft/utils/alsoft-config/CMakeFiles/
+deps/openal-soft/utils/alsoft-config/INSTALL.vcxproj
+deps/openal-soft/utils/alsoft-config/INSTALL.vcxproj.filters
+deps/openal-soft/utils/alsoft-config/alsoft-config.sln
+deps/openal-soft/utils/alsoft-config/cmake_install.cmake
+deps/openal-soft/version.h
 
