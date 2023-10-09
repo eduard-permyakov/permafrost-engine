@@ -384,16 +384,12 @@ vec3_t Entity_CenterPos(uint32_t uid)
     Entity_CurrentOBB(uid, &obb, false);
     return obb.center;
 }
-#include <windows.h>
+
 vec3_t Entity_TopCenterPointWS(uint32_t uid)
 {
     const struct entity *ent = AL_EntityGet(uid);
-
-    char buff[512];
-    sprintf(buff, "ent: %p\n", ent);
-    OutputDebugString(buff);
-
     const struct aabb *aabb = &ent->identity_aabb;
+
     vec4_t top_center_homo = (vec4_t) {
         (aabb->x_min + aabb->x_max) / 2.0f,
         aabb->y_max,

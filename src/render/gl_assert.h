@@ -45,7 +45,7 @@
 #include <windows.h>
 #define PRINT(_text) OutputDebugString(_text)
 #else
-#define PRINT(_text) fprintf(stderr, (_text))
+#define PRINT(_text) fprintf(stderr, "%s", (_text))
 #endif
 
 #define GL_ASSERT_OK()                                  \

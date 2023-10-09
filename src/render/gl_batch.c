@@ -54,7 +54,6 @@
 
 #include <inttypes.h>
 #include <assert.h>
-#include <windows.h>
 
 
 #define MESH_BUFF_SZ        (4*1024*1024)

@@ -48,7 +48,6 @@
 #include "lib/public/mem.h"
 
 #include <SDL.h>
-#include <windows.h>
 
 #include <stdio.h>
 #include <stdbool.h>

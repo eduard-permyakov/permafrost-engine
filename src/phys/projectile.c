@@ -54,7 +54,6 @@
 #include <math.h>
 #include <assert.h>
 #include <SDL.h>
-#include <windows.h>
 
 
 #define PHYS_HZ         (30)
