@@ -35,10 +35,14 @@
 
 #version 330 core
 
-out uvec4 o_frag_color;
+out uint o_frag_id;
+
+in VertexToFrag{
+    flat uint id;
+}from_vertex;
 
 void main()
 {
-    o_frag_color = uvec4(0xffffffff, 0, 0, 0xffffffff);
+    o_frag_id = from_vertex.id;
 }
 

@@ -43,7 +43,7 @@ uniform mat4 view;
 uniform mat4 projection;
 
 out VertexToFrag {
-         vec4 color;
+    vec4 color;
 }to_fragment;
 
 void main()

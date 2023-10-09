@@ -40,9 +40,14 @@
 #define Z_COORDS_PER_TILE (8)
 
 layout (location = 0) in vec3 in_pos;
+layout (location = 1) in uint in_id;
 
 uniform ivec4 map_resolution;
 uniform vec2 map_pos;
+
+out VertexToFrag{
+    flat uint id;
+}to_fragment;
 
 void main()
 {
@@ -50,6 +55,8 @@ void main()
     int resz = map_resolution.y * map_resolution.w * Z_COORDS_PER_TILE;
     float clip_x = (in_pos.x + map_pos.x) / (resx / 2) * -1 + 1;
     float clip_z = (in_pos.z - map_pos.y) / (resz / 2) * +1 - 1;
+
+    to_fragment.id = in_id;
     gl_Position = vec4(clip_x, clip_z, 0, 1);
 }
 
