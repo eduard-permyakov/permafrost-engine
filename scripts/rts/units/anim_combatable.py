@@ -34,10 +34,10 @@
 
 from abc import ABCMeta, abstractproperty
 import pf
-from constants import *
-import globals 
+from rts.constants import *
+import rts.globals 
 import weakref
-import action
+import rts.action
 import controllable as cont
 
 class AnimCombatable(pf.AnimEntity, pf.CombatableEntity, cont.Controllable):
@@ -89,18 +89,18 @@ class AnimCombatable(pf.AnimEntity, pf.CombatableEntity, cont.Controllable):
 
     def on_death_anim_finish(self, event):
         self.unregister(pf.EVENT_ANIM_CYCLE_FINISHED, AnimCombatable.on_death_anim_finish)
-        globals.scene_objs.remove(self)
+        rts.globals.scene_objs.remove(self)
 
     def action(self, idx):
         if idx == 2:
-            return action.ActionDesc(
+            return rts.action.ActionDesc(
                 icon_normal="assets/icons/glest/magic-actions/magic_hold_normal.bmp",
                 icon_hover="assets/icons/glest/magic-actions/magic_hold_hover.bmp",
                 icon_active="assets/icons/glest/magic-actions/magic_hold_active.bmp",
                 action = AnimCombatable.__hold_position_action,
                 hotkey = pf.SDL_SCANCODE_H)
         if idx == 3:
-            return action.ActionDesc(
+            return rts.action.ActionDesc(
                 icon_normal="assets/icons/glest/magic-actions/magic_armor_attack_normal.bmp",
                 icon_hover="assets/icons/glest/magic-actions/magic_armor_attack_hover.bmp",
                 icon_active="assets/icons/glest/magic-actions/magic_armor_attack_active.bmp",

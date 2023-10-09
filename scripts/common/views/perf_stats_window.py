@@ -134,7 +134,7 @@ class PerfStatsWindow(pf.Window):
             self.tickindex = (self.tickindex + 1) % len(self.frame_times_ms)
 
         self.layout_row_dynamic(100, 1)
-        self.simple_chart(pf.NK_CHART_LINES, (0, 200), self.frame_times_ms, self.on_chart_click)
+        self.simple_chart(pf.NK_CHART_LINES, (0, 1000), self.frame_times_ms, self.on_chart_click)
 
         self.layout_row_dynamic(20, 1)
         avg_frame_latency_ms = float(self.ticksum_ms)/len(self.frame_times_ms)

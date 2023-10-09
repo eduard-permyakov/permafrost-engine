@@ -34,10 +34,10 @@
 
 from abc import ABCMeta, abstractproperty
 import pf
-from constants import *
+from rts.constants import *
 import weakref
 import controllable as cont
-import action
+import rts.action
 
 class AnimMoveable(pf.AnimEntity, pf.MovableEntity, cont.Controllable):
     """ 
@@ -79,14 +79,14 @@ class AnimMoveable(pf.AnimEntity, pf.MovableEntity, cont.Controllable):
 
     def action(self, idx):
         if idx == 0:
-            return action.ActionDesc(
+            return rts.action.ActionDesc(
                 icon_normal="assets/icons/glest/magic-actions/magic_move_normal.bmp",
                 icon_hover="assets/icons/glest/magic-actions/magic_move_hover.bmp",
                 icon_active="assets/icons/glest/magic-actions/magic_move_active.bmp",
                 action = AnimMoveable.__move_action,
                 hotkey = pf.SDL_SCANCODE_M)
         if idx == 1 and super(AnimMoveable, self).action(1) is None:
-            return action.ActionDesc(
+            return rts.action.ActionDesc(
                 icon_normal="assets/icons/glest/magic-actions/magic_stop_normal.bmp",
                 icon_hover="assets/icons/glest/magic-actions/magic_stop_hover.bmp",
                 icon_active="assets/icons/glest/magic-actions/magic_stop_active.bmp",

@@ -34,10 +34,10 @@
 
 import anim_moveable as am
 import anim_combatable as ac
-from constants import *
+from rts.constants import *
 import pf
 import weakref
-import action
+import rts.action
 
 class Sinbad(am.AnimMoveable, ac.AnimCombatable):
 
@@ -75,7 +75,7 @@ class Sinbad(am.AnimMoveable, ac.AnimCombatable):
 
     def action(self, idx):
         if idx == 8:
-            return action.ActionDesc(
+            return rts.action.ActionDesc(
                 icon_normal="assets/icons/glest/magic-actions/summoner_daemon_normal.bmp",
                 icon_hover="assets/icons/glest/magic-actions/summoner_daemon_hover.bmp",
                 icon_active="assets/icons/glest/magic-actions/summoner_daemon_active.bmp",

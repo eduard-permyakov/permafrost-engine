@@ -34,8 +34,8 @@
 
 from abc import ABCMeta, abstractmethod
 import pf
-from constants import *
-import action
+from rts.constants import *
+import rts.action
 
 class Controllable(pf.Entity):
     """
