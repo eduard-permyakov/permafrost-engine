@@ -103,7 +103,7 @@
 
 #define QUADTREE_PROTOTYPES(scope, name, type)                                                  \
                                                                                                 \
-    MPOOL_PROTOTYPES(scope, name, qt_node(name))                                                \
+    MPOOL_PROTOTYPES(static, name, qt_node(name))                                               \
                                                                                                 \
     scope bool qt_##name##_init(qt(name) *qt,                                                   \
                                 float xmin, float xmax,                                         \
