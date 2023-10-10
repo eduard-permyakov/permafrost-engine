@@ -410,6 +410,8 @@ static const double __ac_HASH_UPPER = 0.77;
         if(!ret)                                                                                \
             return NULL;                                                                        \
         *ret = *h;                                                                              \
+        if(h->n_buckets == 0)                                                                   \
+            return ret;                                                                         \
         ret->flags = (khint32_t*)kmalloc(__ac_fsize(h->n_buckets) * sizeof(khint32_t));         \
         ret->keys = (khkey_t*)kmalloc(h->n_buckets * sizeof(khkey_t));                          \
         ret->vals = (khval_t*)kmalloc(h->n_buckets * sizeof(khval_t));                          \
