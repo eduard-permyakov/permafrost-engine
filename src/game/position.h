@@ -45,10 +45,18 @@ struct map;
 QUADTREE_TYPE(ent, uint32_t)
 KHASH_DECLARE(pos, khint32_t, vec3_t)
 
-bool G_Pos_Init(const struct map *map);
-void G_Pos_Shutdown(void);
-void G_Pos_Delete(uint32_t uid);
-void G_Pos_Upload(void);
+bool      G_Pos_Init(const struct map *map);
+void      G_Pos_Shutdown(void);
+void      G_Pos_Delete(uint32_t uid);
+void      G_Pos_Upload(void);
+
+qt_ent_t *G_Pos_CopyQuadTree(void);
+void      G_Pos_DestroyQuadTree(qt_ent_t *tree);
+int       G_Pos_EntsInCircleFrom(qt_ent_t *tree, vec2_t xz_point, float range, 
+                                 uint32_t *out, size_t maxout);
+
+khash_t(pos) *G_Pos_CopyTable(void);
+vec2_t        G_Pos_GetXZFrom(khash_t(pos) *table, uint32_t uid);
 
 #endif
 

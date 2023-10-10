@@ -1112,6 +1112,44 @@ static void g_prune_water_input(struct render_input *in)
     PERF_RETURN_VOID();
 }
 
+void g_delete_gpuid(uint32_t uid)
+{
+    khiter_t k = kh_get(entity, s_gs.dynamic, uid);
+    assert(k != kh_end(s_gs.dynamic));
+    kh_del(entity, s_gs.dynamic, k);
+
+    k = kh_get(id, s_gs.ent_gpu_id_map, uid);
+    assert(k != kh_end(s_gs.ent_gpu_id_map));
+    uint32_t old_id = kh_value(s_gs.ent_gpu_id_map, k);
+    uint32_t old_size = kh_size(s_gs.ent_gpu_id_map);
+    kh_del(id, s_gs.ent_gpu_id_map, k);
+
+    k = kh_get(id, s_gs.gpu_id_ent_map, old_id);
+    assert(k != kh_end(s_gs.gpu_id_ent_map));
+    kh_del(id, s_gs.gpu_id_ent_map, k);
+
+    /* Make sure all existing values in the GPU ID table 
+     * are in the range of [1:table_size] */
+    k = kh_get(id, s_gs.gpu_id_ent_map, old_size);
+    if(k != kh_end(s_gs.gpu_id_ent_map)) {
+
+        uint32_t uid = kh_value(s_gs.gpu_id_ent_map, k);
+        kh_del(id, s_gs.gpu_id_ent_map, k);
+
+        k = kh_get(id, s_gs.ent_gpu_id_map, uid);
+        assert(k != kh_end(s_gs.ent_gpu_id_map));
+        kh_value(s_gs.ent_gpu_id_map, k) = old_id;
+
+        int ret;
+        k = kh_put(id, s_gs.gpu_id_ent_map, old_id, &ret);
+        assert(ret != -1);
+        kh_value(s_gs.gpu_id_ent_map, k) = uid;
+    }
+
+    assert(kh_size(s_gs.dynamic) == kh_size(s_gs.ent_gpu_id_map));
+    assert(kh_size(s_gs.ent_gpu_id_map) == kh_size(s_gs.gpu_id_ent_map));
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1705,6 +1743,18 @@ uint32_t G_FlagsGet(uint32_t uid)
     return kh_value(s_gs.ent_flag_map, k);
 }
 
+uint32_t G_FlagsGetFrom(khash_t(id) *table, uint32_t uid)
+{
+    khiter_t k = kh_get(id, table, uid);
+    assert(k != kh_end(table));
+    return kh_value(table, k);
+}
+
+khash_t(id) *G_FlagsCopyTable(void)
+{
+	return kh_copy_id(s_gs.ent_flag_map);
+}
+
 bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1789,42 +1839,8 @@ bool G_RemoveEntity(uint32_t uid)
     kh_del(entity, s_gs.active, k);
 
     uint32_t flags = G_FlagsGet(uid);
-    if(flags & ENTITY_FLAG_MOVABLE) {
-        k = kh_get(entity, s_gs.dynamic, uid);
-        assert(k != kh_end(s_gs.dynamic));
-        kh_del(entity, s_gs.dynamic, k);
-
-        k = kh_get(id, s_gs.ent_gpu_id_map, uid);
-        assert(k != kh_end(s_gs.ent_gpu_id_map));
-        uint32_t old_id = kh_value(s_gs.ent_gpu_id_map, k);
-        uint32_t old_size = kh_size(s_gs.ent_gpu_id_map);
-        kh_del(id, s_gs.ent_gpu_id_map, k);
-
-        k = kh_get(id, s_gs.gpu_id_ent_map, old_id);
-        assert(k != kh_end(s_gs.gpu_id_ent_map));
-        kh_del(id, s_gs.gpu_id_ent_map, k);
-
-        /* Make sure all existing values in the GPU ID table 
-         * are in the range of [1:table_size] */
-        k = kh_get(id, s_gs.gpu_id_ent_map, old_size + 1);
-        if(k != kh_end(s_gs.gpu_id_ent_map)) {
-
-            uint32_t uid = kh_value(s_gs.gpu_id_ent_map, k);
-            kh_del(id, s_gs.gpu_id_ent_map, k);
-
-            k = kh_get(id, s_gs.ent_gpu_id_map, uid);
-            assert(k != kh_end(s_gs.ent_gpu_id_map));
-            kh_value(s_gs.ent_gpu_id_map, k) = old_id;
-
-            int ret;
-            k = kh_put(id, s_gs.gpu_id_ent_map, old_id, &ret);
-            assert(ret != -1);
-            kh_value(s_gs.gpu_id_ent_map, k) = uid;
-        }
-
-        assert(kh_size(s_gs.dynamic) == kh_size(s_gs.ent_gpu_id_map));
-        assert(kh_size(s_gs.ent_gpu_id_map) == kh_size(s_gs.gpu_id_ent_map));
-    }
+    if(flags & ENTITY_FLAG_MOVABLE)
+        g_delete_gpuid(uid);
 
     int idx = vec_entity_indexof(&s_gs.visible, uid, g_entities_equal);
     if(idx != -1) {
@@ -2115,6 +2131,18 @@ float G_GetSelectionRadius(uint32_t uid)
     return kh_value(s_gs.selection_radiuses, k);
 }
 
+khash_t(range) *G_SelectionRadiusCopyTable(void)
+{
+	return kh_copy_range(s_gs.selection_radiuses);
+}
+
+float G_GetSelectionRadiusFrom(khash_t(range) *table, uint32_t uid)
+{
+    khiter_t k = kh_get(range, table, uid);
+    assert(k != kh_end(table));
+    return kh_value(table, k);
+}
+
 bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2294,20 +2322,8 @@ void G_Zombiefy(uint32_t uid, bool invis)
     if(flags & ENTITY_FLAG_SELECTABLE)
         G_Sel_Remove(uid);
 
-    if(flags & ENTITY_FLAG_MOVABLE) {
-        khiter_t k = kh_get(entity, s_gs.dynamic, uid);
-        assert(k != kh_end(s_gs.dynamic));
-        kh_del(entity, s_gs.dynamic, k);
-
-        k = kh_get(id, s_gs.ent_gpu_id_map, uid);
-        assert(k != kh_end(s_gs.ent_gpu_id_map));
-        uint32_t gpu_id = kh_value(s_gs.ent_gpu_id_map, k);
-        kh_del(id, s_gs.ent_gpu_id_map, k);
-
-        k = kh_get(id, s_gs.gpu_id_ent_map, gpu_id);
-        assert(k != kh_end(s_gs.gpu_id_ent_map));
-        kh_del(id, s_gs.gpu_id_ent_map, k);
-    }
+    if(flags & ENTITY_FLAG_MOVABLE)
+        g_delete_gpuid(uid);
 
     G_Move_RemoveEntity(uid);
     G_Combat_RemoveEntity(uid);

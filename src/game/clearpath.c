@@ -293,12 +293,9 @@ static void rays_repr(const struct HRVO *hrvos, size_t n_hrvos,
     }
 }
 
-static size_t compute_vo_xpoints(struct line_2d *rays, size_t n_rays,
-                                 vec_vec2_t *inout, uint32_t ent_uid)
+static size_t compute_vo_xpoints(struct line_2d *rays, size_t n_rays, vec_vec2_t *inout)
 {
     size_t ret = 0;
-    vec2_t pos_xz = G_Pos_GetXZ(ent_uid);
-
     for(int i = 0; i < n_rays; i++) {
         for(int j = 0; j < n_rays; j++) {
 
@@ -540,7 +537,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
 {
     bool status = false;
     STALLOC(struct HRVO, dyn_hrvos, vec_size(&dyn_neighbs));
-    STALLOC(struct HRVO, stat_vos, vec_size(&stat_neighbs));
+    STALLOC(struct VO, stat_vos, vec_size(&stat_neighbs));
 
     size_t n_hrvos = compute_all_hrvos(cpent, dyn_neighbs, dyn_hrvos);
     size_t n_vos = compute_all_vos(cpent, stat_neighbs, (struct VO*)stat_vos);
@@ -554,7 +551,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
      */
     const size_t n_rays = (n_hrvos + n_vos) * 2;
     STALLOC(struct line_2d, rays, n_rays);
-    rays_repr(dyn_hrvos, n_hrvos, (struct VO*)stat_vos, n_vos, rays);
+    rays_repr(dyn_hrvos, n_hrvos, stat_vos, n_vos, rays);
 
     if(save_debug) {
 
@@ -592,7 +589,7 @@ static bool clearpath_new_velocity(struct cp_ent cpent,
      * The remaining intersection points are permissible new velocities on the 
      * boundary of the combined hybrid reciprocal velocity obstacle.
      */
-    compute_vo_xpoints(rays, n_rays, &xpoints, ent_uid); 
+    compute_vo_xpoints(rays, n_rays, &xpoints); 
 
     /* In addition we project the preferred velocity (des_v) on to the line 
      * segments (xz_left_side and xz_right_side of each hrvo) and also retain 

@@ -564,7 +564,8 @@ void Entity_DisappearAnimated(uint32_t uid, const struct map *map, void (*on_fin
         .on_finish = on_finish,
         .arg = arg,
     };
-    uint32_t tid = Sched_Create(1, disappear_task, &darg, NULL, TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+    uint32_t tid = Sched_Create(1, disappear_task, &darg, NULL, 
+        TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
     Sched_RunSync(tid);
 }
 
@@ -572,6 +573,11 @@ int Entity_NavLayer(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
     float radius = G_GetSelectionRadius(uid);
+    return Entity_NavLayerWithRadius(radius);
+}
+
+int Entity_NavLayerWithRadius(float radius)
+{
     if(radius >= 15.0f) {
         return NAV_LAYER_GROUND_7X7;
     }else if(radius >= 10.0f) {

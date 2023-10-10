@@ -130,6 +130,7 @@ size_t   Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[]);
 size_t   Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[]);
 void     Entity_DisappearAnimated(uint32_t uid, const struct map *map, void (*on_finish)(void*), void *arg);
 int      Entity_NavLayer(uint32_t uid);
+int      Entity_NavLayerWithRadius(float radius);
 
 quat_t   Entity_GetRot(uint32_t uid);
 void     Entity_SetRot(uint32_t uid, quat_t rot);

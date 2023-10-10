@@ -421,8 +421,6 @@ static void entity_turn_to_target(uint32_t uid, uint32_t target)
 static void on_disappear_finish(void *arg)
 {
     uint32_t self = (uintptr_t)arg;
-    assert(self);
-
     uint32_t flags = G_FlagsGet(self);
     flags |= ENTITY_FLAG_INVISIBLE;
     G_FlagsSet(self, flags);
@@ -496,7 +494,6 @@ static void entity_ranged_attack(uint32_t uid, uint32_t target)
 static void on_death_anim_finish(void *user, void *event)
 {
     uint32_t self = (uintptr_t)user;
-    assert(self);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, self, on_death_anim_finish);
     G_Zombiefy(self, true);
 }
@@ -544,7 +541,6 @@ static void entity_combat_action(uint32_t uid)
 static void on_attack_anim_finish(void *user, void *event)
 {
     uint32_t self = (uintptr_t)user;
-    assert(self);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, self, on_attack_anim_finish);
     entity_combat_action(self);
 }
@@ -815,7 +811,8 @@ static void on_mousedown(void *user, void *event)
     uint32_t first = vec_AT(sel, 0);
     uint32_t target = G_Sel_GetHovered();
 
-    if(!target || !(G_FlagsGet(target) & ENTITY_FLAG_COMBATABLE) || !enemies(first, target))
+    if((target == NULL_UID) 
+	|| !(G_FlagsGet(target) & ENTITY_FLAG_COMBATABLE) || !enemies(first, target))
         return;
 
     for(int i = 0; i < vec_size(sel); i++) {

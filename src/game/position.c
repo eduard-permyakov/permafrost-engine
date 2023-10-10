@@ -138,6 +138,8 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
 
 vec3_t G_Pos_Get(uint32_t uid)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     khiter_t k = kh_get(pos, s_postable, uid);
     assert(k != kh_end(s_postable));
     return kh_val(s_postable, k);
@@ -145,9 +147,24 @@ vec3_t G_Pos_Get(uint32_t uid)
 
 vec2_t G_Pos_GetXZ(uint32_t uid)
 {
+    ASSERT_IN_MAIN_THREAD();
+
     khiter_t k = kh_get(pos, s_postable, uid);
     assert(k != kh_end(s_postable));
     vec3_t pos = kh_val(s_postable, k);
+    return (vec2_t){pos.x, pos.z};
+}
+
+khash_t(pos) *G_Pos_CopyTable(void)
+{
+    return kh_copy_pos(s_postable);
+}
+
+vec2_t G_Pos_GetXZFrom(khash_t(pos) *table, uint32_t uid)
+{
+    khiter_t k = kh_get(pos, table, uid);
+    assert(k != kh_end(table));
+    vec3_t pos = kh_val(table, k);
     return (vec2_t){pos.x, pos.z};
 }
 
@@ -206,8 +223,8 @@ int G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout)
 {
     PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
-
-    int ret = G_Pos_EntsInRectWithPred(xz_min, xz_max, out, maxout, any_ent, NULL);
+    int ret = qt_ent_inrange_rect(&s_postree, 
+        xz_min.x, xz_max.x, xz_min.z, xz_max.z, out, maxout);
     PERF_RETURN(ret);
 }
 
@@ -239,8 +256,9 @@ int G_Pos_EntsInRectWithPred(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t
 int G_Pos_EntsInCircle(vec2_t xz_point, float range, uint32_t *out, size_t maxout)
 {
     PERF_ENTER();
-
-    int ret = G_Pos_EntsInCircleWithPred(xz_point, range, out, maxout, any_ent, NULL);
+    ASSERT_IN_MAIN_THREAD();
+    int ret = qt_ent_inrange_circle(&s_postree, 
+        xz_point.x, xz_point.z, range, out, maxout);
     PERF_RETURN(ret);
 }
 
@@ -248,6 +266,7 @@ int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, uint32_t *out, size
                                bool (*predicate)(uint32_t ent, void *arg), void *arg)
 {
     PERF_ENTER();
+    ASSERT_IN_MAIN_THREAD();
 
     STALLOC(uint32_t, ent_ids, maxout);
 
@@ -265,6 +284,29 @@ int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, uint32_t *out, size
     }
 
     STFREE(ent_ids);
+    PERF_RETURN(ret);
+}
+
+qt_ent_t *G_Pos_CopyQuadTree(void)
+{
+    qt_ent_t *ret = malloc(sizeof(qt_ent_t));
+    if(!ret)
+        return NULL;
+    qt_ent_copy(&s_postree, ret);
+    return ret;
+}
+
+void G_Pos_DestroyQuadTree(qt_ent_t *tree)
+{
+    qt_ent_destroy(tree);
+    free(tree);
+}
+
+int G_Pos_EntsInCircleFrom(qt_ent_t *tree, vec2_t xz_point, float range, 
+                           uint32_t *out, size_t maxout)
+{
+    PERF_ENTER();
+    int ret = qt_ent_inrange_circle(tree, xz_point.x, xz_point.z, range, out, maxout);
     PERF_RETURN(ret);
 }
 
