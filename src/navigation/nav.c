@@ -3426,3 +3426,31 @@ done:
     queue_td_destroy(&frontier);
     return ret; 
 }
+
+size_t N_DeepCopySize(void *nav_private)
+{
+    struct nav_private *priv = (struct nav_private*)nav_private;
+    size_t ret = sizeof(struct nav_private);
+
+    for(int i = 0; i < NAV_LAYER_MAX; i++) {
+        ret += (priv->width * priv->height * sizeof(struct nav_chunk));
+    }
+    return ret;
+}
+
+void N_DeepCopy(void *nav_private, void *out)
+{
+    struct nav_private *from = (struct nav_private*)nav_private;
+    struct nav_private *to = (struct nav_private*)out;
+
+    *to = *from;
+    unsigned char *cursor = (unsigned char*)(to + 1);
+    size_t layer_size = from->width * from->height * sizeof(struct nav_chunk);
+
+    for(int i = 0; i < NAV_LAYER_MAX; i++) {
+        to->chunks[i] = (struct nav_chunk*)cursor;
+        memcpy(cursor, from->chunks[i], layer_size);
+        cursor += layer_size;
+    }
+}
+

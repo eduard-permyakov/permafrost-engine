@@ -463,6 +463,19 @@ vec2_t N_ClosestReachableInRange(void *nav_private, vec3_t map_pos,
                                  vec2_t xz_src, vec2_t xz_target, 
                                  float range, enum nav_layer layer);
 
+/* ------------------------------------------------------------------------
+ * Returns the number of bytes necessary to store a copy of the navigation
+ * data.
+ * ------------------------------------------------------------------------
+ */
+size_t N_DeepCopySize(void *nav_private);
+
+/* ------------------------------------------------------------------------
+ * Makes a copy of all the navigation data.
+ * ------------------------------------------------------------------------
+ */
+void N_DeepCopy(void *nav_private, void *out);
+
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */
 /*###########################################################################*/

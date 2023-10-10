@@ -354,6 +354,20 @@ void M_AL_ShallowCopy(struct map *dst, const struct map *src)
     memcpy(dst, src, M_AL_ShallowCopySize(src->width, src->height));
 }
 
+struct map *M_AL_DeepCopy(const struct map *src)
+{
+    size_t map_size = M_AL_ShallowCopySize(src->width, src->height);
+    size_t nav_size = N_DeepCopySize(src->nav_private);
+    struct map *ret = malloc(map_size + nav_size);
+    if(!ret)
+        return NULL;
+
+    M_AL_ShallowCopy(ret, src);
+    ret->nav_private = ret + 1;
+    N_DeepCopy(src->nav_private, ret->nav_private);
+    return ret;
+}
+
 bool M_AL_WritePFMap(const struct map *map, SDL_RWops *stream)
 {
     char line[MAX_LINE_LEN];
