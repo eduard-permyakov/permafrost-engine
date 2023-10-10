@@ -124,7 +124,8 @@
                                            float miny, float maxy,                              \
                                            type *out, int maxout);                              \
     scope void qt_##name##_print(qt(name) *qt);                                                 \
-    scope bool qt_##name##_reserve(qt(name) *qt, size_t size);
+    scope bool qt_##name##_reserve(qt(name) *qt, size_t size);                                  \
+    scope bool qt_##name##_copy(const qt(name)* from, qt(name) *to);
 
 /***********************************************************************************************/
 
@@ -969,6 +970,21 @@
     scope bool qt_##name##_reserve(qt(name) *qt, size_t new_cap)                                \
     {                                                                                           \
         return mp_##name##_reserve(&qt->node_pool, new_cap);                                    \
+    }                                                                                           \
+                                                                                                \
+    scope bool qt_##name##_copy(const qt(name)* from, qt(name) *to)                             \
+    {                                                                                           \
+        bool ret = mp_##name##_copy(&from->node_pool, &to->node_pool);                          \
+        if(!ret)                                                                                \
+            return false;                                                                       \
+        to->root = from->root;                                                                  \
+        to->nrecs = from->nrecs;                                                                \
+        to->xmin = from->xmin;                                                                  \
+        to->xmax = from->xmax;                                                                  \
+        to->ymin = from->ymin;                                                                  \
+        to->ymax = from->ymax;                                                                  \
+        to->comparator = from->comparator;                                                      \
+        return true;                                                                            \
     }
 
 #endif

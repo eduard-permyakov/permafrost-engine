@@ -82,7 +82,8 @@ typedef uint32_t mp_ref_t;
     /* For this reason, cache the reference but not the pointer. */                             \
     scope type    *mp_##name##_entry  (mp(name) *mp, mp_ref_t ref);                             \
     scope void     mp_##name##_clear  (mp(name) *mp);                                           \
-    scope mp_ref_t mp_##name##_ref    (mp(name) *mp, void *mem);
+    scope mp_ref_t mp_##name##_ref    (mp(name) *mp, void *mem);                                \
+    scope bool     mp_##name##_copy   (const mp(name) *from, mp(name) *to);
 
 /***********************************************************************************************/
 
@@ -184,6 +185,20 @@ typedef uint32_t mp_ref_t;
         assert(diff % sizeof(mp->pool[0]) == 0);                                                \
         return diff / sizeof(mp->pool[0]);                                                      \
     }                                                                                           \
+                                                                                                \
+    scope bool mp_##name##_copy(const mp(name) *from, mp(name) *to)                             \
+    {                                                                                           \
+        size_t size = from->capacity * sizeof(mp_##name##_node_t);                              \
+        to->pool = malloc(size);                                                                \
+        if(!to->pool)                                                                           \
+            return false;                                                                       \
+        memcpy(to->pool, from->pool, size);                                                     \
+        to->capacity = from->capacity;                                                          \
+        to->num_allocd = from->num_allocd;                                                      \
+        to->ifree_head = from->ifree_head;                                                      \
+        to->can_grow = from->can_grow;                                                          \
+        return true;                                                                            \
+    }
 
 #endif
 
