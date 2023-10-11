@@ -51,6 +51,7 @@ struct attr{
         TYPE_VEC3,
         TYPE_QUAT,
         TYPE_BOOL,
+        TYPE_POINTER,
     }type;
     union{
         char   as_string[256];
@@ -60,6 +61,7 @@ struct attr{
         vec3_t as_vec3;
         quat_t as_quat;
         bool   as_bool;
+        void  *as_pointer;
     }val;
 };
 
