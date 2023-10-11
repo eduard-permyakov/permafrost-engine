@@ -360,7 +360,7 @@ static void sel_filter_buildings(void)
         uint32_t curr = vec_AT(&s_selected, i);
         uint32_t flags = G_FlagsGet(curr);
 
-        if(curr & ENTITY_FLAG_BUILDING) {
+        if(flags & ENTITY_FLAG_BUILDING) {
             vec_entity_del(&s_selected, i);
         }
     }
