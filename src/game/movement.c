@@ -1349,8 +1349,7 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
     enum nav_layer layer = Entity_NavLayerWithRadius(radius);
 
     if(PFM_Vec2_Len(&new_vel) > 0
-    && M_NavPositionPathable(s_map, layer, new_pos_xz)
-    && !M_NavPositionBlocked(s_map, layer, new_pos_xz)) {
+    && M_NavPositionPathable(s_map, layer, new_pos_xz)) {
     
         vec3_t new_pos = (vec3_t){new_pos_xz.x, M_HeightAtPoint(s_map, new_pos_xz), new_pos_xz.z};
         G_Pos_Set(uid, new_pos);
