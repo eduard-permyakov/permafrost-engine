@@ -2472,8 +2472,6 @@ static PyObject *PyPf_load_session(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
-// TODO: FIXME:
-// this is super not robust
 static bool s_sys_path_add_dir(const char *filename)
 {
     if(strlen(filename) >= 512)
