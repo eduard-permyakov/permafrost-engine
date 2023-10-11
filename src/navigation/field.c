@@ -1410,14 +1410,15 @@ void N_FlowFieldUpdate(
     struct field_target       target, 
     struct flow_field        *inout_flow)
 {
+    PERF_ENTER();
     if(target.type == TARGET_ENEMIES) {
         field_update_enemies(chunk_coord, priv, layer, target.enemies, inout_flow);
-        return;
+        PERF_RETURN_VOID();
     }
 
     if(target.type == TARGET_ENTITY) {
         field_update_entity(chunk_coord, priv, layer, target.ent, inout_flow);
-        return;
+        PERF_RETURN_VOID();
     }
 
     const struct nav_chunk *chunk = &priv->chunks[layer][IDX(chunk_coord.r, priv->width, chunk_coord.c)];
@@ -1447,6 +1448,7 @@ void N_FlowFieldUpdate(
     field_fixup(target, integration_field, inout_flow, chunk);
 
     pq_coord_destroy(&frontier);
+    PERF_RETURN_VOID();
 }
 
 void N_LOSFieldCreate(
