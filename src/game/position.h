@@ -43,6 +43,8 @@
 struct map;
 
 QUADTREE_TYPE(ent, uint32_t)
+QUADTREE_PROTOTYPES(extern, ent, uint32_t)
+
 KHASH_DECLARE(pos, khint32_t, vec3_t)
 
 bool      G_Pos_Init(const struct map *map);

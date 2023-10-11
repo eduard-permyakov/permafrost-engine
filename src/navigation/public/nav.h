@@ -471,10 +471,10 @@ vec2_t N_ClosestReachableInRange(void *nav_private, vec3_t map_pos,
 size_t N_DeepCopySize(void *nav_private);
 
 /* ------------------------------------------------------------------------
- * Makes a copy of all the navigation data.
+ * Makes a copy of the traversal cost and blocked tile data.
  * ------------------------------------------------------------------------
  */
-void N_DeepCopy(void *nav_private, void *out);
+void N_CopyCostsAndBlockers(void *nav_private, void *out);
 
 /*###########################################################################*/
 /* NAV FIELD CACHE                                                           */

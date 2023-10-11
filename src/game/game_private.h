@@ -52,12 +52,18 @@ enum ctx_action{
 
 const khash_t(entity) *G_GetDynamicEntsSet(void);
 const khash_t(entity) *G_GetAllEntsSet(void);
+
 enum ctx_action        G_CurrContextualAction(void);
 void                   G_NotifyOrderIssued(uint32_t uid);
+
 khash_t(id)           *G_FlagsCopyTable(void);
 uint32_t               G_FlagsGetFrom(khash_t(id) *table, uint32_t uid);
+
 khash_t(range)        *G_SelectionRadiusCopyTable(void);
 float                  G_GetSelectionRadiusFrom(khash_t(range) *table, uint32_t uid);
+
+khash_t(id)           *G_FactionIDCopyTable(void);
+int                    G_GetFactionIDFrom(khash_t(id) *table, uint32_t uid);
 
 #endif
 

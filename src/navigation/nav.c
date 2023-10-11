@@ -3438,18 +3438,26 @@ size_t N_DeepCopySize(void *nav_private)
     return ret;
 }
 
-void N_DeepCopy(void *nav_private, void *out)
+void N_CopyCostsAndBlockers(void *nav_private, void *out)
 {
     struct nav_private *from = (struct nav_private*)nav_private;
     struct nav_private *to = (struct nav_private*)out;
 
     *to = *from;
     unsigned char *cursor = (unsigned char*)(to + 1);
-    size_t layer_size = from->width * from->height * sizeof(struct nav_chunk);
+    size_t chunks_per_layer = from->width * from->height;
+    size_t layer_size = chunks_per_layer * sizeof(struct nav_chunk);
 
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
+
+        size_t cost_size = sizeof(((struct nav_chunk*)0)->cost_base);
+        size_t blockers_size = sizeof(((struct nav_chunk*)0)->blockers);
         to->chunks[i] = (struct nav_chunk*)cursor;
-        memcpy(cursor, from->chunks[i], layer_size);
+
+        for(int j = 0; j < chunks_per_layer; j++) {
+            memcpy(to->chunks[i][j].cost_base, from->chunks[i][j].cost_base, cost_size);
+            memcpy(to->chunks[i][j].blockers, from->chunks[i][j].blockers, blockers_size);
+        }
         cursor += layer_size;
     }
 }

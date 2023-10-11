@@ -614,10 +614,11 @@ size_t M_AL_ShallowCopySize(size_t nrows, size_t ncols);
 void   M_AL_ShallowCopy(struct map *dst, const struct map *src);
 
 /* ------------------------------------------------------------------------
- * Makes a copy of the map, also copying the navigation data.
+ * Makes a copy of the map, also copying the cost field and blocked fields
+ * from the navigation data.
  * ------------------------------------------------------------------------
  */
-struct map *M_AL_DeepCopy(const struct map *src);
+struct map *M_AL_CopyWithCostsAndBlockers(const struct map *src);
 
 /* ------------------------------------------------------------------------
  * Write the map contents to the stream in PFMap format.

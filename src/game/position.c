@@ -55,9 +55,7 @@
 #include <float.h>
 
 
-QUADTREE_PROTOTYPES(static, ent, uint32_t)
-QUADTREE_IMPL(static, ent, uint32_t)
-
+QUADTREE_IMPL(extern, ent, uint32_t)
 __KHASH_IMPL(pos,  extern, khint32_t, vec3_t, 1, kh_int_hash_func, kh_int_hash_equal)
 
 #define POSBUF_INIT_SIZE (16384)

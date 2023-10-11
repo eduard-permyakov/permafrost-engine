@@ -147,6 +147,7 @@ static void g_init_map(void)
     M_RestrictRTSCamToMap(s_gs.map, s_gs.active_cam);
     M_Raycast_Install(s_gs.map, s_gs.active_cam);
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
+    G_Pos_Init(s_gs.map);
     G_Combat_Init(s_gs.map);
     G_Move_Init(s_gs.map);
     G_Building_Init(s_gs.map);
@@ -155,7 +156,6 @@ static void g_init_map(void)
     G_Region_Init(s_gs.map);
     G_Harvester_Init(s_gs.map);
     G_ClearPath_Init(s_gs.map);
-    G_Pos_Init(s_gs.map);
     G_Fog_Init(s_gs.map);
     N_ClearState();
 }
@@ -1612,11 +1612,6 @@ void G_Render(void)
     R_PushCmd((struct rcmd){ R_GL_BeginFrame, 0 });
     E_Global_NotifyImmediate(EVENT_RENDER_3D_PRE, NULL, ES_ENGINE);
 
-    if(s_gs.map && R_ComputeShaderSupported()) {
-        G_Pos_Upload();
-        G_Move_Upload();
-    }
-
     struct render_input in;
     g_create_render_input(&in);
 
@@ -1811,7 +1806,7 @@ bool G_AddEntity(uint32_t uid, uint32_t flags, vec3_t pos)
         k = kh_put(entity, s_gs.dynamic, uid, &ret);
         assert(ret != -1 && ret != 0);
 
-        G_Move_AddEntity(uid);
+        G_Move_AddEntity(uid, pos, 0.0f, 0);
 
         uint32_t gpu_id = kh_size(s_gs.ent_gpu_id_map) + 1;
         k = kh_put(id, s_gs.ent_gpu_id_map, uid, &ret);
@@ -2089,6 +2084,18 @@ int G_GetFactionID(uint32_t uid)
     return kh_value(s_gs.ent_faction_map, k);
 }
 
+khash_t(id) *G_FactionIDCopyTable(void)
+{
+	return kh_copy_id(s_gs.ent_faction_map);
+}
+
+int G_GetFactionIDFrom(khash_t(id) *table, uint32_t uid)
+{
+    khiter_t k = kh_get(id, table, uid);
+    assert(k != kh_end(table));
+    return kh_value(table, k);
+}
+
 void G_SetVisionRange(uint32_t uid, float range)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -2126,6 +2133,8 @@ void G_SetSelectionRadius(uint32_t uid, float range)
 
 float G_GetSelectionRadius(uint32_t uid)
 {
+	ASSERT_IN_MAIN_THREAD();
+
     khiter_t k = kh_get(range, s_gs.selection_radiuses, uid);
     assert(k != kh_end(s_gs.selection_radiuses));
     return kh_value(s_gs.selection_radiuses, k);
