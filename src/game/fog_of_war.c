@@ -354,7 +354,8 @@ static void fog_update_visible(int faction_id, vec2_t xz_pos, float radius, int 
     STFREE(visited);
 }
 
-static bool fog_obj_matches(uint16_t fac_mask, const struct obb *obj, enum fog_state *states, size_t nstates)
+static bool fog_obj_matches(uint32_t *state, uint16_t fac_mask, const struct obb *obj, 
+                            enum fog_state *states, size_t nstates)
 {
     assert(Sched_UsingBigStack());
 
@@ -375,7 +376,7 @@ static bool fog_obj_matches(uint16_t fac_mask, const struct obb *obj, enum fog_s
     for(int i = 0; i < ntiles; i++) {
 
         int idx = td_index(tds[i]);
-        uint32_t fac_state = s_fog_state[idx] & facstate_mask;
+        uint32_t fac_state = state[idx] & facstate_mask;
 
         for(int j = 0; j < nstates; j++) {
             if(fog_any_matches(fac_state, states[j]))
@@ -751,7 +752,7 @@ bool G_Fog_ObjExplored(uint16_t fac_mask, uint32_t uid, const struct obb *obb)
         return true;
 
     enum fog_state states[] = {STATE_IN_FOG, STATE_VISIBLE};
-    bool result = fog_obj_matches(fac_mask, obb, states, ARR_SIZE(states));
+    bool result = fog_obj_matches(s_fog_state, fac_mask, obb, states, ARR_SIZE(states));
 
     if(result) {
         int status;
@@ -767,7 +768,7 @@ bool G_Fog_ObjVisible(uint16_t fac_mask, const struct obb *obb)
         return true;
 
     enum fog_state states[] = {STATE_VISIBLE};
-    return fog_obj_matches(fac_mask, obb, states, ARR_SIZE(states));
+    return fog_obj_matches(s_fog_state, fac_mask, obb, states, ARR_SIZE(states));
 }
 
 bool G_Fog_CircleExplored(uint16_t fac_mask, vec2_t xz_pos, float radius)
@@ -924,6 +925,29 @@ void G_Fog_ExploreMap(int faction_id)
             s_fog_state[td_index(td)] = ts;
         }}
     }}
+}
+
+uint32_t *G_Fog_CopyState(void)
+{
+    struct map_resolution res;
+    M_GetResolution(s_map, &res);
+    const size_t ntiles = res.chunk_w * res.chunk_h * res.tile_w * res.tile_h;
+
+    uint32_t *ret = malloc(sizeof(s_fog_state[0]) * ntiles);
+    if(!ret)
+        return NULL;
+
+    memcpy(ret, s_fog_state, sizeof(s_fog_state[0]) * ntiles);
+    return ret;
+}
+
+bool G_Fog_ObjVisibleFrom(uint32_t *state, bool enabled, uint16_t fac_mask, const struct obb *obb)
+{
+    if(!enabled)
+        return true;
+
+    enum fog_state states[] = {STATE_VISIBLE};
+    return fog_obj_matches(state, fac_mask, obb, states, ARR_SIZE(states));
 }
 
 void G_Fog_Enable(void)

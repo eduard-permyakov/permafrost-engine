@@ -65,5 +65,10 @@ float                  G_GetSelectionRadiusFrom(khash_t(range) *table, uint32_t 
 khash_t(id)           *G_FactionIDCopyTable(void);
 int                    G_GetFactionIDFrom(khash_t(id) *table, uint32_t uid);
 
+enum diplomacy_state (*G_CopyDiplomacyTable(void))[MAX_FACTIONS];
+bool                   G_GetDiplomacyStateFrom(enum diplomacy_state (*table)[MAX_FACTIONS],
+                                               int fac_id_a, int fac_id_b, 
+                                               enum diplomacy_state *out);
+
 #endif
 

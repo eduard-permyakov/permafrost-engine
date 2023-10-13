@@ -820,6 +820,19 @@ bool M_NavObjAdjacent(const struct map *map, uint32_t uid, uint32_t target_uid)
     }
 }
 
+bool M_NavObjAdjacentToStaticWith(const struct map *map, vec2_t xz_pos, float radius, 
+                                  const struct obb *stat)
+{
+    return N_ObjAdjacentToStaticWith(map->nav_private, map->pos, xz_pos, radius, stat);
+}
+
+bool M_NavObjAdjacentToDynamicWith(const struct map *map, vec2_t xz_pos_a, float radius_a,
+                                   vec2_t xz_pos_b, float radius_b)
+{
+    return N_ObjAdjacentToDynamicWith(map->nav_private, map->pos, xz_pos_a, radius_a,
+                                      xz_pos_b, radius_b);
+}
+
 void M_NavGetResolution(const struct map *map, struct map_resolution *out)
 {
     return N_GetResolution(map->nav_private, out);

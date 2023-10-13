@@ -1362,8 +1362,8 @@ bool n_closest_adjacent_pos(void *nav_private, enum nav_layer layer, vec3_t map_
     return true;
 }
 
-bool n_objects_adjacent(void *nav_private, vec3_t map_pos, uint32_t ent, 
-                        size_t ntiles, const struct tile_desc tds[])
+static bool n_objects_adjacent(void *nav_private, vec3_t map_pos, vec2_t xz_pos, 
+                               float radius, size_t ntiles, const struct tile_desc tds[])
 {
     assert(Sched_UsingBigStack());
 
@@ -1374,8 +1374,8 @@ bool n_objects_adjacent(void *nav_private, vec3_t map_pos, uint32_t ent,
     };
 
     struct tile_desc tds_ent[2048];
-    size_t ntiles_ent = M_Tile_AllUnderCircle(n_res(priv), G_Pos_GetXZ(ent), 
-        G_GetSelectionRadius(ent), map_pos, tds_ent, ARR_SIZE(tds_ent));
+    size_t ntiles_ent = M_Tile_AllUnderCircle(n_res(priv), xz_pos, 
+        radius, map_pos, tds_ent, ARR_SIZE(tds_ent));
 
     for(int i = 0; i < ntiles; i++) {
     for(int j = 0; j < ntiles_ent; j++) {
@@ -3216,7 +3216,26 @@ bool N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, uint32_t ent, cons
     struct tile_desc tds_stat[2048];
     size_t ntiles_stat = M_Tile_AllUnderObj(map_pos, res, stat, tds_stat, ARR_SIZE(tds_stat));
 
-    return n_objects_adjacent(nav_private, map_pos, ent, ntiles_stat, tds_stat);
+    vec2_t pos = G_Pos_GetXZ(ent);
+    float radius = G_GetSelectionRadius(ent);
+
+    return n_objects_adjacent(nav_private, map_pos, pos, radius, ntiles_stat, tds_stat);
+}
+
+bool N_ObjAdjacentToStaticWith(void *nav_private, vec3_t map_pos, vec2_t xz_pos, float radius,
+                               const struct obb *stat)
+{
+    assert(Sched_UsingBigStack());
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc tds_stat[2048];
+    size_t ntiles_stat = M_Tile_AllUnderObj(map_pos, res, stat, tds_stat, ARR_SIZE(tds_stat));
+    return n_objects_adjacent(nav_private, map_pos, xz_pos, radius, ntiles_stat, tds_stat);
 }
 
 bool N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, uint32_t ent, 
@@ -3234,7 +3253,29 @@ bool N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, uint32_t ent,
     size_t ntiles_dyn = M_Tile_AllUnderCircle(n_res(priv), xz_pos, radius, 
         map_pos, tds_dyn, ARR_SIZE(tds_dyn));
 
-    return n_objects_adjacent(nav_private, map_pos, ent, ntiles_dyn, tds_dyn);
+    vec2_t pos = G_Pos_GetXZ(ent);
+    float ent_radius = G_GetSelectionRadius(ent);
+
+    return n_objects_adjacent(nav_private, map_pos, pos, ent_radius, ntiles_dyn, tds_dyn);
+}
+
+bool N_ObjAdjacentToDynamicWith(void *nav_private, vec3_t map_pos, 
+                                vec2_t xz_pos_a, float radius_a,
+                                vec2_t xz_pos_b, float radius_b)
+{
+    assert(Sched_UsingBigStack());
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res = {
+        priv->width, priv->height,
+        FIELD_RES_C, FIELD_RES_R
+    };
+
+    struct tile_desc tds_dyn[2048];
+    size_t ntiles_dyn = M_Tile_AllUnderCircle(n_res(priv), xz_pos_b, radius_b, 
+        map_pos, tds_dyn, ARR_SIZE(tds_dyn));
+
+    return n_objects_adjacent(nav_private, map_pos, xz_pos_a, radius_a, ntiles_dyn, tds_dyn);
 }
 
 void N_GetResolution(void *nav_private, struct map_resolution *out)

@@ -429,6 +429,9 @@ bool      N_IsAdjacentToImpassable(void *nav_private, enum nav_layer layer,
 bool      N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, 
                                 uint32_t ent, const struct obb *stat);
 
+bool      N_ObjAdjacentToStaticWith(void *nav_private, vec3_t map_pos, vec2_t xz_pos, float radius,
+                                    const struct obb *stat);
+
 /* ------------------------------------------------------------------------
  * Returns true if the tiles under the entity selection cirlce overlap or 
  * share an edge with any of the tiles under the other entity's selection circle.
@@ -437,6 +440,10 @@ bool      N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos,
 bool      N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, 
                                  const uint32_t ent, vec2_t xz_pos, 
                                  float radius);
+
+bool      N_ObjAdjacentToDynamicWith(void *nav_private, vec3_t map_pos, 
+                                     vec2_t xz_pos_a, float radius_a,
+                                     vec2_t xz_pos_b, float radius_b);
 
 /* ------------------------------------------------------------------------
  * Get the resolution (chunks, tiles) of the navigation data.

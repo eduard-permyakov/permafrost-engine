@@ -251,7 +251,7 @@ enum combat_stance{
 
 void  G_Combat_AttackUnit(uint32_t uid, uint32_t target);
 
-bool  G_Combat_SetStance(uint32_t uid, enum combat_stance stance);
+void  G_Combat_SetStance(uint32_t uid, enum combat_stance stance);
 void  G_Combat_SetCurrentHP(uint32_t uid, int hp);
 int   G_Combat_GetCurrentHP(uint32_t uid);
 void  G_Combat_UpdateRef(int oldfac, int newfac, vec2_t pos);

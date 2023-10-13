@@ -498,6 +498,29 @@ void G_Building_RemoveEntity(uint32_t uid)
     buildstate_remove(uid);
 }
 
+void *G_Building_CopyState(void)
+{
+    return kh_copy_state(s_entity_state_table);
+}
+
+bool G_Building_IsFoundedFrom(void *state, uint32_t uid)
+{
+    khash_t(state) *table = (khash_t(state)*)state;
+    khiter_t k = kh_get(state, table, uid);
+    assert(k != kh_end(table));
+    struct buildstate *bs = &kh_value(table, k);
+    return (bs->state >= BUILDING_STATE_FOUNDED);
+}
+
+bool G_Building_IsCompletedFrom(void *state, uint32_t uid)
+{
+    khash_t(state) *table = (khash_t(state)*)state;
+    khiter_t k = kh_get(state, table, uid);
+    assert(k != kh_end(table));
+    struct buildstate *bs = &kh_value(table, k);
+    return (bs->state >= BUILDING_STATE_COMPLETED);
+}
+
 bool G_Building_Mark(uint32_t uid)
 {
     struct buildstate *bs = buildstate_get(uid);

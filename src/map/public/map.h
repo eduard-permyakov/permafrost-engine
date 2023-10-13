@@ -426,6 +426,16 @@ bool     M_NavObjAdjacent(const struct map *map, const uint32_t uid,
                          const uint32_t target_uid);
 
 /* ------------------------------------------------------------------------
+ * Like M_NavObjAdjacent, but allowing passsing all the required state
+ * as arguments.
+ * ------------------------------------------------------------------------
+ */
+bool     M_NavObjAdjacentToStaticWith(const struct map *map, vec2_t xz_pos, float radius, 
+                                      const struct obb *stat);
+bool     M_NavObjAdjacentToDynamicWith(const struct map *map, vec2_t xz_pos_a, float radius_a,
+                                       vec2_t xz_pos_b, float radius_b);
+
+/* ------------------------------------------------------------------------
  * Sets 'out' to pointer to 'struct tile' for the specified descriptor. 
  * Returns 'true' on success, 'false' on failure.
  * ------------------------------------------------------------------------

@@ -67,5 +67,9 @@ bool G_Fog_LoadState(struct SDL_RWops *stream);
 
 bool G_Fog_Enabled(void);
 
+uint32_t *G_Fog_CopyState(void);
+bool      G_Fog_ObjVisibleFrom(uint32_t *state, bool enabled, 
+                               uint16_t fac_mask, const struct obb *obb);
+
 #endif
 

@@ -309,8 +309,10 @@ bool AL_EntitySetPFObj(uint32_t uid, const char *base_path, const char *pfobj_na
     if(!ent)
         return false;
 
-    pf_snprintf(old_pfobj_path, sizeof(old_pfobj_path), "%s/%s/%s", g_basepath, ent->basedir, ent->filename);
-    pf_snprintf(new_pfobj_path, sizeof(new_pfobj_path), "%s/%s/%s", g_basepath, base_path, pfobj_name);
+    pf_snprintf(old_pfobj_path, sizeof(old_pfobj_path), "%s/%s/%s", 
+        g_basepath, ent->basedir, ent->filename);
+    pf_snprintf(new_pfobj_path, sizeof(new_pfobj_path), "%s/%s/%s", 
+        g_basepath, base_path, pfobj_name);
 
     if(!al_get_resource(old_pfobj_path, ent->basedir, ent->filename, &old_res))
         goto fail_init;

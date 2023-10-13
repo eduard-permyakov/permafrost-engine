@@ -61,7 +61,5 @@ void G_Combat_AddTimeDelta(uint32_t delta);
 bool G_Combat_SaveState(struct SDL_RWops *stream);
 bool G_Combat_LoadState(struct SDL_RWops *stream);
 
-uint32_t G_Combat_ClosestEligibleEnemy(uint32_t uid);
-
 #endif
 

@@ -158,6 +158,13 @@ khash_t(pos) *G_Pos_CopyTable(void)
     return kh_copy_pos(s_postable);
 }
 
+vec3_t G_Pos_GetFrom(khash_t(pos) *table, uint32_t uid)
+{
+    khiter_t k = kh_get(pos, table, uid);
+    assert(k != kh_end(table));
+    return kh_val(table, k);
+}
+
 vec2_t G_Pos_GetXZFrom(khash_t(pos) *table, uint32_t uid)
 {
     khiter_t k = kh_get(pos, table, uid);
@@ -263,26 +270,8 @@ int G_Pos_EntsInCircle(vec2_t xz_point, float range, uint32_t *out, size_t maxou
 int G_Pos_EntsInCircleWithPred(vec2_t xz_point, float range, uint32_t *out, size_t maxout,
                                bool (*predicate)(uint32_t ent, void *arg), void *arg)
 {
-    PERF_ENTER();
     ASSERT_IN_MAIN_THREAD();
-
-    STALLOC(uint32_t, ent_ids, maxout);
-
-    int ntotal = qt_ent_inrange_circle(&s_postree, 
-        xz_point.x, xz_point.z, range, ent_ids, maxout);
-    int ret = 0;
-
-    for(int i = 0; i < ntotal; i++) {
-
-        uint32_t curr = ent_ids[i];
-        if(!predicate(curr, arg))
-            continue;
-
-        out[ret++] = curr;
-    }
-
-    STFREE(ent_ids);
-    PERF_RETURN(ret);
+    return G_Pos_EntsInCircleWithPredFrom(&s_postree, xz_point, range, out, maxout, predicate, arg);
 }
 
 qt_ent_t *G_Pos_CopyQuadTree(void)
@@ -305,6 +294,32 @@ int G_Pos_EntsInCircleFrom(qt_ent_t *tree, vec2_t xz_point, float range,
 {
     PERF_ENTER();
     int ret = qt_ent_inrange_circle(tree, xz_point.x, xz_point.z, range, out, maxout);
+    PERF_RETURN(ret);
+}
+
+int G_Pos_EntsInCircleWithPredFrom(qt_ent_t *tree, vec2_t xz_point, float range, 
+                                   uint32_t *out, size_t maxout,
+                                   bool (*predicate)(uint32_t ent, void *arg), void *arg)
+{
+    PERF_ENTER();
+    assert(Sched_UsingBigStack());
+
+    STALLOC(uint32_t, ent_ids, maxout);
+
+    int ntotal = qt_ent_inrange_circle(tree, 
+        xz_point.x, xz_point.z, range, ent_ids, maxout);
+    int ret = 0;
+
+    for(int i = 0; i < ntotal; i++) {
+
+        uint32_t curr = ent_ids[i];
+        if(!predicate(curr, arg))
+            continue;
+
+        out[ret++] = curr;
+    }
+
+    STFREE(ent_ids);
     PERF_RETURN(ret);
 }
 

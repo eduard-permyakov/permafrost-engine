@@ -148,15 +148,15 @@ static void g_init_map(void)
     M_Raycast_Install(s_gs.map, s_gs.active_cam);
     M_InitMinimap(s_gs.map, g_default_minimap_pos());
     G_Pos_Init(s_gs.map);
+    G_Building_Init(s_gs.map);
+    G_Fog_Init(s_gs.map);
     G_Combat_Init(s_gs.map);
     G_Move_Init(s_gs.map);
-    G_Building_Init(s_gs.map);
     G_Builder_Init(s_gs.map);
     G_Resource_Init(s_gs.map);
     G_Region_Init(s_gs.map);
     G_Harvester_Init(s_gs.map);
     G_ClearPath_Init(s_gs.map);
-    G_Fog_Init(s_gs.map);
     N_ClearState();
 }
 
@@ -702,16 +702,16 @@ static void g_clear_map_state(void)
 
         M_Raycast_Uninstall();
         M_FreeMinimap(s_gs.map);
+        G_Building_Shutdown();
+        G_Fog_Shutdown();
         G_Combat_Shutdown();
         G_Move_Shutdown();
-        G_Building_Shutdown();
         G_Builder_Shutdown();
         G_Resource_Shutdown();
         G_Region_Shutdown();
         G_Harvester_Shutdown();
         G_ClearPath_Shutdown();
         G_Pos_Shutdown();
-        G_Fog_Shutdown();
 
         AL_MapFree(s_gs.map);
         s_gs.map = NULL;
@@ -2180,6 +2180,25 @@ bool G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out)
         return false;
 
     *out = s_gs.diplomacy_table[fac_id_a][fac_id_b];
+    return true;
+}
+
+enum diplomacy_state (*G_CopyDiplomacyTable(void))[MAX_FACTIONS]
+{
+    void *ret = malloc(sizeof(s_gs.diplomacy_table));
+    if(!ret)
+        return NULL;
+    memcpy(ret, s_gs.diplomacy_table, sizeof(s_gs.diplomacy_table));
+    return ret;
+}
+
+bool G_GetDiplomacyStateFrom(enum diplomacy_state (*table)[MAX_FACTIONS],
+                             int fac_id_a, int fac_id_b, enum diplomacy_state *out)
+{
+    if(fac_id_a == fac_id_b)
+        return false;
+
+    *out = table[fac_id_a][fac_id_b];
     return true;
 }
 

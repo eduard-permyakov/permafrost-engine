@@ -46,7 +46,6 @@
 #include "game/public/game.h"
 #include "anim/public/anim.h"
 #include "lib/public/mpool.h"
-#include "lib/public/khash.h"
 #include "lib/public/string_intern.h"
 
 #include <assert.h>
@@ -71,17 +70,12 @@ struct dis_arg{
     void *arg;
 };
 
-struct transform{
-    vec3_t scale;
-    quat_t rotation;
-};
-
 MPOOL_TYPE(taglist, struct taglist)
 MPOOL_PROTOTYPES(static, taglist, struct taglist)
 MPOOL_IMPL(static, taglist, struct taglist)
 
 KHASH_MAP_INIT_INT(tags, struct taglist)
-KHASH_MAP_INIT_INT(trans, struct transform)
+__KHASH_IMPL(trans, extern, khint32_t, struct transform, 1, kh_int_hash_func, kh_int_hash_equal)
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -288,18 +282,11 @@ static struct result disappear_task(void *arg)
 
 void Entity_ModelMatrix(uint32_t uid, mat4x4_t *out)
 {
-    mat4x4_t mtrans, mscale, mrot, mtmp;
-
     vec3_t pos = G_Pos_Get(uid);
     vec3_t scale = Entity_GetScale(uid);
     quat_t rot = Entity_GetRot(uid);
 
-    PFM_Mat4x4_MakeTrans(pos.x, pos.y, pos.z, &mtrans);
-    PFM_Mat4x4_MakeScale(scale.x, scale.y, scale.z, &mscale);
-    PFM_Mat4x4_RotFromQuat(&rot, &mrot);
-
-    PFM_Mat4x4_Mult4x4(&mscale, &mrot, &mtmp);
-    PFM_Mat4x4_Mult4x4(&mtrans, &mtmp, out);
+    Entity_ModelMatrixFrom(pos, rot, scale, out);
 }
 
 uint32_t Entity_NewUID(void)
@@ -324,58 +311,10 @@ void Entity_CurrentOBB(uint32_t uid, struct obb *out, bool identity)
         aabb = &ent->identity_aabb;
     }
 
-    vec4_t identity_verts_homo[8] = {
-        {aabb->x_min, aabb->y_min, aabb->z_min, 1.0f},
-        {aabb->x_min, aabb->y_min, aabb->z_max, 1.0f},
-        {aabb->x_min, aabb->y_max, aabb->z_min, 1.0f},
-        {aabb->x_min, aabb->y_max, aabb->z_max, 1.0f},
-        {aabb->x_max, aabb->y_min, aabb->z_min, 1.0f},
-        {aabb->x_max, aabb->y_min, aabb->z_max, 1.0f},
-        {aabb->x_max, aabb->y_max, aabb->z_min, 1.0f},
-        {aabb->x_max, aabb->y_max, aabb->z_max, 1.0f},
-    };
-
-    vec4_t identity_center_homo = (vec4_t){
-        (aabb->x_min + aabb->x_max) / 2.0f,
-        (aabb->y_min + aabb->y_max) / 2.0f,
-        (aabb->z_min + aabb->z_max) / 2.0f,
-        1.0f
-    };
-
     mat4x4_t model;
     Entity_ModelMatrix(uid, &model);
-
-    vec4_t obb_verts_homo[8];
-    for(int i = 0; i < 8; i++) {
-        PFM_Mat4x4_Mult4x1(&model, identity_verts_homo + i, obb_verts_homo + i);
-        out->corners[i] = (vec3_t){
-            obb_verts_homo[i].x / obb_verts_homo[i].w,
-            obb_verts_homo[i].y / obb_verts_homo[i].w,
-            obb_verts_homo[i].z / obb_verts_homo[i].w,
-        };
-    }
-
-    vec4_t obb_center_homo;
-    PFM_Mat4x4_Mult4x1(&model, &identity_center_homo, &obb_center_homo);
-    out->center = (vec3_t){
-        obb_center_homo.x / obb_center_homo.w,
-        obb_center_homo.y / obb_center_homo.w,
-        obb_center_homo.z / obb_center_homo.w,
-    };
-
     vec3_t scale = Entity_GetScale(uid);
-    out->half_lengths[0] = (aabb->x_max - aabb->x_min) / 2.0f * scale.x;
-    out->half_lengths[1] = (aabb->y_max - aabb->y_min) / 2.0f * scale.y;
-    out->half_lengths[2] = (aabb->z_max - aabb->z_min) / 2.0f * scale.z;
-
-    vec3_t axis0, axis1, axis2;   
-    PFM_Vec3_Sub(&out->corners[4], &out->corners[0], &axis0);
-    PFM_Vec3_Sub(&out->corners[2], &out->corners[0], &axis1);
-    PFM_Vec3_Sub(&out->corners[1], &out->corners[0], &axis2);
-
-    PFM_Vec3_Normal(&axis0, &out->axes[0]);
-    PFM_Vec3_Normal(&axis1, &out->axes[1]);
-    PFM_Vec3_Normal(&axis2, &out->axes[2]);
+    Entity_CurrentOBBFrom(aabb, model, scale, out);
 }
 
 vec3_t Entity_CenterPos(uint32_t uid)
@@ -684,5 +623,88 @@ void Entity_Remove(uint32_t uid)
     if(k != kh_end(s_ent_tag_map)) {
         kh_del(tags, s_ent_tag_map, k);
     }
+}
+
+khash_t(trans) *Entity_CopyTransforms(void)
+{
+    return kh_copy_trans(s_ent_trans_map);
+}
+
+quat_t Entity_GetRotFrom(khash_t(trans) *table, uint32_t uid)
+{
+    khiter_t k = kh_get(trans, table, uid);
+    assert(k != kh_end(table));
+    return kh_value(table, k).rotation;
+}
+
+vec3_t Entity_GetScaleFrom(khash_t(trans) *table, uint32_t uid)
+{
+    khiter_t k = kh_get(trans, table, uid);
+    assert(k != kh_end(table));
+    return kh_value(table, k).scale;
+}
+
+void Entity_ModelMatrixFrom(vec3_t pos, quat_t rot, vec3_t scale, mat4x4_t *out)
+{
+    mat4x4_t mtrans, mscale, mrot, mtmp;
+
+    PFM_Mat4x4_MakeTrans(pos.x, pos.y, pos.z, &mtrans);
+    PFM_Mat4x4_MakeScale(scale.x, scale.y, scale.z, &mscale);
+    PFM_Mat4x4_RotFromQuat(&rot, &mrot);
+
+    PFM_Mat4x4_Mult4x4(&mscale, &mrot, &mtmp);
+    PFM_Mat4x4_Mult4x4(&mtrans, &mtmp, out);
+}
+
+void Entity_CurrentOBBFrom(const struct aabb *aabb, mat4x4_t model, vec3_t scale, struct obb *out)
+{
+    vec4_t identity_verts_homo[8] = {
+        {aabb->x_min, aabb->y_min, aabb->z_min, 1.0f},
+        {aabb->x_min, aabb->y_min, aabb->z_max, 1.0f},
+        {aabb->x_min, aabb->y_max, aabb->z_min, 1.0f},
+        {aabb->x_min, aabb->y_max, aabb->z_max, 1.0f},
+        {aabb->x_max, aabb->y_min, aabb->z_min, 1.0f},
+        {aabb->x_max, aabb->y_min, aabb->z_max, 1.0f},
+        {aabb->x_max, aabb->y_max, aabb->z_min, 1.0f},
+        {aabb->x_max, aabb->y_max, aabb->z_max, 1.0f},
+    };
+
+    vec4_t identity_center_homo = (vec4_t){
+        (aabb->x_min + aabb->x_max) / 2.0f,
+        (aabb->y_min + aabb->y_max) / 2.0f,
+        (aabb->z_min + aabb->z_max) / 2.0f,
+        1.0f
+    };
+
+    vec4_t obb_verts_homo[8];
+    for(int i = 0; i < 8; i++) {
+        PFM_Mat4x4_Mult4x1(&model, identity_verts_homo + i, obb_verts_homo + i);
+        out->corners[i] = (vec3_t){
+            obb_verts_homo[i].x / obb_verts_homo[i].w,
+            obb_verts_homo[i].y / obb_verts_homo[i].w,
+            obb_verts_homo[i].z / obb_verts_homo[i].w,
+        };
+    }
+
+    vec4_t obb_center_homo;
+    PFM_Mat4x4_Mult4x1(&model, &identity_center_homo, &obb_center_homo);
+    out->center = (vec3_t){
+        obb_center_homo.x / obb_center_homo.w,
+        obb_center_homo.y / obb_center_homo.w,
+        obb_center_homo.z / obb_center_homo.w,
+    };
+
+    out->half_lengths[0] = (aabb->x_max - aabb->x_min) / 2.0f * scale.x;
+    out->half_lengths[1] = (aabb->y_max - aabb->y_min) / 2.0f * scale.y;
+    out->half_lengths[2] = (aabb->z_max - aabb->z_min) / 2.0f * scale.z;
+
+    vec3_t axis0, axis1, axis2;   
+    PFM_Vec3_Sub(&out->corners[4], &out->corners[0], &axis0);
+    PFM_Vec3_Sub(&out->corners[2], &out->corners[0], &axis1);
+    PFM_Vec3_Sub(&out->corners[1], &out->corners[0], &axis2);
+
+    PFM_Vec3_Normal(&axis0, &out->axes[0]);
+    PFM_Vec3_Normal(&axis1, &out->axes[1]);
+    PFM_Vec3_Normal(&axis2, &out->axes[2]);
 }
 

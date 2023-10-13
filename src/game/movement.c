@@ -800,7 +800,7 @@ static void on_render_3d(void *user, void *event)
             pf_snprintf(strbuff, ARR_SIZE(strbuff), "Arrival State: %s Velocity: (%f, %f)", 
                 s_state_str[ms->state], ms->velocity.x, ms->velocity.z);
             struct rgba text_color = (struct rgba){255, 0, 0, 255};
-            UI_DrawText(strbuff, (struct rect){5,50,450,50}, text_color);
+            UI_DrawText(strbuff, (struct rect){5,50,600,50}, text_color);
 
             const struct camera *cam = G_GetActiveCamera();
             struct flock *flock = flock_for_ent(ent);
@@ -821,10 +821,10 @@ static void on_render_3d(void *user, void *event)
                         s_move_work.gamestate.sel_radiuses, ent);
                     int layer = Entity_NavLayerWithRadius(radius); 
                     M_NavRenderVisibleSurroundField(s_map, cam, layer, ms->surround_target_uid);
-                    UI_DrawText("(Surround Field)", (struct rect){5,75,450,50}, text_color);
+                    UI_DrawText("(Surround Field)", (struct rect){5,75,600,50}, text_color);
                 }else{
                     M_NavRenderVisiblePathFlowField(s_map, cam, flock->dest_id);
-                    UI_DrawText("(Path Field)", (struct rect){5,75,450,50}, text_color);
+                    UI_DrawText("(Path Field)", (struct rect){5,75,600,50}, text_color);
                 }
                 break;
             }
@@ -941,7 +941,7 @@ static vec2_t ent_desired_velocity(uint32_t uid)
             }
         }else{
             if(dx >= SURROUND_HIGH_WATER_X || dz >= SURROUND_HIGH_WATER_Z) {
-                ms->using_surround_field = true;
+                ms->using_surround_field = false;
             }
         }
 

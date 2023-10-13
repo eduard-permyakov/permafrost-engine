@@ -37,6 +37,7 @@
 #define ENTITY_H
 
 #include "pf_math.h"
+#include "lib/public/khash.h"
 #include "lib/public/vec.h"
 #include "map/public/tile.h"
 #include "phys/public/collision.h"
@@ -96,6 +97,10 @@ struct ent_anim_rstate{
     mat4x4_t        curr_pose[MAX_JOINTS];
 };
 
+struct transform{
+    vec3_t scale;
+    quat_t rotation;
+};
 
 VEC_TYPE(rstat, struct ent_stat_rstate)
 VEC_IMPL(static inline, rstat, struct ent_stat_rstate)
@@ -103,8 +108,9 @@ VEC_IMPL(static inline, rstat, struct ent_stat_rstate)
 VEC_TYPE(ranim, struct ent_anim_rstate)
 VEC_IMPL(static inline, ranim, struct ent_anim_rstate)
 
-struct map;
+KHASH_DECLARE(trans, khint32_t, struct transform)
 
+struct map;
 
 bool     Entity_Init(void);
 void     Entity_Shutdown(void);
@@ -120,7 +126,8 @@ void     Entity_FaceTowards(uint32_t uid, vec2_t point);
 void     Entity_Ping(uint32_t uid);
 vec2_t   Entity_TopScreenPos(uint32_t uid, int screenw, int screenh);
 /* Coarse-grained test that can give false positives. Use the check to get
- * positives, but confirm positive results with a more precise check */
+ * positives, but confirm positive results with a more precise check 
+ */
 bool     Entity_MaybeAdjacentFast(uint32_t a, uint32_t b, float buffer);
 bool     Entity_AddTag(uint32_t uid, const char *tag);
 void     Entity_RemoveTag(uint32_t uid, const char *tag);
@@ -128,7 +135,8 @@ bool     Entity_HasTag(uint32_t uid, const char *tag);
 void     Entity_ClearTags(uint32_t uid);
 size_t   Entity_EntsForTag(const char *tag, size_t maxout, uint32_t out[]);
 size_t   Entity_TagsForEnt(uint32_t uid, size_t maxout, const char *out[]);
-void     Entity_DisappearAnimated(uint32_t uid, const struct map *map, void (*on_finish)(void*), void *arg);
+void     Entity_DisappearAnimated(uint32_t uid, const struct map *map, 
+                                  void (*on_finish)(void*), void *arg);
 int      Entity_NavLayer(uint32_t uid);
 int      Entity_NavLayerWithRadius(float radius);
 
@@ -137,5 +145,12 @@ void     Entity_SetRot(uint32_t uid, quat_t rot);
 vec3_t   Entity_GetScale(uint32_t uid);
 void     Entity_SetScale(uint32_t uid, vec3_t scale);
 void     Entity_Remove(uint32_t uid);
+
+khash_t(trans) *Entity_CopyTransforms(void);
+quat_t          Entity_GetRotFrom(khash_t(trans) *table, uint32_t uid);
+vec3_t          Entity_GetScaleFrom(khash_t(trans) *table, uint32_t uid);
+void            Entity_ModelMatrixFrom(vec3_t pos, quat_t rot, vec3_t scale, mat4x4_t *out);
+void            Entity_CurrentOBBFrom(const struct aabb *aabb, mat4x4_t model, 
+                                      vec3_t scale, struct obb *out);
 
 #endif
