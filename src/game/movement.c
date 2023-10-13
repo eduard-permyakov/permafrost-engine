@@ -1946,20 +1946,23 @@ static bool uids_match(void *arg, struct move_cmd *cmd)
 static struct move_cmd *snoop_most_recent_command(enum move_cmd_type type, void *arg,
                                                   bool (*pred)(void*, struct move_cmd*))
 {
+    if(queue_size(s_move_commands) == 0)
+        return NULL;
+
     for(int i = s_move_commands.itail; i != s_move_commands.ihead;) {
         struct move_cmd *curr = &s_move_commands.mem[i];
         if(curr->type == type)
             if(pred(arg, curr))
                 return curr;
-        i++;
+        i--;
         if(i >= s_move_commands.capacity) {
-            i = 0; /* Wrap around */
+            i = s_move_commands.capacity - 1; /* Wrap around */
         }
     }
     return NULL;
 }
 
-static void move_process_cmds()
+static void move_process_cmds(void)
 {
     struct move_cmd cmd;
     while(queue_cmd_pop(&s_move_commands, &cmd)) {
