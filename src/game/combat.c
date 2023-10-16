@@ -1037,6 +1037,7 @@ static bool entity_dead(uint32_t uid)
 
 static void entity_target_enemy(uint32_t uid, uint32_t enemy)
 {
+    struct combat_gamestate *gs = &s_combat_work.gamestate;
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
 
@@ -1050,7 +1051,8 @@ static void entity_target_enemy(uint32_t uid, uint32_t enemy)
         return;
     }
 
-    if(cs->stance == COMBAT_STANCE_AGGRESSIVE && (G_FlagsGet(uid) & ENTITY_FLAG_MOVABLE)) {
+    uint32_t flags = G_FlagsGetFrom(gs->flags, uid);
+    if(cs->stance == COMBAT_STANCE_AGGRESSIVE && (flags & ENTITY_FLAG_MOVABLE)) {
 
         cs->target_uid = enemy;
         cs->state = STATE_MOVING_TO_TARGET;
@@ -1471,13 +1473,15 @@ static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, v
     if(queue_size(s_combat_commands) == 0)
         return NULL;
 
-    for(int i = s_combat_commands.itail; i != s_combat_commands.ihead;) {
+    size_t left = queue_size(s_combat_commands);
+    for(int i = s_combat_commands.itail; left > 0;) {
         struct combat_cmd *curr = &s_combat_commands.mem[i];
         if(curr->type == type)
             if(pred(arg, curr))
                 return curr;
         i--;
-        if(i >= s_combat_commands.capacity) {
+        left--;
+        if(i < 0) {
             i = s_combat_commands.capacity - 1; /* Wrap around */
         }
     }
@@ -2311,10 +2315,16 @@ void G_Combat_SetBaseArmour(uint32_t uid, float armour_pc)
 
 float G_Combat_GetBaseArmour(uint32_t uid)
 {
-    struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_SET_BASE_ARMOUR,
+    struct combat_cmd *cmd;
+    cmd = snoop_most_recent_command(COMBAT_CMD_SET_BASE_ARMOUR,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
         return cmd->args[1].val.as_float;
+    }
+    cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd) {
+        return 0.0f;
     }
 
     struct combatstate *cs = combatstate_get(uid);
@@ -2339,10 +2349,16 @@ void G_Combat_SetBaseDamage(uint32_t uid, int dmg)
 
 int G_Combat_GetBaseDamage(uint32_t uid)
 {
-    struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_SET_BASE_DAMAGE,
+    struct combat_cmd *cmd;
+    cmd = snoop_most_recent_command(COMBAT_CMD_SET_BASE_DAMAGE,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
         return cmd->args[1].val.as_int;
+    }
+    cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd) {
+        return 0;
     }
 
     struct combatstate *cs = combatstate_get(uid);
@@ -2382,10 +2398,16 @@ void G_Combat_SetMaxHP(uint32_t uid, int hp)
 
 int G_Combat_GetMaxHP(uint32_t uid)
 {
-    struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_SET_MAX_HP,
+    struct combat_cmd *cmd;
+    cmd = snoop_most_recent_command(COMBAT_CMD_SET_MAX_HP,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
         return cmd->args[1].val.as_int;
+    }
+    cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd) {
+        return 0;
     }
 
     struct combatstate *cs = combatstate_get(uid);
@@ -2435,10 +2457,16 @@ void G_Combat_SetProjDesc(uint32_t uid, const struct proj_desc *pd)
 
 float G_Combat_GetRange(uint32_t uid)
 {
-    struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_SET_RANGE,
+    struct combat_cmd *cmd;
+    cmd = snoop_most_recent_command(COMBAT_CMD_SET_RANGE,
         (void*)(uintptr_t)uid, uids_match);
     if(cmd) {
         return cmd->args[1].val.as_float;
+    }
+    cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd) {
+        return 0.0f;
     }
 
     struct combatstate *cs = combatstate_get(uid);

@@ -1949,13 +1949,15 @@ static struct move_cmd *snoop_most_recent_command(enum move_cmd_type type, void 
     if(queue_size(s_move_commands) == 0)
         return NULL;
 
-    for(int i = s_move_commands.itail; i != s_move_commands.ihead;) {
+    size_t left = queue_size(s_move_commands);
+    for(int i = s_move_commands.itail; left > 0;) {
         struct move_cmd *curr = &s_move_commands.mem[i];
         if(curr->type == type)
             if(pred(arg, curr))
                 return curr;
         i--;
-        if(i >= s_move_commands.capacity) {
+        left--;
+        if(i < 0) {
             i = s_move_commands.capacity - 1; /* Wrap around */
         }
     }
