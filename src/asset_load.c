@@ -360,7 +360,9 @@ void AL_EntityFree(uint32_t uid)
     PF_FREE(entity->filename);
     PF_FREE(entity->name);
 
-    kh_del(uid_ent, s_uid_ent_table, uid);
+    khiter_t k = kh_get(uid_ent, s_uid_ent_table, uid);
+    assert(k != kh_end(s_uid_ent_table));
+    kh_del(uid_ent, s_uid_ent_table, k);
     mpa_ent_free(&s_mpool, entity);
 }
 
@@ -511,7 +513,7 @@ bool AL_Init(void)
     if(!s_uid_ent_table)
         goto fail_uid_ent_table;
 
-    mpa_ent_init(&s_mpool, 1024, 0);
+    mpa_ent_init(&s_mpool, 1024, true);
     if(!mpa_ent_reserve(&s_mpool, 1024))
         goto fail_mpool;
 

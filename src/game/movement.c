@@ -2213,7 +2213,7 @@ static void move_finish_work(void)
     PERF_PUSH("position updates");
     kh_foreach(s_entity_state_table, key, curr, {
         /* The entity has been removed already */
-        if(G_GPUIDForEnt(key) == 0)
+        if(!G_EntityExists(key))
             continue;
         entity_update(key, curr.vnew);
     });

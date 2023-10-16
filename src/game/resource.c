@@ -58,7 +58,7 @@ struct rstate{
     const char *cursor;
     int         amount;
     vec2_t      blocking_pos;
-    int         blocking_radius;
+    float       blocking_radius;
 };
 
 KHASH_MAP_INIT_INT(state, struct rstate)

@@ -58,9 +58,7 @@ bool Attr_Parse(struct SDL_RWops *stream, struct attr *out, bool named)
     if(named) {
         token = pf_strtok_r(line, " \t", &saveptr);
         CHK_TRUE(token, fail);
-
-        strncpy(out->key, token, sizeof(out->key)); 
-        out->key[sizeof(out->key)-1] = '\0';
+        pf_snprintf(out->key, sizeof(out->key), "%s", token);
 
         token = pf_strtok_r(NULL, " \t", &saveptr);
         CHK_TRUE(token, fail);

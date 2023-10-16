@@ -175,7 +175,7 @@ typedef uint32_t mp_ref_t;
         for(int i = 1; i < mp->capacity; ++i) {                                                 \
             mp->pool[i].inext_free = i + 1;                                                     \
         }                                                                                       \
-        mp->pool[mp->capacity].inext_free = 0;                                                  \
+        mp->pool[mp->capacity-1].inext_free = 0;                                                  \
     }                                                                                           \
                                                                                                 \
     scope mp_ref_t mp_##name##_ref(mp(name) *mp, void *mem)                                     \
