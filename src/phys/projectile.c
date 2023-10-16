@@ -283,7 +283,7 @@ static void phys_sweep_test(int front_idx)
         }
     }
 
-    if(hit_ent) {
+    if(hit_ent != NULL_UID) {
 
         struct proj_hit *hit = stalloc(&s_eventargs, sizeof(struct proj_hit));
         hit->ent_uid = hit_ent;
