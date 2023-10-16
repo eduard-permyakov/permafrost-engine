@@ -51,6 +51,7 @@
 #include "../sched.h"
 #include "../task.h"
 #include "../main.h"
+#include "../navigation/public/nav.h"
 #include "../lib/public/queue.h"
 #include "../phys/public/collision.h"
 #include "../script/public/script.h"
@@ -906,6 +907,43 @@ static quat_t dir_quat_from_velocity(vec2_t velocity)
     };
 }
 
+static void request_async_field(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct movestate *ms = movestate_get(uid);
+    if(!ms || ent_still(ms))
+        return;
+
+    vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+    struct flock *fl = flock_for_ent(uid);
+
+    switch(ms->state) {
+    case STATE_SEEK_ENEMIES:  {
+        float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+        int layer = Entity_NavLayerWithRadius(radius);
+        int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
+        return M_NavRequestAsyncEnemySeekField(s_map, layer, pos_xz, faction_id);
+    }
+    case STATE_SURROUND_ENTITY: {
+
+        if(!G_EntityExists(ms->surround_target_uid))
+            return;
+
+        if(ms->using_surround_field) {
+            float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
+            int layer = Entity_NavLayerWithRadius(radius);
+            int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, uid);
+            return M_NavRequestAsyncSurroundField(s_map, layer, pos_xz, 
+                ms->surround_target_uid, faction_id);
+        }
+        break;
+    }
+    default:;
+        /* No-op */
+    }
+}
+
 static vec2_t ent_desired_velocity(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -928,21 +966,6 @@ static vec2_t ent_desired_velocity(uint32_t uid)
 
         if(!G_EntityExists(ms->surround_target_uid)) {
             return M_NavDesiredPointSeekVelocity(s_map, fl->dest_id, pos_xz, fl->target_xz);
-        }
-
-        vec2_t target_pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, 
-            ms->surround_target_uid);
-        float dx = fabs(target_pos_xz.x - pos_xz.x);
-        float dz = fabs(target_pos_xz.z - pos_xz.z);
-
-        if(!ms->using_surround_field) {
-            if(dx < SURROUND_LOW_WATER_X && dz < SURROUND_LOW_WATER_Z) {
-                ms->using_surround_field = true;
-            }
-        }else{
-            if(dx >= SURROUND_HIGH_WATER_X || dz >= SURROUND_HIGH_WATER_Z) {
-                ms->using_surround_field = false;
-            }
         }
 
         if(ms->using_surround_field) {
@@ -1819,6 +1842,20 @@ static void do_set_enter_range(uint32_t uid, uint32_t target, float range)
     ms->target_range = range;
 }
 
+static bool using_surround_field(uint32_t uid, uint32_t target)
+{
+    vec2_t pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, uid);
+    vec2_t target_pos_xz = G_Pos_GetXZFrom(s_move_work.gamestate.positions, target);
+
+    float dx = fabs(target_pos_xz.x - pos_xz.x);
+    float dz = fabs(target_pos_xz.z - pos_xz.z);
+
+    if(dx < SURROUND_LOW_WATER_X && dz < SURROUND_LOW_WATER_Z) {
+        return true;
+    }
+    return false;
+}
+
 static void do_set_surround_entity(uint32_t uid, uint32_t target)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1834,7 +1871,7 @@ static void do_set_surround_entity(uint32_t uid, uint32_t target)
     assert(!ms->blocking);
     ms->state = STATE_SURROUND_ENTITY;
     ms->surround_target_uid = target;
-    ms->using_surround_field = false;
+    ms->using_surround_field = using_surround_field(uid, target);
 }
 
 static void do_set_seek_enemies(uint32_t uid)
@@ -2285,6 +2322,15 @@ static void on_20hz_tick(void *user, void *event)
     move_copy_gamestate();
 
     uint32_t curr;
+
+    PERF_PUSH("compute volatile fields");
+    N_PrepareAsyncWork();
+    kh_foreach_key(G_GetDynamicEntsSet(), curr, {
+        request_async_field(curr);
+    });
+    N_AwaitAsyncFields();
+    PERF_POP();
+
     PERF_PUSH("desired velocity computations");
     kh_foreach_key(G_GetDynamicEntsSet(), curr, {
 

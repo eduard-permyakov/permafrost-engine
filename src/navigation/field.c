@@ -1392,7 +1392,7 @@ int N_FlowFieldTargetType(ff_id_t id)
     return (id >> 56) & 0xf;
 }
 
-void N_FlowFieldInit(struct coord chunk_coord, const void *nav_private, struct flow_field *out)
+void N_FlowFieldInit(struct coord chunk_coord, struct flow_field *out)
 {
     for(int r = 0; r < FIELD_RES_R; r++) {
     for(int c = 0; c < FIELD_RES_C; c++) {

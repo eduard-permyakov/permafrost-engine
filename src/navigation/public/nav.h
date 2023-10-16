@@ -484,6 +484,39 @@ size_t N_DeepCopySize(void *nav_private);
 void N_CopyCostsAndBlockers(void *nav_private, void *out);
 
 /*###########################################################################*/
+/* NAV ASYNC FIELD COMPUTATION                                               */
+/*###########################################################################*/
+
+/* ------------------------------------------------------------------------
+ * Prepare the async workspace for following async field computation jobs.
+ * ------------------------------------------------------------------------
+ */
+void N_PrepareAsyncWork(void);
+
+/* ------------------------------------------------------------------------
+ * Await all the outstanding flow field computation jobs and place the
+ * result in the fieldcache.
+ * ------------------------------------------------------------------------
+ */
+void N_AwaitAsyncFields(void);
+
+/* ------------------------------------------------------------------------
+ * Start an async job computing the required TARGET_ENEMIES field, if it
+ * is not in the cache and has not been started already.
+ * ------------------------------------------------------------------------
+ */
+void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
+                                  vec3_t map_pos, int faction_id);
+
+/* ------------------------------------------------------------------------
+ * Start an async job computing the required TARGET_ENTITY field, if it
+ * is not in the cache and has not been started already.
+ * ------------------------------------------------------------------------
+ */
+void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_layer layer,
+                                 vec3_t map_pos, uint32_t ent, int faction_id);
+
+/*###########################################################################*/
 /* NAV FIELD CACHE                                                           */
 /*###########################################################################*/
 

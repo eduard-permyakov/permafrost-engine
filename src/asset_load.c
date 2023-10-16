@@ -291,8 +291,6 @@ fail_alloc:
 
 struct entity *AL_EntityGet(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     khiter_t k = kh_get(uid_ent, s_uid_ent_table, uid);
     if(k == kh_end(s_uid_ent_table))
         return NULL;

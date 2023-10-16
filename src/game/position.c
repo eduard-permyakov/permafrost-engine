@@ -136,8 +136,6 @@ bool G_Pos_Set(uint32_t uid, vec3_t pos)
 
 vec3_t G_Pos_Get(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     khiter_t k = kh_get(pos, s_postable, uid);
     assert(k != kh_end(s_postable));
     return kh_val(s_postable, k);
@@ -145,8 +143,6 @@ vec3_t G_Pos_Get(uint32_t uid)
 
 vec2_t G_Pos_GetXZ(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     khiter_t k = kh_get(pos, s_postable, uid);
     assert(k != kh_end(s_postable));
     vec3_t pos = kh_val(s_postable, k);
@@ -227,7 +223,6 @@ void G_Pos_Shutdown(void)
 int G_Pos_EntsInRect(vec2_t xz_min, vec2_t xz_max, uint32_t *out, size_t maxout)
 {
     PERF_ENTER();
-    ASSERT_IN_MAIN_THREAD();
     int ret = qt_ent_inrange_rect(&s_postree, 
         xz_min.x, xz_max.x, xz_min.z, xz_max.z, out, maxout);
     PERF_RETURN(ret);

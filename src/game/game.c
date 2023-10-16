@@ -1731,8 +1731,6 @@ void G_FlagsSet(uint32_t uid, uint32_t flags)
 
 uint32_t G_FlagsGet(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     khiter_t k = kh_get(id, s_gs.ent_flag_map, uid);
     assert(k != kh_end(s_gs.ent_flag_map));
     return kh_value(s_gs.ent_flag_map, k);
@@ -2020,7 +2018,6 @@ uint16_t G_GetFactions(char out_names[][MAX_FAC_NAME_LEN], vec3_t *out_colors, b
 
 uint16_t G_GetPlayerControlledFactions(void)
 {
-    ASSERT_IN_MAIN_THREAD();
     uint16_t ret = 0;
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
@@ -2035,7 +2032,6 @@ uint16_t G_GetPlayerControlledFactions(void)
 
 uint16_t G_GetEnemyFactions(int faction_id)
 {
-    ASSERT_IN_MAIN_THREAD();
     uint16_t ret = 0;
 
     for(int i = 0; i < MAX_FACTIONS; i++) {
@@ -2077,8 +2073,6 @@ void G_SetFactionID(uint32_t uid, int faction_id)
 
 int G_GetFactionID(uint32_t uid)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     khiter_t k = kh_get(id, s_gs.ent_faction_map, uid);
     assert(k != kh_end(s_gs.ent_faction_map));
     return kh_value(s_gs.ent_faction_map, k);
@@ -2133,8 +2127,6 @@ void G_SetSelectionRadius(uint32_t uid, float range)
 
 float G_GetSelectionRadius(uint32_t uid)
 {
-	ASSERT_IN_MAIN_THREAD();
-
     khiter_t k = kh_get(range, s_gs.selection_radiuses, uid);
     assert(k != kh_end(s_gs.selection_radiuses));
     return kh_value(s_gs.selection_radiuses, k);
@@ -2170,8 +2162,6 @@ bool G_SetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state ds)
 
 bool G_GetDiplomacyState(int fac_id_a, int fac_id_b, enum diplomacy_state *out)
 {
-    ASSERT_IN_MAIN_THREAD();
-
     if(!(s_gs.factions_allocd & (0x1 << fac_id_a)))
         return false;
     if(!(s_gs.factions_allocd & (0x1 << fac_id_b)))

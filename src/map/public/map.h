@@ -417,6 +417,16 @@ bool     M_NavIsMaximallyClose(const struct map *map, enum nav_layer layer,
 bool     M_NavIsAdjacentToImpassable(const struct map *map, enum nav_layer layer, vec2_t xz_pos);
 
 /* ------------------------------------------------------------------------
+ * Request an asynchronous computation of a field.
+ * ------------------------------------------------------------------------
+ */
+
+void M_NavRequestAsyncEnemySeekField(const struct map *map, enum nav_layer layer, 
+                                     vec2_t curr_pos, int faction_id);
+void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer, 
+                                    vec2_t curr_pos, uint32_t ent, int faction_id);
+
+/* ------------------------------------------------------------------------
  * Returns true if the tiles under the entity selection cirlce overlap or 
  * share an edge with any of the tiles under the target entity.
  * For 'static' enties, the OBB is used. Else, the selection circle is used.
