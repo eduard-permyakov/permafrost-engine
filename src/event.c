@@ -191,6 +191,18 @@ static bool e_zombie_can_receive(enum eventtype type)
         || (type == EVENT_ENTITY_DISAPPEARED);
 }
 
+static bool e_is_timer_event(enum eventtype type)
+{
+    if(type == EVENT_60HZ_TICK
+    || type == EVENT_30HZ_TICK
+    || type == EVENT_20HZ_TICK
+    || type == EVENT_15HZ_TICK
+    || type == EVENT_10HZ_TICK
+    || type == EVENT_1HZ_TICK)
+        return true;
+    return false;
+}
+
 static bool e_register_handler(uint64_t key, struct handler_desc *desc)
 {
     khiter_t k;
@@ -282,6 +294,9 @@ static void e_invoke(const struct handler_desc hd, struct event event)
 
 static void e_handle_event(struct event event, bool immediate)
 {
+    if((G_GetSimState() != G_RUNNING) && e_is_timer_event(event.type))
+        return;
+
     Sched_HandleEvent(event.type, event.arg, event.source, immediate);
 
     uint64_t key = e_key(event.receiver_id, event.type);

@@ -98,7 +98,6 @@ static char            s_saved_argv[MAX_ARGC + 1][128];
 static void subsession_clear(void)
 {
     E_ClearPendingEvents();
-    Sched_ClearState();
     E_DeleteScriptHandlers();
     Cursor_ClearState();
     N_ClearState();
@@ -109,6 +108,7 @@ static void subsession_clear(void)
     Audio_ClearState();
     P_Projectile_ClearState();
     UI_ClearState();
+    Sched_ClearState();
 }
 
 static void subsession_save_args(void)
@@ -124,7 +124,7 @@ static void subsession_save_args(void)
     }
 }
 
-static bool subsession_save(SDL_RWops *stream)
+static void subsession_flush(void)
 {
     /* Drain the event queue to make sure we don't lose any events 
      * when moving from session to session. A 'lost' event can cause
@@ -144,6 +144,11 @@ static bool subsession_save(SDL_RWops *stream)
         E_FlushEventQueue();
         Sched_Flush();
     }
+}
+
+static bool subsession_save(SDL_RWops *stream)
+{
+    subsession_flush();
 
     if(!Cursor_SaveState(stream))
         return false;
@@ -274,7 +279,8 @@ static bool session_load(const char *file, char *errstr, size_t errlen)
 
     if(attr.val.as_float > PFSAVE_VERSION) {
         pf_snprintf(errstr, errlen, 
-            "Incompatible save version: %.01f [Expecting %.01f or less]", attr.val.as_float, PFSAVE_VERSION);
+            "Incompatible save version: %.01f [Expecting %.01f or less]", 
+                attr.val.as_float, PFSAVE_VERSION);
         goto fail_parse;
     }
 
@@ -480,8 +486,10 @@ static struct result session_task(void* arg)
     default: assert(0);
     }
 
-    int success_event = (s_current == SESH_REQ_SAVE) ? EVENT_SESSION_SAVED     : EVENT_SESSION_LOADED;
-    int failure_event = (s_current == SESH_REQ_SAVE) ? EVENT_SESSION_FAIL_SAVE : EVENT_SESSION_FAIL_LOAD;
+    int success_event = (s_current == SESH_REQ_SAVE) ? EVENT_SESSION_SAVED     
+                                                     : EVENT_SESSION_LOADED;
+    int failure_event = (s_current == SESH_REQ_SAVE) ? EVENT_SESSION_FAIL_SAVE 
+                                                     : EVENT_SESSION_FAIL_LOAD;
 
     if(!result) {
         E_Global_Notify(success_event, s_errbuff, ES_ENGINE);
@@ -568,7 +576,7 @@ bool Session_ServiceRequests(struct future *result)
      * re-draw things when the session task yields.
      */
     uint32_t tid = Sched_Create(1, session_task, NULL, result, 
-        TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK);
+        TASK_MAIN_THREAD_PINNED | TASK_BIG_STACK | TASK_RUN_DURING_PAUSE);
     return true;
 }
 

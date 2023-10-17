@@ -196,14 +196,18 @@ static void phys_filter_out_of_bounds(void)
     }
 }
 
-static void phys_proj_finish_work(void)
+static void phys_proj_join_work(void)
 {
     for(int i = 0; i < s_work.ntasks; i++) {
-        /* run to completion */
         while(!Sched_FutureIsReady(&s_work.futures[i])) {
             Sched_RunSync(s_work.tids[i]);
         }
     }
+}
+
+static void phys_proj_finish_work(void)
+{
+    phys_proj_join_work();
     stalloc_clear(&s_work.mem);
     s_work.ntasks = 0;
 
@@ -507,6 +511,7 @@ fail_front:
 
 void P_Projectile_Shutdown(void)
 {
+    phys_proj_join_work();
     E_Global_Unregister(EVENT_30HZ_TICK, on_30hz_tick);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     stalloc_destroy(&s_eventargs);

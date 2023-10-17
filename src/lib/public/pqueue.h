@@ -87,10 +87,13 @@
     scope  void  pq_##name##_destroy (pq(name) *pqueue);                                        \
     scope  bool  pq_##name##_push    (pq(name) *pqueue, float in_prio, type in);                \
     scope  bool  pq_##name##_pop     (pq(name) *pqueue, type *out);                             \
+    scope  bool  pq_##name##_pop_matching(pq(name) *pqueue, type *out, bool pred(void *a));     \
+    scope  bool  pq_##name##_peek    (pq(name) *pqueue, type *out);                             \
     scope  bool  pq_##name##_remove  (pq(name) *pqueue, int compare(void *a, void *b), type t); \
     scope  bool  pq_##name##_contains(pq(name) *pqueue, int compare(void *a, void *b), type t); \
     scope  bool  pq_##name##_reserve (pq(name) *pqueue, size_t cap);                            \
     scope  bool  pq_##name##_top_prio(pq(name) *pqueue, float *out);                            \
+    scope  bool  pq_##name##_top_prio_of(pq(name) *pqueue, float *out, bool pred(void *a));     \
     scope  bool  pq_##name##_copy    (pq(name) *dst, pq(name) *src);                            \
     scope  void  pq_##name##_clear   (pq(name) *pqueue);                                        \
 
@@ -186,6 +189,35 @@
         return true;                                                                            \
     }                                                                                           \
                                                                                                 \
+    scope bool pq_##name##_pop_matching(pq(name) *pqueue, type *out, bool pred(void *a))        \
+    {                                                                                           \
+        if(pqueue->size == 0)                                                                   \
+            return false;                                                                       \
+                                                                                                \
+        int idx = -1;                                                                           \
+        for(int i = 1; i <= pqueue->size; i++) {                                                \
+            if(pred(&pqueue->nodes[i].data)) {                                                  \
+                idx = i;                                                                        \
+                break;                                                                          \
+            }                                                                                   \
+        }                                                                                       \
+        if(idx == -1)                                                                           \
+            return false;                                                                       \
+                                                                                                \
+        *out = pqueue->nodes[idx].data;                                                         \
+        pqueue->nodes[idx] = pqueue->nodes[pqueue->size--];                                     \
+        _pq_##name##_balance(pqueue, 1);                                                        \
+        return true;                                                                            \
+    }                                                                                           \
+                                                                                                \
+    scope bool pq_##name##_peek(pq(name) *pqueue, type *out)                                    \
+    {                                                                                           \
+        if(pqueue->size == 0)                                                                   \
+            return false;                                                                       \
+        *out = pqueue->nodes[1].data;                                                           \
+        return true;                                                                            \
+    }                                                                                           \
+                                                                                                \
     scope bool pq_##name##_remove(pq(name) *pqueue, int compare(void *a, void *b), type t)      \
     {                                                                                           \
         if(pqueue->size == 0)                                                                   \
@@ -234,6 +266,25 @@
         if(pqueue->size == 0)                                                                   \
             return false;                                                                       \
         *out = pqueue->nodes[1].priority;                                                       \
+        return true;                                                                            \
+    }                                                                                           \
+                                                                                                \
+    scope bool pq_##name##_top_prio_of(pq(name) *pqueue, float *out, bool pred(void *a))        \
+    {                                                                                           \
+        if(pqueue->size == 0)                                                                   \
+            return false;                                                                       \
+                                                                                                \
+        int idx = -1;                                                                           \
+        for(int i = 1; i <= pqueue->size; i++) {                                                \
+            if(pred(&pqueue->nodes[i].data)) {                                                  \
+                idx = i;                                                                        \
+                break;                                                                          \
+            }                                                                                   \
+        }                                                                                       \
+        if(idx == -1)                                                                           \
+            return false;                                                                       \
+                                                                                                \
+        *out = pqueue->nodes[idx].priority;                                                     \
         return true;                                                                            \
     }                                                                                           \
                                                                                                 \

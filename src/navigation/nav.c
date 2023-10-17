@@ -1839,6 +1839,15 @@ static struct result field_task(void *arg)
     return NULL_RESULT;
 }
 
+static void field_join_work(void)
+{
+    for(int i = 0; i < s_field_work.ntasks; i++) {
+		while(!Sched_FutureIsReady(&s_field_work.futures[i])) {
+			Sched_RunSync(s_field_work.tids[i]);
+		}
+	}
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -1853,6 +1862,7 @@ bool N_Init(void)
             goto fail_alloc;
     }
 
+    memset(&s_field_work, 0, sizeof(s_field_work));
     if(!stalloc_init(&s_field_work.mem))
         goto fail_alloc;
 
@@ -1910,6 +1920,7 @@ void N_Update(void *nav_private)
 
 void N_Shutdown(void)
 {
+    field_join_work();
     stalloc_destroy(&s_field_work.mem);
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         kh_destroy(coord, s_dirty_chunks[i]);
@@ -1919,6 +1930,7 @@ void N_Shutdown(void)
 
 void N_ClearState(void)
 {
+    field_join_work();
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         s_local_islands_dirty[i] = false;
         kh_clear(coord, s_dirty_chunks[i]);
@@ -3028,10 +3040,8 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
 
 void N_AwaitAsyncFields(void)
 {
+    field_join_work();
     for(int i = 0; i < s_field_work.ntasks; i++) {
-        while(!Sched_FutureIsReady(&s_field_work.futures[i])) {
-            Sched_RunSync(s_field_work.tids[i]);
-        }
         struct field_work_in *in = &vec_AT(&s_field_work.in, i);
         struct field_work_out *out = &vec_AT(&s_field_work.out, i);
         N_FC_PutFlowField(in->id, &out->field);

@@ -2086,7 +2086,7 @@ static void move_process_cmds(void)
             bool attack = cmd.args[2].val.as_bool;
             make_flocks(sel, target_xz, attack);
             vec_entity_destroy(sel);
-            free(sel);
+            PF_FREE(sel);
             break;
         }
         default:
@@ -2109,7 +2109,7 @@ static void *cp_vec_realloc(void *ptr, size_t size)
     return ret;
 }
 
-static void cp_vec_free(void *ptr)
+static void cp_vec_PF_FREE(void *ptr)
 {
     /* no-op */
 }
@@ -2168,10 +2168,12 @@ static struct result move_task(void *arg)
     return NULL_RESULT;
 }
 
-static void move_run_to_completion(int idx)
+static void move_complete_work(void)
 {
-    while(!Sched_FutureIsReady(&s_move_work.futures[idx])) {
-        Sched_RunSync(s_move_work.tids[idx]);
+    for(int i = 0; i < s_move_work.ntasks; i++) {
+        while(!Sched_FutureIsReady(&s_move_work.futures[i])) {
+            Sched_RunSync(s_move_work.tids[i]);
+        }
     }
 }
 
@@ -2211,7 +2213,7 @@ static void move_release_gamestate(void)
         s_move_work.gamestate.faction_ids = NULL;
     }
     if(s_move_work.gamestate.map) {
-        free((void*)s_move_work.gamestate.map);
+        PF_FREE(s_move_work.gamestate.map);
         s_move_work.gamestate.map = NULL;
     }
     PERF_RETURN_VOID();
@@ -2224,9 +2226,7 @@ static void move_finish_work(void)
     if(s_move_work.nwork == 0)
         PERF_RETURN_VOID();
 
-    for(int i = 0; i < s_move_work.ntasks; i++) {
-        move_run_to_completion(i);    
-    }
+    move_complete_work();
 
     PERF_PUSH("velocity updates");
     for(int i = 0; i < s_move_work.nwork; i++) {
@@ -2347,8 +2347,8 @@ static void on_20hz_tick(void *user, void *event)
         dyn = stalloc(&s_move_work.mem, sizeof(vec_cp_ent_t));
         stat = stalloc(&s_move_work.mem, sizeof(vec_cp_ent_t));
 
-        vec_cp_ent_init_alloc(dyn, cp_vec_realloc, cp_vec_free);
-        vec_cp_ent_init_alloc(stat, cp_vec_realloc, cp_vec_free);
+        vec_cp_ent_init_alloc(dyn, cp_vec_realloc, cp_vec_PF_FREE);
+        vec_cp_ent_init_alloc(stat, cp_vec_realloc, cp_vec_PF_FREE);
 
         vec_cp_ent_resize(dyn, 16);
         vec_cp_ent_resize(stat, 16);
@@ -2390,6 +2390,7 @@ bool G_Move_Init(const struct map *map)
         return false;
     }
 
+    memset(&s_move_work, 0, sizeof(s_move_work));
     if(!stalloc_init(&s_move_work.mem)) {
         kh_destroy(state, s_entity_state_table);
         return NULL;
@@ -2418,6 +2419,7 @@ bool G_Move_Init(const struct map *map)
 
 void G_Move_Shutdown(void)
 {
+    move_complete_work();
     s_map = NULL;
 
     E_Global_Unregister(EVENT_20HZ_TICK, on_20hz_tick);
@@ -2955,6 +2957,9 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
 
 bool G_Move_LoadState(struct SDL_RWops *stream)
 {
+    /* Flush the commands submitted during loading */
+    move_process_cmds();
+
     struct attr attr;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));

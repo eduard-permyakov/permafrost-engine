@@ -2,7 +2,7 @@
  *  This file is part of Permafrost Engine. 
  *  Copyright (C) 2018-2020 Eduard Permyakov 
  *
- *  Permafrost Engine is PF_FREE software: you can redistribute it and/or modify
+ *  Permafrost Engine is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or
  *  (at your option) any later version.
@@ -414,7 +414,6 @@ static bool maybe_enemy_near(uint32_t uid)
 static void entity_move_in_range(uint32_t uid, uint32_t target)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct combat_gamestate *gs = &s_combat_work.gamestate;
     const struct combatstate *cs = combatstate_get(uid);
@@ -595,7 +594,6 @@ static void on_disappear_finish(void *arg)
 static void entity_die(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     G_Move_Stop(uid);
 
@@ -633,7 +631,6 @@ static void entity_die(uint32_t uid)
 static void entity_melee_attack(uint32_t uid, uint32_t target)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct combatstate *cs = combatstate_get(uid);
     struct combatstate *target_cs = combatstate_get(cs->target_uid);
@@ -649,7 +646,6 @@ static void entity_melee_attack(uint32_t uid, uint32_t target)
 static void entity_ranged_attack(uint32_t uid, uint32_t target)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct combat_gamestate *gs = &s_combat_work.gamestate;
     struct combatstate *cs = combatstate_get(uid);
@@ -680,7 +676,6 @@ static void on_death_anim_finish(void *user, void *event)
 static void do_add_entity(uint32_t uid, enum combat_stance initial)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     assert(combatstate_get(uid) == NULL);
     assert(G_FlagsGet(uid) & ENTITY_FLAG_COMBATABLE);
@@ -700,7 +695,6 @@ static void do_add_entity(uint32_t uid, enum combat_stance initial)
 static void do_remove_entity(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     if(!(G_FlagsGet(uid) & ENTITY_FLAG_COMBATABLE))
         return;
@@ -726,7 +720,6 @@ static void do_remove_entity(uint32_t uid)
 static void do_tryhit(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     if(entity_dead(uid))
         return; /* Our unit already got 'killed' */
@@ -784,7 +777,6 @@ static void do_proj_tryhit(struct proj_hit *hit)
 static void do_set_stance(uint32_t uid, enum combat_stance stance)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     assert(G_FlagsGet(uid) & ENTITY_FLAG_COMBATABLE);
     struct combatstate *cs = combatstate_get(uid);
@@ -811,7 +803,6 @@ static void do_set_stance(uint32_t uid, enum combat_stance stance)
 static void do_clear_saved_move_cmd(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct combatstate *cs = combatstate_get(uid);
     if(cs) {
@@ -822,7 +813,6 @@ static void do_clear_saved_move_cmd(uint32_t uid)
 static void do_attack_unit(uint32_t uid, uint32_t target)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
@@ -851,7 +841,6 @@ static void do_attack_unit(uint32_t uid, uint32_t target)
 static void do_stop_attack(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct combatstate *cs = combatstate_get(uid);
     if(!cs)
@@ -879,7 +868,6 @@ static void do_stop_attack(uint32_t uid)
 static void do_add_time_delta(uint32_t delta)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     uint32_t key;
     kh_foreach(s_entity_state_table, key, (struct combatstate){0}, {
@@ -894,7 +882,6 @@ static void do_add_time_delta(uint32_t delta)
 static void do_add_ref(int faction_id, vec2_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct map_resolution mapres;
     M_GetResolution(s_map, &mapres);
@@ -919,7 +906,6 @@ static void do_add_ref(int faction_id, vec2_t pos)
 static void do_remove_ref(int faction_id, vec2_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct map_resolution mapres;
     M_GetResolution(s_map, &mapres);
@@ -944,7 +930,6 @@ static void do_remove_ref(int faction_id, vec2_t pos)
 static void do_update_ref(int oldfac, int newfac, vec2_t pos)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     G_Combat_RemoveRef(oldfac, pos);
     G_Combat_AddRef(newfac, pos);
@@ -953,7 +938,6 @@ static void do_update_ref(int oldfac, int newfac, vec2_t pos)
 static void do_set_base_armour(uint32_t uid, float armour_pc)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
@@ -963,7 +947,6 @@ static void do_set_base_armour(uint32_t uid, float armour_pc)
 static void do_set_base_damage(uint32_t uid, int dmg)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
@@ -973,7 +956,6 @@ static void do_set_base_damage(uint32_t uid, int dmg)
 static void do_set_current_hp(uint32_t uid, int hp)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
@@ -983,7 +965,6 @@ static void do_set_current_hp(uint32_t uid, int hp)
 static void do_set_max_hp(uint32_t uid, int hp)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
@@ -993,7 +974,6 @@ static void do_set_max_hp(uint32_t uid, int hp)
 static void do_set_range(uint32_t uid, float range)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
@@ -1003,7 +983,6 @@ static void do_set_range(uint32_t uid, float range)
 static void do_set_proj_desc(uint32_t uid, const struct proj_desc *pd)
 {
     ASSERT_IN_MAIN_THREAD();
-    assert(Sched_ActiveTID() == NULL_TID);
 
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
@@ -1641,10 +1620,12 @@ static struct result combat_task(void *arg)
     return NULL_RESULT;
 }
 
-static void combat_run_to_completion(int idx)
+static void combat_complete_work(void)
 {
-    while(!Sched_FutureIsReady(&s_combat_work.futures[idx])) {
-        Sched_RunSync(s_combat_work.tids[idx]);
+    for(int i = 0; i < s_combat_work.ntasks; i++) {
+        while(!Sched_FutureIsReady(&s_combat_work.futures[i])) {
+            Sched_RunSync(s_combat_work.tids[i]);
+        }
     }
 }
 
@@ -1746,9 +1727,7 @@ static void combat_finish_work(void)
     if(s_combat_work.nwork == 0)
         PERF_RETURN_VOID();
 
-    for(int i = 0; i < s_combat_work.ntasks; i++) {
-        combat_run_to_completion(i);    
-    }
+    combat_complete_work();    
 
     PERF_PUSH("apply updates");
     for(int i = 0; i < s_combat_work.nwork; i++) {
@@ -2037,6 +2016,7 @@ bool G_Combat_Init(const struct map *map)
     if(NULL == (s_entity_state_table = kh_init(state)))
         return false;
 
+    memset(&s_combat_work, 0, sizeof(s_combat_work));
     if(!stalloc_init(&s_combat_work.mem))
         goto fail_stack;
 
@@ -2076,7 +2056,9 @@ fail_stack:
 
 void G_Combat_Shutdown(void)
 {
+    combat_complete_work();
     s_map = NULL;
+
     E_Global_Unregister(EVENT_30HZ_TICK, on_20hz_tick);
     E_Global_Unregister(SDL_MOUSEBUTTONDOWN, on_mousedown);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
@@ -2485,6 +2467,9 @@ float G_Combat_GetRange(uint32_t uid)
 
 bool G_Combat_SaveState(struct SDL_RWops *stream)
 {
+    // TODO: temp...
+    combat_finish_work();
+
     struct attr num_ents = (struct attr){
         .type = TYPE_INT,
         .val.as_int = kh_size(s_entity_state_table)
@@ -2602,6 +2587,9 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
 
 bool G_Combat_LoadState(struct SDL_RWops *stream)
 {
+	/* Flush the commands submitted during loading */
+    combat_process_cmds();
+
     struct attr attr;
 
     CHK_TRUE_RET(Attr_Parse(stream, &attr, true));

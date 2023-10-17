@@ -83,6 +83,7 @@ enum{
     TASK_MAIN_THREAD_PINNED = (1 << 0),
     TASK_DETACHED           = (1 << 1),
     TASK_BIG_STACK          = (1 << 2),
+	TASK_RUN_DURING_PAUSE	= (1 << 3)
 };
 
 typedef struct result (*task_func_t)(void *);
