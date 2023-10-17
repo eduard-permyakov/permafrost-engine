@@ -246,6 +246,9 @@ static void on_attack_anim_finish(void *user, void *event);
 static void on_death_anim_finish(void *user, void *event);
 static void do_stop_attack(uint32_t uid);
 static bool entity_dead(uint32_t uid);
+static struct combat_cmd *snoop_most_recent_command(enum combat_cmd_type type, void *arg,
+                                                    bool (*pred)(void*, struct combat_cmd*));
+static bool uids_match(void *arg, struct combat_cmd *cmd);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -725,16 +728,16 @@ static void do_tryhit(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
     assert(Sched_ActiveTID() == NULL_TID);
 
-    if(entity_dead(uid)) {
+    if(entity_dead(uid))
         return; /* Our unit already got 'killed' */
-    }
 
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
-    if(cs->state == STATE_DEATH_ANIM_PLAYING)
+    if(cs->state == STATE_DEATH_ANIM_PLAYING
+    || cs->state == STATE_NOT_IN_COMBAT)
         return;
-    cs->state = STATE_CAN_ATTACK;
 
+    cs->state = STATE_CAN_ATTACK;
     if(entity_dead(cs->target_uid)) {
         return; /* Our target already got 'killed' */
     }
@@ -858,12 +861,16 @@ static void do_stop_attack(uint32_t uid)
 
     if(cs->state == STATE_ATTACK_ANIM_PLAYING
     || cs->state == STATE_CAN_ATTACK) {
+
         E_Entity_Notify(EVENT_ATTACK_END, uid, NULL, ES_ENGINE);
     }
 
     cs->state = STATE_NOT_IN_COMBAT;
 
-    if(cs->move_cmd_interrupted) {
+    struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_CLEAR_SAVED_MOVE_CMD,
+        (void*)(uintptr_t)uid, uids_match);
+
+    if(!cmd && cs->move_cmd_interrupted) {
         G_Move_SetDest(uid, cs->move_cmd_xz, cs->move_cmd_attacking);
         cs->move_cmd_interrupted = false;
     }
@@ -1075,7 +1082,10 @@ static void entity_stop_combat(uint32_t uid)
     if(!(flags & ENTITY_FLAG_MOVABLE))
         return;
 
-    if(cs->move_cmd_interrupted) {
+    struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_SET_RANGE,
+        (void*)(uintptr_t)uid, uids_match);
+
+    if(!cmd && cs->move_cmd_interrupted) {
         G_Move_SetDest(uid, cs->move_cmd_xz, cs->move_cmd_attacking);
         cs->move_cmd_interrupted = false;
     }else {
@@ -1264,7 +1274,6 @@ static void entity_compute_update(uint32_t uid, struct combat_work_out *out)
 
             if(curr->sticky) {
 
-                assert(curr->stance != COMBAT_STANCE_HOLD_POSITION);
                 if(!entity_dead(curr->target_uid)) {
 
                     curr->state = STATE_MOVING_TO_TARGET_LOCKED;
