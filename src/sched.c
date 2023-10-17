@@ -1320,7 +1320,9 @@ void Sched_HandleEvent(int event, void *arg, int event_source, bool immediate)
         queue_tid_pop(&torun, &tid);
 
         assert(tid != sched_curr_thread_tid());
-        Sched_RunSync(tid);
+        struct task *task = &s_tasks[tid - 1];
+        sched_task_run(task);
+        sched_task_service_request(task);
     }
 
 out:

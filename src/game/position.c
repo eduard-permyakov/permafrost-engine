@@ -355,7 +355,7 @@ uint32_t G_Pos_NearestWithPred(vec2_t xz_point,
             }
         }
 
-        if(ret)
+        if(ret != NULL_UID)
             PERF_RETURN(ret);
 
         if(len == max_range)

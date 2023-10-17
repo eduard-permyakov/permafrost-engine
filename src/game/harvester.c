@@ -2019,7 +2019,7 @@ int G_Harvester_CurrContextualAction(void)
 bool G_Harvester_GetContextualCursor(char *out, size_t maxout)
 {
     uint32_t hovered = G_Sel_GetHovered();
-    if(G_EntityExists(hovered))
+    if(!G_EntityExists(hovered))
         return false;
 
     if(!(G_FlagsGet(hovered) & ENTITY_FLAG_RESOURCE))

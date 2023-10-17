@@ -2357,7 +2357,6 @@ void G_Zombiefy(uint32_t uid, bool invis)
 
     flags &= ~ENTITY_FLAG_SELECTABLE;
     flags &= ~ENTITY_FLAG_COLLISION;
-    flags &= ~ENTITY_FLAG_ANIMATED;
     flags &= ~ENTITY_FLAG_COMBATABLE;
     flags &= ~ENTITY_FLAG_BUILDING;
     flags &= ~ENTITY_FLAG_MOVABLE;
