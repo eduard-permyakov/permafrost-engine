@@ -16,9 +16,9 @@
 
 *.pyc
 *.pickle
+tags
 
 pf.conf
-
 demo.exe
 editor.exe
 
