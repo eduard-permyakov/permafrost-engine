@@ -266,6 +266,7 @@ static void render_reflection_tex(GLuint tex, bool on, struct render_input in)
 
         glDeleteRenderbuffers(1, &depth_rb);
         glDeleteFramebuffers(1, &fb);
+        GL_PERF_POP_GROUP();
         GL_ASSERT_OK();
         GL_PERF_RETURN_VOID(); 
     }

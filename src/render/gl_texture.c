@@ -54,6 +54,7 @@
 #define MIN(a, b)       ((a) < (b) ? (a) : (b))
 #define MAX(a, b)       ((a) > (b) ? (a) : (b))
 #define MAX3(a, b, c)   (MAX((a), MAX((b), (c))))
+#define ARR_SIZE(a)     (sizeof(a)/sizeof((a)[0]))
 
 KHASH_MAP_INIT_STR(tex, GLuint)
 
@@ -613,6 +614,7 @@ void R_GL_Texture_BindArray(const struct texture_arr *arr, GLuint shader_prog)
         GL_U_TEX_ARRAY2,
         GL_U_TEX_ARRAY3,
     };
+    assert(idx >= 0 && idx < ARR_SIZE(unit_name));
 
     glActiveTexture(arr->tunit);
     glBindTexture(GL_TEXTURE_2D_ARRAY, arr->id);
