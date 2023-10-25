@@ -42,6 +42,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 /* Hold on to objects by their handles. Unlike pointers, they don't need to be */
 /* invalidated when a realloc takes place. */
@@ -172,10 +173,10 @@ typedef uint32_t mp_ref_t;
         mp->num_allocd = 0;                                                                     \
         mp->ifree_head = 1;                                                                     \
                                                                                                 \
-        for(int i = 1; i < mp->capacity; ++i) {                                                 \
+        for(int i = 1; i <= mp->capacity; ++i) {                                                \
             mp->pool[i].inext_free = i + 1;                                                     \
         }                                                                                       \
-        mp->pool[mp->capacity-1].inext_free = 0;                                                  \
+        mp->pool[mp->capacity].inext_free = 0;                                                  \
     }                                                                                           \
                                                                                                 \
     scope mp_ref_t mp_##name##_ref(mp(name) *mp, void *mem)                                     \
