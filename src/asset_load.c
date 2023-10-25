@@ -513,7 +513,7 @@ bool AL_Init(void)
     if(!s_uid_ent_table)
         goto fail_uid_ent_table;
 
-    mpa_ent_init(&s_mpool, 1024, true);
+    mpa_ent_init(&s_mpool, 1024, 1024);
     if(!mpa_ent_reserve(&s_mpool, 1024))
         goto fail_mpool;
 
