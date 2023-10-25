@@ -187,8 +187,6 @@ static bool al_get_resource(const char *path, const char *basedir,
         return true;
     }
 
-    printf("INITIALIZE render private for PFOBJ: %s\n", pfobj_name);
-
     stream = SDL_RWFromFile(path, "r");
     if(!stream)
         goto fail_init; 

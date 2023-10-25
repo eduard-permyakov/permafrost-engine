@@ -1134,7 +1134,7 @@ static bool do_run_sync(uint32_t tid, bool dequeue)
         SDL_UnlockMutex(s_ready_lock);
     }
 
-    if(!found)
+    if(dequeue && !found)
         goto out;
 
     if(sched_curr_thread_tid() == NULL_TID) {

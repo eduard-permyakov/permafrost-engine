@@ -206,7 +206,7 @@
                                                                                                 \
         *out = pqueue->nodes[idx].data;                                                         \
         pqueue->nodes[idx] = pqueue->nodes[pqueue->size--];                                     \
-        _pq_##name##_balance(pqueue, 1);                                                        \
+        _pq_##name##_balance(pqueue, idx);                                                      \
         return true;                                                                            \
     }                                                                                           \
                                                                                                 \
