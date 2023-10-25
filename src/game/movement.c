@@ -968,6 +968,20 @@ static vec2_t ent_desired_velocity(uint32_t uid)
             return M_NavDesiredPointSeekVelocity(s_map, fl->dest_id, pos_xz, fl->target_xz);
         }
 
+        vec2_t target_pos_xz = G_Pos_GetXZ(ms->surround_target_uid);
+        float dx = fabs(target_pos_xz.x - pos_xz.x);
+        float dz = fabs(target_pos_xz.z - pos_xz.z);
+
+        if(!ms->using_surround_field) {
+            if(dx < SURROUND_LOW_WATER_X && dz < SURROUND_LOW_WATER_Z) {
+                ms->using_surround_field = true;
+            }
+        }else{
+            if(dx >= SURROUND_HIGH_WATER_X || dz >= SURROUND_HIGH_WATER_Z) {
+                ms->using_surround_field = true;
+            }
+        }
+
         if(ms->using_surround_field) {
             float radius = G_GetSelectionRadiusFrom(s_move_work.gamestate.sel_radiuses, uid);
             int layer = Entity_NavLayerWithRadius(radius);
@@ -1849,11 +1863,7 @@ static bool using_surround_field(uint32_t uid, uint32_t target)
 
     float dx = fabs(target_pos_xz.x - pos_xz.x);
     float dz = fabs(target_pos_xz.z - pos_xz.z);
-
-    if(dx < SURROUND_LOW_WATER_X && dz < SURROUND_LOW_WATER_Z) {
-        return true;
-    }
-    return false;
+    return (dx < SURROUND_LOW_WATER_X && dz < SURROUND_LOW_WATER_Z);
 }
 
 static void do_set_surround_entity(uint32_t uid, uint32_t target)
