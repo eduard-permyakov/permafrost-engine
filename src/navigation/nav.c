@@ -1746,8 +1746,9 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
         if(curr_hop.portal->chunk.r == dst_desc.chunk_r 
         && curr_hop.portal->chunk.c == dst_desc.chunk_c
         && next_hop.portal == dst_port
-        && next_hop.liid == N_ClosestPathableLocalIsland(priv, src_chunk, dst_desc))
+        && next_hop.liid == N_ClosestPathableLocalIsland(priv, dst_chunk, dst_desc)) {
             continue;
+        }
 
         struct coord chunk_coord = curr_hop.portal->chunk;
         struct field_target target = (struct field_target){
