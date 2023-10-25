@@ -32,7 +32,7 @@ LINUX_GLEW_LIB = libGLEW.so.2.2
 LINUX_SDL2_LIB = libSDL2-2.0.so.0
 LINUX_PYTHON_LIB = libpython2.7.so.1.0
 LINUX_PYTHON_TARGET = libpython2.7.so
-LINUX_OPENAL_LIB = libopenal.so.1.21.1
+LINUX_OPENAL_LIB = libopenal.so.1
 
 LINUX_SDL2_CONFIG = --host=x86_64-pc-linux-gnu
 LINUX_PYTHON_CONFIG = --host=x86_64-pc-linux-gnu
