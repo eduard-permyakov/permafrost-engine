@@ -129,7 +129,7 @@ static void exec_draw_commands(const struct nk_draw_list *dl, GLuint shader_prog
             h - (GLint)((cmd->clip_rect.y + cmd->clip_rect.h) / (float)curr_vres.y * h),
             (GLint)(cmd->clip_rect.w / (float)curr_vres.x * w),
             (GLint)(cmd->clip_rect.h / (float)curr_vres.y * h));
-        glDrawElements(GL_TRIANGLES, (GLsizei)cmd->elem_count, GL_UNSIGNED_SHORT, offset);
+        glDrawElements(GL_TRIANGLES, (GLsizei)cmd->elem_count, GL_UNSIGNED_INT, offset);
 
         offset += cmd->elem_count;
     }
