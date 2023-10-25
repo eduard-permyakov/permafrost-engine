@@ -555,7 +555,7 @@ void R_GL_WaterShutdown(void)
     R_GL_Texture_Free(g_basepath, DUDV_PATH);
     R_GL_Texture_Free(g_basepath, NORM_PATH);
 
-    glDeleteBuffers(1, &s_ctx.surface.VAO);
+    glDeleteVertexArrays(1, &s_ctx.surface.VAO);
     glDeleteBuffers(1, &s_ctx.surface.VBO);
     memset(&s_ctx, 0, sizeof(s_ctx));
 
