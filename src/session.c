@@ -491,10 +491,10 @@ static struct result session_task(void* arg)
     int failure_event = (s_current == SESH_REQ_SAVE) ? EVENT_SESSION_FAIL_SAVE 
                                                      : EVENT_SESSION_FAIL_LOAD;
 
-    if(!result) {
-        E_Global_Notify(success_event, s_errbuff, ES_ENGINE);
+    if(result) {
+        E_Global_Notify(success_event, NULL, ES_ENGINE);
     }else {
-        E_Global_Notify(failure_event, NULL, ES_ENGINE);
+        E_Global_Notify(failure_event, s_errbuff, ES_ENGINE);
     }
 
     s_argc = 0;
