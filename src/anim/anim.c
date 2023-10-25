@@ -408,6 +408,11 @@ bool A_LoadState(struct SDL_RWops *stream, uint32_t uid)
     return true;
 }
 
+void A_ClearState(void)
+{
+    kh_clear(ctx, s_anim_ctx);
+}
+
 bool A_Init(void)
 {
     s_anim_ctx = kh_init(ctx);

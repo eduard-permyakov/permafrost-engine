@@ -418,7 +418,7 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
                 .uid = curr,
                 .render_private = ent->render_private, 
                 .model = model,
-                .translucent = flags & ENTITY_FLAG_TRANSLUCENT
+                .translucent = !!(flags & ENTITY_FLAG_TRANSLUCENT)
             };
             A_GetRenderState(curr, &rstate.njoints, rstate.curr_pose, &rstate.inv_bind_pose);
             vec_ranim_push(out_anim, rstate);
@@ -434,7 +434,7 @@ static void g_make_draw_list(vec_entity_t ents, vec_rstat_t *out_stat, vec_ranim
                 .uid = curr,
                 .render_private = ent->render_private, 
                 .model = model,
-                .translucent = flags & ENTITY_FLAG_TRANSLUCENT,
+                .translucent = !!(flags & ENTITY_FLAG_TRANSLUCENT),
                 .td = td
             };
             vec_rstat_push(out_stat, rstate);
@@ -1696,10 +1696,6 @@ void G_Render(void)
         M_RenderMinimap(s_gs.map, s_gs.active_cam);
         g_render_minimap_units();
         R_PushCmd((struct rcmd){ R_GL_MapInvalidate, 0 });
-        if(R_ComputeShaderSupported()) {
-            R_PushCmd((struct rcmd){ R_GL_PositionsInvalidateData, 0 });
-            R_PushCmd((struct rcmd){ R_GL_MoveInvalidateData, 0 });
-        }
     }
 
     E_Global_NotifyImmediate(EVENT_RENDER_FINISH, NULL, ES_ENGINE);

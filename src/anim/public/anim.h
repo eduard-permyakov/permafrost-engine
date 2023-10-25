@@ -156,6 +156,7 @@ bool                   A_LoadState(struct SDL_RWops *stream, uint32_t uid);
  */
 bool                   A_Init(void);
 void                   A_Shutdown(void);
+void                   A_ClearState(void);
 
 /* ---------------------------------------------------------------------------
  * Add or remove an entity to the animation simulation.

@@ -187,6 +187,8 @@ static bool al_get_resource(const char *path, const char *basedir,
         return true;
     }
 
+    printf("INITIALIZE render private for PFOBJ: %s\n", pfobj_name);
+
     stream = SDL_RWFromFile(path, "r");
     if(!stream)
         goto fail_init; 
@@ -364,6 +366,12 @@ void AL_EntityFree(uint32_t uid)
     assert(k != kh_end(s_uid_ent_table));
     kh_del(uid_ent, s_uid_ent_table, k);
     mpa_ent_free(&s_mpool, entity);
+}
+
+void AL_ClearState(void)
+{
+    kh_clear(uid_ent, s_uid_ent_table);
+    mpa_ent_clear(&s_mpool);
 }
 
 void *AL_RenderPrivateForName(const char *base_path, const char *pfobj_name)

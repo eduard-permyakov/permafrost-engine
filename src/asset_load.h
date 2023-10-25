@@ -77,6 +77,7 @@ struct pfmap_hdr{
 
 bool           AL_Init(void);
 void           AL_Shutdown(void);
+void           AL_ClearState(void);
 
 bool           AL_EntityFromPFObj(const char *base_path, const char *pfobj_name, 
                                   const char *name, uint32_t uid, uint32_t *out_flags);

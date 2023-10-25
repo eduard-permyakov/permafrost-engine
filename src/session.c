@@ -39,6 +39,7 @@
 #include "ui.h"
 #include "sched.h"
 #include "cursor.h"
+#include "asset_load.h"
 #include "lib/public/attr.h"
 #include "lib/public/pf_string.h"
 #include "lib/public/vec.h"
@@ -49,6 +50,7 @@
 #include "script/public/script.h"
 #include "audio/public/audio.h"
 #include "phys/public/phys.h"
+#include "anim/public/anim.h"
 
 #include <SDL.h> /* for SDL_RWops */
 #include <assert.h>
@@ -104,10 +106,12 @@ static void subsession_clear(void)
     S_ClearState();
     G_ClearRenderWork();
     G_ClearState();
+    A_ClearState();
     Entity_ClearState();
     Audio_ClearState();
     P_Projectile_ClearState();
     UI_ClearState();
+    AL_ClearState();
     Sched_ClearState();
 }
 
