@@ -81,7 +81,7 @@ void R_GL_Init(struct render_private *priv, const char *shader, const struct ver
 
     glGenBuffers(1, &mesh->VBO);
     glBindBuffer(GL_ARRAY_BUFFER, mesh->VBO);
-    glBufferData(GL_ARRAY_BUFFER, mesh->num_verts * priv->vertex_stride, vbuff, GL_STREAM_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, mesh->num_verts * priv->vertex_stride, vbuff, GL_STATIC_DRAW);
 
     /* Attribute 0 - position */
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, priv->vertex_stride, (void*)0);
