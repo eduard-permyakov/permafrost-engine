@@ -267,6 +267,7 @@ void  G_Combat_SetRange(uint32_t uid, float range);
 float G_Combat_GetRange(uint32_t uid);
 void  G_Combat_SetProjDesc(uint32_t uid, const struct proj_desc *pd);
 
+enum combat_stance G_Combat_GetStance(uint32_t uid);
 
 /*###########################################################################*/
 /* GAME POSITION                                                             */

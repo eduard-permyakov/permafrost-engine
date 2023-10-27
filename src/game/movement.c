@@ -444,7 +444,8 @@ static void entity_finish_moving(uint32_t uid, enum arrival_state newstate)
 
     E_Entity_Notify(EVENT_MOTION_END, uid, NULL, ES_ENGINE);
     if(flags & ENTITY_FLAG_COMBATABLE
-    && (ms->state != STATE_TURNING)) {
+    && (ms->state != STATE_TURNING)
+    && G_Combat_GetStance(uid) != COMBAT_STANCE_HOLD_POSITION) {
         G_Combat_SetStance(uid, COMBAT_STANCE_AGGRESSIVE);
     }
 

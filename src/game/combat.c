@@ -860,6 +860,7 @@ static void do_stop_attack(uint32_t uid)
         (void*)(uintptr_t)uid, uids_match);
 
     if(!cmd && cs->move_cmd_interrupted) {
+        assert(cs->stance != COMBAT_STANCE_HOLD_POSITION);
         G_Move_SetDest(uid, cs->move_cmd_xz, cs->move_cmd_attacking);
         cs->move_cmd_interrupted = false;
     }
@@ -1882,6 +1883,9 @@ static void combat_render_targets(void)
         case STATE_MOVING_TO_TARGET:
         case STATE_MOVING_TO_TARGET_LOCKED:
         case STATE_CAN_ATTACK: {
+
+            if(entity_dead(curr.target_uid))
+                continue;
         
             vec2_t delta;
             vec2_t target_pos = G_Pos_GetXZFrom(gs->positions, curr.target_uid);
@@ -2113,6 +2117,24 @@ void G_Combat_SetStance(uint32_t uid, enum combat_stance stance)
             .val.as_int = stance
         }
     });
+}
+
+enum combat_stance G_Combat_GetStance(uint32_t uid)
+{
+    struct combat_cmd *cmd = snoop_most_recent_command(COMBAT_CMD_SET_STANCE,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd) {
+        return cmd->args[1].val.as_int;
+    }
+    cmd = snoop_most_recent_command(COMBAT_CMD_ADD,
+        (void*)(uintptr_t)uid, uids_match);
+    if(cmd) {
+        return cmd->args[1].val.as_int;
+    }
+
+    struct combatstate *cs = combatstate_get(uid);
+    assert(cs);
+    return cs->stance;
 }
 
 void G_Combat_ClearSavedMoveCmd(uint32_t uid)
@@ -2467,9 +2489,6 @@ float G_Combat_GetRange(uint32_t uid)
 
 bool G_Combat_SaveState(struct SDL_RWops *stream)
 {
-    // TODO: temp...
-    combat_finish_work();
-
     struct attr num_ents = (struct attr){
         .type = TYPE_INT,
         .val.as_int = kh_size(s_entity_state_table)
