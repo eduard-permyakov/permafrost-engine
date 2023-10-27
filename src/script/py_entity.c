@@ -1374,7 +1374,12 @@ static PyObject *PyEntity_register(PyEntityObject *self, PyObject *args)
     Py_INCREF(user_arg);
 
     bool ret = E_Entity_ScriptRegister(event, self->ent, callable, user_arg, G_RUNNING);
-    assert(ret == true);
+    if(!ret) {
+        Py_DECREF(callable);
+        Py_DECREF(user_arg);
+        PyErr_SetString(PyExc_TypeError, "Unable to register the specified handler.");
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 
