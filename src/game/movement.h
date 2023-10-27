@@ -47,6 +47,7 @@ struct SDL_RWops;
 
 bool G_Move_Init(const struct map *map);
 void G_Move_Shutdown(void);
+void G_Move_FlushWork(void);
 
 void G_Move_AddEntity(uint32_t uid, vec3_t pos, float sel_radius, int faction_id);
 void G_Move_RemoveEntity(uint32_t uid);

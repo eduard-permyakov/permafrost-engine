@@ -669,6 +669,12 @@ static void entity_ranged_attack(uint32_t uid, uint32_t target)
 static void on_death_anim_finish(void *user, void *event)
 {
     uint32_t self = (uintptr_t)user;
+
+    khash_t(id) *flags = s_combat_work.gamestate.flags;
+    khiter_t k = kh_get(id, flags, self);
+    assert(k != kh_end(flags));
+    kh_value(flags, k) = kh_value(flags, k) | ENTITY_FLAG_ZOMBIE;
+
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, self, on_death_anim_finish);
     G_Zombiefy(self, true);
 }
@@ -696,11 +702,9 @@ static void do_remove_entity(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    if(!(G_FlagsGet(uid) & ENTITY_FLAG_COMBATABLE))
-        return;
-
     struct combatstate *cs = combatstate_get(uid);
-    assert(cs);
+    if(!cs)
+        return;
 
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_attack_anim_finish);
     E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_death_anim_finish);
@@ -778,7 +782,6 @@ static void do_set_stance(uint32_t uid, enum combat_stance stance)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    assert(G_FlagsGet(uid) & ENTITY_FLAG_COMBATABLE);
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
 
@@ -814,13 +817,14 @@ static void do_attack_unit(uint32_t uid, uint32_t target)
 {
     ASSERT_IN_MAIN_THREAD();
 
+    struct combat_gamestate *gs = &s_combat_work.gamestate;
     struct combatstate *cs = combatstate_get(uid);
     assert(cs);
 
     do_stop_attack(uid);
     cs->stance = COMBAT_STANCE_AGGRESSIVE;
 
-    uint32_t flags = G_FlagsGet(uid);
+    uint32_t flags = G_FlagsGetFrom(gs->flags, uid);
     if(flags & ENTITY_FLAG_MOVABLE) {
     
         cs->sticky = true;
@@ -1857,6 +1861,9 @@ static void on_mousedown(void *user, void *event)
 
 static void combat_render_targets(void)
 {
+    if(kh_size(s_combat_work.gamestate.positions) == 0)
+        return;
+
     int winw, winh;
     Engine_WinDrawableSize(&winw, &winh);
     const struct camera *cam = G_GetActiveCamera();
@@ -1939,6 +1946,9 @@ static void combat_render_targets(void)
 
 static void combat_render_ranges(void)
 {
+    if(kh_size(s_combat_work.gamestate.positions) == 0)
+        return;
+
     uint32_t key;
     struct combatstate curr;
     struct combat_gamestate *gs = &s_combat_work.gamestate;
@@ -2076,6 +2086,12 @@ void G_Combat_Shutdown(void)
     queue_cmd_destroy(&s_combat_commands);
     stalloc_destroy(&s_combat_work.mem);
     kh_destroy(state, s_entity_state_table);
+}
+
+void G_Combat_FlushWork(void)
+{
+    combat_finish_work();
+    combat_process_cmds();
 }
 
 void G_Combat_AddEntity(uint32_t uid, enum combat_stance initial)
@@ -2501,6 +2517,7 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
 
     kh_foreach(s_entity_state_table, key, curr, {
 
+        assert(G_EntityExists(key));
         struct attr uid = (struct attr){
             .type = TYPE_INT,
             .val.as_int = key

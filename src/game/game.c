@@ -1341,6 +1341,12 @@ void G_ClearState(void)
     PERF_RETURN_VOID();
 }
 
+void G_FlushWork(void)
+{
+    G_Combat_FlushWork();
+    G_Move_FlushWork();
+}
+
 void G_ClearRenderWork(void)
 {
     Engine_WaitRenderWorkDone();

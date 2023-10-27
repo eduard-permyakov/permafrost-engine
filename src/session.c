@@ -144,6 +144,7 @@ static void subsession_flush(void)
      * unblock tasks, we keep doing it until the entire event chain is 
      * completed.
      */
+    G_FlushWork();
     while(E_EventsQueued() || Sched_HasBlocked()) {
         E_FlushEventQueue();
         Sched_Flush();

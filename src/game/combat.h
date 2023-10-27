@@ -47,6 +47,7 @@ struct map;
 
 bool G_Combat_Init(const struct map *map);
 void G_Combat_Shutdown(void);
+void G_Combat_FlushWork(void);
 
 void G_Combat_AddEntity(uint32_t uid, enum combat_stance initial);
 void G_Combat_RemoveEntity(uint32_t uid);

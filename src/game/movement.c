@@ -2476,6 +2476,12 @@ void G_Move_Shutdown(void)
     kh_destroy(state, s_entity_state_table);
 }
 
+void G_Move_FlushWork(void)
+{
+    move_finish_work();
+    move_process_cmds();
+}
+
 void G_Move_AddEntity(uint32_t uid, vec3_t pos, float sel_radius, int faction_id)
 {
     ASSERT_IN_MAIN_THREAD();
