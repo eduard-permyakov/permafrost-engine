@@ -675,7 +675,8 @@ vec2_t G_ClearPath_NewVelocity(struct cp_ent cpent,
 
     do{
         vec2_t ret;
-        bool found = clearpath_new_velocity(cpent, ent_uid, ent_des_v, dyn_neighbs, stat_neighbs, save_debug, &ret);
+        bool found = clearpath_new_velocity(cpent, ent_uid, ent_des_v, 
+            dyn_neighbs, stat_neighbs, save_debug, &ret);
         if(found)
             PERF_RETURN(ret);
 

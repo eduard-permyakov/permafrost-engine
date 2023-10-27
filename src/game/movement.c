@@ -235,6 +235,7 @@ enum move_cmd_type{
 };
 
 struct move_cmd{
+    bool               deleted;
     enum move_cmd_type type;
     struct attr        args[4];
 };
@@ -250,6 +251,7 @@ VEC_IMPL(static inline, flock, struct flock)
 static void move_push_cmd(struct move_cmd cmd);
 static void do_set_dest(uint32_t uid, vec2_t dest_xz, bool attack);
 static void do_stop(uint32_t uid);
+static void do_update_pos(uint32_t uid, vec2_t pos);
 
 /* Parameters controlling steering/flocking behaviours */
 #define SEPARATION_FORCE_SCALE          (0.6f)
@@ -978,7 +980,7 @@ static vec2_t ent_desired_velocity(uint32_t uid)
             }
         }else{
             if(dx >= SURROUND_HIGH_WATER_X || dz >= SURROUND_HIGH_WATER_Z) {
-                ms->using_surround_field = true;
+                ms->using_surround_field = false;
             }
         }
 
@@ -1129,7 +1131,8 @@ static vec2_t cohesion_force(uint32_t uid, const struct flock *flock)
         vec2_t curr_xz_pos = G_Pos_GetXZFrom(s_move_work.gamestate.positions, curr);
         PFM_Vec2_Sub(&curr_xz_pos, &ent_xz_pos, &diff);
 
-        float t = (PFM_Vec2_Len(&diff) - COHESION_NEIGHBOUR_RADIUS*0.75) / COHESION_NEIGHBOUR_RADIUS;
+        float t = (PFM_Vec2_Len(&diff) 
+                - COHESION_NEIGHBOUR_RADIUS*0.75) / COHESION_NEIGHBOUR_RADIUS;
         float scale = exp(-6.0f * t);
 
         PFM_Vec2_Scale(&curr_xz_pos, scale, &curr_xz_pos);
@@ -1375,6 +1378,50 @@ static vec2_t vel_wma(const struct movestate *ms)
     return ret;
 }
 
+static bool uids_match(void *arg, struct move_cmd *cmd)
+{
+    uint32_t desired_uid = (uintptr_t)arg;
+    uint32_t actual_uid = cmd->args[0].val.as_int;
+    return (desired_uid == actual_uid);
+}
+
+static struct move_cmd *snoop_most_recent_command(enum move_cmd_type type, void *arg,
+                                                  bool (*pred)(void*, struct move_cmd*),
+                                                  bool remove)
+{
+    if(queue_size(s_move_commands) == 0)
+        return NULL;
+
+    size_t left = queue_size(s_move_commands);
+    for(int i = s_move_commands.itail; left > 0;) {
+        struct move_cmd *curr = &s_move_commands.mem[i];
+        if(!curr->deleted && curr->type == type) {
+            if(pred(arg, curr)) {
+                curr->deleted = true;
+                return curr;
+            }
+        }
+        i--;
+        left--;
+        if(i < 0) {
+            i = s_move_commands.capacity - 1; /* Wrap around */
+        }
+    }
+    return NULL;
+}
+
+static void flush_update_pos_commands(uint32_t uid)
+{
+    struct move_cmd *cmd;
+    while((cmd = snoop_most_recent_command(MOVE_CMD_UPDATE_POS, 
+        (void*)(uintptr_t)uid, uids_match, true))) {
+
+        uint32_t uid = cmd->args[0].val.as_int;
+        vec2_t pos = cmd->args[1].val.as_vec2;
+        do_update_pos(uid, pos);
+    }
+}
+
 static void entity_update(uint32_t uid, vec2_t new_vel)
 {
     ASSERT_IN_MAIN_THREAD();
@@ -1390,6 +1437,7 @@ static void entity_update(uint32_t uid, vec2_t new_vel)
     
         vec3_t new_pos = (vec3_t){new_pos_xz.x, M_HeightAtPoint(s_map, new_pos_xz), new_pos_xz.z};
         G_Pos_Set(uid, new_pos);
+        flush_update_pos_commands(uid);
         ms->velocity = new_vel;
 
         /* Use a weighted average of past velocities ot set the entity's orientation. 
@@ -1983,38 +2031,14 @@ static void move_push_cmd(struct move_cmd cmd)
     queue_cmd_push(&s_move_commands, &cmd);
 }
 
-static bool uids_match(void *arg, struct move_cmd *cmd)
-{
-    uint32_t desired_uid = (uintptr_t)arg;
-    uint32_t actual_uid = cmd->args[0].val.as_int;
-    return (desired_uid == actual_uid);
-}
-
-static struct move_cmd *snoop_most_recent_command(enum move_cmd_type type, void *arg,
-                                                  bool (*pred)(void*, struct move_cmd*))
-{
-    if(queue_size(s_move_commands) == 0)
-        return NULL;
-
-    size_t left = queue_size(s_move_commands);
-    for(int i = s_move_commands.itail; left > 0;) {
-        struct move_cmd *curr = &s_move_commands.mem[i];
-        if(curr->type == type)
-            if(pred(arg, curr))
-                return curr;
-        i--;
-        left--;
-        if(i < 0) {
-            i = s_move_commands.capacity - 1; /* Wrap around */
-        }
-    }
-    return NULL;
-}
-
 static void move_process_cmds(void)
 {
     struct move_cmd cmd;
     while(queue_cmd_pop(&s_move_commands, &cmd)) {
+
+        if(cmd.deleted)
+            continue;
+
         switch(cmd.type) {
         case MOVE_CMD_ADD: {
             uint32_t uid = cmd.args[0].val.as_int;
@@ -2136,6 +2160,7 @@ static void move_work(int begin_idx, int end_idx)
 
         /* Compute the preferred velocity */
         vec2_t vpref = (vec2_t){NAN, NAN};
+        enum arrival_state old_state = ms->state;
         switch(ms->state) {
         case STATE_TURNING:
             vpref = (vec2_t){0.0f, 0.0f};
@@ -2501,7 +2526,7 @@ void G_Move_Stop(uint32_t uid)
 bool G_Move_GetDest(uint32_t uid, vec2_t *out_xz, bool *out_attack)
 {
     struct move_cmd *cmd = snoop_most_recent_command(MOVE_CMD_SET_DEST,
-        (void*)(uintptr_t)uid, uids_match);
+        (void*)(uintptr_t)uid, uids_match, false);
 
     if(cmd) {
         *out_xz = cmd->args[1].val.as_vec2;
@@ -2520,7 +2545,7 @@ bool G_Move_GetDest(uint32_t uid, vec2_t *out_xz, bool *out_attack)
 bool G_Move_GetSurrounding(uint32_t uid, uint32_t *out_uid)
 {
     struct move_cmd *cmd = snoop_most_recent_command(MOVE_CMD_SET_SURROUND_ENTITY,
-        (void*)(uintptr_t)uid, uids_match);
+        (void*)(uintptr_t)uid, uids_match, false);
 
     if(cmd) {
         *out_uid = cmd->args[1].val.as_int;
@@ -2709,7 +2734,7 @@ bool G_Move_GetClickEnabled(void)
 bool G_Move_GetMaxSpeed(uint32_t uid, float *out)
 {
     struct move_cmd *cmd = snoop_most_recent_command(MOVE_CMD_SET_MAX_SPEED,
-        (void*)(uintptr_t)uid, uids_match);
+        (void*)(uintptr_t)uid, uids_match, false);
 
     if(cmd) {
         *out = cmd->args[1].val.as_float;
