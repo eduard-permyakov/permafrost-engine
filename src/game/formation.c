@@ -37,9 +37,12 @@
 #include "position.h"
 #include "../main.h"
 #include "../event.h"
+#include "../settings.h"
 #include "../map/public/map.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/khash.h"
+#include "../render/public/render.h"
+#include "../render/public/render_ctrl.h"
 
 #include <assert.h>
 
@@ -128,6 +131,7 @@ static vec2_t compute_orientation(vec2_t target, khash_t(entity) *ents)
 
     vec2_t orientation;
     PFM_Vec2_Sub(&target, &COM, &orientation);
+    PFM_Vec2_Normal(&orientation, &orientation);
     return orientation;
 }
 
@@ -147,6 +151,39 @@ static void init_cells(size_t nrows, size_t ncols, vec_cell_t *cells)
 
 static void on_render_3d(void *user, void *event)
 {
+    struct sval setting;
+    ss_e status;
+    (void)status;
+
+    status = Settings_Get("pf.debug.show_formations", &setting);
+    assert(status == SS_OKAY);
+    bool enabled = setting.as_bool;
+
+    if(!enabled)
+        return;
+
+    struct formation formation;
+    kh_foreach_value(s_formations, formation, {
+        const float length = 15.0f;
+        const float width = 1.5f;
+        const vec3_t green = (vec3_t){0.0, 1.0, 0.0};
+        vec2_t origin = formation.target;
+        vec2_t delta, end;
+        PFM_Vec2_Scale(&formation.orientation, length, &delta);
+        PFM_Vec2_Add(&origin, &delta, &end);
+
+        vec2_t endpoints[] = {origin, end};
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawLine,
+            .nargs = 4,
+            .args = {
+                R_PushArg(endpoints, sizeof(endpoints)),
+                R_PushArg(&width, sizeof(width)),
+                R_PushArg(&green, sizeof(green)),
+                (void*)G_GetPrevTickMap()
+            }
+        });
+    });
 }
 
 /*****************************************************************************/
