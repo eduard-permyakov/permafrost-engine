@@ -559,10 +559,8 @@ static void shadows_en_commit(const struct sval *new_val)
     if(!s_gs.active)
         return;
 
-    uint32_t key, curr;
-    (void)key;
-
-    kh_foreach(s_gs.active, key, curr, {
+    uint32_t curr;
+    kh_foreach_key(s_gs.active, curr, {
 
         R_PushCmd((struct rcmd){
             .func = R_GL_SetShadowsEnabled,
