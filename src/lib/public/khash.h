@@ -415,18 +415,25 @@ static const double __ac_HASH_UPPER = 0.77;
             return ret;                                                                         \
         ret->flags = (khint32_t*)kmalloc(__ac_fsize(h->n_buckets) * sizeof(khint32_t));         \
         ret->keys = (khkey_t*)kmalloc(h->n_buckets * sizeof(khkey_t));                          \
-        ret->vals = (khval_t*)kmalloc(h->n_buckets * sizeof(khval_t));                          \
-        if(!ret->flags || !ret->keys || !ret->vals) {                                           \
-            kfree(ret->flags);                                                                  \
-            kfree(ret->keys);                                                                   \
-            kfree(ret->vals);                                                                   \
-            kfree(ret);                                                                         \
-            return NULL;                                                                        \
+        if(!ret->flags || !ret->keys) {                                                         \
+            goto fail_keys;                                                                     \
         }                                                                                       \
         kmemcpy(ret->flags, h->flags, __ac_fsize(h->n_buckets) * sizeof(khint32_t));            \
         kmemcpy(ret->keys, h->keys, h->n_buckets * sizeof(khkey_t));                            \
-        kmemcpy(ret->vals, h->vals, h->n_buckets * sizeof(khval_t));                            \
+        if(h->vals) {                                                                           \
+            ret->vals = (khval_t*)kmalloc(h->n_buckets * sizeof(khval_t));                      \
+            if(!ret->vals)                                                                      \
+                goto fail_vals;                                                                 \
+            kmemcpy(ret->vals, h->vals, h->n_buckets * sizeof(khval_t));                        \
+        }                                                                                       \
         return ret;                                                                             \
+    fail_vals:                                                                                  \
+        kfree(ret->vals);                                                                       \
+    fail_keys:                                                                                  \
+        kfree(ret->flags);                                                                      \
+        kfree(ret->keys);                                                                       \
+        kfree(ret);                                                                             \
+        return NULL;                                                                            \
     }
 
 #define KHASH_DECLARE(name, khkey_t, khval_t)                                                   \
