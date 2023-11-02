@@ -485,6 +485,7 @@ static int render(void *data)
     struct render_sync_state *rstate = data; 
     SDL_Window *window = rstate->arg->in_window; /* cache window ptr */
 
+    Engine_SetRenderThreadID(SDL_ThreadID());
     SDL_GL_MakeCurrent(window, s_context);
 
     bool quit = render_wait_cmd(rstate);

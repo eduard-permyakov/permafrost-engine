@@ -446,7 +446,6 @@ static bool engine_init(void)
         fprintf(stderr, "Failed to start the render thread.\n");
         goto fail_rthread;
     }
-    g_render_thread_id = SDL_GetThreadID(s_render_thread);
 
     render_thread_start_work();
     render_thread_wait_done();
@@ -700,6 +699,11 @@ void Engine_FlushRenderWorkQueue(void)
 
     /* Kick off the empty batch such that we're in the same state that we started in */
     render_thread_start_work();
+}
+
+void Engine_SetRenderThreadID(SDL_threadID id)
+{
+    g_render_thread_id = id;
 }
 
 void Engine_EnableRendering(bool on)
