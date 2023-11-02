@@ -38,6 +38,7 @@
 #include "selection.h"
 #include "timer_events.h"
 #include "movement.h"
+#include "formation.h"
 #include "game_private.h"
 #include "combat.h" 
 #include "clearpath.h"
@@ -152,6 +153,7 @@ static void g_init_map(void)
     G_Fog_Init(s_gs.map);
     G_Combat_Init(s_gs.map);
     G_Move_Init(s_gs.map);
+    G_Formation_Init(s_gs.map);
     G_Builder_Init(s_gs.map);
     G_Resource_Init(s_gs.map);
     G_Region_Init(s_gs.map);
@@ -703,6 +705,7 @@ static void g_clear_map_state(void)
         G_Building_Shutdown();
         G_Fog_Shutdown();
         G_Combat_Shutdown();
+        G_Formation_Shutdown();
         G_Move_Shutdown();
         G_Builder_Shutdown();
         G_Resource_Shutdown();

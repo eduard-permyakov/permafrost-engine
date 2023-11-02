@@ -35,6 +35,7 @@
 
 #include "movement.h"
 #include "game_private.h"
+#include "formation.h"
 #include "combat.h"
 #include "clearpath.h"
 #include "position.h"
@@ -322,8 +323,10 @@ static struct movestate *movestate_get(uint32_t uid)
 static void flock_try_remove(struct flock *flock, uint32_t uid)
 {
     khiter_t k;
-    if((k = kh_get(entity, flock->ents, uid)) != kh_end(flock->ents))
+    if((k = kh_get(entity, flock->ents, uid)) != kh_end(flock->ents)) {
         kh_del(entity, flock->ents, k);
+        G_Formation_RemoveUnit(flock->dest_id, uid);
+    }
 }
 
 static void flock_add(struct flock *flock, uint32_t uid)
@@ -490,6 +493,7 @@ static void remove_from_flocks(uint32_t uid)
         flock_try_remove(curr_flock, uid);
 
         if(kh_size(curr_flock->ents) == 0) {
+            G_Formation_Destroy(curr_flock->dest_id);
             kh_destroy(entity, curr_flock->ents);
             vec_flock_del(&s_flocks, i);
         }
@@ -603,9 +607,11 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
 
         uint32_t curr;
         kh_foreach_key(new_flock.ents, curr, { flock_add(merge_flock, curr); });
+        G_Formation_AddUnits(new_flock.dest_id, new_flock.ents);
         kh_destroy(entity, new_flock.ents);
     
     }else{
+        G_Formation_Create(new_flock.dest_id, new_flock.target_xz, new_flock.ents);
         vec_flock_push(&s_flocks, new_flock);
     }
 
@@ -1732,7 +1738,9 @@ static void disband_empty_flocks(void)
 
         if(disband) {
 
-            kh_destroy(entity, vec_AT(&s_flocks, i).ents);
+            struct flock *flock = &vec_AT(&s_flocks, i);
+            G_Formation_Destroy(flock->dest_id);
+            kh_destroy(entity, flock->ents);
             vec_flock_del(&s_flocks, i);
         }
     }
