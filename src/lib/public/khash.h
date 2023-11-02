@@ -209,7 +209,8 @@ static const double __ac_HASH_UPPER = 0.77;
     extern khint_t        kh_get_##name(const kh_##name##_t *h, khkey_t key);                   \
     extern int            kh_resize_##name(kh_##name##_t *h, khint_t new_n_buckets);            \
     extern khint_t        kh_put_##name(kh_##name##_t *h, khkey_t key, int *ret);               \
-    extern void           kh_del_##name(kh_##name##_t *h, khint_t x);
+    extern void           kh_del_##name(kh_##name##_t *h, khint_t x);                           \
+    extern kh_##name##_t *kh_copy_##name(kh_##name##_t *h);
 
 #define __KHASH_IMPL(name, SCOPE, khkey_t, khval_t, kh_is_map, __hash_func, __hash_equal)       \
                                                                                                 \
