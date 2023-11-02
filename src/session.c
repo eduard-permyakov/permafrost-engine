@@ -99,7 +99,7 @@ static char            s_saved_argv[MAX_ARGC + 1][128];
 
 static void subsession_clear(void)
 {
-    E_ClearPendingEvents();
+    Sched_ClearState();
     E_DeleteScriptHandlers();
     Cursor_ClearState();
     N_ClearState();
@@ -112,7 +112,7 @@ static void subsession_clear(void)
     P_Projectile_ClearState();
     UI_ClearState();
     AL_ClearState();
-    Sched_ClearState();
+    E_ClearPendingEvents();
 }
 
 static void subsession_save_args(void)
@@ -144,11 +144,11 @@ static void subsession_flush(void)
      * unblock tasks, we keep doing it until the entire event chain is 
      * completed.
      */
-    G_FlushWork();
-    while(E_EventsQueued() || Sched_HasBlocked()) {
+    do{
+        G_FlushWork();
         E_FlushEventQueue();
         Sched_Flush();
-    }
+    }while(G_HasWork() || E_EventsQueued() || Sched_HasBlocked());
 }
 
 static bool subsession_save(SDL_RWops *stream)

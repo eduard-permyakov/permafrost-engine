@@ -1347,6 +1347,11 @@ void G_FlushWork(void)
     G_Move_FlushWork();
 }
 
+bool G_HasWork(void)
+{
+    return G_Combat_HasWork() || G_Move_HasWork();
+}
+
 void G_ClearRenderWork(void)
 {
     Engine_WaitRenderWorkDone();

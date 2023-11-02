@@ -111,6 +111,7 @@ bool            G_Init(void);
 bool            G_LoadMap(SDL_RWops *stream, bool update_navgrid);
 void            G_Shutdown(void);
 
+bool            G_HasWork(void);
 void            G_FlushWork(void);
 void            G_ClearState(void);
 void            G_ClearRenderWork(void);

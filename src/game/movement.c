@@ -2255,6 +2255,12 @@ static void move_release_gamestate(void)
     PERF_RETURN_VOID();
 }
 
+static void move_update_gamestate(void)
+{
+    move_release_gamestate();
+    move_copy_gamestate();
+}
+
 static void move_finish_work(void)
 {
     PERF_ENTER();
@@ -2474,6 +2480,11 @@ void G_Move_Shutdown(void)
     queue_cmd_destroy(&s_move_commands);
     stalloc_destroy(&s_move_work.mem);
     kh_destroy(state, s_entity_state_table);
+}
+
+bool G_Move_HasWork(void)
+{
+    return (queue_size(s_move_commands) > 0);
 }
 
 void G_Move_FlushWork(void)
@@ -3000,6 +3011,7 @@ bool G_Move_SaveState(struct SDL_RWops *stream)
 bool G_Move_LoadState(struct SDL_RWops *stream)
 {
     /* Flush the commands submitted during loading */
+    move_update_gamestate();
     move_process_cmds();
 
     struct attr attr;

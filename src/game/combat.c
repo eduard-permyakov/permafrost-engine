@@ -1718,6 +1718,12 @@ static void combat_release_gamestate(void)
     PERF_RETURN_VOID();
 }
 
+static void combat_update_gamestate(void)
+{
+    combat_release_gamestate();
+    combat_copy_gamestate();
+}
+
 static void combat_prepare_work(void)
 {
     size_t nents = kh_size(s_entity_state_table);
@@ -1861,9 +1867,6 @@ static void on_mousedown(void *user, void *event)
 
 static void combat_render_targets(void)
 {
-    if(kh_size(s_combat_work.gamestate.positions) == 0)
-        return;
-
     int winw, winh;
     Engine_WinDrawableSize(&winw, &winh);
     const struct camera *cam = G_GetActiveCamera();
@@ -1946,9 +1949,6 @@ static void combat_render_targets(void)
 
 static void combat_render_ranges(void)
 {
-    if(kh_size(s_combat_work.gamestate.positions) == 0)
-        return;
-
     uint32_t key;
     struct combatstate curr;
     struct combat_gamestate *gs = &s_combat_work.gamestate;
@@ -2078,6 +2078,12 @@ void G_Combat_Shutdown(void)
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     E_Global_Unregister(EVENT_PROJECTILE_HIT, on_proj_hit);
 
+    uint32_t uid;
+    kh_foreach_key(s_entity_state_table, uid, {
+        E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_attack_anim_finish);
+        E_Entity_Unregister(EVENT_ANIM_CYCLE_FINISHED, uid, on_death_anim_finish);
+    });
+
     combat_release_gamestate();
     vec_entity_destroy(&s_dying_ents);
     for(int i = 0; i < MAX_FACTIONS; i++) {
@@ -2086,6 +2092,11 @@ void G_Combat_Shutdown(void)
     queue_cmd_destroy(&s_combat_commands);
     stalloc_destroy(&s_combat_work.mem);
     kh_destroy(state, s_entity_state_table);
+}
+
+bool G_Combat_HasWork(void)
+{
+    return (queue_size(s_combat_commands) > 0);
 }
 
 void G_Combat_FlushWork(void)
@@ -2623,7 +2634,8 @@ bool G_Combat_SaveState(struct SDL_RWops *stream)
 
 bool G_Combat_LoadState(struct SDL_RWops *stream)
 {
-	/* Flush the commands submitted during loading */
+    /* Flush the commands submitted during loading */
+    combat_update_gamestate();
     combat_process_cmds();
 
     struct attr attr;
