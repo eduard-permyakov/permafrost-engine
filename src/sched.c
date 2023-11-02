@@ -1682,11 +1682,11 @@ void Sched_Flush(void)
     sched_quiesce_workers();
     struct task *curr;
 
-    while(pq_task_peek(&s_ready_queue, &curr)) {
-        Sched_RunSync(curr->tid);
+    while(pq_task_pop(&s_ready_queue, &curr)) {
+        do_run_sync(curr->tid, false);
     }
-    while(pq_task_peek(&s_ready_queue_main, &curr)) {
-        Sched_RunSync(curr->tid);
+    while(pq_task_pop(&s_ready_queue_main, &curr)) {
+        do_run_sync(curr->tid, false);
     }
     s_flushing = false;
 }
