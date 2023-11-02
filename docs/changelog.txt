@@ -3,6 +3,15 @@
 ********************************************************************************
 
 ================================================================================
+[Version 1.1.0] - 11.02.2023
+================================================================================
+    * Make session saving/loading asynchronous
+    * Make movement and combat simulation asynchronous
+        --> significant performance improvements to battles with large unit 
+            counts
+    * Numerous bug fixes and stability improvements
+
+================================================================================
 [Version 1.00.0] - 08.05.2021
 ================================================================================
     * Numerous bug fixes and stability improvements

@@ -105,6 +105,8 @@ The compliation can either be done on a Linux host, or natively on Windows using
 4. `make pf PLAT=WINDOWS`
 5. `make launchers PLAT=WINDOWS`
 
+Alternatively, a Visual Studio 2022 solution file is provided in the root directory of the project.
+
 ## License ##
 
 Permafrost Engine is licensed under the GPLv3, with a special linking exception.
@@ -150,5 +152,5 @@ Follow the development of Permafrost Engine and EVERGLORY on [YouTube](https://w
 Comments or questions regarding the project or the source code? E-mail: edward.permyakov@gmail.com.
 Discuss EVERGLORY and its' development on [Discord](https://discord.gg/jSQ8M6C). If you have a _useful_ fix for a 
 _non-trivial_ engine issue, feel free to make a PR. Be warned that I will scrutinize every patch to make sure it meets my 
-personal quality standards for the engine code. It you wish to evelove the engine in some way and want the changes to be 
+personal quality standards for the engine code. It you wish to evolve the engine in some way and want the changes to be 
 upstreamed, then do get in touch to discuss it.
