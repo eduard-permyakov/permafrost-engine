@@ -57,6 +57,9 @@ struct obb;
 enum render_pass;
 struct map_resolution;
 
+struct chunkpos{
+    int r, c;
+};
 
 /*###########################################################################*/
 /* MAP GENERAL                                                               */
@@ -75,6 +78,12 @@ void   M_Update(const struct map *map);
  * ------------------------------------------------------------------------
  */
 void   M_RenderEntireMap(const struct map *map, bool shadows, enum render_pass pass);
+
+/* ------------------------------------------------------------------------
+ * Get the model matrix for a specific chunk.
+ * ------------------------------------------------------------------------
+ */
+void   M_ModelMatrixForChunk(const struct map *map, struct chunkpos p, mat4x4_t *out);
 
 /* ------------------------------------------------------------------------
  * Renders the chunks of the map that are currently visible by the specified

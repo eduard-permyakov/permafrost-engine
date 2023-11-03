@@ -95,10 +95,4 @@ struct map{
     struct pfchunk chunks[];
 };
 
-struct chunkpos{
-    int r, c;
-};
-
-void M_ModelMatrixForChunk(const struct map *map, struct chunkpos p, mat4x4_t *out);
-
 #endif

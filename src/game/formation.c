@@ -38,21 +38,39 @@
 #include "../main.h"
 #include "../event.h"
 #include "../settings.h"
+#include "../perf.h"
 #include "../map/public/map.h"
+#include "../map/public/tile.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/khash.h"
+#include "../lib/public/queue.h"
+#include "../navigation/public/nav.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 
 #include <assert.h>
 
-#define COLUMN_WIDTH_RATIO  (0.25f)
-#define RANK_WIDTH_RATIO    (4.0f)
+#define COLUMN_WIDTH_RATIO       (0.25f)
+#define RANK_WIDTH_RATIO         (4.0f)
+#define OCCUPIED_FIELD_RES       (95) /* Must be odd */
+#define CELL_IDX(_r, _c, _ncols) ((_r) * (_ncols) + (_c))
+#define ARR_SIZE(a)              (sizeof(a)/sizeof(a[0]))
+#define MIN(a, b)                ((a) < (b) ? (a) : (b))
+#define MAX(a, b)                ((a) > (b) ? (a) : (b))
+#define CLAMP(a, min, max)       (MIN(MAX((a), (min)), (max)))
 
 enum cell_state
 {
+    CELL_NOT_PLACED,
     CELL_OCCUPIED,
     CELL_NOT_OCCUPIED
+};
+
+enum tile_state
+{
+    TILE_FREE,
+    TILE_BLOCKED,
+    TILE_ALLOCATED
 };
 
 struct coord
@@ -71,6 +89,9 @@ VEC_IMPL(static inline, cell, struct cell)
 
 KHASH_MAP_INIT_INT(assignment, struct coord)
 
+QUEUE_TYPE(coord, struct coord)
+QUEUE_IMPL(static, coord, struct coord)
+
 enum formation_type
 {
     FORMATION_RANK,
@@ -83,10 +104,18 @@ struct formation
     vec2_t               target;
     vec2_t               orientation;
     khash_t(entity)     *ents;
+    /* Each cell holds a single unit from the formation
+     */
     size_t               nrows;
     size_t               ncols;
     vec_cell_t           cells;
+    /* A mapping between entities and a cell within the formation 
+     */
     khash_t(assignment) *assignment;
+    /* The map tiles which have already been allocated to cells.
+     * Centered at the target position.
+     */
+    uint8_t              occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES];
 };
 
 KHASH_MAP_INIT_INT64(formation, struct formation)
@@ -135,33 +164,137 @@ static vec2_t compute_orientation(vec2_t target, khash_t(entity) *ents)
     return orientation;
 }
 
-static void init_cells(size_t nrows, size_t ncols, vec_cell_t *cells)
+static void place_cell(struct cell *curr, 
+                       const struct cell *left, const struct cell *right,
+                       const struct cell *top,  const struct cell *bot,
+                       uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
+    curr->state = CELL_NOT_OCCUPIED;
+}
+
+static void init_occupied_field(vec2_t target, 
+                                uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+{
+    PERF_ENTER();
+
+    struct map_resolution res;
+    M_NavGetResolution(s_map, &res);
+    vec3_t map_pos = M_GetPos(s_map);
+
+    struct tile_desc center_tile;
+    M_Tile_DescForPoint2D(res, map_pos, target, &center_tile);
+
+    struct coord center_coord = (struct coord){
+        OCCUPIED_FIELD_RES / 2,
+        OCCUPIED_FIELD_RES / 2
+    };
+
+    memset(occupied, 0, OCCUPIED_FIELD_RES * OCCUPIED_FIELD_RES);
+    for(int r = 0; r < OCCUPIED_FIELD_RES; r++) {
+    for(int c = 0; c < OCCUPIED_FIELD_RES; c++) {
+
+        int dr = center_coord.r - r;
+        int dc = center_coord.c - c;
+        struct tile_desc curr = center_tile;
+        bool exists = M_Tile_RelativeDesc(res, &curr, dc, dr);
+        if(!exists) {
+            occupied[r][c] = TILE_BLOCKED;
+            continue;
+        }
+
+        struct box bounds = M_Tile_Bounds(res, map_pos, curr);
+        vec2_t center = (vec2_t){
+            bounds.x - bounds.width / 2.0f,
+            bounds.z + bounds.height / 2.0f
+        };
+        if(!M_NavPositionPathable(s_map, NAV_LAYER_GROUND_1X1, center)
+        ||  M_NavPositionBlocked(s_map, NAV_LAYER_GROUND_1X1, center)) {
+            occupied[r][c] = TILE_BLOCKED;
+            continue;
+        }
+    }}
+
+    PERF_RETURN_VOID();
+}
+
+static void init_cells(size_t nrows, size_t ncols, vec_cell_t *cells,
+                       uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+{
+    PERF_ENTER();
+
     size_t total = nrows * ncols;
     vec_cell_init(cells);
     vec_cell_resize(cells, total);
+    cells->size = total;
     for(int r = 0; r < nrows; r++) {
     for(int c = 0; c < ncols; c++) {
         size_t idx = r * ncols + c;
-        vec_AT(cells, idx) = (struct cell){CELL_NOT_OCCUPIED};
+        vec_AT(cells, idx) = (struct cell){CELL_NOT_PLACED};
     }}
 
-    /* Position the cells on pathable and unobstructed terrain */
+    /* Position the cells on pathable and unobstructed terrain.
+     */
+    struct coord center = (struct coord){
+        .r = nrows / 2,
+        .c = ncols / 2
+    };
+
+    /* Start by placing the center-most cell and traverse the cell 
+     * grid outwards in a breadth-first manner.
+     */
+    queue_coord_t frontier;
+    queue_coord_init(&frontier, nrows * ncols);
+    queue_coord_push(&frontier, &center);
+
+    struct coord deltas[] = {
+        { 0, -1},
+        { 0, +1},
+        {-1,  0},
+        {+1,  0},
+    };
+
+    while(queue_size(frontier) > 0) {
+
+        struct coord curr;
+        queue_coord_pop(&frontier, &curr);
+        struct cell *curr_cell = &vec_AT(cells, CELL_IDX(curr.r, curr.c, ncols));
+
+        struct coord top = (struct coord){curr.r - 1, curr.c};
+        struct coord bot = (struct coord){curr.r + 1, curr.c};
+        struct coord left = (struct coord){curr.r, curr.c - 1};
+        struct coord right = (struct coord){curr.r, curr.c + 1};
+
+        struct cell *top_cell = (top.r >= 0) 
+                              ? &vec_AT(cells, CELL_IDX(top.r, top.c, ncols)) 
+                              : NULL;
+        struct cell *bot_cell = (bot.r < ncols) 
+                              ? &vec_AT(cells, CELL_IDX(bot.r, bot.c, ncols)) 
+                              : NULL;
+        struct cell *left_cell = (left.c >= 0) 
+                               ? &vec_AT(cells, CELL_IDX(left.r, left.c, ncols))
+                               : NULL;
+        struct cell *right_cell = (right.c < nrows) 
+                                ? &vec_AT(cells, CELL_IDX(right.r, right.c, ncols))
+                                : NULL;
+
+        place_cell(curr_cell, left_cell, right_cell, top_cell, bot_cell, occupied);
+
+        if(left_cell && left_cell->state == CELL_NOT_PLACED)
+            queue_coord_push(&frontier, &left);
+        if(right_cell && right_cell->state == CELL_NOT_PLACED)
+            queue_coord_push(&frontier, &right);
+        if(top_cell && top_cell->state == CELL_NOT_PLACED)
+            queue_coord_push(&frontier, &top);
+        if(bot_cell && bot_cell->state == CELL_NOT_PLACED)
+            queue_coord_push(&frontier, &bot);
+    }
+
+    queue_coord_destroy(&frontier);
+    PERF_RETURN_VOID();
 }
 
-static void on_render_3d(void *user, void *event)
+static void render_formations(void)
 {
-    struct sval setting;
-    ss_e status;
-    (void)status;
-
-    status = Settings_Get("pf.debug.show_formations", &setting);
-    assert(status == SS_OKAY);
-    bool enabled = setting.as_bool;
-
-    if(!enabled)
-        return;
-
     struct formation formation;
     kh_foreach_value(s_formations, formation, {
         const float length = 15.0f;
@@ -184,6 +317,222 @@ static void on_render_3d(void *user, void *event)
             }
         });
     });
+}
+
+static bool chunks_compare(struct coord *a, struct coord *b)
+{
+    if(a->r > b->r)
+        return true;
+    if(a->c > b->c)
+        return true;
+    return false;
+}
+
+static void swap_corners(vec2_t *corners_buff, size_t a, size_t b)
+{
+    vec2_t tmp[4];
+    memcpy(tmp, corners_buff + (a * 4), sizeof(tmp));
+    memcpy(corners_buff + (a * 4), corners_buff + (b * 4), sizeof(tmp));
+    memcpy(corners_buff + (b * 4), tmp, sizeof(tmp));
+}
+
+static void swap_colors(vec3_t *colors_buff, size_t a, size_t b)
+{
+    vec3_t tmp = colors_buff[a];
+    colors_buff[a] = colors_buff[b];
+    colors_buff[b] = tmp;
+}
+
+static void swap_chunks(struct coord *chunk_buff, size_t a, size_t b)
+{
+    struct coord tmp = chunk_buff[a];
+    chunk_buff[a] = chunk_buff[b];
+    chunk_buff[b] = tmp;
+}
+
+static size_t sort_by_chunk(size_t size, vec2_t *corners_buff, 
+                            vec3_t *colors_buff, struct coord *chunk_buff)
+{
+    if(size == 0)
+        return 0;
+
+    int i = 1;
+    while(i < size) {
+        int j = i;
+        while(j > 0 && chunks_compare(chunk_buff + j - 1, chunk_buff + j)) {
+
+            swap_corners(corners_buff, j, j-1);
+            swap_colors(colors_buff, j, j-1);
+            swap_chunks(chunk_buff, j, j-1);
+
+            j--;
+        }
+        i++;
+    }
+
+    size_t ret = 1;
+    for(int i = 1; i < size; i++) {
+        struct coord *a = chunk_buff + i;
+        struct coord *b = chunk_buff + i - 1;
+        if(a->r != b->r || a->c != b->c)
+            ret++;
+    }
+    return ret;
+}
+
+static size_t next_chunk_range(size_t begin, size_t size, 
+                               struct coord *chunk_buff, size_t *out_count)
+{
+    size_t count = 0;
+    int i = begin;
+    for(; i < size; i++) {
+        struct coord *a = chunk_buff + i;
+        struct coord *b = chunk_buff + i + 1;
+        if(a->r != b->r || a->c != b->c)
+            break;
+        count++;
+    }
+    *out_count = count + 1;
+    return i + 1;
+}
+
+static void render_formations_occupied_field(void)
+{
+    struct map_resolution res;
+    M_NavGetResolution(s_map, &res);
+    vec3_t map_pos = M_GetPos(s_map);
+
+    struct formation formation;
+    kh_foreach_value(s_formations, formation, {
+
+        struct tile_desc center_tile;
+        M_Tile_DescForPoint2D(res, map_pos, formation.target, &center_tile);
+
+        struct box center_bounds = M_Tile_Bounds(res, map_pos, center_tile);
+        vec2_t center = (vec2_t){
+            center_bounds.x - center_bounds.width / 2.0f,
+            center_bounds.z + center_bounds.height / 2.0f
+        };
+
+        const float field_width = center_bounds.width * OCCUPIED_FIELD_RES;
+        const float line_width = 1.0f;
+        const vec3_t blue = (vec3_t){0.0f, 0.0f, 1.0f};
+
+        vec2_t field_corners[4] = {
+            (vec2_t){center.x + field_width/2.0f, center.z - field_width/2.0f},
+            (vec2_t){center.x - field_width/2.0f, center.z - field_width/2.0f},
+            (vec2_t){center.x - field_width/2.0f, center.z + field_width/2.0f},
+            (vec2_t){center.x + field_width/2.0f, center.z + field_width/2.0f},
+        };
+        R_PushCmd((struct rcmd){
+            .func = R_GL_DrawQuad,
+            .nargs = 4,
+            .args = {
+                R_PushArg(field_corners, sizeof(field_corners)),
+                R_PushArg(&line_width, sizeof(line_width)),
+                R_PushArg(&blue, sizeof(blue)),
+                (void*)G_GetPrevTickMap(),
+            },
+        });
+
+        struct coord center_coord = (struct coord){
+            OCCUPIED_FIELD_RES / 2,
+            OCCUPIED_FIELD_RES / 2
+        };
+
+        const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+        const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+        vec2_t corners_buff[4 * OCCUPIED_FIELD_RES * OCCUPIED_FIELD_RES];
+        vec3_t colors_buff[OCCUPIED_FIELD_RES * OCCUPIED_FIELD_RES];
+        struct coord chunk_buff[OCCUPIED_FIELD_RES * OCCUPIED_FIELD_RES];
+
+        vec2_t *corners_base = corners_buff;
+        vec3_t *colors_base = colors_buff; 
+        struct coord *chunk_base = chunk_buff;
+        size_t count = 0;
+
+        for(int r = 0; r < OCCUPIED_FIELD_RES; r++) {
+        for(int c = 0; c < OCCUPIED_FIELD_RES; c++) {
+
+            int dr = center_coord.r - r;
+            int dc = center_coord.c - c;
+            struct tile_desc curr = center_tile;
+            bool exists = M_Tile_RelativeDesc(res, &curr, dc, dr);
+            if(!exists)
+                continue;
+
+            float square_x_len = center_bounds.width;
+            float square_z_len = center_bounds.height;
+
+            float square_x = CLAMP(-(((float)curr.tile_c) / res.tile_w) * chunk_x_dim, 
+                                   -chunk_x_dim, chunk_x_dim);
+            float square_z = CLAMP((((float)curr.tile_r) / res.tile_h) * chunk_z_dim, 
+                                   -chunk_z_dim, chunk_z_dim);
+
+            *corners_base++ = (vec2_t){square_x, square_z};
+            *corners_base++ = (vec2_t){square_x, square_z + square_z_len};
+            *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
+            *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
+
+            if(formation.occupied[r][c] == TILE_BLOCKED) {
+                *colors_base++ = (vec3_t){1.0f, 0.0f, 0.0f};
+            }else if(formation.occupied[r][c] == TILE_ALLOCATED) {
+                *colors_base++ = (vec3_t){0.0f, 0.0f, 1.0f};
+            }else{
+                *colors_base++ = (vec3_t){0.0f, 1.0f, 0.0f};
+            }
+            *chunk_base++ = (struct coord){curr.chunk_r, curr.chunk_c};
+            count++;
+        }}
+
+        size_t nchunks = sort_by_chunk(count, corners_buff, colors_buff, chunk_buff);
+        size_t offset = 0;
+        for(int i = 0; i < nchunks; i++) {
+
+            mat4x4_t chunk_model;
+            M_ModelMatrixForChunk(s_map, 
+                (struct chunkpos){chunk_buff[offset].r, chunk_buff[offset].c}, &chunk_model);
+
+            size_t num_tiles;
+            size_t next_offset = next_chunk_range(offset, count, chunk_buff, &num_tiles);
+            R_PushCmd((struct rcmd){
+                .func = R_GL_DrawMapOverlayQuads,
+                .nargs = 5,
+                .args = {
+                    R_PushArg(corners_buff + 4 * offset, sizeof(vec2_t) * 4 * num_tiles),
+                    R_PushArg(colors_buff + offset, sizeof(vec3_t) * num_tiles),
+                    R_PushArg(&num_tiles, sizeof(num_tiles)),
+                    R_PushArg(&chunk_model, sizeof(chunk_model)),
+                    (void*)G_GetPrevTickMap(),
+                },
+            });
+            offset = next_offset;
+        }
+    });
+}
+
+static void on_render_3d(void *user, void *event)
+{
+    struct sval setting;
+    ss_e status;
+    (void)status;
+
+    status = Settings_Get("pf.debug.show_formations", &setting);
+    assert(status == SS_OKAY);
+    bool enabled = setting.as_bool;
+
+    if(enabled) {
+        render_formations();
+    }
+
+    status = Settings_Get("pf.debug.show_formations_occupied_field", &setting);
+    assert(status == SS_OKAY);
+    enabled = setting.as_bool;
+
+    if(enabled) {
+        render_formations_occupied_field();
+    }
 }
 
 /*****************************************************************************/
@@ -229,7 +578,8 @@ void G_Formation_Create(dest_id_t id, vec2_t target, khash_t(entity) *ents)
         .ncols = ncols(FORMATION_RANK, kh_size(ents)),
         .assignment = kh_init(assignment)
     };
-    init_cells(new.nrows, new.ncols, &new.cells);
+    init_occupied_field(target, new.occupied);
+    init_cells(new.nrows, new.ncols, &new.cells, new.occupied);
 
     int ret;
     khiter_t k = kh_put(formation, s_formations, id, &ret);
