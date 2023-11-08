@@ -1527,34 +1527,6 @@ static void n_update_island_field(struct nav_private *priv, enum nav_layer layer
     }}
 }
 
-static void n_render_overlay_text(const char *text, vec4_t map_pos, 
-                                  mat4x4_t *model, mat4x4_t *view, mat4x4_t *proj)
-{
-    vec2_t vres = UI_GetTextVres();
-    vec2_t adj_vres = UI_ArAdjustedVRes(vres);
-
-    vec4_t ws_pos_homo;
-    PFM_Mat4x4_Mult4x1(model, &map_pos, &ws_pos_homo);
-    ws_pos_homo.x /= ws_pos_homo.w;
-    ws_pos_homo.z /= ws_pos_homo.w;
-
-    vec4_t clip, tmp;
-    PFM_Mat4x4_Mult4x1(view, &ws_pos_homo, &tmp);
-    PFM_Mat4x4_Mult4x1(proj, &tmp, &clip);
-    vec3_t ndc = (vec3_t){ 
-        clip.x / clip.w, 
-        clip.y / clip.w, 
-        clip.z / clip.w
-    };
-
-    float screen_x = (ndc.x + 1.0f) * adj_vres.x/2.0f;
-    float screen_y = adj_vres.y - ((ndc.y + 1.0f) * adj_vres.y/2.0f);
-
-    float len = strlen(text) * 8.0f;
-    struct rect bounds = (struct rect){screen_x - len/2.0f, screen_y, len, 25};
-    UI_DrawText(text, bounds, (struct rgba){255, 0, 0, 255});
-}
-
 static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int faction_id,
                            vec3_t map_pos, enum nav_layer layer, dest_id_t *out_dest_id)
 {
@@ -2007,6 +1979,34 @@ void N_FreePrivate(void *nav_private)
         free(priv->chunks[i]);
     }
     free(nav_private);
+}
+
+void N_RenderOverlayText(const char *text, vec4_t map_pos, 
+                         mat4x4_t *model, mat4x4_t *view, mat4x4_t *proj)
+{
+    vec2_t vres = UI_GetTextVres();
+    vec2_t adj_vres = UI_ArAdjustedVRes(vres);
+
+    vec4_t ws_pos_homo;
+    PFM_Mat4x4_Mult4x1(model, &map_pos, &ws_pos_homo);
+    ws_pos_homo.x /= ws_pos_homo.w;
+    ws_pos_homo.z /= ws_pos_homo.w;
+
+    vec4_t clip, tmp;
+    PFM_Mat4x4_Mult4x1(view, &ws_pos_homo, &tmp);
+    PFM_Mat4x4_Mult4x1(proj, &tmp, &clip);
+    vec3_t ndc = (vec3_t){ 
+        clip.x / clip.w, 
+        clip.y / clip.w, 
+        clip.z / clip.w
+    };
+
+    float screen_x = (ndc.x + 1.0f) * adj_vres.x/2.0f;
+    float screen_y = adj_vres.y - ((ndc.y + 1.0f) * adj_vres.y/2.0f);
+
+    float len = strlen(text) * 8.0f;
+    struct rect bounds = (struct rect){screen_x - len/2.0f, screen_y, len, 25};
+    UI_DrawText(text, bounds, (struct rgba){255, 0, 0, 255});
 }
 
 void N_RenderPathableChunk(void *nav_private, mat4x4_t *chunk_model,
@@ -2495,7 +2495,7 @@ void N_RenderIslandIDs(void *nav_private, const struct map *map,
 
         char text[8];
         pf_snprintf(text, sizeof(text), "%d", chunk->islands[r][c]);
-        n_render_overlay_text(text, center_homo, chunk_model, &view, &proj);
+        N_RenderOverlayText(text, center_homo, chunk_model, &view, &proj);
     }}
 }
 
@@ -2536,7 +2536,7 @@ void N_RenderLocalIslandIDs(void *nav_private, const struct map *map,
 
         char text[8];
         pf_snprintf(text, sizeof(text), "%d", chunk->local_islands[r][c]);
-        n_render_overlay_text(text, center_homo, chunk_model, &view, &proj);
+        N_RenderOverlayText(text, center_homo, chunk_model, &view, &proj);
     }}
 }
 
@@ -3738,6 +3738,33 @@ done:
     STFREE(visited);
     queue_td_destroy(&frontier);
     return ret; 
+}
+
+void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, int nrows, int ncols,
+                            enum nav_layer layer, uint16_t *out_field)
+{
+    struct nav_private *priv = (struct nav_private*)nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+    struct tile_desc center_tile;
+    M_Tile_DescForPoint2D(res, map_pos, center, &center_tile);
+    uint16_t (*rows)[ncols] = (void*)out_field;
+
+    for(int r = 0; r < nrows; r++) {
+    for(int c = 0; c < ncols; c++) {
+
+        int dr = (nrows / 2) - r;
+        int dc = (ncols / 2) - c;
+
+        struct tile_desc curr = center_tile;
+        bool exists = M_Tile_RelativeDesc(res, &curr, dc, dr);
+        if(!exists)
+            continue;
+
+        struct nav_chunk *chunk 
+            = &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
+        rows[r][c] = chunk->islands[curr.tile_r][curr.tile_c];
+    }}
 }
 
 size_t N_DeepCopySize(void *nav_private)

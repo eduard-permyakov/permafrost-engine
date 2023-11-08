@@ -663,6 +663,13 @@ static kh_inline khint_t __ac_Wang_hash(khint_t key)
         __VA_ARGS__;                                        \
     } }
 
+#define kh_foreach_ptr(h, pvar, ...) { khint_t __i;         \
+    for (__i = kh_begin(h); __i != kh_end(h); ++__i) {      \
+        if (!kh_exist(h,__i)) continue;                     \
+        (pvar) = &kh_val(h,__i);                            \
+        __VA_ARGS__;                                        \
+    } }
+
 /*! @function
   @abstract     Iterate over the keys in the hash table
   @param  h     Pointer to the hash table [khash_t(name)*]

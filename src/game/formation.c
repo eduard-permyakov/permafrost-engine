@@ -39,11 +39,13 @@
 #include "../event.h"
 #include "../settings.h"
 #include "../perf.h"
+#include "../camera.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../lib/public/vec.h"
 #include "../lib/public/khash.h"
 #include "../lib/public/queue.h"
+#include "../lib/public/pf_string.h"
 #include "../navigation/public/nav.h"
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
@@ -73,6 +75,13 @@ enum tile_state
     TILE_ALLOCATED
 };
 
+enum direction{
+    DIR_TOP = (1 << 0),
+    DIR_BOT = (1 << 1),
+    DIR_LEFT = (1 << 2),
+    DIR_RIGHT = (1 << 3)
+};
+
 struct coord
 {
     int r, c;
@@ -82,6 +91,11 @@ struct cell
 {
     enum cell_state state;
     vec2_t          pos;
+};
+
+struct range2d{
+    int min_r, max_r;
+    int min_c, max_c;
 };
 
 VEC_TYPE(cell, struct cell)
@@ -116,6 +130,10 @@ struct formation
      * Centered at the target position.
      */
     uint8_t              occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES];
+    /* A copy of the navigation 'island' field for the area specified
+     * by the 'occupied' field.
+     */
+    uint16_t             islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES];
 };
 
 KHASH_MAP_INIT_INT64(formation, struct formation)
@@ -170,6 +188,20 @@ static void place_cell(struct cell *curr,
                        uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
     curr->state = CELL_NOT_OCCUPIED;
+
+    enum direction dir = 0;
+    if(left)
+        dir |= DIR_LEFT;
+    if(right)
+        dir |= DIR_RIGHT;
+    if(top)
+        dir |= DIR_TOP;
+    if(bot)
+        dir |= DIR_BOT;
+
+    // TODO: do breadth-first traversal of the 'occupied' field
+    // greedily place each cell
+    // if we are not able to place a cell, mark that tile
 }
 
 static void init_occupied_field(vec2_t target, 
@@ -215,6 +247,13 @@ static void init_occupied_field(vec2_t target,
     }}
 
     PERF_RETURN_VOID();
+}
+
+static void init_islands_field(vec2_t target,
+                               uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+{
+    M_NavCopyIslandsFieldView(s_map, target, OCCUPIED_FIELD_RES, OCCUPIED_FIELD_RES,
+        NAV_LAYER_GROUND_1X1, (uint16_t*)islands);
 }
 
 static void init_cells(size_t nrows, size_t ncols, vec_cell_t *cells,
@@ -396,17 +435,185 @@ static size_t next_chunk_range(size_t begin, size_t size,
     return i + 1;
 }
 
+static size_t chunks_for_field(vec2_t center, size_t maxout, 
+                               struct coord *out_chunks, struct range2d *out_ranges)
+{
+    struct map_resolution res;
+    M_NavGetResolution(s_map, &res);
+    vec3_t map_pos = M_GetPos(s_map);
+
+    struct tile_desc center_tile;
+    M_Tile_DescForPoint2D(res, map_pos, center, &center_tile);
+
+    int min_dr = -OCCUPIED_FIELD_RES / 2;
+    int min_dc = -OCCUPIED_FIELD_RES / 2;
+    struct tile_desc min_tile = center_tile;
+    bool exists = M_Tile_RelativeDesc(res, &min_tile, min_dc, min_dr);
+    if(!exists) {
+        bool unclipped_r = M_Tile_RelativeDesc(res, &min_tile, 0, min_dr);
+        if(unclipped_r) {
+            min_tile = (struct tile_desc){
+                min_tile.chunk_r, 0, 
+                min_tile.tile_r,  0
+            };
+            goto done_min;
+        }
+        bool unclipped_c = M_Tile_RelativeDesc(res, &min_tile, min_dc, 0);
+        if(unclipped_c) {
+            min_tile = (struct tile_desc){
+                0, min_tile.chunk_c,
+                0, min_tile.tile_c
+            };
+            goto done_min;
+        }
+        min_tile = (struct tile_desc){
+            0, 0,
+            0, 0
+        };
+    }
+done_min:;
+
+    int max_dr = OCCUPIED_FIELD_RES / 2;
+    int max_dc = OCCUPIED_FIELD_RES / 2;
+    struct tile_desc max_tile = center_tile;
+    exists = M_Tile_RelativeDesc(res, &max_tile, max_dr, max_dc);
+    if(!exists) {
+        bool unclipped_r = M_Tile_RelativeDesc(res, &max_tile, 0, max_dr);
+        if(unclipped_r) {
+            max_tile = (struct tile_desc){
+                max_tile.chunk_r, res.chunk_w-1, 
+                max_tile.tile_r,  res.tile_w-1 
+            };
+            goto done_max;
+        }
+        bool unclipped_c = M_Tile_RelativeDesc(res, &max_tile, max_dc, 0);
+        if(unclipped_c) {
+            max_tile = (struct tile_desc){
+                res.chunk_h-1, max_tile.chunk_c,
+                res.tile_h-1,  max_tile.tile_c
+            };
+            goto done_max;
+        }
+        max_tile = (struct tile_desc){
+            res.chunk_h-1, res.chunk_w-1,
+            res.tile_h-1,  res.tile_h-1
+        };
+    }
+done_max:;
+
+    size_t ret = 0;
+    for(int r = min_tile.chunk_r; r <= max_tile.chunk_r; r++) {
+    for(int c = min_tile.chunk_c; c <= max_tile.chunk_c; c++) {
+
+        if(ret == maxout)
+            break;
+
+        struct coord curr = (struct coord){r, c};
+        out_chunks[ret] = curr;
+
+        struct range2d curr_range = (struct range2d){
+            0, res.tile_w-1,
+            0, res.tile_h-1
+        };
+
+        if(r == min_tile.chunk_r) {
+            curr_range.min_r = min_tile.tile_r;
+        }
+        if(r == max_tile.chunk_r) {
+            curr_range.max_r = max_tile.tile_r;
+        }
+        if(c == min_tile.chunk_c) {
+            curr_range.min_c = min_tile.tile_c;
+        }
+        if(c == max_tile.chunk_c) {
+            curr_range.max_c = max_tile.tile_c;
+        }
+        out_ranges[ret] = curr_range;
+        ret++;
+    }}
+    return ret;
+}
+
+static void render_islands_field(void)
+{
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    struct map_resolution res;
+    M_NavGetResolution(s_map, &res);
+    struct camera *cam = G_GetActiveCamera();
+    vec3_t map_pos = M_GetPos(s_map);
+
+    mat4x4_t view, proj;
+    Camera_MakeViewMat(cam, &view); 
+    Camera_MakeProjMat(cam, &proj);
+
+    struct formation *formation;
+    kh_foreach_ptr(s_formations, formation, {
+
+        struct coord chunks[32];
+        struct range2d ranges[32];
+        size_t nchunks = chunks_for_field(formation->target, 32, chunks, ranges);
+
+        struct tile_desc center_tile;
+        M_Tile_DescForPoint2D(res, map_pos, formation->target, &center_tile);
+
+        for(int i = 0; i < nchunks; i++) {
+            struct coord *chunk = &chunks[i];
+            struct range2d *range = &ranges[i];
+
+            mat4x4_t chunk_model;
+            M_ModelMatrixForChunk(s_map, (struct chunkpos){chunk->r, chunk->c}, &chunk_model);
+
+            for(int r = range->min_r; r <= range->max_r; r++) {
+            for(int c = range->min_c; c <= range->max_c; c++) {
+
+                float square_x_len = (1.0f / res.tile_w) * chunk_x_dim;
+                float square_z_len = (1.0f / res.tile_h) * chunk_z_dim;
+                float square_x = CLAMP(-(((float)c) / res.tile_w) * chunk_x_dim, 
+                                       -chunk_x_dim, chunk_x_dim);
+                float square_z = CLAMP((((float)r) / res.tile_h) * chunk_z_dim, 
+                                       -chunk_z_dim, chunk_z_dim);
+
+                vec4_t center_homo = (vec4_t) {
+                    square_x - square_x_len / 2.0,
+                    0.0,
+                    square_z + square_z_len / 2.0,
+                    1.0
+                };
+
+                struct tile_desc curr = (struct tile_desc){
+                    chunk->r, chunk->c,
+                    r, c 
+                };
+                int dr, dc;
+                M_Tile_Distance(res, &curr, &center_tile, &dr, &dc);
+
+                int offset_r = (OCCUPIED_FIELD_RES / 2) + dr;
+                int offset_c = (OCCUPIED_FIELD_RES / 2) + dc;
+                assert(offset_r >= 0 && offset_r < OCCUPIED_FIELD_RES);
+                assert(offset_c >= 0 && offset_c < OCCUPIED_FIELD_RES);
+                uint16_t island_id = formation->islands[offset_r][offset_c];
+
+                char text[8];
+                pf_snprintf(text, sizeof(text), "%u", island_id);
+                N_RenderOverlayText(text, center_homo, &chunk_model, &view, &proj);
+            }}
+        }
+    });
+}
+
 static void render_formations_occupied_field(void)
 {
     struct map_resolution res;
     M_NavGetResolution(s_map, &res);
     vec3_t map_pos = M_GetPos(s_map);
 
-    struct formation formation;
-    kh_foreach_value(s_formations, formation, {
+    struct formation *formation;
+    kh_foreach_ptr(s_formations, formation, {
 
         struct tile_desc center_tile;
-        M_Tile_DescForPoint2D(res, map_pos, formation.target, &center_tile);
+        M_Tile_DescForPoint2D(res, map_pos, formation->target, &center_tile);
 
         struct box center_bounds = M_Tile_Bounds(res, map_pos, center_tile);
         vec2_t center = (vec2_t){
@@ -475,9 +682,9 @@ static void render_formations_occupied_field(void)
             *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
             *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
 
-            if(formation.occupied[r][c] == TILE_BLOCKED) {
+            if(formation->occupied[r][c] == TILE_BLOCKED) {
                 *colors_base++ = (vec3_t){1.0f, 0.0f, 0.0f};
-            }else if(formation.occupied[r][c] == TILE_ALLOCATED) {
+            }else if(formation->occupied[r][c] == TILE_ALLOCATED) {
                 *colors_base++ = (vec3_t){0.0f, 0.0f, 1.0f};
             }else{
                 *colors_base++ = (vec3_t){0.0f, 1.0f, 0.0f};
@@ -532,6 +739,7 @@ static void on_render_3d(void *user, void *event)
 
     if(enabled) {
         render_formations_occupied_field();
+        render_islands_field();
     }
 }
 
@@ -579,6 +787,7 @@ void G_Formation_Create(dest_id_t id, vec2_t target, khash_t(entity) *ents)
         .assignment = kh_init(assignment)
     };
     init_occupied_field(target, new.occupied);
+    init_islands_field(target, new.islands);
     init_cells(new.nrows, new.ncols, &new.cells, new.occupied);
 
     int ret;

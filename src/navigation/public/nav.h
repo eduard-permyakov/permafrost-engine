@@ -127,6 +127,13 @@ void     *N_BuildForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
 void      N_FreePrivate(void *nav_private);
 
 /* ------------------------------------------------------------------------
+ * Render text above a particular map position.
+ * ------------------------------------------------------------------------
+ */
+void      N_RenderOverlayText(const char *text, vec4_t map_pos, 
+                              mat4x4_t *model, mat4x4_t *view, mat4x4_t *proj);
+
+/* ------------------------------------------------------------------------
  * Draw a translucent overlay over the map chunk, showing the pathable and 
  * non-pathable regions. 'chunk_x_dim' and 'chunk_z_dim' are the chunk
  * dimensions in OpenGL coordinates.
@@ -469,6 +476,13 @@ bool      N_ObjectBuildable(void *nav_private, enum nav_layer layer,
 vec2_t N_ClosestReachableInRange(void *nav_private, vec3_t map_pos, 
                                  vec2_t xz_src, vec2_t xz_target, 
                                  float range, enum nav_layer layer);
+
+/* ------------------------------------------------------------------------
+ * Copy a subset of the global 'islands' field.
+ * ------------------------------------------------------------------------
+ */
+void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, int nrows, int ncols,
+                            enum nav_layer layer, uint16_t *out_field);
 
 /* ------------------------------------------------------------------------
  * Returns the number of bytes necessary to store a copy of the navigation

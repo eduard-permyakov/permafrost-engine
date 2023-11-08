@@ -867,3 +867,9 @@ void M_NavRequestAsyncSurroundField(const struct map *map, enum nav_layer layer,
     N_RequestAsyncSurroundField(curr_pos, map->nav_private, layer, map->pos, ent, faction_id);
 }
 
+void M_NavCopyIslandsFieldView(const struct map *map, vec2_t center,
+                               int nrows, int ncols, enum nav_layer layer, uint16_t *out_field)
+{
+    N_CopyIslandsFieldView(map->nav_private, center, map->pos, nrows, ncols, layer, out_field);
+}
+
