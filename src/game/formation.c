@@ -64,6 +64,7 @@
 enum cell_state
 {
     CELL_NOT_PLACED,
+    CELL_VISITED,
     CELL_OCCUPIED,
     CELL_NOT_OCCUPIED
 };
@@ -112,20 +113,32 @@ enum formation_type
     FORMATION_COLUMN
 };
 
+struct subformation{
+    vec2_t     anchor;
+    vec2_t     orientation;
+    size_t     nrows;
+    size_t     ncols;
+    /* Each cell holds a single unit from the subformation
+     */
+    vec_cell_t cells;
+    /* A mapping between entities and a cell within the formation 
+     */
+    khash_t(assignment) *assignment;
+};
+
+VEC_TYPE(subformation, struct subformation)
+VEC_IMPL(static inline, subformation, struct subformation)
+
 struct formation
 {
     enum formation_type  type;
     vec2_t               target;
     vec2_t               orientation;
     khash_t(entity)     *ents;
-    /* Each cell holds a single unit from the formation
+    /* A mapping between entities and subformations 
      */
-    size_t               nrows;
-    size_t               ncols;
-    vec_cell_t           cells;
-    /* A mapping between entities and a cell within the formation 
-     */
-    khash_t(assignment) *assignment;
+    khash_t(assignment) *sub_assignment;
+    vec_subformation_t   subformations;
     /* The map tiles which have already been allocated to cells.
      * Centered at the target position.
      */
@@ -182,10 +195,23 @@ static vec2_t compute_orientation(vec2_t target, khash_t(entity) *ents)
     return orientation;
 }
 
-static void place_cell(struct cell *curr, 
+static bool try_allocate(struct coord *curr, float radius)
+{
+    return true;
+}
+
+static bool nearest_free_cell(struct coord *curr, struct coord *out, int direction_mask,
+                              uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
+                              uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+{
+    return true;
+}
+
+static void place_cell(struct cell *curr, struct coord pos,
                        const struct cell *left, const struct cell *right,
                        const struct cell *top,  const struct cell *bot,
-                       uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+                       uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
+                       uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
     curr->state = CELL_NOT_OCCUPIED;
 
@@ -199,9 +225,14 @@ static void place_cell(struct cell *curr,
     if(bot)
         dir |= DIR_BOT;
 
+    /* First find a "target" tile based on direction and the positions of existing cells */
+
     // TODO: do breadth-first traversal of the 'occupied' field
     // greedily place each cell
     // if we are not able to place a cell, mark that tile
+
+    struct coord nearest;
+    bool exists = nearest_free_cell(&pos, &nearest, dir, occupied, islands);
 }
 
 static void init_occupied_field(vec2_t target, 
@@ -256,19 +287,23 @@ static void init_islands_field(vec2_t target,
         NAV_LAYER_GROUND_1X1, (uint16_t*)islands);
 }
 
-static void init_cells(size_t nrows, size_t ncols, vec_cell_t *cells,
-                       uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+static void place_subformation(struct subformation *formation,
+                               uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
+                               uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
     PERF_ENTER();
 
-    size_t total = nrows * ncols;
-    vec_cell_init(cells);
-    vec_cell_resize(cells, total);
-    cells->size = total;
+    int nrows = formation->nrows;
+    int ncols = formation->ncols;
+
+    size_t total = formation->nrows * formation->ncols;
+    vec_cell_init(&formation->cells);
+    vec_cell_resize(&formation->cells, total);
+    formation->cells.size = total;
     for(int r = 0; r < nrows; r++) {
     for(int c = 0; c < ncols; c++) {
         size_t idx = r * ncols + c;
-        vec_AT(cells, idx) = (struct cell){CELL_NOT_PLACED};
+        vec_AT(&formation->cells, idx) = (struct cell){CELL_NOT_PLACED};
     }}
 
     /* Position the cells on pathable and unobstructed terrain.
@@ -296,7 +331,7 @@ static void init_cells(size_t nrows, size_t ncols, vec_cell_t *cells,
 
         struct coord curr;
         queue_coord_pop(&frontier, &curr);
-        struct cell *curr_cell = &vec_AT(cells, CELL_IDX(curr.r, curr.c, ncols));
+        struct cell *curr_cell = &vec_AT(&formation->cells, CELL_IDX(curr.r, curr.c, ncols));
 
         struct coord top = (struct coord){curr.r - 1, curr.c};
         struct coord bot = (struct coord){curr.r + 1, curr.c};
@@ -304,19 +339,19 @@ static void init_cells(size_t nrows, size_t ncols, vec_cell_t *cells,
         struct coord right = (struct coord){curr.r, curr.c + 1};
 
         struct cell *top_cell = (top.r >= 0) 
-                              ? &vec_AT(cells, CELL_IDX(top.r, top.c, ncols)) 
+                              ? &vec_AT(&formation->cells, CELL_IDX(top.r, top.c, ncols)) 
                               : NULL;
         struct cell *bot_cell = (bot.r < ncols) 
-                              ? &vec_AT(cells, CELL_IDX(bot.r, bot.c, ncols)) 
+                              ? &vec_AT(&formation->cells, CELL_IDX(bot.r, bot.c, ncols)) 
                               : NULL;
         struct cell *left_cell = (left.c >= 0) 
-                               ? &vec_AT(cells, CELL_IDX(left.r, left.c, ncols))
+                               ? &vec_AT(&formation->cells, CELL_IDX(left.r, left.c, ncols))
                                : NULL;
         struct cell *right_cell = (right.c < nrows) 
-                                ? &vec_AT(cells, CELL_IDX(right.r, right.c, ncols))
+                                ? &vec_AT(&formation->cells, CELL_IDX(right.r, right.c, ncols))
                                 : NULL;
 
-        place_cell(curr_cell, left_cell, right_cell, top_cell, bot_cell, occupied);
+        place_cell(curr_cell, curr, left_cell, right_cell, top_cell, bot_cell, occupied, islands);
 
         if(left_cell && left_cell->state == CELL_NOT_PLACED)
             queue_coord_push(&frontier, &left);
@@ -330,6 +365,11 @@ static void init_cells(size_t nrows, size_t ncols, vec_cell_t *cells,
 
     queue_coord_destroy(&frontier);
     PERF_RETURN_VOID();
+}
+
+static void init_subformations(struct formation *formation)
+{
+    vec_subformation_init(&formation->subformations);
 }
 
 static void render_formations(void)
@@ -743,6 +783,23 @@ static void on_render_3d(void *user, void *event)
     }
 }
 
+static void destroy_subformation(struct subformation *formation)
+{
+    vec_cell_destroy(&formation->cells);
+    kh_destroy(assignment, formation->assignment);
+}
+
+static void destroy_formation(struct formation *formation)
+{
+    for(int i = 0; i < vec_size(&formation->subformations); i++) {
+        struct subformation *sub = &vec_AT(&formation->subformations, i);
+        destroy_subformation(sub);
+    }
+    kh_destroy(entity, formation->ents);
+    vec_subformation_destroy(&formation->subformations);
+    kh_destroy(assignment, formation->sub_assignment);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -762,11 +819,9 @@ void G_Formation_Shutdown(void)
 {
     s_map = NULL;
 
-    struct formation formation;
-    kh_foreach_value(s_formations, formation, {
-        kh_destroy(entity, formation.ents);
-        vec_cell_destroy(&formation.cells);
-        kh_destroy(assignment, formation.assignment);
+    struct formation *formation;
+    kh_foreach_ptr(s_formations, formation, {
+        destroy_formation(formation);
     });
 
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
@@ -777,23 +832,26 @@ void G_Formation_Create(dest_id_t id, vec2_t target, khash_t(entity) *ents)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    struct formation new = (struct formation){
+    int ret;
+    khiter_t k = kh_put(formation, s_formations, id, &ret);
+    assert(ret != -1);
+    struct formation *new = &kh_val(s_formations, k);
+
+    *new = (struct formation){
         .type = FORMATION_RANK,
         .target = target,
         .orientation = compute_orientation(target, ents),
         .ents = kh_copy_entity(ents),
-        .nrows = nrows(FORMATION_RANK, kh_size(ents)),
-        .ncols = ncols(FORMATION_RANK, kh_size(ents)),
-        .assignment = kh_init(assignment)
+        .sub_assignment = kh_init(assignment)
     };
-    init_occupied_field(target, new.occupied);
-    init_islands_field(target, new.islands);
-    init_cells(new.nrows, new.ncols, &new.cells, new.occupied);
+    init_subformations(new);
+    init_occupied_field(target, new->occupied);
+    init_islands_field(target, new->islands);
 
-    int ret;
-    khiter_t k = kh_put(formation, s_formations, id, &ret);
-    assert(ret != -1);
-    kh_val(s_formations, k) = new;
+    for(int i = 0; i < vec_size(&new->subformations); i++) {
+        struct subformation *sub = &vec_AT(&new->subformations, i);
+        place_subformation(sub, new->occupied, new->islands);
+    }
 }
 
 void G_Formation_Destroy(dest_id_t id)
@@ -804,9 +862,7 @@ void G_Formation_Destroy(dest_id_t id)
     assert(k != kh_end(s_formations));
 
     struct formation *formation = &kh_val(s_formations, k);
-    kh_destroy(entity, formation->ents);
-    vec_cell_destroy(&formation->cells);
-    kh_destroy(assignment, formation->assignment);
+    destroy_formation(formation);
 
     kh_del(formation, s_formations, k);
 }
