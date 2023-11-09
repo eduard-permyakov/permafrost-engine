@@ -3698,6 +3698,11 @@ bool S_Entity_UIDForObj(script_opaque_t obj, uint32_t *out)
     return true;
 }
 
+uint64_t S_Entity_TypeID(script_opaque_t obj)
+{
+    return (uintptr_t)((PyObject*)obj)->ob_type;
+}
+
 script_opaque_t S_Entity_ObjForUID(uint32_t uid)
 {
     khiter_t k = kh_get(PyObject, s_uid_pyobj_table, uid);

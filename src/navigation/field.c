@@ -190,10 +190,8 @@ static int field_neighbours_grid_global(
         enemies = G_GetEnemyFactions(faction_id);
     }
 
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     for(int r = -1; r <= 1; r++) {
     for(int c = -1; c <= 1; c++) {
@@ -396,10 +394,8 @@ static void field_create_wavefront_blocked_line(
     vec3_t                    map_pos, 
     struct LOS_field         *out_los)
 {
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     /* First determine the slope of the LOS blocker line in the XZ plane */
     struct box target_bounds = M_Tile_Bounds(res, map_pos, target);
@@ -509,10 +505,8 @@ static void field_build_integration_region(
     int                       cdim,
     float                     inout[])
 {
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     while(pq_size(frontier) > 0) {
 
@@ -850,10 +844,8 @@ static bool field_tile_adjacent_to_next_iid(
     int                       r, 
     int                       c)
 {
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     const struct nav_chunk *next_chunk = &priv->chunks[layer][pd.next->chunk.r * priv->width + pd.next->chunk.c];
     for(int r2 = pd.next->endpoints[0].r; r2 <= pd.next->endpoints[1].r; r2++) {
@@ -946,10 +938,8 @@ static size_t field_enemies_initial_frontier(
         ents, MAX_ENTS_PER_CHUNK
     );
 
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     STALLOC(bool, has_enemy, rdim * cdim);
     memset(has_enemy, 0, sizeof(bool) * rdim * cdim);
@@ -1029,10 +1019,8 @@ static size_t field_entity_initial_frontier(
     struct tile_desc         *out, 
     size_t                    maxout)
 {
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     int ntds;
     struct tile_desc tds[512];
@@ -1199,10 +1187,8 @@ static void field_update_enemies(
     struct enemies_desc       target, 
     struct flow_field        *inout_flow)
 {
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     pq_td_t frontier;
     pq_td_init(&frontier);
@@ -1274,10 +1260,8 @@ static void field_update_entity(
     struct entity_desc        target, 
     struct flow_field        *inout_flow)
 {
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     pq_td_t frontier;
     pq_td_init(&frontier);

@@ -104,6 +104,7 @@ struct tile_desc{
 struct map_resolution{
     int chunk_w, chunk_h;
     int tile_w, tile_h;
+    float field_w, field_h;
 };
 
 #define TILETYPE_IS_RAMP(t) \

@@ -93,10 +93,8 @@ struct aabb aabb_for_tile(struct tile_desc desc, const struct map *map)
     const struct pfchunk *chunk = &map->chunks[desc.chunk_r * map->width + desc.chunk_c];
     const struct tile *tile = &chunk->tiles[desc.tile_r * TILES_PER_CHUNK_WIDTH + desc.tile_c];
 
-    struct map_resolution res = {
-        map->width, map->height,
-        TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT
-    };
+    struct map_resolution res;
+	M_GetResolution(map, &res);
     struct box tile_bounds = M_Tile_Bounds(res, map->pos, desc);
 
     return (struct aabb) {
@@ -138,10 +136,8 @@ static vec3_t rc_unproject_mouse_coords(void)
 static bool rc_find_intersection(vec3_t ray_origin, vec3_t ray_dir,
                                  struct tile_desc *out_intersec, vec3_t *out_pos)
 {
-    struct map_resolution res = {
-        s_ctx.map->width, s_ctx.map->height,
-        TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT
-    };
+    struct map_resolution res;
+	M_GetResolution(s_ctx.map, &res);
 
     /* Project the ray on the Y=(-TILE_DEPTH*Y_COORDS_PER_TILE) plane between the ray origin and where the 
      * ray intersects the Y=(-TILE_DEPTH*Y_COORDS_PER_TILE) plane. */
@@ -233,10 +229,8 @@ static void on_render(void *user, void *event)
     for(int r = -(num_tiles / 2); r < (num_tiles / 2) + 1; r++) {
     for(int c = -(num_tiles / 2); c < (num_tiles / 2) + 1; c++) {
 
-        struct map_resolution res = {
-            s_ctx.map->width, s_ctx.map->height,
-            TILES_PER_CHUNK_WIDTH, TILES_PER_CHUNK_HEIGHT
-        };
+		struct map_resolution res;
+		M_GetResolution(s_ctx.map, &res);
 
         struct tile_desc curr = s_ctx.intersec_tile;
         if(M_Tile_RelativeDesc(res, &curr, r, c)) {

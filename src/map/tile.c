@@ -46,10 +46,7 @@
 #include <limits.h>
 
 
-#define CHUNK_WIDTH  (TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE)
-#define CHUNK_HEIGHT (TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE)
-#define EPSILON      (1.0f / 1024.0)
-
+#define EPSILON            (1.0f / 1024.0)
 #define ARR_SIZE(a)        (sizeof(a)/sizeof(a[0]))
 #define MIN(a, b)          ((a) < (b) ? (a) : (b))
 #define MAX(a, b)          ((a) > (b) ? (a) : (b))
@@ -348,11 +345,11 @@ float M_Tile_HeightAtPos(const struct tile *tile, float frac_width, float frac_h
 
 struct box M_Tile_Bounds(struct map_resolution res, vec3_t map_pos, struct tile_desc desc)
 {
-    const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
-    const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
+    const int TILE_X_DIM = res.field_w / res.tile_w;
+    const int TILE_Z_DIM = res.field_h / res.tile_h;
 
-    size_t width  = res.chunk_w * CHUNK_WIDTH;
-    size_t height = res.chunk_h * CHUNK_HEIGHT;
+    size_t width  = res.chunk_w * res.field_w;
+    size_t height = res.chunk_h * res.field_h;
 
     struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
 
@@ -368,16 +365,16 @@ struct box M_Tile_Bounds(struct map_resolution res, vec3_t map_pos, struct tile_
 
 struct box M_Tile_ChunkBounds(struct map_resolution res, vec3_t map_pos, int chunk_r, int chunk_c)
 {
-    size_t width  = res.chunk_w * CHUNK_WIDTH;
-    size_t height = res.chunk_h * CHUNK_HEIGHT;
+    size_t width  = res.chunk_w * res.field_w;
+    size_t height = res.chunk_h * res.field_h;
 
     struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
 
     return (struct box){
-        map_box.x - chunk_c * CHUNK_WIDTH,
-        map_box.z + chunk_r * CHUNK_HEIGHT,
-        CHUNK_WIDTH,
-        CHUNK_HEIGHT
+        map_box.x - chunk_c * res.field_w,
+        map_box.z + chunk_r * res.field_h,
+        res.field_w,
+        res.field_h 
     };
 }
 
@@ -425,8 +422,8 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
 {
     int ret = 0;
 
-    const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
-    const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
+    const int TILE_X_DIM = res.field_w / res.tile_w;
+    const int TILE_Z_DIM = res.field_h / res.tile_h;
 
     /* Initialization: find the coordinate of the line segment origin within the map.
      * In the case of the line segmennt originating inside the map, this is simple - take the 
@@ -434,8 +431,8 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
      * intersection point as the start. Lastly, if ray doesn't even intersect the map, no work 
      * needs to be done - return an empty list. 
      */
-    size_t width  = res.chunk_w * CHUNK_WIDTH;
-    size_t height = res.chunk_h * CHUNK_HEIGHT;
+    size_t width  = res.chunk_w * res.field_w;
+    size_t height = res.chunk_h * res.field_h;
     struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
 
     vec2_t line_dir = (vec2_t){line.bx - line.ax, line.bz - line.az};
@@ -540,11 +537,11 @@ int M_Tile_LineSupercoverTilesSorted(struct map_resolution res, vec3_t map_pos,
 bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos, 
                            vec2_t point, struct tile_desc *out)
 {
-    const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
-    const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
+    const int TILE_X_DIM = res.field_w / res.tile_w;
+    const int TILE_Z_DIM = res.field_h / res.tile_h;
 
-    size_t width  = res.chunk_w * CHUNK_WIDTH;
-    size_t height = res.chunk_h * CHUNK_HEIGHT;
+    size_t width  = res.chunk_w * res.field_w;
+    size_t height = res.chunk_h * res.field_h;
     struct box map_box = (struct box){map_pos.x, map_pos.z, width, height};
 
     /* Recall X increases to the left in our engine */
@@ -555,8 +552,8 @@ bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos,
         return false;
 
     int chunk_r, chunk_c;
-    chunk_r = fabs(map_box.z - point.z) / CHUNK_HEIGHT;
-    chunk_c = fabs(map_box.x - point.x) / CHUNK_WIDTH;
+    chunk_r = fabs(map_box.z - point.z) / res.field_h;
+    chunk_c = fabs(map_box.x - point.x) / res.field_w;
 
     /* Need to account for rounding imprecision when we're at the
      * razor's edge of the map. */
@@ -564,8 +561,8 @@ bool M_Tile_DescForPoint2D(struct map_resolution res, vec3_t map_pos,
     chunk_c = CLAMP(chunk_c, 0, res.chunk_w-1);
 
     float chunk_base_x, chunk_base_z;
-    chunk_base_x = map_box.x - (chunk_c * CHUNK_WIDTH);
-    chunk_base_z = map_box.z + (chunk_r * CHUNK_HEIGHT);
+    chunk_base_x = map_box.x - (chunk_c * res.field_w);
+    chunk_base_z = map_box.z + (chunk_r * res.field_h);
 
     int tile_r, tile_c;
     tile_r = fabs(chunk_base_z - point.z) / TILE_Z_DIM;
@@ -682,10 +679,11 @@ size_t M_Tile_AllUnderCircle(struct map_resolution res, vec2_t xz_center, float 
 {
     struct tile_desc tile;
     bool result = M_Tile_DescForPoint2D(res, map_pos, xz_center, &tile);
-    assert(result);
+    if(!result)
+        return 0;
 
-    const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
-    const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
+    const int TILE_X_DIM = res.field_w / res.tile_w;
+    const int TILE_Z_DIM = res.field_h / res.tile_h;
     int tile_len = MIN(TILE_X_DIM, TILE_Z_DIM);
     int ntiles = ceil(radius / tile_len);
 
@@ -716,8 +714,8 @@ size_t M_Tile_AllUnderAABB(struct map_resolution res, vec2_t xz_center, float ha
     bool result = M_Tile_DescForPoint2D(res, map_pos, xz_center, &tile);
     assert(result);
 
-    const int TILE_X_DIM = CHUNK_WIDTH / res.tile_w;
-    const int TILE_Z_DIM = CHUNK_HEIGHT / res.tile_h;
+    const int TILE_X_DIM = res.field_w / res.tile_w;
+    const int TILE_Z_DIM = res.field_h / res.tile_h;
     int tile_len = MIN(TILE_X_DIM, TILE_Z_DIM);
     int ntiles_x = ceil(halfx / tile_len);
     int ntiles_z = ceil(halfz / tile_len);

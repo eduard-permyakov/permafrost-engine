@@ -203,7 +203,9 @@ static struct map_resolution n_res(void *nav_private)
     struct nav_private *priv = nav_private;
     return (struct map_resolution){
         priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
+        FIELD_RES_C, FIELD_RES_R,
+        X_COORDS_PER_TILE * TILES_PER_CHUNK_WIDTH,
+        Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT
     };
 }
 
@@ -769,10 +771,8 @@ static dest_id_t n_dest_id(struct tile_desc dst_desc, enum nav_layer layer, int 
 static void n_visit_island(struct nav_private *priv, uint16_t id, 
                            struct tile_desc start, enum nav_layer layer)
 {
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct nav_chunk *chunk 
         = &priv->chunks[layer][IDX(start.chunk_r, priv->width, start.chunk_c)];
@@ -815,11 +815,12 @@ static void n_visit_island(struct nav_private *priv, uint16_t id,
     queue_td_destroy(&frontier);
 }
 
-static void n_visit_island_local(struct nav_chunk *chunk, uint16_t id, struct coord start)
+static void n_visit_island_local(struct nav_private *priv, 
+                                 struct nav_chunk *chunk, uint16_t id, struct coord start)
 {
-    struct map_resolution res = {
-        1, 1, FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
     struct tile_desc start_td = {
         0, 0, start.r, start.c
     };
@@ -880,7 +881,7 @@ static bool enemy_ent(uint32_t ent, void *arg)
     return (ds == DIPLOMACY_STATE_WAR);
 }
 
-static void n_update_local_islands(struct nav_chunk *chunk)
+static void n_update_local_islands(struct nav_private *priv, struct nav_chunk *chunk)
 {
     int local_iid = 0;
     memset(chunk->local_islands, 0xff, sizeof(chunk->local_islands));
@@ -894,7 +895,7 @@ static void n_update_local_islands(struct nav_chunk *chunk)
             continue;
         if(chunk->blockers[r][c] > 0)
             continue;
-        n_visit_island_local(chunk, ++local_iid, (struct coord){r, c});
+        n_visit_island_local(priv, chunk, ++local_iid, (struct coord){r, c});
     }}
 }
 
@@ -914,7 +915,7 @@ static void n_update_dirty_local_islands(void *nav_private, enum nav_layer layer
         struct coord curr = (struct coord){ key >> 16, key & 0xffff };
 
         struct nav_chunk *chunk = &priv->chunks[layer][IDX(curr.r, priv->width, curr.c)];
-        n_update_local_islands(chunk);
+        n_update_local_islands(priv, chunk);
     }
     s_local_islands_dirty[layer] = false;
 }
@@ -1025,10 +1026,8 @@ static int n_closest_island_tiles(const struct nav_private *priv,
                                   uint16_t global_iid, bool ignore_blockers,
                                   struct tile_desc *out, int maxout)
 {
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     queue_td_t frontier;
     queue_td_init(&frontier, 1024);
@@ -1354,10 +1353,8 @@ static khash_t(td) *n_moving_entities_tileset(struct nav_private *priv, vec3_t m
 {
     assert(Sched_UsingBigStack());
 
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     vec2_t center_xz = (vec2_t){area->center.x, area->center.z};
     float radius = MAX(area->half_lengths[0], area->half_lengths[2]);
@@ -1389,10 +1386,8 @@ bool n_closest_adjacent_pos(void *nav_private, enum nav_layer layer, vec3_t map_
                             size_t ntiles, const struct tile_desc tds[], vec2_t *out)
 {
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc src_desc;
     bool result = M_Tile_DescForPoint2D(res, map_pos, xz_src, &src_desc);
@@ -1439,10 +1434,8 @@ static bool n_objects_adjacent(void *nav_private, vec3_t map_pos, vec2_t xz_pos,
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tds_ent[2048];
     size_t ntiles_ent = M_Tile_AllUnderCircle(n_res(priv), xz_pos, 
@@ -1533,10 +1526,9 @@ static bool n_request_path(void *nav_private, vec2_t xz_src, vec2_t xz_dest, int
     PERF_ENTER();
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
     bool result;
     (void)result;
 
@@ -2386,10 +2378,8 @@ void N_RenderBuildableTiles(void *nav_private, const struct map *map,
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
     vec3_t map_pos = M_GetPos(map);
 
     struct tile_desc tds[2048];
@@ -2591,10 +2581,8 @@ void N_CutoutStaticObject(void *nav_private, vec3_t map_pos, const struct obb *o
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
@@ -2666,10 +2654,8 @@ vec2_t N_DesiredPointSeekVelocity(dest_id_t id, vec2_t curr_pos, vec2_t xz_dest,
     enum nav_layer layer = N_DestLayer(id);
     int faction_id = N_DestFactionID(id);
 
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tile;
     bool result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &tile);
@@ -2758,10 +2744,8 @@ vec2_t N_DesiredEnemySeekVelocity(vec2_t curr_pos, void *nav_private, enum nav_l
 {
     PERF_ENTER();
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     n_update_dirty_local_islands(nav_private, layer);
 
@@ -2842,10 +2826,8 @@ vec2_t N_DesiredSurroundVelocity(vec2_t curr_pos, void *nav_private, enum nav_la
 {
     PERF_ENTER();
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     n_update_dirty_local_islands(nav_private, layer);
 
@@ -2930,10 +2912,8 @@ void N_RequestAsyncEnemySeekField(vec2_t curr_pos, void *nav_private, enum nav_l
                                   vec3_t map_pos, int faction_id)
 {
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     n_update_dirty_local_islands(nav_private, layer);
 
@@ -2987,10 +2967,8 @@ void N_RequestAsyncSurroundField(vec2_t curr_pos, void *nav_private, enum nav_la
                                  vec3_t map_pos, uint32_t ent, int faction_id)
 {
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     n_update_dirty_local_islands(nav_private, layer);
 
@@ -3059,10 +3037,8 @@ bool N_HasEntityLOS(vec2_t curr_pos, uint32_t ent, void *nav_private,
     bool result = false;
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct line_seg_2d line = (struct line_seg_2d){
         ent_pos.x, ent_pos.z,
@@ -3087,10 +3063,8 @@ out:
 bool N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_pos)
 {
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tile;
     bool result = M_Tile_DescForPoint2D(res, map_pos, curr_pos, &tile);
@@ -3107,10 +3081,8 @@ bool N_HasDestLOS(dest_id_t id, vec2_t curr_pos, void *nav_private, vec3_t map_p
 bool N_PositionPathable(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos)
 {
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tile;
     bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile);
@@ -3124,10 +3096,8 @@ bool N_PositionPathable(vec2_t xz_pos, enum nav_layer layer, void *nav_private, 
 bool N_PositionBlocked(vec2_t xz_pos, enum nav_layer layer, void *nav_private, vec3_t map_pos)
 {
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tile;
     bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &tile);
@@ -3141,10 +3111,9 @@ bool N_PositionBlocked(vec2_t xz_pos, enum nav_layer layer, void *nav_private, v
 vec2_t N_ClosestReachableDest(void *nav_private, enum nav_layer layer, vec3_t map_pos, vec2_t xz_src, vec2_t xz_dst)
 {
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
     bool result;
     (void)result;
 
@@ -3184,10 +3153,9 @@ bool N_ClosestPathable(void *nav_private, enum nav_layer layer,
                        vec3_t map_pos, vec2_t xz_src, vec2_t *out)
 {
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
     bool result;
     (void)result;
 
@@ -3251,10 +3219,9 @@ bool N_LocationsReachable(void *nav_private, enum nav_layer layer,
                           vec3_t map_pos, vec2_t a, vec2_t b)
 {
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
     bool result;
     (void)result;
 
@@ -3283,10 +3250,8 @@ bool N_ClosestReachableAdjacentPosStatic(void *nav_private, enum nav_layer layer
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, target, tds, ARR_SIZE(tds));
@@ -3301,10 +3266,8 @@ bool N_ClosestReachableAdjacentPosDynamic(void *nav_private, enum nav_layer laye
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderCircle(n_res(priv), xz_pos, radius, map_pos, tds, ARR_SIZE(tds));
@@ -3348,10 +3311,8 @@ bool N_IsMaximallyClose(void *nav_private, enum nav_layer layer, vec3_t map_pos,
     PERF_ENTER();
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc dest_td;
     bool result = M_Tile_DescForPoint2D(res, map_pos, xz_dest, &dest_td);
@@ -3387,10 +3348,8 @@ bool N_IsAdjacentToImpassable(void *nav_private, enum nav_layer layer, vec3_t ma
     PERF_ENTER();
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc curr_td;
     bool result = M_Tile_DescForPoint2D(res, map_pos, xz_pos, &curr_td);
@@ -3478,10 +3437,8 @@ bool N_ObjAdjacentToStatic(void *nav_private, vec3_t map_pos, uint32_t ent, cons
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tds_stat[2048];
     size_t ntiles_stat = M_Tile_AllUnderObj(map_pos, res, stat, tds_stat, ARR_SIZE(tds_stat));
@@ -3498,10 +3455,8 @@ bool N_ObjAdjacentToStaticWith(void *nav_private, vec3_t map_pos, vec2_t xz_pos,
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tds_stat[2048];
     size_t ntiles_stat = M_Tile_AllUnderObj(map_pos, res, stat, tds_stat, ARR_SIZE(tds_stat));
@@ -3514,10 +3469,8 @@ bool N_ObjAdjacentToDynamic(void *nav_private, vec3_t map_pos, uint32_t ent,
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tds_dyn[2048];
     size_t ntiles_dyn = M_Tile_AllUnderCircle(n_res(priv), xz_pos, radius, 
@@ -3536,10 +3489,8 @@ bool N_ObjAdjacentToDynamicWith(void *nav_private, vec3_t map_pos,
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tds_dyn[2048];
     size_t ntiles_dyn = M_Tile_AllUnderCircle(n_res(priv), xz_pos_b, radius_b, 
@@ -3548,14 +3499,16 @@ bool N_ObjAdjacentToDynamicWith(void *nav_private, vec3_t map_pos,
     return n_objects_adjacent(nav_private, map_pos, xz_pos_a, radius_a, ntiles_dyn, tds_dyn);
 }
 
-void N_GetResolution(void *nav_private, struct map_resolution *out)
+void N_GetResolution(const void *nav_private, struct map_resolution *out)
 {
-    struct nav_private *priv = nav_private;
+    const struct nav_private *priv = nav_private;
 
     out->chunk_w = priv->width;
     out->chunk_h = priv->height;
     out->tile_w = FIELD_RES_C;
     out->tile_h = FIELD_RES_R;
+    out->field_w = X_COORDS_PER_TILE * TILES_PER_CHUNK_WIDTH;
+    out->field_h = Z_COORDS_PER_TILE * TILES_PER_CHUNK_HEIGHT;
 }
 
 bool N_ObjectBuildable(void *nav_private, enum nav_layer layer, 
@@ -3564,10 +3517,8 @@ bool N_ObjectBuildable(void *nav_private, enum nav_layer layer,
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     struct tile_desc tds[2048];
     size_t ntiles = M_Tile_AllUnderObj(map_pos, res, obb, tds, ARR_SIZE(tds));
@@ -3621,10 +3572,9 @@ vec2_t N_ClosestReachableInRange(void *nav_private, vec3_t map_pos,
     assert(Sched_UsingBigStack());
 
     struct nav_private *priv = nav_private;
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
     bool result;
     (void)result;
 
@@ -3685,10 +3635,8 @@ uint16_t N_ClosestPathableLocalIsland(const struct nav_private *priv, const stru
     if(chunk->local_islands[target.tile_r][target.tile_c] != ISLAND_NONE)
         return chunk->local_islands[target.tile_r][target.tile_c];
 
-    struct map_resolution res = {
-        priv->width, priv->height,
-        FIELD_RES_C, FIELD_RES_R
-    };
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
 
     queue_td_t frontier;
     queue_td_init(&frontier, 1024);

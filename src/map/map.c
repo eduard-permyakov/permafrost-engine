@@ -726,6 +726,8 @@ void M_GetResolution(const struct map *map, struct map_resolution *out)
     out->chunk_h = map->height;
     out->tile_w = TILES_PER_CHUNK_WIDTH;
     out->tile_h = TILES_PER_CHUNK_HEIGHT;
+    out->field_w = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    out->field_h = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 }
 
 void M_SetShadowsEnabled(struct map *map, bool on)

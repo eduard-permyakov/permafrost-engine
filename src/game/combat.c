@@ -388,7 +388,8 @@ static bool maybe_enemy_near(uint32_t uid)
 
     struct map_resolution binres = (struct map_resolution){
         mapres.chunk_w, mapres.chunk_h,
-        X_BINS_PER_CHUNK, Z_BINS_PER_CHUNK
+        X_BINS_PER_CHUNK, Z_BINS_PER_CHUNK,
+		mapres.field_w, mapres.field_h
     };
 
     struct tile_desc td;
@@ -893,7 +894,8 @@ static void do_add_ref(int faction_id, vec2_t pos)
 
     struct map_resolution binres = (struct map_resolution){
         mapres.chunk_w, mapres.chunk_h,
-        X_BINS_PER_CHUNK, Z_BINS_PER_CHUNK
+        X_BINS_PER_CHUNK, Z_BINS_PER_CHUNK,
+		mapres.field_w, mapres.field_h
     };
 
     struct tile_desc td;
@@ -917,7 +919,8 @@ static void do_remove_ref(int faction_id, vec2_t pos)
 
     struct map_resolution binres = (struct map_resolution){
         mapres.chunk_w, mapres.chunk_h,
-        X_BINS_PER_CHUNK, Z_BINS_PER_CHUNK
+        X_BINS_PER_CHUNK, Z_BINS_PER_CHUNK,
+		mapres.field_w, mapres.field_h
     };
 
     struct tile_desc td;

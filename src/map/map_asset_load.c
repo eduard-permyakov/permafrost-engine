@@ -234,7 +234,9 @@ bool M_AL_InitMapFromStream(const struct pfmap_hdr *header, const char *basedir,
         header->num_cols,
         header->num_rows,
         TILES_PER_CHUNK_WIDTH,
-        TILES_PER_CHUNK_HEIGHT
+        TILES_PER_CHUNK_HEIGHT,
+		TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE,
+		TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE
     };
 
     R_PushCmd((struct rcmd){

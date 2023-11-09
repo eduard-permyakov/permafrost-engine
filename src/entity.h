@@ -153,4 +153,6 @@ void            Entity_ModelMatrixFrom(vec3_t pos, quat_t rot, vec3_t scale, mat
 void            Entity_CurrentOBBFrom(const struct aabb *aabb, mat4x4_t model, 
                                       vec3_t scale, struct obb *out);
 
+uint64_t        Entity_TypeID(uint32_t uid);
+
 #endif

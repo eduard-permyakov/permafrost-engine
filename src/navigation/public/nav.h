@@ -456,7 +456,7 @@ bool      N_ObjAdjacentToDynamicWith(void *nav_private, vec3_t map_pos,
  * Get the resolution (chunks, tiles) of the navigation data.
  * ------------------------------------------------------------------------
  */
-void      N_GetResolution(void *nav_private, struct map_resolution *out);
+void      N_GetResolution(const void *nav_private, struct map_resolution *out);
 
 /* ------------------------------------------------------------------------
  * Returns true if the building with the specified OBB can be successfully

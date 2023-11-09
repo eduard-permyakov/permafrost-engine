@@ -101,6 +101,7 @@ script_opaque_t S_Entity_ObjFromAtts(const char *path, const char *name,
                                      const vec_attr_t *construct_args);
 bool            S_Entity_UIDForObj(script_opaque_t, uint32_t *out);
 script_opaque_t S_Entity_ObjForUID(uint32_t uid);
+uint64_t        S_Entity_TypeID(script_opaque_t obj);
 
 /*###########################################################################*/
 /* SCRIPT REGION                                                             */
