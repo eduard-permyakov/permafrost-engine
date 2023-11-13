@@ -63,6 +63,7 @@
 #define MAX(a, b)                ((a) > (b) ? (a) : (b))
 #define CLAMP(a, min, max)       (MIN(MAX((a), (min)), (max)))
 #define UNIT_BUFFER_DIST         (1.0f)
+#define SUBFORMATION_BUFFER_DIST (8.0f)
 #define SIGNUM(x)                (((x) > 0) - ((x) < 0))
 
 enum cell_state
@@ -92,8 +93,17 @@ struct coord{
 
 struct cell{
     enum cell_state state;
+    /* The desired positoin of the cell based 
+     * on the positions of the neighbouring 
+     * cells and anchor.
+     */
     vec2_t          ideal_raw;
-    vec2_t          ideal;
+    /* The ideal position binned to a tile.
+     */
+    vec2_t          ideal_binned;
+    /* The final position of the cell, taking
+     * into account map geometry and blockers.
+     */
     vec2_t          pos;
 };
 
@@ -122,7 +132,6 @@ struct subformation{
     struct subformation *parent;
     size_t               nchildren;
     struct subformation *children[MAX_CHILDREN];
-    enum direction       anchor;
     float                unit_radius;
     vec2_t               pos;
     vec2_t               orientation;
@@ -324,14 +333,8 @@ static vec2_t bin_to_tile(vec2_t pos, vec2_t target)
  * be guaranteed to arrive at a new tile of the
  * grid when going along a particular vector.
  */
-static float step_length(vec2_t orientation)
+static float step_distance(vec2_t orientation, float base)
 {
-    struct map_resolution nav_res;
-    M_NavGetResolution(s_map, &nav_res);
-
-    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
-    const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
-
     vec2_t positive = (vec2_t){
         fabsf(orientation.x),
         fabsf(orientation.z)
@@ -340,7 +343,7 @@ static float step_length(vec2_t orientation)
     float dot = PFM_Vec2_Dot(&positive, &diagonal);
     float max = PFM_Vec2_Dot(&diagonal, &diagonal);
     float fraction = (dot / max) - 0.5f;
-    return (1.0f + fraction * sqrtf(2.0f)) * tile_x_dim;
+    return (1.0f + fraction * sqrtf(2.0f)) * base;
 }
 
 static bool nearest_free_tile(struct coord *curr, struct coord *out, 
@@ -357,9 +360,15 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out,
      * This will more often yield tiles positions that are organized
      * into a perfect grid. 
      */
+
+    struct map_resolution nav_res;
+    M_NavGetResolution(s_map, &nav_res);
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
+
     vec2_t unit_orientation = orientation;
     PFM_Vec2_Normal(&unit_orientation, &unit_orientation);
-    float ulen = step_length(orientation);
+    float ulen = step_distance(orientation, tile_x_dim);
     PFM_Vec2_Scale(&unit_orientation, ulen, &unit_orientation);
     vec2_t unit_perpendicular = (vec2_t){-unit_orientation.z, unit_orientation.x};
 
@@ -475,7 +484,7 @@ static vec2_t target_direction_offsets(vec2_t target, vec2_t orientation,
      * along the direction vector.
      */
     float minimal_distance = formation->unit_radius * 2 + UNIT_BUFFER_DIST;
-    float unit_distance = step_length(orientation);
+    float unit_distance = step_distance(orientation, tile_x_dim);
     float front_distance = INFINITY;
 
     vec2_t unit_delta = orientation;
@@ -535,8 +544,8 @@ static vec2_t target_direction_offsets(vec2_t target, vec2_t orientation,
     return (vec2_t){front_distance, right_distance};
 }
 
-static bool place_cell(struct cell *curr, vec2_t target, vec2_t orientation, 
-                       float radius, vec2_t target_offsets,
+static bool place_cell(struct cell *curr, vec2_t target, vec2_t root, 
+                       vec2_t orientation, float radius, vec2_t target_offsets,
                        const struct cell *left, const struct cell *right,
                        const struct cell *front,  const struct cell *back,
                        uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
@@ -558,7 +567,7 @@ static bool place_cell(struct cell *curr, vec2_t target, vec2_t orientation,
     int count = 0;
 
     if(anchor == 0) {
-        pos = bin_to_tile(target, target);
+        pos = bin_to_tile(root, target);
     }
 
     if(anchor & DIR_LEFT) {
@@ -629,7 +638,7 @@ static bool place_cell(struct cell *curr, vec2_t target, vec2_t orientation,
     struct coord target_tile = pos_to_tile(target, pos);
     struct coord curr_tile;
     curr->ideal_raw = pos;
-    curr->ideal = tile_to_pos(target_tile, target);
+    curr->ideal_binned = tile_to_pos(target_tile, target);
 
     bool exists = nearest_free_tile(&target_tile, &curr_tile, anchor, target, orientation, 
         occupied, islands);
@@ -719,63 +728,49 @@ static void init_islands_field(vec2_t target,
         NAV_LAYER_GROUND_1X1, (uint16_t*)islands);
 }
 
-static vec2_t subformation_target_pos(struct subformation *formation, 
-                                      vec2_t target, vec2_t orientation)
+static vec2_t back_row_average_pos(struct subformation *formation)
+{
+    size_t row = 0;
+    vec2_t total = (vec2_t){0.0f, 0.0f};
+    for(int i = 0; i < formation->ncols; i++) {
+        struct cell *curr = &vec_AT(&formation->cells, CELL_IDX(row, i, formation->ncols));
+        PFM_Vec2_Add(&total, &curr->pos, &total);
+    }
+    PFM_Vec2_Scale(&total, 1.0f / formation->ncols, &total);
+    return total;
+}
+
+static float subformation_offset(struct subformation *formation)
+{
+    struct map_resolution nav_res;
+    M_NavGetResolution(s_map, &nav_res);
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
+
+    float buffer = step_distance(formation->orientation, 
+        formation->unit_radius);
+    buffer = ((int)(buffer / tile_x_dim) + 1) * tile_x_dim;
+    buffer *= 2;
+    buffer += step_distance(formation->orientation, SUBFORMATION_BUFFER_DIST);
+    return buffer;
+}
+
+static vec2_t subformation_target_pos(struct subformation *formation, vec2_t target, 
+                                      vec2_t orientation, vec2_t offsets)
 {
     if(!formation->parent)
         return target;
 
-    /* Calculate the bounds of the formation based on the rows and columns */
-    float target_width = (formation->ncols * formation->unit_radius)
-                       + ((formation->ncols-1) * UNIT_BUFFER_DIST);
-    float target_height = (formation->nrows * formation->unit_radius)
-                        + ((formation->nrows-1) * UNIT_BUFFER_DIST);
+    vec2_t back_pos = back_row_average_pos(formation->parent);
+    float offset = subformation_offset(formation->parent);
 
-    vec2_t pos = formation->parent->pos;
-    if(formation->anchor & DIR_RIGHT) {
-        /* Find a unit vector perpendicular to orientation */
-        vec2_t pdir = (vec2_t){-orientation.z, orientation.x};
-        PFM_Vec2_Normal(&pdir, &pdir);
+    vec2_t delta = orientation;
+    PFM_Vec2_Normal(&orientation, &orientation);
+    PFM_Vec2_Scale(&delta, -offset, &delta);
 
-        /* Then scale it by the offset */
-        float delta = target_width;
-        PFM_Vec2_Scale(&pdir, delta, &pdir);
-
-        /* Shift the target position */
-        PFM_Vec2_Add(&pos, &pdir, &pos);
-    }
-
-    if(formation->anchor & DIR_LEFT) {
-
-        vec2_t pdir = (vec2_t){-orientation.z, orientation.x};
-        PFM_Vec2_Normal(&pdir, &pdir);
-
-        float delta = -target_width;
-        PFM_Vec2_Scale(&pdir, delta, &pdir);
-        PFM_Vec2_Add(&pos, &pdir, &pos);
-    }
-
-    if(formation->anchor & DIR_FRONT) {
-
-        vec2_t front = orientation;
-        PFM_Vec2_Normal(&front, &front);
-
-        float delta = target_height;
-        PFM_Vec2_Scale(&front, delta, &front);
-        PFM_Vec2_Add(&pos, &front, &pos);
-    }
-
-    if(formation->anchor & DIR_BACK) {
-
-        vec2_t front = orientation;
-        PFM_Vec2_Normal(&front, &front);
-
-        float delta = -target_height;
-        PFM_Vec2_Scale(&front, delta, &front);
-        PFM_Vec2_Add(&pos, &front, &pos);
-    }
-
-    return pos;
+    vec2_t ret = back_pos;
+    PFM_Vec2_Add(&ret, &delta, &ret);
+    return ret;
 }
 
 static vec2_t formation_center(struct subformation *formation)
@@ -802,8 +797,9 @@ static void place_subformation(struct subformation *formation,
 {
     PERF_ENTER();
 
-    vec2_t target_pos = subformation_target_pos(formation, target, orientation);
     vec2_t target_orientation = orientation;
+    vec2_t target_offsets = target_direction_offsets(target, orientation, formation);
+    vec2_t target_pos = subformation_target_pos(formation, target, orientation, target_offsets);
 
     int nrows = formation->nrows;
     int ncols = formation->ncols;
@@ -811,8 +807,8 @@ static void place_subformation(struct subformation *formation,
     /* Start by placing the center-most cell, Position the cells on
      * pathable and unbostructed terrain.
      */
-    struct coord cell_center = (struct coord){
-        .r = nrows / 2,
+    struct coord init_cell = (struct coord){
+        .r = nrows - 1,
         .c = ncols / 2
     };
 
@@ -821,7 +817,7 @@ static void place_subformation(struct subformation *formation,
       */
     queue_coord_t frontier;
     queue_coord_init(&frontier, nrows * ncols);
-    queue_coord_push(&frontier, &cell_center);
+    queue_coord_push(&frontier, &init_cell);
 
     struct coord deltas[] = {
         { 0, -1},
@@ -829,8 +825,6 @@ static void place_subformation(struct subformation *formation,
         {-1,  0},
         {+1,  0},
     };
-
-    vec2_t target_offsets = target_direction_offsets(target, orientation, formation);
 
     size_t nents = kh_size(formation->ents);
     size_t placed = 0;
@@ -861,7 +855,7 @@ static void place_subformation(struct subformation *formation,
                                 ? &vec_AT(&formation->cells, CELL_IDX(right.r, right.c, ncols))
                                 : NULL;
 
-        bool success = place_cell(curr_cell, target, orientation, 
+        bool success = place_cell(curr_cell, target, target_pos, orientation, 
             formation->unit_radius, target_offsets,
             left_cell, right_cell, 
             front_cell, back_cell, 
@@ -954,11 +948,6 @@ static void init_subformation(struct subformation *formation,
     formation->nchildren = nchildren;
 
     formation->parent = parent;
-    if(parent) {
-        formation->anchor = DIR_BACK;
-    }else{
-        formation->anchor = 0;
-    }
     formation->nrows = nrows;
     formation->ncols = ncols;
     formation->unit_radius = G_GetSelectionRadius(ents[0]);
@@ -1062,6 +1051,21 @@ static void render_formations(void)
         for(int i = 0; i < vec_size(&formation->subformations); i++) {
 
             struct subformation *sub = &vec_AT(&formation->subformations, i);
+            const vec3_t magenta = (vec3_t){1.0, 0.0, 1.0};
+            const float radius = 0.5f;
+            const float width = 1.5f;
+            R_PushCmd((struct rcmd){
+                .func = R_GL_DrawSelectionCircle,
+                .nargs = 5,
+                .args = {
+                    R_PushArg(&sub->pos, sizeof(sub->pos)),
+                    R_PushArg(&radius, sizeof(radius)),
+                    R_PushArg(&width, sizeof(width)),
+                    R_PushArg(&magenta, sizeof(magenta)),
+                    (void*)G_GetPrevTickMap(),
+                },
+            });
+
             for(int r = 0; r < sub->nrows; r++) {
             for(int c = 0; c < sub->ncols; c++) {
 
@@ -1088,7 +1092,7 @@ static void render_formations(void)
                     .func = R_GL_DrawSelectionCircle,
                     .nargs = 5,
                     .args = {
-                        R_PushArg(&cell->ideal, sizeof(cell->ideal)),
+                        R_PushArg(&cell->ideal_binned, sizeof(cell->ideal_binned)),
                         R_PushArg(&radius, sizeof(radius)),
                         R_PushArg(&width, sizeof(width)),
                         R_PushArg(&cyan, sizeof(cyan)),
@@ -1425,6 +1429,7 @@ static void render_formations_occupied_field(void)
         const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
 
         vec2_t corners_buff[4 * OCCUPIED_FIELD_RES * OCCUPIED_FIELD_RES];
+        memset(corners_buff, 0, sizeof(corners_buff));
         vec3_t colors_buff[OCCUPIED_FIELD_RES * OCCUPIED_FIELD_RES];
         struct coord chunk_buff[OCCUPIED_FIELD_RES * OCCUPIED_FIELD_RES];
 
