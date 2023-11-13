@@ -1420,21 +1420,21 @@ static PyObject *PyEntity_notify(PyEntityObject *self, PyObject *args)
 
 static PyObject *PyEntity_select(PyEntityObject *self)
 {
-    assert(self->ent);
+    assert(self->ent != NULL_UID);
     G_Sel_Add(self->ent);
     Py_RETURN_NONE;
 }
 
 static PyObject *PyEntity_deselect(PyEntityObject *self)
 {
-    assert(self->ent);
+    assert(self->ent != NULL_UID);
     G_Sel_Remove(self->ent);
     Py_RETURN_NONE;
 }
 
 static PyObject *PyEntity_stop(PyEntityObject *self)
 {
-    assert(self->ent);
+    assert(self->ent != NULL_UID);
     G_StopEntity(self->ent, true);
     Py_RETURN_NONE;
 }
