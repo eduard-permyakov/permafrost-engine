@@ -3706,8 +3706,10 @@ void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
 
         struct tile_desc curr = center_tile;
         bool exists = M_Tile_RelativeDesc(res, &curr, dc, dr);
-        if(!exists)
+        if(!exists) {
+            rows[r][c] = ISLAND_NONE;
             continue;
+        }
 
         struct nav_chunk *chunk 
             = &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];

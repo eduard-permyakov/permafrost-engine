@@ -241,7 +241,8 @@ static vec2_t field_center(vec2_t target, vec2_t orientation)
     return center;
 }
 
-static bool try_occupy_cell(struct coord *curr, vec2_t orientation, float radius, int anchor,
+static bool try_occupy_cell(struct coord *curr, vec2_t orientation, uint16_t iid,
+                            float radius, int anchor,
                             uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
                             uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
@@ -268,7 +269,6 @@ static bool try_occupy_cell(struct coord *curr, vec2_t orientation, float radius
     };
     vec3_t origin = (vec3_t){0.0f, 0.0f, 0.0f};
 
-    uint16_t iid = islands[curr->r][curr->c];
     struct tile_desc descs[256];
     size_t ndescs = M_Tile_AllUnderCircle(res, center, radius, origin, descs, ARR_SIZE(descs));
     if(ndescs == 0)
@@ -370,7 +370,7 @@ static float step_distance(vec2_t orientation, float base)
     return (1.0f + fraction * sqrtf(2.0f)) * base;
 }
 
-static bool nearest_free_tile(struct coord *curr, struct coord *out, 
+static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t iid,
                               int direction_mask, vec2_t center, vec2_t orientation,
                               uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
                               uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
@@ -410,7 +410,6 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out,
         PFM_Vec2_Add(&delta, &unit_perpendicular, &delta);
     }
 
-    uint16_t iid = islands[curr->r][curr->c];
     vec2_t candidate_pos = tile_to_pos(*curr, center);
     vec2_t shifted_pos;
     PFM_Vec2_Add(&candidate_pos, &delta, &shifted_pos);
@@ -421,6 +420,7 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out,
         && (test_tile.c >= 0 && test_tile.c < OCCUPIED_FIELD_RES)
         && (islands[test_tile.r][test_tile.c] == iid)
         && (occupied[test_tile.r][test_tile.c] == TILE_FREE)) {
+            assert(islands[test_tile.r][test_tile.c] == 0); // TODO: temp
             *out = test_tile;
             return true;
         }
@@ -432,7 +432,7 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out,
     for(int delta = 1; delta < OCCUPIED_FIELD_RES; delta++) {
         for(int dr = -delta; dr <= +delta; dr++) {
         for(int dc = -delta; dc <= +delta; dc++) {
-            if(abs(dr) != delta && abs(dc) != delta)
+            if(abs(dr) != delta || abs(dc) != delta)
                 continue;
 
             int abs_r = curr->r + dr;
@@ -445,6 +445,7 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out,
             bool free = (occupied[abs_r][abs_c] == TILE_FREE);
             bool islands_match = (islands[abs_r][abs_c] == iid);
             if(free && islands_match) {
+                assert(islands[abs_r][abs_c] == 0); // TODO: temp
                 *out = (struct coord){abs_r, abs_c};
                 return true;
             }
@@ -568,7 +569,7 @@ static vec2_t target_direction_offsets(vec2_t center, vec2_t orientation,
     return (vec2_t){front_distance, right_distance};
 }
 
-static bool place_cell(struct cell *curr, vec2_t center, vec2_t root, 
+static bool place_cell(struct cell *curr, vec2_t center, vec2_t root, vec2_t target,
                        vec2_t orientation, float radius, vec2_t target_offsets,
                        const struct cell *left, const struct cell *right,
                        const struct cell *front,  const struct cell *back,
@@ -661,11 +662,13 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
     /* Find the target tile for the position */
     struct coord target_tile = pos_to_tile(center, pos);
     struct coord curr_tile;
-    curr->ideal_raw = pos;
-    curr->ideal_binned = tile_to_pos(target_tile, center);
 
-    bool exists = nearest_free_tile(&target_tile, &curr_tile, anchor, center, orientation, 
-        occupied, islands);
+    struct coord dest_coord = pos_to_tile(center, target);
+    uint16_t iid = islands[dest_coord.r][dest_coord.c];
+    assert(iid != UINT16_MAX);
+
+    bool exists = nearest_free_tile(&target_tile, &curr_tile, iid, anchor, 
+        center, orientation, occupied, islands);
     if(!exists)
         return false;
 
@@ -677,12 +680,12 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
      */
     bool success = false;
     do{
-        success = try_occupy_cell(&curr_tile, orientation, radius, anchor, occupied, islands);
+        success = try_occupy_cell(&curr_tile, orientation, iid, radius, anchor, occupied, islands);
         if(!success) {
             occupied[curr_tile.r][curr_tile.c] = TILE_VISITED;
             visited[nvisited++] = curr_tile;
-            bool exists = nearest_free_tile(&curr_tile, &curr_tile, anchor, center, orientation,
-                occupied, islands);
+            bool exists = nearest_free_tile(&curr_tile, &curr_tile, iid, anchor, 
+                center, orientation, occupied, islands);
             if(!exists)
                 break;
         }
@@ -694,6 +697,8 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root,
             occupied[visited[i].r][visited[i].c] = TILE_FREE;
     }
     if(success) {
+        curr->ideal_raw = pos;
+        curr->ideal_binned = tile_to_pos(target_tile, center);
         curr->state = CELL_NOT_OCCUPIED;
         curr->pos = tile_to_pos(curr_tile, center);
     }
@@ -828,7 +833,7 @@ static void place_subformation(struct subformation *formation, vec2_t center,
     int nrows = formation->nrows;
     int ncols = formation->ncols;
 
-    /* Start by placing the center-most cell, Position the cells on
+    /* Start by placing the center-most front row cell, Position the cells on
      * pathable and unbostructed terrain.
      */
     struct coord init_cell = (struct coord){
@@ -879,10 +884,9 @@ static void place_subformation(struct subformation *formation, vec2_t center,
                                 ? &vec_AT(&formation->cells, CELL_IDX(right.r, right.c, ncols))
                                 : NULL;
 
-        bool success = place_cell(curr_cell, center, target_pos, orientation, 
-            formation->unit_radius, target_offsets,
-            left_cell, right_cell, 
-            front_cell, back_cell, 
+        bool success = place_cell(curr_cell, center, target_pos, 
+            target,orientation, formation->unit_radius, target_offsets,
+            left_cell, right_cell, front_cell, back_cell, 
             occupied, islands);
         if(!success)
             break;
