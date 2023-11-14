@@ -153,6 +153,7 @@ struct formation{
     enum formation_type  type;
     vec2_t               target;
     vec2_t               orientation;
+    vec2_t               center;
     khash_t(entity)     *ents;
     /* A mapping between entities and subformations 
      */
@@ -217,6 +218,29 @@ static vec2_t compute_orientation(vec2_t target, khash_t(entity) *ents)
     return orientation;
 }
 
+/* Shift the field center in the opposite direction of the 
+ * formations' orientation. Since units are placed 'behind' the 
+ * target, this allows to get better utilization of the 
+ * field.
+ */
+static vec2_t field_center(vec2_t target, vec2_t orientation)
+{
+    struct map_resolution nav_res;
+    M_NavGetResolution(s_map, &nav_res);
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
+
+    int delta_mag = OCCUPIED_FIELD_RES / 3.0f * tile_x_dim;
+    vec2_t delta = orientation;
+    PFM_Vec2_Normal(&delta, &delta);
+    PFM_Vec2_Scale(&delta, delta_mag, &delta);
+
+    vec2_t center = target;
+    PFM_Vec2_Sub(&center, &delta, &center);
+    center = M_ClampedMapCoordinate(s_map, center);
+    return center;
+}
+
 static bool try_occupy_cell(struct coord *curr, vec2_t orientation, float radius, int anchor,
                             uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
                             uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
@@ -265,7 +289,7 @@ static bool try_occupy_cell(struct coord *curr, vec2_t orientation, float radius
     return true;
 }
 
-static vec2_t tile_to_pos(struct coord tile, vec2_t target)
+static vec2_t tile_to_pos(struct coord tile, vec2_t center)
 {
     struct map_resolution nav_res;
     M_NavGetResolution(s_map, &nav_res);
@@ -276,30 +300,30 @@ static vec2_t tile_to_pos(struct coord tile, vec2_t target)
     const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
     const float tile_z_dim = chunk_z_dim / nav_res.tile_h;
 
-    vec2_t tile_target = (vec2_t){
-        ((int)(target.x / tile_x_dim)) * tile_x_dim,
-        ((int)(target.z / tile_z_dim)) * tile_z_dim,
+    vec2_t tile_center = (vec2_t){
+        ((int)(center.x / tile_x_dim)) * tile_x_dim,
+        ((int)(center.z / tile_z_dim)) * tile_z_dim,
     };
 
     vec2_t offset = (vec2_t) {
-         tile_x_dim * (tile.c - OCCUPIED_FIELD_RES/2 + 0.5f * SIGNUM(target.x)),
-        -tile_z_dim * (tile.r - OCCUPIED_FIELD_RES/2 - 0.5f * SIGNUM(target.z))
+         tile_x_dim * (tile.c - OCCUPIED_FIELD_RES/2 + 0.5f * SIGNUM(center.x)),
+        -tile_z_dim * (tile.r - OCCUPIED_FIELD_RES/2 - 0.5f * SIGNUM(center.z))
     };
 
-    vec2_t ret = tile_target;
+    vec2_t ret = tile_center;
     PFM_Vec2_Add(&ret, &offset, &ret);
     return ret;
 }
 
-static struct coord pos_to_tile(vec2_t target, vec2_t pos)
+static struct coord pos_to_tile(vec2_t center, vec2_t pos)
 {
     struct map_resolution nav_res;
     M_NavGetResolution(s_map, &nav_res);
 
-    vec2_t tile_target = tile_to_pos((struct coord){
+    vec2_t tile_center = tile_to_pos((struct coord){
         OCCUPIED_FIELD_RES/2,
         OCCUPIED_FIELD_RES/2
-    }, target);
+    }, center);
 
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
@@ -312,7 +336,7 @@ static struct coord pos_to_tile(vec2_t target, vec2_t pos)
         ((int)(pos.z) / tile_z_dim) * tile_z_dim,
     };
     vec2_t delta;
-    PFM_Vec2_Sub(&binned_pos, &tile_target, &delta);
+    PFM_Vec2_Sub(&binned_pos, &tile_center, &delta);
 
     float dc =  delta.x / tile_x_dim + 0.5f;
     float dr = -delta.z / tile_z_dim + 0.5f;
@@ -323,10 +347,10 @@ static struct coord pos_to_tile(vec2_t target, vec2_t pos)
     };
 }
 
-static vec2_t bin_to_tile(vec2_t pos, vec2_t target)
+static vec2_t bin_to_tile(vec2_t pos, vec2_t center)
 {
-    struct coord tile = pos_to_tile(target, pos);
-    return tile_to_pos(tile, target);
+    struct coord tile = pos_to_tile(center, pos);
+    return tile_to_pos(tile, center);
 }
 
 /* The distance we need to march in order to 
@@ -347,7 +371,7 @@ static float step_distance(vec2_t orientation, float base)
 }
 
 static bool nearest_free_tile(struct coord *curr, struct coord *out, 
-                              int direction_mask, vec2_t target, vec2_t orientation,
+                              int direction_mask, vec2_t center, vec2_t orientation,
                               uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
                               uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
@@ -387,10 +411,10 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out,
     }
 
     uint16_t iid = islands[curr->r][curr->c];
-    vec2_t candidate_pos = tile_to_pos(*curr, target);
+    vec2_t candidate_pos = tile_to_pos(*curr, center);
     vec2_t shifted_pos;
     PFM_Vec2_Add(&candidate_pos, &delta, &shifted_pos);
-    struct coord test_tile = pos_to_tile(target, shifted_pos);
+    struct coord test_tile = pos_to_tile(center, shifted_pos);
 
     if(test_tile.r != curr->r || test_tile.c != curr->c) {
         if((test_tile.r >= 0 && test_tile.r < OCCUPIED_FIELD_RES)
@@ -445,7 +469,7 @@ static bool any_match(struct tile_desc *a, size_t numa,
  * unit radiuses because of the grid-based nature of the 'occupied'
  * field. 
  */
-static vec2_t target_direction_offsets(vec2_t target, vec2_t orientation, 
+static vec2_t target_direction_offsets(vec2_t center, vec2_t orientation, 
                                        struct subformation *formation)
 {
     struct map_resolution nav_res;
@@ -497,7 +521,7 @@ static vec2_t target_direction_offsets(vec2_t target, vec2_t orientation,
 
     vec2_t candidate = root_center;
     PFM_Vec2_Add(&candidate, &min_delta, &candidate);
-    candidate = bin_to_tile(candidate, target);
+    candidate = bin_to_tile(candidate, center);
 
     do{
         struct tile_desc front_descs[256];
@@ -544,7 +568,7 @@ static vec2_t target_direction_offsets(vec2_t target, vec2_t orientation,
     return (vec2_t){front_distance, right_distance};
 }
 
-static bool place_cell(struct cell *curr, vec2_t target, vec2_t root, 
+static bool place_cell(struct cell *curr, vec2_t center, vec2_t root, 
                        vec2_t orientation, float radius, vec2_t target_offsets,
                        const struct cell *left, const struct cell *right,
                        const struct cell *front,  const struct cell *back,
@@ -567,7 +591,7 @@ static bool place_cell(struct cell *curr, vec2_t target, vec2_t root,
     int count = 0;
 
     if(anchor == 0) {
-        pos = bin_to_tile(root, target);
+        pos = bin_to_tile(root, center);
     }
 
     if(anchor & DIR_LEFT) {
@@ -635,12 +659,12 @@ static bool place_cell(struct cell *curr, vec2_t target, vec2_t root,
     }
 
     /* Find the target tile for the position */
-    struct coord target_tile = pos_to_tile(target, pos);
+    struct coord target_tile = pos_to_tile(center, pos);
     struct coord curr_tile;
     curr->ideal_raw = pos;
-    curr->ideal_binned = tile_to_pos(target_tile, target);
+    curr->ideal_binned = tile_to_pos(target_tile, center);
 
-    bool exists = nearest_free_tile(&target_tile, &curr_tile, anchor, target, orientation, 
+    bool exists = nearest_free_tile(&target_tile, &curr_tile, anchor, center, orientation, 
         occupied, islands);
     if(!exists)
         return false;
@@ -657,7 +681,7 @@ static bool place_cell(struct cell *curr, vec2_t target, vec2_t root,
         if(!success) {
             occupied[curr_tile.r][curr_tile.c] = TILE_VISITED;
             visited[nvisited++] = curr_tile;
-            bool exists = nearest_free_tile(&curr_tile, &curr_tile, anchor, target, orientation,
+            bool exists = nearest_free_tile(&curr_tile, &curr_tile, anchor, center, orientation,
                 occupied, islands);
             if(!exists)
                 break;
@@ -671,12 +695,12 @@ static bool place_cell(struct cell *curr, vec2_t target, vec2_t root,
     }
     if(success) {
         curr->state = CELL_NOT_OCCUPIED;
-        curr->pos = tile_to_pos(curr_tile, target);
+        curr->pos = tile_to_pos(curr_tile, center);
     }
     return success;
 }
 
-static void init_occupied_field(vec2_t target, 
+static void init_occupied_field(vec2_t center,
                                 uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
     PERF_ENTER();
@@ -686,7 +710,7 @@ static void init_occupied_field(vec2_t target,
     vec3_t map_pos = M_GetPos(s_map);
 
     struct tile_desc center_tile;
-    M_Tile_DescForPoint2D(res, map_pos, target, &center_tile);
+    M_Tile_DescForPoint2D(res, map_pos, center, &center_tile);
 
     struct coord center_coord = (struct coord){
         OCCUPIED_FIELD_RES / 2,
@@ -721,10 +745,10 @@ static void init_occupied_field(vec2_t target,
     PERF_RETURN_VOID();
 }
 
-static void init_islands_field(vec2_t target,
+static void init_islands_field(vec2_t center,
                                uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
-    M_NavCopyIslandsFieldView(s_map, target, OCCUPIED_FIELD_RES, OCCUPIED_FIELD_RES,
+    M_NavCopyIslandsFieldView(s_map, center, OCCUPIED_FIELD_RES, OCCUPIED_FIELD_RES,
         NAV_LAYER_GROUND_1X1, (uint16_t*)islands);
 }
 
@@ -790,7 +814,7 @@ static vec2_t formation_center(struct subformation *formation)
     return ret;
 }
 
-static void place_subformation(struct subformation *formation,
+static void place_subformation(struct subformation *formation, vec2_t center, 
                                vec2_t target, vec2_t orientation,
                                uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
                                uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
@@ -798,7 +822,7 @@ static void place_subformation(struct subformation *formation,
     PERF_ENTER();
 
     vec2_t target_orientation = orientation;
-    vec2_t target_offsets = target_direction_offsets(target, orientation, formation);
+    vec2_t target_offsets = target_direction_offsets(center, orientation, formation);
     vec2_t target_pos = subformation_target_pos(formation, target, orientation, target_offsets);
 
     int nrows = formation->nrows;
@@ -855,7 +879,7 @@ static void place_subformation(struct subformation *formation,
                                 ? &vec_AT(&formation->cells, CELL_IDX(right.r, right.c, ncols))
                                 : NULL;
 
-        bool success = place_cell(curr_cell, target, target_pos, orientation, 
+        bool success = place_cell(curr_cell, center, target_pos, orientation, 
             formation->unit_radius, target_offsets,
             left_cell, right_cell, 
             front_cell, back_cell, 
@@ -1331,10 +1355,10 @@ static void render_islands_field(void)
 
         struct coord chunks[32];
         struct range2d ranges[32];
-        size_t nchunks = chunks_for_field(formation->target, 32, chunks, ranges);
+        size_t nchunks = chunks_for_field(formation->center, 32, chunks, ranges);
 
         struct tile_desc center_tile;
-        M_Tile_DescForPoint2D(res, map_pos, formation->target, &center_tile);
+        M_Tile_DescForPoint2D(res, map_pos, formation->center, &center_tile);
 
         for(int i = 0; i < nchunks; i++) {
             struct coord *chunk = &chunks[i];
@@ -1391,7 +1415,7 @@ static void render_formations_occupied_field(void)
     kh_foreach_ptr(s_formations, formation, {
 
         struct tile_desc center_tile;
-        M_Tile_DescForPoint2D(res, map_pos, formation->target, &center_tile);
+        M_Tile_DescForPoint2D(res, map_pos, formation->center, &center_tile);
 
         struct box center_bounds = M_Tile_Bounds(res, map_pos, center_tile);
         vec2_t center = (vec2_t){
@@ -1518,7 +1542,7 @@ static void on_render_3d(void *user, void *event)
 
     if(enabled) {
         render_formations_occupied_field();
-        //render_islands_field();
+        render_islands_field();
     }
 }
 
@@ -1576,20 +1600,23 @@ void G_Formation_Create(dest_id_t id, vec2_t target, khash_t(entity) *ents)
     assert(ret != -1);
     struct formation *new = &kh_val(s_formations, k);
 
+    vec2_t orientation = compute_orientation(target, ents);
     *new = (struct formation){
         .type = FORMATION_RANK,
         .target = target,
-        .orientation = compute_orientation(target, ents),
+        .orientation = orientation,
+        .center = field_center(target, orientation),
         .ents = kh_copy_entity(ents),
         .sub_assignment = kh_init(assignment)
     };
     init_subformations(new);
-    init_occupied_field(target, new->occupied);
-    init_islands_field(target, new->islands);
+    init_occupied_field(new->center, new->occupied);
+    init_islands_field(new->center, new->islands);
 
     for(int i = 0; i < vec_size(&new->subformations); i++) {
         struct subformation *sub = &vec_AT(&new->subformations, i);
-        place_subformation(sub, target, new->orientation, new->occupied, new->islands);
+        place_subformation(sub, new->center, target, new->orientation, 
+            new->occupied, new->islands);
     }
 }
 
