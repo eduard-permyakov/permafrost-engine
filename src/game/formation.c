@@ -428,7 +428,6 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t ii
         && (test_tile.c >= 0 && test_tile.c < OCCUPIED_FIELD_RES)
         && (islands[test_tile.r][test_tile.c] == iid)
         && (occupied[test_tile.r][test_tile.c] == TILE_FREE)) {
-            assert(islands[test_tile.r][test_tile.c] == 0); // TODO: temp
             *out = test_tile;
             return true;
         }
@@ -453,7 +452,6 @@ static bool nearest_free_tile(struct coord *curr, struct coord *out, uint16_t ii
             bool free = (occupied[abs_r][abs_c] == TILE_FREE);
             bool islands_match = (islands[abs_r][abs_c] == iid);
             if(free && islands_match) {
-                assert(islands[abs_r][abs_c] == 0); // TODO: temp
                 *out = (struct coord){abs_r, abs_c};
                 return true;
             }
@@ -1044,11 +1042,533 @@ static void init_subformations(struct formation *formation)
 
         size_t next_offset = next_type_range(offset, nunits, types, &count);
         init_subformation(sub, parent, 1, &child, target_ncols, ents + offset, count);
+
+        for(int j = offset; j < offset + count; j++) {
+            int ret;
+            khiter_t k = kh_put(assignment, formation->sub_assignment, ents[j], &ret);
+            assert(ret != -1);
+            kh_val(formation->sub_assignment, k) = (struct coord){i, 0};
+        }
         offset = next_offset;
     }
 
     STFREE(ents);
     STFREE(types);
+}
+
+/* The cost matrix holds the distance between every entity
+ * and every cell.
+ */
+static void create_cost_matrix(struct subformation *formation, int *out_costs)
+{
+    size_t nents = kh_size(formation->ents);
+    int (*out_rows)[nents] = (void*)out_costs;
+
+    int i = 0;
+    uint32_t uid;
+    kh_foreach_key(formation->ents, uid, {
+
+        vec2_t pos = G_Pos_GetXZ(uid);
+        for(int j = 0; j < nents; j++) {
+            struct cell *cell = &vec_AT(&formation->cells, j);
+            if(cell->state == CELL_NOT_PLACED) {
+                out_rows[i][j] = INT_MAX;
+            }else{
+                vec2_t distance;
+                PFM_Vec2_Sub(&cell->pos, &pos, &distance);
+                out_rows[i][j] = PFM_Vec2_Len(&distance);
+            }
+        }
+        i++;
+    });
+}
+
+static int row_minimum(int *costs, int irow, size_t nents)
+{
+    int (*rows)[nents] = (void*)costs;
+    int min = rows[irow][0];
+    for(int i = 1; i < nents; i++) {
+        min = MIN(min, rows[irow][i]);
+    }
+    return min;
+}
+
+static int column_minimum(int *costs, int icol, size_t nents)
+{
+    int (*rows)[nents] = (void*)costs;
+    int min = rows[0][icol];
+    for(int i = 1; i < nents; i++) {
+        min = MIN(min, rows[i][icol]);
+    }
+    return min;
+}
+
+static bool assigned_in_column(bool *starred, size_t nents, size_t icol)
+{
+    bool (*rows)[nents] = (void*)starred;
+    for(int i = 0; i < nents; i++) {
+        if(rows[i][icol])
+            return true;
+    }
+    return false;
+}
+
+static bool row_is_covered(bool *covered, size_t nents, size_t irow)
+{
+    bool (*rows)[nents] = (void*)covered;
+    size_t ncovered = 0;
+    for(int i = 0; i < nents; i++) {
+        if(rows[irow][i])
+            ncovered++;
+    }
+    return (ncovered == nents);
+}
+
+static void cover_column(bool *covered, size_t nents, size_t icol)
+{
+    bool (*rows)[nents] = (void*)covered;
+    for(int i = 0; i < nents; i++) {
+        rows[i][icol] = true;
+    }
+}
+
+static void uncover_column(bool *covered, size_t nents, size_t icol)
+{
+    bool (*rows)[nents] = (void*)covered;
+    for(int i = 0; i < nents; i++) {
+        if(!row_is_covered(covered, nents, i)) {
+            rows[i][icol] = false;
+        }
+    }
+}
+
+static void cover_row(bool *covered, size_t nents, size_t irow)
+{
+    bool (*rows)[nents] = (void*)covered;
+    for(int i = 0; i < nents; i++) {
+        rows[irow][i] = true;
+    }
+}
+
+static bool row_has_starred(bool *starred, size_t nents, size_t irow, int *out_col)
+{
+    bool (*rows)[nents] = (void*)starred;
+    for(int i = 0; i < nents; i++) {
+        if(rows[irow][i]) {
+            *out_col = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool column_is_covered(bool *covered, size_t nents, size_t icol)
+{
+    bool (*rows)[nents] = (void*)covered;
+    size_t ncovered = 0;
+    for(int i = 0; i < nents; i++) {
+        if(rows[i][icol])
+            ncovered++;
+    }
+    return (ncovered == nents);
+}
+
+static bool column_has_starred(bool *starred, size_t nents, size_t icol, int *out_row)
+{
+    bool (*rows)[nents] = (void*)starred;
+    for(int i = 0; i < nents; i++) {
+        if(rows[i][icol]) {
+            *out_row = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+static int primed_zero_at_row(bool *primed, size_t nents, size_t irow)
+{
+    bool (*rows)[nents] = (void*)primed;
+    for(int i = 0; i < nents; i++) {
+        if(rows[irow][i])
+            return i;
+    }
+    assert(0);
+    return -1;
+}
+
+static size_t count_covered_rows(bool *covered, size_t nents)
+{
+    bool (*rows)[nents] = (void*)covered;
+    size_t ret = 0;
+    for(int i = 0; i < nents; i++) {
+        size_t ncovered = 0;
+        for(int j = 0; j < nents; j++) {
+            if(rows[i][j])
+                ncovered++;
+        }
+        if(ncovered == nents)
+            ret++;
+    }
+    return ret;
+}
+
+static size_t count_covered_columns(bool *covered, size_t nents)
+{
+    bool (*rows)[nents] = (void*)covered;
+    size_t ret = 0;
+    for(int i = 0; i < nents; i++) {
+        size_t ncovered = 0;
+        for(int j = 0; j < nents; j++) {
+            if(rows[j][i])
+                ncovered++;
+        }
+        if(ncovered == nents)
+            ret++;
+    }
+    return ret;
+}
+
+static void dump_cost_matrix(int *costs, size_t nents,
+                             bool *starred, bool *covered, bool *primed)
+{
+    int  (*cost_rows)[nents] = (void*)costs;
+    bool (*starred_rows)[nents] = (void*)starred;
+    bool (*covered_rows)[nents] = (void*)covered;
+    bool (*primed_rows)[nents] = (void*)primed;
+
+    for(int r = 0; r < nents; r++) {
+        for(int c = 0; c < nents; c++) {
+            printf("%03d%c%c%c", 
+                cost_rows[r][c],
+                starred_rows[r][c] ? '*'  : ' ',
+                primed_rows[r][c]  ? '\'' : ' ',
+                covered_rows[r][c] ? 'C'  : ' ');
+            if(c != nents-1)
+                printf("  ");
+        }
+        printf("\n");
+    }
+}
+
+static int min_uncovered_value(int *costs, bool *covered, size_t nents)
+{
+    int  (*cost_rows)[nents] = (void*)costs;
+    bool (*covered_rows)[nents] = (void*)covered;
+
+    int min = INT_MAX;
+    for(int r = 0; r < nents; r++) {
+        for(int c = 0; c < nents; c++) {
+            if(!covered_rows[r][c]) {
+                min = MIN(cost_rows[r][c], min);
+            }
+        }
+    }
+    return min;
+}
+
+static int min_lines_to_cover_zeroes(int *costs, int *out_next, 
+                                     struct coord *out_assignment, size_t nents)
+{
+    STALLOC(bool, starred, nents * nents);
+    STALLOC(bool, covered, nents * nents);
+    STALLOC(bool, primed, nents * nents);
+
+    memset(starred, 0, nents * nents * sizeof(bool));
+    memset(covered, 0, nents * nents * sizeof(bool));
+    memset(primed, 0, nents * nents * sizeof(bool));
+
+    int  (*cost_rows)[nents] = (void*)costs;
+    bool (*starred_rows)[nents] = (void*)starred;
+    bool (*covered_rows)[nents] = (void*)covered;
+    bool (*primed_rows)[nents] = (void*)primed;
+
+iterate:
+    /* For each row, try to assign an arbitrary zero. Assigned tasks
+     * are represented by starring a zero. Note that assignments can't 
+     * be in the same row or column.
+     */
+    for(int row = 0; row < nents; row++) {
+        for(int col = 0; col < nents; col++) {
+            if(starred_rows[row][col])
+                break;
+            if((cost_rows[row][col] == 0) && !assigned_in_column(starred, nents, col)) {
+                starred_rows[row][col] = true;
+                break;
+            }
+        }
+    }
+
+    /* Cover all columns containing a (starred) zero.
+     */
+    for(int row = 0; row < nents; row++) {
+        for(int col = 0; col < nents; col++) {
+            if(starred_rows[row][col])
+                cover_column(covered, nents, col);
+        }
+    }
+
+    bool has_uncovered;
+    int primed_r, primed_c;
+    do{
+        /* Find a non-covered zero and prime it */
+        has_uncovered = false;
+        for(int row = 0; row < nents; row++) {
+            for(int col = 0; col < nents; col++) {
+                if(cost_rows[row][col] == 0 && !covered_rows[row][col]) {
+                    has_uncovered = true;
+                    primed_rows[row][col] = true;
+                    primed_r = row;
+                    primed_c = col;
+                    break;
+                }
+            }
+            if(has_uncovered)
+                break;
+        }
+
+        if(has_uncovered) {
+            /* If the zero is on the same row as a starred zero, 
+             * cover the corresponding row, and uncover the column 
+             * of the starred zero 
+             */
+            int starred_c;
+            if(row_has_starred(starred, nents, primed_r, &starred_c)) {
+                uncover_column(covered, nents, starred_c);
+                cover_row(covered, nents, primed_r);
+            }else{
+                size_t npath = 0;
+                STALLOC(struct coord, path, nents * nents);
+                path[npath++] = (struct coord){primed_r, primed_c};
+                /* Else the non-covered zero has no assigned zero on its row. 
+                 * We make a path starting from the zero by performing the following steps: 
+                 *
+                 * Substep 1: Find a starred zero on the corresponding column. If there is one, 
+                 * go to Substep 2, else, stop.
+                 */
+            next_path_zero:;
+                int starred_r;
+                if(column_has_starred(starred, nents, primed_c, &starred_r)) {
+                    path[npath++] = (struct coord){starred_r, primed_c};
+                    /*
+                     * Substep 2: Find a primed zero on the corresponding row (there should always 
+                     * be one). Go to Substep 1. 
+                     */
+                    primed_c = primed_zero_at_row(primed, nents, starred_r);
+                    primed_r = starred_r;
+                    path[npath++] = (struct coord){primed_r, primed_c};
+                    goto next_path_zero;
+                }
+
+                for(int i = 0; i < npath; i++) {
+                    printf("[%02d] path: (%d, %d)\n",
+                        i, path[i].r, path[i].c);
+                }
+
+                /* For all zeros encountered during the path, star primed zeros 
+                 * and unstar starred zeros.
+                 */
+                for(int i = 0; i < npath; i++) {
+                    struct coord curr = path[i];
+                    assert(starred_rows[curr.r][curr.c] ^ primed_rows[curr.r][curr.c]);
+                    if(starred_rows[curr.r][curr.c]) {
+                        starred_rows[curr.r][curr.c] = false;
+                    }else if(primed_rows[curr.r][curr.c]) {
+                        starred_rows[curr.r][curr.c] = true;
+                    }
+                }
+
+                /* Unprime all primed zeroes and uncover all tiles.
+                 */
+                for(int i = 0; i < nents; i++) {
+                    for(int j = 0; j < nents; j++) {
+                        primed_rows[i][j] = false;
+                        covered_rows[i][j] = false;
+                    }
+                }
+                STFREE(path);
+                goto iterate;
+            }
+        }
+    }while(has_uncovered); 
+
+    size_t ncovered_rows = count_covered_rows(covered, nents);
+    size_t ncovered_cols = count_covered_columns(covered, nents);
+
+    size_t ret;
+    if((ncovered_rows == nents) || (ncovered_cols == nents)) {
+        ret = nents;
+    }else{
+        ret = (ncovered_rows + ncovered_cols);
+    }
+
+    if(ret < nents) {
+        /* Find the lowest uncovered value. Subtract this from every 
+         * unmarked element and add it to every element covered by two lines.  
+         * This is equivalent to subtracting a number from all rows which are 
+         * not covered and adding the same number to all columns which are 
+         * covered. These operations do not change optimal assignments. 
+         */
+        int (*next_rows)[nents] = (void*)out_next;
+        memcpy(out_next, costs, sizeof(int) * nents * nents);
+
+        int min = min_uncovered_value(costs, covered, nents);
+        for(int r = 0; r < nents; r++) {
+            if(!row_is_covered(covered, nents, r)) {
+                for(int c = 0; c < nents; c++) {
+                    next_rows[r][c] -= min;
+                }
+            }
+        }
+        for(int c = 0; c < nents; c++) {
+            if(column_is_covered(covered, nents, c)) {
+                for(int r = 0; r < nents; r++) {
+                    next_rows[r][c] += min;
+                }
+            }
+        }
+    }else{
+        int i = 0;
+        for(int r = 0; r < nents; r++) {
+            for(int c = 0; c < nents; c++) {
+                if(starred_rows[r][c]) {
+                    out_assignment[i++] = (struct coord){r, c};
+                }
+            }
+        }
+        assert(i == nents);
+    }
+
+    STFREE(starred);
+    STFREE(covered);
+    STFREE(primed);
+
+    return ret;
+}
+
+#if 0
+void test_ncovered(void)
+{
+    int initial[4][4] = {
+        {99, 18, 35, 51},
+        {92, 71, 72, 48},
+        {96, 97, 27, 99},
+        {75, 29, 82, 94}
+    };
+    int test[4][4] = {
+        {37,  0, 17, 33},
+        { 0, 23, 24,  0},
+        {25, 70,  0, 72},
+        { 2,  0, 53, 65}
+    };
+    int next[4][4];
+    struct coord assignment[4];
+    size_t nlines = min_lines_to_cover_zeroes((int*)test, (int*)next, assignment, 4);
+    printf("we need %lu lines to cover the zeroes\n\n", nlines);
+
+    int nnext[4][4];
+    nlines = min_lines_to_cover_zeroes((int*)next, (int*)nnext, assignment, 4);
+    printf("we need %lu lines to cover the zeroes\n", nlines);
+
+    int total = 0;
+    for(int i = 0; i < 4; i++) {
+        struct coord curr = assignment[i];
+        total += initial[curr.r][curr.c];
+    }
+    printf("The optimal value is: %d\n", total);
+}
+
+void test2(void)
+{
+    int test[4][4] = {
+        { 0,  0,  0,  0},
+        { 0,  0,  0,  0},
+        { 0,  1,  2,  2},
+        { 0,  2,  3,  3}
+    };
+    int next[4][4];
+    struct coord assignment[4];
+    size_t nlines = min_lines_to_cover_zeroes((int*)test, (int*)next, assignment, 4);
+    printf("we need %lu lines to cover the zeroes\n\n", nlines);
+
+    int nnext[4][4];
+    nlines = min_lines_to_cover_zeroes((int*)next, (int*)nnext, assignment, 4);
+    printf("we need %lu lines to cover the zeroes\n", nlines);
+
+    int total = 0;
+    for(int i = 0; i < 4; i++) {
+        struct coord curr = assignment[i];
+        total += test[curr.r][curr.c];
+    }
+    printf("The optimal value is: %d\n", total);
+}
+#endif
+
+/* Use the Hungarian algorithm to find an optimal assignment of entities to cells
+ * (minimizing the combined distance that needs to be traveled by the entities).
+ */
+static void compute_cell_assignment(struct subformation *formation)
+{
+    size_t nents = kh_size(formation->ents);
+    STALLOC(int, costs, nents * nents);
+    STALLOC(int, next, nents * nents);
+    STALLOC(struct coord, assignment, nents);
+
+    create_cost_matrix(formation, costs);
+    int (*rows)[nents] = (void*)costs;
+
+    /* Step 1: Subtract row minima
+     * For each row, find the lowest element and subtract it from each element in that row.
+     */
+    for(int i = 0; i < nents; i++) {
+        int row_min = row_minimum(costs, i, nents);
+        for(int j = 0; j < nents; j++) {
+            rows[i][j] -= row_min;
+        }
+    }
+
+    /* Step  2: Subtract column minima 
+     * For each column, find the lowest element and subtract it from each element in that 
+     * column.
+     */
+    for(int i = 0; i < nents; i++) {
+        int col_min = column_minimum(costs, i, nents);
+        for(int j = 0; j < nents; j++) {
+            rows[j][i] -= col_min;
+        }
+    }
+
+    size_t min_lines;
+    do{
+        /* Step 3: Cover all zeros with a minimum number of lines
+         * Cover all zeros in the resulting matrix using a minimum number of horizontal and 
+         * vertical lines. If n lines are required, an optimal assignment exists among the zeros. 
+         * The algorithm stops.
+         *
+         * If less than n lines are required, continue with Step 4.
+         */
+        min_lines = min_lines_to_cover_zeroes(costs, next, assignment, nents);
+
+        /* Step 4: Create additional zeros
+         * Find the smallest element (call it k) that is not covered by a line in Step 3. 
+         * Subtract k from all uncovered elements, and add k to all elements that are covered twice.
+         */
+        if(min_lines < nents) {
+            memcpy(costs, next, sizeof(int) * nents * nents);
+        }
+    }while(min_lines < nents);
+
+    int i = 0;
+    uint32_t uid;
+    kh_foreach_key(formation->ents, uid, {
+        int status;
+        khiter_t k = kh_put(assignment, formation->assignment, uid, &status);
+        assert(status != -1);
+        kh_val(formation->assignment, k) = assignment[i++];
+    });
+
+    STFREE(costs);
+    STFREE(next)
+    STFREE(assignment);
 }
 
 static void render_formations(void)
@@ -1666,6 +2186,7 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents)
         struct subformation *sub = &vec_AT(&new->subformations, i);
         place_subformation(sub, new->center, target, new->orientation, 
             new->occupied, new->islands);
+        compute_cell_assignment(sub);
     }
 }
 
