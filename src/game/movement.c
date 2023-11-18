@@ -325,7 +325,7 @@ static void flock_try_remove(struct flock *flock, uint32_t uid)
     khiter_t k;
     if((k = kh_get(entity, flock->ents, uid)) != kh_end(flock->ents)) {
         kh_del(entity, flock->ents, k);
-        G_Formation_RemoveUnit(flock->dest_id, uid);
+        G_Formation_RemoveUnit(uid);
     }
 }
 
@@ -493,7 +493,6 @@ static void remove_from_flocks(uint32_t uid)
         flock_try_remove(curr_flock, uid);
 
         if(kh_size(curr_flock->ents) == 0) {
-            G_Formation_Destroy(curr_flock->dest_id);
             kh_destroy(entity, curr_flock->ents);
             vec_flock_del(&s_flocks, i);
         }
@@ -556,8 +555,6 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
     for(int i = 0; i < vec_size(units); i++) {
 
         uint32_t curr_ent = vec_AT(units, i);
-        if(stationary(curr_ent))
-            continue;
         remove_from_flocks(curr_ent);
     }
 
@@ -607,11 +604,11 @@ static bool make_flock(const vec_entity_t *units, vec2_t target_xz,
 
         uint32_t curr;
         kh_foreach_key(new_flock.ents, curr, { flock_add(merge_flock, curr); });
-        G_Formation_AddUnits(new_flock.dest_id, new_flock.ents);
         kh_destroy(entity, new_flock.ents);
     
     }else{
-        G_Formation_Create(new_flock.dest_id, new_flock.target_xz, new_flock.ents);
+        formation_id_t fid;
+        int faction_id = G_GetFactionIDFrom(s_move_work.gamestate.faction_ids, first);
         vec_flock_push(&s_flocks, new_flock);
     }
 
@@ -632,12 +629,14 @@ static void make_flocks(const vec_entity_t *sel, vec2_t target_xz, bool attack)
 
     vec_entity_t layer_flocks[NAV_LAYER_MAX];
     split_into_layers(&fsel, layer_flocks);
-    vec_entity_destroy(&fsel);
 
     for(int i = 0; i < NAV_LAYER_MAX; i++) {
         make_flock(layer_flocks + i, target_xz, i, attack);
         vec_entity_destroy(layer_flocks + i);
     }
+
+    G_Formation_Create(target_xz, &fsel);
+    vec_entity_destroy(&fsel);
 }
 
 static size_t adjacent_flock_members(uint32_t uid, const struct flock *flock, 
@@ -1739,7 +1738,10 @@ static void disband_empty_flocks(void)
         if(disband) {
 
             struct flock *flock = &vec_AT(&s_flocks, i);
-            G_Formation_Destroy(flock->dest_id);
+            uint32_t uid;
+            kh_foreach_key(flock->ents, uid, {
+                G_Formation_RemoveUnit(uid);
+            });
             kh_destroy(entity, flock->ents);
             vec_flock_del(&s_flocks, i);
         }

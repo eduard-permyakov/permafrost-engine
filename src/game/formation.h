@@ -40,16 +40,16 @@
 #include "../pf_math.h"
 #include "../navigation/public/nav.h"
 
+typedef uint32_t formation_id_t;
+
 struct map;
 
-bool G_Formation_Init(const struct map *map);
-void G_Formation_Shutdown(void);
+bool           G_Formation_Init(const struct map *map);
+void           G_Formation_Shutdown(void);
 
-void G_Formation_Create(dest_id_t id, vec2_t target, khash_t(entity) *ents);
-void G_Formation_Destroy(dest_id_t id);
-
-void G_Formation_AddUnits(dest_id_t id, khash_t(entity) *ents);
-void G_Formation_RemoveUnit(dest_id_t id, uint32_t uid);
+void           G_Formation_Create(vec2_t target, const vec_entity_t *ents);
+formation_id_t G_Formation_GetForEnt(uint32_t uid);
+void           G_Formation_RemoveUnit(uint32_t uid);
 
 #endif
 

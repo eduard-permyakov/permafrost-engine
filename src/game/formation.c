@@ -150,6 +150,10 @@ VEC_TYPE(subformation, struct subformation)
 VEC_IMPL(static inline, subformation, struct subformation)
 
 struct formation{
+    /* The refcount is the number of movement system
+     * 'flocks' associated with this formation.
+     */
+    int                  refcount;
     enum formation_type  type;
     vec2_t               target;
     vec2_t               orientation;
@@ -172,14 +176,17 @@ struct formation{
     uint16_t             islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES];
 };
 
-KHASH_MAP_INIT_INT64(formation, struct formation)
+KHASH_MAP_INIT_INT(formation, struct formation)
+KHASH_MAP_INIT_INT(mapping, formation_id_t);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
 
 static const struct map   *s_map;
+static khash_t(mapping)   *s_ent_formation_map;
 static khash_t(formation) *s_formations;
+static formation_id_t      s_next_id;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
@@ -201,15 +208,16 @@ static size_t nrows(enum formation_type type, size_t nunits)
     return ceilf(nunits / ncols(type, nunits));
 }
 
-static vec2_t compute_orientation(vec2_t target, khash_t(entity) *ents)
+static vec2_t compute_orientation(vec2_t target, const vec_entity_t *ents)
 {
     uint32_t curr;
     vec2_t COM = (vec2_t){0.0f, 0.0f};
-    kh_foreach_key(ents, curr, {
+    for(int i = 0; i < vec_size(ents); i++) {
+        uint32_t curr = vec_AT(ents, i);
         vec2_t curr_pos = G_Pos_GetXZ(curr);
         PFM_Vec2_Add(&COM, &curr_pos, &COM);
-    });
-    size_t nents = kh_size(ents);
+    }
+    size_t nents = vec_size(ents);
     PFM_Vec2_Scale(&COM, 1.0f / nents, &COM);
 
     vec2_t orientation;
@@ -1567,16 +1575,40 @@ static void destroy_formation(struct formation *formation)
     kh_destroy(assignment, formation->sub_assignment);
 }
 
+static khash_t(entity) *copy_vector(const vec_entity_t *ents)
+{
+    khash_t(entity) *ret = kh_init(entity);
+    if(!ret)
+        return NULL;
+    if(kh_resize(entity, ret, vec_size(ents)) != 0)
+        return NULL;
+    for(int i = 0; i < vec_size(ents); i++) {
+        uint32_t uid = vec_AT(ents, i);
+        int status;
+        khiter_t k = kh_put(entity, ret, uid, &status);
+        assert(status != -1);
+    }
+    return ret;
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
 
 bool G_Formation_Init(const struct map *map)
 {
-    if(NULL == (s_formations = kh_init(formation)))
+    ASSERT_IN_MAIN_THREAD();
+
+    if(NULL == (s_ent_formation_map = kh_init(mapping)))
         return false;
+    if(NULL == (s_formations = kh_init(formation))) {
+        kh_destroy(mapping, s_ent_formation_map);
+        return false;
+    }
 
     s_map = map;
+    s_next_id = 0;
+
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
     return true;
@@ -1584,6 +1616,7 @@ bool G_Formation_Init(const struct map *map)
 
 void G_Formation_Shutdown(void)
 {
+    ASSERT_IN_MAIN_THREAD();
     s_map = NULL;
 
     struct formation *formation;
@@ -1593,24 +1626,36 @@ void G_Formation_Shutdown(void)
 
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     kh_destroy(formation, s_formations);
+    kh_destroy(mapping, s_ent_formation_map);
 }
 
-void G_Formation_Create(dest_id_t id, vec2_t target, khash_t(entity) *ents)
+void G_Formation_Create(vec2_t target, const vec_entity_t *ents)
 {
     ASSERT_IN_MAIN_THREAD();
+    formation_id_t fid = s_next_id++;
+
+    /* Add a mapping from entities to the formation */
+    for(int i = 0; i < vec_size(ents); i++) {
+        uint32_t uid = vec_AT(ents, i);
+        int ret;
+        khiter_t k = kh_put(mapping, s_ent_formation_map, uid, &ret);
+        assert(ret != -1);
+        kh_val(s_ent_formation_map, k) = fid;
+    }
 
     int ret;
-    khiter_t k = kh_put(formation, s_formations, id, &ret);
+    khiter_t k = kh_put(formation, s_formations, fid, &ret);
     assert(ret != -1);
     struct formation *new = &kh_val(s_formations, k);
 
     vec2_t orientation = compute_orientation(target, ents);
     *new = (struct formation){
+        .refcount = kh_size(ents),
         .type = FORMATION_RANK,
         .target = target,
         .orientation = orientation,
         .center = field_center(target, orientation),
-        .ents = kh_copy_entity(ents),
+        .ents = copy_vector(ents),
         .sub_assignment = kh_init(assignment)
     };
     init_subformations(new);
@@ -1624,48 +1669,32 @@ void G_Formation_Create(dest_id_t id, vec2_t target, khash_t(entity) *ents)
     }
 }
 
-void G_Formation_Destroy(dest_id_t id)
+formation_id_t G_Formation_GetForEnt(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    khiter_t k = kh_get(formation, s_formations, id);
-    assert(k != kh_end(s_formations));
-
-    struct formation *formation = &kh_val(s_formations, k);
-    destroy_formation(formation);
-
-    kh_del(formation, s_formations, k);
+    khiter_t k = kh_get(mapping, s_ent_formation_map, uid);
+    assert(k != kh_end(s_ent_formation_map));
+    return kh_val(s_ent_formation_map, k);
 }
 
-void G_Formation_AddUnits(dest_id_t id, khash_t(entity) *ents)
+void G_Formation_RemoveUnit(uint32_t uid)
 {
     ASSERT_IN_MAIN_THREAD();
 
-    khiter_t k = kh_get(formation, s_formations, id);
+    formation_id_t fid = G_Formation_GetForEnt(uid);
+    khiter_t k = kh_get(formation, s_formations, fid);
     assert(k != kh_end(s_formations));
     struct formation *formation = &kh_val(s_formations, k);
 
-    uint32_t uid;
-    kh_foreach_key(ents, uid, {
-        int ret;
-        k = kh_put(entity, formation->ents, uid, &ret);
-        assert(ret != -1 && ret != 0);
-    });
-    /* Re-assign the entities */
-}
-
-void G_Formation_RemoveUnit(dest_id_t id, uint32_t uid)
-{
-    ASSERT_IN_MAIN_THREAD();
-
-    khiter_t k = kh_get(formation, s_formations, id);
-    assert(k != kh_end(s_formations));
-    struct formation *formation = &kh_val(s_formations, k);
-
-    k = kh_get(entity, formation->ents, uid);
-    assert(k != kh_end(formation->ents));
-    kh_del(entity, formation->ents, k);
-
+    khiter_t l = kh_get(entity, formation->ents, uid);
+    assert(l != kh_end(formation->ents));
+    kh_del(entity, formation->ents, l);
     /* Remove the entity assignment */
+
+    if(--formation->refcount == 0) {
+        destroy_formation(formation);
+        kh_del(formation, s_formations, k);
+    }
 }
 
