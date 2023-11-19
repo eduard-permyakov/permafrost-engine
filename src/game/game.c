@@ -1034,6 +1034,17 @@ static void g_create_settings(void)
         .validate = bool_val_validate,
         .commit = NULL,
     });
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_formations_assignment",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
 }
 
 static void g_render_minimap_units(void)

@@ -53,8 +53,8 @@
 
 #include <assert.h>
 
-#define COLUMN_WIDTH_RATIO       (0.25f)
-#define RANK_WIDTH_RATIO         (4.0f)
+#define COLUMN_WIDTH_RATIO       (4.0f)
+#define RANK_WIDTH_RATIO         (0.25f)
 #define OCCUPIED_FIELD_RES       (95) /* Must be odd */
 #define MAX_CHILDREN             (16)
 #define CELL_IDX(_r, _c, _ncols) ((_r) * (_ncols) + (_c))
@@ -196,9 +196,9 @@ static size_t ncols(enum formation_type type, size_t nunits)
 {
     switch(type) {
     case FORMATION_RANK:
-        return ceilf(sqrtf(nunits / RANK_WIDTH_RATIO));
+        return MIN(ceilf(sqrtf(nunits / RANK_WIDTH_RATIO)), nunits);
     case FORMATION_COLUMN:
-        return ceilf(sqrtf(nunits / COLUMN_WIDTH_RATIO));
+        return MIN(ceilf(sqrtf(nunits / COLUMN_WIDTH_RATIO)), nunits);
     default: assert(0);
     }
 }
@@ -1359,11 +1359,6 @@ iterate:
                     goto next_path_zero;
                 }
 
-                for(int i = 0; i < npath; i++) {
-                    printf("[%02d] path: (%d, %d)\n",
-                        i, path[i].r, path[i].c);
-                }
-
                 /* For all zeros encountered during the path, star primed zeros 
                  * and unstar starred zeros.
                  */
@@ -1445,64 +1440,6 @@ iterate:
     return ret;
 }
 
-#if 0
-void test_ncovered(void)
-{
-    int initial[4][4] = {
-        {99, 18, 35, 51},
-        {92, 71, 72, 48},
-        {96, 97, 27, 99},
-        {75, 29, 82, 94}
-    };
-    int test[4][4] = {
-        {37,  0, 17, 33},
-        { 0, 23, 24,  0},
-        {25, 70,  0, 72},
-        { 2,  0, 53, 65}
-    };
-    int next[4][4];
-    struct coord assignment[4];
-    size_t nlines = min_lines_to_cover_zeroes((int*)test, (int*)next, assignment, 4);
-    printf("we need %lu lines to cover the zeroes\n\n", nlines);
-
-    int nnext[4][4];
-    nlines = min_lines_to_cover_zeroes((int*)next, (int*)nnext, assignment, 4);
-    printf("we need %lu lines to cover the zeroes\n", nlines);
-
-    int total = 0;
-    for(int i = 0; i < 4; i++) {
-        struct coord curr = assignment[i];
-        total += initial[curr.r][curr.c];
-    }
-    printf("The optimal value is: %d\n", total);
-}
-
-void test2(void)
-{
-    int test[4][4] = {
-        { 0,  0,  0,  0},
-        { 0,  0,  0,  0},
-        { 0,  1,  2,  2},
-        { 0,  2,  3,  3}
-    };
-    int next[4][4];
-    struct coord assignment[4];
-    size_t nlines = min_lines_to_cover_zeroes((int*)test, (int*)next, assignment, 4);
-    printf("we need %lu lines to cover the zeroes\n\n", nlines);
-
-    int nnext[4][4];
-    nlines = min_lines_to_cover_zeroes((int*)next, (int*)nnext, assignment, 4);
-    printf("we need %lu lines to cover the zeroes\n", nlines);
-
-    int total = 0;
-    for(int i = 0; i < 4; i++) {
-        struct coord curr = assignment[i];
-        total += test[curr.r][curr.c];
-    }
-    printf("The optimal value is: %d\n", total);
-}
-#endif
-
 /* Use the Hungarian algorithm to find an optimal assignment of entities to cells
  * (minimizing the combined distance that needs to be traveled by the entities).
  */
@@ -1563,7 +1500,12 @@ static void compute_cell_assignment(struct subformation *formation)
         int status;
         khiter_t k = kh_put(assignment, formation->assignment, uid, &status);
         assert(status != -1);
-        kh_val(formation->assignment, k) = assignment[i++];
+        struct coord cell_coord = (struct coord){
+            assignment[i].c / formation->ncols,
+            assignment[i].c % formation->ncols
+        };
+        kh_val(formation->assignment, k) = cell_coord;
+        i++;
     });
 
     STFREE(costs);
@@ -2054,6 +1996,40 @@ static void render_formations_occupied_field(void)
     });
 }
 
+static void render_formation_assignment(void)
+{
+    struct formation *formation;
+    kh_foreach_ptr(s_formations, formation, {
+
+        for(int i = 0; i < vec_size(&formation->subformations); i++) {
+            struct subformation *subformation = &vec_AT(&formation->subformations, i);
+
+            uint32_t uid;
+            struct coord coord;
+            kh_foreach(subformation->assignment, uid, coord, {
+                struct cell *target = &vec_AT(&subformation->cells,
+                    CELL_IDX(coord.r, coord.c, subformation->ncols));
+                vec2_t from = G_Pos_GetXZ(uid);
+                vec2_t to = target->pos;
+                vec2_t endpoints[] = {from, to};
+                vec3_t yellow = (vec3_t){1.0f, 0.0f, 1.0f};
+                const float width = 0.5f;
+
+                R_PushCmd((struct rcmd){
+                    .func = R_GL_DrawLine,
+                    .nargs = 4,
+                    .args = {
+                        R_PushArg(endpoints, sizeof(endpoints)),
+                        R_PushArg(&width, sizeof(width)),
+                        R_PushArg(&yellow, sizeof(yellow)),
+                        (void*)G_GetPrevTickMap()
+                    }
+                });
+            });
+        }
+    });
+}
+
 static void on_render_3d(void *user, void *event)
 {
     struct sval setting;
@@ -2075,6 +2051,14 @@ static void on_render_3d(void *user, void *event)
     if(enabled) {
         render_formations_occupied_field();
         render_islands_field();
+    }
+
+    status = Settings_Get("pf.debug.show_formations_assignment", &setting);
+    assert(status == SS_OKAY);
+    enabled = setting.as_bool;
+
+    if(enabled) {
+        render_formation_assignment();
     }
 }
 
