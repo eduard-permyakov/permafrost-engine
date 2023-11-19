@@ -133,6 +133,8 @@ struct subformation{
     size_t               nchildren;
     struct subformation *children[MAX_CHILDREN];
     float                unit_radius;
+    enum nav_layer       layer;
+    vec2_t               reachable_target;
     vec2_t               pos;
     vec2_t               orientation;
     size_t               nrows;
@@ -169,11 +171,11 @@ struct formation{
     /* The map tiles which have already been allocated to cells.
      * Centered at the target position.
      */
-    uint8_t              occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES];
+    uint8_t              occupied[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES];
     /* A copy of the navigation 'island' field for the area specified
      * by the 'occupied' field.
      */
-    uint16_t             islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES];
+    uint16_t             islands[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES];
 };
 
 KHASH_MAP_INIT_INT(formation, struct formation)
@@ -250,8 +252,8 @@ static vec2_t field_center(vec2_t target, vec2_t orientation)
 }
 
 static bool try_occupy_cell(struct coord *curr, vec2_t orientation, uint16_t iid,
-                            float radius, int anchor,
-                            uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
+                            float radius, enum nav_layer layer, int anchor,
+                            uint8_t occupied[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
                             uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
     struct map_resolution nav_res;
@@ -286,13 +288,15 @@ static bool try_occupy_cell(struct coord *curr, vec2_t orientation, uint16_t iid
         struct coord coord = (struct coord){descs[i].tile_r, descs[i].tile_c};
         if(islands[coord.r][coord.c] != iid)
             return false;
-        if(occupied[coord.r][coord.c] != TILE_FREE
-        && occupied[coord.r][coord.c] != TILE_VISITED)
+        if(occupied[layer][coord.r][coord.c] != TILE_FREE
+        && occupied[layer][coord.r][coord.c] != TILE_VISITED)
             return false;
     }
     for(int i = 0; i < ndescs; i++) {
         struct coord coord = (struct coord){descs[i].tile_r, descs[i].tile_c};
-        occupied[coord.r][coord.c] = TILE_ALLOCATED;
+        for(int j = 0; j < NAV_LAYER_MAX; j++) {
+            occupied[j][coord.r][coord.c] = TILE_ALLOCATED;
+        }
     }
     return true;
 }
@@ -575,12 +579,13 @@ static vec2_t target_direction_offsets(vec2_t center, vec2_t orientation,
     return (vec2_t){front_distance, right_distance};
 }
 
-static bool place_cell(struct cell *curr, vec2_t center, vec2_t root, vec2_t target,
-                       vec2_t orientation, float radius, vec2_t target_offsets,
+static bool place_cell(struct cell *curr, vec2_t center, vec2_t root, 
+                       vec2_t target, vec2_t orientation, float radius, 
+                       enum nav_layer layer, vec2_t target_offsets,
                        const struct cell *left, const struct cell *right,
                        const struct cell *front,  const struct cell *back,
-                       uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
-                       uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+                       uint8_t occupied[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
+                       uint16_t islands[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
     int anchor = 0;
     if(left && (left->state != CELL_NOT_PLACED))
@@ -670,11 +675,11 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root, vec2_t tar
     struct coord curr_tile;
 
     struct coord dest_coord = pos_to_tile(center, target);
-    uint16_t iid = islands[dest_coord.r][dest_coord.c];
+    uint16_t iid = islands[layer][dest_coord.r][dest_coord.c];
     assert(iid != UINT16_MAX);
 
     bool exists = nearest_free_tile(&target_tile, &curr_tile, iid, anchor, 
-        center, orientation, occupied, islands);
+        center, orientation, occupied[layer], islands[layer]);
     if(!exists)
         return false;
 
@@ -686,12 +691,13 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root, vec2_t tar
      */
     bool success = false;
     do{
-        success = try_occupy_cell(&curr_tile, orientation, iid, radius, anchor, occupied, islands);
+        success = try_occupy_cell(&curr_tile, orientation, iid, radius, layer, 
+            anchor, occupied, islands[layer]);
         if(!success) {
-            occupied[curr_tile.r][curr_tile.c] = TILE_VISITED;
+            occupied[layer][curr_tile.r][curr_tile.c] = TILE_VISITED;
             visited[nvisited++] = curr_tile;
             bool exists = nearest_free_tile(&curr_tile, &curr_tile, iid, anchor, 
-                center, orientation, occupied, islands);
+                center, orientation, occupied[layer], islands[layer]);
             if(!exists)
                 break;
         }
@@ -699,8 +705,8 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root, vec2_t tar
 
     /* Reset the 'visited' tiles */
     for(int i = 0; i < nvisited; i++) {
-        if(occupied[visited[i].r][visited[i].c] == TILE_VISITED)
-            occupied[visited[i].r][visited[i].c] = TILE_FREE;
+        if(occupied[layer][visited[i].r][visited[i].c] == TILE_VISITED)
+            occupied[layer][visited[i].r][visited[i].c] = TILE_FREE;
     }
     if(success) {
         curr->ideal_raw = pos;
@@ -711,7 +717,7 @@ static bool place_cell(struct cell *curr, vec2_t center, vec2_t root, vec2_t tar
     return success;
 }
 
-static void init_occupied_field(vec2_t center,
+static void init_occupied_field(enum nav_layer layer, vec2_t center,
                                 uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
     PERF_ENTER();
@@ -746,8 +752,8 @@ static void init_occupied_field(vec2_t center,
             bounds.x - bounds.width / 2.0f,
             bounds.z + bounds.height / 2.0f
         };
-        if(!M_NavPositionPathable(s_map, NAV_LAYER_GROUND_1X1, center)
-        ||  M_NavPositionBlocked(s_map, NAV_LAYER_GROUND_1X1, center)) {
+        if(!M_NavPositionPathable(s_map, layer, center)
+        ||  M_NavPositionBlocked(s_map, layer, center)) {
             occupied[r][c] = TILE_BLOCKED;
             continue;
         }
@@ -756,11 +762,11 @@ static void init_occupied_field(vec2_t center,
     PERF_RETURN_VOID();
 }
 
-static void init_islands_field(vec2_t center,
+static void init_islands_field(enum nav_layer layer, vec2_t center,
                                uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
     M_NavCopyIslandsFieldView(s_map, center, OCCUPIED_FIELD_RES, OCCUPIED_FIELD_RES,
-        NAV_LAYER_GROUND_1X1, (uint16_t*)islands);
+        layer, (uint16_t*)islands);
 }
 
 static vec2_t back_row_average_pos(struct subformation *formation)
@@ -826,9 +832,9 @@ static vec2_t formation_center(struct subformation *formation)
 }
 
 static void place_subformation(struct subformation *formation, vec2_t center, 
-                               vec2_t target, vec2_t orientation,
-                               uint8_t occupied[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
-                               uint16_t islands[OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
+    vec2_t target, vec2_t orientation,
+    uint8_t occupied[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES],
+    uint16_t islands[NAV_LAYER_MAX][OCCUPIED_FIELD_RES][OCCUPIED_FIELD_RES])
 {
     PERF_ENTER();
 
@@ -891,8 +897,8 @@ static void place_subformation(struct subformation *formation, vec2_t center,
                                 : NULL;
 
         bool success = place_cell(curr_cell, center, target_pos, 
-            target,orientation, formation->unit_radius, target_offsets,
-            left_cell, right_cell, front_cell, back_cell, 
+            formation->reachable_target, orientation, formation->unit_radius, 
+            formation->layer, target_offsets, left_cell, right_cell, front_cell, back_cell, 
             occupied, islands);
         if(!success)
             break;
@@ -966,7 +972,7 @@ static size_t next_type_range(size_t begin, size_t size,
     return i + 1;
 }
 
-static void init_subformation(struct subformation *formation,
+static void init_subformation(vec2_t target, struct subformation *formation,
                               struct subformation *parent,
                               size_t nchildren, struct subformation **children,
                               size_t ncols, uint32_t *ents, size_t nents)
@@ -974,17 +980,23 @@ static void init_subformation(struct subformation *formation,
     size_t nrows = (nents / ncols) + !!(nents % ncols);
     size_t total = nrows * ncols;
 
+    enum nav_layer layer = Entity_NavLayer(ents[0]);
+    vec2_t first_ent_pos = G_Pos_GetXZ(ents[0]);
+    vec2_t reachable_target = M_NavClosestReachableDest(s_map, layer, 
+        first_ent_pos, target);
+
     size_t curr_child = 0;
     while((curr_child < nents) && (curr_child < MAX_CHILDREN)) {
         formation->children[curr_child] = children[curr_child];
         curr_child++;
     }
     formation->nchildren = nchildren;
-
     formation->parent = parent;
     formation->nrows = nrows;
     formation->ncols = ncols;
     formation->unit_radius = G_GetSelectionRadius(ents[0]);
+    formation->layer = layer;
+    formation->reachable_target = reachable_target;
     formation->assignment = kh_init(assignment);
     kh_resize(assignment, formation->assignment, nents);
 
@@ -1041,7 +1053,8 @@ static void init_subformations(struct formation *formation)
                                    : &vec_AT(&formation->subformations, i+1);
 
         size_t next_offset = next_type_range(offset, nunits, types, &count);
-        init_subformation(sub, parent, 1, &child, target_ncols, ents + offset, count);
+        init_subformation(formation->target, sub, parent, 1, &child, 
+            target_ncols, ents + offset, count);
 
         for(int j = offset; j < offset + count; j++) {
             int ret;
@@ -1269,6 +1282,8 @@ static int min_uncovered_value(int *costs, bool *covered, size_t nents)
 static int min_lines_to_cover_zeroes(int *costs, int *out_next, 
                                      struct coord *out_assignment, size_t nents)
 {
+    PERF_ENTER();
+
     STALLOC(bool, starred, nents * nents);
     STALLOC(bool, covered, nents * nents);
     STALLOC(bool, primed, nents * nents);
@@ -1437,7 +1452,7 @@ iterate:
     STFREE(covered);
     STFREE(primed);
 
-    return ret;
+    PERF_RETURN(ret);
 }
 
 /* Use the Hungarian algorithm to find an optimal assignment of entities to cells
@@ -1445,6 +1460,8 @@ iterate:
  */
 static void compute_cell_assignment(struct subformation *formation)
 {
+    PERF_ENTER();
+
     size_t nents = kh_size(formation->ents);
     STALLOC(int, costs, nents * nents);
     STALLOC(int, next, nents * nents);
@@ -1511,6 +1528,8 @@ static void compute_cell_assignment(struct subformation *formation)
     STFREE(costs);
     STFREE(next)
     STFREE(assignment);
+
+    PERF_RETURN_VOID();
 }
 
 static void render_formations(void)
@@ -1810,7 +1829,7 @@ done_max:;
     return ret;
 }
 
-static void render_islands_field(void)
+static void render_islands_field(enum nav_layer layer)
 {
     const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
     const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
@@ -1869,7 +1888,7 @@ static void render_islands_field(void)
                 int offset_c = (OCCUPIED_FIELD_RES / 2) + dc;
                 assert(offset_r >= 0 && offset_r < OCCUPIED_FIELD_RES);
                 assert(offset_c >= 0 && offset_c < OCCUPIED_FIELD_RES);
-                uint16_t island_id = formation->islands[offset_r][offset_c];
+                uint16_t island_id = formation->islands[layer][offset_r][offset_c];
 
                 char text[8];
                 pf_snprintf(text, sizeof(text), "%u", island_id);
@@ -1879,7 +1898,7 @@ static void render_islands_field(void)
     });
 }
 
-static void render_formations_occupied_field(void)
+static void render_formations_occupied_field(enum nav_layer layer)
 {
     struct map_resolution res;
     M_NavGetResolution(s_map, &res);
@@ -1959,9 +1978,9 @@ static void render_formations_occupied_field(void)
             *corners_base++ = (vec2_t){square_x - square_x_len, square_z + square_z_len};
             *corners_base++ = (vec2_t){square_x - square_x_len, square_z};
 
-            if(formation->occupied[r][c] == TILE_BLOCKED) {
+            if(formation->occupied[layer][r][c] == TILE_BLOCKED) {
                 *colors_base++ = (vec3_t){1.0f, 0.0f, 0.0f};
-            }else if(formation->occupied[r][c] == TILE_ALLOCATED) {
+            }else if(formation->occupied[layer][r][c] == TILE_ALLOCATED) {
                 *colors_base++ = (vec3_t){0.0f, 0.0f, 1.0f};
             }else{
                 *colors_base++ = (vec3_t){0.0f, 1.0f, 0.0f};
@@ -2032,9 +2051,14 @@ static void render_formation_assignment(void)
 
 static void on_render_3d(void *user, void *event)
 {
+    enum nav_layer layer;
     struct sval setting;
     ss_e status;
     (void)status;
+
+    status = Settings_Get("pf.debug.navigation_layer", &setting);
+    assert(status == SS_OKAY);
+    layer = setting.as_int;
 
     status = Settings_Get("pf.debug.show_formations", &setting);
     assert(status == SS_OKAY);
@@ -2049,8 +2073,8 @@ static void on_render_3d(void *user, void *event)
     enabled = setting.as_bool;
 
     if(enabled) {
-        render_formations_occupied_field();
-        render_islands_field();
+        render_formations_occupied_field(layer);
+        render_islands_field(layer);
     }
 
     status = Settings_Get("pf.debug.show_formations_assignment", &setting);
@@ -2092,6 +2116,34 @@ static khash_t(entity) *copy_vector(const vec_entity_t *ents)
         khiter_t k = kh_put(entity, ret, uid, &status);
         assert(status != -1);
     }
+    return ret;
+}
+
+static size_t contains_layer(enum nav_layer layer, enum nav_layer *layers, size_t count)
+{
+    for(int i = 0; i < count; i++) {
+        if(layers[i] == layer)
+            return true;
+    }
+    return false;
+}
+
+static int compare_layers(const void *a, const void *b)
+{
+    enum nav_layer layer_a = *(enum nav_layer*)a;
+    enum nav_layer layer_b = *(enum nav_layer*)b;
+    return (layer_a - layer_b);
+}
+
+static size_t formation_layers(vec_subformation_t *subformations, enum nav_layer *out_layers)
+{
+    size_t ret = 0;
+    for(int i = 0; i < vec_size(subformations); i++) {
+        struct subformation *curr = &vec_AT(subformations, i);
+        if(!contains_layer(curr->layer, out_layers, ret))
+            out_layers[ret++] = curr->layer;
+    }
+    qsort(out_layers, ret, sizeof(enum nav_layer), compare_layers);
     return ret;
 }
 
@@ -2163,8 +2215,14 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents)
         .sub_assignment = kh_init(assignment)
     };
     init_subformations(new);
-    init_occupied_field(new->center, new->occupied);
-    init_islands_field(new->center, new->islands);
+
+    enum nav_layer layers[NAV_LAYER_MAX];
+    size_t nlayers = formation_layers(&new->subformations, layers);
+    for(int i = 0; i < nlayers; i++) {
+        printf("init islands field for layer %d\n", layers[i]);
+        init_occupied_field(layers[i], new->center, new->occupied[layers[i]]);
+        init_islands_field(layers[i], new->center, new->islands[layers[i]]);
+    }
 
     for(int i = 0; i < vec_size(&new->subformations); i++) {
         struct subformation *sub = &vec_AT(&new->subformations, i);
