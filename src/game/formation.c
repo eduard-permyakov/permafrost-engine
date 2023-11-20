@@ -40,6 +40,8 @@
 #include "../settings.h"
 #include "../perf.h"
 #include "../camera.h"
+#include "../sched.h"
+#include "../task.h"
 #include "../map/public/map.h"
 #include "../map/public/tile.h"
 #include "../lib/public/vec.h"
@@ -51,11 +53,13 @@
 #include "../render/public/render.h"
 #include "../render/public/render_ctrl.h"
 
+#include <SDL.h>
 #include <assert.h>
 
 #define COLUMN_WIDTH_RATIO       (4.0f)
 #define RANK_WIDTH_RATIO         (0.25f)
 #define OCCUPIED_FIELD_RES       (95) /* Must be odd */
+#define CELL_ARRIVAL_FIELD_RES   (OCCUPIED_FIELD_RES + 1) /* Must be even */
 #define MAX_CHILDREN             (16)
 #define CELL_IDX(_r, _c, _ncols) ((_r) * (_ncols) + (_c))
 #define ARR_SIZE(a)              (sizeof(a)/sizeof(a[0]))
@@ -66,8 +70,7 @@
 #define SUBFORMATION_BUFFER_DIST (8.0f)
 #define SIGNUM(x)                (((x) > 0) - ((x) < 0))
 
-enum cell_state
-{
+enum cell_state{
     CELL_NOT_PLACED,
     CELL_OCCUPIED,
     CELL_NOT_OCCUPIED
@@ -112,10 +115,28 @@ struct range2d{
     int min_c, max_c;
 };
 
+struct cell_arrival_field{
+    struct{
+        unsigned dir_idx : 4;
+    }field[CELL_ARRIVAL_FIELD_RES][CELL_ARRIVAL_FIELD_RES];
+};
+
 VEC_TYPE(cell, struct cell)
 VEC_IMPL(static inline, cell, struct cell)
 
+struct cell_field_work{
+    bool                      consumed;
+    uint32_t                  tid;
+    uint32_t                  uid;
+    struct future             future;
+    struct cell_arrival_field result;
+};
+
+VEC_TYPE(work, struct cell_field_work)
+VEC_IMPL(static inline, work, struct cell_field_work)
+
 KHASH_MAP_INIT_INT(assignment, struct coord)
+KHASH_MAP_INIT_INT(result, struct cell_arrival_field*)
 
 QUEUE_TYPE(coord, struct coord)
 QUEUE_IMPL(static, coord, struct coord)
@@ -126,7 +147,7 @@ enum formation_type{
 };
 
 struct subformation{
-    /* Subformations are stored in an asyclic tree structure
+    /* Subformations are stored in an acyclic tree structure
      * and are placed relative to their parent with some constaints.
      */
     struct subformation *parent;
@@ -146,6 +167,12 @@ struct subformation{
     /* A mapping between entities and a cell within the formation 
      */
     khash_t(assignment) *assignment;
+    /* A future for the task responsible for computing the 
+     * cell arrival field. Each task is responsible for computing
+     * a single field, so there is one task per entity/cell.
+     */
+    khash_t(result)     *results;
+    vec_work_t           futures;
 };
 
 VEC_TYPE(subformation, struct subformation)
@@ -181,6 +208,8 @@ struct formation{
 KHASH_MAP_INIT_INT(formation, struct formation)
 KHASH_MAP_INIT_INT(mapping, formation_id_t);
 
+static void complete_cell_field_work(struct subformation *formation);
+
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
 /*****************************************************************************/
@@ -189,10 +218,28 @@ static const struct map   *s_map;
 static khash_t(mapping)   *s_ent_formation_map;
 static khash_t(formation) *s_formations;
 static formation_id_t      s_next_id;
+static SDL_TLSID           s_workspace;
 
 /*****************************************************************************/
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
+
+static void *get_workspace(void)
+{
+    void *ret;
+    if((ret = SDL_TLSGet(s_workspace)))
+        return ret;
+
+    size_t workspace_size = CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES * sizeof(float);
+    ret = malloc(workspace_size);
+    if(!ret)
+        return NULL;
+    if(0 != SDL_TLSSet(s_workspace, ret, free)) {
+        free(ret);
+        return NULL;
+    }
+    return ret;
+}
 
 static size_t ncols(enum formation_type type, size_t nunits)
 {
@@ -979,6 +1026,7 @@ static void init_subformation(vec2_t target, struct subformation *formation,
 {
     size_t nrows = (nents / ncols) + !!(nents % ncols);
     size_t total = nrows * ncols;
+    printf("the subformation has %lu rows and %lu cols\n", nrows, ncols);
 
     enum nav_layer layer = Entity_NavLayer(ents[0]);
     vec2_t first_ent_pos = G_Pos_GetXZ(ents[0]);
@@ -1016,13 +1064,13 @@ static void init_subformation(vec2_t target, struct subformation *formation,
         size_t idx = r * ncols + c;
         vec_AT(&formation->cells, idx) = (struct cell){CELL_NOT_PLACED};
     }}
+    formation->results = kh_init(result);
+    vec_work_init(&formation->futures);
 }
 
 static void init_subformations(struct formation *formation)
 {
     size_t nunits = kh_size(formation->ents);
-    int target_nrows = nrows(formation->type, nunits);
-    int target_ncols = ncols(formation->type, nunits);
 
     uint32_t uid;
     size_t curr = 0;
@@ -1054,7 +1102,7 @@ static void init_subformations(struct formation *formation)
 
         size_t next_offset = next_type_range(offset, nunits, types, &count);
         init_subformation(formation->target, sub, parent, 1, &child, 
-            target_ncols, ents + offset, count);
+            ncols(formation->type, count), ents + offset, count);
 
         for(int j = offset; j < offset + count; j++) {
             int ret;
@@ -2088,8 +2136,12 @@ static void on_render_3d(void *user, void *event)
 
 static void destroy_subformation(struct subformation *formation)
 {
+    complete_cell_field_work(formation);
+    vec_work_destroy(&formation->futures);
     vec_cell_destroy(&formation->cells);
+    kh_destroy(result, formation->results);
     kh_destroy(assignment, formation->assignment);
+    kh_destroy(entity, formation->ents);
 }
 
 static void destroy_formation(struct formation *formation)
@@ -2147,6 +2199,90 @@ static size_t formation_layers(vec_subformation_t *subformations, enum nav_layer
     return ret;
 }
 
+static struct result cell_field_task(void *arg)
+{
+    return NULL_RESULT;
+}
+
+static void dispatch_cell_field_work(struct subformation *formation)
+{
+    /* Reserve the appropriate amount of space in the vector. 
+     * Futures cannot be moved in memory once the corresponding 
+     * task is dispatched. 
+     */
+    size_t nents = kh_size(formation->ents);
+    vec_work_resize(&formation->futures, nents);
+    formation->futures.size = nents;
+
+    int i = 0;
+    uint32_t uid;
+    kh_foreach_key(formation->ents, uid, {
+        struct cell_field_work *curr = &vec_AT(&formation->futures, i);
+        curr->consumed = false;
+        curr->uid = uid;
+        SDL_AtomicSet(&curr->future.status, FUTURE_INCOMPLETE);
+        curr->tid = Sched_Create(31, cell_field_task, &curr->result, &curr->future, 0);
+        if(curr->tid == NULL_TID) {
+            cell_field_task(&curr->result);
+            SDL_AtomicSet(&curr->future.status, FUTURE_COMPLETE);
+        }
+        i++;
+    });
+}
+
+static void complete_cell_field_work(struct subformation *formation)
+{
+    for(int j = 0; j < vec_size(&formation->futures); j++) {
+        struct cell_field_work *curr = &vec_AT(&formation->futures, j);
+        if(curr->tid == NULL_TID)
+            continue;
+        while(!Sched_FutureIsReady(&curr->future)) {
+            Sched_RunSync(curr->tid);
+        }
+    }
+}
+
+static void on_update_start(void *user, void *event)
+{
+    struct formation *formation;
+    kh_foreach_ptr(s_formations, formation, {
+
+        for(int i = 0; i < vec_size(&formation->subformations); i++) {
+            struct subformation *sub = &vec_AT(&formation->subformations, i);
+            for(int j = 0; j < vec_size(&sub->futures); j++) {
+                struct cell_field_work *curr = &vec_AT(&sub->futures, j);
+                if(!curr->consumed && Sched_FutureIsReady(&curr->future)) {
+                    /* Publish the result */
+                    int ret;
+                    khiter_t k = kh_put(result, sub->results, curr->uid, &ret);
+                    assert(ret != -1);
+                    kh_val(sub->results, k) = &curr->result;
+                    curr->consumed = true;
+                }
+            }
+        }
+    });
+}
+
+struct cell_arrival_field *cell_get_field(uint32_t uid)
+{
+    formation_id_t fid = G_Formation_GetForEnt(uid);
+
+    khiter_t k = kh_get(formation, s_formations, fid);
+    assert(k != kh_end(s_formations));
+    struct formation *formation = &kh_val(s_formations, k);
+
+    khiter_t l = kh_get(assignment, formation->sub_assignment, uid);
+    assert(l != kh_end(formation->sub_assignment));
+    int idx = kh_val(formation->sub_assignment, l).r;
+    struct subformation *sub = &vec_AT(&formation->subformations, idx);
+
+    khiter_t m = kh_get(result, sub->results, uid);
+    if(m == kh_end(sub->results))
+        return NULL;
+    return kh_val(sub->results, m);
+}
+
 /*****************************************************************************/
 /* EXTERN FUNCTIONS                                                          */
 /*****************************************************************************/
@@ -2157,17 +2293,28 @@ bool G_Formation_Init(const struct map *map)
 
     if(NULL == (s_ent_formation_map = kh_init(mapping)))
         return false;
-    if(NULL == (s_formations = kh_init(formation))) {
-        kh_destroy(mapping, s_ent_formation_map);
-        return false;
+    if(NULL == (s_formations = kh_init(formation)))
+        goto fail_formations;
+
+    if(s_workspace == 0) {
+        s_workspace = SDL_TLSCreate();
     }
+    if(s_workspace == 0)
+        goto fail_tls;
 
     s_map = map;
     s_next_id = 0;
 
     E_Global_Register(EVENT_RENDER_3D_POST, on_render_3d, NULL, 
         G_RUNNING | G_PAUSED_FULL | G_PAUSED_UI_RUNNING);
+    E_Global_Register(EVENT_UPDATE_START, on_update_start, NULL, G_RUNNING);
     return true;
+
+fail_tls:
+    kh_destroy(formation, s_formations);
+fail_formations:
+    kh_destroy(mapping, s_ent_formation_map);
+    return false;
 }
 
 void G_Formation_Shutdown(void)
@@ -2180,6 +2327,7 @@ void G_Formation_Shutdown(void)
         destroy_formation(formation);
     });
 
+    E_Global_Unregister(EVENT_UPDATE_START, on_update_start);
     E_Global_Unregister(EVENT_RENDER_3D_POST, on_render_3d);
     kh_destroy(formation, s_formations);
     kh_destroy(mapping, s_ent_formation_map);
@@ -2219,7 +2367,6 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents)
     enum nav_layer layers[NAV_LAYER_MAX];
     size_t nlayers = formation_layers(&new->subformations, layers);
     for(int i = 0; i < nlayers; i++) {
-        printf("init islands field for layer %d\n", layers[i]);
         init_occupied_field(layers[i], new->center, new->occupied[layers[i]]);
         init_islands_field(layers[i], new->center, new->islands[layers[i]]);
     }
@@ -2229,6 +2376,7 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents)
         place_subformation(sub, new->center, target, new->orientation, 
             new->occupied, new->islands);
         compute_cell_assignment(sub);
+        dispatch_cell_field_work(sub);
     }
 }
 
