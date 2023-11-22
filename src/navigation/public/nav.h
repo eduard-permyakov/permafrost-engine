@@ -493,10 +493,11 @@ void N_CopyIslandsFieldView(void *nav_private, vec2_t center, vec3_t map_pos, in
 size_t N_DeepCopySize(void *nav_private);
 
 /* ------------------------------------------------------------------------
- * Makes a copy of the traversal cost and blocked tile data.
+ * Makes a copy of the traversal cost, blocked tile data, and per-tile
+ * faction refcounts.
  * ------------------------------------------------------------------------
  */
-void N_CopyCostsAndBlockers(void *nav_private, void *out);
+void N_CopyFields(void *nav_private, void *out);
 
 /* ------------------------------------------------------------------------
  * Creates an arbitrary-resolution flow field guiding to a set of tiles.
@@ -507,7 +508,7 @@ void N_CopyCostsAndBlockers(void *nav_private, void *out);
 
 void N_CellArrivalFieldCreate(void *nav_private, vec2_t center, 
                               size_t rdim, size_t cdim, 
-                              enum nav_layer layer, int faction_id,
+                              enum nav_layer layer, uint16_t enemies,
                               struct tile_desc target, uint8_t *out,
                               void *workspace, size_t workspace_size);
 

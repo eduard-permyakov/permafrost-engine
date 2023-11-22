@@ -356,7 +356,7 @@ void M_AL_ShallowCopy(struct map *dst, const struct map *src)
     memcpy(dst, src, M_AL_ShallowCopySize(src->width, src->height));
 }
 
-struct map *M_AL_CopyWithCostsAndBlockers(const struct map *src)
+struct map *M_AL_CopyWithFields(const struct map *src)
 {
     size_t map_size = M_AL_ShallowCopySize(src->width, src->height);
     size_t nav_size = N_DeepCopySize(src->nav_private);
@@ -366,7 +366,7 @@ struct map *M_AL_CopyWithCostsAndBlockers(const struct map *src)
 
     M_AL_ShallowCopy(ret, src);
     ret->nav_private = ret + 1;
-    N_CopyCostsAndBlockers(src->nav_private, ret->nav_private);
+    N_CopyFields(src->nav_private, ret->nav_private);
     return ret;
 }
 

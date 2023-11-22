@@ -877,11 +877,11 @@ void M_NavCopyIslandsFieldView(const struct map *map, vec2_t center,
 
 void M_NavCellArrivalFieldCreate(const struct map *map, vec2_t center, 
                                  size_t rdim, size_t cdim, 
-                                 enum nav_layer layer, int faction_id,
+                                 enum nav_layer layer, uint16_t enemies,
                                  struct tile_desc target, uint8_t *out,
                                  void *workspace, size_t workspace_size)
 {
-    N_CellArrivalFieldCreate(map->nav_private, center, rdim, cdim, layer, faction_id, 
+    N_CellArrivalFieldCreate(map->nav_private, center, rdim, cdim, layer, enemies, 
         target, out, workspace, workspace_size);
 }
 

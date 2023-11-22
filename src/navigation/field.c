@@ -102,6 +102,15 @@ static bool field_tile_passable(const struct nav_chunk *chunk, struct coord tile
     return true;
 }
 
+static uint16_t enemies_for_faction(int faction_id)
+{
+    uint16_t ret = 0;
+    if(faction_id != FACTION_ID_NONE) {
+        ret = G_GetEnemyFactions(faction_id);
+    }
+    return ret;
+}
+
 static bool field_tile_passable_no_enemies(
     const struct nav_chunk *chunk, 
     struct coord            tile, 
@@ -180,15 +189,11 @@ static int field_neighbours_grid_global(
     enum nav_layer            layer,
     struct tile_desc          coord, 
     bool                      only_passable, 
-    int                       faction_id,
+    uint16_t                  enemies,
     struct tile_desc         *out_neighbours, 
     uint8_t                  *out_costs)
 {
     int ret = 0;
-    uint16_t enemies = 0;
-    if(faction_id != FACTION_ID_NONE) {
-        enemies = G_GetEnemyFactions(faction_id);
-    }
 
     struct map_resolution res;
     N_GetResolution(priv, &res);
@@ -205,13 +210,14 @@ static int field_neighbours_grid_global(
         if(!M_Tile_RelativeDesc(res, &curr, c, r))
             continue;
 
-        struct nav_chunk *chunk = &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
+        struct nav_chunk *chunk 
+            = &priv->chunks[layer][IDX(curr.chunk_r, priv->width, curr.chunk_c)];
         if(only_passable) {
 
             bool passable;
             struct coord tile = (struct coord){curr.tile_r, curr.tile_c};
 
-            if(faction_id == FACTION_ID_NONE) {
+            if(enemies == 0) {
                 passable = field_tile_passable(chunk, tile);
             }else{
                 passable = field_tile_passable_no_enemies(chunk, tile, enemies);
@@ -499,7 +505,7 @@ static void field_build_integration_region(
     pq_td_t                  *frontier,
     const struct nav_private *priv,
     enum nav_layer            layer,
-    int                       faction_id,
+    uint16_t                  enemies,
     struct tile_desc          base,
     int                       rdim,
     int                       cdim,
@@ -515,7 +521,7 @@ static void field_build_integration_region(
 
         struct tile_desc neighbours[8];
         uint8_t neighbour_costs[8];
-        int num_neighbours = field_neighbours_grid_global(priv, layer, curr, true, faction_id, 
+        int num_neighbours = field_neighbours_grid_global(priv, layer, curr, true, enemies, 
             neighbours, neighbour_costs);
 
         for(int i = 0; i < num_neighbours; i++) {
@@ -1281,7 +1287,7 @@ static void field_update_enemies(
     const int roff = (chunk_coord.r > 0) ? FIELD_RES_R / 2 + (FIELD_RES_R % 2) : 0;
     const int coff = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0;
 
-    field_build_integration_region(&frontier, priv, layer, FACTION_ID_NONE, 
+    field_build_integration_region(&frontier, priv, layer, 0, 
         base, rdim, cdim, integration_field);
     field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
 
@@ -1347,7 +1353,7 @@ static void field_update_entity(
     const int roff = (chunk_coord.r > 0) ? FIELD_RES_R / 2 + (FIELD_RES_R % 2) : 0;
     const int coff = (chunk_coord.c > 0) ? FIELD_RES_C / 2 + (FIELD_RES_C % 2) : 0;
 
-    field_build_integration_region(&frontier, priv, layer, FACTION_ID_NONE, 
+    field_build_integration_region(&frontier, priv, layer, 0, 
         base, rdim, cdim, integration_field);
     field_build_flow_region(rdim, cdim, roff, coff, integration_field, inout_flow);
 
@@ -1816,7 +1822,7 @@ vec2_t N_FlowDir(enum flow_dir dir)
 
 void N_CellArrivalFieldCreate(void *nav_private, vec2_t center, 
                               size_t rdim, size_t cdim, 
-                              enum nav_layer layer, int faction_id,
+                              enum nav_layer layer, uint16_t enemies,
                               struct tile_desc target, uint8_t *out,
                               void *workspace, size_t workspace_size)
 {
@@ -1868,7 +1874,7 @@ void N_CellArrivalFieldCreate(void *nav_private, vec2_t center,
     pq_td_push(&frontier, 0.0f, target); 
     integration_field[dr * rdim + dc] = 0.0f;
 
-    field_build_integration_region(&frontier, priv, layer, faction_id, 
+    field_build_integration_region(&frontier, priv, layer, enemies, 
         base, rdim, cdim, integration_field);
     field_build_flow_unaligned(rdim, cdim, integration_field, out);
 

@@ -127,12 +127,13 @@ VEC_IMPL(static inline, cell, struct cell)
 struct cell_field_work_input{
     vec2_t           center;
     enum nav_layer   layer;
-    int              faction_id;
+    uint16_t         enemy_faction_mask;
     struct tile_desc cell_tile;
 };
 
 struct cell_field_work{
     bool                         consumed;
+    struct map                  *map;
     uint32_t                     tid;
     uint32_t                     uid;
     struct future                future;
@@ -204,6 +205,9 @@ struct formation{
      */
     struct subformation *root;
     vec_subformation_t   subformations;
+    /* Map snapshot to be used for asynchronous field computation.
+     */
+    struct map          *map_snapshot;
     /* The map tiles which have already been allocated to cells.
      * Centered at the target position.
      */
@@ -2164,6 +2168,7 @@ static void destroy_formation(struct formation *formation)
         struct subformation *sub = &vec_AT(&formation->subformations, i);
         destroy_subformation(sub);
     }
+    PF_FREE(formation->map_snapshot);
     kh_destroy(entity, formation->ents);
     vec_subformation_destroy(&formation->subformations);
     kh_destroy(assignment, formation->sub_assignment);
@@ -2218,21 +2223,22 @@ static struct result cell_field_task(void *arg)
     struct cell_field_work *work = arg;
     struct cell_field_work_input *input = &work->input;
     struct cell_arrival_field *result = &work->result;
+    struct map *map = work->map;
     void *workspace = get_workspace();
     size_t size = workspace_size();
 
-    M_NavCellArrivalFieldCreate(s_map, input->center, 
+    M_NavCellArrivalFieldCreate(work->map, input->center, 
         CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, 
-        input->layer, input->faction_id, input->cell_tile,
+        input->layer, input->enemy_faction_mask, input->cell_tile,
         (uint8_t*)result, workspace, size);
     return NULL_RESULT;
 }
 
-static void dispatch_cell_field_work(vec2_t center, struct subformation *formation)
+static void dispatch_cell_field_work(struct map *map, vec2_t center, struct subformation *formation)
 {
     struct map_resolution res;
-    M_NavGetResolution(s_map, &res);
-    vec3_t map_pos = M_GetPos(s_map);
+    M_NavGetResolution(map, &res);
+    vec3_t map_pos = M_GetPos(map);
 
     /* Reserve the appropriate amount of space in the vector. 
      * Futures cannot be moved in memory once the corresponding 
@@ -2256,11 +2262,12 @@ static void dispatch_cell_field_work(vec2_t center, struct subformation *formati
         assert(exists);
 
         curr->consumed = false;
+        curr->map = map;
         curr->uid = uid;
         curr->input = (struct cell_field_work_input){
             .center = center,
             .layer = formation->layer,
-            .faction_id = formation->faction_id,
+            .enemy_faction_mask = G_GetEnemyFactions(formation->faction_id),
             .cell_tile = cell_td
         };
         SDL_AtomicSet(&curr->future.status, FUTURE_INCOMPLETE);
@@ -2406,6 +2413,7 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents)
         .sub_assignment = kh_init(assignment)
     };
     init_subformations(new);
+    new->map_snapshot = M_AL_CopyWithFields(s_map);
 
     enum nav_layer layers[NAV_LAYER_MAX];
     size_t nlayers = formation_layers(&new->subformations, layers);
@@ -2419,7 +2427,7 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents)
         place_subformation(sub, new->center, target, new->orientation, 
             new->occupied, new->islands);
         compute_cell_assignment(sub);
-        dispatch_cell_field_work(new->center, sub);
+        dispatch_cell_field_work(new->map_snapshot, new->center, sub);
     }
 }
 

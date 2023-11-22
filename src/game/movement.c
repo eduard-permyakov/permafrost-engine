@@ -2231,7 +2231,7 @@ static void move_copy_gamestate(void)
     s_move_work.gamestate.postree = G_Pos_CopyQuadTree();
     s_move_work.gamestate.sel_radiuses = G_SelectionRadiusCopyTable();
     s_move_work.gamestate.faction_ids = G_FactionIDCopyTable();
-    s_move_work.gamestate.map = M_AL_CopyWithCostsAndBlockers(s_map);
+    s_move_work.gamestate.map = M_AL_CopyWithFields(s_map);
     PERF_RETURN_VOID();
 }
 
