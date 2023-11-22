@@ -189,7 +189,7 @@ typedef uint32_t mp_ref_t;
                                                                                                 \
     scope bool mp_##name##_copy(const mp(name) *from, mp(name) *to)                             \
     {                                                                                           \
-        size_t size = from->capacity * sizeof(mp_##name##_node_t);                              \
+        size_t size = (from->capacity + 1)* sizeof(mp_##name##_node_t);                         \
         to->pool = malloc(size);                                                                \
         if(!to->pool)                                                                           \
             return false;                                                                       \
