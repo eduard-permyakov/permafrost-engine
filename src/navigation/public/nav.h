@@ -46,6 +46,7 @@ struct map;
 struct obb;
 struct map_resolution;
 struct camera;
+struct tile_desc;
 
 typedef uint32_t dest_id_t;
 
@@ -496,6 +497,19 @@ size_t N_DeepCopySize(void *nav_private);
  * ------------------------------------------------------------------------
  */
 void N_CopyCostsAndBlockers(void *nav_private, void *out);
+
+/* ------------------------------------------------------------------------
+ * Creates an arbitrary-resolution flow field guiding to a set of tiles.
+ * The 'out' array holds a (resolution * resolution) 2-dimensional row-major 
+ * array with each element being a 4-bit direction index.
+ * ------------------------------------------------------------------------
+ */
+
+void N_CellArrivalFieldCreate(void *nav_private, vec2_t center, 
+                              size_t rdim, size_t cdim, 
+                              enum nav_layer layer, int faction_id,
+                              struct tile_desc target, uint8_t *out,
+                              void *workspace, size_t workspace_size);
 
 /*###########################################################################*/
 /* NAV ASYNC FIELD COMPUTATION                                               */

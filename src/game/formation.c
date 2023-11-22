@@ -124,12 +124,20 @@ struct cell_arrival_field{
 VEC_TYPE(cell, struct cell)
 VEC_IMPL(static inline, cell, struct cell)
 
+struct cell_field_work_input{
+    vec2_t           center;
+    enum nav_layer   layer;
+    int              faction_id;
+    struct tile_desc cell_tile;
+};
+
 struct cell_field_work{
-    bool                      consumed;
-    uint32_t                  tid;
-    uint32_t                  uid;
-    struct future             future;
-    struct cell_arrival_field result;
+    bool                         consumed;
+    uint32_t                     tid;
+    uint32_t                     uid;
+    struct future                future;
+    struct cell_field_work_input input;
+    struct cell_arrival_field    result;
 };
 
 VEC_TYPE(work, struct cell_field_work)
@@ -155,6 +163,7 @@ struct subformation{
     struct subformation *children[MAX_CHILDREN];
     float                unit_radius;
     enum nav_layer       layer;
+    int                  faction_id;
     vec2_t               reachable_target;
     vec2_t               pos;
     vec2_t               orientation;
@@ -180,7 +189,7 @@ VEC_IMPL(static inline, subformation, struct subformation)
 
 struct formation{
     /* The refcount is the number of movement system
-     * 'flocks' associated with this formation.
+     * entities associated with this formation.
      */
     int                  refcount;
     enum formation_type  type;
@@ -224,14 +233,19 @@ static SDL_TLSID           s_workspace;
 /* STATIC FUNCTIONS                                                          */
 /*****************************************************************************/
 
+static size_t workspace_size(void)
+{
+    return CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES * sizeof(float);
+}
+
 static void *get_workspace(void)
 {
     void *ret;
     if((ret = SDL_TLSGet(s_workspace)))
         return ret;
 
-    size_t workspace_size = CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES * sizeof(float);
-    ret = malloc(workspace_size);
+    size_t sz = workspace_size();
+    ret = malloc(sz);
     if(!ret)
         return NULL;
     if(0 != SDL_TLSSet(s_workspace, ret, free)) {
@@ -547,7 +561,7 @@ static vec2_t target_direction_offsets(vec2_t center, vec2_t orientation,
         field_x_dim, field_z_dim
     };
 
-    /* First find the set of tiles occupied by the root tile */
+    /* First find the set of tiles occupied by the root cell */
     vec3_t origin = (vec3_t){0.0f, 0.0f, 0.0f};
     struct coord root_tile = (struct coord){
         OCCUPIED_FIELD_RES/2,
@@ -1026,7 +1040,6 @@ static void init_subformation(vec2_t target, struct subformation *formation,
 {
     size_t nrows = (nents / ncols) + !!(nents % ncols);
     size_t total = nrows * ncols;
-    printf("the subformation has %lu rows and %lu cols\n", nrows, ncols);
 
     enum nav_layer layer = Entity_NavLayer(ents[0]);
     vec2_t first_ent_pos = G_Pos_GetXZ(ents[0]);
@@ -1044,6 +1057,7 @@ static void init_subformation(vec2_t target, struct subformation *formation,
     formation->ncols = ncols;
     formation->unit_radius = G_GetSelectionRadius(ents[0]);
     formation->layer = layer;
+    formation->faction_id = G_GetFactionID(ents[0]);
     formation->reachable_target = reachable_target;
     formation->assignment = kh_init(assignment);
     kh_resize(assignment, formation->assignment, nents);
@@ -2201,11 +2215,25 @@ static size_t formation_layers(vec_subformation_t *subformations, enum nav_layer
 
 static struct result cell_field_task(void *arg)
 {
+    struct cell_field_work *work = arg;
+    struct cell_field_work_input *input = &work->input;
+    struct cell_arrival_field *result = &work->result;
+    void *workspace = get_workspace();
+    size_t size = workspace_size();
+
+    M_NavCellArrivalFieldCreate(s_map, input->center, 
+        CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, 
+        input->layer, input->faction_id, input->cell_tile,
+        (uint8_t*)result, workspace, size);
     return NULL_RESULT;
 }
 
-static void dispatch_cell_field_work(struct subformation *formation)
+static void dispatch_cell_field_work(vec2_t center, struct subformation *formation)
 {
+    struct map_resolution res;
+    M_NavGetResolution(s_map, &res);
+    vec3_t map_pos = M_GetPos(s_map);
+
     /* Reserve the appropriate amount of space in the vector. 
      * Futures cannot be moved in memory once the corresponding 
      * task is dispatched. 
@@ -2218,10 +2246,25 @@ static void dispatch_cell_field_work(struct subformation *formation)
     uint32_t uid;
     kh_foreach_key(formation->ents, uid, {
         struct cell_field_work *curr = &vec_AT(&formation->futures, i);
+
+        khiter_t k = kh_get(assignment, formation->assignment, uid);
+        assert(k != kh_end(formation->assignment));
+        struct coord coord = kh_val(formation->assignment, k);
+        struct cell *cell = &vec_AT(&formation->cells, coord.r);
+        struct tile_desc cell_td;
+        bool exists = M_Tile_DescForPoint2D(res, map_pos, cell->pos, &cell_td);
+        assert(exists);
+
         curr->consumed = false;
         curr->uid = uid;
+        curr->input = (struct cell_field_work_input){
+            .center = center,
+            .layer = formation->layer,
+            .faction_id = formation->faction_id,
+            .cell_tile = cell_td
+        };
         SDL_AtomicSet(&curr->future.status, FUTURE_INCOMPLETE);
-        curr->tid = Sched_Create(31, cell_field_task, &curr->result, &curr->future, 0);
+        curr->tid = Sched_Create(31, cell_field_task, curr, &curr->future, 0);
         if(curr->tid == NULL_TID) {
             cell_field_task(&curr->result);
             SDL_AtomicSet(&curr->future.status, FUTURE_COMPLETE);
@@ -2376,7 +2419,7 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents)
         place_subformation(sub, new->center, target, new->orientation, 
             new->occupied, new->islands);
         compute_cell_assignment(sub);
-        dispatch_cell_field_work(sub);
+        dispatch_cell_field_work(new->center, sub);
     }
 }
 

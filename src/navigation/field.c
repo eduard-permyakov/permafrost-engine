@@ -618,7 +618,7 @@ static void field_build_flow_region(
     struct flow_field *inout_flow)
 {
     for(int r = 0; r < MIN(FIELD_RES_R, rdim); r++) {
-    for(int c = 0; c < MIN(FIELD_RES_C, rdim); c++) {
+    for(int c = 0; c < MIN(FIELD_RES_C, cdim); c++) {
 
         int infr = r + roff;
         int infc = c + coff;
@@ -634,6 +634,46 @@ static void field_build_flow_region(
 
         inout_flow->field[r][c].dir_idx = field_flow_dir(rdim ,cdim, 
             intf, (struct coord){infr, infc});
+    }}
+}
+
+static void set_flow_cell(enum flow_dir value, int r, int c, int rdim, int cdim, uint8_t *buff)
+{
+    size_t row_size = rdim / 2;
+    size_t aligned_c = c - (c % 2);
+    size_t byte_index = r * row_size + aligned_c;
+    if(c % 2 == 1) {
+        buff[byte_index] = (buff[byte_index] & 0xf0) | (value >> 4);
+    }else{
+        buff[byte_index] = (buff[byte_index] & 0x0f) | (value >> 0);
+    }
+}
+
+/* Build an arbitrary-sized flow field not aligned to chunk boundaries.
+ */
+static void field_build_flow_unaligned(
+    int                rdim, 
+    int                cdim, 
+    float              intf[], 
+    uint8_t           *inout_flow)
+{
+    assert(rdim % 2 == 0);
+    assert(cdim % 2 == 0);
+
+    for(int r = 0; r < rdim; r++) {
+    for(int c = 0; c < cdim; c++) {
+
+        if(intf[r * rdim + c] == INFINITY)
+            continue;
+
+        if(intf[r * rdim + c] == 0.0f) {
+
+            set_flow_cell(FD_NONE, r, c, rdim, cdim, inout_flow);
+            continue;
+        }
+
+        enum flow_dir dir = field_flow_dir(rdim, cdim, intf, (struct coord){r, c});
+        set_flow_cell(dir, r, c, rdim, cdim, inout_flow);
     }}
 }
 
@@ -1772,5 +1812,66 @@ vec2_t N_FlowDir(enum flow_dir dir)
     s_flow_dir_lookup[FD_SE]    = (vec2_t){ -1.0f / sqrt(2.0f),  1.0f / sqrt(2.0f) };
 
     return s_flow_dir_lookup[dir];
+}
+
+void N_CellArrivalFieldCreate(void *nav_private, vec2_t center, 
+                              size_t rdim, size_t cdim, 
+                              enum nav_layer layer, int faction_id,
+                              struct tile_desc target, uint8_t *out,
+                              void *workspace, size_t workspace_size)
+{
+    assert(rdim % 2 == 0);
+    assert(cdim % 2 == 0);
+
+    size_t out_size = (rdim * cdim) / 2;
+    memset(out, 0, out_size);
+
+    struct nav_private *priv = nav_private;
+    struct map_resolution res;
+    N_GetResolution(priv, &res);
+
+    pq_td_t frontier;
+    pq_td_init(&frontier);
+
+    size_t integration_field_size = sizeof(float) * rdim * cdim;
+    assert(workspace_size >= integration_field_size);
+    float *integration_field = workspace;
+    for(int r = 0; r < rdim; r++) {
+    for(int c = 0; c < cdim; c++) {
+        integration_field[r * rdim + c] = INFINITY;
+    }}
+
+    /* Find the clamped minimum coordinate of the field */
+    struct tile_desc r_base = target, c_base = target, base;
+    bool exists = M_Tile_RelativeDesc(res, &r_base, 0, -(rdim / 2));
+    if(!exists) {
+        base.chunk_r = 0;
+        base.tile_r = 0;
+    }else{
+        base.chunk_r = r_base.chunk_r;
+        base.tile_r = r_base.tile_r;
+    }
+    exists = M_Tile_RelativeDesc(res, &c_base, -(cdim / 2), 0);
+    if(!exists) {
+        base.chunk_c = 0;
+        base.tile_c = 0;
+    }else{
+        base.chunk_c = c_base.chunk_c;
+        base.tile_c = c_base.tile_c;
+    }
+
+    int dr, dc;
+    M_Tile_Distance(res, &base, &target, &dr, &dc);
+    assert(dr >= 0 && dr <= rdim);
+    assert(dc >= 0 && dc <= cdim);
+
+    pq_td_push(&frontier, 0.0f, target); 
+    integration_field[dr * rdim + dc] = 0.0f;
+
+    field_build_integration_region(&frontier, priv, layer, faction_id, 
+        base, rdim, cdim, integration_field);
+    field_build_flow_unaligned(rdim, cdim, integration_field, out);
+
+    pq_td_destroy(&frontier);
 }
 
