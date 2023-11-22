@@ -14358,7 +14358,7 @@ nk_draw_texpath(struct nk_command_buffer *b, struct nk_rect r,
     cmd->h = (unsigned short)NK_MAX(0, r.h);
     cmd->col = col;
 
-    strncpy(cmd->texpath, texpath, sizeof(cmd->texpath));
+    strncpy(cmd->texpath, texpath, sizeof(cmd->texpath)-1);
     cmd->texpath[sizeof(cmd->texpath)-1] = '\0';
 }
 

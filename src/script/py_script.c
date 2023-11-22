@@ -2199,7 +2199,7 @@ static PyObject *PyPf_settings_create(PyObject *self, PyObject *args)
         .validate = NULL,
         .commit = NULL
     };
-    strncpy(new_sett.name, name, sizeof(new_sett.name));
+    pf_strlcpy(new_sett.name, name, sizeof(new_sett.name));
     new_sett.name[sizeof(new_sett.name)-1] = '\0';
 
     ss_e status = Settings_Create(new_sett);
