@@ -899,6 +899,16 @@ static void n_update_local_islands(struct nav_private *priv, struct nav_chunk *c
     }}
 }
 
+static void n_update_local_island_field(struct nav_private *priv, enum nav_layer layer)
+{
+    for(int chunk_r = 0; chunk_r < priv->height; chunk_r++) {
+    for(int chunk_c = 0; chunk_c < priv->width;  chunk_c++) {
+
+        struct nav_chunk *curr_chunk = &priv->chunks[layer][IDX(chunk_r, priv->width, chunk_c)];
+        n_update_local_islands(priv, curr_chunk);
+    }}
+}
+
 static void n_update_dirty_local_islands(void *nav_private, enum nav_layer layer)
 {
     struct nav_private *priv = nav_private;
@@ -1193,6 +1203,8 @@ static const struct portal *n_closest_reachable_from_location(struct nav_private
                                                               struct tile_desc loc,
                                                               struct tile_desc *out_nearest)
 {
+    PERF_ENTER();
+
     float shortest_dist = FLT_MAX;
     const struct portal *ret = NULL;
     struct tile_desc nearest = {0};
@@ -1230,7 +1242,7 @@ static const struct portal *n_closest_reachable_from_location(struct nav_private
     if(ret) {
         *out_nearest = nearest;
     }
-    return ret;
+    PERF_RETURN(ret);
 }
 
 static void chunk_bounds(vec3_t map_pos, struct coord chunk, 
@@ -1952,6 +1964,7 @@ void *N_BuildForMapData(size_t w, size_t h, size_t chunk_w, size_t chunk_h,
         n_make_cliff_edges(ret, chunk_tiles, layer, chunk_w, chunk_h);
         n_update_portals(ret, layer);
         n_update_island_field(ret, layer);
+        n_update_local_island_field(ret, layer);
     }
 
     return ret;
