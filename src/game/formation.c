@@ -116,19 +116,17 @@ struct range2d{
 };
 
 struct cell_arrival_field{
-    struct{
-        unsigned dir_idx : 4;
-    }field[CELL_ARRIVAL_FIELD_RES][CELL_ARRIVAL_FIELD_RES];
+    uint8_t raw[CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES / 2];
 };
 
 VEC_TYPE(cell, struct cell)
 VEC_IMPL(static inline, cell, struct cell)
 
 struct cell_field_work_input{
-    vec2_t           center;
     enum nav_layer   layer;
     uint16_t         enemy_faction_mask;
     struct tile_desc cell_tile;
+    struct tile_desc center_tile;
 };
 
 struct cell_field_work{
@@ -222,6 +220,8 @@ KHASH_MAP_INIT_INT(formation, struct formation)
 KHASH_MAP_INIT_INT(mapping, formation_id_t);
 
 static void complete_cell_field_work(struct subformation *formation);
+static struct cell_arrival_field *cell_get_field(uint32_t uid);
+static vec2_t cell_get_dir(const struct cell_arrival_field *field, int r, int c);
 
 /*****************************************************************************/
 /* STATIC VARIABLES                                                          */
@@ -1024,6 +1024,10 @@ static size_t sort_by_type(size_t size, uint32_t *ents, uint64_t *types)
 static size_t next_type_range(size_t begin, size_t size, 
                               uint64_t *types, size_t *out_count)
 {
+    if(size == 1) {
+        *out_count = 1;
+        return 1;
+    }
     size_t count = 0;
     int i = begin;
     for(; i < size; i++) {
@@ -1598,6 +1602,29 @@ static void compute_cell_assignment(struct subformation *formation)
     PERF_RETURN_VOID();
 }
 
+static mat4x4_t cell_field_model_matrix(vec2_t center)
+{
+    struct map_resolution nav_res;
+    M_NavGetResolution(s_map, &nav_res);
+
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
+    const float tile_z_dim = chunk_z_dim / nav_res.tile_h;
+
+    const float field_x_dim = tile_x_dim * CELL_ARRIVAL_FIELD_RES;
+    const float field_z_dim = tile_z_dim * CELL_ARRIVAL_FIELD_RES;
+
+    vec2_t base;
+    vec2_t delta = (vec2_t){field_x_dim/2.0f, -field_z_dim/2.0f};
+    PFM_Vec2_Add(&center, &delta, &base);
+
+    mat4x4_t ret;
+    PFM_Mat4x4_MakeTrans(base.x, 0.0f, base.z, &ret);
+    return ret;
+}
+
 static void render_formations(void)
 {
     struct map_resolution res;
@@ -2115,16 +2142,94 @@ static void render_formation_assignment(void)
     });
 }
 
+static void render_cell_arrival_field(struct formation *formation, int index)
+{
+    if(index >= kh_size(formation->ents))
+        return;
+
+    int i = 0;
+    uint32_t uid = 0;
+    kh_foreach_key(formation->ents, uid, {
+        if(i++ == index)
+            break;
+    });
+
+    struct cell_arrival_field *field = cell_get_field(uid);
+    if(!field)
+        return;
+
+    assert(sizeof(*field) == ((CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES) / 2));
+    struct map_resolution res;
+    M_NavGetResolution(s_map, &res);
+
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    const float tile_x_dim = chunk_x_dim / res.tile_w;
+    const float tile_z_dim = chunk_z_dim / res.tile_h;
+
+    const float field_x_dim = tile_x_dim * CELL_ARRIVAL_FIELD_RES;
+    const float field_z_dim = tile_z_dim * CELL_ARRIVAL_FIELD_RES;
+
+    vec2_t positions_buff[CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES];
+    vec2_t dirs_buff[CELL_ARRIVAL_FIELD_RES * CELL_ARRIVAL_FIELD_RES];
+
+    size_t count = 0;
+    mat4x4_t model = cell_field_model_matrix(formation->center);
+
+    for(int r = 0; r < CELL_ARRIVAL_FIELD_RES; r++) {
+    for(int c = 0; c < CELL_ARRIVAL_FIELD_RES; c++) {
+
+        float square_x_len = (1.0f / res.tile_w) * chunk_x_dim;
+        float square_z_len = (1.0f / res.tile_h) * chunk_z_dim;
+        float square_x = CLAMP(-(((float)c) / CELL_ARRIVAL_FIELD_RES) * field_x_dim, 
+                               -field_x_dim, field_x_dim);
+        float square_z = CLAMP((((float)r) / CELL_ARRIVAL_FIELD_RES) * field_z_dim, 
+                               -field_z_dim, field_z_dim);
+
+        vec2_t pos = (vec2_t){
+            square_x - square_x_len / 2.0f,
+            square_z + square_z_len / 2.0f
+        };
+        vec4_t point = (vec4_t){pos.x, 0.0f, pos.z, 1.0f}, raw;
+        PFM_Mat4x4_Mult4x1(&model, &point, &raw);
+        vec2_t transformed = (vec2_t){raw.x, raw.z};
+        if(!M_PointInsideMap(s_map, transformed))
+            continue;
+
+        positions_buff[count] = pos;
+        dirs_buff[count] = cell_get_dir(field, r, c);
+        count++;
+    }}
+
+    R_PushCmd((struct rcmd){
+        .func = R_GL_DrawFlowField,
+        .nargs = 5,
+        .args = {
+            R_PushArg(positions_buff, sizeof(positions_buff)),
+            R_PushArg(dirs_buff, sizeof(dirs_buff)),
+            R_PushArg(&count, sizeof(count)),
+            R_PushArg(&model, sizeof(model)),
+            (void*)G_GetPrevTickMap(),
+        },
+    });
+}
+
 static void on_render_3d(void *user, void *event)
 {
     enum nav_layer layer;
     struct sval setting;
+    int cell_index;
     ss_e status;
     (void)status;
 
     status = Settings_Get("pf.debug.navigation_layer", &setting);
     assert(status == SS_OKAY);
     layer = setting.as_int;
+
+    status = Settings_Get("pf.debug.formation_cell_index", &setting);
+    assert(status == SS_OKAY);
+    cell_index = setting.as_int;
 
     status = Settings_Get("pf.debug.show_formations", &setting);
     assert(status == SS_OKAY);
@@ -2149,6 +2254,23 @@ static void on_render_3d(void *user, void *event)
 
     if(enabled) {
         render_formation_assignment();
+    }
+
+    status = Settings_Get("pf.debug.show_formations_cell_arrival_field", &setting);
+    assert(status == SS_OKAY);
+    enabled = setting.as_bool;
+
+    if(enabled) {
+        formation_id_t fid;
+        enum selection_type type;
+        const vec_entity_t *sel = G_Sel_Get(&type);
+        if(vec_size(sel) > 0 && ((fid = G_Formation_GetForEnt(vec_AT(sel, 0))) != NULL_FID)) {
+            khiter_t k = kh_get(formation, s_formations, fid);
+            if(k != kh_end(s_formations)) {
+                struct formation *formation = &kh_val(s_formations, k);
+                render_cell_arrival_field(formation, cell_index);
+            }
+        }
     }
 }
 
@@ -2227,9 +2349,8 @@ static struct result cell_field_task(void *arg)
     void *workspace = get_workspace();
     size_t size = workspace_size();
 
-    M_NavCellArrivalFieldCreate(work->map, input->center, 
-        CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, 
-        input->layer, input->enemy_faction_mask, input->cell_tile,
+    M_NavCellArrivalFieldCreate(work->map, CELL_ARRIVAL_FIELD_RES, CELL_ARRIVAL_FIELD_RES, 
+        input->layer, input->enemy_faction_mask, input->cell_tile, input->center_tile,
         (uint8_t*)result, workspace, size);
     return NULL_RESULT;
 }
@@ -2256,19 +2377,25 @@ static void dispatch_cell_field_work(struct map *map, vec2_t center, struct subf
         khiter_t k = kh_get(assignment, formation->assignment, uid);
         assert(k != kh_end(formation->assignment));
         struct coord coord = kh_val(formation->assignment, k);
-        struct cell *cell = &vec_AT(&formation->cells, coord.r);
+        struct cell *cell = &vec_AT(&formation->cells,
+            CELL_IDX(coord.r, coord.c, formation->ncols));
+
         struct tile_desc cell_td;
         bool exists = M_Tile_DescForPoint2D(res, map_pos, cell->pos, &cell_td);
+        assert(exists);
+
+        struct tile_desc center_td;
+        exists = M_Tile_DescForPoint2D(res, map_pos, center, &center_td);
         assert(exists);
 
         curr->consumed = false;
         curr->map = map;
         curr->uid = uid;
         curr->input = (struct cell_field_work_input){
-            .center = center,
             .layer = formation->layer,
             .enemy_faction_mask = G_GetEnemyFactions(formation->faction_id),
-            .cell_tile = cell_td
+            .cell_tile = cell_td,
+            .center_tile = center_td
         };
         SDL_AtomicSet(&curr->future.status, FUTURE_INCOMPLETE);
         curr->tid = Sched_Create(31, cell_field_task, curr, &curr->future, 0);
@@ -2314,7 +2441,7 @@ static void on_update_start(void *user, void *event)
     });
 }
 
-struct cell_arrival_field *cell_get_field(uint32_t uid)
+static struct cell_arrival_field *cell_get_field(uint32_t uid)
 {
     formation_id_t fid = G_Formation_GetForEnt(uid);
 
@@ -2331,6 +2458,23 @@ struct cell_arrival_field *cell_get_field(uint32_t uid)
     if(m == kh_end(sub->results))
         return NULL;
     return kh_val(sub->results, m);
+}
+
+static vec2_t cell_get_dir(const struct cell_arrival_field *field, int r, int c)
+{
+    assert(r >= 0 && r < CELL_ARRIVAL_FIELD_RES);
+    assert(c >= 0 && c < CELL_ARRIVAL_FIELD_RES);
+
+    size_t row_size = CELL_ARRIVAL_FIELD_RES / 2;
+    size_t aligned_c = (c - (c % 2)) / 2;
+    size_t byte_index = r * row_size + aligned_c;
+    enum flow_dir dir;
+    if(c % 2 == 1) {
+        dir = (field->raw[byte_index] & 0x0f) >> 0;
+    }else{
+        dir = (field->raw[byte_index] & 0xf0) >> 4;
+    }
+    return N_FlowDir(dir);
 }
 
 /*****************************************************************************/
@@ -2436,7 +2580,8 @@ formation_id_t G_Formation_GetForEnt(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
 
     khiter_t k = kh_get(mapping, s_ent_formation_map, uid);
-    assert(k != kh_end(s_ent_formation_map));
+    if(k == kh_end(s_ent_formation_map))
+        return NULL_FID;
     return kh_val(s_ent_formation_map, k);
 }
 
@@ -2445,6 +2590,9 @@ void G_Formation_RemoveUnit(uint32_t uid)
     ASSERT_IN_MAIN_THREAD();
 
     formation_id_t fid = G_Formation_GetForEnt(uid);
+    if(fid == NULL_FID)
+        return;
+
     khiter_t k = kh_get(formation, s_formations, fid);
     assert(k != kh_end(s_formations));
     struct formation *formation = &kh_val(s_formations, k);

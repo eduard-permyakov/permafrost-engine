@@ -81,6 +81,18 @@ enum nav_layer{
     NAV_LAYER_MAX,
 };
 
+enum flow_dir{
+    FD_NONE = 0,
+    FD_NW,
+    FD_N,
+    FD_NE,
+    FD_W,
+    FD_E,
+    FD_SW,
+    FD_S,
+    FD_SE
+};
+
 #define DEST_ID_INVALID (~((uint32_t)0))
 
 /*###########################################################################*/
@@ -501,16 +513,20 @@ void N_CopyFields(void *nav_private, void *out);
 
 /* ------------------------------------------------------------------------
  * Creates an arbitrary-resolution flow field guiding to a set of tiles.
- * The 'out' array holds a (resolution * resolution) 2-dimensional row-major 
+ * The 'out' array holds a (rdim * cdim) 2-dimensional row-major 
  * array with each element being a 4-bit direction index.
  * ------------------------------------------------------------------------
  */
-
-void N_CellArrivalFieldCreate(void *nav_private, vec2_t center, 
-                              size_t rdim, size_t cdim, 
+void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim, 
                               enum nav_layer layer, uint16_t enemies,
-                              struct tile_desc target, uint8_t *out,
-                              void *workspace, size_t workspace_size);
+                              struct tile_desc target, struct tile_desc center, 
+                              uint8_t *out, void *workspace, size_t workspace_size);
+
+/* ------------------------------------------------------------------------
+ * Convert a 'flow_dir' enum value to an XZ vector.
+ * ------------------------------------------------------------------------
+ */
+vec2_t N_FlowDir(enum flow_dir dir);
 
 /*###########################################################################*/
 /* NAV ASYNC FIELD COMPUTATION                                               */

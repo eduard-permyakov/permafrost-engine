@@ -40,6 +40,8 @@
 #include "../pf_math.h"
 #include "../navigation/public/nav.h"
 
+#define NULL_FID (~((uint32_t)0))
+
 typedef uint32_t formation_id_t;
 
 struct map;

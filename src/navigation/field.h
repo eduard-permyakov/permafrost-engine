@@ -98,20 +98,6 @@ struct flow_field{
     }field[FIELD_RES_R][FIELD_RES_C];
 };
 
-enum flow_dir{
-    FD_NONE = 0,
-    FD_NW,
-    FD_N,
-    FD_NE,
-    FD_W,
-    FD_E,
-    FD_SW,
-    FD_S,
-    FD_SE
-};
-
-vec2_t         N_FlowDir(enum flow_dir dir);
-
 /* ------------------------------------------------------------------------
  * Get the unique flow field ID for the specified parameters.
  * ------------------------------------------------------------------------

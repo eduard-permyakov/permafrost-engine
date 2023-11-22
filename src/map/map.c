@@ -875,13 +875,12 @@ void M_NavCopyIslandsFieldView(const struct map *map, vec2_t center,
     N_CopyIslandsFieldView(map->nav_private, center, map->pos, nrows, ncols, layer, out_field);
 }
 
-void M_NavCellArrivalFieldCreate(const struct map *map, vec2_t center, 
-                                 size_t rdim, size_t cdim, 
+void M_NavCellArrivalFieldCreate(const struct map *map, size_t rdim, size_t cdim, 
                                  enum nav_layer layer, uint16_t enemies,
-                                 struct tile_desc target, uint8_t *out,
-                                 void *workspace, size_t workspace_size)
+                                 struct tile_desc target, struct tile_desc center,
+                                 uint8_t *out, void *workspace, size_t workspace_size)
 {
-    N_CellArrivalFieldCreate(map->nav_private, center, rdim, cdim, layer, enemies, 
-        target, out, workspace, workspace_size);
+    N_CellArrivalFieldCreate(map->nav_private, rdim, cdim, layer, enemies, 
+        target, center, out, workspace, workspace_size);
 }
 

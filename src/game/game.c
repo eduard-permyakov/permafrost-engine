@@ -526,6 +526,15 @@ static bool nav_layer_validate(const struct sval *new_val)
     return true;
 }
 
+static bool int_validate(const struct sval *new_val)
+{
+    if(new_val->type != ST_TYPE_INT)
+        return false;
+    if(new_val->as_int < 0)
+        return false;
+    return true;
+}
+
 static bool hb_mode_validate(const struct sval *new_val)
 {
     if(new_val->type != ST_TYPE_INT)
@@ -1037,6 +1046,28 @@ static void g_create_settings(void)
 
     status = Settings_Create((struct setting){
         .name = "pf.debug.show_formations_assignment",
+        .val = (struct sval) {
+            .type = ST_TYPE_BOOL,
+            .as_bool = false
+        },
+        .prio = 0,
+        .validate = bool_val_validate,
+        .commit = NULL,
+    });
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.formation_cell_index",
+        .val = (struct sval) {
+            .type = ST_TYPE_INT,
+            .as_int = 0
+        },
+        .prio = 0,
+        .validate = int_validate,
+        .commit = NULL,
+    });
+
+    status = Settings_Create((struct setting){
+        .name = "pf.debug.show_formations_cell_arrival_field",
         .val = (struct sval) {
             .type = ST_TYPE_BOOL,
             .as_bool = false

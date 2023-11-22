@@ -646,12 +646,12 @@ static void field_build_flow_region(
 static void set_flow_cell(enum flow_dir value, int r, int c, int rdim, int cdim, uint8_t *buff)
 {
     size_t row_size = rdim / 2;
-    size_t aligned_c = c - (c % 2);
+    size_t aligned_c = (c - (c % 2)) / 2;
     size_t byte_index = r * row_size + aligned_c;
     if(c % 2 == 1) {
-        buff[byte_index] = (buff[byte_index] & 0xf0) | (value >> 4);
+        buff[byte_index] = (buff[byte_index] & 0xf0) | (value << 0);
     }else{
-        buff[byte_index] = (buff[byte_index] & 0x0f) | (value >> 0);
+        buff[byte_index] = (buff[byte_index] & 0x0f) | (value << 4);
     }
 }
 
@@ -1807,25 +1807,25 @@ void N_FlowFieldUpdateIslandToNearest(
 vec2_t N_FlowDir(enum flow_dir dir)
 {
     static vec2_t s_flow_dir_lookup[9] = {0};
-    s_flow_dir_lookup[FD_NONE]  = (vec2_t){0.0f,               0.0f};
-    s_flow_dir_lookup[FD_NW]    = (vec2_t){1.0f / sqrt(2.0f), -1.0f / sqrt(2.0f)};
-    s_flow_dir_lookup[FD_N]     = (vec2_t){0.0f,              -1.0f};
+    s_flow_dir_lookup[FD_NONE]  = (vec2_t){  0.0f,               0.0f              };
+    s_flow_dir_lookup[FD_NW]    = (vec2_t){  1.0f / sqrt(2.0f), -1.0f / sqrt(2.0f) };
+    s_flow_dir_lookup[FD_N]     = (vec2_t){  0.0f,              -1.0f              };
     s_flow_dir_lookup[FD_NE]    = (vec2_t){ -1.0f / sqrt(2.0f), -1.0f / sqrt(2.0f) };
-    s_flow_dir_lookup[FD_W]     = (vec2_t){ 1.0f,               0.0f };
-    s_flow_dir_lookup[FD_E]     = (vec2_t){ -1.0f,               0.0f };
-    s_flow_dir_lookup[FD_SW]    = (vec2_t){ 1.0f / sqrt(2.0f),  1.0f / sqrt(2.0f) };
-    s_flow_dir_lookup[FD_S]     = (vec2_t){ 0.0f,               1.0f };
+    s_flow_dir_lookup[FD_W]     = (vec2_t){  1.0f,               0.0f              };
+    s_flow_dir_lookup[FD_E]     = (vec2_t){ -1.0f,               0.0f              };
+    s_flow_dir_lookup[FD_SW]    = (vec2_t){  1.0f / sqrt(2.0f),  1.0f / sqrt(2.0f) };
+    s_flow_dir_lookup[FD_S]     = (vec2_t){  0.0f,               1.0f              };
     s_flow_dir_lookup[FD_SE]    = (vec2_t){ -1.0f / sqrt(2.0f),  1.0f / sqrt(2.0f) };
 
     return s_flow_dir_lookup[dir];
 }
 
-void N_CellArrivalFieldCreate(void *nav_private, vec2_t center, 
-                              size_t rdim, size_t cdim, 
+void N_CellArrivalFieldCreate(void *nav_private, size_t rdim, size_t cdim, 
                               enum nav_layer layer, uint16_t enemies,
-                              struct tile_desc target, uint8_t *out,
-                              void *workspace, size_t workspace_size)
+                              struct tile_desc target, struct tile_desc center, 
+                              uint8_t *out, void *workspace, size_t workspace_size)
 {
+    PERF_ENTER();
     assert(rdim % 2 == 0);
     assert(cdim % 2 == 0);
 
@@ -1847,24 +1847,17 @@ void N_CellArrivalFieldCreate(void *nav_private, vec2_t center,
         integration_field[r * rdim + c] = INFINITY;
     }}
 
-    /* Find the clamped minimum coordinate of the field */
-    struct tile_desc r_base = target, c_base = target, base;
-    bool exists = M_Tile_RelativeDesc(res, &r_base, 0, -(rdim / 2));
-    if(!exists) {
-        base.chunk_r = 0;
-        base.tile_r = 0;
-    }else{
-        base.chunk_r = r_base.chunk_r;
-        base.tile_r = r_base.tile_r;
-    }
-    exists = M_Tile_RelativeDesc(res, &c_base, -(cdim / 2), 0);
-    if(!exists) {
-        base.chunk_c = 0;
-        base.tile_c = 0;
-    }else{
-        base.chunk_c = c_base.chunk_c;
-        base.tile_c = c_base.tile_c;
-    }
+    /* Find the clamped minimum coordinate of the field. Note that the 'base'
+     * coordinate may fall outside the map bounds.
+     */
+    int abs_r = center.chunk_r * res.tile_h + center.tile_r - (rdim / 2);
+    int abs_c = center.chunk_c * res.tile_w + center.tile_c - (cdim / 2);
+    struct tile_desc base = (struct tile_desc){
+        abs_r / res.tile_h,
+        abs_c / res.tile_w,
+        abs_r % res.tile_h,
+        abs_c % res.tile_w,
+    };
 
     int dr, dc;
     M_Tile_Distance(res, &base, &target, &dr, &dc);
@@ -1879,5 +1872,6 @@ void N_CellArrivalFieldCreate(void *nav_private, vec2_t center,
     field_build_flow_unaligned(rdim, cdim, integration_field, out);
 
     pq_td_destroy(&frontier);
+    PERF_RETURN_VOID();
 }
 
