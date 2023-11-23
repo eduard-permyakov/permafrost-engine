@@ -53,5 +53,13 @@ void           G_Formation_Create(vec2_t target, const vec_entity_t *ents);
 formation_id_t G_Formation_GetForEnt(uint32_t uid);
 void           G_Formation_RemoveUnit(uint32_t uid);
 
+bool           G_Formation_InRangeOfCell(uint32_t uid);
+bool           G_Formation_CanUseArrivalField(uint32_t uid);
+vec2_t         G_Formation_DesiredArrivalVelocity(uint32_t uid);
+vec2_t         G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid);
+bool           G_Formation_ArrivedAtCell(uint32_t uid);
+bool           G_Formation_AssignedToCell(uint32_t uid);
+vec2_t         G_Formation_CellPosition(uint32_t uid);
+
 #endif
 

@@ -73,7 +73,8 @@
 enum cell_state{
     CELL_NOT_PLACED,
     CELL_OCCUPIED,
-    CELL_NOT_OCCUPIED
+    CELL_NOT_OCCUPIED,
+    CELL_NOT_USED
 };
 
 enum tile_state{
@@ -986,6 +987,47 @@ static void place_subformation(struct subformation *formation, vec2_t center,
     PERF_RETURN_VOID();
 }
 
+static void mark_unused_cells(struct subformation *formation)
+{
+    size_t ncells = formation->nrows * formation->ncols;
+    size_t nents = kh_size(formation->ents);
+    if(nents == ncells)
+        return;
+
+    size_t nplaced = ncells;
+    for(int i = 0; i < ncells; i++) {
+        if(vec_AT(&formation->cells, i).state == CELL_NOT_PLACED)
+            nplaced--;
+    }
+
+    if(nplaced <= nents)
+        return;
+
+    /* Make all not placed cells as not used */
+    for(int i = 0; i < ncells; i++) {
+        struct cell *cell = &vec_AT(&formation->cells, i);
+        if(cell->state == CELL_NOT_PLACED)
+            cell->state = CELL_NOT_USED;
+    }
+
+    size_t nexcess = nplaced - nents;
+    size_t left = 0, right = 0;
+    while(nexcess > 0) {
+        if(left <= right) {
+            /* Mark left-most back row cell */
+            size_t idx = CELL_IDX(0, left, formation->ncols);
+            vec_AT(&formation->cells, idx).state = CELL_NOT_USED;
+            left++;
+        }else{
+            /* Mark right-most back row cell */
+            size_t idx = CELL_IDX(0, formation->ncols - 1 - right, formation->ncols);
+            vec_AT(&formation->cells, idx).state = CELL_NOT_USED;
+            right++;
+        }
+        nexcess--;
+    }
+}
+
 static size_t sort_by_type(size_t size, uint32_t *ents, uint64_t *types)
 {
     if(size == 0)
@@ -1139,27 +1181,51 @@ static void init_subformations(struct formation *formation)
     STFREE(types);
 }
 
+static float manhattan_distance(vec2_t vec)
+{
+    return vec.x + vec.z;
+}
+
 /* The cost matrix holds the distance between every entity
  * and every cell.
  */
-static void create_cost_matrix(struct subformation *formation, int *out_costs)
+static void create_cost_matrix(struct subformation *formation, int *out_costs, 
+                               struct coord *out_idx_to_cell)
 {
     size_t nents = kh_size(formation->ents);
     int (*out_rows)[nents] = (void*)out_costs;
+
+    size_t cell_idx = 0;
+    for(int i = 0; i < nents; i++) {
+        struct cell *cell;
+        do{
+            cell = &vec_AT(&formation->cells, cell_idx);
+            cell_idx++;
+        }while(cell->state == CELL_NOT_USED);
+        out_idx_to_cell[i] = (struct coord){
+            (cell_idx-1) / formation->ncols,
+            (cell_idx-1) % formation->ncols
+        };
+    }
+    assert(cell_idx == formation->nrows * formation->ncols);
 
     int i = 0;
     uint32_t uid;
     kh_foreach_key(formation->ents, uid, {
 
         vec2_t pos = G_Pos_GetXZ(uid);
+        size_t cell_idx = 0;
         for(int j = 0; j < nents; j++) {
-            struct cell *cell = &vec_AT(&formation->cells, j);
+            struct coord cell_coord = out_idx_to_cell[j];
+            size_t cell_idx = CELL_IDX(cell_coord.r, cell_coord.c, formation->ncols);
+            struct cell *cell = &vec_AT(&formation->cells, cell_idx);
             if(cell->state == CELL_NOT_PLACED) {
                 out_rows[i][j] = INT_MAX;
             }else{
-                vec2_t distance;
-                PFM_Vec2_Sub(&cell->pos, &pos, &distance);
-                out_rows[i][j] = PFM_Vec2_Len(&distance);
+                vec2_t delta;
+                PFM_Vec2_Sub(&cell->pos, &pos, &delta);
+                float exponentiated_distance = powf(PFM_Vec2_Len(&delta), 2.0f);
+                out_rows[i][j] = exponentiated_distance;
             }
         }
         i++;
@@ -1536,8 +1602,9 @@ static void compute_cell_assignment(struct subformation *formation)
     STALLOC(int, costs, nents * nents);
     STALLOC(int, next, nents * nents);
     STALLOC(struct coord, assignment, nents);
+    STALLOC(struct coord, idx_to_cell, nents);
 
-    create_cost_matrix(formation, costs);
+    create_cost_matrix(formation, costs, idx_to_cell);
     int (*rows)[nents] = (void*)costs;
 
     /* Step 1: Subtract row minima
@@ -1587,17 +1654,20 @@ static void compute_cell_assignment(struct subformation *formation)
         int status;
         khiter_t k = kh_put(assignment, formation->assignment, uid, &status);
         assert(status != -1);
-        struct coord cell_coord = (struct coord){
-            assignment[i].c / formation->ncols,
-            assignment[i].c % formation->ncols
-        };
+        struct coord cell_coord = idx_to_cell[i];
         kh_val(formation->assignment, k) = cell_coord;
+        size_t cell_idx = CELL_IDX(cell_coord.r, cell_coord.c, formation->ncols);
+        struct cell *cell = &vec_AT(&formation->cells, cell_idx);
+        if(cell->state != CELL_NOT_PLACED) {
+            cell->state = CELL_OCCUPIED;
+        }
         i++;
     });
 
     STFREE(costs);
     STFREE(next)
     STFREE(assignment);
+    STFREE(idx_to_cell);
 
     PERF_RETURN_VOID();
 }
@@ -1616,9 +1686,13 @@ static mat4x4_t cell_field_model_matrix(vec2_t center)
     const float field_x_dim = tile_x_dim * CELL_ARRIVAL_FIELD_RES;
     const float field_z_dim = tile_z_dim * CELL_ARRIVAL_FIELD_RES;
 
+    vec2_t binned_center = bin_to_tile(center, center);
+    binned_center.x += tile_x_dim / 2.0f;
+    binned_center.z -= tile_z_dim / 2.0f;
+
     vec2_t base;
     vec2_t delta = (vec2_t){field_x_dim/2.0f, -field_z_dim/2.0f};
-    PFM_Vec2_Add(&center, &delta, &base);
+    PFM_Vec2_Add(&binned_center, &delta, &base);
 
     mat4x4_t ret;
     PFM_Mat4x4_MakeTrans(base.x, 0.0f, base.z, &ret);
@@ -2381,11 +2455,11 @@ static void dispatch_cell_field_work(struct map *map, vec2_t center, struct subf
             CELL_IDX(coord.r, coord.c, formation->ncols));
 
         struct tile_desc cell_td;
-        bool exists = M_Tile_DescForPoint2D(res, map_pos, cell->pos, &cell_td);
+        bool exists = M_Tile_DescForPoint2D(res, map_pos, bin_to_tile(cell->pos, center), &cell_td);
         assert(exists);
 
         struct tile_desc center_td;
-        exists = M_Tile_DescForPoint2D(res, map_pos, center, &center_td);
+        exists = M_Tile_DescForPoint2D(res, map_pos, bin_to_tile(center, center), &center_td);
         assert(exists);
 
         curr->consumed = false;
@@ -2475,6 +2549,55 @@ static vec2_t cell_get_dir(const struct cell_arrival_field *field, int r, int c)
         dir = (field->raw[byte_index] & 0xf0) >> 4;
     }
     return N_FlowDir(dir);
+}
+
+static bool inside_arrival_field_bounds(struct formation *formation, vec2_t pos)
+{
+    struct map_resolution nav_res;
+    M_NavGetResolution(s_map, &nav_res);
+
+    const float chunk_x_dim = TILES_PER_CHUNK_WIDTH * X_COORDS_PER_TILE;
+    const float chunk_z_dim = TILES_PER_CHUNK_HEIGHT * Z_COORDS_PER_TILE;
+
+    const float tile_x_dim = chunk_x_dim / nav_res.tile_w;
+    const float tile_z_dim = chunk_z_dim / nav_res.tile_h;
+
+    const float field_x_dim = tile_x_dim * OCCUPIED_FIELD_RES;
+    const float field_z_dim = tile_z_dim * OCCUPIED_FIELD_RES;
+
+    vec2_t center = formation->center;
+    vec2_t corners[] = {
+        (vec2_t){center.x + field_x_dim / 2.0f, center.z - field_z_dim / 2.0f},
+        (vec2_t){center.x - field_x_dim / 2.0f, center.z - field_z_dim / 2.0f},
+        (vec2_t){center.x - field_x_dim / 2.0f, center.z + field_z_dim / 2.0f},
+        (vec2_t){center.x + field_x_dim / 2.0f, center.z + field_z_dim / 2.0f}
+    };
+    return C_PointInsideRect2D(pos, corners[0], corners[1], corners[2], corners[3]);
+}
+
+static struct formation *formation_for_ent(uint32_t uid)
+{
+    formation_id_t fid = G_Formation_GetForEnt(uid);
+    if(fid == NULL_FID)
+        return NULL;
+
+    khiter_t k = kh_get(formation, s_formations, fid);
+    assert(k != kh_end(s_formations));
+    return &kh_val(s_formations, k);
+}
+
+static struct cell *cell_for_ent(struct formation *formation, uint32_t uid)
+{
+    khiter_t k = kh_get(assignment, formation->sub_assignment, uid);
+    assert(k != kh_end(formation->sub_assignment));
+    size_t sub_idx = kh_val(formation->sub_assignment, k).r;
+    struct subformation *sub = &vec_AT(&formation->subformations, sub_idx);
+
+    khiter_t l = kh_get(assignment, sub->assignment, uid);
+    assert(l != kh_end(sub->assignment));
+    struct coord cell_coord = kh_val(sub->assignment, l);
+    size_t cell_idx = cell_coord.r * sub->ncols + cell_coord.c;
+    return &vec_AT(&sub->cells, cell_idx);
 }
 
 /*****************************************************************************/
@@ -2570,6 +2693,7 @@ void G_Formation_Create(vec2_t target, const vec_entity_t *ents)
         struct subformation *sub = &vec_AT(&new->subformations, i);
         place_subformation(sub, new->center, target, new->orientation, 
             new->occupied, new->islands);
+        mark_unused_cells(sub);
         compute_cell_assignment(sub);
         dispatch_cell_field_work(new->map_snapshot, new->center, sub);
     }
@@ -2606,5 +2730,103 @@ void G_Formation_RemoveUnit(uint32_t uid)
         destroy_formation(formation);
         kh_del(formation, s_formations, k);
     }
+}
+
+bool G_Formation_CanUseArrivalField(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct cell_arrival_field *field = cell_get_field(uid);
+    if(!field)
+        return false;
+
+    struct formation *formation = formation_for_ent(uid);
+    vec2_t pos = G_Pos_GetXZ(uid);
+    return inside_arrival_field_bounds(formation, pos);
+}
+
+bool G_Formation_InRangeOfCell(uint32_t uid)
+{
+    struct formation *formation = formation_for_ent(uid);
+    vec2_t pos = G_Pos_GetXZ(uid);
+    return inside_arrival_field_bounds(formation, pos);
+}
+
+vec2_t G_Formation_DesiredArrivalVelocity(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+    
+    struct formation *formation = formation_for_ent(uid);
+    assert(formation);
+
+    vec2_t pos = G_Pos_GetXZ(uid);
+    struct coord coord = pos_to_tile(pos, formation->center);
+    /* Account for the difference between OCCUPIED_FIELD_RES
+     * and CELL_ARRIVAL_FIELD_RES */
+    coord.r += 1;
+    coord.c += 1;
+
+    struct cell_arrival_field *field = cell_get_field(uid);
+    vec2_t ret = cell_get_dir(field, coord.r, coord.c);
+    return ret;
+}
+
+vec2_t G_Formation_ApproximateDesiredArrivalVelocity(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct formation *formation = formation_for_ent(uid);
+    assert(formation);
+    struct cell *cell = cell_for_ent(formation, uid);
+    assert(cell);
+
+    vec2_t cell_pos = cell->pos;
+    vec2_t ent_pos = G_Pos_GetXZ(uid);
+    vec2_t delta;
+    PFM_Vec2_Sub(&cell_pos, &ent_pos, &delta);
+    PFM_Vec2_Normal(&delta, &delta);
+    return delta;
+}
+
+bool G_Formation_ArrivedAtCell(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct formation *formation = formation_for_ent(uid);
+    assert(formation);
+    struct cell *cell = cell_for_ent(formation, uid);
+    assert(cell);
+
+    /* Check if we are within tolerance of the cell position */
+    float radius = G_GetSelectionRadius(uid);
+    float arrive_thresh = radius * 1.5f;
+
+    vec2_t cell_pos = cell->pos;
+    vec2_t ent_pos = G_Pos_GetXZ(uid);
+    vec2_t delta;
+    PFM_Vec2_Sub(&ent_pos, &cell_pos, &delta);
+    return (PFM_Vec2_Len(&delta) <= arrive_thresh);
+}
+
+bool G_Formation_AssignedToCell(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct formation *formation = formation_for_ent(uid);
+    assert(formation);
+    struct cell *cell = cell_for_ent(formation, uid);
+    assert(cell);
+    return (cell->state == CELL_OCCUPIED);
+}
+
+vec2_t G_Formation_CellPosition(uint32_t uid)
+{
+    ASSERT_IN_MAIN_THREAD();
+
+    struct formation *formation = formation_for_ent(uid);
+    assert(formation);
+    struct cell *cell = cell_for_ent(formation, uid);
+    assert(cell);
+    return cell->pos;
 }
 
