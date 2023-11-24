@@ -1224,8 +1224,12 @@ static void create_cost_matrix(struct subformation *formation, int *out_costs,
             }else{
                 vec2_t delta;
                 PFM_Vec2_Sub(&cell->pos, &pos, &delta);
-                float exponentiated_distance = powf(PFM_Vec2_Len(&delta), 2.0f);
-                out_rows[i][j] = exponentiated_distance;
+                /* Scale the resolution by 100 to keep 2 points of precision
+                 * after the decimal in the integer distance. Squaring the 
+                 * distance adds an additional penalty for a unit 'overtaking'
+                 * another one in the formation. */
+                float squared_distance = powf(PFM_Vec2_Len(&delta) * 100, 2);
+                out_rows[i][j] = squared_distance;
             }
         }
         i++;
@@ -1375,6 +1379,19 @@ static size_t count_covered_columns(bool *covered, size_t nents)
             ret++;
     }
     return ret;
+}
+
+static void dump_cost_matrix_only(int *costs, size_t nents)
+{
+    int (*cost_rows)[nents] = (void*)costs;
+    for(int r = 0; r < nents; r++) {
+        for(int c = 0; c < nents; c++) {
+            printf("%03d", cost_rows[r][c]);
+            if(c != nents-1)
+                printf("  ");
+        }
+        printf("\n");
+    }
 }
 
 static void dump_cost_matrix(int *costs, size_t nents,
@@ -1654,7 +1671,8 @@ static void compute_cell_assignment(struct subformation *formation)
         int status;
         khiter_t k = kh_put(assignment, formation->assignment, uid, &status);
         assert(status != -1);
-        struct coord cell_coord = idx_to_cell[i];
+        size_t meta_idx = assignment[i].c;
+        struct coord cell_coord = idx_to_cell[meta_idx];
         kh_val(formation->assignment, k) = cell_coord;
         size_t cell_idx = CELL_IDX(cell_coord.r, cell_coord.c, formation->ncols);
         struct cell *cell = &vec_AT(&formation->cells, cell_idx);
@@ -1817,6 +1835,19 @@ static void render_formations(void)
                 N_RenderOverlayText(text, center_homo, &model, &view, &proj);
             }}
         }
+
+        /* Draw the entity's UID over each entity */
+        uint32_t uid;
+        kh_foreach_key(formation->ents, uid, {
+
+            vec4_t center = (vec4_t){0.0f, 0.0f, 0.0f, 1.0f};
+            mat4x4_t model;
+            Entity_ModelMatrix(uid, &model);
+
+            char text[16];
+            pf_snprintf(text, sizeof(text), "UID: %u", uid);
+            N_RenderOverlayText(text, center, &model, &view, &proj);
+        });
     });
 }
 
